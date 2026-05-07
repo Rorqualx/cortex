@@ -24,7 +24,9 @@ import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State } from "./types.js";
 
 const ASSEMBLE_TOP_K = 5;
-const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
+// Production threshold ~4000; temporarily lowered for the Phase 6 dry-run.
+// TODO(memory-l3): revert before next stable build.
+const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 50;
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 
@@ -220,7 +222,15 @@ export class HierarchicalL3Engine implements ContextEngine {
     // OpenClaw's runtime hands us the full session message array each turn
     // and never invokes ingest/ingestBatch separately. Pull the tail we
     // haven't compacted yet into the buffer so the existing compactor runs.
-    const compactedSoFar = this.state.compactedMessageCount;
+    // Per-session cursor with truncation guard: if the runtime sends fewer
+    // messages than we'd already compacted (session restart, history
+    // truncation), reset to 0 for this session and re-ingest from the top.
+    const sessionCursors = this.state.compactedMessageCountBySession;
+    const recordedCursor = sessionCursors[params.sessionId] ?? 0;
+    const compactedSoFar = recordedCursor > params.messages.length ? 0 : recordedCursor;
+    if (compactedSoFar !== recordedCursor) {
+      sessionCursors[params.sessionId] = 0;
+    }
     const tail = params.messages.slice(compactedSoFar);
     if (tail.length > 0) {
       this.buffer.pushBatch(params.sessionId, tail);
@@ -248,7 +258,7 @@ export class HierarchicalL3Engine implements ContextEngine {
         now,
       });
       if (result.chunkId !== null) {
-        this.state.compactedMessageCount = params.messages.length;
+        this.state.compactedMessageCountBySession[params.sessionId] = params.messages.length;
       }
       l3debug(
         `afterTurn(): compaction result chunkId=${result.chunkId} factsAdded=${result.factsAdded} epochId=${result.epochId}`,

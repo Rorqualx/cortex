@@ -10,12 +10,14 @@ export type L3State = {
   lastEpochAt: number;
   lastChunkId: string | null;
   /**
-   * Number of session messages that have already been compacted into L2
-   * chunks. afterTurn() ingests `params.messages.slice(compactedMessageCount)`
-   * each turn so we don't double-ingest when the runtime hands us the full
-   * session history every call.
+   * Per-session cursor: how many messages of each session have already been
+   * compacted into L2 chunks. afterTurn() ingests
+   * `params.messages.slice(compactedMessageCountBySession[sessionId])` each
+   * turn so we don't double-ingest. Per-session because the runtime rotates
+   * session ids; an engine-wide int would over-skip on new sessions and
+   * under-skip on truncated ones.
    */
-  compactedMessageCount: number;
+  compactedMessageCountBySession: Record<string, number>;
   /** Wall-clock ms of the most recent long-term consolidation pass (0 = never). */
   lastConsolidatedAt: number;
 };
@@ -27,7 +29,7 @@ export const INITIAL_L3_STATE: L3State = {
   l2ChunkIndex: 0,
   lastEpochAt: 0,
   lastChunkId: null,
-  compactedMessageCount: 0,
+  compactedMessageCountBySession: {},
   lastConsolidatedAt: 0,
 };
 
