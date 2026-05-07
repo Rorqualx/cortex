@@ -24,9 +24,7 @@ import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State } from "./types.js";
 
 const ASSEMBLE_TOP_K = 5;
-// Production threshold ~4000; temporarily lowered for the Phase 6 dry-run.
-// TODO(memory-l3): revert before next stable build.
-const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 50;
+const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 
