@@ -15,8 +15,8 @@ export type CompactionResult = {
   epochId: string | null;
 };
 
-const RECENT_DEDUP_KEYS_LIMIT = 50;
-const RECENT_CHUNKS_TO_SCAN = 10;
+const RECENT_DEDUP_KEYS_LIMIT = 200;
+const RECENT_CHUNKS_TO_SCAN = 50;
 
 export async function compactSession(params: {
   sessionId: string;
@@ -24,6 +24,8 @@ export async function compactSession(params: {
   storage: Storage;
   caller: LlmCaller;
   state: L3State;
+  /** Override the wall clock (for deterministic regression tests). */
+  now?: number;
 }): Promise<CompactionResult> {
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
@@ -43,7 +45,7 @@ export async function compactSession(params: {
   const filtered = dropAlreadyKnown(extracted, alreadyKnownSet);
   const deduped = dedupWithinChunk(filtered);
 
-  const now = Date.now();
+  const now = params.now ?? Date.now();
   const chunkId = nextChunkId(params.state);
   const facts: L2Fact[] = deduped.map((f) => liftToL2Fact(f, now));
 
