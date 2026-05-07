@@ -9,7 +9,9 @@ import type {
   IngestResult,
 } from "openclaw/plugin-sdk";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { compactSession } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
+import { createGlmCaller, type LlmCaller } from "./llm.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
@@ -27,17 +29,24 @@ export function createHierarchicalL3Engine(ctx: ContextEngineFactoryContext): Co
   return new HierarchicalL3Engine(storage);
 }
 
+export type HierarchicalL3EngineOptions = {
+  /** Override the default GLM-from-env LlmCaller. Used by tests. */
+  caller?: LlmCaller;
+};
+
 // Stage 2: storage-backed bootstrap/dispose. Ingest, assemble, and compact
 // remain passthrough stubs; subsequent stages (3-8) wire the L1/L2/L3
 // algorithms onto this storage layer.
-class HierarchicalL3Engine implements ContextEngine {
+export class HierarchicalL3Engine implements ContextEngine {
   readonly info = ENGINE_INFO;
   private readonly storage: Storage;
   private readonly buffer = new IngestBuffer();
+  private readonly callerOverride: LlmCaller | undefined;
   private state: L3State | null = null;
 
-  constructor(storage: Storage) {
+  constructor(storage: Storage, options?: HierarchicalL3EngineOptions) {
     this.storage = storage;
+    this.callerOverride = options?.caller;
   }
 
   async bootstrap(): Promise<BootstrapResult> {
@@ -100,12 +109,58 @@ class HierarchicalL3Engine implements ContextEngine {
     };
   }
 
-  async compact(): Promise<CompactResult> {
+  async compact(params: {
+    sessionId: string;
+    sessionKey?: string;
+    sessionFile: string;
+    tokenBudget?: number;
+    force?: boolean;
+    currentTokenCount?: number;
+  }): Promise<CompactResult> {
+    if (!this.state) {
+      return { ok: false, compacted: false, reason: "engine not bootstrapped" };
+    }
+    const caller = this.resolveCaller();
+    if (!caller) {
+      return {
+        ok: false,
+        compacted: false,
+        reason: "no LlmCaller available (Z_AI_API_KEY missing and no override)",
+      };
+    }
+    const { chunkId, factsAdded, tokensBefore, messagesIngested } = await compactSession({
+      sessionId: params.sessionId,
+      buffer: this.buffer,
+      storage: this.storage,
+      caller,
+      state: this.state,
+    });
+    if (chunkId === null) {
+      return {
+        ok: true,
+        compacted: false,
+        reason: "no buffered messages to compact",
+        result: { tokensBefore: 0, tokensAfter: 0 },
+      };
+    }
+    await this.storage.writeState(this.state);
     return {
       ok: true,
-      compacted: false,
-      reason: "hierarchical-l3 v0.1.0 stub: L2 compaction not yet implemented",
+      compacted: true,
+      reason: `wrote chunk ${chunkId} with ${factsAdded} fact(s) over ${messagesIngested} message(s)`,
+      result: {
+        firstKeptEntryId: chunkId,
+        tokensBefore,
+        tokensAfter: 0,
+      },
     };
+  }
+
+  private resolveCaller(): LlmCaller | null {
+    if (this.callerOverride) return this.callerOverride;
+    const apiKey = process.env.Z_AI_API_KEY;
+    if (!apiKey || apiKey.length === 0) return null;
+    return createGlmCaller({ apiKey });
   }
 
   async dispose(): Promise<void> {

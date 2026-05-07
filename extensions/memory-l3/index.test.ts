@@ -32,14 +32,14 @@ describe("memory-l3 engine factory", () => {
     expect(result.messages).not.toBe(messages);
   });
 
-  it("compact reports stage 1 stub with reason", async () => {
+  it("compact refuses to run when the engine has not been bootstrapped", async () => {
     const engine = createHierarchicalL3Engine({});
     const result = await engine.compact({
       sessionId: "s1",
       sessionFile: "/tmp/test.session",
     } as never);
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
     expect(result.compacted).toBe(false);
-    expect(result.reason).toContain("stub");
+    expect(result.reason).toContain("not bootstrapped");
   });
 });

@@ -105,6 +105,12 @@ export class Storage {
     return await readFrontmatterDocument<L2ChunkFrontmatter>(target);
   }
 
+  async readL2ChunkAtPath(
+    filePath: string,
+  ): Promise<FrontmatterDocument<L2ChunkFrontmatter> | null> {
+    return await readFrontmatterDocument<L2ChunkFrontmatter>(filePath);
+  }
+
   /** List every persisted L2 chunk path, sorted chronologically by partition. */
   async listL2ChunkPaths(): Promise<string[]> {
     const root = path.join(this.root, L2_DIR);
