@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import {
   type ConsolidationCandidate,
   type ConsolidationConfig,
@@ -47,6 +49,13 @@ export async function consolidateLongTerm(params: {
   now: number;
   consolidationConfig?: ConsolidationConfig;
   longTermConfig?: LongTermConfig;
+  /**
+   * When provided, additionally write a QMD-friendly snapshot of active
+   * long-term facts to `<workspaceDir>/memory/.l3/<YYYY-MM-DD>.md` so
+   * memory-core's existing dreaming + retrieval pipeline picks them up
+   * without any modification to memory-core source.
+   */
+  workspaceDir?: string;
 }): Promise<ConsolidationOutput> {
   const consolidationConfig = params.consolidationConfig ?? DEFAULT_CONSOLIDATION_CONFIG;
   const longTermConfig = params.longTermConfig ?? DEFAULT_LONG_TERM_CONFIG;
@@ -98,6 +107,14 @@ export async function consolidateLongTerm(params: {
   };
 
   await params.storage.writeLongTerm(frontmatter, formatLongTermBody(orderedFacts));
+
+  if (params.workspaceDir) {
+    await writeQmdMirror({
+      workspaceDir: params.workspaceDir,
+      facts: orderedFacts,
+      now: params.now,
+    });
+  }
 
   return {
     promotedCount,
@@ -164,6 +181,71 @@ function orderFacts(facts: LongTermFact[]): LongTermFact[] {
 function byImportanceDesc(a: LongTermFact, b: LongTermFact): number {
   if (b.importance !== a.importance) return b.importance - a.importance;
   return a.dedupKey.localeCompare(b.dedupKey);
+}
+
+/**
+ * Mirror the active long-term tier into a QMD-indexable markdown file at
+ * `<workspaceDir>/memory/.l3/<YYYY-MM-DD>.md`. The path is chosen to match
+ * memory-core's SHORT_TERM_PATH_RE (`memory/<...>/YYYY-MM-DD.md`) so the
+ * existing memory-core indexer + dreaming pipeline picks the facts up
+ * automatically, no patches needed. Each fact gets its own H2 heading so
+ * QMD chunks them sensibly.
+ *
+ * Format is plain markdown — NO JSON frontmatter — so memory-core's regular
+ * parsers don't fight it. The file is purely a derived artifact of
+ * consolidation; user edits will be overwritten on the next pass.
+ */
+async function writeQmdMirror(params: {
+  workspaceDir: string;
+  facts: ReadonlyArray<LongTermFact>;
+  now: number;
+}): Promise<void> {
+  const active = params.facts.filter((f) => !f.archived);
+  const datePart = formatDateString(params.now);
+  const mirrorDir = path.join(params.workspaceDir, "memory", ".l3");
+  const mirrorPath = path.join(mirrorDir, `${datePart}.md`);
+
+  if (active.length === 0) {
+    // No active facts — leave any prior mirror in place rather than churn it.
+    // It will be overwritten on the next consolidation that has facts.
+    return;
+  }
+
+  await fs.mkdir(mirrorDir, { recursive: true });
+  const body = formatQmdMirror(active);
+  const tmp = `${mirrorPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  await fs.writeFile(tmp, body, "utf8");
+  await fs.rename(tmp, mirrorPath);
+}
+
+function formatQmdMirror(facts: ReadonlyArray<LongTermFact>): string {
+  const lines: string[] = [
+    "# Long-term memory (memory-l3 derived)",
+    "",
+    "_Auto-generated snapshot of evergreen facts that have promoted into hierarchical-l3's long-term tier. Edits are overwritten on the next consolidation pass._",
+    "",
+  ];
+  for (const fact of facts) {
+    const firstSeen = formatDateString(fact.firstSeenAt);
+    const lastConfirmed = formatDateString(fact.lastConfirmedAt);
+    lines.push(`## ${fact.dedupKey}`);
+    lines.push("");
+    lines.push(fact.text);
+    lines.push("");
+    lines.push(
+      `_recallCount=${fact.recallCount}, importance=${fact.importance.toFixed(2)}, firstSeen=${firstSeen}, lastConfirmed=${lastConfirmed}_`,
+    );
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function formatDateString(unixMs: number): string {
+  const d = new Date(unixMs);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function formatLongTermBody(facts: ReadonlyArray<LongTermFact>): string {

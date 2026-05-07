@@ -250,3 +250,106 @@ describe("consolidateLongTerm", () => {
     expect(DEFAULT_LONG_TERM_CONFIG.maxAgeWithoutConfirmMs).toBe(60 * MS_PER_DAY);
   });
 });
+
+describe("consolidateLongTerm QMD mirror", () => {
+  it("writes <workspaceDir>/memory/.l3/<date>.md when workspaceDir is provided", async () => {
+    await writeChunk(
+      "chunk-x",
+      [fact("f1", "user prefers tabs over spaces", 0.9, NOW, "user_pref:tabs")],
+      NOW,
+    );
+    const workspaceDir = path.join(tmpRoot, "workspace");
+    const fs = await import("node:fs/promises");
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      workspaceDir,
+    });
+    expect(result.promotedCount).toBe(1);
+
+    // NOW = 2026-05-06 UTC
+    const mirrorPath = path.join(workspaceDir, "memory", ".l3", "2026-05-06.md");
+    const body = await fs.readFile(mirrorPath, "utf8");
+    expect(body).toContain("# Long-term memory (memory-l3 derived)");
+    expect(body).toContain("## user_pref:tabs");
+    expect(body).toContain("user prefers tabs over spaces");
+    expect(body).toContain("recallCount=1");
+    expect(body).toContain("importance=0.90");
+  });
+
+  it("does not write a mirror when workspaceDir is not provided", async () => {
+    await writeChunk("chunk-x", [fact("f1", "anything", 0.9, NOW, "k:1")], NOW);
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+    expect(result.promotedCount).toBe(1);
+    // No assertion on filesystem — the mirror is opt-in.
+  });
+
+  it("does not write the mirror when no active facts exist", async () => {
+    await writeChunk("chunk-x", [fact("f1", "trivia", 0.4, NOW, "k:1")], NOW);
+    const workspaceDir = path.join(tmpRoot, "workspace");
+    const fs = await import("node:fs/promises");
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      workspaceDir,
+    });
+    expect(result.promotedCount).toBe(0);
+    expect(result.activeCount).toBe(0);
+
+    const mirrorDir = path.join(workspaceDir, "memory", ".l3");
+    const exists = await fs
+      .stat(mirrorDir)
+      .then(() => true)
+      .catch(() => false);
+    expect(exists).toBe(false);
+  });
+
+  it("excludes archived facts from the mirror", async () => {
+    // Promote a fact, then re-run past the staleness window without re-confirming.
+    await writeChunk(
+      "chunk-old",
+      [fact("f1", "ephemeral", 0.9, NOW - 100 * MS_PER_DAY, "old:1")],
+      NOW - 100 * MS_PER_DAY,
+    );
+    const workspaceDir = path.join(tmpRoot, "workspace");
+    const fs = await import("node:fs/promises");
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 100 * MS_PER_DAY,
+      workspaceDir,
+    });
+
+    // Remove the L2 chunk, then re-run consolidation past the 60-day window.
+    const chunkPath = (await storage.listL2ChunkPaths())[0];
+    await fs.unlink(chunkPath);
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      workspaceDir,
+    });
+
+    // Today's mirror file should NOT exist (no active facts) — the prior
+    // mirror (from the original consolidation date) may still exist as a
+    // historical snapshot, but today is empty so we don't overwrite it.
+    const todayPath = path.join(workspaceDir, "memory", ".l3", "2026-05-06.md");
+    const todayExists = await fs
+      .stat(todayPath)
+      .then(() => true)
+      .catch(() => false);
+    expect(todayExists).toBe(false);
+  });
+});

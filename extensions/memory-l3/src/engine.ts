@@ -43,7 +43,11 @@ const ENGINE_INFO: ContextEngineInfo = {
 
 export function createHierarchicalL3Engine(ctx: ContextEngineFactoryContext): ContextEngine {
   const storage = Storage.fromWorkspace(ctx.workspaceDir);
-  return new HierarchicalL3Engine(storage, { agentDir: ctx.agentDir, config: ctx.config });
+  return new HierarchicalL3Engine(storage, {
+    agentDir: ctx.agentDir,
+    config: ctx.config,
+    workspaceDir: ctx.workspaceDir,
+  });
 }
 
 export type HierarchicalL3EngineOptions = {
@@ -55,6 +59,8 @@ export type HierarchicalL3EngineOptions = {
   config?: OpenClawConfig;
   /** Override the memory-core lookup. Used by tests; production wires the SDK call. */
   memoryCoreLookup?: MemoryCoreLookup;
+  /** Workspace dir from factory context. Used to mirror long-term facts into memory/.l3/. */
+  workspaceDir?: string;
 };
 
 export class HierarchicalL3Engine implements ContextEngine {
@@ -65,6 +71,7 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly agentDir: string | undefined;
   private readonly config: OpenClawConfig | undefined;
   private readonly memoryCoreLookupOverride: MemoryCoreLookup | undefined;
+  private readonly workspaceDir: string | undefined;
   private cachedZaiKey: string | null | undefined;
   private state: L3State | null = null;
 
@@ -74,6 +81,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     this.agentDir = options?.agentDir;
     this.config = options?.config;
     this.memoryCoreLookupOverride = options?.memoryCoreLookup;
+    this.workspaceDir = options?.workspaceDir;
   }
 
   async bootstrap(): Promise<BootstrapResult> {
@@ -254,6 +262,7 @@ export class HierarchicalL3Engine implements ContextEngine {
             storage: this.storage,
             agentId: this.state.agentId,
             now,
+            workspaceDir: this.workspaceDir,
           });
           this.state.lastConsolidatedAt = now;
           l3debug(
