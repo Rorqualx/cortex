@@ -16,6 +16,8 @@ export type L3State = {
    * session history every call.
    */
   compactedMessageCount: number;
+  /** Wall-clock ms of the most recent long-term consolidation pass (0 = never). */
+  lastConsolidatedAt: number;
 };
 
 export const INITIAL_L3_STATE: L3State = {
@@ -26,6 +28,7 @@ export const INITIAL_L3_STATE: L3State = {
   lastEpochAt: 0,
   lastChunkId: null,
   compactedMessageCount: 0,
+  lastConsolidatedAt: 0,
 };
 
 /**
@@ -70,4 +73,49 @@ export type L3EpochFrontmatter = {
 export type FrontmatterDocument<TFrontmatter> = {
   frontmatter: TFrontmatter;
   body: string;
+};
+
+/**
+ * A fact promoted into the long-term tier — i.e., one that recurred across
+ * multiple L2 chunks with enough cumulative signal that it is worth carrying
+ * across sessions. The schema is intentionally a superset of `L2Fact` so a
+ * single fact can travel through the tiers without lossy conversion.
+ */
+export type LongTermFact = {
+  id: string;
+  text: string;
+  dedupKey: string;
+  /** Composite importance, currently the max importance across confirming chunks. */
+  importance: number;
+  /** ms timestamp of the first L2 chunk that emitted this dedupKey. */
+  firstSeenAt: number;
+  /** ms timestamp of the most recent L2 chunk that confirmed this dedupKey. */
+  lastConfirmedAt: number;
+  /** Distinct L2 chunks that have emitted this dedupKey. */
+  recallCount: number;
+  /** Distinct chunkIds that confirmed this fact (used by demotion to find provenance). */
+  sourceChunkIds: string[];
+  /** When true, fact is hidden from retrieval but kept on disk for forensics. */
+  archived: boolean;
+  /** ms timestamp when archived (set iff archived=true). */
+  archivedAt: number | null;
+};
+
+/**
+ * Frontmatter for `<root>/longterm.md`. Single-file schema (vs. the date-
+ * partitioned L2 layout) because long-term facts are bounded — promotion
+ * thresholds keep the working set small enough to load whole.
+ */
+export type LongTermFrontmatter = {
+  version: 1;
+  agentId: string | null;
+  lastConsolidatedAt: number;
+  facts: LongTermFact[];
+};
+
+export const INITIAL_LONG_TERM_FRONTMATTER: LongTermFrontmatter = {
+  version: 1,
+  agentId: null,
+  lastConsolidatedAt: 0,
+  facts: [],
 };

@@ -3,7 +3,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Storage } from "./storage.js";
-import { INITIAL_L3_STATE, type L2ChunkFrontmatter, type L3EpochFrontmatter } from "./types.js";
+import {
+  INITIAL_L3_STATE,
+  type L2ChunkFrontmatter,
+  type L3EpochFrontmatter,
+  type LongTermFact,
+  type LongTermFrontmatter,
+} from "./types.js";
 
 let tmpRoot: string;
 let storage: Storage;
@@ -143,6 +149,103 @@ describe("Storage L1 archive", () => {
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0])).toEqual({ role: "user", content: "first" });
     expect(JSON.parse(lines[1])).toEqual({ role: "assistant", content: "second" });
+  });
+});
+
+describe("Storage long-term tier I/O", () => {
+  it("readLongTerm returns initial frontmatter when the file does not exist", async () => {
+    const lt = await storage.readLongTerm();
+    expect(lt.version).toBe(1);
+    expect(lt.agentId).toBeNull();
+    expect(lt.lastConsolidatedAt).toBe(0);
+    expect(lt.facts).toEqual([]);
+  });
+
+  it("writeLongTerm then readLongTerm round-trips faithfully", async () => {
+    await storage.ensureLayout();
+    const fact: LongTermFact = {
+      id: "lt-1",
+      text: "user prefers morning standups",
+      dedupKey: "user_pref:morning_standups",
+      importance: 0.9,
+      firstSeenAt: 1000,
+      lastConfirmedAt: 5000,
+      recallCount: 3,
+      sourceChunkIds: ["chunk-000000-aaaa", "chunk-000003-bbbb", "chunk-000005-cccc"],
+      archived: false,
+      archivedAt: null,
+    };
+    const fm: LongTermFrontmatter = {
+      version: 1,
+      agentId: "j-rorqual",
+      lastConsolidatedAt: 7000,
+      facts: [fact],
+    };
+    await storage.writeLongTerm(fm, "## Long-term facts\n- user prefers morning standups");
+    const round = await storage.readLongTerm();
+    expect(round).toEqual(fm);
+  });
+
+  it("writeLongTerm overwrites the existing file atomically", async () => {
+    await storage.ensureLayout();
+    const fmA: LongTermFrontmatter = {
+      version: 1,
+      agentId: null,
+      lastConsolidatedAt: 1,
+      facts: [],
+    };
+    await storage.writeLongTerm(fmA, "v1");
+    const fmB: LongTermFrontmatter = {
+      version: 1,
+      agentId: "j-rorqual",
+      lastConsolidatedAt: 2,
+      facts: [
+        {
+          id: "lt-2",
+          text: "always tabs",
+          dedupKey: "user_pref:tabs",
+          importance: 0.7,
+          firstSeenAt: 100,
+          lastConfirmedAt: 200,
+          recallCount: 2,
+          sourceChunkIds: ["chunk-x", "chunk-y"],
+          archived: false,
+          archivedAt: null,
+        },
+      ],
+    };
+    await storage.writeLongTerm(fmB, "v2");
+    const round = await storage.readLongTerm();
+    expect(round.lastConsolidatedAt).toBe(2);
+    expect(round.facts).toHaveLength(1);
+    expect(round.facts[0].dedupKey).toBe("user_pref:tabs");
+  });
+
+  it("preserves archived facts on round-trip", async () => {
+    await storage.ensureLayout();
+    const fm: LongTermFrontmatter = {
+      version: 1,
+      agentId: "j-rorqual",
+      lastConsolidatedAt: 9000,
+      facts: [
+        {
+          id: "lt-old",
+          text: "deprecated preference",
+          dedupKey: "old:thing",
+          importance: 0.4,
+          firstSeenAt: 1000,
+          lastConfirmedAt: 1500,
+          recallCount: 2,
+          sourceChunkIds: ["chunk-z"],
+          archived: true,
+          archivedAt: 8500,
+        },
+      ],
+    };
+    await storage.writeLongTerm(fm, "");
+    const round = await storage.readLongTerm();
+    expect(round.facts[0].archived).toBe(true);
+    expect(round.facts[0].archivedAt).toBe(8500);
   });
 });
 

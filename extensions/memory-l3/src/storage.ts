@@ -6,12 +6,15 @@ import * as path from "node:path";
 import {
   type FrontmatterDocument,
   INITIAL_L3_STATE,
+  INITIAL_LONG_TERM_FRONTMATTER,
   type L2ChunkFrontmatter,
   type L3EpochFrontmatter,
   type L3State,
+  type LongTermFrontmatter,
 } from "./types.js";
 
 const STATE_FILENAME = "state.json";
+const LONG_TERM_FILENAME = "longterm.md";
 const L1_ARCHIVE_DIR = "l1_archive";
 const L2_DIR = "l2";
 const L3_DIR = "l3";
@@ -165,6 +168,34 @@ export class Storage {
     filePath: string,
   ): Promise<FrontmatterDocument<L3EpochFrontmatter> | null> {
     return await readFrontmatterDocument<L3EpochFrontmatter>(filePath);
+  }
+
+  /**
+   * Read the long-term tier file. Returns a fresh INITIAL_LONG_TERM_FRONTMATTER
+   * (no facts) when the file is absent, so callers can treat the tier as
+   * always-readable.
+   */
+  async readLongTerm(): Promise<LongTermFrontmatter> {
+    const target = path.join(this.root, LONG_TERM_FILENAME);
+    const doc = await readFrontmatterDocument<LongTermFrontmatter>(target);
+    if (doc === null) {
+      return { ...INITIAL_LONG_TERM_FRONTMATTER };
+    }
+    return doc.frontmatter;
+  }
+
+  /**
+   * Atomically rewrite `<root>/longterm.md`. The body is a stable, ordered
+   * markdown listing of the active facts for human inspection — frontmatter
+   * remains the source of truth.
+   */
+  async writeLongTerm(frontmatter: LongTermFrontmatter, body: string): Promise<string> {
+    return await this.mutex.run(async () => {
+      const target = path.join(this.root, LONG_TERM_FILENAME);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
+      return target;
+    });
   }
 }
 
