@@ -35,6 +35,7 @@ describe("compactSession", () => {
       factsAdded: 0,
       tokensBefore: 0,
       messagesIngested: 0,
+      epochId: null,
     });
     expect(caller).not.toHaveBeenCalled();
   });

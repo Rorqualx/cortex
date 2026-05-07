@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { dedupWithinChunk, dropAlreadyKnown, liftToL2Fact } from "./dedup.js";
+import { maybeWriteEpoch } from "./epoch.js";
 import type { IngestBuffer } from "./ingest.js";
 import { extractFacts, type LlmCaller } from "./llm.js";
 import type { Storage } from "./storage.js";
@@ -11,6 +12,7 @@ export type CompactionResult = {
   factsAdded: number;
   tokensBefore: number;
   messagesIngested: number;
+  epochId: string | null;
 };
 
 const RECENT_DEDUP_KEYS_LIMIT = 50;
@@ -26,7 +28,7 @@ export async function compactSession(params: {
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
   if (messages.length === 0) {
-    return { chunkId: null, factsAdded: 0, tokensBefore: 0, messagesIngested: 0 };
+    return { chunkId: null, factsAdded: 0, tokensBefore: 0, messagesIngested: 0, epochId: null };
   }
 
   const alreadyKnownKeys = await readRecentDedupKeys(params.storage);
@@ -66,11 +68,18 @@ export async function compactSession(params: {
   params.state.lastChunkId = chunkId;
   params.state.bufferTokenCount = params.buffer.totalTokens();
 
+  const epochId = await maybeWriteEpoch({
+    storage: params.storage,
+    state: params.state,
+    now,
+  });
+
   return {
     chunkId,
     factsAdded: facts.length,
     tokensBefore,
     messagesIngested: messages.length,
+    epochId,
   };
 }
 
