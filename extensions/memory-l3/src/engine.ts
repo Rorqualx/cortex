@@ -10,12 +10,14 @@ import type {
   IngestBatchResult,
   IngestResult,
 } from "openclaw/plugin-sdk";
+import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { getMemorySearchManager } from "openclaw/plugin-sdk/memory-core-engine-runtime";
 import { compactSession } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
 import { createGlmCaller, type LlmCaller } from "./llm.js";
 import { consolidateLongTerm } from "./longterm.js";
-import { formatMemorySection, retrieveTopK } from "./retrieval.js";
+import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
@@ -41,7 +43,7 @@ const ENGINE_INFO: ContextEngineInfo = {
 
 export function createHierarchicalL3Engine(ctx: ContextEngineFactoryContext): ContextEngine {
   const storage = Storage.fromWorkspace(ctx.workspaceDir);
-  return new HierarchicalL3Engine(storage, { agentDir: ctx.agentDir });
+  return new HierarchicalL3Engine(storage, { agentDir: ctx.agentDir, config: ctx.config });
 }
 
 export type HierarchicalL3EngineOptions = {
@@ -49,6 +51,10 @@ export type HierarchicalL3EngineOptions = {
   caller?: LlmCaller;
   /** Per-agent directory under ~/.openclaw/agents/<id>/. Used to read auth-profiles.json. */
   agentDir?: string;
+  /** OpenClaw config from the factory context. Required to call memory-core's QMD. */
+  config?: OpenClawConfig;
+  /** Override the memory-core lookup. Used by tests; production wires the SDK call. */
+  memoryCoreLookup?: MemoryCoreLookup;
 };
 
 export class HierarchicalL3Engine implements ContextEngine {
@@ -57,6 +63,8 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly buffer = new IngestBuffer();
   private readonly callerOverride: LlmCaller | undefined;
   private readonly agentDir: string | undefined;
+  private readonly config: OpenClawConfig | undefined;
+  private readonly memoryCoreLookupOverride: MemoryCoreLookup | undefined;
   private cachedZaiKey: string | null | undefined;
   private state: L3State | null = null;
 
@@ -64,6 +72,8 @@ export class HierarchicalL3Engine implements ContextEngine {
     this.storage = storage;
     this.callerOverride = options?.caller;
     this.agentDir = options?.agentDir;
+    this.config = options?.config;
+    this.memoryCoreLookupOverride = options?.memoryCoreLookup;
   }
 
   async bootstrap(): Promise<BootstrapResult> {
@@ -153,9 +163,38 @@ export class HierarchicalL3Engine implements ContextEngine {
       query: prompt,
       storage: this.storage,
       topK: ASSEMBLE_TOP_K,
+      memoryCoreLookup: this.resolveMemoryCoreLookup(),
     });
     if (top.length === 0) return undefined;
     return formatMemorySection(top);
+  }
+
+  private resolveMemoryCoreLookup(): MemoryCoreLookup | undefined {
+    if (this.memoryCoreLookupOverride) return this.memoryCoreLookupOverride;
+    if (!this.config || !this.state?.agentId) return undefined;
+    const cfg = this.config;
+    const agentId = this.state.agentId;
+    return async (query) => {
+      try {
+        const { manager, error } = await getMemorySearchManager({
+          cfg,
+          agentId,
+          purpose: "default",
+        });
+        if (!manager || error) return [];
+        const hits = await manager.search(query, { maxResults: ASSEMBLE_TOP_K });
+        return hits.map((h) => ({
+          path: h.path,
+          startLine: h.startLine,
+          endLine: h.endLine,
+          score: h.score,
+          snippet: h.snippet,
+        }));
+      } catch (err) {
+        l3debug(`memory-core lookup failed: ${(err as Error).message}`);
+        return [];
+      }
+    };
   }
 
   async afterTurn(params: {

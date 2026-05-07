@@ -334,3 +334,60 @@ describe("retrieveTopK long-term tier", () => {
     expect(result[0].tier).toBe("longterm");
   });
 });
+
+describe("retrieveTopK memory-core tier", () => {
+  it("merges memory-core hits into the top-K ranking with the ◆ marker", async () => {
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.5, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    const memoryCoreLookup = async (_query: string) => [
+      {
+        path: "MEMORY.md",
+        startLine: 12,
+        endLine: 14,
+        score: 0.9,
+        snippet: "user prefers morning standups (per dreaming consolidation)",
+      },
+    ];
+    const result = await retrieveTopK({
+      query: "morning standups",
+      storage,
+      topK: 5,
+      now: NOW,
+      memoryCoreLookup,
+    });
+    const mcHit = result.find((r) => r.tier === "memory-core");
+    expect(mcHit).toBeDefined();
+    expect(mcHit?.fact.text).toContain("morning standups");
+    expect(mcHit?.chunkId).toBe("MEMORY.md");
+    // 0.9 * weightMemoryCoreTierMultiplier (default 0.7) = 0.63
+    expect(mcHit?.score).toBeCloseTo(0.63, 4);
+  });
+
+  it("silently drops the tier when the lookup throws", async () => {
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.5, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    const memoryCoreLookup = async (_query: string) => {
+      throw new Error("memory-core unavailable");
+    };
+    const result = await retrieveTopK({
+      query: "alpha",
+      storage,
+      topK: 5,
+      now: NOW,
+      memoryCoreLookup,
+    });
+    // L2 result still returned, no memory-core hits
+    expect(result.length).toBe(1);
+    expect(result[0].tier).toBe("l2");
+  });
+
+  it("does not call the lookup when none is provided (existing tests stay valid)", async () => {
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha", importance: 0.5, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    const result = await retrieveTopK({ query: "alpha", storage, topK: 5, now: NOW });
+    expect(result.every((r) => r.tier === "l2")).toBe(true);
+  });
+});

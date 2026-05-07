@@ -12,6 +12,13 @@ export type ScoringConfig = {
    * at similar scoring without dominating unrelated queries. Default 0.15.
    */
   weightLongTermTierBoost: number;
+  /**
+   * Multiplier applied to memory-core QMD result scores to bring them into
+   * the same 0-0.7 range as our composite, so the cross-store tier
+   * participates in unified top-K ranking instead of competing on a
+   * different scale. Default 0.7.
+   */
+  weightMemoryCoreTierMultiplier: number;
   recencyHalfLifeDays: number;
 };
 
@@ -21,6 +28,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightRecency: 0.1,
   weightL3Boost: 0.1,
   weightLongTermTierBoost: 0.15,
+  weightMemoryCoreTierMultiplier: 0.7,
   recencyHalfLifeDays: 7,
 };
 

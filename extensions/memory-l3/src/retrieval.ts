@@ -10,7 +10,22 @@ import {
 import type { Storage } from "./storage.js";
 import type { L2Fact, L3EpochFrontmatter, LongTermFact } from "./types.js";
 
-export type RetrievalTier = "l2" | "longterm";
+export type RetrievalTier = "l2" | "longterm" | "memory-core";
+
+/**
+ * Minimal shape of memory-core's QMD search results that retrieval cares
+ * about. Mirrors the public SDK type so callers can pass the SDK output
+ * straight through.
+ */
+export type MemoryCoreSearchHit = {
+  path: string;
+  startLine: number;
+  endLine?: number;
+  score: number;
+  snippet: string;
+};
+
+export type MemoryCoreLookup = (query: string) => Promise<MemoryCoreSearchHit[]>;
 
 export type RetrievedFact = {
   fact: L2Fact;
@@ -26,6 +41,13 @@ export async function retrieveTopK(params: {
   topK: number;
   now?: number;
   config?: ScoringConfig;
+  /**
+   * Optional adapter to memory-core's QMD search. When provided, results
+   * participate in the unified top-K ranking alongside L2/long-term facts.
+   * Inject in production (engine wires it via the plugin-sdk seam); leave
+   * undefined in unit tests to focus on L3-only retrieval.
+   */
+  memoryCoreLookup?: MemoryCoreLookup;
 }): Promise<RetrievedFact[]> {
   const topK = Math.max(0, params.topK);
   if (topK === 0) return [];
@@ -67,6 +89,35 @@ export async function retrieveTopK(params: {
     const score = baseScore + config.weightLongTermTierBoost;
     if (score > 0) {
       scored.push({ fact, score, signals, chunkId: "longterm", tier: "longterm" });
+    }
+  }
+
+  // Memory-core cross-store tier — query QMD for results from MEMORY.md /
+  // memory/*.md / DREAMS.md and merge into our ranking. Failures are
+  // swallowed; the L3 tiers still produce a result.
+  if (params.memoryCoreLookup) {
+    try {
+      const hits = await params.memoryCoreLookup(params.query);
+      for (const hit of hits) {
+        const fact: L2Fact = {
+          id: `mc-${hit.path}-${hit.startLine}`,
+          text: hit.snippet,
+          importance: 0.5,
+          createdAt: now,
+          dedupKey: `memory-core:${hit.path}:${hit.startLine}`,
+        };
+        const score = hit.score * config.weightMemoryCoreTierMultiplier;
+        if (score <= 0) continue;
+        scored.push({
+          fact,
+          score,
+          signals: { lexical: hit.score, importance: 0.5, recency: 1, l3Boost: 0 },
+          chunkId: hit.path,
+          tier: "memory-core",
+        });
+      }
+    } catch {
+      // Memory-core unavailable or threw — skip the tier silently.
     }
   }
 
@@ -157,8 +208,19 @@ function chunkSeq(chunkId: string): number | null {
 export function formatMemorySection(facts: ReadonlyArray<RetrievedFact>): string {
   if (facts.length === 0) return "";
   const lines = facts.map((r) => {
-    const marker = r.tier === "longterm" ? "★" : "·";
+    const marker = tierMarker(r.tier);
     return `- ${marker} [${r.score.toFixed(2)}] ${r.fact.text}`;
   });
   return `## Memory (hierarchical-l3)\n${lines.join("\n")}`;
+}
+
+function tierMarker(tier: RetrievalTier): string {
+  switch (tier) {
+    case "longterm":
+      return "★";
+    case "memory-core":
+      return "◆";
+    case "l2":
+      return "·";
+  }
 }
