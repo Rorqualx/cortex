@@ -9,6 +9,7 @@ import type {
   IngestResult,
 } from "openclaw/plugin-sdk";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { IngestBuffer } from "./ingest.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
@@ -32,6 +33,7 @@ export function createHierarchicalL3Engine(ctx: ContextEngineFactoryContext): Co
 class HierarchicalL3Engine implements ContextEngine {
   readonly info = ENGINE_INFO;
   private readonly storage: Storage;
+  private readonly buffer = new IngestBuffer();
   private state: L3State | null = null;
 
   constructor(storage: Storage) {
@@ -44,12 +46,17 @@ class HierarchicalL3Engine implements ContextEngine {
     return { bootstrapped: true };
   }
 
-  async ingest(_params: {
+  async ingest(params: {
     sessionId: string;
     sessionKey?: string;
     message: AgentMessage;
     isHeartbeat?: boolean;
   }): Promise<IngestResult> {
+    if (params.isHeartbeat) {
+      return { ingested: false };
+    }
+    this.buffer.push(params.sessionId, params.message);
+    this.refreshBufferTokenCount();
     return { ingested: true };
   }
 
@@ -59,7 +66,18 @@ class HierarchicalL3Engine implements ContextEngine {
     messages: AgentMessage[];
     isHeartbeat?: boolean;
   }): Promise<IngestBatchResult> {
-    return { ingestedCount: params.messages.length };
+    if (params.isHeartbeat) {
+      return { ingestedCount: 0 };
+    }
+    const ingestedCount = this.buffer.pushBatch(params.sessionId, params.messages);
+    this.refreshBufferTokenCount();
+    return { ingestedCount };
+  }
+
+  private refreshBufferTokenCount(): void {
+    if (this.state) {
+      this.state.bufferTokenCount = this.buffer.totalTokens();
+    }
   }
 
   async assemble(params: {
