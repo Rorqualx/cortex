@@ -6,6 +6,12 @@ export type ScoringConfig = {
   weightRecency: number;
   /** ε-weighted L3-epoch boost. Soft additive prior; default 0.1. */
   weightL3Boost: number;
+  /**
+   * Flat additive bonus applied to any long-term tier hit that has a
+   * positive lexical match. Lets evergreen facts edge out fresh L2 facts
+   * at similar scoring without dominating unrelated queries. Default 0.15.
+   */
+  weightLongTermTierBoost: number;
   recencyHalfLifeDays: number;
 };
 
@@ -14,6 +20,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightImportance: 0.2,
   weightRecency: 0.1,
   weightL3Boost: 0.1,
+  weightLongTermTierBoost: 0.15,
   recencyHalfLifeDays: 7,
 };
 

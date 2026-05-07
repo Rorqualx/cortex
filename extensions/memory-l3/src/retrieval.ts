@@ -8,13 +8,16 @@ import {
   tokenize,
 } from "./scoring.js";
 import type { Storage } from "./storage.js";
-import type { L2Fact, L3EpochFrontmatter } from "./types.js";
+import type { L2Fact, L3EpochFrontmatter, LongTermFact } from "./types.js";
+
+export type RetrievalTier = "l2" | "longterm";
 
 export type RetrievedFact = {
   fact: L2Fact;
   score: number;
   signals: Signals;
   chunkId: string;
+  tier: RetrievalTier;
 };
 
 export async function retrieveTopK(params: {
@@ -47,13 +50,38 @@ export async function retrieveTopK(params: {
       const signals = scoreFact({ queryTokens, fact, now, config, l3Boost });
       const score = composite(signals, config);
       if (score > 0) {
-        scored.push({ fact, score, signals, chunkId });
+        scored.push({ fact, score, signals, chunkId, tier: "l2" });
       }
+    }
+  }
+
+  // Long-term tier — promoted evergreen facts. Skip archived; treat
+  // lastConfirmedAt as the recency anchor so re-affirmed facts feel fresh.
+  const longterm = await params.storage.readLongTerm();
+  for (const lt of longterm.facts) {
+    if (lt.archived) continue;
+    const fact = longTermAsL2Fact(lt);
+    const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
+    if (signals.lexical === 0) continue; // no topical match — skip
+    const baseScore = composite(signals, config);
+    const score = baseScore + config.weightLongTermTierBoost;
+    if (score > 0) {
+      scored.push({ fact, score, signals, chunkId: "longterm", tier: "longterm" });
     }
   }
 
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, topK);
+}
+
+function longTermAsL2Fact(lt: LongTermFact): L2Fact {
+  return {
+    id: lt.id,
+    text: lt.text,
+    importance: lt.importance,
+    createdAt: lt.lastConfirmedAt,
+    dedupKey: lt.dedupKey,
+  };
 }
 
 /**
@@ -128,6 +156,9 @@ function chunkSeq(chunkId: string): number | null {
 
 export function formatMemorySection(facts: ReadonlyArray<RetrievedFact>): string {
   if (facts.length === 0) return "";
-  const lines = facts.map((r) => `- [${r.score.toFixed(2)}] ${r.fact.text}`);
+  const lines = facts.map((r) => {
+    const marker = r.tier === "longterm" ? "★" : "·";
+    return `- ${marker} [${r.score.toFixed(2)}] ${r.fact.text}`;
+  });
   return `## Memory (hierarchical-l3)\n${lines.join("\n")}`;
 }

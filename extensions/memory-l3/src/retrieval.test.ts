@@ -183,9 +183,154 @@ describe("formatMemorySection", () => {
         score: 0.85,
         signals: { lexical: 1, importance: 0.7, recency: 1, l3Boost: 0 },
         chunkId: "chunk-1",
+        tier: "l2",
       },
     ]);
     expect(result).toContain("## Memory (hierarchical-l3)");
     expect(result).toContain("[0.85] morning standups preferred");
+  });
+
+  it("uses ★ marker for long-term hits and · for L2 hits", () => {
+    const result = formatMemorySection([
+      {
+        fact: {
+          id: "lt-1",
+          text: "evergreen fact",
+          importance: 0.8,
+          createdAt: NOW,
+          dedupKey: "k:lt",
+        },
+        score: 0.9,
+        signals: { lexical: 1, importance: 0.8, recency: 1, l3Boost: 0 },
+        chunkId: "longterm",
+        tier: "longterm",
+      },
+      {
+        fact: {
+          id: "f1",
+          text: "fresh fact",
+          importance: 0.6,
+          createdAt: NOW,
+          dedupKey: "k:l2",
+        },
+        score: 0.5,
+        signals: { lexical: 0.5, importance: 0.6, recency: 1, l3Boost: 0 },
+        chunkId: "chunk-1",
+        tier: "l2",
+      },
+    ]);
+    expect(result).toContain("★ [0.90] evergreen fact");
+    expect(result).toContain("· [0.50] fresh fact");
+  });
+});
+
+describe("retrieveTopK long-term tier", () => {
+  it("surfaces a matching long-term fact even when no L2 chunks match", async () => {
+    // Write an L2 chunk whose facts are unrelated to the query.
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.6, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-1",
+            text: "user prefers tabs over spaces",
+            dedupKey: "user_pref:tabs",
+            importance: 0.8,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 4,
+            sourceChunkIds: ["chunk-a", "chunk-b", "chunk-c", "chunk-d"],
+            archived: false,
+            archivedAt: null,
+          },
+        ],
+      },
+      "",
+    );
+
+    const result = await retrieveTopK({
+      query: "tabs vs spaces",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    const ltHit = result.find((r) => r.tier === "longterm");
+    expect(ltHit).toBeDefined();
+    expect(ltHit?.fact.dedupKey).toBe("user_pref:tabs");
+    expect(ltHit?.signals.lexical).toBeGreaterThan(0);
+  });
+
+  it("does not surface archived long-term facts", async () => {
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.5, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-archived",
+            text: "user prefers tabs over spaces",
+            dedupKey: "user_pref:tabs",
+            importance: 0.8,
+            firstSeenAt: NOW - 100 * 86400000,
+            lastConfirmedAt: NOW - 80 * 86400000,
+            recallCount: 4,
+            sourceChunkIds: ["chunk-a"],
+            archived: true,
+            archivedAt: NOW - 60 * 86400000,
+          },
+        ],
+      },
+      "",
+    );
+    const result = await retrieveTopK({ query: "tabs", storage, topK: 5, now: NOW });
+    expect(result.find((r) => r.fact.id === "lt-archived")).toBeUndefined();
+  });
+
+  it("ranks long-term tier above an L2 fact at similar lexical strength", async () => {
+    // L2 fact with strong lexical match
+    await writeChunk("chunk-000000-x", [
+      {
+        id: "l2-1",
+        text: "tabs preferred recently",
+        importance: 0.6,
+        createdAt: NOW,
+        dedupKey: "user_pref:tabs:recent",
+      },
+    ]);
+    // Long-term fact with same lexical match but lower importance
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-1",
+            text: "tabs preferred",
+            dedupKey: "user_pref:tabs",
+            importance: 0.6, // same as L2
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 5,
+            sourceChunkIds: ["a", "b", "c", "d", "e"],
+            archived: false,
+            archivedAt: null,
+          },
+        ],
+      },
+      "",
+    );
+    const result = await retrieveTopK({ query: "tabs preferred", storage, topK: 5, now: NOW });
+    expect(result.length).toBeGreaterThanOrEqual(2);
+    expect(result[0].tier).toBe("longterm");
   });
 });

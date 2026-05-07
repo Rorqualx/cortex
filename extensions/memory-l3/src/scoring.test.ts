@@ -110,6 +110,7 @@ describe("scoreFact + composite", () => {
       weightImportance: 0.3,
       weightRecency: 0.1,
       weightL3Boost: 0.1,
+      weightLongTermTierBoost: 0,
       recencyHalfLifeDays: 7,
     };
     const score = composite({ lexical: 1.0, importance: 1.0, recency: 1.0, l3Boost: 1.0 }, config);
@@ -124,6 +125,7 @@ describe("scoreFact + composite", () => {
       weightImportance: 0,
       weightRecency: 0,
       weightL3Boost: 0.5,
+      weightLongTermTierBoost: 0,
       recencyHalfLifeDays: 7,
     };
     const score = composite({ lexical: 0, importance: 0, recency: 0, l3Boost: 0.4 }, config);
