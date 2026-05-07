@@ -4,13 +4,16 @@ export type ScoringConfig = {
   weightLexical: number;
   weightImportance: number;
   weightRecency: number;
+  /** ε-weighted L3-epoch boost. Soft additive prior; default 0.1. */
+  weightL3Boost: number;
   recencyHalfLifeDays: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightLexical: 0.6,
   weightImportance: 0.2,
-  weightRecency: 0.2,
+  weightRecency: 0.1,
+  weightL3Boost: 0.1,
   recencyHalfLifeDays: 7,
 };
 
@@ -18,6 +21,7 @@ export type Signals = {
   lexical: number;
   importance: number;
   recency: number;
+  l3Boost: number;
 };
 
 export function tokenize(text: string): Set<string> {
@@ -52,6 +56,7 @@ export function scoreFact(params: {
   fact: L2Fact;
   now: number;
   config: ScoringConfig;
+  l3Boost?: number;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -60,13 +65,14 @@ export function scoreFact(params: {
     params.now - params.fact.createdAt,
     params.config.recencyHalfLifeDays,
   );
-  return { lexical, importance, recency };
+  return { lexical, importance, recency, l3Boost: params.l3Boost ?? 0 };
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {
   return (
     signals.lexical * config.weightLexical +
     signals.importance * config.weightImportance +
-    signals.recency * config.weightRecency
+    signals.recency * config.weightRecency +
+    signals.l3Boost * config.weightL3Boost
   );
 }

@@ -19,6 +19,7 @@ import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State } from "./types.js";
 
 const ASSEMBLE_TOP_K = 5;
+const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
 
 const ENGINE_INFO: ContextEngineInfo = {
   id: "hierarchical-l3",
@@ -128,6 +129,35 @@ export class HierarchicalL3Engine implements ContextEngine {
     });
     if (top.length === 0) return undefined;
     return formatMemorySection(top);
+  }
+
+  async afterTurn(params: {
+    sessionId: string;
+    sessionKey?: string;
+    sessionFile: string;
+    messages: AgentMessage[];
+    prePromptMessageCount: number;
+    autoCompactionSummary?: string;
+    isHeartbeat?: boolean;
+    tokenBudget?: number;
+  }): Promise<void> {
+    if (params.isHeartbeat || !this.state) return;
+    const tokens = this.buffer.tokens(params.sessionId);
+    if (tokens < AFTER_TURN_COMPACTION_THRESHOLD_TOKENS) return;
+    const caller = this.resolveCaller();
+    if (!caller) return;
+    try {
+      await compactSession({
+        sessionId: params.sessionId,
+        buffer: this.buffer,
+        storage: this.storage,
+        caller,
+        state: this.state,
+      });
+      await this.storage.writeState(this.state);
+    } catch (err) {
+      console.error(`[memory-l3] afterTurn compaction failed: ${(err as Error).message}`);
+    }
   }
 
   async compact(params: {

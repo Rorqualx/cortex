@@ -43,3 +43,68 @@ describe("memory-l3 engine factory", () => {
     expect(result.reason).toContain("not bootstrapped");
   });
 });
+
+describe("afterTurn buffer-threshold trigger", () => {
+  it("invokes the caller when the buffered token count crosses the threshold", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { Storage } = await import("./src/storage.js");
+    const { HierarchicalL3Engine } = await import("./src/engine.js");
+
+    const tmpRoot = mkdtempSync(path.join(os.tmpdir(), "memory-l3-afterturn-"));
+    try {
+      const storage = new Storage(path.join(tmpRoot, ".openclaw", "l3"));
+      const callerCalls: number = 0;
+      let capturedCalls = callerCalls;
+      const stub = async () => {
+        capturedCalls += 1;
+        return JSON.stringify({ facts: [] });
+      };
+      const engine = new HierarchicalL3Engine(storage, { caller: stub });
+      await engine.bootstrap({} as never);
+
+      const fatMessage = { role: "user", content: "x".repeat(20000) } as never;
+      await engine.ingest({ sessionId: "s1", message: fatMessage });
+      await engine.afterTurn({
+        sessionId: "s1",
+        sessionFile: "/tmp/x",
+        messages: [],
+        prePromptMessageCount: 0,
+      } as never);
+      expect(capturedCalls).toBe(1);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("is a no-op when buffered tokens are below the threshold", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { Storage } = await import("./src/storage.js");
+    const { HierarchicalL3Engine } = await import("./src/engine.js");
+
+    const tmpRoot = mkdtempSync(path.join(os.tmpdir(), "memory-l3-afterturn-noop-"));
+    try {
+      const storage = new Storage(path.join(tmpRoot, ".openclaw", "l3"));
+      let calls = 0;
+      const stub = async () => {
+        calls += 1;
+        return JSON.stringify({ facts: [] });
+      };
+      const engine = new HierarchicalL3Engine(storage, { caller: stub });
+      await engine.bootstrap({} as never);
+      await engine.ingest({ sessionId: "s1", message: { role: "user", content: "tiny" } as never });
+      await engine.afterTurn({
+        sessionId: "s1",
+        sessionFile: "/tmp/x",
+        messages: [],
+        prePromptMessageCount: 0,
+      } as never);
+      expect(calls).toBe(0);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+});

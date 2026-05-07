@@ -148,6 +148,24 @@ export class Storage {
     const target = path.join(this.root, L3_DIR, `${epochId}.md`);
     return await readFrontmatterDocument<L3EpochFrontmatter>(target);
   }
+
+  async listL3EpochPaths(): Promise<string[]> {
+    const root = path.join(this.root, L3_DIR);
+    if (!existsSync(root)) {
+      return [];
+    }
+    const files = (await fs.readdir(root, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+      .map((entry) => entry.name)
+      .sort();
+    return files.map((file) => path.join(root, file));
+  }
+
+  async readL3EpochAtPath(
+    filePath: string,
+  ): Promise<FrontmatterDocument<L3EpochFrontmatter> | null> {
+    return await readFrontmatterDocument<L3EpochFrontmatter>(filePath);
+  }
 }
 
 async function atomicWriteFile(target: string, contents: string): Promise<void> {

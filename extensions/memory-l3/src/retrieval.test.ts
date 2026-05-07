@@ -123,6 +123,48 @@ describe("retrieveTopK", () => {
   });
 });
 
+describe("retrieveTopK with L3 boost", () => {
+  it("applies an additive boost to facts whose epoch lexically matches the query", async () => {
+    // Two chunks. Both have facts that DON'T lexically match "deadline".
+    // Only the second is covered by an epoch whose representative facts mention "deadline".
+    await writeChunk("chunk-000000-aaaa", [
+      { id: "f-old", text: "alpha topic", importance: 0.5, createdAt: NOW, dedupKey: "k:old" },
+    ]);
+    await writeChunk("chunk-000001-bbbb", [
+      { id: "f-new", text: "beta topic", importance: 0.5, createdAt: NOW, dedupKey: "k:new" },
+    ]);
+    await storage.writeL3Epoch(
+      {
+        id: "epoch-0000",
+        agentId: "j-rorqual",
+        startChunkId: "chunk-000001-bbbb",
+        endChunkId: "chunk-000001-bbbb",
+        createdAt: NOW,
+        representativeFacts: [
+          {
+            id: "rep",
+            text: "user is anxious about the deadline",
+            importance: 0.8,
+            createdAt: NOW,
+            dedupKey: "k:deadline",
+          },
+        ],
+      },
+      "",
+    );
+    const result = await retrieveTopK({
+      query: "deadline",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    // f-new should rank higher than f-old because it's in the epoch range.
+    const fNewIdx = result.findIndex((r) => r.fact.id === "f-new");
+    expect(fNewIdx).toBeGreaterThanOrEqual(0);
+    expect(result[fNewIdx].signals.l3Boost).toBeGreaterThan(0);
+  });
+});
+
 describe("formatMemorySection", () => {
   it("returns an empty string when no facts are provided", () => {
     expect(formatMemorySection([])).toBe("");
@@ -139,7 +181,7 @@ describe("formatMemorySection", () => {
           dedupKey: "k:1",
         },
         score: 0.85,
-        signals: { lexical: 1, importance: 0.7, recency: 1 },
+        signals: { lexical: 1, importance: 0.7, recency: 1, l3Boost: 0 },
         chunkId: "chunk-1",
       },
     ]);
