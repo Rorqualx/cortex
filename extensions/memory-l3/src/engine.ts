@@ -9,6 +9,8 @@ import type {
   IngestResult,
 } from "openclaw/plugin-sdk";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { Storage } from "./storage.js";
+import type { L3State } from "./types.js";
 
 const ENGINE_INFO: ContextEngineInfo = {
   id: "hierarchical-l3",
@@ -17,18 +19,26 @@ const ENGINE_INFO: ContextEngineInfo = {
   ownsCompaction: false,
 };
 
-export function createHierarchicalL3Engine(_ctx: ContextEngineFactoryContext): ContextEngine {
-  return new HierarchicalL3Engine();
+export function createHierarchicalL3Engine(ctx: ContextEngineFactoryContext): ContextEngine {
+  const storage = Storage.fromWorkspace(ctx.workspaceDir);
+  return new HierarchicalL3Engine(storage);
 }
 
-// Stage 1: passthrough stub. Every required method satisfies the ContextEngine
-// contract with legacy-equivalent semantics. The L1/L2/L3 algorithms — sliding
-// window, chunk fact-list with extract+update, epoch digest, hybrid retrieval —
-// are filled in across subsequent stages.
+// Stage 2: storage-backed bootstrap/dispose. Ingest, assemble, and compact
+// remain passthrough stubs; subsequent stages (3-8) wire the L1/L2/L3
+// algorithms onto this storage layer.
 class HierarchicalL3Engine implements ContextEngine {
   readonly info = ENGINE_INFO;
+  private readonly storage: Storage;
+  private state: L3State | null = null;
+
+  constructor(storage: Storage) {
+    this.storage = storage;
+  }
 
   async bootstrap(): Promise<BootstrapResult> {
+    await this.storage.ensureLayout();
+    this.state = await this.storage.readState();
     return { bootstrapped: true };
   }
 
@@ -69,5 +79,11 @@ class HierarchicalL3Engine implements ContextEngine {
       compacted: false,
       reason: "hierarchical-l3 v0.1.0 stub: L2 compaction not yet implemented",
     };
+  }
+
+  async dispose(): Promise<void> {
+    if (this.state) {
+      await this.storage.writeState(this.state);
+    }
   }
 }
