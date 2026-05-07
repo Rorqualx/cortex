@@ -1,0 +1,24 @@
+{
+  "name": "@openclaw/memory-l3",
+  "version": "2026.5.2",
+  "private": true,
+  "description": "Hierarchical L1/L2/L3 memory context engine plugin",
+  "type": "module",
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*",
+    "openclaw": "workspace:*"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.2"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

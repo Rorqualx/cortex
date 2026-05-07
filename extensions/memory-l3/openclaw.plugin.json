@@ -1,0 +1,27 @@
+{
+  "id": "memory-l3",
+  "activation": {
+    "onStartup": true
+  },
+  "kind": "memory",
+  "name": "Hierarchical Memory (L1/L2/L3)",
+  "description": "Layered memory context engine: sliding-window L1, chunk fact-list L2, epoch digest L3.",
+  "contracts": {
+    "contextEngines": ["hierarchical-l3"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      }
+    }
+  },
+  "uiHints": {
+    "enabled": {
+      "label": "Enable Hierarchical Memory",
+      "help": "Register the hierarchical-l3 context engine for opt-in selection by agents."
+    }
+  }
+}
