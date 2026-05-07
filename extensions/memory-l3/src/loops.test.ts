@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { compactSession } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
+import { consolidateLongTerm } from "./longterm.js";
 import {
   buildConceptCorpus,
   createConceptStubCaller,
@@ -211,5 +212,193 @@ describe("Loop 5: long-horizon needle recall", () => {
     const hits = top.filter((r) => needleIds.has(r.fact.id)).length;
     expect(top).toHaveLength(5);
     expect(hits).toBeGreaterThanOrEqual(4);
+  });
+});
+
+/**
+ * Loop E — long-term promotion across handcrafted multi-chunk corpora.
+ * Writes L2 chunks directly (bypassing the stub LLM and its
+ * already-known suppression so we can exercise the consolidation logic on
+ * facts that recur naturally across multiple chunks). Validates three
+ * promotion paths simultaneously: recall+dayspan+importance, the
+ * high-importance one-shot shortcut, and below-threshold rejection.
+ */
+describe("Loop E: long-term promotion mixed-signal corpus", () => {
+  it("promotes recurring + high-importance facts and rejects sub-threshold trivia", async () => {
+    // Recurring concept: same dedupKey across 4 chunks spanning 8 days,
+    // importance 0.7 — should promote via recall+dayspan+importance.
+    for (let i = 0; i < 4; i += 1) {
+      const ageDays = 9 - i * 2; // 9d, 7d, 5d, 3d ago
+      await storage.writeL2Chunk(
+        {
+          id: `chunk-${String(i).padStart(6, "0")}-recur`,
+          agentId: "j-rorqual",
+          startTurnIndex: 0,
+          endTurnIndex: 1,
+          createdAt: NOW - ageDays * MS_PER_DAY,
+          facts: [
+            {
+              id: `f-recur-${i}`,
+              text: "user prefers tabs over spaces",
+              importance: 0.7,
+              createdAt: NOW - ageDays * MS_PER_DAY,
+              dedupKey: "user_pref:tabs",
+            },
+          ],
+          dedupKeys: ["user_pref:tabs"],
+        },
+        "",
+      );
+    }
+
+    // One-shot high-importance fact — should promote via the passthrough.
+    await storage.writeL2Chunk(
+      {
+        id: "chunk-000004-identity",
+        agentId: "j-rorqual",
+        startTurnIndex: 0,
+        endTurnIndex: 1,
+        createdAt: NOW - 1 * MS_PER_DAY,
+        facts: [
+          {
+            id: "f-identity",
+            text: "user's name is Joe; based in Denver",
+            importance: 0.9,
+            createdAt: NOW - 1 * MS_PER_DAY,
+            dedupKey: "user:identity",
+          },
+        ],
+        dedupKeys: ["user:identity"],
+      },
+      "",
+    );
+
+    // Below-threshold trivia: low importance one-shot — should NOT promote.
+    await storage.writeL2Chunk(
+      {
+        id: "chunk-000005-trivia",
+        agentId: "j-rorqual",
+        startTurnIndex: 0,
+        endTurnIndex: 1,
+        createdAt: NOW - 1 * MS_PER_DAY,
+        facts: [
+          {
+            id: "f-trivia",
+            text: "user mentioned a movie once",
+            importance: 0.3,
+            createdAt: NOW - 1 * MS_PER_DAY,
+            dedupKey: "trivia:movie",
+          },
+        ],
+        dedupKeys: ["trivia:movie"],
+      },
+      "",
+    );
+
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    expect(result.promotedCount).toBe(2);
+    expect(result.activeCount).toBe(2);
+
+    const lt = await storage.readLongTerm();
+    const promotedKeys = lt.facts
+      .filter((f) => !f.archived)
+      .map((f) => f.dedupKey)
+      .sort();
+    expect(promotedKeys).toEqual(["user:identity", "user_pref:tabs"]);
+
+    const tabs = lt.facts.find((f) => f.dedupKey === "user_pref:tabs");
+    expect(tabs?.recallCount).toBe(4);
+    expect(tabs?.firstSeenAt).toBe(NOW - 9 * MS_PER_DAY);
+    expect(tabs?.lastConfirmedAt).toBe(NOW - 3 * MS_PER_DAY);
+  });
+});
+
+/**
+ * Loop F — demotion when facts go quiet. Promotes a fact via the
+ * high-importance shortcut, removes the L2 chunk that supplied it, and
+ * re-runs consolidation past the maxAgeWithoutConfirmMs window. The fact
+ * should land in the archived tier (preserved on disk, hidden from
+ * retrieval).
+ */
+describe("Loop F: demotion of stale long-term facts", () => {
+  it("archives a fact whose lastConfirmedAt is past the staleness threshold", async () => {
+    // Promote at T=0
+    await storage.writeL2Chunk(
+      {
+        id: "chunk-000000-x",
+        agentId: "j-rorqual",
+        startTurnIndex: 0,
+        endTurnIndex: 1,
+        createdAt: NOW - 100 * MS_PER_DAY,
+        facts: [
+          {
+            id: "f1",
+            text: "ephemeral high-importance fact",
+            importance: 0.9,
+            createdAt: NOW - 100 * MS_PER_DAY,
+            dedupKey: "ephemeral:1",
+          },
+        ],
+        dedupKeys: ["ephemeral:1"],
+      },
+      "",
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 100 * MS_PER_DAY,
+    });
+    const ltAfterPromote = await storage.readLongTerm();
+    expect(ltAfterPromote.facts[0].archived).toBe(false);
+
+    // Remove the L2 chunk so the next consolidation has no candidates.
+    const fs = await import("node:fs/promises");
+    const chunkPath = (await storage.listL2ChunkPaths())[0];
+    await fs.unlink(chunkPath);
+
+    // Verify retrieval surfaces the active long-term fact at T=now-90d
+    // (still inside the 60-day window).
+    const beforeStale = await retrieveTopK({
+      query: "ephemeral high-importance fact",
+      storage,
+      topK: 5,
+      now: NOW - 90 * MS_PER_DAY,
+    });
+    expect(
+      beforeStale.find(
+        (r) => (r.tier === "longterm" && r.fact.id === "f1") || r.fact.dedupKey === "ephemeral:1",
+      ),
+    ).toBeUndefined();
+    // The fact is still active in storage but the retrieve uses now=NOW-90d,
+    // by which point lastConfirmedAt-now < 60 days so it'd remain active.
+    const ltStill = await storage.readLongTerm();
+    expect(ltStill.facts[0].archived).toBe(false);
+
+    // Run consolidation past the window — the fact should archive.
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW, // 100 days after promotion, well past the 60-day default
+    });
+    expect(result.archivedCount).toBe(1);
+    expect(result.activeCount).toBe(0);
+
+    const ltFinal = await storage.readLongTerm();
+    expect(ltFinal.facts[0].archived).toBe(true);
+    expect(ltFinal.facts[0].archivedAt).toBe(NOW);
+
+    // Retrieval should not surface the archived fact even on a perfect query.
+    const afterStale = await retrieveTopK({
+      query: "ephemeral high-importance fact",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    expect(afterStale.find((r) => r.fact.dedupKey === "ephemeral:1")).toBeUndefined();
   });
 });
