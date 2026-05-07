@@ -12,10 +12,13 @@ import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { compactSession } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
 import { createGlmCaller, type LlmCaller } from "./llm.js";
+import { formatMemorySection, retrieveTopK } from "./retrieval.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State } from "./types.js";
+
+const ASSEMBLE_TOP_K = 5;
 
 const ENGINE_INFO: ContextEngineInfo = {
   id: "hierarchical-l3",
@@ -96,17 +99,35 @@ export class HierarchicalL3Engine implements ContextEngine {
     tokenBudget?: number;
     prompt?: string;
   }): Promise<AssembleResult> {
-    if (params.tokenBudget && params.tokenBudget > 0) {
-      const { selected, estimatedTokens } = selectSlidingWindow({
-        messages: params.messages,
-        tokenBudget: params.tokenBudget,
-      });
-      return { messages: selected, estimatedTokens };
-    }
+    const window =
+      params.tokenBudget && params.tokenBudget > 0
+        ? selectSlidingWindow({
+            messages: params.messages,
+            tokenBudget: params.tokenBudget,
+          })
+        : {
+            selected: [...params.messages],
+            estimatedTokens: estimateTotalTokens(params.messages),
+          };
+
+    const systemPromptAddition = await this.buildMemorySection(params.prompt);
+
     return {
-      messages: [...params.messages],
-      estimatedTokens: estimateTotalTokens(params.messages),
+      messages: window.selected,
+      estimatedTokens: window.estimatedTokens,
+      ...(systemPromptAddition ? { systemPromptAddition } : {}),
     };
+  }
+
+  private async buildMemorySection(prompt: string | undefined): Promise<string | undefined> {
+    if (!prompt || prompt.length === 0) return undefined;
+    const top = await retrieveTopK({
+      query: prompt,
+      storage: this.storage,
+      topK: ASSEMBLE_TOP_K,
+    });
+    if (top.length === 0) return undefined;
+    return formatMemorySection(top);
   }
 
   async compact(params: {
