@@ -9,6 +9,13 @@ export type L3State = {
   l2ChunkIndex: number;
   lastEpochAt: number;
   lastChunkId: string | null;
+  /**
+   * Number of session messages that have already been compacted into L2
+   * chunks. afterTurn() ingests `params.messages.slice(compactedMessageCount)`
+   * each turn so we don't double-ingest when the runtime hands us the full
+   * session history every call.
+   */
+  compactedMessageCount: number;
 };
 
 export const INITIAL_L3_STATE: L3State = {
@@ -18,6 +25,7 @@ export const INITIAL_L3_STATE: L3State = {
   l2ChunkIndex: 0,
   lastEpochAt: 0,
   lastChunkId: null,
+  compactedMessageCount: 0,
 };
 
 /**

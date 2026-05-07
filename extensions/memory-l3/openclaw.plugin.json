@@ -3,7 +3,7 @@
   "activation": {
     "onStartup": true
   },
-  "kind": "memory",
+  "kind": "context-engine",
   "name": "Hierarchical Memory (L1/L2/L3)",
   "description": "Layered memory context engine: sliding-window L1, chunk fact-list L2, epoch digest L3.",
   "contracts": {
