@@ -14,6 +14,7 @@ import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { compactSession } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
 import { createGlmCaller, type LlmCaller } from "./llm.js";
+import { consolidateLongTerm } from "./longterm.js";
 import { formatMemorySection, retrieveTopK } from "./retrieval.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
@@ -189,6 +190,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       return;
     }
     l3debug(`afterTurn(): triggering compaction for sessionId=${params.sessionId}`);
+    const now = Date.now();
     try {
       const result = await compactSession({
         sessionId: params.sessionId,
@@ -196,14 +198,35 @@ export class HierarchicalL3Engine implements ContextEngine {
         storage: this.storage,
         caller,
         state: this.state,
+        now,
       });
       if (result.chunkId !== null) {
         this.state.compactedMessageCount = params.messages.length;
       }
-      await this.storage.writeState(this.state);
       l3debug(
         `afterTurn(): compaction result chunkId=${result.chunkId} factsAdded=${result.factsAdded} epochId=${result.epochId}`,
       );
+      // Epoch boundary triggers a long-term consolidation pass: aggregate
+      // recurring/important L2 facts into the long-term tier, archive
+      // stale entries, persist longterm.md.
+      if (result.epochId !== null) {
+        try {
+          const lt = await consolidateLongTerm({
+            storage: this.storage,
+            agentId: this.state.agentId,
+            now,
+          });
+          this.state.lastConsolidatedAt = now;
+          l3debug(
+            `afterTurn(): consolidation promoted=${lt.promotedCount} reaffirmed=${lt.reaffirmedCount} archived=${lt.archivedCount} unarchived=${lt.unarchivedCount} active=${lt.activeCount}`,
+          );
+        } catch (consolidationErr) {
+          // Consolidation failures are non-fatal — the L2 chunk is already
+          // safely persisted. Log loud and continue.
+          console.error(`[memory-l3] consolidation failed: ${(consolidationErr as Error).message}`);
+        }
+      }
+      await this.storage.writeState(this.state);
     } catch (err) {
       // Real failures stay loud regardless of debug flag — compaction errors
       // are operational signals worth surfacing.
