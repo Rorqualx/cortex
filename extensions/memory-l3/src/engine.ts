@@ -50,9 +50,6 @@ export type HierarchicalL3EngineOptions = {
   agentDir?: string;
 };
 
-// Stage 2: storage-backed bootstrap/dispose. Ingest, assemble, and compact
-// remain passthrough stubs; subsequent stages (3-8) wire the L1/L2/L3
-// algorithms onto this storage layer.
 export class HierarchicalL3Engine implements ContextEngine {
   readonly info = ENGINE_INFO;
   private readonly storage: Storage;
@@ -204,10 +201,12 @@ export class HierarchicalL3Engine implements ContextEngine {
         this.state.compactedMessageCount = params.messages.length;
       }
       await this.storage.writeState(this.state);
-      console.error(
-        `[memory-l3] afterTurn(): compaction result chunkId=${result.chunkId} factsAdded=${result.factsAdded} epochId=${result.epochId}`,
+      l3debug(
+        `afterTurn(): compaction result chunkId=${result.chunkId} factsAdded=${result.factsAdded} epochId=${result.epochId}`,
       );
     } catch (err) {
+      // Real failures stay loud regardless of debug flag — compaction errors
+      // are operational signals worth surfacing.
       console.error(`[memory-l3] afterTurn compaction failed: ${(err as Error).message}`);
     }
   }
