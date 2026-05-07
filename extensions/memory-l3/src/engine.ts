@@ -9,7 +9,9 @@ import type {
   IngestResult,
 } from "openclaw/plugin-sdk";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
+import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State } from "./types.js";
 
 const ENGINE_INFO: ContextEngineInfo = {
@@ -67,9 +69,16 @@ class HierarchicalL3Engine implements ContextEngine {
     tokenBudget?: number;
     prompt?: string;
   }): Promise<AssembleResult> {
+    if (params.tokenBudget && params.tokenBudget > 0) {
+      const { selected, estimatedTokens } = selectSlidingWindow({
+        messages: params.messages,
+        tokenBudget: params.tokenBudget,
+      });
+      return { messages: selected, estimatedTokens };
+    }
     return {
       messages: [...params.messages],
-      estimatedTokens: 0,
+      estimatedTokens: estimateTotalTokens(params.messages),
     };
   }
 
