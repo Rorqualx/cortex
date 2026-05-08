@@ -39,13 +39,16 @@ export type Signals = {
   l3Boost: number;
 };
 
+// Match alphabetic words, multi-char numeric runs (preserving internal . and ,
+// so "$1,234.56" and "192.168.50.128" survive as single tokens), and single
+// digits. Anything else is treated as a separator.
+const TOKEN_PATTERN = /[a-z]+|\d[\d.,]*\d|\d/g;
+
 export function tokenize(text: string): Set<string> {
-  const tokens = text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length > 1);
-  return new Set(tokens);
+  const matches = text.toLowerCase().match(TOKEN_PATTERN) ?? [];
+  // Drop single-letter alphabetic tokens ("a", "i") as noise; keep single
+  // digits ("port 5", "v3") since they often carry signal.
+  return new Set(matches.filter((t) => t.length > 1 || /^\d$/.test(t)));
 }
 
 export function jaccard(a: Set<string>, b: Set<string>): number {

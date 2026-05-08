@@ -26,6 +26,26 @@ describe("tokenize", () => {
   it("returns an empty set for empty input", () => {
     expect(tokenize("")).toEqual(new Set());
   });
+
+  it("preserves numeric runs with internal punctuation", () => {
+    expect(tokenize("balance is $1,234.56 today")).toEqual(
+      new Set(["balance", "is", "1,234.56", "today"]),
+    );
+  });
+
+  it("preserves IP-like addresses as single tokens", () => {
+    expect(tokenize("pi-hole at 192.168.50.128 listens")).toEqual(
+      new Set(["pi", "hole", "at", "192.168.50.128", "listens"]),
+    );
+  });
+
+  it("keeps single digits but drops single letters", () => {
+    expect(tokenize("port 5 on host a")).toEqual(new Set(["port", "5", "on", "host"]));
+  });
+
+  it("preserves version-like decimals", () => {
+    expect(tokenize("running v1.2.3 stack")).toEqual(new Set(["running", "1.2.3", "stack"]));
+  });
 });
 
 describe("jaccard", () => {
