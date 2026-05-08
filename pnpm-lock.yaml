@@ -194,6 +194,9 @@ importers:
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
+      sqlite-vec-darwin-arm64:
+        specifier: ^0.1.9
+        version: 0.1.9
       tar:
         specifier: 7.5.13
         version: 7.5.13
@@ -14671,8 +14674,7 @@ snapshots:
 
   split2@4.2.0: {}
 
-  sqlite-vec-darwin-arm64@0.1.9:
-    optional: true
+  sqlite-vec-darwin-arm64@0.1.9: {}
 
   sqlite-vec-darwin-x64@0.1.9:
     optional: true
