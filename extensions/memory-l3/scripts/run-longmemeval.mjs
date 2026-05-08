@@ -6,9 +6,10 @@
 // and a summary table comparing hypothesis to ground truth.
 //
 // Usage:
-//   node extensions/memory-l3/scripts/run-longmemeval.mjs [--limit=N] [--type=single-session-user]
+//   node extensions/memory-l3/scripts/run-longmemeval.mjs [--limit=N] [--type=TYPE] [--stratified=PER_TYPE] [--concurrency=N]
 //
-// Defaults: 5 questions, single-session-user (smallest subset).
+// Defaults: 5 questions, single-session-user (smallest subset), concurrency=1.
+// --stratified=30 runs N questions per type (6 types × N), overrides --type/--limit.
 
 import { readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
@@ -18,11 +19,23 @@ const HOME = os.homedir();
 const ORACLE_PATH = "/tmp/longmemeval/oracle.json";
 
 const args = process.argv.slice(2);
-const limitArg = args.find((a) => a.startsWith("--limit="));
-const typeArg = args.find((a) => a.startsWith("--type="));
-const LIMIT = limitArg ? Number.parseInt(limitArg.split("=")[1], 10) : 5;
-const TYPE = typeArg ? typeArg.split("=")[1] : "single-session-user";
+const argVal = (name) => {
+  const a = args.find((x) => x.startsWith(`--${name}=`));
+  return a ? a.split("=")[1] : null;
+};
+const LIMIT = Number.parseInt(argVal("limit") ?? "5", 10);
+const TYPE = argVal("type") ?? "single-session-user";
+const STRATIFIED = argVal("stratified") ? Number.parseInt(argVal("stratified"), 10) : null;
+const CONCURRENCY = Number.parseInt(argVal("concurrency") ?? "1", 10);
 const TOP_K = 8;
+const QUESTION_TYPES = [
+  "single-session-user",
+  "single-session-assistant",
+  "single-session-preference",
+  "multi-session",
+  "knowledge-update",
+  "temporal-reasoning",
+];
 
 const EXTRACT_SYSTEM_PROMPT_V4 = `You are a memory extraction assistant. Read the conversation chunk and extract two complementary kinds of facts:
 
@@ -48,7 +61,17 @@ Emit strict JSON only, with no surrounding prose. Schema:
 
 If nothing to emit, output: { "facts": [], "typedFacts": [] }`;
 
-const ANSWER_SYSTEM_PROMPT = `You answer questions about a user using only the provided memory facts. Be terse and direct — output ONLY the answer, no preamble. If the facts don't contain enough information, output the single word: UNKNOWN.`;
+const ANSWER_SYSTEM_PROMPT = `You answer questions about a user using only the provided memory facts. Output ONLY the answer, no preamble.
+
+Rules:
+- Counting questions ("how many"): count the distinct relevant items the facts describe.
+- Listing questions ("which", "what kinds of"): comma-separate all matching items.
+- AGGREGATION (sum/combine) ONLY when the question explicitly asks for a total ("total", "altogether", "in total", "combined"): sum the components from the facts.
+- For "how long is X" / "how much does X cost" / "what is X": phrase the answer the way the facts describe it. DO NOT double or sum unless explicitly asked.
+- Temporal: use dates and durations exactly as stated.
+- Only return UNKNOWN if the facts genuinely lack the information; if facts contain a clear answer or its components, prefer the answer over UNKNOWN.
+
+Be terse. Output the bare answer (number, name, date, list).`;
 
 const TOKEN_PATTERN = /[a-z]+|\d[\d.,]*\d|\d/g;
 
@@ -192,55 +215,114 @@ function exactStringMatch(hypothesis, answer) {
   return hypothesis.toLowerCase().includes(ansStr.toLowerCase());
 }
 
+function selectQuestions(oracle) {
+  if (STRATIFIED !== null) {
+    const out = [];
+    for (const t of QUESTION_TYPES) {
+      out.push(...oracle.filter((q) => q.question_type === t).slice(0, STRATIFIED));
+    }
+    return out;
+  }
+  return oracle.filter((q) => q.question_type === TYPE).slice(0, LIMIT);
+}
+
+async function runWithConcurrency(items, concurrency, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  let completed = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const idx = next;
+      next += 1;
+      if (idx >= items.length) return;
+      try {
+        results[idx] = await fn(items[idx], idx);
+      } catch (e) {
+        results[idx] = { error: e.message, question_id: items[idx].question_id };
+      }
+      completed += 1;
+      process.stdout.write(`\r  progress: ${completed}/${items.length} `);
+    }
+  });
+  await Promise.all(workers);
+  process.stdout.write("\n");
+  return results;
+}
+
 async function main() {
-  console.log(`# LongMemEval first-signal run`);
-  console.log(`Type: ${TYPE}`);
-  console.log(`Limit: ${LIMIT}`);
+  console.log(`# LongMemEval run`);
+  if (STRATIFIED !== null) {
+    console.log(`Stratified: ${STRATIFIED} per type × ${QUESTION_TYPES.length} types`);
+  } else {
+    console.log(`Type: ${TYPE}, Limit: ${LIMIT}`);
+  }
+  console.log(`Concurrency: ${CONCURRENCY}`);
 
   const oracle = JSON.parse(await readFile(ORACLE_PATH, "utf8"));
-  const filtered = oracle.filter((q) => q.question_type === TYPE).slice(0, LIMIT);
+  const filtered = selectQuestions(oracle);
   console.log(`Selected ${filtered.length} questions`);
 
   const apiKey = await resolveZaiKey();
-  const results = [];
-  let exactHits = 0;
-  for (const [i, q] of filtered.entries()) {
-    process.stdout.write(`\n[${i + 1}/${filtered.length}] ${q.question_id} `);
-    const t0 = Date.now();
-    let result;
-    try {
-      result = await runQuestion({ apiKey, question: q });
-    } catch (e) {
-      console.log(`ERR ${e.message}`);
-      results.push({ question_id: q.question_id, hypothesis: "", error: e.message });
-      continue;
-    }
-    const elapsed = Date.now() - t0;
-    const hit = exactStringMatch(result.hypothesis, q.answer);
-    if (hit) exactHits += 1;
-    console.log(`${hit ? "✓" : "✗"} ${elapsed}ms`);
-    console.log(`  Q: ${q.question}`);
-    console.log(`  Truth:      ${q.answer}`);
-    console.log(`  Hypothesis: ${result.hypothesis}`);
-    console.log(
-      `  facts=${result.facts_extracted} typed=${result.typed_extracted} retrieved=${result.top_k_used}`,
-    );
-    results.push({ ...result, ground_truth: q.answer, exact_hit: hit });
+  const t0 = Date.now();
+  const results = await runWithConcurrency(filtered, CONCURRENCY, async (q) => {
+    const r = await runQuestion({ apiKey, question: q });
+    return {
+      ...r,
+      question_type: q.question_type,
+      ground_truth: String(q.answer),
+      exact_hit: exactStringMatch(r.hypothesis, q.answer),
+    };
+  });
+  const elapsedMin = ((Date.now() - t0) / 60000).toFixed(1);
+
+  // Per-type breakdown
+  const byType = {};
+  for (let i = 0; i < results.length; i += 1) {
+    const r = results[i];
+    const t = filtered[i].question_type;
+    if (!byType[t]) byType[t] = { total: 0, hits: 0, errors: 0 };
+    byType[t].total += 1;
+    if (r.exact_hit) byType[t].hits += 1;
+    if (r.error) byType[t].errors += 1;
   }
 
-  console.log(`\n=== Summary ===`);
+  console.log(`\n=== Per-type results ===`);
+  for (const t of QUESTION_TYPES) {
+    const b = byType[t];
+    if (!b) continue;
+    const pct = b.total > 0 ? Math.round((b.hits / b.total) * 100) : 0;
+    const errSuffix = b.errors > 0 ? ` [${b.errors} errors]` : "";
+    console.log(`  ${t.padEnd(28)} ${b.hits}/${b.total} (${pct}%)${errSuffix}`);
+  }
+  const totalHits = results.filter((r) => r.exact_hit).length;
+  const totalErrors = results.filter((r) => r.error).length;
+  const overallPct = Math.round((totalHits / results.length) * 100);
+  const errSuffix = totalErrors > 0 ? ` [${totalErrors} errors]` : "";
   console.log(
-    `Exact-string hits: ${exactHits}/${filtered.length} (${Math.round((exactHits / filtered.length) * 100)}%)`,
+    `  ${"OVERALL".padEnd(28)} ${totalHits}/${results.length} (${overallPct}%)${errSuffix}`,
   );
+  console.log(`  wall-clock: ${elapsedMin} min`);
 
-  const outPath = `/tmp/longmemeval/hypothesis-${TYPE}-n${filtered.length}.jsonl`;
+  // Show 5 sample misses for inspection
+  const misses = results.filter((r) => !r.exact_hit && !r.error).slice(0, 5);
+  if (misses.length > 0) {
+    console.log(`\n=== Sample misses ===`);
+    for (const m of misses) {
+      console.log(`  [${m.question_type}] ${m.question_id}`);
+      console.log(`    Truth: ${(m.ground_truth ?? "").slice(0, 120)}`);
+      console.log(`    Got:   ${(m.hypothesis ?? "").slice(0, 120)}`);
+    }
+  }
+
+  const tag = STRATIFIED !== null ? `stratified${STRATIFIED}` : `${TYPE}-n${filtered.length}`;
+  const outPath = `/tmp/longmemeval/hypothesis-${tag}.jsonl`;
   await writeFile(
     outPath,
     results
-      .map((r) => JSON.stringify({ question_id: r.question_id, hypothesis: r.hypothesis }))
+      .map((r) => JSON.stringify({ question_id: r.question_id, hypothesis: r.hypothesis ?? "" }))
       .join("\n") + "\n",
   );
-  console.log(`Wrote ${outPath}`);
+  console.log(`\nWrote ${outPath}`);
 }
 
 main().catch((e) => {
