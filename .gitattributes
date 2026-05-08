@@ -3,26 +3,6 @@ CLAUDE.md -text
 src/gateway/server-methods/CLAUDE.md -text
 
 # --- fork: memory subsystem protection ---
-# Pure-add, entirely owned by memory-fork
+# Truly fork-exclusive code — never accept upstream changes here.
 extensions/memory-l3/**                               merge=ours
 memory/.l3/**                                         merge=ours
-
-# Mixed dir — list dreaming files explicitly so unrelated upstream
-# changes inside memory-core continue to flow through.
-extensions/memory-core/src/dreaming.ts                merge=ours
-extensions/memory-core/src/dreaming.test.ts           merge=ours
-extensions/memory-core/src/dreaming-command.ts        merge=ours
-extensions/memory-core/src/dreaming-command.test.ts   merge=ours
-extensions/memory-core/src/dreaming-phases.ts         merge=ours
-extensions/memory-core/src/dreaming-phases.test.ts    merge=ours
-extensions/memory-core/src/dreaming-narrative.ts      merge=ours
-extensions/memory-core/src/dreaming-narrative.test.ts merge=ours
-extensions/memory-core/src/dreaming-repair.ts         merge=ours
-extensions/memory-core/src/dreaming-repair.test.ts    merge=ours
-extensions/memory-core/src/dreaming-shared.ts         merge=ours
-extensions/memory-core/src/dreaming-shared.test.ts    merge=ours
-extensions/memory-core/src/dreaming-markdown.ts       merge=ours
-extensions/memory-core/src/dreaming-markdown.test.ts  merge=ours
-
-# Host SDK shim
-src/memory-host-sdk/dreaming.ts                       merge=ours
