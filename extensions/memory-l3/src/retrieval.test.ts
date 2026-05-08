@@ -295,6 +295,83 @@ describe("retrieveTopK long-term tier", () => {
     expect(result.find((r) => r.fact.id === "lt-archived")).toBeUndefined();
   });
 
+  it("surfaces a high-importance long-term fact even with zero lexical overlap", async () => {
+    // Query has zero token overlap with the long-term fact text, but the
+    // fact has high importance and there's nothing else competing — it
+    // should still appear in the result set (previously it was hard-skipped).
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "weather report", importance: 0.4, createdAt: NOW, dedupKey: "k:weather" },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-persona",
+            text: "user prefers tabs over spaces",
+            dedupKey: "user_pref:tabs",
+            importance: 0.9,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 5,
+            sourceChunkIds: ["a", "b", "c", "d", "e"],
+            archived: false,
+            archivedAt: null,
+          },
+        ],
+      },
+      "",
+    );
+    const result = await retrieveTopK({ query: "lunch ideas", storage, topK: 5, now: NOW });
+    const ltHit = result.find((r) => r.tier === "longterm");
+    expect(ltHit).toBeDefined();
+    expect(ltHit?.signals.lexical).toBe(0);
+  });
+
+  it("does not let a zero-lexical long-term fact out-rank a meaningfully-relevant L2 fact", async () => {
+    // L2 fact with a real but mediocre lexical hit — should rank above an
+    // unrelated high-importance long-term fact, because the long-term tier
+    // boost is withheld when lexical is zero.
+    await writeChunk("chunk-000000-x", [
+      {
+        id: "l2-relevant",
+        text: "lunch options near downtown denver",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:lunch_options",
+      },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-unrelated",
+            text: "user prefers tabs over spaces",
+            dedupKey: "user_pref:tabs",
+            importance: 0.9,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 5,
+            sourceChunkIds: ["a", "b", "c", "d", "e"],
+            archived: false,
+            archivedAt: null,
+          },
+        ],
+      },
+      "",
+    );
+    const result = await retrieveTopK({ query: "lunch ideas", storage, topK: 5, now: NOW });
+    const l2Idx = result.findIndex((r) => r.fact.id === "l2-relevant");
+    const ltIdx = result.findIndex((r) => r.fact.id === "lt-unrelated");
+    expect(l2Idx).toBeGreaterThanOrEqual(0);
+    expect(l2Idx).toBeLessThan(ltIdx === -1 ? Infinity : ltIdx);
+  });
+
   it("ranks long-term tier above an L2 fact at similar lexical strength", async () => {
     // L2 fact with strong lexical match
     await writeChunk("chunk-000000-x", [

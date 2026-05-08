@@ -79,14 +79,17 @@ export async function retrieveTopK(params: {
 
   // Long-term tier — promoted evergreen facts. Skip archived; treat
   // lastConfirmedAt as the recency anchor so re-affirmed facts feel fresh.
+  // The fixed tier boost only applies when there's an actual topical hit;
+  // lex=0 long-term facts can still compete on importance + recency, but
+  // don't get the +0.15 floor that would let unrelated identity-class
+  // facts out-rank stronger L2 matches on every query.
   const longterm = await params.storage.readLongTerm();
   for (const lt of longterm.facts) {
     if (lt.archived) continue;
     const fact = longTermAsL2Fact(lt);
     const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
-    if (signals.lexical === 0) continue; // no topical match — skip
     const baseScore = composite(signals, config);
-    const score = baseScore + config.weightLongTermTierBoost;
+    const score = signals.lexical > 0 ? baseScore + config.weightLongTermTierBoost : baseScore;
     if (score > 0) {
       scored.push({ fact, score, signals, chunkId: "longterm", tier: "longterm" });
     }
