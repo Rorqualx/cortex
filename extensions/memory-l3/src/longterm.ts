@@ -137,6 +137,7 @@ function promote(candidate: ConsolidationCandidate): LongTermFact {
     sourceChunkIds: [...candidate.sourceChunkIds],
     archived: false,
     archivedAt: null,
+    supersededBy: null,
   };
 }
 
@@ -153,6 +154,10 @@ function reaffirm(prior: LongTermFact, candidate: ConsolidationCandidate): LongT
     sourceChunkIds: merged,
     archived: false,
     archivedAt: null,
+    // Preserve any cross-brain reconciliation mark — re-affirmation alone
+    // doesn't resolve a stale-vs-typed contradiction; the reconciler must
+    // run again with current data to decide.
+    supersededBy: prior.supersededBy ?? null,
   };
 }
 
@@ -248,7 +253,7 @@ function formatDateString(unixMs: number): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function formatLongTermBody(facts: ReadonlyArray<LongTermFact>): string {
+export function formatLongTermBody(facts: ReadonlyArray<LongTermFact>): string {
   const active = facts.filter((f) => !f.archived);
   const archived = facts.filter((f) => f.archived);
   const lines: string[] = ["## Long-term facts", ""];
@@ -256,7 +261,12 @@ function formatLongTermBody(facts: ReadonlyArray<LongTermFact>): string {
     lines.push("(no active long-term facts)");
   } else {
     for (const fact of active) {
-      lines.push(`- [${fact.importance.toFixed(2)}] \`${fact.dedupKey}\` — ${fact.text}`);
+      const supersededMark = fact.supersededBy
+        ? ` _(superseded by typed fact \`${fact.supersededBy}\`)_`
+        : "";
+      lines.push(
+        `- [${fact.importance.toFixed(2)}] \`${fact.dedupKey}\` — ${fact.text}${supersededMark}`,
+      );
     }
   }
   if (archived.length > 0) {

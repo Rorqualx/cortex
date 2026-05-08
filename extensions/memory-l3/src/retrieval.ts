@@ -135,6 +135,10 @@ export async function retrieveTopK(params: {
   const longterm = await params.storage.readLongTerm();
   for (const lt of longterm.facts) {
     if (lt.archived) continue;
+    // Cross-brain reconciliation marker: prose fact contradicts a typed
+    // fact's verbatim value, so the typed value is canonical and this
+    // prose entry shouldn't surface in active retrieval.
+    if (lt.supersededBy) continue;
     const fact = longTermAsL2Fact(lt);
     const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
     const baseScore = composite(signals, config);

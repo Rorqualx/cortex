@@ -519,6 +519,40 @@ describe("retrieveTopK typed-fact tier", () => {
   });
 });
 
+describe("retrieveTopK cross-brain reconciliation", () => {
+  it("does not surface a long-term prose fact that has been marked supersededBy", async () => {
+    // Need at least one L2 chunk for retrieval to enter the loop.
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.4, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-stale",
+            text: "user balance is around 500",
+            dedupKey: "user:balance_estimate",
+            importance: 0.7,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 3,
+            sourceChunkIds: ["a", "b", "c"],
+            archived: false,
+            archivedAt: null,
+            supersededBy: "user:account_balance",
+          },
+        ],
+      },
+      "",
+    );
+    const result = await retrieveTopK({ query: "balance", storage, topK: 5, now: NOW });
+    expect(result.find((r) => r.fact.id === "lt-stale")).toBeUndefined();
+  });
+});
+
 describe("retrieveTopK longterm-typed tier", () => {
   it("surfaces canonical entry and suppresses per-chunk typed facts for the same slot", async () => {
     // Two chunks both emit the same slot with different values. After

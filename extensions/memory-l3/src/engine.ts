@@ -18,6 +18,7 @@ import { IngestBuffer } from "./ingest.js";
 import { createGlmCaller, type LlmCaller } from "./llm.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
 import { consolidateLongTerm } from "./longterm.js";
+import { reconcileCrossBrain } from "./reconciliation.js";
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
@@ -285,17 +286,42 @@ export class HierarchicalL3Engine implements ContextEngine {
         // Corpus-callosum bridge: typed-fact long-term consolidation runs
         // on the same epoch boundary. Detects value drift per slot and
         // builds the canonical "current value" view at longterm-typed.md.
+        let typedActivity = false;
         try {
           const ltt = await consolidateLongTermTyped({
             storage: this.storage,
             agentId: this.state.agentId,
             now,
           });
+          typedActivity = ltt.promotedCount + ltt.supersededCount > 0;
           l3debug(
             `afterTurn(): typed consolidation promoted=${ltt.promotedCount} superseded=${ltt.supersededCount} reaffirmed=${ltt.reaffirmedCount} archived=${ltt.archivedCount} active=${ltt.activeCount}`,
           );
         } catch (typedErr) {
           console.error(`[memory-l3] typed consolidation failed: ${(typedErr as Error).message}`);
+        }
+        // Cross-brain reconciliation: only fires when typed consolidation
+        // produced a new or changed slot — otherwise the prose↔typed
+        // landscape didn't shift since the last pass and we'd just spend
+        // an LLM round-trip to confirm what's already on disk. Failures
+        // are non-fatal; the worst case is one stale prose fact slipping
+        // through to retrieval until the next pass.
+        if (typedActivity) {
+          try {
+            const rec = await reconcileCrossBrain({
+              storage: this.storage,
+              caller,
+              agentId: this.state.agentId,
+              now,
+            });
+            l3debug(
+              `afterTurn(): reconcile prose=${rec.proseFactsConsidered} typed=${rec.typedFactsConsidered} newlyStale=${rec.newlyMarkedStale} unmarked=${rec.unmarkedNowAgreed}`,
+            );
+          } catch (recErr) {
+            console.error(
+              `[memory-l3] cross-brain reconciliation failed: ${(recErr as Error).message}`,
+            );
+          }
         }
       }
       await this.storage.writeState(this.state);

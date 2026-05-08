@@ -1,0 +1,174 @@
+// Cross-brain reconciler — the prose↔typed bridge of the corpus callosum.
+// Loads the active prose long-term facts (right brain) and the active typed
+// long-term facts (left brain), asks an LLM which prose facts contradict
+// which typed values, and marks contradicted prose facts with
+// `supersededBy: <slot>`. Retrieval skips superseded facts, so stale prose
+// like "balance is around $500" no longer surfaces once the canonical typed
+// fact says `user:account_balance = 750.00`.
+//
+// Runs at the same epoch boundary as the two consolidation passes, but only
+// when there's something new in the typed tier to reconcile against. Cost
+// is bounded by the total number of long-term facts (small by design — the
+// promotion thresholds keep the working set tight).
+
+import { parseJsonResponse, type LlmCaller } from "./llm.js";
+import { formatLongTermBody } from "./longterm.js";
+import type { Storage } from "./storage.js";
+import type { LongTermFact, LongTermFrontmatter, LongTermTypedFact } from "./types.js";
+
+export type ReconcileOutput = {
+  proseFactsConsidered: number;
+  typedFactsConsidered: number;
+  /** Prose facts that gained a new supersededBy mark this pass. */
+  newlyMarkedStale: number;
+  /** Prose facts that had a supersededBy mark cleared this pass. */
+  unmarkedNowAgreed: number;
+};
+
+const RECONCILE_SYSTEM_PROMPT = `You are a memory reconciler. Compare prose facts (LLM-distilled, possibly outdated) to typed facts (verbatim values, current). When a prose fact contradicts a typed fact, the prose fact is STALE — typed values are canonical.
+
+Reconcile each prose fact independently:
+- "stale" — contradicts at least one typed fact. Include the typed fact's slot in supersededBy.
+- "agreed" — consistent with all relevant typed facts, OR unrelated to any typed fact.
+
+Be conservative: only mark "stale" when there is a clear factual contradiction. Vague paraphrases that don't disagree on facts are "agreed".
+
+Output strict JSON only, no surrounding prose. Schema:
+{
+  "decisions": [
+    { "factId": "lt-xxx", "verdict": "stale", "supersededBy": "user:account_balance" },
+    { "factId": "lt-yyy", "verdict": "agreed" }
+  ]
+}
+
+Include a decision for every prose fact you were given. If unsure, default to "agreed".`;
+
+type Decision = {
+  verdict: "stale" | "agreed";
+  supersededBy: string | null;
+};
+
+/**
+ * Run a cross-brain reconciliation pass. Idempotent — if no LLM verdicts
+ * change marks, the file is left untouched and counts return zero.
+ *
+ * Skips silently when either tier is empty (nothing to compare against).
+ */
+export async function reconcileCrossBrain(params: {
+  storage: Storage;
+  caller: LlmCaller;
+  agentId: string | null;
+  now: number;
+}): Promise<ReconcileOutput> {
+  const longterm = await params.storage.readLongTerm();
+  const longtermTyped = await params.storage.readLongTermTyped();
+
+  const activeProse = longterm.facts.filter((f) => !f.archived);
+  const activeTyped = longtermTyped.facts.filter((f) => !f.archived);
+
+  if (activeProse.length === 0 || activeTyped.length === 0) {
+    return {
+      proseFactsConsidered: activeProse.length,
+      typedFactsConsidered: activeTyped.length,
+      newlyMarkedStale: 0,
+      unmarkedNowAgreed: 0,
+    };
+  }
+
+  const userPrompt = buildReconcileUserPrompt(activeProse, activeTyped);
+  const raw = await params.caller({
+    systemPrompt: RECONCILE_SYSTEM_PROMPT,
+    userPrompt,
+    thinking: false,
+  });
+
+  const validIds = new Set(activeProse.map((f) => f.id));
+  const validSlots = new Set(activeTyped.map((t) => t.slot));
+  const decisions = parseDecisions(raw, validIds, validSlots);
+
+  let newlyMarkedStale = 0;
+  let unmarkedNowAgreed = 0;
+  const updatedFacts = longterm.facts.map((fact) => {
+    if (fact.archived) return fact;
+    const decision = decisions.get(fact.id);
+    if (!decision) return fact;
+    const priorMark = fact.supersededBy ?? null;
+    if (decision.verdict === "stale") {
+      if (priorMark === decision.supersededBy) return fact;
+      if (priorMark === null) newlyMarkedStale += 1;
+      return { ...fact, supersededBy: decision.supersededBy };
+    }
+    if (priorMark !== null) {
+      unmarkedNowAgreed += 1;
+      return { ...fact, supersededBy: null };
+    }
+    return fact;
+  });
+
+  if (newlyMarkedStale === 0 && unmarkedNowAgreed === 0) {
+    return {
+      proseFactsConsidered: activeProse.length,
+      typedFactsConsidered: activeTyped.length,
+      newlyMarkedStale: 0,
+      unmarkedNowAgreed: 0,
+    };
+  }
+
+  const frontmatter: LongTermFrontmatter = {
+    version: 1,
+    agentId: params.agentId,
+    lastConsolidatedAt: params.now,
+    facts: updatedFacts,
+  };
+  await params.storage.writeLongTerm(frontmatter, formatLongTermBody(updatedFacts));
+
+  return {
+    proseFactsConsidered: activeProse.length,
+    typedFactsConsidered: activeTyped.length,
+    newlyMarkedStale,
+    unmarkedNowAgreed,
+  };
+}
+
+function buildReconcileUserPrompt(
+  proseFacts: ReadonlyArray<LongTermFact>,
+  typedFacts: ReadonlyArray<LongTermTypedFact>,
+): string {
+  const proseLines = proseFacts.map((f) => `- [${f.id}] ${f.text}`).join("\n");
+  const typedLines = typedFacts
+    .map((t) => `- ${t.slot} = ${t.value}${t.unit ? ` ${t.unit}` : ""}`)
+    .join("\n");
+  return `<prose-facts>\n${proseLines}\n</prose-facts>\n\n<typed-facts>\n${typedLines}\n</typed-facts>\n\nReconcile every prose fact.`;
+}
+
+function parseDecisions(
+  raw: string,
+  validIds: ReadonlySet<string>,
+  validSlots: ReadonlySet<string>,
+): Map<string, Decision> {
+  const out = new Map<string, Decision>();
+  let parsed: unknown;
+  try {
+    parsed = parseJsonResponse(raw);
+  } catch {
+    return out;
+  }
+  if (!parsed || typeof parsed !== "object") return out;
+  const decisions = (parsed as { decisions?: unknown }).decisions;
+  if (!Array.isArray(decisions)) return out;
+  for (const candidate of decisions) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const o = candidate as Record<string, unknown>;
+    if (typeof o.factId !== "string") continue;
+    if (!validIds.has(o.factId)) continue;
+    if (o.verdict !== "stale" && o.verdict !== "agreed") continue;
+    if (o.verdict === "stale") {
+      const slot = typeof o.supersededBy === "string" ? o.supersededBy : null;
+      if (!slot || !validSlots.has(slot)) continue;
+      out.set(o.factId, { verdict: "stale", supersededBy: slot });
+    } else {
+      out.set(o.factId, { verdict: "agreed", supersededBy: null });
+    }
+  }
+  return out;
+}

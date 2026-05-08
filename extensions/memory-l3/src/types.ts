@@ -131,6 +131,13 @@ export type LongTermFact = {
   archived: boolean;
   /** ms timestamp when archived (set iff archived=true). */
   archivedAt: number | null;
+  /**
+   * When set, the slot of a typed fact whose verbatim value contradicts this
+   * prose fact's content. Marked by the cross-brain reconciler at epoch
+   * boundaries. Suppressed from active retrieval (typed facts are
+   * authoritative). Optional for backward compat — old data may lack it.
+   */
+  supersededBy?: string | null;
 };
 
 /**
