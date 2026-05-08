@@ -90,10 +90,33 @@ export function parseExtractResponse(raw: string): ExtractedFact[] {
   let parsed: unknown;
   try {
     parsed = parseJsonResponse(raw);
-  } catch {
+  } catch (e) {
+    debugLog(`extract: JSON parse failed (${(e as Error).message}); raw=${summarizeRaw(raw)}`);
+    return [];
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !Array.isArray((parsed as { facts?: unknown }).facts)
+  ) {
+    debugLog(`extract: response missing "facts" array; raw=${summarizeRaw(raw)}`);
     return [];
   }
   return normalizeFacts(parsed);
+}
+
+// Gated on OPENCLAW_MEMORY_L3_DEBUG=1 to keep tests quiet by default; when on,
+// surfaces silent extraction failures to stderr so we never lose another
+// session's worth of facts to a parse error nobody saw.
+function debugLog(message: string): void {
+  if (process.env.OPENCLAW_MEMORY_L3_DEBUG === "1") {
+    console.warn(`[memory-l3] ${message}`);
+  }
+}
+
+function summarizeRaw(raw: string, limit = 160): string {
+  const flat = raw.replace(/\s+/g, " ").trim();
+  return flat.length > limit ? `${flat.slice(0, limit)}...` : flat;
 }
 
 export function parseJsonResponse(raw: string): unknown {
