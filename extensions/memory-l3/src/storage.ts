@@ -7,14 +7,17 @@ import {
   type FrontmatterDocument,
   INITIAL_L3_STATE,
   INITIAL_LONG_TERM_FRONTMATTER,
+  INITIAL_LONG_TERM_TYPED_FRONTMATTER,
   type L2ChunkFrontmatter,
   type L3EpochFrontmatter,
   type L3State,
   type LongTermFrontmatter,
+  type LongTermTypedFrontmatter,
 } from "./types.js";
 
 const STATE_FILENAME = "state.json";
 const LONG_TERM_FILENAME = "longterm.md";
+const LONG_TERM_TYPED_FILENAME = "longterm-typed.md";
 const L1_ARCHIVE_DIR = "l1_archive";
 const L2_DIR = "l2";
 const L3_DIR = "l3";
@@ -192,6 +195,32 @@ export class Storage {
   async writeLongTerm(frontmatter: LongTermFrontmatter, body: string): Promise<string> {
     return await this.mutex.run(async () => {
       const target = path.join(this.root, LONG_TERM_FILENAME);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
+      return target;
+    });
+  }
+
+  /**
+   * Read the long-term typed-fact tier. Returns a fresh
+   * INITIAL_LONG_TERM_TYPED_FRONTMATTER when the file is absent.
+   */
+  async readLongTermTyped(): Promise<LongTermTypedFrontmatter> {
+    const target = path.join(this.root, LONG_TERM_TYPED_FILENAME);
+    const doc = await readFrontmatterDocument<LongTermTypedFrontmatter>(target);
+    if (doc === null) {
+      return { ...INITIAL_LONG_TERM_TYPED_FRONTMATTER };
+    }
+    return doc.frontmatter;
+  }
+
+  /**
+   * Atomically rewrite `<root>/longterm-typed.md` — the canonical
+   * current-value-per-slot view across all L2 chunks' typed facts.
+   */
+  async writeLongTermTyped(frontmatter: LongTermTypedFrontmatter, body: string): Promise<string> {
+    return await this.mutex.run(async () => {
+      const target = path.join(this.root, LONG_TERM_TYPED_FILENAME);
       await fs.mkdir(path.dirname(target), { recursive: true });
       await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
       return target;

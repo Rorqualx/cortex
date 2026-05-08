@@ -151,3 +151,47 @@ export const INITIAL_LONG_TERM_FRONTMATTER: LongTermFrontmatter = {
   lastConsolidatedAt: 0,
   facts: [],
 };
+
+/**
+ * The typed-fact analogue of `LongTermFact`: a slot's *canonical* current
+ * value, plus a history of superseded values. Where prose long-term facts
+ * accumulate evidence (recallCount = how often the same idea recurs), typed
+ * long-term facts track *value drift* (history = the trail of supersessions
+ * as the value changes over time, e.g. balance updates).
+ */
+export type LongTermTypedFact = {
+  id: string;
+  slot: string;
+  /** Most recent value across all chunks emitting this slot. */
+  value: string;
+  unit: string | null;
+  /** Confidence of the most recent emission. */
+  confidence: number;
+  /** ms timestamp of the earliest typed fact for this slot. */
+  firstSeenAt: number;
+  /** ms timestamp of the most recent typed fact (= source of `value`). */
+  lastConfirmedAt: number;
+  /** Number of distinct chunks that have emitted typed facts for this slot. */
+  recallCount: number;
+  /** Distinct chunkIds that emitted any typed fact for this slot. */
+  sourceChunkIds: string[];
+  /** Older values that have been superseded, oldest first. */
+  history: Array<{ value: string; supersededAt: number }>;
+  /** When true, fact is hidden from retrieval but kept on disk for forensics. */
+  archived: boolean;
+  archivedAt: number | null;
+};
+
+export type LongTermTypedFrontmatter = {
+  version: 1;
+  agentId: string | null;
+  lastConsolidatedAt: number;
+  facts: LongTermTypedFact[];
+};
+
+export const INITIAL_LONG_TERM_TYPED_FRONTMATTER: LongTermTypedFrontmatter = {
+  version: 1,
+  agentId: null,
+  lastConsolidatedAt: 0,
+  facts: [],
+};

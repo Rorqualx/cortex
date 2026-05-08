@@ -16,6 +16,7 @@ import { getMemorySearchManager } from "openclaw/plugin-sdk/memory-core-engine-r
 import { compactSession } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
 import { createGlmCaller, type LlmCaller } from "./llm.js";
+import { consolidateLongTermTyped } from "./longterm-typed.js";
 import { consolidateLongTerm } from "./longterm.js";
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { selectSlidingWindow } from "./sliding-window.js";
@@ -280,6 +281,21 @@ export class HierarchicalL3Engine implements ContextEngine {
           // Consolidation failures are non-fatal — the L2 chunk is already
           // safely persisted. Log loud and continue.
           console.error(`[memory-l3] consolidation failed: ${(consolidationErr as Error).message}`);
+        }
+        // Corpus-callosum bridge: typed-fact long-term consolidation runs
+        // on the same epoch boundary. Detects value drift per slot and
+        // builds the canonical "current value" view at longterm-typed.md.
+        try {
+          const ltt = await consolidateLongTermTyped({
+            storage: this.storage,
+            agentId: this.state.agentId,
+            now,
+          });
+          l3debug(
+            `afterTurn(): typed consolidation promoted=${ltt.promotedCount} superseded=${ltt.supersededCount} reaffirmed=${ltt.reaffirmedCount} archived=${ltt.archivedCount} active=${ltt.activeCount}`,
+          );
+        } catch (typedErr) {
+          console.error(`[memory-l3] typed consolidation failed: ${(typedErr as Error).message}`);
         }
       }
       await this.storage.writeState(this.state);

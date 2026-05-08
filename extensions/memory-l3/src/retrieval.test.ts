@@ -519,6 +519,91 @@ describe("retrieveTopK typed-fact tier", () => {
   });
 });
 
+describe("retrieveTopK longterm-typed tier", () => {
+  it("surfaces canonical entry and suppresses per-chunk typed facts for the same slot", async () => {
+    // Two chunks both emit the same slot with different values. After
+    // consolidation, the canonical view holds only the latest. Retrieval
+    // should surface the canonical entry and skip the per-chunk hits.
+    await writeChunk("chunk-a", [], NOW - 5 * 86400000, [
+      {
+        id: "tf-old",
+        slot: "user:account_balance",
+        value: "500.00",
+        sourceSpan: "balance 500.00",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW - 5 * 86400000,
+      },
+    ]);
+    await writeChunk("chunk-b", [], NOW, [
+      {
+        id: "tf-new",
+        slot: "user:account_balance",
+        value: "750.00",
+        sourceSpan: "balance 750.00",
+        unit: null,
+        confidence: 0.95,
+        createdAt: NOW,
+      },
+    ]);
+    await storage.writeLongTermTyped(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "ltt-1",
+            slot: "user:account_balance",
+            value: "750.00",
+            unit: null,
+            confidence: 0.95,
+            firstSeenAt: NOW - 5 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 2,
+            sourceChunkIds: ["chunk-a", "chunk-b"],
+            history: [{ value: "500.00", supersededAt: NOW }],
+            archived: false,
+            archivedAt: null,
+          },
+        ],
+      },
+      "",
+    );
+
+    const result = await retrieveTopK({
+      query: "balance",
+      storage,
+      topK: 10,
+      now: NOW,
+    });
+    const canonical = result.find((r) => r.tier === "longterm-typed");
+    const perChunk = result.find((r) => r.tier === "typed");
+    expect(canonical).toBeDefined();
+    expect(canonical?.fact.text).toBe("user:account_balance = 750.00");
+    expect(perChunk).toBeUndefined();
+  });
+
+  it("renders longterm-typed hits with the ★ marker", () => {
+    const result = formatMemorySection([
+      {
+        fact: {
+          id: "ltt-1",
+          text: "user:phone = 555-1234",
+          importance: 0.95,
+          createdAt: NOW,
+          dedupKey: "user:phone",
+        },
+        score: 0.82,
+        signals: { lexical: 0.5, importance: 0.95, recency: 1, l3Boost: 0 },
+        chunkId: "longterm-typed",
+        tier: "longterm-typed",
+      },
+    ]);
+    expect(result).toContain("★ [0.82] user:phone = 555-1234");
+  });
+});
+
 describe("retrieveTopK memory-core tier", () => {
   it("merges memory-core hits into the top-K ranking with the ◆ marker", async () => {
     await writeChunk("chunk-000000-x", [

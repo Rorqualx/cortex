@@ -8,9 +8,15 @@ import {
   tokenize,
 } from "./scoring.js";
 import type { Storage } from "./storage.js";
-import type { L2Fact, L3EpochFrontmatter, LongTermFact, TypedFact } from "./types.js";
+import type {
+  L2Fact,
+  L3EpochFrontmatter,
+  LongTermFact,
+  LongTermTypedFact,
+  TypedFact,
+} from "./types.js";
 
-export type RetrievalTier = "l2" | "longterm" | "memory-core" | "typed";
+export type RetrievalTier = "l2" | "longterm" | "longterm-typed" | "memory-core" | "typed";
 
 /**
  * Minimal shape of memory-core's QMD search results that retrieval cares
@@ -62,6 +68,13 @@ export async function retrieveTopK(params: {
 
   const epochBoosts = await buildEpochBoostMap(params.storage, queryTokens);
 
+  // Corpus-callosum: load the canonical typed-fact view first so per-chunk
+  // typed hits with the same slot can be suppressed. The canonical view
+  // already represents the latest value across all chunks; surfacing both
+  // would just be noise.
+  const longtermTyped = await params.storage.readLongTermTyped();
+  const canonicalSlots = new Set(longtermTyped.facts.filter((f) => !f.archived).map((f) => f.slot));
+
   const scored: RetrievedFact[] = [];
   for (const filePath of paths) {
     const doc = await params.storage.readL2ChunkAtPath(filePath);
@@ -76,10 +89,11 @@ export async function retrieveTopK(params: {
       }
     }
     // Typed-fact tier (left brain) — verbatim-grounded values surfaced
-    // alongside prose facts. Score via the same composite formula but with
-    // confidence standing in for importance. Tier boost only applies when
-    // there's an actual topical hit (mirrors the long-term tier's policy).
+    // alongside prose facts. Suppress when a canonical entry already
+    // exists for the slot: the longterm-typed tier surfaces the latest
+    // value and we don't want stale per-chunk values competing.
     for (const typed of doc.frontmatter.typedFacts ?? []) {
+      if (canonicalSlots.has(typed.slot)) continue;
       const fact = typedFactAsL2Fact(typed);
       const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
       const baseScore = composite(signals, config);
@@ -87,6 +101,28 @@ export async function retrieveTopK(params: {
       if (score > 0) {
         scored.push({ fact, score, signals, chunkId, tier: "typed" });
       }
+    }
+  }
+
+  // Long-term typed tier — canonical current-value-per-slot view. Recall
+  // count and history contribute implicitly through the canonical entry's
+  // confidence + lastConfirmedAt anchor. Score boost matches the prose
+  // long-term tier (+0.15) so canonical typed and canonical prose compete
+  // on equal footing.
+  for (const ltt of longtermTyped.facts) {
+    if (ltt.archived) continue;
+    const fact = longTermTypedAsL2Fact(ltt);
+    const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
+    const baseScore = composite(signals, config);
+    const score = signals.lexical > 0 ? baseScore + config.weightLongTermTierBoost : baseScore;
+    if (score > 0) {
+      scored.push({
+        fact,
+        score,
+        signals,
+        chunkId: "longterm-typed",
+        tier: "longterm-typed",
+      });
     }
   }
 
@@ -167,6 +203,17 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     importance: typed.confidence,
     createdAt: typed.createdAt,
     dedupKey: typed.slot,
+  };
+}
+
+function longTermTypedAsL2Fact(ltt: LongTermTypedFact): L2Fact {
+  const text = ltt.unit ? `${ltt.slot} = ${ltt.value} ${ltt.unit}` : `${ltt.slot} = ${ltt.value}`;
+  return {
+    id: ltt.id,
+    text,
+    importance: ltt.confidence,
+    createdAt: ltt.lastConfirmedAt,
+    dedupKey: ltt.slot,
   };
 }
 
@@ -252,6 +299,8 @@ export function formatMemorySection(facts: ReadonlyArray<RetrievedFact>): string
 function tierMarker(tier: RetrievalTier): string {
   switch (tier) {
     case "longterm":
+      return "★";
+    case "longterm-typed":
       return "★";
     case "memory-core":
       return "◆";
