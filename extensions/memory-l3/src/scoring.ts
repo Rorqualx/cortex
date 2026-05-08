@@ -19,6 +19,13 @@ export type ScoringConfig = {
    * different scale. Default 0.7.
    */
   weightMemoryCoreTierMultiplier: number;
+  /**
+   * Flat additive bonus applied to typed-fact hits (left brain) that have a
+   * positive lexical match. Smaller than the long-term boost because typed
+   * facts already get a strong signal from confidence + the slot:value text
+   * matching the query directly. Default 0.1.
+   */
+  weightTypedFactTierBoost: number;
   recencyHalfLifeDays: number;
 };
 
@@ -29,6 +36,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightL3Boost: 0.1,
   weightLongTermTierBoost: 0.15,
   weightMemoryCoreTierMultiplier: 0.7,
+  weightTypedFactTierBoost: 0.1,
   recencyHalfLifeDays: 7,
 };
 

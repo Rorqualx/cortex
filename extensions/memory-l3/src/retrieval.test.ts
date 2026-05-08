@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { formatMemorySection, retrieveTopK } from "./retrieval.js";
 import { Storage } from "./storage.js";
-import type { L2ChunkFrontmatter } from "./types.js";
+import type { L2ChunkFrontmatter, TypedFact } from "./types.js";
 
 let tmpRoot: string;
 let storage: Storage;
@@ -23,6 +23,7 @@ const writeChunk = async (
   chunkId: string,
   facts: L2ChunkFrontmatter["facts"],
   createdAt: number = NOW,
+  typedFacts: TypedFact[] = [],
 ): Promise<void> => {
   await storage.writeL2Chunk(
     {
@@ -32,6 +33,7 @@ const writeChunk = async (
       endTurnIndex: 1,
       createdAt,
       facts,
+      typedFacts,
       dedupKeys: facts.map((f) => f.dedupKey),
     },
     "",
@@ -409,6 +411,111 @@ describe("retrieveTopK long-term tier", () => {
     const result = await retrieveTopK({ query: "tabs preferred", storage, topK: 5, now: NOW });
     expect(result.length).toBeGreaterThanOrEqual(2);
     expect(result[0].tier).toBe("longterm");
+  });
+});
+
+describe("retrieveTopK typed-fact tier", () => {
+  it("surfaces a typed fact whose slot or value matches the query", async () => {
+    await writeChunk(
+      "chunk-000000-x",
+      [
+        {
+          id: "f1",
+          text: "user discussed networking",
+          importance: 0.4,
+          createdAt: NOW,
+          dedupKey: "k:net",
+        },
+      ],
+      NOW,
+      [
+        {
+          id: "tf-pi",
+          slot: "infra:pi_hole_ip",
+          value: "192.168.50.128",
+          sourceSpan: "pi-hole at 192.168.50.128",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+    );
+    const result = await retrieveTopK({
+      query: "192.168.50.128",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    const typedHit = result.find((r) => r.tier === "typed");
+    expect(typedHit).toBeDefined();
+    expect(typedHit?.fact.text).toBe("infra:pi_hole_ip = 192.168.50.128");
+    expect(typedHit?.signals.lexical).toBeGreaterThan(0);
+  });
+
+  it("includes unit in the rendered text when present", async () => {
+    await writeChunk("chunk-000000-y", [], NOW, [
+      {
+        id: "tf-bal",
+        slot: "user:account_balance",
+        value: "1234.56",
+        sourceSpan: "balance is 1234.56",
+        unit: "USD",
+        confidence: 0.95,
+        createdAt: NOW,
+      },
+    ]);
+    const result = await retrieveTopK({ query: "balance", storage, topK: 5, now: NOW });
+    const hit = result.find((r) => r.tier === "typed");
+    expect(hit?.fact.text).toBe("user:account_balance = 1234.56 USD");
+  });
+
+  it("ranks a typed fact above a mediocre prose fact when both lexically match", async () => {
+    await writeChunk(
+      "chunk-000000-z",
+      [
+        {
+          id: "prose",
+          text: "the user mentioned their phone briefly",
+          importance: 0.3,
+          createdAt: NOW,
+          dedupKey: "k:phone_mention",
+        },
+      ],
+      NOW,
+      [
+        {
+          id: "tf-phone",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+    );
+    const result = await retrieveTopK({ query: "phone 555-1234", storage, topK: 5, now: NOW });
+    expect(result[0].tier).toBe("typed");
+    expect(result[0].fact.id).toBe("tf-phone");
+  });
+
+  it("renders typed-fact hits with the ■ marker in formatMemorySection", () => {
+    const result = formatMemorySection([
+      {
+        fact: {
+          id: "tf-1",
+          text: "user:phone = 555-1234",
+          importance: 0.9,
+          createdAt: NOW,
+          dedupKey: "user:phone",
+        },
+        score: 0.78,
+        signals: { lexical: 0.5, importance: 0.9, recency: 1, l3Boost: 0 },
+        chunkId: "chunk-1",
+        tier: "typed",
+      },
+    ]);
+    expect(result).toContain("■ [0.78] user:phone = 555-1234");
   });
 });
 

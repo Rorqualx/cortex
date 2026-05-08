@@ -8,9 +8,9 @@ import {
   tokenize,
 } from "./scoring.js";
 import type { Storage } from "./storage.js";
-import type { L2Fact, L3EpochFrontmatter, LongTermFact } from "./types.js";
+import type { L2Fact, L3EpochFrontmatter, LongTermFact, TypedFact } from "./types.js";
 
-export type RetrievalTier = "l2" | "longterm" | "memory-core";
+export type RetrievalTier = "l2" | "longterm" | "memory-core" | "typed";
 
 /**
  * Minimal shape of memory-core's QMD search results that retrieval cares
@@ -75,6 +75,19 @@ export async function retrieveTopK(params: {
         scored.push({ fact, score, signals, chunkId, tier: "l2" });
       }
     }
+    // Typed-fact tier (left brain) — verbatim-grounded values surfaced
+    // alongside prose facts. Score via the same composite formula but with
+    // confidence standing in for importance. Tier boost only applies when
+    // there's an actual topical hit (mirrors the long-term tier's policy).
+    for (const typed of doc.frontmatter.typedFacts ?? []) {
+      const fact = typedFactAsL2Fact(typed);
+      const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
+      const baseScore = composite(signals, config);
+      const score = signals.lexical > 0 ? baseScore + config.weightTypedFactTierBoost : baseScore;
+      if (score > 0) {
+        scored.push({ fact, score, signals, chunkId, tier: "typed" });
+      }
+    }
   }
 
   // Long-term tier — promoted evergreen facts. Skip archived; treat
@@ -135,6 +148,25 @@ function longTermAsL2Fact(lt: LongTermFact): L2Fact {
     importance: lt.importance,
     createdAt: lt.lastConfirmedAt,
     dedupKey: lt.dedupKey,
+  };
+}
+
+/**
+ * Render a typed fact as L2Fact-shaped so it flows through the existing
+ * composite-score pipeline. Text combines slot + value (+ unit) so lexical
+ * matching catches both "what's my pi-hole IP" (slot tokens) and
+ * "192.168.50.128" (value tokens). Confidence stands in for importance.
+ */
+function typedFactAsL2Fact(typed: TypedFact): L2Fact {
+  const text = typed.unit
+    ? `${typed.slot} = ${typed.value} ${typed.unit}`
+    : `${typed.slot} = ${typed.value}`;
+  return {
+    id: typed.id,
+    text,
+    importance: typed.confidence,
+    createdAt: typed.createdAt,
+    dedupKey: typed.slot,
   };
 }
 
@@ -223,6 +255,8 @@ function tierMarker(tier: RetrievalTier): string {
       return "★";
     case "memory-core":
       return "◆";
+    case "typed":
+      return "■";
     case "l2":
       return "·";
   }
