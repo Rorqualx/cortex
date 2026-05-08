@@ -499,6 +499,43 @@ describe("retrieveTopK typed-fact tier", () => {
     expect(result[0].fact.id).toBe("tf-phone");
   });
 
+  it("renders relative ages and a guidance prelude when `now` is provided", () => {
+    const result = formatMemorySection(
+      [
+        {
+          fact: {
+            id: "f-fresh",
+            text: "balance is 750",
+            importance: 0.7,
+            createdAt: NOW - 2 * 86400000,
+            dedupKey: "k:fresh",
+          },
+          score: 0.8,
+          signals: { lexical: 0.5, importance: 0.7, recency: 1, l3Boost: 0 },
+          chunkId: "chunk-1",
+          tier: "l2",
+        },
+        {
+          fact: {
+            id: "f-stale",
+            text: "balance is 500",
+            importance: 0.6,
+            createdAt: NOW - 30 * 86400000,
+            dedupKey: "k:stale",
+          },
+          score: 0.5,
+          signals: { lexical: 0.4, importance: 0.6, recency: 0.05, l3Boost: 0 },
+          chunkId: "chunk-2",
+          tier: "l2",
+        },
+      ],
+      { now: NOW },
+    );
+    expect(result).toContain("(2d ago) balance is 750");
+    expect(result).toContain("(4w ago) balance is 500");
+    expect(result).toContain("prefer the one with the more recent timestamp");
+  });
+
   it("renders typed-fact hits with the ■ marker in formatMemorySection", () => {
     const result = formatMemorySection([
       {

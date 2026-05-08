@@ -176,7 +176,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
     });
     if (top.length === 0) return undefined;
-    return formatMemorySection(top);
+    return formatMemorySection(top, { now: Date.now() });
   }
 
   private resolveMemoryCoreLookup(): MemoryCoreLookup | undefined {

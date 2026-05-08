@@ -291,13 +291,38 @@ function chunkSeq(chunkId: string): number | null {
   return m ? Number.parseInt(m[1], 10) : null;
 }
 
-export function formatMemorySection(facts: ReadonlyArray<RetrievedFact>): string {
+export function formatMemorySection(
+  facts: ReadonlyArray<RetrievedFact>,
+  options?: { now?: number },
+): string {
   if (facts.length === 0) return "";
+  const now = options?.now;
   const lines = facts.map((r) => {
     const marker = tierMarker(r.tier);
-    return `- ${marker} [${r.score.toFixed(2)}] ${r.fact.text}`;
+    const age = now !== undefined ? ` ${formatRelativeAge(now - r.fact.createdAt)}` : "";
+    return `- ${marker} [${r.score.toFixed(2)}]${age} ${r.fact.text}`;
   });
-  return `## Memory (hierarchical-l3)\n${lines.join("\n")}`;
+  // Guidance prelude: tells the agent how to use the facts. Stays passive
+  // ("draw on these"), respects the agent's own answer style — no hard rules
+  // about UNKNOWN handling, since live users want honest abstention.
+  // The "prefer recent" line addresses stale-fact conflicts (knowledge-update
+  // class) without forcing a guess.
+  const prelude =
+    "Draw on these recalled facts when relevant. When two facts give conflicting values, prefer the one with the more recent timestamp.";
+  return `## Memory (hierarchical-l3)\n${prelude}\n\n${lines.join("\n")}`;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function formatRelativeAge(ageMs: number): string {
+  if (!Number.isFinite(ageMs) || ageMs < 0) return "(now)";
+  const days = ageMs / MS_PER_DAY;
+  if (days < 1) return "(today)";
+  if (days < 2) return "(yesterday)";
+  if (days < 14) return `(${Math.round(days)}d ago)`;
+  if (days < 60) return `(${Math.round(days / 7)}w ago)`;
+  if (days < 365) return `(${Math.round(days / 30)}mo ago)`;
+  return `(${(days / 365).toFixed(1)}y ago)`;
 }
 
 function tierMarker(tier: RetrievalTier): string {

@@ -95,6 +95,17 @@ function jaccard(a, b) {
   return union === 0 ? 0 : intersect / union;
 }
 
+function formatRelativeAge(ageMs) {
+  if (!Number.isFinite(ageMs) || ageMs < 0) return "(now)";
+  const days = ageMs / MS_PER_DAY;
+  if (days < 1) return "(today)";
+  if (days < 2) return "(yesterday)";
+  if (days < 14) return `(${Math.round(days)}d ago)`;
+  if (days < 60) return `(${Math.round(days / 7)}w ago)`;
+  if (days < 365) return `(${Math.round(days / 30)}mo ago)`;
+  return `(${(days / 365).toFixed(1)}y ago)`;
+}
+
 // Verbatim from packages/memory-host-sdk/src/host/internal.ts:483-507.
 // Cosine similarity in 0..1 (clamped). Returns 0 on empty/zero vectors.
 function cosineSimilarity(a, b) {
@@ -297,6 +308,7 @@ async function retrieveTopK({ question, facts, typedFacts, now, k }) {
       return {
         kind: c.kind,
         text: c.text,
+        createdAt: c.createdAt,
         score: rrf + tierBoost + impPrior,
         lexRank: lexRank[i],
         semRank: semRank[i],
@@ -346,8 +358,14 @@ async function runQuestion({ apiKey, question }) {
     now: questionTime,
     k: TOP_K,
   });
-  const memorySection = top.map((r) => `- ${r.kind === "typed" ? "■" : "·"} ${r.text}`).join("\n");
-  const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n</memory>\n\nQuestion: ${question.question}`;
+  const memorySection = top
+    .map((r) => {
+      const marker = r.kind === "typed" ? "■" : "·";
+      const age = r.createdAt ? ` ${formatRelativeAge(questionTime - r.createdAt)}` : "";
+      return `- ${marker}${age} ${r.text}`;
+    })
+    .join("\n");
+  const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n\nWhen two facts give conflicting values, prefer the one with the more recent timestamp.\n</memory>\n\nQuestion: ${question.question}`;
   const rawAnswer = (await callGlm({ apiKey, systemPrompt: ANSWER_SYSTEM_PROMPT, userPrompt }))
     .replace(/^```[\s\S]*?\n|```$/g, "")
     .trim();
