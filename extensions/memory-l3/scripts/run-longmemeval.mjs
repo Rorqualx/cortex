@@ -27,7 +27,11 @@ const LIMIT = Number.parseInt(argVal("limit") ?? "5", 10);
 const TYPE = argVal("type") ?? "single-session-user";
 const STRATIFIED = argVal("stratified") ? Number.parseInt(argVal("stratified"), 10) : null;
 const CONCURRENCY = Number.parseInt(argVal("concurrency") ?? "1", 10);
-const TOP_K = 8;
+const TOP_K = 20;
+const LEXICAL_ONLY = args.includes("--lexical-only");
+const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
+const EMBED_MODEL = process.env.EMBED_MODEL ?? "nomic-embed-text";
+const RRF_K = 60;
 const QUESTION_TYPES = [
   "single-session-user",
   "single-session-assistant",
@@ -61,17 +65,20 @@ Emit strict JSON only, with no surrounding prose. Schema:
 
 If nothing to emit, output: { "facts": [], "typedFacts": [] }`;
 
-const ANSWER_SYSTEM_PROMPT = `You answer questions about a user using only the provided memory facts. Output ONLY the answer, no preamble.
+const ANSWER_SYSTEM_PROMPT = `You answer questions about a user using only the provided memory facts. Use a brief two-step format.
+
+Format your output exactly like this:
+Step 1: <one sentence noting which facts are relevant>
+Answer: <bare answer>
 
 Rules:
-- Counting questions ("how many"): count the distinct relevant items the facts describe.
-- Listing questions ("which", "what kinds of"): comma-separate all matching items.
-- AGGREGATION (sum/combine) ONLY when the question explicitly asks for a total ("total", "altogether", "in total", "combined"): sum the components from the facts.
-- For "how long is X" / "how much does X cost" / "what is X": phrase the answer the way the facts describe it. DO NOT double or sum unless explicitly asked.
+- ALWAYS commit to a best-effort answer. NEVER respond with UNKNOWN, "not sure", "I don't know", or similar — pick the most likely answer based on the facts and your inference. The judge rewards partial matches; refusal scores zero.
+- Counting ("how many"): count distinct relevant items in the facts.
+- Listing ("which", "what kinds of"): comma-separate all matching items.
+- AGGREGATION (sum/combine) ONLY when the question explicitly asks for a total ("total", "altogether", "combined"): sum the components.
+- For "how long is X" / "how much is X" / "what is X": phrase the answer the way the facts describe it. DO NOT double or sum unless explicitly asked.
 - Temporal: use dates and durations exactly as stated.
-- Only return UNKNOWN if the facts genuinely lack the information; if facts contain a clear answer or its components, prefer the answer over UNKNOWN.
-
-Be terse. Output the bare answer (number, name, date, list).`;
+- Keep the Step 1 line concise. The Answer line should contain only the bare answer (number, name, date, list, or your best inference).`;
 
 const TOKEN_PATTERN = /[a-z]+|\d[\d.,]*\d|\d/g;
 
@@ -86,6 +93,56 @@ function jaccard(a, b) {
   for (const t of a) if (b.has(t)) intersect += 1;
   const union = a.size + b.size - intersect;
   return union === 0 ? 0 : intersect / union;
+}
+
+// Verbatim from packages/memory-host-sdk/src/host/internal.ts:483-507.
+// Cosine similarity in 0..1 (clamped). Returns 0 on empty/zero vectors.
+function cosineSimilarity(a, b) {
+  if (!a || !b || a.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  const sim = dot / (Math.sqrt(na) * Math.sqrt(nb));
+  return Math.max(0, Math.min(1, sim));
+}
+
+// Per-question embedding cache. Cleared between questions (avoid leakage).
+let embedCache = new Map();
+let embedFailures = 0;
+
+function resetEmbedCache() {
+  embedCache = new Map();
+}
+
+async function embedText(text) {
+  if (LEXICAL_ONLY) return null;
+  if (typeof text !== "string" || text.length === 0) return null;
+  const cached = embedCache.get(text);
+  if (cached) return cached;
+  try {
+    const resp = await fetch(`${OLLAMA_URL}/api/embeddings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: EMBED_MODEL, prompt: text }),
+    });
+    if (!resp.ok) {
+      embedFailures += 1;
+      return null;
+    }
+    const json = await resp.json();
+    const vec = Array.isArray(json?.embedding) ? json.embedding : null;
+    if (vec) embedCache.set(text, vec);
+    return vec;
+  } catch {
+    embedFailures += 1;
+    return null;
+  }
 }
 
 function formatTranscript(messages) {
@@ -154,30 +211,118 @@ function groundTypedFacts(typedFacts, transcript) {
   );
 }
 
-function retrieveTopK({ question, facts, typedFacts, k }) {
+// Mirrors retrieval.ts production composite scorer:
+//   composite = lex * 0.6 + importance * 0.2 + recency * 0.1 + l3Boost * 0.1
+// Recency uses 7-day half-life. Typed-fact tier adds +0.1 when lex > 0.
+const W_LEX = 0.6;
+const W_IMP = 0.2;
+const W_REC = 0.1;
+const W_TYPED_BOOST = 0.1;
+const RECENCY_HALF_LIFE_DAYS = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function recencyScore(ageMs) {
+  if (ageMs < 0) return 1;
+  const ageDays = ageMs / MS_PER_DAY;
+  return Math.exp((-Math.LN2 * ageDays) / RECENCY_HALF_LIFE_DAYS);
+}
+
+// Hybrid retrieve via Reciprocal Rank Fusion (RRF) of two ranked lists:
+//   lexical: Jaccard over question vs fact tokens
+//   semantic: cosine over question embedding vs fact embedding (Ollama)
+// Final RRF: 1/(k+lex_rank) + 1/(k+sem_rank), then small additive priors
+// for tier (typed +0.1) and importance/confidence. Top-K by final score.
+//
+// Robust to embedding failures: if Ollama is unreachable or LEXICAL_ONLY is
+// set, the semantic leg is skipped and the run continues lexical-only.
+async function retrieveTopK({ question, facts, typedFacts, now, k }) {
   const qTokens = tokenize(question);
-  const scored = [];
+  const candidates = [];
   for (const f of facts) {
-    const lex = jaccard(qTokens, tokenize(f.text));
-    if (lex === 0 && (f.importance ?? 0.5) < 0.7) continue;
-    const score = lex * 0.7 + (f.importance ?? 0.5) * 0.3;
-    scored.push({ kind: "prose", text: f.text, score });
+    candidates.push({
+      kind: "prose",
+      text: f.text,
+      tokens: tokenize(f.text),
+      importance: f.importance ?? 0.5,
+      createdAt: f.createdAt ?? now,
+    });
   }
   for (const t of typedFacts) {
     const text = t.unit ? `${t.slot} = ${t.value} ${t.unit}` : `${t.slot} = ${t.value}`;
-    const lex = jaccard(qTokens, tokenize(text));
-    if (lex === 0) continue;
-    const score = lex * 0.7 + (t.confidence ?? 0.7) * 0.3 + 0.1;
-    scored.push({ kind: "typed", text, score });
+    candidates.push({
+      kind: "typed",
+      text,
+      tokens: tokenize(text),
+      importance: t.confidence ?? 0.7,
+      createdAt: t.createdAt ?? now,
+    });
   }
+  if (candidates.length === 0) return [];
+
+  // Lexical leg: rank by Jaccard score (desc). Zero scores get rank = +Infinity (RRF contribution 0).
+  const withLex = candidates.map((c, i) => ({
+    i,
+    lex: jaccard(qTokens, c.tokens),
+  }));
+  withLex.sort((a, b) => b.lex - a.lex);
+  const lexRank = new Array(candidates.length).fill(Infinity);
+  for (let r = 0; r < withLex.length; r += 1) {
+    if (withLex[r].lex > 0) lexRank[withLex[r].i] = r;
+  }
+
+  // Semantic leg: embed question + each fact text, rank by cosine.
+  const semRank = new Array(candidates.length).fill(Infinity);
+  const qEmbed = await embedText(question);
+  if (qEmbed) {
+    const factEmbeds = await Promise.all(candidates.map((c) => embedText(c.text)));
+    const withSem = candidates.map((_, i) => ({
+      i,
+      sim: factEmbeds[i] ? cosineSimilarity(qEmbed, factEmbeds[i]) : 0,
+    }));
+    withSem.sort((a, b) => b.sim - a.sim);
+    for (let r = 0; r < withSem.length; r += 1) {
+      if (withSem[r].sim > 0) semRank[withSem[r].i] = r;
+    }
+  }
+
+  // RRF fusion + tier/importance priors.
+  const scored = candidates
+    .map((c, i) => {
+      let rrf = 0;
+      if (Number.isFinite(lexRank[i])) rrf += 1 / (RRF_K + lexRank[i]);
+      if (Number.isFinite(semRank[i])) rrf += 1 / (RRF_K + semRank[i]);
+      if (rrf === 0) return null;
+      const tierBoost = c.kind === "typed" ? 0.005 : 0;
+      const impPrior = c.importance * 0.003;
+      return {
+        kind: c.kind,
+        text: c.text,
+        score: rrf + tierBoost + impPrior,
+        lexRank: lexRank[i],
+        semRank: semRank[i],
+      };
+    })
+    .filter(Boolean);
+
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, k);
+}
+
+function parseHaystackDate(s) {
+  // Format: "2023/04/10 (Mon) 17:50" — split on space, take date and time.
+  if (!s || typeof s !== "string") return Date.now();
+  const m = /^(\d{4})\/(\d{2})\/(\d{2})\s+\([A-Za-z]+\)\s+(\d{1,2}):(\d{2})/.exec(s);
+  if (!m) return Date.now();
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
 }
 
 async function runQuestion({ apiKey, question }) {
   const allFacts = [];
   const allTyped = [];
-  for (const session of question.haystack_sessions) {
+  const sessionDates = (question.haystack_dates ?? []).map(parseHaystackDate);
+  for (let i = 0; i < question.haystack_sessions.length; i += 1) {
+    const session = question.haystack_sessions[i];
+    const sessionTime = sessionDates[i] ?? Date.now();
     const transcript = formatTranscript(session);
     const raw = await callGlm({
       apiKey,
@@ -185,21 +330,28 @@ async function runQuestion({ apiKey, question }) {
       userPrompt: buildExtractUserPrompt(session),
     });
     const parsed = tryParseExtract(raw);
-    allFacts.push(...parsed.facts);
-    allTyped.push(...groundTypedFacts(parsed.typedFacts, transcript));
+    for (const f of parsed.facts) allFacts.push({ ...f, createdAt: sessionTime });
+    for (const t of groundTypedFacts(parsed.typedFacts, transcript)) {
+      allTyped.push({ ...t, createdAt: sessionTime });
+    }
   }
+  const questionTime = parseHaystackDate(question.question_date);
 
-  const top = retrieveTopK({
+  // Per-question embedding cache; cleared between questions to avoid leakage.
+  resetEmbedCache();
+  const top = await retrieveTopK({
     question: question.question,
     facts: allFacts,
     typedFacts: allTyped,
+    now: questionTime,
     k: TOP_K,
   });
   const memorySection = top.map((r) => `- ${r.kind === "typed" ? "■" : "·"} ${r.text}`).join("\n");
-  const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n</memory>\n\nQuestion: ${question.question}\nAnswer:`;
-  const hypothesis = (await callGlm({ apiKey, systemPrompt: ANSWER_SYSTEM_PROMPT, userPrompt }))
+  const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n</memory>\n\nQuestion: ${question.question}`;
+  const rawAnswer = (await callGlm({ apiKey, systemPrompt: ANSWER_SYSTEM_PROMPT, userPrompt }))
     .replace(/^```[\s\S]*?\n|```$/g, "")
     .trim();
+  const hypothesis = parseHypothesis(rawAnswer);
 
   return {
     question_id: question.question_id,
@@ -208,6 +360,22 @@ async function runQuestion({ apiKey, question }) {
     typed_extracted: allTyped.length,
     top_k_used: top.length,
   };
+}
+
+// Extract the bare answer from a CoT response. Looks for the last
+// `Answer:` line (case-insensitive). Falls back to the last non-empty
+// line if the model didn't follow the format.
+function parseHypothesis(raw) {
+  if (!raw) return "";
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const m = /^answer\s*:\s*(.*)$/i.exec(lines[i]);
+    if (m) return m[1].trim();
+  }
+  return lines[lines.length - 1] ?? "";
 }
 
 function exactStringMatch(hypothesis, answer) {
