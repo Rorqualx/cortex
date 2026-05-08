@@ -533,7 +533,7 @@ describe("retrieveTopK typed-fact tier", () => {
     );
     expect(result).toContain("(2d ago) balance is 750");
     expect(result).toContain("(4w ago) balance is 500");
-    expect(result).toContain("prefer the one with the more recent timestamp");
+    expect(result).toContain("when each fact was *noted*");
   });
 
   it("renders typed-fact hits with the ■ marker in formatMemorySection", () => {

@@ -365,7 +365,7 @@ async function runQuestion({ apiKey, question }) {
       return `- ${marker}${age} ${r.text}`;
     })
     .join("\n");
-  const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n\nWhen two facts give conflicting values, prefer the one with the more recent timestamp.\n</memory>\n\nQuestion: ${question.question}`;
+  const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n\nThe (Nd ago) annotation shows when each fact was *noted*, not when the event happened. Use it only to break ties between two facts that directly contradict (e.g. balance is X vs balance is Y, prefer the more recent recall). For questions about event ordering, durations, or specific dates, the answer lives in the fact text itself.\n</memory>\n\nQuestion: ${question.question}`;
   const rawAnswer = (await callGlm({ apiKey, systemPrompt: ANSWER_SYSTEM_PROMPT, userPrompt }))
     .replace(/^```[\s\S]*?\n|```$/g, "")
     .trim();

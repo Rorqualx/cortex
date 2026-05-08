@@ -305,10 +305,12 @@ export function formatMemorySection(
   // Guidance prelude: tells the agent how to use the facts. Stays passive
   // ("draw on these"), respects the agent's own answer style — no hard rules
   // about UNKNOWN handling, since live users want honest abstention.
-  // The "prefer recent" line addresses stale-fact conflicts (knowledge-update
-  // class) without forcing a guess.
+  // The recall-vs-event clarification matters: the parenthetical age is when
+  // the fact was *noted*, not when the event happened. For questions about
+  // event ordering ("which came first") or durations ("how long ago"), the
+  // answer lives in the fact text itself, not in the recall annotation.
   const prelude =
-    "Draw on these recalled facts when relevant. When two facts give conflicting values, prefer the one with the more recent timestamp.";
+    "Draw on these recalled facts when relevant. The (Nd ago) annotation shows when each fact was *noted*, not when the event happened — use it only to break ties between two facts that directly contradict (e.g. balance is X vs balance is Y, prefer the more recent recall). For questions about event ordering, durations, or dates, the answer lives in the fact text itself.";
   return `## Memory (hierarchical-l3)\n${prelude}\n\n${lines.join("\n")}`;
 }
 
