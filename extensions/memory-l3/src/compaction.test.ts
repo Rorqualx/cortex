@@ -33,6 +33,7 @@ describe("compactSession", () => {
     expect(result).toEqual({
       chunkId: null,
       factsAdded: 0,
+      typedFactsAdded: 0,
       tokensBefore: 0,
       messagesIngested: 0,
       epochId: null,
@@ -130,6 +131,54 @@ describe("compactSession", () => {
     const doc = await storage.readL2ChunkAtPath(paths[0]);
     expect(doc?.frontmatter.facts[0].text).toBe("first emission");
     expect(doc?.frontmatter.facts[0].importance).toBe(0.8);
+  });
+
+  it("grounds typed facts against the transcript and persists only those that survive", async () => {
+    buffer.push(
+      "s1",
+      userMsg("My pi-hole is at 192.168.50.128 and the router is at 192.168.50.1."),
+    );
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({
+        facts: [],
+        typedFacts: [
+          {
+            slot: "infra:pi_hole_ip",
+            value: "192.168.50.128",
+            sourceSpan: "pi-hole is at 192.168.50.128",
+            unit: null,
+            confidence: 0.95,
+          },
+          {
+            slot: "infra:router_ip",
+            value: "192.168.50.1",
+            sourceSpan: "router is at 192.168.50.1",
+            unit: null,
+            confidence: 0.95,
+          },
+          {
+            // Hallucinated — value never appeared in the transcript. Must be dropped.
+            slot: "infra:gateway_ip",
+            value: "10.0.0.1",
+            sourceSpan: "gateway at 10.0.0.1",
+            unit: null,
+            confidence: 0.5,
+          },
+        ],
+      }),
+    );
+    await storage.ensureLayout();
+    const result = await compactSession({ sessionId: "s1", buffer, storage, caller, state });
+    expect(result.typedFactsAdded).toBe(2);
+
+    const paths = await storage.listL2ChunkPaths();
+    const doc = await storage.readL2ChunkAtPath(paths[0]);
+    expect(doc?.frontmatter.typedFacts).toHaveLength(2);
+    expect(doc?.frontmatter.typedFacts?.map((t) => t.slot)).toEqual([
+      "infra:pi_hole_ip",
+      "infra:router_ip",
+    ]);
+    expect(doc?.frontmatter.typedFacts?.[0].value).toBe("192.168.50.128");
   });
 
   it("writes the L1 archive with the original messages", async () => {

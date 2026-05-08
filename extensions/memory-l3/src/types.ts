@@ -46,6 +46,30 @@ export type L2Fact = {
 };
 
 /**
+ * A precise, verbatim-grounded fact — the "left brain" complement to the
+ * LLM-distilled prose `L2Fact`. TypedFacts hold exact values (numbers, IDs,
+ * dates, file paths, version strings) that the LLM extractor cannot be
+ * trusted to paraphrase. Each value must pass regex source-grounding:
+ * `value` appears verbatim inside `sourceSpan`, which appears verbatim in
+ * the source transcript.
+ */
+export type TypedFact = {
+  id: string;
+  /** Kebab-case scoped slot name like "user:phone" or "infra:pi_hole_ip". */
+  slot: string;
+  /** The verbatim value as it appeared in the source transcript. */
+  value: string;
+  /** Surrounding context (15-200 chars) containing `value`, used for grounding. */
+  sourceSpan: string;
+  /** Optional unit hint ("USD", "MB", "v", etc). */
+  unit: string | null;
+  /** Extractor confidence 0..1. */
+  confidence: number;
+  /** ms timestamp. */
+  createdAt: number;
+};
+
+/**
  * JSON frontmatter persisted on L2 chunk markdown files. The body of the
  * markdown holds a human-readable summary; the structured data lives here.
  */
@@ -56,6 +80,12 @@ export type L2ChunkFrontmatter = {
   endTurnIndex: number;
   createdAt: number;
   facts: L2Fact[];
+  /**
+   * Precise verbatim-grounded values extracted alongside `facts`. Optional
+   * for backward compat — chunks written before PROMPT_VERSION=4 lack this
+   * field; readers must default to [].
+   */
+  typedFacts?: TypedFact[];
   dedupKeys: string[];
 };
 

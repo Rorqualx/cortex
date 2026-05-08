@@ -6,10 +6,11 @@
 // Usage:
 //   node extensions/memory-l3/scripts/replay-compaction.mjs [archive-path] [--limit=N] [--legacy-v2]
 //
-// Defaults to the most recent failed-extraction archive using the v3 prompt
-// (production). Pass --legacy-v2 to replay with the old v2 prompt + injected
-// already-known keys, which reproduces the over-suppression bug for
-// regression checking.
+// Defaults to the most recent failed-extraction archive using the v4 prompt
+// (production: prose facts + typed facts co-emitted, with regex source-
+// grounding applied to typed facts post-extraction). Pass --legacy-v2 to
+// replay with the old v2 prompt + injected already-known keys, which
+// reproduces the over-suppression bug for regression checking.
 
 import { readFile, readdir } from "node:fs/promises";
 import * as os from "node:os";
@@ -32,16 +33,33 @@ const ARCHIVE_PATH = positional[0] ?? DEFAULT_ARCHIVE;
 const MSG_LIMIT = limitArg ? Number.parseInt(limitArg.split("=")[1], 10) : null;
 
 // Inlined from extensions/memory-l3/src/llm.ts. Kept manually in sync.
-const EXTRACT_SYSTEM_PROMPT_V3 = `You are a memory extraction assistant. Read the conversation chunk and extract distilled facts — durable units of information that should be remembered across future sessions.
+const EXTRACT_SYSTEM_PROMPT_V4 = `You are a memory extraction assistant. Read the conversation chunk and extract two complementary kinds of facts:
 
-Rules (PROMPT_VERSION=3):
-- IMPORTANCE: a 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context details 0.3-0.5; trivia 0.1-0.3.
-- DEDUPKEY: a stable kebab-case key like "user_preference:morning_standups" so future runs can detect duplicates.
+1. PROSE FACTS — durable LLM-distilled units of information for future recall.
+2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY (numbers, IDs, dates, phone numbers, IP addresses, file paths, version strings, URLs, currency amounts).
+
+Rules (PROMPT_VERSION=4):
+- IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
+- DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
+- TYPED FACTS: emit only when a precise verbatim value appears in the conversation. Each typed fact must include:
+  - slot: kebab-case scoped name like "user:phone" or "infra:pi_hole_ip" or "release:version".
+  - value: the EXACT substring from the conversation, character-for-character (case- and whitespace-sensitive).
+  - sourceSpan: surrounding context (15-200 chars) containing value, copied verbatim from the conversation.
+  - unit: optional unit ("USD", "MB", "v", etc) or null.
+  - confidence: 0.0-1.0.
+  Skip typedFacts emission when no verbatim values are present.
 
 Emit strict JSON only, with no surrounding prose. Schema:
-{ "facts": [ { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case" } ] }
+{
+  "facts": [
+    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case" }
+  ],
+  "typedFacts": [
+    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
+  ]
+}
 
-If no new facts to emit, output: { "facts": [] }`;
+If nothing to emit, output: { "facts": [], "typedFacts": [] }`;
 
 // Retained verbatim for regression replay. v2 over-suppressed on long inputs
 // with 20+ keys; do NOT use as the production prompt.
@@ -76,12 +94,15 @@ function formatMessageForPrompt(message) {
   return `${message.role}: ${text}`;
 }
 
-function buildV3UserPrompt(messages) {
-  const transcript = messages
+function formatTranscript(messages) {
+  return messages
     .map(formatMessageForPrompt)
     .filter((s) => s.length > 0)
     .join("\n");
-  return `<conversation>\n${transcript}\n</conversation>\n\nExtract new facts following the rules.`;
+}
+
+function buildV4UserPrompt(messages) {
+  return `<conversation>\n${formatTranscript(messages)}\n</conversation>\n\nExtract new facts following the rules.`;
 }
 
 function buildV2LegacyUserPrompt(messages, alreadyKnownKeys) {
@@ -193,14 +214,39 @@ function tryParse(raw) {
   if (!parsed || typeof parsed !== "object") {
     return { ok: false, reason: "not_object", parsed };
   }
-  if (!Array.isArray(parsed.facts)) {
-    return { ok: false, reason: "no_facts_array", parsed };
-  }
   return {
     ok: true,
-    factCount: parsed.facts.length,
-    sample: parsed.facts.slice(0, 3),
+    factCount: Array.isArray(parsed.facts) ? parsed.facts.length : 0,
+    typedFactCount: Array.isArray(parsed.typedFacts) ? parsed.typedFacts.length : 0,
+    factSample: Array.isArray(parsed.facts) ? parsed.facts.slice(0, 3) : [],
+    typedFactSample: Array.isArray(parsed.typedFacts) ? parsed.typedFacts.slice(0, 5) : [],
   };
+}
+
+function groundTypedFacts(typedFacts, transcript) {
+  const passed = [];
+  const failed = [];
+  for (const t of typedFacts ?? []) {
+    if (
+      typeof t?.value === "string" &&
+      typeof t?.sourceSpan === "string" &&
+      t.value.length > 0 &&
+      t.sourceSpan.length > 0 &&
+      t.sourceSpan.includes(t.value) &&
+      transcript.includes(t.sourceSpan)
+    ) {
+      passed.push(t);
+    } else {
+      let reason = "unknown";
+      if (typeof t?.value !== "string" || t.value.length === 0) reason = "value_empty";
+      else if (typeof t?.sourceSpan !== "string" || t.sourceSpan.length === 0)
+        reason = "span_empty";
+      else if (!t.sourceSpan.includes(t.value)) reason = "value_not_in_span";
+      else if (!transcript.includes(t.sourceSpan)) reason = "span_not_in_transcript";
+      failed.push({ slot: t?.slot, value: t?.value, reason });
+    }
+  }
+  return { passed, failed };
 }
 
 function summarizeContent(messages) {
@@ -244,11 +290,12 @@ async function main() {
   const { key, source } = await resolveZaiKey();
   console.log(`Auth source: ${source} (key ${key.slice(0, 10)}...)`);
 
-  const promptVersion = LEGACY_V2 ? "v2 (legacy regression replay)" : "v3 (production)";
+  const promptVersion = LEGACY_V2 ? "v2 (legacy regression replay)" : "v4 (production)";
   console.log(`Prompt version: ${promptVersion}`);
 
   let userPrompt;
   let systemPrompt;
+  let groundingTranscript = "";
   if (LEGACY_V2) {
     const knownKeys = await loadRecentDedupKeys();
     console.log(
@@ -258,8 +305,9 @@ async function main() {
     userPrompt = buildV2LegacyUserPrompt(messages, knownKeys);
     systemPrompt = EXTRACT_SYSTEM_PROMPT_V2_LEGACY;
   } else {
-    userPrompt = buildV3UserPrompt(messages);
-    systemPrompt = EXTRACT_SYSTEM_PROMPT_V3;
+    groundingTranscript = formatTranscript(messages);
+    userPrompt = buildV4UserPrompt(messages);
+    systemPrompt = EXTRACT_SYSTEM_PROMPT_V4;
   }
 
   const promptBytes = Buffer.byteLength(userPrompt, "utf8");
@@ -289,7 +337,20 @@ async function main() {
   }
 
   console.log(`\n=== Parse outcome ===`);
-  console.log(JSON.stringify(tryParse(result.content), null, 2));
+  const parsed = tryParse(result.content);
+  console.log(JSON.stringify(parsed, null, 2));
+
+  if (!LEGACY_V2 && parsed.ok && parsed.typedFactCount > 0) {
+    const grounding = groundTypedFacts(parsed.typedFactSample, groundingTranscript);
+    console.log(`\n=== Typed-fact grounding ===`);
+    console.log(`  passed: ${grounding.passed.length} / ${parsed.typedFactSample.length}`);
+    if (grounding.failed.length > 0) {
+      console.log(`  failed:`);
+      for (const f of grounding.failed) {
+        console.log(`    - ${f.slot}=${JSON.stringify(f.value)} reason=${f.reason}`);
+      }
+    }
+  }
 }
 
 main().catch((e) => {

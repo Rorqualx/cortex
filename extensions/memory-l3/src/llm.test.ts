@@ -26,12 +26,12 @@ describe("parseJsonResponse", () => {
 });
 
 describe("parseExtractResponse", () => {
-  it("returns [] for non-JSON output", () => {
-    expect(parseExtractResponse("not json")).toEqual([]);
+  it("returns empty result for non-JSON output", () => {
+    expect(parseExtractResponse("not json")).toEqual({ facts: [], typedFacts: [] });
   });
 
-  it("returns [] when facts field is missing", () => {
-    expect(parseExtractResponse("{}")).toEqual([]);
+  it("returns empty result when both arrays are missing", () => {
+    expect(parseExtractResponse("{}")).toEqual({ facts: [], typedFacts: [] });
   });
 
   it("normalizes a valid facts array", () => {
@@ -41,14 +41,15 @@ describe("parseExtractResponse", () => {
         { text: "beta", importance: 1.5, dedupKey: "k:2" },
       ],
     });
-    const facts = parseExtractResponse(raw);
-    expect(facts).toEqual([
+    const result = parseExtractResponse(raw);
+    expect(result.facts).toEqual([
       { text: "alpha", importance: 0.7, dedupKey: "k:1" },
       { text: "beta", importance: 1, dedupKey: "k:2" },
     ]);
+    expect(result.typedFacts).toEqual([]);
   });
 
-  it("drops malformed entries (missing text or dedupKey)", () => {
+  it("drops malformed prose entries (missing text or dedupKey)", () => {
     const raw = JSON.stringify({
       facts: [
         { text: "ok", importance: 0.5, dedupKey: "valid" },
@@ -57,48 +58,124 @@ describe("parseExtractResponse", () => {
         { importance: 0.5, dedupKey: "no-text" },
       ],
     });
-    const facts = parseExtractResponse(raw);
-    expect(facts).toHaveLength(1);
-    expect(facts[0].dedupKey).toBe("valid");
+    const result = parseExtractResponse(raw);
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0].dedupKey).toBe("valid");
   });
 
   it("defaults missing importance to 0.5", () => {
+    const raw = JSON.stringify({ facts: [{ text: "ok", dedupKey: "k:1" }] });
+    const result = parseExtractResponse(raw);
+    expect(result.facts[0].importance).toBe(0.5);
+  });
+
+  it("normalizes a valid typedFacts array", () => {
     const raw = JSON.stringify({
-      facts: [{ text: "ok", dedupKey: "k:1" }],
+      facts: [],
+      typedFacts: [
+        {
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my number is 555-1234",
+          unit: null,
+          confidence: 0.9,
+        },
+        {
+          slot: "infra:port",
+          value: "18789",
+          sourceSpan: "listening on 18789",
+          unit: "tcp",
+          confidence: 0.7,
+        },
+      ],
     });
-    const facts = parseExtractResponse(raw);
-    expect(facts[0].importance).toBe(0.5);
+    const result = parseExtractResponse(raw);
+    expect(result.typedFacts).toEqual([
+      {
+        slot: "user:phone",
+        value: "555-1234",
+        sourceSpan: "my number is 555-1234",
+        unit: null,
+        confidence: 0.9,
+      },
+      {
+        slot: "infra:port",
+        value: "18789",
+        sourceSpan: "listening on 18789",
+        unit: "tcp",
+        confidence: 0.7,
+      },
+    ]);
+  });
+
+  it("drops malformed typed-fact entries (missing slot/value/sourceSpan)", () => {
+    const raw = JSON.stringify({
+      typedFacts: [
+        { slot: "ok", value: "1", sourceSpan: "v=1", unit: null, confidence: 0.5 },
+        { slot: "no-value", sourceSpan: "x", confidence: 0.5 },
+        { slot: "", value: "1", sourceSpan: "v=1", confidence: 0.5 },
+        { slot: "no-span", value: "1", confidence: 0.5 },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.typedFacts).toHaveLength(1);
+    expect(result.typedFacts[0].slot).toBe("ok");
+  });
+
+  it("clamps confidence into [0,1] and treats empty-string unit as null", () => {
+    const raw = JSON.stringify({
+      typedFacts: [
+        { slot: "x", value: "5", sourceSpan: "v=5", unit: "  ", confidence: 1.7 },
+        { slot: "y", value: "10", sourceSpan: "v=10", unit: "MB", confidence: -0.1 },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.typedFacts[0].unit).toBeNull();
+    expect(result.typedFacts[0].confidence).toBe(1);
+    expect(result.typedFacts[1].unit).toBe("MB");
+    expect(result.typedFacts[1].confidence).toBe(0);
   });
 });
 
 describe("extractFacts", () => {
-  it("calls the caller with the extract system prompt and returns parsed facts", async () => {
+  it("calls the caller with the v4 system prompt and returns parsed result", async () => {
     const caller = vi.fn(async () =>
       JSON.stringify({
         facts: [
           { text: "user prefers morning standups", importance: 0.8, dedupKey: "user:standups" },
         ],
+        typedFacts: [
+          {
+            slot: "user:phone",
+            value: "555-1234",
+            sourceSpan: "my number is 555-1234",
+            unit: null,
+            confidence: 0.9,
+          },
+        ],
       }),
     );
-    const facts = await extractFacts({
+    const result = await extractFacts({
       messages: [{ role: "user", content: "morning standups please" }] as never[],
       caller,
     });
-    expect(facts).toHaveLength(1);
-    expect(facts[0].text).toBe("user prefers morning standups");
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0].text).toBe("user prefers morning standups");
+    expect(result.typedFacts).toHaveLength(1);
+    expect(result.typedFacts[0].slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0][0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=3");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=4");
     expect(call.userPrompt).not.toContain("already-known");
   });
 
-  it("returns [] when caller returns empty/garbage", async () => {
+  it("returns empty result when caller returns empty/garbage", async () => {
     const caller = vi.fn(async () => "");
-    const facts = await extractFacts({
+    const result = await extractFacts({
       messages: [{ role: "user", content: "hi" }] as never[],
       caller,
     });
-    expect(facts).toEqual([]);
+    expect(result).toEqual({ facts: [], typedFacts: [] });
   });
 });
 

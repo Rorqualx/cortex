@@ -50,22 +50,39 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
   };
 }
 
-// PROMPT_VERSION = 3 — drops the in-prompt already-known list. v2 sent the
-// recent dedup keys to the LLM with a "skip silently" rule; on long inputs
-// with 20+ keys, GLM-5.1 over-applied the rule and returned {"facts": []}
-// for content that genuinely contained new facts (verified via
-// scripts/replay-compaction.mjs A/B test). Dedup now happens post-hoc via
-// dropAlreadyKnown in dedup.ts — the LLM never sees the suppression list.
-const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract distilled facts — durable units of information that should be remembered across future sessions.
+// PROMPT_VERSION = 4 — co-emits prose facts AND verbatim typed facts in a
+// single LLM call (Mem0/HippoRAG2 pattern). Prose facts are LLM-distilled
+// (right brain); typed facts are exact-string values that must pass regex
+// source-grounding (left brain) before they hit storage. v3's drop-the-
+// already-known-list change is preserved as the prose-fact rule set; v4
+// adds the typed-fact schema alongside.
+const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract two complementary kinds of facts:
 
-Rules (PROMPT_VERSION=3):
-- IMPORTANCE: a 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context details 0.3-0.5; trivia 0.1-0.3.
-- DEDUPKEY: a stable kebab-case key like "user_preference:morning_standups" so future runs can detect duplicates.
+1. PROSE FACTS — durable LLM-distilled units of information for future recall.
+2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY (numbers, IDs, dates, phone numbers, IP addresses, file paths, version strings, URLs, currency amounts).
+
+Rules (PROMPT_VERSION=4):
+- IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
+- DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
+- TYPED FACTS: emit only when a precise verbatim value appears in the conversation. Each typed fact must include:
+  - slot: kebab-case scoped name like "user:phone" or "infra:pi_hole_ip" or "release:version".
+  - value: the EXACT substring from the conversation, character-for-character (case- and whitespace-sensitive).
+  - sourceSpan: surrounding context (15-200 chars) containing value, copied verbatim from the conversation.
+  - unit: optional unit ("USD", "MB", "v", etc) or null.
+  - confidence: 0.0-1.0.
+  Skip typedFacts emission when no verbatim values are present.
 
 Emit strict JSON only, with no surrounding prose. Schema:
-{ "facts": [ { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case" } ] }
+{
+  "facts": [
+    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case" }
+  ],
+  "typedFacts": [
+    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
+  ]
+}
 
-If no new facts to emit, output: { "facts": [] }`;
+If nothing to emit, output: { "facts": [], "typedFacts": [] }`;
 
 export type ExtractedFact = {
   text: string;
@@ -73,10 +90,23 @@ export type ExtractedFact = {
   dedupKey: string;
 };
 
+export type ExtractedTypedFact = {
+  slot: string;
+  value: string;
+  sourceSpan: string;
+  unit: string | null;
+  confidence: number;
+};
+
+export type ExtractResult = {
+  facts: ExtractedFact[];
+  typedFacts: ExtractedTypedFact[];
+};
+
 export async function extractFacts(params: {
   messages: ReadonlyArray<AgentMessage>;
   caller: LlmCaller;
-}): Promise<ExtractedFact[]> {
+}): Promise<ExtractResult> {
   const userPrompt = buildExtractUserPrompt(params.messages);
   const raw = await params.caller({
     systemPrompt: EXTRACT_SYSTEM_PROMPT,
@@ -86,23 +116,29 @@ export async function extractFacts(params: {
   return parseExtractResponse(raw);
 }
 
-export function parseExtractResponse(raw: string): ExtractedFact[] {
+export function parseExtractResponse(raw: string): ExtractResult {
   let parsed: unknown;
   try {
     parsed = parseJsonResponse(raw);
   } catch (e) {
     debugLog(`extract: JSON parse failed (${(e as Error).message}); raw=${summarizeRaw(raw)}`);
-    return [];
+    return { facts: [], typedFacts: [] };
   }
-  if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    !Array.isArray((parsed as { facts?: unknown }).facts)
-  ) {
-    debugLog(`extract: response missing "facts" array; raw=${summarizeRaw(raw)}`);
-    return [];
+  if (!parsed || typeof parsed !== "object") {
+    debugLog(`extract: response not an object; raw=${summarizeRaw(raw)}`);
+    return { facts: [], typedFacts: [] };
   }
-  return normalizeFacts(parsed);
+  const obj = parsed as { facts?: unknown; typedFacts?: unknown };
+  if (!Array.isArray(obj.facts) && !Array.isArray(obj.typedFacts)) {
+    debugLog(
+      `extract: response missing both "facts" and "typedFacts" arrays; raw=${summarizeRaw(raw)}`,
+    );
+    return { facts: [], typedFacts: [] };
+  }
+  return {
+    facts: Array.isArray(obj.facts) ? normalizeFacts(obj.facts) : [],
+    typedFacts: Array.isArray(obj.typedFacts) ? normalizeTypedFacts(obj.typedFacts) : [],
+  };
 }
 
 // Gated on OPENCLAW_MEMORY_L3_DEBUG=1 to keep tests quiet by default; when on,
@@ -125,14 +161,7 @@ export function parseJsonResponse(raw: string): unknown {
   return JSON.parse(fenced ? fenced[1] : trimmed);
 }
 
-function normalizeFacts(parsed: unknown): ExtractedFact[] {
-  if (!parsed || typeof parsed !== "object" || !("facts" in parsed)) {
-    return [];
-  }
-  const facts = (parsed as { facts: unknown }).facts;
-  if (!Array.isArray(facts)) {
-    return [];
-  }
+function normalizeFacts(facts: ReadonlyArray<unknown>): ExtractedFact[] {
   const out: ExtractedFact[] = [];
   for (const candidate of facts) {
     if (!candidate || typeof candidate !== "object") continue;
@@ -151,11 +180,44 @@ function normalizeFacts(parsed: unknown): ExtractedFact[] {
   return out;
 }
 
-function buildExtractUserPrompt(messages: ReadonlyArray<AgentMessage>): string {
-  const transcript = messages
+function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[] {
+  const out: ExtractedTypedFact[] = [];
+  for (const candidate of facts) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const o = candidate as Record<string, unknown>;
+    if (typeof o.slot !== "string" || typeof o.value !== "string") continue;
+    if (typeof o.sourceSpan !== "string") continue;
+    const slot = o.slot.trim();
+    const value = o.value;
+    const sourceSpan = o.sourceSpan;
+    if (slot.length === 0 || value.length === 0 || sourceSpan.length === 0) continue;
+    const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
+    const unit = typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null;
+    out.push({
+      slot,
+      value,
+      sourceSpan,
+      unit,
+      confidence: Math.max(0, Math.min(1, confidenceRaw)),
+    });
+  }
+  return out;
+}
+
+/**
+ * Format the same transcript string the LLM sees in the user prompt, so
+ * grounding can verify typed-fact spans against the exact text that was
+ * shown to the model.
+ */
+export function formatTranscriptForPrompt(messages: ReadonlyArray<AgentMessage>): string {
+  return messages
     .map(formatMessageForPrompt)
     .filter((s) => s.length > 0)
     .join("\n");
+}
+
+function buildExtractUserPrompt(messages: ReadonlyArray<AgentMessage>): string {
+  const transcript = formatTranscriptForPrompt(messages);
   return `<conversation>\n${transcript}\n</conversation>\n\nExtract new facts following the rules.`;
 }
 

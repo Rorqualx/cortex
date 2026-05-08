@@ -2,14 +2,21 @@ import { randomUUID } from "node:crypto";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { dedupWithinChunk, dropAlreadyKnown, liftToL2Fact } from "./dedup.js";
 import { maybeWriteEpoch } from "./epoch.js";
+import { groundAndDedupTypedFacts } from "./grounding.js";
 import type { IngestBuffer } from "./ingest.js";
-import { extractFacts, type LlmCaller } from "./llm.js";
+import {
+  extractFacts,
+  type ExtractedTypedFact,
+  formatTranscriptForPrompt,
+  type LlmCaller,
+} from "./llm.js";
 import type { Storage } from "./storage.js";
-import type { L2ChunkFrontmatter, L2Fact, L3State } from "./types.js";
+import type { L2ChunkFrontmatter, L2Fact, L3State, TypedFact } from "./types.js";
 
 export type CompactionResult = {
   chunkId: string | null;
   factsAdded: number;
+  typedFactsAdded: number;
   tokensBefore: number;
   messagesIngested: number;
   epochId: string | null;
@@ -30,7 +37,14 @@ export async function compactSession(params: {
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
   if (messages.length === 0) {
-    return { chunkId: null, factsAdded: 0, tokensBefore: 0, messagesIngested: 0, epochId: null };
+    return {
+      chunkId: null,
+      factsAdded: 0,
+      typedFactsAdded: 0,
+      tokensBefore: 0,
+      messagesIngested: 0,
+      epochId: null,
+    };
   }
 
   const alreadyKnownSet = new Set(await readRecentDedupKeys(params.storage));
@@ -40,12 +54,19 @@ export async function compactSession(params: {
     caller: params.caller,
   });
 
-  const filtered = dropAlreadyKnown(extracted, alreadyKnownSet);
+  const filtered = dropAlreadyKnown(extracted.facts, alreadyKnownSet);
   const deduped = dedupWithinChunk(filtered);
+
+  // Verbatim source-grounding for typed facts: the LLM's claimed values
+  // must appear inside the original transcript character-for-character.
+  // Anything that fails grounding is hallucinated and dropped silently.
+  const transcript = formatTranscriptForPrompt(messages);
+  const groundedTyped = groundAndDedupTypedFacts(extracted.typedFacts, transcript);
 
   const now = params.now ?? Date.now();
   const chunkId = nextChunkId(params.state);
   const facts: L2Fact[] = deduped.map((f) => liftToL2Fact(f, now));
+  const typedFacts: TypedFact[] = groundedTyped.map((t) => liftToTypedFact(t, now));
 
   const frontmatter: L2ChunkFrontmatter = {
     id: chunkId,
@@ -54,10 +75,11 @@ export async function compactSession(params: {
     endTurnIndex: messages.length,
     createdAt: now,
     facts,
+    typedFacts,
     dedupKeys: facts.map((f) => f.dedupKey),
   };
 
-  await params.storage.writeL2Chunk(frontmatter, formatChunkBody(messages, facts));
+  await params.storage.writeL2Chunk(frontmatter, formatChunkBody(messages, facts, typedFacts));
 
   for (const message of messages) {
     await params.storage.appendL1Archive(chunkId, message);
@@ -77,9 +99,22 @@ export async function compactSession(params: {
   return {
     chunkId,
     factsAdded: facts.length,
+    typedFactsAdded: typedFacts.length,
     tokensBefore,
     messagesIngested: messages.length,
     epochId,
+  };
+}
+
+function liftToTypedFact(extracted: ExtractedTypedFact, createdAt: number): TypedFact {
+  return {
+    id: `tf-${randomUUID().slice(0, 8)}`,
+    slot: extracted.slot,
+    value: extracted.value,
+    sourceSpan: extracted.sourceSpan,
+    unit: extracted.unit,
+    confidence: extracted.confidence,
+    createdAt,
   };
 }
 
@@ -106,11 +141,21 @@ function nextChunkId(state: L3State): string {
 function formatChunkBody(
   messages: ReadonlyArray<AgentMessage>,
   facts: ReadonlyArray<L2Fact>,
+  typedFacts: ReadonlyArray<TypedFact>,
 ): string {
   const factSection =
     facts.length > 0
       ? `## Facts\n${facts.map((f) => `- [${f.importance.toFixed(2)}] ${f.text}`).join("\n")}`
       : "## Facts\n(none extracted)";
+  const typedSection =
+    typedFacts.length > 0
+      ? `## Typed facts (verbatim)\n${typedFacts
+          .map(
+            (t) =>
+              `- \`${t.slot}\` = \`${t.value}\`${t.unit ? ` ${t.unit}` : ""} (conf ${t.confidence.toFixed(2)})`,
+          )
+          .join("\n")}`
+      : "";
   const summarySection = `## Conversation\n${messages.length} message(s) compacted.`;
-  return `${factSection}\n\n${summarySection}`;
+  return [factSection, typedSection, summarySection].filter((s) => s.length > 0).join("\n\n");
 }
