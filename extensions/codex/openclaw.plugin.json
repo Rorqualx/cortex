@@ -38,6 +38,11 @@
         "enum": ["native-first", "openclaw-compat"],
         "default": "native-first"
       },
+      "codexDynamicToolsLoading": {
+        "type": "string",
+        "enum": ["searchable", "direct"],
+        "default": "searchable"
+      },
       "codexDynamicToolsExclude": {
         "type": "array",
         "items": { "type": "string" },
@@ -130,6 +135,11 @@
             "minimum": 1,
             "default": 60000
           },
+          "turnCompletionIdleTimeoutMs": {
+            "type": "number",
+            "minimum": 1,
+            "default": 60000
+          },
           "approvalPolicy": {
             "type": "string",
             "enum": ["never", "on-request", "on-failure", "untrusted"]
@@ -154,6 +164,11 @@
     "codexDynamicToolsProfile": {
       "label": "Dynamic Tools Profile",
       "help": "Select which OpenClaw dynamic tools are exposed to Codex app-server. native-first omits tools Codex already owns.",
+      "advanced": true
+    },
+    "codexDynamicToolsLoading": {
+      "label": "Dynamic Tools Loading",
+      "help": "Use searchable to defer OpenClaw dynamic tools behind Codex tool search, or direct to expose them in the initial context.",
       "advanced": true
     },
     "codexDynamicToolsExclude": {
@@ -268,6 +283,11 @@
     "appServer.requestTimeoutMs": {
       "label": "Request Timeout",
       "help": "Maximum time to wait for Codex app-server control-plane requests.",
+      "advanced": true
+    },
+    "appServer.turnCompletionIdleTimeoutMs": {
+      "label": "Turn Completion Idle Timeout",
+      "help": "Maximum quiet time after a turn-scoped Codex app-server request before OpenClaw interrupts the turn while waiting for turn/completed.",
       "advanced": true
     },
     "appServer.approvalPolicy": {

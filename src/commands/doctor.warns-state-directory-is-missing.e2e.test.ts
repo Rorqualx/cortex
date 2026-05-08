@@ -110,24 +110,15 @@ describe("doctor command", () => {
     const loadBundledPluginPublicSurfaceModuleSync = vi.fn(() => {
       throw new Error("missing browser doctor facade");
     });
-    vi.doMock("../plugin-sdk/facade-loader.js", () => ({
-      createLazyFacadeArrayValue: <T extends readonly unknown[]>(load: () => T): T =>
-        new Proxy([], {
-          get(_target, property, receiver) {
-            return Reflect.get(load(), property, receiver);
-          },
-        }) as unknown as T,
-      createLazyFacadeObjectValue: <T extends object>(load: () => T): T =>
-        new Proxy(
-          {},
-          {
-            get(_target, property, receiver) {
-              return Reflect.get(load(), property, receiver);
-            },
-          },
-        ) as T,
-      loadBundledPluginPublicSurfaceModuleSync,
-    }));
+    vi.doMock("../plugin-sdk/facade-loader.js", async () => {
+      const actual = await vi.importActual<typeof import("../plugin-sdk/facade-loader.js")>(
+        "../plugin-sdk/facade-loader.js",
+      );
+      return {
+        ...actual,
+        loadBundledPluginPublicSurfaceModuleSync,
+      };
+    });
     doctorCommand = await loadDoctorCommandForTest({
       unmockModules: [
         "../flows/doctor-health-contributions.js",

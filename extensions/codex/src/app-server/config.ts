@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { z } from "zod";
+import { z } from "openclaw/plugin-sdk/zod";
 import type { CodexSandboxPolicy, CodexServiceTier } from "./protocol.js";
 
 const START_OPTIONS_KEY_SECRET = randomBytes(32);
@@ -11,6 +11,7 @@ export type CodexAppServerSandboxMode = "read-only" | "workspace-write" | "dange
 type CodexAppServerApprovalsReviewer = "user" | "auto_review" | "guardian_subagent";
 type CodexAppServerCommandSource = "managed" | "resolved-managed" | "config" | "env";
 type CodexDynamicToolsProfile = "native-first" | "openclaw-compat";
+export type CodexDynamicToolsLoading = "searchable" | "direct";
 
 export type CodexComputerUseConfig = {
   enabled?: boolean;
@@ -49,6 +50,7 @@ export type CodexAppServerStartOptions = {
 export type CodexAppServerRuntimeOptions = {
   start: CodexAppServerStartOptions;
   requestTimeoutMs: number;
+  turnCompletionIdleTimeoutMs: number;
   approvalPolicy: CodexAppServerApprovalPolicy;
   sandbox: CodexAppServerSandboxMode;
   approvalsReviewer: CodexAppServerApprovalsReviewer;
@@ -57,6 +59,7 @@ export type CodexAppServerRuntimeOptions = {
 
 export type CodexPluginConfig = {
   codexDynamicToolsProfile?: CodexDynamicToolsProfile;
+  codexDynamicToolsLoading?: CodexDynamicToolsLoading;
   codexDynamicToolsExclude?: string[];
   discovery?: {
     enabled?: boolean;
@@ -73,6 +76,7 @@ export type CodexPluginConfig = {
     headers?: Record<string, string>;
     clearEnv?: string[];
     requestTimeoutMs?: number;
+    turnCompletionIdleTimeoutMs?: number;
     approvalPolicy?: CodexAppServerApprovalPolicy;
     sandbox?: CodexAppServerSandboxMode;
     approvalsReviewer?: CodexAppServerApprovalsReviewer;
@@ -91,6 +95,7 @@ export const CODEX_APP_SERVER_CONFIG_KEYS = [
   "headers",
   "clearEnv",
   "requestTimeoutMs",
+  "turnCompletionIdleTimeoutMs",
   "approvalPolicy",
   "sandbox",
   "approvalsReviewer",
@@ -124,6 +129,7 @@ const codexAppServerApprovalPolicySchema = z.enum([
 const codexAppServerSandboxSchema = z.enum(["read-only", "workspace-write", "danger-full-access"]);
 const codexAppServerApprovalsReviewerSchema = z.enum(["user", "auto_review", "guardian_subagent"]);
 const codexDynamicToolsProfileSchema = z.enum(["native-first", "openclaw-compat"]);
+const codexDynamicToolsLoadingSchema = z.enum(["searchable", "direct"]);
 const codexAppServerServiceTierSchema = z
   .preprocess(
     (value) => (value === null ? null : resolveServiceTier(value)),
@@ -134,6 +140,7 @@ const codexAppServerServiceTierSchema = z
 const codexPluginConfigSchema = z
   .object({
     codexDynamicToolsProfile: codexDynamicToolsProfileSchema.optional(),
+    codexDynamicToolsLoading: codexDynamicToolsLoadingSchema.optional(),
     codexDynamicToolsExclude: z.array(z.string()).optional(),
     discovery: z
       .object({
@@ -166,6 +173,7 @@ const codexPluginConfigSchema = z
         headers: z.record(z.string(), z.string()).optional(),
         clearEnv: z.array(z.string()).optional(),
         requestTimeoutMs: z.number().positive().optional(),
+        turnCompletionIdleTimeoutMs: z.number().positive().optional(),
         approvalPolicy: codexAppServerApprovalPolicySchema.optional(),
         sandbox: codexAppServerSandboxSchema.optional(),
         approvalsReviewer: codexAppServerApprovalsReviewerSchema.optional(),
@@ -227,6 +235,10 @@ export function resolveCodexAppServerRuntimeOptions(
       ...(transport === "stdio" && clearEnv.length > 0 ? { clearEnv } : {}),
     },
     requestTimeoutMs: normalizePositiveNumber(config.requestTimeoutMs, 60_000),
+    turnCompletionIdleTimeoutMs: normalizePositiveNumber(
+      config.turnCompletionIdleTimeoutMs,
+      60_000,
+    ),
     approvalPolicy:
       resolveApprovalPolicy(config.approvalPolicy) ??
       resolveApprovalPolicy(env.OPENCLAW_CODEX_APP_SERVER_APPROVAL_POLICY) ??

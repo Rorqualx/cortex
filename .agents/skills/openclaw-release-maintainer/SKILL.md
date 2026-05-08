@@ -41,19 +41,13 @@ Use this skill for release and publish-time workflow. Keep ordinary development 
   recommended replacement can shift as plugin ownership, externalization, and
   config footprint move, so do not blindly copy stale replacement annotations
   into release notes.
-- Do not delete or rewrite alpha or beta tags after their matching npm package
-  has been published. If a pushed alpha or beta tag fails preflight before npm
-  publish, first verify the matching npm package does not exist, then delete and
-  recreate the tag and prerelease at the fixed commit so npm prerelease versions
-  stay contiguous. If a published prerelease needs a fix, commit the fix on the
-  release branch and increment to the next matching `-alpha.N` or `-beta.N`.
-- After a beta is published, distinguish validation-only fixes from product
-  fixes. Test, docs, workflow, release-script, changelog, or agent-skill fixes
-  that do not change the `openclaw` package runtime can be committed and
-  validated without cutting a new beta. Any fix that changes shipped OpenClaw
-  runtime, package contents, install/update behavior, public API, or user-facing
-  behavior after the beta was published usually requires a new `-beta.N` before
-  treating release validation as evidence for the published package.
+- Do not delete or rewrite beta tags after their matching npm package has been
+  published. If a pushed beta tag fails before npm publish, the version is not
+  consumed: keep the same `-beta.N`, delete/recreate or force-move the git tag
+  and prerelease to the fixed commit, and rerun preflight. Do not increment to
+  the next beta number until the matching npm package has actually published.
+  If a published beta needs a fix, commit the fix on the release branch and
+  increment to the next `-beta.N`.
 - For a beta release train, run the fast local preflight first, publish the
   beta to npm `beta`, then run the expensive published-package roster focused
   on install/update/Docker/Parallels/NPM Telegram. If anything fails, fix it on
