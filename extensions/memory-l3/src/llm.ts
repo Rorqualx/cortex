@@ -50,13 +50,15 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
   };
 }
 
-// PROMPT_VERSION = 2 — extract prompt with already-known gating + delta-only
-// emission. Ported from the Rust reference (claw-code memory_experiment).
+// PROMPT_VERSION = 3 — drops the in-prompt already-known list. v2 sent the
+// recent dedup keys to the LLM with a "skip silently" rule; on long inputs
+// with 20+ keys, GLM-5.1 over-applied the rule and returned {"facts": []}
+// for content that genuinely contained new facts (verified via
+// scripts/replay-compaction.mjs A/B test). Dedup now happens post-hoc via
+// dropAlreadyKnown in dedup.ts — the LLM never sees the suppression list.
 const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract distilled facts — durable units of information that should be remembered across future sessions.
 
-Critical rules (PROMPT_VERSION=2):
-- ALREADY KNOWN: when the conversation re-states a fact already listed in <already-known>, do NOT re-emit it. Skip silently.
-- DELTA ONLY: when the conversation refines or contradicts a known fact, emit ONLY the new/refined piece, not the whole restated fact.
+Rules (PROMPT_VERSION=3):
 - IMPORTANCE: a 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context details 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: a stable kebab-case key like "user_preference:morning_standups" so future runs can detect duplicates.
 
@@ -73,10 +75,9 @@ export type ExtractedFact = {
 
 export async function extractFacts(params: {
   messages: ReadonlyArray<AgentMessage>;
-  alreadyKnownKeys: ReadonlyArray<string>;
   caller: LlmCaller;
 }): Promise<ExtractedFact[]> {
-  const userPrompt = buildExtractUserPrompt(params.messages, params.alreadyKnownKeys);
+  const userPrompt = buildExtractUserPrompt(params.messages);
   const raw = await params.caller({
     systemPrompt: EXTRACT_SYSTEM_PROMPT,
     userPrompt,
@@ -127,16 +128,12 @@ function normalizeFacts(parsed: unknown): ExtractedFact[] {
   return out;
 }
 
-function buildExtractUserPrompt(
-  messages: ReadonlyArray<AgentMessage>,
-  alreadyKnownKeys: ReadonlyArray<string>,
-): string {
+function buildExtractUserPrompt(messages: ReadonlyArray<AgentMessage>): string {
   const transcript = messages
     .map(formatMessageForPrompt)
     .filter((s) => s.length > 0)
     .join("\n");
-  const known = alreadyKnownKeys.length > 0 ? alreadyKnownKeys.join("\n- ") : "(none)";
-  return `<already-known>\n- ${known}\n</already-known>\n\n<conversation>\n${transcript}\n</conversation>\n\nExtract new facts following the rules.`;
+  return `<conversation>\n${transcript}\n</conversation>\n\nExtract new facts following the rules.`;
 }
 
 function formatMessageForPrompt(message: AgentMessage): string {

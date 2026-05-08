@@ -82,22 +82,20 @@ describe("extractFacts", () => {
     );
     const facts = await extractFacts({
       messages: [{ role: "user", content: "morning standups please" }] as never[],
-      alreadyKnownKeys: ["user:other"],
       caller,
     });
     expect(facts).toHaveLength(1);
     expect(facts[0].text).toBe("user prefers morning standups");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0][0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=2");
-    expect(call.userPrompt).toContain("user:other");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=3");
+    expect(call.userPrompt).not.toContain("already-known");
   });
 
   it("returns [] when caller returns empty/garbage", async () => {
     const caller = vi.fn(async () => "");
     const facts = await extractFacts({
       messages: [{ role: "user", content: "hi" }] as never[],
-      alreadyKnownKeys: [],
       caller,
     });
     expect(facts).toEqual([]);

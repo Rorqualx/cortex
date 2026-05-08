@@ -33,12 +33,10 @@ export async function compactSession(params: {
     return { chunkId: null, factsAdded: 0, tokensBefore: 0, messagesIngested: 0, epochId: null };
   }
 
-  const alreadyKnownKeys = await readRecentDedupKeys(params.storage);
-  const alreadyKnownSet = new Set(alreadyKnownKeys);
+  const alreadyKnownSet = new Set(await readRecentDedupKeys(params.storage));
 
   const extracted = await extractFacts({
     messages,
-    alreadyKnownKeys,
     caller: params.caller,
   });
 
