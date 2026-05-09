@@ -72,7 +72,9 @@ Rules (PROMPT_VERSION=4):
   - confidence: 0.0-1.0.
   Skip typedFacts emission when no verbatim values are present.
 
-Emit strict JSON only, with no surrounding prose. Schema:
+Emit strict JSON only, with no surrounding prose. Use EXACTLY the field names below — do NOT rename "text" to "fact"/"content" or "dedupKey" to "key"/"id".
+
+Schema:
 {
   "facts": [
     { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case" }
@@ -166,11 +168,25 @@ function normalizeFacts(facts: ReadonlyArray<unknown>): ExtractedFact[] {
   for (const candidate of facts) {
     if (!candidate || typeof candidate !== "object") continue;
     const o = candidate as Record<string, unknown>;
-    if (typeof o.text !== "string" || typeof o.dedupKey !== "string") continue;
-    const importanceRaw = typeof o.importance === "number" ? o.importance : 0.5;
-    const text = o.text.trim();
-    const dedupKey = o.dedupKey.trim();
+    // GLM-5.1 inconsistently emits the prose field as "text", "fact", or
+    // "content" depending on phase of the moon. Accept any of them; the
+    // schema prompt asks for "text" but parser tolerance prevents silent
+    // fact loss. Same for dedupKey vs key vs id.
+    const textRaw =
+      typeof o.text === "string"
+        ? o.text
+        : typeof o.fact === "string"
+          ? o.fact
+          : typeof o.content === "string"
+            ? o.content
+            : null;
+    const dedupRaw =
+      typeof o.dedupKey === "string" ? o.dedupKey : typeof o.key === "string" ? o.key : null;
+    if (textRaw === null || dedupRaw === null) continue;
+    const text = textRaw.trim();
+    const dedupKey = dedupRaw.trim();
     if (text.length === 0 || dedupKey.length === 0) continue;
+    const importanceRaw = typeof o.importance === "number" ? o.importance : 0.5;
     out.push({
       text,
       importance: Math.max(0, Math.min(1, importanceRaw)),
@@ -185,18 +201,28 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
   for (const candidate of facts) {
     if (!candidate || typeof candidate !== "object") continue;
     const o = candidate as Record<string, unknown>;
-    if (typeof o.slot !== "string" || typeof o.value !== "string") continue;
-    if (typeof o.sourceSpan !== "string") continue;
-    const slot = o.slot.trim();
-    const value = o.value;
-    const sourceSpan = o.sourceSpan;
-    if (slot.length === 0 || value.length === 0 || sourceSpan.length === 0) continue;
+    // Same field-name tolerance pattern as normalizeFacts: accept common
+    // synonyms the model emits when it drifts from the schema. "span" is a
+    // common alternate to "sourceSpan".
+    const slotRaw = typeof o.slot === "string" ? o.slot : typeof o.key === "string" ? o.key : null;
+    const valueRaw = typeof o.value === "string" ? o.value : null;
+    const spanRaw =
+      typeof o.sourceSpan === "string"
+        ? o.sourceSpan
+        : typeof o.span === "string"
+          ? o.span
+          : typeof o.source === "string"
+            ? o.source
+            : null;
+    if (slotRaw === null || valueRaw === null || spanRaw === null) continue;
+    const slot = slotRaw.trim();
+    if (slot.length === 0 || valueRaw.length === 0 || spanRaw.length === 0) continue;
     const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
     const unit = typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null;
     out.push({
       slot,
-      value,
-      sourceSpan,
+      value: valueRaw,
+      sourceSpan: spanRaw,
       unit,
       confidence: Math.max(0, Math.min(1, confidenceRaw)),
     });

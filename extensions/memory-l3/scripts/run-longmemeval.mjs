@@ -195,16 +195,64 @@ async function callGlm({ apiKey, systemPrompt, userPrompt }) {
   return json.choices?.[0]?.message?.content ?? "";
 }
 
+// Normalize a raw fact entry from the LLM. GLM-5.1 inconsistently emits the
+// prose field as "text", "fact", or "content"; same for "dedupKey" vs "key".
+// Tolerate all three; downstream code reads .text and .dedupKey.
+function normalizeFact(o) {
+  if (!o || typeof o !== "object") return null;
+  const text =
+    typeof o.text === "string"
+      ? o.text
+      : typeof o.fact === "string"
+        ? o.fact
+        : typeof o.content === "string"
+          ? o.content
+          : null;
+  const dedupKey =
+    typeof o.dedupKey === "string" ? o.dedupKey : typeof o.key === "string" ? o.key : null;
+  if (!text || !dedupKey) return null;
+  return {
+    text: text.trim(),
+    dedupKey: dedupKey.trim(),
+    importance: typeof o.importance === "number" ? Math.max(0, Math.min(1, o.importance)) : 0.5,
+  };
+}
+
+function normalizeTypedFact(o) {
+  if (!o || typeof o !== "object") return null;
+  const slot = typeof o.slot === "string" ? o.slot : typeof o.key === "string" ? o.key : null;
+  const value = typeof o.value === "string" ? o.value : null;
+  const sourceSpan =
+    typeof o.sourceSpan === "string"
+      ? o.sourceSpan
+      : typeof o.span === "string"
+        ? o.span
+        : typeof o.source === "string"
+          ? o.source
+          : null;
+  if (!slot || !value || !sourceSpan) return null;
+  return {
+    slot: slot.trim(),
+    value,
+    sourceSpan,
+    unit: typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null,
+    confidence: typeof o.confidence === "number" ? Math.max(0, Math.min(1, o.confidence)) : 0.5,
+  };
+}
+
 function tryParseExtract(raw) {
   const trimmed = raw.trim();
   const fenced = /^```(?:json|javascript)?\s*\n?([\s\S]*?)\n?```$/.exec(trimmed);
   const candidate = fenced ? fenced[1] : trimmed;
   try {
     const parsed = JSON.parse(candidate);
-    return {
-      facts: Array.isArray(parsed.facts) ? parsed.facts : [],
-      typedFacts: Array.isArray(parsed.typedFacts) ? parsed.typedFacts : [],
-    };
+    const facts = (Array.isArray(parsed.facts) ? parsed.facts : [])
+      .map(normalizeFact)
+      .filter(Boolean);
+    const typedFacts = (Array.isArray(parsed.typedFacts) ? parsed.typedFacts : [])
+      .map(normalizeTypedFact)
+      .filter(Boolean);
+    return { facts, typedFacts };
   } catch {
     return { facts: [], typedFacts: [] };
   }
