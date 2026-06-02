@@ -1006,8 +1006,10 @@ export async function cleanupSessionLifecycleArtifacts(
       const sessionId = path.basename(transcriptPath, ".jsonl");
       archivedTranscriptArtifacts += archiveSessionTranscripts({
         sessionId,
+        storePath,
         sessionFile: transcriptPath,
         reason: "deleted",
+        restrictToStoreDir: true,
       }).length;
     }
     const { removeRemovedSessionTrajectoryArtifacts } = await loadTrajectoryCleanupRuntime();
