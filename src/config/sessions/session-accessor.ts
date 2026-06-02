@@ -9,12 +9,15 @@ import { resolveSessionTranscriptPathInDir, resolveStorePath } from "./paths.js"
 import { resolveAndPersistSessionFile } from "./session-file.js";
 import {
   getSessionEntry,
+  cleanupSessionLifecycleArtifacts as cleanupFileSessionLifecycleArtifacts,
   listSessionEntries as listFileSessionEntries,
   loadSessionStore,
   patchSessionEntry as patchFileSessionEntry,
   readSessionUpdatedAt as readFileSessionUpdatedAt,
   resolveSessionStoreEntry,
   updateSessionStoreEntry as updateFileSessionStoreEntry,
+  type SessionLifecycleArtifactCleanupParams,
+  type SessionLifecycleArtifactCleanupResult,
 } from "./store.js";
 import { parseSessionThreadInfo } from "./thread-info.js";
 import {
@@ -82,6 +85,8 @@ export type SessionEntryPatchOptions = {
 export type SessionEntryPatchContext = {
   existingEntry?: SessionEntry;
 };
+
+export type { SessionLifecycleArtifactCleanupParams, SessionLifecycleArtifactCleanupResult };
 
 /** Loads one session entry through the storage-neutral accessor seam. */
 export function loadSessionEntry(scope: SessionAccessScope): SessionEntry | undefined {
@@ -178,6 +183,13 @@ export async function updateSessionEntry(
     takeCacheOwnership: options.takeCacheOwnership,
     update,
   });
+}
+
+/** Cleans scoped session lifecycle entries and transcript artifacts through the accessor seam. */
+export async function cleanupSessionLifecycleArtifacts(
+  params: SessionLifecycleArtifactCleanupParams,
+): Promise<SessionLifecycleArtifactCleanupResult> {
+  return await cleanupFileSessionLifecycleArtifacts(params);
 }
 
 /** Loads raw transcript events through the storage-neutral accessor seam. */

@@ -28,6 +28,7 @@ export { resolveGroupSessionKey } from "../config/sessions/group.js";
 export { canonicalizeMainSessionAlias } from "../config/sessions/main-session.js";
 export {
   clearSessionStoreCacheForTest,
+  cleanupSessionLifecycleArtifacts,
   patchSessionEntry,
   recordSessionMetaFromInbound,
   saveSessionStore,
@@ -35,6 +36,10 @@ export {
   updateSessionStore,
   updateSessionStoreEntry,
   upsertSessionEntry,
+} from "../config/sessions/store.js";
+export type {
+  SessionLifecycleArtifactCleanupParams,
+  SessionLifecycleArtifactCleanupResult,
 } from "../config/sessions/store.js";
 export {
   evaluateSessionFreshness,
