@@ -957,6 +957,7 @@ export async function cleanupSessionLifecycleArtifacts(
   const storePath = path.resolve(params.storePath);
   const sessionsDir = path.dirname(storePath);
   const removedSessionFiles = new Map<string, string | undefined>();
+  const removedTranscriptPaths: Array<{ sessionId: string; transcriptPath: string }> = [];
   let removedEntries = 0;
   let archivedTranscriptArtifacts = 0;
 
@@ -976,6 +977,9 @@ export async function cleanupSessionLifecycleArtifacts(
         })
       ) {
         rememberRemovedSessionFile(removedSessionFiles, entry);
+        if (entry.sessionId && transcriptPath && fs.existsSync(transcriptPath)) {
+          removedTranscriptPaths.push({ sessionId: entry.sessionId, transcriptPath });
+        }
         delete store[sessionKey];
         removedEntries += 1;
         continue;
@@ -993,18 +997,17 @@ export async function cleanupSessionLifecycleArtifacts(
         .filter((sessionId): sessionId is string => Boolean(sessionId)),
     );
     const { archiveSessionTranscripts } = await loadSessionArchiveRuntime();
-    // Removed entries carry concrete session ids/files, so archive their
-    // session-owned artifacts before persisting the row deletion.
-    for (const [sessionId, sessionFile] of removedSessionFiles) {
-      if (referencedSessionIds.has(sessionId)) {
+    // Archive only the exact transcript path that passed the age/missing guard.
+    // Broader session-id candidate scans can include fresh sibling transcripts.
+    for (const { sessionId: removedSessionId, transcriptPath } of removedTranscriptPaths) {
+      if (referencedSessionIds.has(removedSessionId)) {
         continue;
       }
+      const sessionId = path.basename(transcriptPath, ".jsonl");
       archivedTranscriptArtifacts += archiveSessionTranscripts({
         sessionId,
-        storePath,
-        sessionFile,
+        sessionFile: transcriptPath,
         reason: "deleted",
-        restrictToStoreDir: true,
       }).length;
     }
     const { removeRemovedSessionTrajectoryArtifacts } = await loadTrajectoryCleanupRuntime();
