@@ -4,6 +4,7 @@ import type { MsgContext } from "../../auto-reply/templating.js";
 import { writeTextAtomic } from "../../infra/json-files.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
+import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import {
   deliveryContextFromChannelRoute,
   deliveryContextFromSession,
@@ -14,6 +15,7 @@ import {
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import { getFileStatSnapshot } from "../cache-utils.js";
 import { getRuntimeConfig } from "../io.js";
+import { formatSessionArchiveTimestamp } from "./artifacts.js";
 import { enforceSessionDiskBudget, type SessionDiskBudgetSweepResult } from "./disk-budget.js";
 import { deriveSessionMetaPatch } from "./metadata.js";
 import { resolveSessionFilePath, resolveStorePath } from "./paths.js";
@@ -563,6 +565,17 @@ function lifecycleTranscriptIsReclaimable(params: {
   }
 }
 
+function archiveExactLifecycleTranscriptPath(transcriptPath: string): number {
+  const archivedPath = `${transcriptPath}.deleted.${formatSessionArchiveTimestamp()}`;
+  try {
+    fs.renameSync(transcriptPath, archivedPath);
+    emitSessionTranscriptUpdate({ sessionFile: archivedPath });
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+
 async function saveSessionStoreUnlocked(
   storePath: string,
   store: Record<string, SessionEntry>,
@@ -996,21 +1009,13 @@ export async function cleanupSessionLifecycleArtifacts(
         .map((entry) => entry?.sessionId)
         .filter((sessionId): sessionId is string => Boolean(sessionId)),
     );
-    const { archiveSessionTranscripts } = await loadSessionArchiveRuntime();
     // Archive only the exact transcript path that passed the age/missing guard.
     // Broader session-id candidate scans can include fresh sibling transcripts.
     for (const { sessionId: removedSessionId, transcriptPath } of removedTranscriptPaths) {
       if (referencedSessionIds.has(removedSessionId)) {
         continue;
       }
-      const sessionId = path.basename(transcriptPath, ".jsonl");
-      archivedTranscriptArtifacts += archiveSessionTranscripts({
-        sessionId,
-        storePath,
-        sessionFile: transcriptPath,
-        reason: "deleted",
-        restrictToStoreDir: true,
-      }).length;
+      archivedTranscriptArtifacts += archiveExactLifecycleTranscriptPath(transcriptPath);
     }
     const { removeRemovedSessionTrajectoryArtifacts } = await loadTrajectoryCleanupRuntime();
     await removeRemovedSessionTrajectoryArtifacts({
