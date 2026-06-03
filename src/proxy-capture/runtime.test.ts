@@ -69,13 +69,14 @@ describe("debug proxy runtime", () => {
       headers: { "content-type": "application/json" },
       body: '{"input":"hello"}',
     });
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
     finalizeDebugProxyCapture(settings, deps);
 
     const sessionEvents = events.filter((event) => event.sessionId === "runtime-test-session");
-    expect(sessionEvents.some((event) => event.host === "api.minimax.io")).toBe(true);
-    expect(sessionEvents.some((event) => event.kind === "request")).toBe(true);
-    expect(sessionEvents.some((event) => event.kind === "response")).toBe(true);
+    expect(sessionEvents.map((event) => event.host)).toContain("api.minimax.io");
+    expect(sessionEvents.map((event) => event.kind)).toEqual(["request", "response"]);
   });
 
   it("normalizes symbol-bearing request headers before calling patched fetch targets", async () => {
@@ -103,11 +104,13 @@ describe("debug proxy runtime", () => {
       headers,
       body: "{}",
     });
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
     finalizeDebugProxyCapture(settings, deps);
 
     const request = events.find((event) => event.kind === "request");
-    expect(JSON.parse(String(request?.headersJson))).toMatchObject({
+    expect(JSON.parse(String(request?.headersJson))).toStrictEqual({
       "content-type": "application/json",
       "x-hidden": "yes",
     });
@@ -138,11 +141,13 @@ describe("debug proxy runtime", () => {
       settings,
       deps,
     );
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
     finalizeDebugProxyCapture(settings, deps);
 
     const request = events.find((event) => event.kind === "request");
-    expect(JSON.parse(String(request?.headersJson))).toMatchObject({
+    expect(JSON.parse(String(request?.headersJson))).toStrictEqual({
       Authorization: "[REDACTED]",
       Cookie: "[REDACTED]",
       "x-api-key": "[REDACTED]",
@@ -150,7 +155,7 @@ describe("debug proxy runtime", () => {
       "x-safe": "visible",
     });
     const response = events.find((event) => event.kind === "response");
-    expect(JSON.parse(String(response?.headersJson))).toMatchObject({
+    expect(JSON.parse(String(response?.headersJson))).toStrictEqual({
       "content-type": "application/json",
       "set-cookie": "[REDACTED]",
     });

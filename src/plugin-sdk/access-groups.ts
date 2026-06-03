@@ -1,9 +1,15 @@
+import { uniqueStrings } from "../../packages/normalization-core/src/string-normalization.js";
+import {
+  ACCESS_GROUP_ALLOW_FROM_PREFIX,
+  parseAccessGroupAllowFromEntry,
+} from "../channels/allow-from.js";
 import type { ChannelId } from "../channels/plugins/types.public.js";
 import type { AccessGroupConfig } from "../config/types.access-groups.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 
-export const ACCESS_GROUP_ALLOW_FROM_PREFIX = "accessGroup:";
+export { ACCESS_GROUP_ALLOW_FROM_PREFIX, parseAccessGroupAllowFromEntry };
 
+/** Resolves membership for an access group using the full OpenClaw config. */
 export type AccessGroupMembershipResolver = (params: {
   cfg: OpenClawConfig;
   name: string;
@@ -13,14 +19,26 @@ export type AccessGroupMembershipResolver = (params: {
   senderId: string;
 }) => boolean | Promise<boolean>;
 
-export function parseAccessGroupAllowFromEntry(entry: string): string | null {
-  const trimmed = entry.trim();
-  if (!trimmed.startsWith(ACCESS_GROUP_ALLOW_FROM_PREFIX)) {
-    return null;
-  }
-  const name = trimmed.slice(ACCESS_GROUP_ALLOW_FROM_PREFIX.length).trim();
-  return name.length > 0 ? name : null;
-}
+/** Resolves membership for one access group when the caller already selected the config group. */
+export type AccessGroupMembershipLookup = (params: {
+  name: string;
+  group: AccessGroupConfig;
+  channel: ChannelId;
+  accountId: string;
+  senderId: string;
+}) => boolean | Promise<boolean>;
+
+/** Reports how access-group allowlist entries resolved for a channel sender. */
+export type ResolvedAccessGroupAllowFromState = {
+  referenced: string[];
+  matched: string[];
+  missing: string[];
+  unsupported: string[];
+  failed: string[];
+  matchedAllowFromEntries: string[];
+  hasReferences: boolean;
+  hasMatch: boolean;
+};
 
 function resolveMessageSenderGroupEntries(params: {
   group: AccessGroupConfig;
@@ -32,21 +50,16 @@ function resolveMessageSenderGroupEntries(params: {
   return [...(params.group.members["*"] ?? []), ...(params.group.members[params.channel] ?? [])];
 }
 
-export async function resolveAccessGroupAllowFromMatches(params: {
-  cfg?: OpenClawConfig;
+/** Resolves `accessGroup:<name>` allowlist entries without changing the original allowlist. */
+export async function resolveAccessGroupAllowFromState(params: {
+  accessGroups?: Record<string, AccessGroupConfig>;
   allowFrom: Array<string | number> | null | undefined;
   channel: ChannelId;
   accountId: string;
   senderId: string;
   isSenderAllowed?: (senderId: string, allowFrom: string[]) => boolean;
-  resolveMembership?: AccessGroupMembershipResolver;
-}): Promise<string[]> {
-  const cfg = params.cfg;
-  const groups = cfg?.accessGroups;
-  if (!groups) {
-    return [];
-  }
-
+  resolveMembership?: AccessGroupMembershipLookup;
+}): Promise<ResolvedAccessGroupAllowFromState> {
   const names = Array.from(
     new Set(
       (params.allowFrom ?? [])
@@ -54,14 +67,21 @@ export async function resolveAccessGroupAllowFromMatches(params: {
         .filter((entry): entry is string => entry != null),
     ),
   );
-  if (names.length === 0) {
-    return [];
-  }
-
-  const matched: string[] = [];
+  const state: ResolvedAccessGroupAllowFromState = {
+    referenced: names,
+    matched: [],
+    missing: [],
+    unsupported: [],
+    failed: [],
+    matchedAllowFromEntries: [],
+    hasReferences: names.length > 0,
+    hasMatch: false,
+  };
+  const groups = params.accessGroups;
   for (const name of names) {
-    const group = groups[name];
+    const group = groups?.[name];
     if (!group) {
+      state.missing.push(name);
       continue;
     }
 
@@ -73,31 +93,73 @@ export async function resolveAccessGroupAllowFromMatches(params: {
       senderEntries.length > 0 &&
       params.isSenderAllowed?.(params.senderId, senderEntries) === true
     ) {
-      matched.push(`${ACCESS_GROUP_ALLOW_FROM_PREFIX}${name}`);
+      state.matched.push(name);
       continue;
     }
 
-    let allowed = false;
+    if (!params.resolveMembership) {
+      if (group.type !== "message.senders") {
+        state.unsupported.push(name);
+      }
+      continue;
+    }
+
+    let allowed;
     try {
-      allowed =
-        (await params.resolveMembership?.({
-          cfg,
-          name,
-          group,
-          channel: params.channel,
-          accountId: params.accountId,
-          senderId: params.senderId,
-        })) === true;
+      allowed = await params.resolveMembership({
+        name,
+        group,
+        channel: params.channel,
+        accountId: params.accountId,
+        senderId: params.senderId,
+      });
     } catch {
-      allowed = false;
+      state.failed.push(name);
+      continue;
     }
     if (allowed) {
-      matched.push(`${ACCESS_GROUP_ALLOW_FROM_PREFIX}${name}`);
+      state.matched.push(name);
     }
   }
-  return matched;
+  state.matchedAllowFromEntries = state.matched.map(
+    (name) => `${ACCESS_GROUP_ALLOW_FROM_PREFIX}${name}`,
+  );
+  state.hasMatch = state.matchedAllowFromEntries.length > 0;
+  return state;
 }
 
+/** Returns the matched `accessGroup:<name>` allowlist entries for a sender. */
+export async function resolveAccessGroupAllowFromMatches(params: {
+  cfg?: OpenClawConfig;
+  allowFrom: Array<string | number> | null | undefined;
+  channel: ChannelId;
+  accountId: string;
+  senderId: string;
+  isSenderAllowed?: (senderId: string, allowFrom: string[]) => boolean;
+  resolveMembership?: AccessGroupMembershipResolver;
+}): Promise<string[]> {
+  const cfg = params.cfg;
+  const resolveMembership = params.resolveMembership;
+  const state = await resolveAccessGroupAllowFromState({
+    accessGroups: cfg?.accessGroups,
+    allowFrom: params.allowFrom,
+    channel: params.channel,
+    accountId: params.accountId,
+    senderId: params.senderId,
+    isSenderAllowed: params.isSenderAllowed,
+    resolveMembership:
+      resolveMembership && cfg
+        ? async (lookupParams) =>
+            await resolveMembership({
+              cfg,
+              ...lookupParams,
+            })
+        : undefined,
+  });
+  return state.matchedAllowFromEntries;
+}
+
+/** Expands a matching access-group allowlist with the concrete sender entry. */
 export async function expandAllowFromWithAccessGroups(params: {
   cfg?: OpenClawConfig;
   allowFrom: Array<string | number> | null | undefined;
@@ -122,5 +184,6 @@ export async function expandAllowFromWithAccessGroups(params: {
     return allowFrom;
   }
   const senderEntry = params.senderAllowEntry ?? params.senderId;
-  return Array.from(new Set([...allowFrom, senderEntry]));
+  // Downstream legacy sender checks still expect a concrete allowlist entry after a group match.
+  return uniqueStrings([...allowFrom, senderEntry]);
 }

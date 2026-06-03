@@ -6,6 +6,7 @@ const hoisted = vi.hoisted(() => ({
   getActivePluginRuntimeSubagentMode: vi.fn<() => "default" | "explicit" | "gateway-bindable">(
     () => "default",
   ),
+  getActivePluginRegistryWorkspaceDir: vi.fn<() => string | undefined>(() => undefined),
 }));
 
 vi.mock("../plugins/current-plugin-metadata-snapshot.js", () => ({
@@ -18,6 +19,7 @@ vi.mock("../plugins/runtime/standalone-runtime-registry-loader.js", () => ({
 
 vi.mock("../plugins/runtime.js", () => ({
   getActivePluginRuntimeSubagentMode: hoisted.getActivePluginRuntimeSubagentMode,
+  getActivePluginRegistryWorkspaceDir: hoisted.getActivePluginRegistryWorkspaceDir,
 }));
 
 describe("ensureRuntimePluginsLoaded", () => {
@@ -30,11 +32,13 @@ describe("ensureRuntimePluginsLoaded", () => {
     hoisted.ensureStandaloneRuntimePluginRegistryLoaded.mockReturnValue(undefined);
     hoisted.getActivePluginRuntimeSubagentMode.mockReset();
     hoisted.getActivePluginRuntimeSubagentMode.mockReturnValue("default");
+    hoisted.getActivePluginRegistryWorkspaceDir.mockReset();
+    hoisted.getActivePluginRegistryWorkspaceDir.mockReturnValue(undefined);
     vi.resetModules();
     ({ ensureRuntimePluginsLoaded } = await import("./runtime-plugins.js"));
   });
 
-  it("does not reactivate plugins when a process already has an active registry", async () => {
+  it("does not reactivate plugins when a process already has an active registry", () => {
     hoisted.ensureStandaloneRuntimePluginRegistryLoaded.mockReturnValue({});
 
     ensureRuntimePluginsLoaded({
@@ -46,7 +50,7 @@ describe("ensureRuntimePluginsLoaded", () => {
     expect(hoisted.ensureStandaloneRuntimePluginRegistryLoaded).toHaveBeenCalledTimes(1);
   });
 
-  it("resolves runtime plugins through the shared runtime helper", async () => {
+  it("resolves runtime plugins through the shared runtime helper", () => {
     ensureRuntimePluginsLoaded({
       config: {} as never,
       workspaceDir: "/tmp/workspace",
@@ -65,7 +69,22 @@ describe("ensureRuntimePluginsLoaded", () => {
     });
   });
 
-  it("scopes runtime plugin loading to the current gateway startup plan", async () => {
+  it("does not load runtime plugins when plugins are globally disabled", () => {
+    ensureRuntimePluginsLoaded({
+      config: {
+        plugins: {
+          enabled: false,
+        },
+      } as never,
+      workspaceDir: "/tmp/workspace",
+      allowGatewaySubagentBinding: true,
+    });
+
+    expect(hoisted.getCurrentPluginMetadataSnapshot).not.toHaveBeenCalled();
+    expect(hoisted.ensureStandaloneRuntimePluginRegistryLoaded).not.toHaveBeenCalled();
+  });
+
+  it("scopes runtime plugin loading to the current gateway startup plan", () => {
     const config = {} as never;
     hoisted.getCurrentPluginMetadataSnapshot.mockReturnValue({
       startup: {
@@ -96,7 +115,7 @@ describe("ensureRuntimePluginsLoaded", () => {
     });
   });
 
-  it("delegates startup-scope registry reuse to loader cache compatibility", async () => {
+  it("delegates startup-scope registry reuse to loader cache compatibility", () => {
     hoisted.getCurrentPluginMetadataSnapshot.mockReturnValue({
       startup: {
         pluginIds: ["telegram"],
@@ -123,7 +142,7 @@ describe("ensureRuntimePluginsLoaded", () => {
     });
   });
 
-  it("lets the loader decide when startup ids match but config changes", async () => {
+  it("lets the loader decide when startup ids match but config changes", () => {
     const config = {
       plugins: {
         config: {
@@ -159,7 +178,7 @@ describe("ensureRuntimePluginsLoaded", () => {
     });
   });
 
-  it("does not enable gateway subagent binding for normal runtime loads", async () => {
+  it("does not enable gateway subagent binding for normal runtime loads", () => {
     ensureRuntimePluginsLoaded({
       config: {} as never,
       workspaceDir: "/tmp/workspace",
@@ -175,7 +194,7 @@ describe("ensureRuntimePluginsLoaded", () => {
     });
   });
 
-  it("inherits gateway-bindable mode from an active gateway registry", async () => {
+  it("inherits gateway-bindable mode from an active gateway registry", () => {
     hoisted.getActivePluginRuntimeSubagentMode.mockReturnValue("gateway-bindable");
 
     ensureRuntimePluginsLoaded({

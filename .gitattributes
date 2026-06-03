@@ -1,6 +1,9 @@
 * text=auto eol=lf
 CLAUDE.md -text
 src/gateway/server-methods/CLAUDE.md -text
+ui/src/i18n/.i18n/* linguist-generated
+ui/src/i18n/locales/*.ts linguist-generated
+ui/src/i18n/locales/en.ts -linguist-generated
 
 # --- fork: memory subsystem protection ---
 # Truly fork-exclusive code — never accept upstream changes here.
@@ -16,28 +19,10 @@ memory/.l3/**                                                        merge=ours
 # Feature A: default OpenAI transport=sse for GPT-5 API-key models
 # (WebSocket path under investigation; explicit opt-in required).
 docs/concepts/model-providers.md                                     merge=ours
-src/agents/pi-embedded-runner/extra-params.ts                        merge=ours
-src/agents/pi-embedded-runner-extraparams-resolve.test.ts            merge=ours
-src/agents/pi-embedded-runner-extraparams.test.ts                    merge=ours
-src/agents/pi-embedded-runner/extra-params.provider-runtime.test.ts  merge=ours
+src/agents/embedded-agent-runner/extra-params.ts                     merge=ours
+src/agents/embedded-agent-runner-extraparams-resolve.test.ts         merge=ours
+src/agents/embedded-agent-runner-extraparams.test.ts                 merge=ours
+src/agents/embedded-agent-runner/extra-params.provider-runtime.test.ts merge=ours
 
 # Feature B: packageVersion plumbing on bundled-plugin types.
 src/plugins/channel-catalog-registry.ts                              merge=ours
-src/plugins/externalized-bundled-plugins.ts                          merge=ours
-src/cli/plugins-location-bridges.ts                                  merge=ours
-
-# Feature C: route externalized bundled-plugin chunks under their
-# excluded dist subtree (tsdown OutputOptions plumbing).
-tsdown.config.ts                                                     merge=ours
-src/infra/tsdown-config.test.ts                                      merge=ours
-
-# Feature D: workspace prerelease npm-spec resolution in catalog tests.
-src/channels/plugins/contracts/channel-catalog.contract.test.ts      merge=ours
-
-# Feature E: beta-aware install-spec helper for doctor tests.
-src/commands/doctor/shared/missing-configured-plugin-install.test.ts merge=ours
-
-# Feature B/D/E support module: channel-aware npm spec resolver
-# (fork-added, no upstream counterpart — protect against name collision).
-src/plugins/channel-npm-spec.ts                                      merge=ours
-src/plugins/channel-npm-spec.test.ts                                 merge=ours

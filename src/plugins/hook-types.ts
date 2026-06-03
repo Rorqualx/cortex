@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "../agents/runtime/index.js";
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import type { ReplyPayload } from "../auto-reply/reply-payload.js";
 import type {
@@ -9,10 +9,6 @@ import type { FinalizedMsgContext } from "../auto-reply/templating.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { TtsAutoMode } from "../config/types.tts.js";
 import type { DiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
-import {
-  PLUGIN_PROMPT_MUTATION_RESULT_FIELDS,
-  stripPromptMutationFieldsFromLegacyHookResult,
-} from "./hook-before-agent-start.types.js";
 import type {
   PluginHookBeforeAgentStartEvent,
   PluginHookBeforeAgentStartResult,
@@ -87,6 +83,7 @@ export type PluginHookName =
   | "inbound_claim"
   | "message_received"
   | "message_sending"
+  | "reply_payload_sending"
   | "message_sent"
   | "before_tool_call"
   | "after_tool_call"
@@ -94,10 +91,17 @@ export type PluginHookName =
   | "before_message_write"
   | "session_start"
   | "session_end"
+  /**
+   * @deprecated Core prepares thread-bound subagent bindings through channel
+   * session-binding adapters before `subagent_spawned` fires. Use
+   * `subagent_spawned` for post-launch observation in new plugins.
+   */
   | "subagent_spawning"
   | "subagent_delivery_target"
   | "subagent_spawned"
   | "subagent_ended"
+  /** @deprecated Use gateway_stop. */
+  | "deactivate"
   | "gateway_start"
   | "gateway_stop"
   | "heartbeat_prompt_contribution"
@@ -105,7 +109,8 @@ export type PluginHookName =
   | "before_dispatch"
   | "reply_dispatch"
   | "before_install"
-  | "before_agent_run";
+  | "before_agent_run"
+  | "resolve_exec_env";
 
 export const PLUGIN_HOOK_NAMES = [
   "before_model_resolve",
@@ -125,6 +130,7 @@ export const PLUGIN_HOOK_NAMES = [
   "inbound_claim",
   "message_received",
   "message_sending",
+  "reply_payload_sending",
   "message_sent",
   "before_tool_call",
   "after_tool_call",
@@ -136,6 +142,7 @@ export const PLUGIN_HOOK_NAMES = [
   "subagent_delivery_target",
   "subagent_spawned",
   "subagent_ended",
+  "deactivate",
   "gateway_start",
   "gateway_stop",
   "heartbeat_prompt_contribution",
@@ -144,12 +151,45 @@ export const PLUGIN_HOOK_NAMES = [
   "reply_dispatch",
   "before_install",
   "before_agent_run",
+  "resolve_exec_env",
 ] as const satisfies readonly PluginHookName[];
 
 type MissingPluginHookNames = Exclude<PluginHookName, (typeof PLUGIN_HOOK_NAMES)[number]>;
 type AssertAllPluginHookNamesListed = MissingPluginHookNames extends never ? true : never;
 const assertAllPluginHookNamesListed: AssertAllPluginHookNamesListed = true;
 void assertAllPluginHookNamesListed;
+
+export type DeprecatedPluginHookName = "subagent_spawning" | "deactivate";
+
+export type PluginHookDeprecation = {
+  replacement: string;
+  reason: string;
+  removeAfter?: string;
+};
+
+export const DEPRECATED_PLUGIN_HOOKS = {
+  subagent_spawning: {
+    replacement: "`subagent_spawned` for observation; core session bindings for routing",
+    reason:
+      "Core prepares thread-bound subagent bindings through channel session-binding adapters before `subagent_spawned` fires.",
+    removeAfter: "2026-08-30",
+  },
+  deactivate: {
+    replacement: "`gateway_stop`",
+    reason: "`deactivate` is a legacy cleanup hook alias for `gateway_stop`.",
+    removeAfter: "2026-08-16",
+  },
+} as const satisfies Record<DeprecatedPluginHookName, PluginHookDeprecation>;
+
+export const DEPRECATED_PLUGIN_HOOK_NAMES = Object.keys(
+  DEPRECATED_PLUGIN_HOOKS,
+) as DeprecatedPluginHookName[];
+
+const deprecatedPluginHookNameSet = new Set<PluginHookName>(DEPRECATED_PLUGIN_HOOK_NAMES);
+
+export const isDeprecatedPluginHookName = (
+  hookName: PluginHookName,
+): hookName is DeprecatedPluginHookName => deprecatedPluginHookNameSet.has(hookName);
 
 const pluginHookNameSet = new Set<PluginHookName>(PLUGIN_HOOK_NAMES);
 
@@ -200,7 +240,19 @@ export type PluginHookAgentContext = {
   messageProvider?: string;
   trigger?: string;
   channelId?: string;
+  /** Resolved effective context-token budget after model/config/agent caps. */
+  contextTokenBudget?: number;
+  /** Source that supplied the resolved context-token budget. */
+  contextWindowSource?: PluginHookContextWindowSource;
+  /** Native/configured reference window when a lower cap wins. */
+  contextWindowReferenceTokens?: number;
 };
+
+export type PluginHookContextWindowSource =
+  | "model"
+  | "modelsConfig"
+  | "agentContextTokens"
+  | "default";
 
 export type PluginHookBeforeAgentReplyEvent = {
   cleanedBody: string;
@@ -221,6 +273,7 @@ export type PluginHookLlmInputEvent = {
   prompt: string;
   historyMessages: unknown[];
   imagesCount: number;
+  tools?: unknown[];
 };
 
 export type PluginHookModelCallBaseEvent = {
@@ -232,6 +285,12 @@ export type PluginHookModelCallBaseEvent = {
   model: string;
   api?: string;
   transport?: string;
+  /** Resolved effective context-token budget after model/config/agent caps. */
+  contextTokenBudget?: number;
+  /** Source that supplied the resolved context-token budget. */
+  contextWindowSource?: PluginHookContextWindowSource;
+  /** Native/configured reference window when a lower cap wins. */
+  contextWindowReferenceTokens?: number;
 };
 
 export type PluginHookModelCallStartedEvent = PluginHookModelCallBaseEvent;
@@ -252,11 +311,17 @@ export type PluginHookLlmOutputEvent = {
   sessionId: string;
   provider: string;
   model: string;
+  /** Resolved effective context-token budget after model/config/agent caps. */
+  contextTokenBudget?: number;
+  /** Source that supplied the resolved context-token budget. */
+  contextWindowSource?: PluginHookContextWindowSource;
+  /** Native/configured reference window when a lower cap wins. */
+  contextWindowReferenceTokens?: number;
   /**
    * Fully resolved provider/model ref used for the call.
    *
    * This intentionally keeps the provider prefix so operator tooling can
-   * distinguish e.g. openai-codex/gpt-5.4 from codex/gpt-5.4 even when display
+   * distinguish e.g. openai/gpt-5.4 from codex/gpt-5.4 even when display
    * names collapse to just the model id.
    */
   resolvedRef?: string;
@@ -347,6 +412,9 @@ export type PluginHookBeforeDispatchEvent = {
   channel?: string;
   sessionKey?: string;
   senderId?: string;
+  replyToId?: string;
+  replyToBody?: string;
+  replyToSender?: string;
   isGroup?: boolean;
   timestamp?: number;
 };
@@ -357,6 +425,9 @@ export type PluginHookBeforeDispatchContext = {
   conversationId?: string;
   sessionKey?: string;
   senderId?: string;
+  replyToId?: string;
+  replyToBody?: string;
+  replyToSender?: string;
 };
 
 export type PluginHookBeforeDispatchResult = {
@@ -378,6 +449,8 @@ export type PluginHookReplyDispatchEvent = {
   shouldRouteToOriginating: boolean;
   originatingChannel?: string;
   originatingTo?: string;
+  originatingAccountId?: string;
+  originatingThreadId?: string | number;
   shouldSendToolSummaries: boolean;
   sendPolicy: "allow" | "deny";
   isTailDispatch?: boolean;
@@ -404,6 +477,26 @@ export type PluginHookReplyDispatchResult = {
   counts: Record<ReplyDispatchKind, number>;
 };
 
+export type PluginHookReplyPayloadSendingEvent = {
+  payload: PluginHookReplyPayload;
+  kind: ReplyDispatchKind;
+  channel?: string;
+  sessionKey?: string;
+  runId?: string;
+};
+
+export type PluginHookReplyPayload = Omit<ReplyPayload, "trustedLocalMedia">;
+export type PluginHookReplyPayloadSendingContext = PluginHookMessageContext;
+
+export type PluginHookReplyPayloadSendingResult = {
+  payload?: PluginHookReplyPayload;
+  cancel?: boolean;
+  reason?: string;
+};
+
+export type PluginHookToolKind = "code_mode_exec";
+export type PluginHookToolInputKind = "javascript" | "typescript";
+
 export type PluginHookToolContext = {
   agentId?: string;
   sessionKey?: string;
@@ -411,19 +504,36 @@ export type PluginHookToolContext = {
   runId?: string;
   trace?: DiagnosticTraceContext;
   toolName: string;
+  /** Host-authoritative discriminator for tools that intentionally share names. */
+  toolKind?: PluginHookToolKind;
+  /** Host-authoritative input/runtime family for tools whose payloads need policy distinction. */
+  toolInputKind?: PluginHookToolInputKind;
   toolCallId?: string;
-  // oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- Plugin callers type JSON reads by namespace.
-  getSessionExtension?: <T extends PluginJsonValue = PluginJsonValue>(
-    namespace: string,
-  ) => T | undefined;
+  getSessionExtension?: (namespace: string) => PluginJsonValue | undefined;
   channelId?: string;
 };
 
 export type PluginHookBeforeToolCallEvent = {
   toolName: string;
   params: Record<string, unknown>;
+  /** Host-authoritative discriminator for tools that intentionally share names. */
+  toolKind?: PluginHookToolKind;
+  /** Host-authoritative input/runtime family for tools whose payloads need policy distinction. */
+  toolInputKind?: PluginHookToolInputKind;
   runId?: string;
   toolCallId?: string;
+  /**
+   * Optional best-effort destination path hints the host derived from `params`
+   * for well-known tool envelopes (e.g. `apply_patch`).
+   *
+   * This is a convenience hint, not an authoritative parse result: the host's
+   * extractor may be intentionally lenient and can return paths for malformed
+   * or partial envelopes. Plugins may use `derivedPaths` as a fast path, but
+   * should parse and validate `params` themselves when correctness or policy
+   * decisions depend on the exact set of affected paths. Absent for tools the
+   * host does not know how to derive paths for.
+   */
+  derivedPaths?: readonly string[];
 };
 
 export const PluginApprovalResolutions = {
@@ -511,6 +621,8 @@ export type PluginHookSessionEndReason =
   | "daily"
   | "compaction"
   | "deleted"
+  | "shutdown"
+  | "restart"
   | "unknown";
 
 export type PluginHookSessionEndEvent = {
@@ -547,12 +659,32 @@ type PluginHookSubagentSpawnBase = {
   threadRequested: boolean;
 };
 
+/**
+ * @deprecated Core prepares thread-bound subagent bindings through channel
+ * session-binding adapters before `subagent_spawned` fires. Use
+ * `subagent_spawned` for post-launch observation in new plugins.
+ */
 export type PluginHookSubagentSpawningEvent = PluginHookSubagentSpawnBase;
 
+/**
+ * @deprecated Core prepares thread-bound subagent bindings through channel
+ * session-binding adapters before `subagent_spawned` fires. Returning routing
+ * data from `subagent_spawning` is retained only for older runtimes.
+ */
 export type PluginHookSubagentSpawningResult =
   | {
       status: "ok";
+      /**
+       * @deprecated Core now resolves thread-bound spawn routing from session
+       * bindings and channel route projection. Keep returning this only for
+       * compatibility with older OpenClaw runtimes.
+       */
       threadBindingReady?: boolean;
+      /**
+       * @deprecated Use channel `resolveDeliveryTarget` plus core
+       * `SessionBindingRecord` projection instead of returning an ad hoc
+       * delivery route from this hook.
+       */
       deliveryOrigin?: {
         channel?: string;
         accountId?: string;
@@ -579,6 +711,11 @@ export type PluginHookSubagentDeliveryTargetEvent = {
   expectsCompletionMessage: boolean;
 };
 
+/**
+ * @deprecated Core route projection resolves subagent delivery targets from
+ * `SessionBindingRecord` and channel `resolveDeliveryTarget`. This hook result
+ * remains for plugin compatibility during the transition.
+ */
 export type PluginHookSubagentDeliveryTargetResult = {
   origin?: {
     channel?: string;
@@ -590,6 +727,10 @@ export type PluginHookSubagentDeliveryTargetResult = {
 
 export type PluginHookSubagentSpawnedEvent = PluginHookSubagentSpawnBase & {
   runId: string;
+  /** Fully resolved provider/model ref applied to the spawned child session. */
+  resolvedModel?: string;
+  /** Provider prefix parsed from resolvedModel when the ref includes one. */
+  resolvedProvider?: string;
 };
 
 export type PluginHookSubagentEndedEvent = {
@@ -634,6 +775,12 @@ export type PluginHookGatewayCronJobState = {
   lastRunStatus?: PluginHookGatewayCronRunStatus;
   lastError?: string;
   lastDurationMs?: number;
+  lastDelivered?: boolean;
+  lastDeliveryStatus?: PluginHookGatewayCronDeliveryStatus;
+  lastDeliveryError?: string;
+  lastFailureNotificationDelivered?: boolean;
+  lastFailureNotificationDeliveryStatus?: PluginHookGatewayCronDeliveryStatus;
+  lastFailureNotificationDeliveryError?: string;
 };
 
 export type PluginHookGatewayCronJob = {
@@ -830,12 +977,20 @@ export type PluginHookBeforeAgentRunEvent = {
   channelId?: string;
   /** Sender identity when available. */
   senderId?: string;
-  /** Whether the sender is an owner. */
+  /** Trusted sender identity bit when available. */
   senderIsOwner?: boolean;
 };
 
 /** Result type for before_agent_run. Returns pass/block or void (= pass). */
 export type PluginHookBeforeAgentRunResult = InputGateDecision | void;
+
+export type PluginHookResolveExecEnvEvent = {
+  sessionKey?: string;
+  toolName: "exec";
+  host: "gateway" | "sandbox" | "node";
+};
+
+export type PluginHookResolveExecEnvContext = PluginHookAgentContext;
 
 export type PluginHookHandlerMap = {
   agent_turn_prepare: (
@@ -907,6 +1062,13 @@ export type PluginHookHandlerMap = {
     event: PluginHookReplyDispatchEvent,
     ctx: PluginHookReplyDispatchContext,
   ) => Promise<PluginHookReplyDispatchResult | void> | PluginHookReplyDispatchResult | void;
+  reply_payload_sending: (
+    event: PluginHookReplyPayloadSendingEvent,
+    ctx: PluginHookReplyPayloadSendingContext,
+  ) =>
+    | Promise<PluginHookReplyPayloadSendingResult | void>
+    | PluginHookReplyPayloadSendingResult
+    | void;
   message_received: (
     event: PluginHookMessageReceivedEvent,
     ctx: PluginHookMessageContext,
@@ -943,6 +1105,11 @@ export type PluginHookHandlerMap = {
     event: PluginHookSessionEndEvent,
     ctx: PluginHookSessionContext,
   ) => Promise<void> | void;
+  /**
+   * @deprecated Core prepares thread-bound subagent bindings through channel
+   * session-binding adapters before `subagent_spawned` fires. Use
+   * `subagent_spawned` for post-launch observation in new plugins.
+   */
   subagent_spawning: (
     event: PluginHookSubagentSpawningEvent,
     ctx: PluginHookSubagentContext,
@@ -961,6 +1128,19 @@ export type PluginHookHandlerMap = {
   subagent_ended: (
     event: PluginHookSubagentEndedEvent,
     ctx: PluginHookSubagentContext,
+  ) => Promise<void> | void;
+  /**
+   * Deprecated compatibility alias for gateway_stop.
+   *
+   * New plugins should register gateway_stop directly; the loader normalizes
+   * deactivate registrations onto gateway_stop so cleanup handlers still run
+   * during Gateway shutdown.
+   *
+   * @deprecated Use gateway_stop.
+   */
+  deactivate: (
+    event: PluginHookGatewayStopEvent,
+    ctx: PluginHookGatewayContext,
   ) => Promise<void> | void;
   gateway_start: (
     event: PluginHookGatewayStartEvent,
@@ -989,6 +1169,10 @@ export type PluginHookHandlerMap = {
     event: PluginHookBeforeAgentRunEvent,
     ctx: PluginHookAgentContext,
   ) => Promise<PluginHookBeforeAgentRunResult> | PluginHookBeforeAgentRunResult;
+  resolve_exec_env: (
+    event: PluginHookResolveExecEnvEvent,
+    ctx: PluginHookResolveExecEnvContext,
+  ) => Promise<Record<string, string> | void> | Record<string, string> | void;
 };
 
 export type PluginHookRegistration<K extends PluginHookName = PluginHookName> = {

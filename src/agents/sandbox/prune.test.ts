@@ -132,7 +132,7 @@ describe("maybePruneSandboxes", () => {
   it("removes the registry entry after runtime removal succeeds", async () => {
     await maybePruneSandboxes(buildPruneConfig());
 
-    expect(backendMocks.removeRuntime).toHaveBeenCalled();
+    expect(backendMocks.removeRuntime).toHaveBeenCalledTimes(1);
     expect(registryMocks.removeRegistryEntry).toHaveBeenCalledWith("sandbox-1");
   });
 
@@ -145,5 +145,24 @@ describe("maybePruneSandboxes", () => {
     expect(runtimeMocks.error).toHaveBeenCalledWith(
       "Sandbox prune failed to remove sandbox-1: docker rm failed",
     );
+  });
+
+  it("prunes entries with out-of-range registry timestamps", async () => {
+    registryMocks.readRegistry.mockResolvedValueOnce({
+      entries: [
+        {
+          containerName: "sandbox-out-of-range",
+          backendId: "docker",
+          createdAtMs: Date.now(),
+          lastUsedAtMs: Number.MAX_SAFE_INTEGER,
+          image: "openclaw-sandbox:bookworm-slim",
+        },
+      ],
+    });
+
+    await maybePruneSandboxes(buildPruneConfig());
+
+    expect(backendMocks.removeRuntime).toHaveBeenCalledTimes(1);
+    expect(registryMocks.removeRegistryEntry).toHaveBeenCalledWith("sandbox-out-of-range");
   });
 });

@@ -1,7 +1,6 @@
-import type { StreamFn } from "@mariozechner/pi-agent-core";
-import type { Context, Model, SimpleStreamOptions } from "@mariozechner/pi-ai";
+import type { StreamFn } from "openclaw/plugin-sdk/agent-core";
+import type { Context, Model, SimpleStreamOptions } from "openclaw/plugin-sdk/llm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildOpenAICodexProviderPlugin } from "./openai-codex-provider.js";
 import { buildOpenAIProvider } from "./openai-provider.js";
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   openAIResponsesTransportStreamFn: vi.fn(),
 }));
 
-vi.mock("./openai-codex-provider.runtime.js", () => ({
+vi.mock("./openai-chatgpt-provider.runtime.js", () => ({
   refreshOpenAICodexToken: mocks.refreshOpenAICodexToken,
 }));
 
@@ -60,16 +59,16 @@ function runWrappedPayloadCase(params: {
   modelId: string;
   model:
     | Model<"openai-responses">
-    | Model<"openai-codex-responses">
+    | Model<"openai-chatgpt-responses">
     | Model<"azure-openai-responses">;
   extraParams?: Record<string, unknown>;
   cfg?: Record<string, unknown>;
   payload?: Record<string, unknown>;
 }) {
   const payload = params.payload ?? { store: false };
-  let capturedOptions: (SimpleStreamOptions & { openaiWsWarmup?: boolean }) | undefined;
+  let capturedOptions: SimpleStreamOptions | undefined;
   const baseStreamFn: StreamFn = (model, _context, options) => {
-    capturedOptions = options as (SimpleStreamOptions & { openaiWsWarmup?: boolean }) | undefined;
+    capturedOptions = options;
     options?.onPayload?.(payload, model);
     return {} as ReturnType<StreamFn>;
   };
@@ -92,6 +91,29 @@ function runWrappedPayloadCase(params: {
   };
 }
 
+function expectFields(value: unknown, expected: Record<string, unknown>): void {
+  if (!value || typeof value !== "object") {
+    throw new Error("expected fields object");
+  }
+  const record = value as Record<string, unknown>;
+  for (const [key, expectedValue] of Object.entries(expected)) {
+    expect(record[key], key).toEqual(expectedValue);
+  }
+}
+
+function expectCatalogEntry(entries: unknown, id: string, expected: Record<string, unknown>): void {
+  expect(Array.isArray(entries)).toBe(true);
+  const entry = (entries as Array<Record<string, unknown>>).find(
+    (candidate) => candidate.id === id,
+  );
+  expectFields(entry, expected);
+}
+
+function expectNoCatalogEntry(entries: unknown, id: string): void {
+  expect(Array.isArray(entries)).toBe(true);
+  expect((entries as Array<Record<string, unknown>>).map((entry) => entry.id)).not.toContain(id);
+}
+
 describe("buildOpenAIProvider", () => {
   beforeEach(() => {
     mocks.openAIResponsesTransportStreamFn.mockReset();
@@ -104,11 +126,67 @@ describe("buildOpenAIProvider", () => {
     const provider = buildOpenAIProvider();
     const apiKey = provider.auth.find((method) => method.id === "api-key");
 
-    expect(apiKey?.wizard).toMatchObject({
+    expect(provider.hookAliases).toEqual(["azure-openai", "azure-openai-responses"]);
+    expect(provider.catalog).toBeUndefined();
+    expectFields(apiKey?.wizard, {
       choiceLabel: "OpenAI API Key",
+      choiceHint: "Use your OpenAI API key directly",
       groupId: "openai",
       groupLabel: "OpenAI",
-      groupHint: "Direct API key",
+      groupHint: "ChatGPT/Codex sign-in or API key",
+    });
+  });
+
+  it("keeps the deprecated Codex provider builder on the public API barrel", async () => {
+    const { buildOpenAICodexProviderPlugin } = await import("./api.js");
+    const provider = buildOpenAICodexProviderPlugin();
+
+    expect(provider.id).toBe("openai");
+    expect(provider.hookAliases).toEqual(["azure-openai", "azure-openai-responses"]);
+  });
+
+  it("prefers auth-aware Codex runtime metadata over static OpenAI catalog rows", () => {
+    const provider = buildOpenAIProvider();
+
+    expect(
+      provider.preferRuntimeResolvedModel?.({
+        provider: "openai",
+        modelId: "gpt-5.5",
+      } as never),
+    ).toBe(true);
+  });
+
+  it("normalizes legacy OpenAI Codex hook aliases through the Codex transport", () => {
+    const provider = buildOpenAIProvider();
+
+    expect(
+      provider.normalizeTransport?.({
+        provider: "openai",
+        api: "openai-responses",
+        baseUrl: "https://chatgpt.com/backend-api",
+      } as never),
+    ).toEqual({
+      api: "openai-chatgpt-responses",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+    });
+    expect(
+      provider.normalizeResolvedModel?.({
+        provider: "openai",
+        modelId: "gpt-5.4",
+        model: {
+          provider: "openai",
+          id: "gpt-5.4-codex",
+          name: "gpt-5.4-codex",
+          api: "openai-responses",
+          baseUrl: "https://chatgpt.com/backend-api",
+        },
+      } as never),
+    ).toMatchObject({
+      id: "gpt-5.4",
+      name: "gpt-5.4",
+      api: "openai-chatgpt-responses",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      input: ["text", "image"],
     });
   });
 
@@ -162,7 +240,7 @@ describe("buildOpenAIProvider", () => {
       modelRegistry: registry as never,
     });
 
-    expect(mini).toMatchObject({
+    expectFields(mini, {
       provider: "openai",
       id: "gpt-5.4-mini",
       api: "openai-responses",
@@ -170,7 +248,7 @@ describe("buildOpenAIProvider", () => {
       contextWindow: 400_000,
       maxTokens: 128_000,
     });
-    expect(nano).toMatchObject({
+    expectFields(nano, {
       provider: "openai",
       id: "gpt-5.4-nano",
       api: "openai-responses",
@@ -189,16 +267,16 @@ describe("buildOpenAIProvider", () => {
           provider: "openai",
           modelId: "gpt-5.4-mini",
         } as never)
-        ?.levels.some((level) => level.id === "xhigh"),
-    ).toBe(true);
+        ?.levels.map((level) => level.id),
+    ).toContain("xhigh");
     expect(
       provider
         .resolveThinkingProfile?.({
           provider: "openai",
           modelId: "gpt-5.4-nano",
         } as never)
-        ?.levels.some((level) => level.id === "xhigh"),
-    ).toBe(true);
+        ?.levels.map((level) => level.id),
+    ).toContain("xhigh");
 
     const entries = provider.augmentModelCatalog?.({
       env: process.env,
@@ -208,26 +286,22 @@ describe("buildOpenAIProvider", () => {
       ],
     } as never);
 
-    expect(entries).toContainEqual(
-      expect.objectContaining({
-        provider: "openai",
-        id: "gpt-5.4-mini",
-        name: "gpt-5.4-mini",
-        reasoning: true,
-        input: ["text", "image"],
-        contextWindow: 400_000,
-      }),
-    );
-    expect(entries).toContainEqual(
-      expect.objectContaining({
-        provider: "openai",
-        id: "gpt-5.4-nano",
-        name: "gpt-5.4-nano",
-        reasoning: true,
-        input: ["text", "image"],
-        contextWindow: 400_000,
-      }),
-    );
+    expectCatalogEntry(entries, "gpt-5.4-mini", {
+      provider: "openai",
+      id: "gpt-5.4-mini",
+      name: "gpt-5.4-mini",
+      reasoning: true,
+      input: ["text", "image"],
+      contextWindow: 400_000,
+    });
+    expectCatalogEntry(entries, "gpt-5.4-nano", {
+      provider: "openai",
+      id: "gpt-5.4-nano",
+      name: "gpt-5.4-nano",
+      reasoning: true,
+      input: ["text", "image"],
+      contextWindow: 400_000,
+    });
   });
 
   it("owns native reasoning output mode for OpenAI and Azure OpenAI responses", () => {
@@ -249,22 +323,44 @@ describe("buildOpenAIProvider", () => {
     ).toBe("native");
   });
 
-  it("keeps GPT-5.4 family metadata aligned with native OpenAI docs", () => {
+  it("routes GPT forward-compat models by selected OpenAI auth mode", () => {
     const provider = buildOpenAIProvider();
-    const codexProvider = buildOpenAICodexProviderPlugin();
 
     const openaiModel = provider.resolveDynamicModel?.({
       provider: "openai",
       modelId: "gpt-5.4",
       modelRegistry: { find: () => null },
+      providerConfig: {
+        auth: "api-key",
+      },
     } as never);
-    const codexModel = codexProvider.resolveDynamicModel?.({
-      provider: "openai-codex",
+    const codexModel = provider.resolveDynamicModel?.({
+      provider: "openai",
       modelId: "gpt-5.4",
       modelRegistry: { find: () => null },
+      config: {
+        auth: {
+          profiles: {
+            "openai:default": {
+              provider: "openai",
+              mode: "oauth",
+            },
+          },
+          order: {
+            openai: ["openai:default"],
+          },
+        },
+      },
+    } as never);
+    const selectedOauthModel = provider.resolveDynamicModel?.({
+      provider: "openai",
+      modelId: "gpt-5.4",
+      modelRegistry: { find: () => null },
+      authProfileId: "openai:work",
+      authProfileMode: "oauth",
     } as never);
 
-    expect(openaiModel).toMatchObject({
+    expectFields(openaiModel, {
       provider: "openai",
       id: "gpt-5.4",
       api: "openai-responses",
@@ -272,10 +368,18 @@ describe("buildOpenAIProvider", () => {
       contextWindow: 1_050_000,
       maxTokens: 128_000,
     });
-    expect(codexModel).toMatchObject({
-      provider: "openai-codex",
+    expectFields(codexModel, {
+      provider: "openai",
       id: "gpt-5.4",
-      api: "openai-codex-responses",
+      api: "openai-chatgpt-responses",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      contextWindow: 1_050_000,
+      maxTokens: 128_000,
+    });
+    expectFields(selectedOauthModel, {
+      provider: "openai",
+      id: "gpt-5.4",
+      api: "openai-chatgpt-responses",
       baseUrl: "https://chatgpt.com/backend-api/codex",
       contextWindow: 1_050_000,
       maxTokens: 128_000,
@@ -307,7 +411,7 @@ describe("buildOpenAIProvider", () => {
       } as never,
     });
 
-    expect(model).toMatchObject({
+    expectFields(model, {
       provider: "openai",
       id: "chat-latest",
       api: "openai-responses",
@@ -325,7 +429,7 @@ describe("buildOpenAIProvider", () => {
       modelRegistry: { find: () => null },
     } as never);
 
-    expect(fallback).toMatchObject({
+    expectFields(fallback, {
       provider: "openai",
       id: "chat-latest",
       api: "openai-responses",
@@ -336,7 +440,7 @@ describe("buildOpenAIProvider", () => {
     });
   });
 
-  it("leaves gpt-5.5 to Pi and resolves gpt-5.5-pro locally", () => {
+  it("resolves gpt-5.5 locally without cached catalog metadata", () => {
     const provider = buildOpenAIProvider();
 
     const model = provider.resolveDynamicModel?.({
@@ -360,6 +464,25 @@ describe("buildOpenAIProvider", () => {
             : null,
       } as never,
     });
+
+    expectFields(model, {
+      provider: "openai",
+      id: "gpt-5.5",
+      api: "openai-responses",
+      baseUrl: "https://api.openai.com/v1",
+      contextWindow: 1_000_000,
+      contextTokens: 272_000,
+      maxTokens: 128_000,
+      mediaInput: {
+        image: { maxSidePx: 6000, preferredSidePx: 2048, tokenMode: "detail" },
+      },
+      cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 },
+    });
+  });
+
+  it("resolves gpt-5.5-pro locally", () => {
+    const provider = buildOpenAIProvider();
+
     const pro = provider.resolveDynamicModel?.({
       provider: "openai",
       modelId: "gpt-5.5-pro",
@@ -382,8 +505,7 @@ describe("buildOpenAIProvider", () => {
       } as never,
     });
 
-    expect(model).toBeUndefined();
-    expect(pro).toMatchObject({
+    expectFields(pro, {
       provider: "openai",
       id: "gpt-5.5-pro",
       api: "openai-responses",
@@ -392,6 +514,27 @@ describe("buildOpenAIProvider", () => {
       maxTokens: 128_000,
       cost: { input: 30, output: 180, cacheRead: 0, cacheWrite: 0 },
     });
+  });
+
+  it("keeps Codex-family OpenAI models on the Codex thinking policy", () => {
+    const provider = buildOpenAIProvider();
+
+    expect(
+      provider
+        .resolveThinkingProfile?.({
+          provider: "openai",
+          modelId: "gpt-5.3-codex-spark",
+        } as never)
+        ?.levels.map((level) => level.id),
+    ).toContain("xhigh");
+    expect(
+      provider
+        .resolveThinkingProfile?.({
+          provider: "openai",
+          modelId: "gpt-5.3",
+        } as never)
+        ?.levels.map((level) => level.id),
+    ).not.toContain("xhigh");
   });
 
   it("keeps chat-latest and gpt-5.5 out of synthetic catalog metadata", () => {
@@ -403,31 +546,21 @@ describe("buildOpenAIProvider", () => {
           provider: "openai",
           modelId: "gpt-5.5",
         } as never)
-        ?.levels.some((level) => level.id === "xhigh"),
-    ).toBe(true);
+        ?.levels.map((level) => level.id),
+    ).toContain("xhigh");
 
     const entries = provider.augmentModelCatalog?.({
       env: process.env,
       entries: [{ provider: "openai", id: "gpt-5.4", name: "GPT-5.4" }],
     } as never);
 
-    expect(entries).not.toContainEqual(
-      expect.objectContaining({
-        provider: "openai",
-        id: "gpt-5.5",
-      }),
-    );
-    expect(entries).not.toContainEqual(
-      expect.objectContaining({
-        provider: "openai",
-        id: "chat-latest",
-      }),
-    );
+    expectNoCatalogEntry(entries, "gpt-5.5");
+    expectNoCatalogEntry(entries, "chat-latest");
   });
 
-  it("keeps modern live selection on OpenAI 5.2+ and current Codex models", () => {
+  it("keeps modern live selection on current OpenAI and Codex models", () => {
     const provider = buildOpenAIProvider();
-    const codexProvider = buildOpenAICodexProviderPlugin();
+    const codexProvider = buildOpenAIProvider();
 
     expect(
       provider.isModernModelRef?.({
@@ -440,7 +573,7 @@ describe("buildOpenAIProvider", () => {
         provider: "openai",
         modelId: "gpt-5.2",
       } as never),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       provider.isModernModelRef?.({
         provider: "openai",
@@ -462,31 +595,31 @@ describe("buildOpenAIProvider", () => {
 
     expect(
       codexProvider.isModernModelRef?.({
-        provider: "openai-codex",
+        provider: "openai",
         modelId: "gpt-5.1-codex",
       } as never),
     ).toBe(false);
     expect(
       codexProvider.isModernModelRef?.({
-        provider: "openai-codex",
+        provider: "openai",
         modelId: "gpt-5.1-codex-max",
       } as never),
     ).toBe(false);
     expect(
       codexProvider.isModernModelRef?.({
-        provider: "openai-codex",
+        provider: "openai",
         modelId: "gpt-5.2-codex",
       } as never),
     ).toBe(false);
     expect(
       codexProvider.isModernModelRef?.({
-        provider: "openai-codex",
+        provider: "openai",
         modelId: "gpt-5.4",
       } as never),
     ).toBe(true);
     expect(
       codexProvider.isModernModelRef?.({
-        provider: "openai-codex",
+        provider: "openai",
         modelId: "gpt-5.5",
       } as never),
     ).toBe(true);
@@ -494,7 +627,7 @@ describe("buildOpenAIProvider", () => {
 
   it("owns replay policy for OpenAI and Codex transports", () => {
     const provider = buildOpenAIProvider();
-    const codexProvider = buildOpenAICodexProviderPlugin();
+    const codexProvider = buildOpenAIProvider();
 
     expect(
       provider.buildReplayPolicy?.({
@@ -527,8 +660,8 @@ describe("buildOpenAIProvider", () => {
 
     expect(
       codexProvider.buildReplayPolicy?.({
-        provider: "openai-codex",
-        modelApi: "openai-codex-responses",
+        provider: "openai",
+        modelApi: "openai-chatgpt-responses",
         modelId: "gpt-5.4",
       } as never),
     ).toEqual({
@@ -537,6 +670,7 @@ describe("buildOpenAIProvider", () => {
       sanitizeToolCallIds: false,
       validateGeminiTurns: false,
       validateAnthropicTurns: false,
+      allowSyntheticToolResults: true,
     });
   });
 
@@ -573,10 +707,9 @@ describe("buildOpenAIProvider", () => {
       },
     });
 
-    expect(extraParams).toMatchObject({
+    expectFields(extraParams, {
       transport: "sse",
     });
-    expect(extraParams?.openaiWsWarmup).toBeUndefined();
     expect(result.payload.store).toBe(true);
     expect(result.payload.context_management).toEqual([
       { type: "compaction", compact_threshold: 140_000 },
@@ -743,12 +876,11 @@ describe("buildOpenAIProvider", () => {
     expect(result.payload.tools).toEqual([{ type: "function", name: "web_search" }]);
   });
 
-  it("preserves explicit OpenAI responses transport and warmup overrides", () => {
+  it("preserves explicit OpenAI responses transport overrides", () => {
     const provider = buildOpenAIProvider();
 
     const explicit = {
       transport: "websocket",
-      openaiWsWarmup: false,
       fastMode: true,
     };
 
@@ -761,15 +893,41 @@ describe("buildOpenAIProvider", () => {
     ).toBe(explicit);
   });
 
-  it("defaults Codex responses transport without forcing warmup flags", () => {
-    const provider = buildOpenAICodexProviderPlugin();
+  it("defaults Codex responses transport without forcing extra flags", () => {
+    const provider = buildOpenAIProvider();
 
     expect(
       provider.prepareExtraParams?.({
-        provider: "openai-codex",
+        provider: "openai",
         modelId: "gpt-5.4",
         extraParams: { effort: "high" },
+        config: {
+          auth: {
+            profiles: {
+              "openai:default": {
+                provider: "openai",
+                mode: "oauth",
+              },
+            },
+          },
+        },
       } as never),
+    ).toEqual({
+      effort: "high",
+      transport: "auto",
+    });
+    expect(
+      provider.prepareExtraParams?.({
+        provider: "openai",
+        modelId: "gpt-5.4",
+        model: {
+          api: "openai-chatgpt-responses",
+          provider: "openai",
+          id: "gpt-5.4",
+          baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+        } as Model<"openai-chatgpt-responses">,
+        extraParams: { effort: "high" },
+      }),
     ).toEqual({
       effort: "high",
       transport: "auto",
@@ -777,11 +935,10 @@ describe("buildOpenAIProvider", () => {
 
     const explicit = {
       transport: "sse",
-      openaiWsWarmup: false,
     };
     expect(
       provider.prepareExtraParams?.({
-        provider: "openai-codex",
+        provider: "openai",
         modelId: "gpt-5.4",
         extraParams: explicit,
       } as never),
@@ -790,7 +947,7 @@ describe("buildOpenAIProvider", () => {
 
   it("shares OpenAI responses wrapper composition across provider variants", () => {
     const provider = buildOpenAIProvider();
-    const codexProvider = buildOpenAICodexProviderPlugin();
+    const codexProvider = buildOpenAIProvider();
 
     expect(provider.wrapStreamFn).toBe(codexProvider.wrapStreamFn);
     expect(provider.buildReplayPolicy).toBe(codexProvider.buildReplayPolicy);
@@ -823,88 +980,14 @@ describe("buildOpenAIProvider", () => {
     });
 
     expect(result.options?.transport).toBeUndefined();
-    expect(result.options?.openaiWsWarmup).toBeUndefined();
     expect(result.payload.reasoning).toEqual({ effort: "none" });
   });
 
-  it("owns Codex wrapper composition for responses payloads", () => {
-    const provider = buildOpenAICodexProviderPlugin();
-    const wrap = provider.wrapStreamFn;
-    expect(wrap).toBeTypeOf("function");
-    if (!wrap) {
-      throw new Error("expected Codex wrapper");
-    }
-    const payload = {
-      store: false,
-      text: { verbosity: "medium" },
-      tools: [{ type: "function", name: "read" }],
-    };
-    mocks.openAIResponsesTransportStreamFn.mockImplementation((model, _context, options) => {
-      options?.onPayload?.(payload, model);
-      return {} as ReturnType<StreamFn>;
-    });
-    const result = runWrappedPayloadCase({
-      wrap,
-      provider: "openai-codex",
-      modelId: "gpt-5.4",
-      extraParams: {
-        fastMode: true,
-        serviceTier: "priority",
-        text_verbosity: "high",
-      },
-      cfg: {
-        auth: {
-          profiles: {
-            "openai-codex:default": {
-              provider: "openai-codex",
-              mode: "oauth",
-            },
-          },
-        },
-        tools: {
-          web: {
-            search: {
-              enabled: true,
-              openaiCodex: {
-                enabled: true,
-                mode: "live",
-                allowedDomains: ["example.com"],
-              },
-            },
-          },
-        },
-      },
-      model: {
-        api: "openai-codex-responses",
-        provider: "openai-codex",
-        id: "gpt-5.4",
-        baseUrl: "https://chatgpt.com/backend-api",
-      } as Model<"openai-codex-responses">,
-      payload,
-    });
-
-    expect(mocks.openAIResponsesTransportStreamFn).not.toHaveBeenCalled();
-    expect(result.options?.headers).toMatchObject({
-      originator: "openclaw",
-      "User-Agent": expect.stringMatching(/^openclaw\//u),
-    });
-    expect(result.payload.store).toBe(false);
-    expect(result.payload.service_tier).toBe("priority");
-    expect(result.payload.text).toEqual({ verbosity: "high" });
-    expect(result.payload.tools).toEqual([
-      { type: "function", name: "read" },
-      {
-        type: "web_search",
-        external_web_access: true,
-        filters: { allowed_domains: ["example.com"] },
-      },
-    ]);
-  });
   it("falls back to cached codex oauth credentials on accountId extraction failures", async () => {
-    const provider = buildOpenAICodexProviderPlugin();
+    const provider = buildOpenAIProvider();
     const credential = {
       type: "oauth" as const,
-      provider: "openai-codex",
+      provider: "openai",
       access: "cached-access-token",
       refresh: "refresh-token",
       expires: Date.now() - 60_000,
