@@ -14,6 +14,13 @@ export type ChatItem =
       timestamp: number;
     }
   | { kind: "stream"; key: string; text: string; startedAt: number; isStreaming: boolean }
+  | {
+      kind: "thinking";
+      key: string;
+      text: string;
+      startedAt: number;
+      isStreaming: boolean;
+    }
   | { kind: "reading-indicator"; key: string };
 
 /** A group of consecutive messages from the same role (Slack-style layout) */
@@ -34,6 +41,11 @@ export type MessageContentItem =
       text?: string;
       name?: string;
       args?: unknown;
+    }
+  | {
+      type: "thinking";
+      text: string;
+      isStreaming?: boolean;
     }
   | {
       type: "attachment";

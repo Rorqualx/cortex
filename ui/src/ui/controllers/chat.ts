@@ -365,6 +365,8 @@ export type ChatState = {
   chatRunId: string | null;
   chatStream: string | null;
   chatStreamStartedAt: number | null;
+  chatThinkingStream: string | null;
+  chatThinkingStreamStartedAt: number | null;
   lastError: string | null;
   chatError?: string | null;
   agentsError?: string | null;
@@ -395,6 +397,7 @@ export type ChatEventPayload = {
   state: "delta" | "final" | "aborted" | "error";
   message?: unknown;
   deltaText?: string;
+  deltaThinking?: string;
   replace?: boolean;
   errorMessage?: string;
 };
@@ -520,6 +523,22 @@ function resolveDeltaChatStreamText(
     return `${currentStream}${payload.deltaText}`;
   }
   return typeof snapshot === "string" ? snapshot : null;
+}
+
+function resolveDeltaThinkingStreamText(
+  currentStream: string | null,
+  payload: ChatEventPayload,
+): string | null {
+  if (typeof payload.deltaThinking === "string") {
+    if (payload.replace === true) {
+      return payload.deltaThinking;
+    }
+    if (currentStream === null) {
+      return payload.deltaThinking;
+    }
+    return `${currentStream}${payload.deltaThinking}`;
+  }
+  return currentStream;
 }
 
 type InFlightChatHistoryRequest = {
@@ -714,6 +733,8 @@ async function loadChatHistoryUncached(
       maybeResetToolStream(state);
       state.chatStream = null;
       state.chatStreamStartedAt = null;
+      state.chatThinkingStream = null;
+      state.chatThinkingStreamStartedAt = null;
       recordChatHistoryTiming(state, "stream-reset", startedAtMs, {
         requestSessionKey: sessionKey,
         requestAgentId,
@@ -952,6 +973,8 @@ export async function sendChatMessage(
       state.chatRunId = null;
       state.chatStream = null;
       state.chatStreamStartedAt = null;
+      state.chatThinkingStream = null;
+      state.chatThinkingStreamStartedAt = null;
     } else {
       state.chatRunId = ack.runId;
     }
@@ -1126,6 +1149,13 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       !isAssistantHeartbeatAckForDisplay(payload.message)
     ) {
       state.chatStream = next;
+    }
+    const nextThinking = resolveDeltaThinkingStreamText(state.chatThinkingStream, payload);
+    if (typeof nextThinking === "string" && nextThinking) {
+      state.chatThinkingStream = nextThinking;
+      if (state.chatThinkingStreamStartedAt === null) {
+        state.chatThinkingStreamStartedAt = Date.now();
+      }
     }
   } else if (payload.state === "final") {
     const finalMessage = normalizeFinalAssistantMessage(payload.message);

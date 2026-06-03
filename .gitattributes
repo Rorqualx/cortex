@@ -26,3 +26,19 @@ src/agents/embedded-agent-runner/extra-params.provider-runtime.test.ts merge=our
 
 # Feature B: packageVersion plumbing on bundled-plugin types.
 src/plugins/channel-catalog-registry.ts                              merge=ours
+
+# Feature C: LLM thinking stream to Control UI.
+# Real-time thinking display in chat (deltaThinking field in gateway protocol).
+packages/gateway-protocol/src/schema/logs-chat.ts                    merge=ours
+src/gateway/server-chat.ts                                            merge=ours
+src/gateway/server-chat-state.ts                                      merge=ours
+ui/src/ui/chat/run-lifecycle.ts                                       merge=ours
+ui/src/ui/app.ts                                                      merge=ours
+ui/src/ui/app-render.ts                                               merge=ours
+ui/src/ui/types/chat-types.ts                                         merge=ours
+ui/src/ui/chat/build-chat-items.ts                                    merge=ours
+ui/src/ui/views/chat.ts                                               merge=ours
+ui/src/ui/chat/grouped-render.ts                                      merge=ours
+ui/src/styles/chat/grouped.css                                        merge=ours
+ui/src/ui/controllers/chat.ts                                         merge=ours
+ui/src/ui/app-view-state.ts                                         merge=ours

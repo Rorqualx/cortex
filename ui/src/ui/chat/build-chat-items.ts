@@ -19,6 +19,8 @@ export type BuildChatItemsProps = {
   streamSegments: Array<{ text: string; ts: number }>;
   stream: string | null;
   streamStartedAt: number | null;
+  thinkingStream: string | null;
+  thinkingStreamStartedAt: number | null;
   queue?: ChatQueueItem[];
   showToolCalls: boolean;
   searchOpen?: boolean;
@@ -660,6 +662,17 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
     } else if (props.stream.trim().length === 0) {
       items.push({ kind: "reading-indicator", key });
     }
+  }
+
+  if (props.thinkingStream !== null) {
+    const key = `thinking:${props.sessionKey}:${props.thinkingStreamStartedAt ?? "live"}`;
+    items.push({
+      kind: "thinking",
+      key,
+      text: props.thinkingStream,
+      startedAt: props.thinkingStreamStartedAt ?? Date.now(),
+      isStreaming: true,
+    });
   }
 
   return groupMessages(collapseSequentialDuplicateMessages(sortChatItemsByVisibleTime(items)));

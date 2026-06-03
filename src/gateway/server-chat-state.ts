@@ -84,6 +84,10 @@ export type ChatRunState = {
   deltaLastBroadcastText: Map<string, string>;
   agentDeltaSentAt: Map<string, number>;
   bufferedAgentEvents: Map<string, BufferedAgentEvent>;
+  /** Accumulated thinking content per run, for inclusion in chat delta events. */
+  thinkingBuffers: Map<string, string>;
+  /** Last thinking content broadcast, for computing deltaThinking. */
+  deltaLastBroadcastThinking: Map<string, string>;
   abortedRuns: Map<string, number>;
   clearRun: (runId: string) => void;
   clear: () => void;
@@ -99,6 +103,8 @@ export function createChatRunState(): ChatRunState {
   const deltaLastBroadcastText = new Map<string, string>();
   const agentDeltaSentAt = new Map<string, number>();
   const bufferedAgentEvents = new Map<string, BufferedAgentEvent>();
+  const thinkingBuffers = new Map<string, string>();
+  const deltaLastBroadcastThinking = new Map<string, string>();
   const abortedRuns = new Map<string, number>();
 
   const clearRun = (runId: string) => {
@@ -108,6 +114,8 @@ export function createChatRunState(): ChatRunState {
     deltaSentAt.delete(runId);
     deltaLastBroadcastLen.delete(runId);
     deltaLastBroadcastText.delete(runId);
+    thinkingBuffers.delete(runId);
+    deltaLastBroadcastThinking.delete(runId);
     for (const key of [runId, `${runId}:assistant`, `${runId}:thinking`]) {
       agentDeltaSentAt.delete(key);
       bufferedAgentEvents.delete(key);
@@ -124,6 +132,8 @@ export function createChatRunState(): ChatRunState {
     deltaLastBroadcastText.clear();
     agentDeltaSentAt.clear();
     bufferedAgentEvents.clear();
+    thinkingBuffers.clear();
+    deltaLastBroadcastThinking.clear();
     abortedRuns.clear();
   };
 
@@ -137,6 +147,8 @@ export function createChatRunState(): ChatRunState {
     deltaLastBroadcastText,
     agentDeltaSentAt,
     bufferedAgentEvents,
+    thinkingBuffers,
+    deltaLastBroadcastThinking,
     abortedRuns,
     clearRun,
     clear,

@@ -26,6 +26,7 @@ import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
+  renderThinkingGroup,
 } from "../chat/grouped-render.ts";
 import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "../chat/input-history.ts";
 import { PinnedMessages } from "../chat/pinned-messages.ts";
@@ -102,6 +103,8 @@ export type ChatProps = {
   streamSegments: Array<{ text: string; ts: number }>;
   stream: string | null;
   streamStartedAt: number | null;
+  thinkingStream: string | null;
+  thinkingStreamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
   draft: string;
   queue: ChatQueueItem[];
@@ -1427,6 +1430,8 @@ export function renderChat(props: ChatProps) {
     streamSegments: props.streamSegments,
     stream: displayStream,
     streamStartedAt: props.streamStartedAt,
+    thinkingStream: props.thinkingStream,
+    thinkingStreamStartedAt: props.thinkingStreamStartedAt,
     queue: props.queue,
     showToolCalls: props.showToolCalls,
     searchOpen: vs.searchOpen,
@@ -1567,6 +1572,17 @@ export function renderChat(props: ChatProps) {
                 }
                 if (item.kind === "stream") {
                   return renderStreamingGroup(
+                    item.text,
+                    item.startedAt,
+                    item.isStreaming,
+                    props.onOpenSidebar,
+                    assistantIdentity,
+                    props.basePath,
+                    props.assistantAttachmentAuthToken ?? null,
+                  );
+                }
+                if (item.kind === "thinking") {
+                  return renderThinkingGroup(
                     item.text,
                     item.startedAt,
                     item.isStreaming,

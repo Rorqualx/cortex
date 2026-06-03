@@ -209,7 +209,7 @@ function excludeConnIds(
   return filtered;
 }
 
-type BroadcastDelta = { deltaText: string; replace?: true };
+type BroadcastDelta = { deltaText: string; deltaThinking?: string; replace?: true };
 
 function resolveBroadcastDelta(params: {
   text: string;
@@ -659,6 +659,22 @@ export function createAgentEventHandler({
     };
   };
 
+  const accumulateThinkingDelta = (clientRunId: string, text: string) => {
+    const previous = chatRunState.thinkingBuffers.get(clientRunId) ?? "";
+    chatRunState.thinkingBuffers.set(clientRunId, previous + text);
+  };
+
+  const resolveThinkingDelta = (clientRunId: string): BroadcastDelta | undefined => {
+    const text = chatRunState.thinkingBuffers.get(clientRunId);
+    if (!text) {
+      return undefined;
+    }
+    return resolveBroadcastDelta({
+      text,
+      previousBroadcastText: chatRunState.deltaLastBroadcastThinking.get(clientRunId),
+    });
+  };
+
   const flushBufferedChatDeltaIfNeeded = (
     sessionKey: string,
     agentId: string | undefined,
@@ -686,6 +702,10 @@ export function createAgentEventHandler({
     if (!delta) {
       return;
     }
+
+    // Include thinking delta if available
+    const thinkingDelta = resolveThinkingDelta(clientRunId);
+
     const spawnedBy = resolveSpawnedBy(sessionKey);
     const flushPayload = {
       runId: clientRunId,
@@ -696,6 +716,7 @@ export function createAgentEventHandler({
       state: "delta" as const,
       deltaText: delta.deltaText,
       ...(delta.replace ? { replace: true as const } : {}),
+      ...(thinkingDelta?.deltaThinking ? { deltaThinking: thinkingDelta.deltaThinking } : {}),
       message: {
         role: "assistant",
         content: [{ type: "text", text }],
@@ -709,6 +730,12 @@ export function createAgentEventHandler({
     });
     chatRunState.deltaLastBroadcastLen.set(clientRunId, text.length);
     chatRunState.deltaLastBroadcastText.set(clientRunId, text);
+    if (thinkingDelta) {
+      chatRunState.deltaLastBroadcastThinking.set(
+        clientRunId,
+        chatRunState.thinkingBuffers.get(clientRunId) ?? "",
+      );
+    }
     chatRunState.deltaSentAt.set(clientRunId, now);
   };
 
@@ -909,6 +936,10 @@ export function createAgentEventHandler({
     if (!stream) {
       sendAgentPayload(sessionKey, payload, { agentId });
       return;
+    }
+    // Accumulate thinking deltas for inclusion in chat delta events
+    if (stream === "thinking" && typeof payload.data?.delta === "string") {
+      accumulateThinkingDelta(clientRunId, payload.data.delta);
     }
     const now = Date.now();
     const key = agentTextThrottleKey(clientRunId, stream);

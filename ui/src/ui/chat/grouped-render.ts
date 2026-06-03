@@ -403,6 +403,47 @@ export function renderStreamingGroup(
   `;
 }
 
+export function renderThinkingGroup(
+  text: string,
+  startedAt: number,
+  isStreaming = true,
+  onOpenSidebar?: (content: SidebarContent) => void,
+  assistant?: AssistantIdentity,
+  basePath?: string,
+  authToken?: string | null,
+) {
+  const name = assistant?.name ?? "Assistant";
+
+  return html`
+    <div class="chat-group assistant thinking-group">
+      ${renderChatAvatar("assistant", assistant, undefined, basePath, authToken)}
+      <div class="chat-group-messages">
+        <details open class="chat-thinking-details">
+          <summary class="chat-thinking-summary">
+            <span class="chat-thinking-label">Thinking</span>
+          </summary>
+          <div class="chat-thinking-content">
+            ${renderGroupedMessage(
+              {
+                role: "assistant",
+                content: [{ type: "thinking", text, isStreaming }],
+                timestamp: startedAt,
+              },
+              `thinking:${startedAt}`,
+              { isStreaming, showReasoning: false },
+              onOpenSidebar,
+            )}
+          </div>
+        </details>
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">${name}</span>
+          ${renderChatTimestamp(startedAt)}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderMessageGroup(
   group: MessageGroup,
   opts: {

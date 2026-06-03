@@ -123,6 +123,7 @@ export const ChatDeltaEventSchema = Type.Object(
     state: Type.Literal("delta"),
     message: Type.Optional(Type.Unknown()),
     deltaText: Type.String(),
+    deltaThinking: Type.Optional(Type.String()),
     replace: Type.Optional(Type.Boolean()),
     usage: Type.Optional(Type.Unknown()),
   },

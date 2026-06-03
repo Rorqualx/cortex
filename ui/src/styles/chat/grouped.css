@@ -647,3 +647,80 @@ details.msg-meta:not([open]) .msg-meta__details {
     display: none;
   }
 }
+
+/* ── Thinking block (reasoning/thinking stream display) ── */
+
+/* Thinking group container */
+.chat-group.thinking-group {
+  align-items: flex-start;
+}
+
+.chat-thinking-details {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg) 50%, transparent);
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.chat-thinking-summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  transition: background 120ms ease-out;
+}
+
+.chat-thinking-summary:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.chat-thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-thinking-label {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.chat-thinking-details[open] .chat-thinking-label {
+  color: var(--fg);
+}
+
+.chat-thinking-content {
+  padding: 10px 12px 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+.chat-thinking-content p {
+  margin: 0 0 8px 0;
+}
+
+.chat-thinking-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Streaming indicator for thinking content */
+.chat-thinking-content .streaming {
+  animation: thinking-stream-pulse 1.5s ease-out infinite;
+}
+
+@keyframes thinking-stream-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
