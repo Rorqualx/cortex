@@ -79,6 +79,7 @@ export type SessionEntryUpdateOptions = {
 
 export type SessionEntryPatchOptions = {
   fallbackEntry?: SessionEntry;
+  preserveActivity?: boolean;
   replaceEntry?: boolean;
 };
 
@@ -163,6 +164,7 @@ export async function patchSessionEntry(
   return await patchFileSessionEntry({
     ...scope,
     fallbackEntry: options.fallbackEntry,
+    preserveActivity: options.preserveActivity,
     replaceEntry: options.replaceEntry,
     update,
   });
