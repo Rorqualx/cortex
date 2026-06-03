@@ -33,6 +33,13 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
       "Citations: include Source: <path#line> when it helps the user verify memory snippets.",
     );
   }
+  // Hallucination reduction guidance
+  lines.push(
+    "Accuracy: When memory search results are unclear, incomplete, or don't directly answer the question, say so rather than guessing. You are allowed to say 'I don't know' or 'The available memory doesn't contain this information' when uncertain.",
+  );
+  lines.push(
+    "Verification: Before asserting facts from memory, ensure the cited snippet actually supports your claim. If the connection is tenuous, acknowledge the limitation.",
+  );
   lines.push("");
   return lines;
 };
