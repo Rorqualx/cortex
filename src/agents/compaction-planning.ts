@@ -2,6 +2,7 @@ import { stripRuntimeContextCustomMessages } from "./internal-runtime-context.js
 import type { AgentMessage } from "./runtime/index.js";
 import { repairToolUseResultPairing, stripToolResultDetails } from "./session-transcript-repair.js";
 import { estimateTokens } from "./sessions/index.js";
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./system-prompt-cache-boundary.js";
 import { extractToolCallsFromAssistant, extractToolResultId } from "./tool-call-id.js";
 
 export const BASE_CHUNK_RATIO = 0.4;
@@ -386,4 +387,256 @@ export function buildHistoryPrunePlan(params: {
       parts: params.parts,
     }),
   };
+}
+
+/**
+ * Cache-aware compaction: Detect and preserve prompt cache boundaries.
+ *
+ * When a system prompt contains the cache boundary marker, content before
+ * the marker is cached by the model. Content after is not cached and is
+ * re-processed on each request.
+ *
+ * Cache-aware compaction preserves cache-carryover content (before boundary)
+ * and applies more aggressive compaction to dynamic content (after boundary).
+ * This improves cache hit rates and reduces token costs.
+ */
+
+/**
+ * Position of a cache boundary within messages.
+ */
+export type CacheBoundaryPosition = {
+  /** Index of the message containing the boundary */
+  messageIndex: number;
+  /** Whether this is the start of cache-carryover content */
+  isCacheStart: boolean;
+  /** Whether this is the end of cache-carryover content */
+  isCacheEnd: boolean;
+  /** Approximate character offset within the message body */
+  charOffset?: number;
+};
+
+/**
+ * Result of cache boundary detection.
+ */
+export type CacheBoundaryDetection = {
+  /** Whether any cache boundaries were detected */
+  hasBoundary: boolean;
+  /** All detected boundary positions */
+  positions: CacheBoundaryPosition[];
+  /** Index of the first message after the cache boundary (dynamic content) */
+  firstDynamicIndex?: number;
+  /** Token count before boundary (cache-carryover) */
+  cachedTokens?: number;
+  /** Token count after boundary (dynamic) */
+  dynamicTokens?: number;
+};
+
+/**
+ * Detect cache boundaries in a list of messages.
+ *
+ * Scans message bodies for the cache boundary marker and returns
+ * position information for chunking decisions.
+ */
+export function detectCacheBoundaries(messages: AgentMessage[]): CacheBoundaryDetection {
+  const positions: CacheBoundaryPosition[] = [];
+  let firstDynamicIndex: number | undefined;
+  let boundarySeen = false;
+
+  for (const [index, msg] of messages.entries()) {
+    const body = extractMessageBody(msg);
+    if (!body) continue;
+
+    const boundaryIndex = body.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY);
+    if (boundaryIndex !== -1) {
+      positions.push({
+        messageIndex: index,
+        isCacheStart: !boundarySeen,
+        isCacheEnd: true, // The boundary marks the end of cached content
+        charOffset: boundaryIndex,
+      });
+      boundarySeen = true;
+
+      // First message after boundary is dynamic content
+      if (firstDynamicIndex === undefined) {
+        firstDynamicIndex = index;
+      }
+    }
+  }
+
+  // Calculate token counts
+  let cachedTokens = 0;
+  let dynamicTokens = 0;
+
+  if (firstDynamicIndex !== undefined) {
+    const boundaryMsg = messages[firstDynamicIndex];
+    const boundaryBody = extractMessageBody(boundaryMsg);
+    const boundaryPos = positions.find((p) => p.messageIndex === firstDynamicIndex);
+
+    // Messages fully before the boundary are cached
+    cachedTokens = estimateMessagesTokens(messages.slice(0, firstDynamicIndex));
+
+    // For the boundary message, estimate tokens for cached portion (before boundary)
+    if (boundaryBody && boundaryPos?.charOffset !== undefined) {
+      const cachedPortion = boundaryBody.slice(0, boundaryPos.charOffset);
+      cachedTokens += estimateTokens({ role: "user", content: cachedPortion });
+    }
+
+    // For the boundary message, estimate tokens for dynamic portion (after boundary)
+    if (boundaryBody && boundaryPos?.charOffset !== undefined) {
+      const boundaryMarkerLength = SYSTEM_PROMPT_CACHE_BOUNDARY.length;
+      const dynamicPortion = boundaryBody.slice(boundaryPos.charOffset + boundaryMarkerLength);
+      // Assistant messages require content as an array of blocks for estimateTokens
+      dynamicTokens += estimateTokens({
+        role: "assistant",
+        content: [{ type: "text", text: dynamicPortion }],
+      });
+    } else {
+      // If we can't split, count the whole boundary message as dynamic
+      dynamicTokens += estimateCompactionMessageTokens(boundaryMsg);
+    }
+
+    // Messages after the boundary are fully dynamic
+    dynamicTokens += estimateMessagesTokens(messages.slice(firstDynamicIndex + 1));
+  }
+
+  return {
+    hasBoundary: boundarySeen,
+    positions,
+    firstDynamicIndex,
+    cachedTokens,
+    dynamicTokens,
+  };
+}
+
+/**
+ * Extract message body as string for boundary detection.
+ *
+ * Handles both string content and array content (for assistant messages).
+ * For array content, concatenates text blocks together.
+ */
+function extractMessageBody(msg: AgentMessage): string | undefined {
+  if (typeof msg === "string") return msg;
+  if (typeof msg === "object" && msg !== null) {
+    const content = (msg as { content?: string | unknown }).content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      // Handle assistant message content blocks
+      const textBlocks = content
+        .filter((block) => block?.type === "text" && typeof block?.text === "string")
+        .map((block) => block.text as string);
+      if (textBlocks.length > 0) return textBlocks.join("");
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Cache-aware chunking options.
+ */
+export type CacheAwareChunkingOptions = {
+  /** Maximum tokens per chunk */
+  maxTokens: number;
+  /** Whether to preserve cache-carryover content */
+  preserveCacheCarryover?: boolean;
+  /** Extra buffer for cache-carryover content (default: 1.2x) */
+  cacheBufferMultiplier?: number;
+};
+
+/**
+ * Cache-aware chunking result.
+ */
+export type CacheAwareChunkPlan = {
+  /** Chunks respecting cache boundaries */
+  chunks: AgentMessage[][];
+  /** Cache boundary detection result */
+  detection: CacheBoundaryDetection;
+  /** Whether cache content was preserved */
+  cachePreserved: boolean;
+};
+
+/**
+ * Build cache-aware chunking plan.
+ *
+ * When cache boundaries are detected, this function:
+ * 1. Preserves cache-carryover content (before boundary)
+ * 2. Splits dynamic content (after boundary) using maxTokens
+ * 3. Prefers splitting at cache boundaries when possible
+ *
+ * This improves cache hit rates by keeping cached content intact
+ * and only compressing dynamic conversation content.
+ */
+export function buildCacheAwareChunkPlan(
+  messages: AgentMessage[],
+  options: CacheAwareChunkingOptions,
+): CacheAwareChunkPlan {
+  const detection = detectCacheBoundaries(messages);
+  const { maxTokens, preserveCacheCarryover = true, cacheBufferMultiplier = 1.2 } = options;
+
+  // No cache boundary detected - use standard chunking
+  if (!detection.hasBoundary) {
+    return {
+      chunks: chunkMessagesByMaxTokens(messages, maxTokens),
+      detection,
+      cachePreserved: false,
+    };
+  }
+
+  const chunks: AgentMessage[][] = [];
+
+  // Preserve cache-carryover content
+  if (preserveCacheCarryover && detection.firstDynamicIndex !== undefined) {
+    const cachedContent = messages.slice(0, detection.firstDynamicIndex + 1);
+    chunks.push(cachedContent);
+  }
+
+  // Chunk dynamic content
+  const dynamicContent =
+    detection.firstDynamicIndex !== undefined
+      ? messages.slice(detection.firstDynamicIndex + 1)
+      : messages;
+
+  if (dynamicContent.length > 0) {
+    const dynamicChunks = chunkMessagesByMaxTokens(dynamicContent, maxTokens);
+    chunks.push(...dynamicChunks);
+  }
+
+  return {
+    chunks,
+    detection,
+    cachePreserved: preserveCacheCarryover,
+  };
+}
+
+/**
+ * Check if cache-aware chunking is beneficial for this message set.
+ *
+ * Returns true when:
+ * - Cache boundary exists
+ * - Cached content is substantial (>10% of total)
+ * - Dynamic content exceeds chunk threshold
+ */
+export function isCacheAwareChunkingBeneficial(
+  messages: AgentMessage[],
+  maxTokens: number,
+): boolean {
+  const detection = detectCacheBoundaries(messages);
+  if (!detection.hasBoundary) return false;
+
+  // No benefit if maxTokens is zero or negative
+  if (maxTokens <= 0) return false;
+
+  const totalTokens = estimateMessagesTokens(messages);
+  if (totalTokens === 0) return false;
+
+  // Check if cached content is substantial
+  const cachedRatio =
+    detection.cachedTokens !== undefined && totalTokens > 0
+      ? detection.cachedTokens / totalTokens
+      : 0;
+
+  // Use pre-calculated dynamicTokens from detection which correctly includes
+  // the dynamic portion of the boundary message plus all subsequent messages
+  const dynamicTokens = detection.dynamicTokens ?? 0;
+
+  return cachedRatio > 0.1 && dynamicTokens > maxTokens * 0.5;
 }

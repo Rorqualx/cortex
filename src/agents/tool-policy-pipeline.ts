@@ -1,5 +1,6 @@
 import { filterToolsByPolicy } from "./agent-tools.policy.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
+import { emitToolDenied } from "./event-ledger-helper.js";
 import { isKnownCoreToolId } from "./tool-catalog.js";
 import { auditToolPolicyFilter, type ToolPolicyAuditLogLevel } from "./tool-policy-audit.js";
 import {
@@ -194,6 +195,18 @@ export function applyToolPolicyPipeline(params: {
       after: filtered,
       logLevel: params.auditLogLevel,
     });
+
+    // Emit policy decision events for denied tools
+    const denied = new Set(before.map((t) => t.name));
+    for (const allowed of filtered) {
+      denied.delete(allowed.name);
+    }
+    for (const toolName of denied) {
+      void emitToolDenied({
+        toolName,
+        denyReason: step.label,
+      });
+    }
   }
   return filtered;
 }

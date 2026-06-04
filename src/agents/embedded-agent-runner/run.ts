@@ -11,6 +11,11 @@ import {
   resolveContextEngine,
   resolveContextEngineOwnerPluginId,
 } from "../../context-engine/registry.js";
+import {
+  createDoomLoopGuard,
+  DoomLoopDetectedError,
+  type DoomLoopGuard,
+} from "../../doom-loop-guard.js";
 import { emitAgentPlanEvent, registerAgentRunContext } from "../../infra/agent-events.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { freezeDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
@@ -1210,6 +1215,23 @@ export async function runEmbeddedAgent(
           postCompactionAbortController?.abort(postCompactionAbortError);
         }
       };
+      // Doom loop guard for consecutive failure detection. Arms after successful
+      // turns; observes LLM/tool/network errors and aborts when threshold reached.
+      const doomLoopGuard: DoomLoopGuard = createDoomLoopGuard(
+        resolvedLoopDetectionConfig?.doomLoopGuard,
+        { enabled: resolvedLoopDetectionConfig?.enabled !== false },
+      );
+      let doomLoopAbortController: AbortController | undefined;
+      let doomLoopAbortError: DoomLoopDetectedError | undefined;
+      const observeDoomLoopFailure = (errorType: string, timestamp: number): void => {
+        const verdict = doomLoopGuard.recordFailure(errorType, timestamp);
+        if (verdict.shouldAbort) {
+          doomLoopAbortError ??= DoomLoopDetectedError.fromVerdict(
+            verdict as Extract<DoomLoopVerdict, { shouldAbort: true }>,
+          );
+          doomLoopAbortController?.abort(doomLoopAbortError);
+        }
+      };
       let lastRetryFailoverReason: FailoverReason | null = null;
       let planningOnlyRetryInstruction: string | null = null;
       let reasoningOnlyRetryInstruction: string | null = null;
@@ -1541,6 +1563,7 @@ export async function runEmbeddedAgent(
 
           const attemptAbortController = new AbortController();
           postCompactionAbortController = attemptAbortController;
+          doomLoopAbortController = attemptAbortController;
           const parentAbortSignal = params.abortSignal;
           const relayParentAbort = (): void => {
             attemptAbortController.abort(parentAbortSignal?.reason);
@@ -1698,6 +1721,9 @@ export async function runEmbeddedAgent(
               parentAbortSignal?.removeEventListener?.("abort", relayParentAbort);
               if (postCompactionAbortController === attemptAbortController) {
                 postCompactionAbortController = undefined;
+              }
+              if (doomLoopAbortController === attemptAbortController) {
+                doomLoopAbortController = undefined;
               }
             });
           if (postCompactionAbortError) {
@@ -2758,6 +2784,17 @@ export async function runEmbeddedAgent(
             aborted,
           });
 
+          // Doom loop detection: record LLM errors
+          if (assistantFailoverReason || timedOut || idleTimedOut) {
+            const errorType =
+              assistantFailoverReason === "rate_limit"
+                ? "network_error"
+                : assistantFailoverReason === "timeout" || timedOut || idleTimedOut
+                  ? "timeout"
+                  : "llm_error";
+            observeDoomLoopFailure(errorType, Date.now());
+          }
+
           if (
             authFailure &&
             (await maybeRefreshRuntimeAuthForAuthError(
@@ -3533,6 +3570,9 @@ export async function runEmbeddedAgent(
               agentDir: params.agentDir,
             });
           }
+          // Doom loop guard: reset on successful turn and arm for next turn
+          doomLoopGuard.reset();
+          doomLoopGuard.arm();
           const replayInvalid = resolveReplayInvalidForAttempt(null);
           const livenessState = attempt.yieldDetected
             ? "paused"

@@ -630,6 +630,24 @@ const ToolLoopPostCompactionGuardSchema = z
   .strict()
   .optional();
 
+const DoomLoopGuardSchema = z
+  .object({
+    maxConsecutiveFailures: z.number().int().positive().optional(),
+    failureWindowMs: z.number().int().positive().optional(),
+    countableFailures: z
+      .array(
+        z.union([
+          z.literal("llm_error"),
+          z.literal("tool_error"),
+          z.literal("network_error"),
+          z.literal("timeout"),
+        ]),
+      )
+      .optional(),
+  })
+  .strict()
+  .optional();
+
 const ToolLoopDetectionSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -640,6 +658,7 @@ const ToolLoopDetectionSchema = z
     globalCircuitBreakerThreshold: z.number().int().positive().optional(),
     detectors: ToolLoopDetectionDetectorSchema,
     postCompactionGuard: ToolLoopPostCompactionGuardSchema,
+    doomLoopGuard: DoomLoopGuardSchema,
   })
   .strict()
   .superRefine((value, ctx) => {

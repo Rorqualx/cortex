@@ -120,4 +120,17 @@ export type SubagentRunRecord = {
   attachmentsDir?: string;
   attachmentsRootDir?: string;
   retainAttachmentsOnKeep?: boolean;
+  /** Isolated transcript metadata - set when isolateTranscript was enabled at spawn time. */
+  isolatedTranscript?: {
+    /** UUID for the isolated transcript */
+    id: string;
+    /** Path to the isolated .jsonl file (relative to agent dir) */
+    path: string;
+    /** When the reference token was delivered to parent */
+    deliveredAt?: number;
+    /** When parent first accessed the full content */
+    accessedAt?: number;
+    /** Approximate token count */
+    tokens?: number;
+  };
 };

@@ -28,6 +28,12 @@ export type HookMappingResolved = {
   thinking?: string;
   timeoutSeconds?: number;
   transform?: HookMappingTransformResolved;
+  /** Enable LLM-based validation for this hook mapping */
+  validateViaAgent?: boolean;
+  /** Agent ID to use for validation */
+  validationAgentId?: string;
+  /** Custom prompt for validation */
+  validationPrompt?: string;
 };
 
 type HookMappingTransformResolved = {
@@ -165,6 +171,14 @@ export async function applyHookMappings(
       continue;
     }
 
+    // Agent-based validation if requested
+    if (mapping.validateViaAgent) {
+      const validation = await runAgentBasedHookValidation(mapping, ctx);
+      if (!validation.pass) {
+        return { ok: false, error: `Hook validation failed: ${validation.reason}` };
+      }
+    }
+
     const base = buildActionFromMapping(mapping, ctx);
     if (!base.ok) {
       return base;
@@ -227,6 +241,9 @@ function normalizeHookMapping(
     thinking: mapping.thinking,
     timeoutSeconds: mapping.timeoutSeconds,
     transform,
+    validateViaAgent: mapping.validateViaAgent,
+    validationAgentId: normalizeOptionalString(mapping.validationAgentId),
+    validationPrompt: mapping.validationPrompt,
   };
 }
 
@@ -564,4 +581,160 @@ function getByPath(input: Record<string, unknown>, pathExpr: string): unknown {
     current = (current as Record<string, unknown>)[part];
   }
   return current;
+}
+
+/**
+ * Result of agent-based hook validation.
+ */
+type HookValidationResult = { pass: true } | { pass: false; reason: string };
+
+/**
+ * Run agent-based validation for a hook mapping.
+ *
+ * Spawns a subagent to evaluate complex validation conditions that are
+ * difficult to express in code or transform functions. The agent receives
+ * context about the request and returns a structured pass/fail result.
+ *
+ * @param mapping - Hook mapping with validation enabled
+ * @param ctx - Current hook context (payload, headers, url, path)
+ * @returns Validation result with pass/fail and optional reason
+ */
+async function runAgentBasedHookValidation(
+  mapping: HookMappingResolved,
+  ctx: HookMappingContext,
+): Promise<HookValidationResult> {
+  // Import dynamically to avoid circular dependencies with agent spawning
+  const { spawnSubagentDirect } = await import("../agents/subagent-spawn.js");
+
+  // Determine which agent to use for validation
+  const validationAgentId = mapping.validationAgentId || mapping.agentId;
+
+  // Build validation prompt with context
+  const validationPrompt = buildValidationPrompt(mapping, ctx);
+
+  try {
+    // Spawn validation agent with minimal context
+    const result = await spawnSubagentDirect(
+      {
+        agentId: validationAgentId || "default-agent",
+        task: validationPrompt,
+        mode: "run",
+        cleanup: "delete",
+        thinking: "low",
+        timeoutSeconds: 30,
+        expectsCompletionMessage: false,
+      },
+      {
+        requesterInternalKey: "hook-validation",
+        requesterAgentId: validationAgentId || "default-agent",
+      },
+    );
+
+    if (result.status !== "ok") {
+      // If spawn failed, fail open for safety (allow the hook)
+      console.error(`Hook validation spawn failed for ${mapping.id}:`, result.error);
+      return { pass: true };
+    }
+
+    // The validation agent should output structured result
+    // Parse the output to determine pass/fail
+    return parseValidationResult(result);
+  } catch (err) {
+    // On unexpected errors, fail open for safety
+    console.error(`Hook validation error for ${mapping.id}:`, err);
+    return { pass: true };
+  }
+}
+
+/**
+ * Build validation prompt from mapping and context.
+ */
+function buildValidationPrompt(mapping: HookMappingResolved, ctx: HookMappingContext): string {
+  const customPrompt = mapping.validationPrompt || "Validate if this hook should execute.";
+
+  // Include context about the request
+  const contextInfo = [`Path: ${ctx.path}`, `URL: ${ctx.url.href}`];
+
+  // Add relevant headers
+  const relevantHeaders = Object.entries(ctx.headers)
+    .filter(([key]) =>
+      ["content-type", "authorization", "x-api-key", "user-agent"].includes(key.toLowerCase()),
+    )
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(", ");
+  if (relevantHeaders) {
+    contextInfo.push(`Headers: ${relevantHeaders}`);
+  }
+
+  // Add payload summary
+  if (ctx.payload && Object.keys(ctx.payload).length > 0) {
+    const payloadSummary = JSON.stringify(ctx.payload).slice(0, 500);
+    contextInfo.push(
+      `Payload: ${payloadSummary}${JSON.stringify(ctx.payload).length > 500 ? "..." : ""}`,
+    );
+  }
+
+  return `${customPrompt}
+
+Context:
+${contextInfo.join("\n")}
+
+Respond with a structured result in the following format:
+{
+  "pass": true|false,
+  "reason": "brief explanation if pass is false"
+}
+
+Keep the response concise. Only include the JSON object.`;
+}
+
+/**
+ * Parse validation result from agent output.
+ */
+function parseValidationResult(result: {
+  status: string;
+  outcome?: { answer?: string };
+}): HookValidationResult {
+  if (result.status !== "ok" || !result.outcome?.answer) {
+    // No clear answer, fail open
+    return { pass: true };
+  }
+
+  const answer = result.outcome.answer.trim();
+
+  // Try to parse JSON response
+  try {
+    const parsed = JSON.parse(answer);
+    if (typeof parsed === "object" && parsed !== null) {
+      if (parsed.pass === true) {
+        return { pass: true };
+      }
+      if (parsed.pass === false) {
+        return { pass: false, reason: String(parsed.reason || "Validation failed") };
+      }
+    }
+  } catch {
+    // Not JSON, try text analysis
+  }
+
+  // Fallback: check for explicit pass/fail keywords
+  const lowerAnswer = answer.toLowerCase();
+  if (
+    lowerAnswer.includes("pass") ||
+    lowerAnswer.includes("allow") ||
+    lowerAnswer.includes("proceed")
+  ) {
+    return { pass: true };
+  }
+  if (
+    lowerAnswer.includes("fail") ||
+    lowerAnswer.includes("deny") ||
+    lowerAnswer.includes("block") ||
+    lowerAnswer.includes("reject")
+  ) {
+    return { pass: false, reason: "Validation rejected" };
+  }
+
+  // Ambiguous response, fail open
+  return { pass: true };
 }

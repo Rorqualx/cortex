@@ -15,7 +15,8 @@ export type AgentRunTerminalReason =
   | "cancelled"
   | "aborted"
   | "blocked"
-  | "failed";
+  | "failed"
+  | "doom_loop";
 
 export type AgentRunTerminalOutcome = {
   reason: AgentRunTerminalReason;

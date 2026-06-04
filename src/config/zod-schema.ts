@@ -108,6 +108,25 @@ const SecuritySchema = z
   .strict()
   .optional();
 
+const EventLedgerSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    storagePath: z.string().optional(),
+    retentionDays: z.number().int().positive().optional(),
+    streams: z
+      .object({
+        tool_calls: z.boolean().optional(),
+        policy_decisions: z.boolean().optional(),
+        session_lifecycle: z.boolean().optional(),
+        security_events: z.boolean().optional(),
+        agent_actions: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .optional();
+
 const AccessGroupsSchema = z
   .record(
     z.string().min(1),
@@ -770,6 +789,7 @@ export const OpenClawSchema = z
     agents: AgentsSchema,
     tools: ToolsSchema,
     security: SecuritySchema,
+    eventLedger: EventLedgerSchema,
     bindings: BindingsSchema,
     broadcast: BroadcastSchema,
     audio: AudioSchema,

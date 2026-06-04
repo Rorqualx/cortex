@@ -89,6 +89,22 @@ export type OpenClawConfig = {
   diagnostics?: DiagnosticsConfig;
   logging?: LoggingConfig;
   security?: SecurityConfig;
+  eventLedger?: {
+    /** Enable event ledger for audit trails */
+    enabled?: boolean;
+    /** Base path for event storage */
+    storagePath?: string;
+    /** Number of days to retain events */
+    retentionDays?: number;
+    /** Which streams to capture */
+    streams?: {
+      tool_calls?: boolean;
+      policy_decisions?: boolean;
+      session_lifecycle?: boolean;
+      security_events?: boolean;
+      agent_actions?: boolean;
+    };
+  };
   cli?: CliConfig;
   crestodian?: CrestodianConfig;
   update?: {

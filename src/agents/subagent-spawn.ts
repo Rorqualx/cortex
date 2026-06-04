@@ -59,6 +59,11 @@ import {
 import { resolveSubagentCapabilities } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { buildSubagentInitialUserMessage } from "./subagent-initial-user-message.js";
+import {
+  generateIsolatedTranscriptId,
+  isolatedTranscriptReferenceToken,
+  resolveIsolatedTranscriptPath,
+} from "./subagent-isolated-transcripts.js";
 import { countActiveRunsForSession, registerSubagentRun } from "./subagent-registry.js";
 import { resolveSubagentRunTimerDelayMs } from "./subagent-run-timeout.js";
 import { resolveSubagentSpawnAcceptedNote } from "./subagent-spawn-accepted-note.js";
@@ -169,6 +174,8 @@ export type SpawnSubagentParams = {
   context?: SpawnSubagentContextMode;
   lightContext?: boolean;
   expectsCompletionMessage?: boolean;
+  /** Enable sidechain transcript isolation - output stored separately, reference token delivered to parent. */
+  isolateTranscript?: boolean;
   attachments?: Array<{
     name: string;
     content: string;
@@ -1251,6 +1258,19 @@ export async function spawnSubagentDirect(
     maxSpawnDepth,
   });
   const targetAgentDir = resolveAgentDir(cfg, targetAgentId);
+
+  // Prepare isolated transcript metadata if enabled.
+  // When isolateTranscript is true, subagent output will be written to a
+  // sidechain file instead of flowing directly into the parent's context.
+  // The parent receives only a reference token `[isolated:<id>]` and can
+  // fetch the full content on-demand.
+  let isolatedTranscript: { id: string; path: string; tokens?: number } | undefined;
+  if (params.isolateTranscript && targetAgentDir) {
+    const isolatedId = generateIsolatedTranscriptId();
+    const isolatedPath = resolveIsolatedTranscriptPath(targetAgentDir, isolatedId);
+    isolatedTranscript = { id: isolatedId, path: isolatedPath };
+  }
+
   const requesterAgentConfig = resolveAgentConfig(cfg, requesterAgentId);
   const targetAgentConfig = resolveAgentConfig(cfg, targetAgentId);
   const callerThinkingRaw = readRequesterThinkingLevel({
@@ -1642,6 +1662,7 @@ export async function spawnSubagentDirect(
       attachmentsDir: attachmentAbsDir,
       attachmentsRootDir: attachmentRootDir,
       retainAttachmentsOnKeep: retainOnSessionKeep,
+      isolatedTranscript,
     });
   } catch (err) {
     await rollbackPreparedContextEngine(contextEnginePreparation);

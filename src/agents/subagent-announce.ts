@@ -45,6 +45,7 @@ import {
   waitForEmbeddedAgentRunEnd,
 } from "./subagent-announce.runtime.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
+import { getSubagentRunByRunId } from "./subagent-registry.js";
 import { deleteSubagentSessionForCleanup } from "./subagent-session-cleanup.js";
 import type { SpawnSubagentMode } from "./subagent-spawn.types.js";
 import { isAnnounceSkip } from "./tools/sessions-send-tokens.js";
@@ -390,8 +391,19 @@ export async function runSubagentAnnounceFlow(params: {
         Boolean(fallbackReply) &&
         (isAnnounceSkip(fallbackReply) || isSilentReplyText(fallbackReply, SILENT_REPLY_TOKEN));
 
+      // Check for isolated transcript - if enabled, pass context to readSubagentOutput
+      const runRecord = getSubagentRunByRunId(params.childRunId);
+      const isolatedTranscript =
+        runRecord?.isolatedTranscript && runRecord.agentDir
+          ? {
+              id: runRecord.isolatedTranscript.id,
+              path: runRecord.isolatedTranscript.path,
+              agentDir: runRecord.agentDir,
+            }
+          : undefined;
+
       if (!reply && allowFailedOutputCapture) {
-        reply = await readSubagentOutput(params.childSessionKey, outcome);
+        reply = await readSubagentOutput(params.childSessionKey, outcome, { isolatedTranscript });
       }
 
       if (!reply?.trim() && allowFailedOutputCapture) {

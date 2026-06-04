@@ -108,6 +108,21 @@ Skills own workflows; root owns hard policy and routing.
 - Prompt cache: deterministic ordering for maps/sets/registries/plugin lists/files/network results before model/tool payloads. Preserve old transcript bytes when possible.
 - Agent tool schema cleanup: remove stale args cleanly; no hidden compat for model-facing params just to avoid churn.
 
+### Deny-First Security Rule
+
+OpenClaw enforces a deny-first security model for tool access control: **any tool in a deny list is BLOCKED, even if it appears in an allow list**. This is a fundamental security principle—deny ALWAYS overrides allow.
+
+Tool policy evaluation order:
+
+1. Collect all deny lists from all policy sources (profile, agent, provider, group, sender)
+2. Remove any tool matching a deny pattern
+3. Only then apply allowlist restrictions
+4. Tools must survive BOTH checks to be available
+
+This means adding a tool to `tools.deny` at any policy level will block it, regardless of allowlist entries at other levels. The deny-first rule is enforced in `src/agents/tool-policy-match.ts` (deny check precedes allow check) and explicitly documented in `src/agents/tool-policy.ts` via the `DENY_FIRST_RULE` symbol.
+
+When modifying tool policy logic, verify that deny processing happens before allow processing. Tests in `src/agents/tool-policy-deny-first.test.ts` enforce this behavior.
+
 ## Commands
 
 - Runtime: Node 22.19+; Node 24 recommended. Keep Node + Bun paths working.

@@ -14,6 +14,13 @@ import {
   resolveAgentIdFromSessionKey,
   resolveStorePath,
 } from "./subagent-announce.runtime.js";
+import {
+  isolatedTranscriptReferenceToken,
+  parseIsolatedTranscriptReferenceToken,
+  writeIsolatedTranscript,
+  readIsolatedTranscript,
+  type IsolatedTranscript,
+} from "./subagent-isolated-transcripts.js";
 import { assistantCallsSessionsYield, isSessionsYieldToolResult } from "./subagent-yield-output.js";
 import { extractAssistantText, sanitizeTextContent } from "./tools/session-message-text.js";
 import { isAnnounceSkip } from "./tools/sessions-send-tokens.js";
@@ -197,7 +204,10 @@ function selectSubagentOutputText(snapshot: SubagentOutputSnapshot): string | un
 export async function readSubagentOutput(
   sessionKey: string,
   _outcome?: SubagentRunOutcome,
-  options?: { sessionFile?: string },
+  options?: {
+    sessionFile?: string;
+    isolatedTranscript?: { id: string; path: string; agentDir: string };
+  },
 ): Promise<string | undefined> {
   let messages: unknown[] | undefined;
   if (options?.sessionFile) {
@@ -223,6 +233,18 @@ export async function readSubagentOutput(
   const sourceMessages = messages ?? (Array.isArray(history?.messages) ? history.messages : []);
   const snapshot = summarizeSubagentOutputHistory(sourceMessages);
   const selected = selectSubagentOutputText(snapshot);
+
+  // Handle isolated transcript - write to sidechain file and return reference token
+  if (options?.isolatedTranscript && selected?.trim()) {
+    await writeIsolatedTranscript({
+      agentDir: options.isolatedTranscript.agentDir,
+      id: options.isolatedTranscript.id,
+      content: selected,
+      path: options.isolatedTranscript.path,
+    });
+    return isolatedTranscriptReferenceToken(options.isolatedTranscript.id);
+  }
+
   if (selected?.trim()) {
     return selected;
   }

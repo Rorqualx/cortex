@@ -1517,6 +1517,10 @@ export function getLatestSubagentRunByChildSessionKey(
   return latest;
 }
 
+export function getSubagentRunByRunId(runId: string): SubagentRunRecord | null {
+  return subagentRegistryDeps.getSubagentRunsSnapshotForRead(subagentRuns).get(runId) ?? null;
+}
+
 export function initSubagentRegistry() {
   restoreSubagentRunsOnce();
 }

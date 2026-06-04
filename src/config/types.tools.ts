@@ -172,6 +172,15 @@ export type ToolLoopPostCompactionGuardConfig = {
   windowSize?: number;
 };
 
+export type DoomLoopGuardConfig = {
+  /** Maximum consecutive failures before aborting (default: 5). */
+  maxConsecutiveFailures?: number;
+  /** Time window for failure counting in milliseconds (default: 300000 / 5 minutes). */
+  failureWindowMs?: number;
+  /** Failure types to count toward doom loop (default: all types). */
+  countableFailures?: Array<"llm_error" | "tool_error" | "network_error" | "timeout">;
+};
+
 export type ToolLoopDetectionConfig = {
   /** Enable tool-loop protection (default: false). */
   enabled?: boolean;
@@ -189,6 +198,8 @@ export type ToolLoopDetectionConfig = {
   detectors?: ToolLoopDetectionDetectorConfig;
   /** Post-compaction loop guard: aborts when the agent repeats the same (tool, args, result) immediately after auto-compaction-retry. */
   postCompactionGuard?: ToolLoopPostCompactionGuardConfig;
+  /** Doom loop guard: aborts when consecutive LLM/tool/network failures reach threshold. */
+  doomLoopGuard?: DoomLoopGuardConfig;
 };
 
 export type ToolSearchConfig =
