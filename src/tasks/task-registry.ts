@@ -520,6 +520,7 @@ function mapAgentRunTerminalOutcomeToTaskStatus(
       return "cancelled";
     case "blocked":
     case "failed":
+    case "doom_loop":
       return "failed";
     default:
       return outcome.reason satisfies never;

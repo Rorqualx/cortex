@@ -23,7 +23,7 @@ export type GatewaySessionsDefaults = {
   thinkingDefault?: string;
 };
 
-export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout";
+export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout" | "doom_loop";
 
 type SubagentRunState = "active" | "interrupted" | "historical";
 

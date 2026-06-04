@@ -59,6 +59,8 @@ function mapAgentRunTerminalOutcomeToSessionStatus(
     case "blocked":
     case "failed":
       return "failed";
+    case "doom_loop":
+      return "doom_loop";
     default:
       return outcome.reason satisfies never;
   }
