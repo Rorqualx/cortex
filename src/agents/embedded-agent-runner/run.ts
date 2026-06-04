@@ -11,11 +11,6 @@ import {
   resolveContextEngine,
   resolveContextEngineOwnerPluginId,
 } from "../../context-engine/registry.js";
-import {
-  createDoomLoopGuard,
-  DoomLoopDetectedError,
-  type DoomLoopGuard,
-} from "../../doom-loop-guard.js";
 import { emitAgentPlanEvent, registerAgentRunContext } from "../../infra/agent-events.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { freezeDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
@@ -54,6 +49,12 @@ import {
   resolveStoredSessionKeyForSessionId,
 } from "../command/session.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
+import {
+  createDoomLoopGuard,
+  DoomLoopDetectedError,
+  type DoomLoopGuard,
+  type DoomLoopVerdict,
+} from "../doom-loop-guard.js";
 import {
   classifyFailoverReason,
   extractObservedOverflowTokenCount,
