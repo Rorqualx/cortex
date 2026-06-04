@@ -24,12 +24,20 @@ export type TranscriptsConfig = {
   enabled?: boolean;
   maxUtterances?: number;
   autoStart?: TranscriptsAutoStartConfig[];
+  embeddings?: {
+    enabled?: boolean;
+    model?: string;
+  };
 };
 
 export type ResolvedTranscriptsConfig = {
   enabled: boolean;
   maxUtterances: number;
   autoStart: ResolvedTranscriptsAutoStartConfig[];
+  embeddings: {
+    enabled: boolean;
+    model: string;
+  };
 };
 
 function resolveAutoStart(raw: unknown): ResolvedTranscriptsAutoStartConfig[] {
@@ -57,14 +65,27 @@ function resolveAutoStart(raw: unknown): ResolvedTranscriptsAutoStartConfig[] {
 }
 
 export function resolveTranscriptsConfig(raw: unknown): ResolvedTranscriptsConfig {
-  const config = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const config = raw && typeof config === "object" ? (raw as Record<string, unknown>) : {};
   const maxUtterances =
     typeof config.maxUtterances === "number" && Number.isFinite(config.maxUtterances)
       ? Math.max(1, Math.min(10_000, Math.floor(config.maxUtterances)))
       : 2_000;
+
+  // Resolve embeddings config
+  const embeddingsConfig =
+    config.embeddings && typeof config.embeddings === "object"
+      ? (config.embeddings as Record<string, unknown>)
+      : {};
+  const embeddingsEnabled = embeddingsConfig.enabled === true;
+  const embeddingModel = readString(embeddingsConfig.model) || "text-embedding-3-small";
+
   return {
     enabled: config.enabled === true,
     maxUtterances,
     autoStart: resolveAutoStart(config.autoStart),
+    embeddings: {
+      enabled: embeddingsEnabled,
+      model: embeddingModel,
+    },
   };
 }

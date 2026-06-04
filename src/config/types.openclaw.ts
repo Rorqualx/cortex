@@ -105,6 +105,14 @@ export type OpenClawConfig = {
       agent_actions?: boolean;
     };
   };
+  executionVisualization?: {
+    /** Enable graph-based execution visualization events */
+    enabled?: boolean;
+    /** Include W3C trace context for distributed tracing correlation */
+    includeTraceContext?: boolean;
+    /** Level of phase granularity: "basic" (attempt only) or "detailed" (all phases) */
+    phaseLevel?: "basic" | "detailed";
+  };
   cli?: CliConfig;
   crestodian?: CrestodianConfig;
   update?: {

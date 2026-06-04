@@ -460,6 +460,8 @@ export type AgentDefaultsConfig = {
     announceTimeoutMs?: number;
     /** Require explicit agentId in sessions_spawn (no default same-as-caller). Default: false. */
     requireAgentId?: boolean;
+    /** Lightweight delegation mode with reduced latency for simple subagent tasks. */
+    fastSpawn?: FastSpawnConfig;
   };
   /** Optional sandbox settings for non-main sessions. */
   sandbox?: AgentSandboxConfig;
@@ -566,4 +568,33 @@ export type AgentCompactionMemoryFlushConfig = {
   prompt?: string;
   /** System prompt appended for the memory flush turn. */
   systemPrompt?: string;
+};
+
+/**
+ * Lightweight subagent delegation mode that preserves safety invariants
+ * (depth, children caps) while skipping optional phases for reduced latency.
+ */
+export type FastSpawnConfig = {
+  /** Enable fast spawn mode for simple delegation use cases. Default: false. */
+  enabled?: boolean;
+  /**
+   * Maximum milliseconds to wait for inline subagent result before returning.
+   * Default: 60000 (60 seconds).
+   */
+  maxInlineWaitMs?: number;
+  /**
+   * Skip capability filter checks during fast spawn. Default: true.
+   * When enabled, fast spawn bypasses provider/model capability validation.
+   */
+  skipCapabilityFilters?: boolean;
+  /**
+   * Skip runtime plugin loading during fast spawn. Default: true.
+   * When enabled, fast spawn spawns without loading runtime plugins.
+   */
+  skipPluginLoading?: boolean;
+  /**
+   * Require explicit opt-in via spawn options. Default: true.
+   * When enabled, fast spawn only activates when opts.fastSpawn=true.
+   */
+  requireExplicitOptIn?: boolean;
 };

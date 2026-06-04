@@ -11,6 +11,7 @@ import {
   resolveSessionCompactionCheckpointReason,
   type CapturedCompactionCheckpointSnapshot,
 } from "../../gateway/session-compaction-checkpoints.js";
+import { emitAgentExecutionEvent } from "../../infra/agent-execution-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { getMachineDisplayName } from "../../infra/machine-name.js";
 import { generateSecureToken } from "../../infra/secure-random.js";
@@ -487,10 +488,26 @@ async function compactEmbeddedAgentSessionDirectOnce(
 ): Promise<EmbeddedAgentCompactResult> {
   const startedAt = Date.now();
   const diagId = params.diagId?.trim() || createCompactionDiagId();
+  const runId = params.runId ?? params.sessionId;
+
+  // Emit compaction_detailed:start event for execution visualization
+  emitAgentExecutionEvent({
+    runId,
+    stream: "compaction_detailed",
+    phase: "start",
+    sessionKey: params.sessionKey,
+    sessionId: params.sessionId,
+    agentId: params.agentId,
+    traceContext: params.traceContext,
+    metadata: {
+      diagId,
+      trigger: params.trigger ?? "manual",
+    },
+    startedAt,
+  });
   const trigger = params.trigger ?? "manual";
   const attempt = params.attempt ?? 1;
   const maxAttempts = params.maxAttempts ?? 1;
-  const runId = params.runId ?? params.sessionId;
   const resolvedWorkspace = resolveUserPath(params.workspaceDir);
   ensureRuntimePluginsLoaded({
     config: params.config,
@@ -1299,6 +1316,19 @@ async function compactEmbeddedAgentSessionDirectOnce(
             observedTokenCount,
             estimateTokensFn: estimateTokens,
           });
+          // Emit before_hooks_start event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "before_hooks_start",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+            metadata: {
+              messageCountOriginal: beforeHookMetrics.messageCountOriginal,
+            },
+          });
+
           const { hookSessionKey, missingSessionKey } = await runBeforeCompactionHooks({
             hookRunner,
             sessionId: params.sessionId,
@@ -1309,6 +1339,21 @@ async function compactEmbeddedAgentSessionDirectOnce(
             metrics: beforeHookMetrics,
             onHookMessages: params.onCompactionHookMessages,
           });
+
+          // Emit before_hooks_complete event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "before_hooks_complete",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+            metadata: {
+              hookSessionKey,
+              missingSessionKey,
+            },
+          });
+
           const { messageCountOriginal } = beforeHookMetrics;
           const diagEnabled = log.isEnabled("debug");
           const preMetrics = diagEnabled
@@ -1354,6 +1399,21 @@ async function compactEmbeddedAgentSessionDirectOnce(
             // the sanity check below becomes a no-op instead of crashing compaction.
           }
           const activeSession = session;
+
+          // Emit summarization_start event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "summarization_start",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+            metadata: {
+              messageCountCompactionInput,
+              fullSessionTokensBefore,
+            },
+          });
+
           const result = await compactWithSafetyTimeout(
             () => {
               setCompactionSafeguardCancelReason(compactionSessionManager, undefined);
@@ -1367,6 +1427,22 @@ async function compactEmbeddedAgentSessionDirectOnce(
               },
             },
           );
+
+          // Emit summarization_complete event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "summarization_complete",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+            metadata: {
+              summaryLength: typeof result.summary === "string" ? result.summary.length : undefined,
+              tokensBefore: result.tokensBefore,
+              firstKeptEntryId: result.firstKeptEntryId,
+            },
+          });
+
           let effectiveFirstKeptEntryId = result.firstKeptEntryId;
           let postCompactionLeafId =
             typeof sessionManager.getLeafId === "function"
@@ -1429,12 +1505,34 @@ async function compactEmbeddedAgentSessionDirectOnce(
                 `(sessionKey=${params.sessionKey ?? params.sessionId})`,
             );
           }
+
+          // Emit side_effects_start event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "side_effects_start",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+          });
+
           await runPostCompactionSideEffects({
             config: params.config,
             sessionKey: params.sessionKey,
             agentId: sessionAgentId,
             sessionFile: activeSessionFile,
           });
+
+          // Emit side_effects_complete event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "side_effects_complete",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+          });
+
           if (params.config && params.sessionKey && checkpointSnapshot) {
             try {
               const storedCheckpoint = await persistSessionCompactionCheckpoint({
@@ -1478,6 +1576,17 @@ async function compactEmbeddedAgentSessionDirectOnce(
                 `delta.estTokens=${typeof preMetrics.estTokens === "number" && typeof postMetrics.estTokens === "number" ? postMetrics.estTokens - preMetrics.estTokens : "unknown"}`,
             );
           }
+
+          // Emit after_hooks_start event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "after_hooks_start",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+          });
+
           await runAfterCompactionHooks({
             hookRunner,
             sessionId: activeSessionId,
@@ -1495,6 +1604,33 @@ async function compactEmbeddedAgentSessionDirectOnce(
             firstKeptEntryId: effectiveFirstKeptEntryId,
             onHookMessages: params.onCompactionHookMessages,
           });
+
+          // Emit after_hooks_complete event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "after_hooks_complete",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+            metadata: {
+              messageCountAfter,
+              tokensAfter,
+              compactedCount,
+            },
+          });
+
+          // Emit compaction_detailed:complete event for execution visualization
+          emitAgentExecutionEvent({
+            runId,
+            stream: "compaction_detailed",
+            phase: "complete",
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            agentId: params.agentId,
+            status: "completed",
+          });
+
           return {
             ok: true,
             compacted: true,

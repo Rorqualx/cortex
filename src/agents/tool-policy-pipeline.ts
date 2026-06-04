@@ -1,3 +1,4 @@
+import { createPhaseTracker } from "../infra/agent-execution-events.js";
 import { filterToolsByPolicy } from "./agent-tools.policy.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
 import { emitToolDenied } from "./event-ledger-helper.js";
@@ -122,6 +123,9 @@ export function applyToolPolicyPipeline(params: {
   warn: (message: string) => void;
   steps: ToolPolicyPipelineStep[];
   auditLogLevel?: ToolPolicyAuditLogLevel;
+  runId?: string;
+  sessionKey?: string;
+  traceContext?: import("../infra/agent-execution-events.js").W3CTraceContext;
 }): AnyAgentTool[] {
   const coreToolNames = new Set(
     params.tools
@@ -135,10 +139,40 @@ export function applyToolPolicyPipeline(params: {
     toolMeta: params.toolMeta,
   });
 
+  // Create phase tracker for policy check events if runId is provided
+  const policyTracker = params.runId
+    ? createPhaseTracker<"policy_check">({
+        runId: params.runId,
+        stream: "policy_check",
+        sessionKey: params.sessionKey,
+        traceContext: params.traceContext,
+      })
+    : null;
+
   let filtered = params.tools;
+
+  // Emit policy pipeline start event
+  if (policyTracker) {
+    policyTracker.start("deny_list_start");
+  }
+
   for (const step of params.steps) {
     if (!step.policy) {
       continue;
+    }
+
+    // Emit policy step start event if tracking enabled
+    if (policyTracker) {
+      const stepPhase = step.label.includes("profile")
+        ? ("capability_start" as const)
+        : step.label.includes("group")
+          ? ("permission_start" as const)
+          : step.label.includes("sandbox")
+            ? ("sandbox_start" as const)
+            : step.label.includes("subagent")
+              ? ("rate_limit_start" as const)
+              : ("deny_list_start" as const);
+      policyTracker.start(stepPhase);
     }
 
     let policy: ToolPolicyLike | undefined = step.policy;
@@ -207,6 +241,33 @@ export function applyToolPolicyPipeline(params: {
         denyReason: step.label,
       });
     }
+
+    // Emit policy step complete event if tracking enabled
+    if (policyTracker) {
+      const stepPhase = step.label.includes("profile")
+        ? ("capability_complete" as const)
+        : step.label.includes("group")
+          ? ("permission_complete" as const)
+          : step.label.includes("sandbox")
+            ? ("sandbox_complete" as const)
+            : step.label.includes("subagent")
+              ? ("rate_limit_complete" as const)
+              : ("deny_list_complete" as const);
+      policyTracker.complete(stepPhase, {
+        stepLabel: step.label,
+        beforeCount: before.length,
+        afterCount: filtered.length,
+        deniedCount: denied.size,
+      });
+    }
+  }
+  // Emit policy pipeline complete event if tracking enabled
+  if (policyTracker) {
+    policyTracker.complete("deny_list_complete", {
+      finalToolCount: filtered.length,
+      initialToolCount: params.tools.length,
+      stepsProcessed: params.steps.length,
+    });
   }
   return filtered;
 }

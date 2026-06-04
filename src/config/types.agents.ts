@@ -4,6 +4,7 @@ import type {
   AgentDefaultsConfig,
   AgentModelEntryConfig,
   EmbeddedAgentExecutionContract,
+  FastSpawnConfig,
   SubagentDelegationMode,
 } from "./types.agent-defaults.js";
 import type { AgentModelConfig, AgentSandboxConfig } from "./types.agents-shared.js";
@@ -139,6 +140,8 @@ export type AgentConfig = {
     thinking?: string;
     /** Require explicit agentId in sessions_spawn (no default same-as-caller). */
     requireAgentId?: boolean;
+    /** Per-agent fast spawn configuration for lightweight delegation. */
+    fastSpawn?: FastSpawnConfig;
   };
   /** Optional outer run loop retry boundaries. */
   runRetries?: AgentDefaultsConfig["runRetries"];

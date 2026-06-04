@@ -1,4 +1,7 @@
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { getMemoryEmbeddingProvider } from "../plugins/memory-embedding-provider-runtime.js";
+import type { MemoryEmbeddingProvider } from "../plugins/memory-embedding-providers.js";
 import type { TranscriptSessionDescriptor, TranscriptUtterance } from "./provider-types.js";
 
 export type TranscriptsSummary = {
@@ -11,6 +14,10 @@ export type TranscriptsSummary = {
   actionItems: string[];
   risks: string[];
   utteranceCount: number;
+  // Embedding fields for semantic search
+  embedding?: number[]; // embedding vector for semantic search
+  embeddingModel?: string; // model used to generate embedding
+  embeddingAt?: string; // ISO timestamp when embedding was generated
 };
 
 const ACTION_PATTERNS =
@@ -70,11 +77,22 @@ function renderList(items: string[]): string {
 }
 
 export function renderTranscriptsMarkdown(summary: TranscriptsSummary): string {
-  return [
+  const lines = [
     `# ${summary.title}`,
     "",
     `Generated: ${summary.generatedAt}`,
     `Session: ${summary.sessionId}`,
+  ];
+
+  // Add embedding metadata if present
+  if (summary.embeddingModel) {
+    lines.push(
+      "",
+      `Embedding: ${summary.embeddingModel}${summary.embeddingAt ? ` (generated: ${summary.embeddingAt})` : ""}`,
+    );
+  }
+
+  lines.push(
     "",
     "## Overview",
     summary.overview,
@@ -92,5 +110,82 @@ export function renderTranscriptsMarkdown(summary: TranscriptsSummary): string {
     renderList(summary.risks),
     "",
     `Transcript utterances: ${summary.utteranceCount}`,
-  ].join("\n");
+  );
+
+  return lines.join("\n");
+}
+
+/**
+ * Generate embedding vector for a transcript summary.
+ *
+ * Builds an embedding text from the summary overview and structured fields,
+ * then uses the configured memory embedding provider to generate a vector.
+ *
+ * @param params - Summary and config for embedding generation
+ * @returns Embedding vector (number array)
+ * @throws Error if no embedding provider is configured
+ */
+export async function generateSummaryEmbedding(params: {
+  summary: TranscriptsSummary;
+  cfg: OpenClawConfig;
+}): Promise<number[]> {
+  const { summary, cfg } = params;
+
+  // Resolve embedding provider (defaults to OpenAI)
+  const providerId = "openai";
+  const adapter = getMemoryEmbeddingProvider(providerId, cfg);
+  if (!adapter) {
+    throw new Error(
+      `No embedding provider configured for transcript summaries: ${providerId} not found`,
+    );
+  }
+
+  // Build embedding text from summary + structured fields
+  const embeddingText = buildEmbeddingTextFromSummary(summary);
+
+  // Create provider instance with default model
+  const createResult = await adapter.create({
+    config: cfg,
+    model: adapter.defaultModel || "text-embedding-3-small",
+  });
+  const provider = createResult.provider;
+  if (!provider) {
+    throw new Error(`Failed to create embedding provider instance: ${providerId}`);
+  }
+
+  // Generate embedding for the summary text
+  const embeddings = await provider.embedBatch([embeddingText]);
+  return embeddings[0];
+}
+
+/**
+ * Build embedding text from summary components.
+ *
+ * Combines the overview with structured metadata (topics/decisions/action items)
+ * to create a rich text representation for embedding generation.
+ */
+function buildEmbeddingTextFromSummary(summary: TranscriptsSummary): string {
+  const parts: string[] = [];
+
+  // Start with overview (main content)
+  if (summary.overview) {
+    parts.push(summary.overview);
+  }
+
+  // Add decisions as context
+  if (summary.decisions.length > 0) {
+    parts.push(`Decisions: ${summary.decisions.join("; ")}`);
+  }
+
+  // Add action items as context
+  if (summary.actionItems.length > 0) {
+    parts.push(`Action Items: ${summary.actionItems.join("; ")}`);
+  }
+
+  // Add risks as context
+  if (summary.risks.length > 0) {
+    parts.push(`Risks: ${summary.risks.join("; ")}`);
+  }
+
+  return parts.join("\n\n");
 }

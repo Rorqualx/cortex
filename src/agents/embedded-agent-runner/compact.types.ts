@@ -97,6 +97,8 @@ export type CompactEmbeddedAgentSessionParams = {
   }) => void | Promise<void>;
   /** Allow runtime plugins for this compaction to late-bind the gateway subagent. */
   allowGatewaySubagentBinding?: boolean;
+  /** W3C trace context for distributed tracing correlation. */
+  traceContext?: import("../../infra/agent-execution-events.js").W3CTraceContext;
 };
 
 export type CompactionMessageMetrics = {

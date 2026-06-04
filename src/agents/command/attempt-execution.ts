@@ -11,6 +11,12 @@ import {
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { emitAgentEvent } from "../../infra/agent-events.js";
+import {
+  emitAgentExecutionEvent,
+  generateTraceId,
+  generateSpanId,
+  type W3CTraceContext,
+} from "../../infra/agent-execution-events.js";
 import { readErrorName } from "../../infra/errors.js";
 import { redactSensitiveText } from "../../logging/redact.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -432,6 +438,27 @@ export function runAgentAttempt(params: {
   suppressPromptPersistenceOnRetry?: boolean;
   onUserMessagePersisted?: (message: Extract<AgentMessage, { role: "user" }>) => void;
 }) {
+  // Generate W3C trace context for this attempt
+  const traceId = generateTraceId();
+  const spanId = generateSpanId();
+  const traceContext: W3CTraceContext = { traceId, spanId };
+
+  // Emit attempt_start event for execution visualization
+  emitAgentExecutionEvent({
+    runId: params.runId,
+    stream: "attempt",
+    phase: "attempt_start",
+    sessionKey: params.sessionKey,
+    sessionId: params.sessionId,
+    agentId: params.sessionAgentId,
+    traceContext,
+    metadata: {
+      provider: params.providerOverride,
+      model: params.modelOverride,
+      isFallbackRetry: params.isFallbackRetry,
+    },
+  });
+
   const isRawModelRun = params.opts.modelRun === true || params.opts.promptMode === "none";
   const claudeCliFallbackPrelude =
     !isRawModelRun &&
@@ -517,6 +544,24 @@ export function runAgentAttempt(params: {
     (agentHarnessPolicy.runtime === "openclaw" && agentHarnessPolicy.runtimeSource !== "implicit"
       ? "openclaw"
       : undefined);
+
+  // Emit planning_complete event for execution visualization
+  emitAgentExecutionEvent({
+    runId: params.runId,
+    stream: "attempt",
+    phase: "planning_complete",
+    sessionKey: params.sessionKey,
+    sessionId: params.sessionId,
+    agentId: params.sessionAgentId,
+    traceContext,
+    metadata: {
+      harnessRuntime: agentHarnessPolicy.runtime,
+      harnessRuntimeSource: agentHarnessPolicy.runtimeSource,
+      embeddedAgentHarnessOverride,
+      cliExecutionProvider: cliExecutionProvider,
+    },
+  });
+
   if (!isRawModelRun && isCliProvider(cliExecutionProvider, params.cfg)) {
     const cliSessionBinding = getCliSessionBinding(params.sessionEntry, cliExecutionProvider);
     const cliProcessCwd = params.cwd ? resolveUserPath(params.cwd) : params.workspaceDir;
@@ -639,6 +684,23 @@ export function runAgentAttempt(params: {
               ...mutableCliSessionStore,
             })) ?? params.sessionEntry;
         }
+
+        // Emit attempt_failed event for execution visualization
+        emitAgentExecutionEvent({
+          runId: params.runId,
+          stream: "attempt",
+          phase: "attempt_failed",
+          sessionKey: params.sessionKey,
+          sessionId: params.sessionId,
+          agentId: params.sessionAgentId,
+          traceContext,
+          metadata: {
+            error: readErrorName(err),
+            reason: resolveClearedCliSessionReason(err),
+          },
+          status: "failed",
+        });
+
         throw err;
       }
     });

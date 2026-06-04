@@ -1118,6 +1118,9 @@ export function createOpenClawCodingTools(options?: {
       { policy: inheritedToolPolicy, label: "inherited tools", unavailableCoreToolReason },
     ],
     auditLogLevel: options?.toolPolicyAuditLogLevel,
+    runId: options?.runId,
+    sessionKey: options?.sessionKey,
+    traceContext: options?.trace,
   });
   if (shouldInheritEffectiveToolAllowlist) {
     replaceWithEffectiveToolAllowlist(inheritedToolAllowlist, subagentFiltered);

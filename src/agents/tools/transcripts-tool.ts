@@ -18,7 +18,7 @@ import type {
   TranscriptSourceLocator,
 } from "../../transcripts/provider-types.js";
 import { TranscriptsStore, type TranscriptsSessionEntry } from "../../transcripts/store.js";
-import { summarizeTranscripts } from "../../transcripts/summary.js";
+import { generateSummaryEmbedding, summarizeTranscripts } from "../../transcripts/summary.js";
 import type { AnyAgentTool } from "./common.js";
 
 type TranscriptsLogger = {
@@ -158,6 +158,7 @@ function toolText(text: string, details?: Record<string, unknown>) {
 
 async function summarizeAndPersist(params: {
   config: ReturnType<typeof resolveTranscriptsConfig>;
+  ctx: TranscriptsRuntimeContext;
   store: TranscriptsStore;
   session: TranscriptSessionDescriptor;
   sessionDir?: string;
@@ -170,7 +171,29 @@ async function summarizeAndPersist(params: {
       : await params.store.readUtterancesForSession(params.session, {
           maxUtterances: params.config.maxUtterances,
         });
-  const summary = summarizeTranscripts({ session: params.session, utterances });
+  let summary = summarizeTranscripts({ session: params.session, utterances });
+
+  // Generate embedding if enabled
+  if (params.config.embeddings.enabled) {
+    try {
+      const embedding = await generateSummaryEmbedding({
+        summary,
+        cfg: params.ctx.config || {},
+      });
+      summary = {
+        ...summary,
+        embedding,
+        embeddingModel: params.config.embeddings.model,
+        embeddingAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      // Embedding generation failure should not block summarization
+      params.ctx.logger.warn(
+        `Failed to generate embedding for summary: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   const summaryPath =
     params.sessionDir !== undefined
       ? await params.store.writeSummaryToDir(summary, params.sessionDir)
@@ -290,6 +313,7 @@ async function stopTranscripts(params: {
   }
   const { summaryPath, summary } = await summarizeAndPersist({
     config: resolveTranscriptsConfig(params.ctx.config?.transcripts),
+    ctx: params.ctx,
     store: params.store,
     session: stoppedSession,
     sessionDir: selectedActive ? undefined : resolvedEntry?.sessionDir,
@@ -335,6 +359,7 @@ async function importTranscripts(params: {
   }
   const { summaryPath, summary } = await summarizeAndPersist({
     config: resolveTranscriptsConfig(params.ctx.config?.transcripts),
+    ctx: params.ctx,
     store: params.store,
     session,
   });
@@ -348,6 +373,7 @@ async function importTranscripts(params: {
 
 async function summarizeExisting(params: {
   config: ReturnType<typeof resolveTranscriptsConfig>;
+  ctx: TranscriptsRuntimeContext;
   store: TranscriptsStore;
   rawParams: Record<string, unknown>;
 }) {
@@ -361,6 +387,7 @@ async function summarizeExisting(params: {
   }
   const { summaryPath, summary } = await summarizeAndPersist({
     config: params.config,
+    ctx: params.ctx,
     store: params.store,
     session: entry.session,
     sessionDir: entry.sessionDir,
@@ -425,7 +452,7 @@ export function createTranscriptsTool(options?: {
         case "import":
           return await importTranscripts({ ctx, store, rawParams: params });
         case "summarize":
-          return await summarizeExisting({ config, store, rawParams: params });
+          return await summarizeExisting({ config, ctx, store, rawParams: params });
         case "status":
           return await statusTranscripts(ctx);
         default:
