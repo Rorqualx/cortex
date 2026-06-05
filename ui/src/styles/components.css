@@ -2188,6 +2188,33 @@
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
 }
 
+/* Line-numbered code table */
+.code-lines {
+  border-collapse: collapse;
+  width: 100%;
+}
+.code-line-num {
+  width: 1%;
+  min-width: 2.5em;
+  padding: 0 12px 0 8px;
+  text-align: right;
+  color: var(--muted);
+  opacity: 0.4;
+  font-size: inherit;
+  font-family: var(--mono);
+  user-select: none;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.code-line-num::before {
+  content: attr(data-line);
+}
+.code-line-content {
+  padding: 0;
+  vertical-align: top;
+  white-space: pre;
+}
+
 .code-block-header {
   display: flex;
   align-items: center;

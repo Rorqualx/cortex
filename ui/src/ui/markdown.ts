@@ -633,6 +633,24 @@ md.renderer.rules.image = (tokens, idx) => {
 };
 
 // Override fenced code blocks with copy button + JSON collapse
+/**
+ * Wrap highlighted code into a table with line numbers.
+ * Preserves hljs HTML spans by splitting only at \n boundaries.
+ */
+function wrapWithLineNumbers(highlighted: string): string {
+  const lines = highlighted.split("\n");
+  // Remove trailing empty line if the source ended with \n
+  if (lines.length > 1 && lines[lines.length - 1].trim() === "") {
+    lines.pop();
+  }
+  let html = '<table class="code-lines"><tbody>';
+  for (let i = 0; i < lines.length; i++) {
+    html += `<tr><td class="code-line-num" data-line="${i + 1}"></td><td class="code-line-content">${lines[i] || " "}</td></tr>`;
+  }
+  html += "</tbody></table>";
+  return html;
+}
+
 md.renderer.rules.fence = (tokens, idx, _options, env) => {
   const token = tokens[idx];
   // token.info contains the full fence info string (e.g., "json title=foo");
@@ -641,7 +659,7 @@ md.renderer.rules.fence = (tokens, idx, _options, env) => {
   const text = token.content;
   const highlighted = highlightCode(text, lang);
   const classAttr = codeClassAttribute(lang, highlighted);
-  const codeBlock = `<pre><code${classAttr}>${highlighted}</code></pre>`;
+  const codeBlock = `<pre><code${classAttr}>${wrapWithLineNumbers(highlighted)}</code></pre>`;
   if (!shouldRenderCodeBlockCopy(env)) {
     return codeBlock;
   }
@@ -672,7 +690,7 @@ md.renderer.rules.code_block = (tokens, idx, _options, env) => {
   const text = token.content;
   const highlighted = highlightCode(text, "");
   const classAttr = codeClassAttribute("", highlighted);
-  const codeBlock = `<pre><code${classAttr}>${highlighted}</code></pre>`;
+  const codeBlock = `<pre><code${classAttr}>${wrapWithLineNumbers(highlighted)}</code></pre>`;
   if (!shouldRenderCodeBlockCopy(env)) {
     return codeBlock;
   }
