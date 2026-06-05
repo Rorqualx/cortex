@@ -201,6 +201,7 @@ export const AgentsFilesGetParamsSchema = Type.Object(
   {
     agentId: NonEmptyString,
     name: NonEmptyString,
+    path: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

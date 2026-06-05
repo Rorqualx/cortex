@@ -192,7 +192,7 @@ export type ChatProps = {
     activeFile: ActiveFileResult;
     activeDirFiles: AgentFileEntry[] | null;
     onRefresh: () => void;
-    onOpenFile: (name: string) => void;
+    onOpenFile: (name: string, filePath?: string) => void;
   };
 };
 
@@ -1024,7 +1024,11 @@ function renderWorkspaceFileRail(
                         type="button"
                         role="listitem"
                         title=${file.path || file.name}
-                        @click=${() => workspaceFiles.onOpenFile(file.name)}
+                        @click=${() =>
+                          workspaceFiles.onOpenFile(
+                            file.name,
+                            showActiveDir ? file.path : undefined,
+                          )}
                       >
                         <span class="chat-workspace-rail__file-icon">${icons.fileText}</span>
                         <span class="chat-workspace-rail__file-main">

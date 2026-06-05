@@ -2013,7 +2013,7 @@ export function renderApp(state: AppViewState) {
       }
     })();
   }
-  const openChatWorkspaceFile = (name: string) => {
+  const openChatWorkspaceFile = (name: string, filePath?: string) => {
     chatWorkspaceFiles.activeName = name;
     const previousRequest = chatWorkspaceFileOpenRequests.get(state);
     const openRequest = {
@@ -2040,10 +2040,12 @@ export function renderApp(state: AppViewState) {
       }
       chatWorkspaceFiles.error = null;
       try {
-        const res = await state.client.request<AgentsFilesGetResult | null>("agents.files.get", {
-          agentId: chatAgentId,
-          name,
-        });
+        const reqParams: Record<string, string> = { agentId: chatAgentId, name };
+        if (filePath) reqParams.path = filePath;
+        const res = await state.client.request<AgentsFilesGetResult | null>(
+          "agents.files.get",
+          reqParams,
+        );
         const content = res?.file?.content;
         if (typeof content !== "string") {
           if (isCurrentOpenRequest()) {

@@ -846,6 +846,44 @@ export const agentsHandlers: GatewayRequestHandlers = {
       respondInvalidMethodParams(respond, "agents.files.get", validateAgentsFilesGetParams.errors);
       return;
     }
+
+    // If a full path is provided (active directory file), read it directly
+    if (typeof params.path === "string" && params.path.trim()) {
+      const filePath = path.resolve(params.path.trim());
+      const name = path.basename(filePath);
+      try {
+        const stat = fsSync.statSync(filePath);
+        if (!stat.isFile()) {
+          respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "not a file"));
+          return;
+        }
+        // Cap at 500KB
+        if (stat.size > 500 * 1024) {
+          respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "file too large"));
+          return;
+        }
+        const content = await fs.readFile(filePath, "utf-8");
+        respond(
+          true,
+          {
+            agentId: params.agentId ?? "main",
+            workspace: path.dirname(filePath),
+            file: { name, path: filePath, content, size: stat.size, updatedAtMs: stat.mtimeMs },
+          },
+          undefined,
+        );
+      } catch {
+        respondWorkspaceFileMissing({
+          respond,
+          agentId: params.agentId ?? "main",
+          workspaceDir: path.dirname(filePath),
+          name,
+          filePath,
+        });
+      }
+      return;
+    }
+
     const resolved = resolveAgentWorkspaceFileOrRespondError(
       params,
       respond,
