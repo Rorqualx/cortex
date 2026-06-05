@@ -843,7 +843,8 @@ function renderChatGoal(goal: SessionGoal | undefined): TemplateResult | typeof 
 }
 
 /** Tool names that operate on files — their path args reveal the active directory. */
-const FILE_TOOL_NAMES = new Set(["read", "write", "edit", "apply_patch", "bash"]);
+const FILE_TOOL_NAMES = new Set(["read", "write", "edit", "apply_patch", "bash", "exec"]);
+const RESULT_ROLES = new Set(["toolresult", "tool_result"]);
 
 /**
  * Result of scanning messages for the most recent file operation.
@@ -897,6 +898,10 @@ export function resolveActiveFileFromMessages(
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i] as Record<string, unknown> | undefined;
     if (!msg) continue;
+
+    // Skip tool-result messages — they have toolName but no arguments
+    const role = typeof msg.role === "string" ? msg.role.toLowerCase() : "";
+    if (RESULT_ROLES.has(role)) continue;
 
     // Shape 2: top-level toolName / tool_name + args / arguments
     const topLevelName =
