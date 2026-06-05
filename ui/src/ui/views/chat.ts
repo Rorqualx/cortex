@@ -189,6 +189,7 @@ export type ChatProps = {
     loading: boolean;
     error: string | null;
     activeName: string | null;
+    activeDir: string | null;
     onRefresh: () => void;
     onOpenFile: (name: string) => void;
   };
@@ -841,6 +842,59 @@ function renderChatGoal(goal: SessionGoal | undefined): TemplateResult | typeof 
   `;
 }
 
+/** Tool names that operate on files — their path args reveal the active directory. */
+const FILE_TOOL_NAMES = new Set(["read", "write", "edit", "apply_patch", "bash"]);
+
+/**
+ * Scan messages (most-recent-first) for file-operation tool calls and return
+ * the directory of the most recent one. Returns `null` if none found.
+ */
+export function resolveActiveDirFromMessages(
+  messages: unknown[],
+  workspace: string | undefined,
+): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as Record<string, unknown> | undefined;
+    if (!msg) continue;
+    const content = Array.isArray(msg.content) ? msg.content : [];
+    for (let j = content.length - 1; j >= 0; j--) {
+      const item = content[j] as Record<string, unknown> | undefined;
+      if (!item) continue;
+      const kind = (typeof item.type === "string" ? item.type : "").toLowerCase();
+      const isToolCall =
+        ["toolcall", "tool_call", "tooluse", "tool_use"].includes(kind) ||
+        (typeof item.name === "string" && item.arguments != null);
+      if (!isToolCall) continue;
+      const name = (typeof item.name === "string" ? item.name : "").toLowerCase();
+      if (!FILE_TOOL_NAMES.has(name)) continue;
+      const raw = item.arguments ?? item.args ?? item.input;
+      const args = typeof raw === "string" ? safeJsonParse(raw) : raw;
+      if (!args || typeof args !== "object") continue;
+      const a = args as Record<string, unknown>;
+      // bash/exec: workdir reveals the active directory
+      if (name === "bash" && typeof a.workdir === "string" && a.workdir.trim()) {
+        const dir = a.workdir.replace(/\/+$/, "");
+        if (dir && dir !== workspace) return dir;
+      }
+      // file tools: extract directory from the path argument
+      const filePath = a.path ?? a.file_path ?? a.filePath;
+      if (typeof filePath === "string" && filePath.trim()) {
+        const dir = filePath.replace(/\/+$/, "").replace(/\/[^/]+$/, "");
+        if (dir && dir !== workspace) return dir;
+      }
+    }
+  }
+  return null;
+}
+
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 function formatWorkspaceFileSize(file: AgentFileEntry): string {
   const size = file.size;
   if (typeof size !== "number" || !Number.isFinite(size) || size < 0) {
@@ -880,9 +934,12 @@ function renderWorkspaceFileRail(
           ${icons.refresh}
         </button>
       </div>
-      ${workspaceFiles.list?.workspace
-        ? html`<div class="chat-workspace-rail__path" title=${workspaceFiles.list.workspace}>
-            ${workspaceFiles.list.workspace}
+      ${(workspaceFiles.activeDir ?? workspaceFiles.list?.workspace)
+        ? html`<div
+            class="chat-workspace-rail__path"
+            title=${workspaceFiles.activeDir ?? workspaceFiles.list?.workspace}
+          >
+            ${workspaceFiles.activeDir ?? workspaceFiles.list?.workspace}
           </div>`
         : nothing}
       ${workspaceFiles.error
