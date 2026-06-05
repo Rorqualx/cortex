@@ -855,8 +855,40 @@ export type ActiveFileResult = {
 } | null;
 
 /**
+ * Try to extract an active-file result from a single parsed tool call.
+ */
+function extractActiveFileFromToolCall(
+  name: string,
+  rawArgs: unknown,
+  _workspace: string | undefined,
+): ActiveFileResult {
+  const args = typeof rawArgs === "string" ? safeJsonParse(rawArgs) : rawArgs;
+  if (!args || typeof args !== "object") return null;
+  const a = args as Record<string, unknown>;
+  // bash/exec: workdir reveals the active directory (no specific file)
+  if (name === "bash" && typeof a.workdir === "string" && a.workdir.trim()) {
+    const dir = a.workdir.replace(/\/+$/, "");
+    if (dir) return { dir, fileName: "" };
+  }
+  // file tools: extract directory + basename from the path argument
+  const filePath = a.path ?? a.file_path ?? a.filePath;
+  if (typeof filePath === "string" && filePath.trim()) {
+    const trimmed = filePath.replace(/\/+$/, "");
+    const lastSlash = trimmed.lastIndexOf("/");
+    const dir = lastSlash > 0 ? trimmed.substring(0, lastSlash) : trimmed;
+    const fileName = lastSlash >= 0 ? trimmed.substring(lastSlash + 1) : trimmed;
+    if (dir) return { dir, fileName };
+  }
+  return null;
+}
+
+/**
  * Scan messages (most-recent-first) for file-operation tool calls and return
  * the directory + filename of the most recent one. Returns `null` if none found.
+ *
+ * Handles two message shapes used by the gateway:
+ * 1. Content-array tool calls: { content: [{type:"tool_call", name:"read", arguments:{...}}] }
+ * 2. Top-level tool-name messages: { toolName: "read", args: {...} }
  */
 export function resolveActiveFileFromMessages(
   messages: unknown[],
@@ -865,6 +897,25 @@ export function resolveActiveFileFromMessages(
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i] as Record<string, unknown> | undefined;
     if (!msg) continue;
+
+    // Shape 2: top-level toolName / tool_name + args / arguments
+    const topLevelName =
+      (typeof msg.toolName === "string" && msg.toolName) ||
+      (typeof msg.tool_name === "string" && msg.tool_name) ||
+      "";
+    if (topLevelName) {
+      const lower = topLevelName.toLowerCase();
+      if (FILE_TOOL_NAMES.has(lower)) {
+        const result = extractActiveFileFromToolCall(
+          lower,
+          msg.args ?? msg.arguments ?? msg.input ?? msg.params,
+          workspace,
+        );
+        if (result) return result;
+      }
+    }
+
+    // Shape 1: content-array tool calls
     const content = Array.isArray(msg.content) ? msg.content : [];
     for (let j = content.length - 1; j >= 0; j--) {
       const item = content[j] as Record<string, unknown> | undefined;
@@ -872,28 +923,16 @@ export function resolveActiveFileFromMessages(
       const kind = (typeof item.type === "string" ? item.type : "").toLowerCase();
       const isToolCall =
         ["toolcall", "tool_call", "tooluse", "tool_use"].includes(kind) ||
-        (typeof item.name === "string" && item.arguments != null);
+        (typeof item.name === "string" && (item.arguments != null || item.args != null));
       if (!isToolCall) continue;
       const name = (typeof item.name === "string" ? item.name : "").toLowerCase();
       if (!FILE_TOOL_NAMES.has(name)) continue;
-      const raw = item.arguments ?? item.args ?? item.input;
-      const args = typeof raw === "string" ? safeJsonParse(raw) : raw;
-      if (!args || typeof args !== "object") continue;
-      const a = args as Record<string, unknown>;
-      // bash/exec: workdir reveals the active directory (no specific file)
-      if (name === "bash" && typeof a.workdir === "string" && a.workdir.trim()) {
-        const dir = a.workdir.replace(/\/+$/, "");
-        if (dir && dir !== workspace) return { dir, fileName: "" };
-      }
-      // file tools: extract directory + basename from the path argument
-      const filePath = a.path ?? a.file_path ?? a.filePath;
-      if (typeof filePath === "string" && filePath.trim()) {
-        const trimmed = filePath.replace(/\/+$/, "");
-        const lastSlash = trimmed.lastIndexOf("/");
-        const dir = lastSlash > 0 ? trimmed.substring(0, lastSlash) : trimmed;
-        const fileName = lastSlash >= 0 ? trimmed.substring(lastSlash + 1) : trimmed;
-        if (dir && dir !== workspace) return { dir, fileName };
-      }
+      const result = extractActiveFileFromToolCall(
+        name,
+        item.arguments ?? item.args ?? item.input,
+        workspace,
+      );
+      if (result) return result;
     }
   }
   return null;
