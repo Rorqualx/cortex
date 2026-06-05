@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatCliCommand } from "../cli/command-format.js";
+import { resolveStateDir } from "../config/paths.js";
 import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
 import { captureEnv } from "../test-utils/env.js";
 import type { UpdateCheckResult } from "./update-check.js";
@@ -46,6 +47,7 @@ vi.mock("../process/exec.js", () => ({
 }));
 
 describe("update-startup", () => {
+  const UPDATE_CHECK_FILENAME = "update-check.json";
   const suiteRootTracker = createSuiteTempRootTracker({ prefix: "openclaw-update-check-suite-" });
   let tempDir: string;
   let envSnapshot: ReturnType<typeof captureEnv>;
@@ -523,5 +525,92 @@ describe("update-startup", () => {
       isNixMode: false,
     });
     stop();
+  });
+
+  describe("equal version handling", () => {
+    it("clears update available when resolved version equals current version", async () => {
+      mockPackageInstallStatus();
+      // VERSION is globally mocked as "1.0.0" in this test suite
+      // Use an old timestamp to ensure the fresh check runs
+      const oldTimestamp = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+      // Set up state with a previous "available" version
+      const statePath = path.join(resolveStateDir(), UPDATE_CHECK_FILENAME);
+      await fs.writeFile(
+        statePath,
+        JSON.stringify(
+          {
+            lastCheckedAt: oldTimestamp,
+            lastAvailableVersion: "2.0.0",
+            lastAvailableTag: "latest",
+          },
+          null,
+          2,
+        ),
+        "utf-8",
+      );
+
+      // Mock fresh check returning same version as current (1.0.0)
+      vi.mocked(resolveNpmChannelTag).mockResolvedValueOnce({
+        tag: "latest",
+        version: "1.0.0", // Same as globally mocked VERSION
+      });
+
+      const onUpdateAvailableChange = vi.fn();
+      await runGatewayUpdateCheck({
+        cfg: { update: { channel: "stable" } },
+        log: { info: vi.fn() },
+        isNixMode: false,
+        allowInTests: true,
+        onUpdateAvailableChange,
+      });
+
+      // Should clear the update available state
+      expect(onUpdateAvailableChange).toHaveBeenCalledWith(null);
+      expect(getUpdateAvailable()).toBeNull();
+    });
+
+    it("does not show banner when persisted version equals current", async () => {
+      mockPackageInstallStatus();
+      // VERSION is globally mocked as "1.0.0" in this test suite
+      // Use an old timestamp to ensure the fresh check runs
+      const oldTimestamp = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+      // Set up state with a previous "available" version (2.0.0)
+      // Then mock the fresh check returning the same version as current (1.0.0)
+      const statePath = path.join(resolveStateDir(), UPDATE_CHECK_FILENAME);
+      await fs.writeFile(
+        statePath,
+        JSON.stringify(
+          {
+            lastCheckedAt: oldTimestamp,
+            lastAvailableVersion: "2.0.0", // Previously "available"
+            lastAvailableTag: "latest",
+          },
+          null,
+          2,
+        ),
+        "utf-8",
+      );
+
+      // Mock the fresh check to return 1.0.0 (equal to current VERSION)
+      vi.mocked(resolveNpmChannelTag).mockResolvedValueOnce({
+        tag: "latest",
+        version: "1.0.0", // Same as current VERSION
+      });
+
+      const onUpdateAvailableChange = vi.fn();
+      await runGatewayUpdateCheck({
+        cfg: { update: { channel: "stable" } },
+        log: { info: vi.fn() },
+        isNixMode: false,
+        allowInTests: true,
+        onUpdateAvailableChange,
+      });
+
+      // Should clear the update (going from 2.0.0 available to no update)
+      expect(onUpdateAvailableChange).toHaveBeenCalledWith(null);
+      expect(getUpdateAvailable()).toBeNull();
+    });
   });
 });

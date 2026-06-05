@@ -165,6 +165,10 @@ function resolvePersistedUpdateAvailable(state: UpdateCheckState): UpdateAvailab
   if (!latestVersion) {
     return null;
   }
+  // Defensive: if versions are identical, never show the banner
+  if (latestVersion === VERSION) {
+    return null;
+  }
   const cmp = compareSemverStrings(VERSION, latestVersion);
   if (cmp == null || cmp >= 0) {
     return null;
@@ -403,6 +407,19 @@ export async function runGatewayUpdateCheck(params: {
   const resolved = await resolveNpmChannelTag({ channel, timeoutMs: 2500 });
   const tag = resolved.tag;
   if (!resolved.version) {
+    await writeState(statePath, nextState);
+    return;
+  }
+
+  // Defensive: never show update banner when versions are identical
+  if (resolved.version === VERSION) {
+    delete nextState.lastAvailableVersion;
+    delete nextState.lastAvailableTag;
+    clearAutoState(nextState);
+    setUpdateAvailableCache({
+      next: null,
+      onUpdateAvailableChange: params.onUpdateAvailableChange,
+    });
     await writeState(statePath, nextState);
     return;
   }
