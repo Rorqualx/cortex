@@ -68,6 +68,18 @@ repos:
         pass_filenames: false
         files: "^skills/.*\\.py$"
 
+  # Fork merge guard — detect config drift on every commit
+  - repo: local
+    hooks:
+      - id: fork-config-drift
+        name: fork config drift check
+        entry: node scripts/fork-config-snapshot.mjs verify
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        always_run: false
+        files: "^(\\.gitattributes|\\.pre-commit-config\\.yaml|\\.crabbox\\.yaml|\\.oxlintrc\\.json|tsconfig|package\\.json|src/config/)"
+
   # Project checks (same commands as CI)
   - repo: local
     hooks:

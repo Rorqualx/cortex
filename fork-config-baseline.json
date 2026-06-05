@@ -1,0 +1,98 @@
+{
+  "timestamp": "2026-06-05T17:36:04.420Z",
+  "branch": "memory-fork",
+  "headSha": "fc855b7462ac9d5f1b72c7518e96a9409d3392d5",
+  "files": {
+    ".gitattributes": {
+      "hash": "1e11650c27b3ea2d9eff727415650c05aad92508ae694e9e11955a20ab179a57",
+      "mergeOursLines": [
+        "extensions/memory-l3/**                                              merge=ours",
+        "memory/.l3/**                                                        merge=ours",
+        "# `merge=ours` keeps OUR version on conflict; non-overlapping upstream",
+        "docs/concepts/model-providers.md                                     merge=ours",
+        "src/agents/embedded-agent-runner/extra-params.ts                     merge=ours",
+        "src/agents/embedded-agent-runner-extraparams-resolve.test.ts         merge=ours",
+        "src/agents/embedded-agent-runner-extraparams.test.ts                 merge=ours",
+        "src/agents/embedded-agent-runner/extra-params.provider-runtime.test.ts merge=ours",
+        "src/plugins/channel-catalog-registry.ts                              merge=ours",
+        "packages/gateway-protocol/src/schema/logs-chat.ts                    merge=ours",
+        "src/gateway/server-chat.ts                                            merge=ours",
+        "src/gateway/server-chat-state.ts                                      merge=ours",
+        "ui/src/ui/chat/run-lifecycle.ts                                       merge=ours",
+        "ui/src/ui/app.ts                                                      merge=ours",
+        "ui/src/ui/app-render.ts                                               merge=ours",
+        "ui/src/ui/types/chat-types.ts                                         merge=ours",
+        "ui/src/ui/chat/build-chat-items.ts                                    merge=ours",
+        "ui/src/ui/views/chat.ts                                               merge=ours",
+        "ui/src/ui/chat/grouped-render.ts                                      merge=ours",
+        "ui/src/styles/chat/grouped.css                                        merge=ours",
+        "ui/src/ui/controllers/chat.ts                                         merge=ours",
+        "ui/src/ui/app-view-state.ts                                         merge=ours",
+        "extensions/memory-core/src/prompt-section.ts                             merge=ours",
+        "extensions/memory-core/src/tools.citations.ts                             merge=ours",
+        "src/skill-forge/**                                                       merge=ours",
+        "src/agents/doom-loop-guard.ts                                           merge=ours",
+        "src/agents/tool-loop-detection-config.ts                                merge=ours",
+        "src/config/types.tools.ts                                               merge=ours",
+        "fork-config-baseline.json                                               merge=ours",
+        "scripts/fork-config-snapshot.mjs                                       merge=ours",
+        "scripts/fork-merge-guard.mjs                                            merge=ours",
+        "scripts/fork-merge-verify.mjs                                           merge=ours",
+        "FORK-MERGE-GUIDE.md                                                     merge=ours"
+      ]
+    },
+    ".pre-commit-config.yaml": {
+      "hash": "cbe9ea213f011bc475b260f0801de98fa0cb32698a87b6fa16d17f917286987a"
+    },
+    ".crabbox.yaml": {
+      "hash": "7ebb18073164395cee2221247149ebb62792c616cd38fec4a91088d97df7f5c8"
+    },
+    ".oxlintrc.json": {
+      "hash": "bc044e9bdabd1dda6990e22a9d196157c2f3dfb0372db369f5217c962b4f888b",
+      "jsonKeys": [
+        "$schema",
+        "plugins",
+        "categories",
+        "rules",
+        "ignorePatterns",
+        "overrides"
+      ]
+    },
+    "tsconfig.json": {
+      "hash": "ba1409982b08114780a90d4e44b30bc23d59aef9fe7eb2297934f19958344212",
+      "jsonKeys": [
+        "compilerOptions",
+        "include",
+        "exclude"
+      ]
+    },
+    "tsconfig.core.json": {
+      "hash": "68cbb3d86fda0670a3634a182a5c60a0abc08fa69847de5663ec87430d9a5323",
+      "jsonKeys": [
+        "extends",
+        "compilerOptions",
+        "include",
+        "exclude"
+      ]
+    },
+    "tsconfig.extensions.json": {
+      "hash": "fda20fc37da7a663d987ceb3f557e8d4dbc1d21120f864e1c89871d03b5b51f6",
+      "jsonKeys": [
+        "extends",
+        "compilerOptions",
+        "include",
+        "exclude"
+      ]
+    },
+    "package.json": {
+      "hash": "ac9d21194e3d93c6247456110b859fafc0cef54896df8ed35b420bc2b99195f5",
+      "pkgSectionsHash": "f79b35a31e1ebc3082bab25afa7c45a65bd1cad40a3bcf0eccd0a9b21de602e3"
+    },
+    "src/config/schema.ts": {
+      "hash": "6a445062e415dbd88ba7cf33297b84a63f13e21e1727e20e677c594d6e881bff"
+    },
+    "src/config/runtime-schema.ts": {
+      "hash": "8cf5bb07c1072182966147c7b16b1c2261c844e53f28d343ea581f5c92b45ac3"
+    }
+  }
+}

@@ -65,3 +65,11 @@ src/agents/templates/*.md linguist-generated=false
 /AGENTS.md linguist-generated=false
 **/*.prompt.md linguist-generated=false
 **/*.agent.md linguist-generated=false
+
+# --- fork: merge guard system ---
+# Baseline snapshot and merge guard scripts (fork-exclusive tooling)
+fork-config-baseline.json                                               merge=ours
+scripts/fork-config-snapshot.mjs                                       merge=ours
+scripts/fork-merge-guard.mjs                                            merge=ours
+scripts/fork-merge-verify.mjs                                           merge=ours
+FORK-MERGE-GUIDE.md                                                     merge=ours
