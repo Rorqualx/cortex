@@ -8,10 +8,6 @@ import {
   type AgentGeneratedAttachment,
 } from "./generated-attachments.js";
 import {
-  formatGeneratedAttachmentLines,
-  type AgentGeneratedAttachment,
-} from "./generated-attachments.js";
-import {
   AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION,
   type AgentInternalEventSource,
   type AgentInternalEventStatus,

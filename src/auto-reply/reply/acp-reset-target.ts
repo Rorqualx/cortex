@@ -4,10 +4,6 @@ import {
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import {
-  normalizeLowercaseStringOrEmpty,
-  normalizeOptionalString,
-} from "@openclaw/normalization-core/string-coerce";
-import {
   buildConfiguredAcpSessionKey,
   normalizeBindingConfig,
   type ConfiguredAcpBindingChannel,

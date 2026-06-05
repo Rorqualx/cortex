@@ -2,11 +2,6 @@
  * Caps compaction retry waits against the aggregate run timeout.
  */
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
-/**
- * Waits for compaction retry completion with an aggregate timeout so a lost
- * retry resolution cannot hold the session lane indefinitely.
- */
-import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 
 export async function waitForCompactionRetryWithAggregateTimeout(params: {
   waitForCompactionRetry: () => Promise<void>;

@@ -8,10 +8,6 @@ import {
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
 import {
-  normalizeLowercaseStringOrEmpty,
-  normalizeOptionalLowercaseString,
-} from "@openclaw/normalization-core/string-coerce";
-import {
   buildConfiguredAcpSessionKey,
   normalizeBindingConfig,
   normalizeMode,

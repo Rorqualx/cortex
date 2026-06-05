@@ -9,11 +9,6 @@ import {
   normalizeOptionalThreadValue,
 } from "@openclaw/normalization-core/string-coerce";
 import {
-  normalizeLowercaseStringOrEmpty,
-  normalizeOptionalString,
-  normalizeOptionalThreadValue,
-} from "@openclaw/normalization-core/string-coerce";
-import {
   channelRouteTargetsMatchExact,
   channelRouteTargetsShareConversation,
   type ChannelRouteParsedTarget,

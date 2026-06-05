@@ -1,5 +1,6 @@
 // Defines tool availability and allowlist configuration types.
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
+import type { DoomLoopGuardConfig } from "../agents/doom-loop-guard.js";
 import type { ChatType } from "../channels/chat-type.js";
 import type { SafeBinProfileFixture } from "../infra/exec-safe-bin-policy.js";
 import type { AgentModelConfig } from "./types.agents-shared.js";
@@ -197,6 +198,8 @@ export type ToolLoopDetectionConfig = {
   detectors?: ToolLoopDetectionDetectorConfig;
   /** Post-compaction loop guard: aborts when the agent repeats the same (tool, args, result) immediately after auto-compaction-retry. */
   postCompactionGuard?: ToolLoopPostCompactionGuardConfig;
+  /** Doom loop guard: aborts when consecutive LLM/tool/network failures reach threshold. */
+  doomLoopGuard?: DoomLoopGuardConfig;
 };
 
 export type ToolSearchConfig =

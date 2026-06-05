@@ -624,16 +624,16 @@ async function runAgentBasedHookValidation(
         mode: "run",
         cleanup: "delete",
         thinking: "low",
-        timeoutSeconds: 30,
+        runTimeoutSeconds: 30,
         expectsCompletionMessage: false,
       },
       {
-        requesterInternalKey: "hook-validation",
-        requesterAgentId: validationAgentId || "default-agent",
+        agentSessionKey: "hook-validation",
+        requesterAgentIdOverride: validationAgentId || "default-agent",
       },
     );
 
-    if (result.status !== "ok") {
+    if (result.status !== "accepted") {
       // If spawn failed, fail open for safety (allow the hook)
       console.error(`Hook validation spawn failed for ${mapping.id}:`, result.error);
       return { pass: true };

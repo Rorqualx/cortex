@@ -9,14 +9,6 @@ import {
   validateExecApprovalsSetParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import {
-  ErrorCodes,
-  errorShape,
-  validateExecApprovalsGetParams,
-  validateExecApprovalsNodeGetParams,
-  validateExecApprovalsNodeSetParams,
-  validateExecApprovalsSetParams,
-} from "../../../packages/gateway-protocol/src/index.js";
-import {
   ensureExecApprovals,
   mergeExecApprovalsSocketDefaults,
   normalizeExecApprovals,

@@ -7,12 +7,6 @@ import {
   validateNodePendingEnqueueParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import {
-  ErrorCodes,
-  errorShape,
-  validateNodePendingDrainParams,
-  validateNodePendingEnqueueParams,
-} from "../../../packages/gateway-protocol/src/index.js";
-import {
   drainNodePendingWork,
   enqueueNodePendingWork,
   type NodePendingWorkPriority,

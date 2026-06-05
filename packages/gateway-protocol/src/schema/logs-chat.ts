@@ -34,6 +34,14 @@ export const ChatHistoryParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/** Lightweight chat metadata request; optional agent scope keeps selector state explicit. */
+export const ChatMetadataParamsSchema = Type.Object(
+  {
+    agentId: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
 export const ChatMessageGetParamsSchema = Type.Object(
   {
     sessionKey: NonEmptyString,
