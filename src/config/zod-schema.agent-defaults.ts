@@ -1,3 +1,4 @@
+// Defines Zod schema fragments for agent default configuration.
 import { z } from "zod";
 import { isValidNonNegativeByteSizeString } from "./byte-size.js";
 import {
@@ -199,25 +200,6 @@ export const AgentDefaultsSchema = z
         truncateAfterCompaction: z.boolean().optional(),
         maxActiveTranscriptBytes: NonNegativeByteSizeSchema.optional(),
         notifyUser: z.boolean().optional(),
-        cacheAwareChunking: z
-          .object({
-            enabled: z
-              .boolean()
-              .optional()
-              .describe("Enable cache-aware chunking (default: true)."),
-            preserveCacheCarryover: z
-              .boolean()
-              .optional()
-              .describe("Preserve cache-carryover content (default: true)."),
-            cacheBufferMultiplier: z
-              .number()
-              .min(1)
-              .max(2)
-              .optional()
-              .describe("Buffer multiplier for cached content (default: 1.2)."),
-          })
-          .strict()
-          .optional(),
       })
       .strict()
       .optional(),
@@ -283,33 +265,6 @@ export const AgentDefaultsSchema = z
         runTimeoutSeconds: z.number().int().min(0).optional(),
         announceTimeoutMs: z.number().int().positive().optional(),
         requireAgentId: z.boolean().optional(),
-        subagentIsolation: z
-          .object({
-            enabled: z
-              .boolean()
-              .optional()
-              .describe("Enable sidechain transcript isolation for subagents (default: false)."),
-            autoIsolateVerbose: z
-              .boolean()
-              .optional()
-              .describe(
-                "Automatically isolate transcripts when output exceeds verboseThreshold tokens.",
-              ),
-            verboseThreshold: z
-              .number()
-              .int()
-              .min(1000)
-              .optional()
-              .describe("Token threshold for auto-isolation (default: 10000)."),
-            ttlDays: z
-              .number()
-              .int()
-              .min(1)
-              .optional()
-              .describe("TTL for isolated transcripts in days (default: 7)."),
-          })
-          .strict()
-          .optional(),
       })
       .strict()
       .optional(),

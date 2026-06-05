@@ -1,3 +1,5 @@
+// sessions_spawn tool tests cover model-visible schema gating, ACP/subagent
+// dispatch, and result details for spawned child sessions.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoisted = vi.hoisted(() => {
@@ -108,6 +110,8 @@ describe("sessions_spawn tool", () => {
   }
 
   it("hides ACP runtime affordances when no ACP backend is loaded", () => {
+    // The tool schema is generated from live runtime availability; stale ACP
+    // fields should not be advertised when no backend can handle them.
     const tool = createSessionsSpawnTool();
     const schema = tool.parameters as {
       properties?: {
@@ -570,7 +574,131 @@ describe("sessions_spawn tool", () => {
     const spawnContext = mockCallArg(hoisted.spawnAcpDirectMock, 0, 1, "spawnAcpDirect");
     expect(spawnContext.agentSessionKey).toBe("agent:main:main");
     expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
-    expect(hoisted.registerSubagentRunMock).not.toHaveBeenCalled();
+    const registration = mockCallArg(hoisted.registerSubagentRunMock, 0, 0, "registerSubagentRun");
+    expect(registration.runId).toBe("run-acp");
+    expect(registration.childSessionKey).toBe("agent:codex:acp:1");
+    expect(registration.requesterSessionKey).toBe("agent:main:main");
+    expect(registration.task).toBe("investigate the failing CI run");
+    expect(registration.cleanup).toBe("keep");
+    expect(registration.spawnMode).toBe("session");
+    expect(registration.expectsCompletionMessage).toBe(true);
+  });
+
+  it("passes inherited tool denies to ACP spawns", async () => {
+    registerAcpBackendForTest();
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+      inheritedToolDenylist: ["custom_control_tool"],
+    });
+
+    await tool.execute("call-acp-inherited-deny", {
+      runtime: "acp",
+      task: "investigate",
+      agentId: "codex",
+    });
+
+    const spawnContext = mockCallArg(hoisted.spawnAcpDirectMock, 0, 1, "spawnAcpDirect");
+    expect(spawnContext.inheritedToolDenylist).toEqual(["custom_control_tool"]);
+  });
+
+  it("rejects ACP spawns when inherited denies include command tools", async () => {
+    registerAcpBackendForTest();
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+      inheritedToolDenylist: ["exec"],
+    });
+
+    const result = await tool.execute("call-acp-inherited-command-deny", {
+      runtime: "acp",
+      task: "investigate",
+      agentId: "codex",
+    });
+
+    expectDetailFields(result.details, { status: "forbidden", role: "codex" });
+    expect(JSON.stringify(result.details)).toContain("requester denies exec");
+    expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects ACP spawns when inherited deny groups or patterns include command tools", async () => {
+    registerAcpBackendForTest();
+    const cases = [
+      { inheritedToolDenylist: ["group:fs"], expected: "requester denies apply_patch" },
+      { inheritedToolDenylist: ["group:runtime"], expected: "requester denies exec" },
+      { inheritedToolDenylist: ["exec*"], expected: "requester denies exec" },
+      { inheritedToolDenylist: ["*"], expected: "requester denies apply_patch" },
+    ];
+
+    for (const testCase of cases) {
+      const tool = createSessionsSpawnTool({
+        agentSessionKey: "agent:main:main",
+        inheritedToolDenylist: testCase.inheritedToolDenylist,
+      });
+
+      const result = await tool.execute("call-acp-inherited-command-group-deny", {
+        runtime: "acp",
+        task: "investigate",
+        agentId: "codex",
+      });
+
+      expectDetailFields(result.details, { status: "forbidden", role: "codex" });
+      expect(JSON.stringify(result.details)).toContain(testCase.expected);
+    }
+    expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects ACP spawns when inherited allows omit command tools", async () => {
+    registerAcpBackendForTest();
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+      inheritedToolAllowlist: ["sessions_spawn", "custom_plugin_tool"],
+    });
+
+    const result = await tool.execute("call-acp-inherited-command-allow", {
+      runtime: "acp",
+      task: "investigate",
+      agentId: "codex",
+    });
+
+    expectDetailFields(result.details, { status: "forbidden", role: "codex" });
+    expect(JSON.stringify(result.details)).toContain("requester does not allow apply_patch");
+    expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts ACP spawns when inherited allows include OpenClaw command tools", async () => {
+    registerAcpBackendForTest();
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+      inheritedToolAllowlist: [
+        "apply_patch",
+        "edit",
+        "exec",
+        "process",
+        "read",
+        "sessions_spawn",
+        "write",
+      ],
+    });
+
+    const result = await tool.execute("call-acp-inherited-command-allow-compatible", {
+      runtime: "acp",
+      task: "investigate",
+      agentId: "codex",
+    });
+
+    expectDetailFields(result.details, {
+      status: "accepted",
+      childSessionKey: "agent:codex:acp:1",
+    });
+    const spawnContext = mockCallArg(hoisted.spawnAcpDirectMock, 0, 1, "spawnAcpDirect");
+    expect(spawnContext.inheritedToolAllowlist).toEqual([
+      "apply_patch",
+      "edit",
+      "exec",
+      "process",
+      "read",
+      "sessions_spawn",
+      "write",
+    ]);
   });
 
   it("passes inherited tool denies to ACP spawns", async () => {

@@ -1,3 +1,4 @@
+// Coordinates task registry creation, updates, delivery state, and snapshots.
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
@@ -520,7 +521,6 @@ function mapAgentRunTerminalOutcomeToTaskStatus(
       return "cancelled";
     case "blocked":
     case "failed":
-    case "doom_loop":
       return "failed";
     default:
       return outcome.reason satisfies never;

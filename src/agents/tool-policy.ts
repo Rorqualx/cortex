@@ -1,3 +1,8 @@
+/**
+ * Tool allow/deny policy helpers.
+ * Normalizes core and plugin tool groups, expands plugin entries, and extracts
+ * explicit operator allow/deny lists.
+ */
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { IMPLICIT_ALLOW_ALL_FROM_ALSO_ALLOW } from "./sandbox-tool-policy.js";
@@ -12,48 +17,30 @@ export {
 } from "./tool-policy-shared.js";
 export type { ToolProfileId } from "./tool-policy-shared.js";
 
-/**
- * DENY-FIRST SECURITY RULE
- *
- * OpenClaw enforces a deny-first security model: any tool in a deny list
- * is BLOCKED, even if it appears in an allow list. This is a fundamental
- * security principle - deny ALWAYS overrides allow.
- *
- * The tool policy pipeline processes deny lists before allow lists, and any
- * tool matching a deny pattern is removed from consideration before allow
- * patterns are evaluated.
- *
- * This means adding a tool to `tools.deny` at any policy level
- * (profile, agent, provider, group) will block it, regardless of
- * allowlist entries at other levels.
- *
- * Tool policy evaluation order:
- * 1. Collect all deny lists from all policy sources
- * 2. Remove any tool matching a deny pattern
- * 3. Only then apply allowlist restrictions
- * 4. Tools must survive BOTH checks to be available
- */
-export const DENY_FIRST_RULE = Symbol.for("openclaw.denyFirstRule");
-
+/** Tool allow/deny policy shape accepted by agent and sandbox config. */
 export type ToolPolicyLike = {
   allow?: string[];
   deny?: string[];
   [IMPLICIT_ALLOW_ALL_FROM_ALSO_ALLOW]?: true;
 };
 
+/** Plugin-owned tool group expansion state. */
 export type PluginToolGroups = {
   all: string[];
   byPlugin: Map<string, string[]>;
 };
 
+/** Analysis of an allowlist after matching core and plugin tool ids. */
 export type AllowlistResolution = {
   policy: ToolPolicyLike | undefined;
   unknownAllowlist: string[];
   pluginOnlyAllowlist: boolean;
 };
 
+/** Synthetic allowlist entry that means "use default plugin tools". */
 export const DEFAULT_PLUGIN_TOOLS_ALLOWLIST_ENTRY = "__openclaw_default_plugin_tools__";
 
+/** Returns true when an allow policy is narrower than all/default plugin tools. */
 export function hasRestrictiveAllowPolicy(policy?: { allow?: string[] }): boolean {
   return (
     Array.isArray(policy?.allow) &&
@@ -68,6 +55,7 @@ export function hasRestrictiveAllowPolicy(policy?: { allow?: string[] }): boolea
   );
 }
 
+/** Replaces an allowlist with the normalized names of an effective tool array. */
 export function replaceWithEffectiveToolAllowlist(
   target: string[],
   tools: Array<{ name: string }>,
@@ -84,6 +72,7 @@ export function replaceWithEffectiveToolAllowlist(
   }
 }
 
+/** Collects explicit allow entries from layered policies. */
 export function collectExplicitAllowlist(policies: Array<ToolPolicyLike | undefined>): string[] {
   const entries: string[] = [];
   for (const policy of policies) {
@@ -96,6 +85,8 @@ export function collectExplicitAllowlist(policies: Array<ToolPolicyLike | undefi
       }
       const trimmed = value.trim();
       if (trimmed === "*" && policy[IMPLICIT_ALLOW_ALL_FROM_ALSO_ALLOW] === true) {
+        // alsoAllow implicitly injects "*" for sandbox compatibility; do not
+        // report that implicit wildcard as an explicit operator allow entry.
         continue;
       }
       if (trimmed) {
@@ -109,6 +100,7 @@ export function collectExplicitAllowlist(policies: Array<ToolPolicyLike | undefi
   return uniqueStrings(entries);
 }
 
+/** Collects explicit deny entries from layered policies. */
 export function collectExplicitDenylist(policies: Array<ToolPolicyLike | undefined>): string[] {
   const entries: string[] = [];
   for (const policy of policies) {
@@ -128,6 +120,7 @@ export function collectExplicitDenylist(policies: Array<ToolPolicyLike | undefin
   return entries;
 }
 
+/** Builds plugin tool groups from tool metadata. */
 export function buildPluginToolGroups<T extends { name: string }>(params: {
   tools: T[];
   toolMeta: (tool: T) => { pluginId: string } | undefined;
@@ -152,6 +145,7 @@ export function buildPluginToolGroups<T extends { name: string }>(params: {
   return { all, byPlugin };
 }
 
+/** Expands group:plugins and plugin-id entries into concrete plugin tool names. */
 export function expandPluginGroups(
   list: string[] | undefined,
   groups: PluginToolGroups,
@@ -180,6 +174,7 @@ export function expandPluginGroups(
   return uniqueStrings(expanded);
 }
 
+/** Expands plugin groups in a policy while preserving undefined policies. */
 export function expandPolicyWithPluginGroups(
   policy: ToolPolicyLike | undefined,
   groups: PluginToolGroups,
@@ -193,6 +188,7 @@ export function expandPolicyWithPluginGroups(
   };
 }
 
+/** Classifies allowlists as core, plugin-only, or unknown for diagnostics. */
 export function analyzeAllowlistByToolType(
   policy: ToolPolicyLike | undefined,
   groups: PluginToolGroups,
@@ -233,6 +229,7 @@ export function analyzeAllowlistByToolType(
   };
 }
 
+/** Merges alsoAllow entries into an existing allow policy. */
 export function mergeAlsoAllowPolicy<TPolicy extends { allow?: string[] }>(
   policy: TPolicy | undefined,
   alsoAllow?: string[],
@@ -241,102 +238,4 @@ export function mergeAlsoAllowPolicy<TPolicy extends { allow?: string[] }>(
     return policy;
   }
   return { ...policy, allow: uniqueStrings([...policy.allow, ...alsoAllow]) };
-}
-
-/**
- * Apply deny-first rule to tool names.
- *
- * Removes denied tools FIRST, before applying allowlist restrictions.
- * This enforces the fundamental security principle that deny ALWAYS overrides allow.
- *
- * @param tools - Tool names to filter
- * @param denylist - Tools to deny (may include glob patterns)
- * @param allowlist - Tools to allow (may include glob patterns)
- * @returns Filtered tool names respecting deny-first rule
- */
-export function applyDenyFirstRule(params: {
-  tools: string[];
-  denylist?: string[];
-  allowlist?: string[];
-}): string[] {
-  const { tools, denylist = [], allowlist = [] } = params;
-
-  // Expand tool groups (e.g., "group:plugins" -> actual tool names)
-  const expandedDeny = expandToolGroups(denylist);
-  const expandedAllow = expandToolGroups(allowlist);
-
-  // Step 1: Remove denied tools FIRST (deny-first rule)
-  const deniedSet = new Set(expandedDeny.map(normalizeToolName).filter(Boolean));
-
-  // Special handling for wildcard deny (*)
-  const hasDenyAll = deniedSet.has("*");
-
-  const afterDeny = tools.filter((name) => {
-    const normalized = normalizeToolName(name);
-    // Wildcard deny removes everything
-    if (hasDenyAll) return false;
-    return !deniedSet.has(normalized);
-  });
-
-  // Step 2: Only then apply allowlist restriction
-  const allowSet = new Set(expandedAllow.map(normalizeToolName).filter(Boolean));
-
-  // If allowlist is empty or has wildcard, all non-denied tools pass
-  if (expandedAllow.length === 0 || allowSet.has("*")) {
-    return afterDeny;
-  }
-
-  return afterDeny.filter((name) => {
-    const normalized = normalizeToolName(name);
-    return allowSet.has(normalized);
-  });
-}
-
-/**
- * Detect conflicts between deny and allow lists.
- *
- * Returns tools that appear in both deny and allow lists, indicating
- * a potential policy conflict that should be resolved.
- *
- * @param policies - Array of policies to check for conflicts
- * @returns Object containing conflicting tool names by policy index
- */
-export function detectDenyAllowConflicts(
-  policies: Array<ToolPolicyLike | undefined>,
-): Record<number, string[]> {
-  const conflicts: Record<number, string[]> = {};
-
-  for (let i = 0; i < policies.length; i++) {
-    const policy = policies[i];
-    if (!policy) continue;
-
-    const deny = new Set((policy.deny ?? []).map(normalizeToolName).filter(Boolean));
-    const allow = new Set((policy.allow ?? []).map(normalizeToolName).filter(Boolean));
-
-    const conflicting: string[] = [];
-    for (const tool of deny) {
-      // Check if this denied tool is also explicitly allowed
-      if (allow.has(tool) || allow.has("*")) {
-        conflicting.push(tool);
-      }
-    }
-
-    // Also check expanded tool groups
-    const expandedDeny = expandToolGroups(policy.deny ?? []);
-    const expandedAllow = expandToolGroups(policy.allow ?? []);
-    const expandedAllowSet = new Set(expandedAllow.map(normalizeToolName));
-
-    for (const tool of expandedDeny) {
-      const normalized = normalizeToolName(tool);
-      if (expandedAllowSet.has(normalized) && !conflicting.includes(normalized)) {
-        conflicting.push(normalized);
-      }
-    }
-
-    if (conflicting.length > 0) {
-      conflicts[i] = uniqueStrings(conflicting);
-    }
-  }
-
-  return conflicts;
 }

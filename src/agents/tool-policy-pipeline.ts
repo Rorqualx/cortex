@@ -1,7 +1,10 @@
-import { createPhaseTracker } from "../infra/agent-execution-events.js";
+/**
+ * Applies layered tool policy in runtime resolution order. Policy diagnostics
+ * stay tied to the layer that introduced them, while plugin groups are
+ * expanded only after unknown core/plugin entries are classified.
+ */
 import { filterToolsByPolicy } from "./agent-tools.policy.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
-import { emitToolDenied } from "./event-ledger-helper.js";
 import { isKnownCoreToolId } from "./tool-catalog.js";
 import { auditToolPolicyFilter, type ToolPolicyAuditLogLevel } from "./tool-policy-audit.js";
 import {
@@ -31,6 +34,7 @@ function rememberToolPolicyWarning(warning: string): boolean {
   return true;
 }
 
+/** One named policy layer in the effective runtime tool policy pipeline. */
 export type ToolPolicyPipelineStep = {
   policy: ToolPolicyLike | undefined;
   label: string;
@@ -40,6 +44,7 @@ export type ToolPolicyPipelineStep = {
   unavailableCoreToolReason?: string;
 };
 
+/** Builds the default profile, provider, agent, group, and sender policy layers. */
 export function buildDefaultToolPolicyPipelineSteps(params: {
   profilePolicy?: ToolPolicyLike;
   profile?: string;
@@ -117,15 +122,13 @@ export function buildDefaultToolPolicyPipelineSteps(params: {
   ];
 }
 
+/** Applies configured policy layers to a tool list and emits deduped warnings/audit events. */
 export function applyToolPolicyPipeline(params: {
   tools: AnyAgentTool[];
   toolMeta: (tool: AnyAgentTool) => { pluginId: string } | undefined;
   warn: (message: string) => void;
   steps: ToolPolicyPipelineStep[];
   auditLogLevel?: ToolPolicyAuditLogLevel;
-  runId?: string;
-  sessionKey?: string;
-  traceContext?: import("../infra/agent-execution-events.js").W3CTraceContext;
 }): AnyAgentTool[] {
   const coreToolNames = new Set(
     params.tools
@@ -139,44 +142,15 @@ export function applyToolPolicyPipeline(params: {
     toolMeta: params.toolMeta,
   });
 
-  // Create phase tracker for policy check events if runId is provided
-  const policyTracker = params.runId
-    ? createPhaseTracker<"policy_check">({
-        runId: params.runId,
-        stream: "policy_check",
-        sessionKey: params.sessionKey,
-        traceContext: params.traceContext,
-      })
-    : null;
-
   let filtered = params.tools;
-
-  // Emit policy pipeline start event
-  if (policyTracker) {
-    policyTracker.start("deny_list_start");
-  }
-
   for (const step of params.steps) {
     if (!step.policy) {
       continue;
     }
 
-    // Emit policy step start event if tracking enabled
-    if (policyTracker) {
-      const stepPhase = step.label.includes("profile")
-        ? ("capability_start" as const)
-        : step.label.includes("group")
-          ? ("permission_start" as const)
-          : step.label.includes("sandbox")
-            ? ("sandbox_start" as const)
-            : step.label.includes("subagent")
-              ? ("rate_limit_start" as const)
-              : ("deny_list_start" as const);
-      policyTracker.start(stepPhase);
-    }
-
     let policy: ToolPolicyLike | undefined = step.policy;
     if (step.stripPluginOnlyAllowlist) {
+      // Plugin-only allowlists are valid for deferred tools; warn only for entries that cannot match.
       const resolved = analyzeAllowlistByToolType(policy, pluginGroups, coreToolNames);
       if (resolved.unknownAllowlist.length > 0) {
         const unavailableCoreWarningAllowlist = new Set(
@@ -229,45 +203,6 @@ export function applyToolPolicyPipeline(params: {
       after: filtered,
       logLevel: params.auditLogLevel,
     });
-
-    // Emit policy decision events for denied tools
-    const denied = new Set(before.map((t) => t.name));
-    for (const allowed of filtered) {
-      denied.delete(allowed.name);
-    }
-    for (const toolName of denied) {
-      void emitToolDenied({
-        toolName,
-        denyReason: step.label,
-      });
-    }
-
-    // Emit policy step complete event if tracking enabled
-    if (policyTracker) {
-      const stepPhase = step.label.includes("profile")
-        ? ("capability_complete" as const)
-        : step.label.includes("group")
-          ? ("permission_complete" as const)
-          : step.label.includes("sandbox")
-            ? ("sandbox_complete" as const)
-            : step.label.includes("subagent")
-              ? ("rate_limit_complete" as const)
-              : ("deny_list_complete" as const);
-      policyTracker.complete(stepPhase, {
-        stepLabel: step.label,
-        beforeCount: before.length,
-        afterCount: filtered.length,
-        deniedCount: denied.size,
-      });
-    }
-  }
-  // Emit policy pipeline complete event if tracking enabled
-  if (policyTracker) {
-    policyTracker.complete("deny_list_complete", {
-      finalToolCount: filtered.length,
-      initialToolCount: params.tools.length,
-      stepsProcessed: params.steps.length,
-    });
   }
   return filtered;
 }
@@ -304,6 +239,7 @@ function describeUnknownAllowlistSuffix(params: {
   return preface ? `${preface} ${detail}` : detail;
 }
 
+/** Clears process-local warning dedupe state between tests. */
 export function resetToolPolicyWarningCacheForTest(): void {
   seenToolPolicyWarnings.clear();
   toolPolicyWarningOrder.length = 0;

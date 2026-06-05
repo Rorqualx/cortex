@@ -1,7 +1,12 @@
 // Intentional Knip unused-file findings. These are dynamic entrypoints,
 // generated/build inputs, manifest-discovered plugin surfaces, live-test
 // helpers, or package bridge files that static production scanning cannot see.
-export const KNIP_UNUSED_FILE_ALLOWLIST = [];
+export const KNIP_UNUSED_FILE_ALLOWLIST = [
+  // Per-agent SQLite scaffold is intentionally ahead of mainline runtime callers.
+  // The pending SQLite session/runtime branch wires these files into production.
+  "src/agents/cache/agent-cache-store.sqlite.ts",
+  "src/agents/cache/agent-cache-store.ts",
+];
 
 // Knip can disagree across supported local/CI platforms for files that are
 // only reachable through test-only import graphs, sparse-checkout proof

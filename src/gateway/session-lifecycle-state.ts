@@ -1,3 +1,5 @@
+// Gateway session lifecycle state projection.
+// Converts agent run lifecycle events into session row/store status updates.
 import {
   buildAgentRunTerminalOutcome,
   type AgentRunTerminalOutcome,
@@ -59,8 +61,6 @@ function mapAgentRunTerminalOutcomeToSessionStatus(
     case "blocked":
     case "failed":
       return "failed";
-    case "doom_loop":
-      return "doom_loop";
     default:
       return outcome.reason satisfies never;
   }
@@ -131,6 +131,8 @@ export function deriveGatewaySessionLifecycleSnapshot(params: {
 
   const existing = params.session ?? undefined;
   if (phase === "start") {
+    // A start event clears terminal fields from the previous run so UI rows do
+    // not show stale runtime/end state while the new run is active.
     const startedAt = resolveLifecycleStartedAt(existing?.startedAt, params.event);
     const updatedAt = startedAt ?? existing?.updatedAt;
     return {

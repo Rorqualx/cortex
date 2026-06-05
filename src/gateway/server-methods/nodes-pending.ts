@@ -1,3 +1,11 @@
+// Node pending methods queue and drain work for paired nodes that may reconnect
+// later, with optional APNs wake nudges.
+import {
+  ErrorCodes,
+  errorShape,
+  validateNodePendingDrainParams,
+  validateNodePendingEnqueueParams,
+} from "../../../packages/gateway-protocol/src/index.js";
 import {
   ErrorCodes,
   errorShape,

@@ -1,3 +1,4 @@
+/** Implements ACP subagent/session spawning, binding, limits, and parent-stream setup. */
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import {
@@ -39,7 +40,6 @@ import { parseDurationMs } from "../cli/parse-duration.js";
 import {
   DEFAULT_SUBAGENT_MAX_CHILDREN_PER_AGENT,
   DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH,
-  resolveFastSpawnConfig,
 } from "../config/agent-limits.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { resolveStorePath } from "../config/sessions/paths.js";
@@ -99,12 +99,7 @@ import {
   type SessionCapabilityStore,
 } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
-import {
-  countActiveRunsForSession,
-  getSubagentRunByChildSessionKey,
-  getSubagentRunByRunId,
-  registerSubagentRun,
-} from "./subagent-registry.js";
+import { countActiveRunsForSession, getSubagentRunByChildSessionKey } from "./subagent-registry.js";
 import {
   resolveConfiguredSubagentRunTimeoutSeconds,
   splitModelRef,
@@ -138,8 +133,6 @@ export type SpawnAcpParams = {
   sandbox?: SpawnAcpSandboxMode;
   streamTo?: SpawnAcpStreamTarget;
   attachments?: AcpTurnAttachment[];
-  /** Request lightweight fast spawn mode (optional, requires opt-in). */
-  fastSpawn?: boolean;
 };
 
 type GatewayImageAttachmentInput = {
@@ -216,7 +209,6 @@ type SpawnAcpAcceptedResult = SpawnAcpResultFields & {
   childSessionKey: string;
   runId: string;
   mode: SpawnAcpMode;
-  inlineResult?: SubagentInlineResult;
 };
 
 type SpawnAcpFailedResult = SpawnAcpResultFields & {
@@ -1409,36 +1401,6 @@ export async function spawnAcpDirect(
       error: resumeAuthorization.error,
     });
   }
-
-  // Fast spawn dispatch (lightweight delegation path)
-  const fastSpawnConfig = resolveFastSpawnConfig(cfg, targetAgentId);
-  const useFastSpawn =
-    params.fastSpawn === true &&
-    spawnMode === "run" &&
-    fastSpawnConfig.enabled &&
-    (!fastSpawnConfig.requireExplicitOptIn || params.fastSpawn === true);
-
-  if (useFastSpawn) {
-    log.debug("Fast spawn dispatch", {
-      targetAgentId,
-      requesterSessionKey: parentSessionKey,
-    });
-    return spawnAcpFast(
-      {
-        task: params.task,
-        label: params.label,
-        agentId: targetAgentId,
-        model: params.model,
-        thinking: params.thinking,
-        cwd: params.cwd,
-        mode: "run",
-        attachments: params.attachments,
-        fastSpawn: true,
-      },
-      ctx,
-    );
-  }
-
   const runtimeOptionsResult = resolveAcpSpawnRuntimeOptions({
     cfg,
     targetAgentId,
@@ -1602,6 +1564,7 @@ export async function spawnAcpDirect(
       logPath: streamLogPath,
       deliveryContext: parentDeliveryCtx,
       emitStartNotice: false,
+      cfg,
     });
   }
   const gatewayAttachments = toGatewayImageAttachments(params.attachments);
@@ -1661,6 +1624,7 @@ export async function spawnAcpDirect(
         logPath: streamLogPath,
         deliveryContext: parentDeliveryCtx,
         emitStartNotice: false,
+        cfg,
       });
     }
     parentRelay?.notifyStarted();
@@ -1740,296 +1704,5 @@ export async function spawnAcpDirect(
     runTimeoutSeconds,
     ...(deliveryPlan.useInlineDelivery ? { inlineDelivery: true } : {}),
     note: spawnMode === "session" ? ACP_SPAWN_SESSION_ACCEPTED_NOTE : ACP_SPAWN_ACCEPTED_NOTE,
-  };
-}
-
-// ============================================================================
-// Fast Spawn Implementation
-// ============================================================================
-
-// ============================================================================
-// Fast Spawn Implementation
-// ============================================================================
-
-export type SpawnAcpFastParams = SpawnAcpParams & {
-  fastSpawn: true;
-};
-
-export type SubagentInlineResult = {
-  status: "completed" | "failed" | "cancelled" | "timeout";
-  resultText?: string;
-  error?: string;
-  endedAt: number;
-};
-
-/**
- * Lightweight subagent spawn path for simple delegation.
- * Preserves safety invariants (depth, children caps) while skipping optional phases:
- * - Skips runtime plugins loading
- * - Skips thread binding (run mode only)
- * - Skips parent stream relay
- * - Skips background task setup
- * - Uses inline result polling instead of sidechain delivery
- */
-export async function spawnAcpFast(
-  params: SpawnAcpFastParams,
-  ctx: SpawnAcpContext,
-): Promise<SpawnAcpResult> {
-  const cfg = getRuntimeConfig();
-  const parentSessionKey = normalizeOptionalString(ctx.agentSessionKey);
-  const requesterInternalKey = resolveRequesterInternalSessionKey({
-    cfg,
-    requesterSessionKey: parentSessionKey,
-  });
-
-  // Phase 1: Resolve target agent
-  const targetAgentResult = resolveTargetAcpAgentId({
-    requestedAgentId: params.agentId,
-    cfg,
-  });
-  if (!targetAgentResult.ok) {
-    return createAcpSpawnFailure({
-      status: "error",
-      errorCode:
-        params.agentId && normalizeOptionalAgentId(params.agentId)
-          ? "runtime_agent_mismatch"
-          : "target_agent_required",
-      error: targetAgentResult.error,
-    });
-  }
-  const targetAgentId = targetAgentResult.agentId;
-
-  // Create child session key
-  const childSessionKey = `agent:${targetAgentId}:acp:${crypto.randomUUID()}`;
-
-  // Phase 2: Agent policy check
-
-  // Phase 2: Agent policy check
-  const agentPolicyError = resolveAcpAgentPolicyError(cfg, targetAgentId);
-  if (agentPolicyError) {
-    return createAcpSpawnFailure({
-      status: "forbidden",
-      errorCode: "agent_forbidden",
-      error: agentPolicyError.message,
-    });
-  }
-
-  // Phase 3: Subagent envelope policy check
-  const subagentStore = resolveSubagentCapabilityStore(parentSessionKey, { cfg });
-  const subagentEnvelopeState = resolveAcpSubagentEnvelopeState({
-    cfg,
-    requesterSessionKey: requesterInternalKey,
-    targetAgentId,
-    requestedAgentId: params.agentId,
-    subagentStore,
-  });
-  if (subagentEnvelopeState.error) {
-    return createAcpSpawnFailure({
-      status: "forbidden",
-      errorCode: "subagent_policy",
-      error: subagentEnvelopeState.error,
-    });
-  }
-
-  // Phase 4: Depth and children cap validation
-  const spawnDepth = getSubagentDepthFromSessionStore(parentSessionKey, { cfg }) + 1;
-  const maxDepth =
-    cfg.agents?.defaults?.subagents?.maxSpawnDepth ?? DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH;
-  if (spawnDepth > maxDepth) {
-    return createAcpSpawnFailure({
-      status: "forbidden",
-      errorCode: "subagent_policy",
-      error: `Subagent spawn depth ${spawnDepth} exceeds max depth ${maxDepth}`,
-    });
-  }
-
-  const activeRunsCount = countActiveRunsForSession(parentSessionKey!);
-  const maxChildren =
-    cfg.agents?.defaults?.subagents?.maxChildrenPerAgent ?? DEFAULT_SUBAGENT_MAX_CHILDREN_PER_AGENT;
-  if (activeRunsCount >= maxChildren) {
-    return createAcpSpawnFailure({
-      status: "forbidden",
-      errorCode: "subagent_policy",
-      error: `Session has ${activeRunsCount} active subagent runs, exceeding cap of ${maxChildren}`,
-    });
-  }
-
-  // Phase 5: Model and thinking selection
-  const modelSelection = resolveConfiguredSubagentSpawnModelSelection({
-    cfg,
-    agentId: targetAgentId,
-    modelOverride: params.model,
-  });
-
-  // Phase 6: Gateway spawn call
-  log.debug("Fast spawn gateway call", {
-    targetAgentId,
-    spawnDepth,
-    fastSpawn: true,
-  });
-
-  const gatewayAttachments = toGatewayImageAttachments(params.attachments);
-  const gatewayResult = await callGateway({
-    method: "agent",
-    params: {
-      message: params.task,
-      sessionKey: parentSessionKey,
-      agentId: targetAgentId,
-      lane: AGENT_LANE_SUBAGENT,
-      acpTurnSource: "manual_spawn",
-      label: params.label || undefined,
-      model: modelSelection,
-      ...(params.attachments ? { attachments: gatewayAttachments } : {}),
-      fastSpawn: true,
-      spawnMode: "run",
-      spawnDepth,
-    },
-    timeoutMs: 10_000,
-  });
-
-  const responseRunId = normalizeOptionalString(gatewayResult?.runId);
-  if (!responseRunId) {
-    return createAcpSpawnFailure({
-      status: "error",
-      errorCode: "spawn_failed",
-      error: "Gateway spawn failed: no runId returned",
-    });
-  }
-
-  const runId = responseRunId;
-
-  // Phase 7: Create and persist run record
-  const { mainKey, alias } = resolveMainSessionAlias(cfg);
-  const requesterDisplayKey =
-    requesterInternalKey ??
-    resolveInternalSessionKey({
-      key: parentSessionKey ?? "",
-      alias,
-      mainKey,
-    });
-  // Verify parentSessionKey is defined before registering run
-  // (fast spawn requires a requester session context)
-  if (!parentSessionKey) {
-    return createAcpSpawnFailure({
-      status: "error",
-      errorCode: "requester_session_required",
-      error: "Fast spawn requires an active requester session context",
-    });
-  }
-
-  await registerSubagentRun({
-    runId,
-    childSessionKey,
-    requesterSessionKey: parentSessionKey,
-    requesterDisplayKey,
-    task: params.task,
-    taskName: params.label,
-    cleanup: "delete",
-    spawnMode: "run",
-    model: modelSelection,
-  });
-
-  log.debug("Fast spawn waiting for inline result", { runId });
-
-  // Phase 8: Inline result polling
-  const fastSpawnConfig = resolveFastSpawnConfig(cfg, targetAgentId);
-  const inlineResult = await waitForInlineSubagentResult({
-    runId,
-    sessionKey: childSessionKey as string,
-    timeoutMs: fastSpawnConfig.maxInlineWaitMs,
-    cfg: cfg as OpenClawConfig,
-  });
-
-  return {
-    status: "accepted",
-    childSessionKey,
-    runId,
-    mode: "run",
-    inlineResult,
-  };
-}
-
-/**
- * Poll for subagent completion result with timeout.
- * Returns when subagent completes or timeout expires.
- */
-async function waitForInlineSubagentResult(params: {
-  runId: string;
-  sessionKey: string;
-  timeoutMs: number;
-  cfg: OpenClawConfig;
-}): Promise<SubagentInlineResult> {
-  const { runId, sessionKey, timeoutMs, cfg } = params;
-  const startedAt = Date.now();
-  const pollInterval = 500; // 500ms
-
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const run = getSubagentRunByRunId(runId);
-      if (!run) {
-        // Run record not found yet, may still be initializing
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
-        continue;
-      }
-
-      // Check if run has reached terminal state
-      const executionStatus = run.execution?.status;
-      const isTerminal = executionStatus === "terminal";
-
-      if (isTerminal) {
-        // Map outcome status to inline result status
-        const outcomeStatus = run.outcome?.status; // "ok" | "error" | "timeout" | "unknown"
-        const inlineStatus =
-          outcomeStatus === "ok"
-            ? "completed"
-            : outcomeStatus === "error"
-              ? "failed"
-              : outcomeStatus === "timeout"
-                ? "timeout"
-                : outcomeStatus === "unknown"
-                  ? "failed"
-                  : "failed";
-
-        log.debug("Fast spawn subagent completed", { runId, executionStatus, outcomeStatus });
-
-        // Capture result from session entry if available
-        let resultText: string | undefined;
-        if (outcomeStatus === "ok") {
-          try {
-            const storePath = resolveStorePath(cfg.session?.store, {
-              agentId: resolveAgentIdFromSessionKey(sessionKey),
-            });
-            const sessionStore = loadSessionStore(storePath);
-            const sessionEntry = sessionStore[sessionKey];
-            if (sessionEntry?.pendingFinalDeliveryText) {
-              resultText = sessionEntry.pendingFinalDeliveryText;
-            }
-          } catch {
-            // Ignore transcript read errors for inline result
-          }
-        }
-
-        return {
-          status: inlineStatus,
-          resultText,
-          endedAt: Date.now(),
-        };
-      }
-
-      // Still running, wait and poll again
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-    } catch (error) {
-      log.warn("Error polling subagent status", { runId, error });
-      // Continue polling on transient errors
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-    }
-  }
-
-  // Timeout exceeded
-  log.warn("Fast spawn timeout exceeded", { runId, timeoutMs });
-  return {
-    status: "timeout",
-    error: "Exceeded maxInlineWaitMs",
-    endedAt: Date.now(),
   };
 }

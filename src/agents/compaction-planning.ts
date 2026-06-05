@@ -1,20 +1,29 @@
+/**
+ * Planning helpers for transcript compaction. The module estimates sanitized
+ * token usage, chooses chunking strategy, and preserves active tool-use pairs
+ * while splitting history for summaries.
+ */
 import { stripRuntimeContextCustomMessages } from "./internal-runtime-context.js";
 import type { AgentMessage } from "./runtime/index.js";
 import { repairToolUseResultPairing, stripToolResultDetails } from "./session-transcript-repair.js";
 import { estimateTokens } from "./sessions/index.js";
-import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./system-prompt-cache-boundary.js";
 import { extractToolCallsFromAssistant, extractToolResultId } from "./tool-call-id.js";
 
+/** Default share of context window targeted for compaction chunks. */
 export const BASE_CHUNK_RATIO = 0.4;
+/** Lower bound for adaptive compaction chunk sizing. */
 export const MIN_CHUNK_RATIO = 0.15;
-export const SAFETY_MARGIN = 1.2; // 20% buffer for estimateTokens() inaccuracy
+/** Buffer for estimateTokens() inaccuracy. */
+export const SAFETY_MARGIN = 1.2;
 const DEFAULT_PARTS = 2;
 
-// Overhead reserved for summarization prompt, system prompt, previous summary,
-// and serialization wrappers (<conversation> tags, instructions, etc.).
-// generateSummary uses reasoning: "high" which also consumes context budget.
+/**
+ * Overhead reserved for summary prompt, system prompt, prior summary, wrapper
+ * tags, and high-reasoning summary generation.
+ */
 export const SUMMARIZATION_OVERHEAD_TOKENS = 4096;
 
+/** Decision for whether a summarization stage should run as one chunk or multiple chunks. */
 export type StageSplitPlan =
   | {
       mode: "single";
@@ -24,11 +33,13 @@ export type StageSplitPlan =
       chunks: AgentMessage[][];
     };
 
+/** Messages safe to summarize plus notes for messages too large to fit in a summary request. */
 export type OversizedFallbackPlan = {
   smallMessages: AgentMessage[];
   oversizedNotes: string[];
 };
 
+/** Token accounting and optional prune result for preserving context-window headroom. */
 export type HistoryPrunePlan = {
   summarizableTokens: number;
   newContentTokens: number;
@@ -36,20 +47,24 @@ export type HistoryPrunePlan = {
   pruned?: ReturnType<typeof pruneHistoryForContextShare>;
 };
 
+/** Estimates compaction tokens after removing fields that must not reach summarization. */
 export function estimateMessagesTokens(messages: AgentMessage[]): number {
   // SECURITY: toolResult.details and runtime-context transcript entries must never enter LLM-facing compaction.
   const safe = sanitizeCompactionMessages(messages);
   return safe.reduce((sum, message) => sum + estimateTokens(message), 0);
 }
 
+/** Removes runtime-only context and tool-result details before token estimates or summaries. */
 export function sanitizeCompactionMessages(messages: AgentMessage[]): AgentMessage[] {
   return stripToolResultDetails(stripRuntimeContextCustomMessages(messages));
 }
 
+/** Estimates one message using the same sanitization path as multi-message planning. */
 export function estimateCompactionMessageTokens(message: AgentMessage): number {
   return estimateMessagesTokens([message]);
 }
 
+/** Clamps requested split parts to a usable count for the available messages. */
 export function normalizeCompactionParts(parts: number, messageCount: number): number {
   if (!Number.isFinite(parts) || parts <= 1) {
     return 1;
@@ -57,6 +72,7 @@ export function normalizeCompactionParts(parts: number, messageCount: number): n
   return Math.min(Math.max(1, Math.floor(parts)), Math.max(1, messageCount));
 }
 
+/** Splits messages into roughly equal token-share chunks without separating active tool pairs. */
 export function splitMessagesByTokenShare(
   messages: AgentMessage[],
   parts = DEFAULT_PARTS,
@@ -86,6 +102,7 @@ export function splitMessagesByTokenShare(
     ) {
       return false;
     }
+    // Keep an assistant tool_use and its following tool_result responses in the same chunk.
     chunks.push(current.slice(0, pendingChunkStartIndex));
     current = current.slice(pendingChunkStartIndex);
     currentTokens = current.reduce((sum, msg) => sum + estimateCompactionMessageTokens(msg), 0);
@@ -153,6 +170,7 @@ export function splitMessagesByTokenShare(
   return chunks;
 }
 
+/** Chunks messages by a max-token budget while applying the shared estimator safety margin. */
 export function chunkMessagesByMaxTokens(
   messages: AgentMessage[],
   maxTokens: number,
@@ -229,6 +247,7 @@ export function isOversizedForSummary(msg: AgentMessage, contextWindow: number):
   return tokens > contextWindow * 0.5;
 }
 
+/** Builds sanitized chunks for summarization prompts. */
 export function buildSummaryChunks(params: {
   messages: AgentMessage[];
   maxChunkTokens: number;
@@ -238,6 +257,7 @@ export function buildSummaryChunks(params: {
   return chunkMessagesByMaxTokens(safeMessages, params.maxChunkTokens);
 }
 
+/** Separates messages too large to summarize and emits compact placeholder notes for them. */
 export function buildOversizedFallbackPlan(params: {
   messages: AgentMessage[];
   contextWindow: number;
@@ -260,6 +280,7 @@ export function buildOversizedFallbackPlan(params: {
   return { smallMessages, oversizedNotes };
 }
 
+/** Plans whether to split a summarization stage based on message count and token budget. */
 export function buildStageSplitPlan(params: {
   messages: AgentMessage[];
   maxChunkTokens: number;
@@ -284,6 +305,7 @@ export function buildStageSplitPlan(params: {
   return chunks.length > 1 ? { mode: "split", chunks } : { mode: "single" };
 }
 
+/** Drops oldest token-share chunks until history fits the requested context share. */
 export function pruneHistoryForContextShare(params: {
   messages: AgentMessage[];
   maxContextTokens: number;
@@ -351,6 +373,7 @@ export function pruneHistoryForContextShare(params: {
   };
 }
 
+/** Computes whether new content exceeds the history budget and plans pruning when needed. */
 export function buildHistoryPrunePlan(params: {
   messagesToSummarize: AgentMessage[];
   turnPrefixMessages: AgentMessage[];
@@ -387,256 +410,4 @@ export function buildHistoryPrunePlan(params: {
       parts: params.parts,
     }),
   };
-}
-
-/**
- * Cache-aware compaction: Detect and preserve prompt cache boundaries.
- *
- * When a system prompt contains the cache boundary marker, content before
- * the marker is cached by the model. Content after is not cached and is
- * re-processed on each request.
- *
- * Cache-aware compaction preserves cache-carryover content (before boundary)
- * and applies more aggressive compaction to dynamic content (after boundary).
- * This improves cache hit rates and reduces token costs.
- */
-
-/**
- * Position of a cache boundary within messages.
- */
-export type CacheBoundaryPosition = {
-  /** Index of the message containing the boundary */
-  messageIndex: number;
-  /** Whether this is the start of cache-carryover content */
-  isCacheStart: boolean;
-  /** Whether this is the end of cache-carryover content */
-  isCacheEnd: boolean;
-  /** Approximate character offset within the message body */
-  charOffset?: number;
-};
-
-/**
- * Result of cache boundary detection.
- */
-export type CacheBoundaryDetection = {
-  /** Whether any cache boundaries were detected */
-  hasBoundary: boolean;
-  /** All detected boundary positions */
-  positions: CacheBoundaryPosition[];
-  /** Index of the first message after the cache boundary (dynamic content) */
-  firstDynamicIndex?: number;
-  /** Token count before boundary (cache-carryover) */
-  cachedTokens?: number;
-  /** Token count after boundary (dynamic) */
-  dynamicTokens?: number;
-};
-
-/**
- * Detect cache boundaries in a list of messages.
- *
- * Scans message bodies for the cache boundary marker and returns
- * position information for chunking decisions.
- */
-export function detectCacheBoundaries(messages: AgentMessage[]): CacheBoundaryDetection {
-  const positions: CacheBoundaryPosition[] = [];
-  let firstDynamicIndex: number | undefined;
-  let boundarySeen = false;
-
-  for (const [index, msg] of messages.entries()) {
-    const body = extractMessageBody(msg);
-    if (!body) continue;
-
-    const boundaryIndex = body.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY);
-    if (boundaryIndex !== -1) {
-      positions.push({
-        messageIndex: index,
-        isCacheStart: !boundarySeen,
-        isCacheEnd: true, // The boundary marks the end of cached content
-        charOffset: boundaryIndex,
-      });
-      boundarySeen = true;
-
-      // First message after boundary is dynamic content
-      if (firstDynamicIndex === undefined) {
-        firstDynamicIndex = index;
-      }
-    }
-  }
-
-  // Calculate token counts
-  let cachedTokens = 0;
-  let dynamicTokens = 0;
-
-  if (firstDynamicIndex !== undefined) {
-    const boundaryMsg = messages[firstDynamicIndex];
-    const boundaryBody = extractMessageBody(boundaryMsg);
-    const boundaryPos = positions.find((p) => p.messageIndex === firstDynamicIndex);
-
-    // Messages fully before the boundary are cached
-    cachedTokens = estimateMessagesTokens(messages.slice(0, firstDynamicIndex));
-
-    // For the boundary message, estimate tokens for cached portion (before boundary)
-    if (boundaryBody && boundaryPos?.charOffset !== undefined) {
-      const cachedPortion = boundaryBody.slice(0, boundaryPos.charOffset);
-      cachedTokens += estimateTokens({ role: "user", content: cachedPortion });
-    }
-
-    // For the boundary message, estimate tokens for dynamic portion (after boundary)
-    if (boundaryBody && boundaryPos?.charOffset !== undefined) {
-      const boundaryMarkerLength = SYSTEM_PROMPT_CACHE_BOUNDARY.length;
-      const dynamicPortion = boundaryBody.slice(boundaryPos.charOffset + boundaryMarkerLength);
-      // Assistant messages require content as an array of blocks for estimateTokens
-      dynamicTokens += estimateTokens({
-        role: "assistant",
-        content: [{ type: "text", text: dynamicPortion }],
-      });
-    } else {
-      // If we can't split, count the whole boundary message as dynamic
-      dynamicTokens += estimateCompactionMessageTokens(boundaryMsg);
-    }
-
-    // Messages after the boundary are fully dynamic
-    dynamicTokens += estimateMessagesTokens(messages.slice(firstDynamicIndex + 1));
-  }
-
-  return {
-    hasBoundary: boundarySeen,
-    positions,
-    firstDynamicIndex,
-    cachedTokens,
-    dynamicTokens,
-  };
-}
-
-/**
- * Extract message body as string for boundary detection.
- *
- * Handles both string content and array content (for assistant messages).
- * For array content, concatenates text blocks together.
- */
-function extractMessageBody(msg: AgentMessage): string | undefined {
-  if (typeof msg === "string") return msg;
-  if (typeof msg === "object" && msg !== null) {
-    const content = (msg as { content?: string | unknown }).content;
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-      // Handle assistant message content blocks
-      const textBlocks = content
-        .filter((block) => block?.type === "text" && typeof block?.text === "string")
-        .map((block) => block.text as string);
-      if (textBlocks.length > 0) return textBlocks.join("");
-    }
-  }
-  return undefined;
-}
-
-/**
- * Cache-aware chunking options.
- */
-export type CacheAwareChunkingOptions = {
-  /** Maximum tokens per chunk */
-  maxTokens: number;
-  /** Whether to preserve cache-carryover content */
-  preserveCacheCarryover?: boolean;
-  /** Extra buffer for cache-carryover content (default: 1.2x) */
-  cacheBufferMultiplier?: number;
-};
-
-/**
- * Cache-aware chunking result.
- */
-export type CacheAwareChunkPlan = {
-  /** Chunks respecting cache boundaries */
-  chunks: AgentMessage[][];
-  /** Cache boundary detection result */
-  detection: CacheBoundaryDetection;
-  /** Whether cache content was preserved */
-  cachePreserved: boolean;
-};
-
-/**
- * Build cache-aware chunking plan.
- *
- * When cache boundaries are detected, this function:
- * 1. Preserves cache-carryover content (before boundary)
- * 2. Splits dynamic content (after boundary) using maxTokens
- * 3. Prefers splitting at cache boundaries when possible
- *
- * This improves cache hit rates by keeping cached content intact
- * and only compressing dynamic conversation content.
- */
-export function buildCacheAwareChunkPlan(
-  messages: AgentMessage[],
-  options: CacheAwareChunkingOptions,
-): CacheAwareChunkPlan {
-  const detection = detectCacheBoundaries(messages);
-  const { maxTokens, preserveCacheCarryover = true, cacheBufferMultiplier = 1.2 } = options;
-
-  // No cache boundary detected - use standard chunking
-  if (!detection.hasBoundary) {
-    return {
-      chunks: chunkMessagesByMaxTokens(messages, maxTokens),
-      detection,
-      cachePreserved: false,
-    };
-  }
-
-  const chunks: AgentMessage[][] = [];
-
-  // Preserve cache-carryover content
-  if (preserveCacheCarryover && detection.firstDynamicIndex !== undefined) {
-    const cachedContent = messages.slice(0, detection.firstDynamicIndex + 1);
-    chunks.push(cachedContent);
-  }
-
-  // Chunk dynamic content
-  const dynamicContent =
-    detection.firstDynamicIndex !== undefined
-      ? messages.slice(detection.firstDynamicIndex + 1)
-      : messages;
-
-  if (dynamicContent.length > 0) {
-    const dynamicChunks = chunkMessagesByMaxTokens(dynamicContent, maxTokens);
-    chunks.push(...dynamicChunks);
-  }
-
-  return {
-    chunks,
-    detection,
-    cachePreserved: preserveCacheCarryover,
-  };
-}
-
-/**
- * Check if cache-aware chunking is beneficial for this message set.
- *
- * Returns true when:
- * - Cache boundary exists
- * - Cached content is substantial (>10% of total)
- * - Dynamic content exceeds chunk threshold
- */
-export function isCacheAwareChunkingBeneficial(
-  messages: AgentMessage[],
-  maxTokens: number,
-): boolean {
-  const detection = detectCacheBoundaries(messages);
-  if (!detection.hasBoundary) return false;
-
-  // No benefit if maxTokens is zero or negative
-  if (maxTokens <= 0) return false;
-
-  const totalTokens = estimateMessagesTokens(messages);
-  if (totalTokens === 0) return false;
-
-  // Check if cached content is substantial
-  const cachedRatio =
-    detection.cachedTokens !== undefined && totalTokens > 0
-      ? detection.cachedTokens / totalTokens
-      : 0;
-
-  // Use pre-calculated dynamicTokens from detection which correctly includes
-  // the dynamic portion of the boundary message plus all subsequent messages
-  const dynamicTokens = detection.dynamicTokens ?? 0;
-
-  return cachedRatio > 0.1 && dynamicTokens > maxTokens * 0.5;
 }

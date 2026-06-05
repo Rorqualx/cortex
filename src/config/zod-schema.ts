@@ -1,3 +1,4 @@
+// Assembles the canonical Zod schema for OpenClaw config parsing.
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeStringifiedOptionalString,
@@ -104,22 +105,29 @@ const SecuritySchema = z
       })
       .strict()
       .optional(),
-  })
-  .strict()
-  .optional();
-
-const EventLedgerSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    storagePath: z.string().optional(),
-    retentionDays: z.number().int().positive().optional(),
-    streams: z
+    installPolicy: z
       .object({
-        tool_calls: z.boolean().optional(),
-        policy_decisions: z.boolean().optional(),
-        session_lifecycle: z.boolean().optional(),
-        security_events: z.boolean().optional(),
-        agent_actions: z.boolean().optional(),
+        enabled: z.boolean().optional(),
+        targets: z
+          .array(z.union([z.literal("skill"), z.literal("plugin")]))
+          .min(1)
+          .optional(),
+        exec: z
+          .object({
+            source: z.literal("exec"),
+            command: z.string().min(1),
+            args: z.array(z.string()).optional(),
+            timeoutMs: z.number().int().min(1).optional(),
+            noOutputTimeoutMs: z.number().int().min(1).optional(),
+            maxOutputBytes: z.number().int().min(1).optional(),
+            env: z.record(z.string(), z.string().register(sensitive)).optional(),
+            passEnv: z.array(z.string()).optional(),
+            trustedDirs: z.array(z.string()).optional(),
+            allowInsecurePath: z.boolean().optional(),
+            allowSymlinkCommand: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
@@ -789,7 +797,6 @@ export const OpenClawSchema = z
     agents: AgentsSchema,
     tools: ToolsSchema,
     security: SecuritySchema,
-    eventLedger: EventLedgerSchema,
     bindings: BindingsSchema,
     broadcast: BroadcastSchema,
     audio: AudioSchema,

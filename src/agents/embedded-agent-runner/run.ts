@@ -1,3 +1,6 @@
+/**
+ * Top-level embedded-agent run orchestration entrypoint.
+ */
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
@@ -49,12 +52,6 @@ import {
   resolveStoredSessionKeyForSessionId,
 } from "../command/session.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
-import {
-  createDoomLoopGuard,
-  DoomLoopDetectedError,
-  type DoomLoopGuard,
-  type DoomLoopVerdict,
-} from "../doom-loop-guard.js";
 import {
   classifyFailoverReason,
   extractObservedOverflowTokenCount,
@@ -328,6 +325,7 @@ function normalizeEmbeddedRunAttemptResult(
     messagingToolSourceReplyPayloads?:
       | EmbeddedRunAttemptForRunner["messagingToolSourceReplyPayloads"]
       | null;
+    didDeliverSourceReplyViaMessageTool?: boolean | null;
     itemLifecycle?: EmbeddedRunAttemptForRunner["itemLifecycle"] | null;
   };
   return {
@@ -340,6 +338,7 @@ function normalizeEmbeddedRunAttemptResult(
     messagingToolSentMediaUrls: raw.messagingToolSentMediaUrls ?? [],
     messagingToolSentTargets: raw.messagingToolSentTargets ?? [],
     messagingToolSourceReplyPayloads: raw.messagingToolSourceReplyPayloads ?? [],
+    didDeliverSourceReplyViaMessageTool: raw.didDeliverSourceReplyViaMessageTool === true,
     itemLifecycle: raw.itemLifecycle ?? {
       startedCount: 0,
       completedCount: 0,
@@ -1216,23 +1215,6 @@ export async function runEmbeddedAgent(
           postCompactionAbortController?.abort(postCompactionAbortError);
         }
       };
-      // Doom loop guard for consecutive failure detection. Arms after successful
-      // turns; observes LLM/tool/network errors and aborts when threshold reached.
-      const doomLoopGuard: DoomLoopGuard = createDoomLoopGuard(
-        resolvedLoopDetectionConfig?.doomLoopGuard,
-        { enabled: resolvedLoopDetectionConfig?.enabled !== false },
-      );
-      let doomLoopAbortController: AbortController | undefined;
-      let doomLoopAbortError: DoomLoopDetectedError | undefined;
-      const observeDoomLoopFailure = (errorType: string, timestamp: number): void => {
-        const verdict = doomLoopGuard.recordFailure(errorType, timestamp);
-        if (verdict.shouldAbort) {
-          doomLoopAbortError ??= DoomLoopDetectedError.fromVerdict(
-            verdict as Extract<DoomLoopVerdict, { shouldAbort: true }>,
-          );
-          doomLoopAbortController?.abort(doomLoopAbortError);
-        }
-      };
       let lastRetryFailoverReason: FailoverReason | null = null;
       let planningOnlyRetryInstruction: string | null = null;
       let reasoningOnlyRetryInstruction: string | null = null;
@@ -1564,7 +1546,6 @@ export async function runEmbeddedAgent(
 
           const attemptAbortController = new AbortController();
           postCompactionAbortController = attemptAbortController;
-          doomLoopAbortController = attemptAbortController;
           const parentAbortSignal = params.abortSignal;
           const relayParentAbort = (): void => {
             attemptAbortController.abort(parentAbortSignal?.reason);
@@ -1722,9 +1703,6 @@ export async function runEmbeddedAgent(
               parentAbortSignal?.removeEventListener?.("abort", relayParentAbort);
               if (postCompactionAbortController === attemptAbortController) {
                 postCompactionAbortController = undefined;
-              }
-              if (doomLoopAbortController === attemptAbortController) {
-                doomLoopAbortController = undefined;
               }
             });
           if (postCompactionAbortError) {
@@ -2785,17 +2763,6 @@ export async function runEmbeddedAgent(
             aborted,
           });
 
-          // Doom loop detection: record LLM errors
-          if (assistantFailoverReason || timedOut || idleTimedOut) {
-            const errorType =
-              assistantFailoverReason === "rate_limit"
-                ? "network_error"
-                : assistantFailoverReason === "timeout" || timedOut || idleTimedOut
-                  ? "timeout"
-                  : "llm_error";
-            observeDoomLoopFailure(errorType, Date.now());
-          }
-
           if (
             authFailure &&
             (await maybeRefreshRuntimeAuthForAuthError(
@@ -3099,6 +3066,8 @@ export async function runEmbeddedAgent(
                 agentHarnessResultClassification: attempt.agentHarnessResultClassification,
               },
               didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+              didDeliverSourceReplyViaMessageTool:
+                attempt.didDeliverSourceReplyViaMessageTool === true,
               didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
               messagingToolSentTexts: attempt.messagingToolSentTexts,
               messagingToolSentMediaUrls: attempt.messagingToolSentMediaUrls,
@@ -3344,6 +3313,8 @@ export async function runEmbeddedAgent(
                 agentHarnessResultClassification: attempt.agentHarnessResultClassification,
               },
               didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+              didDeliverSourceReplyViaMessageTool:
+                attempt.didDeliverSourceReplyViaMessageTool === true,
               didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
               messagingToolSentTexts: attempt.messagingToolSentTexts,
               messagingToolSentMediaUrls: attempt.messagingToolSentMediaUrls,
@@ -3398,6 +3369,8 @@ export async function runEmbeddedAgent(
                 agentHarnessResultClassification: attempt.agentHarnessResultClassification,
               },
               didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+              didDeliverSourceReplyViaMessageTool:
+                attempt.didDeliverSourceReplyViaMessageTool === true,
               didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
               messagingToolSentTexts: attempt.messagingToolSentTexts,
               messagingToolSentMediaUrls: attempt.messagingToolSentMediaUrls,
@@ -3519,6 +3492,8 @@ export async function runEmbeddedAgent(
                 agentHarnessResultClassification: attempt.agentHarnessResultClassification,
               },
               didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+              didDeliverSourceReplyViaMessageTool:
+                attempt.didDeliverSourceReplyViaMessageTool === true,
               didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
               messagingToolSentTexts: attempt.messagingToolSentTexts,
               messagingToolSentMediaUrls: attempt.messagingToolSentMediaUrls,
@@ -3571,9 +3546,6 @@ export async function runEmbeddedAgent(
               agentDir: params.agentDir,
             });
           }
-          // Doom loop guard: reset on successful turn and arm for next turn
-          doomLoopGuard.reset();
-          doomLoopGuard.arm();
           const replayInvalid = resolveReplayInvalidForAttempt(null);
           const livenessState = attempt.yieldDetected
             ? "paused"
@@ -3665,6 +3637,8 @@ export async function runEmbeddedAgent(
                 autoCompactionCount > 0 ? { lastTurnCompactions: autoCompactionCount } : undefined,
             },
             didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+            didDeliverSourceReplyViaMessageTool:
+              attempt.didDeliverSourceReplyViaMessageTool === true,
             didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
             messagingToolSentTexts: attempt.messagingToolSentTexts,
             messagingToolSentMediaUrls: attempt.messagingToolSentMediaUrls,

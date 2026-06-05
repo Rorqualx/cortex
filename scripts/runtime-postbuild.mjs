@@ -486,7 +486,6 @@ export function runRuntimePostBuild(params = {}) {
     copyStaticExtensionAssets(staticAssetParams);
     copyStaticExtensionAssetsToRuntimeOverlay(staticAssetParams);
   });
-  runPhase("Control UI assets", () => copyControlUiAssets(params));
   runPhase("stable root runtime imports", () => rewriteRootRuntimeImportsToStableAliases(params));
   runPhase("stable root runtime aliases", () => writeStableRootRuntimeAliases(params));
   runPhase("legacy root runtime compat aliases", () => writeLegacyRootRuntimeCompatAliases(params));
@@ -495,50 +494,4 @@ export function runRuntimePostBuild(params = {}) {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   runRuntimePostBuild();
-}
-
-function shouldCopyControlUiAssets(params) {
-  const env = params.env ?? process.env;
-  return env.OPENCLAW_RUNTIME_POSTBUILD_CONTROL_UI_ASSETS !== "0";
-}
-
-function copyControlUiAssets(params = {}) {
-  const rootDir = params.rootDir ?? ROOT;
-  const fsImpl = params.fs ?? fs;
-  const srcDir = path.join(rootDir, "dist", "control-ui");
-  const destDir = path.join(rootDir, "node_modules", "openclaw", "dist", "control-ui");
-
-  if (!shouldCopyControlUiAssets(params)) {
-    return;
-  }
-
-  try {
-    if (!fsImpl.existsSync(srcDir)) {
-      return;
-    }
-
-    if (fsImpl.existsSync(destDir)) {
-      fsImpl.rmSync(destDir, { recursive: true, force: true });
-    }
-
-    copyDirectory(srcDir, destDir, fsImpl);
-  } catch (err) {
-    console.error(`[runtime-postbuild] failed to copy Control UI assets:`, err);
-  }
-}
-
-function copyDirectory(src, dest, fsImpl) {
-  fsImpl.mkdirSync(dest, { recursive: true });
-  const entries = fsImpl.readdirSync(src, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      copyDirectory(srcPath, destPath, fsImpl);
-    } else {
-      fsImpl.copyFileSync(srcPath, destPath);
-    }
-  }
 }

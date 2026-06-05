@@ -1,3 +1,10 @@
+/**
+ * Public model-selection facade for persisted, configured, and allowed refs.
+ */
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "@openclaw/normalization-core/string-coerce";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,

@@ -1,5 +1,13 @@
+// Resolves transcript source configuration from OpenClaw config.
 import { normalizeOptionalString as readString } from "@openclaw/normalization-core/string-coerce";
 
+/**
+ * Configuration normalization for transcript capture/import.
+ *
+ * Raw config can contain optional auto-start provider locators; resolution
+ * returns bounded defaults and drops malformed entries before runtime startup.
+ */
+/** Raw auto-start transcript source entry from config. */
 export type TranscriptsAutoStartConfig = {
   providerId: string;
   sessionId?: string;
@@ -10,6 +18,7 @@ export type TranscriptsAutoStartConfig = {
   meetingUrl?: string;
 };
 
+/** Normalized auto-start source entry consumed by transcript runtime code. */
 export type ResolvedTranscriptsAutoStartConfig = {
   providerId: string;
   sessionId?: string;
@@ -20,24 +29,18 @@ export type ResolvedTranscriptsAutoStartConfig = {
   meetingUrl?: string;
 };
 
+/** Raw transcripts config block. */
 export type TranscriptsConfig = {
   enabled?: boolean;
   maxUtterances?: number;
   autoStart?: TranscriptsAutoStartConfig[];
-  embeddings?: {
-    enabled?: boolean;
-    model?: string;
-  };
 };
 
+/** Resolved transcripts config with defaults applied. */
 export type ResolvedTranscriptsConfig = {
   enabled: boolean;
   maxUtterances: number;
   autoStart: ResolvedTranscriptsAutoStartConfig[];
-  embeddings: {
-    enabled: boolean;
-    model: string;
-  };
 };
 
 function resolveAutoStart(raw: unknown): ResolvedTranscriptsAutoStartConfig[] {
@@ -64,28 +67,16 @@ function resolveAutoStart(raw: unknown): ResolvedTranscriptsAutoStartConfig[] {
     .filter((entry): entry is ResolvedTranscriptsAutoStartConfig => entry !== undefined);
 }
 
+/** Normalize raw transcripts config into runtime settings. */
 export function resolveTranscriptsConfig(raw: unknown): ResolvedTranscriptsConfig {
-  const config = raw && typeof config === "object" ? (raw as Record<string, unknown>) : {};
+  const config = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const maxUtterances =
     typeof config.maxUtterances === "number" && Number.isFinite(config.maxUtterances)
       ? Math.max(1, Math.min(10_000, Math.floor(config.maxUtterances)))
       : 2_000;
-
-  // Resolve embeddings config
-  const embeddingsConfig =
-    config.embeddings && typeof config.embeddings === "object"
-      ? (config.embeddings as Record<string, unknown>)
-      : {};
-  const embeddingsEnabled = embeddingsConfig.enabled === true;
-  const embeddingModel = readString(embeddingsConfig.model) || "text-embedding-3-small";
-
   return {
     enabled: config.enabled === true,
     maxUtterances,
     autoStart: resolveAutoStart(config.autoStart),
-    embeddings: {
-      enabled: embeddingsEnabled,
-      model: embeddingModel,
-    },
   };
 }

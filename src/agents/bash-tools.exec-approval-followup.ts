@@ -1,3 +1,12 @@
+/**
+ * Delivery orchestration for async exec approval follow-ups.
+ * Resumes the originating agent session when possible and falls back to safe
+ * direct delivery only when session resume is unavailable.
+ */
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "@openclaw/normalization-core/string-coerce";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
@@ -61,6 +70,7 @@ function formatUnknownError(error: unknown): string {
   }
 }
 
+/** Builds the prompt used to resume an agent after an approved async exec completes. */
 export function buildExecApprovalFollowupPrompt(resultText: string): string {
   const trimmed = resultText.trim();
   if (isExecDeniedResultText(trimmed)) {
@@ -270,6 +280,7 @@ async function sendDirectFollowupFallback(params: {
   return true;
 }
 
+/** Sends an exec approval follow-up via session resume or safe direct delivery. */
 export async function sendExecApprovalFollowup(
   params: ExecApprovalFollowupParams,
 ): Promise<boolean> {

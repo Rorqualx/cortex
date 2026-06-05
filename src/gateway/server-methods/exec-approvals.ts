@@ -1,3 +1,13 @@
+// Exec approvals config methods read and write command approval defaults with
+// base-hash protection for admin-edited allowlists.
+import {
+  ErrorCodes,
+  errorShape,
+  validateExecApprovalsGetParams,
+  validateExecApprovalsNodeGetParams,
+  validateExecApprovalsNodeSetParams,
+  validateExecApprovalsSetParams,
+} from "../../../packages/gateway-protocol/src/index.js";
 import {
   ErrorCodes,
   errorShape,
