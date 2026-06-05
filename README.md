@@ -1,21 +1,39 @@
-# 🦞 OpenClaw — Personal AI Assistant
+# 🦞 Cortex — OpenClaw Fork
 
 <p align="center">
     <picture>
         <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text-dark.svg">
-        <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text.svg" alt="OpenClaw" width="500">
+        <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text.svg" alt="Cortex" width="500">
     </picture>
 </p>
 
 <p align="center">
-  <strong>EXFOLIATE! EXFOLIATE!</strong>
+  <strong>Fork of OpenClaw</strong> — Extended with persistent memory & autonomous self-improvement
 </p>
 
 <p align="center">
-  <a href="https://github.com/openclaw/openclaw/actions/workflows/ci.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/openclaw/openclaw/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
-  <a href="https://github.com/openclaw/openclaw/releases"><img src="https://img.shields.io/github/v/release/openclaw/openclaw?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
-  <a href="https://discord.gg/clawd"><img src="https://img.shields.io/discord/1456350064065904867?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
+  <a href="https://github.com/Rorqualx/cortex"><img src="https://img.shields.io/badge/Cortex-Fork-blue?style=for-the-badge" alt="Cortex Fork"></a>
+  <a href="https://github.com/openclaw/openclaw"><img src="https://img.shields.io/badge/Upstream-OpenClaw-green?style=for-the-badge" alt="Upstream"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+</p>
+
+## About Cortex
+
+**Cortex** is a fork of [OpenClaw](https://github.com/openclaw/openclaw) that extends the personal AI assistant with:
+
+- **memory-l3** — Hierarchical 3-tier memory engine with long-term recall across sessions
+- **skill-forge** — Autonomous self-improvement pipeline that learns from failures
+- **SSE transport for GPT-5** — Stable Server-Sent Events transport for OpenAI models
+- **Thinking stream UI** — Real-time LLM thinking display in Control UI
+
+See [FORK.md](FORK.md) for detailed architecture and features.
+
+---
+
+# OpenClaw — Personal AI Assistant
+
+<p align="center">
+  <strong>EXFOLIATE! EXFOLIATE!</strong>
 </p>
 
 **OpenClaw** is a _personal AI assistant_ you run on your own devices.
@@ -27,6 +45,57 @@ Supported channels include: WhatsApp, Telegram, Slack, Discord, Google Chat, Sig
 
 [Website](https://openclaw.ai) · [Docs](https://docs.openclaw.ai) · [Vision](VISION.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) · [DeepWiki](https://deepwiki.com/openclaw/openclaw) · [Getting Started](https://docs.openclaw.ai/start/getting-started) · [Updating](https://docs.openclaw.ai/install/updating) · [Showcase](https://docs.openclaw.ai/start/showcase) · [FAQ](https://docs.openclaw.ai/help/faq) · [Onboarding](https://docs.openclaw.ai/start/wizard) · [Nix](https://github.com/openclaw/nix-openclaw) · [Docker](https://docs.openclaw.ai/install/docker) · [Discord](https://discord.gg/clawd)
 
+New install? Start here: [Getting started](https://docs.openclaw.ai/start/getting-started)
+
+Preferred setup: run `openclaw onboard` in your terminal.
+OpenClaw Onboard guides you step by step through setting up the gateway, workspace, channels, and skills. It is the recommended CLI setup path and works on **macOS, Linux, and Windows**.
+Windows desktop users can start with the native [Windows Hub](https://docs.openclaw.ai/platforms/windows) companion app for setup, tray status, chat, node mode, and local MCP mode.
+Works with npm, pnpm, or bun.
+
+## Sponsors
+
+<table>
+  <tr>
+    <td align="center" width="16.66%">
+      <a href="https://openai.com/">
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/openai-light.svg">
+          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/openai.svg" alt="OpenAI" height="28">
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="16.66%">
+      <a href="https://github.com/">
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/github-light.svg">
+          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/github.svg" alt="GitHub" height="28">
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="16.66%">
+      <a href="https://www.nvidia.com/">
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/nvidia.svg">
+          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/nvidia-dark.svg" alt="NVIDIA" height="28">
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="16.66%">
+      <a href="https://vercel.com/">
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/vercel-light.svg">
+          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/vercel.svg" alt="Vercel" height="24">
+        </picture>
+      </a>
+    </td>
+    <td align="center" width="16.66%">
+      <a href="https://blacksmith.sh/">
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/blacksmith-light.svg">
+          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/blacksmith.svg" alt="Blacksmith" height="28">
+        </picture>
+      </a>
+    </td>
 New install? Start here: [Getting started](https://docs.openclaw.ai/start/getting-started)
 
 Preferred setup: run `openclaw onboard` in your terminal.
