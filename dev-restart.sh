@@ -18,9 +18,9 @@ for arg in "$@"; do
 done
 
 if $BUILD; then
-  echo "🔧 Building UI..."
-  pnpm ui:build
-  echo "✅ UI built"
+  echo "🔧 Building (full)..."
+  node scripts/build-all.mjs
+  echo "✅ Built"
 fi
 
 if $RESTART; then
