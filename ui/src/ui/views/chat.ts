@@ -189,7 +189,7 @@ export type ChatProps = {
     loading: boolean;
     error: string | null;
     activeName: string | null;
-    activeDir: string | null;
+    activeFile: ActiveFileResult;
     onRefresh: () => void;
     onOpenFile: (name: string) => void;
   };
@@ -846,13 +846,22 @@ function renderChatGoal(goal: SessionGoal | undefined): TemplateResult | typeof 
 const FILE_TOOL_NAMES = new Set(["read", "write", "edit", "apply_patch", "bash"]);
 
 /**
- * Scan messages (most-recent-first) for file-operation tool calls and return
- * the directory of the most recent one. Returns `null` if none found.
+ * Result of scanning messages for the most recent file operation.
+ * `dir` is the parent directory, `fileName` is the basename of the file.
  */
-export function resolveActiveDirFromMessages(
+export type ActiveFileResult = {
+  dir: string;
+  fileName: string;
+} | null;
+
+/**
+ * Scan messages (most-recent-first) for file-operation tool calls and return
+ * the directory + filename of the most recent one. Returns `null` if none found.
+ */
+export function resolveActiveFileFromMessages(
   messages: unknown[],
   workspace: string | undefined,
-): string | null {
+): ActiveFileResult {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i] as Record<string, unknown> | undefined;
     if (!msg) continue;
@@ -871,16 +880,19 @@ export function resolveActiveDirFromMessages(
       const args = typeof raw === "string" ? safeJsonParse(raw) : raw;
       if (!args || typeof args !== "object") continue;
       const a = args as Record<string, unknown>;
-      // bash/exec: workdir reveals the active directory
+      // bash/exec: workdir reveals the active directory (no specific file)
       if (name === "bash" && typeof a.workdir === "string" && a.workdir.trim()) {
         const dir = a.workdir.replace(/\/+$/, "");
-        if (dir && dir !== workspace) return dir;
+        if (dir && dir !== workspace) return { dir, fileName: "" };
       }
-      // file tools: extract directory from the path argument
+      // file tools: extract directory + basename from the path argument
       const filePath = a.path ?? a.file_path ?? a.filePath;
       if (typeof filePath === "string" && filePath.trim()) {
-        const dir = filePath.replace(/\/+$/, "").replace(/\/[^/]+$/, "");
-        if (dir && dir !== workspace) return dir;
+        const trimmed = filePath.replace(/\/+$/, "");
+        const lastSlash = trimmed.lastIndexOf("/");
+        const dir = lastSlash > 0 ? trimmed.substring(0, lastSlash) : trimmed;
+        const fileName = lastSlash >= 0 ? trimmed.substring(lastSlash + 1) : trimmed;
+        if (dir && dir !== workspace) return { dir, fileName };
       }
     }
   }
@@ -934,12 +946,12 @@ function renderWorkspaceFileRail(
           ${icons.refresh}
         </button>
       </div>
-      ${(workspaceFiles.activeDir ?? workspaceFiles.list?.workspace)
+      ${(workspaceFiles.activeFile?.dir ?? workspaceFiles.list?.workspace)
         ? html`<div
             class="chat-workspace-rail__path"
-            title=${workspaceFiles.activeDir ?? workspaceFiles.list?.workspace}
+            title=${workspaceFiles.activeFile?.dir ?? workspaceFiles.list?.workspace}
           >
-            ${workspaceFiles.activeDir ?? workspaceFiles.list?.workspace}
+            ${workspaceFiles.activeFile?.dir ?? workspaceFiles.list?.workspace}
           </div>`
         : nothing}
       ${workspaceFiles.error
@@ -955,11 +967,12 @@ function renderWorkspaceFileRail(
                   ${files.map((file) => {
                     const size = formatWorkspaceFileSize(file);
                     const isActive = file.name === workspaceFiles.activeName;
+                    const isAgentActive = file.name === workspaceFiles.activeFile?.fileName;
                     return html`
                       <button
                         class="chat-workspace-rail__file ${isActive
                           ? "chat-workspace-rail__file--active"
-                          : ""}"
+                          : ""} ${isAgentActive ? "chat-workspace-rail__file--agent-active" : ""}"
                         type="button"
                         role="listitem"
                         title=${file.path || file.name}

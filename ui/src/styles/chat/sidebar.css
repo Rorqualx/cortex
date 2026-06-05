@@ -148,6 +148,15 @@
   background: var(--bg-hover);
 }
 
+.chat-workspace-rail__file--agent-active {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.chat-workspace-rail__file--agent-active .chat-workspace-rail__file-icon {
+  color: var(--accent);
+}
+
 .chat-workspace-rail__file-main {
   display: flex;
   flex-direction: column;
