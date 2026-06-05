@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 // Agents gateway methods expose agent listing, config mutation, workspace file
 // reads/writes, identity merging, and safe deletion for operator clients.
 import fs from "node:fs/promises";
@@ -196,6 +197,45 @@ async function openWorkspaceRootSafely(workspaceDir: string): Promise<WorkspaceR
     return await agentsHandlerDeps.root(workspaceDir);
   } catch {
     return null;
+  }
+}
+type AgentFileEntry = {
+  name: string;
+  path: string;
+  missing: boolean;
+  size?: number;
+  updatedAtMs?: number;
+};
+
+/**
+ * List files in an arbitrary directory (used for the active-dir workspace rail).
+ * Returns up to 100 files, sorted alphabetically.
+ */
+function listDirectoryFiles(dirPath: string): AgentFileEntry[] {
+  try {
+    const entries = fsSync.readdirSync(dirPath, { withFileTypes: true });
+    const files: AgentFileEntry[] = [];
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue; // skip hidden files
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isFile()) {
+        try {
+          const stat = fsSync.statSync(fullPath);
+          files.push({
+            name: entry.name,
+            path: fullPath,
+            missing: false,
+            size: stat.size,
+            updatedAtMs: stat.mtimeMs,
+          });
+        } catch {
+          files.push({ name: entry.name, path: fullPath, missing: true });
+        }
+      }
+    }
+    return files.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 100);
+  } catch {
+    return [];
   }
 }
 
@@ -785,7 +825,21 @@ export const agentsHandlers: GatewayRequestHandlers = {
       // Fall back to showing BOOTSTRAP if workspace state cannot be read.
     }
     const files = await listAgentFiles(workspaceDir, { hideBootstrap });
-    respond(true, { agentId, workspace: workspaceDir, files }, undefined);
+    // If an alternate path is requested, list files from that directory too
+    let activeDirFiles: AgentFileEntry[] | undefined;
+    if (typeof params.path === "string" && params.path.trim()) {
+      const requestedPath = path.resolve(params.path.trim());
+      // Only allow listing if the path exists and is a directory
+      try {
+        const stat = fsSync.statSync(requestedPath);
+        if (stat.isDirectory()) {
+          activeDirFiles = await listDirectoryFiles(requestedPath);
+        }
+      } catch {
+        // Path doesn't exist or isn't readable — skip
+      }
+    }
+    respond(true, { agentId, workspace: workspaceDir, files, activeDirFiles }, undefined);
   },
   "agents.files.get": async ({ params, respond, context }) => {
     if (!validateAgentsFilesGetParams(params)) {

@@ -177,7 +177,12 @@ import {
 import { loadLocalAssistantIdentity } from "./storage.ts";
 import { normalizeStringEntries } from "./string-coerce.ts";
 import { normalizeOptionalString } from "./string-coerce.ts";
-import type { AgentsFilesGetResult, AgentsFilesListResult, GatewaySessionRow } from "./types.ts";
+import type {
+  AgentsFilesGetResult,
+  AgentsFilesListResult,
+  AgentFileEntry,
+  GatewaySessionRow,
+} from "./types.ts";
 import { isRenderableControlUiAvatarUrl } from "./views/agents-utils.ts";
 import { agentLogoUrl } from "./views/agents-utils.ts";
 import {
@@ -540,6 +545,8 @@ type ChatWorkspaceFilesState = {
   list: AgentsFilesListResult | null;
   loading: boolean;
   requestId: number;
+  activeDir: string | null;
+  activeDirFiles: AgentFileEntry[] | null;
 };
 
 const chatWorkspaceFilesStates = new WeakMap<AppViewState, ChatWorkspaceFilesState>();
@@ -560,6 +567,8 @@ function getChatWorkspaceFilesState(state: AppViewState, agentId: string): ChatW
     list: null,
     loading: false,
     requestId: 0,
+    activeDir: null,
+    activeDirFiles: null,
   };
   chatWorkspaceFilesStates.set(state, next);
   return next;
@@ -3335,6 +3344,31 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
+        ${(() => {
+          // When the active directory changes, fetch its file listing
+          const dir = chatWorkspaceFiles.list?.workspace
+            ? (resolveActiveFileFromMessages(state.chatMessages, chatWorkspaceFiles.list.workspace)
+                ?.dir ?? null)
+            : null;
+          if (dir && dir !== chatWorkspaceFiles.activeDir && state.client && state.connected) {
+            chatWorkspaceFiles.activeDir = dir;
+            void (async () => {
+              try {
+                const res = await state.client?.request<AgentsFilesListResult | null>(
+                  "agents.files.list",
+                  { agentId: chatAgentId, path: dir },
+                );
+                if (chatWorkspaceFiles.activeDir === dir) {
+                  chatWorkspaceFiles.activeDirFiles = res?.activeDirFiles ?? res?.files ?? null;
+                  requestHostUpdate?.();
+                }
+              } catch {
+                // ignore — active dir listing is best-effort
+              }
+            })();
+          }
+          return nothing;
+        })()}
         ${state.tab === "chat"
           ? renderMeasured(
               state,
@@ -3399,6 +3433,7 @@ export function renderApp(state: AppViewState) {
                           chatWorkspaceFiles.list.workspace,
                         )
                       : null,
+                    activeDirFiles: chatWorkspaceFiles.activeDirFiles,
                     onRefresh: refreshChatWorkspaceFiles,
                     onOpenFile: openChatWorkspaceFile,
                   },

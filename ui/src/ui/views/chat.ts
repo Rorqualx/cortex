@@ -190,6 +190,7 @@ export type ChatProps = {
     error: string | null;
     activeName: string | null;
     activeFile: ActiveFileResult;
+    activeDirFiles: AgentFileEntry[] | null;
     onRefresh: () => void;
     onOpenFile: (name: string) => void;
   };
@@ -971,7 +972,10 @@ function renderWorkspaceFileRail(
   if (!workspaceFiles) {
     return nothing;
   }
-  const files = workspaceFiles.list?.files ?? [];
+  const activeDir = workspaceFiles.activeFile?.dir;
+  const showActiveDir =
+    activeDir && activeDir !== workspaceFiles.list?.workspace && workspaceFiles.activeDirFiles;
+  const files = showActiveDir ? workspaceFiles.activeDirFiles! : (workspaceFiles.list?.files ?? []);
   return html`
     <aside class="chat-workspace-rail" aria-label="Workspace files">
       <div class="chat-workspace-rail__header">

@@ -372,6 +372,7 @@ export type AgentsFilesListResult = {
   agentId: string;
   workspace: string;
   files: AgentFileEntry[];
+  activeDirFiles?: AgentFileEntry[];
 };
 
 export type AgentsFilesGetResult = {

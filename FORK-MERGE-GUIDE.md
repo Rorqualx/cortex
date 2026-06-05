@@ -138,6 +138,14 @@ git push origin memory-fork
 a different part of the same file, Git merges both changes — and the combined
 result may be invalid. The baseline system catches these silent combinations.
 
+## Cron Job Disaster Recovery
+
+Cron jobs are stored at `~/.openclaw/cron/jobs.json` (and `.bak` backup). If the gateway loses jobs from memory (e.g., after API credit exhaustion causes cascading errors):
+
+1. Read `~/.openclaw/cron/jobs.json` or `.bak` — the disk files persist
+2. Recreate each missing job via `cron add` with the original payload
+3. The backup file (`jobs.json.bak`) is the authoritative safety net
+
 ## When to Regenerate the Baseline
 
 - After a successful upstream merge

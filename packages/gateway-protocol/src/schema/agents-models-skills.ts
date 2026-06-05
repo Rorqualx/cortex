@@ -181,6 +181,7 @@ export const AgentsFileEntrySchema = Type.Object(
 export const AgentsFilesListParamsSchema = Type.Object(
   {
     agentId: NonEmptyString,
+    path: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
