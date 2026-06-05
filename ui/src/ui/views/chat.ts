@@ -53,6 +53,7 @@ import {
 } from "../chat/status-indicators.ts";
 import { getExpandedToolCards, syncToolCardExpansionState } from "../chat/tool-expansion-state.ts";
 import type { EmbedSandboxMode } from "../embed-sandbox.ts";
+import { fileIcon } from "../file-icons.ts";
 import { icons } from "../icons.ts";
 import { formatGoalDetail, formatGoalSummary } from "../session-goal.ts";
 import type { SidebarContent } from "../sidebar-content.ts";
@@ -1030,7 +1031,11 @@ function renderWorkspaceFileRail(
                             showActiveDir ? file.path : undefined,
                           )}
                       >
-                        <span class="chat-workspace-rail__file-icon">${icons.fileText}</span>
+                        <span
+                          class="chat-workspace-rail__file-icon"
+                          data-ext=${file.name.split(".").pop()?.toLowerCase() ?? ""}
+                          >${fileIcon(file.name)}</span
+                        >
                         <span class="chat-workspace-rail__file-main">
                           <span class="chat-workspace-rail__file-name">${file.name}</span>
                           ${size
