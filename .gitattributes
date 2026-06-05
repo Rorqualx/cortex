@@ -48,6 +48,16 @@ ui/src/ui/app-view-state.ts                                         merge=ours
 extensions/memory-core/src/prompt-section.ts                             merge=ours
 extensions/memory-core/src/tools.citations.ts                             merge=ours
 
+# --- fork: skill-forge extension ---
+# Autonomous self-improvement pipeline (4,672 lines across 32 files)
+src/skill-forge/**                                                       merge=ours
+
+# --- fork: doom loop guard ---
+# Agent doom loop detection and guard system
+src/agents/doom-loop-guard.ts                                           merge=ours
+src/agents/tool-loop-detection-config.ts                                merge=ours
+src/config/types.tools.ts                                               merge=ours
+
 # Protect AI prompt and template files from being marked as generated
 docs/reference/templates/*.md linguist-generated=false
 src/agents/templates/*.md linguist-generated=false

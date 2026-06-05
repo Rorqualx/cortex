@@ -221,26 +221,48 @@ src/skill-forge/
 
 ---
 
+### Feature D — Doom Loop Guard
+
+**Problem:** Agent runaway loops (LLM errors, tool failures, network issues) waste API credits and provide poor UX. Existing loop detection only catches identical tool calls.
+
+**Solution:** Generic consecutive failure detector that aborts when threshold reached, regardless of specific tool or error type.
+
+**Behavior:**
+
+- Tracks consecutive failures within configurable time window (default: 5 minutes)
+- Arms after successful agent turns to avoid startup false positives
+- Configurable failure types (llm_error, tool_error, network_error, timeout)
+- Throws `DoomLoopDetectedError` when threshold exceeded
+
+| File                                       | Purpose                               |
+| ------------------------------------------ | ------------------------------------- |
+| `src/agents/doom-loop-guard.ts`            | Core guard implementation (221 lines) |
+| `src/agents/tool-loop-detection-config.ts` | Config integration                    |
+| `src/config/types.tools.ts`                | Tool config types                     |
+
+---
+
 ## Merge Strategy
 
 All fork-modified files are protected in `.gitattributes` with `merge=ours`:
 
-- **Fork-exclusive code** (`extensions/memory-l3/`, `memory/.l3/`) — fully owned by fork
-- **Fork patches to upstream files** (Feature A/B/C) — keeps our version on conflict; non-overlapping upstream changes merge normally
+- **Fork-exclusive code** (`extensions/memory-l3/`, `memory/.l3/`, `src/skill-forge/`) — fully owned by fork
+- **Fork patches to upstream files** (Feature A/B/C/D) — keeps our version on conflict; non-overlapping upstream changes merge normally
 - **Upstream merges** — Regular catch-up merges from `upstream/main` (two staged legs to reduce conflict surface)
 
 ---
 
 ## Statistics
 
-| Feature                    | Lines Added | Files   |
-| -------------------------- | ----------- | ------- |
-| memory-l3                  | 8,334       | 44      |
-| skill-forge                | 4,672       | 32      |
-| Feature A (SSE transport)  | 6,101       | 7       |
-| Feature B (packageVersion) | 12          | 1       |
-| Feature C (thinking UI)    | ~265        | 16      |
-| **Total fork-specific**    | **~19,384** | **100** |
+| Feature                     | Lines Added | Files   |
+| --------------------------- | ----------- | ------- |
+| memory-l3                   | 8,334       | 44      |
+| skill-forge                 | 4,672       | 32      |
+| Feature A (SSE transport)   | 6,101       | 7       |
+| Feature B (packageVersion)  | 12          | 1       |
+| Feature C (thinking UI)     | ~265        | 16      |
+| Feature D (doom loop guard) | ~300        | 3       |
+| **Total fork-specific**     | **~19,684** | **103** |
 
 ---
 
@@ -256,4 +278,4 @@ All fork-modified files are protected in `.gitattributes` with `merge=ours`:
 
 ---
 
-_Last updated: 2026-06-03_
+_Last updated: 2026-06-04_
