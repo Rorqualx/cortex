@@ -854,6 +854,7 @@ const RESULT_ROLES = new Set(["toolresult", "tool_result"]);
 export type ActiveFileResult = {
   dir: string;
   fileName: string;
+  toolName?: string;
 } | null;
 
 /**
@@ -870,7 +871,7 @@ function extractActiveFileFromToolCall(
   // bash/exec: workdir reveals the active directory (no specific file)
   if (name === "bash" && typeof a.workdir === "string" && a.workdir.trim()) {
     const dir = a.workdir.replace(/\/+$/, "");
-    if (dir) return { dir, fileName: "" };
+    if (dir) return { dir, fileName: "", toolName: name };
   }
   // file tools: extract directory + basename from the path argument
   const filePath = a.path ?? a.file_path ?? a.filePath;
@@ -879,7 +880,7 @@ function extractActiveFileFromToolCall(
     const lastSlash = trimmed.lastIndexOf("/");
     const dir = lastSlash > 0 ? trimmed.substring(0, lastSlash) : trimmed;
     const fileName = lastSlash >= 0 ? trimmed.substring(lastSlash + 1) : trimmed;
-    if (dir) return { dir, fileName };
+    if (dir) return { dir, fileName, toolName: name };
   }
   return null;
 }

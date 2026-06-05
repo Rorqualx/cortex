@@ -554,6 +554,8 @@ const chatWorkspaceFileOpenRequests = new WeakMap<
   AppViewState,
   { agentId: string; id: number; name: string; sessionKey: string }
 >();
+/** Tracks the last file auto-previewed so we don't re-open the same file. */
+const autoPreviewedFile = new WeakMap<AppViewState, string>();
 
 function getChatWorkspaceFilesState(state: AppViewState, agentId: string): ChatWorkspaceFilesState {
   const current = chatWorkspaceFilesStates.get(state);
@@ -3347,11 +3349,18 @@ export function renderApp(state: AppViewState) {
             )
           : nothing}
         ${(() => {
+          // Scan both history messages AND live tool-stream messages
+          // so active-file detection works during a running agent turn.
+          const allMessages = chatWorkspaceFiles.list?.workspace
+            ? [...state.chatMessages, ...state.chatToolMessages]
+            : [];
+          const workspace = chatWorkspaceFiles.list?.workspace;
+
           // When the active directory changes, fetch its file listing
-          const dir = chatWorkspaceFiles.list?.workspace
-            ? (resolveActiveFileFromMessages(state.chatMessages, chatWorkspaceFiles.list.workspace)
-                ?.dir ?? null)
+          const activeFile = workspace
+            ? resolveActiveFileFromMessages(allMessages, workspace)
             : null;
+          const dir = activeFile?.dir ?? null;
           if (dir && dir !== chatWorkspaceFiles.activeDir && state.client && state.connected) {
             chatWorkspaceFiles.activeDir = dir;
             void (async () => {
@@ -3368,6 +3377,22 @@ export function renderApp(state: AppViewState) {
                 // ignore — active dir listing is best-effort
               }
             })();
+          }
+
+          // Auto-preview: when agent reads a file, open it in the sidebar
+          if (
+            activeFile?.fileName &&
+            activeFile.toolName === "read" &&
+            state.client &&
+            state.connected
+          ) {
+            const key = `${activeFile.dir}/${activeFile.fileName}`;
+            const lastAutoPreviewed = autoPreviewedFile.get(state);
+            if (lastAutoPreviewed !== key) {
+              autoPreviewedFile.set(state, key);
+              // Defer to avoid mutating state during render
+              queueMicrotask(() => openChatWorkspaceFile(activeFile.fileName, key));
+            }
           }
           return nothing;
         })()}
@@ -3431,7 +3456,7 @@ export function renderApp(state: AppViewState) {
                     activeName: chatWorkspaceFiles.activeName,
                     activeFile: chatWorkspaceFiles.list?.workspace
                       ? resolveActiveFileFromMessages(
-                          state.chatMessages,
+                          [...state.chatMessages, ...state.chatToolMessages],
                           chatWorkspaceFiles.list.workspace,
                         )
                       : null,
