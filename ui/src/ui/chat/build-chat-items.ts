@@ -595,6 +595,15 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
       key: `pending-send:${queued.id}`,
       message,
     });
+    // Show a reading indicator for each pending send in sending state.
+    // This ensures follow-ups always get processing feedback even when
+    // the stream from the previous run is still active.
+    if (queued.sendState === "sending") {
+      items.push({
+        kind: "reading-indicator",
+        key: `pending-indicator:${queued.id}`,
+      });
+    }
   }
   for (const liftedCanvasSource of liftedCanvasSources) {
     const assistantIndex = findNearestAssistantMessageIndex(items, liftedCanvasSource.timestamp);

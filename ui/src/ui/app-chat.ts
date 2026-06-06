@@ -32,7 +32,6 @@ import {
   parseSlashCommand,
   refreshSlashCommands,
 } from "./chat/slash-commands.ts";
-import { buildUserChatMessageContentBlocks } from "./chat/user-message-content.ts";
 import { formatConnectError } from "./connect-error.ts";
 import { resolveControlUiAuthHeader } from "./control-ui-auth.ts";
 import {
@@ -1030,15 +1029,11 @@ async function sendQueuedChatMessage(
   const isVisibleSession = () => visibleSessionMatches(host, sessionKey, prepared.agentId);
   if (isVisibleSession()) {
     setChatError(host, null);
-    // Immediately show the reading indicator before the RPC call goes out.
-    // This eliminates the dead zone between hitting send and seeing feedback.
-    if (host.chatStream === null) {
-      host.chatStream = "";
-      (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt = startedAt;
-    }
+    // The `sending` flag in buildChatItems handles the reading indicator.
+    // Don't set chatStream here — doing so causes flakiness when the ack
+    // clears it ~100ms later, making the dots flicker.
     reconcileChatRunLifecycle(host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
       clearRunStatus: true,
-      clearChatStream: false, // don't wipe the indicator we just set
     });
   }
 
@@ -1870,62 +1865,19 @@ export async function handleSendChat(
       return;
     }
 
-    // When the agent is busy, send the follow-up directly via chat.send
-    // without going through the queue. Append user message to chatMessages
-    // immediately with a pending marker so it shows shaded in the thread.
+    // When the agent is busy, send immediately via sendChatMessageNow.
+    // This bypasses the old isChatBusy queue-wait behavior while using
+    // the proven send pipeline (ack handling, history refresh, etc.).
+    // The item is already in chatQueue with sendState="sending" so it
+    // renders in-thread as a shaded pending bubble.
     if (isChatBusy(host)) {
-      // Append user message optimistically with pending marker
-      const pendingContent = buildUserChatMessageContentBlocks(
-        message,
-        hasAttachments ? attachmentsToSend : undefined,
-      );
-      (host as unknown as ChatState).chatMessages = [
-        ...(host as unknown as ChatState).chatMessages,
-        {
-          role: "user",
-          content: pendingContent,
-          timestamp: submittedAtMs ?? Date.now(),
-          __openclaw: {
-            kind: "pending-send",
-            id: queued.id,
-            state: "sending",
-          },
-        },
-      ];
+      updateQueuedMessage(host, queued.id, (item) => ({
+        ...item,
+        sendError: undefined,
+        sendState: "sending",
+        sendSubmittedAtMs: submittedAtMs,
+      }));
       host.requestUpdate?.();
-
-      // Send directly via chat.send RPC (bypass queue)
-      const runId = generateUUID();
-      try {
-        const ack = await requestChatSend(host as unknown as ChatState, {
-          message,
-          attachments: hasAttachments ? attachmentsToSend : undefined,
-          runId,
-          sessionKey: host.sessionKey,
-        });
-        // Remove from queue on success
-        removeQueuedMessageWithoutReleasing(host, queued.id, host.sessionKey);
-        discardChatAttachmentDataUrls(excludeComposerAttachments(host, attachmentsToSend));
-        if (ack.status === "started" && host.chatRunId !== ack.runId) {
-          // New run started — update tracking. The agent will process this
-          // as a new user turn appended to the conversation.
-          host.chatRunId = ack.runId;
-          if (host.chatStream === null) {
-            host.chatStream = "";
-            (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt =
-              submittedAtMs ?? Date.now();
-          }
-        }
-        host.requestUpdate?.();
-      } catch (err) {
-        const error = formatConnectError(err);
-        setChatError(host, error);
-        restoreComposerAfterFailedSend(host, {
-          previousDraft: cleared.previousDraft,
-          previousAttachments: cleared.previousAttachments,
-        });
-      }
-      return;
     }
 
     await sendChatMessageNow(host, message, {
