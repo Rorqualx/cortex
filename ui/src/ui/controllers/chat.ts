@@ -360,6 +360,7 @@ export type ChatState = {
   chatMessages: unknown[];
   chatThinkingLevel: string | null;
   chatSending: boolean;
+  chatSendStartedAt: number | null;
   chatMessage: string;
   chatAttachments: ChatAttachment[];
   chatRunId: string | null;

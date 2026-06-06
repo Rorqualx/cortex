@@ -192,11 +192,11 @@ export function reconcileChatRunLifecycle(host: RunLifecycleHost, options: Recon
   }
   if (options.clearLocalRun) {
     host.chatRunId = null;
-    // Clear chatSending when the run ends — the ack finally block defers
-    // clearing until the run is finished to prevent the thinking indicator
-    // from flashing off between ack and first delta.
     if ("chatSending" in host) {
-      (host as RunLifecycleHost & { chatSending?: boolean }).chatSending = false;
+      (
+        host as RunLifecycleHost & { chatSending?: boolean; chatSendStartedAt?: number | null }
+      ).chatSending = false;
+      (host as RunLifecycleHost & { chatSendStartedAt?: number | null }).chatSendStartedAt = null;
     }
   }
   if (options.clearSideResultTerminalRuns) {

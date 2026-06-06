@@ -103,6 +103,7 @@ export type ChatProps = {
   streamSegments: Array<{ text: string; ts: number }>;
   stream: string | null;
   streamStartedAt: number | null;
+  sendStartedAt: number | null;
   thinkingStream: string | null;
   thinkingStreamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
@@ -1744,7 +1745,9 @@ export function renderChat(props: ChatProps) {
                     assistantIdentity,
                     props.basePath,
                     props.assistantAttachmentAuthToken ?? null,
-                    props.streamStartedAt,
+                    // Use streamStartedAt if available, otherwise fall back to
+                    // a fixed send-time anchor so the timer works from send.
+                    props.streamStartedAt ?? props.sendStartedAt ?? null,
                   );
                 }
                 if (item.kind === "stream") {

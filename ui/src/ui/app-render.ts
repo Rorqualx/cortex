@@ -3773,6 +3773,7 @@ export function renderApp(state: AppViewState) {
                   streamSegments: state.chatStreamSegments,
                   stream: state.chatStream,
                   streamStartedAt: state.chatStreamStartedAt,
+                  sendStartedAt: state.chatSendStartedAt ?? null,
                   thinkingStream: state.chatThinkingStream,
                   thinkingStreamStartedAt: state.chatThinkingStreamStartedAt,
                   draft: state.chatMessage,

@@ -101,6 +101,7 @@ export type ChatHost = ChatInputHistoryState & {
   chatQueueBySession?: Record<string, ChatQueueItem[]>;
   chatRunId: string | null;
   chatSending: boolean;
+  chatSendStartedAt: number | null;
   lastError?: string | null;
   chatError?: string | null;
   basePath: string;
@@ -1026,6 +1027,7 @@ async function sendQueuedChatMessage(
   registerChatSendTiming(host, sendingItem, runId, requestStartedAtMs);
   recordChatSendTiming(host, sendingItem, "request-start", sendingItem.sendSubmittedAtMs);
   host.chatSending = true;
+  host.chatSendStartedAt = Date.now();
   const isVisibleSession = () => visibleSessionMatches(host, sessionKey, prepared.agentId);
   if (isVisibleSession()) {
     setChatError(host, null);
