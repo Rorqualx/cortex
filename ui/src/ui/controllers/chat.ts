@@ -729,10 +729,12 @@ async function loadChatHistoryUncached(
     state.chatThinkingLevel = res.sessionInfo?.thinkingLevel ?? res.thinkingLevel ?? null;
     const resetStream = !state.chatRunId || state.chatRunId === previousRunId;
     if (resetStream) {
-      // Guard: don't clear the stream if it has content not yet in history.
-      // This prevents a mid-run history push from wiping active streaming text.
-      const streamHasContent = typeof state.chatStream === "string" && state.chatStream.trim();
-      if (streamHasContent) {
+      // Guard: don't clear the stream if it's active (non-null), even if empty.
+      // An empty string means the thinking indicator is showing — clearing it
+      // makes the indicator vanish. Only clear when stream is genuinely null
+      // or the run has already finished streaming.
+      const streamActive = typeof state.chatStream === "string";
+      if (streamActive) {
         // Keep the stream alive — the active run will deliver its own final event.
       } else {
         maybeResetToolStream(state);
