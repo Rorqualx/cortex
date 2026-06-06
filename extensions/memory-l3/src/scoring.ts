@@ -2,6 +2,10 @@ import type { L2Fact } from "./types.js";
 
 export type ScoringConfig = {
   weightLexical: number;
+  /** BM25 lexical signal. Augments Jaccard with term-frequency/document-rarity
+   * weighting so rare exact matches (IPs, paths, project names) score higher
+   * than common-word overlaps. Default 0 — set to 0.2-0.4 to opt in. */
+  weightBm25: number;
   weightImportance: number;
   weightRecency: number;
   /** ε-weighted L3-epoch boost. Soft additive prior; default 0.1. */
@@ -31,6 +35,7 @@ export type ScoringConfig = {
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightLexical: 0.6,
+  weightBm25: 0,
   weightImportance: 0.2,
   weightRecency: 0.1,
   weightL3Boost: 0.1,
@@ -42,6 +47,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
 
 export type Signals = {
   lexical: number;
+  bm25: number;
   importance: number;
   recency: number;
   l3Boost: number;
@@ -77,26 +83,86 @@ export function recencyScore(ageMs: number, halfLifeDays: number): number {
   return Math.exp((-Math.LN2 * ageDays) / halfLifeDays);
 }
 
+export type CorpusStats = {
+  /** Per-term document frequency: how many facts contain each token. */
+  df: Map<string, number>;
+  /** Total number of facts in the corpus. */
+  total: number;
+  /** Average fact text length in tokens. */
+  avgLen: number;
+};
+
+export function bm25Score(
+  queryTokens: Set<string>,
+  factText: string,
+  corpusStats: CorpusStats,
+  k1 = 1.2,
+  b = 0.75,
+): number {
+  const factTokens = tokenize(factText);
+  const docLen = factTokens.size;
+  let score = 0;
+  for (const term of queryTokens) {
+    if (!factTokens.has(term)) continue;
+    const df = corpusStats.df.get(term) ?? 0;
+    const idf = Math.log(1 + (corpusStats.total - df + 0.5) / (df + 0.5));
+    // Presence-based tf=1: facts are short, so counting occurrences within
+    // a single fact adds noise. The signal comes from IDF — rare terms
+    // that match should dominate.
+    const tf = 1;
+    const norm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * docLen) / (corpusStats.avgLen || 1)));
+    score += idf * norm;
+  }
+  return score;
+}
+
+/** Build corpus-level document frequencies from a collection of fact texts.
+ * One-pass: counts how many facts contain each token and computes average
+ * fact length. */
+export function buildCorpusStats(factTexts: ReadonlyArray<string>): CorpusStats {
+  const df = new Map<string, number>();
+  let totalTokens = 0;
+  for (const text of factTexts) {
+    const tokens = tokenize(text);
+    totalTokens += tokens.size;
+    for (const token of tokens) {
+      df.set(token, (df.get(token) ?? 0) + 1);
+    }
+  }
+  return {
+    df,
+    total: factTexts.length,
+    avgLen: factTexts.length > 0 ? totalTokens / factTexts.length : 0,
+  };
+}
+
 export function scoreFact(params: {
   queryTokens: Set<string>;
   fact: L2Fact;
   now: number;
   config: ScoringConfig;
   l3Boost?: number;
+  /** Corpus stats for BM25 scoring. When omitted, bm25 signal is 0. */
+  corpusStats?: CorpusStats;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
+  const bm25 =
+    params.corpusStats && params.config.weightBm25 > 0
+      ? bm25Score(params.queryTokens, params.fact.text, params.corpusStats)
+      : 0;
   const importance = params.fact.importance;
   const recency = recencyScore(
     params.now - params.fact.createdAt,
     params.config.recencyHalfLifeDays,
   );
-  return { lexical, importance, recency, l3Boost: params.l3Boost ?? 0 };
+  return { lexical, bm25, importance, recency, l3Boost: params.l3Boost ?? 0 };
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {
   return (
     signals.lexical * config.weightLexical +
+    signals.bm25 * config.weightBm25 +
     signals.importance * config.weightImportance +
     signals.recency * config.weightRecency +
     signals.l3Boost * config.weightL3Boost

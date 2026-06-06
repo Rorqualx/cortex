@@ -64,6 +64,7 @@ const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the c
 Rules (PROMPT_VERSION=4):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
+- REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions. E.g., "User mentioned this preference unprompted, suggesting strong importance." or "This is a one-off debugging value, low cross-session utility." Omit when the reason is obvious from the text alone.
 - TYPED FACTS: emit only when a precise verbatim value appears in the conversation. Each typed fact must include:
   - slot: kebab-case scoped name like "user:phone" or "infra:pi_hole_ip" or "release:version".
   - value: the EXACT substring from the conversation, character-for-character (case- and whitespace-sensitive).
@@ -77,7 +78,7 @@ Emit strict JSON only, with no surrounding prose. Use EXACTLY the field names be
 Schema:
 {
   "facts": [
-    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case" }
+    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string" }
   ],
   "typedFacts": [
     { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
@@ -90,6 +91,8 @@ export type ExtractedFact = {
   text: string;
   importance: number;
   dedupKey: string;
+  /** Optional reasoning about why this fact matters. */
+  reasoning?: string;
 };
 
 export type ExtractedTypedFact = {
@@ -191,6 +194,10 @@ function normalizeFacts(facts: ReadonlyArray<unknown>): ExtractedFact[] {
       text,
       importance: Math.max(0, Math.min(1, importanceRaw)),
       dedupKey,
+      reasoning:
+        typeof o.reasoning === "string" && o.reasoning.trim().length > 0
+          ? o.reasoning.trim()
+          : undefined,
     });
   }
   return out;

@@ -43,6 +43,11 @@ export type L2Fact = {
   importance: number;
   createdAt: number;
   dedupKey: string;
+  /** Optional one-sentence explanation of why this fact is worth remembering
+   * across sessions, extracted from the LLM during compaction. E.g.,
+   * "User mentioned this preference unprompted, suggesting strong importance."
+   * Absent on facts extracted before PROMPT_VERSION=5. */
+  reasoning?: string;
 };
 
 /**

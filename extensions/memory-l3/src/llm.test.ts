@@ -49,6 +49,30 @@ describe("parseExtractResponse", () => {
     expect(result.typedFacts).toEqual([]);
   });
 
+  it("preserves reasoning field when present", () => {
+    const raw = JSON.stringify({
+      facts: [
+        {
+          text: "user prefers dark mode",
+          importance: 0.8,
+          dedupKey: "pref:dark_mode",
+          reasoning: "User mentioned this preference unprompted",
+        },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0].reasoning).toBe("User mentioned this preference unprompted");
+  });
+
+  it("drops empty/whitespace reasoning", () => {
+    const raw = JSON.stringify({
+      facts: [{ text: "alpha", importance: 0.5, dedupKey: "k:1", reasoning: "   " }],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.facts[0].reasoning).toBeUndefined();
+  });
+
   it("drops malformed prose entries (missing text or dedupKey)", () => {
     const raw = JSON.stringify({
       facts: [
@@ -166,6 +190,7 @@ describe("extractFacts", () => {
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0][0];
     expect(call.systemPrompt).toContain("PROMPT_VERSION=4");
+    expect(call.systemPrompt).toContain("REASONING");
     expect(call.userPrompt).not.toContain("already-known");
   });
 

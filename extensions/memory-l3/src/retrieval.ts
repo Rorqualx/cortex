@@ -1,6 +1,8 @@
 import {
+  buildCorpusStats,
   composite,
   DEFAULT_SCORING_CONFIG,
+  type CorpusStats,
   jaccard,
   type ScoringConfig,
   scoreFact,
@@ -75,76 +77,83 @@ export async function retrieveTopK(params: {
   const longtermTyped = await params.storage.readLongTermTyped();
   const canonicalSlots = new Set(longtermTyped.facts.filter((f) => !f.archived).map((f) => f.slot));
 
-  const scored: RetrievedFact[] = [];
+  // Phase 1: Collect all scorable items so we can compute corpus-wide BM25
+  // stats before the scoring pass.
+  type ScorableItem = {
+    fact: L2Fact;
+    chunkId: string;
+    tier: RetrievalTier;
+    l3Boost: number;
+    /** For long-term/typed tiers: flat additive boost when lexical > 0. */
+    tierBoost: number;
+  };
+  const items: ScorableItem[] = [];
+
   for (const filePath of paths) {
     const doc = await params.storage.readL2ChunkAtPath(filePath);
     if (!doc) continue;
     const chunkId = doc.frontmatter.id;
     const l3Boost = epochBoosts.get(chunkId) ?? 0;
     for (const fact of doc.frontmatter.facts) {
-      const signals = scoreFact({ queryTokens, fact, now, config, l3Boost });
-      const score = composite(signals, config);
-      if (score > 0) {
-        scored.push({ fact, score, signals, chunkId, tier: "l2" });
-      }
+      items.push({ fact, chunkId, tier: "l2", l3Boost, tierBoost: 0 });
     }
-    // Typed-fact tier (left brain) — verbatim-grounded values surfaced
-    // alongside prose facts. Suppress when a canonical entry already
-    // exists for the slot: the longterm-typed tier surfaces the latest
-    // value and we don't want stale per-chunk values competing.
     for (const typed of doc.frontmatter.typedFacts ?? []) {
       if (canonicalSlots.has(typed.slot)) continue;
-      const fact = typedFactAsL2Fact(typed);
-      const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
-      const baseScore = composite(signals, config);
-      const score = signals.lexical > 0 ? baseScore + config.weightTypedFactTierBoost : baseScore;
-      if (score > 0) {
-        scored.push({ fact, score, signals, chunkId, tier: "typed" });
-      }
-    }
-  }
-
-  // Long-term typed tier — canonical current-value-per-slot view. Recall
-  // count and history contribute implicitly through the canonical entry's
-  // confidence + lastConfirmedAt anchor. Score boost matches the prose
-  // long-term tier (+0.15) so canonical typed and canonical prose compete
-  // on equal footing.
-  for (const ltt of longtermTyped.facts) {
-    if (ltt.archived) continue;
-    const fact = longTermTypedAsL2Fact(ltt);
-    const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
-    const baseScore = composite(signals, config);
-    const score = signals.lexical > 0 ? baseScore + config.weightLongTermTierBoost : baseScore;
-    if (score > 0) {
-      scored.push({
-        fact,
-        score,
-        signals,
-        chunkId: "longterm-typed",
-        tier: "longterm-typed",
+      items.push({
+        fact: typedFactAsL2Fact(typed),
+        chunkId,
+        tier: "typed",
+        l3Boost: 0,
+        tierBoost: config.weightTypedFactTierBoost,
       });
     }
   }
 
-  // Long-term tier — promoted evergreen facts. Skip archived; treat
-  // lastConfirmedAt as the recency anchor so re-affirmed facts feel fresh.
-  // The fixed tier boost only applies when there's an actual topical hit;
-  // lex=0 long-term facts can still compete on importance + recency, but
-  // don't get the +0.15 floor that would let unrelated identity-class
-  // facts out-rank stronger L2 matches on every query.
+  // Long-term typed tier
+  for (const ltt of longtermTyped.facts) {
+    if (ltt.archived) continue;
+    items.push({
+      fact: longTermTypedAsL2Fact(ltt),
+      chunkId: "longterm-typed",
+      tier: "longterm-typed",
+      l3Boost: 0,
+      tierBoost: config.weightLongTermTierBoost,
+    });
+  }
+
+  // Long-term prose tier
   const longterm = await params.storage.readLongTerm();
   for (const lt of longterm.facts) {
     if (lt.archived) continue;
-    // Cross-brain reconciliation marker: prose fact contradicts a typed
-    // fact's verbatim value, so the typed value is canonical and this
-    // prose entry shouldn't surface in active retrieval.
     if (lt.supersededBy) continue;
-    const fact = longTermAsL2Fact(lt);
-    const signals = scoreFact({ queryTokens, fact, now, config, l3Boost: 0 });
+    items.push({
+      fact: longTermAsL2Fact(lt),
+      chunkId: "longterm",
+      tier: "longterm",
+      l3Boost: 0,
+      tierBoost: config.weightLongTermTierBoost,
+    });
+  }
+
+  // Build corpus stats from all fact texts for BM25 IDF computation.
+  const corpusStats: CorpusStats | undefined =
+    config.weightBm25 > 0 ? buildCorpusStats(items.map((i) => i.fact.text)) : undefined;
+
+  // Phase 2: Score all items using composite + tier boosts.
+  const scored: RetrievedFact[] = [];
+  for (const item of items) {
+    const signals = scoreFact({
+      queryTokens,
+      fact: item.fact,
+      now,
+      config,
+      l3Boost: item.l3Boost,
+      corpusStats,
+    });
     const baseScore = composite(signals, config);
-    const score = signals.lexical > 0 ? baseScore + config.weightLongTermTierBoost : baseScore;
+    const score = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
     if (score > 0) {
-      scored.push({ fact, score, signals, chunkId: "longterm", tier: "longterm" });
+      scored.push({ fact: item.fact, score, signals, chunkId: item.chunkId, tier: item.tier });
     }
   }
 
@@ -167,7 +176,7 @@ export async function retrieveTopK(params: {
         scored.push({
           fact,
           score,
-          signals: { lexical: hit.score, importance: 0.5, recency: 1, l3Boost: 0 },
+          signals: { lexical: hit.score, bm25: 0, importance: 0.5, recency: 1, l3Boost: 0 },
           chunkId: hit.path,
           tier: "memory-core",
         });

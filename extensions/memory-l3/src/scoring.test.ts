@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  bm25Score,
+  buildCorpusStats,
   composite,
   DEFAULT_SCORING_CONFIG,
   jaccard,
@@ -127,28 +129,125 @@ describe("scoreFact + composite", () => {
   it("composite is the weighted sum of signals", () => {
     const config = {
       weightLexical: 0.5,
+      weightBm25: 0,
       weightImportance: 0.3,
       weightRecency: 0.1,
       weightL3Boost: 0.1,
       weightLongTermTierBoost: 0,
+      weightMemoryCoreTierMultiplier: 0.7,
+      weightTypedFactTierBoost: 0,
       recencyHalfLifeDays: 7,
     };
-    const score = composite({ lexical: 1.0, importance: 1.0, recency: 1.0, l3Boost: 1.0 }, config);
+    const score = composite(
+      { lexical: 1.0, bm25: 0, importance: 1.0, recency: 1.0, l3Boost: 1.0 },
+      config,
+    );
     expect(score).toBeCloseTo(1.0, 6);
-    const half = composite({ lexical: 0.5, importance: 0.5, recency: 0.5, l3Boost: 0.5 }, config);
+    const half = composite(
+      { lexical: 0.5, bm25: 0, importance: 0.5, recency: 0.5, l3Boost: 0.5 },
+      config,
+    );
     expect(half).toBeCloseTo(0.5, 6);
   });
 
   it("l3Boost contributes via the ε weight", () => {
     const config = {
       weightLexical: 0,
+      weightBm25: 0,
       weightImportance: 0,
       weightRecency: 0,
       weightL3Boost: 0.5,
       weightLongTermTierBoost: 0,
+      weightMemoryCoreTierMultiplier: 0.7,
+      weightTypedFactTierBoost: 0,
       recencyHalfLifeDays: 7,
     };
-    const score = composite({ lexical: 0, importance: 0, recency: 0, l3Boost: 0.4 }, config);
+    const score = composite(
+      { lexical: 0, bm25: 0, importance: 0, recency: 0, l3Boost: 0.4 },
+      config,
+    );
     expect(score).toBeCloseTo(0.2, 6);
+  });
+});
+
+describe("buildCorpusStats + BM25", () => {
+  it("computes document frequencies from fact texts", () => {
+    const stats = buildCorpusStats([
+      "pi-hole at 192.168.50.128",
+      "router is 192.168.50.1",
+      "user likes coffee",
+    ]);
+    // "192.168.50.128" appears in 1 doc
+    expect(stats.df.get("192.168.50.128")).toBe(1);
+    // "192.168.50.1" appears in 1 doc (tokenized as one token)
+    expect(stats.df.get("192.168.50.1")).toBe(1);
+    // "at" appears in 1 doc
+    expect(stats.df.get("at")).toBe(1);
+    expect(stats.total).toBe(3);
+    expect(stats.avgLen).toBeGreaterThan(0);
+  });
+
+  it("returns zeroed stats for empty corpus", () => {
+    const stats = buildCorpusStats([]);
+    expect(stats.total).toBe(0);
+    expect(stats.avgLen).toBe(0);
+    expect(stats.df.size).toBe(0);
+  });
+
+  it("gives rare terms higher BM25 score than common terms", () => {
+    // Two facts: one with a rare IP, one with a common word.
+    const stats = buildCorpusStats([
+      "pi-hole at 192.168.50.128",
+      "also at 192.168.50.128 is the dns",
+      "user likes coffee",
+      "user also likes tea",
+      "user sometimes likes water",
+    ]);
+    const queryTokens = tokenize("192.168.50.128");
+    const score = bm25Score(queryTokens, "pi-hole at 192.168.50.128", stats);
+    expect(score).toBeGreaterThan(0);
+  });
+
+  it("BM25 signal is 0 when weightBm25 is 0 (default)", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    expect(config.weightBm25).toBe(0);
+    const fact = {
+      id: "f1",
+      text: "pi-hole at 192.168.50.128",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const queryTokens = tokenize("192.168.50.128");
+    const stats = buildCorpusStats([fact.text]);
+    const signals = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config,
+      corpusStats: stats,
+    });
+    expect(signals.bm25).toBe(0);
+  });
+
+  it("BM25 signal is populated when weightBm25 > 0 and corpusStats provided", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, weightBm25: 0.3 };
+    const fact = {
+      id: "f1",
+      text: "pi-hole at 192.168.50.128",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const queryTokens = tokenize("192.168.50.128");
+    const stats = buildCorpusStats([fact.text, "unrelated text about coffee"]);
+    const signals = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config,
+      corpusStats: stats,
+    });
+    expect(signals.bm25).toBeGreaterThan(0);
   });
 });
