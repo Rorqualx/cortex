@@ -208,9 +208,30 @@ describe("buildCorpusStats + BM25", () => {
     expect(score).toBeGreaterThan(0);
   });
 
-  it("BM25 signal is 0 when weightBm25 is 0 (default)", () => {
+  it("BM25 signal is populated by default (weightBm25=0.3)", () => {
     const config = DEFAULT_SCORING_CONFIG;
-    expect(config.weightBm25).toBe(0);
+    expect(config.weightBm25).toBe(0.3);
+    const fact = {
+      id: "f1",
+      text: "pi-hole at 192.168.50.128",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const queryTokens = tokenize("192.168.50.128");
+    const stats = buildCorpusStats([fact.text, "unrelated text about coffee"]);
+    const signals = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config,
+      corpusStats: stats,
+    });
+    expect(signals.bm25).toBeGreaterThan(0);
+  });
+
+  it("BM25 signal is 0 when weightBm25 is explicitly 0", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, weightBm25: 0 };
     const fact = {
       id: "f1",
       text: "pi-hole at 192.168.50.128",

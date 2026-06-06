@@ -35,7 +35,7 @@ export type ScoringConfig = {
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightLexical: 0.6,
-  weightBm25: 0,
+  weightBm25: 0.3,
   weightImportance: 0.2,
   weightRecency: 0.1,
   weightL3Boost: 0.1,

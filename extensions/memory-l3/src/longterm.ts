@@ -19,10 +19,20 @@ export type LongTermConfig = {
    * from active retrieval.
    */
   maxAgeWithoutConfirmMs: number;
+  /**
+   * Multiplier applied to `maxAgeWithoutConfirmMs` when archiving would drop
+   * the last active fact from its epoch cluster (facts that first appeared on
+   * the same day). Prevents "Region Wipe-out" where an entire topic
+   * disappears at once because all its facts age out in the same pass.
+   * Set to 1.0 to disable epoch-aware grace.
+   * Default: 1.5 (50% extension).
+   */
+  epochGraceMultiplier: number;
 };
 
 export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
   maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
+  epochGraceMultiplier: 1.5,
 };
 
 export type ConsolidationOutput = {
@@ -32,6 +42,8 @@ export type ConsolidationOutput = {
   reaffirmedCount: number;
   /** Active facts that aged out and were marked archived in this pass. */
   archivedCount: number;
+  /** Active facts that would have aged out but received an epoch-cluster grace extension. */
+  epochGraceCount: number;
   /** Archived facts that re-appeared in candidates and were re-activated. */
   unarchivedCount: number;
   /** Total active facts after the pass (excludes archived). */
