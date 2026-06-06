@@ -5,6 +5,7 @@
  */
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
+import { evaluatePolicy, loadPolicy } from "../exec-policy/index.js";
 import { describeInterpreterInlineEval } from "../infra/command-analysis/inline-eval.js";
 import { detectPolicyInlineEval } from "../infra/command-analysis/policy.js";
 import {
@@ -344,6 +345,37 @@ async function resolveGatewayExecApprovalFollowupText(params: {
 export async function processGatewayAllowlist(
   params: ProcessGatewayAllowlistParams,
 ): Promise<ProcessGatewayAllowlistResult> {
+  // --- Exec Policy (new layer, runs before allowlist) ---
+  const execPolicy = loadPolicy();
+  const policyEval = evaluatePolicy(params.command, execPolicy);
+  if (policyEval.decision === "forbidden") {
+    const bannedInfo = policyEval.bannedMatch
+      ? ` (banned prefix: ${policyEval.bannedMatch.pattern.join(" ")})`
+      : "";
+    return {
+      deniedResult: {
+        content: [
+          {
+            type: "text" as const,
+            text: `Exec policy denied${bannedInfo}: ${params.command}`,
+          },
+        ],
+        details: {
+          status: "failed" as const,
+          exitCode: null,
+          durationMs: 0,
+          aggregated: `Exec policy denied${bannedInfo}: ${params.command}`,
+          cwd: params.workdir,
+        },
+      },
+    };
+  }
+  // If exec-policy explicitly allows, skip allowlist but still enforce command hygiene.
+  if (policyEval.decision === "allow" && policyEval.matched) {
+    return { allowWithoutEnforcedCommand: true };
+  }
+  // "prompt" or no match → fall through to existing allowlist/approval flow.
+
   const { approvals, hostSecurity, hostAsk, askFallback } = resolveExecHostApprovalContext({
     agentId: params.agentId,
     security: params.security,

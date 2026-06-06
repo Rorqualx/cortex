@@ -22,6 +22,11 @@ import { requestHeartbeat } from "../infra/heartbeat-wake.js";
 import { isDangerousHostInheritedEnvVarName } from "../infra/host-env-security.js";
 import { findPathKey, mergePathPrepend, removePathPrepend } from "../infra/path-prepend.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
+import {
+  shouldApplyOsSandbox,
+  buildDefaultOsSandboxConfig,
+  wrapWithSeatbelt,
+} from "../sandbox/os-sandbox.js";
 import { isSubagentSessionKey } from "../sessions/session-key-utils.js";
 import type { ProcessSession } from "./bash-process-registry.js";
 import type { ExecToolDetails } from "./bash-tools.exec-types.js";
@@ -841,7 +846,24 @@ export async function runExecProcess(opts: {
           (opts.usePty ? ("pipe-open" as const) : ("pipe-closed" as const)),
       };
     }
+    // --- OS-level sandboxing (Seatbelt on macOS) when no Docker sandbox ---
     const { shell, args: shellArgs } = getShellConfig();
+    let useOsSandbox = false;
+    let osSandboxArgv: string[] | undefined;
+    if (
+      shouldApplyOsSandbox(undefined, false) &&
+      !opts.usePty // Seatbelt doesn't support PTY mode
+    ) {
+      const sandboxConfig = buildDefaultOsSandboxConfig(opts.workdir);
+      if (sandboxConfig?.available && sandboxConfig.type === "seatbelt" && sandboxConfig.seatbelt) {
+        const wrapped = wrapWithSeatbelt(
+          [shell, ...shellArgs, execCommand],
+          sandboxConfig.seatbelt,
+        );
+        osSandboxArgv = wrapped.command;
+        useOsSandbox = true;
+      }
+    }
 
     // Wrap the command to enforce PATH prepend precedence over shell RC overrides.
     const commandWithPathPrepend = wrapPosixCommandWithPathPrepend(
@@ -857,7 +879,10 @@ export async function runExecProcess(opts: {
       env: shellRuntimeEnv,
     });
 
-    const childArgv = [shell, ...shellArgs, commandWithShellSnapshot];
+    const childArgv =
+      useOsSandbox && osSandboxArgv
+        ? osSandboxArgv
+        : [shell, ...shellArgs, commandWithShellSnapshot];
     if (opts.usePty) {
       return {
         mode: "pty" as const,
