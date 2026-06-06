@@ -1180,7 +1180,13 @@ async function sendQueuedChatMessage(
     recordChatSendTiming(host, prepared, "failed", prepared.sendSubmittedAtMs, { error });
     return "failed";
   } finally {
-    host.chatSending = false;
+    // Keep chatSending true while the run is active — the ack arriving
+    // doesn't mean the agent is done, just that the request was accepted.
+    // Clearing chatSending here causes the "thinking" indicator to flash
+    // and disappear before the first delta arrives.
+    if (!host.chatRunId) {
+      host.chatSending = false;
+    }
   }
 }
 
