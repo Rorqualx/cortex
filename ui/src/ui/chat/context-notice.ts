@@ -63,13 +63,34 @@ export function getContextNoticeViewModel(
   warning: boolean;
   compactRecommended: boolean;
 } | null {
-  if (session?.totalTokensFresh === false) {
+  const limit = session?.contextTokens ?? defaultContextTokens ?? 0;
+  if (!limit) {
     return null;
   }
-  const used = session?.totalTokens;
-  const limit = session?.contextTokens ?? defaultContextTokens ?? 0;
-  if (typeof used !== "number" || !Number.isFinite(used) || used < 0 || !limit) {
-    return null;
+  // Always show the badge when we have a context window — even at 0 tokens used.
+  // Previously returned null when totalTokens was missing, which hid the badge
+  // entirely at session start.
+  if (session?.totalTokensFresh === false) {
+    // Stale token data — show 0 badge instead of hiding entirely
+    return {
+      pct: 0,
+      detail: `0 / ${formatTokensCompact(limit)}`,
+      color: "var(--muted)",
+      bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
+      warning: false,
+      compactRecommended: false,
+    };
+  }
+  const used = session?.totalTokens ?? 0;
+  if (typeof used !== "number" || !Number.isFinite(used) || used < 0) {
+    return {
+      pct: 0,
+      detail: `0 / ${formatTokensCompact(limit)}`,
+      color: "var(--muted)",
+      bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
+      warning: false,
+      compactRecommended: false,
+    };
   }
   const ratio = used / limit;
   const pct = Math.min(Math.round(ratio * 100), 100);
@@ -146,8 +167,7 @@ export function renderContextNotice(
               <span class="context-notice__meter-fill" style="width:${model.pct}%"></span>
             </span>
           `}
-      <span>${model.pct}% context used</span>
-      <span class="context-notice__detail">${model.detail}</span>
+      <span class="context-notice__label">${model.pct}% · ${model.detail}</span>
       ${canRenderCompact
         ? html`
             <button

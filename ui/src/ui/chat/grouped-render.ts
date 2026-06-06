@@ -612,8 +612,20 @@ export function renderMessageGroup(
     `;
   }
 
+  // Check if this is a pending (optimistically sent) user message
+  const isPendingSend =
+    group.role === "user" &&
+    group.messages.some((m) => {
+      const meta = (m.message as Record<string, unknown>)["__openclaw"];
+      return (
+        meta &&
+        typeof meta === "object" &&
+        (meta as Record<string, unknown>).kind === "pending-send"
+      );
+    });
+
   return html`
-    <div class="chat-group ${roleClass}">
+    <div class="chat-group ${roleClass} ${isPendingSend ? "chat-group--pending" : ""}">
       ${renderChatAvatar(
         group.role,
         {

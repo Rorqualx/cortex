@@ -32,6 +32,7 @@ import {
   parseSlashCommand,
   refreshSlashCommands,
 } from "./chat/slash-commands.ts";
+import { buildUserChatMessageContentBlocks } from "./chat/user-message-content.ts";
 import { formatConnectError } from "./connect-error.ts";
 import { resolveControlUiAuthHeader } from "./control-ui-auth.ts";
 import {
@@ -1029,8 +1030,15 @@ async function sendQueuedChatMessage(
   const isVisibleSession = () => visibleSessionMatches(host, sessionKey, prepared.agentId);
   if (isVisibleSession()) {
     setChatError(host, null);
+    // Immediately show the reading indicator before the RPC call goes out.
+    // This eliminates the dead zone between hitting send and seeing feedback.
+    if (host.chatStream === null) {
+      host.chatStream = "";
+      (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt = startedAt;
+    }
     reconcileChatRunLifecycle(host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
       clearRunStatus: true,
+      clearChatStream: false, // don't wipe the indicator we just set
     });
   }
 
@@ -1068,21 +1076,56 @@ async function sendQueuedChatMessage(
         startedAt,
       );
       if (ack.status === "ok") {
-        reconcileChatRunLifecycle(
-          host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],
-          {
-            outcome: "done",
-            sessionStatus: "done",
-            runId: ack.runId,
-            sessionKey,
-            clearLocalRun: true,
-            clearChatStream: true,
-            clearToolStream: true,
-            clearSideResultTerminalRuns: true,
-            publishRunStatus: false,
-            armLocalTerminalReconcile: true,
-          },
-        );
+        // ack.status "ok" means the run completed synchronously (e.g. /stop command).
+        // Preserve any stream text that may have arrived before the ack resolved.
+        // Previously this unconditionally cleared chatStream/chatRunId, causing
+        // the final delta content to vanish between clearing and history load.
+        const hasStreamContent = typeof host.chatStream === "string" && host.chatStream.trim();
+        if (
+          hasStreamContent &&
+          !host.chatMessages.some((msg: unknown) => {
+            const m = msg as Record<string, unknown>;
+            return (
+              m.role === "assistant" &&
+              typeof m.content === "string" &&
+              m.content === host.chatStream
+            );
+          })
+        ) {
+          // Stream has content not yet in messages — keep it visible until history load.
+          // The history refresh below will deliver the canonical final message.
+          reconcileChatRunLifecycle(
+            host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],
+            {
+              outcome: "done",
+              sessionStatus: "done",
+              runId: ack.runId,
+              sessionKey,
+              clearLocalRun: true,
+              clearChatStream: false, // ← preserve stream text
+              clearToolStream: true,
+              clearSideResultTerminalRuns: true,
+              publishRunStatus: false,
+              armLocalTerminalReconcile: true,
+            },
+          );
+        } else {
+          reconcileChatRunLifecycle(
+            host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],
+            {
+              outcome: "done",
+              sessionStatus: "done",
+              runId: ack.runId,
+              sessionKey,
+              clearLocalRun: true,
+              clearChatStream: true,
+              clearToolStream: true,
+              clearSideResultTerminalRuns: true,
+              publishRunStatus: false,
+              armLocalTerminalReconcile: true,
+            },
+          );
+        }
         void loadChatHistory(host as unknown as ChatState);
       } else {
         const hasAlreadyAdoptedRunStream =
@@ -1827,13 +1870,61 @@ export async function handleSendChat(
       return;
     }
 
+    // When the agent is busy, send the follow-up directly via chat.send
+    // without going through the queue. Append user message to chatMessages
+    // immediately with a pending marker so it shows shaded in the thread.
     if (isChatBusy(host)) {
-      updateQueuedMessage(host, queued.id, (item) => ({
-        ...item,
-        sendError: undefined,
-        sendState: undefined,
-      }));
-      recordChatSendTiming(host, queued, "queued-busy", submittedAtMs);
+      // Append user message optimistically with pending marker
+      const pendingContent = buildUserChatMessageContentBlocks(
+        message,
+        hasAttachments ? attachmentsToSend : undefined,
+      );
+      (host as unknown as ChatState).chatMessages = [
+        ...(host as unknown as ChatState).chatMessages,
+        {
+          role: "user",
+          content: pendingContent,
+          timestamp: submittedAtMs ?? Date.now(),
+          __openclaw: {
+            kind: "pending-send",
+            id: queued.id,
+            state: "sending",
+          },
+        },
+      ];
+      host.requestUpdate?.();
+
+      // Send directly via chat.send RPC (bypass queue)
+      const runId = generateUUID();
+      try {
+        const ack = await requestChatSend(host as unknown as ChatState, {
+          message,
+          attachments: hasAttachments ? attachmentsToSend : undefined,
+          runId,
+          sessionKey: host.sessionKey,
+        });
+        // Remove from queue on success
+        removeQueuedMessageWithoutReleasing(host, queued.id, host.sessionKey);
+        discardChatAttachmentDataUrls(excludeComposerAttachments(host, attachmentsToSend));
+        if (ack.status === "started" && host.chatRunId !== ack.runId) {
+          // New run started — update tracking. The agent will process this
+          // as a new user turn appended to the conversation.
+          host.chatRunId = ack.runId;
+          if (host.chatStream === null) {
+            host.chatStream = "";
+            (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt =
+              submittedAtMs ?? Date.now();
+          }
+        }
+        host.requestUpdate?.();
+      } catch (err) {
+        const error = formatConnectError(err);
+        setChatError(host, error);
+        restoreComposerAfterFailedSend(host, {
+          previousDraft: cleared.previousDraft,
+          previousAttachments: cleared.previousAttachments,
+        });
+      }
       return;
     }
 

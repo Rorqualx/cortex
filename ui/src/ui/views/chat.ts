@@ -544,6 +544,7 @@ function sameChatItemsInput(previous: BuildChatItemsProps, next: BuildChatItemsP
     previous.streamSegments === next.streamSegments &&
     previous.stream === next.stream &&
     previous.streamStartedAt === next.streamStartedAt &&
+    previous.sending === next.sending &&
     previous.queue === next.queue &&
     previous.showToolCalls === next.showToolCalls &&
     previous.searchOpen === next.searchOpen &&
@@ -1575,6 +1576,7 @@ export function renderChat(props: ChatProps) {
     streamStartedAt: props.streamStartedAt,
     thinkingStream: props.thinkingStream,
     thinkingStreamStartedAt: props.thinkingStreamStartedAt,
+    sending: props.sending,
     queue: props.queue,
     showToolCalls: props.showToolCalls,
     searchOpen: vs.searchOpen,

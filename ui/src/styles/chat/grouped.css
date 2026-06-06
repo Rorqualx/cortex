@@ -18,6 +18,15 @@
   justify-content: flex-start;
 }
 
+/* Pending user messages — optimistically sent while agent is busy */
+.chat-group.chat-group--pending {
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
+}
+.chat-group.chat-group--pending .chat-bubble {
+  border-style: dashed;
+}
+
 .chat-group-messages {
   display: flex;
   flex-direction: column;
