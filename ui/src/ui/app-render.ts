@@ -212,6 +212,7 @@ import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
 
 let pendingUpdate: (() => void) | undefined;
+let thinkingTickInterval: ReturnType<typeof setInterval> | undefined;
 
 const notifyLazyViewChanged = () => pendingUpdate?.();
 
@@ -1176,6 +1177,18 @@ export function renderApp(state: AppViewState) {
       ? () => updatableState.requestUpdate?.()
       : undefined;
   pendingUpdate = requestHostUpdate;
+
+  // Live tick timer: drive requestUpdate every second while the thinking indicator
+  // is active so the elapsed time counter updates in real time.
+  const isThinking = state.chatSending || state.chatStream !== null;
+  if (isThinking && !thinkingTickInterval) {
+    thinkingTickInterval = setInterval(() => {
+      pendingUpdate?.();
+    }, 1000);
+  } else if (!isThinking && thinkingTickInterval) {
+    clearInterval(thinkingTickInterval);
+    thinkingTickInterval = undefined;
+  }
 
   // Gate: require successful gateway connection before showing the dashboard.
   // The gateway URL confirmation overlay is always rendered so URL-param flows still work.
