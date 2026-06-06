@@ -19,9 +19,11 @@ export type BuildChatItemsProps = {
   streamSegments: Array<{ text: string; ts: number }>;
   stream: string | null;
   streamStartedAt: number | null;
+  sendStartedAt: number | null;
   thinkingStream: string | null;
   thinkingStreamStartedAt: number | null;
   sending?: boolean;
+  runId?: string | null;
   queue?: ChatQueueItem[];
   showToolCalls: boolean;
   searchOpen?: boolean;
@@ -672,10 +674,11 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
     } else if (props.stream.trim().length === 0) {
       items.push({ kind: "reading-indicator", key });
     }
-  } else if (props.sending) {
-    // Message sent but stream hasn't started yet — show a processing indicator
-    // so the user sees immediate feedback instead of a 20-30s dead zone.
-    const key = `sending:${props.sessionKey}:${Date.now()}`;
+  } else if (props.runId || props.sending) {
+    // Active run but no stream text — show thinking indicator.
+    // Uses runId (active run exists) as primary trigger so the indicator
+    // survives tool execution, history refreshes, and stream resets.
+    const key = `thinking:${props.sessionKey}:${props.runId ?? "sending"}`;
     items.push({ kind: "reading-indicator", key });
   }
 

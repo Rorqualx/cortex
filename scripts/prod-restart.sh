@@ -65,10 +65,11 @@ if [[ "${DAEMON:-0}" -eq 1 && "${DAEMONIZED:-0}" -ne 1 ]]; then
   fi
   # Pass all args except --daemon to the daemonizer
   FILTERED_ARGS=()
+  FILTERED_ARGS=()
   for a in "$@"; do
     [[ "$a" != "--daemon" ]] && FILTERED_ARGS+=("$a")
   done
-  python3 "$DAEMON_SCRIPT" "${FILTERED_ARGS[@]}"
+  python3 "$DAEMON_SCRIPT" ${FILTERED_ARGS[@]+"${FILTERED_ARGS[@]}"}
   log_green "Restart daemonized. Log: /tmp/prod-restart.log"
   exit 0
 fi

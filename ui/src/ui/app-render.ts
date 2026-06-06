@@ -1180,7 +1180,7 @@ export function renderApp(state: AppViewState) {
 
   // Live tick timer: drive requestUpdate every second while the thinking indicator
   // is active so the elapsed time counter updates in real time.
-  const isThinking = state.chatSending || state.chatStream !== null;
+  const isThinking = state.chatSending || state.chatStream !== null || state.chatRunId !== null;
   if (isThinking && !thinkingTickInterval) {
     thinkingTickInterval = setInterval(() => {
       pendingUpdate?.();
@@ -3764,6 +3764,7 @@ export function renderApp(state: AppViewState) {
                   showToolCalls,
                   loading: state.chatLoading,
                   sending: state.chatSending,
+                  runId: state.chatRunId,
                   compactionStatus: state.compactionStatus,
                   fallbackStatus: state.fallbackStatus,
                   assistantAvatarUrl: chatAvatarUrl,

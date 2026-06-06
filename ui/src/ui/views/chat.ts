@@ -104,6 +104,7 @@ export type ChatProps = {
   stream: string | null;
   streamStartedAt: number | null;
   sendStartedAt: number | null;
+  runId?: string | null;
   thinkingStream: string | null;
   thinkingStreamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
@@ -546,6 +547,7 @@ function sameChatItemsInput(previous: BuildChatItemsProps, next: BuildChatItemsP
     previous.stream === next.stream &&
     previous.streamStartedAt === next.streamStartedAt &&
     previous.sending === next.sending &&
+    previous.runId === next.runId &&
     previous.queue === next.queue &&
     previous.showToolCalls === next.showToolCalls &&
     previous.searchOpen === next.searchOpen &&
@@ -1606,9 +1608,11 @@ export function renderChat(props: ChatProps) {
     streamSegments: props.streamSegments,
     stream: effectiveStream,
     streamStartedAt: props.streamStartedAt,
+    sendStartedAt: props.sendStartedAt,
     thinkingStream: props.thinkingStream,
     thinkingStreamStartedAt: props.thinkingStreamStartedAt,
     sending: props.sending,
+    runId: props.runId,
     queue: props.queue,
     showToolCalls: props.showToolCalls,
     searchOpen: vs.searchOpen,
@@ -1745,8 +1749,6 @@ export function renderChat(props: ChatProps) {
                     assistantIdentity,
                     props.basePath,
                     props.assistantAttachmentAuthToken ?? null,
-                    // Use streamStartedAt if available, otherwise fall back to
-                    // a fixed send-time anchor so the timer works from send.
                     props.streamStartedAt ?? props.sendStartedAt ?? null,
                   );
                 }
