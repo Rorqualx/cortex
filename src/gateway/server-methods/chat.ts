@@ -119,6 +119,7 @@ import {
   augmentChatHistoryWithCanvasBlocks,
   dropPreSessionStartAnnouncePairs,
   projectChatDisplayMessage,
+  projectChatDisplayMessages,
   projectRecentChatDisplayMessages,
   resolveEffectiveChatHistoryMaxChars,
 } from "../chat-display-projection.js";
@@ -133,7 +134,10 @@ import {
 } from "../managed-image-attachments.js";
 import { ADMIN_SCOPE } from "../method-scopes.js";
 import { getMaxChatHistoryMessagesBytes, MAX_PAYLOAD_BYTES } from "../server-constants.js";
-import { resolveSessionHistoryTailReadOptions } from "../session-history-state.js";
+import {
+  buildSessionHistorySnapshot,
+  resolveSessionHistoryTailReadOptions,
+} from "../session-history-state.js";
 import { readSessionTranscriptIndex } from "../session-transcript-index.fs.js";
 import {
   capArrayByJsonBytes,
@@ -143,6 +147,7 @@ import {
   listAgentsForGateway,
   readSessionMessageByIdAsync,
   readSessionMessagesAsync,
+  readRecentSessionMessagesWithStatsAsync,
   resolveGatewayModelSupportsImages,
   resolveDeletedAgentIdFromSessionKey,
   readRecentSessionMessagesAsync,
@@ -2349,7 +2354,9 @@ async function handleChatHistoryRequest({
     agentId?: string;
     limit?: number;
     maxChars?: number;
+    cursor?: string;
   };
+  const paginationCursor = (params as { cursor?: string }).cursor;
   const agentIdOverride = normalizeOptionalText((params as { agentId?: string }).agentId);
   const requestedAgentId = resolveRequestedChatAgentId({
     cfg: (context as { getRuntimeConfig?: () => OpenClawConfig }).getRuntimeConfig?.(),
@@ -2390,70 +2397,128 @@ async function handleChatHistoryRequest({
   const requested = typeof limit === "number" ? limit : defaultLimit;
   const max = Math.min(hardMax, requested);
   const maxHistoryBytes = getMaxChatHistoryMessagesBytes();
-  const rawHistoryWindow = resolveSessionHistoryTailReadOptions(max);
-  const localHistoryReadOptions = {
-    maxMessages: rawHistoryWindow.maxMessages + 1,
-    maxLines: rawHistoryWindow.maxLines + 1,
-  };
-  const localMessages =
-    sessionId && storePath
-      ? await readRecentSessionMessagesAsync(sessionId, storePath, entry?.sessionFile, {
+  const effectiveMaxChars = resolveEffectiveChatHistoryMaxChars(cfg, maxChars);
+  const perMessageHardCap = Math.min(CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES, maxHistoryBytes);
+
+  let paginationHasMore = false;
+  let paginationNextCursor: string | undefined;
+  let bounded: { messages: unknown[]; placeholderCount: number };
+
+  if (paginationCursor) {
+    // Cursor-based pagination: read the full transcript and paginate.
+    const fullRawMessages =
+      sessionId && storePath
+        ? await readSessionMessagesAsync(sessionId, storePath, entry?.sessionFile, {
+            mode: "full",
+            reason: "chat.history cursor pagination",
+          })
+        : [];
+    const snapshot = buildSessionHistorySnapshot({
+      rawMessages: fullRawMessages,
+      maxChars: effectiveMaxChars,
+      limit: max,
+      cursor: paginationCursor,
+    });
+    const history = snapshot.history;
+    paginationHasMore = history.hasMore;
+    paginationNextCursor = history.nextCursor;
+    const cursorReplaced = replaceOversizedChatHistoryMessages({
+      messages: history.messages,
+      maxSingleMessageBytes: perMessageHardCap,
+    });
+    bounded = enforceChatHistoryFinalBudget({
+      messages: cursorReplaced.messages,
+      maxBytes: maxHistoryBytes,
+    });
+    bounded.placeholderCount += cursorReplaced.replacedCount;
+  } else {
+    // Default tail-read path (no cursor).
+    const rawHistoryWindow = resolveSessionHistoryTailReadOptions(max);
+    const localHistoryReadOptions = {
+      maxMessages: rawHistoryWindow.maxMessages + 1,
+      maxLines: rawHistoryWindow.maxLines + 1,
+    };
+    // Use the stats variant to get both messages (with seq metadata) and total count.
+    let totalMessages = 0;
+    let localMessages: unknown[] = [];
+    if (sessionId && storePath) {
+      const stats = await readRecentSessionMessagesWithStatsAsync(
+        sessionId,
+        storePath,
+        entry?.sessionFile,
+        {
           ...localHistoryReadOptions,
           maxBytes: Math.max(maxHistoryBytes * 2, 1024 * 1024),
-        })
-      : [];
-  const overreadContextMessage =
-    localMessages.length > rawHistoryWindow.maxMessages ? localMessages[0] : undefined;
-  const localMessagesWithBoundaryFilter = dropLocalHistoryOverreadContextMessage(
-    dropPreSessionStartAnnouncePairs(
-      localMessages,
+        },
+      );
+      localMessages = stats.messages;
+      totalMessages = stats.totalMessages;
+    }
+    const overreadContextMessage =
+      localMessages.length > rawHistoryWindow.maxMessages ? localMessages[0] : undefined;
+    const localMessagesWithBoundaryFilter = dropLocalHistoryOverreadContextMessage(
+      dropPreSessionStartAnnouncePairs(
+        localMessages,
+        typeof entry?.sessionStartedAt === "number" ? entry.sessionStartedAt : undefined,
+      ),
+      overreadContextMessage,
+    );
+    const rawMessages = augmentChatHistoryWithCliSessionImports({
+      entry,
+      provider: resolvedSessionModel.provider,
+      localMessages: localMessagesWithBoundaryFilter,
+    });
+    // Drop subagent_announce pairs (user inter-session announce + adjacent
+    // assistant) whose record timestamp predates the current session's
+    // sessionStartedAt. Run after CLI history imports too, because those
+    // timestamped messages share the same chat.history response surface.
+    const recencyFilteredMessages = dropPreSessionStartAnnouncePairs(
+      rawMessages,
       typeof entry?.sessionStartedAt === "number" ? entry.sessionStartedAt : undefined,
-    ),
-    overreadContextMessage,
-  );
-  const rawMessages = augmentChatHistoryWithCliSessionImports({
-    entry,
-    provider: resolvedSessionModel.provider,
-    localMessages: localMessagesWithBoundaryFilter,
-  });
-  // Drop subagent_announce pairs (user inter-session announce + adjacent
-  // assistant) whose record timestamp predates the current session's
-  // sessionStartedAt. Run after CLI history imports too, because those
-  // timestamped messages share the same chat.history response surface.
-  const recencyFilteredMessages = dropPreSessionStartAnnouncePairs(
-    rawMessages,
-    typeof entry?.sessionStartedAt === "number" ? entry.sessionStartedAt : undefined,
-  );
-  const effectiveMaxChars = resolveEffectiveChatHistoryMaxChars(cfg, maxChars);
-  const normalized = augmentChatHistoryWithCanvasBlocks(
-    projectRecentChatDisplayMessages(recencyFilteredMessages, {
-      maxChars: effectiveMaxChars,
-      maxMessages: max,
-    }),
-  );
-  const perMessageHardCap = Math.min(CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES, maxHistoryBytes);
-  const replaced = replaceOversizedChatHistoryMessages({
-    messages: normalized,
-    maxSingleMessageBytes: perMessageHardCap,
-  });
-  scheduleChatHistoryManagedImageCleanup({
-    sessionKey,
-    ...(selectedAgent.agentId ? { agentId: selectedAgent.agentId } : {}),
-    context,
-  });
-  const capped = capArrayByJsonBytes(replaced.messages, maxHistoryBytes).items;
-  const bounded = enforceChatHistoryFinalBudget({ messages: capped, maxBytes: maxHistoryBytes });
-  const placeholderCount = replaced.replacedCount + bounded.placeholderCount;
+    );
+    const normalized = augmentChatHistoryWithCanvasBlocks(
+      projectRecentChatDisplayMessages(recencyFilteredMessages, {
+        maxChars: effectiveMaxChars,
+        maxMessages: max,
+      }),
+    );
+    const tailReplaced = replaceOversizedChatHistoryMessages({
+      messages: normalized,
+      maxSingleMessageBytes: perMessageHardCap,
+    });
+    scheduleChatHistoryManagedImageCleanup({
+      sessionKey,
+      ...(selectedAgent.agentId ? { agentId: selectedAgent.agentId } : {}),
+      context,
+    });
+    const capped = capArrayByJsonBytes(tailReplaced.messages, maxHistoryBytes).items;
+    bounded = enforceChatHistoryFinalBudget({ messages: capped, maxBytes: maxHistoryBytes });
+    bounded.placeholderCount += tailReplaced.replacedCount;
+    // Detect if earlier messages exist beyond the tail window.
+    paginationHasMore = totalMessages > localMessages.length;
+    context.logGateway.debug(
+      `chat.history pagination: totalMessages=${totalMessages} localMessages=${localMessages.length} hasMore=${paginationHasMore}`,
+    );
+    if (paginationHasMore && localMessages.length > 0) {
+      // Derive the cursor from the raw messages (before projection strips meta).
+      const firstRaw = localMessages[
+        localMessages.length > rawHistoryWindow.maxMessages ? 1 : 0
+      ] as Record<string, unknown> | undefined;
+      const seq =
+        firstRaw?.__openclaw && typeof firstRaw.__openclaw === "object"
+          ? (firstRaw.__openclaw as Record<string, unknown>).seq
+          : undefined;
+      if (typeof seq === "number" && seq > 0) {
+        paginationNextCursor = `seq:${seq}`;
+      } else if (typeof seq === "number" && seq === 1) {
+        // Already at the beginning.
+        paginationHasMore = false;
+      }
+    }
+  }
+  const placeholderCount = bounded.placeholderCount;
   if (placeholderCount > 0) {
     chatHistoryPlaceholderEmitCount += placeholderCount;
-    logLargePayload({
-      surface: "gateway.chat.history",
-      action: "truncated",
-      bytes: jsonUtf8Bytes(normalized),
-      limitBytes: maxHistoryBytes,
-      count: placeholderCount,
-      reason: "chat_history_budget",
-    });
     context.logGateway.debug(
       `chat.history omitted oversized payloads placeholders=${placeholderCount} total=${chatHistoryPlaceholderEmitCount}`,
     );
@@ -2509,6 +2574,7 @@ async function handleChatHistoryRequest({
     verboseLevel,
     ...(boundedInFlightRun ? { inFlightRun: boundedInFlightRun } : {}),
     ...(includeAgentsList ? { agentsList: listAgentsForGateway(cfg, modelCatalog) } : {}),
+    ...(paginationHasMore ? { hasMore: true, nextCursor: paginationNextCursor } : {}),
   };
   respond(true, payload);
 }

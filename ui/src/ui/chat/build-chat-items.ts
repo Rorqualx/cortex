@@ -284,6 +284,55 @@ function collapseSequentialDuplicateMessages(items: ChatItem[]): ChatItem[] {
   return collapsed;
 }
 
+/**
+ * Remove stream segments whose text is already present in the last assistant
+ * message. When a run completes, the final event appends the full assistant
+ * message to chatMessages, but chatStreamSegments may still hold partial text
+ * that was committed before a tool call interrupted the stream. Since segments
+ * are `kind: "stream"` and messages are `kind: "message"`, the sequential
+ * duplicate collapse logic won't catch them.
+ */
+function deduplicateStreamSegmentsAgainstFinal(items: ChatItem[]): ChatItem[] {
+  // Find the last assistant message's text content.
+  const lastAssistantText = (() => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.kind !== "message") {
+        continue;
+      }
+      const normalized = safeNormalizeMessage(item.message);
+      if (normalized && normalized.role.toLowerCase() === "assistant") {
+        const raw = extractTextCached(item.message);
+        if (raw) {
+          return sanitizeStreamText(raw);
+        }
+        break;
+      }
+    }
+    return null;
+  })();
+
+  if (!lastAssistantText) {
+    return items;
+  }
+
+  // Filter out stream segments whose text is a prefix of (or equal to)
+  // the final assistant message. Segments committed before tool calls
+  // will be partial prefixes of the full response.
+  return items.filter((item) => {
+    if (item.kind !== "stream") {
+      return true;
+    }
+    const segText = sanitizeStreamText(item.text);
+    if (segText.length === 0) {
+      return true;
+    }
+    // Remove the segment if the final assistant message starts with it
+    // (segment was committed before the full response arrived).
+    return !lastAssistantText.startsWith(segText);
+  });
+}
+
 function hasRenderableNormalizedMessage(message: unknown): boolean {
   const normalized = safeNormalizeMessage(message);
   if (!normalized) {
@@ -692,6 +741,13 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
       isStreaming: true,
     });
   }
+
+  // Deduplicate stream segments against the final assistant message.
+  // When a run completes, the final event appends the assistant message to
+  // chatMessages, but streamSegments (committed before tool calls) may still
+  // hold the same text. Since segments are kind:"stream" and messages are
+  // kind:"message", collapseSequentialDuplicateMessages won't catch them.
+  items = deduplicateStreamSegmentsAgainstFinal(items);
 
   return groupMessages(collapseSequentialDuplicateMessages(sortChatItemsByVisibleTime(items)));
 }

@@ -914,6 +914,15 @@
   color: color-mix(in srgb, var(--muted) 60%, transparent);
 }
 
+.chat-reading-indicator__model {
+  font-size: 0.85em;
+  color: color-mix(in srgb, var(--muted) 50%, transparent);
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--border) 40%, transparent);
+}
+
 .chat-reading-indicator__dots {
   display: flex;
   gap: 6px;

@@ -363,9 +363,11 @@ export function renderReadingIndicatorGroup(
   basePath?: string,
   authToken?: string | null,
   startedAt?: number | null,
+  model?: string | null,
 ) {
   const name = assistant?.name ?? "Assistant";
   const elapsedLabel = startedAt ? formatElapsed(Date.now() - startedAt) : null;
+  const shortModel = model ? (model.includes("/") ? model.split("/").pop()! : model) : null;
   return html`
     <div class="chat-group assistant chat-group--thinking">
       ${renderChatAvatar("assistant", assistant, undefined, basePath, authToken)}
@@ -375,6 +377,8 @@ export function renderReadingIndicatorGroup(
             >${name} is
             thinking${elapsedLabel
               ? html` <span class="chat-reading-indicator__elapsed">${elapsedLabel}</span>`
+              : nothing}${shortModel
+              ? html` <span class="chat-reading-indicator__model">${shortModel}</span>`
               : nothing}</span
           >
           <span class="chat-reading-indicator__dots">

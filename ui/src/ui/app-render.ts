@@ -51,7 +51,7 @@ import {
 } from "./controllers/agents.ts";
 import { setAssistantAvatarOverride } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
-import { loadChatHistory } from "./controllers/chat.ts";
+import { loadChatHistory, loadEarlierMessages } from "./controllers/chat.ts";
 import {
   applyConfig,
   ensureAgentConfigEntry,
@@ -3882,6 +3882,9 @@ export function renderApp(state: AppViewState) {
                       state.chatError = state.lastError;
                     }
                   }),
+                  historyHasMore: state.chatHistoryHasMore === true,
+                  loadingEarlier: state.chatLoadingEarlier === true,
+                  onLoadEarlier: () => void loadEarlierMessages(state),
                   agentsList: state.agentsList,
                   currentAgentId: chatAgentId,
                   fullMessageAgentId: scopedAgentParamsForSession(state, state.sessionKey).agentId,

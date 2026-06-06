@@ -170,6 +170,9 @@ export type ChatProps = {
   onDismissSideResult?: () => void;
   onNewSession: () => void;
   onClearHistory?: () => void;
+  historyHasMore?: boolean;
+  loadingEarlier?: boolean;
+  onLoadEarlier?: () => void;
   agentsList: {
     agents: Array<{ id: string; name?: string; identity?: { name?: string; avatarUrl?: string } }>;
     defaultId?: string;
@@ -1682,6 +1685,20 @@ export function renderChat(props: ChatProps) {
         ${isEmpty && vs.searchOpen
           ? html` <div class="agent-chat__empty">No matching messages</div> `
           : nothing}
+        ${props.historyHasMore
+          ? html`
+              <div class="chat-load-earlier">
+                <button
+                  type="button"
+                  class="btn btn--subtle btn--sm"
+                  ?disabled=${props.loadingEarlier}
+                  @click=${() => props.onLoadEarlier?.()}
+                >
+                  ${props.loadingEarlier ? "Loading..." : "↑ Load earlier messages"}
+                </button>
+              </div>
+            `
+          : nothing}
         ${guard(
           [
             chatItems,
@@ -1750,6 +1767,7 @@ export function renderChat(props: ChatProps) {
                     props.basePath,
                     props.assistantAttachmentAuthToken ?? null,
                     props.streamStartedAt ?? props.sendStartedAt ?? null,
+                    activeSession?.model ?? null,
                   );
                 }
                 if (item.kind === "stream") {

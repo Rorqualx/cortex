@@ -44,6 +44,7 @@ import {
   abortChatRun,
   appendUserChatMessage,
   loadChatHistory,
+  loadEarlierMessages,
   requestChatSend,
   requestSkillWorkshopRevisionChatSend,
   sendDetachedChatMessage,
@@ -2010,6 +2011,9 @@ async function clearChatHistory(host: ChatHost) {
     });
     host.chatMessages = [];
     host.chatSideResult = null;
+    host.chatHistoryHasMore = false;
+    host.chatHistoryNextCursor = null;
+    host.chatLoadingEarlier = false;
     reconcileChatRunLifecycle(host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
       outcome: hadActiveRun ? "interrupted" : undefined,
       sessionStatus: "killed",

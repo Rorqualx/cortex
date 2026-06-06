@@ -31,7 +31,7 @@ import {
 const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
 const SYNTHETIC_TRANSCRIPT_REPAIR_RESULT =
   "[openclaw] missing tool result in session history; inserted synthetic error result for transcript repair.";
-const CHAT_HISTORY_REQUEST_LIMIT = 100;
+const CHAT_HISTORY_REQUEST_LIMIT = 200;
 const STARTUP_CHAT_HISTORY_RETRY_TIMEOUT_MS = 60_000;
 const STARTUP_CHAT_HISTORY_DEFAULT_RETRY_MS = 500;
 const STARTUP_CHAT_HISTORY_MAX_RETRY_MS = 5_000;
@@ -368,6 +368,9 @@ export type ChatState = {
   chatStreamStartedAt: number | null;
   chatThinkingStream: string | null;
   chatThinkingStreamStartedAt: number | null;
+  chatHistoryHasMore: boolean;
+  chatHistoryNextCursor: string | null;
+  chatLoadingEarlier: boolean;
   lastError: string | null;
   chatError?: string | null;
   agentsError?: string | null;
@@ -389,6 +392,8 @@ export type ChatHistoryResult = {
   defaults?: GatewaySessionsDefaults;
   sessionInfo?: GatewaySessionRow;
   agentsList?: AgentsListResult;
+  hasMore?: boolean;
+  nextCursor?: string;
 };
 
 export type ChatEventPayload = {
@@ -637,6 +642,49 @@ function applyChatStartupAgentsList(state: ChatState, agentsList: AgentsListResu
       : (agentsList.agents[0]?.id ?? null);
 }
 
+export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
+  if (
+    !state.client ||
+    !state.connected ||
+    state.chatLoadingEarlier ||
+    !state.chatHistoryNextCursor
+  ) {
+    return false;
+  }
+  state.chatLoadingEarlier = true;
+  try {
+    const cursor = state.chatHistoryNextCursor;
+    const sessionKey = state.sessionKey;
+    const requestAgentId = isSelectedGlobalEventSessionKey(sessionKey)
+      ? resolveSelectedAgentId(state)
+      : undefined;
+    const res = await state.client.request<ChatHistoryResult>("chat.history", {
+      sessionKey,
+      ...(requestAgentId ? { agentId: requestAgentId } : {}),
+      limit: CHAT_HISTORY_REQUEST_LIMIT,
+      cursor,
+    });
+    // Verify session hasn't changed during the async request.
+    if (state.sessionKey !== sessionKey) {
+      return false;
+    }
+    const messages = Array.isArray(res.messages) ? res.messages : [];
+    const visibleMessages = messages.filter((message) => !shouldHideHistoryMessage(message));
+    // Prepend earlier messages before the current ones.
+    if (visibleMessages.length > 0) {
+      state.chatMessages = [...visibleMessages, ...state.chatMessages];
+    }
+    state.chatHistoryHasMore = res.hasMore === true;
+    state.chatHistoryNextCursor = res.nextCursor ?? null;
+    return visibleMessages.length > 0;
+  } catch (err) {
+    setChatError(state, String(err));
+    return false;
+  } finally {
+    state.chatLoadingEarlier = false;
+  }
+}
+
 async function loadChatHistoryUncached(
   state: ChatState,
   client: NonNullable<ChatState["client"]>,
@@ -710,7 +758,29 @@ async function loadChatHistoryUncached(
     }
     const messages = Array.isArray(res.messages) ? res.messages : [];
     applyChatStartupAgentsList(state, res.agentsList);
-    const visibleMessages = messages.filter((message) => !shouldHideHistoryMessage(message));
+    let visibleMessages = messages.filter((message) => !shouldHideHistoryMessage(message));
+
+    // Stream guard: if a run is active and the stream has content, strip the
+    // last assistant message from history that matches the stream text.
+    // The stream rendering layer already displays it; including it in
+    // chatMessages causes duplicates and can flash when the stream clears.
+    if (state.chatRunId && typeof state.chatStream === "string" && state.chatStream.trim()) {
+      const streamText = state.chatStream.trim();
+      for (let i = visibleMessages.length - 1; i >= 0; i--) {
+        const msg = visibleMessages[i];
+        if (
+          msg &&
+          typeof msg === "object" &&
+          normalizeLowercaseStringOrEmpty((msg as Record<string, unknown>).role) === "assistant"
+        ) {
+          const msgText = extractText(msg)?.trim();
+          if (msgText && (streamText === msgText || msgText.startsWith(streamText))) {
+            visibleMessages = visibleMessages.filter((_, idx) => idx !== i);
+          }
+          break; // Only check the last assistant message
+        }
+      }
+    }
     const lateOptimisticTail = collectLateOptimisticTailMessages(
       previousMessages,
       state.chatMessages,
@@ -727,6 +797,9 @@ async function loadChatHistoryUncached(
           ? res.sessionId
           : null;
     state.chatThinkingLevel = res.sessionInfo?.thinkingLevel ?? res.thinkingLevel ?? null;
+    // Track pagination state from server response.
+    state.chatHistoryHasMore = res.hasMore === true;
+    state.chatHistoryNextCursor = res.nextCursor ?? null;
     const resetStream = !state.chatRunId || state.chatRunId === previousRunId;
     if (resetStream) {
       // Guard: don't clear the stream if it's active (non-null), even if empty.
