@@ -1552,6 +1552,37 @@ export function renderChat(props: ChatProps) {
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
   const displayStream = props.stream ?? null;
 
+  // Suppress the stream if the final message already appears in chatMessages.
+  // This prevents the stream text from showing alongside the final message
+  // (duplicate display) while also preventing a flash if the stream is cleared
+  // before the render picks up the new final message.
+  const lastAssistantText = (() => {
+    for (let i = props.messages.length - 1; i >= 0; i--) {
+      const m = props.messages[i] as Record<string, unknown>;
+      if (m.role === "assistant") {
+        const content = m.content;
+        if (typeof content === "string" && content.trim()) return content.trim();
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (
+              block &&
+              typeof block === "object" &&
+              block.type === "text" &&
+              typeof block.text === "string" &&
+              block.text.trim()
+            ) {
+              return block.text.trim();
+            }
+          }
+        }
+      }
+    }
+    return null;
+  })();
+  const streamMatchesFinal =
+    lastAssistantText && displayStream && lastAssistantText === displayStream.trim();
+  const effectiveStream = streamMatchesFinal ? null : displayStream;
+
   const handleCodeBlockCopy = (e: Event) => {
     const btn = (e.target as HTMLElement).closest(".code-block-copy");
     if (!btn) {
@@ -1572,7 +1603,7 @@ export function renderChat(props: ChatProps) {
     messages: props.messages,
     toolMessages: props.toolMessages,
     streamSegments: props.streamSegments,
-    stream: displayStream,
+    stream: effectiveStream,
     streamStartedAt: props.streamStartedAt,
     thinkingStream: props.thinkingStream,
     thinkingStreamStartedAt: props.thinkingStreamStartedAt,

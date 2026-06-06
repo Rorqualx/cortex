@@ -1209,6 +1209,11 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   } else if (payload.state === "final") {
     const finalMessage = normalizeFinalAssistantMessage(payload.message);
     if (finalMessage && !shouldHideAssistantChatMessage(finalMessage)) {
+      // Tag with local timestamp so preserveOptimisticTailMessages keeps it
+      // if a racing history refresh arrives before the server has this message.
+      if (!(finalMessage as Record<string, unknown>).timestamp) {
+        (finalMessage as Record<string, unknown>).timestamp = Date.now();
+      }
       state.chatMessages = [...state.chatMessages, finalMessage];
     } else if (
       state.chatStream?.trim() &&
