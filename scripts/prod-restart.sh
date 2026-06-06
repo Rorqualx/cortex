@@ -29,6 +29,7 @@ for arg in "$@"; do
       log "Usage: $(basename "$0") [options]"
       log ""
       log "Options:"
+      log "  --daemon      Detach via double-fork (survives gateway death)"
       log "  --no-build    Skip rebuild step"
       log "  --help|-h     Show this help"
       log ""
@@ -37,13 +38,40 @@ for arg in "$@"; do
       log "  2. Stops the gateway service"
       log "  3. Rebuilds the project (unless --no-build)"
       log "  4. Starts the production gateway"
+      log ""
+      log "Use --daemon when calling from inside the gateway (agent restart)."
+      log "Uses scripts/daemon-restart.py for process detachment."
       exit 0
+      ;;
+    --daemon)
+      DAEMON=1
+      ;;
+    --daemonized)
+      # Internal flag — already running as a daemon, skip re-fork
+      DAEMONIZED=1
       ;;
     --no-build)
       NO_BUILD=1
       ;;
   esac
 done
+
+# If --daemon was requested, re-exec through the Python daemonizer.
+# This double-forks to orphan from the gateway process tree.
+if [[ "${DAEMON:-0}" -eq 1 && "${DAEMONIZED:-0}" -ne 1 ]]; then
+  DAEMON_SCRIPT="${ROOT_DIR}/scripts/daemon-restart.py"
+  if [[ ! -f "$DAEMON_SCRIPT" ]]; then
+    fail "daemon-restart.py not found at $DAEMON_SCRIPT"
+  fi
+  # Pass all args except --daemon to the daemonizer
+  FILTERED_ARGS=()
+  for a in "$@"; do
+    [[ "$a" != "--daemon" ]] && FILTERED_ARGS+=("$a")
+  done
+  python3 "$DAEMON_SCRIPT" "${FILTERED_ARGS[@]}"
+  log_green "Restart daemonized. Log: /tmp/prod-restart.log"
+  exit 0
+fi
 
 step "Killing all OpenClaw processes..."
 # Kill gateway processes
