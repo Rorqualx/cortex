@@ -637,6 +637,10 @@ function switchChatSessionInternal(
   resetChatStateForSessionSwitch(state, nextSessionKey);
   if (previousSessionKey !== nextSessionKey) {
     state.announceSessionSwitch?.(nextSessionKey, nextSessionLabel);
+    // Track session in the open tabs list
+    if (!state.chatOpenSessionTabs.includes(nextSessionKey)) {
+      state.chatOpenSessionTabs = [...state.chatOpenSessionTabs, nextSessionKey];
+    }
   }
   void state.loadAssistantIdentity();
   void refreshChatAvatar(state);

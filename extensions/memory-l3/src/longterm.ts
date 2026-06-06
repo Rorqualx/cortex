@@ -102,12 +102,45 @@ export async function consolidateLongTerm(params: {
   }
 
   let archivedCount = 0;
+  let epochGraceCount = 0;
+
+  // Build a map of active facts by firstSeenAt date string for epoch cluster
+  // density checks. Facts that first appeared on the same day likely came from
+  // the same consolidation epoch — dropping the last one means the entire
+  // topic disappears at once ("Region Wipe-out" problem).
+  const activeByEpoch = new Map<string, number>();
+  for (const fact of merged.values()) {
+    if (fact.archived) continue;
+    const epochKey = formatDateString(fact.firstSeenAt);
+    activeByEpoch.set(epochKey, (activeByEpoch.get(epochKey) ?? 0) + 1);
+  }
+
   for (const [key, fact] of merged) {
     if (fact.archived) continue;
     if (promotableByKey.has(key)) continue; // already re-affirmed this pass
-    if (params.now - fact.lastConfirmedAt < longTermConfig.maxAgeWithoutConfirmMs) continue;
+    const age = params.now - fact.lastConfirmedAt;
+    if (age < longTermConfig.maxAgeWithoutConfirmMs) continue;
+
+    // Epoch cluster awareness: if archiving would drop the last active fact
+    // from its first-seen epoch, apply a grace multiplier to the threshold.
+    // This prevents entire topic clusters from evaporating simultaneously.
+    const epochKey = formatDateString(fact.firstSeenAt);
+    const epochPop = activeByEpoch.get(epochKey) ?? 0;
+    if (epochPop <= 1 && longTermConfig.epochGraceMultiplier > 1) {
+      const graceThreshold =
+        longTermConfig.maxAgeWithoutConfirmMs * longTermConfig.epochGraceMultiplier;
+      if (age < graceThreshold) {
+        epochGraceCount += 1;
+        continue;
+      }
+    }
+
     merged.set(key, archive(fact, params.now));
     archivedCount += 1;
+    // Update epoch density map since this fact is now archived
+    if (epochPop > 0) {
+      activeByEpoch.set(epochKey, epochPop - 1);
+    }
   }
 
   const orderedFacts = orderFacts([...merged.values()]);
@@ -132,6 +165,7 @@ export async function consolidateLongTerm(params: {
     promotedCount,
     reaffirmedCount,
     archivedCount,
+    epochGraceCount,
     unarchivedCount,
     activeCount: orderedFacts.filter((f) => !f.archived).length,
   };

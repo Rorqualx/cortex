@@ -169,6 +169,8 @@ export type AppViewState = {
   chatManualRefreshInFlight: boolean;
   chatHeaderControlsHidden: boolean;
   chatMobileControlsOpen: boolean;
+  chatOpenSessionTabs: string[];
+  chatTabCloseRequested: string | null;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
   chatNewMessagesBelow: boolean;

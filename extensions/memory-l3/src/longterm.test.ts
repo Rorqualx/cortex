@@ -55,6 +55,7 @@ describe("consolidateLongTerm", () => {
       promotedCount: 0,
       reaffirmedCount: 0,
       archivedCount: 0,
+      epochGraceCount: 0,
       unarchivedCount: 0,
       activeCount: 0,
     });
@@ -248,6 +249,131 @@ describe("consolidateLongTerm", () => {
 
   it("default maxAgeWithoutConfirmMs is 60 days", () => {
     expect(DEFAULT_LONG_TERM_CONFIG.maxAgeWithoutConfirmMs).toBe(60 * MS_PER_DAY);
+  });
+
+  it("default epochGraceMultiplier is 1.5", () => {
+    expect(DEFAULT_LONG_TERM_CONFIG.epochGraceMultiplier).toBe(1.5);
+  });
+
+  it("grants epoch grace to last fact in its epoch cluster", async () => {
+    // Promote a single fact at T=0
+    await writeChunk(
+      "chunk-x",
+      [fact("f1", "japan trip", 0.9, NOW - 100 * MS_PER_DAY, "trip:japan")],
+      NOW - 100 * MS_PER_DAY,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
+
+    // Remove the L2 chunk so the fact won't be re-confirmed
+    const chunkPath = (await storage.listL2ChunkPaths())[0];
+    const fs = await import("node:fs/promises");
+    await fs.unlink(chunkPath);
+
+    // At 65 days (past 60-day window but under 90-day grace window),
+    // the fact should receive epoch grace since it's the last one from its epoch
+    const result65 = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 100 * MS_PER_DAY + 65 * MS_PER_DAY,
+    });
+    expect(result65.archivedCount).toBe(0);
+    expect(result65.epochGraceCount).toBe(1);
+    expect(result65.activeCount).toBe(1);
+
+    // At 95 days (past 90-day grace window = 60 * 1.5), it should archive
+    const result95 = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 100 * MS_PER_DAY + 95 * MS_PER_DAY,
+    });
+    expect(result95.archivedCount).toBe(1);
+    expect(result95.epochGraceCount).toBe(0);
+    expect(result95.activeCount).toBe(0);
+  });
+
+  it("does not grant epoch grace when other facts share the epoch", async () => {
+    // Promote two facts from the same epoch (same firstSeenAt day)
+    await writeChunk(
+      "chunk-a",
+      [
+        fact("f1", "japan flights", 0.9, NOW - 100 * MS_PER_DAY, "trip:flights"),
+        fact("f2", "japan hotels", 0.85, NOW - 100 * MS_PER_DAY, "trip:hotels"),
+      ],
+      NOW - 100 * MS_PER_DAY,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
+
+    // Remove the L2 chunk so facts won't be re-confirmed
+    const chunkPath = (await storage.listL2ChunkPaths())[0];
+    const fs = await import("node:fs/promises");
+    await fs.unlink(chunkPath);
+
+    // At 65 days, facts should archive normally — there are 2 in the epoch,
+    // so the "last fact" grace doesn't apply to the first one archived.
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 100 * MS_PER_DAY + 65 * MS_PER_DAY,
+    });
+    expect(result.archivedCount).toBe(2);
+    expect(result.epochGraceCount).toBe(0);
+    expect(result.activeCount).toBe(0);
+  });
+
+  it("epoch grace applies when second-to-last fact archives, leaving one", async () => {
+    // Three facts from the same epoch, all stale
+    await writeChunk(
+      "chunk-a",
+      [
+        fact("f1", "japan flights", 0.9, NOW - 100 * MS_PER_DAY, "trip:flights"),
+        fact("f2", "japan hotels", 0.85, NOW - 100 * MS_PER_DAY, "trip:hotels"),
+        fact("f3", "japan food", 0.8, NOW - 100 * MS_PER_DAY, "trip:food"),
+      ],
+      NOW - 100 * MS_PER_DAY,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
+
+    const chunkPath = (await storage.listL2ChunkPaths())[0];
+    const fs = await import("node:fs/promises");
+    await fs.unlink(chunkPath);
+
+    // At 65 days, 2 facts archive normally (epoch has 3), then the 3rd
+    // becomes the last-in-epoch and receives grace.
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 100 * MS_PER_DAY + 65 * MS_PER_DAY,
+    });
+    expect(result.archivedCount).toBe(2);
+    expect(result.epochGraceCount).toBe(1);
+    expect(result.activeCount).toBe(1);
+  });
+
+  it("epoch grace can be disabled by setting multiplier to 1", async () => {
+    await writeChunk(
+      "chunk-x",
+      [fact("f1", "japan trip", 0.9, NOW - 100 * MS_PER_DAY, "trip:japan")],
+      NOW - 100 * MS_PER_DAY,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
+
+    const chunkPath = (await storage.listL2ChunkPaths())[0];
+    const fs = await import("node:fs/promises");
+    await fs.unlink(chunkPath);
+
+    const noGraceConfig: LongTermConfig = {
+      maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
+      epochGraceMultiplier: 1,
+    };
+    // At 65 days, no grace — archives immediately
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 100 * MS_PER_DAY + 65 * MS_PER_DAY,
+      longTermConfig: noGraceConfig,
+    });
+    expect(result.archivedCount).toBe(1);
+    expect(result.epochGraceCount).toBe(0);
   });
 });
 

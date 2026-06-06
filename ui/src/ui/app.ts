@@ -322,6 +322,8 @@ export class OpenClawApp extends LitElement {
   @state() chatManualRefreshInFlight = false;
   @state() chatHeaderControlsHidden = false;
   @state() chatMobileControlsOpen = false;
+  @state() chatOpenSessionTabs: string[] = [];
+  @state() chatTabCloseRequested: string | null = null;
   private chatMobileControlsTrigger: HTMLElement | null = null;
   @state() navDrawerOpen = false;
 
@@ -813,6 +815,10 @@ export class OpenClawApp extends LitElement {
     document.addEventListener("keydown", this.chatMobileControlsKeydownHandler);
     document.addEventListener("pointerdown", this.chatMobileControlsPointerdownHandler);
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
+    // Ensure the initial session is in the tab list
+    if (!this.chatOpenSessionTabs.includes(this.sessionKey)) {
+      this.chatOpenSessionTabs = [this.sessionKey];
+    }
     this.nativeBridgeCleanup = initNativeBridge(this);
     void this.initWebPushState();
   }

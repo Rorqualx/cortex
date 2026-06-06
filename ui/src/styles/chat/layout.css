@@ -1,4 +1,139 @@
 /* =============================================
+   CHAT TAB BAR — Multi-session tab header
+   ============================================= */
+
+.chat-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 4px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  user-select: none;
+}
+
+.chat-tab-bar__tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chat-tab-bar__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-tab-bar__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.chat-tab-bar__tab:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--border) 30%, transparent);
+}
+
+.chat-tab-bar__tab--active {
+  color: var(--fg);
+  background: var(--bg-elevated);
+}
+
+.chat-tab-bar__tab--active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+
+.chat-tab-bar__tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-tab-bar__tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s ease, background 0.1s ease;
+}
+
+.chat-tab-bar__tab:hover .chat-tab-bar__tab-close,
+.chat-tab-bar__tab--active .chat-tab-bar__tab-close {
+  opacity: 0.6;
+}
+
+.chat-tab-bar__tab-close:hover {
+  opacity: 1 !important;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.chat-tab-bar__tab-close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.chat-tab-bar__new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.chat-tab-bar__new:hover:not(:disabled) {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--border) 30%, transparent);
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.chat-tab-bar__new:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chat-tab-bar__new svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* =============================================
    CHAT CARD LAYOUT - Flex container with sticky compose
    ============================================= */
 
