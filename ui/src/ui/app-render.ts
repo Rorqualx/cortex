@@ -560,6 +560,10 @@ const autoPreviewedFile = new WeakMap<AppViewState, string>();
 const codeViewerOpenTime = new WeakMap<AppViewState, number>();
 /** Timer for flipping reading state to false. */
 const codeViewerReadingTimer = new WeakMap<AppViewState, ReturnType<typeof setTimeout>>();
+/** Last edit entry ID processed for the code viewer diff. */
+const codeViewerLastEditId = new WeakMap<AppViewState, string>();
+/** Timestamp when the current edit diff was shown. */
+const codeViewerEditTime = new WeakMap<AppViewState, number>();
 
 function getChatWorkspaceFilesState(state: AppViewState, agentId: string): ChatWorkspaceFilesState {
   const current = chatWorkspaceFilesStates.get(state);
@@ -3443,58 +3447,68 @@ export function renderApp(state: AppViewState) {
             }
           }
 
-          // Detect pending edits on the open file in the sidebar
+          // Detect edits on the open file — catch recently-completed edits
+          // (they complete too fast to catch in-progress)
           if (state.sidebarContent?.kind === "code" && !state.sidebarContent.reading) {
             const sc = state.sidebarContent;
-            let pendingEdit: import("../sidebar-content.ts").PendingEdit | null = null;
-            for (const entry of state.toolStreamById.values()) {
-              if ((entry.name === "edit" || entry.name === "apply_patch") && !entry.output) {
+            const now = Date.now();
+            // If we're already showing a pending edit, check if it's time to resolve
+            if (sc.pendingEdit) {
+              const editAge = codeViewerEditTime.get(state) ?? 0;
+              if (now - editAge > 3000) {
+                // Hold period over — refresh file content and clear pending edit
+                queueMicrotask(async () => {
+                  try {
+                    const key = `${activeFile?.dir}/${sc.fileName}`;
+                    const result = await state.client?.request<{
+                      file?: { content?: string };
+                    } | null>("agents.files.get", { agentId: chatAgentId, path: key });
+                    if (result?.file?.content != null) {
+                      state.sidebarContent = {
+                        ...sc,
+                        content: result.file.content,
+                        pendingEdit: null,
+                      };
+                      requestHostUpdate?.();
+                    }
+                  } catch {
+                    // best effort
+                  }
+                });
+              }
+            } else {
+              // Scan for recently-completed edits on this file
+              for (const entry of state.toolStreamById.values()) {
+                if (entry.name !== "edit" && entry.name !== "apply_patch") continue;
+                if (!entry.output) continue;
                 const args = entry.args as Record<string, unknown> | undefined;
                 const filePath = String(args?.path ?? args?.file_path ?? args?.filePath ?? "");
-                if (filePath.endsWith(sc.fileName)) {
-                  // Extract old/new text from edit args
-                  if (entry.name === "edit") {
-                    const edits = Array.isArray(args?.edits) ? args.edits : [];
-                    const removed: string[] = [];
-                    const added: string[] = [];
-                    for (const e of edits) {
-                      if (typeof e?.oldText === "string") removed.push(...e.oldText.split("\n"));
-                      if (typeof e?.newText === "string") added.push(...e.newText.split("\n"));
-                    }
-                    if (removed.length || added.length) {
-                      pendingEdit = { type: "edit", removed, added };
-                    }
-                  } else {
-                    // apply_patch — show it as a generic pending edit
-                    pendingEdit = { type: "apply_patch", removed: [], added: [] };
+                if (!filePath.endsWith(sc.fileName)) continue;
+                const editId = entry.id ?? "";
+                const lastEditId = codeViewerLastEditId.get(state) ?? "";
+                if (editId === lastEditId) continue;
+                // New edit detected — extract diff
+                codeViewerLastEditId.set(state, editId);
+                codeViewerEditTime.set(state, now);
+                if (entry.name === "edit") {
+                  const edits = Array.isArray(args?.edits) ? args.edits : [];
+                  const removed: string[] = [];
+                  const added: string[] = [];
+                  for (const e of edits) {
+                    if (typeof e?.oldText === "string") removed.push(...e.oldText.split("\n"));
+                    if (typeof e?.newText === "string") added.push(...e.newText.split("\n"));
                   }
-                  break;
+                  if (removed.length || added.length) {
+                    state.sidebarContent = { ...sc, pendingEdit: { type: "edit", removed, added } };
+                  }
+                } else {
+                  state.sidebarContent = {
+                    ...sc,
+                    pendingEdit: { type: "apply_patch", removed: [], added: [] },
+                  };
                 }
+                break;
               }
-            }
-            // When edit completes, reload the file content
-            if (!pendingEdit && sc.pendingEdit) {
-              // Edit just completed — refresh the file content
-              queueMicrotask(async () => {
-                try {
-                  const key = `${activeFile?.dir}/${sc.fileName}`;
-                  const result = await state.client?.request<{
-                    file?: { content?: string };
-                  } | null>("agents.files.get", { agentId: chatAgentId, path: key });
-                  if (result?.file?.content != null) {
-                    state.sidebarContent = {
-                      ...sc,
-                      content: result.file.content,
-                      pendingEdit: null,
-                    };
-                    requestHostUpdate?.();
-                  }
-                } catch {
-                  // best effort
-                }
-              });
-            } else if (pendingEdit !== sc.pendingEdit) {
-              state.sidebarContent = { ...sc, pendingEdit };
             }
           }
 
