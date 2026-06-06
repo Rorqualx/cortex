@@ -3424,6 +3424,47 @@ export function renderApp(state: AppViewState) {
             }
           }
 
+          // Auto-open: when agent writes a file not currently shown in sidebar,
+          // open it directly from the write tool args (no fetch needed)
+          if (
+            activeFile?.fileName &&
+            activeFile.toolName === "write" &&
+            (state.sidebarContent?.kind !== "code" ||
+              (state.sidebarContent?.kind === "code" &&
+                state.sidebarContent.fileName !== activeFile.fileName))
+          ) {
+            const key = `${activeFile.dir}/${activeFile.fileName}`;
+            const lastAutoPreviewed = autoPreviewedFile.get(state);
+            if (lastAutoPreviewed !== key) {
+              autoPreviewedFile.set(state, key);
+              // Find the write tool entry to get content from args
+              let writeContent: string | undefined;
+              for (const entry of state.toolStreamById.values()) {
+                if (entry.name !== "write" || !entry.output) continue;
+                const a = entry.args as Record<string, unknown> | undefined;
+                const fp = String(a?.path ?? a?.file_path ?? a?.filePath ?? "");
+                if (fp === key && typeof a?.content === "string") {
+                  writeContent = a.content;
+                  break;
+                }
+              }
+              if (writeContent != null) {
+                const ext =
+                  activeFile.fileName.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "";
+                state.handleOpenSidebar({
+                  kind: "code",
+                  fileName: activeFile.fileName,
+                  content: writeContent,
+                  language: ext,
+                  rawText: writeContent,
+                  reading: true,
+                });
+                codeViewerOpenTime.set(state, Date.now());
+                requestHostUpdate?.();
+              }
+            }
+          }
+
           // Update reading state on code sidebar content
           // The read tool completes almost instantly, so we use a minimum
           // display duration for the reading animation (1.5s).
@@ -3487,17 +3528,23 @@ export function renderApp(state: AppViewState) {
                 });
               }
             } else {
-              // Scan for recently-completed edits on this file
+              // Scan for recently-completed edits/writes on this file
               for (const entry of state.toolStreamById.values()) {
-                if (entry.name !== "edit" && entry.name !== "apply_patch") continue;
+                if (entry.name !== "edit" && entry.name !== "apply_patch" && entry.name !== "write")
+                  continue;
                 if (!entry.output) continue;
                 const args = entry.args as Record<string, unknown> | undefined;
                 const filePath = String(args?.path ?? args?.file_path ?? args?.filePath ?? "");
                 if (!filePath.endsWith(sc.fileName)) continue;
                 // Use args content as dedup key since entry.id is often undefined
-                const editsArr = Array.isArray(args?.edits) ? args.edits : [];
-                const editKey =
-                  filePath + ":" + editsArr.map((e: any) => String(e?.oldText ?? "")).join("|");
+                let editKey: string;
+                if (entry.name === "write") {
+                  editKey = "write:" + filePath + ":" + String(args?.content ?? "").length;
+                } else {
+                  const editsArr = Array.isArray(args?.edits) ? args.edits : [];
+                  editKey =
+                    filePath + ":" + editsArr.map((e: any) => String(e?.oldText ?? "")).join("|");
+                }
                 const lastEditKey = codeViewerLastEditId.get(state) ?? "";
                 if (editKey === lastEditKey) continue;
                 // New edit detected — extract diff
@@ -3587,6 +3634,71 @@ export function renderApp(state: AppViewState) {
                             state.sidebarContent = {
                               ...sc2,
                               content: newContent,
+                              pendingEdit: null,
+                              editing: false,
+                              reading: false,
+                            };
+                            requestHostUpdate?.();
+                          } catch {
+                            state.sidebarContent = {
+                              ...sc2,
+                              pendingEdit: null,
+                              editing: false,
+                              reading: false,
+                            };
+                            requestHostUpdate?.();
+                          }
+                        })();
+                      }
+                    }, 3000);
+                  }
+                } else if (entry.name === "write") {
+                  // Write: diff old sidebar content against new write content
+                  const newContent = typeof args?.content === "string" ? args.content : "";
+                  const oldLines = sc.content.split("\n");
+                  const newLines = newContent.split("\n");
+                  // Simple line diff: find first and last differing lines
+                  let firstDiff = 0;
+                  while (
+                    firstDiff < oldLines.length &&
+                    firstDiff < newLines.length &&
+                    oldLines[firstDiff] === newLines[firstDiff]
+                  )
+                    firstDiff++;
+                  let oldEnd = oldLines.length - 1;
+                  let newEnd = newLines.length - 1;
+                  while (
+                    oldEnd > firstDiff &&
+                    newEnd > firstDiff &&
+                    oldLines[oldEnd] === newLines[newEnd]
+                  ) {
+                    oldEnd--;
+                    newEnd--;
+                  }
+                  const removed = oldLines.slice(firstDiff, oldEnd + 1);
+                  const added = newLines.slice(firstDiff, newEnd + 1);
+                  if (removed.length || added.length) {
+                    state.sidebarContent = {
+                      ...sc,
+                      editing: true,
+                      reading: false,
+                      pendingEdit: { type: "edit", removed, added, matchLineIndex: firstDiff },
+                    };
+                    clearTimeout(codeViewerReadingTimer.get(state));
+                    codeViewerReadingTimer.delete(state);
+                    codeViewerEditTime.set(state, Date.now());
+                    setTimeout(() => {
+                      if (state.sidebarContent?.kind === "code" && state.sidebarContent.editing) {
+                        const sc2 = state.sidebarContent;
+                        const fp = `${activeFile?.dir}/${sc2.fileName}`;
+                        void (async () => {
+                          try {
+                            const result = await state.client?.request<{
+                              file?: { content?: string };
+                            } | null>("agents.files.get", { agentId: chatAgentId, path: fp });
+                            state.sidebarContent = {
+                              ...sc2,
+                              content: result?.file?.content ?? sc2.content,
                               pendingEdit: null,
                               editing: false,
                               reading: false,
