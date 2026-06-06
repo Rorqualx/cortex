@@ -52,6 +52,14 @@ export type ChatTimestampDisplay = {
   dateTime: string;
 };
 
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return `${m}m ${rs}s`;
+}
+
 export function formatChatTimestampForDisplay(timestamp: number): ChatTimestampDisplay {
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) {
@@ -354,12 +362,21 @@ export function renderReadingIndicatorGroup(
   assistant?: AssistantIdentity,
   basePath?: string,
   authToken?: string | null,
+  startedAt?: number | null,
 ) {
+  const name = assistant?.name ?? "Assistant";
+  const elapsedLabel = startedAt ? formatElapsed(Date.now() - startedAt) : null;
   return html`
-    <div class="chat-group assistant">
+    <div class="chat-group assistant chat-group--thinking">
       ${renderChatAvatar("assistant", assistant, undefined, basePath, authToken)}
       <div class="chat-group-messages">
         <div class="chat-bubble chat-reading-indicator" aria-hidden="true">
+          <span class="chat-reading-indicator__label"
+            >${name} is
+            thinking${elapsedLabel
+              ? html` <span class="chat-reading-indicator__elapsed">${elapsedLabel}</span>`
+              : nothing}</span
+          >
           <span class="chat-reading-indicator__dots">
             <span></span><span></span><span></span>
           </span>

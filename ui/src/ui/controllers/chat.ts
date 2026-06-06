@@ -728,13 +728,18 @@ async function loadChatHistoryUncached(
     state.chatThinkingLevel = res.sessionInfo?.thinkingLevel ?? res.thinkingLevel ?? null;
     const resetStream = !state.chatRunId || state.chatRunId === previousRunId;
     if (resetStream) {
-      // Clear all streaming state — history includes tool results and text
-      // inline, so keeping streaming artifacts would cause duplicates.
-      maybeResetToolStream(state);
-      state.chatStream = null;
-      state.chatStreamStartedAt = null;
-      state.chatThinkingStream = null;
-      state.chatThinkingStreamStartedAt = null;
+      // Guard: don't clear the stream if it has content not yet in history.
+      // This prevents a mid-run history push from wiping active streaming text.
+      const streamHasContent = typeof state.chatStream === "string" && state.chatStream.trim();
+      if (streamHasContent) {
+        // Keep the stream alive — the active run will deliver its own final event.
+      } else {
+        maybeResetToolStream(state);
+        state.chatStream = null;
+        state.chatStreamStartedAt = null;
+        state.chatThinkingStream = null;
+        state.chatThinkingStreamStartedAt = null;
+      }
       recordChatHistoryTiming(state, "stream-reset", startedAtMs, {
         requestSessionKey: sessionKey,
         requestAgentId,

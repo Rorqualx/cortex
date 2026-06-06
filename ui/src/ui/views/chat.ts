@@ -1713,6 +1713,7 @@ export function renderChat(props: ChatProps) {
                     assistantIdentity,
                     props.basePath,
                     props.assistantAttachmentAuthToken ?? null,
+                    props.streamStartedAt,
                   );
                 }
                 if (item.kind === "stream") {

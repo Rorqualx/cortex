@@ -898,8 +898,20 @@
 .chat-reading-indicator {
   background: transparent;
   border: 1px solid var(--border);
-  padding: 12px;
+  padding: 12px 16px;
   display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-reading-indicator__label {
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.chat-reading-indicator__elapsed {
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--muted) 60%, transparent);
 }
 
 .chat-reading-indicator__dots {
