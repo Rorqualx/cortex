@@ -556,6 +556,10 @@ const chatWorkspaceFileOpenRequests = new WeakMap<
 >();
 /** Tracks the last file auto-previewed so we don't re-open the same file. */
 const autoPreviewedFile = new WeakMap<AppViewState, string>();
+/** Timestamp when the current code sidebar opened — used for reading animation. */
+const codeViewerOpenTime = new WeakMap<AppViewState, number>();
+/** Timer for flipping reading state to false. */
+const codeViewerReadingTimer = new WeakMap<AppViewState, ReturnType<typeof setTimeout>>();
 
 function getChatWorkspaceFilesState(state: AppViewState, agentId: string): ChatWorkspaceFilesState {
   const current = chatWorkspaceFilesStates.get(state);
@@ -2080,8 +2084,10 @@ export function renderApp(state: AppViewState) {
                 content: content,
                 language: name.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "",
                 rawText: content,
+                reading: true,
               },
         );
+        codeViewerOpenTime.set(state, Date.now());
       } catch (err) {
         if (isCurrentOpenRequest()) {
           chatWorkspaceFiles.error = String(err);
@@ -3412,6 +3418,86 @@ export function renderApp(state: AppViewState) {
               queueMicrotask(() => openChatWorkspaceFile(activeFile.fileName, key));
             }
           }
+
+          // Update reading state on code sidebar content
+          // The read tool completes almost instantly, so we use a minimum
+          // display duration for the reading animation (1.5s).
+          if (state.sidebarContent?.kind === "code") {
+            const sc = state.sidebarContent;
+            if (sc.reading) {
+              const openedAt = codeViewerOpenTime.get(state) ?? 0;
+              const elapsed = Date.now() - openedAt;
+              if (elapsed > 2500) {
+                state.sidebarContent = { ...sc, reading: false };
+              } else if (!codeViewerReadingTimer.get(state)) {
+                // Schedule the flip to non-reading state
+                const timer = setTimeout(() => {
+                  codeViewerReadingTimer.delete(state);
+                  if (state.sidebarContent?.kind === "code" && state.sidebarContent.reading) {
+                    state.sidebarContent = { ...state.sidebarContent, reading: false };
+                    requestHostUpdate?.();
+                  }
+                }, 2500 - elapsed);
+                codeViewerReadingTimer.set(state, timer);
+              }
+            }
+          }
+
+          // Detect pending edits on the open file in the sidebar
+          if (state.sidebarContent?.kind === "code" && !state.sidebarContent.reading) {
+            const sc = state.sidebarContent;
+            let pendingEdit: import("../sidebar-content.ts").PendingEdit | null = null;
+            for (const entry of state.toolStreamById.values()) {
+              if ((entry.name === "edit" || entry.name === "apply_patch") && !entry.output) {
+                const args = entry.args as Record<string, unknown> | undefined;
+                const filePath = String(args?.path ?? args?.file_path ?? args?.filePath ?? "");
+                if (filePath.endsWith(sc.fileName)) {
+                  // Extract old/new text from edit args
+                  if (entry.name === "edit") {
+                    const edits = Array.isArray(args?.edits) ? args.edits : [];
+                    const removed: string[] = [];
+                    const added: string[] = [];
+                    for (const e of edits) {
+                      if (typeof e?.oldText === "string") removed.push(...e.oldText.split("\n"));
+                      if (typeof e?.newText === "string") added.push(...e.newText.split("\n"));
+                    }
+                    if (removed.length || added.length) {
+                      pendingEdit = { type: "edit", removed, added };
+                    }
+                  } else {
+                    // apply_patch — show it as a generic pending edit
+                    pendingEdit = { type: "apply_patch", removed: [], added: [] };
+                  }
+                  break;
+                }
+              }
+            }
+            // When edit completes, reload the file content
+            if (!pendingEdit && sc.pendingEdit) {
+              // Edit just completed — refresh the file content
+              queueMicrotask(async () => {
+                try {
+                  const key = `${activeFile?.dir}/${sc.fileName}`;
+                  const result = await state.client?.request<{
+                    file?: { content?: string };
+                  } | null>("agents.files.get", { agentId: chatAgentId, path: key });
+                  if (result?.file?.content != null) {
+                    state.sidebarContent = {
+                      ...sc,
+                      content: result.file.content,
+                      pendingEdit: null,
+                    };
+                    requestHostUpdate?.();
+                  }
+                } catch {
+                  // best effort
+                }
+              });
+            } else if (pendingEdit !== sc.pendingEdit) {
+              state.sidebarContent = { ...sc, pendingEdit };
+            }
+          }
+
           return nothing;
         })()}
         ${state.tab === "chat"
