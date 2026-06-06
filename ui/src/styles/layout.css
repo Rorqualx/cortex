@@ -1287,8 +1287,7 @@
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
-  padding-top: 0;
-  padding-bottom: 0;
+  padding: 0;
 }
 
 .content--chat > * + * {

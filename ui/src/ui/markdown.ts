@@ -70,6 +70,7 @@ const allowedAttrs = [
   "src",
   "alt",
   "data-code",
+  "data-line",
   "type",
   "aria-label",
 ];
@@ -187,7 +188,7 @@ function installHooks() {
 
 // ── markdown-it instance with custom renderers ──
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -305,7 +306,7 @@ for (const [language, definition, aliases] of [
   }
 }
 
-function normalizeHighlightLanguage(lang: string): string {
+export function normalizeHighlightLanguage(lang: string): string {
   const normalized = lang.trim().toLowerCase();
   if (!normalized) {
     return "";
@@ -341,7 +342,7 @@ const autoHighlightLanguages = [
   "yaml",
 ];
 
-function highlightCode(text: string, lang: string): string {
+export function highlightCode(text: string, lang: string): string {
   const language = normalizeHighlightLanguage(lang);
   try {
     if (language && hljs.getLanguage(language)) {

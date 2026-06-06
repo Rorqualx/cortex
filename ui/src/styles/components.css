@@ -2215,6 +2215,56 @@
   white-space: pre;
 }
 
+/* IDE-style code viewer (sidebar preview) */
+.code-viewer {
+  display: flex;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: auto;
+  flex: 1;
+}
+.code-viewer__gutter {
+  flex-shrink: 0;
+  text-align: right;
+  padding: 0 12px 0 8px;
+  color: var(--muted);
+  opacity: 0.4;
+  user-select: none;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+.code-viewer__line-num {
+  height: 1.5em;
+}
+.code-viewer__content {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+.code-viewer__content pre {
+  margin: 0;
+  padding: 0 16px;
+  background: transparent !important;
+  border: none;
+}
+.code-viewer__code-line {
+  height: 1.5em;
+  white-space: pre;
+}
+.sidebar-code-viewer-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.sidebar-code-viewer-shell .code-viewer {
+  flex: 1;
+}
+
 .code-block-header {
   display: flex;
   align-items: center;

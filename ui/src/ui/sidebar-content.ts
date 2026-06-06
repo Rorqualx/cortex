@@ -25,4 +25,12 @@ export type CanvasSidebarContent = {
   unavailableReason?: "not_found" | "oversized" | "not_visible" | null;
 };
 
-export type SidebarContent = MarkdownSidebarContent | CanvasSidebarContent;
+export type CodeSidebarContent = {
+  kind: "code";
+  fileName: string;
+  content: string;
+  language: string;
+  rawText?: string | null;
+};
+
+export type SidebarContent = MarkdownSidebarContent | CanvasSidebarContent | CodeSidebarContent;

@@ -967,6 +967,8 @@ function formatWorkspaceFileSize(file: AgentFileEntry): string {
   return `${size} B`;
 }
 
+let lastScrolledAgentFile = "";
+
 function renderWorkspaceFileRail(
   workspaceFiles: NonNullable<ChatProps["workspaceFiles"]> | undefined,
 ): TemplateResult | typeof nothing {
@@ -977,6 +979,7 @@ function renderWorkspaceFileRail(
   const showActiveDir =
     activeDir && activeDir !== workspaceFiles.list?.workspace && workspaceFiles.activeDirFiles;
   const files = showActiveDir ? workspaceFiles.activeDirFiles! : (workspaceFiles.list?.files ?? []);
+  scheduleAgentFileScroll(workspaceFiles.activeFile?.fileName);
   return html`
     <aside class="chat-workspace-rail" aria-label="Workspace files">
       <div class="chat-workspace-rail__header">
@@ -1048,6 +1051,23 @@ function renderWorkspaceFileRail(
               `}
     </aside>
   `;
+}
+
+// Schedule scroll after the render cycle commits to DOM.
+// Retries because the file list may not be in the DOM yet when the
+// active directory changes and files load asynchronously.
+function scheduleAgentFileScroll(activeFileName: string | undefined) {
+  if (!activeFileName || activeFileName === lastScrolledAgentFile) return;
+  lastScrolledAgentFile = activeFileName;
+  const tryScroll = (attempt: number) => {
+    const el = document.querySelector(".chat-workspace-rail__file--agent-active");
+    if (el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    } else if (attempt < 5) {
+      setTimeout(() => tryScroll(attempt + 1), 200);
+    }
+  };
+  requestAnimationFrame(() => tryScroll(0));
 }
 
 function resetSlashMenuState(): void {

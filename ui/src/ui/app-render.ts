@@ -1149,7 +1149,15 @@ function buildWorkspaceFileSidebarContent(name: string, content: string): string
     return content;
   }
   const language = name.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "";
-  return `# ${name}\n\n\`\`\`${language}\n${content}\n\`\`\``;
+  // Cap code content so the markdown fence renderer handles it (with line numbers)
+  // instead of falling back to plain-text rendering for large files.
+  const MAX_CODE_CHARS = 35_000;
+  const suffix =
+    content.length > MAX_CODE_CHARS
+      ? `\n\n… truncated (${content.length.toLocaleString()} chars, showing first ${MAX_CODE_CHARS.toLocaleString()}).`
+      : "";
+  const code = content.length > MAX_CODE_CHARS ? content.substring(0, MAX_CODE_CHARS) : content;
+  return `# ${name}${suffix}\n\n\`\`\`${language}\n${code}\n\`\`\``;
 }
 
 export function renderApp(state: AppViewState) {
@@ -2059,11 +2067,21 @@ export function renderApp(state: AppViewState) {
         if (!isCurrentOpenRequest()) {
           return;
         }
-        state.handleOpenSidebar({
-          kind: "markdown",
-          content: buildWorkspaceFileSidebarContent(name, content),
-          rawText: content,
-        });
+        state.handleOpenSidebar(
+          /\.(?:md|markdown|mdx)$/i.test(name)
+            ? {
+                kind: "markdown",
+                content: content,
+                rawText: content,
+              }
+            : {
+                kind: "code",
+                fileName: name,
+                content: content,
+                language: name.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "",
+                rawText: content,
+              },
+        );
       } catch (err) {
         if (isCurrentOpenRequest()) {
           chatWorkspaceFiles.error = String(err);
