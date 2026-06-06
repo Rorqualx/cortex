@@ -1031,11 +1031,16 @@ async function sendQueuedChatMessage(
   const isVisibleSession = () => visibleSessionMatches(host, sessionKey, prepared.agentId);
   if (isVisibleSession()) {
     setChatError(host, null);
-    // The `sending` flag in buildChatItems handles the reading indicator.
-    // Don't set chatStream here — doing so causes flakiness when the ack
-    // clears it ~100ms later, making the dots flicker.
+    // Set chatStream to empty string to activate the thinking indicator
+    // and keep the 1s tick interval running. The ack handler won't clear it
+    // because the deferred chatSending guard keeps it alive.
+    if (host.chatStream === null) {
+      host.chatStream = "";
+      (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt = startedAt;
+    }
     reconcileChatRunLifecycle(host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
       clearRunStatus: true,
+      clearChatStream: false,
     });
   }
 

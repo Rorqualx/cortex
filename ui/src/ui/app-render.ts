@@ -1183,6 +1183,7 @@ export function renderApp(state: AppViewState) {
   const isThinking = state.chatSending || state.chatStream !== null;
   if (isThinking && !thinkingTickInterval) {
     thinkingTickInterval = setInterval(() => {
+      console.debug("[thinking-tick]", Date.now());
       pendingUpdate?.();
     }, 1000);
   } else if (!isThinking && thinkingTickInterval) {
