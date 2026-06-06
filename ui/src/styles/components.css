@@ -2301,26 +2301,27 @@
   color: #ffa657;
 }
 
-/* Diff overlay */
-.code-viewer__diff {
-  border-top: 1px dashed var(--border);
-  margin-top: 4px;
-  padding-top: 4px;
-}
-.code-viewer__diff-line {
-  white-space: pre;
-  padding: 0 4px;
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.code-viewer__diff-line--removed {
+/* Diff inline styles */
+.code-viewer__code-line--removed {
   background: rgba(248, 81, 73, 0.15);
   color: #ffa198;
+  border-left: 3px solid #f85149;
+  padding-left: 4px;
+  opacity: 1 !important; /* override reading dim */
+  position: relative;
 }
-.code-viewer__diff-line--added {
+.code-viewer__code-line--added {
   background: rgba(46, 160, 67, 0.15);
   color: #7ee787;
+  border-left: 3px solid #2ea043;
+  padding-left: 4px;
+  opacity: 1 !important; /* override reading dim */
+  position: relative;
+}
+.code-viewer__code-line--context {
+  opacity: 0.35;
+  text-decoration: line-through;
+  text-decoration-color: rgba(248, 81, 73, 0.3);
 }
 .code-viewer__diff-marker {
   display: inline-block;
@@ -2329,6 +2330,38 @@
   opacity: 0.7;
   margin-right: 4px;
   user-select: none;
+}
+.code-viewer__line-num--diff {
+  opacity: 0.15;
+}
+.code-viewer--editing .code-viewer__content {
+  opacity: 0.35;
+}
+.code-viewer--editing .code-viewer__gutter {
+  opacity: 0.25;
+}
+.code-viewer--editing::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    #ffa657 40%,
+    #ffa657 60%,
+    transparent 100%
+  );
+  opacity: 0.12;
+  animation: code-viewer-scan 0.8s ease-in-out forwards;
+  pointer-events: none;
+}
+/* Edit scan dims everything except the diff lines */
+.code-viewer--editing .code-viewer__code-line--removed,
+.code-viewer--editing .code-viewer__code-line--added {
+  opacity: 1 !important;
 }
 @keyframes code-viewer-pulse {
   0% { opacity: 0.5; }

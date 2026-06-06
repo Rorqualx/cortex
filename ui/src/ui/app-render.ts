@@ -207,6 +207,7 @@ import { renderDreaming } from "./views/dreaming.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
+import { triggerEditScan } from "./views/markdown-sidebar.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
 
@@ -3449,11 +3450,11 @@ export function renderApp(state: AppViewState) {
 
           // Detect edits on the open file — catch recently-completed edits
           // (they complete too fast to catch in-progress)
-          if (state.sidebarContent?.kind === "code" && !state.sidebarContent.reading) {
+          if (state.sidebarContent?.kind === "code") {
             const sc = state.sidebarContent;
             const now = Date.now();
             // If we're already showing a pending edit, check if it's time to resolve
-            if (sc.pendingEdit) {
+            if (sc.pendingEdit || sc.editing) {
               const editAge = codeViewerEditTime.get(state) ?? 0;
               if (now - editAge > 3000) {
                 // Hold period over — refresh file content and clear pending edit
@@ -3468,11 +3469,20 @@ export function renderApp(state: AppViewState) {
                         ...sc,
                         content: result.file.content,
                         pendingEdit: null,
+                        editing: false,
+                        reading: false,
                       };
                       requestHostUpdate?.();
                     }
                   } catch {
-                    // best effort
+                    // best effort — clear anyway
+                    state.sidebarContent = {
+                      ...sc,
+                      pendingEdit: null,
+                      editing: false,
+                      reading: false,
+                    };
+                    requestHostUpdate?.();
                   }
                 });
               }
@@ -3484,11 +3494,14 @@ export function renderApp(state: AppViewState) {
                 const args = entry.args as Record<string, unknown> | undefined;
                 const filePath = String(args?.path ?? args?.file_path ?? args?.filePath ?? "");
                 if (!filePath.endsWith(sc.fileName)) continue;
-                const editId = entry.id ?? "";
-                const lastEditId = codeViewerLastEditId.get(state) ?? "";
-                if (editId === lastEditId) continue;
+                // Use args content as dedup key since entry.id is often undefined
+                const editsArr = Array.isArray(args?.edits) ? args.edits : [];
+                const editKey =
+                  filePath + ":" + editsArr.map((e: any) => String(e?.oldText ?? "")).join("|");
+                const lastEditKey = codeViewerLastEditId.get(state) ?? "";
+                if (editKey === lastEditKey) continue;
                 // New edit detected — extract diff
-                codeViewerLastEditId.set(state, editId);
+                codeViewerLastEditId.set(state, editKey);
                 codeViewerEditTime.set(state, now);
                 if (entry.name === "edit") {
                   const edits = Array.isArray(args?.edits) ? args.edits : [];
@@ -3499,7 +3512,98 @@ export function renderApp(state: AppViewState) {
                     if (typeof e?.newText === "string") added.push(...e.newText.split("\n"));
                   }
                   if (removed.length || added.length) {
-                    state.sidebarContent = { ...sc, pendingEdit: { type: "edit", removed, added } };
+                    // Find where the edit landed in the current file content.
+                    // Content may already be refreshed (post-edit), so search for added lines first,
+                    // then fall back to removed lines if content is still old.
+                    let matchLineIndex: number | undefined;
+                    const fileLines = sc.content.split("\n");
+                    if (fileLines.length > 1 && fileLines[fileLines.length - 1].trim() === "")
+                      fileLines.pop();
+                    // Try added lines first (content is post-edit)
+                    const firstAdded = added[0]?.trim();
+                    if (firstAdded) {
+                      for (let li = 0; li < fileLines.length; li++) {
+                        if (fileLines[li].trim() === firstAdded) {
+                          let fullMatch = true;
+                          for (let ai = 0; ai < added.length && li + ai < fileLines.length; ai++) {
+                            if (fileLines[li + ai].trim() !== added[ai].trim()) {
+                              fullMatch = false;
+                              break;
+                            }
+                          }
+                          if (fullMatch) {
+                            matchLineIndex = li;
+                            break;
+                          }
+                        }
+                      }
+                    }
+                    // Fallback: try removed lines (content is still pre-edit)
+                    if (matchLineIndex === undefined) {
+                      const firstRemoved = removed[0]?.trim();
+                      if (firstRemoved) {
+                        for (let li = 0; li < fileLines.length; li++) {
+                          if (fileLines[li].trim() === firstRemoved) {
+                            let fullMatch = true;
+                            for (
+                              let ri = 0;
+                              ri < removed.length && li + ri < fileLines.length;
+                              ri++
+                            ) {
+                              if (fileLines[li + ri].trim() !== removed[ri].trim()) {
+                                fullMatch = false;
+                                break;
+                              }
+                            }
+                            if (fullMatch) {
+                              matchLineIndex = li;
+                              break;
+                            }
+                          }
+                        }
+                      }
+                    }
+                    state.sidebarContent = {
+                      ...sc,
+                      editing: true,
+                      reading: false,
+                      pendingEdit: { type: "edit", removed, added, matchLineIndex },
+                    };
+                    // Kill any active reading timer
+                    clearTimeout(codeViewerReadingTimer.get(state));
+                    codeViewerReadingTimer.delete(state);
+                    // Self-resolving timer: after 3s, refresh file and clear edit state
+                    codeViewerEditTime.set(state, Date.now());
+                    setTimeout(() => {
+                      if (state.sidebarContent?.kind === "code" && state.sidebarContent.editing) {
+                        const sc2 = state.sidebarContent;
+                        const filePath = `${activeFile?.dir}/${sc2.fileName}`;
+                        void (async () => {
+                          try {
+                            const result = await state.client?.request<{
+                              file?: { content?: string };
+                            } | null>("agents.files.get", { agentId: chatAgentId, path: filePath });
+                            const newContent = result?.file?.content ?? sc2.content;
+                            state.sidebarContent = {
+                              ...sc2,
+                              content: newContent,
+                              pendingEdit: null,
+                              editing: false,
+                              reading: false,
+                            };
+                            requestHostUpdate?.();
+                          } catch {
+                            state.sidebarContent = {
+                              ...sc2,
+                              pendingEdit: null,
+                              editing: false,
+                              reading: false,
+                            };
+                            requestHostUpdate?.();
+                          }
+                        })();
+                      }
+                    }, 3000);
                   }
                 } else {
                   state.sidebarContent = {

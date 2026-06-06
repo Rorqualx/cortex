@@ -30,6 +30,8 @@ export type PendingEdit = {
   /** Line-based hunks: removed lines and added lines */
   removed: string[];
   added: string[];
+  /** 0-based line index where oldText was found in file content (for inline placement) */
+  matchLineIndex?: number;
 };
 
 export type CodeSidebarContent = {
@@ -39,6 +41,7 @@ export type CodeSidebarContent = {
   language: string;
   rawText?: string | null;
   reading?: boolean;
+  editing?: boolean;
   pendingEdit?: PendingEdit | null;
 };
 
