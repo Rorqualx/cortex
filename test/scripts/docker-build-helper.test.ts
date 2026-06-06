@@ -207,7 +207,7 @@ describe("docker build helper", () => {
     expect(e2eImageHelper).toContain('docker_e2e_docker_cmd pull "$image_name"');
     expect(liveBuild).toContain('source "$SCRIPT_ROOT_DIR/scripts/lib/docker-e2e-container.sh"');
     expect(liveBuild).toContain(
-      'DOCKER_COMMAND_TIMEOUT="${DOCKER_COMMAND_TIMEOUT:-${OPENCLAW_LIVE_DOCKER_PULL_TIMEOUT:-180s}}"',
+      'DOCKER_COMMAND_TIMEOUT="${DOCKER_COMMAND_TIMEOUT:-${OPENCLAW_LIVE_DOCKER_PULL_TIMEOUT:-600s}}"',
     );
     expect(liveBuild).toContain(
       'LIVE_IMAGE_PULL_ATTEMPTS="${OPENCLAW_LIVE_DOCKER_PULL_ATTEMPTS:-3}"',
@@ -1973,6 +1973,13 @@ output="$(run_logged_print_heartbeat plugins-run 08 bash -c 'printf "captured co
     expect(runner).not.toContain(
       'run_logged gateway-network-client timeout "$CLIENT_TIMEOUT" docker run --rm',
     );
+  });
+
+  it("requires TCP readiness for the gateway network runner", () => {
+    const runner = readFileSync(GATEWAY_NETWORK_DOCKER_E2E_PATH, "utf8");
+
+    expect(runner).toContain("openclaw_e2e_probe_tcp 127.0.0.1 $PORT");
+    expect(runner).not.toMatch(/openclaw_e2e_probe_tcp[^\n]*\|\|[^\n]*gateway-net-e2e\.log/u);
   });
 
   it("copies root lifecycle scripts before cleanup-smoke installs dependencies", () => {
