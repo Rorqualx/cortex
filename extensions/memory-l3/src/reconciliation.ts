@@ -13,6 +13,7 @@
 
 import { parseJsonResponse, type LlmCaller } from "./llm.js";
 import { formatLongTermBody } from "./longterm.js";
+import { jaccard, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type { LongTermFact, LongTermFrontmatter, LongTermTypedFact } from "./types.js";
 
@@ -139,6 +140,136 @@ function buildReconcileUserPrompt(
     .map((t) => `- ${t.slot} = ${t.value}${t.unit ? ` ${t.unit}` : ""}`)
     .join("\n");
   return `<prose-facts>\n${proseLines}\n</prose-facts>\n\n<typed-facts>\n${typedLines}\n</typed-facts>\n\nReconcile every prose fact.`;
+}
+
+// ---------------------------------------------------------------------------
+// Prose↔prose interference detection (Microsoft "Forgetting Is the Fix")
+// ---------------------------------------------------------------------------
+
+/**
+ * Output of a prose-prose interference detection pass.
+ *
+ * This is the algorithmic (no-LLM) complement to `reconcileCrossBrain`:
+ * it detects pairs of prose facts that are topically similar (high jaccard)
+ * but differ in detail — indicating the newer fact may supersede the older
+ * one. Inspired by Microsoft's interference-based forgetting: "new fixes
+ * supersede old bug reports."
+ */
+export type ProseInterferenceOutput = {
+  /** Active prose facts considered for pairing. */
+  factsConsidered: number;
+  /** Older facts that gained a new supersededBy mark this pass. */
+  newlySuperseded: number;
+  /** Facts that had a prose-interference supersededBy mark cleared. */
+  cleared: number;
+};
+
+/** Minimum jaccard similarity to consider two facts "topically similar". */
+const INTERFERENCE_JACCARD_THRESHOLD = 0.4;
+
+/**
+ * Detect prose-prose interference: when two long-term prose facts are
+ * topically similar (share many terms) but were confirmed at different
+ * times, the older one is likely stale and should be suppressed from
+ * retrieval.
+ *
+ * Unlike `reconcileCrossBrain`, this is purely algorithmic — no LLM call.
+ * It uses jaccard similarity over tokenized fact texts. This is conservative:
+ * it only fires when facts share enough vocabulary to be about the same topic
+ * but are from different time periods.
+ *
+ * The `supersededBy` field is set to the newer fact's dedupKey (prefixed with
+ * `prose:` to distinguish from typed-fact supersession). Retrieval should skip
+ * facts with any non-null `supersededBy`.
+ */
+export async function reconcileProseInterference(params: {
+  storage: Storage;
+  agentId: string | null;
+  now: number;
+}): Promise<ProseInterferenceOutput> {
+  const longterm = await params.storage.readLongTerm();
+  const active = longterm.facts.filter((f) => !f.archived && !f.supersededBy);
+
+  if (active.length < 2) {
+    return { factsConsidered: active.length, newlySuperseded: 0, cleared: 0 };
+  }
+
+  // Pre-tokenize all facts once
+  const tokenized = new Map<string, Set<string>>();
+  for (const f of active) {
+    tokenized.set(f.id, tokenize(f.text));
+  }
+
+  // Find interference pairs: (older, newer) where jaccard > threshold
+  // and they're from different days.
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const supersededByFactId = new Map<string, string>(); // olderId → newerDedupKey
+
+  for (let i = 0; i < active.length; i++) {
+    for (let j = i + 1; j < active.length; j++) {
+      const a = active[i];
+      const b = active[j];
+      const sim = jaccard(tokenized.get(a.id)!, tokenized.get(b.id)!);
+      if (sim < INTERFERENCE_JACCARD_THRESHOLD) continue;
+
+      // Determine older and newer
+      const older = a.lastConfirmedAt <= b.lastConfirmedAt ? a : b;
+      const newer = a.lastConfirmedAt <= b.lastConfirmedAt ? b : a;
+
+      // Must be from different days to indicate drift
+      const dayDiff = Math.abs(newer.lastConfirmedAt - older.lastConfirmedAt) / MS_PER_DAY;
+      if (dayDiff < 1) continue;
+
+      // Don't supersede a fact that was already superseded by something else
+      if (supersededByFactId.has(older.id)) continue;
+
+      supersededByFactId.set(older.id, `prose:${newer.dedupKey}`);
+    }
+  }
+
+  // Apply marks
+  let newlySuperseded = 0;
+  let cleared = 0;
+  const updatedFacts = longterm.facts.map((fact) => {
+    if (fact.archived) return fact;
+
+    // Check if this fact should gain a new mark
+    const newMark = supersededByFactId.get(fact.id);
+    if (newMark) {
+      const priorMark = fact.supersededBy ?? null;
+      if (priorMark === newMark) return fact; // already marked
+      if (priorMark === null) newlySuperseded += 1;
+      return { ...fact, supersededBy: newMark };
+    }
+
+    // Check if this fact had a prose-interference mark that should be cleared
+    // (the pairing no longer meets the threshold, or the other fact was archived)
+    if (fact.supersededBy?.startsWith("prose:")) {
+      const otherDedupKey = fact.supersededBy.slice(6);
+      const otherStillActive = active.some((f) => f.dedupKey === otherDedupKey);
+      const stillSimilar = supersededByFactId.has(fact.id);
+      if (!otherStillActive || !stillSimilar) {
+        cleared += 1;
+        return { ...fact, supersededBy: null };
+      }
+    }
+
+    return fact;
+  });
+
+  if (newlySuperseded === 0 && cleared === 0) {
+    return { factsConsidered: active.length, newlySuperseded: 0, cleared: 0 };
+  }
+
+  const frontmatter: LongTermFrontmatter = {
+    version: 1,
+    agentId: params.agentId,
+    lastConsolidatedAt: longterm.lastConsolidatedAt,
+    facts: updatedFacts,
+  };
+  await params.storage.writeLongTerm(frontmatter, formatLongTermBody(updatedFacts));
+
+  return { factsConsidered: active.length, newlySuperseded, cleared };
 }
 
 function parseDecisions(

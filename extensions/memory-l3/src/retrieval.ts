@@ -3,6 +3,7 @@ import {
   composite,
   DEFAULT_SCORING_CONFIG,
   type CorpusStats,
+  fsrsRetrievability,
   jaccard,
   type ScoringConfig,
   scoreFact,
@@ -35,6 +36,28 @@ export type MemoryCoreSearchHit = {
 
 export type MemoryCoreLookup = (query: string) => Promise<MemoryCoreSearchHit[]>;
 
+export type RetrievalConfig = {
+  /**
+   * When true, use epoch-first retrieval: score epoch summaries first, then
+   * only expand the top N epochs for detailed scoring. Inspired by DeepSeek
+   * V4's CSA (compressed sparse attention with top-k selector).
+   *
+   * False = full-scan all chunks (legacy behavior).
+   * Default true.
+   */
+  useEpochFirst: boolean;
+  /**
+   * Number of top epochs to expand when epoch-first is enabled.
+   * Default 3.
+   */
+  epochExpandTopN: number;
+};
+
+export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
+  useEpochFirst: true,
+  epochExpandTopN: 3,
+};
+
 export type RetrievedFact = {
   fact: L2Fact;
   score: number;
@@ -49,6 +72,7 @@ export async function retrieveTopK(params: {
   topK: number;
   now?: number;
   config?: ScoringConfig;
+  retrievalConfig?: RetrievalConfig;
   /**
    * Optional adapter to memory-core's QMD search. When provided, results
    * participate in the unified top-K ranking alongside L2/long-term facts.
@@ -67,8 +91,26 @@ export async function retrieveTopK(params: {
 
   const now = params.now ?? Date.now();
   const config = params.config ?? DEFAULT_SCORING_CONFIG;
+  const retConfig = params.retrievalConfig ?? DEFAULT_RETRIEVAL_CONFIG;
 
+  // -----------------------------------------------------------------
+  // Epoch-first retrieval (DeepSeek V4 CSA-inspired)
+  // -----------------------------------------------------------------
+  // When enabled, score epoch summaries first (O(epochs), cheap), then
+  // only expand facts from the top N epochs. This avoids O(all chunks)
+  // file reads for mature agents with 50+ chunks.
+  //
+  // Long-term facts are always included (they're already promoted and
+  // represent the most important tier). Epoch filtering only applies to
+  // L2 chunks.
   const epochBoosts = await buildEpochBoostMap(params.storage, queryTokens);
+
+  let candidatePaths: string[];
+  if (retConfig.useEpochFirst) {
+    candidatePaths = await selectEpochPaths(params.storage, queryTokens, retConfig.epochExpandTopN);
+  } else {
+    candidatePaths = paths;
+  }
 
   // Corpus-callosum: load the canonical typed-fact view first so per-chunk
   // typed hits with the same slot can be suppressed. The canonical view
@@ -89,7 +131,7 @@ export async function retrieveTopK(params: {
   };
   const items: ScorableItem[] = [];
 
-  for (const filePath of paths) {
+  for (const filePath of candidatePaths) {
     const doc = await params.storage.readL2ChunkAtPath(filePath);
     if (!doc) continue;
     const chunkId = doc.frontmatter.id;
@@ -293,6 +335,77 @@ function scoreEpochAgainstQuery(epoch: L3EpochFrontmatter, queryTokens: Set<stri
   if (epoch.representativeFacts.length === 0) return 0;
   const epochText = epoch.representativeFacts.map((f) => f.text).join(" ");
   return jaccard(queryTokens, tokenize(epochText));
+}
+
+/**
+ * Epoch-first path selection (DeepSeek V4 CSA-inspired).
+ *
+ * Score epoch summaries against the query, then return only the L2 chunk
+ * paths that belong to the top N scoring epochs. This reduces the number
+ * of file reads from O(all chunks) to O(top-epochs × chunks-per-epoch),
+ * which is ~5-10× fewer reads for mature agents.
+ *
+ * Always includes the most recent EPOCH_CHUNK_THRESHOLD chunks regardless
+ * of epoch scoring — recent context should never be filtered out.
+ */
+async function selectEpochPaths(
+  storage: Storage,
+  queryTokens: Set<string>,
+  topN: number,
+): Promise<string[]> {
+  const allPaths = await storage.listL2ChunkPaths();
+  if (allPaths.length === 0) return [];
+
+  // Few chunks — not worth filtering, just return everything
+  if (allPaths.length <= 8) return allPaths;
+
+  // Score each epoch
+  const epochPaths = await storage.listL3EpochPaths();
+  if (epochPaths.length === 0) return allPaths; // No epochs yet
+
+  const scored: Array<{ score: number; startSeq: number; endSeq: number }> = [];
+  for (const epPath of epochPaths) {
+    const doc = await storage.readL3EpochAtPath(epPath);
+    if (!doc) continue;
+    const startSeq = chunkSeq(doc.frontmatter.startChunkId);
+    const endSeq = chunkSeq(doc.frontmatter.endChunkId);
+    if (startSeq === null || endSeq === null) continue;
+    const score = scoreEpochAgainstQuery(doc.frontmatter, queryTokens);
+    scored.push({ score, startSeq, endSeq });
+  }
+
+  // Sort by score descending, take top N
+  scored.sort((a, b) => b.score - a.score);
+  const topEpochs = scored.slice(0, topN);
+
+  // Also always include the last epoch's worth of chunks (recency bias)
+  const lastChunk = allPaths[allPaths.length - 1];
+  const lastDoc = await storage.readL2ChunkAtPath(lastChunk);
+  const lastSeq = lastDoc ? chunkSeq(lastDoc.frontmatter.id) : null;
+  if (lastSeq !== null) {
+    const recentMin = Math.max(0, lastSeq - 7); // last ~8 chunks
+    // Check if already covered by a top epoch
+    const covered = topEpochs.some((e) => e.startSeq <= recentMin && e.endSeq >= lastSeq);
+    if (!covered) {
+      topEpochs.push({ score: 1, startSeq: recentMin, endSeq: lastSeq + 100 });
+    }
+  }
+
+  // Collect paths whose chunk seq falls within any selected epoch range
+  const selected = new Set<string>();
+  for (const filePath of allPaths) {
+    const doc = await storage.readL2ChunkAtPath(filePath);
+    if (!doc) continue;
+    const seq = chunkSeq(doc.frontmatter.id);
+    if (seq === null) {
+      selected.add(filePath); // Include non-sequenced chunks
+      continue;
+    }
+    const inRange = topEpochs.some((e) => seq >= e.startSeq && seq <= e.endSeq);
+    if (inRange) selected.add(filePath);
+  }
+
+  return allPaths.filter((p) => selected.has(p));
 }
 
 function chunkSeq(chunkId: string): number | null {

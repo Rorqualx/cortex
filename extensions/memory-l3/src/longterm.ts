@@ -7,6 +7,7 @@ import {
   DEFAULT_CONSOLIDATION_CONFIG,
   selectPromotable,
 } from "./consolidation.js";
+import { jaccard, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type { LongTermFact, LongTermFrontmatter } from "./types.js";
 
@@ -28,11 +29,27 @@ export type LongTermConfig = {
    * Default: 1.5 (50% extension).
    */
   epochGraceMultiplier: number;
+  /**
+   * Jaccard similarity threshold for semantic dedup during consolidation.
+   * When a new promotion candidate's jaccard similarity with an existing
+   * active fact exceeds this threshold, the older (lower-importance) fact
+   * is archived as semantically redundant. Inspired by FSFM's
+   * redundancy-based forgetting (cosine > 0.95 → demote).
+   *
+   * We use jaccard (0-1) instead of cosine similarity because L3 prose
+   * facts are short enough that lexical overlap is a strong signal,
+   * and it avoids the cost of embedding computation.
+   *
+   * Set to 1.0 to disable semantic dedup.
+   * Default: 0.75.
+   */
+  semanticDedupThreshold: number;
 };
 
 export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
   maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
   epochGraceMultiplier: 1.5,
+  semanticDedupThreshold: 0.85,
 };
 
 export type ConsolidationOutput = {
@@ -46,6 +63,8 @@ export type ConsolidationOutput = {
   epochGraceCount: number;
   /** Archived facts that re-appeared in candidates and were re-activated. */
   unarchivedCount: number;
+  /** Facts archived as semantically redundant of a higher-importance fact (FSFM). */
+  semanticDedupCount: number;
   /** Total active facts after the pass (excludes archived). */
   activeCount: number;
 };
@@ -103,6 +122,7 @@ export async function consolidateLongTerm(params: {
 
   let archivedCount = 0;
   let epochGraceCount = 0;
+  let semanticDedupCount = 0;
 
   // Build a map of active facts by firstSeenAt date string for epoch cluster
   // density checks. Facts that first appeared on the same day likely came from
@@ -143,6 +163,55 @@ export async function consolidateLongTerm(params: {
     }
   }
 
+  // -----------------------------------------------------------------
+  // Semantic dedup (FSFM-inspired redundancy-based forgetting)
+  // -----------------------------------------------------------------
+  // Runs AFTER archival so it doesn't interfere with epoch-grace logic.
+  // When two active facts have high jaccard similarity, the lower-
+  // importance one is archived as redundant. This prevents semantically
+  // duplicate facts from accumulating (e.g., "fork is on memory-fork" and
+  // "the branch is memory-fork" have different dedupKeys but are
+  // semantically identical).
+  if (longTermConfig.semanticDedupThreshold < 1.0) {
+    const activeFacts = [...merged.values()].filter((f) => !f.archived);
+    if (activeFacts.length >= 2) {
+      // Pre-tokenize
+      const factTokens = new Map<string, Set<string>>();
+      for (const f of activeFacts) {
+        factTokens.set(f.dedupKey, tokenize(f.text));
+      }
+
+      // For each pair, check if they're semantically redundant
+      const toArchive = new Set<string>();
+      for (let i = 0; i < activeFacts.length; i++) {
+        for (let j = i + 1; j < activeFacts.length; j++) {
+          const a = activeFacts[i];
+          const b = activeFacts[j];
+          if (toArchive.has(a.dedupKey) || toArchive.has(b.dedupKey)) continue;
+
+          const sim = jaccard(factTokens.get(a.dedupKey)!, factTokens.get(b.dedupKey)!);
+          if (sim < longTermConfig.semanticDedupThreshold) continue;
+
+          // Archive the lower-importance (or older if tied) fact
+          const victim =
+            a.importance < b.importance ||
+            (a.importance === b.importance && a.firstSeenAt < b.firstSeenAt)
+              ? a
+              : b;
+          toArchive.add(victim.dedupKey);
+        }
+      }
+
+      for (const dedupKey of toArchive) {
+        const fact = merged.get(dedupKey);
+        if (fact && !fact.archived) {
+          merged.set(dedupKey, archive(fact, params.now));
+          semanticDedupCount += 1;
+        }
+      }
+    }
+  }
+
   const orderedFacts = orderFacts([...merged.values()]);
   const frontmatter: LongTermFrontmatter = {
     version: 1,
@@ -167,6 +236,7 @@ export async function consolidateLongTerm(params: {
     archivedCount,
     epochGraceCount,
     unarchivedCount,
+    semanticDedupCount,
     activeCount: orderedFacts.filter((f) => !f.archived).length,
   };
 }

@@ -7,6 +7,11 @@ export type ScoringConfig = {
    * than common-word overlaps. Default 0 — set to 0.2-0.4 to opt in. */
   weightBm25: number;
   weightImportance: number;
+  /**
+   * Recency/forgetting signal weight. When `useFsrs` is true, this weight
+   * applies to the FSRS retrievability score instead of simple exponential
+   * decay. Default 0.1.
+   */
   weightRecency: number;
   /** ε-weighted L3-epoch boost. Soft additive prior; default 0.1. */
   weightL3Boost: number;
@@ -30,7 +35,14 @@ export type ScoringConfig = {
    * matching the query directly. Default 0.1.
    */
   weightTypedFactTierBoost: number;
+  /** Base half-life in days for FSRS recency scoring. Default 7. */
   recencyHalfLifeDays: number;
+  /**
+   * When true, use FSRS-based per-fact forgetting instead of simple
+   * exponential decay. Facts with higher recallCount get longer half-lives.
+   * Default true.
+   */
+  useFsrs: boolean;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -43,7 +55,87 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightMemoryCoreTierMultiplier: 0.7,
   weightTypedFactTierBoost: 0.1,
   recencyHalfLifeDays: 7,
+  useFsrs: true,
 };
+
+// ---------------------------------------------------------------------------
+// FSRS-inspired per-fact forgetting (ZenBrain / FSFM research)
+// ---------------------------------------------------------------------------
+
+/**
+ * FSRS (Free Spaced Repetition Scheduler) parameters for per-fact stability.
+ * Unlike the one-size-fits-all recencyScore(), FSRS models each fact's
+ * retrievability based on how often it's been recalled and how stable it is.
+ *
+ * Inspired by:
+ * - ZenBrain: FSRS scheduling with Hebbian learning and Ebbinghaus curves
+ * - FSFM: per-fact stability × difficulty × retrievability
+ * - Microsoft "Forgetting Is the Fix": exponential decay with per-fact rates
+ *
+ * The key insight: a fact recalled 20 times (like an IP address) should have
+ * a MUCH longer half-life than a fact recalled once (a one-off conversation).
+ */
+
+/** FSRS parameters that control the forgetting curve shape. */
+export type FsrsParams = {
+  /** Difficulty parameter (0..1). Higher = harder to remember. Default 0.3. */
+  w0: number;
+  /** Stability growth on successful recall. Default 1.3. */
+  w1: number;
+  /** Base decay rate. Default 0.4. */
+  w2: number;
+  /** Significance multiplier — "remember this" facts decay 2.7× slower. Default 2.7. */
+  significanceBoost: number;
+};
+
+export const DEFAULT_FSRS_PARAMS: FsrsParams = {
+  w0: 0.3,
+  w1: 1.3,
+  w2: 0.4,
+  significanceBoost: 2.7,
+};
+
+/**
+ * Compute FSRS-based retrievability for a fact.
+ *
+ * R(t) = e^(-t / S)
+ *
+ * Where S (stability) grows with recallCount:
+ *   S = baseHalfLifeDays × w1^(recallCount - 1) × (1 + difficulty)
+ *
+ * And for significant facts:
+ *   S *= significanceBoost
+ *
+ * This means:
+ * - First recall (recallCount=1): S = baseHalfLifeDays × (1 + difficulty)
+ * - Each subsequent recall multiplies S by w1 (1.3×)
+ * - "Remember this" facts get 2.7× longer stability
+ * - Result: infrastructure facts (recalled 20×) have ~190 day half-life
+ *   vs one-off facts at ~7 days
+ */
+export function fsrsRetrievability(params: {
+  ageMs: number;
+  recallCount: number;
+  halfLifeDays: number;
+  significant?: boolean;
+  fsrs?: FsrsParams;
+}): number {
+  const fsrs = params.fsrs ?? DEFAULT_FSRS_PARAMS;
+  const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
+  if (params.halfLifeDays <= 0) return 1;
+
+  // Compute per-fact stability based on recall history
+  let stability = params.halfLifeDays * Math.pow(fsrs.w1, Math.max(0, params.recallCount - 1));
+  stability *= 1 + fsrs.w0; // difficulty adjustment
+
+  // Significance boost (emotional tagging from ZenBrain)
+  if (params.significant) {
+    stability *= fsrs.significanceBoost;
+  }
+
+  // R(t) = e^(-t / S) — standard Ebbinghaus curve with per-fact stability
+  return Math.exp(-ageDays / stability);
+}
 
 export type Signals = {
   lexical: number;
@@ -144,6 +236,14 @@ export function scoreFact(params: {
   l3Boost?: number;
   /** Corpus stats for BM25 scoring. When omitted, bm25 signal is 0. */
   corpusStats?: CorpusStats;
+  /**
+   * Number of times this fact has been recalled across L2 chunks.
+   * When > 1 and useFsrs is true, FSRS-based forgetting is used instead
+   * of simple exponential decay — giving high-recall facts longer half-lives.
+   */
+  recallCount?: number;
+  /** Whether this fact was flagged as significant by the user ("remember this"). */
+  significant?: boolean;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -152,10 +252,16 @@ export function scoreFact(params: {
       ? bm25Score(params.queryTokens, params.fact.text, params.corpusStats)
       : 0;
   const importance = params.fact.importance;
-  const recency = recencyScore(
-    params.now - params.fact.createdAt,
-    params.config.recencyHalfLifeDays,
-  );
+  const ageMs = params.now - params.fact.createdAt;
+  const recency =
+    params.config.useFsrs && (params.recallCount ?? 0) > 0
+      ? fsrsRetrievability({
+          ageMs,
+          recallCount: params.recallCount ?? 1,
+          halfLifeDays: params.config.recencyHalfLifeDays,
+          significant: params.significant,
+        })
+      : recencyScore(ageMs, params.config.recencyHalfLifeDays);
   return { lexical, bm25, importance, recency, l3Boost: params.l3Boost ?? 0 };
 }
 

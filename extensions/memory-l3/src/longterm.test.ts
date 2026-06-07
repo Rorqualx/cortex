@@ -57,6 +57,7 @@ describe("consolidateLongTerm", () => {
       archivedCount: 0,
       epochGraceCount: 0,
       unarchivedCount: 0,
+      semanticDedupCount: 0,
       activeCount: 0,
     });
     const lt = await storage.readLongTerm();

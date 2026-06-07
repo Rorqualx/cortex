@@ -18,7 +18,7 @@ import { IngestBuffer } from "./ingest.js";
 import { createGlmCaller, type LlmCaller } from "./llm.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
 import { consolidateLongTerm } from "./longterm.js";
-import { reconcileCrossBrain } from "./reconciliation.js";
+import { reconcileCrossBrain, reconcileProseInterference } from "./reconciliation.js";
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
@@ -322,6 +322,25 @@ export class HierarchicalL3Engine implements ContextEngine {
               `[memory-l3] cross-brain reconciliation failed: ${(recErr as Error).message}`,
             );
           }
+        }
+        // Prose-prose interference detection (Microsoft "Forgetting Is the Fix"):
+        // Algorithmic (no LLM) — detects topically similar prose facts from
+        // different time periods and marks the older one as superseded.
+        try {
+          const pi = await reconcileProseInterference({
+            storage: this.storage,
+            agentId: this.state.agentId,
+            now,
+          });
+          if (pi.newlySuperseded > 0 || pi.cleared > 0) {
+            l3debug(
+              `afterTurn(): prose interference considered=${pi.factsConsidered} superseded=${pi.newlySuperseded} cleared=${pi.cleared}`,
+            );
+          }
+        } catch (piErr) {
+          console.error(
+            `[memory-l3] prose interference detection failed: ${(piErr as Error).message}`,
+          );
         }
       }
       await this.storage.writeState(this.state);
