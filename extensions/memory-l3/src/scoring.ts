@@ -43,6 +43,13 @@ export type ScoringConfig = {
    * Default true.
    */
   useFsrs: boolean;
+  /**
+   * Weight for embedding-based semantic similarity signal. Only applies when
+   * both the query and the fact have pre-computed embeddings. When 0 or when
+   * embeddings are unavailable, this signal is skipped entirely.
+   * Default 0.15.
+   */
+  weightSemantic: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -56,6 +63,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightTypedFactTierBoost: 0.1,
   recencyHalfLifeDays: 7,
   useFsrs: true,
+  weightSemantic: 0.15,
 };
 
 // ---------------------------------------------------------------------------
@@ -143,6 +151,8 @@ export type Signals = {
   importance: number;
   recency: number;
   l3Boost: number;
+  /** Embedding-based cosine similarity. 0 when embeddings unavailable. */
+  semantic: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
@@ -173,6 +183,28 @@ export function recencyScore(ageMs: number, halfLifeDays: number): number {
   if (halfLifeDays <= 0) return 1;
   const ageDays = Math.max(0, ageMs) / MS_PER_DAY;
   return Math.exp((-Math.LN2 * ageDays) / halfLifeDays);
+}
+
+// ---------------------------------------------------------------------------
+// Cosine similarity for pre-computed embedding vectors
+// ---------------------------------------------------------------------------
+
+/**
+ * Cosine similarity between two embedding vectors.
+ * Returns 0 if either vector is empty or lengths mismatch.
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
 }
 
 export type CorpusStats = {
@@ -262,7 +294,7 @@ export function scoreFact(params: {
           significant: params.significant,
         })
       : recencyScore(ageMs, params.config.recencyHalfLifeDays);
-  return { lexical, bm25, importance, recency, l3Boost: params.l3Boost ?? 0 };
+  return { lexical, bm25, importance, recency, l3Boost: params.l3Boost ?? 0, semantic: 0 };
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {
@@ -271,6 +303,7 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.bm25 * config.weightBm25 +
     signals.importance * config.weightImportance +
     signals.recency * config.weightRecency +
-    signals.l3Boost * config.weightL3Boost
+    signals.l3Boost * config.weightL3Boost +
+    signals.semantic * config.weightSemantic
   );
 }

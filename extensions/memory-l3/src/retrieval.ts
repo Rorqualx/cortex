@@ -14,6 +14,7 @@ import {
 import {
   buildCorpusStats,
   composite,
+  cosineSimilarity,
   DEFAULT_SCORING_CONFIG,
   type CorpusStats,
   fsrsRetrievability,
@@ -114,6 +115,12 @@ export async function retrieveTopK(params: {
    * Optional Hebbian config. Defaults to DEFAULT_HEBBIAN_CONFIG.
    */
   hebbianConfig?: HebbianConfig;
+  /**
+   * Pre-computed query embedding. When provided, facts with stored
+   * embeddings get a cosine-similarity semantic signal added to their
+   * composite score.
+   */
+  queryEmbedding?: number[];
 }): Promise<RetrievedFact[]> {
   const topK = Math.max(0, params.topK);
   if (topK === 0) return [];
@@ -162,6 +169,8 @@ export async function retrieveTopK(params: {
     l3Boost: number;
     /** For long-term/typed tiers: flat additive boost when lexical > 0. */
     tierBoost: number;
+    /** Pre-computed embedding vector from LongTermFact.embedding, if present. */
+    embedding?: number[];
   };
   const items: ScorableItem[] = [];
 
@@ -208,6 +217,7 @@ export async function retrieveTopK(params: {
       tier: "longterm",
       l3Boost: 0,
       tierBoost: config.weightLongTermTierBoost,
+      embedding: lt.embedding,
     });
   }
 
@@ -227,6 +237,14 @@ export async function retrieveTopK(params: {
       corpusStats,
       significant: item.fact.significant,
     });
+    // Add embedding-based semantic signal when both query and fact have vectors
+    if (
+      params.queryEmbedding &&
+      item.embedding &&
+      params.queryEmbedding.length === item.embedding.length
+    ) {
+      signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+    }
     const baseScore = composite(signals, config);
     const score = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
     if (score > 0) {
@@ -253,7 +271,14 @@ export async function retrieveTopK(params: {
         scored.push({
           fact,
           score,
-          signals: { lexical: hit.score, bm25: 0, importance: 0.5, recency: 1, l3Boost: 0 },
+          signals: {
+            lexical: hit.score,
+            bm25: 0,
+            importance: 0.5,
+            recency: 1,
+            l3Boost: 0,
+            semantic: 0,
+          },
           chunkId: hit.path,
           tier: "memory-core",
         });

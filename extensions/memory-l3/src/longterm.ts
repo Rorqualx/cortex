@@ -7,11 +7,15 @@ import {
   DEFAULT_CONSOLIDATION_CONFIG,
   selectPromotable,
 } from "./consolidation.js";
-import { jaccard, tokenize } from "./scoring.js";
+import { cosineSimilarity, jaccard, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type { LongTermFact, LongTermFrontmatter } from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
+function l3debug(msg: string): void {
+  if (DEBUG_ENABLED) console.error(`[memory-l3/longterm] ${msg}`);
+}
 
 export type LongTermConfig = {
   /**
@@ -87,6 +91,13 @@ export async function consolidateLongTerm(params: {
    * without any modification to memory-core source.
    */
   workspaceDir?: string;
+  /**
+   * Optional embedding provider for pre-computing vectors at promotion time.
+   * When provided, promoted/reaffirmed facts get an `embedding` field
+   * enabling cosine-similarity semantic dedup and retrieval signals.
+   * Falls back to jaccard when unavailable.
+   */
+  embeddingProvider?: { embedBatch(texts: string[]): Promise<number[][]> };
 }): Promise<ConsolidationOutput> {
   const consolidationConfig = params.consolidationConfig ?? DEFAULT_CONSOLIDATION_CONFIG;
   const longTermConfig = params.longTermConfig ?? DEFAULT_LONG_TERM_CONFIG;
@@ -104,10 +115,16 @@ export async function consolidateLongTerm(params: {
   let reaffirmedCount = 0;
   let unarchivedCount = 0;
 
+  // Collect all facts that need embedding computation.
+  const factsNeedingEmbedding: Array<{ dedupKey: string; text: string }> = [];
+  const pendingFacts = new Map<string, LongTermFact>();
+
   for (const candidate of promotable) {
     const prior = merged.get(candidate.dedupKey);
     if (!prior) {
-      merged.set(candidate.dedupKey, promote(candidate));
+      const fact = promote(candidate);
+      pendingFacts.set(candidate.dedupKey, fact);
+      factsNeedingEmbedding.push({ dedupKey: candidate.dedupKey, text: candidate.text });
       promotedCount += 1;
       continue;
     }
@@ -117,7 +134,34 @@ export async function consolidateLongTerm(params: {
     } else {
       reaffirmedCount += 1;
     }
-    merged.set(candidate.dedupKey, reaffirmed);
+    pendingFacts.set(candidate.dedupKey, reaffirmed);
+    // Re-compute embedding on reaffirmation (text may have updated)
+    if (!reaffirmed.archived) {
+      factsNeedingEmbedding.push({ dedupKey: candidate.dedupKey, text: reaffirmed.text });
+    }
+  }
+
+  // Batch-compute embeddings for all promoted/reaffirmed facts at once.
+  if (params.embeddingProvider && factsNeedingEmbedding.length > 0) {
+    try {
+      const texts = factsNeedingEmbedding.map((f) => f.text);
+      const vectors = await params.embeddingProvider.embedBatch(texts);
+      for (let i = 0; i < factsNeedingEmbedding.length; i++) {
+        const dedupKey = factsNeedingEmbedding[i].dedupKey;
+        const fact = pendingFacts.get(dedupKey);
+        if (fact && vectors[i]) {
+          pendingFacts.set(dedupKey, { ...fact, embedding: vectors[i] });
+        }
+      }
+    } catch (embedErr) {
+      // Non-fatal: facts without embeddings fall back to jaccard in dedup
+      l3debug(`embedding batch failed, continuing without vectors: ${(embedErr as Error).message}`);
+    }
+  }
+
+  // Merge pending facts into the merged map
+  for (const [key, fact] of pendingFacts) {
+    merged.set(key, fact);
   }
 
   let archivedCount = 0;
@@ -194,7 +238,10 @@ export async function consolidateLongTerm(params: {
   // Semantic dedup (FSFM-inspired redundancy-based forgetting)
   // -----------------------------------------------------------------
   // Runs AFTER archival so it doesn't interfere with epoch-grace logic.
-  // When two active facts have high jaccard similarity, the lower-
+  // Uses cosine similarity on pre-computed embeddings when available,
+  // falls back to jaccard for facts without embeddings.
+  //
+  // When two active facts exceed the similarity threshold, the lower-
   // importance one is archived as redundant. This prevents semantically
   // duplicate facts from accumulating (e.g., "fork is on memory-fork" and
   // "the branch is memory-fork" have different dedupKeys but are
@@ -202,13 +249,14 @@ export async function consolidateLongTerm(params: {
   if (longTermConfig.semanticDedupThreshold < 1.0) {
     const activeFacts = [...merged.values()].filter((f) => !f.archived);
     if (activeFacts.length >= 2) {
-      // Pre-tokenize
+      // Pre-compute jaccard tokens for fallback
       const factTokens = new Map<string, Set<string>>();
       for (const f of activeFacts) {
         factTokens.set(f.dedupKey, tokenize(f.text));
       }
 
-      // For each pair, check if they're semantically redundant
+      // For each pair, check if they're semantically redundant.
+      // Prefer cosine similarity on embeddings when both facts have them.
       const toArchive = new Set<string>();
       for (let i = 0; i < activeFacts.length; i++) {
         for (let j = i + 1; j < activeFacts.length; j++) {
@@ -216,7 +264,19 @@ export async function consolidateLongTerm(params: {
           const b = activeFacts[j];
           if (toArchive.has(a.dedupKey) || toArchive.has(b.dedupKey)) continue;
 
-          const sim = jaccard(factTokens.get(a.dedupKey)!, factTokens.get(b.dedupKey)!);
+          // Use cosine similarity on embeddings when both facts have them,
+          // otherwise fall back to jaccard.
+          let sim: number;
+          if (
+            a.embedding &&
+            b.embedding &&
+            a.embedding.length > 0 &&
+            a.embedding.length === b.embedding.length
+          ) {
+            sim = cosineSimilarity(a.embedding, b.embedding);
+          } else {
+            sim = jaccard(factTokens.get(a.dedupKey)!, factTokens.get(b.dedupKey)!);
+          }
           if (sim < longTermConfig.semanticDedupThreshold) continue;
 
           // Archive the lower-importance (or older if tied) fact

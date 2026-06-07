@@ -150,6 +150,13 @@ export type LongTermFact = {
   supersededBy?: string | null;
   /** Emotional significance flag propagated from L2 extraction. */
   significant?: boolean;
+  /**
+   * Pre-computed embedding vector for semantic dedup and retrieval.
+   * Computed at promotion time (or reaffirmation) via the embedding provider.
+   * Absent for facts promoted before this feature was added — fallback to
+   * jaccard for those. Stored as number array (768-dim for nomic-embed-text).
+   */
+  embedding?: number[];
 };
 
 /**

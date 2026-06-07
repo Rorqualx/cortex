@@ -137,14 +137,16 @@ describe("scoreFact + composite", () => {
       weightMemoryCoreTierMultiplier: 0.7,
       weightTypedFactTierBoost: 0,
       recencyHalfLifeDays: 7,
+      useFsrs: false,
+      weightSemantic: 0,
     };
     const score = composite(
-      { lexical: 1.0, bm25: 0, importance: 1.0, recency: 1.0, l3Boost: 1.0 },
+      { lexical: 1.0, bm25: 0, importance: 1.0, recency: 1.0, l3Boost: 1.0, semantic: 0 },
       config,
     );
     expect(score).toBeCloseTo(1.0, 6);
     const half = composite(
-      { lexical: 0.5, bm25: 0, importance: 0.5, recency: 0.5, l3Boost: 0.5 },
+      { lexical: 0.5, bm25: 0, importance: 0.5, recency: 0.5, l3Boost: 0.5, semantic: 0 },
       config,
     );
     expect(half).toBeCloseTo(0.5, 6);
@@ -161,9 +163,11 @@ describe("scoreFact + composite", () => {
       weightMemoryCoreTierMultiplier: 0.7,
       weightTypedFactTierBoost: 0,
       recencyHalfLifeDays: 7,
+      useFsrs: false,
+      weightSemantic: 0,
     };
     const score = composite(
-      { lexical: 0, bm25: 0, importance: 0, recency: 0, l3Boost: 0.4 },
+      { lexical: 0, bm25: 0, importance: 0, recency: 0, l3Boost: 0.4, semantic: 0 },
       config,
     );
     expect(score).toBeCloseTo(0.2, 6);

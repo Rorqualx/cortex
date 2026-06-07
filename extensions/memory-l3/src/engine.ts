@@ -20,6 +20,23 @@ import { createGlmCaller, type LlmCaller } from "./llm.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
 import { consolidateLongTerm } from "./longterm.js";
 import { reconcileCrossBrain, reconcileProseInterference } from "./reconciliation.js";
+
+/**
+ * Embedding provider for pre-computing vectors at promotion time.
+ * Follows the same pattern as LlmCaller — injected via constructor,
+ * resolved lazily, optional (graceful degradation to jaccard).
+ *
+ * When provided, embeddings are computed once at promotion/reaffirmation and
+ * stored in LongTermFact.embedding. This enables cosine-similarity-based
+ * semantic dedup (instead of jaccard) and semantic retrieval signals —
+ * without any embedding calls during the dedup or retrieval passes.
+ */
+export type EmbeddingProvider = {
+  /** Compute embedding for a single text. */
+  embed(text: string): Promise<number[]>;
+  /** Compute embeddings for multiple texts in a batch. */
+  embedBatch(texts: string[]): Promise<number[][]>;
+};
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
@@ -68,6 +85,13 @@ export type HierarchicalL3EngineOptions = {
   skillForgeDir?: string;
   /** Shared memory directory for cross-context tier. Defaults to ~/.openclaw/shared-memory/. */
   sharedMemoryDir?: string;
+  /**
+   * Embedding provider for pre-computing vectors at promotion time.
+   * When provided, LongTermFacts get an `embedding` field that enables
+   * cosine-similarity semantic dedup and retrieval. Falls back to jaccard
+   * when unavailable.
+   */
+  embeddingProvider?: EmbeddingProvider;
 };
 
 export class HierarchicalL3Engine implements ContextEngine {
@@ -81,6 +105,7 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly workspaceDir: string | undefined;
   private readonly skillForgeDir: string | undefined;
   private readonly sharedMemoryDir: string | undefined;
+  private readonly embeddingProvider: EmbeddingProvider | undefined;
   private cachedZaiKey: string | null | undefined;
   private state: L3State | null = null;
 
@@ -89,6 +114,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     this.callerOverride = options?.caller;
     this.agentDir = options?.agentDir;
     this.config = options?.config;
+    this.embeddingProvider = options?.embeddingProvider;
     this.memoryCoreLookupOverride = options?.memoryCoreLookup;
     this.workspaceDir = options?.workspaceDir;
     this.skillForgeDir = options?.skillForgeDir;
@@ -185,6 +211,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,
+      queryEmbedding: await this.resolveQueryEmbedding(prompt),
     });
     if (top.length === 0) return undefined;
     return formatMemorySection(top, { now: Date.now() });
@@ -284,6 +311,7 @@ export class HierarchicalL3Engine implements ContextEngine {
             agentId: this.state.agentId,
             now,
             workspaceDir: this.workspaceDir,
+            embeddingProvider: this.embeddingProvider,
           });
           this.state.lastConsolidatedAt = now;
           l3debug(
@@ -426,6 +454,19 @@ export class HierarchicalL3Engine implements ContextEngine {
         tokensAfter: 0,
       },
     };
+  }
+
+  /**
+   * Compute query embedding for semantic retrieval signal.
+   * Returns undefined when no embedding provider is configured or the call fails.
+   */
+  private async resolveQueryEmbedding(query: string): Promise<number[] | undefined> {
+    if (!this.embeddingProvider) return undefined;
+    try {
+      return await this.embeddingProvider.embed(query);
+    } catch {
+      return undefined;
+    }
   }
 
   private async resolveCaller(): Promise<LlmCaller | null> {
