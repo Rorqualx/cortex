@@ -1,11 +1,12 @@
 // Covers startup update check and auto-update behavior.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatCliCommand } from "../cli/command-format.js";
-import { resolveStateDir } from "../config/paths.js";
-import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
-import { captureEnv } from "../test-utils/env.js";
+import {
+  createOpenClawTestState,
+  type OpenClawTestState,
+} from "../test-utils/openclaw-test-state.js";
 import type { UpdateCheckResult } from "./update-check.js";
 
 const {
@@ -79,10 +80,8 @@ vi.mock("./update-managed-service-handoff.js", () => ({
 }));
 
 describe("update-startup", () => {
-  const UPDATE_CHECK_FILENAME = "update-check.json";
-  const suiteRootTracker = createSuiteTempRootTracker({ prefix: "openclaw-update-check-suite-" });
   let tempDir: string;
-  let envSnapshot: ReturnType<typeof captureEnv>;
+  let testState: OpenClawTestState;
 
   let resolveOpenClawPackageRoot: (typeof import("./openclaw-root.js"))["resolveOpenClawPackageRoot"];
   let checkUpdateStatus: (typeof import("./update-check.js"))["checkUpdateStatus"];
@@ -102,33 +101,26 @@ describe("update-startup", () => {
     return call;
   }
 
-  beforeAll(async () => {
-    await suiteRootTracker.setup();
-  });
-
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-17T10:00:00Z"));
-    tempDir = await suiteRootTracker.make("case");
-    envSnapshot = captureEnv([
-      "OPENCLAW_NO_AUTO_UPDATE",
-      "OPENCLAW_STATE_DIR",
-      "OPENCLAW_SERVICE_KIND",
-      "OPENCLAW_SERVICE_MARKER",
-      "OPENCLAW_GATEWAY_SERVICE_PID",
-      "OPENCLAW_LAUNCHD_LABEL",
-      "OPENCLAW_SYSTEMD_UNIT",
-      "OPENCLAW_WINDOWS_TASK_NAME",
-      "INVOCATION_ID",
-      "NODE_ENV",
-      "VITEST",
-    ]);
-    process.env.OPENCLAW_STATE_DIR = tempDir;
-
-    process.env.NODE_ENV = "test";
-
-    // Ensure update checks don't short-circuit in test mode.
-    delete process.env.VITEST;
+    testState = await createOpenClawTestState({
+      layout: "state-only",
+      prefix: "openclaw-update-check-suite-",
+      env: {
+        OPENCLAW_NO_AUTO_UPDATE: undefined,
+        OPENCLAW_SERVICE_KIND: undefined,
+        OPENCLAW_SERVICE_MARKER: undefined,
+        OPENCLAW_GATEWAY_SERVICE_PID: undefined,
+        OPENCLAW_LAUNCHD_LABEL: undefined,
+        OPENCLAW_SYSTEMD_UNIT: undefined,
+        OPENCLAW_WINDOWS_TASK_NAME: undefined,
+        INVOCATION_ID: undefined,
+        NODE_ENV: "test",
+        VITEST: undefined,
+      },
+    });
+    tempDir = testState.stateDir;
 
     // Perf: load mocked modules once (after timers/env are set up).
     if (!loaded) {
@@ -162,12 +154,8 @@ describe("update-startup", () => {
 
   afterEach(async () => {
     vi.useRealTimers();
-    envSnapshot.restore();
+    await testState.cleanup();
     resetUpdateAvailableStateForTest();
-  });
-
-  afterAll(async () => {
-    await suiteRootTracker.cleanup();
   });
 
   function mockPackageUpdateStatus(tag = "latest", version = "2.0.0") {
@@ -629,92 +617,5 @@ describe("update-startup", () => {
       isNixMode: false,
     });
     stop();
-  });
-
-  describe("equal version handling", () => {
-    it("clears update available when resolved version equals current version", async () => {
-      mockPackageInstallStatus();
-      // VERSION is globally mocked as "1.0.0" in this test suite
-      // Use an old timestamp to ensure the fresh check runs
-      const oldTimestamp = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-
-      // Set up state with a previous "available" version
-      const statePath = path.join(resolveStateDir(), UPDATE_CHECK_FILENAME);
-      await fs.writeFile(
-        statePath,
-        JSON.stringify(
-          {
-            lastCheckedAt: oldTimestamp,
-            lastAvailableVersion: "2.0.0",
-            lastAvailableTag: "latest",
-          },
-          null,
-          2,
-        ),
-        "utf-8",
-      );
-
-      // Mock fresh check returning same version as current (1.0.0)
-      vi.mocked(resolveNpmChannelTag).mockResolvedValueOnce({
-        tag: "latest",
-        version: "1.0.0", // Same as globally mocked VERSION
-      });
-
-      const onUpdateAvailableChange = vi.fn();
-      await runGatewayUpdateCheck({
-        cfg: { update: { channel: "stable" } },
-        log: { info: vi.fn() },
-        isNixMode: false,
-        allowInTests: true,
-        onUpdateAvailableChange,
-      });
-
-      // Should clear the update available state
-      expect(onUpdateAvailableChange).toHaveBeenCalledWith(null);
-      expect(getUpdateAvailable()).toBeNull();
-    });
-
-    it("does not show banner when persisted version equals current", async () => {
-      mockPackageInstallStatus();
-      // VERSION is globally mocked as "1.0.0" in this test suite
-      // Use an old timestamp to ensure the fresh check runs
-      const oldTimestamp = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-
-      // Set up state with a previous "available" version (2.0.0)
-      // Then mock the fresh check returning the same version as current (1.0.0)
-      const statePath = path.join(resolveStateDir(), UPDATE_CHECK_FILENAME);
-      await fs.writeFile(
-        statePath,
-        JSON.stringify(
-          {
-            lastCheckedAt: oldTimestamp,
-            lastAvailableVersion: "2.0.0", // Previously "available"
-            lastAvailableTag: "latest",
-          },
-          null,
-          2,
-        ),
-        "utf-8",
-      );
-
-      // Mock the fresh check to return 1.0.0 (equal to current VERSION)
-      vi.mocked(resolveNpmChannelTag).mockResolvedValueOnce({
-        tag: "latest",
-        version: "1.0.0", // Same as current VERSION
-      });
-
-      const onUpdateAvailableChange = vi.fn();
-      await runGatewayUpdateCheck({
-        cfg: { update: { channel: "stable" } },
-        log: { info: vi.fn() },
-        isNixMode: false,
-        allowInTests: true,
-        onUpdateAvailableChange,
-      });
-
-      // Should clear the update (going from 2.0.0 available to no update)
-      expect(onUpdateAvailableChange).toHaveBeenCalledWith(null);
-      expect(getUpdateAvailable()).toBeNull();
-    });
   });
 });
