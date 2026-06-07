@@ -3007,6 +3007,85 @@ export async function runEmbeddedAttempt(
             );
           }
         }
+
+        // Context compression: post-assemble compression of tool-result content.
+        // Runs after context engine assemble (or on raw pipeline messages when
+        // no context engine is active). Only compresses tool-result content;
+        // user messages, system prompts, and assistant responses pass through.
+        try {
+          const compressionConfig = params.config?.compression;
+          if (compressionConfig?.enabled) {
+            const {
+              compressAssembledContext,
+              resolveCompressionConfig,
+              createCCRStore,
+              createCCRRetrieveTool,
+            } = await import("../../compression/index.js");
+            const resolved = resolveCompressionConfig(compressionConfig);
+            const currentMessages = activeSession.messages;
+            // Create CCR store if enabled — kept alive for tool retrieval during the attempt
+            const ccrStore = createCCRStore(
+              resolved,
+              params.sessionFile?.replace(/[^/]+$/, ".openclaw") ?? "/tmp",
+            );
+            const compressed = await compressAssembledContext(
+              currentMessages,
+              resolved,
+              params.contextTokenBudget,
+              ccrStore,
+            );
+            if (compressed.messages !== currentMessages) {
+              activeSession.agent.state.messages = compressed.messages;
+            }
+            // Inject ccr_retrieve tool so the model can request original data
+            if (ccrStore && compressed.ccrHashes.length > 0) {
+              const ccrTool = createCCRRetrieveTool(ccrStore);
+              if (ccrTool) {
+                effectiveTools.push(ccrTool);
+              }
+            }
+            // Schedule CCR cleanup after the attempt completes
+            if (ccrStore) {
+              const storeRef = ccrStore;
+              const attemptRunId = params.runId;
+              // Use process.nextTick-like cleanup via the session dispose chain
+              const origDispose = activeSession.dispose.bind(activeSession);
+              activeSession.dispose = () => {
+                try {
+                  storeRef.evict();
+                } catch {
+                  /* best effort */
+                }
+                try {
+                  storeRef.close();
+                } catch {
+                  /* already closed */
+                }
+                origDispose();
+              };
+            }
+            // Telemetry
+            if (compressed.stats.messagesCompressed > 0) {
+              log.info(
+                `compression: ${compressed.stats.messagesCompressed} messages compressed, ` +
+                  `${compressed.stats.totalSavingsPercent}% savings, ` +
+                  `${compressed.charsBefore} → ${compressed.charsAfter} chars` +
+                  (compressed.ccrHashes.length > 0
+                    ? `, ${compressed.ccrHashes.length} CCR entries`
+                    : "") +
+                  `, runId=${params.runId}`,
+              );
+              const typesBreakdown = Object.entries(compressed.stats.byType)
+                .map(([type, s]) => `${type}:${s.count}(${s.savingsPercent}%)`)
+                .join(", ");
+              if (typesBreakdown) {
+                log.debug(`compression breakdown: ${typesBreakdown}`);
+              }
+            }
+          }
+        } catch (compressErr) {
+          log.warn(`context compression failed: ${String(compressErr)}`);
+        }
       } catch (err) {
         await flushPendingToolResultsAfterIdle({
           agent: activeSession?.agent,
