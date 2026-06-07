@@ -204,6 +204,8 @@ export type EmbeddedRunAttemptResult = {
   /** True when sessions_yield tool was called during this attempt. */
   yieldDetected?: boolean;
   replayMetadata: EmbeddedRunReplayMetadata;
+  /** HTTP response headers from the LLM provider (for attestation header capture). */
+  providerResponseHeaders?: Record<string, string>;
   itemLifecycle: {
     startedCount: number;
     completedCount: number;

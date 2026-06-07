@@ -2562,6 +2562,8 @@ export async function runEmbeddedAttempt(
         model: params.model,
         resolvedApiKey: params.resolvedApiKey,
       });
+      // Mutable container for provider HTTP response headers (populated by onResponse callback).
+      const providerResponseHeadersContainer: { headers?: Record<string, string> } = {};
       activeSession.agent.streamFn = resolveEmbeddedAgentStreamFn({
         currentStreamFn: defaultSessionStreamFn,
         providerStreamFn,
@@ -2572,6 +2574,9 @@ export async function runEmbeddedAttempt(
         resolvedApiKey: params.resolvedApiKey,
         authProfileId: resolveAttemptStreamAuthProfileId(params),
         authStorage: params.authStorage,
+        onResponse: (response) => {
+          providerResponseHeadersContainer.headers = response.headers;
+        },
       });
       const providerTextTransforms = resolveProviderTextTransforms({
         provider: params.provider,
@@ -5023,6 +5028,7 @@ export async function runEmbeddedAttempt(
           itemLifecycle: getItemLifecycle(),
           toolMetas: toolMetasNormalized,
           replayMetadata,
+          providerResponseHeaders: providerResponseHeadersContainer.headers,
           promptErrorSource,
           timedOutDuringCompaction,
         },
@@ -5115,6 +5121,7 @@ export async function runEmbeddedAttempt(
 
       return {
         replayMetadata,
+        providerResponseHeaders: providerResponseHeadersContainer.headers,
         itemLifecycle: getItemLifecycle(),
         setTerminalLifecycleMeta,
         aborted,

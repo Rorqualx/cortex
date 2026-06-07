@@ -18,6 +18,10 @@ import { emitAgentPlanEvent, registerAgentRunContext } from "../../infra/agent-e
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { freezeDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import {
+  resolveAttestationConfig as resolveAttestationConfigFromCodex,
+  attestModelResponse,
+} from "../../integration/codex-features.js";
 import { buildAgentHookContextChannelFields } from "../../plugins/hook-agent-context.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { resolveProviderAuthProfileId } from "../../plugins/provider-runtime.js";
@@ -26,6 +30,7 @@ import type { CommandQueueEnqueueOptions } from "../../process/command-queue.typ
 import { createAgentHarnessTaskRuntimeScope } from "../../tasks/agent-harness-task-runtime-scope.js";
 import { resolveUserPath } from "../../utils.js";
 import { isMarkdownCapableMessageChannel } from "../../utils/message-channel.js";
+import { resolveRuntimeServiceVersion } from "../../version.js";
 import {
   retireSessionMcpRuntime,
   retireSessionMcpRuntimeForSessionKey,
@@ -1729,6 +1734,28 @@ export async function runEmbeddedAgent(
           ) => {
             attempt.setTerminalLifecycleMeta?.({ ...meta, aborted });
           };
+          // Attestation: create tamper-evident receipt for this model response.
+          // This is a no-op when attestation.enabled is false (the default).
+          const _attestationRecord =
+            !aborted && !promptError
+              ? attestModelResponse({
+                  config: resolveAttestationConfigFromCodex(
+                    params.config as Record<string, unknown>,
+                  ),
+                  provider,
+                  model: modelId,
+                  sessionId: activeSessionId,
+                  turnId: params.runId ?? activeSessionId,
+                  requestPayload: prompt,
+                  responseContent: attempt.assistantTexts?.join("\n") ?? "",
+                  gatewayVersion: resolveRuntimeServiceVersion(),
+                  responseHeaders: attempt.providerResponseHeaders,
+                  agentId: workspaceResolution.agentId,
+                  toolCalls: attempt.toolMetas?.map((t) => t.toolName),
+                  durationMs: Date.now() - started,
+                })
+              : null;
+          void _attestationRecord; // Prevent unused-var lint; future: attach to transcript metadata.
           const timedOutDuringToolExecution = attempt.timedOutDuringToolExecution ?? false;
           if (sessionIdUsed && sessionIdUsed !== activeSessionId) {
             activeSessionId = sessionIdUsed;

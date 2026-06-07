@@ -258,3 +258,7 @@ extensions/diffs-language-pack/assets/viewer-runtime.js
 /.opengrep-out/
 /.crabbox-artifacts
 .comux*
+
+# Attestation signing keys (never commit)
+attestation-key
+.attestation-key

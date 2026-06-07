@@ -73,3 +73,9 @@ scripts/fork-config-snapshot.mjs                                       merge=our
 scripts/fork-merge-guard.mjs                                            merge=ours
 scripts/fork-merge-verify.mjs                                           merge=ours
 FORK-MERGE-GUIDE.md                                                     merge=ours
+
+# --- attestation: never commit signing keys ---
+.attestation-key                  export-ignore
+attestation-key                   export-ignore
+.attestation-key*                 export-ignore
+attestation-key*                  export-ignore

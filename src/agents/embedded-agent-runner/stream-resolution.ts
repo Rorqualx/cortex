@@ -125,6 +125,11 @@ export function resolveEmbeddedAgentStreamFn(params: {
   resolvedApiKey?: string;
   authProfileId?: string;
   authStorage?: { getApiKey(provider: string): Promise<string | undefined> };
+  /** Callback for provider HTTP response headers (used by attestation). */
+  onResponse?: (
+    response: { status: number; headers: Record<string, string> },
+    model: unknown,
+  ) => void | Promise<void>;
 }): StreamFn {
   if (params.providerStreamFn) {
     return wrapEmbeddedAgentStreamFn(params.providerStreamFn, {
@@ -134,6 +139,7 @@ export function resolveEmbeddedAgentStreamFn(params: {
       authStorage: params.authStorage,
       providerId: params.model.provider,
       promptCacheKey: params.promptCacheKey,
+      onResponse: params.onResponse,
       transformContext: (context) =>
         context.systemPrompt
           ? {
@@ -162,6 +168,7 @@ export function resolveEmbeddedAgentStreamFn(params: {
       providerId: params.model.provider,
       sessionId: params.sessionId,
       promptCacheKey: params.promptCacheKey,
+      onResponse: params.onResponse,
       transformContext: (context) =>
         context.systemPrompt
           ? {
@@ -194,6 +201,7 @@ export function resolveEmbeddedAgentStreamFn(params: {
         authStorage: params.authStorage,
         providerId: params.model.provider,
         promptCacheKey: params.promptCacheKey,
+        onResponse: params.onResponse,
       });
     }
   }
@@ -209,6 +217,7 @@ export function resolveEmbeddedAgentStreamFn(params: {
     authStorage: undefined,
     providerId: params.model.provider,
     promptCacheKey,
+    onResponse: params.onResponse,
   });
 }
 
@@ -232,6 +241,11 @@ function wrapEmbeddedAgentStreamFn(
     sessionId?: string;
     promptCacheKey?: string;
     transformContext?: (context: Parameters<StreamFn>[1]) => Parameters<StreamFn>[1];
+    /** Callback invoked when the provider returns an HTTP response. */
+    onResponse?: (
+      response: { status: number; headers: Record<string, string> },
+      model: unknown,
+    ) => void | Promise<void>;
   },
 ): StreamFn {
   const transformContext =
@@ -249,6 +263,9 @@ function wrapEmbeddedAgentStreamFn(
     }
     if (params.authProfileId && !merged?.authProfileId) {
       merged = { ...merged, authProfileId: params.authProfileId };
+    }
+    if (params.onResponse && !merged?.onResponse) {
+      merged = { ...merged, onResponse: params.onResponse };
     }
     return signal ? { ...merged, signal } : merged;
   };
