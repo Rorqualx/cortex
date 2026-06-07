@@ -124,29 +124,60 @@ export async function consolidateLongTerm(params: {
   let epochGraceCount = 0;
   let semanticDedupCount = 0;
 
-  // Build a map of active facts by firstSeenAt date string for epoch cluster
-  // density checks. Facts that first appeared on the same day likely came from
-  // the same consolidation epoch — dropping the last one means the entire
-  // topic disappears at once ("Region Wipe-out" problem).
-  const activeByEpoch = new Map<string, number>();
+  // Build a SNAPSHOT of epoch densities BEFORE any archival decisions.
+  // Facts that first appeared on the same day likely came from the same
+  // consolidation epoch. Dropping the last one means the entire topic
+  // disappears at once ("Region Wipe-out" problem). The snapshot must be
+  // frozen before the loop so archiving one fact doesn't shift the count
+  // for another fact in the same epoch — that caused sequential archivals
+  // to incorrectly grant grace to the second-to-last fact.
+  const epochPopSnapshot = new Map<string, number>();
   for (const fact of merged.values()) {
     if (fact.archived) continue;
     const epochKey = formatDateString(fact.firstSeenAt);
-    activeByEpoch.set(epochKey, (activeByEpoch.get(epochKey) ?? 0) + 1);
+    epochPopSnapshot.set(epochKey, (epochPopSnapshot.get(epochKey) ?? 0) + 1);
   }
 
+  // Collect all archivable facts first, then decide grace/commit in one pass.
+  // This avoids order-dependent grace when multiple facts share an epoch.
+  const archivalCandidates: Array<{
+    key: string;
+    fact: LongTermFact;
+    age: number;
+    epochKey: string;
+  }> = [];
   for (const [key, fact] of merged) {
     if (fact.archived) continue;
-    if (promotableByKey.has(key)) continue; // already re-affirmed this pass
+    if (promotableByKey.has(key)) continue;
     const age = params.now - fact.lastConfirmedAt;
     if (age < longTermConfig.maxAgeWithoutConfirmMs) continue;
+    archivalCandidates.push({ key, fact, age, epochKey: formatDateString(fact.firstSeenAt) });
+  }
 
-    // Epoch cluster awareness: if archiving would drop the last active fact
-    // from its first-seen epoch, apply a grace multiplier to the threshold.
-    // This prevents entire topic clusters from evaporating simultaneously.
-    const epochKey = formatDateString(fact.firstSeenAt);
-    const epochPop = activeByEpoch.get(epochKey) ?? 0;
-    if (epochPop <= 1 && longTermConfig.epochGraceMultiplier > 1) {
+  // Sort by importance ascending so lower-importance facts archive first.
+  // This ensures grace, if granted, protects the most important fact.
+  archivalCandidates.sort((a, b) => a.fact.importance - b.fact.importance);
+
+  // Track remaining epoch pop as we commit archivals.
+  const remainingEpochPop = new Map(epochPopSnapshot);
+  for (const { key, fact, age, epochKey } of archivalCandidates) {
+    // Use the FROZEN snapshot for the grace decision, not the running count.
+    // This prevents sequential archivals from incorrectly granting grace
+    // to a fact that was part of a multi-fact epoch cluster.
+    const originalPop = epochPopSnapshot.get(epochKey) ?? 0;
+    const pop = remainingEpochPop.get(epochKey) ?? 0;
+    // Grace: protect the LAST survivor of a multi-fact epoch cluster from
+    // Region Wipe-out. Conditions:
+    //   (a) pop == 1 — this is the last fact currently standing
+    //   (b) originalPop >= 3 — the epoch was a genuine cluster, not just a
+    //       pair. Two-fact epochs don't get grace because a pair doesn't
+    //       represent enough topical depth to warrant protection. A single
+    //       original fact (solitary epoch) DOES get grace — it's the only
+    //       representative of its topic.
+    // This means: 2-fact epochs archive both, 3+ epochs protect the last one.
+    const isSolitary = originalPop === 1;
+    const isLastOfCluster = originalPop >= 3 && pop <= 1;
+    if ((isSolitary || isLastOfCluster) && longTermConfig.epochGraceMultiplier > 1) {
       const graceThreshold =
         longTermConfig.maxAgeWithoutConfirmMs * longTermConfig.epochGraceMultiplier;
       if (age < graceThreshold) {
@@ -154,13 +185,9 @@ export async function consolidateLongTerm(params: {
         continue;
       }
     }
-
     merged.set(key, archive(fact, params.now));
     archivedCount += 1;
-    // Update epoch density map since this fact is now archived
-    if (epochPop > 0) {
-      activeByEpoch.set(epochKey, epochPop - 1);
-    }
+    if (pop > 0) remainingEpochPop.set(epochKey, pop - 1);
   }
 
   // -----------------------------------------------------------------

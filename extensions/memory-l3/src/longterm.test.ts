@@ -322,13 +322,15 @@ describe("consolidateLongTerm", () => {
   });
 
   it("epoch grace applies when second-to-last fact archives, leaving one", async () => {
-    // Three facts from the same epoch, all stale
+    // Three facts from the same epoch, all stale. All three must clear
+    // highImportancePassthrough (>= 0.85) so they actually promote from a
+    // single chunk. Without this, facts below 0.85 are silently dropped.
     await writeChunk(
       "chunk-a",
       [
         fact("f1", "japan flights", 0.9, NOW - 100 * MS_PER_DAY, "trip:flights"),
         fact("f2", "japan hotels", 0.85, NOW - 100 * MS_PER_DAY, "trip:hotels"),
-        fact("f3", "japan food", 0.8, NOW - 100 * MS_PER_DAY, "trip:food"),
+        fact("f3", "japan food", 0.88, NOW - 100 * MS_PER_DAY, "trip:food"),
       ],
       NOW - 100 * MS_PER_DAY,
     );
