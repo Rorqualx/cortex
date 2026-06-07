@@ -56,15 +56,19 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
 // source-grounding (left brain) before they hit storage. v3's drop-the-
 // already-known-list change is preserved as the prose-fact rule set; v4
 // adds the typed-fact schema alongside.
+// PROMPT_VERSION = 6 — adds SIGNIFICANT field for emotional tagging (ZenBrain
+// Layer 4 emotional tagging: 2.7× slower FSRS decay for significant facts).
+// v5 added REASONING. v4 co-emitted prose + typed facts. v3 dropped-already-known.
 const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract two complementary kinds of facts:
 
 1. PROSE FACTS — durable LLM-distilled units of information for future recall.
 2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY (numbers, IDs, dates, phone numbers, IP addresses, file paths, version strings, URLs, currency amounts).
 
-Rules (PROMPT_VERSION=4):
+Rules (PROMPT_VERSION=6):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions. E.g., "User mentioned this preference unprompted, suggesting strong importance." or "This is a one-off debugging value, low cross-session utility." Omit when the reason is obvious from the text alone.
+- SIGNIFICANT: set to true when the user explicitly expresses intent to remember (phrases like "remember this", "don't forget", "this is important", "write this down", "make a note", "bookmark this", "I need to remember"). Also true for facts involving errors the user corrected, safety-critical information, or anything the user repeated more than twice in the conversation. Default false.
 - TYPED FACTS: emit only when a precise verbatim value appears in the conversation. Each typed fact must include:
   - slot: kebab-case scoped name like "user:phone" or "infra:pi_hole_ip" or "release:version".
   - value: the EXACT substring from the conversation, character-for-character (case- and whitespace-sensitive).
@@ -78,7 +82,7 @@ Emit strict JSON only, with no surrounding prose. Use EXACTLY the field names be
 Schema:
 {
   "facts": [
-    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string" }
+    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false }
   ],
   "typedFacts": [
     { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
@@ -93,6 +97,8 @@ export type ExtractedFact = {
   dedupKey: string;
   /** Optional reasoning about why this fact matters. */
   reasoning?: string;
+  /** When true, user expressed intent to remember or the fact is safety-critical. */
+  significant?: boolean;
 };
 
 export type ExtractedTypedFact = {
@@ -198,6 +204,7 @@ function normalizeFacts(facts: ReadonlyArray<unknown>): ExtractedFact[] {
         typeof o.reasoning === "string" && o.reasoning.trim().length > 0
           ? o.reasoning.trim()
           : undefined,
+      significant: o.significant === true ? true : undefined,
     });
   }
   return out;

@@ -1,3 +1,16 @@
+import { readSharedFacts, type SharedLongTermFact } from "./cross-context.js";
+import {
+  buildEdgeLookup,
+  hebbianBoost,
+  type HebbianConfig,
+  type HebbianEdge,
+  DEFAULT_HEBBIAN_CONFIG,
+} from "./hebbian.js";
+import {
+  readPromotedSkills,
+  proceduralFactAsL2Fact,
+  fsrsProceduralRetrievability,
+} from "./procedural.js";
 import {
   buildCorpusStats,
   composite,
@@ -19,7 +32,14 @@ import type {
   TypedFact,
 } from "./types.js";
 
-export type RetrievalTier = "l2" | "longterm" | "longterm-typed" | "memory-core" | "typed";
+export type RetrievalTier =
+  | "l2"
+  | "longterm"
+  | "longterm-typed"
+  | "memory-core"
+  | "typed"
+  | "shared"
+  | "procedural";
 
 /**
  * Minimal shape of memory-core's QMD search results that retrieval cares
@@ -80,6 +100,20 @@ export async function retrieveTopK(params: {
    * undefined in unit tests to focus on L3-only retrieval.
    */
   memoryCoreLookup?: MemoryCoreLookup;
+  /**
+   * Optional skill-forge directory path. When provided, promoted skills are
+   * read and included as a procedural memory tier in retrieval.
+   */
+  skillForgeDir?: string;
+  /**
+   * Optional shared memory directory. When provided, cross-context facts
+   * from other agents/sessions participate in retrieval.
+   */
+  sharedMemoryDir?: string;
+  /**
+   * Optional Hebbian config. Defaults to DEFAULT_HEBBIAN_CONFIG.
+   */
+  hebbianConfig?: HebbianConfig;
 }): Promise<RetrievedFact[]> {
   const topK = Math.max(0, params.topK);
   if (topK === 0) return [];
@@ -191,6 +225,7 @@ export async function retrieveTopK(params: {
       config,
       l3Boost: item.l3Boost,
       corpusStats,
+      significant: item.fact.significant,
     });
     const baseScore = composite(signals, config);
     const score = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
@@ -225,6 +260,109 @@ export async function retrieveTopK(params: {
       }
     } catch {
       // Memory-core unavailable or threw — skip the tier silently.
+    }
+  }
+
+  // Procedural memory tier (ZenBrain Layer 5) — read skill-forge promoted
+  // skills and add them to the ranking. Each skill's FSRS retrievability
+  // is based on usageCount with a longer 30-day half-life.
+  if (params.skillForgeDir) {
+    try {
+      const skills = await readPromotedSkills(params.skillForgeDir);
+      for (const skill of skills) {
+        const fact = proceduralFactAsL2Fact(skill);
+        const signals = scoreFact({
+          queryTokens,
+          fact,
+          now,
+          config,
+          l3Boost: 0,
+          corpusStats,
+          recallCount: Math.max(1, skill.usageCount),
+        });
+        const baseScore = composite(signals, config);
+        const recency = fsrsProceduralRetrievability(skill, now);
+        const score =
+          baseScore +
+          (signals.lexical > 0 ? config.weightLongTermTierBoost : 0) +
+          recency * config.weightRecency;
+        if (score > 0) {
+          scored.push({
+            fact,
+            score,
+            signals,
+            chunkId: `procedural:${skill.skillName}`,
+            tier: "procedural",
+          });
+        }
+      }
+    } catch {
+      // Skill-forge directory unavailable — skip tier.
+    }
+  }
+
+  // Cross-context shared memory tier (ZenBrain Layer 7) — read shared
+  // facts published by other agents/sessions and include in ranking.
+  if (params.sharedMemoryDir) {
+    try {
+      const shared = await readSharedFacts(params.sharedMemoryDir);
+      for (const sf of shared) {
+        if (sf.archived) continue;
+        const fact: L2Fact = {
+          id: sf.id,
+          text: sf.text,
+          importance: sf.importance,
+          createdAt: sf.lastConfirmedAt,
+          dedupKey: sf.dedupKey,
+        };
+        const signals = scoreFact({
+          queryTokens,
+          fact,
+          now,
+          config,
+          l3Boost: 0,
+          corpusStats,
+          recallCount: sf.recallCount,
+        });
+        const baseScore = composite(signals, config);
+        const score = signals.lexical > 0 ? baseScore + config.weightLongTermTierBoost : baseScore;
+        if (score > 0) {
+          scored.push({
+            fact,
+            score,
+            signals,
+            chunkId: `shared:${sf.sourceAgentId}`,
+            tier: "shared",
+          });
+        }
+      }
+    } catch {
+      // Shared memory unavailable — skip tier.
+    }
+  }
+
+  // Hebbian neighbor boosting — facts that co-occur frequently across chunks
+  // get a small additive boost when their neighbors score high.
+  const hConfig = params.hebbianConfig ?? DEFAULT_HEBBIAN_CONFIG;
+  if (hConfig.enabled && scored.length > 0) {
+    try {
+      const edgeRaw = await params.storage.readEdgeMap();
+      const edges = Array.isArray(edgeRaw) ? (edgeRaw as HebbianEdge[]) : [];
+      if (edges.length > 0) {
+        const edgeLookup = buildEdgeLookup(edges);
+        const baseScores = new Map<string, number>();
+        for (const item of scored) {
+          baseScores.set(item.fact.dedupKey, item.score);
+        }
+        for (const item of scored) {
+          const boost = hebbianBoost(item.fact.dedupKey, edgeLookup, baseScores, hConfig);
+          if (boost > 0) {
+            item.score += boost;
+          }
+        }
+      }
+    } catch {
+      // Edge map read failed — skip Hebbian boosting.
     }
   }
 
@@ -459,6 +597,10 @@ function tierMarker(tier: RetrievalTier): string {
       return "◆";
     case "typed":
       return "■";
+    case "shared":
+      return "◇";
+    case "procedural":
+      return "⬡";
     case "l2":
       return "·";
   }

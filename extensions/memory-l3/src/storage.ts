@@ -226,6 +226,31 @@ export class Storage {
       return target;
     });
   }
+
+  // -----------------------------------------------------------------
+  // Hebbian edge map
+  // -----------------------------------------------------------------
+
+  /** Read the Hebbian co-occurrence edge map from `edges.json`. */
+  async readEdgeMap(): Promise<unknown[]> {
+    const target = path.join(this.root, "edges.json");
+    try {
+      const raw = await fs.readFile(target, "utf8");
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      if (isNotFound(err)) return [];
+      throw err;
+    }
+  }
+
+  /** Write the Hebbian co-occurrence edge map to `edges.json`. */
+  async writeEdgeMap(edges: unknown[]): Promise<void> {
+    await this.mutex.run(async () => {
+      const target = path.join(this.root, "edges.json");
+      await atomicWriteFile(target, `${JSON.stringify(edges, null, 2)}\n`);
+    });
+  }
 }
 
 async function atomicWriteFile(target: string, contents: string): Promise<void> {

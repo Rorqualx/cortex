@@ -3,6 +3,7 @@ import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { dedupWithinChunk, dropAlreadyKnown, liftToL2Fact } from "./dedup.js";
 import { maybeWriteEpoch } from "./epoch.js";
 import { groundAndDedupTypedFacts } from "./grounding.js";
+import { extractEdges, mergeEdges, type HebbianEdge } from "./hebbian.js";
 import type { IngestBuffer } from "./ingest.js";
 import {
   extractFacts,
@@ -80,6 +81,24 @@ export async function compactSession(params: {
   };
 
   await params.storage.writeL2Chunk(frontmatter, formatChunkBody(messages, facts, typedFacts));
+
+  // Hebbian co-occurrence: extract edges from facts in this chunk and
+  // merge with existing edge map.
+  if (facts.length >= 2) {
+    try {
+      const newEdges = extractEdges(facts);
+      if (newEdges.length > 0) {
+        const existingEdges = (await params.storage.readEdgeMap()) as HebbianEdge[];
+        const merged = mergeEdges(existingEdges, newEdges);
+        await params.storage.writeEdgeMap(merged);
+      }
+    } catch (edgeErr) {
+      // Edge extraction failures are non-fatal — the chunk is already written.
+      if (process.env.OPENCLAW_MEMORY_L3_DEBUG === "1") {
+        console.error(`[memory-l3] hebbian edge extraction failed: ${(edgeErr as Error).message}`);
+      }
+    }
+  }
 
   for (const message of messages) {
     await params.storage.appendL1Archive(chunkId, message);

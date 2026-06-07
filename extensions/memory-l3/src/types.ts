@@ -48,6 +48,11 @@ export type L2Fact = {
    * "User mentioned this preference unprompted, suggesting strong importance."
    * Absent on facts extracted before PROMPT_VERSION=5. */
   reasoning?: string;
+  /** When true, this fact was flagged as emotionally significant (user said
+   * "remember this", the fact involves a correction, or is safety-critical).
+   * Significant facts get a 2.7× slower FSRS decay rate. Absent on facts
+   * extracted before PROMPT_VERSION=6. */
+  significant?: boolean;
 };
 
 /**
@@ -143,6 +148,8 @@ export type LongTermFact = {
    * authoritative). Optional for backward compat — old data may lack it.
    */
   supersededBy?: string | null;
+  /** Emotional significance flag propagated from L2 extraction. */
+  significant?: boolean;
 };
 
 /**

@@ -39,5 +39,6 @@ export function liftToL2Fact(fact: ExtractedFact, createdAt: number): L2Fact {
     createdAt,
     dedupKey: fact.dedupKey,
     reasoning: fact.reasoning,
+    significant: fact.significant,
   };
 }

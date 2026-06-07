@@ -14,6 +14,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { getMemorySearchManager } from "openclaw/plugin-sdk/memory-core-engine-runtime";
 import { compactSession } from "./compaction.js";
+import { publishToFacts } from "./cross-context.js";
 import { IngestBuffer } from "./ingest.js";
 import { createGlmCaller, type LlmCaller } from "./llm.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
@@ -63,6 +64,10 @@ export type HierarchicalL3EngineOptions = {
   memoryCoreLookup?: MemoryCoreLookup;
   /** Workspace dir from factory context. Used to mirror long-term facts into memory/.l3/. */
   workspaceDir?: string;
+  /** Skill-forge directory for procedural memory tier. Defaults to ~/.openclaw/skill-forge/skills/. */
+  skillForgeDir?: string;
+  /** Shared memory directory for cross-context tier. Defaults to ~/.openclaw/shared-memory/. */
+  sharedMemoryDir?: string;
 };
 
 export class HierarchicalL3Engine implements ContextEngine {
@@ -74,6 +79,8 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly config: OpenClawConfig | undefined;
   private readonly memoryCoreLookupOverride: MemoryCoreLookup | undefined;
   private readonly workspaceDir: string | undefined;
+  private readonly skillForgeDir: string | undefined;
+  private readonly sharedMemoryDir: string | undefined;
   private cachedZaiKey: string | null | undefined;
   private state: L3State | null = null;
 
@@ -84,6 +91,8 @@ export class HierarchicalL3Engine implements ContextEngine {
     this.config = options?.config;
     this.memoryCoreLookupOverride = options?.memoryCoreLookup;
     this.workspaceDir = options?.workspaceDir;
+    this.skillForgeDir = options?.skillForgeDir;
+    this.sharedMemoryDir = options?.sharedMemoryDir;
   }
 
   async bootstrap(): Promise<BootstrapResult> {
@@ -174,6 +183,8 @@ export class HierarchicalL3Engine implements ContextEngine {
       storage: this.storage,
       topK: ASSEMBLE_TOP_K,
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
+      skillForgeDir: this.skillForgeDir,
+      sharedMemoryDir: this.sharedMemoryDir,
     });
     if (top.length === 0) return undefined;
     return formatMemorySection(top, { now: Date.now() });
@@ -278,6 +289,25 @@ export class HierarchicalL3Engine implements ContextEngine {
           l3debug(
             `afterTurn(): consolidation promoted=${lt.promotedCount} reaffirmed=${lt.reaffirmedCount} archived=${lt.archivedCount} unarchived=${lt.unarchivedCount} active=${lt.activeCount}`,
           );
+          // Cross-context publish: share promoted facts with other agents/sessions.
+          try {
+            const ltData = await this.storage.readLongTerm();
+            const activeFacts = ltData.facts.filter((f) => !f.archived && !f.supersededBy);
+            if (activeFacts.length > 0) {
+              const pub = await publishToFacts(
+                this.state.agentId ?? "unknown",
+                activeFacts,
+                this.sharedMemoryDir,
+              );
+              if (pub.published > 0) {
+                l3debug(
+                  `afterTurn(): cross-context published=${pub.published} conflicts=${pub.conflicts}`,
+                );
+              }
+            }
+          } catch (pubErr) {
+            console.error(`[memory-l3] cross-context publish failed: ${(pubErr as Error).message}`);
+          }
         } catch (consolidationErr) {
           // Consolidation failures are non-fatal — the L2 chunk is already
           // safely persisted. Log loud and continue.
