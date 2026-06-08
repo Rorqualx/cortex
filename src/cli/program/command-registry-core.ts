@@ -138,6 +138,11 @@ const coreEntrySpecs: readonly CommandGroupDescriptorSpec<
         loadModule: () => import("./register.status-health-sessions.js"),
         exportName: "registerStatusHealthSessionsCommands",
       },
+      {
+        commandNames: ["workboard"],
+        loadModule: () => import("./register.workboard.js"),
+        exportName: "registerWorkboardCli",
+      },
     ]),
   ),
 ];
