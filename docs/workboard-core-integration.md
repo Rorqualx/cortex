@@ -61,95 +61,22 @@ All existing cards/boards/attachments preserved.
 
 ## Phase 2: Deep Integration (Weeks 2-3)
 
-Goal: workboard is a first-class citizen. Unified DB, no gateway wrappers, native tooling.
+Detailed, step-level plan at [`docs/workboard-phase2-plan.md`](./workboard-phase2-plan.md).
 
-### 2.1 Merge SQLite into core DB
+### Summary
 
-```
-src/db/
-├── schema.ts           # +4 tables (workboard_cards, _boards, _notify, _attachments)
-├── migrations/
-│   └── 0XX_workboard.ts   # New migration
-```
+| Step | Action                                                  | Lines |
+| ---- | ------------------------------------------------------- | ----- |
+| 2.1  | Merge SQLite into core DB + migration                   | ~300  |
+| 2.2  | Replace gateway RPC with direct API exports             | ~400  |
+| 2.3  | Replace TypeBox import (trivial, core uses TypeBox too) | 1     |
+| 2.4  | Wire dispatcher to spawnSubagentDirect                  | ~100  |
+| 2.5  | Replace Commander CLI with CoreCommandDescriptor        | ~150  |
+| 2.6  | Feature flag `features.workbook`                        | ~30   |
+| 2.7  | Delete old plugin + cleanup                             | —     |
 
-- Tables live alongside other core tables in the main `gateway.db`
-- Migration copies rows from `workboard.db` → core DB, then deletes old file
-- `sqlite-store.ts` → removed, logic folded into `src/db/workboard-queries.ts`
-
-### 2.2 Remove gateway RPC layer
-
-Currently 30 methods in `gateway.ts` are thin wrappers:
-
-```typescript
-// Before (gateway RPC)
-registerMethod("workboard.cards.list", async ({ boardId, status }) => {
-  return store.list({ boardId, status });
-});
-
-// After (direct import)
-import { listCards } from "../db/workboard-queries.ts";
-const cards = await listCards({ boardId, status });
-```
-
-- Gateway methods → direct function exports from `src/workboard/api.ts`
-- UI imports `api.ts` directly, no message routing
-- Removes ~500 lines of boilerplate
-
-### 2.3 Collapse tools into core registry
-
-```typescript
-// src/mcp/tool-registry.ts
-import { workboardTools } from "../workboard/tools.ts";
-registry.registerAll(workboardTools);
-
-// tools.ts keeps the same parameter shapes but uses core schema
-// Replace TypeBox Type.Object() with core-native schema builder
-```
-
-- Remove `typebox` npm dependency entirely
-- Tool shapes stay identical — just schema layer changes
-
-### 2.4 First-class subagent integration
-
-```typescript
-// src/workboard/dispatcher.ts
-// Before: receives subagent as injected dependency
-// After: imports directly
-import { spawnSubagent } from "../agents/subagent.ts";
-
-await spawnSubagent({
-  sessionKey: `workboard:${card.boardId}:${card.id}`,
-  message: buildWorkerPrompt(card),
-  lane: `workboard:${card.id}`,
-  lightContext: true,
-});
-```
-
-- No `WorkboardSubagentRuntime` interface
-- Direct call — no abstraction
-
-### 2.5 Remove `commander` dependency
-
-- CLI subcommands → core CLI framework
-- Removes external dep, ~200 lines of CLI code stay mostly the same
-
-### 2.6 Feature flag
-
-```jsonc
-// openclaw.json
-{
-  "features": {
-    "workboard": true, // on by default
-  },
-}
-```
-
-- Core can boot without workboard if flag is false
-- Tables still exist (just empty), tools not registered
-
-**Deliverable:** Workboard is indistinguishable from native core features.
-Zero plugin traces. Same DB as everything else. Same CLI framework.
-Same schema system. Same subagent system.
+**Deliverable:** Workboard indistinguishable from native core features.
+Zero plugin SDK traces. Same DB, same CLI, same schema, same subagent system.
 
 ---
 
