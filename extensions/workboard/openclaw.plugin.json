@@ -1,6 +1,6 @@
 {
   "id": "workboard",
-  "enabledByDefault": false,
+  "enabledByDefault": true,
   "activation": {
     "onStartup": true,
     "onCommands": ["workboard"]
