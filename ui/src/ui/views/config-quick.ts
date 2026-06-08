@@ -7,6 +7,7 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../i18n/index.ts";
+import { openAvatarLightbox } from "../avatar-lightbox.ts";
 import { icons } from "../icons.ts";
 import type { BorderRadiusStop, TextScaleStop } from "../storage.ts";
 import { normalizeOptionalString } from "../string-coerce.ts";
@@ -172,7 +173,12 @@ function renderLocalUserAvatarPreview(avatar: string | null | undefined) {
   const avatarUrl = resolveLocalUserAvatarUrl(identity);
   const avatarText = resolveLocalUserAvatarText(identity);
   if (avatarUrl) {
-    return html`<img class="qs-user-avatar" src=${avatarUrl} alt=${LOCAL_USER_LABEL} />`;
+    return html`<img
+      class="qs-user-avatar qs-avatar--expandable"
+      src=${avatarUrl}
+      alt=${LOCAL_USER_LABEL}
+      @click=${() => openAvatarLightbox(avatarUrl, LOCAL_USER_LABEL, { removable: true })}
+    />`;
   }
   if (avatarText) {
     return html`<div class="qs-user-avatar qs-user-avatar--text" aria-label=${LOCAL_USER_LABEL}>
@@ -251,7 +257,12 @@ function renderAssistantAvatarPreview(props: QuickSettingsProps) {
   const assistantAvatarOverride = normalizeOptionalString(props.assistantAvatarOverride);
   const assistantAvatarUrl = resolveAssistantPreviewAvatarUrl(props);
   if (assistantAvatarUrl) {
-    return html`<img class="qs-assistant-avatar" src=${assistantAvatarUrl} alt=${assistantName} />`;
+    return html`<img
+      class="qs-assistant-avatar qs-avatar--expandable"
+      src=${assistantAvatarUrl}
+      alt=${assistantName}
+      @click=${() => openAvatarLightbox(assistantAvatarUrl, assistantName)}
+    />`;
   }
   const assistantAvatarText = resolveAssistantTextAvatar(
     assistantAvatarOverride ?? props.assistantAvatar,

@@ -1,6 +1,7 @@
 // Control UI chat module implements chat avatar behavior.
 import { html } from "lit";
 import type { AssistantIdentity } from "../assistant-identity.ts";
+import { openAvatarLightbox } from "../avatar-lightbox.ts";
 import {
   resolveLocalUserAvatarText,
   resolveLocalUserAvatarUrl,
@@ -75,7 +76,12 @@ export function renderChatAvatar(
           : "other";
 
   if (normalized === "user" && userAvatarUrl) {
-    return html`<img class="chat-avatar ${className}" src="${userAvatarUrl}" alt="${userName}" />`;
+    return html`<img
+      class="chat-avatar ${className} chat-avatar--expandable"
+      src="${userAvatarUrl}"
+      alt="${userName}"
+      @click=${() => openAvatarLightbox(userAvatarUrl, userName, { removable: true })}
+    />`;
   }
 
   if (normalized === "user" && userAvatarText) {
@@ -94,9 +100,10 @@ export function renderChatAvatar(
         />`;
       }
       return html`<img
-        class="chat-avatar ${className}"
+        class="chat-avatar ${className} chat-avatar--expandable"
         src="${assistantAvatar}"
         alt="${assistantName}"
+        @click=${() => openAvatarLightbox(assistantAvatar, assistantName)}
       />`;
     }
     if (assistantAvatarText) {
