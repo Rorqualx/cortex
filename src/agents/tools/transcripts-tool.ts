@@ -24,6 +24,7 @@ import type {
 } from "../../transcripts/provider-types.js";
 import { TranscriptsStore, type TranscriptsSessionEntry } from "../../transcripts/store.js";
 import { summarizeTranscripts } from "../../transcripts/summary.js";
+import { generateSummaryEmbedding } from "../../transcripts/summary.js";
 import type { AnyAgentTool } from "./common.js";
 
 type TranscriptsLogger = {
@@ -170,6 +171,7 @@ async function summarizeAndPersist(params: {
   store: TranscriptsStore;
   session: TranscriptSessionDescriptor;
   sessionDir?: string;
+  openclawConfig?: OpenClawConfig;
 }) {
   const utterances =
     params.sessionDir !== undefined
@@ -180,6 +182,18 @@ async function summarizeAndPersist(params: {
           maxUtterances: params.config.maxUtterances,
         });
   const summary = summarizeTranscripts({ session: params.session, utterances });
+
+  // Generate embedding for semantic search if an embedding provider is configured.
+  // Non-fatal: if embedding fails (no provider, network error), the summary
+  // is still persisted without an embedding vector.
+  if (params.openclawConfig) {
+    try {
+      await generateSummaryEmbedding({ summary, cfg: params.openclawConfig });
+    } catch {
+      // No embedding provider available or embedding failed — continue without.
+    }
+  }
+
   const summaryPath =
     params.sessionDir !== undefined
       ? await params.store.writeSummaryToDir(summary, params.sessionDir)
@@ -302,6 +316,7 @@ async function stopTranscripts(params: {
     store: params.store,
     session: stoppedSession,
     sessionDir: selectedActive ? undefined : resolvedEntry?.sessionDir,
+    openclawConfig: params.ctx.config,
   });
   return toolText(`Transcripts stopped: ${sessionId}\nSummary: ${summaryPath}`, {
     sessionId,
@@ -346,6 +361,7 @@ async function importTranscripts(params: {
     config: resolveTranscriptsConfig(params.ctx.config?.transcripts),
     store: params.store,
     session,
+    openclawConfig: params.ctx.config,
   });
   return toolText(`Transcript imported: ${session.sessionId}\nSummary: ${summaryPath}`, {
     sessionId: session.sessionId,
@@ -359,6 +375,7 @@ async function summarizeExisting(params: {
   config: ReturnType<typeof resolveTranscriptsConfig>;
   store: TranscriptsStore;
   rawParams: Record<string, unknown>;
+  openclawConfig?: OpenClawConfig;
 }) {
   const sessionId = readStringParam(params.rawParams, "sessionId", {
     required: true,
@@ -373,6 +390,7 @@ async function summarizeExisting(params: {
     store: params.store,
     session: entry.session,
     sessionDir: entry.sessionDir,
+    openclawConfig: params.openclawConfig,
   });
   return toolText(`Transcripts summarized: ${sessionId}\nSummary: ${summaryPath}`, {
     sessionId,
@@ -435,7 +453,12 @@ export function createTranscriptsTool(options?: {
         case "import":
           return await importTranscripts({ ctx, store, rawParams: params });
         case "summarize":
-          return await summarizeExisting({ config, store, rawParams: params });
+          return await summarizeExisting({
+            config,
+            store,
+            rawParams: params,
+            openclawConfig: ctx.config,
+          });
         case "status":
           return await statusTranscripts(ctx);
         default:
