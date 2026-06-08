@@ -31,9 +31,10 @@ export function normalizeControlUiBasePath(basePath?: string): string {
 
 /** Builds the gateway-served avatar URL for an agent under the provided base path. */
 export function buildControlUiAvatarUrl(basePath: string, agentId: string): string {
-  return basePath
+  const base = basePath
     ? `${basePath}${CONTROL_UI_AVATAR_PREFIX}/${agentId}`
     : `${CONTROL_UI_AVATAR_PREFIX}/${agentId}`;
+  return `${base}?t=${Date.now()}`;
 }
 
 /** Resolves the assistant avatar URL that Control UI should render for the active agent. */
