@@ -7,9 +7,10 @@ import {
   DEFAULT_CONSOLIDATION_CONFIG,
   selectPromotable,
 } from "./consolidation.js";
+import { adjustImportance, recordRetrievalSignals } from "./entities.js";
 import { cosineSimilarity, jaccard, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
-import type { LongTermFact, LongTermFrontmatter } from "./types.js";
+import type { L2ChunkFrontmatter, L3State, LongTermFact, LongTermFrontmatter } from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
@@ -300,19 +301,47 @@ export async function consolidateLongTerm(params: {
   }
 
   const orderedFacts = orderFacts([...merged.values()]);
+
+  // -----------------------------------------------------------------
+  // Dynamic importance scoring (Phase 3)
+  // -----------------------------------------------------------------
+  // Adjust fact importance based on retrieval frequency signals.
+  // Facts that are frequently recalled get boosted; idle facts decay.
+  let adjustedFacts = orderedFacts;
+  try {
+    const signals = await params.storage.readRetrievalSignals();
+    if (signals.length > 0) {
+      const signalMap = new Map(signals.map((s) => [s.factId, s]));
+      adjustedFacts = adjustImportance({
+        facts: orderedFacts,
+        signals: signalMap,
+        now: params.now,
+      });
+      const changed = adjustedFacts.filter(
+        (f, i) => Math.abs(f.importance - orderedFacts[i].importance) >= 0.01,
+      ).length;
+      if (changed > 0) {
+        l3debug(`dynamic importance: adjusted ${changed}/${orderedFacts.length} facts`);
+      }
+    }
+  } catch (importanceErr) {
+    // Non-fatal: proceed with existing importance values
+    l3debug(`dynamic importance failed: ${(importanceErr as Error).message}`);
+  }
+
   const frontmatter: LongTermFrontmatter = {
     version: 1,
     agentId: params.agentId,
     lastConsolidatedAt: params.now,
-    facts: orderedFacts,
+    facts: adjustedFacts,
   };
 
-  await params.storage.writeLongTerm(frontmatter, formatLongTermBody(orderedFacts));
+  await params.storage.writeLongTerm(frontmatter, formatLongTermBody(adjustedFacts));
 
   if (params.workspaceDir) {
     await writeQmdMirror({
       workspaceDir: params.workspaceDir,
-      facts: orderedFacts,
+      facts: adjustedFacts,
       now: params.now,
     });
   }
@@ -324,7 +353,7 @@ export async function consolidateLongTerm(params: {
     epochGraceCount,
     unarchivedCount,
     semanticDedupCount,
-    activeCount: orderedFacts.filter((f) => !f.archived).length,
+    activeCount: adjustedFacts.filter((f) => !f.archived).length,
   };
 }
 

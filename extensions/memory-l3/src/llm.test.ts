@@ -27,11 +27,21 @@ describe("parseJsonResponse", () => {
 
 describe("parseExtractResponse", () => {
   it("returns empty result for non-JSON output", () => {
-    expect(parseExtractResponse("not json")).toEqual({ facts: [], typedFacts: [] });
+    expect(parseExtractResponse("not json")).toEqual({
+      facts: [],
+      typedFacts: [],
+      decisions: [],
+      actions: [],
+    });
   });
 
   it("returns empty result when both arrays are missing", () => {
-    expect(parseExtractResponse("{}")).toEqual({ facts: [], typedFacts: [] });
+    expect(parseExtractResponse("{}")).toEqual({
+      facts: [],
+      typedFacts: [],
+      decisions: [],
+      actions: [],
+    });
   });
 
   it("normalizes a valid facts array", () => {
@@ -189,7 +199,7 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0].slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0][0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=4");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=7");
     expect(call.systemPrompt).toContain("REASONING");
     expect(call.userPrompt).not.toContain("already-known");
   });
@@ -200,7 +210,7 @@ describe("extractFacts", () => {
       messages: [{ role: "user", content: "hi" }] as never[],
       caller,
     });
-    expect(result).toEqual({ facts: [], typedFacts: [] });
+    expect(result).toEqual({ facts: [], typedFacts: [], decisions: [], actions: [] });
   });
 });
 

@@ -67,6 +67,8 @@ export function createHierarchicalL3Engine(ctx: ContextEngineFactoryContext): Co
     agentDir: ctx.agentDir,
     config: ctx.config,
     workspaceDir: ctx.workspaceDir,
+    // Embedding provider is resolved lazily from config at first use.
+    // See resolveEmbeddingProvider() below.
   });
 }
 
@@ -105,7 +107,9 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly workspaceDir: string | undefined;
   private readonly skillForgeDir: string | undefined;
   private readonly sharedMemoryDir: string | undefined;
-  private readonly embeddingProvider: EmbeddingProvider | undefined;
+  private readonly embeddingProviderOverride: EmbeddingProvider | undefined;
+  /** Lazily resolved embedding provider from core infrastructure. */
+  private resolvedEmbeddingProvider: EmbeddingProvider | null | undefined;
   private cachedZaiKey: string | null | undefined;
   private state: L3State | null = null;
 
@@ -114,7 +118,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     this.callerOverride = options?.caller;
     this.agentDir = options?.agentDir;
     this.config = options?.config;
-    this.embeddingProvider = options?.embeddingProvider;
+    this.embeddingProviderOverride = options?.embeddingProvider;
     this.memoryCoreLookupOverride = options?.memoryCoreLookup;
     this.workspaceDir = options?.workspaceDir;
     this.skillForgeDir = options?.skillForgeDir;
@@ -274,11 +278,13 @@ export class HierarchicalL3Engine implements ContextEngine {
       this.buffer.pushBatch(params.sessionId, tail);
       this.refreshBufferTokenCount();
     }
-    const tokens = this.buffer.tokens(params.sessionId);
+    // Use total buffer tokens across all sessions — compaction processes
+    // the full buffer regardless of which session triggered it.
+    const totalBuffered = this.buffer.totalTokens();
     l3debug(
-      `afterTurn(): sessionId=${params.sessionId} totalMessages=${params.messages.length} compactedSoFar=${compactedSoFar} newTail=${tail.length} bufferedTokens=${tokens} threshold=${AFTER_TURN_COMPACTION_THRESHOLD_TOKENS}`,
+      `afterTurn(): sessionId=${params.sessionId} totalMessages=${params.messages.length} compactedSoFar=${compactedSoFar} newTail=${tail.length} totalBuffered=${totalBuffered} threshold=${AFTER_TURN_COMPACTION_THRESHOLD_TOKENS}`,
     );
-    if (tokens < AFTER_TURN_COMPACTION_THRESHOLD_TOKENS) return;
+    if (totalBuffered < AFTER_TURN_COMPACTION_THRESHOLD_TOKENS) return;
     const caller = await this.resolveCaller();
     if (!caller) {
       l3debug("afterTurn(): no caller resolved; skipping compaction");
@@ -294,6 +300,7 @@ export class HierarchicalL3Engine implements ContextEngine {
         caller,
         state: this.state,
         now,
+        embeddingProvider: await this.resolveEmbeddingProvider(),
       });
       if (result.chunkId !== null) {
         this.state.compactedMessageCountBySession[params.sessionId] = params.messages.length;
@@ -311,7 +318,7 @@ export class HierarchicalL3Engine implements ContextEngine {
             agentId: this.state.agentId,
             now,
             workspaceDir: this.workspaceDir,
-            embeddingProvider: this.embeddingProvider,
+            embeddingProvider: await this.resolveEmbeddingProvider(),
           });
           this.state.lastConsolidatedAt = now;
           l3debug(
@@ -434,6 +441,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       storage: this.storage,
       caller,
       state: this.state,
+      embeddingProvider: await this.resolveEmbeddingProvider(),
     });
     if (chunkId === null) {
       return {
@@ -461,10 +469,72 @@ export class HierarchicalL3Engine implements ContextEngine {
    * Returns undefined when no embedding provider is configured or the call fails.
    */
   private async resolveQueryEmbedding(query: string): Promise<number[] | undefined> {
-    if (!this.embeddingProvider) return undefined;
+    const provider = await this.resolveEmbeddingProvider();
+    if (!provider) return undefined;
     try {
-      return await this.embeddingProvider.embed(query);
+      return await provider.embed(query);
     } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Lazily resolve an embedding provider from core OpenClaw infrastructure.
+   *
+   * Resolution order:
+   *   1. Explicit override passed via HierarchicalL3EngineOptions
+   *   2. Core embedding provider resolved from config (via dynamic import)
+   *
+   * The result is cached after first resolution (null = tried and failed,
+   * undefined = not yet attempted). This keeps the synchronous factory
+   * function clean while still connecting to the provider at runtime.
+   */
+  private async resolveEmbeddingProvider(): Promise<EmbeddingProvider | undefined> {
+    if (this.resolvedEmbeddingProvider !== undefined) {
+      // null = already tried and no provider available
+      return this.resolvedEmbeddingProvider ?? undefined;
+    }
+
+    // 1. Explicit override from constructor options (e.g. tests)
+    if (this.embeddingProviderOverride) {
+      this.resolvedEmbeddingProvider = this.embeddingProviderOverride;
+      return this.resolvedEmbeddingProvider;
+    }
+
+    // 2. Try to resolve from core OpenClaw embedding provider infrastructure
+    try {
+      // Dynamic import: the embedding provider runtime is part of the core
+      // openclaw package but not exported via plugin-sdk. Since memory-l3
+      // runs in the same process, the relative import resolves at runtime.
+      const providerRuntime =
+        await import("../../src/plugins/memory-embedding-provider-runtime.js");
+      const adapter = providerRuntime.getMemoryEmbeddingProvider("openai", this.config);
+      if (!adapter) {
+        l3debug("resolveEmbeddingProvider(): no openai adapter found; semantic channel disabled");
+        this.resolvedEmbeddingProvider = null;
+        return undefined;
+      }
+      const { provider } = await adapter.create({
+        config: this.config,
+        model: adapter.defaultModel,
+      });
+      if (!provider) {
+        l3debug("resolveEmbeddingProvider(): adapter.create() returned no provider");
+        this.resolvedEmbeddingProvider = null;
+        return undefined;
+      }
+      // Wrap the core EmbeddingProvider (which has embed/embedBatch/close)
+      // as our local EmbeddingProvider type (same shape, just to be explicit).
+      const wrapped: EmbeddingProvider = {
+        embed: (text: string) => provider.embed(text),
+        embedBatch: (texts: string[]) => provider.embedBatch(texts),
+      };
+      this.resolvedEmbeddingProvider = wrapped;
+      l3debug("resolveEmbeddingProvider(): resolved provider from core infrastructure");
+      return wrapped;
+    } catch (err) {
+      l3debug(`resolveEmbeddingProvider(): failed to resolve from core: ${(err as Error).message}`);
+      this.resolvedEmbeddingProvider = null;
       return undefined;
     }
   }
@@ -480,16 +550,27 @@ export class HierarchicalL3Engine implements ContextEngine {
    * Resolution order:
    *   1. process.env.ZAI_API_KEY  (matches OpenClaw's user-shell convention)
    *   2. process.env.Z_AI_API_KEY (compat alias)
-   *   3. <agentDir>/agent/auth-profiles.json → profiles["zai:default"].key
+   *   3. OpenClaw config → plugins.entries.agentmcp.config.zaiApiKey
+   *   4. OpenClaw config → models.providers.zai.apiKey
+   *   5. <agentDir>/agent/auth-profiles.json → profiles["zai:default"].key
    */
   private async resolveZaiKey(): Promise<string | null> {
     if (this.cachedZaiKey !== undefined) return this.cachedZaiKey;
+    // 1–2. Environment variables
     const fromEnv = process.env.ZAI_API_KEY ?? process.env.Z_AI_API_KEY ?? "";
     if (fromEnv.length > 0) {
       l3debug("resolveZaiKey: hit via env");
       this.cachedZaiKey = fromEnv;
       return fromEnv;
     }
+    // 3–4. OpenClaw config (keys are typically stored here, not in env)
+    const fromConfig = readZaiKeyFromConfig(this.config);
+    if (fromConfig) {
+      l3debug("resolveZaiKey: hit via openclaw config");
+      this.cachedZaiKey = fromConfig;
+      return fromConfig;
+    }
+    // 5. Auth profiles file
     const fromAuth = await readZaiKeyFromAuthProfiles(this.agentDir);
     l3debug(
       `resolveZaiKey: agentDir=${this.agentDir ?? "(undefined)"} auth-result=${fromAuth ? "hit" : "miss"}`,
@@ -518,6 +599,29 @@ function deriveAgentIdFromAgentDir(agentDir: string | undefined): string | null 
     return null;
   }
   return candidate;
+}
+
+/**
+ * Read ZAI API key from the OpenClaw config object.
+ * Checks two common locations where the key may be stored:
+ *   1. plugins.entries.agentmcp.config.zaiApiKey  (agentmcp plugin)
+ *   2. models.providers.zai.apiKey               (provider config)
+ */
+function readZaiKeyFromConfig(config: OpenClawConfig | undefined): string | null {
+  if (!config || typeof config !== "object") return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyCfg = config as any;
+  // Path 1: agentmcp plugin config
+  const fromAgentmcp = anyCfg?.plugins?.entries?.agentmcp?.config?.zaiApiKey;
+  if (typeof fromAgentmcp === "string" && fromAgentmcp.length > 0) {
+    return fromAgentmcp;
+  }
+  // Path 2: models provider config
+  const fromModels = anyCfg?.models?.providers?.zai?.apiKey;
+  if (typeof fromModels === "string" && fromModels.length > 0) {
+    return fromModels;
+  }
+  return null;
 }
 
 async function readZaiKeyFromAuthProfiles(agentDir: string | undefined): Promise<string | null> {

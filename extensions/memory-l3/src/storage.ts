@@ -13,6 +13,10 @@ import {
   type L3State,
   type LongTermFrontmatter,
   type LongTermTypedFrontmatter,
+  type MessageChunk,
+  type Entity,
+  type TopicLink,
+  type RetrievalSignal,
 } from "./types.js";
 
 const STATE_FILENAME = "state.json";
@@ -21,6 +25,7 @@ const LONG_TERM_TYPED_FILENAME = "longterm-typed.md";
 const L1_ARCHIVE_DIR = "l1_archive";
 const L2_DIR = "l2";
 const L3_DIR = "l3";
+const MSG_DIR = "msg";
 
 /**
  * On-disk layout under `<root>/`:
@@ -225,6 +230,129 @@ export class Storage {
       await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
       return target;
     });
+  }
+
+  // -----------------------------------------------------------------
+  // Message-level embedding chunks
+  // -----------------------------------------------------------------
+
+  /** Write message-level chunks for a given L2 chunk. */
+  async writeMessageChunks(chunks: ReadonlyArray<MessageChunk>): Promise<void> {
+    if (chunks.length === 0) return;
+    await this.mutex.run(async () => {
+      const chunkDir = path.join(this.root, MSG_DIR, chunks[0].chunkId);
+      await fs.mkdir(chunkDir, { recursive: true });
+      const data = chunks.map((c) => ({
+        id: c.id,
+        seq: c.seq,
+        startMsgIndex: c.startMsgIndex,
+        endMsgIndex: c.endMsgIndex,
+        text: c.text,
+        embedding: c.embedding,
+        createdAt: c.createdAt,
+        chunkId: c.chunkId,
+      }));
+      const target = path.join(chunkDir, "chunks.json");
+      await atomicWriteFile(target, `${JSON.stringify(data, null, 2)}\n`);
+    });
+  }
+
+  /** Read message-level chunks for a given L2 chunk ID. */
+  async readMessageChunks(chunkId: string): Promise<MessageChunk[]> {
+    const target = path.join(this.root, MSG_DIR, chunkId, "chunks.json");
+    try {
+      const raw = await fs.readFile(target, "utf8");
+      return JSON.parse(raw) as MessageChunk[];
+    } catch (err) {
+      if (isNotFound(err)) return [];
+      throw err;
+    }
+  }
+
+  /** List all chunk IDs that have message-level index data. */
+  async listMessageChunkIds(): Promise<string[]> {
+    const root = path.join(this.root, MSG_DIR);
+    if (!existsSync(root)) return [];
+    const entries = await fs.readdir(root, { withFileTypes: true });
+    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  }
+
+  // -----------------------------------------------------------------
+  // Entity index
+  // -----------------------------------------------------------------
+
+  /** Write the entity index (full replacement). */
+  async writeEntityIndex(entities: ReadonlyArray<Entity>): Promise<void> {
+    await this.mutex.run(async () => {
+      const target = path.join(this.root, "entities.json");
+      await atomicWriteFile(target, `${JSON.stringify(entities, null, 2)}\n`);
+    });
+  }
+
+  /** Read the entity index. Returns empty array if not yet created. */
+  async readEntityIndex(): Promise<Entity[]> {
+    const target = path.join(this.root, "entities.json");
+    try {
+      const raw = await fs.readFile(target, "utf8");
+      return JSON.parse(raw) as Entity[];
+    } catch (err) {
+      if (isNotFound(err)) return [];
+      throw err;
+    }
+  }
+
+  // -----------------------------------------------------------------
+  // Topic links (cross-session graph)
+  // -----------------------------------------------------------------
+
+  /** Append topic links to the link graph (dedup by source+target pair). */
+  async appendTopicLinks(links: ReadonlyArray<TopicLink>): Promise<void> {
+    if (links.length === 0) return;
+    await this.mutex.run(async () => {
+      const target = path.join(this.root, "topic-links.json");
+      const existing = await this.readTopicLinks();
+      const keySet = new Set(existing.map((l) => `${l.sourceChunkId}::${l.targetChunkId}`));
+      const newLinks = links.filter((l) => !keySet.has(`${l.sourceChunkId}::${l.targetChunkId}`));
+      if (newLinks.length === 0) return;
+      existing.push(...newLinks);
+      await atomicWriteFile(target, `${JSON.stringify(existing, null, 2)}\n`);
+    });
+  }
+
+  /** Read all topic links. */
+  async readTopicLinks(): Promise<TopicLink[]> {
+    const target = path.join(this.root, "topic-links.json");
+    try {
+      const raw = await fs.readFile(target, "utf8");
+      return JSON.parse(raw) as TopicLink[];
+    } catch (err) {
+      if (isNotFound(err)) return [];
+      throw err;
+    }
+  }
+
+  // -----------------------------------------------------------------
+  // Retrieval signals (dynamic importance)
+  // -----------------------------------------------------------------
+
+  /** Write retrieval signals (full replacement). */
+  async writeRetrievalSignals(signals: ReadonlyArray<RetrievalSignal>): Promise<void> {
+    await this.mutex.run(async () => {
+      const target = path.join(this.root, "retrieval-signals.json");
+      await atomicWriteFile(target, `${JSON.stringify(signals, null, 2)}\n`);
+    });
+  }
+
+  /** Read retrieval signals. */
+  async readRetrievalSignals(): Promise<RetrievalSignal[]> {
+    const target = path.join(this.root, "retrieval-signals.json");
+    try {
+      const raw = await fs.readFile(target, "utf8");
+      return JSON.parse(raw) as RetrievalSignal[];
+    } catch (err) {
+      if (isNotFound(err)) return [];
+      throw err;
+    }
   }
 
   // -----------------------------------------------------------------

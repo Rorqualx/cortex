@@ -50,34 +50,35 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
   };
 }
 
-// PROMPT_VERSION = 4 — co-emits prose facts AND verbatim typed facts in a
-// single LLM call (Mem0/HippoRAG2 pattern). Prose facts are LLM-distilled
-// (right brain); typed facts are exact-string values that must pass regex
-// source-grounding (left brain) before they hit storage. v3's drop-the-
-// already-known-list change is preserved as the prose-fact rule set; v4
-// adds the typed-fact schema alongside.
-// PROMPT_VERSION = 6 — adds SIGNIFICANT field for emotional tagging (ZenBrain
-// Layer 4 emotional tagging: 2.7× slower FSRS decay for significant facts).
-// v5 added REASONING. v4 co-emitted prose + typed facts. v3 dropped-already-known.
-const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract two complementary kinds of facts:
+// PROMPT_VERSION = 7 — adds DECISIONS and ACTIONS co-emission (Phase 2:
+// LLM-driven summary extraction replaces regex-based pattern matching).
+// v6 added SIGNIFICANT. v5 added REASONING. v4 co-emitted prose + typed.
+const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract three complementary kinds of information:
 
 1. PROSE FACTS — durable LLM-distilled units of information for future recall.
-2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY (numbers, IDs, dates, phone numbers, IP addresses, file paths, version strings, URLs, currency amounts).
+2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
+3. DECISIONS & ACTIONS — structured decisions reached and action items identified.
 
-Rules (PROMPT_VERSION=6):
+Rules (PROMPT_VERSION=7):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
-- REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions. E.g., "User mentioned this preference unprompted, suggesting strong importance." or "This is a one-off debugging value, low cross-session utility." Omit when the reason is obvious from the text alone.
-- SIGNIFICANT: set to true when the user explicitly expresses intent to remember (phrases like "remember this", "don't forget", "this is important", "write this down", "make a note", "bookmark this", "I need to remember"). Also true for facts involving errors the user corrected, safety-critical information, or anything the user repeated more than twice in the conversation. Default false.
-- TYPED FACTS: emit only when a precise verbatim value appears in the conversation. Each typed fact must include:
-  - slot: kebab-case scoped name like "user:phone" or "infra:pi_hole_ip" or "release:version".
-  - value: the EXACT substring from the conversation, character-for-character (case- and whitespace-sensitive).
-  - sourceSpan: surrounding context (15-200 chars) containing value, copied verbatim from the conversation.
-  - unit: optional unit ("USD", "MB", "v", etc) or null.
+- REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions.
+- SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
+- TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
+- DECISIONS: emit when a clear decision, conclusion, or agreement was reached (including implicit ones like "let's go with X"). Each must have:
+  - text: what was decided.
+  - maker: "user", "agent", or "both".
   - confidence: 0.0-1.0.
-  Skip typedFacts emission when no verbatim values are present.
+  - sourceSpan: verbatim context from conversation.
+- ACTIONS: emit when a concrete task, follow-up, or action item is identified. Each must have:
+  - text: what needs to be done.
+  - owner: "user", "agent", or "unassigned".
+  - deadline: optional deadline or time context string, or null.
+  - confidence: 0.0-1.0.
+  - sourceSpan: verbatim context from conversation.
+  Skip decisions/actions when none are present.
 
-Emit strict JSON only, with no surrounding prose. Use EXACTLY the field names below — do NOT rename "text" to "fact"/"content" or "dedupKey" to "key"/"id".
+Emit strict JSON only, with no surrounding prose.
 
 Schema:
 {
@@ -86,10 +87,16 @@ Schema:
   ],
   "typedFacts": [
     { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
+  ],
+  "decisions": [
+    { "text": "what was decided", "maker": "user|agent|both", "confidence": 0.9, "sourceSpan": "verbatim context" }
+  ],
+  "actions": [
+    { "text": "what to do", "owner": "user|agent|unassigned", "deadline": null, "confidence": 0.8, "sourceSpan": "verbatim context" }
   ]
 }
 
-If nothing to emit, output: { "facts": [], "typedFacts": [] }`;
+If nothing to emit, output: { "facts": [], "typedFacts": [], "decisions": [], "actions": [] }`;
 
 export type ExtractedFact = {
   text: string;
@@ -112,6 +119,23 @@ export type ExtractedTypedFact = {
 export type ExtractResult = {
   facts: ExtractedFact[];
   typedFacts: ExtractedTypedFact[];
+  decisions: ExtractedDecision[];
+  actions: ExtractedActionItem[];
+};
+
+export type ExtractedDecision = {
+  text: string;
+  maker: string;
+  confidence: number;
+  sourceSpan: string;
+};
+
+export type ExtractedActionItem = {
+  text: string;
+  owner: string;
+  deadline: string | null;
+  confidence: number;
+  sourceSpan: string;
 };
 
 export async function extractFacts(params: {
@@ -133,22 +157,32 @@ export function parseExtractResponse(raw: string): ExtractResult {
     parsed = parseJsonResponse(raw);
   } catch (e) {
     debugLog(`extract: JSON parse failed (${(e as Error).message}); raw=${summarizeRaw(raw)}`);
-    return { facts: [], typedFacts: [] };
+    return { facts: [], typedFacts: [], decisions: [], actions: [] };
   }
   if (!parsed || typeof parsed !== "object") {
     debugLog(`extract: response not an object; raw=${summarizeRaw(raw)}`);
-    return { facts: [], typedFacts: [] };
+    return { facts: [], typedFacts: [], decisions: [], actions: [] };
   }
-  const obj = parsed as { facts?: unknown; typedFacts?: unknown };
-  if (!Array.isArray(obj.facts) && !Array.isArray(obj.typedFacts)) {
-    debugLog(
-      `extract: response missing both "facts" and "typedFacts" arrays; raw=${summarizeRaw(raw)}`,
-    );
-    return { facts: [], typedFacts: [] };
+  const obj = parsed as {
+    facts?: unknown;
+    typedFacts?: unknown;
+    decisions?: unknown;
+    actions?: unknown;
+  };
+  if (
+    !Array.isArray(obj.facts) &&
+    !Array.isArray(obj.typedFacts) &&
+    !Array.isArray(obj.decisions) &&
+    !Array.isArray(obj.actions)
+  ) {
+    debugLog(`extract: response missing all arrays; raw=${summarizeRaw(raw)}`);
+    return { facts: [], typedFacts: [], decisions: [], actions: [] };
   }
   return {
     facts: Array.isArray(obj.facts) ? normalizeFacts(obj.facts) : [],
     typedFacts: Array.isArray(obj.typedFacts) ? normalizeTypedFacts(obj.typedFacts) : [],
+    decisions: Array.isArray(obj.decisions) ? normalizeDecisions(obj.decisions) : [],
+    actions: Array.isArray(obj.actions) ? normalizeActions(obj.actions) : [],
   };
 }
 
@@ -239,6 +273,87 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
       sourceSpan: spanRaw,
       unit,
       confidence: Math.max(0, Math.min(1, confidenceRaw)),
+    });
+  }
+  return out;
+}
+
+function normalizeDecisions(items: ReadonlyArray<unknown>): ExtractedDecision[] {
+  const out: ExtractedDecision[] = [];
+  for (const candidate of items) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const o = candidate as Record<string, unknown>;
+    const textRaw =
+      typeof o.text === "string"
+        ? o.text
+        : typeof o.decision === "string"
+          ? o.decision
+          : typeof o.content === "string"
+            ? o.content
+            : null;
+    const spanRaw =
+      typeof o.sourceSpan === "string"
+        ? o.sourceSpan
+        : typeof o.span === "string"
+          ? o.span
+          : typeof o.source === "string"
+            ? o.source
+            : null;
+    if (textRaw === null || spanRaw === null) continue;
+    const text = textRaw.trim();
+    if (text.length === 0 || spanRaw.length === 0) continue;
+    const makerRaw =
+      typeof o.maker === "string" ? o.maker : typeof o.who === "string" ? o.who : "unknown";
+    const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
+    out.push({
+      text,
+      maker: makerRaw.trim().toLowerCase(),
+      confidence: Math.max(0, Math.min(1, confidenceRaw)),
+      sourceSpan: spanRaw,
+    });
+  }
+  return out;
+}
+
+function normalizeActions(items: ReadonlyArray<unknown>): ExtractedActionItem[] {
+  const out: ExtractedActionItem[] = [];
+  for (const candidate of items) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const o = candidate as Record<string, unknown>;
+    const textRaw =
+      typeof o.text === "string"
+        ? o.text
+        : typeof o.action === "string"
+          ? o.action
+          : typeof o.content === "string"
+            ? o.content
+            : null;
+    const spanRaw =
+      typeof o.sourceSpan === "string"
+        ? o.sourceSpan
+        : typeof o.span === "string"
+          ? o.span
+          : typeof o.source === "string"
+            ? o.source
+            : null;
+    if (textRaw === null || spanRaw === null) continue;
+    const text = textRaw.trim();
+    if (text.length === 0 || spanRaw.length === 0) continue;
+    const ownerRaw =
+      typeof o.owner === "string"
+        ? o.owner
+        : typeof o.assignee === "string"
+          ? o.assignee
+          : "unassigned";
+    const deadlineRaw =
+      typeof o.deadline === "string" && o.deadline.trim().length > 0 ? o.deadline.trim() : null;
+    const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
+    out.push({
+      text,
+      owner: ownerRaw.trim().toLowerCase(),
+      deadline: deadlineRaw,
+      confidence: Math.max(0, Math.min(1, confidenceRaw)),
+      sourceSpan: spanRaw,
     });
   }
   return out;

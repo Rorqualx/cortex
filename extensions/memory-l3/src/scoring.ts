@@ -53,17 +53,20 @@ export type ScoringConfig = {
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
-  weightLexical: 0.6,
+  // Phase 1 rebalance: with semantic embeddings now active, reduce lexical
+  // dominance and give BM25 + semantic their proper weight. This moves us
+  // from keyword-matching-over-compressed-summaries to true hybrid retrieval.
+  weightLexical: 0.25,
   weightBm25: 0.3,
-  weightImportance: 0.2,
-  weightRecency: 0.1,
+  weightImportance: 0.15,
+  weightRecency: 0.05,
   weightL3Boost: 0.1,
   weightLongTermTierBoost: 0.15,
   weightMemoryCoreTierMultiplier: 0.7,
   weightTypedFactTierBoost: 0.1,
   recencyHalfLifeDays: 7,
   useFsrs: true,
-  weightSemantic: 0.15,
+  weightSemantic: 0.35,
 };
 
 // ---------------------------------------------------------------------------

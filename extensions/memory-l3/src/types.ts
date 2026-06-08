@@ -97,6 +97,16 @@ export type L2ChunkFrontmatter = {
    */
   typedFacts?: TypedFact[];
   dedupKeys: string[];
+  /**
+   * Structured decisions extracted from this chunk via LLM. Optional for
+   * backward compat — chunks written before PROMPT_VERSION=7 lack this.
+   */
+  decisions?: ExtractedDecision[];
+  /**
+   * Action items extracted from this chunk via LLM. Optional for backward
+   * compat.
+   */
+  actionItems?: ExtractedActionItem[];
 };
 
 /**
@@ -220,4 +230,138 @@ export const INITIAL_LONG_TERM_TYPED_FRONTMATTER: LongTermTypedFrontmatter = {
   agentId: null,
   lastConsolidatedAt: 0,
   facts: [],
+};
+
+// -----------------------------------------------------------------
+// Phase 2 types: LLM-driven decisions/actions + message-level index
+// -----------------------------------------------------------------
+
+/**
+ * A structured decision extracted from conversation by the LLM.
+ * Replaces the regex-based DECISION_PATTERNS matching in summary.ts.
+ */
+export type ExtractedDecision = {
+  /** The decision or conclusion reached. */
+  text: string;
+  /** Who made the decision ("user", "agent", or "both"). */
+  maker: string;
+  /** Confidence 0..1. */
+  confidence: number;
+  /** Verbatim source span from the conversation. */
+  sourceSpan: string;
+};
+
+/**
+ * A structured action item extracted from conversation by the LLM.
+ * Replaces the regex-based ACTION_PATTERNS matching in summary.ts.
+ */
+export type ExtractedActionItem = {
+  /** What needs to be done. */
+  text: string;
+  /** Who is responsible ("user", "agent", "unassigned"). */
+  owner: string;
+  /** Optional deadline or time context. */
+  deadline?: string;
+  /** Confidence 0..1. */
+  confidence: number;
+  /** Verbatim source span from the conversation. */
+  sourceSpan: string;
+};
+
+/**
+ * A sliding-window chunk of raw messages with a pre-computed embedding.
+ * Stored alongside L2 chunks so retrieval can fall through from
+ * fact-based search to raw conversation when facts miss.
+ *
+ * Window size: ~10 messages, overlapping by 2 for continuity.
+ */
+export type MessageChunk = {
+  id: string;
+  /** Sequential index for ordering. */
+  seq: number;
+  /** Index of the first message in the source array. */
+  startMsgIndex: number;
+  /** Index of the last message (exclusive). */
+  endMsgIndex: number;
+  /** Concatenated text of the messages in this window. */
+  text: string;
+  /** Pre-computed embedding vector. */
+  embedding: number[];
+  /** ms timestamp. */
+  createdAt: number;
+  /** Parent chunk ID this window belongs to. */
+  chunkId: string;
+};
+
+/**
+ * Topic boundary detected via embedding similarity between consecutive
+ * message windows. Used for semantic epoch segmentation.
+ */
+export type TopicBoundary = {
+  /** Index in the message array where the topic shifts. */
+  messageIndex: number;
+  /** Cosine similarity between the windows before and after this point. */
+  similarity: number;
+  /** Embedding distance threshold that triggered this boundary. */
+  threshold: number;
+};
+
+// -----------------------------------------------------------------
+// Phase 3 types: Entity extraction, topic linking, dynamic importance
+// -----------------------------------------------------------------
+
+/**
+ * A named entity extracted from L2 facts and typed facts.
+ * Entities are cross-referenced across sessions — e.g., "HueyTheDestroyer"
+ * appearing in session A and session B both resolve to the same entity.
+ */
+export type Entity = {
+  /** Unique ID derived from normalized name. */
+  id: string;
+  /** Display name (preserving original casing). */
+  name: string;
+  /** Entity category. */
+  category: string;
+  /** Normalized lowercase aliases (including the name itself). */
+  aliases: string[];
+  /** First time this entity was seen. */
+  firstSeenAt: number;
+  /** Most recent time this entity was seen. */
+  lastSeenAt: number;
+  /** Number of times this entity has been mentioned across all chunks. */
+  mentionCount: number;
+  /** Chunk IDs where this entity appears. */
+  sourceChunkIds: string[];
+  /** Arbitrary key-value attributes (e.g., type="docker", ip="..."). */
+  attributes: Record<string, string>;
+};
+
+/**
+ * A link between two chunks that discuss the same topic, detected via
+ * embedding similarity. Enables cross-session retrieval expansion.
+ */
+export type TopicLink = {
+  /** The chunk that triggered the link. */
+  sourceChunkId: string;
+  /** The existing chunk with similar content. */
+  targetChunkId: string;
+  /** Cosine similarity between the chunk embeddings. */
+  similarity: number;
+  /** When this link was created. */
+  createdAt: number;
+};
+
+/**
+ * Tracks how often a fact is retrieved, used for dynamic importance scoring.
+ * Updated during retrieval, consumed during consolidation.
+ */
+export type RetrievalSignal = {
+  /** The fact ID this signal tracks. */
+  factId: string;
+  /** Total number of times this fact appeared in top-K results. */
+  recallCount: number;
+  /** Most recent retrieval timestamp. */
+  lastRecalledAt: number;
+  /** First retrieval timestamp. */
+  firstRecalledAt: number;
 };

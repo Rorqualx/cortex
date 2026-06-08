@@ -1,4 +1,5 @@
 import { readSharedFacts, type SharedLongTermFact } from "./cross-context.js";
+import { recordRetrievalSignals } from "./entities.js";
 import {
   buildEdgeLookup,
   hebbianBoost,
@@ -366,6 +367,29 @@ export async function retrieveTopK(params: {
     }
   }
 
+  // -----------------------------------------------------------------
+  // Retrieval signal recording (Phase 3: dynamic importance)
+  // -----------------------------------------------------------------
+  // Record which facts were retrieved so consolidation can adjust
+  // importance based on retrieval frequency. Non-fatal — signal
+  // recording failure must not block retrieval.
+  scored.sort((a, b) => b.score - a.score);
+  const topForSignals = scored.slice(0, topK);
+  try {
+    if (topForSignals.length > 0) {
+      const existingSignals = await params.storage.readRetrievalSignals();
+      const existingMap = new Map(existingSignals.map((s) => [s.factId, s]));
+      const updated = recordRetrievalSignals(
+        existingMap,
+        topForSignals.map((f) => f.fact.id),
+        now,
+      );
+      await params.storage.writeRetrievalSignals([...updated.values()]);
+    }
+  } catch {
+    // Signal recording is non-critical — skip silently
+  }
+
   // Hebbian neighbor boosting — facts that co-occur frequently across chunks
   // get a small additive boost when their neighbors score high.
   const hConfig = params.hebbianConfig ?? DEFAULT_HEBBIAN_CONFIG;
@@ -392,7 +416,53 @@ export async function retrieveTopK(params: {
   }
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, topK);
+
+  // -----------------------------------------------------------------
+  // Message-chunk fallback (Phase 3)
+  // -----------------------------------------------------------------
+  // When top-K is sparse (< topK/2 results from fact tiers), expand
+  // search into raw message-level chunks. This catches relevant
+  // conversation context that wasn't captured as structured facts.
+  let result = scored.slice(0, topK);
+  if (params.queryEmbedding && result.length < Math.ceil(topK / 2)) {
+    try {
+      const msgChunkIds = await params.storage.listMessageChunkIds();
+      for (const cid of msgChunkIds) {
+        const chunks = await params.storage.readMessageChunks(cid);
+        for (const chunk of chunks) {
+          if (!chunk.embedding || chunk.embedding.length !== params.queryEmbedding.length) continue;
+          const sim = cosineSimilarity(params.queryEmbedding, chunk.embedding);
+          if (sim < 0.3) continue; // Minimum relevance threshold
+          result.push({
+            fact: {
+              id: chunk.id,
+              text: chunk.text.slice(0, 200) + (chunk.text.length > 200 ? "..." : ""),
+              importance: 0.3,
+              createdAt: chunk.createdAt,
+              dedupKey: `msg-chunk:${chunk.id}`,
+            },
+            score: sim * 0.5, // Scale down — message chunks are supplementary
+            signals: {
+              lexical: 0,
+              bm25: 0,
+              importance: 0.3,
+              recency: 1,
+              l3Boost: 0,
+              semantic: sim,
+            },
+            chunkId: cid,
+            tier: "l2" as RetrievalTier,
+          });
+        }
+      }
+      // Re-sort after message chunk expansion
+      result.sort((a, b) => b.score - a.score);
+    } catch {
+      // Message chunk search failed — return fact-based results as-is
+    }
+  }
+
+  return result.slice(0, topK);
 }
 
 function longTermAsL2Fact(lt: LongTermFact): L2Fact {
