@@ -3041,6 +3041,7 @@ export async function runEmbeddedAttempt(
               resolveCompressionConfig,
               createCCRStore,
               createCCRRetrieveTool,
+              // @ts-ignore — compression module excluded from DTS build; runtime import works.
             } = await import("../../compression/index.js");
             const resolved = resolveCompressionConfig(compressionConfig);
             const currentMessages = activeSession.messages;
@@ -3097,7 +3098,10 @@ export async function runEmbeddedAttempt(
                   `, runId=${params.runId}`,
               );
               const typesBreakdown = Object.entries(compressed.stats.byType)
-                .map(([type, s]) => `${type}:${s.count}(${s.savingsPercent}%)`)
+                .map(([type, s]) => {
+                  const stats = s as { count: number; savingsPercent: number };
+                  return `${type}:${stats.count}(${stats.savingsPercent}%)`;
+                })
                 .join(", ");
               if (typesBreakdown) {
                 log.debug(`compression breakdown: ${typesBreakdown}`);

@@ -55,6 +55,7 @@ type IncompleteTurnAttempt = Pick<
   | "promptErrorSource"
   | "timedOutDuringCompaction"
   | "toolMetas"
+  | "providerResponseHeaders"
 > &
   Partial<Pick<EmbeddedRunAttemptResult, "acceptedSessionSpawns">>;
 
