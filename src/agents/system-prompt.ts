@@ -46,10 +46,7 @@ import {
   shouldRenderOpenClawToolWorkflowHints,
 } from "./prompt-surface.js";
 import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
-import {
-  buildSkillWorkshopPromptSection,
-  SKILL_WORKSHOP_TOOL_NAME,
-} from "./skill-workshop-prompt.js";
+import { buildSkillForgePromptSection, SKILL_FORGE_TOOL_NAME } from "./skill-forge-prompt.js";
 import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./system-prompt-cache-boundary.js";
 import type {
   ProviderSystemPromptContribution,
@@ -761,8 +758,8 @@ export function buildAgentSystemPrompt(params: {
       "On-demand list/status visibility for sub-agent runs in this requester session; do not use for wait loops",
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
-    skill_workshop:
-      "Create, update, revise, list, inspect, apply, reject, or quarantine Skill Workshop proposals",
+    skill_forge:
+      "Inspect, capture, run, promote, retire, and query telemetry for the Skill Forge autonomous pipeline",
     image: "Analyze an image with the configured image model",
     image_generate: "Generate images with the configured image-generation model",
   };
@@ -793,7 +790,7 @@ export function buildAgentSystemPrompt(params: {
     "sessions_yield",
     "subagents",
     "session_status",
-    "skill_workshop",
+    "skill_forge",
     "image",
     "image_generate",
   ];
@@ -934,8 +931,8 @@ export function buildAgentSystemPrompt(params: {
     skillsPrompt,
     readToolName,
   });
-  const skillWorkshopSection = availableTools.has(SKILL_WORKSHOP_TOOL_NAME)
-    ? buildSkillWorkshopPromptSection()
+  const skillForgeSection = availableTools.has(SKILL_FORGE_TOOL_NAME)
+    ? buildSkillForgePromptSection()
     : [];
   const memorySection = buildMemorySection({
     isMinimal,
@@ -1099,7 +1096,7 @@ export function buildAgentSystemPrompt(params: {
       "`restart`, not stop+start.",
       "",
       ...skillsSection,
-      ...skillWorkshopSection,
+      ...skillForgeSection,
       ...memorySection,
       hasGateway && !isMinimal ? "## OpenClaw Self-Update" : "",
       hasGateway && !isMinimal

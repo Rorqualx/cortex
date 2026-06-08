@@ -276,10 +276,10 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Update Plan",
       detailKeys: ["explanation", "plan.0.step"],
     },
-    skill_workshop: {
-      emoji: "🧰",
-      title: "Skill Workshop",
-      detailKeys: ["action", "name", "proposal_id"],
+    skill_forge: {
+      emoji: "⚒️",
+      title: "Skill Forge",
+      detailKeys: ["action", "name", "session_id"],
     },
     gateway: {
       emoji: "🔌",

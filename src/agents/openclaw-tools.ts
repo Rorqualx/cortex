@@ -62,7 +62,7 @@ import { createSessionsListTool } from "./tools/sessions-list-tool.js";
 import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createSessionsYieldTool } from "./tools/sessions-yield-tool.js";
-import { createSkillWorkshopTool } from "./tools/skill-workshop-tool.js";
+import { createSkillForgeTool } from "./tools/skill-forge-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
 import { createTranscriptsTool } from "./tools/transcripts-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
@@ -228,13 +228,7 @@ export function createOpenClawTools(
       ? undefined
       : options?.onYield
     : options?.onYield;
-  const skillWorkshopSessionKey = normalizeOptionalString(
-    options?.runSessionKey ?? options?.agentSessionKey,
-  );
-  const skillWorkshopRunId = normalizeOptionalString(options?.runId);
-  const skillWorkshopMessageId = normalizeOptionalString(
-    options?.currentMessageId === undefined ? undefined : String(options.currentMessageId),
-  );
+  const skillForgeAgentId = sessionAgentId;
   const imageToolAgentDir = options?.agentDir;
   const imageTool = resolveImageToolFactoryAvailable({
     config: availabilityConfig ?? resolvedConfig,
@@ -466,16 +460,10 @@ export function createOpenClawTools(
     ...(options?.sandboxed
       ? []
       : [
-          createSkillWorkshopTool({
+          createSkillForgeTool({
             workspaceDir,
             config: resolvedConfig,
-            agentId: sessionAgentId,
-            origin: {
-              agentId: sessionAgentId,
-              ...(skillWorkshopSessionKey ? { sessionKey: skillWorkshopSessionKey } : {}),
-              ...(skillWorkshopRunId ? { runId: skillWorkshopRunId } : {}),
-              ...(skillWorkshopMessageId ? { messageId: skillWorkshopMessageId } : {}),
-            },
+            agentId: skillForgeAgentId,
           }),
         ]),
     ...(includeUpdatePlanTool ? [createUpdatePlanTool()] : []),

@@ -300,10 +300,10 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
-    id: "skill_workshop",
-    label: "skill_workshop",
+    id: "skill_forge",
+    label: "skill_forge",
     description:
-      "Create, update, revise, list, inspect, apply, reject, or quarantine Skill Workshop proposals",
+      "Inspect, capture, run, promote, retire, and query telemetry for the Skill Forge autonomous pipeline",
     sectionId: "agents",
     profiles: ["coding"],
     includeInOpenClawGroup: true,
