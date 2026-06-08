@@ -89,9 +89,25 @@ export class WebRtcSdpRealtimeTalkTransport implements RealtimeTalkTransport {
 
     const offer = await this.peer.createOffer();
     await this.peer.setLocalDescription(offer);
+    // OpenAI's WebRTC endpoint does not support trickle ICE — the SDP offer
+    // must include all gathered candidates. Wait for gathering to complete
+    // before sending the offer. On most connections the browser includes
+    // candidates from the initial offer, but cold starts or network changes
+    // can produce an incomplete candidate list without this wait.
+    if (this.peer.iceGatheringState !== "complete") {
+      await new Promise<void>((resolve) => {
+        const onStateChange = () => {
+          if (this.peer?.iceGatheringState === "complete") {
+            this.peer.removeEventListener("icegatheringstatechange", onStateChange);
+            resolve();
+          }
+        };
+        this.peer!.addEventListener("icegatheringstatechange", onStateChange);
+      });
+    }
     const sdp = await fetch(this.session.offerUrl ?? "https://api.openai.com/v1/realtime/calls", {
       method: "POST",
-      body: offer.sdp,
+      body: this.peer.localDescription!.sdp,
       headers: {
         ...this.session.offerHeaders,
         Authorization: `Bearer ${this.session.clientSecret}`,
@@ -99,7 +115,10 @@ export class WebRtcSdpRealtimeTalkTransport implements RealtimeTalkTransport {
       },
     });
     if (!sdp.ok) {
-      throw new Error(`Realtime WebRTC setup failed (${sdp.status})`);
+      const errorText = await sdp.text().catch(() => "");
+      throw new Error(
+        `Realtime WebRTC setup failed (${sdp.status})${errorText ? ": " + errorText : ""}`,
+      );
     }
     await this.peer.setRemoteDescription({
       type: "answer",
