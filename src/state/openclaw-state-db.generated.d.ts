@@ -931,6 +931,32 @@ export interface WebPushVapidKeys {
   updated_at_ms: number;
 }
 
+export interface WorkboardBoards {
+  data: string;
+  id: string;
+  version: Generated<number>;
+}
+
+export interface WorkboardCardAttachments {
+  card_id: string;
+  content: Generated<Uint8Array>;
+  data: string;
+  id: string;
+  version: Generated<number>;
+}
+
+export interface WorkboardCards {
+  data: string;
+  id: string;
+  version: Generated<number>;
+}
+
+export interface WorkboardNotificationSubscriptions {
+  data: string;
+  id: string;
+  version: Generated<number>;
+}
+
 export interface WorkspaceSetupState {
   bootstrap_seeded_at: string | null;
   setup_completed_at: string | null;
@@ -1004,5 +1030,9 @@ export interface DB {
   voicewake_triggers: VoicewakeTriggers;
   web_push_subscriptions: WebPushSubscriptions;
   web_push_vapid_keys: WebPushVapidKeys;
+  workboard_boards: WorkboardBoards;
+  workboard_card_attachments: WorkboardCardAttachments;
+  workboard_cards: WorkboardCards;
+  workboard_notification_subscriptions: WorkboardNotificationSubscriptions;
   workspace_setup_state: WorkspaceSetupState;
 }

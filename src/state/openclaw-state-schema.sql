@@ -1205,3 +1205,34 @@ CREATE TABLE IF NOT EXISTS backup_runs (
 
 CREATE INDEX IF NOT EXISTS idx_backup_runs_created
   ON backup_runs(created_at DESC, id);
+
+-- Workboard tables (core-native, migrated from extensions/workboard/)
+
+CREATE TABLE IF NOT EXISTS workboard_cards (
+  id TEXT NOT NULL PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 1,
+  data TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workboard_boards (
+  id TEXT NOT NULL PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 1,
+  data TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workboard_notification_subscriptions (
+  id TEXT NOT NULL PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 1,
+  data TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workboard_card_attachments (
+  id TEXT NOT NULL PRIMARY KEY,
+  card_id TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  data TEXT NOT NULL,
+  content BLOB DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workboard_card_attachments_card_id
+  ON workboard_card_attachments(card_id);

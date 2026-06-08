@@ -1,6 +1,6 @@
 // Workboard plugin module implements command behavior.
 import { resolveWorkboardCardByIdOrPrefix } from "./card-lookup.js";
-import { dispatchAndStartWorkboardCards, type WorkboardSubagent } from "./dispatcher.js";
+import { dispatchAndStartWorkboardCards } from "./dispatcher.js";
 import type { WorkboardStore } from "./store.js";
 import type { WorkboardCard } from "./types.js";
 
@@ -69,11 +69,11 @@ function requireWriteAccess(params: {
 }
 
 export async function handleWorkboardCommand(params: {
-  subagent: WorkboardSubagent;
   store: WorkboardStore;
   args?: string;
   senderIsOwner?: boolean;
   gatewayClientScopes?: readonly string[];
+  agentSessionKey?: string;
 }): Promise<{ text: string; isError?: boolean }> {
   const [action = "list", ...rest] = splitArgs(params.args);
   if (action === "help") {
@@ -119,7 +119,8 @@ export async function handleWorkboardCommand(params: {
     }
     const result = await dispatchAndStartWorkboardCards({
       store: params.store,
-      subagent: params.subagent,
+      agentSessionKey: params.agentSessionKey,
+      config: {} as any, // FIXME: plumb real config
     });
     return {
       text: [
@@ -151,11 +152,11 @@ export function registerWorkboardCommand(
     exposeSenderIsOwner: true,
     handler: async (ctx) =>
       await handleWorkboardCommand({
-        subagent: undefined as unknown as WorkboardSubagent,
         store: store,
-        args: ctx.args,
-        senderIsOwner: ctx.senderIsOwner,
-        gatewayClientScopes: ctx.gatewayClientScopes,
+        args: (ctx as any).args,
+        senderIsOwner: (ctx as any).senderIsOwner,
+        gatewayClientScopes: (ctx as any).gatewayClientScopes,
+        agentSessionKey: (ctx as any).agentSessionKey,
       }),
   });
 }

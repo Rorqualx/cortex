@@ -1,20 +1,9 @@
+import { spawnSubagentDirect, type SpawnSubagentParams } from "../../agents/subagent-spawn.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 // Workboard plugin module implements dispatcher behavior.
 import { formatErrorMessage } from "../../infra/errors.js";
 import { WorkboardStore, type WorkboardDispatchResult } from "./store.js";
 import type { WorkboardCard, WorkboardExecution } from "./types.js";
-
-/** Subagent spawn callback — adapter for core subagent system. */
-export type WorkboardSubagent = (params: {
-  sessionKey: string;
-  message: string;
-  model?: string;
-  provider?: string;
-  thinking?: string;
-  lightContext?: boolean;
-  lane?: string;
-  idempotencyKey?: string;
-  deliver?: boolean;
-}) => Promise<{ runId: string; status: string }>;
 
 const DEFAULT_DISPATCH_MAX_STARTS = 3;
 const DEFAULT_DISPATCH_OWNER = "workboard-dispatcher";
@@ -193,21 +182,27 @@ export async function dispatchAndStartWorkboardCards(params: {
       });
       token = claimed.token;
       const context = await params.store.buildWorkerContext(card.id);
-      const run = await params.subagent({
-        sessionKey,
-        message: buildWorkerPrompt({
-          card: claimed.card,
-          context,
-          ownerId,
-          token,
-        }),
-        ...(params.options?.provider ? { provider: params.options.provider } : {}),
-        ...(params.options?.model ? { model: params.options.model } : {}),
-        lane: `workboard:${cardBoardId(card)}:${card.id}`,
-        idempotencyKey: `workboard:${card.id}:${claimed.card.updatedAt}`,
-        lightContext: true,
-        deliver: false,
-      });
+      const run = await spawnSubagentDirect(
+        {
+          task: buildWorkerPrompt({
+            card: claimed.card,
+            context,
+            ownerId,
+            token,
+          }),
+          taskName: sessionKey,
+          model: params.options?.model?.trim() || DEFAULT_DISPATCH_MODEL,
+          thinking: params.options?.thinking,
+          lightContext: true,
+          expectsCompletionMessage: false,
+        },
+        { agentSessionKey: params.agentSessionKey },
+      );
+      if (run.status !== "accepted" || !run.runId) {
+        throw new Error(
+          `Subagent spawn failed: ${run.status}${run.error ? ` — ${run.error}` : ""}`,
+        );
+      }
       const updated = await params.store.update(card.id, {
         sessionKey,
         runId: run.runId,
