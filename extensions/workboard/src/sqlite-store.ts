@@ -161,6 +161,7 @@ function ensureWorkboardSchema(db: DatabaseSync): void {
       title TEXT NOT NULL,
       notes TEXT,
       status TEXT NOT NULL,
+      section TEXT DEFAULT 'tasks',
       priority TEXT NOT NULL,
       agent_id TEXT,
       session_key TEXT,
@@ -356,6 +357,7 @@ function ensureWorkboardSchema(db: DatabaseSync): void {
     "lifecycle_status_source_updated_at",
     "lifecycle_status_source_updated_at INTEGER",
   );
+  ensureColumn(db, "workboard_cards", "section", "section TEXT DEFAULT 'tasks'");
   db.prepare(
     "INSERT OR IGNORE INTO workboard_schema_migrations (id, applied_at) VALUES (?, ?)",
   ).run(`schema-${SCHEMA_VERSION}`, Date.now());
@@ -706,6 +708,9 @@ function readCard(db: DatabaseSync, row: Row): WorkboardCard {
   return {
     ...card,
     ...(stringValue(row, "notes") ? { notes: stringValue(row, "notes") } : {}),
+    ...(stringValue(row, "section")
+      ? { section: stringValue(row, "section") as WorkboardSection }
+      : {}),
     ...(stringValue(row, "agent_id") ? { agentId: stringValue(row, "agent_id") } : {}),
     ...(stringValue(row, "session_key") ? { sessionKey: stringValue(row, "session_key") } : {}),
     ...(stringValue(row, "run_id") ? { runId: stringValue(row, "run_id") } : {}),
@@ -758,14 +763,14 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
   db.prepare(
     `
       INSERT INTO workboard_cards (
-        id, board_id, title, notes, status, priority, agent_id, session_key, run_id, task_id,
+        id, board_id, title, notes, status, section, priority, agent_id, session_key, run_id, task_id,
         source_url, position, created_at, updated_at, started_at, completed_at,
         execution_id, execution_kind, execution_engine, execution_mode, execution_status,
         execution_model, execution_session_key, execution_run_id, execution_started_at,
         execution_updated_at, automation_json, claim_json, template_id, archived_at, stale_json,
         lifecycle_status_source_updated_at, failure_count
       ) VALUES (
-        @id, @board_id, @title, @notes, @status, @priority, @agent_id, @session_key, @run_id,
+        @id, @board_id, @title, @notes, @status, @section, @priority, @agent_id, @session_key, @run_id,
         @task_id, @source_url, @position, @created_at, @updated_at, @started_at, @completed_at,
         @execution_id, @execution_kind, @execution_engine, @execution_mode, @execution_status,
         @execution_model, @execution_session_key, @execution_run_id, @execution_started_at,
@@ -777,6 +782,7 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
         title = excluded.title,
         notes = excluded.notes,
         status = excluded.status,
+        section = excluded.section,
         priority = excluded.priority,
         agent_id = excluded.agent_id,
         session_key = excluded.session_key,
@@ -812,6 +818,7 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
     title: card.title,
     notes: bindNull(card.notes),
     status: card.status,
+    section: card.section ?? "tasks",
     priority: card.priority,
     agent_id: bindNull(card.agentId),
     session_key: bindNull(card.sessionKey),

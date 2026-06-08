@@ -225,6 +225,11 @@ export function createWorkboardTools(params: {
       parameters: Type.Object(
         {
           status: Type.Optional(Type.String({ description: "Optional card status filter." })),
+          section: Type.Optional(
+            Type.String({
+              description: "Optional section filter: goals, implementations, tasks, ideas.",
+            }),
+          ),
           agentId: Type.Optional(Type.String({ description: "Optional agent id filter." })),
           tenant: Type.Optional(Type.String({ description: "Optional tenant filter." })),
           boardId: Type.Optional(Type.String({ description: "Optional board id filter." })),
@@ -246,6 +251,7 @@ export function createWorkboardTools(params: {
           await store.refreshDiagnostics();
         }
         const status = typeof record.status === "string" ? record.status : undefined;
+        const section = typeof record.section === "string" ? record.section : undefined;
         const agentId = typeof record.agentId === "string" ? record.agentId : undefined;
         const tenant = typeof record.tenant === "string" ? record.tenant : undefined;
         const boardId = typeof record.boardId === "string" ? record.boardId : undefined;
@@ -256,6 +262,7 @@ export function createWorkboardTools(params: {
         const cards = (await store.list({ boardId }))
           .filter((card) => record.includeArchived === true || !card.metadata?.archivedAt)
           .filter((card) => !status || card.status === status)
+          .filter((card) => !section || (card.section ?? "tasks") === section)
           .filter((card) => !agentId || card.agentId === agentId)
           .filter((card) => !tenant || card.metadata?.automation?.tenant === tenant)
           .slice(0, limit)
@@ -273,6 +280,11 @@ export function createWorkboardTools(params: {
           title: Type.String({ description: "Card title." }),
           notes: Type.Optional(Type.String({ description: "Card notes or acceptance criteria." })),
           status: Type.Optional(Type.String({ description: "Initial status." })),
+          section: Type.Optional(
+            Type.String({
+              description: "Section: goals, implementations, tasks, or ideas. Default tasks.",
+            }),
+          ),
           priority: Type.Optional(Type.String({ description: "low, normal, high, or urgent." })),
           labels: Type.Optional(Type.Array(Type.String(), { description: "Card labels." })),
           agentId: Type.Optional(Type.String({ description: "Assigned agent id." })),

@@ -6,9 +6,9 @@ export default definePluginEntry({
   id: "memory-l3",
   name: "Hierarchical Memory (L1/L2/L3)",
   description:
-    'Layered memory: sliding-window L1, chunk fact-list L2, epoch digest L3. Opt-in via plugins.slots.contextEngine: "hierarchical-l3".',
+    'Layered memory: sliding-window L1, chunk fact-list L2, epoch digest L3. Opt-in via plugins.slots.contextEngine: "memory-l3".',
   kind: "context-engine",
   register(_api) {
-    registerContextEngine("hierarchical-l3", (ctx) => createHierarchicalL3Engine(ctx));
+    registerContextEngine("memory-l3", (ctx) => createHierarchicalL3Engine(ctx));
   },
 });

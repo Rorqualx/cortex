@@ -55,7 +55,7 @@ function l3debug(msg: string): void {
 }
 
 const ENGINE_INFO: ContextEngineInfo = {
-  id: "hierarchical-l3",
+  id: "memory-l3",
   name: "Hierarchical Memory (L1/L2/L3)",
   version: "0.1.0",
   ownsCompaction: false,
@@ -259,6 +259,17 @@ export class HierarchicalL3Engine implements ContextEngine {
     isHeartbeat?: boolean;
     tokenBudget?: number;
   }): Promise<void> {
+    // Lazy bootstrap: if the engine hasn't been bootstrapped yet
+    // (e.g. embedded-agent-runner path doesn't call bootstrap() explicitly),
+    // do it now so we don't silently skip all afterTurn work.
+    if (!this.state) {
+      try {
+        await this.bootstrap();
+      } catch (err) {
+        console.error(`[memory-l3] lazy bootstrap failed: ${(err as Error).message}`);
+        return;
+      }
+    }
     if (params.isHeartbeat || !this.state) return;
 
     // OpenClaw's runtime hands us the full session message array each turn

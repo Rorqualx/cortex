@@ -74,28 +74,29 @@ if [[ "${DAEMON:-0}" -eq 1 && "${DAEMONIZED:-0}" -ne 1 ]]; then
   exit 0
 fi
 
-step "Killing all OpenClaw processes..."
-# Kill gateway processes
-pkill -f "openclaw.*gateway" 2>/dev/null || true
-pkill -f "node.*dist/index.js gateway" 2>/dev/null || true
-pkill -f "run-node.mjs gateway" 2>/dev/null || true
+if [[ "${DAEMONIZED:-0}" -ne 1 ]]; then
+  step "Killing all OpenClaw processes..."
+  # Kill gateway processes
+  pkill -f "openclaw.*gateway" 2>/dev/null || true
+  pkill -f "node.*dist/index.js gateway" 2>/dev/null || true
+  pkill -f "run-node.mjs gateway" 2>/dev/null || true
 
-# Kill any other OpenClaw node processes
-pkill -f "openclaw" 2>/dev/null || true
+  # Stop launch agent if loaded
+  launchctl bootout gui/"$UID"/ai.openclaw.gateway 2>/dev/null || true
 
-# Stop launch agent if loaded
-launchctl bootout gui/"$UID"/ai.openclaw.gateway 2>/dev/null || true
+  # Wait a moment for processes to die
+  sleep 1
 
-# Wait a moment for processes to die
-sleep 1
-
-# Verify no processes remain
-REMAINING=$(pgrep -f "openclaw|gateway" 2>/dev/null | wc -l || echo "0")
-if [[ "$REMAINING" -gt 0 ]]; then
-  log_yellow "Warning: Some processes may still be running"
-  pgrep -f "openclaw|gateway" 2>/dev/null || true
+  # Verify no processes remain
+  REMAINING=$(pgrep -f "openclaw.*gateway" 2>/dev/null | wc -l || echo "0")
+  if [[ "$REMAINING" -gt 0 ]]; then
+    log_yellow "Warning: Some processes may still be running"
+    pgrep -f "openclaw.*gateway" 2>/dev/null || true
+  else
+    log_green "All processes cleaned up"
+  fi
 else
-  log_green "All processes cleaned up"
+  step "Skipping kill step (daemonized — already killed by parent)"
 fi
 
 # Rebuild unless --no-build
@@ -115,23 +116,38 @@ fi
 # Start gateway
 step "Starting production gateway..."
 cd "${ROOT_DIR}"
-if pnpm openclaw gateway start; then
-  log_green "Gateway started successfully"
 
-  # Wait a moment for gateway to initialize
+# Prefer launchd if the plist is loaded — cleaner than raw process management
+if launchctl print gui/"$UID"/ai.openclaw.gateway &>/dev/null; then
+  step "Launching via launchd (kickstart -k)..."
+  launchctl kickstart -k gui/"$UID"/ai.openclaw.gateway
   sleep 3
-
-  # Show status
-  step "Gateway status:"
-  pnpm openclaw gateway status | grep -E "(Dashboard|Listening|Connectivity|Runtime)" || true
-
-  log ""
-  log_green "✓ Production gateway is running!"
-  log ""
-  log "UI should be accessible at:"
-  log "  - http://localhost:18789/"
-  log ""
+  if launchctl print gui/"$UID"/ai.openclaw.gateway &>/dev/null; then
+    log_green "Gateway started via launchd"
+  else
+    log_red "launchd kickstart failed, falling back to direct start"
+    pnpm openclaw gateway start
+  fi
 else
-  log_red "Failed to start gateway!"
-  exit 1
+  # No launchd plist loaded — start directly
+  if pnpm openclaw gateway start; then
+    log_green "Gateway started successfully"
+  else
+    log_red "Failed to start gateway!"
+    exit 1
+  fi
 fi
+
+# Wait for gateway to initialize
+sleep 3
+
+# Show status
+step "Gateway status:"
+pnpm openclaw gateway status 2>/dev/null | grep -E "(Dashboard|Listening|Connectivity|Runtime)" || true
+
+log ""
+log_green "✓ Production gateway is running!"
+log ""
+log "UI should be accessible at:"
+log "  - http://localhost:18789/"
+log ""

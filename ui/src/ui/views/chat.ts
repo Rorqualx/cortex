@@ -563,7 +563,8 @@ function sameChatItemsInput(previous: BuildChatItemsProps, next: BuildChatItemsP
     previous.queue === next.queue &&
     previous.showToolCalls === next.showToolCalls &&
     previous.searchOpen === next.searchOpen &&
-    previous.searchQuery === next.searchQuery
+    previous.searchQuery === next.searchQuery &&
+    previous.runStatus === next.runStatus
   );
 }
 
@@ -1630,6 +1631,7 @@ export function renderChat(props: ChatProps) {
     searchOpen: vs.searchOpen,
     searchQuery: vs.searchQuery,
     branchPoints: props.branchPoints as BuildChatItemsProps["branchPoints"],
+    runStatus: props.runStatus as BuildChatItemsProps["runStatus"],
     historyRenderLimit: props.historyRenderLimit,
   });
   syncToolCardExpansionState(props.sessionKey, chatItems, Boolean(props.autoExpandToolCalls));

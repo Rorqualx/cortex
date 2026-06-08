@@ -7,7 +7,8 @@ import { type AppViewState } from "../app-view-state.ts";
 import { icons } from "../icons.ts";
 import { resolveSessionDisplayName } from "../session-display.ts";
 import { normalizeAgentId, parseAgentSessionKey } from "../session-key.ts";
-import type { SessionsListResult } from "../types.ts";
+import { isSessionRunActive } from "../session-run-state.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 
 // ── Persistence helpers ──────────────────────────────────────────────
 const TAB_STATE_KEY = "openclaw.control.tabs.v1";
@@ -49,6 +50,23 @@ export function restorePersistedTabs(): { openTabs: string[]; activeTab: string 
 
 // ── Drag state (module-level, shared across renders) ─────────────────
 let draggedSessionKey: string | null = null;
+
+// ── Tab status tracking (persists across renders) ────────────────────
+const tabActiveRuns = new Set<string>();
+const tabCompletedUnviewed = new Map<string, "done" | "interrupted">();
+/** How long the done dot stays visible on the active tab after a run finishes.
+ *  Set to Infinity to keep it until user interaction. */
+const ACTIVE_DONE_DISPLAY_MS = Infinity;
+/** Maps sessionKey → timestamp when the done dot first appeared on the active tab. */
+const tabActiveDoneShownAt = new Map<string, number>();
+
+/** Clear the done dot on the active tab — call from any user interaction handler. */
+export function dismissActiveTabDoneDot(): void {
+  tabActiveDoneShownAt.clear();
+}
+
+/** Tracks the last chatRunId to detect when the user sends a new message. */
+let lastChatRunId: string | null = null;
 
 // ── Label resolution ─────────────────────────────────────────────────
 /** Max tab label length for goal-based titles. */
@@ -94,6 +112,116 @@ function resolveAgentLabel(state: AppViewState, agentId: string): string {
   const agent = (state.agentsList?.agents ?? []).find((a) => normalizeAgentId(a.id) === agentId);
   const name = agent?.identity?.name ?? agent?.name;
   return name && name !== agentId ? name : agentId;
+}
+
+// ── Tab status indicator ─────────────────────────────────────────────
+
+function resolveTabRunState(
+  state: AppViewState,
+  sessionKey: string,
+  row: GatewaySessionRow | undefined,
+  isActiveTab: boolean,
+): "active" | "done" | "interrupted" | "idle" {
+  const rowActive = row ? isSessionRunActive(row) : false;
+  const isCurrent = sessionKey === state.sessionKey;
+  const hasLocalRun = isCurrent && Boolean(state.chatRunId);
+  const isRunning = rowActive || hasLocalRun;
+
+  // User sent a new message — clear the done dot
+  if (state.chatRunId && state.chatRunId !== lastChatRunId) {
+    dismissActiveTabDoneDot();
+  }
+  lastChatRunId = state.chatRunId;
+
+  // User is actively typing/sending — clear the done dot
+  if (state.chatSending) {
+    dismissActiveTabDoneDot();
+  }
+
+  if (isRunning) {
+    // Clear any active-done timestamp (agent came back to life)
+    tabActiveDoneShownAt.delete(sessionKey);
+    tabActiveRuns.add(sessionKey);
+    return "active";
+  }
+
+  // ── Active tab (foreground): brief done dot with timestamp expiry ─
+  if (isActiveTab) {
+    // Active → done transition on the foreground tab
+    if (tabActiveRuns.has(sessionKey)) {
+      tabActiveRuns.delete(sessionKey);
+      tabActiveDoneShownAt.set(sessionKey, Date.now());
+      return "done";
+    }
+    // Done dot still within display window
+    const shownAt = tabActiveDoneShownAt.get(sessionKey);
+    if (shownAt != null) {
+      if (Date.now() - shownAt < ACTIVE_DONE_DISPLAY_MS) {
+        return "done";
+      }
+      tabActiveDoneShownAt.delete(sessionKey);
+    }
+    return "idle";
+  }
+
+  // ── Background tab: persistent dot until user clicks ──────────────
+
+  // Active → done transition (local tracking)
+  if (tabActiveRuns.has(sessionKey)) {
+    tabActiveRuns.delete(sessionKey);
+    const outcome: "done" | "interrupted" = row?.status === "killed" ? "interrupted" : "done";
+    tabCompletedUnviewed.set(sessionKey, outcome);
+    return outcome;
+  }
+
+  // Still tracked as completed-unviewed from a previous render
+  if (tabCompletedUnviewed.has(sessionKey)) {
+    return tabCompletedUnviewed.get(sessionKey)!;
+  }
+
+  // Catch terminal states we never saw go active (fast agents that
+  // finish before the first sessions-list poll includes them)
+  if (row?.status === "done" || row?.status === "failed" || row?.status === "timeout") {
+    tabCompletedUnviewed.set(sessionKey, "done");
+    return "done";
+  }
+  if (row?.status === "killed") {
+    tabCompletedUnviewed.set(sessionKey, "interrupted");
+    return "interrupted";
+  }
+
+  return "idle";
+}
+
+function renderTabStatusDot(
+  runState: "active" | "done" | "interrupted" | "idle",
+): typeof nothing | TemplateResult {
+  if (runState === "idle") return nothing;
+
+  if (runState === "active") {
+    return html`
+      <span class="chat-tab-bar__status-dot chat-tab-bar__status-dot--active" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="14" height="14">
+          <circle
+            cx="8"
+            cy="8"
+            r="6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-dasharray="3 3"
+            stroke-linecap="round"
+          />
+        </svg>
+      </span>
+    `;
+  }
+
+  const cls =
+    runState === "interrupted"
+      ? "chat-tab-bar__status-dot--interrupted"
+      : "chat-tab-bar__status-dot--done";
+  return html`<span class="chat-tab-bar__status-dot ${cls}" aria-hidden="true"></span>`;
 }
 
 // ── Main render ──────────────────────────────────────────────────────
@@ -247,8 +375,18 @@ export function renderChatTabBar(
     draggedSessionKey = null;
   }
 
+  // Clear active-tab done dot on any click in the tab bar
+  function handleBarClick() {
+    tabActiveDoneShownAt.clear();
+  }
+
   return html`
-    <div class="chat-tab-bar" role="tablist" aria-label=${t("chat.selectors.session")}>
+    <div
+      class="chat-tab-bar"
+      role="tablist"
+      aria-label=${t("chat.selectors.session")}
+      @click=${handleBarClick}
+    >
       <div
         class="chat-tab-bar__tabs"
         @wheel=${(e: WheelEvent) => {
@@ -273,6 +411,8 @@ export function renderChatTabBar(
           const label = resolveChatTabLabel(state, key, sessions);
           const agentId = resolveAgentIdForTab(state, key);
           const agentLabel = resolveAgentLabel(state, agentId);
+          const row = sessions?.sessions.find((s) => s.key === key);
+          const runState = resolveTabRunState(state, key, row, active);
           return html`
             <button
               class="chat-tab-bar__tab ${active ? "chat-tab-bar__tab--active" : ""}"
@@ -293,6 +433,7 @@ export function renderChatTabBar(
               @dragleave=${handleDragLeave}
               @drop=${(e: DragEvent) => handleDrop(e, key)}
             >
+              ${renderTabStatusDot(runState)}
               <span class="chat-tab-bar__tab-label">${label}</span>
               ${effectiveTabs.length > 1
                 ? html`

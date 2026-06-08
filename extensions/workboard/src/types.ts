@@ -12,6 +12,10 @@ export const WORKBOARD_STATUSES = [
 ] as const;
 
 export const WORKBOARD_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
+
+export const WORKBOARD_SECTIONS = ["goals", "implementations", "tasks", "ideas"] as const;
+
+export type WorkboardSection = (typeof WORKBOARD_SECTIONS)[number];
 export const WORKBOARD_EXECUTION_ENGINES = ["codex", "claude"] as const;
 export const WORKBOARD_EXECUTION_MODES = ["autonomous", "manual"] as const;
 export const WORKBOARD_EXECUTION_STATUSES = [
@@ -307,6 +311,7 @@ export type WorkboardCard = {
   title: string;
   notes?: string;
   status: WorkboardStatus;
+  section?: WorkboardSection;
   priority: WorkboardPriority;
   labels: string[];
   agentId?: string;

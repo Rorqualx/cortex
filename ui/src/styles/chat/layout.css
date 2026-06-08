@@ -82,6 +82,72 @@
   border-radius: 2px 2px 0 0;
 }
 
+/* ── Tab status indicator ───────────────────────────────────────── */
+
+.chat-tab-bar__status-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border-radius: 50%;
+}
+
+/* Spinning dashed circle — agent working */
+.chat-tab-bar__status-dot--active {
+  color: var(--info);
+}
+
+.chat-tab-bar__status-dot--active svg {
+  animation: tab-status-spin 1.2s linear infinite;
+}
+
+/* Solid red dot — agent done (bouncing) */
+.chat-tab-bar__status-dot--done {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+  animation: tab-status-bounce 0.4s ease-in-out infinite;
+}
+
+/* Solid orange dot — agent interrupted (bouncing) */
+.chat-tab-bar__status-dot--interrupted {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  background: var(--warn, #f59e0b);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--warn, #f59e0b) 50%, transparent);
+  animation: tab-status-bounce 0.4s ease-in-out infinite;
+}
+
+@keyframes tab-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes tab-status-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-tab-bar__status-dot--active svg {
+    animation-duration: 4s;
+  }
+  .chat-tab-bar__status-dot--done,
+  .chat-tab-bar__status-dot--interrupted {
+    animation: none;
+  }
+}
+
 .chat-tab-bar__tab-label {
   min-width: 0;
   overflow: hidden;

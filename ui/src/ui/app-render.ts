@@ -25,7 +25,11 @@ import {
 } from "./app-render.helpers.ts";
 import { hasOperatorAdminAccess, hasOperatorWriteAccess, warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
-import { renderChatTabBar, savePersistedTabs } from "./chat/chat-tab-bar.ts";
+import {
+  renderChatTabBar,
+  savePersistedTabs,
+  dismissActiveTabDoneDot,
+} from "./chat/chat-tab-bar.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import {
   renderChatSessionSelect,

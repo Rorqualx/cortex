@@ -360,6 +360,7 @@ export type WorkboardUiState = {
   draftTitle: string;
   draftNotes: string;
   draftStatus: WorkboardStatus;
+  draftSection: string;
   draftPriority: WorkboardPriority;
   draftLabels: string;
   draftAgentId: string;
@@ -407,6 +408,7 @@ function createDefaultState(): WorkboardUiState {
     draftTitle: "",
     draftNotes: "",
     draftStatus: "todo",
+    draftSection: "tasks",
     draftPriority: "normal",
     draftLabels: "",
     draftAgentId: "",
@@ -1255,6 +1257,7 @@ function draftPayload(state: WorkboardUiState) {
     title: state.draftTitle,
     notes: state.draftNotes,
     status: state.draftStatus,
+    section: state.draftSection || "tasks",
     priority: state.draftPriority,
     labels: normalizeDraftLabels(state.draftLabels),
     agentId: state.draftAgentId,

@@ -316,7 +316,11 @@ function resolveOllamaEmbeddingClient(
   return {
     baseUrl,
     headers,
-    ssrfPolicy: ssrfPolicyFromHttpBaseUrlAllowedOrigin(baseUrl),
+    ssrfPolicy: {
+      ...ssrfPolicyFromHttpBaseUrlAllowedOrigin(baseUrl),
+      // Ollama runs locally (localhost/127.0.0.1); allow private network access.
+      allowPrivateNetwork: true,
+    },
     model,
   };
 }

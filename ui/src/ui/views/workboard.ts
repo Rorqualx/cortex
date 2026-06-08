@@ -34,6 +34,7 @@ import { formatDateMs } from "../format.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import { icons } from "../icons.ts";
 import type { AgentsListResult, GatewaySessionRow } from "../types.ts";
+import { renderPixelOffice } from "./pixel-office.ts";
 
 type WorkboardAgentRow = AgentsListResult["agents"][number];
 
@@ -688,6 +689,7 @@ function resetDraft(state: WorkboardUiState) {
   state.draftTitle = "";
   state.draftNotes = "";
   state.draftStatus = "todo";
+  state.draftSection = "tasks";
   state.draftPriority = "normal";
   state.draftLabels = "";
   state.draftAgentId = "";
@@ -707,6 +709,7 @@ function openEditModal(state: WorkboardUiState, card: WorkboardCard) {
   state.draftTitle = card.title;
   state.draftNotes = card.notes ?? "";
   state.draftStatus = card.status;
+  state.draftSection = card.section ?? "tasks";
   state.draftPriority = card.priority;
   state.draftLabels = card.labels.join(", ");
   state.draftAgentId = card.agentId ?? "";
@@ -725,6 +728,7 @@ function applyTemplate(state: WorkboardUiState, templateId: WorkboardTemplateId)
   state.draftNotes = template.notes;
   state.draftLabels = template.labels;
   state.draftPriority = template.priority;
+  state.draftSection = "tasks";
 }
 
 function renderCardModal(props: WorkboardProps) {
@@ -861,6 +865,27 @@ function renderCardModal(props: WorkboardProps) {
                 (status) =>
                   html`<option value=${status} ?selected=${state.draftStatus === status}>
                     ${formatStatusLabel(status)}
+                  </option>`,
+              )}
+            </select>
+          </label>
+          <label class="workboard-field">
+            <span>Section</span>
+            <select
+              class="input"
+              .value=${state.draftSection ?? "tasks"}
+              @change=${(event: Event) => {
+                state.draftSection = (event.currentTarget as HTMLSelectElement).value;
+                props.onRequestUpdate?.();
+              }}
+            >
+              ${WORKBOARD_SECTIONS_UI.map(
+                (section) =>
+                  html`<option
+                    value=${section}
+                    ?selected=${(state.draftSection ?? "tasks") === section}
+                  >
+                    ${WORKBOARD_SECTION_LABELS[section]}
                   </option>`,
               )}
             </select>
@@ -1843,6 +1868,63 @@ function renderColumn(props: WorkboardProps, status: WorkboardStatus, cards: Wor
   `;
 }
 
+const WORKBOARD_SECTIONS_UI = ["goals", "implementations", "tasks", "ideas"] as const;
+type WorkboardSectionUI = (typeof WORKBOARD_SECTIONS_UI)[number];
+
+const WORKBOARD_SECTION_LABELS: Record<WorkboardSectionUI, string> = {
+  goals: "🎯 Goals",
+  implementations: "🔧 Implementations",
+  tasks: "✅ Tasks",
+  ideas: "💡 Ideas",
+};
+
+function renderSectionedBoard(
+  props: WorkboardProps,
+  filtered: WorkboardCard[],
+  statuses: readonly WorkboardStatus[],
+) {
+  const state = getWorkboardState(props.host);
+  const sectioned = new Map<WorkboardSectionUI, WorkboardCard[]>();
+  for (const section of WORKBOARD_SECTIONS_UI) {
+    sectioned.set(section, []);
+  }
+  for (const card of filtered) {
+    const section: WorkboardSectionUI = (card.section as WorkboardSectionUI) ?? "tasks";
+    const bucket = sectioned.get(section) ?? sectioned.get("tasks")!;
+    bucket.push(card);
+  }
+  return html`
+    <div class="workboard-sections">
+      ${WORKBOARD_SECTIONS_UI.map((section) => {
+        const sectionCards = sectioned.get(section) ?? [];
+        const byStatus = new Map<WorkboardStatus, WorkboardCard[]>();
+        for (const status of statuses) {
+          byStatus.set(status, []);
+        }
+        for (const card of sectionCards) {
+          byStatus.get(card.status)?.push(card);
+        }
+        return html`
+          <details
+            class="workboard-section"
+            ?open=${sectionCards.length > 0 && section !== "tasks"}
+          >
+            <summary class="workboard-section__header">
+              <h3 class="workboard-section__title">
+                ${WORKBOARD_SECTION_LABELS[section]}
+                <span class="workboard-section__count">${sectionCards.length}</span>
+              </h3>
+            </summary>
+            <div class="workboard-board workboard-board--${state.layout}">
+              ${statuses.map((status) => renderColumn(props, status, byStatus.get(status) ?? []))}
+            </div>
+          </details>
+        `;
+      })}
+    </div>
+  `;
+}
+
 export function renderWorkboard(props: WorkboardProps) {
   const state = getWorkboardState(props.host);
   if (props.pluginEnabled) {
@@ -1877,13 +1959,6 @@ export function renderWorkboard(props: WorkboardProps) {
     .filter((card) => matchesFilter(card, { query: state.query, priority: state.priorityFilter }));
   const writable = canMutate(props);
   const agentOptions = buildAgentFilterOptions(state.cards, props.agentsList);
-  const byStatus = new Map<WorkboardStatus, WorkboardCard[]>();
-  for (const status of state.statuses) {
-    byStatus.set(status, []);
-  }
-  for (const card of filtered) {
-    byStatus.get(card.status)?.push(card);
-  }
   const dialogOpen = state.draftOpen || Boolean(getVisibleDetailCard(state));
 
   return html`
@@ -2032,10 +2107,8 @@ export function renderWorkboard(props: WorkboardProps) {
           </div>
         </div>
         ${state.error ? html`<div class="callout danger">${state.error}</div>` : nothing}
-        ${renderDispatchSummary(state)}
-        <div class="workboard-board workboard-board--${state.layout}">
-          ${state.statuses.map((status) => renderColumn(props, status, byStatus.get(status) ?? []))}
-        </div>
+        ${renderDispatchSummary(state)} ${renderPixelOffice(props.agentsList, props.sessions)}
+        ${renderSectionedBoard(props, filtered, state.statuses)}
       </div>
       ${renderCardModal(props)} ${renderCardDetailsPanel(props)}
     </section>
