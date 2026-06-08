@@ -77,6 +77,10 @@ const loadChatHandlers = lazyHandlerModule(
   () => import("./server-methods/chat.js"),
   (module) => module.chatHandlers,
 );
+const loadChatBranchHandlers = lazyHandlerModule(
+  () => import("./server-methods/chat-branch.js"),
+  (module) => module.chatBranchHandlers,
+);
 const loadCommandsHandlers = lazyHandlerModule(
   () => import("./server-methods/commands.js"),
   (module) => module.commandsHandlers,
@@ -289,6 +293,10 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "chat.inject",
     ],
     loadHandlers: loadChatHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["chat.branch", "chat.branches"],
+    loadHandlers: loadChatBranchHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: ["commands.list"],
