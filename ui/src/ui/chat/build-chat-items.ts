@@ -1,5 +1,6 @@
 import type { ChatItem, MessageGroup, NormalizedMessage, ToolCard } from "../types/chat-types.ts";
 import type { ChatQueueItem } from "../ui-types.ts";
+import type { SessionBranchPoint } from "./branch-service.ts";
 import {
   isAssistantHeartbeatAckForDisplay,
   stripHeartbeatTokenForDisplay,
@@ -24,10 +25,17 @@ export type BuildChatItemsProps = {
   thinkingStreamStartedAt: number | null;
   sending?: boolean;
   runId?: string | null;
+  /** Terminal run status from reconcileChatRunLifecycle — used to suppress
+   * late-arriving thinking/stream items after the run already completed. */
+  runStatus?: { phase: string; runId?: string | null } | null;
   queue?: ChatQueueItem[];
   showToolCalls: boolean;
   searchOpen?: boolean;
   searchQuery?: string;
+  /** Branch points from chat.branches API — injected as branch-point dividers. */
+  branchPoints?: SessionBranchPoint[];
+  /** Override the default CHAT_HISTORY_RENDER_LIMIT for scroll-back expansion. */
+  historyRenderLimit?: number;
 };
 
 function appendCanvasBlockToAssistantMessage(
@@ -522,7 +530,12 @@ function countVisibleHistoryMessages(messages: unknown[], showToolCalls: boolean
   return count;
 }
 
-function resolveHistoryStartIndex(messages: unknown[], showToolCalls: boolean): number {
+function resolveHistoryStartIndex(
+  messages: unknown[],
+  showToolCalls: boolean,
+  renderLimit?: number,
+): number {
+  const limit = renderLimit ?? CHAT_HISTORY_RENDER_LIMIT;
   let visibleCount = 0;
   let renderChars = 0;
   let startIndex = messages.length;
@@ -531,7 +544,7 @@ function resolveHistoryStartIndex(messages: unknown[], showToolCalls: boolean): 
     if (isHiddenToolMessage(message, showToolCalls)) {
       continue;
     }
-    if (visibleCount >= CHAT_HISTORY_RENDER_LIMIT) {
+    if (visibleCount >= limit) {
       break;
     }
     const remainingBudget = Math.max(1, CHAT_HISTORY_RENDER_CHAR_BUDGET - renderChars + 1);
@@ -544,6 +557,58 @@ function resolveHistoryStartIndex(messages: unknown[], showToolCalls: boolean): 
     startIndex = index;
   }
   return startIndex;
+}
+
+/**
+ * Inject branch-point dividers into chat items based on branch point messageIds.
+ * Branch points are placed AFTER the message whose id matches the branch
+ * point's messageId.
+ */
+function injectBranchPointDividers(
+  items: ChatItem[],
+  branchPoints: SessionBranchPoint[],
+): ChatItem[] {
+  const result: ChatItem[] = [];
+  const branchByMessageId = new Map<string, SessionBranchPoint[]>();
+
+  // Build map: messageId -> branch points
+  for (const bp of branchPoints) {
+    if (bp.messageId) {
+      const existing = branchByMessageId.get(bp.messageId) ?? [];
+      existing.push(bp);
+      branchByMessageId.set(bp.messageId, existing);
+    }
+  }
+
+  for (const item of items) {
+    result.push(item);
+    if (item.kind !== "message") {
+      continue;
+    }
+
+    const record = asRecord(item.message);
+    const messageId = typeof record?.id === "string" ? record.id : null;
+
+    if (messageId) {
+      const points = branchByMessageId.get(messageId);
+      if (points) {
+        const itemTs = chatItemTimestamp(item);
+        for (const bp of points) {
+          result.push({
+            kind: "branch-point",
+            key: `branch:${bp.entryId}:${item.key}`,
+            entryId: bp.entryId,
+            childCount: bp.childCount,
+            activeChildIndex: bp.isActive ? 0 : 0,
+            label: bp.label,
+            timestamp: itemTs ?? Date.now(),
+          });
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | MessageGroup> {
@@ -559,7 +624,11 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
     text: string | null;
     timestamp: number | null;
   }>;
-  const historyStart = resolveHistoryStartIndex(history, props.showToolCalls);
+  const historyStart = resolveHistoryStartIndex(
+    history,
+    props.showToolCalls,
+    props.historyRenderLimit,
+  );
   const hiddenHistoryCount = countVisibleHistoryMessages(
     history.slice(0, historyStart),
     props.showToolCalls,
@@ -731,7 +800,13 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
     items.push({ kind: "reading-indicator", key });
   }
 
-  if (props.thinkingStream !== null) {
+  // Suppress thinking stream when the run has already been terminal-reconciled.
+  // Without this guard, a late-arriving thinking delta (processed before the
+  // delta guard in controllers/chat.ts took effect) would render a thinking
+  // badge after the done badge already displayed.
+  const hasTerminalRunStatus =
+    props.runStatus?.phase === "done" || props.runStatus?.phase === "interrupted";
+  if (props.thinkingStream !== null && !hasTerminalRunStatus) {
     const key = `thinking:${props.sessionKey}:${props.thinkingStreamStartedAt ?? "live"}`;
     items.push({
       kind: "thinking",
@@ -748,6 +823,11 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
   // hold the same text. Since segments are kind:"stream" and messages are
   // kind:"message", collapseSequentialDuplicateMessages won't catch them.
   items = deduplicateStreamSegmentsAgainstFinal(items);
+
+  // Inject branch-point dividers at positions matching branch timestamps.
+  if (props.branchPoints && props.branchPoints.length > 0) {
+    items = injectBranchPointDividers(items, props.branchPoints);
+  }
 
   return groupMessages(collapseSequentialDuplicateMessages(sortChatItemsByVisibleTime(items)));
 }

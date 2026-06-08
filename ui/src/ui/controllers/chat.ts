@@ -4,6 +4,10 @@ import {
   isAssistantHeartbeatAckForDisplay,
   stripHeartbeatTokenForDisplay,
 } from "../chat/heartbeat-display.ts";
+import {
+  CHAT_HISTORY_RENDER_LIMIT,
+  CHAT_HISTORY_RENDER_EXPAND_STEP,
+} from "../chat/history-limits.ts";
 import { extractText } from "../chat/message-extract.ts";
 import { reconcileChatRunLifecycle } from "../chat/run-lifecycle.ts";
 import { buildUserChatMessageContentBlocks } from "../chat/user-message-content.ts";
@@ -371,6 +375,8 @@ export type ChatState = {
   chatHistoryHasMore: boolean;
   chatHistoryNextCursor: string | null;
   chatLoadingEarlier: boolean;
+  chatHistoryRenderLimit: number;
+  chatHistoryRenderExpanded: boolean;
   lastError: string | null;
   chatError?: string | null;
   agentsError?: string | null;
@@ -379,6 +385,10 @@ export type ChatState = {
   agentsList?: ChatAgentsListSnapshot | null;
   agentsSelectedId?: string | null;
   hello?: GatewayHelloOk | null;
+  /** Branch points from chat.branches for visual navigation. */
+  branchPoints?: unknown[];
+  /** Currently active branch entry ID (for branch navigation). */
+  branchFromId?: string | null;
 };
 
 type ChatAgentsListSnapshot = Partial<Omit<AgentsListResult, "agents">> & {
@@ -685,6 +695,71 @@ export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
   }
 }
 
+export function expandHistoryRenderLimit(state: ChatState): boolean {
+  const messagesCount = Array.isArray(state.chatMessages) ? state.chatMessages.length : 0;
+  const currentLimit = state.chatHistoryRenderLimit;
+  if (currentLimit >= messagesCount) {
+    return false;
+  }
+  state.chatHistoryRenderLimit = Math.min(
+    currentLimit + CHAT_HISTORY_RENDER_EXPAND_STEP,
+    messagesCount,
+  );
+  state.chatHistoryRenderExpanded = true;
+  return state.chatHistoryRenderLimit > currentLimit;
+}
+
+export async function loadBranches(state: ChatState): Promise<void> {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  try {
+    const res = await state.client.request<{
+      ok?: boolean;
+      branches?: unknown[];
+      activeLeafId?: string | null;
+      activePath?: string[];
+      error?: string;
+    }>("chat.branches", {
+      sessionKey: state.sessionKey,
+    });
+    if (res.ok && res.branches) {
+      state.branchPoints = res.branches;
+    } else {
+      state.branchPoints = [];
+    }
+  } catch {
+    state.branchPoints = [];
+  }
+}
+
+export async function handleBranchNavigate(
+  state: ChatState,
+  entryId: string,
+  direction: "prev" | "next",
+): Promise<void> {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  try {
+    const res = await state.client.request<{
+      ok?: boolean;
+      branchFromId?: string;
+      error?: string;
+    }>("chat.branch", {
+      sessionKey: state.sessionKey,
+      entryId,
+    });
+    if (res.ok) {
+      state.branchFromId = entryId;
+      state.branchPoints = [];
+      await Promise.all([loadChatHistory(state, { startup: false }), loadBranches(state)]);
+    }
+  } catch {
+    // Silently fail — branch not supported on older gateways
+  }
+}
+
 async function loadChatHistoryUncached(
   state: ChatState,
   client: NonNullable<ChatState["client"]>,
@@ -800,6 +875,8 @@ async function loadChatHistoryUncached(
     // Track pagination state from server response.
     state.chatHistoryHasMore = res.hasMore === true;
     state.chatHistoryNextCursor = res.nextCursor ?? null;
+    state.chatHistoryRenderLimit = CHAT_HISTORY_RENDER_LIMIT;
+    state.chatHistoryRenderExpanded = false;
     const resetStream = !state.chatRunId || state.chatRunId === previousRunId;
     if (resetStream) {
       // Guard: don't clear the stream if it's active (non-null), even if empty.
@@ -1267,19 +1344,36 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     });
 
   if (payload.state === "delta") {
-    const next = resolveDeltaChatStreamText(state.chatStream, payload);
-    if (
-      typeof next === "string" &&
-      !isSilentReplyStream(next) &&
-      !isAssistantHeartbeatAckForDisplay(payload.message)
-    ) {
-      state.chatStream = next;
-    }
-    const nextThinking = resolveDeltaThinkingStreamText(state.chatThinkingStream, payload);
-    if (typeof nextThinking === "string" && nextThinking) {
-      state.chatThinkingStream = nextThinking;
-      if (state.chatThinkingStreamStartedAt === null) {
-        state.chatThinkingStreamStartedAt = Date.now();
+    // Guard: ignore late-arriving deltas after a terminal reconcile for this run.
+    // The gateway may queue delta events that arrive after the ACK resolved
+    // synchronously (ack.status === "ok") or after a final event already
+    // reconciled the run to done. Processing these would re-activate
+    // chatStream/chatThinkingStream after the done badge already flashed,
+    // causing the "done → no dots → thinking badge" visual glitch.
+    const terminalReconcile = (
+      state as unknown as {
+        lastLocalTerminalReconcile?: { runId: string | null; occurredAt: number } | null;
+      }
+    ).lastLocalTerminalReconcile;
+    const runAlreadyTerminal =
+      terminalReconcile &&
+      terminalReconcile.runId != null &&
+      (terminalReconcile.runId === payload.runId || terminalReconcile.runId === state.chatRunId);
+    if (!runAlreadyTerminal) {
+      const next = resolveDeltaChatStreamText(state.chatStream, payload);
+      if (
+        typeof next === "string" &&
+        !isSilentReplyStream(next) &&
+        !isAssistantHeartbeatAckForDisplay(payload.message)
+      ) {
+        state.chatStream = next;
+      }
+      const nextThinking = resolveDeltaThinkingStreamText(state.chatThinkingStream, payload);
+      if (typeof nextThinking === "string" && nextThinking) {
+        state.chatThinkingStream = nextThinking;
+        if (state.chatThinkingStreamStartedAt === null) {
+          state.chatThinkingStreamStartedAt = Date.now();
+        }
       }
     }
   } else if (payload.state === "final") {

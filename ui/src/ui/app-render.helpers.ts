@@ -10,6 +10,7 @@ import {
 } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
+import { savePersistedTabs } from "./chat/chat-tab-bar.ts";
 import { persistChatComposerState, restoreChatComposerState } from "./chat/composer-persistence.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import {
@@ -641,6 +642,7 @@ function switchChatSessionInternal(
     if (!state.chatOpenSessionTabs.includes(nextSessionKey)) {
       state.chatOpenSessionTabs = [...state.chatOpenSessionTabs, nextSessionKey];
     }
+    savePersistedTabs(state.chatOpenSessionTabs, nextSessionKey);
   }
   void state.loadAssistantIdentity();
   void refreshChatAvatar(state);

@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { ifDefined } from "lit/directives/if-defined.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { until } from "lit/directives/until.js";
 import { getSafeLocalStorage } from "../../local-storage.ts";
@@ -491,6 +492,8 @@ export function renderMessageGroup(
     allowExternalEmbedUrls?: boolean;
     contextWindow?: number | null;
     onDelete?: () => void;
+    onBranchFromMessage?: (messageId: string) => void;
+    onEditMessage?: (text: string, messageId: string) => void;
   },
 ) {
   const normalizedRole = normalizeRoleForGrouping(group.role);
@@ -694,6 +697,7 @@ export function renderMessageGroup(
           ${opts.onDelete
             ? renderDeleteButton(opts.onDelete, normalizedRole === "user" ? "left" : "right")
             : nothing}
+          ${normalizedRole === "user" ? renderEditButton(group, opts.onEditMessage) : nothing}
         </div>
       </div>
     </div>
@@ -914,6 +918,165 @@ function placeDeleteConfirmPopover(
   popover.style.left = `${Math.round(left)}px`;
   popover.style.top = `${Math.round(top)}px`;
   popover.dataset.placement = placeBelow ? "below" : "above";
+}
+
+function renderEditButton(
+  group: MessageGroup,
+  _onEdit?: (text: string, messageId: string) => void,
+) {
+  return html`
+    <button
+      class="chat-group-edit"
+      title="Edit message"
+      aria-label="Edit this message"
+      @click=${(e: Event) => {
+        e.stopPropagation();
+        const btn = e.currentTarget as HTMLElement;
+        const groupEl = btn.closest(".chat-group");
+        const bubble = groupEl?.querySelector(
+          ".chat-bubble:not(.chat-bubble--tool-shell)",
+        ) as HTMLElement | null;
+        if (!bubble) return;
+        const currentText = bubble.textContent?.trim() ?? "";
+        // Extract message ID from the first message in the group
+        const firstMsg = group.messages[0]?.message;
+        const msgId =
+          firstMsg && typeof firstMsg === "object" && firstMsg !== null
+            ? ((firstMsg as Record<string, unknown>).id as string | undefined)
+            : undefined;
+        enterEditMode(bubble, currentText, () => {}, msgId);
+      }}
+    >
+      <span class="chat-group-edit__icon">
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          width="13"
+          height="13"
+        >
+          <path d="M11 2a2.828 2.828 0 1 1 4 4L7.5 13.5 2 14l.5-5.5L11 2z" />
+        </svg>
+      </span>
+    </button>
+  `;
+}
+
+function enterEditMode(
+  bubble: HTMLElement,
+  originalText: string,
+  _onSave: (text: string) => void,
+  messageId?: string,
+) {
+  const originalHTML = bubble.innerHTML;
+
+  bubble.innerHTML = `
+    <textarea class="chat-edit-textarea">${escapeHTML(originalText)}</textarea>
+    <div class="chat-edit-actions">
+      <button class="btn btn--sm chat-edit-save">Save</button>
+      <button class="btn btn--sm btn--subtle chat-edit-cancel">Cancel</button>
+    </div>
+  `;
+
+  const textarea = bubble.querySelector(".chat-edit-textarea") as HTMLTextAreaElement;
+  const saveBtn = bubble.querySelector(".chat-edit-save") as HTMLElement;
+  const cancelBtn = bubble.querySelector(".chat-edit-cancel") as HTMLElement;
+
+  textarea?.focus();
+
+  const cleanup = () => {
+    bubble.innerHTML = originalHTML;
+  };
+
+  cancelBtn?.addEventListener("click", cleanup);
+  saveBtn?.addEventListener("click", async () => {
+    const newText = textarea?.value?.trim();
+    if (!newText || newText === originalText) {
+      cleanup();
+      return;
+    }
+    cleanup();
+
+    // Try to branch from the edited message
+    const client = (window as any).__oc_client;
+    const sessionKey = (window as any).__oc_sessionKey;
+    if (client?.request && messageId && sessionKey) {
+      try {
+        await client.request("chat.branch", { sessionKey, messageId });
+      } catch {
+        /* ok if not supported */
+      }
+    }
+
+    // Populate composer and send
+    const ta = document.querySelector(
+      ".agent-chat__composer-combobox > textarea",
+    ) as HTMLTextAreaElement | null;
+    if (!ta) return;
+    ta.value = newText;
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.focus();
+    requestAnimationFrame(() => {
+      ta.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+  });
+
+  const onKey = (ke: KeyboardEvent) => {
+    if (ke.key === "Escape") {
+      cleanup();
+      document.removeEventListener("keydown", onKey);
+    }
+  };
+  document.addEventListener("keydown", onKey);
+}
+
+function renderBranchButton(group: MessageGroup, onBranch?: (messageId: string) => void) {
+  // Always render the button element so CSS can show/hide it.
+  // If no callback is provided, clicking is a no-op.
+  const firstMsg = group.messages[0]?.message;
+  const messageId =
+    firstMsg && typeof firstMsg === "object" && firstMsg !== null
+      ? (firstMsg as Record<string, unknown>).id
+      : undefined;
+  return html`
+    <button
+      class="chat-group-edit"
+      title="Edit message"
+      aria-label="Edit this message"
+      @click=${(e: Event) => {
+        e.stopPropagation();
+        if (typeof messageId === "string" && onBranch) {
+          onBranch(messageId);
+        }
+      }}
+    >
+      <span class="chat-group-edit__icon">
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          width="13"
+          height="13"
+        >
+          <path d="M11 2a2.828 2.828 0 1 1 4 4L7.5 13.5 2 14l.5-5.5L11 2z" />
+        </svg>
+      </span>
+    </button>
+  `;
 }
 
 function renderDeleteButton(onDelete: () => void, side: DeleteConfirmSide) {
@@ -2021,4 +2184,12 @@ function renderMarkdownText(
       ${unsafeHTML(toSanitizedMarkdownHtml(markdown, markdownRenderOptions))}
     </div>
   `;
+}
+
+function escapeHTML(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

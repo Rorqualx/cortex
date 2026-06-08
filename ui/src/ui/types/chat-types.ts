@@ -13,6 +13,15 @@ export type ChatItem =
       action?: { kind: "session-checkpoints"; label: string };
       timestamp: number;
     }
+  | {
+      kind: "branch-point";
+      key: string;
+      entryId: string;
+      childCount: number;
+      activeChildIndex: number;
+      label?: string;
+      timestamp: number;
+    }
   | { kind: "stream"; key: string; text: string; startedAt: number; isStreaming: boolean }
   | {
       kind: "thinking";

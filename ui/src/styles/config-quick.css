@@ -532,6 +532,16 @@
   fill: currentColor;
 }
 
+.qs-avatar--expandable {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.qs-avatar--expandable:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
+}
+
 .qs-row__chevron svg {
   width: 12px;
   height: 12px;

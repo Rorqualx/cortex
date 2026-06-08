@@ -173,6 +173,7 @@ export type ChatProps = {
   historyHasMore?: boolean;
   loadingEarlier?: boolean;
   onLoadEarlier?: () => void;
+  historyRenderLimit?: number;
   agentsList: {
     agents: Array<{ id: string; name?: string; identity?: { name?: string; avatarUrl?: string } }>;
     defaultId?: string;
@@ -199,6 +200,14 @@ export type ChatProps = {
     onRefresh: () => void;
     onOpenFile: (name: string, filePath?: string) => void;
   };
+  /** Branch points for visual branch navigation indicators. */
+  branchPoints?: unknown[];
+  /** Branch navigate handler: (entryId, direction) => void. */
+  onBranchNavigate?: (entryId: string, direction: "prev" | "next") => void;
+  /** Branch-from-message handler: triggered when user clicks edit/branch on any message. */
+  onBranchFromMessage?: (messageId: string) => void;
+  /** Edit message: populates composer with the message text for editing/branching. */
+  onEditMessage?: (text: string, messageId: string) => void;
 };
 
 const pinnedMessagesMap = new Map<string, PinnedMessages>();
@@ -1620,6 +1629,8 @@ export function renderChat(props: ChatProps) {
     showToolCalls: props.showToolCalls,
     searchOpen: vs.searchOpen,
     searchQuery: vs.searchQuery,
+    branchPoints: props.branchPoints as BuildChatItemsProps["branchPoints"],
+    historyRenderLimit: props.historyRenderLimit,
   });
   syncToolCardExpansionState(props.sessionKey, chatItems, Boolean(props.autoExpandToolCalls));
   const expandedToolCards = getExpandedToolCards(props.sessionKey);
@@ -1727,6 +1738,55 @@ export function renderChat(props: ChatProps) {
               chatItems,
               (item) => item.key,
               (item) => {
+                if (item.kind === "branch-point") {
+                  return html`
+                    <div class="chat-branch" data-entry-id=${item.entryId}>
+                      <div
+                        class="chat-branch__divider"
+                        role="separator"
+                        aria-label="Conversation branch point"
+                      >
+                        <span class="chat-branch__line"></span>
+                        <span class="chat-branch__icon">⎇</span>
+                        <span class="chat-branch__label">
+                          ${item.label ?? `Branch point · ${item.childCount} conversations`}
+                        </span>
+                        <span class="chat-branch__line"></span>
+                      </div>
+                      <div class="chat-branch__nav">
+                        <button
+                          type="button"
+                          class="btn btn--subtle btn--sm chat-branch__btn"
+                          title="Previous branch"
+                          aria-label="Previous branch"
+                          @click=${() => {
+                            if (props.onBranchNavigate) {
+                              props.onBranchNavigate(item.entryId, "prev");
+                            }
+                          }}
+                        >
+                          ◀
+                        </button>
+                        <span class="chat-branch__counter"
+                          >${item.activeChildIndex + 1} / ${item.childCount}</span
+                        >
+                        <button
+                          type="button"
+                          class="btn btn--subtle btn--sm chat-branch__btn"
+                          title="Next branch"
+                          aria-label="Next branch"
+                          @click=${() => {
+                            if (props.onBranchNavigate) {
+                              props.onBranchNavigate(item.entryId, "next");
+                            }
+                          }}
+                        >
+                          ▶
+                        </button>
+                      </div>
+                    </div>
+                  `;
+                }
                 if (item.kind === "divider") {
                   return html`
                     <div class="chat-divider" data-ts=${String(item.timestamp)}>
@@ -1830,6 +1890,8 @@ export function renderChat(props: ChatProps) {
                       deleted.delete(item.key);
                       requestUpdate();
                     },
+                    onBranchFromMessage: props.onBranchFromMessage,
+                    onEditMessage: props.onEditMessage,
                   });
                 }
                 return nothing;

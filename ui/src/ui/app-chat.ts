@@ -14,6 +14,7 @@ import {
   persistStoredChatComposerQueue,
   removeStoredChatComposerQueueItem,
 } from "./chat/composer-persistence.ts";
+import { CHAT_HISTORY_RENDER_LIMIT } from "./chat/history-limits.ts";
 import {
   handleChatDraftChange,
   handleChatInputHistoryKey,
@@ -43,8 +44,11 @@ import {
 import {
   abortChatRun,
   appendUserChatMessage,
+  handleBranchNavigate,
+  loadBranches,
   loadChatHistory,
   loadEarlierMessages,
+  expandHistoryRenderLimit,
   requestChatSend,
   requestSkillWorkshopRevisionChatSend,
   sendDetachedChatMessage,
@@ -2014,6 +2018,8 @@ async function clearChatHistory(host: ChatHost) {
     host.chatHistoryHasMore = false;
     host.chatHistoryNextCursor = null;
     host.chatLoadingEarlier = false;
+    host.chatHistoryRenderLimit = CHAT_HISTORY_RENDER_LIMIT;
+    host.chatHistoryRenderExpanded = false;
     reconcileChatRunLifecycle(host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
       outcome: hadActiveRun ? "interrupted" : undefined,
       sessionStatus: "killed",
@@ -2053,6 +2059,8 @@ export async function refreshChat(
   const historyLoad = loadChatHistory(host as unknown as ChatState, {
     startup: opts?.startup === true,
   });
+  // Fire-and-forget branch data load alongside history
+  void loadBranches(host as unknown as ChatState);
   const historyRefresh = historyLoad.finally(() => {
     if (opts?.scheduleScroll !== false) {
       scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);

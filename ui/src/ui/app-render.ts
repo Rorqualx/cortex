@@ -25,7 +25,7 @@ import {
 } from "./app-render.helpers.ts";
 import { hasOperatorAdminAccess, hasOperatorWriteAccess, warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
-import { renderChatTabBar } from "./chat/chat-tab-bar.ts";
+import { renderChatTabBar, savePersistedTabs } from "./chat/chat-tab-bar.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import {
   renderChatSessionSelect,
@@ -52,7 +52,14 @@ import {
 } from "./controllers/agents.ts";
 import { setAssistantAvatarOverride } from "./controllers/assistant-identity.ts";
 import { loadChannels } from "./controllers/channels.ts";
-import { loadChatHistory, loadEarlierMessages } from "./controllers/chat.ts";
+import {
+  handleBranchNavigate,
+  loadBranches,
+  loadChatHistory,
+  loadEarlierMessages,
+  expandHistoryRenderLimit,
+  requestChatSend,
+} from "./controllers/chat.ts";
 import {
   applyConfig,
   ensureAgentConfigEntry,
@@ -459,10 +466,20 @@ function renderSidebarSessions(state: AppViewState) {
                 type="button"
                 aria-expanded=${String(!state.settings.recentSessionsCollapsed)}
                 @click=${() => {
+                  const expanding = state.settings.recentSessionsCollapsed;
                   state.applySettings({
                     ...state.settings,
                     recentSessionsCollapsed: !state.settings.recentSessionsCollapsed,
                   });
+                  // When expanding, scroll the active session into view
+                  if (expanding) {
+                    requestAnimationFrame(() => {
+                      const active = document.querySelector(".sidebar-recent-session--active");
+                      if (active) {
+                        active.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                      }
+                    });
+                  }
                 }}
               >
                 <span class="sidebar-recent-sessions__label-text"
@@ -481,7 +498,8 @@ function renderSidebarSessions(state: AppViewState) {
 
 function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow) {
   const active = row.key === state.sessionKey;
-  const label = resolveSessionDisplayName(row.key, row);
+  const label =
+    row.goal?.objective?.trim() || row.derivedTitle || resolveSessionDisplayName(row.key, row);
   const meta = row.updatedAt ? formatRelativeTimestamp(row.updatedAt) : "n/a";
   const href = `${pathForTab("chat", state.basePath)}?session=${encodeURIComponent(row.key)}`;
   return html`
@@ -567,6 +585,8 @@ const codeViewerReadingTimer = new WeakMap<AppViewState, ReturnType<typeof setTi
 const codeViewerLastEditId = new WeakMap<AppViewState, string>();
 /** Timestamp when the current edit diff was shown. */
 const codeViewerEditTime = new WeakMap<AppViewState, number>();
+/** Timer for resolving the current edit diff (refresh file + clear pendingEdit). */
+const codeViewerEditTimer = new WeakMap<AppViewState, ReturnType<typeof setTimeout>>();
 
 function getChatWorkspaceFilesState(state: AppViewState, agentId: string): ChatWorkspaceFilesState {
   const current = chatWorkspaceFilesStates.get(state);
@@ -1172,6 +1192,10 @@ function buildWorkspaceFileSidebarContent(name: string, content: string): string
 }
 
 export function renderApp(state: AppViewState) {
+  // Expose gateway client globally so edit-save can call chat.branch
+  if (state.client) {
+    (window as any).__oc_client = state.client;
+  }
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
     typeof updatableState.requestUpdate === "function"
@@ -3512,20 +3536,25 @@ export function renderApp(state: AppViewState) {
             if (sc.pendingEdit || sc.editing) {
               const editAge = codeViewerEditTime.get(state) ?? 0;
               if (now - editAge > 3000) {
-                // Hold period over — refresh file content and clear pending edit
+                // Hold period over — cancel timer and refresh file content
+                clearTimeout(codeViewerEditTimer.get(state));
+                codeViewerEditTimer.delete(state);
                 queueMicrotask(async () => {
                   try {
-                    const key = `${activeFile?.dir}/${sc.fileName}`;
+                    // Re-read sidebarContent in case it changed since scheduling
+                    const scNow = state.sidebarContent;
+                    if (scNow?.kind !== "code") return;
+                    const key = `${activeFile?.dir}/${scNow.fileName}`;
                     const result = await state.client?.request<{
                       file?: { content?: string };
                     } | null>("agents.files.get", {
                       agentId: chatAgentId,
-                      name: sc.fileName,
+                      name: scNow.fileName,
                       path: key,
                     });
                     if (result?.file?.content != null) {
                       state.sidebarContent = {
-                        ...sc,
+                        ...scNow,
                         content: result.file.content,
                         pendingEdit: null,
                         editing: false,
@@ -3534,18 +3563,26 @@ export function renderApp(state: AppViewState) {
                       requestHostUpdate?.();
                     }
                   } catch {
-                    // best effort — clear anyway
-                    state.sidebarContent = {
-                      ...sc,
-                      pendingEdit: null,
-                      editing: false,
-                      reading: false,
-                    };
-                    requestHostUpdate?.();
+                    // best effort — clear if still code
+                    const scNow = state.sidebarContent;
+                    if (scNow?.kind === "code") {
+                      state.sidebarContent = {
+                        ...scNow,
+                        pendingEdit: null,
+                        editing: false,
+                        reading: false,
+                      };
+                      requestHostUpdate?.();
+                    }
                   }
                 });
               }
             } else {
+              // No active edit — clear any orphaned edit timer
+              if (codeViewerEditTimer.has(state)) {
+                clearTimeout(codeViewerEditTimer.get(state));
+                codeViewerEditTimer.delete(state);
+              }
               // Scan for recently-completed edits/writes on this file
               for (const entry of state.toolStreamById.values()) {
                 if (entry.name !== "edit" && entry.name !== "apply_patch" && entry.name !== "write")
@@ -3565,7 +3602,10 @@ export function renderApp(state: AppViewState) {
                 }
                 const lastEditKey = codeViewerLastEditId.get(state) ?? "";
                 if (editKey === lastEditKey) continue;
-                // New edit detected — extract diff
+                // New edit detected — cancel any previous edit timer first
+                clearTimeout(codeViewerEditTimer.get(state));
+                codeViewerEditTimer.delete(state);
+                // Extract diff
                 codeViewerLastEditId.set(state, editKey);
                 codeViewerEditTime.set(state, now);
                 if (entry.name === "edit") {
@@ -3639,7 +3679,8 @@ export function renderApp(state: AppViewState) {
                     codeViewerReadingTimer.delete(state);
                     // Self-resolving timer: after 3s, refresh file and clear edit state
                     codeViewerEditTime.set(state, Date.now());
-                    setTimeout(() => {
+                    const editTimer = setTimeout(() => {
+                      codeViewerEditTimer.delete(state);
                       if (state.sidebarContent?.kind === "code" && state.sidebarContent.editing) {
                         const sc2 = state.sidebarContent;
                         const filePath = `${activeFile?.dir}/${sc2.fileName}`;
@@ -3673,6 +3714,7 @@ export function renderApp(state: AppViewState) {
                         })();
                       }
                     }, 3000);
+                    codeViewerEditTimer.set(state, editTimer);
                   }
                 } else if (entry.name === "write") {
                   // Write: diff old sidebar content against new write content
@@ -3709,7 +3751,8 @@ export function renderApp(state: AppViewState) {
                     clearTimeout(codeViewerReadingTimer.get(state));
                     codeViewerReadingTimer.delete(state);
                     codeViewerEditTime.set(state, Date.now());
-                    setTimeout(() => {
+                    const writeTimer = setTimeout(() => {
+                      codeViewerEditTimer.delete(state);
                       if (state.sidebarContent?.kind === "code" && state.sidebarContent.editing) {
                         const sc2 = state.sidebarContent;
                         const fp = `${activeFile?.dir}/${sc2.fileName}`;
@@ -3742,6 +3785,7 @@ export function renderApp(state: AppViewState) {
                         })();
                       }
                     }, 3000);
+                    codeViewerEditTimer.set(state, writeTimer);
                   }
                 } else {
                   state.sidebarContent = {
@@ -3759,7 +3803,10 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "chat"
           ? html`
               ${renderChatTabBar(state, {
-                onSwitchSession: (next) => switchChatSession(state, next),
+                onSwitchSession: (next) => {
+                  switchChatSession(state, next);
+                  savePersistedTabs(state.chatOpenSessionTabs, next);
+                },
                 onNewSession: () => void createChatSession(state),
                 onCloseTab: (key) => {
                   state.chatOpenSessionTabs = state.chatOpenSessionTabs.filter((k) => k !== key);
@@ -3769,6 +3816,11 @@ export function renderApp(state: AppViewState) {
                       switchChatSession(state, remaining[remaining.length - 1]);
                     }
                   }
+                  savePersistedTabs(state.chatOpenSessionTabs, state.sessionKey);
+                },
+                onReorderTabs: (reordered) => {
+                  state.chatOpenSessionTabs = reordered;
+                  savePersistedTabs(reordered, state.sessionKey);
                 },
               })}
               ${renderMeasured(
@@ -3912,6 +3964,7 @@ export function renderApp(state: AppViewState) {
                     historyHasMore: state.chatHistoryHasMore === true,
                     loadingEarlier: state.chatLoadingEarlier === true,
                     onLoadEarlier: () => void loadEarlierMessages(state),
+                    historyRenderLimit: state.chatHistoryRenderLimit,
                     agentsList: state.agentsList,
                     currentAgentId: chatAgentId,
                     fullMessageAgentId: scopedAgentParamsForSession(state, state.sessionKey)
@@ -3945,6 +3998,55 @@ export function renderApp(state: AppViewState) {
                     embedSandboxMode: state.embedSandboxMode,
                     allowExternalEmbedUrls: state.allowExternalEmbedUrls,
                     assistantAttachmentAuthToken: resolveAssistantAttachmentAuthToken(state),
+                    branchPoints: state.branchPoints,
+                    onBranchNavigate: (entryId, direction) => {
+                      void handleBranchNavigate(state, entryId, direction);
+                    },
+                    onBranchFromMessage: (messageId) => {
+                      void (async () => {
+                        if (!state.client || !state.connected) return;
+                        try {
+                          await state.client.request("chat.branch", {
+                            sessionKey: state.sessionKey,
+                            messageId,
+                          });
+                        } catch {
+                          // Graceful — branch not supported
+                        }
+                        await Promise.all([
+                          loadChatHistory(state, { startup: false }),
+                          loadBranches(state),
+                        ]);
+                      })();
+                    },
+                    onEditMessage: (text, messageId) => {
+                      if (!state.client || !state.connected) return;
+                      // Clear the composer
+                      state.chatMessage = "";
+                      void (async () => {
+                        try {
+                          // Create the branch point (rewind)
+                          await state.client?.request("chat.branch", {
+                            sessionKey: state.sessionKey,
+                            messageId,
+                          });
+                        } catch {
+                          /* graceful */
+                        }
+                        // Reload history — this shows only messages up to the branch point
+                        state.chatMessages = [];
+                        state.chatToolMessages = [];
+                        await loadChatHistory(state, { startup: false });
+                        await loadBranches(state);
+                        state.requestUpdate?.();
+                        // Auto-send the edited message
+                        await requestChatSend(state, {
+                          message: text,
+                          runId: crypto.randomUUID(),
+                          sessionKey: state.sessionKey,
+                        });
+                      })();
+                    },
                     basePath: state.basePath ?? "",
                   }),
               )}

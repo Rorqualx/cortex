@@ -75,6 +75,7 @@ export type LoadSessionsOverrides = {
   configuredAgentsOnly?: boolean;
   append?: boolean;
   publishChatRunStatus?: boolean;
+  includeDerivedTitles?: boolean;
 };
 
 type CreateSessionParams = {
@@ -1122,6 +1123,7 @@ async function loadSessionsOnce(
       includeGlobal,
       includeUnknown,
       configuredAgentsOnly,
+      includeDerivedTitles: true,
     };
     const agentId = overrides?.agentId?.trim();
     const resultAgentId = agentId ? normalizeAgentId(agentId) : null;

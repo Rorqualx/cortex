@@ -70,6 +70,8 @@ import {
 } from "./app-tool-stream.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
+import { AvatarChangeEvent } from "./avatar-lightbox.ts";
+import { restorePersistedTabs, savePersistedTabs } from "./chat/chat-tab-bar.ts";
 import { restoreChatComposerState } from "./chat/composer-persistence.ts";
 import { exportChatMarkdown } from "./chat/export.ts";
 import {
@@ -90,6 +92,11 @@ import {
   refreshVisibleToolsEffectiveForCurrentSession as refreshVisibleToolsEffectiveForCurrentSessionInternal,
 } from "./controllers/agents.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import {
+  loadEarlierMessages as loadEarlierMessagesInternal,
+  expandHistoryRenderLimit as expandHistoryRenderLimitInternal,
+  type ChatState as ChatStateType,
+} from "./controllers/chat.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type {
   DreamingStatus,
@@ -274,6 +281,11 @@ export class OpenClawApp extends LitElement {
   @state() chatAvatarStatus: "none" | "local" | "remote" | "data" | null = null;
   @state() chatAvatarReason: string | null = null;
   @state() chatThinkingLevel: string | null = null;
+  @state() chatHistoryHasMore = false;
+  @state() chatHistoryNextCursor: string | null = null;
+  @state() chatLoadingEarlier = false;
+  @state() chatHistoryRenderLimit: number = 100;
+  @state() chatHistoryRenderExpanded = false;
   @state() chatModelOverrides: Record<string, ChatModelOverride | null> = {};
   @state() chatModelSwitchPromises: Record<string, Promise<boolean>> = {};
   @state() chatModelsLoading = false;
@@ -815,12 +827,26 @@ export class OpenClawApp extends LitElement {
     document.addEventListener("keydown", this.chatMobileControlsKeydownHandler);
     document.addEventListener("pointerdown", this.chatMobileControlsPointerdownHandler);
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
-    // Ensure the initial session is in the tab list
-    if (!this.chatOpenSessionTabs.includes(this.sessionKey)) {
+    // Restore persisted tabs or initialize with current session
+    const persisted = restorePersistedTabs();
+    if (persisted && persisted.openTabs.length > 0) {
+      // Merge persisted tabs with current session (ensure current session is present)
+      const current = this.sessionKey;
+      const tabsWithCurrent = persisted.openTabs.includes(current)
+        ? persisted.openTabs
+        : [current, ...persisted.openTabs.filter((k) => k !== current)];
+      this.chatOpenSessionTabs = tabsWithCurrent;
+    } else if (!this.chatOpenSessionTabs.includes(this.sessionKey)) {
       this.chatOpenSessionTabs = [this.sessionKey];
     }
     this.nativeBridgeCleanup = initNativeBridge(this);
     void this.initWebPushState();
+    // Listen for avatar changes from the lightbox cropper
+    this.addEventListener(AvatarChangeEvent.eventName, this.handleAvatarChange);
+    document.addEventListener(
+      AvatarChangeEvent.eventName,
+      this.handleAvatarChange as EventListener,
+    );
   }
 
   protected override firstUpdated() {
@@ -842,6 +868,11 @@ export class OpenClawApp extends LitElement {
       this.sessionSwitchFlashTimer = null;
     }
     this.chatMobileControlsTrigger = null;
+    this.removeEventListener(AvatarChangeEvent.eventName, this.handleAvatarChange);
+    document.removeEventListener(
+      AvatarChangeEvent.eventName,
+      this.handleAvatarChange as EventListener,
+    );
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }
@@ -875,10 +906,26 @@ export class OpenClawApp extends LitElement {
   }
 
   handleChatScroll(event: Event) {
-    handleChatScrollInternal(
-      this as unknown as Parameters<typeof handleChatScrollInternal>[0],
-      event,
-    );
+    const host = this as unknown as Parameters<typeof handleChatScrollInternal>[0] & {
+      chatHistoryHasMore?: boolean;
+      chatLoadingEarlier?: boolean;
+      chatHistoryRenderExpanded?: boolean;
+      chatHistoryRenderLimit?: number;
+      chatMessages?: unknown[];
+      onHistoryExpand?: () => boolean;
+      onLoadEarlier?: () => Promise<boolean>;
+    };
+    host.chatHistoryHasMore = this.chatHistoryHasMore;
+    host.chatLoadingEarlier = this.chatLoadingEarlier;
+    host.chatHistoryRenderExpanded = this.chatHistoryRenderExpanded ?? false;
+    host.onHistoryExpand = () => expandHistoryRenderLimitInternal(this as unknown as ChatStateType);
+    host.onLoadEarlier = async () => {
+      const prevScrollHeight =
+        (this.querySelector(".chat-thread") as HTMLElement | null)?.scrollHeight ?? 0;
+      const result = await loadEarlierMessagesInternal(this as unknown as ChatStateType);
+      return result;
+    };
+    handleChatScrollInternal(host, event);
   }
 
   handleLogsScroll(event: Event) {
@@ -938,6 +985,11 @@ export class OpenClawApp extends LitElement {
       next,
     );
   }
+
+  private handleAvatarChange = (e: Event) => {
+    const { avatar } = (e as AvatarChangeEvent).detail;
+    this.applyLocalUserIdentity({ avatar: avatar || null });
+  };
 
   setTab(next: Tab) {
     setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);

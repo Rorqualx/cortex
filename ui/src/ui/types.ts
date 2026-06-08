@@ -465,6 +465,8 @@ export type GatewaySessionRow = {
   compactionCheckpointCount?: number;
   latestCompactionCheckpoint?: SessionCompactionCheckpointPreview;
   goal?: SessionGoal;
+  /** Server-derived title from first user message, displayName, or subject. */
+  derivedTitle?: string;
 };
 
 export type SessionsListResult = SessionsListResultBase<GatewaySessionsDefaults, GatewaySessionRow>;

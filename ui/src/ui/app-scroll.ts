@@ -5,6 +5,7 @@ import { normalizeChatAutoScrollMode, type ChatAutoScrollMode } from "./storage.
 const NEAR_BOTTOM_THRESHOLD = 450;
 const HEADER_HIDE_SCROLL_DELTA = 12;
 const HEADER_SHOW_TOP_THRESHOLD = 24;
+const SCROLL_TOP_LOAD_THRESHOLD = 60;
 
 type ScrollHost = {
   updateComplete: Promise<unknown>;
@@ -19,6 +20,11 @@ type ScrollHost = {
   chatNewMessagesBelow: boolean;
   chatIsProgrammaticScroll: boolean;
   chatProgrammaticScrollTarget: number;
+  chatHistoryHasMore: boolean;
+  chatLoadingEarlier: boolean;
+  chatHistoryRenderExpanded: boolean;
+  onHistoryExpand?: () => boolean;
+  onLoadEarlier?: () => Promise<boolean>;
   settings?: {
     chatAutoScroll?: ChatAutoScrollMode;
   };
@@ -228,6 +234,32 @@ export function handleChatScroll(host: ScrollHost, event: Event) {
   // Clear the "new messages below" indicator when user scrolls back to bottom.
   if (host.chatUserNearBottom) {
     host.chatNewMessagesBelow = false;
+  }
+
+  // Auto-load earlier messages when user scrolls near the top.
+  if (scrollTop <= SCROLL_TOP_LOAD_THRESHOLD && !host.chatLoadingEarlier) {
+    // 1. Try expanding the local render window first (instant, no network).
+    const expanded = host.onHistoryExpand?.() ?? false;
+    // 2. If render is already at full capacity and server has more, fetch.
+    if (!expanded && host.chatHistoryHasMore) {
+      // Capture scroll position for preservation after messages arrive.
+      const prevScrollHeight = container.scrollHeight;
+      const prevScrollTop = container.scrollTop;
+      void host.onLoadEarlier?.().then(() => {
+        // After state update triggers re-render, restore scroll position.
+        void host.updateComplete.then(() => {
+          requestAnimationFrame(() => {
+            const latestContainer = queryHost(host, ".chat-thread") as HTMLElement | null;
+            if (latestContainer) {
+              const offset = latestContainer.scrollHeight - prevScrollHeight;
+              if (offset > 0) {
+                latestContainer.scrollTop = prevScrollTop + offset;
+              }
+            }
+          });
+        });
+      });
+    }
   }
 }
 

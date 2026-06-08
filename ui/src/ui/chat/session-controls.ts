@@ -237,6 +237,17 @@ function focusChatSessionPickerSearch(state: AppViewState) {
   setTimeout(focus, 0);
 }
 
+function scrollPickerToSelectedSession() {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const selected = document.querySelector(".chat-session-picker__option--selected");
+      if (selected) {
+        selected.scrollIntoView({ block: "nearest", behavior: "auto" });
+      }
+    });
+  });
+}
+
 function openChatSessionPicker(state: AppViewState, surface: ChatSessionSelectSurface) {
   state.chatSessionPickerOpen = true;
   state.chatSessionPickerSurface = surface;
@@ -246,6 +257,8 @@ function openChatSessionPicker(state: AppViewState, surface: ChatSessionSelectSu
   }
   requestHostUpdate(state);
   focusChatSessionPickerSearch(state);
+
+  scrollPickerToSelectedSession();
 }
 
 function closeChatSessionPicker(state: AppViewState) {
@@ -288,6 +301,7 @@ function createChatSessionPickerRequestParams(
     includeUnknown: overrides.includeUnknown,
     configuredAgentsOnly: overrides.configuredAgentsOnly,
     limit: overrides.limit,
+    includeDerivedTitles: true,
   };
   const activeAgentSession = parseAgentSessionKey(state.sessionKey);
   const activeSessionRow = state.sessionsResult?.sessions.find(
@@ -399,6 +413,7 @@ async function loadChatSessionPickerPage(
     if (isCurrentChatSessionPickerSearchRequest(state, requestId)) {
       finishChatSessionPickerSearchRequest(state, requestId);
       state.chatSessionPickerLoading = false;
+      scrollPickerToSelectedSession();
       requestHostUpdate(state);
     }
   }
@@ -514,6 +529,18 @@ function resolveSelectedChatSessionLabel(
   sessionGroups: SessionOptionGroup[],
 ): string {
   const row = resolveChatSessionRow(state, state.sessionKey);
+
+  // Priority 1: Goal objective
+  if (row?.goal?.objective?.trim()) {
+    return row.goal.objective.trim();
+  }
+
+  // Priority 2: Derived title
+  if (row?.derivedTitle && row.derivedTitle !== state.sessionKey) {
+    return row.derivedTitle;
+  }
+
+  // Priority 3: Existing resolution
   const displayName = resolveSessionDisplayName(state.sessionKey, row);
   if (displayName !== state.sessionKey) {
     return displayName;
@@ -1764,6 +1791,19 @@ function resolveSessionScopedOptionLabel(
     return base;
   }
 
+  // Priority 1: Goal objective
+  if (row.goal?.objective?.trim()) {
+    const obj = row.goal.objective.trim();
+    return obj.length > 48 ? obj.slice(0, 48) + "…" : obj;
+  }
+
+  // Priority 2: Server-derived title
+  if (row.derivedTitle && row.derivedTitle !== key) {
+    const dt = row.derivedTitle;
+    return dt.length > 48 ? dt.slice(0, 48) + "…" : dt;
+  }
+
+  // Priority 3: Label / displayName
   const label = normalizeOptionalString(row.label) ?? "";
   const displayName = normalizeOptionalString(row.displayName) ?? "";
   if ((label && label !== key) || (displayName && displayName !== key)) {
