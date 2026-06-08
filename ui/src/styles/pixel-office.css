@@ -71,6 +71,8 @@
   position: relative;
   width: 44px;
   height: 50px;
+  /* Foot stomp — squishing scale for stepping feel */
+  animation: mo-stomp 0.7s ease-in-out infinite;
 }
 
 /* Base frame — always fully visible */
@@ -98,19 +100,17 @@
   50%, 100% { clip-path: inset(100%); }
 }
 
-/* Active glow */
+/* Active agents stomp faster */
 .mo-buddy[data-active="true"] .mo-buddy__sprite-wrap {
+  animation: mo-stomp 0.35s ease-in-out infinite;
   filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent, #5a8a6e) 40%, transparent));
 }
 
-/* Idle float on the wrapper */
-.mo-buddy:not([data-active="true"]) .mo-buddy__sprite-wrap {
-  animation: mo-float 3s ease-in-out infinite;
-}
+/* Idle float removed (sway) */
 
-@keyframes mo-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
+@keyframes mo-stomp {
+  0%, 100% { transform: scaleY(1) scaleX(1); }
+  50% { transform: scaleY(0.92) scaleX(1.06); }
 }
 
 /* ── Bottom row: project cells ─────────────────────────── */

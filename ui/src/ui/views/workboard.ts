@@ -1905,10 +1905,7 @@ function renderSectionedBoard(
           byStatus.get(card.status)?.push(card);
         }
         return html`
-          <details
-            class="workboard-section"
-            ?open=${sectionCards.length > 0 && section !== "tasks"}
-          >
+          <details class="workboard-section" ?open=${sectionCards.length > 0}>
             <summary class="workboard-section__header">
               <h3 class="workboard-section__title">
                 ${WORKBOARD_SECTION_LABELS[section]}
