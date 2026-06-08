@@ -2,7 +2,7 @@
  * Workboard CLI subcommands — core-native replacement for extensions/workboard/src/cli.ts.
  */
 import type { Command } from "commander";
-import { addGatewayClientOptions, callGatewayFromCli } from "../cli/gateway-rpc.js";
+import { callGatewayFromCli } from "../cli/gateway-rpc.js";
 import { getRuntimeConfig } from "../config/runtime-snapshot.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resolveWorkboardCardByIdOrPrefix } from "../workboard/card-lookup.js";
