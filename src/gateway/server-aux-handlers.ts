@@ -2,6 +2,7 @@
 // Wires reload, secrets, exec approval, and plugin approval RPC handlers.
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isTruthyEnvValue } from "../infra/env.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import { createExecApprovalForwarder } from "../infra/exec-approval-forwarder.js";
 import type { PluginApprovalRequestPayload } from "../infra/plugin-approvals.js";
 import {
@@ -264,6 +265,44 @@ export function createGatewayAuxHandlers(params: {
         }),
     ));
 
+  // Workboard — lazy load on first access
+  const loadWorkboardHandler =
+    (method: string) => async (opts: Parameters<GatewayRequestHandler>[0]) => {
+      const handlers = await getWorkboardGatewayHandlers();
+      const handler = handlers[method];
+      if (!handler) throw new Error(`workboard handler not found: ${method}`);
+      await handler(opts);
+    };
+
+  // Add workboard to extraHandlers so they route through core descriptors
+  const wbHandlers: GatewayRequestHandlers = {};
+  const WB_METHODS = [
+    "workboard.cards.list",
+    "workboard.cards.create",
+    "workboard.cards.read",
+    "workboard.cards.update",
+    "workboard.cards.delete",
+    "workboard.cards.claim",
+    "workboard.cards.release",
+    "workboard.cards.heartbeat",
+    "workboard.cards.complete",
+    "workboard.cards.block",
+    "workboard.cards.unblock",
+    "workboard.cards.promote",
+    "workboard.cards.reassign",
+    "workboard.cards.reclaim",
+    "workboard.cards.dispatch",
+    "workboard.cards.stats",
+    "workboard.cards.runs",
+    "workboard.boards.list",
+    "workboard.boards.create",
+    "workboard.boards.archive",
+    "workboard.boards.delete",
+  ];
+  for (const m of WB_METHODS) {
+    wbHandlers[m] = loadWorkboardHandler(m) as GatewayRequestHandler;
+  }
+
   return {
     execApprovalManager,
     pluginApprovalManager,
@@ -291,6 +330,56 @@ export function createGatewayAuxHandlers(params: {
       ),
       "secrets.reload": createLazyHandler("secrets.reload", loadSecretsHandlers),
       "secrets.resolve": createLazyHandler("secrets.resolve", loadSecretsHandlers),
+      ...wbHandlers,
     },
   };
+}
+
+// ── Workboard loaders ──────────────────────────────────────────────
+
+/** Bridge: direct-return handler → respond-callback GatewayRequestHandler. */
+function bridgeWorkboardHandler(
+  fn: (params: Record<string, unknown>) => unknown,
+): GatewayRequestHandler {
+  return async (opts) => {
+    try {
+      const params =
+        ((opts.context as Record<string, unknown>).params as Record<string, unknown>) ?? {};
+      const result = await fn(params);
+      opts.respond(true, result);
+    } catch (error) {
+      opts.respond(false, undefined, {
+        code: ((error as Record<string, unknown>)?.code as string) ?? "workboard_error",
+        message: formatErrorMessage(error),
+      });
+    }
+  };
+}
+
+let _workboardGatewayHandlers: Promise<GatewayRequestHandlers> | null = null;
+
+/** Lazy-load workboard gateway handlers (first call opens DB + creates store). */
+export function getWorkboardGatewayHandlers(): Promise<GatewayRequestHandlers> {
+  if (!_workboardGatewayHandlers) {
+    _workboardGatewayHandlers = (async () => {
+      const { createWorkboardGatewayHandlers, WorkboardStore } =
+        await import("../workboard/api.js");
+      const { openOpenClawStateDatabase } = await import("../state/openclaw-state-db.js");
+      const { createWorkboardCoreDbStores } = await import("../workboard/core-db-store.js");
+      const stateDb = openOpenClawStateDatabase();
+      const stores = createWorkboardCoreDbStores(stateDb.db);
+      const store = new WorkboardStore(stores.cards, {
+        boards: stores.boards,
+        subscriptions: stores.subscriptions,
+        attachments: stores.attachments,
+      });
+      const handlers = createWorkboardGatewayHandlers(store);
+      const wrapped: GatewayRequestHandlers = {};
+      for (const [name, fn] of Object.entries(handlers)) {
+        wrapped[name] = bridgeWorkboardHandler(fn as (params: Record<string, unknown>) => unknown);
+      }
+      return wrapped;
+    })();
+  }
+  return _workboardGatewayHandlers;
 }
