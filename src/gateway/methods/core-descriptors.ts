@@ -228,6 +228,29 @@ export const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "nativeHook.invoke", scope: "operator.admin", advertise: false },
   { name: "web.login.start", scope: "operator.admin", advertise: false },
   { name: "web.login.wait", scope: "operator.admin", advertise: false },
+
+  // Workboard
+  { name: "workboard.cards.list", scope: "operator.read" },
+  { name: "workboard.cards.create", scope: "operator.write" },
+  { name: "workboard.cards.update", scope: "operator.write" },
+  { name: "workboard.cards.delete", scope: "operator.write" },
+  { name: "workboard.cards.read", scope: "operator.read" },
+  { name: "workboard.cards.claim", scope: "operator.write" },
+  { name: "workboard.cards.release", scope: "operator.write" },
+  { name: "workboard.cards.heartbeat", scope: "operator.write" },
+  { name: "workboard.cards.complete", scope: "operator.write" },
+  { name: "workboard.cards.block", scope: "operator.write" },
+  { name: "workboard.cards.unblock", scope: "operator.write" },
+  { name: "workboard.cards.promote", scope: "operator.write" },
+  { name: "workboard.cards.reassign", scope: "operator.write" },
+  { name: "workboard.cards.reclaim", scope: "operator.write" },
+  { name: "workboard.cards.dispatch", scope: "operator.write" },
+  { name: "workboard.cards.stats", scope: "operator.read" },
+  { name: "workboard.cards.runs", scope: "operator.read" },
+  { name: "workboard.boards.list", scope: "operator.read" },
+  { name: "workboard.boards.create", scope: "operator.write" },
+  { name: "workboard.boards.archive", scope: "operator.write" },
+  { name: "workboard.boards.delete", scope: "operator.write" },
 ] as const;
 
 const CORE_GATEWAY_METHOD_SPEC_BY_NAME: ReadonlyMap<string, CoreGatewayMethodSpec> = new Map(
