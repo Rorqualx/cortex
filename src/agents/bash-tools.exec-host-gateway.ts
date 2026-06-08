@@ -1,8 +1,3 @@
-/**
- * Gateway-host exec approval and allowlist handling.
- * Evaluates shell allowlists, auto-review, durable approvals, follow-up routing,
- * and approved command execution for gateway-backed exec calls.
- */
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
 import { evaluatePolicy, loadPolicy } from "../exec-policy/index.js";
@@ -28,6 +23,12 @@ import {
   type ExecAutoReviewInput,
 } from "../infra/exec-auto-review.js";
 import type { SafeBinProfile } from "../infra/exec-safe-bin-policy.js";
+/**
+ * Gateway-host exec approval and allowlist handling.
+ * Evaluates shell allowlists, auto-review, durable approvals, follow-up routing,
+ * and approved command execution for gateway-backed exec calls.
+ */
+import type { ResolvedOsSandbox } from "../sandbox/os-sandbox.js";
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../utils/message-channel.js";
 import { markBackgrounded, tail } from "./bash-process-registry.js";
 import {
@@ -98,6 +99,8 @@ export type ProcessGatewayAllowlistParams = {
   maxOutput: number;
   pendingMaxOutput: number;
   trustedSafeBinDirs?: ReadonlySet<string>;
+  /** Resolved OS sandbox config (Seatbelt on macOS). */
+  osSandboxConfig?: ResolvedOsSandbox;
 };
 
 /** Gateway allowlist outcome before command execution continues. */
@@ -783,6 +786,7 @@ export async function processGatewayAllowlist(
           scopeKey: params.scopeKey,
           sessionKey: params.notifySessionKey ?? params.sessionKey,
           timeoutSec: effectiveTimeout,
+          osSandboxConfig: params.osSandboxConfig,
         });
       } catch {
         await sendExecApprovalFollowupResult(

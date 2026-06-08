@@ -100,6 +100,22 @@ export type SandboxPruneSettings = {
   maxAgeDays?: number;
 };
 
+/** OS-level sandbox settings (Seatbelt on macOS, bwrap on Linux).
+ *
+ * Applied to host exec when Docker/SSH sandbox is not used.
+ * Disabled by default — opt-in for defense in depth.
+ */
+export type OsSandboxSettings = {
+  /** Enable OS-level sandboxing for host exec. Default: false. */
+  enabled?: boolean;
+  /** Extra absolute paths to allow writes to (beyond workspace + TMPDIR). */
+  extraWritableRoots?: string[];
+  /** Extra metadata filenames to protect from writes (beyond defaults like .env, .git). */
+  extraProtectedMetadata?: string[];
+  /** Network policy override. Default: "allow-loopback". */
+  network?: "deny" | "allow" | "allow-loopback";
+};
+
 export type SandboxSshSettings = {
   /** SSH target in user@host[:port] form. */
   target?: string;

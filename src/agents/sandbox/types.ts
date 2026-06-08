@@ -72,6 +72,13 @@ export type SandboxSshConfig = {
 
 export type SandboxScope = "session" | "agent" | "shared";
 
+export type SandboxOsSandboxConfig = {
+  enabled: boolean;
+  extraWritableRoots: string[];
+  extraProtectedMetadata: string[];
+  network: "deny" | "allow" | "allow-loopback";
+};
+
 export type SandboxConfig = {
   mode: "off" | "non-main" | "all";
   backend: SandboxBackendId;
@@ -83,6 +90,7 @@ export type SandboxConfig = {
   browser: SandboxBrowserConfig;
   tools: SandboxToolPolicy;
   prune: SandboxPruneConfig;
+  osSandbox: SandboxOsSandboxConfig;
 };
 
 export type SandboxBrowserContext = {

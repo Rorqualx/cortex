@@ -29,6 +29,7 @@ import type {
   SandboxBrowserConfig,
   SandboxConfig,
   SandboxDockerConfig,
+  SandboxOsSandboxConfig,
   SandboxPruneConfig,
   SandboxScope,
   SandboxSshConfig,
@@ -227,6 +228,23 @@ export function resolveSandboxSshConfig(params: {
   };
 }
 
+export function resolveSandboxOsSandboxConfig(params: {
+  globalOsSandbox?: import("../../config/types.sandbox.js").OsSandboxSettings;
+  agentOsSandbox?: import("../../config/types.sandbox.js").OsSandboxSettings;
+}): SandboxOsSandboxConfig {
+  const g = params.globalOsSandbox;
+  const a = params.agentOsSandbox;
+  return {
+    enabled: a?.enabled ?? g?.enabled ?? false,
+    extraWritableRoots: [...(g?.extraWritableRoots ?? []), ...(a?.extraWritableRoots ?? [])],
+    extraProtectedMetadata: [
+      ...(g?.extraProtectedMetadata ?? []),
+      ...(a?.extraProtectedMetadata ?? []),
+    ],
+    network: a?.network ?? g?.network ?? "allow-loopback",
+  };
+}
+
 export function resolveSandboxConfigForAgent(
   cfg?: OpenClawConfig,
   agentId?: string,
@@ -281,6 +299,10 @@ export function resolveSandboxConfigForAgent(
       scope,
       globalPrune: agent?.prune,
       agentPrune: agentSandbox?.prune,
+    }),
+    osSandbox: resolveSandboxOsSandboxConfig({
+      globalOsSandbox: agent?.osSandbox,
+      agentOsSandbox: agentSandbox?.osSandbox,
     }),
   };
 }

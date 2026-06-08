@@ -80,6 +80,7 @@ import {
 } from "./bash-tools.shared.js";
 import { createModelExecAutoReviewer } from "./exec-auto-reviewer.js";
 import type { AgentToolResult } from "./runtime/index.js";
+import { resolveSandboxConfigForAgent } from "./sandbox/config.js";
 import { EXEC_TOOL_DISPLAY_SUMMARY } from "./tool-description-presets.js";
 import { type AgentToolWithMeta, failedTextResult, textResult } from "./tools/common.js";
 
@@ -1821,6 +1822,8 @@ export function createExecTool(
           maxOutput,
           pendingMaxOutput,
           trustedSafeBinDirs,
+          osSandboxConfig: resolveSandboxConfigForAgent(defaults?.config, defaults?.agentId)
+            .osSandbox,
         });
         if (gatewayResult.pendingResult) {
           return gatewayResult.pendingResult;
@@ -1867,6 +1870,9 @@ export function createExecTool(
         notifyDeliveryContext,
         timeoutSec: effectiveTimeout,
         onUpdate,
+        osSandboxConfig: sandbox
+          ? undefined // Docker sandbox active — skip OS sandbox
+          : resolveSandboxConfigForAgent(defaults?.config, defaults?.agentId).osSandbox,
       });
 
       let yielded = false;

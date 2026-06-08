@@ -24,9 +24,10 @@ import { findPathKey, mergePathPrepend, removePathPrepend } from "../infra/path-
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import {
   shouldApplyOsSandbox,
-  buildDefaultOsSandboxConfig,
+  buildSeatbeltConfigWithOverrides,
   wrapWithSeatbelt,
 } from "../sandbox/os-sandbox.js";
+import type { ResolvedOsSandbox } from "../sandbox/os-sandbox.js";
 import { isSubagentSessionKey } from "../sessions/session-key-utils.js";
 import type { ProcessSession } from "./bash-process-registry.js";
 import type { ExecToolDetails } from "./bash-tools.exec-types.js";
@@ -691,6 +692,9 @@ export async function runExecProcess(opts: {
   sessionScope?: "per-sender" | "global";
   /** Start-time routing policy for detached exec system events. */
   eventRouting?: EventSessionRoutingPolicy;
+  /** Resolved OS sandbox config (Seatbelt on macOS). When provided and enabled,
+   *  host exec commands are wrapped with sandbox-exec. */
+  osSandboxConfig?: ResolvedOsSandbox;
   notifyDeliveryContext?: DeliveryContext;
   timeoutSec: number | null;
   onUpdate?: (partialResult: AgentToolResult<ExecToolDetails>) => void;
@@ -851,18 +855,13 @@ export async function runExecProcess(opts: {
     let useOsSandbox = false;
     let osSandboxArgv: string[] | undefined;
     if (
-      shouldApplyOsSandbox(undefined, false) &&
+      shouldApplyOsSandbox(opts.osSandboxConfig, false) &&
       !opts.usePty // Seatbelt doesn't support PTY mode
     ) {
-      const sandboxConfig = buildDefaultOsSandboxConfig(opts.workdir);
-      if (sandboxConfig?.available && sandboxConfig.type === "seatbelt" && sandboxConfig.seatbelt) {
-        const wrapped = wrapWithSeatbelt(
-          [shell, ...shellArgs, execCommand],
-          sandboxConfig.seatbelt,
-        );
-        osSandboxArgv = wrapped.command;
-        useOsSandbox = true;
-      }
+      const seatbeltConfig = buildSeatbeltConfigWithOverrides(opts.workdir, opts.osSandboxConfig!);
+      const wrapped = wrapWithSeatbelt([shell, ...shellArgs, execCommand], seatbeltConfig);
+      osSandboxArgv = wrapped.command;
+      useOsSandbox = true;
     }
 
     // Wrap the command to enforce PATH prepend precedence over shell RC overrides.

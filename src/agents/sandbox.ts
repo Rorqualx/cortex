@@ -8,6 +8,7 @@ export {
   resolveSandboxBrowserConfig,
   resolveSandboxConfigForAgent,
   resolveSandboxDockerConfig,
+  resolveSandboxOsSandboxConfig,
   resolveSandboxPruneConfig,
   resolveSandboxScope,
 } from "./sandbox/config.js";
@@ -83,6 +84,7 @@ export type {
   SandboxConfig,
   SandboxContext,
   SandboxDockerConfig,
+  SandboxOsSandboxConfig,
   SandboxPruneConfig,
   SandboxScope,
   SandboxSshConfig,

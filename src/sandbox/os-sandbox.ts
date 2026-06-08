@@ -5,7 +5,7 @@ import { isSeatbeltAvailable, buildDefaultSeatbeltConfig } from "./seatbelt/inde
  * Exports platform detection helpers and the `shouldApplyOsSandbox` gate
  * that the exec-runtime uses to decide whether to wrap host commands.
  */
-import type { OsSandboxConfig } from "./seatbelt/types.js";
+import type { OsSandboxConfig, SeatbeltConfig } from "./seatbelt/types.js";
 
 export type { OsSandboxConfig } from "./seatbelt/types.js";
 export {
@@ -55,25 +55,59 @@ export function buildDefaultOsSandboxConfig(workspaceDir: string): OsSandboxConf
 }
 
 /**
+ * Resolved OS sandbox config from the sandbox config resolver.
+ */
+export interface ResolvedOsSandbox {
+  enabled: boolean;
+  extraWritableRoots: string[];
+  extraProtectedMetadata: string[];
+  network: "deny" | "allow" | "allow-loopback";
+}
+
+/**
+ * Build a SeatbeltConfig that merges the base defaults with user-provided overrides.
+ *
+ * - Adds `extraWritableRoots` as additional writable roots
+ * - Adds `extraProtectedMetadata` to the deny list
+ * - Overrides the network policy if specified
+ */
+export function buildSeatbeltConfigWithOverrides(
+  workspaceDir: string,
+  overrides: ResolvedOsSandbox,
+): SeatbeltConfig {
+  const base = buildDefaultSeatbeltConfig(workspaceDir);
+
+  return {
+    ...base,
+    writableRoots: [
+      ...base.writableRoots,
+      ...overrides.extraWritableRoots.map((p) => ({ path: p, access: "write" as const })),
+    ],
+    protectedMetadata: [...base.protectedMetadata, ...overrides.extraProtectedMetadata],
+    network: overrides.network,
+  };
+}
+
+/**
  * Resolve whether OS sandboxing should be applied.
  *
- * Checks: platform support + config enablement.
+ * Uses the resolved SandboxConfig to determine:
+ * 1. Is OS sandboxing explicitly enabled in config?
+ * 2. Is the current platform supported?
+ * 3. Is this a Docker exec? (never double-sandbox)
  *
- * Default: DISABLED. Must be explicitly enabled via sandbox.osSandbox config.
- * The seatbelt profile restricts write paths which blocks bundlers, package
- * managers, and other build tooling from functioning. Once the exec-policy
- * allowlist covers common build tools, this can flip to opt-out.
+ * Default: DISABLED. Must be explicitly enabled via `sandbox.osSandbox.enabled: true`.
  */
-export function shouldApplyOsSandbox(explicitlyEnabled?: boolean, isDockerExec?: boolean): boolean {
+export function shouldApplyOsSandbox(
+  osSandboxConfig: ResolvedOsSandbox | undefined,
+  isDockerExec?: boolean,
+): boolean {
   // Never sandbox commands already running inside Docker
   if (isDockerExec) return false;
 
-  // If explicitly disabled, respect that
-  if (explicitlyEnabled === false) return false;
+  // Check explicit config
+  if (!osSandboxConfig?.enabled) return false;
 
-  // If explicitly enabled, check platform support
-  if (explicitlyEnabled === true) return isOsSandboxAvailable();
-
-  // Default: OFF until exec-policy allowlist covers build tooling.
-  return false;
+  // Platform support check
+  return isOsSandboxAvailable();
 }

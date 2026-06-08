@@ -1,5 +1,6 @@
 // Defines shared agent configuration types across runtime schemas.
 import type {
+  OsSandboxSettings,
   SandboxBrowserSettings,
   SandboxDockerSettings,
   SandboxPruneSettings,
@@ -65,4 +66,6 @@ export type AgentSandboxConfig = {
   browser?: SandboxBrowserSettings;
   /** Auto-prune sandbox settings. */
   prune?: SandboxPruneSettings;
+  /** OS-level sandbox (Seatbelt on macOS) for host exec when Docker sandbox is off. */
+  osSandbox?: OsSandboxSettings;
 };
