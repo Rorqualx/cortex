@@ -173,6 +173,9 @@ importers:
       rastermill:
         specifier: 0.3.1
         version: 0.3.1
+      smol-toml:
+        specifier: ^1.6.1
+        version: 1.6.1
       tar:
         specifier: 7.5.15
         version: 7.5.15
@@ -6673,6 +6676,10 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  smol-toml@1.6.1:
+    resolution: {integrity: sha512-dWUG8F5sIIARXih1DTaQAX4SsiTXhInKf1buxdY9DIg4ZYPZK5nGM1VRIYmEbDbsHt7USo99xSLFu5Q1IqTmsg==}
+    engines: {node: '>= 18'}
+
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
 
@@ -12607,6 +12614,8 @@ snapshots:
       - bare-abort-controller
       - bare-buffer
       - react-native-b4a
+
+  smol-toml@1.6.1: {}
 
   sonic-boom@4.2.1:
     dependencies:
