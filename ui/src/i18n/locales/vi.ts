@@ -411,7 +411,7 @@ export const vi: TranslationMap = {
     usage: "Mức sử dụng",
     cron: "Tác vụ Cron",
     skills: "Skills",
-    skillWorkshop: "Xưởng kỹ năng",
+    skillForge: "Xưởng kỹ năng",
     nodes: "Nút",
     chat: "Trò chuyện",
     config: "Cấu hình",
@@ -436,7 +436,7 @@ export const vi: TranslationMap = {
     usage: "Mức sử dụng API và chi phí.",
     cron: "Đánh thức và chạy định kỳ.",
     skills: "Skills và khóa API.",
-    skillWorkshop:
+    skillForge:
       "Xem xét, tinh chỉnh và áp dụng các đề xuất trước khi chúng trở thành kỹ năng đang hoạt động.",
     nodes: "Thiết bị đã ghép nối và lệnh.",
     chat: "Trò chuyện Gateway để can thiệp nhanh.",
@@ -451,7 +451,7 @@ export const vi: TranslationMap = {
     logs: "Nhật ký gateway trực tiếp.",
     dreams: "Mơ bộ nhớ, hợp nhất và phản chiếu.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

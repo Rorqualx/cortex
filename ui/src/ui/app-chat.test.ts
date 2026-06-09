@@ -2185,7 +2185,7 @@ describe("handleSendChat", () => {
     expect(userMessage.role).toBe("user");
   });
 
-  it("routes queued Skill Workshop revisions through the proposal request RPC", async () => {
+  it("routes queued Skill Forge revisions through the proposal request RPC", async () => {
     const sent = createDeferred<unknown>();
     const request = vi.fn((method: string) => {
       if (method === "skills.proposals.requestRevision") {
@@ -2201,7 +2201,7 @@ describe("handleSendChat", () => {
 
     const send = handleSendChat(host, "Make the support files 5", {
       restoreDraft: true,
-      skillWorkshopRevision: {
+      skillForgeRevision: {
         proposalId: "support-file-sampler-20260531-68207b7b7f",
         agentId: "proposal-owner",
       },
@@ -2210,7 +2210,7 @@ describe("handleSendChat", () => {
 
     expect(host.chatQueue[0]).toMatchObject({
       text: "Make the support files 5",
-      skillWorkshopRevision: {
+      skillForgeRevision: {
         proposalId: "support-file-sampler-20260531-68207b7b7f",
         agentId: "proposal-owner",
       },
@@ -2240,7 +2240,7 @@ describe("handleSendChat", () => {
     expect(userMessage.content).toEqual([{ type: "text", text: "Make the support files 5" }]);
   });
 
-  it("treats slash-like Skill Workshop revision drafts as revision instructions", async () => {
+  it("treats slash-like Skill Forge revision drafts as revision instructions", async () => {
     const sent = createDeferred<unknown>();
     const request = vi.fn((method: string) => {
       if (method === "skills.proposals.requestRevision") {
@@ -2254,7 +2254,7 @@ describe("handleSendChat", () => {
 
     const send = handleSendChat(host, "/reset examples", {
       restoreDraft: true,
-      skillWorkshopRevision: {
+      skillForgeRevision: {
         proposalId: "support-file-sampler-20260531-68207b7b7f",
       },
     });
@@ -2274,7 +2274,7 @@ describe("handleSendChat", () => {
     expect(host.chatQueue[0]).toMatchObject({
       refreshSessions: false,
       text: "/reset examples",
-      skillWorkshopRevision: {
+      skillForgeRevision: {
         proposalId: "support-file-sampler-20260531-68207b7b7f",
       },
     });

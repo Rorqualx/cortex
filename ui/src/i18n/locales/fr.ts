@@ -413,7 +413,7 @@ export const fr: TranslationMap = {
     usage: "Utilisation",
     cron: "Tâches cron",
     skills: "Skills",
-    skillWorkshop: "Atelier Skills",
+    skillForge: "Atelier Skills",
     nodes: "Nœuds",
     chat: "Chat",
     config: "Configuration",
@@ -438,7 +438,7 @@ export const fr: TranslationMap = {
     usage: "Utilisation de l’API et coûts.",
     cron: "Réveils et exécutions récurrentes.",
     skills: "Skills et clés API.",
-    skillWorkshop:
+    skillForge:
       "Examinez, affinez et appliquez les propositions avant qu’elles ne deviennent des skills actives.",
     nodes: "Appareils appairés et commandes.",
     chat: "Chat Gateway pour les interventions rapides.",
@@ -453,7 +453,7 @@ export const fr: TranslationMap = {
     logs: "Journaux Gateway en direct.",
     dreams: "Consolidation de la mémoire pendant le sommeil.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

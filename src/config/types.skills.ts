@@ -58,7 +58,7 @@ export type SkillsLimitsConfig = {
 
 /** Autonomous and approval settings for generated skill proposals. */
 export type SkillsWorkshopConfig = {
-  /** Autonomous Skill Workshop behavior controlled separately from user-prompted proposals. */
+  /** Autonomous Skill Forge behavior controlled separately from user-prompted proposals. */
   autonomous?: {
     /** Allow agents to create pending proposals from durable conversation signals. */
     enabled?: boolean;

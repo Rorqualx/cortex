@@ -412,7 +412,7 @@ export const fa: TranslationMap = {
     usage: "مصرف",
     cron: "کارهای Cron",
     skills: "Skills",
-    skillWorkshop: "کارگاه Skill",
+    skillForge: "کارگاه Skill",
     nodes: "گره‌ها",
     chat: "چت",
     config: "Config",
@@ -437,7 +437,7 @@ export const fa: TranslationMap = {
     usage: "مصرف و هزینه‌های API.",
     cron: "بیدارباش‌ها و اجراهای تکرارشونده.",
     skills: "Skills و کلیدهای API.",
-    skillWorkshop: "پیشنهادها را پیش از تبدیل‌شدن به مهارت‌های فعال، بررسی، اصلاح و اعمال کنید.",
+    skillForge: "پیشنهادها را پیش از تبدیل‌شدن به مهارت‌های فعال، بررسی، اصلاح و اعمال کنید.",
     nodes: "دستگاه‌های جفت‌شده و فرمان‌ها.",
     chat: "چت Gateway برای مداخله‌های سریع.",
     config: "ویرایش openclaw.json.",
@@ -451,7 +451,7 @@ export const fa: TranslationMap = {
     logs: "گزارش‌های زنده Gateway.",
     dreams: "رؤیاپردازی حافظه، یکپارچه‌سازی و بازتاب.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

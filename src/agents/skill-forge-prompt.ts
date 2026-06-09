@@ -17,6 +17,7 @@ export function buildSkillForgePromptSection(): string[] {
     "Use `action=retire` with `name` and optional `reason` to demote a skill, or omit `name` to run a decay sweep on stale skills.",
     "Use `action=telemetry` to list per-skill usage statistics including use counts and last-used timestamps.",
     "Do not directly modify forge skill files with `write`, `edit`, or `exec`. Use `skill_forge` actions to manage the pipeline.",
+    "After promoting or retiring skills, rebuild and restart the gateway so changes take effect: `bash scripts/prod-restart.sh` (auto-daemonizes when called from inside the gateway). Add `--no-build` to skip the build if you already built.",
     "",
   ];
 }

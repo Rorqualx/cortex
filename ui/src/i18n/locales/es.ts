@@ -411,7 +411,7 @@ export const es: TranslationMap = {
     usage: "Uso",
     cron: "Tareas Cron",
     skills: "Skills",
-    skillWorkshop: "Taller de Skills",
+    skillForge: "Taller de Skills",
     nodes: "Nodos",
     chat: "Chat",
     config: "Configuración",
@@ -436,7 +436,7 @@ export const es: TranslationMap = {
     usage: "Monitorear uso de API y costes.",
     cron: "Programar despertares y ejecuciones recurrentes de agentes.",
     skills: "Gestionar disponibilidad de habilidades e inyección de claves API.",
-    skillWorkshop:
+    skillForge:
       "Revisa, perfecciona y aplica propuestas antes de que se conviertan en Skills activas.",
     nodes: "Dispositivos emparejados, capacidades y exposición de comandos.",
     chat: "Sesión de chat directa con la puerta de enlace para intervenciones rápidas.",
@@ -451,7 +451,7 @@ export const es: TranslationMap = {
     logs: "Seguimiento en vivo de los registros de la puerta de enlace.",
     dreams: "Consolidación de la memoria durante el sueño.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

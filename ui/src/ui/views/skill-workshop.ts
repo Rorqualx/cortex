@@ -4,26 +4,21 @@ import { keyed } from "lit/directives/keyed.js";
 import { styleMap } from "lit/directives/style-map.js";
 import "../components/file-preview-modal.ts";
 
-export type SkillWorkshopProposalStatus =
-  | "pending"
-  | "applied"
-  | "rejected"
-  | "quarantined"
-  | "stale";
+export type SkillForgeProposalStatus = "pending" | "applied" | "rejected" | "quarantined" | "stale";
 
-export type SkillWorkshopFile = {
+export type SkillForgeFile = {
   path: string;
   size: string;
   contents: string;
 };
 
-export type SkillWorkshopProposal = {
+export type SkillForgeProposal = {
   key: string;
   slug: string;
   name: string;
   oneLine: string;
   body: string;
-  status: SkillWorkshopProposalStatus;
+  status: SkillForgeProposalStatus;
   origin?: {
     agentId?: string;
     sessionKey?: string;
@@ -35,50 +30,50 @@ export type SkillWorkshopProposal = {
   updatedAt?: number;
   recencyGroup: "today" | "yesterday" | "earlier";
   ageLabel: string;
-  supportFiles: SkillWorkshopFile[];
+  supportFiles: SkillForgeFile[];
   isNew: boolean;
 };
 
-export type SkillWorkshopStatusFilter = "all" | SkillWorkshopProposalStatus;
-export type SkillWorkshopAction = "apply" | "revise" | "reject";
-export type SkillWorkshopMode = "board" | "today";
+export type SkillForgeStatusFilter = "all" | SkillForgeProposalStatus;
+export type SkillForgeAction = "apply" | "revise" | "reject";
+export type SkillForgeMode = "board" | "today";
 
-export type SkillWorkshopActionBusy = {
+export type SkillForgeActionBusy = {
   key: string;
-  action: SkillWorkshopAction;
+  action: SkillForgeAction;
 };
 
-export type SkillWorkshopActionNotice = {
+export type SkillForgeActionNotice = {
   key: string;
   label: string;
   slug: string;
 };
 
-type SkillWorkshopEmptyIcon = "search" | "clock" | "check" | "x" | "shield" | "refresh";
+type SkillForgeEmptyIcon = "search" | "clock" | "check" | "x" | "shield" | "refresh";
 
-export type SkillWorkshopProps = {
+export type SkillForgeProps = {
   loading: boolean;
   error: string | null;
   inspectingKey: string | null;
-  proposals: SkillWorkshopProposal[];
+  proposals: SkillForgeProposal[];
   selectedKey: string | null;
-  statusFilter: SkillWorkshopStatusFilter;
+  statusFilter: SkillForgeStatusFilter;
   query: string;
   filePreviewKey: string | null;
   filePreviewQuery: string;
   queueWidth: number;
-  mode: SkillWorkshopMode;
-  actionBusy: SkillWorkshopActionBusy | null;
-  actionNotice: SkillWorkshopActionNotice | null;
+  mode: SkillForgeMode;
+  actionBusy: SkillForgeActionBusy | null;
+  actionNotice: SkillForgeActionNotice | null;
   revisionKey: string | null;
   revisionDraft: string;
   assistantName: string;
-  counts: Record<SkillWorkshopStatusFilter, number>;
-  onStatusFilterChange: (status: SkillWorkshopStatusFilter) => void;
+  counts: Record<SkillForgeStatusFilter, number>;
+  onStatusFilterChange: (status: SkillForgeStatusFilter) => void;
   onQueryChange: (query: string) => void;
   onFilePreviewQueryChange: (query: string) => void;
   onQueueWidthChange: (width: number) => void;
-  onModeChange: (mode: SkillWorkshopMode) => void;
+  onModeChange: (mode: SkillForgeMode) => void;
   onSelect: (key: string) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -92,7 +87,7 @@ export type SkillWorkshopProps = {
   onClosePreview: () => void;
 };
 
-const STATUS_TABS: SkillWorkshopStatusFilter[] = [
+const STATUS_TABS: SkillForgeStatusFilter[] = [
   "all",
   "pending",
   "applied",
@@ -101,7 +96,7 @@ const STATUS_TABS: SkillWorkshopStatusFilter[] = [
   "stale",
 ];
 
-const STATUS_LABEL: Record<SkillWorkshopStatusFilter, string> = {
+const STATUS_LABEL: Record<SkillForgeStatusFilter, string> = {
   all: "All",
   pending: "Pending",
   applied: "Applied",
@@ -113,14 +108,14 @@ const STATUS_LABEL: Record<SkillWorkshopStatusFilter, string> = {
 const TODAY_PREVIEW_MAX_ITEMS = 3;
 const TODAY_PREVIEW_MAX_ITEM_CHARS = 120;
 
-const GROUP_LABEL: Record<SkillWorkshopProposal["recencyGroup"], string> = {
+const GROUP_LABEL: Record<SkillForgeProposal["recencyGroup"], string> = {
   today: "Today",
   yesterday: "Yesterday",
   earlier: "Earlier this week",
 };
 
-export function renderSkillWorkshop(props: SkillWorkshopProps) {
-  const filtered = filterSkillWorkshopProposals(props.proposals, props.statusFilter, props.query);
+export function renderSkillForge(props: SkillForgeProps) {
+  const filtered = filterSkillForgeProposals(props.proposals, props.statusFilter, props.query);
   const selected = filtered.find((p) => p.key === props.selectedKey) ?? filtered[0];
   const groups = groupByRecency(filtered);
   const preview =
@@ -141,7 +136,7 @@ export function renderSkillWorkshop(props: SkillWorkshopProps) {
       : renderBoard(props, filtered, groups, selected);
 
   return html`
-    <section class="skill-workshop sw-mode-${props.mode}">
+    <section class="skill-forge sw-mode-${props.mode}">
       ${props.error ? html`<div class="sw-error" role="status">${props.error}</div>` : nothing}
       <div class="sw-view" data-mode=${props.mode}>
         ${keyed(props.mode, html`<div class="sw-view__pane">${body}</div>`)}
@@ -166,7 +161,7 @@ export function renderSkillWorkshop(props: SkillWorkshopProps) {
   `;
 }
 
-function renderRevisionDialog(props: SkillWorkshopProps, proposal: SkillWorkshopProposal) {
+function renderRevisionDialog(props: SkillForgeProps, proposal: SkillForgeProposal) {
   const busy = props.actionBusy?.key === proposal.key && props.actionBusy.action === "revise";
   const canSubmit = props.revisionDraft.trim().length > 0 && !props.actionBusy;
   const verb = props.mode === "board" ? "Revise" : "Tweak";
@@ -238,10 +233,10 @@ function renderRevisionDialog(props: SkillWorkshopProps, proposal: SkillWorkshop
 }
 
 function renderBoard(
-  props: SkillWorkshopProps,
-  filtered: SkillWorkshopProposal[],
-  groups: Array<{ label: string; items: SkillWorkshopProposal[] }>,
-  selected: SkillWorkshopProposal | undefined,
+  props: SkillForgeProps,
+  filtered: SkillForgeProposal[],
+  groups: Array<{ label: string; items: SkillForgeProposal[] }>,
+  selected: SkillForgeProposal | undefined,
 ) {
   void filtered;
   return html`
@@ -253,7 +248,7 @@ function renderBoard(
   `;
 }
 
-function renderQueueResizer(props: SkillWorkshopProps) {
+function renderQueueResizer(props: SkillForgeProps) {
   return html`
     <div
       class="sw-queue-resizer"
@@ -267,7 +262,7 @@ function renderQueueResizer(props: SkillWorkshopProps) {
   `;
 }
 
-function startQueueResize(event: PointerEvent, props: SkillWorkshopProps): void {
+function startQueueResize(event: PointerEvent, props: SkillForgeProps): void {
   event.preventDefault();
   event.stopPropagation();
 
@@ -300,7 +295,7 @@ function startQueueResize(event: PointerEvent, props: SkillWorkshopProps): void 
   window.addEventListener("pointercancel", onUp);
 }
 
-function resizeQueueWithKeyboard(event: KeyboardEvent, props: SkillWorkshopProps): void {
+function resizeQueueWithKeyboard(event: KeyboardEvent, props: SkillForgeProps): void {
   if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
     return;
   }
@@ -309,7 +304,7 @@ function resizeQueueWithKeyboard(event: KeyboardEvent, props: SkillWorkshopProps
   props.onQueueWidthChange(props.queueWidth + delta);
 }
 
-function renderLifecycleTabs(props: SkillWorkshopProps) {
+function renderLifecycleTabs(props: SkillForgeProps) {
   return html`
     <div class="sw-lifecycle-tabs">
       ${STATUS_TABS.map((status) => {
@@ -329,9 +324,9 @@ function renderLifecycleTabs(props: SkillWorkshopProps) {
 }
 
 function renderQueue(
-  props: SkillWorkshopProps,
-  groups: Array<{ label: string; items: SkillWorkshopProposal[] }>,
-  selected: SkillWorkshopProposal | undefined,
+  props: SkillForgeProps,
+  groups: Array<{ label: string; items: SkillForgeProposal[] }>,
+  selected: SkillForgeProposal | undefined,
 ) {
   const total = groups.reduce((sum, g) => sum + g.items.length, 0);
 
@@ -362,9 +357,9 @@ function renderQueue(
 }
 
 function renderRow(
-  props: SkillWorkshopProps,
-  proposal: SkillWorkshopProposal,
-  selected: SkillWorkshopProposal | undefined,
+  props: SkillForgeProps,
+  proposal: SkillForgeProposal,
+  selected: SkillForgeProposal | undefined,
 ) {
   const isSelected = selected?.key === proposal.key;
   const noveltyClass = proposal.isNew ? "is-new" : "is-seen";
@@ -383,7 +378,7 @@ function renderRow(
   `;
 }
 
-function renderDetail(props: SkillWorkshopProps, proposal: SkillWorkshopProposal) {
+function renderDetail(props: SkillForgeProps, proposal: SkillForgeProposal) {
   const editedAt =
     proposal.updatedAt && proposal.updatedAt > proposal.createdAt ? proposal.updatedAt : null;
   const createdLabel = editedAt
@@ -457,7 +452,7 @@ function renderDetail(props: SkillWorkshopProps, proposal: SkillWorkshopProposal
   `;
 }
 
-function renderActionNotice(notice: SkillWorkshopActionNotice) {
+function renderActionNotice(notice: SkillForgeActionNotice) {
   return html`
     <div class="sw-action-toast" role="status" aria-live="polite">
       <span>${notice.label}</span>
@@ -467,7 +462,7 @@ function renderActionNotice(notice: SkillWorkshopActionNotice) {
   `;
 }
 
-function renderPendingActions(props: SkillWorkshopProps, proposal: SkillWorkshopProposal) {
+function renderPendingActions(props: SkillForgeProps, proposal: SkillForgeProposal) {
   const busy = props.actionBusy?.key === proposal.key ? props.actionBusy.action : null;
   const disabled = Boolean(props.actionBusy);
   return html`
@@ -497,7 +492,7 @@ function renderPendingActions(props: SkillWorkshopProps, proposal: SkillWorkshop
   `;
 }
 
-function renderEmpty(props: SkillWorkshopProps) {
+function renderEmpty(props: SkillForgeProps) {
   const empty = resolveBoardEmptyState(props);
   return html`
     <div class="sw-detail sw-detail--empty">
@@ -512,8 +507,8 @@ function renderEmpty(props: SkillWorkshopProps) {
   `;
 }
 
-function resolveBoardEmptyState(props: SkillWorkshopProps): {
-  icon: SkillWorkshopEmptyIcon;
+function resolveBoardEmptyState(props: SkillForgeProps): {
+  icon: SkillForgeEmptyIcon;
   title: string;
   body: string;
 } {
@@ -560,17 +555,17 @@ function resolveBoardEmptyState(props: SkillWorkshopProps): {
       return {
         icon: "search",
         title: "No proposals here",
-        body: "Skill Workshop proposals will appear here when your agent drafts them.",
+        body: "Skill Forge proposals will appear here when your agent drafts them.",
       };
   }
   return {
     icon: "search",
     title: "No proposals here",
-    body: "Skill Workshop proposals will appear here when your agent drafts them.",
+    body: "Skill Forge proposals will appear here when your agent drafts them.",
   };
 }
 
-function renderEmptyStateIcon(icon: SkillWorkshopEmptyIcon) {
+function renderEmptyStateIcon(icon: SkillForgeEmptyIcon) {
   switch (icon) {
     case "clock":
       return html`
@@ -619,17 +614,17 @@ function renderEmptyStateIcon(icon: SkillWorkshopEmptyIcon) {
   return nothing;
 }
 
-function renderWorkshopEmptyState(props: SkillWorkshopProps) {
+function renderWorkshopEmptyState(props: SkillForgeProps) {
   const assistantName = props.assistantName.trim() || "Your agent";
   return html`
     <div class="sw-empty-state">
-      <section class="sw-empty-state__panel" aria-label="No Skill Workshop proposals">
+      <section class="sw-empty-state__panel" aria-label="No Skill Forge proposals">
         <div class="sw-empty-state__glyph" aria-hidden="true">
           <span></span>
           <span></span>
           <span></span>
         </div>
-        <p class="sw-empty-state__eyebrow">Skill Workshop</p>
+        <p class="sw-empty-state__eyebrow">Skill Forge</p>
         <h2>No proposals yet</h2>
         <p>${assistantName} hasn't drafted any skill proposals.</p>
         <div class="sw-empty-state__footer">New proposals will appear here for review.</div>
@@ -639,9 +634,9 @@ function renderWorkshopEmptyState(props: SkillWorkshopProps) {
 }
 
 function renderToday(
-  props: SkillWorkshopProps,
-  hero: SkillWorkshopProposal | undefined,
-  pending: SkillWorkshopProposal[],
+  props: SkillForgeProps,
+  hero: SkillForgeProposal | undefined,
+  pending: SkillForgeProposal[],
 ) {
   if (!hero) {
     return html`
@@ -822,7 +817,7 @@ function renderToday(
   `;
 }
 
-function renderTodayDoesBlock(hero: SkillWorkshopProposal) {
+function renderTodayDoesBlock(hero: SkillForgeProposal) {
   const preview = extractTodayProposalPreview(hero.body);
   if (!preview) {
     return nothing;
@@ -1063,11 +1058,11 @@ function renderInline(text: string): unknown {
   return parts;
 }
 
-export function filterSkillWorkshopProposals(
-  proposals: SkillWorkshopProposal[],
-  statusFilter: SkillWorkshopStatusFilter,
+export function filterSkillForgeProposals(
+  proposals: SkillForgeProposal[],
+  statusFilter: SkillForgeStatusFilter,
   query: string,
-): SkillWorkshopProposal[] {
+): SkillForgeProposal[] {
   const q = query.trim().toLowerCase();
   return proposals.filter((p) => {
     if (statusFilter !== "all" && p.status !== statusFilter) {
@@ -1084,21 +1079,21 @@ export function filterSkillWorkshopProposals(
 }
 
 function groupByRecency(
-  proposals: SkillWorkshopProposal[],
-): Array<{ label: string; items: SkillWorkshopProposal[] }> {
-  const buckets = new Map<SkillWorkshopProposal["recencyGroup"], SkillWorkshopProposal[]>();
+  proposals: SkillForgeProposal[],
+): Array<{ label: string; items: SkillForgeProposal[] }> {
+  const buckets = new Map<SkillForgeProposal["recencyGroup"], SkillForgeProposal[]>();
   for (const proposal of proposals) {
     const list = buckets.get(proposal.recencyGroup) ?? [];
     list.push(proposal);
     buckets.set(proposal.recencyGroup, list);
   }
-  const order: Array<SkillWorkshopProposal["recencyGroup"]> = ["today", "yesterday", "earlier"];
+  const order: Array<SkillForgeProposal["recencyGroup"]> = ["today", "yesterday", "earlier"];
   return order
     .filter((key) => buckets.has(key))
     .map((key) => ({ label: GROUP_LABEL[key], items: buckets.get(key) ?? [] }));
 }
 
-function queueEmptyText(props: SkillWorkshopProps): string {
+function queueEmptyText(props: SkillForgeProps): string {
   if (props.error) {
     return "Could not load proposals.";
   }

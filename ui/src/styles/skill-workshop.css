@@ -1,41 +1,41 @@
-/* Skill Workshop — exact port of .artifacts/skill-workshop-ui/option-p-triage-tabs.html */
+/* Skill Forge — exact port of .artifacts/skill-forge-ui/option-p-triage-tabs.html */
 
-.skill-workshop {
+.skill-forge {
   display: flex;
   flex-direction: column;
   min-height: 0;
   position: relative;
 }
 
-.content > .skill-workshop {
+.content > .skill-forge {
   margin-top: 8px;
 }
 
-.content--skill-workshop {
+.content--skill-forge {
   display: flex;
   flex-direction: column;
   overflow: hidden;
   padding-bottom: 16px;
 }
 
-.content--skill-workshop .content-header {
+.content--skill-forge .content-header {
   flex-shrink: 0;
 }
 
-.content--skill-workshop > .skill-workshop {
+.content--skill-forge > .skill-forge {
   flex: 1 1 auto;
   min-height: 0;
 }
 
-.content--skill-workshop-today {
+.content--skill-forge-today {
   display: block;
   overflow-y: auto;
   padding-bottom: 32px;
 }
 
-.content--skill-workshop-today > .skill-workshop,
-.content--skill-workshop-today .sw-view,
-.content--skill-workshop-today .sw-view__pane {
+.content--skill-forge-today > .skill-forge,
+.content--skill-forge-today .sw-view,
+.content--skill-forge-today .sw-view__pane {
   display: block;
   min-height: auto;
 }
@@ -1057,7 +1057,7 @@
   overflow-y: auto;
 }
 
-.content--skill-workshop-today .sw-today {
+.content--skill-forge-today .sw-today {
   overflow: visible;
 }
 

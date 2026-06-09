@@ -9,7 +9,7 @@ export const TAB_GROUPS = [
     label: "control",
     tabs: ["overview", "activity", "workboard", "instances", "sessions", "usage", "cron"],
   },
-  { label: "agent", tabs: ["agents", "skills", "skillWorkshop", "nodes", "dreams"] },
+  { label: "agent", tabs: ["agents", "skills", "skillForge", "nodes", "dreams"] },
   {
     label: "settings",
     tabs: ["config"],
@@ -27,7 +27,7 @@ export type Tab =
   | "usage"
   | "cron"
   | "skills"
-  | "skillWorkshop"
+  | "skillForge"
   | "nodes"
   | "chat"
   | "config"
@@ -65,7 +65,7 @@ const TAB_PATHS: Record<Tab, string> = {
   usage: "/usage",
   cron: "/cron",
   skills: "/skills",
-  skillWorkshop: "/skills/workshop",
+  skillForge: "/skills/forge",
   nodes: "/nodes",
   chat: "/chat",
   config: "/config",
@@ -89,7 +89,7 @@ const PATH_ALIASES: Record<string, Tab> = {
  * under the parent in the sidebar. Sub-items still get their own routes.
  */
 export const TAB_PARENTS: Partial<Record<Tab, Tab>> = {
-  skillWorkshop: "skills",
+  skillForge: "skills",
 };
 
 export function isChildTab(tab: Tab): boolean {
@@ -221,7 +221,7 @@ export function iconForTab(tab: Tab): IconName {
       return "loader";
     case "skills":
       return "zap";
-    case "skillWorkshop":
+    case "skillForge":
       return "wrench";
     case "nodes":
       return "monitor";

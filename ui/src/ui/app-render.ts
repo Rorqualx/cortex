@@ -139,11 +139,17 @@ import {
   toggleSessionCompactionCheckpoints,
 } from "./controllers/sessions.ts";
 import {
-  countSkillWorkshopProposals,
-  requestSkillWorkshopRevision,
-  runSkillWorkshopLifecycleAction,
-  selectSkillWorkshopProposal,
-} from "./controllers/skill-workshop.ts";
+  filteredSkills as filterSkillForgeSkills,
+  countSkillForge as countSkillForgeSkills,
+  loadSkillForgeStatus,
+  runForgePipeline,
+  promoteSkill,
+  retireSkill,
+  runDecaySweep,
+  selectSkillForge,
+  setSkillForgeMode,
+  loadSkillForgeMode as loadSkillForgeModeController,
+} from "./controllers/skill-forge.ts";
 import {
   closeClawHubDetail,
   installFromClawHub,
@@ -236,73 +242,18 @@ function runUiTask<Args extends unknown[]>(
   };
 }
 
-const SKILL_WORKSHOP_MODE_KEY = "openclaw:control-ui:skill-workshop-mode:v1";
+const SKILL_FORGE_MODE_KEY = "openclaw:control-ui:skill-forge-mode:v1";
 
-export function loadSkillWorkshopMode(): "board" | "today" {
-  try {
-    const raw = getSafeLocalStorage()?.getItem(SKILL_WORKSHOP_MODE_KEY);
-    return raw === "board" ? "board" : "today";
-  } catch {
-    return "today";
-  }
+export function loadSkillForgeMode(): "board" | "grid" {
+  return loadSkillForgeModeController();
 }
 
-function setSkillWorkshopMode(state: AppViewState, mode: "board" | "today"): void {
-  if (state.skillWorkshopMode === mode) {
-    return;
-  }
-  state.skillWorkshopMode = mode;
-  try {
-    getSafeLocalStorage()?.setItem(SKILL_WORKSHOP_MODE_KEY, mode);
-  } catch {
-    // Mode persistence is a convenience; the in-memory switch still works.
-  }
+function setSkillForgeModeLocal(state: AppViewState, mode: "board" | "grid"): void {
+  setSkillForgeMode(state, mode);
 }
 
-function renderSkillWorkshopHeaderControls(state: AppViewState) {
-  return html`
-    <div class="sw-header-controls">
-      <div
-        class="sw-mode-switch"
-        role="tablist"
-        aria-label="Workshop view"
-        data-mode=${state.skillWorkshopMode}
-      >
-        <button
-          type="button"
-          class="sw-mode-switch__opt ${state.skillWorkshopMode === "board" ? "is-active" : ""}"
-          role="tab"
-          aria-selected=${state.skillWorkshopMode === "board" ? "true" : "false"}
-          title="Board view"
-          @click=${() => setSkillWorkshopMode(state, "board")}
-        >
-          <svg viewBox="0 0 24 24" class="sw-mode-switch__icon" aria-hidden="true">
-            <rect x="3" y="4" width="7" height="16" rx="1.5" />
-            <rect x="14" y="4" width="7" height="9" rx="1.5" />
-            <rect x="14" y="15" width="7" height="5" rx="1.5" />
-          </svg>
-          <span>Board</span>
-        </button>
-        <button
-          type="button"
-          class="sw-mode-switch__opt ${state.skillWorkshopMode === "today" ? "is-active" : ""}"
-          role="tab"
-          aria-selected=${state.skillWorkshopMode === "today" ? "true" : "false"}
-          title="Today view"
-          @click=${() => setSkillWorkshopMode(state, "today")}
-        >
-          <svg viewBox="0 0 24 24" class="sw-mode-switch__icon" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" />
-            <path
-              d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"
-            />
-          </svg>
-          <span>Today</span>
-        </button>
-        <span class="sw-mode-switch__indicator" aria-hidden="true"></span>
-      </div>
-    </div>
-  `;
+function renderSkillForgeHeaderControls(state: AppViewState) {
+  return html``;
 }
 
 function renderSettingsSectionNav(state: AppViewState) {
@@ -556,8 +507,8 @@ const lazyInstances = createLazyView(() => import("./views/instances.ts"), notif
 const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
 const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewChanged);
 const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewChanged);
-const lazySkillWorkshop = createLazyView(
-  () => import("./views/skill-workshop.ts"),
+const lazySkillForge = createLazyView(
+  () => import("./views/skill-forge.ts"),
   notifyLazyViewChanged,
 );
 const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewChanged);
@@ -2347,10 +2298,8 @@ export function renderApp(state: AppViewState) {
         class="content ${isChat ? "content--chat" : ""} ${state.tab === "logs"
           ? "content--logs"
           : ""} ${state.tab === "workboard" ? "content--workboard" : ""} ${state.tab ===
-        "skillWorkshop"
-          ? `content--skill-workshop ${
-              state.skillWorkshopMode === "today" ? "content--skill-workshop-today" : ""
-            }`
+        "skillForge"
+          ? `content--skill-forge`
           : ""}"
       >
         ${state.updateStatusBanner
@@ -2399,9 +2348,7 @@ export function renderApp(state: AppViewState) {
                 <div class="page-sub">${subtitleForTab(state.tab)}</div>
               </div>
               <div class="page-meta">
-                ${state.tab === "skillWorkshop"
-                  ? renderSkillWorkshopHeaderControls(state)
-                  : nothing}
+                ${state.tab === "skillForge" ? renderSkillForgeHeaderControls(state) : nothing}
                 ${state.tab === "dreams"
                   ? html`
                       <div class="dreaming-header-controls">
@@ -3236,107 +3183,34 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
-        ${state.tab === "skillWorkshop"
-          ? renderLazyView(lazySkillWorkshop, (m) => {
-              const visibleProposals = m.filterSkillWorkshopProposals(
-                state.skillWorkshopProposals,
-                state.skillWorkshopStatusFilter,
-                state.skillWorkshopQuery,
-              );
-              const selectedIndex = visibleProposals.findIndex(
-                (proposal) => proposal.key === state.skillWorkshopSelectedKey,
-              );
-              const selectRelativeProposal = (delta: -1 | 1) => {
-                if (visibleProposals.length === 0) {
-                  return;
-                }
-                const nextIndex =
-                  selectedIndex < 0
-                    ? 0
-                    : (selectedIndex + delta + visibleProposals.length) % visibleProposals.length;
-                selectSkillWorkshopProposal(state, visibleProposals[nextIndex].key);
-              };
-              const selectVisibleFallback = (proposals: typeof visibleProposals) => {
-                if (
-                  proposals.length === 0 ||
-                  proposals.some((proposal) => proposal.key === state.skillWorkshopSelectedKey)
-                ) {
-                  return;
-                }
-                state.skillWorkshopFilePreviewKey = null;
-                selectSkillWorkshopProposal(state, proposals[0].key);
-              };
-              return m.renderSkillWorkshop({
-                loading: state.skillWorkshopLoading,
-                error: state.skillWorkshopError,
-                inspectingKey: state.skillWorkshopInspectingKey,
-                proposals: state.skillWorkshopProposals,
-                selectedKey: state.skillWorkshopSelectedKey,
-                statusFilter: state.skillWorkshopStatusFilter,
-                query: state.skillWorkshopQuery,
-                filePreviewKey: state.skillWorkshopFilePreviewKey,
-                filePreviewQuery: state.skillWorkshopFilePreviewQuery,
-                queueWidth: state.skillWorkshopQueueWidth,
-                mode: state.skillWorkshopMode,
-                actionBusy: state.skillWorkshopActionBusy,
-                actionNotice: state.skillWorkshopActionNotice,
-                revisionKey: state.skillWorkshopRevisionKey,
-                revisionDraft: state.skillWorkshopRevisionDraft,
-                assistantName: state.assistantName,
-                counts: countSkillWorkshopProposals(state.skillWorkshopProposals),
-                onStatusFilterChange: (status) => {
-                  state.skillWorkshopStatusFilter = status;
-                  selectVisibleFallback(
-                    m.filterSkillWorkshopProposals(
-                      state.skillWorkshopProposals,
-                      status,
-                      state.skillWorkshopQuery,
-                    ),
-                  );
+        ${state.tab === "skillForge"
+          ? renderLazyView(lazySkillForge, (m) => {
+              return m.renderSkillForge({
+                skillForgeLoading: state.skillForgeLoading,
+                skillForgeLoaded: state.skillForgeLoaded,
+                skillForgeError: state.skillForgeError,
+                skillForgeStatus: state.skillForgeStatus,
+                skillForgeSelectedName: state.skillForgeSelectedName,
+                skillForgeRunBusy: state.skillForgeRunBusy,
+                skillForgeActionBusy: state.skillForgeActionBusy,
+                skillForgeActionNotice: state.skillForgeActionNotice,
+                skillForgeFilter: state.skillForgeFilter,
+                skillForgeQuery: state.skillForgeQuery,
+                skillForgeMode: state.skillForgeMode,
+                skillForgeQueueWidth: state.skillForgeQueueWidth,
+                onRunPipeline: () => void runForgePipeline(state),
+                onPromote: (name: string) => void promoteSkill(state, name),
+                onRetire: (name: string) => void retireSkill(state, name),
+                onDecaySweep: () => void runDecaySweep(state),
+                onSelect: (name: string) => selectSkillForge(state, name),
+                onFilterChange: (filter) => {
+                  state.skillForgeFilter = filter;
                 },
                 onQueryChange: (query) => {
-                  state.skillWorkshopQuery = query;
-                  selectVisibleFallback(
-                    m.filterSkillWorkshopProposals(
-                      state.skillWorkshopProposals,
-                      state.skillWorkshopStatusFilter,
-                      query,
-                    ),
-                  );
+                  state.skillForgeQuery = query;
                 },
-                onFilePreviewQueryChange: (query) => (state.skillWorkshopFilePreviewQuery = query),
-                onQueueWidthChange: (width) => (state.skillWorkshopQueueWidth = width),
-                onModeChange: (mode) => setSkillWorkshopMode(state, mode),
-                onSelect: (key) => {
-                  state.skillWorkshopFilePreviewKey = null;
-                  selectSkillWorkshopProposal(state, key);
-                },
-                onPrev: () => selectRelativeProposal(-1),
-                onNext: () => selectRelativeProposal(1),
-                onApply: (key) => void runSkillWorkshopLifecycleAction(state, "apply", key),
-                onRevise: (key) => {
-                  state.skillWorkshopRevisionKey = key;
-                  state.skillWorkshopRevisionDraft = "";
-                },
-                onReject: (key) => void runSkillWorkshopLifecycleAction(state, "reject", key),
-                onRevisionDraftChange: (draft) => (state.skillWorkshopRevisionDraft = draft),
-                onRevisionCancel: () => {
-                  state.skillWorkshopRevisionKey = null;
-                  state.skillWorkshopRevisionDraft = "";
-                },
-                onRevisionSubmit: (key) =>
-                  void requestSkillWorkshopRevision(state, key, async (message) => {
-                    state.setTab("chat" as Tab);
-                    await state.handleSendChat(message, { restoreDraft: true });
-                  }),
-                onPreviewFile: (key, path) => {
-                  state.skillWorkshopSelectedKey = key;
-                  state.skillWorkshopFilePreviewKey = path;
-                },
-                onClosePreview: () => {
-                  state.skillWorkshopFilePreviewKey = null;
-                  state.skillWorkshopFilePreviewQuery = "";
-                },
+                onModeChange: (mode) => setSkillForgeModeLocal(state, mode),
+                onQueueWidthChange: (width) => (state.skillForgeQueueWidth = width),
               });
             })
           : nothing}

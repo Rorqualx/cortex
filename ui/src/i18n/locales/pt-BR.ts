@@ -411,7 +411,7 @@ export const pt_BR: TranslationMap = {
     usage: "Uso",
     cron: "Tarefas Cron",
     skills: "Skills",
-    skillWorkshop: "Oficina de Skills",
+    skillForge: "Oficina de Skills",
     nodes: "Nós",
     chat: "Chat",
     config: "Configuração",
@@ -436,7 +436,7 @@ export const pt_BR: TranslationMap = {
     usage: "Uso e custos da API.",
     cron: "Despertares e execuções.",
     skills: "Habilidades e chaves API.",
-    skillWorkshop: "Revise, refine e aplique propostas antes que elas se tornem skills ativas.",
+    skillForge: "Revise, refine e aplique propostas antes que elas se tornem skills ativas.",
     nodes: "Dispositivos e comandos.",
     chat: "Chat do gateway para intervenções rápidas.",
     config: "Editar openclaw.json.",
@@ -450,7 +450,7 @@ export const pt_BR: TranslationMap = {
     logs: "Logs ao vivo do gateway.",
     dreams: "Consolidação de memória durante o sono.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

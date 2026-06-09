@@ -1,7 +1,7 @@
 // Control UI chat module implements composer persistence behavior.
 import { getSafeSessionStorage } from "../../local-storage.ts";
 import { DEFAULT_AGENT_ID, normalizeAgentId, parseAgentSessionKey } from "../session-key.ts";
-import type { ChatAttachment, ChatQueueItem, ChatQueueSkillWorkshopRevision } from "../ui-types.ts";
+import type { ChatAttachment, ChatQueueItem, ChatQueueSkillForgeRevision } from "../ui-types.ts";
 import { getChatAttachmentDataUrl } from "./attachment-payload-store.ts";
 
 const STORAGE_KEY_PREFIX = "openclaw.control.chatComposer.v1:";
@@ -168,9 +168,7 @@ function serializeChatAttachment(attachment: ChatAttachment): ChatAttachment | n
   };
 }
 
-function normalizeSkillWorkshopRevision(
-  value: unknown,
-): ChatQueueSkillWorkshopRevision | undefined {
+function normalizeSkillForgeRevision(value: unknown): ChatQueueSkillForgeRevision | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
@@ -208,7 +206,7 @@ function serializeQueueItem(item: ChatQueueItem): ChatQueueItem | null {
     item.sendState === "waiting-model"
       ? item.sendState
       : undefined;
-  const skillWorkshopRevision = normalizeSkillWorkshopRevision(item.skillWorkshopRevision);
+  const skillForgeRevision = normalizeSkillForgeRevision(item.skillForgeRevision);
   return {
     id,
     text,
@@ -223,7 +221,7 @@ function serializeQueueItem(item: ChatQueueItem): ChatQueueItem | null {
     ...(item.localCommandName ? { localCommandName: item.localCommandName } : {}),
     ...(item.sessionKey ? { sessionKey: item.sessionKey } : {}),
     ...(item.agentId ? { agentId: item.agentId } : {}),
-    ...(skillWorkshopRevision ? { skillWorkshopRevision } : {}),
+    ...(skillForgeRevision ? { skillForgeRevision } : {}),
     ...(sendState ? { sendState } : {}),
     ...(item.sendError ? { sendError: item.sendError } : {}),
     ...(item.sendRunId ? { sendRunId: item.sendRunId } : {}),
@@ -296,9 +294,9 @@ function normalizeQueueItem(value: unknown): ChatQueueItem | null {
   if (agentId) {
     item.agentId = normalizeAgentId(agentId);
   }
-  const skillWorkshopRevision = normalizeSkillWorkshopRevision(entry.skillWorkshopRevision);
-  if (skillWorkshopRevision) {
-    item.skillWorkshopRevision = skillWorkshopRevision;
+  const skillForgeRevision = normalizeSkillForgeRevision(entry.skillForgeRevision);
+  if (skillForgeRevision) {
+    item.skillForgeRevision = skillForgeRevision;
   }
   return item;
 }

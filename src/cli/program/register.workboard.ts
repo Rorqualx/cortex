@@ -2,13 +2,13 @@
  * Workboard CLI subcommands — core-native replacement for extensions/workboard/src/cli.ts.
  */
 import type { Command } from "commander";
-import { callGatewayFromCli } from "../cli/gateway-rpc.js";
-import { getRuntimeConfig } from "../config/runtime-snapshot.js";
-import { formatErrorMessage } from "../infra/errors.js";
-import { resolveWorkboardCardByIdOrPrefix } from "../workboard/card-lookup.js";
-import { WorkboardStore } from "../workboard/store.js";
-import type { WorkboardDispatchResult, WorkboardStore as WbStore } from "../workboard/store.js";
-import type { WorkboardCard } from "../workboard/types.js";
+import { getRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
+import { formatErrorMessage } from "../../infra/errors.js";
+import { resolveWorkboardCardByIdOrPrefix } from "../../workboard/card-lookup.js";
+import { WorkboardStore } from "../../workboard/store.js";
+import type { WorkboardDispatchResult, WorkboardStore as WbStore } from "../../workboard/store.js";
+import type { WorkboardCard } from "../../workboard/types.js";
+import { callGatewayFromCli } from "../gateway-rpc.js";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -86,7 +86,7 @@ export function registerWorkboardCli(program: Command) {
     .option("--priority <priority>", "Priority (low/normal/high/urgent)", "normal")
     .option("--agent <agentId>", "Assigned agent")
     .action(async (title: string, opts) => {
-      const config = getRuntimeConfig() ?? {};
+      const config = getRuntimeConfigSnapshot() ?? {};
       try {
         const result = await callGatewayFromCli(
           "workboard.cards.create-card",
@@ -125,7 +125,7 @@ export function registerWorkboardCli(program: Command) {
             ].join("\n") + "\n",
           );
         } else {
-          const config = getRuntimeConfig() ?? {};
+          const config = getRuntimeConfigSnapshot() ?? {};
           const result = await callGatewayFromCli(
             "workboard.cards.dispatch",
             {

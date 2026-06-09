@@ -50,7 +50,7 @@ import {
   loadEarlierMessages,
   expandHistoryRenderLimit,
   requestChatSend,
-  requestSkillWorkshopRevisionChatSend,
+  requestSkillForgeRevisionChatSend,
   sendDetachedChatMessage,
   sendSteerChatMessage,
   type ChatEventPayload,
@@ -91,7 +91,7 @@ import type { SessionsListResult } from "./types.ts";
 import type {
   ChatAttachment,
   ChatQueueItem,
-  ChatQueueSkillWorkshopRevision,
+  ChatQueueSkillForgeRevision,
   ChatSessionRefreshTarget,
 } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
@@ -158,7 +158,7 @@ function setChatError(host: ChatHost, error: string | null) {
 export type ChatSendOptions = {
   confirmReset?: boolean;
   restoreDraft?: boolean;
-  skillWorkshopRevision?: ChatQueueSkillWorkshopRevision;
+  skillForgeRevision?: ChatQueueSkillForgeRevision;
 };
 
 export type ChatAbortOptions = {
@@ -435,7 +435,7 @@ function enqueuePendingSendMessage(
   sendState: ChatQueueItem["sendState"] = host.connected && host.client
     ? "sending"
     : "waiting-reconnect",
-  skillWorkshopRevision?: ChatQueueSkillWorkshopRevision,
+  skillForgeRevision?: ChatQueueSkillForgeRevision,
 ): ChatQueueItem | null {
   const trimmed = text.trim();
   const hasAttachments = Boolean(attachments && attachments.length > 0);
@@ -454,7 +454,7 @@ function enqueuePendingSendMessage(
     sendSubmittedAtMs: submittedAtMs,
     sessionKey: host.sessionKey,
     agentId: scopedAgentIdForSession(host, host.sessionKey),
-    ...(skillWorkshopRevision ? { skillWorkshopRevision } : {}),
+    ...(skillForgeRevision ? { skillForgeRevision } : {}),
   };
   host.chatQueue = [...host.chatQueue, pending];
   recordChatSendTiming(host, pending, "pending-visible", submittedAtMs);
@@ -997,10 +997,10 @@ async function sendQueuedChatMessage(
     removeQueuedMessageWithoutReleasing(host, id, prepared.sessionKey ?? host.sessionKey);
     return "sent";
   }
-  if (prepared.skillWorkshopRevision && hasAttachments) {
+  if (prepared.skillForgeRevision && hasAttachments) {
     updateQueuedMessageForSession(host, prepared.sessionKey ?? host.sessionKey, id, (item) => ({
       ...item,
-      sendError: "Skill Workshop revision requests do not support attachments.",
+      sendError: "Skill Forge revision requests do not support attachments.",
       sendState: "failed",
     }));
     return "failed";
@@ -1050,11 +1050,11 @@ async function sendQueuedChatMessage(
   }
 
   try {
-    const ack = prepared.skillWorkshopRevision
-      ? await requestSkillWorkshopRevisionChatSend(host as unknown as ChatState, {
-          proposalId: prepared.skillWorkshopRevision.proposalId,
-          ...(prepared.skillWorkshopRevision.agentId
-            ? { agentId: prepared.skillWorkshopRevision.agentId }
+    const ack = prepared.skillForgeRevision
+      ? await requestSkillForgeRevisionChatSend(host as unknown as ChatState, {
+          proposalId: prepared.skillForgeRevision.proposalId,
+          ...(prepared.skillForgeRevision.agentId
+            ? { agentId: prepared.skillForgeRevision.agentId }
             : {}),
           ...(prepared.agentId ? { targetAgentId: prepared.agentId } : {}),
           instructions: message,
@@ -1288,14 +1288,14 @@ function chatSubmitKey(
   kind: "btw" | "message",
   message: string,
   attachments: ChatAttachment[],
-  skillWorkshopRevision?: ChatQueueSkillWorkshopRevision,
+  skillForgeRevision?: ChatQueueSkillForgeRevision,
 ): string {
   return JSON.stringify([
     kind,
     host.sessionKey,
     message.trim(),
-    skillWorkshopRevision?.proposalId ?? "",
-    skillWorkshopRevision?.agentId ?? "",
+    skillForgeRevision?.proposalId ?? "",
+    skillForgeRevision?.agentId ?? "",
     attachments.map(attachmentSubmitSignature),
   ]);
 }
@@ -1745,8 +1745,8 @@ export async function handleSendChat(
   const attachments = host.chatAttachments ?? [];
   const attachmentsToSend = messageOverride == null ? snapshotChatAttachments(attachments) : [];
   const hasAttachments = attachmentsToSend.length > 0;
-  const skillWorkshopRevision = opts?.skillWorkshopRevision;
-  const shouldInterpretChatCommands = !skillWorkshopRevision;
+  const skillForgeRevision = opts?.skillForgeRevision;
+  const shouldInterpretChatCommands = !skillForgeRevision;
 
   if (!message && !hasAttachments) {
     return;
@@ -1823,13 +1823,7 @@ export async function handleSendChat(
   }
 
   const refreshSessions = shouldInterpretChatCommands && isChatResetCommand(message);
-  const submitKey = chatSubmitKey(
-    host,
-    "message",
-    message,
-    attachmentsToSend,
-    skillWorkshopRevision,
-  );
+  const submitKey = chatSubmitKey(host, "message", message, attachmentsToSend, skillForgeRevision);
   await withChatSubmitGuard(host, submitKey, async () => {
     if (host.sessionKey !== submittedSessionKey) {
       return;
@@ -1851,7 +1845,7 @@ export async function handleSendChat(
       refreshSessions,
       submittedAtMs,
       waitingForModel ? "waiting-model" : undefined,
-      skillWorkshopRevision,
+      skillForgeRevision,
     );
     if (!queued) {
       return;

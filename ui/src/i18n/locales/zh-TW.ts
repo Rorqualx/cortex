@@ -408,7 +408,7 @@ export const zh_TW: TranslationMap = {
     usage: "使用情況",
     cron: "定時任務",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "節點",
     chat: "聊天",
     config: "配置",
@@ -433,7 +433,7 @@ export const zh_TW: TranslationMap = {
     usage: "API 使用情況和成本。",
     cron: "喚醒和重複運行。",
     skills: "技能和 API 密鑰。",
-    skillWorkshop: "在提案成為上線技能之前，先進行審閱、調整並套用。",
+    skillForge: "在提案成為上線技能之前，先進行審閱、調整並套用。",
     nodes: "配對設備和命令。",
     chat: "網關聊天，快速干預。",
     config: "編輯 openclaw.json。",
@@ -447,7 +447,7 @@ export const zh_TW: TranslationMap = {
     logs: "實時網關日誌。",
     dreams: "睡眠期間的記憶整合。",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

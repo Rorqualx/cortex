@@ -133,7 +133,7 @@ describe("tool-cards", () => {
       renderToolCard(
         {
           id: "msg:5a:call-5a",
-          name: "skill_workshop",
+          name: "skill_forge",
           args: { detail: "create" },
           inputText: '{\n  "detail": "create"\n}',
           outputText: "Proposal created",
@@ -145,7 +145,7 @@ describe("tool-cards", () => {
 
     const summaryButton = container.querySelector("button.chat-tool-msg-summary");
     expect(summaryButton?.querySelector(".chat-tool-msg-summary__label")?.textContent).toBe(
-      "Skill Workshop",
+      "Skill Forge",
     );
     expect(summaryButton?.querySelector(".chat-tool-msg-summary__names")?.textContent).toBe(
       "create",

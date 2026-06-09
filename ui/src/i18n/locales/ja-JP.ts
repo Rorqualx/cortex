@@ -414,7 +414,7 @@ export const ja_JP: TranslationMap = {
     usage: "使用状況",
     cron: "Cron ジョブ",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "ノード",
     chat: "チャット",
     config: "設定",
@@ -439,7 +439,7 @@ export const ja_JP: TranslationMap = {
     usage: "API 使用量とコスト。",
     cron: "ウェイクアップと定期実行。",
     skills: "Skills と API キー。",
-    skillWorkshop: "提案がライブスキルになる前に、確認、調整、適用します。",
+    skillForge: "提案がライブスキルになる前に、確認、調整、適用します。",
     nodes: "ペアリング済みデバイスとコマンド。",
     chat: "すばやく介入するための Gateway チャット。",
     config: "openclaw.json を編集。",
@@ -453,7 +453,7 @@ export const ja_JP: TranslationMap = {
     logs: "ライブ Gateway ログ。",
     dreams: "スリープ中のメモリ統合。",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

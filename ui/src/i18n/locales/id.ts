@@ -411,7 +411,7 @@ export const id: TranslationMap = {
     usage: "Penggunaan",
     cron: "Tugas Cron",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "Node",
     chat: "Chat",
     config: "Konfigurasi",
@@ -436,7 +436,7 @@ export const id: TranslationMap = {
     usage: "Penggunaan API dan biaya.",
     cron: "Bangun dan proses berulang.",
     skills: "Skills dan kunci API.",
-    skillWorkshop: "Tinjau, sempurnakan, dan terapkan proposal sebelum menjadi Skills aktif.",
+    skillForge: "Tinjau, sempurnakan, dan terapkan proposal sebelum menjadi Skills aktif.",
     nodes: "Perangkat yang dipasangkan dan perintah.",
     chat: "Chat Gateway untuk intervensi cepat.",
     config: "Edit openclaw.json.",
@@ -450,7 +450,7 @@ export const id: TranslationMap = {
     logs: "Log Gateway langsung.",
     dreams: "Konsolidasi memori saat tidur.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

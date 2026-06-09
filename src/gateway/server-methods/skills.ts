@@ -1,4 +1,6 @@
-// Gateway RPC handlers for skill discovery, install/update, and proposal workflows.
+import fsp from "node:fs/promises";
+import path from "node:path";
+// Gateway RPC handlers for skill discovery, install/update, and skill forge pipeline.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
   ErrorCodes,
@@ -6,13 +8,6 @@ import {
   validateSkillsBinsParams,
   validateSkillsDetailParams,
   validateSkillsInstallParams,
-  validateSkillsProposalActionParams,
-  validateSkillsProposalCreateParams,
-  validateSkillsProposalInspectParams,
-  validateSkillsProposalRequestRevisionParams,
-  validateSkillsProposalReviseParams,
-  validateSkillsProposalsListParams,
-  validateSkillsProposalUpdateParams,
   validateSkillsSearchParams,
   validateSkillsSecurityVerdictsParams,
   validateSkillsSkillCardParams,
@@ -30,6 +25,20 @@ import { redactConfigObject } from "../../config/redact-snapshot.js";
 import { fetchClawHubSkillDetail } from "../../infra/clawhub.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
+import {
+  resolveSkillForgeSkillsRoot,
+  resolveSkillForgeStagedSkillsDir,
+  resolveSkillForgeRetiredSkillsDir,
+  resolveSkillForgeCandidatesDir,
+} from "../../skill-forge/paths.js";
+import { runForgePipeline, type PipelineRunResult } from "../../skill-forge/pipeline.js";
+import {
+  promoteStagedSkill,
+  runDecaySweep,
+  DEFAULT_DECAY_POLICY,
+} from "../../skill-forge/promoter.js";
+import { listTelemetryEntries, type SkillTelemetryEntry } from "../../skill-forge/telemetry.js";
+import { recordSkillDemotion } from "../../skill-forge/telemetry.js";
 import { updateSkillConfigEntry } from "../../skills/config/mutations.js";
 import { collectSkillBins } from "../../skills/discovery/bins.js";
 import { buildWorkspaceSkillStatus } from "../../skills/discovery/status.js";
@@ -47,24 +56,9 @@ import {
   collectClawHubVerdictTargets,
   fetchOpenClawSkillSecurityVerdicts,
 } from "../../skills/security/clawhub-verdicts.js";
-import {
-  applySkillProposal,
-  inspectSkillProposal,
-  listSkillProposals,
-  proposeCreateSkill,
-  proposeUpdateSkill,
-  quarantineSkillProposal,
-  rejectSkillProposal,
-  reviseSkillProposal,
-} from "../../skills/workshop/service.js";
 import { skillsUploadHandlers } from "./skills-upload.js";
-import type {
-  GatewayRequestContext,
-  GatewayRequestHandlerOptions,
-  GatewayRequestHandlers,
-  RespondFn,
-} from "./types.js";
-import { assertValidParams, type Validator } from "./validation.js";
+import type { GatewayRequestContext, GatewayRequestHandlers, RespondFn } from "./types.js";
+import { assertValidParams } from "./validation.js";
 
 function resolveSkillsAgentWorkspace(params: unknown, context: GatewayRequestContext) {
   const cfg = context.getRuntimeConfig();
@@ -74,8 +68,6 @@ function resolveSkillsAgentWorkspace(params: unknown, context: GatewayRequestCon
       : undefined;
   const agentId = agentIdRaw ? normalizeAgentId(agentIdRaw) : resolveDefaultAgentId(cfg);
   if (agentIdRaw) {
-    // Explicit agent routing must name a configured agent; otherwise a typo
-    // could create or inspect skills under an unintended workspace.
     const knownAgents = listAgentIds(cfg);
     if (!knownAgents.includes(agentId)) {
       return {
@@ -98,8 +90,6 @@ type ResolvedSkillsWorkspace = Extract<
 >;
 
 function buildRemoteAwareWorkspaceSkillStatus(resolved: ResolvedSkillsWorkspace) {
-  // Remote skill availability depends on the agent's executable-node surface,
-  // not only the workspace contents, so status reports include live eligibility.
   return buildWorkspaceSkillStatus(resolved.workspaceDir, {
     config: resolved.cfg,
     eligibility: {
@@ -113,90 +103,152 @@ function buildRemoteAwareWorkspaceSkillStatus(resolved: ResolvedSkillsWorkspace)
   });
 }
 
-function respondSkillWorkshopError(respond: RespondFn, err: unknown) {
+function respondSkillForgeError(respond: RespondFn, err: unknown) {
   respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, formatErrorMessage(err)));
 }
 
-function buildRevisionAgentInstruction(proposal: Awaited<ReturnType<typeof inspectSkillProposal>>) {
-  if (!proposal) {
+async function listDirs(dirPath: string): Promise<string[]> {
+  try {
+    const entries = await fsp.readdir(dirPath);
+    const dirs: string[] = [];
+    for (const entry of entries) {
+      try {
+        const stat = await fsp.stat(path.join(dirPath, entry));
+        if (stat.isDirectory()) dirs.push(entry);
+      } catch {
+        // skip
+      }
+    }
+    return dirs;
+  } catch {
+    return [];
+  }
+}
+
+/** Read the description frontmatter field from a SKILL.md file. */
+async function readSkillDescription(skillDir: string): Promise<string> {
+  try {
+    const mdPath = path.join(skillDir, "SKILL.md");
+    const content = await fsp.readFile(mdPath, "utf8");
+    // Parse YAML frontmatter between --- markers
+    const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
+    if (!match) return "";
+    const descMatch = match[1].match(/^description:\s*['"]?(.+?)['"]?\s*$/m);
+    return descMatch?.[1]?.trim() ?? "";
+  } catch {
     return "";
   }
-  return [
-    `Revise Skill Workshop proposal \`${proposal.record.id}\` (${proposal.record.target.skillKey}).`,
-    "",
-    "Use `skill_workshop` with `action=inspect` first, then `action=revise` for that pending proposal.",
-    "Do not apply, approve, reject, quarantine, or install the proposal.",
-    "",
-    "Requested changes:",
-  ].join("\n");
 }
 
-const SKILL_PROPOSAL_RESPONSE_HANDLED = Symbol("skill proposal response handled");
-
-async function runSkillsProposalWorkspaceHandler<TParams, TResult>(params: {
-  method: string;
-  rawParams: unknown;
-  respond: RespondFn;
-  context: GatewayRequestContext;
-  validate: Validator<TParams>;
-  run: (
-    parsedParams: TParams,
-    resolved: ResolvedSkillsWorkspace,
-  ) => Promise<TResult | typeof SKILL_PROPOSAL_RESPONSE_HANDLED>;
-}): Promise<void> {
-  if (!assertValidParams(params.rawParams, params.validate, params.method, params.respond)) {
-    return;
-  }
-  const resolved = resolveSkillsAgentWorkspace(params.rawParams, params.context);
-  if (!resolved.ok) {
-    params.respond(false, undefined, resolved.error);
-    return;
-  }
+/** List and parse candidate JSON files from the forge candidates directory. */
+async function listCandidateFiles(candidatesDir: string): Promise<
+  Array<{
+    id: string;
+    lane: string;
+    failingTool: string;
+    recoveringTool: string;
+    rationale: string;
+  }>
+> {
   try {
-    const result = await params.run(params.rawParams, resolved);
-    if (result !== SKILL_PROPOSAL_RESPONSE_HANDLED) {
-      params.respond(true, result, undefined);
+    const entries = await fsp.readdir(candidatesDir);
+    const candidates: Array<{
+      id: string;
+      lane: string;
+      failingTool: string;
+      recoveringTool: string;
+      rationale: string;
+    }> = [];
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      try {
+        const raw = await fsp.readFile(path.join(candidatesDir, entry), "utf8");
+        const data = JSON.parse(raw);
+        candidates.push({
+          id: data.candidateId ?? entry.replace(".json", ""),
+          lane: data.lane ?? "unknown",
+          failingTool: data.failingTool ?? "unknown",
+          recoveringTool: data.recoveringTool ?? "unknown",
+          rationale: data.rationale ?? "",
+        });
+      } catch {
+        // skip malformed
+      }
     }
-  } catch (err) {
-    respondSkillWorkshopError(params.respond, err);
+    return candidates;
+  } catch {
+    return [];
   }
 }
 
-async function forwardSkillWorkshopRevisionToChatSend(
-  opts: GatewayRequestHandlerOptions,
-  params: {
-    agentId: string;
-    idempotencyKey: string;
-    instructions: string;
-    proposal: NonNullable<Awaited<ReturnType<typeof inspectSkillProposal>>>;
-    sessionId?: string;
-    sessionKey: string;
-    targetAgentId?: string;
-  },
-): Promise<void> {
-  const { chatHandlers } = await import("./chat.js");
-  const chatSend = chatHandlers["chat.send"];
-  if (!chatSend) {
-    throw new Error("chat.send handler is unavailable");
-  }
-  const chatParams = {
-    sessionKey: params.sessionKey,
-    agentId: params.targetAgentId ?? params.agentId,
-    ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-    message: params.instructions,
-    deliver: false,
-    systemProvenanceReceipt: buildRevisionAgentInstruction(params.proposal),
-    suppressCommandInterpretation: true,
-    idempotencyKey: params.idempotencyKey,
+async function buildForgeStatus() {
+  const [telemetry, promotedDirs, stagedDirs, retiredDirs, candidateFiles] = await Promise.all([
+    listTelemetryEntries().catch(() => [] as SkillTelemetryEntry[]),
+    listDirs(resolveSkillForgeSkillsRoot()),
+    listDirs(resolveSkillForgeStagedSkillsDir()),
+    listDirs(resolveSkillForgeRetiredSkillsDir()),
+    listCandidateFiles(resolveSkillForgeCandidatesDir()),
+  ]);
+
+  const promoted = promotedDirs.filter((d) => d !== "_staging" && d !== "_retired");
+
+  // Read descriptions from SKILL.md frontmatter
+  const promotedSkillsRoot = resolveSkillForgeSkillsRoot();
+  const stagedSkillsRoot = resolveSkillForgeStagedSkillsDir();
+  const retiredSkillsRoot = resolveSkillForgeRetiredSkillsDir();
+
+  const [promotedDescs, stagedDescs, retiredDescs] = await Promise.all([
+    Promise.all(promoted.map((name) => readSkillDescription(path.join(promotedSkillsRoot, name)))),
+    Promise.all(stagedDirs.map((name) => readSkillDescription(path.join(stagedSkillsRoot, name)))),
+    Promise.all(
+      retiredDirs.map((name) => readSkillDescription(path.join(retiredSkillsRoot, name))),
+    ),
+  ]);
+
+  return {
+    schema: "openclaw.skill-forge.status.v1" as const,
+    candidates: candidateFiles.length,
+    promoted: promoted.length,
+    staged: stagedDirs.length,
+    retired: retiredDirs.length,
+    telemetry: telemetry.length,
+    skills: {
+      candidates: candidateFiles,
+      promoted: promoted.map((name, i) => {
+        const tel = telemetry.find((t) => t.name === name);
+        return {
+          name,
+          description: promotedDescs[i],
+          status: tel?.status ?? "promoted",
+          usageCount: tel?.usageCount ?? 0,
+          lastUsedAt: tel?.lastUsedAt,
+          promotedAt: tel?.promotedAt,
+        };
+      }),
+      staged: stagedDirs.map((name, i) => {
+        const tel = telemetry.find((t) => t.name === name);
+        return {
+          name,
+          description: stagedDescs[i],
+          status: tel?.status ?? "staged",
+          createdAt: tel?.createdAt,
+        };
+      }),
+      retired: retiredDirs.map((name, i) => {
+        const tel = telemetry.find((t) => t.name === name);
+        return {
+          name,
+          description: retiredDescs[i],
+          status: "retired",
+          retiredAt: tel?.retiredAt,
+          retiredReason: tel?.retiredReason,
+        };
+      }),
+    },
   };
-  await chatSend({
-    ...opts,
-    req: { ...opts.req, method: "chat.send", params: chatParams },
-    params: chatParams,
-  });
 }
 
-/** Gateway request handlers for skill status, catalogs, installs, updates, and workshop proposals. */
+/** Gateway request handlers for skill status, catalogs, installs, updates, and forge pipeline. */
 export const skillsHandlers: GatewayRequestHandlers = {
   ...skillsUploadHandlers,
   "skills.status": ({ params, respond, context }) => {
@@ -325,207 +377,132 @@ export const skillsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatErrorMessage(err)));
     }
   },
-  "skills.proposals.list": async ({ params, respond, context }) => {
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.list",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalsListParams,
-      run: (_parsedParams, resolved) => listSkillProposals({ workspaceDir: resolved.workspaceDir }),
-    });
+
+  // ── Skill Forge pipeline RPCs ──────────────────────────────────────
+
+  "skills.forge.status": async ({ respond }) => {
+    try {
+      const status = await buildForgeStatus();
+      respond(true, status, undefined);
+    } catch (err) {
+      respondSkillForgeError(respond, err);
+    }
   },
-  "skills.proposals.inspect": async ({ params, respond, context }) => {
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.inspect",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalInspectParams,
-      run: async (parsedParams, resolved) => {
-        const proposal = await inspectSkillProposal(parsedParams.proposalId, {
-          workspaceDir: resolved.workspaceDir,
-        });
-        if (!proposal) {
-          respond(
-            false,
-            undefined,
-            errorShape(
-              ErrorCodes.INVALID_REQUEST,
-              `Skill proposal not found: ${parsedParams.proposalId}`,
-            ),
-          );
-          return SKILL_PROPOSAL_RESPONSE_HANDLED;
-        }
-        return proposal;
-      },
-    });
+  "skills.forge.run": async ({ respond }) => {
+    try {
+      const result: PipelineRunResult = await runForgePipeline();
+      respond(
+        true,
+        {
+          schema: "openclaw.skill-forge.run.v1",
+          scannedCaptureDirs: result.scannedCaptureDirs,
+          candidateCount: result.candidates.length,
+          draftedCount: result.drafted.length,
+          promotedCount: result.promotions.filter((p) => p.status === "promoted").length,
+          drafted: result.drafted.map((d) => ({ name: d.name, skillDir: d.skillDir })),
+          promotions: result.promotions,
+        },
+        undefined,
+      );
+    } catch (err) {
+      respondSkillForgeError(respond, err);
+    }
   },
-  "skills.proposals.create": async ({ params, respond, context }) => {
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.create",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalCreateParams,
-      run: (parsedParams, resolved) =>
-        proposeCreateSkill({
-          workspaceDir: resolved.workspaceDir,
-          config: resolved.cfg,
-          name: parsedParams.name,
-          description: parsedParams.description,
-          content: parsedParams.content,
-          supportFiles: parsedParams.supportFiles,
-          createdBy: "gateway",
-          goal: parsedParams.goal,
-          evidence: parsedParams.evidence,
-        }),
-    });
+  "skills.forge.promote": async ({ params, respond }) => {
+    const name = (params as { name?: string })?.name;
+    if (!name) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "name is required"));
+      return;
+    }
+    try {
+      const result = await promoteStagedSkill({ name });
+      if (result.status === "rejected") {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            result.verdict.reasons.join("; ") ?? "gate check failed",
+          ),
+        );
+        return;
+      }
+      respond(
+        true,
+        {
+          schema: "openclaw.skill-forge.promote.v1",
+          status: "promoted",
+          name: result.name,
+          promotedDir: result.promotedDir,
+        },
+        undefined,
+      );
+    } catch (err) {
+      respondSkillForgeError(respond, err);
+    }
   },
-  "skills.proposals.update": async ({ params, respond, context }) => {
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.update",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalUpdateParams,
-      run: (parsedParams, resolved) =>
-        proposeUpdateSkill({
-          workspaceDir: resolved.workspaceDir,
-          config: resolved.cfg,
-          agentId: resolved.agentId,
-          skillName: parsedParams.skillName,
-          description: parsedParams.description,
-          content: parsedParams.content,
-          supportFiles: parsedParams.supportFiles,
-          createdBy: "gateway",
-          goal: parsedParams.goal,
-          evidence: parsedParams.evidence,
-        }),
-    });
+  "skills.forge.retire": async ({ params, respond }) => {
+    const name = (params as { name?: string })?.name;
+    const reason = (params as { reason?: string })?.reason ?? "manual retirement";
+    if (!name) {
+      // Run decay sweep
+      try {
+        const retired = await runDecaySweep({ policy: DEFAULT_DECAY_POLICY });
+        respond(
+          true,
+          {
+            schema: "openclaw.skill-forge.decay.v1",
+            retiredCount: retired.length,
+            retired,
+          },
+          undefined,
+        );
+      } catch (err) {
+        respondSkillForgeError(respond, err);
+      }
+      return;
+    }
+    try {
+      const entry = await recordSkillDemotion({ name, reason });
+      respond(
+        true,
+        {
+          schema: "openclaw.skill-forge.retire.v1",
+          status: "retired",
+          name,
+          reason,
+          entry,
+        },
+        undefined,
+      );
+    } catch (err) {
+      respondSkillForgeError(respond, err);
+    }
   },
-  "skills.proposals.revise": async ({ params, respond, context }) => {
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.revise",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalReviseParams,
-      run: (parsedParams, resolved) =>
-        reviseSkillProposal({
-          workspaceDir: resolved.workspaceDir,
-          config: resolved.cfg,
-          proposalId: parsedParams.proposalId,
-          content: parsedParams.content,
-          supportFiles: parsedParams.supportFiles,
-          description: parsedParams.description,
-          goal: parsedParams.goal,
-          evidence: parsedParams.evidence,
-        }),
-    });
+  "skills.forge.telemetry": async ({ respond }) => {
+    try {
+      const entries = await listTelemetryEntries();
+      respond(
+        true,
+        {
+          schema: "openclaw.skill-forge.telemetry.v1",
+          entries,
+        },
+        undefined,
+      );
+    } catch (err) {
+      respondSkillForgeError(respond, err);
+    }
   },
-  "skills.proposals.requestRevision": async (opts) => {
-    const { params, respond, context } = opts;
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.requestRevision",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalRequestRevisionParams,
-      run: async (parsedParams, resolved) => {
-        const proposal = await inspectSkillProposal(parsedParams.proposalId, {
-          workspaceDir: resolved.workspaceDir,
-        });
-        if (!proposal) {
-          respond(
-            false,
-            undefined,
-            errorShape(
-              ErrorCodes.INVALID_REQUEST,
-              `Skill proposal not found: ${parsedParams.proposalId}`,
-            ),
-          );
-          return SKILL_PROPOSAL_RESPONSE_HANDLED;
-        }
-        if (proposal.record.status !== "pending") {
-          respond(
-            false,
-            undefined,
-            errorShape(
-              ErrorCodes.INVALID_REQUEST,
-              `Skill proposal is not pending: ${parsedParams.proposalId}`,
-            ),
-          );
-          return SKILL_PROPOSAL_RESPONSE_HANDLED;
-        }
-        await forwardSkillWorkshopRevisionToChatSend(opts, {
-          agentId: resolved.agentId,
-          idempotencyKey: parsedParams.idempotencyKey,
-          instructions: parsedParams.instructions,
-          proposal,
-          sessionId: parsedParams.sessionId,
-          sessionKey: parsedParams.sessionKey,
-          targetAgentId: parsedParams.targetAgentId
-            ? normalizeAgentId(parsedParams.targetAgentId)
-            : undefined,
-        });
-        return SKILL_PROPOSAL_RESPONSE_HANDLED;
-      },
-    });
-  },
-  "skills.proposals.apply": async ({ params, respond, context }) => {
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.apply",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalActionParams,
-      run: (parsedParams, resolved) =>
-        applySkillProposal({
-          workspaceDir: resolved.workspaceDir,
-          proposalId: parsedParams.proposalId,
-          reason: parsedParams.reason,
-        }),
-    });
-  },
-  "skills.proposals.reject": async ({ params, respond, context }) => {
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.reject",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalActionParams,
-      run: (parsedParams, resolved) =>
-        rejectSkillProposal({
-          workspaceDir: resolved.workspaceDir,
-          proposalId: parsedParams.proposalId,
-          reason: parsedParams.reason,
-        }),
-    });
-  },
-  "skills.proposals.quarantine": async ({ params, respond, context }) => {
-    await runSkillsProposalWorkspaceHandler({
-      method: "skills.proposals.quarantine",
-      rawParams: params,
-      respond,
-      context,
-      validate: validateSkillsProposalActionParams,
-      run: (parsedParams, resolved) =>
-        quarantineSkillProposal({
-          workspaceDir: resolved.workspaceDir,
-          proposalId: parsedParams.proposalId,
-          reason: parsedParams.reason,
-        }),
-    });
-  },
+
+  // ── Install / Update (unchanged) ───────────────────────────────────
+
   "skills.install": async ({ params, respond, context }) => {
     if (!assertValidParams(params, validateSkillsInstallParams, "skills.install", respond)) {
       return;
     }
     const cfg = context.getRuntimeConfig();
     const workspaceDirRaw = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
-    // Skill installs are intentionally routed by source; each source owns its
-    // validation, provenance checks, and result payload shape.
     if (params && typeof params === "object" && "source" in params && params.source === "clawhub") {
       const p = params as {
         source: "clawhub";

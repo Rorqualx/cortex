@@ -158,7 +158,7 @@ export async function generateSummaryEmbedding(params: {
   }
   const createResult = await adapter.create({
     config: params.cfg,
-    model: adapter.defaultModel,
+    model: adapter.defaultModel ?? "",
   });
   const provider = createResult.provider;
   if (!provider) {

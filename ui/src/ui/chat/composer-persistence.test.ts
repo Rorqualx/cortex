@@ -58,7 +58,7 @@ describe("chat composer persistence", () => {
     expect(restored.chatQueue).toEqual(queue);
   });
 
-  it("preserves Skill Workshop revision metadata on queued sends", () => {
+  it("preserves Skill Forge revision metadata on queued sends", () => {
     persistChatComposerState(
       createState({
         chatQueue: [
@@ -69,7 +69,7 @@ describe("chat composer persistence", () => {
             sessionKey: "agent:lily:main",
             agentId: "lily",
             sendState: "waiting-reconnect",
-            skillWorkshopRevision: {
+            skillForgeRevision: {
               proposalId: "support-file-sampler-20260531-68207b7b7f",
               agentId: "proposal-owner",
             },
@@ -89,7 +89,7 @@ describe("chat composer persistence", () => {
         sessionKey: "agent:lily:main",
         agentId: "lily",
         sendState: "waiting-reconnect",
-        skillWorkshopRevision: {
+        skillForgeRevision: {
           proposalId: "support-file-sampler-20260531-68207b7b7f",
           agentId: "proposal-owner",
         },

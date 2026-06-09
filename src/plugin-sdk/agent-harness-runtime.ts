@@ -137,6 +137,10 @@ export {
 export { resolveModelAuthMode } from "../agents/model-auth.js";
 export { supportsModelTools } from "../agents/model-tool-support.js";
 export {
+  buildSkillForgePromptSection,
+  SKILL_FORGE_TOOL_NAME,
+} from "../agents/skill-forge-prompt.js";
+export {
   buildSkillWorkshopPromptSection,
   SKILL_WORKSHOP_TOOL_NAME,
 } from "../agents/skill-workshop-prompt.js";

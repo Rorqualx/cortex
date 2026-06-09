@@ -413,7 +413,7 @@ export const tr: TranslationMap = {
     usage: "Kullanım",
     cron: "Cron İşleri",
     skills: "Skills",
-    skillWorkshop: "Skill Atölyesi",
+    skillForge: "Skill Atölyesi",
     nodes: "Düğümler",
     chat: "Sohbet",
     config: "Yapılandırma",
@@ -438,7 +438,7 @@ export const tr: TranslationMap = {
     usage: "API kullanımı ve maliyetler.",
     cron: "Uyandırmalar ve yinelenen çalıştırmalar.",
     skills: "Skills ve API anahtarları.",
-    skillWorkshop:
+    skillForge:
       "Teklifleri canlı becerilere dönüşmeden önce gözden geçirin, iyileştirin ve uygulayın.",
     nodes: "Eşleştirilmiş cihazlar ve komutlar.",
     chat: "Hızlı müdahaleler için Gateway sohbeti.",
@@ -453,7 +453,7 @@ export const tr: TranslationMap = {
     logs: "Canlı Gateway günlükleri.",
     dreams: "Uyku sırasında bellek birleştirme.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

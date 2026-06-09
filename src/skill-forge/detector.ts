@@ -240,7 +240,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     toolShapeHash: string;
   };
   const perCapture: PerCapture[] = [];
-  const candidates: Candidate[] = [];
+  const rawCandidates: Candidate[] = [];
 
   for (const captureDir of input.captureDirs) {
     const events = await readCaptureEvents(captureDir);
@@ -252,7 +252,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     perCapture.push({ captureDir, events, toolSequence, toolShapeHash });
 
     for (const motif of detectErrorRecovery(events)) {
-      candidates.push({
+      rawCandidates.push({
         lane: "error-recovery",
         candidateId: shortHash(
           `error-recovery:${captureDir}:${motif.failingTool}:${motif.recoveringTool}`,
@@ -266,7 +266,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     }
 
     for (const match of detectExplicitInstructions(events)) {
-      candidates.push({
+      rawCandidates.push({
         lane: "explicit",
         candidateId: shortHash(`explicit:${captureDir}:${match.matchedPhrase}`),
         captureDir,
@@ -275,6 +275,34 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         promptExcerpt: match.promptExcerpt,
         rationale: `User explicitly asked: "${match.matchedPhrase}"`,
       });
+    }
+  }
+
+  // ── Deduplicate error-recovery candidates by (failingTool, recoveringTool) ──
+  const candidates: Candidate[] = [];
+  const seenErrorRecovery = new Map<string, ErrorRecoveryCandidate>();
+  const seenExplicit = new Map<string, ExplicitCandidate>();
+
+  for (const raw of rawCandidates) {
+    if (raw.lane === "error-recovery") {
+      const key = `${raw.failingTool}→${raw.recoveringTool}`;
+      const existing = seenErrorRecovery.get(key);
+      if (existing) {
+        // Merge: keep the first one found, but increment nothing — just skip duplicate
+        continue;
+      }
+      // Re-key with a stable deduplicated ID
+      const deduped: ErrorRecoveryCandidate = {
+        ...raw,
+        candidateId: shortHash(`error-recovery:${raw.failingTool}:${raw.recoveringTool}`),
+      };
+      seenErrorRecovery.set(key, deduped);
+      candidates.push(deduped);
+    } else if (raw.lane === "explicit") {
+      const key = raw.matchedPhrase?.toLowerCase() ?? "";
+      if (seenExplicit.has(key)) continue;
+      seenExplicit.set(key, raw);
+      candidates.push(raw);
     }
   }
 

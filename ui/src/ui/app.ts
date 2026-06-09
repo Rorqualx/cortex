@@ -42,7 +42,7 @@ import {
 } from "./app-lifecycle.ts";
 import { initNativeBridge } from "./app-native-bridge.ts";
 import { createChatSession as createChatSessionInternal } from "./app-render.helpers.ts";
-import { loadSkillWorkshopMode, renderApp } from "./app-render.ts";
+import { loadSkillForgeMode, renderApp } from "./app-render.ts";
 import {
   exportLogs as exportLogsInternal,
   handleActivityScroll as handleActivityScrollInternal,
@@ -110,7 +110,7 @@ import {
   type ExecApprovalRequest,
 } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
-import type { SkillWorkshopState } from "./controllers/skill-workshop.ts";
+import type { SkillForgeState } from "./controllers/skill-forge.ts";
 import type {
   ClawHubSearchResult,
   ClawHubSkillSecurityVerdict,
@@ -643,23 +643,19 @@ export class OpenClawApp extends LitElement {
   @state() skillCardContentKeys: Record<string, string> = {};
   @state() skillCardLoadingKey: string | null = null;
   @state() skillCardErrors: Record<string, string> = {};
-  @state() skillWorkshopLoading = false;
-  @state() skillWorkshopLoaded = false;
-  @state() skillWorkshopError: string | null = null;
-  @state() skillWorkshopInspectingKey: string | null = null;
-  @state() skillWorkshopProposals: SkillWorkshopState["skillWorkshopProposals"] = [];
-  @state() skillWorkshopSelectedKey: string | null = null;
-  @state() skillWorkshopActionBusy: SkillWorkshopState["skillWorkshopActionBusy"] = null;
-  @state() skillWorkshopActionNotice: SkillWorkshopState["skillWorkshopActionNotice"] = null;
-  skillWorkshopActionNoticeTimer: ReturnType<typeof globalThis.setTimeout> | number | null = null;
-  @state() skillWorkshopRevisionKey: string | null = null;
-  @state() skillWorkshopRevisionDraft = "";
-  @state() skillWorkshopStatusFilter: SkillWorkshopState["skillWorkshopStatusFilter"] = "pending";
-  @state() skillWorkshopQuery = "";
-  @state() skillWorkshopFilePreviewKey: string | null = null;
-  @state() skillWorkshopFilePreviewQuery = "";
-  @state() skillWorkshopQueueWidth = 360;
-  @state() skillWorkshopMode: SkillWorkshopState["skillWorkshopMode"] = loadSkillWorkshopMode();
+  @state() skillForgeLoading = false;
+  @state() skillForgeLoaded = false;
+  @state() skillForgeError: string | null = null;
+  @state() skillForgeStatus: SkillForgeState["skillForgeStatus"] = null;
+  @state() skillForgeSelectedName: string | null = null;
+  @state() skillForgeRunBusy = false;
+  @state() skillForgeActionBusy: string | null = null;
+  @state() skillForgeActionNotice: SkillForgeState["skillForgeActionNotice"] = null;
+  skillForgeActionNoticeTimer: ReturnType<typeof globalThis.setTimeout> | number | null = null;
+  @state() skillForgeFilter: SkillForgeState["skillForgeFilter"] = "all";
+  @state() skillForgeQuery = "";
+  @state() skillForgeMode: SkillForgeState["skillForgeMode"] = loadSkillForgeMode();
+  @state() skillForgeQueueWidth = 360;
 
   @state() healthLoading = false;
   @state() healthResult: HealthSummary | null = null;

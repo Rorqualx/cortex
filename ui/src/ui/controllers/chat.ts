@@ -1042,7 +1042,7 @@ function resolveChatSendRouting(
   };
 }
 
-export async function requestSkillWorkshopRevisionChatSend(
+export async function requestSkillForgeRevisionChatSend(
   state: ChatState,
   params: {
     proposalId: string;

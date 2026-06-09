@@ -8,7 +8,7 @@ import path from "node:path";
  */
 import { Type } from "typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { captureSessionToForge, type CaptureResult } from "../../skill-forge/capture.js";
+import { captureSessionToForge } from "../../skill-forge/capture.js";
 import {
   resolveSkillForgeSkillsRoot,
   resolveSkillForgeStagedSkillsDir,
@@ -23,6 +23,7 @@ import {
 } from "../../skill-forge/promoter.js";
 import { listTelemetryEntries, type SkillTelemetryEntry } from "../../skill-forge/telemetry.js";
 import { readTelemetry, recordSkillDemotion } from "../../skill-forge/telemetry.js";
+import type { CaptureResult } from "../../skill-forge/types.js";
 import { stringEnum } from "../schema/typebox.js";
 import {
   asToolParamsRecord,
@@ -120,30 +121,48 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
     ]);
 
     const promoted = promotedDirs.filter((d) => d !== "_staging" && d !== "_retired");
+
+    // Read descriptions
+    const promotedRoot = resolveSkillForgeSkillsRoot();
+    const stagedRoot = resolveSkillForgeStagedSkillsDir();
+    const retiredRoot = resolveSkillForgeRetiredSkillsDir();
+    const [promotedDescs, stagedDescs, retiredDescs] = await Promise.all([
+      Promise.all(promoted.map((n) => readSkillDesc(path.join(promotedRoot, n)))),
+      Promise.all(stagedDirs.map((n) => readSkillDesc(path.join(stagedRoot, n)))),
+      Promise.all(retiredDirs.map((n) => readSkillDesc(path.join(retiredRoot, n)))),
+    ]);
+
     const status = {
       promoted: promoted.length,
       staged: stagedDirs.length,
       retired: retiredDirs.length,
       telemetry: telemetry.length,
       skills: {
-        promoted: promoted.map((name) => {
+        promoted: promoted.map((name, i) => {
           const tel = telemetry.find((t) => t.name === name);
           return {
             name,
+            description: promotedDescs[i],
             status: tel?.status ?? "promoted",
             usageCount: tel?.usageCount ?? 0,
             lastUsedAt: tel?.lastUsedAt,
             promotedAt: tel?.promotedAt,
           };
         }),
-        staged: stagedDirs.map((name) => {
-          const tel = telemetry.find((t) => t.name === name);
-          return { name, status: tel?.status ?? "staged", createdAt: tel?.createdAt };
-        }),
-        retired: retiredDirs.map((name) => {
+        staged: stagedDirs.map((name, i) => {
           const tel = telemetry.find((t) => t.name === name);
           return {
             name,
+            description: stagedDescs[i],
+            status: tel?.status ?? "staged",
+            createdAt: tel?.createdAt,
+          };
+        }),
+        retired: retiredDirs.map((name, i) => {
+          const tel = telemetry.find((t) => t.name === name);
+          return {
+            name,
+            description: retiredDescs[i],
             status: "retired",
             retiredAt: tel?.retiredAt,
             retiredReason: tel?.retiredReason,
@@ -164,10 +183,11 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
             `  Telemetry entries: ${status.telemetry}`,
             "",
             ...status.skills.promoted.map(
-              (s) => `  ✓ ${s.name} (used ${s.usageCount}x, ${s.lastUsedAt ?? "never"})`,
+              (s) =>
+                `  ✓ ${s.name}${s.description ? ` — ${s.description}` : ""} (used ${s.usageCount}x, ${s.lastUsedAt ?? "never"})`,
             ),
             ...status.skills.staged.map(
-              (s) => `  ○ ${s.name} (${s.status}, created ${s.createdAt ?? "unknown"})`,
+              (s) => `  ○ ${s.name}${s.description ? ` — ${s.description}` : ""} (${s.status})`,
             ),
             ...status.skills.retired.map(
               (s) =>
@@ -185,7 +205,12 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
       required: true,
       label: "session_id",
     });
-    const result: CaptureResult = await captureSessionToForge({ sessionId });
+    const result: CaptureResult = await captureSessionToForge({
+      sessionId,
+      sessionFile: sessionId,
+      workspaceDir: options.workspaceDir,
+      trigger: "manual",
+    });
     if (result.status === "skipped") {
       return {
         content: [{ type: "text" as const, text: `Capture skipped: ${result.reason}` }],
@@ -218,7 +243,7 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
       `  Promoted:  ${result.promotions.filter((p) => p.status === "promoted").length}`,
     ];
     for (const draft of result.drafted) {
-      lines.push(`  → ${draft.name} (${draft.stagingDir})`);
+      lines.push(`  → ${draft.name} (${draft.skillDir})`);
     }
     return {
       content: [{ type: "text" as const, text: lines.join("\n") }],
@@ -235,20 +260,25 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
   async function handlePromote(params: Record<string, unknown>) {
     const name = readStringParam(params, "name", { required: true });
     const result: PromotionResult = await promoteStagedSkill({ name });
-    if (result.status === "skipped") {
+    if (result.status === "rejected") {
       return {
-        content: [{ type: "text" as const, text: `Promotion skipped: ${result.reason}` }],
-        details: { status: "skipped", reason: result.reason },
+        content: [
+          {
+            type: "text" as const,
+            text: `Promotion rejected: ${result.verdict.reasons.join("; ") ?? "gate check failed"}`,
+          },
+        ],
+        details: { status: "rejected", name, reason: result.verdict.reasons.join("; ") },
       };
     }
     return {
       content: [
         {
           type: "text" as const,
-          text: `Promoted skill "${name}" → ${result.targetDir}`,
+          text: `Promoted skill "${name}" → ${result.promotedDir}`,
         },
       ],
-      details: { status: "promoted", name, targetDir: result.targetDir },
+      details: { status: "promoted", name, promotedDir: result.promotedDir },
     };
   }
 
@@ -321,5 +351,17 @@ async function listDirs(dirPath: string): Promise<string[]> {
     return dirs;
   } catch {
     return [];
+  }
+}
+
+async function readSkillDesc(skillDir: string): Promise<string> {
+  try {
+    const content = await fsp.readFile(path.join(skillDir, "SKILL.md"), "utf8");
+    const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
+    if (!match) return "";
+    const descMatch = match[1].match(/^description:\s*['"]?(.+?)['"]?\s*$/m);
+    return descMatch?.[1]?.trim() ?? "";
+  } catch {
+    return "";
   }
 }

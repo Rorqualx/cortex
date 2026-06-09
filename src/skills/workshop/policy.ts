@@ -44,12 +44,12 @@ function lifecycleApprovalText(action: SkillWorkshopLifecycleAction): {
 }
 
 /** Returns approval policy for skill workshop lifecycle tool calls. */
-export function resolveSkillWorkshopToolApproval(params: {
+export function resolveSkillForgeToolApproval(params: {
   toolName: string;
   toolParams: unknown;
   config?: OpenClawConfig;
 }): PluginHookBeforeToolCallResult | undefined {
-  if (params.toolName !== "skill_workshop") {
+  if (params.toolName !== "skill_forge") {
     return undefined;
   }
   const action = readLifecycleAction(params.toolParams);

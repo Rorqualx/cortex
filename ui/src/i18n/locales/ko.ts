@@ -410,7 +410,7 @@ export const ko: TranslationMap = {
     usage: "사용량",
     cron: "Cron 작업",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "노드",
     chat: "채팅",
     config: "구성",
@@ -435,7 +435,7 @@ export const ko: TranslationMap = {
     usage: "API 사용량 및 비용.",
     cron: "웨이크업 및 반복 실행.",
     skills: "Skills 및 API 키.",
-    skillWorkshop: "제안이 실제 Skills가 되기 전에 검토하고, 다듬고, 적용하세요.",
+    skillForge: "제안이 실제 Skills가 되기 전에 검토하고, 다듬고, 적용하세요.",
     nodes: "페어링된 디바이스 및 명령.",
     chat: "빠른 개입을 위한 Gateway 채팅.",
     config: "openclaw.json 편집.",
@@ -449,7 +449,7 @@ export const ko: TranslationMap = {
     logs: "실시간 Gateway 로그.",
     dreams: "수면 중 메모리 통합.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

@@ -412,7 +412,7 @@ export const uk: TranslationMap = {
     usage: "Використання",
     cron: "Завдання Cron",
     skills: "Навички",
-    skillWorkshop: "Майстерня Skills",
+    skillForge: "Майстерня Skills",
     nodes: "Вузли",
     chat: "Чат",
     config: "Конфігурація",
@@ -437,7 +437,7 @@ export const uk: TranslationMap = {
     usage: "Використання API та витрати.",
     cron: "Пробудження та повторювані запуски.",
     skills: "Навички та API-ключі.",
-    skillWorkshop:
+    skillForge:
       "Переглядайте, уточнюйте й застосовуйте пропозиції, перш ніж вони стануть активними Skills.",
     nodes: "Спарені пристрої та команди.",
     chat: "Чат шлюзу для швидких втручань.",
@@ -452,7 +452,7 @@ export const uk: TranslationMap = {
     logs: "Журнали шлюзу в реальному часі.",
     dreams: "Консолідація пам’яті під час сну.",
   },
-  skillWorkshop: {
+  skillForge: {
     header: {
       useCurrentChat: "Use current chat",
       useCurrentChatAria: "Use current chat for revision requests",

@@ -49,7 +49,7 @@ import {
   resolveSkillTelemetrySourceValue,
 } from "../skills/loading/source.js";
 import type { SkillSnapshot, SkillTelemetrySource } from "../skills/types.js";
-import { resolveSkillWorkshopToolApproval } from "../skills/workshop/policy.js";
+import { resolveSkillForgeToolApproval } from "../skills/workshop/policy.js";
 import { isPlainObject } from "../utils.js";
 import { adjustedParamsByToolCallId } from "./agent-tools.before-tool-call.state.js";
 import { copyChannelAgentToolMeta, getChannelAgentToolMeta } from "./channel-tools.js";
@@ -661,7 +661,7 @@ async function resolveBeforeToolCallApprovalOutcome(params: {
   });
 }
 
-async function resolveSkillWorkshopApprovalForFinalParams(params: {
+async function resolveSkillForgeApprovalForFinalParams(params: {
   toolName: string;
   params: unknown;
   approvalMode?: "request" | "report" | "defer";
@@ -669,7 +669,7 @@ async function resolveSkillWorkshopApprovalForFinalParams(params: {
   ctx?: HookContext;
   signal?: AbortSignal;
 }): Promise<HookOutcome | undefined> {
-  const result = resolveSkillWorkshopToolApproval({
+  const result = resolveSkillForgeToolApproval({
     toolName: params.toolName,
     toolParams: isPlainObject(params.params) ? params.params : {},
     ...(params.ctx?.config ? { config: params.ctx.config } : {}),
@@ -874,7 +874,7 @@ export async function runBeforeToolCallHook(args: {
     const hasBeforeToolCallHooks = hookRunner?.hasHooks("before_tool_call") === true;
     const shouldRunTrustedPolicies = hasTrustedToolPolicies();
     const normalizedParams = isPlainObject(params) ? params : {};
-    const initialCorePolicyResult = resolveSkillWorkshopToolApproval({
+    const initialCorePolicyResult = resolveSkillForgeToolApproval({
       toolName,
       toolParams: normalizedParams,
       ...(args.ctx?.config ? { config: args.ctx.config } : {}),
@@ -996,7 +996,7 @@ export async function runBeforeToolCallHook(args: {
         ? deriveToolParams(toolName, policyAdjustedParams, deriveOptions)
         : derivedToolParams;
     if (!hasBeforeToolCallHooks) {
-      const finalApprovalOutcome = await resolveSkillWorkshopApprovalForFinalParams({
+      const finalApprovalOutcome = await resolveSkillForgeApprovalForFinalParams({
         toolName,
         params: policyAdjustedParams,
         approvalMode: args.approvalMode,
@@ -1068,7 +1068,7 @@ export async function runBeforeToolCallHook(args: {
     if (hookResult?.params) {
       finalParams = mergeParamsWithApprovalOverrides(finalParams, hookResult.params);
     }
-    const finalApprovalOutcome = await resolveSkillWorkshopApprovalForFinalParams({
+    const finalApprovalOutcome = await resolveSkillForgeApprovalForFinalParams({
       toolName,
       params: finalParams,
       approvalMode: args.approvalMode,

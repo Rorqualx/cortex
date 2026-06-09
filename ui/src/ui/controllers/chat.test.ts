@@ -10,7 +10,7 @@ import {
   handleChatEvent,
   loadChatHistory,
   requestChatSend,
-  requestSkillWorkshopRevisionChatSend,
+  requestSkillForgeRevisionChatSend,
   sendChatMessage,
   type ChatEventPayload,
   type ChatState,
@@ -1876,7 +1876,7 @@ describe("sendChatMessage", () => {
     );
   });
 
-  it("requests Skill Workshop revisions with visible instructions and target agent routing", async () => {
+  it("requests Skill Forge revisions with visible instructions and target agent routing", async () => {
     const request = vi.fn().mockResolvedValue({ runId: "run-revision", status: "started" });
     const state = createState({
       sessionKey: "global",
@@ -1886,7 +1886,7 @@ describe("sendChatMessage", () => {
       client: { request } as unknown as ChatState["client"],
     });
 
-    const result = await requestSkillWorkshopRevisionChatSend(state, {
+    const result = await requestSkillForgeRevisionChatSend(state, {
       proposalId: "support-file-sampler-20260531-68207b7b7f",
       agentId: "proposal-owner",
       targetAgentId: "target",

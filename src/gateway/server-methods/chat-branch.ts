@@ -13,7 +13,11 @@ import {
   formatValidationErrors,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { uuidv7 } from "../../agents/runtime/index.js";
-import { loadEntriesFromFile, type SessionEntry } from "../../agents/sessions/session-manager.js";
+import {
+  loadEntriesFromFile,
+  type FileEntry,
+  type SessionEntry,
+} from "../../agents/sessions/session-manager.js";
 import { appendJsonlEntrySync } from "../../config/sessions/transcript-jsonl.js";
 import { loadSessionEntry } from "../session-utils.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./types.js";
@@ -232,7 +236,7 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
   let entries: SessionEntry[];
   try {
     entries = loadEntriesFromFile(sessionFile).filter(
-      (e): e is SessionEntry => (e as SessionEntry).type !== "session",
+      (e): e is SessionEntry => (e as FileEntry).type !== "session",
     );
   } catch {
     respond(
@@ -345,7 +349,7 @@ async function handleChatBranchesRequest(opts: GatewayRequestHandlerOptions): Pr
   let entries: SessionEntry[];
   try {
     entries = loadEntriesFromFile(sessionFile).filter(
-      (e): e is SessionEntry => (e as SessionEntry).type !== "session",
+      (e): e is SessionEntry => (e as FileEntry).type !== "session",
     );
   } catch {
     respond(
