@@ -2651,8 +2651,8 @@ export function renderApp(state: AppViewState) {
                 },
                 onRefresh: () =>
                   void loadSessions(state, {
-                    includeGlobal: false,
-                    includeUnknown: false,
+                    includeGlobal: true,
+                    includeUnknown: true,
                     showArchived: false,
                   }),
                 onNavigateToChat: (sessionKey) => {

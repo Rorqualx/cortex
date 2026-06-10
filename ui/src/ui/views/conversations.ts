@@ -101,7 +101,7 @@ export function renderConversations(props: ConversationsProps) {
   } = props;
 
   const allRows = (result?.sessions ?? [])
-    .filter((row) => !row.archived && row.kind !== "global" && row.kind !== "unknown")
+    .filter((row) => !row.archived)
     .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 
   const filtered = filterConversations(allRows, searchQuery);
