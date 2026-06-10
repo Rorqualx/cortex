@@ -807,17 +807,29 @@ function renderChatSessionPickerPopover(
       </div>
       <div class="chat-session-picker__footer">
         <span class="chat-session-picker__count">${countLabel}</span>
-        ${loadMoreOffset !== null
-          ? html`<button
-              class="btn btn--ghost btn--sm"
-              data-chat-session-load-more="true"
-              type="button"
-              ?disabled=${loadMoreDisabled}
-              @click=${() => void loadMoreChatSessionPickerResults(state)}
-            >
-              ${t("chat.selectors.loadMoreSessions")}
-            </button>`
-          : ""}
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button
+            class="btn btn--ghost btn--sm"
+            type="button"
+            @click=${() => {
+              closeChatSessionPicker(state);
+              state.setTab("sessions" as import("../navigation.ts").Tab);
+            }}
+          >
+            All sessions
+          </button>
+          ${loadMoreOffset !== null
+            ? html`<button
+                class="btn btn--ghost btn--sm"
+                data-chat-session-load-more="true"
+                type="button"
+                ?disabled=${loadMoreDisabled}
+                @click=${() => void loadMoreChatSessionPickerResults(state)}
+              >
+                ${t("chat.selectors.loadMoreSessions")}
+              </button>`
+            : ""}
+        </div>
       </div>
     </div>
   `;
