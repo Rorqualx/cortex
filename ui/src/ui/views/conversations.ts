@@ -1,0 +1,202 @@
+// Control UI view renders conversations screen content.
+import { html, nothing } from "lit";
+import { t } from "../../i18n/index.ts";
+import { formatRelativeTimestamp, parseSessionKeyParts } from "../format.ts";
+import { icons } from "../icons.ts";
+import { pathForTab } from "../navigation.ts";
+import { isSessionRunActive } from "../session-run-state.ts";
+import { normalizeLowercaseStringOrEmpty, normalizeOptionalString } from "../string-coerce.ts";
+import type { AgentIdentityResult, GatewaySessionRow, SessionsListResult } from "../types.ts";
+import { resolveAgentRuntimeLabel } from "./agents-utils.ts";
+
+export type ConversationsProps = {
+  loading: boolean;
+  result: SessionsListResult | null;
+  error: string | null;
+  basePath: string;
+  searchQuery: string;
+  agentIdentityById: Record<string, AgentIdentityResult>;
+  onSearchChange: (query: string) => void;
+  onRefresh: () => void;
+  onNavigateToChat: (sessionKey: string) => void;
+};
+
+function resolveAgentName(
+  agentIdentityById: Record<string, AgentIdentityResult>,
+  agentId: string,
+): string {
+  const identity = Object.hasOwn(agentIdentityById, agentId)
+    ? (agentIdentityById[agentId] ?? null)
+    : null;
+  return (
+    normalizeOptionalString(identity?.name) ||
+    normalizeOptionalString(identity?.displayName) ||
+    agentId
+  );
+}
+
+function resolveConversationTitle(row: GatewaySessionRow): string {
+  if (row.goal?.objective?.trim()) {
+    const obj = row.goal.objective.trim();
+    return obj.length > 80 ? obj.slice(0, 80) + "…" : obj;
+  }
+  if (row.derivedTitle && row.derivedTitle !== row.key) {
+    const dt = row.derivedTitle;
+    return dt.length > 80 ? dt.slice(0, 80) + "…" : dt;
+  }
+  if (row.llmTitle && row.llmTitle !== row.key) {
+    return row.llmTitle;
+  }
+  if (row.label && row.label !== row.key) {
+    return row.label;
+  }
+  if (row.displayName && row.displayName !== row.key) {
+    return row.displayName;
+  }
+  const parsed = parseSessionKeyParts(row.key);
+  if (parsed?.rest && parsed.rest !== "main") {
+    return parsed.rest;
+  }
+  return row.key;
+}
+
+function resolveConversationMeta(row: GatewaySessionRow): string {
+  const parts: string[] = [];
+  if (row.modelProvider && row.model) {
+    parts.push(`${row.modelProvider}/${row.model}`);
+  } else if (row.model) {
+    parts.push(row.model);
+  }
+  if (row.updatedAt) {
+    parts.push(formatRelativeTimestamp(row.updatedAt));
+  }
+  return parts.join(" · ");
+}
+
+function filterConversations(rows: GatewaySessionRow[], query: string): GatewaySessionRow[] {
+  const q = normalizeOptionalString(query)?.toLowerCase() ?? "";
+  if (!q) return rows;
+  return rows.filter((row) => {
+    const title = resolveConversationTitle(row).toLowerCase();
+    if (title.includes(q)) return true;
+    if (row.key.toLowerCase().includes(q)) return true;
+    if (row.goal?.objective?.toLowerCase().includes(q)) return true;
+    if (row.derivedTitle?.toLowerCase().includes(q)) return true;
+    if (row.label?.toLowerCase().includes(q)) return true;
+    return false;
+  });
+}
+
+export function renderConversations(props: ConversationsProps) {
+  const {
+    loading,
+    result,
+    error,
+    basePath,
+    searchQuery,
+    agentIdentityById,
+    onSearchChange,
+    onRefresh,
+    onNavigateToChat,
+  } = props;
+
+  const allRows = (result?.sessions ?? [])
+    .filter((row) => !row.archived && row.kind !== "global" && row.kind !== "unknown")
+    .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+
+  const filtered = filterConversations(allRows, searchQuery);
+
+  return html`
+    <div class="conversations-layout">
+      <section class="conversations-toolbar">
+        <div class="conversations-toolbar-row">
+          <div class="conversations-search">
+            <label class="field conversations-search-field">
+              <input
+                type="search"
+                placeholder="Search conversations…"
+                aria-label="Search conversations"
+                .value=${searchQuery}
+                @input=${(e: Event) => onSearchChange((e.target as HTMLInputElement).value)}
+              />
+            </label>
+          </div>
+          <button
+            class="btn btn--sm conversations-refresh-btn"
+            ?disabled=${loading}
+            @click=${onRefresh}
+          >
+            ${loading ? t("common.loading") : t("common.refresh")}
+          </button>
+        </div>
+        ${error
+          ? html`<div class="callout danger" style="margin-top: 8px;">${error}</div>`
+          : nothing}
+      </section>
+
+      <section class="conversations-list">
+        ${filtered.length === 0 && !loading
+          ? html`
+              <div class="card">
+                <div class="card-title">No conversations found</div>
+                <div class="card-sub">
+                  ${allRows.length === 0
+                    ? "Start chatting to create conversations."
+                    : "No conversations match your search."}
+                </div>
+              </div>
+            `
+          : nothing}
+        ${filtered.map((row) => {
+          const title = resolveConversationTitle(row);
+          const meta = resolveConversationMeta(row);
+          const parsed = parseSessionKeyParts(row.key);
+          const agentId = parsed?.agentId ?? "main";
+          const agentName = resolveAgentName(agentIdentityById, agentId);
+          const href = `${pathForTab("chat", basePath)}?session=${encodeURIComponent(row.key)}`;
+          const hasActiveRun = row.hasActiveRun || isSessionRunActive(row.status);
+
+          return html`
+            <a
+              href=${href}
+              class="conversation-row"
+              title=${`${title} · ${row.key}`}
+              @click=${(event: MouseEvent) => {
+                if (
+                  event.defaultPrevented ||
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                onNavigateToChat(row.key);
+              }}
+            >
+              <span class="conversation-row__dot" aria-hidden="true"></span>
+              <span class="conversation-row__body">
+                <span class="conversation-row__name">${title}</span>
+                <span class="conversation-row__meta">
+                  ${agentName}${meta ? ` · ${meta}` : ""}
+                </span>
+              </span>
+              ${hasActiveRun
+                ? html`<span class="conversation-row__live" aria-label="Active run">●</span>`
+                : nothing}
+            </a>
+          `;
+        })}
+      </section>
+
+      <div class="conversations-footer">
+        <span class="conversations-count">
+          ${filtered.length}${allRows.length !== filtered.length ? ` / ${allRows.length}` : ""}
+          ${filtered.length === 1 ? "conversation" : "conversations"}
+        </span>
+      </div>
+    </div>
+  `;
+}

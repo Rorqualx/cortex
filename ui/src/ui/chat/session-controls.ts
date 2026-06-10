@@ -813,10 +813,10 @@ function renderChatSessionPickerPopover(
             type="button"
             @click=${() => {
               closeChatSessionPicker(state);
-              state.setTab("sessions" as import("../navigation.ts").Tab);
+              state.setTab("conversations" as import("../navigation.ts").Tab);
             }}
           >
-            All sessions
+            All conversations
           </button>
           ${loadMoreOffset !== null
             ? html`<button

@@ -1610,3 +1610,115 @@
 .chat-controls-dropdown {
   display: none;
 }
+
+/* Conversations page */
+.conversations-layout {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.conversations-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.conversations-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.conversations-search-field input {
+  width: 100%;
+}
+
+.conversations-list {
+  display: grid;
+  gap: 6px;
+}
+
+.conversation-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  text-decoration: none;
+  background: var(--bg-elevated);
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.conversation-row:hover {
+  background: color-mix(in srgb, var(--bg-hover) 78%, transparent);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.conversation-row__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--muted) 46%, transparent);
+}
+
+.conversation-row:hover .conversation-row__dot {
+  background: var(--accent);
+}
+
+.conversation-row__body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.conversation-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.conversation-row__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.conversation-row:hover .conversation-row__meta {
+  color: var(--text);
+}
+
+.conversation-row__live {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--ok);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.conversations-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 4px;
+}
+
+.conversations-count {
+  font-size: 12px;
+  color: var(--muted);
+}

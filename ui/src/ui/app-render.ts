@@ -649,6 +649,10 @@ function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow)
 const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyViewChanged);
 const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewChanged);
 const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewChanged);
+const lazyConversations = createLazyView(
+  () => import("./views/conversations.ts"),
+  notifyLazyViewChanged,
+);
 const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewChanged);
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
 const lazyInstances = createLazyView(() => import("./views/instances.ts"), notifyLazyViewChanged);
@@ -2630,6 +2634,31 @@ export function renderApp(state: AppViewState) {
                 lastError: state.presenceError,
                 statusMessage: state.presenceStatus,
                 onRefresh: () => void loadPresence(state),
+              }),
+            )
+          : nothing}
+        ${state.tab === "conversations"
+          ? renderLazyView(lazyConversations, (m) =>
+              m.renderConversations({
+                loading: state.sessionsLoading,
+                result: state.sessionsResult,
+                error: state.sessionsError,
+                basePath: state.basePath,
+                searchQuery: state.conversationsSearchQuery,
+                agentIdentityById: state.agentIdentityById,
+                onSearchChange: (query) => {
+                  state.conversationsSearchQuery = query;
+                },
+                onRefresh: () =>
+                  void loadSessions(state, {
+                    includeGlobal: false,
+                    includeUnknown: false,
+                    showArchived: false,
+                  }),
+                onNavigateToChat: (sessionKey) => {
+                  switchChatSession(state, sessionKey);
+                  state.setTab("chat" as import("./navigation.ts").Tab);
+                },
               }),
             )
           : nothing}
