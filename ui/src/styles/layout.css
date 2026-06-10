@@ -1703,6 +1703,20 @@
   color: var(--text);
 }
 
+.conversation-row__preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.72;
+}
+
+.conversation-row:hover .conversation-row__preview {
+  opacity: 1;
+}
+
 .conversation-row__live {
   width: 8px;
   height: 8px;

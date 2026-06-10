@@ -60,6 +60,25 @@ function resolveConversationTitle(row: GatewaySessionRow): string {
   return row.key;
 }
 
+function resolveConversationPreview(row: GatewaySessionRow, title: string): string | null {
+  const candidates = [
+    row.derivedTitle,
+    row.goal?.objective,
+    row.llmTitle,
+    row.subject,
+    row.displayName,
+    row.label,
+  ];
+  for (const raw of candidates) {
+    const candidate = normalizeOptionalString(raw)?.trim();
+    if (!candidate || candidate === title || candidate === row.key) {
+      continue;
+    }
+    return candidate.length > 120 ? candidate.slice(0, 120) + "…" : candidate;
+  }
+  return null;
+}
+
 function resolveConversationMeta(row: GatewaySessionRow): string {
   const parts: string[] = [];
   if (row.modelProvider && row.model) {
@@ -149,6 +168,7 @@ export function renderConversations(props: ConversationsProps) {
           : nothing}
         ${filtered.map((row) => {
           const title = resolveConversationTitle(row);
+          const preview = resolveConversationPreview(row, title);
           const meta = resolveConversationMeta(row);
           const parsed = parseSessionKeyParts(row.key);
           const agentId = parsed?.agentId ?? "main";
@@ -160,7 +180,7 @@ export function renderConversations(props: ConversationsProps) {
             <a
               href=${href}
               class="conversation-row"
-              title=${`${title} · ${row.key}`}
+              title=${`${title}${preview ? " · " + preview : ""} · ${row.key}`}
               @click=${(event: MouseEvent) => {
                 if (
                   event.defaultPrevented ||
@@ -179,6 +199,9 @@ export function renderConversations(props: ConversationsProps) {
               <span class="conversation-row__dot" aria-hidden="true"></span>
               <span class="conversation-row__body">
                 <span class="conversation-row__name">${title}</span>
+                ${preview
+                  ? html`<span class="conversation-row__preview">${preview}</span>`
+                  : nothing}
                 <span class="conversation-row__meta">
                   ${agentName}${meta ? ` · ${meta}` : ""}
                 </span>
