@@ -8,7 +8,7 @@ export const TAB_GROUPS = [
   { label: "channels", tabs: [] },
   {
     label: "control",
-    tabs: ["overview", "activity", "workboard", "instances", "sessions", "usage", "cron"],
+    tabs: ["workboard", "overview", "activity", "instances", "sessions", "usage", "cron"],
   },
   { label: "agent", tabs: ["agents", "skills", "skillForge", "nodes", "dreams"] },
   {
