@@ -2282,8 +2282,6 @@ export function renderApp(state: AppViewState) {
         class="shell-nav-backdrop"
         aria-label="${t("nav.collapse")}"
         @click=${() => {
-          if (ch.key !== state.sessionKey) {
-          }
           state.navDrawerOpen = false;
         }}
       ></button>
@@ -2297,8 +2295,6 @@ export function renderApp(state: AppViewState) {
             type="button"
             class="sidebar-menu-trigger topbar-nav-toggle"
             @click=${() => {
-              if (ch.key !== state.sessionKey) {
-              }
               state.navDrawerOpen = !navDrawerOpen;
             }}
             title="${navDrawerOpen ? t("nav.collapse") : t("nav.expand")}"
@@ -2321,8 +2317,6 @@ export function renderApp(state: AppViewState) {
             <button
               class="topbar-search"
               @click=${() => {
-                if (ch.key !== state.sessionKey) {
-                }
                 state.paletteOpen = !state.paletteOpen;
               }}
               title=${t("chat.commandPaletteTitle")}
@@ -2484,8 +2478,6 @@ export function renderApp(state: AppViewState) {
                 title=${t("common.dismiss")}
                 aria-label=${t("chat.dismissUpdateBanner")}
                 @click=${() => {
-                  if (ch.key !== state.sessionKey) {
-                  }
                   dismissUpdateBanner(state.updateAvailable);
                   state.updateAvailable = null;
                 }}
