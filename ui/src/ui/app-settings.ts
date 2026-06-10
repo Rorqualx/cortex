@@ -460,7 +460,14 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         await loadUsage(app);
         break;
       case "conversations":
-        await loadSessions(app);
+        // All conversations across every agent: no agent scope, no time
+        // filter, include global/unknown so the list matches the full store.
+        await loadSessions(app, {
+          activeMinutes: 0,
+          includeGlobal: true,
+          includeUnknown: true,
+          configuredAgentsOnly: false,
+        });
         break;
       case "sessions":
         await Promise.all([loadConfig(app), loadSessions(app)]);

@@ -2651,8 +2651,10 @@ export function renderApp(state: AppViewState) {
                 },
                 onRefresh: () =>
                   void loadSessions(state, {
+                    activeMinutes: 0,
                     includeGlobal: true,
                     includeUnknown: true,
+                    configuredAgentsOnly: false,
                     showArchived: false,
                   }),
                 onNavigateToChat: (sessionKey) => {
