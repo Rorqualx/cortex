@@ -828,7 +828,7 @@ function renderMessageMeta(meta: GroupMeta | null) {
   }
 
   return html`
-    <details class="msg-meta">
+    <details class="msg-meta" open>
       <summary class="msg-meta__summary" title="Show message context details">
         <span class="msg-meta__summary-icon" aria-hidden="true">${icons.chevronRight}</span>
         <span>Context</span>

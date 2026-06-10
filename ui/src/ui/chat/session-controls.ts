@@ -1943,7 +1943,12 @@ function resolveAgentGroupLabel(state: AppViewState, agentIdRaw: string): string
   );
   const name =
     normalizeOptionalString(agent?.identity?.name) ?? normalizeOptionalString(agent?.name) ?? "";
-  return name && name !== agentIdRaw ? `${name} (${agentIdRaw})` : agentIdRaw;
+  const modelRaw = normalizeOptionalString(agent?.model?.primary) ?? "";
+  const modelLabel = modelRaw.includes("/") ? modelRaw.split("/").pop()! : modelRaw;
+  if (name && name !== agentIdRaw) {
+    return modelLabel ? `${name} (${modelLabel})` : name;
+  }
+  return modelLabel ? `${agentIdRaw} (${modelLabel})` : agentIdRaw;
 }
 
 function resolveSessionScopedOptionLabel(
