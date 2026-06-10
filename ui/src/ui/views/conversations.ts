@@ -154,7 +154,7 @@ export function renderConversations(props: ConversationsProps) {
           const agentId = parsed?.agentId ?? "main";
           const agentName = resolveAgentName(agentIdentityById, agentId);
           const href = `${pathForTab("chat", basePath)}?session=${encodeURIComponent(row.key)}`;
-          const hasActiveRun = row.hasActiveRun || isSessionRunActive(row.status);
+          const hasActiveRun = row.hasActiveRun || isSessionRunActive(row);
 
           return html`
             <a
