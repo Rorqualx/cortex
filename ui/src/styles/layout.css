@@ -1032,6 +1032,21 @@
   color: var(--accent);
 }
 
+.nav-item--muted {
+  color: var(--text-muted);
+  cursor: default;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: none;
+  background: none;
+}
+
+.nav-item--muted:hover {
+  color: var(--text-muted);
+  background: none;
+  border-color: transparent;
+}
+
 .sidebar--collapsed .sidebar-shell {
   padding: 12px 8px 10px;
 }

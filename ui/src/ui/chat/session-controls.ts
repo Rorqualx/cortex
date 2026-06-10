@@ -57,6 +57,63 @@ type ChatInlineSelectOption = {
   label: string;
 };
 
+/** Channel surfaces whose sessions are eligible for the agent dropdown. */
+const CHANNEL_SURFACES_FOR_AGENT_DROPDOWN = new Set([
+  "telegram",
+  "kimi-claw",
+  "signal",
+  "whatsapp",
+  "discord",
+  "slack",
+  "imessage",
+  "googlechat",
+  "nostr",
+]);
+
+const CHANNEL_AGENT_OPTION_PREFIX = "$";
+
+function isChannelAgentOptionId(id: string): boolean {
+  return id.startsWith(CHANNEL_AGENT_OPTION_PREFIX) && id.length > 1;
+}
+
+function channelSessionKeyFromOptionId(id: string): string {
+  return id.slice(CHANNEL_AGENT_OPTION_PREFIX.length);
+}
+
+function channelAgentOptionIdFromSessionKey(key: string): string {
+  return `${CHANNEL_AGENT_OPTION_PREFIX}${key}`;
+}
+
+function surfaceLabel(surface: string): string {
+  return surface.charAt(0).toUpperCase() + surface.slice(1);
+}
+
+/** Extract channel surface from a session key (e.g. "agent:main:telegram:direct:peer" → "telegram"). */
+function channelFromSessionKey(key: string): string | null {
+  const parsed = parseAgentSessionKey(key);
+  if (!parsed) return null;
+  const restLower = normalizeLowercaseStringOrEmpty(parsed.rest);
+  const channelSegment = restLower.split(":")[0];
+  return CHANNEL_SURFACES_FOR_AGENT_DROPDOWN.has(channelSegment) ? channelSegment : null;
+}
+
+/** Check if a session row is a channel session (main sessions excluded). */
+function isChannelSessionRow(
+  state: AppViewState,
+  row: SessionsListResult["sessions"][number],
+): boolean {
+  if (row.kind === "global" || row.kind === "unknown") return false;
+  if (isCronSessionKey(row.key)) return false;
+  if (isSubagentSessionKey(row.key) || row.spawnedBy) return false;
+  const channel = channelFromSessionKey(row.key);
+  if (!channel) return false;
+  // Exclude the agent's main session (the default chat)
+  const defaultAgentId = normalizeAgentId(state.agentsList?.defaultId ?? "main");
+  const mainKey = buildAgentMainSessionKey({ agentId: defaultAgentId });
+  if (parseAgentSessionKey(row.key)?.rest === "main" || row.key === mainKey) return false;
+  return true;
+}
+
 const FAST_MODE_PROVIDER_IDS = new Set([
   "anthropic",
   "minimax",
@@ -826,6 +883,22 @@ function renderChatAgentSelect(
   }
   const activeAgentId = resolveChatAgentFilterId(state, state.sessionKey);
   const selectedLabel = options.find((entry) => entry.id === activeAgentId)?.label ?? activeAgentId;
+
+  // Build optgroups: agents first, then channel sessions grouped by surface
+  const agentOptions: ChatAgentFilterOption[] = [];
+  const channelGroups = new Map<string, ChatAgentFilterOption[]>();
+  for (const opt of options) {
+    if (isChannelAgentOptionId(opt.id)) {
+      const key = channelSessionKeyFromOptionId(opt.id);
+      const surface = channelFromSessionKey(key) ?? "channel";
+      const group = channelGroups.get(surface) ?? [];
+      group.push(opt);
+      channelGroups.set(surface, group);
+    } else {
+      agentOptions.push(opt);
+    }
+  }
+
   return html`
     <label class="field chat-controls__session chat-controls__agent">
       <select
@@ -835,20 +908,46 @@ function renderChatAgentSelect(
         .value=${activeAgentId}
         ?disabled=${!state.connected}
         @change=${(e: Event) => {
-          const nextAgentId = normalizeAgentId((e.target as HTMLSelectElement).value);
+          const rawValue = (e.target as HTMLSelectElement).value;
+          if (isChannelAgentOptionId(rawValue)) {
+            const sessionKey = channelSessionKeyFromOptionId(rawValue);
+            if (sessionKey !== state.sessionKey) {
+              onSwitchSession(state, sessionKey);
+            }
+            return;
+          }
+          const nextAgentId = normalizeAgentId(rawValue);
           if (nextAgentId === activeAgentId) {
             return;
           }
           onSwitchSession(state, resolvePreferredSessionForAgent(state, nextAgentId));
         }}
       >
+        ${agentOptions.length > 0
+          ? html`<optgroup label="Agents">
+              ${repeat(
+                agentOptions,
+                (entry) => entry.id,
+                (entry) =>
+                  html`<option value=${entry.id} ?selected=${entry.id === activeAgentId}>
+                    ${entry.label}
+                  </option>`,
+              )}
+            </optgroup>`
+          : ""}
         ${repeat(
-          options,
-          (entry) => entry.id,
-          (entry) =>
-            html`<option value=${entry.id} ?selected=${entry.id === activeAgentId}>
-              ${entry.label}
-            </option>`,
+          [...channelGroups.entries()],
+          ([surface]) => surface,
+          ([surface, groupOptions]) => html`<optgroup label=${surfaceLabel(surface)}>
+            ${repeat(
+              groupOptions,
+              (entry) => entry.id,
+              (entry) =>
+                html`<option value=${entry.id} ?selected=${entry.id === activeAgentId}>
+                  ${entry.label}
+                </option>`,
+            )}
+          </optgroup>`,
         )}
       </select>
     </label>
@@ -1500,8 +1599,18 @@ type ChatAgentFilterOption = {
 };
 
 export function resolveChatAgentFilterId(state: AppViewState, sessionKey: string): string {
+  // Channel sessions get their own $ prefixed agent option ID
+  if (_sessionIsChannelSession(state, sessionKey)) {
+    return channelAgentOptionIdFromSessionKey(sessionKey);
+  }
   const parsed = parseAgentSessionKey(sessionKey);
   return normalizeAgentId(parsed?.agentId ?? state.agentsList?.defaultId ?? "main");
+}
+
+function _sessionIsChannelSession(state: AppViewState, sessionKey: string): boolean {
+  const row = state.sessionsResult?.sessions.find((r) => r.key === sessionKey);
+  if (!row) return false;
+  return isChannelSessionRow(state, row);
 }
 
 function resolvePreferredSessionCandidateAgentId(
@@ -1585,6 +1694,45 @@ export function resolvePreferredSessionForAgent(state: AppViewState, agentId: st
   return buildAgentMainSessionKey({ agentId: normalizedAgentId });
 }
 
+/** Resolve the most recent session for a specific agent + channel surface (e.g. kimi-claw). */
+export function resolvePreferredSessionForAgentSurface(
+  state: AppViewState,
+  agentId: string,
+  surface: string,
+): string {
+  const normalizedAgentId = normalizeAgentId(agentId);
+  const normalizedSurface = normalizeLowercaseStringOrEmpty(surface);
+  const defaultAgentId = normalizeAgentId(state.agentsList?.defaultId ?? "main");
+
+  // If already on a session for this agent and surface, stay there.
+  const parsedCurrent = parseAgentSessionKey(state.sessionKey);
+  if (
+    parsedCurrent &&
+    normalizeAgentId(parsedCurrent.agentId) === normalizedAgentId &&
+    normalizeLowercaseStringOrEmpty(parsedCurrent.rest).startsWith(`${normalizedSurface}:`)
+  ) {
+    return state.sessionKey;
+  }
+
+  const eligible = rowsForPreferredAgentSession(state, normalizedAgentId, defaultAgentId)
+    .filter((row) => {
+      if (!isSessionKeyTiedToAgent(row.key, normalizedAgentId, defaultAgentId)) {
+        return false;
+      }
+      const parsed = parseAgentSessionKey(row.key);
+      if (!parsed) return false;
+      return normalizeLowercaseStringOrEmpty(parsed.rest).startsWith(`${normalizedSurface}:`);
+    })
+    .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+
+  if (eligible[0]?.key) {
+    return eligible[0].key;
+  }
+
+  // Fall back to the agent's main session when no surface-specific session exists yet.
+  return buildAgentMainSessionKey({ agentId: normalizedAgentId });
+}
+
 export function resolveChatAgentFilterOptions(state: AppViewState): ChatAgentFilterOption[] {
   const seen = new Set<string>();
   const options: ChatAgentFilterOption[] = [];
@@ -1610,6 +1758,23 @@ export function resolveChatAgentFilterOptions(state: AppViewState): ChatAgentFil
     if (parsed) {
       add(parsed.agentId);
     }
+  }
+
+  // Add channel sessions as agent dropdown entries
+  const channelRows = (state.sessionsResult?.sessions ?? []).filter((row) =>
+    isChannelSessionRow(state, row),
+  );
+  channelRows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  for (const row of channelRows) {
+    const id = channelAgentOptionIdFromSessionKey(row.key);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const name =
+      normalizeOptionalString(row.derivedTitle) ??
+      normalizeOptionalString(row.displayName) ??
+      normalizeOptionalString(row.label) ??
+      row.key;
+    options.push({ id, label: name });
   }
 
   return options;

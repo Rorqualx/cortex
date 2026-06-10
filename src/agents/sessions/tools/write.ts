@@ -391,45 +391,49 @@ export function createWriteToolDefinition(
       void ctx;
       const absolutePath = resolveToCwd(path, cwd);
       const dir = dirname(absolutePath);
-      return withFileMutationQueue(absolutePath, async () => {
-        const precheck = await readOriginalWriteState(absolutePath, content, ops);
-        try {
-          if (signal?.aborted) {
-            throw new Error("Operation aborted");
+      return withFileMutationQueue(
+        absolutePath,
+        async () => {
+          const precheck = await readOriginalWriteState(absolutePath, content, ops);
+          try {
+            if (signal?.aborted) {
+              throw new Error("Operation aborted");
+            }
+            await ops.mkdir(dir);
+            if (signal?.aborted) {
+              throw new Error("Operation aborted");
+            }
+            await ops.writeFile(absolutePath, content);
+            if (signal?.aborted) {
+              throw new Error("Operation aborted");
+            }
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Successfully wrote ${content.length} bytes to ${path}`,
+                },
+              ],
+              details: undefined,
+            };
+          } catch (error: unknown) {
+            const recovered = await recoverSuccessfulWrite({
+              absolutePath,
+              content,
+              error,
+              ops,
+              path,
+              precheck,
+              signal,
+            });
+            if (recovered) {
+              return recovered;
+            }
+            throw error;
           }
-          await ops.mkdir(dir);
-          if (signal?.aborted) {
-            throw new Error("Operation aborted");
-          }
-          await ops.writeFile(absolutePath, content);
-          if (signal?.aborted) {
-            throw new Error("Operation aborted");
-          }
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Successfully wrote ${content.length} bytes to ${path}`,
-              },
-            ],
-            details: undefined,
-          };
-        } catch (error: unknown) {
-          const recovered = await recoverSuccessfulWrite({
-            absolutePath,
-            content,
-            error,
-            ops,
-            path,
-            precheck,
-            signal,
-          });
-          if (recovered) {
-            return recovered;
-          }
-          throw error;
-        }
-      });
+        },
+        { toolName: "write" },
+      );
     },
     renderCall(args, theme, context) {
       const renderArgs = args as

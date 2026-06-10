@@ -77,6 +77,7 @@ import { createChannelMessageReplyPipeline } from "../../plugin-sdk/channel-outb
 import type { ChannelRouteRef } from "../../plugin-sdk/channel-route.js";
 import { isPluginOwnedSessionBindingRecord } from "../../plugins/conversation-binding.js";
 import { normalizeAgentId, scopeLegacySessionKeyToAgent } from "../../routing/session-key.js";
+import { sessionActivityRegistry as sessionAwarenessRegistry } from "../../session-awareness/index.js";
 import { normalizeInputProvenance, type InputProvenance } from "../../sessions/input-provenance.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
@@ -97,6 +98,7 @@ import {
   isWebchatClient,
   normalizeMessageChannel,
 } from "../../utils/message-channel.js";
+import { generateAutoTitle, shouldGenerateAutoTitle } from "../auto-title-generator.js";
 import {
   abortChatRunById,
   boundInFlightRunSnapshotForChatHistory,
@@ -3024,7 +3026,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       },
     );
     const sessionLoadMs = roundedChatSendTimingMs(performance.now() - sessionLoadStartedAtMs);
-    const { cfg, entry, canonicalKey: sessionKey } = sessionLoadResult;
+    const { cfg, storePath: sessionStorePath, entry, canonicalKey: sessionKey } = sessionLoadResult;
     const selectedAgent = validateChatSelectedAgent({
       cfg,
       requestedSessionKey: rawSessionKey,
@@ -4387,6 +4389,33 @@ export const chatHandlers: GatewayRequestHandlers = {
             },
             dispatchStartedAtMs,
           );
+
+          // Auto-title generation: fire-and-forget after first turn
+          if (agentRunStarted && sessionStorePath && shouldGenerateAutoTitle(entry)) {
+            const finalReplyTexts = deliveredReplies
+              .filter((r) => r.kind === "final" && !r.payload.isError)
+              .map((r) => r.payload.text?.trim())
+              .filter((t): t is string => Boolean(t));
+            const assistantReply = finalReplyTexts.join(" ").slice(0, 500);
+            if (inboundMessage?.trim() && assistantReply) {
+              void generateAutoTitle({
+                userMessage: inboundMessage,
+                assistantReply,
+                cfg,
+                agentId,
+                sessionKey,
+                storePath: sessionStorePath,
+                entry: entry ?? undefined,
+                onTitleGenerated: () => {
+                  emitSessionsChanged(context, {
+                    sessionKey,
+                    agentId: sessionKey === "global" ? agentId : undefined,
+                    reason: "auto-title",
+                  });
+                },
+              });
+            }
+          }
         })
         .catch(async (err: unknown) => {
           const emitAfterError =
@@ -4425,11 +4454,14 @@ export const chatHandlers: GatewayRequestHandlers = {
           activeRunAbort.cleanup();
           clearActiveChatSendDedupeRun(context.dedupe, activeChatSendDedupeKey, clientRunId);
           context.removeChatRun(clientRunId, clientRunId, sessionKey);
+          // Release all file claims held by this session
+          sessionAwarenessRegistry.releaseAllForSession(sessionKey);
         });
     } catch (err) {
       activeRunAbort.cleanup();
       clearActiveChatSendDedupeRun(context.dedupe, activeChatSendDedupeKey, clientRunId);
       context.removeChatRun(clientRunId, clientRunId, sessionKey);
+      sessionAwarenessRegistry.releaseAllForSession(sessionKey);
       const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
       const payload = {
         runId: clientRunId,

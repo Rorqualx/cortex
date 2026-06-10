@@ -447,8 +447,11 @@ export type GatewaySessionRow = {
   elevatedLevel?: string;
   inputTokens?: number;
   outputTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
   totalTokens?: number;
   totalTokensFresh?: boolean;
+  estimatedCostUsd?: number;
   status?: SessionRunStatus;
   archived?: boolean;
   hasActiveRun?: boolean;
@@ -467,6 +470,8 @@ export type GatewaySessionRow = {
   goal?: SessionGoal;
   /** Server-derived title from first user message, displayName, or subject. */
   derivedTitle?: string;
+  /** LLM-generated auto-title from first turn. */
+  llmTitle?: string;
 };
 
 export type SessionsListResult = SessionsListResultBase<GatewaySessionsDefaults, GatewaySessionRow>;

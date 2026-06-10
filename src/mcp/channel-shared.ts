@@ -24,6 +24,7 @@ export type ConversationDescriptor = {
   label?: string;
   displayName?: string;
   derivedTitle?: string;
+  llmTitle?: string;
   lastMessagePreview?: string;
   updatedAt?: number | null;
 };
@@ -49,6 +50,7 @@ type SessionRow = {
   label?: string;
   displayName?: string;
   derivedTitle?: string;
+  llmTitle?: string;
   lastMessagePreview?: string;
   updatedAt?: number | null;
 };
@@ -212,6 +214,7 @@ export function toConversation(row: SessionRow): ConversationDescriptor | null {
     label: toText(row.label),
     displayName: toText(row.displayName),
     derivedTitle: toText(row.derivedTitle),
+    llmTitle: toText(row.llmTitle),
     lastMessagePreview: toText(row.lastMessagePreview),
     updatedAt: typeof row.updatedAt === "number" ? row.updatedAt : null,
   };

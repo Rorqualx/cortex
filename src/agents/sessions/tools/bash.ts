@@ -8,6 +8,11 @@ import { existsSync } from "node:fs";
 import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { Type } from "typebox";
+import {
+  checkExecGuard,
+  releaseExecGuard,
+  formatExecGuardError,
+} from "../../../session-awareness/exec-guard.js";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { theme } from "../../modes/interactive/theme/theme.js";
@@ -301,6 +306,14 @@ export function createBashToolDefinition(
       void toolCallId;
       void ctx;
       const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
+
+      // ── Cross-session exec guard ──
+      // Detects git commit/push and restart commands, blocks if another
+      // session has claimed the same scope.
+      const execGuard = checkExecGuard(resolvedCommand, cwd);
+      if (!execGuard.allowed && execGuard.error) {
+        throw new Error(formatExecGuardError(execGuard.error));
+      }
       const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
       const output = new OutputAccumulator({ tempFilePrefix: "openclaw-bash" });
       let updateTimer: NodeJS.Timeout | undefined;
@@ -424,6 +437,7 @@ export function createBashToolDefinition(
         return { content: [{ type: "text", text: outputText }], details };
       } finally {
         clearUpdateTimer();
+        releaseExecGuard(execGuard.scopeKey);
       }
     },
     renderCall(args, themeValue, context) {

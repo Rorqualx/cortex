@@ -382,66 +382,48 @@ export function createEditToolDefinition(
       const { path, edits } = validateEditInput(input);
       const absolutePath = resolveToCwd(path, cwd);
 
-      return withFileMutationQueue(absolutePath, async () => {
-        if (signal?.aborted) {
-          throw new Error("Operation aborted");
-        }
-
-        try {
-          await ops.access(absolutePath);
-        } catch (error: unknown) {
-          const errorMessage =
-            error instanceof Error && "code" in error
-              ? `Error code: ${String(error.code)}`
-              : String(error);
-          throw new Error(`Could not edit file: ${path}. ${errorMessage}.`, {
-            cause: error,
-          });
-        }
-
-        const buffer = await ops.readFile(absolutePath);
-        const rawContent = buffer.toString("utf-8");
-        try {
+      return withFileMutationQueue(
+        absolutePath,
+        async () => {
           if (signal?.aborted) {
             throw new Error("Operation aborted");
           }
 
-          const { bom, text: content } = stripBom(rawContent);
-          const originalEnding = detectLineEnding(content);
-          const normalizedContent = normalizeToLF(content);
-          const { baseContent, newContent } = applyEditsToNormalizedContent(
-            normalizedContent,
-            edits,
-            path,
-          );
-          const finalContent = bom + restoreLineEndings(newContent, originalEnding);
-          await ops.writeFile(absolutePath, finalContent);
-          if (signal?.aborted) {
-            throw new Error("Operation aborted");
+          try {
+            await ops.access(absolutePath);
+          } catch (error: unknown) {
+            const errorMessage =
+              error instanceof Error && "code" in error
+                ? `Error code: ${String(error.code)}`
+                : String(error);
+            throw new Error(`Could not edit file: ${path}. ${errorMessage}.`, {
+              cause: error,
+            });
           }
 
-          const diffResult = generateDiffString(baseContent, newContent);
-          const patch = generateUnifiedPatch(path, baseContent, newContent);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
-              },
-            ],
-            details: {
-              diff: diffResult.diff,
-              patch,
-              firstChangedLine: diffResult.firstChangedLine,
-            },
-          };
-        } catch (error: unknown) {
-          const normalizedError = error instanceof Error ? error : new Error(String(error));
-          const currentContent = await ops
-            .readFile(absolutePath)
-            .then((current) => current.toString("utf-8"))
-            .catch(() => rawContent);
-          if (didEditLikelyApply({ originalContent: rawContent, currentContent, edits })) {
+          const buffer = await ops.readFile(absolutePath);
+          const rawContent = buffer.toString("utf-8");
+          try {
+            if (signal?.aborted) {
+              throw new Error("Operation aborted");
+            }
+
+            const { bom, text: content } = stripBom(rawContent);
+            const originalEnding = detectLineEnding(content);
+            const normalizedContent = normalizeToLF(content);
+            const { baseContent, newContent } = applyEditsToNormalizedContent(
+              normalizedContent,
+              edits,
+              path,
+            );
+            const finalContent = bom + restoreLineEndings(newContent, originalEnding);
+            await ops.writeFile(absolutePath, finalContent);
+            if (signal?.aborted) {
+              throw new Error("Operation aborted");
+            }
+
+            const diffResult = generateDiffString(baseContent, newContent);
+            const patch = generateUnifiedPatch(path, baseContent, newContent);
             return {
               content: [
                 {
@@ -449,15 +431,37 @@ export function createEditToolDefinition(
                   text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
                 },
               ],
-              details: { diff: "", patch: "" },
+              details: {
+                diff: diffResult.diff,
+                patch,
+                firstChangedLine: diffResult.firstChangedLine,
+              },
             };
+          } catch (error: unknown) {
+            const normalizedError = error instanceof Error ? error : new Error(String(error));
+            const currentContent = await ops
+              .readFile(absolutePath)
+              .then((current) => current.toString("utf-8"))
+              .catch(() => rawContent);
+            if (didEditLikelyApply({ originalContent: rawContent, currentContent, edits })) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
+                  },
+                ],
+                details: { diff: "", patch: "" },
+              };
+            }
+            if (normalizedError.message.includes(EDIT_MISMATCH_MESSAGE)) {
+              throw appendMismatchHint(normalizedError, currentContent);
+            }
+            throw normalizedError;
           }
-          if (normalizedError.message.includes(EDIT_MISMATCH_MESSAGE)) {
-            throw appendMismatchHint(normalizedError, currentContent);
-          }
-          throw normalizedError;
-        }
-      });
+        },
+        { toolName: "edit" },
+      );
     },
     renderCall(args, theme, context) {
       const component = getEditCallRenderComponent(context.state, context.lastComponent);

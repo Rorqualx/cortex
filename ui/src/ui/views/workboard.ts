@@ -35,6 +35,7 @@ import type { GatewayBrowserClient } from "../gateway.ts";
 import { icons } from "../icons.ts";
 import type { AgentsListResult, GatewaySessionRow } from "../types.ts";
 import { renderPixelOffice } from "./pixel-office.ts";
+import type { ProjectOffice } from "./pixel-office.ts";
 
 type WorkboardAgentRow = AgentsListResult["agents"][number];
 
@@ -57,6 +58,7 @@ const workboardCardModalId = "workboard-card-modal";
 const workboardCardDetailDrawerId = "workboard-card-detail-drawer";
 const workboardCardDetailTitleId = "workboard-card-detail-title";
 const workboardCardDetailDescriptionId = "workboard-card-detail-description";
+const workboardProjectModalTitleId = "workboard-project-modal-title";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -537,7 +539,9 @@ function buildAgentFilterOptions(
       continue;
     }
     seen.add(agent.id);
-    options.push({ id: agent.id, label: agentDisplayName(agent, agent.id) });
+    const label = agentDisplayName(agent, agent.id);
+    const description = agent.description?.trim();
+    options.push({ id: agent.id, label: description ? `${label} — ${description}` : label });
   }
   for (const card of cards) {
     const id = card.agentId?.trim();
@@ -578,9 +582,13 @@ function engineBlockedByRuntime(
 }
 
 function renderAgentChip(props: WorkboardProps, card: WorkboardCard) {
+  const agent = findCardAgent(card, props.agentsList);
   const label = cardAgentLabel(card, props.agentsList);
+  const description = agent?.description?.trim();
   const title = card.agentId
-    ? t("workboard.agentLinked", { agent: label })
+    ? description
+      ? t("workboard.agentLinkedWithDescription", { agent: label, description })
+      : t("workboard.agentLinked", { agent: label })
     : t("workboard.agentDefaultLinked", { agent: label });
   return html`<span class="workboard-agent-chip" title=${title}>${label}</span>`;
 }
@@ -924,8 +932,14 @@ function renderCardModal(props: WorkboardProps) {
               </option>
               ${agents.map(
                 (agent) =>
-                  html`<option value=${agent.id} ?selected=${state.draftAgentId === agent.id}>
-                    ${agent.name ?? agent.identity?.name ?? agent.id}
+                  html`<option
+                    value=${agent.id}
+                    ?selected=${state.draftAgentId === agent.id}
+                    title=${agent.description?.trim() ?? ""}
+                  >
+                    ${agent.name ?? agent.identity?.name ?? agent.id}${agent.description?.trim()
+                      ? ` — ${agent.description.trim()}`
+                      : ""}
                   </option>`,
               )}
             </select>
@@ -1922,6 +1936,237 @@ function renderSectionedBoard(
   `;
 }
 
+function openProjectModal(state: WorkboardUiState, project: ProjectOffice | null) {
+  state.projectModalOpen = true;
+  state.editingProjectId = project?.id ?? null;
+  state.draftProjectName = project?.name ?? "";
+  state.draftProjectIcon = project?.icon ?? "📁";
+}
+
+function closeProjectModal(state: WorkboardUiState) {
+  state.projectModalOpen = false;
+  state.editingProjectId = null;
+  state.draftProjectName = "";
+  state.draftProjectIcon = "📁";
+}
+
+function projectLabelFromName(name: string, icon: string): string {
+  const trimmedIcon = icon.trim() || "📁";
+  return `project:${name.trim()}:${trimmedIcon}`;
+}
+
+function findProjectLabel(card: WorkboardCard, projectId: string): string | undefined {
+  return card.labels.find((label) => {
+    const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
+    if (!match) return false;
+    const name = match[1]?.trim();
+    const id = name?.toLowerCase().replace(/\s+/g, "-");
+    return id === projectId;
+  });
+}
+
+async function saveProjectModal(props: WorkboardProps) {
+  const state = getWorkboardState(props.host);
+  const client = props.client;
+  if (!client || !state.draftProjectName.trim()) {
+    closeProjectModal(state);
+    props.onRequestUpdate?.();
+    return;
+  }
+
+  const editingId = state.editingProjectId;
+  const newName = state.draftProjectName.trim();
+  const newIcon = state.draftProjectIcon.trim() || "📁";
+  const newLabel = projectLabelFromName(newName, newIcon);
+
+  // Adding a new project: projects are created via card labels, so just close.
+  if (!editingId) {
+    closeProjectModal(state);
+    props.onRequestUpdate?.();
+    return;
+  }
+
+  const cardsToUpdate = state.cards.filter((card) => findProjectLabel(card, editingId));
+  if (cardsToUpdate.length === 0) {
+    closeProjectModal(state);
+    props.onRequestUpdate?.();
+    return;
+  }
+
+  state.loading = true;
+  state.error = null;
+  props.onRequestUpdate?.();
+
+  try {
+    for (const card of cardsToUpdate) {
+      const oldLabel = findProjectLabel(card, editingId);
+      if (!oldLabel) continue;
+      const newLabels = card.labels.map((label) => (label === oldLabel ? newLabel : label));
+      await client.request("workboard.cards.update", {
+        id: card.id,
+        patch: { labels: newLabels },
+      });
+    }
+    closeProjectModal(state);
+    await loadWorkboard({
+      host: props.host,
+      client,
+      requestUpdate: props.onRequestUpdate,
+      force: true,
+    });
+  } catch (error) {
+    state.error =
+      error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : "Project update failed.";
+  } finally {
+    state.loading = false;
+    props.onRequestUpdate?.();
+  }
+}
+
+async function deleteProjectFromCards(params: {
+  host: WorkboardHost;
+  project: ProjectOffice;
+  client: GatewayBrowserClient | null;
+  requestUpdate?: () => void;
+}) {
+  const { host, project, client, requestUpdate } = params;
+  const state = getWorkboardState(host);
+  if (!client) return;
+
+  const projectId = project.id;
+  const cardsToUpdate = state.cards.filter((card) => findProjectLabel(card, projectId));
+  if (cardsToUpdate.length === 0) return;
+
+  state.loading = true;
+  state.error = null;
+  requestUpdate?.();
+
+  try {
+    for (const card of cardsToUpdate) {
+      const newLabels = card.labels.filter((label) => {
+        const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
+        if (!match) return true;
+        const name = match[1]?.trim();
+        const id = name?.toLowerCase().replace(/\s+/g, "-");
+        return id !== projectId;
+      });
+      await client.request("workboard.cards.update", {
+        id: card.id,
+        patch: { labels: newLabels },
+      });
+    }
+    await loadWorkboard({
+      host,
+      client,
+      requestUpdate,
+      force: true,
+    });
+  } catch (error) {
+    state.error =
+      error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : "Project deletion failed.";
+  } finally {
+    state.loading = false;
+    requestUpdate?.();
+  }
+}
+
+function renderProjectModal(props: WorkboardProps) {
+  const state = getWorkboardState(props.host);
+  if (!state.projectModalOpen) {
+    return nothing;
+  }
+  const editing = Boolean(state.editingProjectId);
+  return html`
+    <div
+      class="workboard-modal"
+      role="presentation"
+      @click=${(event: MouseEvent) => {
+        if (event.target === event.currentTarget) {
+          closeProjectModal(state);
+          props.onRequestUpdate?.();
+        }
+      }}
+    >
+      <div
+        class="workboard-modal__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby=${workboardProjectModalTitleId}
+      >
+        <div class="workboard-modal__header">
+          <h2 id=${workboardProjectModalTitleId}>
+            ${editing ? t("workboard.editProject") : t("workboard.addProject")}
+          </h2>
+          <button
+            class="btn btn--icon"
+            type="button"
+            title=${t("common.cancel")}
+            aria-label=${t("common.cancel")}
+            @click=${() => {
+              closeProjectModal(state);
+              props.onRequestUpdate?.();
+            }}
+          >
+            ${icons.x}
+          </button>
+        </div>
+        <div class="workboard-modal__body">
+          <label class="field">
+            <span class="field__label">${t("workboard.projectName")}</span>
+            <input
+              class="field__input"
+              type="text"
+              .value=${state.draftProjectName}
+              @input=${(e: Event) => {
+                state.draftProjectName = (e.target as HTMLInputElement).value;
+                props.onRequestUpdate?.();
+              }}
+              placeholder="OpenClaw"
+            />
+          </label>
+          <label class="field">
+            <span class="field__label">${t("workboard.projectIcon")}</span>
+            <input
+              class="field__input"
+              type="text"
+              .value=${state.draftProjectIcon}
+              @input=${(e: Event) => {
+                state.draftProjectIcon = (e.target as HTMLInputElement).value;
+                props.onRequestUpdate?.();
+              }}
+              placeholder="📁"
+            />
+          </label>
+        </div>
+        <div class="workboard-modal__footer">
+          <button
+            class="btn"
+            type="button"
+            @click=${() => {
+              closeProjectModal(state);
+              props.onRequestUpdate?.();
+            }}
+          >
+            ${t("common.cancel")}
+          </button>
+          <button
+            class="btn primary"
+            type="button"
+            ?disabled=${!state.draftProjectName.trim() || state.loading}
+            @click=${() => saveProjectModal(props)}
+          >
+            ${state.loading ? t("common.saving") : t("common.save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderWorkboard(props: WorkboardProps) {
   const state = getWorkboardState(props.host);
   if (props.pluginEnabled) {
@@ -2104,8 +2349,32 @@ export function renderWorkboard(props: WorkboardProps) {
           </div>
         </div>
         ${state.error ? html`<div class="callout danger">${state.error}</div>` : nothing}
-        ${renderDispatchSummary(state)} ${renderPixelOffice(props.agentsList, props.sessions)}
-        ${renderSectionedBoard(props, filtered, state.statuses)}
+        ${renderDispatchSummary(state)}
+        ${renderPixelOffice(props.agentsList, props.sessions, state.cards, {
+          onAddProject: writable
+            ? () => {
+                openProjectModal(state, null);
+                props.onRequestUpdate?.();
+              }
+            : undefined,
+          onEditProject: writable
+            ? (project) => {
+                openProjectModal(state, project);
+                props.onRequestUpdate?.();
+              }
+            : undefined,
+          onDeleteProject: writable
+            ? (project) => {
+                void deleteProjectFromCards({
+                  host: props.host,
+                  project,
+                  client: props.client,
+                  requestUpdate: props.onRequestUpdate,
+                });
+              }
+            : undefined,
+        })}
+        ${renderSectionedBoard(props, filtered, state.statuses)} ${renderProjectModal(props)}
       </div>
       ${renderCardModal(props)} ${renderCardDetailsPanel(props)}
     </section>

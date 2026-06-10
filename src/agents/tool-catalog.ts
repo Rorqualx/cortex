@@ -205,6 +205,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "session_awareness",
+    label: "session_awareness",
+    description: "Check active agent sessions and file write claims",
+    sectionId: "sessions",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "browser",
     label: "browser",
     description: "Control web browser",

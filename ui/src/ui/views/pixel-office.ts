@@ -2,9 +2,14 @@
  * Pixel office — neon monster terminal buddies.
  * Top row: all crew agents with flapping/stepping animation.
  * Bottom row: project office cells with open doors, showing who's inside.
+ *
+ * Projects are derived dynamically from workboard card labels.
+ * A card label matching /^project:(.+)/i creates a project office.
+ * Inconspicuous gear icon provides add/edit/delete CRUD.
  */
 
 import { html, nothing } from "lit";
+import type { WorkboardCard } from "../controllers/workboard.ts";
 import type { GatewaySessionRow } from "../types.ts";
 import type { AgentsListResult } from "../types.ts";
 
@@ -30,19 +35,63 @@ const CREW: CrewAgent[] = [
 
 // ── Project offices ────────────────────────────────────────────────
 
-interface ProjectOffice {
+export interface ProjectOffice {
   id: string;
   name: string;
   icon: string;
   agents: string[];
 }
 
-const PROJECTS: ProjectOffice[] = [
-  { id: "openclaw", name: "OpenClaw", icon: "🏰", agents: ["main", "gendry", "yoren"] },
-  { id: "kaizoku", name: "Kaizoku", icon: "🏴‍☠️", agents: ["gendry", "varys"] },
-  { id: "agentmcp", name: "AgentMCP", icon: "🤖", agents: ["gendry", "stannis"] },
-  { id: "freezctl", name: "Freezctl", icon: "🌱", agents: ["podrick"] },
-];
+/** Derive projects dynamically from card labels like "project:OpenClaw" */
+function deriveProjectsFromCards(cards: readonly WorkboardCard[]): ProjectOffice[] {
+  const projectMap = new Map<string, { icon: string; agents: Set<string> }>();
+
+  for (const card of cards) {
+    for (const label of card.labels) {
+      const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
+      if (!match) continue;
+      const name = match[1]?.trim();
+      const icon = match[2]?.trim() ?? "📁";
+      if (!name) continue;
+
+      const existing = projectMap.get(name);
+      if (existing) {
+        if (card.agentId) existing.agents.add(card.agentId);
+      } else {
+        const agents = new Set<string>();
+        if (card.agentId) agents.add(card.agentId);
+        projectMap.set(name, { icon, agents });
+      }
+    }
+  }
+
+  // Also include hardcoded defaults if no cards define them yet
+  const defaults: ProjectOffice[] = [
+    { id: "openclaw", name: "OpenClaw", icon: "🏰", agents: ["main", "gendry", "yoren"] },
+    { id: "kaizoku", name: "Kaizoku", icon: "🏴‍☠️", agents: ["gendry", "varys"] },
+    { id: "agentmcp", name: "AgentMCP", icon: "🤖", agents: ["gendry", "stannis"] },
+    { id: "freezctl", name: "Freezctl", icon: "🌱", agents: ["podrick"] },
+  ];
+
+  const derived: ProjectOffice[] = [];
+  for (const [name, meta] of projectMap) {
+    derived.push({
+      id: name.toLowerCase().replace(/\s+/g, "-"),
+      name,
+      icon: meta.icon,
+      agents: [...meta.agents],
+    });
+  }
+
+  // Merge defaults for any not already derived
+  for (const def of defaults) {
+    if (!derived.some((d) => d.name.toLowerCase() === def.name.toLowerCase())) {
+      derived.push(def);
+    }
+  }
+
+  return derived.sort((a, b) => a.name.localeCompare(b.name));
+}
 
 // ── Pixel sprite builder ───────────────────────────────────────────
 
@@ -350,16 +399,67 @@ function renderMonsterBuddy(state: AgentState) {
   `;
 }
 
+/** Inconspicuous gear icon for project CRUD */
+const GEAR_ICON = html`<svg
+  width="12"
+  height="12"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <circle cx="12" cy="12" r="3" />
+  <path
+    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+  />
+</svg>`;
+
+/** Plus icon for adding projects */
+const PLUS_ICON = html`<svg
+  width="14"
+  height="14"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <line x1="12" y1="5" x2="12" y2="19" />
+  <line x1="5" y1="12" x2="19" y2="12" />
+</svg>`;
+
+/** Trash icon for deleting projects */
+const TRASH_ICON = html`<svg
+  width="12"
+  height="12"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <polyline points="3 6 5 6 21 6" />
+  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+</svg>`;
+
 function renderProjectCell(
   project: ProjectOffice,
   agentStates: AgentState[],
   sessions: GatewaySessionRow[],
+  options: {
+    editable?: boolean;
+    onEdit?: (project: ProjectOffice) => void;
+    onDelete?: (project: ProjectOffice) => void;
+  } = {},
 ) {
   const projAgents = project.agents
     .map((id) => agentStates.find((a) => a.agent.id === id))
     .filter(Boolean) as AgentState[];
   const anyActive = projAgents.some((a) => a.active);
-  const activeNames = projAgents.filter((a) => a.active).map((a) => a.agent.emoji);
 
   return html`
     <div class="mo-cell ${anyActive ? "mo-cell--active" : ""}">
@@ -367,6 +467,34 @@ function renderProjectCell(
         <div class="mo-cell__header">
           <span class="mo-cell__icon">${project.icon}</span>
           <span class="mo-cell__name">${project.name}</span>
+          ${options.editable
+            ? html`
+                <span class="mo-cell__actions">
+                  <button
+                    class="mo-cell__action-btn"
+                    type="button"
+                    title="Edit project"
+                    @click=${(e: Event) => {
+                      e.stopPropagation();
+                      options.onEdit?.(project);
+                    }}
+                  >
+                    ${GEAR_ICON}
+                  </button>
+                  <button
+                    class="mo-cell__action-btn mo-cell__action-btn--danger"
+                    type="button"
+                    title="Remove project"
+                    @click=${(e: Event) => {
+                      e.stopPropagation();
+                      options.onDelete?.(project);
+                    }}
+                  >
+                    ${TRASH_ICON}
+                  </button>
+                </span>
+              `
+            : nothing}
         </div>
         <div class="mo-cell__agents">
           ${projAgents.length > 0
@@ -387,11 +515,21 @@ function renderProjectCell(
   `;
 }
 
+export interface PixelOfficeCallbacks {
+  onAddProject?: () => void;
+  onEditProject?: (project: ProjectOffice) => void;
+  onDeleteProject?: (project: ProjectOffice) => void;
+}
+
 export function renderPixelOffice(
   _agentsList: AgentsListResult | null,
   sessions: GatewaySessionRow[],
+  cards: readonly WorkboardCard[],
+  callbacks?: PixelOfficeCallbacks,
 ): ReturnType<typeof html> {
   const agentStates = resolveAgentStates(sessions);
+  const projects = deriveProjectsFromCards(cards);
+  const editable = Boolean(callbacks?.onEditProject || callbacks?.onDeleteProject);
 
   return html`
     <div class="mo">
@@ -399,7 +537,28 @@ export function renderPixelOffice(
       <div class="mo__agents">${agentStates.map((s) => renderMonsterBuddy(s))}</div>
       <!-- Bottom row: project offices -->
       <div class="mo__projects">
-        ${PROJECTS.map((p) => renderProjectCell(p, agentStates, sessions))}
+        ${projects.map((p) =>
+          renderProjectCell(p, agentStates, sessions, {
+            editable,
+            onEdit: callbacks?.onEditProject,
+            onDelete: callbacks?.onDeleteProject,
+          }),
+        )}
+        ${callbacks?.onAddProject
+          ? html`
+              <div class="mo-cell mo-cell--add">
+                <button
+                  class="mo-cell__add-btn"
+                  type="button"
+                  title="Add project"
+                  @click=${() => callbacks.onAddProject?.()}
+                >
+                  ${PLUS_ICON}
+                  <span>Add</span>
+                </button>
+              </div>
+            `
+          : nothing}
       </div>
     </div>
   `;

@@ -60,6 +60,8 @@ export function emitSessionsChanged(
             subagentControlScope: sessionRow.subagentControlScope,
             label: sessionRow.label,
             displayName: sessionRow.displayName,
+            llmTitle: sessionRow.llmTitle,
+            derivedTitle: sessionRow.derivedTitle,
             deliveryContext: sessionRow.deliveryContext,
             parentSessionKey: sessionRow.parentSessionKey,
             childSessions: sessionRow.childSessions,

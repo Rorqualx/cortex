@@ -36,6 +36,7 @@ import {
   shouldIncludeUpdatePlanToolForOpenClawTools,
 } from "./openclaw-tools.registration.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
+import { createSessionAwarenessTool } from "./sessions/tools/session-awareness-tool.js";
 import type { SpawnedToolContext } from "./spawned-context.js";
 import type { ToolFsPolicy } from "./tool-fs-policy.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
@@ -532,6 +533,9 @@ export function createOpenClawTools(
         accountId: options?.agentAccountId,
         threadId: options?.currentThreadTs ?? options?.agentThreadId,
       },
+    }),
+    createSessionAwarenessTool({
+      cwd: workspaceDir,
     }),
     ...collectPresentOpenClawTools([webSearchTool, webFetchTool, imageTool, pdfTool]),
   ];

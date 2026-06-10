@@ -27,6 +27,7 @@ import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { resolveProviderAuthProfileId } from "../../plugins/provider-runtime.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
 import type { CommandQueueEnqueueOptions } from "../../process/command-queue.types.js";
+import { runWithSessionContext } from "../../session-awareness/index.js";
 import { createAgentHarnessTaskRuntimeScope } from "../../tasks/agent-harness-task-runtime-scope.js";
 import { resolveUserPath } from "../../utils.js";
 import { isMarkdownCapableMessageChannel } from "../../utils/message-channel.js";
@@ -529,20 +530,31 @@ export async function runEmbeddedAgent(
       },
       laneTaskTimeoutMs,
     );
+  // Wrap lane tasks with session context so tool execution can detect
+  // cross-session write conflicts via AsyncLocalStorage.
+  const sessionContextInfo = effectiveSessionKey
+    ? { sessionKey: effectiveSessionKey, agentId: params.agentId }
+    : undefined;
+  const wrapWithSessionContext = <T>(task: () => Promise<T>): (() => Promise<T>) => {
+    if (!sessionContextInfo) return task;
+    return () => runWithSessionContext(sessionContextInfo, task);
+  };
   const enqueueGlobal = <T>(task: () => Promise<T>, opts?: CommandQueueEnqueueOptions) => {
     const globalOpts: CommandQueueEnqueueOptions = {
       ...opts,
       priority: sessionQueuePriority,
     };
+    const wrappedTask = wrapWithSessionContext(task);
     return params.enqueue
-      ? params.enqueue(task, withLaneTimeout(globalOpts))
-      : enqueueCommandInLane(globalLane, task, withLaneTimeout(globalOpts));
+      ? params.enqueue(wrappedTask, withLaneTimeout(globalOpts))
+      : enqueueCommandInLane(globalLane, wrappedTask, withLaneTimeout(globalOpts));
   };
   const enqueueSession = <T>(task: () => Promise<T>, opts?: CommandQueueEnqueueOptions) => {
     const sessionOpts: CommandQueueEnqueueOptions = { ...opts, priority: sessionQueuePriority };
+    const wrappedTask = wrapWithSessionContext(task);
     return params.enqueue
-      ? params.enqueue(task, sessionOpts)
-      : enqueueCommandInLane(sessionLane, task, sessionOpts);
+      ? params.enqueue(wrappedTask, sessionOpts)
+      : enqueueCommandInLane(sessionLane, wrappedTask, sessionOpts);
   };
   const channelHint = params.messageChannel ?? params.messageProvider;
   const resolvedToolResultFormat =

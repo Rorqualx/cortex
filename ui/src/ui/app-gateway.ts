@@ -47,6 +47,7 @@ import {
   loadAssistantIdentity,
   type AssistantIdentityState,
 } from "./controllers/assistant-identity.ts";
+import { loadChannels, type ChannelsState } from "./controllers/channels.ts";
 import {
   loadChatHistory,
   handleChatEvent,
@@ -234,7 +235,7 @@ function scheduleSessionsChangedReload(host: GatewayHost) {
     if (!shouldRunDeferredSessionsReload(host)) {
       return;
     }
-    void loadSessions(host as unknown as SessionsState);
+    void loadSessions(host as unknown as SessionsState, { activeMinutes: 0 });
   }, SESSIONS_CHANGED_RELOAD_DEBOUNCE_MS);
 }
 
@@ -824,6 +825,11 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
         { force: true },
       );
       void loadAgentsThenRefreshActiveTabForClient(host, client);
+      void loadChannels(host as unknown as ChannelsState, false);
+      void loadSessions(host as unknown as SessionsState, {
+        activeMinutes: 0,
+        configuredAgentsOnly: false,
+      });
       scheduleDeferredStartupWork(() => {
         if (host.client !== client) {
           return;

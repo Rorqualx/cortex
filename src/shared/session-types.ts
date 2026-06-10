@@ -30,6 +30,8 @@ export type GatewayThinkingLevelOption = {
 export type GatewayAgentRow = {
   id: string;
   name?: string;
+  /** Optional human-readable description of this agent's purpose. */
+  description?: string;
   identity?: GatewayAgentIdentity;
   workspace?: string;
   model?: GatewayAgentModel;

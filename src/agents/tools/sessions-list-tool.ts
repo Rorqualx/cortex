@@ -289,6 +289,7 @@ export function createSessionsListTool(opts?: {
           label: readStringValue(entry.label),
           displayName: readStringValue(entry.displayName),
           derivedTitle: readStringValue(entry.derivedTitle),
+          llmTitle: readStringValue(entry.llmTitle),
           lastMessagePreview: readStringValue(entry.lastMessagePreview),
           parentSessionKey:
             typeof entry.parentSessionKey === "string"

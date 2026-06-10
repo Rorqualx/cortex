@@ -391,6 +391,7 @@ export const en: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Control",
     agent: "Agent",
     settings: "Settings",
@@ -543,6 +544,7 @@ export const en: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -659,6 +661,10 @@ export const en: TranslationMap = {
     eventArchived: "Archived",
     eventUnarchived: "Unarchived",
     eventStale: "Stale session",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

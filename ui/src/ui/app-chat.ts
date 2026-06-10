@@ -1135,16 +1135,32 @@ async function sendQueuedChatMessage(
         }
         void loadChatHistory(host as unknown as ChatState);
       } else {
-        const hasAlreadyAdoptedRunStream =
-          host.chatRunId === ack.runId && typeof host.chatStream === "string";
-        host.chatRunId = ack.runId;
-        // Gateway can deliver the first delta before the chat.send ACK resolves.
-        // Preserve that adopted stream; resetting here makes first replies vanish
-        // until a later delta or final event arrives.
-        if (!hasAlreadyAdoptedRunStream) {
-          host.chatStream = "";
-          (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt =
-            startedAt;
+        // Guard: ignore a late-arriving non-ok ack after the run was already
+        // terminal-reconciled by an early chat event. The gateway can deliver
+        // the full response (deltas + final) before the chat.send ACK resolves.
+        // Re-setting chatRunId/chatStream here would re-stuck the new-session
+        // button after the run is already finished.
+        const terminalReconcile = (
+          host as unknown as {
+            lastLocalTerminalReconcile?: { runId: string | null; occurredAt: number } | null;
+          }
+        ).lastLocalTerminalReconcile;
+        const runAlreadyTerminal =
+          terminalReconcile &&
+          typeof ack.runId === "string" &&
+          (terminalReconcile.runId === ack.runId || terminalReconcile.runId === host.chatRunId);
+        if (!runAlreadyTerminal) {
+          const hasAlreadyAdoptedRunStream =
+            host.chatRunId === ack.runId && typeof host.chatStream === "string";
+          host.chatRunId = ack.runId;
+          // Gateway can deliver the first delta before the chat.send ACK resolves.
+          // Preserve that adopted stream; resetting here makes first replies vanish
+          // until a later delta or final event arrives.
+          if (!hasAlreadyAdoptedRunStream) {
+            host.chatStream = "";
+            (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt =
+              startedAt;
+          }
         }
       }
     }

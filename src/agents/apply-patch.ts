@@ -10,6 +10,11 @@ import { Type } from "typebox";
 import { openRootFile, type RootFileOpenResult } from "../infra/boundary-file-read.js";
 import { root as fsRoot } from "../infra/fs-safe.js";
 import { PATH_ALIAS_POLICIES, type PathAliasPolicy } from "../infra/path-alias-guards.js";
+import {
+  claimFileForWrite,
+  releaseFileClaim,
+  formatWriteGuardError,
+} from "../session-awareness/file-write-guard.js";
 import { applyUpdateHunk } from "./apply-patch-update.js";
 import { toRelativeSandboxPath, resolvePathFromInput } from "./path-policy.js";
 import type { AgentTool } from "./runtime/index.js";
@@ -113,19 +118,56 @@ export function createApplyPatchTool(
         throw err;
       }
 
-      const result = await applyPatch(input, {
-        cwd,
-        sandbox,
-        workspaceOnly,
-        signal,
-      });
+      // ── Cross-session write conflict check ──
+      // Parse the patch to extract target file paths, then claim each one.
+      // If any file is claimed by another session, block the entire patch.
+      const targetPaths = parsePatchFilePaths(input);
+      const resolvedPaths: string[] = [];
+      const { resolvePathFromInput } = await import("./path-policy.js");
+      const { resolve } = await import("node:path");
+      for (const relPath of targetPaths) {
+        const absPath = sandbox
+          ? relPath // sandbox paths are resolved internally
+          : workspaceOnly !== false
+            ? resolvePathFromInput(relPath, cwd)
+            : resolve(cwd, relPath);
+        resolvedPaths.push(absPath);
+        const claim = claimFileForWrite(absPath, "apply_patch");
+        if (!claim.ok) {
+          // Release any claims we already made before failing
+          for (const rp of resolvedPaths.slice(0, -1)) {
+            releaseFileClaim(rp);
+          }
+          throw new Error(formatWriteGuardError(claim.error));
+        }
+      }
 
-      return {
-        content: [{ type: "text", text: result.text }],
-        details: { summary: result.summary },
-      };
+      try {
+        const result = await applyPatch(input, {
+          cwd,
+          sandbox,
+          workspaceOnly,
+          signal,
+        });
+
+        return {
+          content: [{ type: "text", text: result.text }],
+          details: { summary: result.summary },
+        };
+      } finally {
+        // Release all claims after patch completes (success or failure)
+        for (const rp of resolvedPaths) {
+          releaseFileClaim(rp);
+        }
+      }
     },
   };
+}
+
+/** Parse patch text and return the set of file paths that would be affected. */
+export function parsePatchFilePaths(input: string): string[] {
+  const parsed = parsePatchText(input);
+  return parsed.hunks.map((h) => h.path);
 }
 
 /** Parse and apply a patch envelope to the configured filesystem target. */

@@ -390,6 +390,38 @@
 .context-notice__label {
   color: color-mix(in srgb, currentColor 72%, var(--muted));
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* Token breakdown segments inside context notice */
+.ctx-bd {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  opacity: 0.82;
+}
+.ctx-bd__seg {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.ctx-bd__seg--in {
+  opacity: 0.9;
+}
+.ctx-bd__seg--out {
+  opacity: 0.9;
+}
+.ctx-bd__seg--cr,
+.ctx-bd__seg--cw {
+  opacity: 0.65;
+  font-size: 10.5px;
+}
+.ctx-bd__seg--cost {
+  opacity: 0.6;
+  font-size: 10.5px;
 }
 
 .context-notice__action {

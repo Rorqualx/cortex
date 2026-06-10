@@ -12,6 +12,8 @@
  * Source: ~/Documents/Cline/code/agentmcp/
  */
 import { definePluginEntry, type AnyAgentTool } from "openclaw/plugin-sdk/plugin-entry";
+import { z } from "zod";
+import { callWithFallback, loadFallbackConfig, type FallbackResult } from "./lib/fallback.js";
 import { resolveFilePaths, FilePathError } from "./lib/file-resolver.js";
 import { estimateCostUsd, formatCostUsd } from "./lib/pricing.js";
 import { makeProvider, readProviderConfig } from "./lib/providers/index.js";
@@ -101,6 +103,19 @@ interface RunInput {
   model: string;
   thinking: boolean;
   temperatureOverride: number | undefined;
+  /** All available clients for fallback. If set, fallback is enabled. */
+  allClients?: Record<Provider, LlmClient | undefined>;
+  fallbackConfig?: ReturnType<typeof loadFallbackConfig>;
+}
+
+function formatFallbackMeta(fb: FallbackResult, toolName: string, thinking: boolean): string {
+  const primary = fb.attempts[0];
+  const lines = fb.attempts.map((a) => {
+    const status = a.error ? `error: ${a.error}` : "success";
+    return `  ${a.provider}: ${status} (${a.latencyMs}ms)`;
+  });
+  const fallbackTag = fb.attempts.length > 1 ? ` · fallback:${fb.provider}` : "";
+  return `\n\n---\n_model: ${toolName} (${fb.result.model}·thinking=${thinking}) · in:${fb.result.inputTokens}t · out:${fb.result.outputTokens}t · ${fb.result.latencyMs}ms${fallbackTag}_\n_attempts:\n${lines.join("\n")}`;
 }
 
 async function runDelegation(input: RunInput): Promise<any> {
@@ -119,23 +134,43 @@ async function runDelegation(input: RunInput): Promise<any> {
   const mergedContext =
     resolvedFiles.length > 0 ? [...resolvedFiles, ...(input.context ?? [])] : input.context;
 
+  const callParams = {
+    systemPrompt: input.systemPrompt,
+    userPrompt: input.userPrompt,
+    contextItems: mergedContext,
+    images: input.images,
+    maxOutputTokens: input.maxOutputTokens,
+    temperature: input.temperatureOverride,
+    thinking: input.thinking,
+    format: input.format,
+    model: input.model,
+  };
+
   try {
-    const result = await input.client.call({
-      systemPrompt: input.systemPrompt,
-      userPrompt: input.userPrompt,
-      contextItems: mergedContext,
-      images: input.images,
-      maxOutputTokens: input.maxOutputTokens,
-      temperature: input.temperatureOverride,
-      thinking: input.thinking,
-      format: input.format,
-      model: input.model,
-    });
+    let result: import("./lib/providers/types.js").LlmCallResult;
+    let usedProvider = input.provider;
+    let fallbackMeta = "";
+
+    // Use fallback if multiple clients are available
+    if (input.allClients && input.fallbackConfig) {
+      const fb = await callWithFallback(
+        input.allClients,
+        input.fallbackConfig,
+        input.provider,
+        callParams,
+      );
+      result = fb.result;
+      usedProvider = fb.provider;
+      fallbackMeta = formatFallbackMeta(fb, input.toolName, input.thinking);
+    } else {
+      result = await input.client.call(callParams);
+      fallbackMeta = metaLine(input.toolName, result, input.thinking, usedProvider);
+    }
 
     if (input.format === "json") {
       const json: Record<string, unknown> = {
         tool: input.toolName,
-        provider: input.provider,
+        provider: usedProvider,
         content: result.content,
         model: result.model,
         thinking: input.thinking,
@@ -152,7 +187,7 @@ async function runDelegation(input: RunInput): Promise<any> {
       content: [
         {
           type: "text",
-          text: result.content + metaLine(input.toolName, result, input.thinking, input.provider),
+          text: result.content + fallbackMeta,
         },
       ],
     };
@@ -176,9 +211,25 @@ const SHAPE_FACTORIES: Record<string, (p?: string) => any> = {
   academic: () => makeAcademicShape("zai" as Provider),
 };
 
-function createTool(provider: Provider, kind: ToolKind, client: LlmClient): AnyAgentTool {
+/** Convert a Zod shape object (record of ZodType) to a JSON Schema object. */
+function shapeToJsonSchema(shape: Record<string, z.ZodTypeAny>): Record<string, unknown> {
+  const schema = z.object(shape);
+  return schema.toJSONSchema() as Record<string, unknown>;
+}
+
+interface ToolCreationInput {
+  provider: Provider;
+  kind: ToolKind;
+  client: LlmClient;
+  allClients?: Record<Provider, LlmClient | undefined>;
+  fallbackConfig?: ReturnType<typeof loadFallbackConfig>;
+}
+
+function createTool(input: ToolCreationInput): AnyAgentTool {
+  const { provider, kind, client, allClients, fallbackConfig } = input;
   const toolName = `agentmcp__${provider}__${kind}`;
-  const shape = kind === "vision" ? SHAPE_FACTORIES[kind](provider) : SHAPE_FACTORIES[kind]();
+  const rawShape = kind === "vision" ? SHAPE_FACTORIES[kind](provider) : SHAPE_FACTORIES[kind]();
+  const parameters = shapeToJsonSchema(rawShape);
 
   const handler = async (_id: string, rawParams: unknown, _signal?: AbortSignal): Promise<any> => {
     const args = rawParams as any;
@@ -241,6 +292,8 @@ function createTool(provider: Provider, kind: ToolKind, client: LlmClient): AnyA
       model,
       thinking,
       temperatureOverride: temperature,
+      allClients,
+      fallbackConfig,
     });
   };
 
@@ -248,7 +301,7 @@ function createTool(provider: Provider, kind: ToolKind, client: LlmClient): AnyA
     label: `${provider} ${kind}`,
     name: toolName,
     description: describe(provider, kind),
-    parameters: shape,
+    parameters,
     execute: handler,
   };
 }
@@ -321,6 +374,9 @@ export default definePluginEntry({
       return;
     }
 
+    const fallbackConfig = loadFallbackConfig();
+    const enableFallback = process.env["AGENTMCP_FALLBACK_DISABLE"] !== "1";
+
     let registered = 0;
     for (const provider of PROVIDERS) {
       const client = clients[provider];
@@ -329,14 +385,26 @@ export default definePluginEntry({
       const supportedKinds = SUPPORTED_TOOLS[provider] as ToolKind[];
       for (const kind of PLUGIN_TOOLS) {
         if (!supportedKinds.includes(kind)) continue;
-        api.registerTool(() => createTool(provider, kind, client));
+        api.registerTool(() =>
+          createTool({
+            provider,
+            kind,
+            client,
+            allClients: enableFallback ? clients : undefined,
+            fallbackConfig: enableFallback ? fallbackConfig : undefined,
+          }),
+        );
         registered++;
       }
     }
 
+    const fallbackInfo = enableFallback
+      ? ` · fallback chain: ${fallbackConfig.chain.join(" → ")}`
+      : " · fallback disabled";
     logger.info(
       `agentmcp: Registered ${registered} native tools across ${availableCount} provider(s)` +
         (skipped.length > 0 ? ` (skipped: ${skipped.join(", ")})` : "") +
+        fallbackInfo +
         ". Explore/swarm available via MCP server in main session.",
     );
   },

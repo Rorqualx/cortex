@@ -52,26 +52,53 @@ export function resetContextNoticeThemeCacheForTest(): void {
   cachedThemeNoticeColors = null;
 }
 
-export function getContextNoticeViewModel(
-  session: GatewaySessionRow | undefined,
-  defaultContextTokens: number | null,
-): {
+export type ContextNoticeViewModel = {
   pct: number;
   detail: string;
   color: string;
   bg: string;
   warning: boolean;
   compactRecommended: boolean;
-} | null {
+  breakdown: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+    costUsd: number | null;
+  };
+};
+
+export function getContextNoticeViewModel(
+  session: GatewaySessionRow | undefined,
+  defaultContextTokens: number | null,
+): ContextNoticeViewModel | null {
   const limit = session?.contextTokens ?? defaultContextTokens ?? 0;
   if (!limit) {
     return null;
   }
+
+  const input = session?.inputTokens ?? 0;
+  const output = session?.outputTokens ?? 0;
+  const cacheRead = session?.cacheRead ?? 0;
+  const cacheWrite = session?.cacheWrite ?? 0;
+  const costUsd =
+    typeof session?.estimatedCostUsd === "number" && Number.isFinite(session.estimatedCostUsd)
+      ? session.estimatedCostUsd
+      : null;
+
+  const breakdown: ContextNoticeViewModel["breakdown"] = {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    total: 0,
+    costUsd,
+  };
+
   // Always show the badge when we have a context window — even at 0 tokens used.
-  // Previously returned null when totalTokens was missing, which hid the badge
-  // entirely at session start.
   if (session?.totalTokensFresh === false) {
-    // Stale token data — show 0 badge instead of hiding entirely
+    breakdown.total = 0;
     return {
       pct: 0,
       detail: `0 / ${formatTokensCompact(limit)}`,
@@ -79,10 +106,13 @@ export function getContextNoticeViewModel(
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning: false,
       compactRecommended: false,
+      breakdown,
     };
   }
+
   const used = session?.totalTokens ?? 0;
   if (typeof used !== "number" || !Number.isFinite(used) || used < 0) {
+    breakdown.total = 0;
     return {
       pct: 0,
       detail: `0 / ${formatTokensCompact(limit)}`,
@@ -90,21 +120,31 @@ export function getContextNoticeViewModel(
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning: false,
       compactRecommended: false,
+      breakdown,
     };
   }
+
+  breakdown.total = used;
   const ratio = used / limit;
   const pct = Math.min(Math.round(ratio * 100), 100);
   const warning = ratio >= CONTEXT_NOTICE_RATIO;
+
+  const baseModel: Omit<ContextNoticeViewModel, "color" | "bg" | "warning"> = {
+    pct,
+    detail: `${formatTokensCompact(used)} / ${formatTokensCompact(limit)}`,
+    compactRecommended: ratio >= CONTEXT_COMPACT_RATIO,
+    breakdown,
+  };
+
   if (!warning) {
     return {
-      pct,
-      detail: `${formatTokensCompact(used)} / ${formatTokensCompact(limit)}`,
+      ...baseModel,
       color: "var(--muted)",
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning,
-      compactRecommended: false,
     };
   }
+
   // Read theme semantic tokens so color tracks the active theme (Dash, dark, light ...).
   const { warnRgb, dangerRgb } = getThemeNoticeColors();
   const [wr, wg, wb] = warnRgb;
@@ -117,13 +157,61 @@ export function getContextNoticeViewModel(
   const bgOpacity = 0.08 + 0.08 * t;
   const bg = `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
   return {
-    pct,
-    detail: `${formatTokensCompact(used)} / ${formatTokensCompact(limit)}`,
+    ...baseModel,
     color,
     bg,
     warning,
-    compactRecommended: ratio >= CONTEXT_COMPACT_RATIO,
   };
+}
+
+function renderBreakdown(breakdown: ContextNoticeViewModel["breakdown"]) {
+  const parts: Array<ReturnType<typeof html>> = [];
+
+  if (breakdown.input > 0) {
+    parts.push(
+      html`<span class="ctx-bd__seg ctx-bd__seg--in"
+        >↑${formatTokensCompact(breakdown.input)}</span
+      >`,
+    );
+  }
+  if (breakdown.output > 0) {
+    parts.push(
+      html`<span class="ctx-bd__seg ctx-bd__seg--out"
+        >↓${formatTokensCompact(breakdown.output)}</span
+      >`,
+    );
+  }
+  if (breakdown.cacheRead > 0) {
+    parts.push(
+      html`<span class="ctx-bd__seg ctx-bd__seg--cr"
+        >R${formatTokensCompact(breakdown.cacheRead)}</span
+      >`,
+    );
+  }
+  if (breakdown.cacheWrite > 0) {
+    parts.push(
+      html`<span class="ctx-bd__seg ctx-bd__seg--cw"
+        >W${formatTokensCompact(breakdown.cacheWrite)}</span
+      >`,
+    );
+  }
+  if (breakdown.costUsd !== null && breakdown.costUsd > 0) {
+    parts.push(
+      html`<span class="ctx-bd__seg ctx-bd__seg--cost"
+        >$${breakdown.costUsd < 0.01
+          ? breakdown.costUsd.toFixed(4)
+          : breakdown.costUsd < 1
+            ? breakdown.costUsd.toFixed(3)
+            : breakdown.costUsd.toFixed(2)}</span
+      >`,
+    );
+  }
+
+  if (parts.length === 0) {
+    return nothing;
+  }
+
+  return html`<span class="ctx-bd">${parts}</span>`;
 }
 
 export function renderContextNotice(
@@ -137,6 +225,11 @@ export function renderContextNotice(
   }
   const canRenderCompact = model.compactRecommended && options.onCompact;
   const compactDisabled = options.compactDisabled === true || options.compactBusy === true;
+  const hasBreakdown =
+    model.breakdown.input > 0 ||
+    model.breakdown.output > 0 ||
+    model.breakdown.cacheRead > 0 ||
+    model.breakdown.cacheWrite > 0;
   return html`
     <div
       class="context-notice ${model.warning ? "context-notice--warning" : "context-notice--usage"}"
@@ -167,7 +260,10 @@ export function renderContextNotice(
               <span class="context-notice__meter-fill" style="width:${model.pct}%"></span>
             </span>
           `}
-      <span class="context-notice__label">${model.pct}% · ${model.detail}</span>
+      <span class="context-notice__label">
+        ${model.pct}% ·
+        ${model.detail}${hasBreakdown ? html` · ${renderBreakdown(model.breakdown)}` : nothing}
+      </span>
       ${canRenderCompact
         ? html`
             <button

@@ -230,6 +230,11 @@ export function deriveSessionTitle(
     return undefined;
   }
 
+  // LLM-generated title takes highest priority (smart auto-title)
+  if (normalizeOptionalString(entry.llmTitle)) {
+    return normalizeOptionalString(entry.llmTitle);
+  }
+
   if (normalizeOptionalString(entry.displayName)) {
     return normalizeOptionalString(entry.displayName);
   }
@@ -1225,13 +1230,14 @@ export function listAgentsForGateway(
   const scope = cfg.session?.scope ?? "per-sender";
   const configuredById = new Map<
     string,
-    { name?: string; identity?: GatewayAgentRow["identity"] }
+    { name?: string; description?: string; identity?: GatewayAgentRow["identity"] }
   >();
   for (const entry of cfg.agents?.list ?? []) {
     if (!entry?.id) {
       continue;
     }
     const configuredName = normalizeOptionalString(entry.name);
+    const configuredDescription = normalizeOptionalString(entry.description);
     const identity = entry.identity
       ? {
           name: normalizeOptionalString(entry.identity.name),
@@ -1247,6 +1253,7 @@ export function listAgentsForGateway(
       : undefined;
     configuredById.set(normalizeAgentId(entry.id), {
       name: configuredName ?? identity?.name,
+      description: configuredDescription,
       identity,
     });
   }
@@ -1275,6 +1282,7 @@ export function listAgentsForGateway(
       {
         id,
         name: meta?.name,
+        description: meta?.description,
         identity: meta?.identity,
         workspace: resolveAgentWorkspaceDir(cfg, id),
         agentRuntime: resolveModelAgentRuntimeMetadata({
@@ -2153,6 +2161,7 @@ export function buildGatewaySessionRow(params: {
     label: entry?.label,
     displayName,
     derivedTitle,
+    llmTitle: normalizeOptionalString(entry?.llmTitle),
     lastMessagePreview,
     channel,
     subject,
@@ -2176,6 +2185,8 @@ export function buildGatewaySessionRow(params: {
     sendPolicy: entry?.sendPolicy,
     inputTokens: entry?.inputTokens,
     outputTokens: entry?.outputTokens,
+    cacheRead: entry?.cacheRead,
+    cacheWrite: entry?.cacheWrite,
     totalTokens,
     totalTokensFresh,
     goal,

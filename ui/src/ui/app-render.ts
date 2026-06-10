@@ -36,6 +36,7 @@ import {
   resolveChatAgentFilterId,
   resolveChatAgentFilterOptions,
   resolvePreferredSessionForAgent,
+  resolvePreferredSessionForAgentSurface,
 } from "./chat/session-controls.ts";
 import {
   controlUiNowMs,
@@ -305,6 +306,153 @@ function renderSettingsWorkspace(state: AppViewState, body: unknown) {
   `;
 }
 
+// Known agent channel surfaces mapped to nav label/icon.
+// Discovered dynamically from cached sessions (e.g., kimi-claw → agent:<id>:main).
+const AGENT_CHANNEL_SURFACE_META: Record<string, { label: string; icon: unknown }> = {
+  "kimi-claw": { label: "Kimi", icon: icons.brain },
+};
+
+function resolveChannelsNavItems(
+  state: AppViewState,
+): Array<{ key: string; label: string; icon: unknown }> {
+  const configuredChannels = state.channelsSnapshot?.channels ?? {};
+  const channelLabels = state.channelsSnapshot?.channelLabels ?? {};
+  const channelMeta = new Map(
+    (state.channelsSnapshot?.channelMeta ?? []).map((m) => [m.id.toLowerCase(), m]),
+  );
+  const channelOrder = state.channelsSnapshot?.channelOrder ?? [];
+  // Search across ALL cached agent sessions, not just the current scope
+  const allCachedSessions = [
+    ...(state.sessionsResult?.sessions ?? []),
+    ...Object.values(state.chatAgentSessionRowsByAgent ?? {}).flat(),
+  ];
+
+  // Discover agent channel surfaces from cached sessions (e.g., kimi-claw).
+  // Prefer non-default agents so plugin-created channels map to their
+  // dedicated agent instead of the default one.
+  const defaultAgentId = normalizeAgentId(state.agentsList?.defaultId ?? "main");
+  const surfaceToAgents = new Map<string, Set<string>>();
+  for (const row of allCachedSessions) {
+    const parsed = parseAgentSessionKey(row.key);
+    if (!parsed) continue;
+    const surface = parsed.rest.split(":")[0]?.toLowerCase();
+    if (!surface || !AGENT_CHANNEL_SURFACE_META[surface]) continue;
+    const agents = surfaceToAgents.get(surface) ?? new Set<string>();
+    agents.add(parsed.agentId);
+    surfaceToAgents.set(surface, agents);
+  }
+
+  const agentSurfaceAgents = new Map<string, string>();
+  for (const [surface, agentIds] of surfaceToAgents) {
+    const agentsArray = [...agentIds];
+    const nonDefault = agentsArray.filter((id) => normalizeAgentId(id) !== defaultAgentId);
+    if (nonDefault.length === 1) {
+      agentSurfaceAgents.set(surface, nonDefault[0]);
+    } else if (nonDefault.length > 1) {
+      // Multiple non-default agents — pick the one whose name matches the surface label
+      const surfaceLabel = AGENT_CHANNEL_SURFACE_META[surface]?.label?.toLowerCase();
+      const match = surfaceLabel
+        ? nonDefault.find((id) => {
+            const agent = state.agentsList?.agents.find((a) => a.id === id);
+            const name = (agent?.identity?.name ?? agent?.name ?? "").toLowerCase();
+            return name.includes(surfaceLabel);
+          })
+        : undefined;
+      agentSurfaceAgents.set(surface, match ?? nonDefault[0]);
+    } else {
+      agentSurfaceAgents.set(surface, agentsArray[0]);
+    }
+  }
+
+  // Collect every channel id that should appear
+  const ids = new Set<string>();
+  for (const id of Object.keys(configuredChannels)) {
+    ids.add(id.toLowerCase());
+  }
+  for (const surface of agentSurfaceAgents.keys()) {
+    ids.add(surface);
+  }
+  if (ids.size === 0) return [];
+
+  // Preserve server-provided order, then append any remaining ids
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const id of channelOrder) {
+    const lower = id.toLowerCase();
+    if (ids.has(lower) && !seen.has(lower)) {
+      ordered.push(id);
+      seen.add(lower);
+    }
+  }
+  for (const id of ids) {
+    if (!seen.has(id)) {
+      ordered.push(id);
+      seen.add(id);
+    }
+  }
+
+  const result: Array<{ key: string; label: string; icon: unknown }> = [];
+  for (const channelId of ordered) {
+    const id = channelId.toLowerCase();
+    const agentId = agentSurfaceAgents.get(id);
+    const surfaceMeta = AGENT_CHANNEL_SURFACE_META[id];
+
+    if (agentId && surfaceMeta) {
+      result.push({
+        key: resolvePreferredSessionForAgentSurface(state, agentId, id),
+        label: surfaceMeta.label,
+        icon: surfaceMeta.icon,
+      });
+      continue;
+    }
+
+    const label = channelMeta.get(id)?.label ?? channelLabels[id] ?? channelId;
+    const icon = icons.messageSquare;
+
+    const channelSession = allCachedSessions.find((row) => {
+      const lower = row.key.toLowerCase();
+      return lower.includes(`:${id}:`) || lower.startsWith(`${id}:`) || lower === id;
+    });
+
+    result.push({
+      key:
+        channelSession?.key ??
+        buildAgentMainSessionKey({ agentId: resolveSidebarDefaultAgentId(state) }),
+      label,
+      icon,
+    });
+  }
+
+  return result.filter((r) => r.key);
+}
+
+function renderChannelsNavItems(state: AppViewState, collapsed: boolean) {
+  const channels = resolveChannelsNavItems(state);
+  if (channels.length === 0 && !collapsed) {
+    return html`<div class="nav-item nav-item--muted">No channels connected</div>`;
+  }
+  return channels.map(
+    (ch) => html`
+      <button
+        type="button"
+        class="nav-item ${state.tab === "chat" && state.sessionKey === ch.key
+          ? "nav-item--active"
+          : ""}"
+        title=${ch.label}
+        @click=${() => {
+          if (ch.key !== state.sessionKey) {
+            switchChatSession(state, ch.key);
+          }
+          state.setTab("chat");
+        }}
+      >
+        <span class="nav-item__icon" aria-hidden="true">${ch.icon}</span>
+        ${!collapsed ? html`<span class="nav-item__text">${ch.label}</span>` : nothing}
+      </button>
+    `,
+  );
+}
+
 function isSidebarSessionBusy(state: AppViewState) {
   return (
     state.chatLoading ||
@@ -421,6 +569,8 @@ function renderSidebarSessions(state: AppViewState) {
                 type="button"
                 aria-expanded=${String(!state.settings.recentSessionsCollapsed)}
                 @click=${() => {
+                  if (ch.key !== state.sessionKey) {
+                  }
                   const expanding = state.settings.recentSessionsCollapsed;
                   state.applySettings({
                     ...state.settings,
@@ -2133,6 +2283,8 @@ export function renderApp(state: AppViewState) {
         class="shell-nav-backdrop"
         aria-label="${t("nav.collapse")}"
         @click=${() => {
+          if (ch.key !== state.sessionKey) {
+          }
           state.navDrawerOpen = false;
         }}
       ></button>
@@ -2146,6 +2298,8 @@ export function renderApp(state: AppViewState) {
             type="button"
             class="sidebar-menu-trigger topbar-nav-toggle"
             @click=${() => {
+              if (ch.key !== state.sessionKey) {
+              }
               state.navDrawerOpen = !navDrawerOpen;
             }}
             title="${navDrawerOpen ? t("nav.collapse") : t("nav.expand")}"
@@ -2168,6 +2322,8 @@ export function renderApp(state: AppViewState) {
             <button
               class="topbar-search"
               @click=${() => {
+                if (ch.key !== state.sessionKey) {
+                }
                 state.paletteOpen = !state.paletteOpen;
               }}
               title=${t("chat.commandPaletteTitle")}
@@ -2221,6 +2377,7 @@ export function renderApp(state: AppViewState) {
                 ${TAB_GROUPS.map((group) => {
                   const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
                   const showItems = navCollapsed || !isGroupCollapsed;
+                  const isChannelsGroup = group.label === "channels";
 
                   return html`
                     <section class="nav-section ${!showItems ? "nav-section--collapsed" : ""}">
@@ -2229,6 +2386,8 @@ export function renderApp(state: AppViewState) {
                             <button
                               class="nav-section__label"
                               @click=${() => {
+                                if (ch.key !== state.sessionKey) {
+                                }
                                 const next = { ...state.settings.navGroupsCollapsed };
                                 next[group.label] = !isGroupCollapsed;
                                 state.applySettings({
@@ -2246,9 +2405,11 @@ export function renderApp(state: AppViewState) {
                           `
                         : nothing}
                       <div class="nav-section__items">
-                        ${group.tabs.map((tab) =>
-                          renderTab(state, tab, { collapsed: navCollapsed }),
-                        )}
+                        ${isChannelsGroup
+                          ? renderChannelsNavItems(state, navCollapsed)
+                          : group.tabs.map((tab) =>
+                              renderTab(state, tab, { collapsed: navCollapsed }),
+                            )}
                       </div>
                     </section>
                   `;
@@ -2326,6 +2487,8 @@ export function renderApp(state: AppViewState) {
                 title=${t("common.dismiss")}
                 aria-label=${t("chat.dismissUpdateBanner")}
                 @click=${() => {
+                  if (ch.key !== state.sessionKey) {
+                  }
                   dismissUpdateBanner(state.updateAvailable);
                   state.updateAvailable = null;
                 }}
@@ -2484,11 +2647,12 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "sessions"
           ? renderLazyView(lazySessions, (m) => {
               const workboardState = getWorkboardState(state);
+              // Workboard is a core module — enabled by default.
               const workboardEnabled = isPluginEnabledInConfigSnapshot(
                 state.configSnapshot,
                 "workboard",
                 {
-                  enabledByDefault: false,
+                  enabledByDefault: true,
                 },
               );
               const operatorCanWrite = hasOperatorWriteAccess(
@@ -2660,8 +2824,9 @@ export function renderApp(state: AppViewState) {
                 connected: state.connected,
                 canWrite: hasOperatorWriteAccess(auth),
                 canModelOverride: hasOperatorAdminAccess(auth),
+                // Workboard is a core module — enabled by default.
                 pluginEnabled: isPluginEnabledInConfigSnapshot(state.configSnapshot, "workboard", {
-                  enabledByDefault: false,
+                  enabledByDefault: true,
                 }),
                 agentsList: state.agentsList,
                 sessions: state.sessionsResult?.sessions ?? [],

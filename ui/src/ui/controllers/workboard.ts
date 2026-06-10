@@ -373,6 +373,11 @@ export type WorkboardUiState = {
   draggedCardId: string | null;
   syncingCardIds: Set<string>;
   capturingSessionKeys: Set<string>;
+  // Project CRUD modal state
+  projectModalOpen: boolean;
+  editingProjectId: string | null;
+  draftProjectName: string;
+  draftProjectIcon: string;
 };
 
 type WorkboardHost = object;
@@ -421,6 +426,10 @@ function createDefaultState(): WorkboardUiState {
     draggedCardId: null,
     syncingCardIds: new Set(),
     capturingSessionKeys: new Set(),
+    projectModalOpen: false,
+    editingProjectId: null,
+    draftProjectName: "",
+    draftProjectIcon: "📁",
   };
 }
 

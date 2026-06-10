@@ -599,6 +599,8 @@ function emitSessionsChanged(
             lastTo: sessionRow.lastTo,
             lastAccountId: sessionRow.lastAccountId,
             lastThreadId: sessionRow.lastThreadId,
+            cacheRead: sessionRow.cacheRead,
+            cacheWrite: sessionRow.cacheWrite,
             totalTokens: sessionRow.totalTokens,
             totalTokensFresh: sessionRow.totalTokensFresh,
             ...(omitUnscopedGlobalGoal ? {} : { goal: sessionRow.goal ?? null }),

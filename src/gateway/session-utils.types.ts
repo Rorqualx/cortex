@@ -50,6 +50,7 @@ export type GatewaySessionRow = {
   label?: string;
   displayName?: string;
   derivedTitle?: string;
+  llmTitle?: string;
   lastMessagePreview?: string;
   channel?: string;
   subject?: string;
@@ -73,6 +74,8 @@ export type GatewaySessionRow = {
   sendPolicy?: "allow" | "deny";
   inputTokens?: number;
   outputTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
   totalTokens?: number;
   totalTokensFresh?: boolean;
   goal?: SessionGoal;

@@ -326,7 +326,6 @@ describe("context notice", () => {
       key: "main",
       kind: "direct",
       updatedAt: null,
-      inputTokens: 757_300,
       totalTokens: 46_000,
       contextTokens: 200_000,
     };
@@ -353,7 +352,6 @@ describe("context notice", () => {
       key: "main",
       kind: "direct",
       updatedAt: null,
-      inputTokens: 757_300,
       totalTokens: 190_000,
       contextTokens: 200_000,
     };
@@ -402,6 +400,14 @@ describe("context notice", () => {
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning: false,
       compactRecommended: false,
+      breakdown: {
+        input: 500_000,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+        costUsd: null,
+      },
     });
     expect(
       getContextNoticeViewModel(
@@ -422,6 +428,14 @@ describe("context notice", () => {
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning: false,
       compactRecommended: false,
+      breakdown: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+        costUsd: null,
+      },
     });
   });
 });

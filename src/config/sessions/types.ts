@@ -250,6 +250,8 @@ export type SessionEntry = {
   pluginOwnerId?: string;
   systemSent?: boolean;
   abortedLastRun?: boolean;
+  /** LLM-generated session title (auto-title from first turn conversation). */
+  llmTitle?: string;
   /** Durable guard state for automatic subagent orphan recovery. */
   subagentRecovery?: SubagentRecoveryState;
   /** Quota cascade protection and state-aware failover status. */

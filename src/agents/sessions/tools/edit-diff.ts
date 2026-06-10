@@ -150,15 +150,127 @@ function countOccurrences(content: string, oldText: string): number {
   return fuzzyContent.split(fuzzyOldText).length - 1;
 }
 
-function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
+function getNotFoundError(
+  path: string,
+  editIndex: number,
+  totalEdits: number,
+  oldText?: string,
+  content?: string,
+): Error {
+  let message: string;
   if (totalEdits === 1) {
-    return new Error(
-      `Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`,
-    );
+    message = `Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`;
+  } else {
+    message = `Could not find edits[${editIndex}] in ${path}. The oldText must match exactly including all whitespace and newlines.`;
   }
-  return new Error(
-    `Could not find edits[${editIndex}] in ${path}. The oldText must match exactly including all whitespace and newlines.`,
-  );
+
+  // Add a suggestion if we can find something similar
+  if (oldText && content && oldText.length >= 10) {
+    const suggestion = findSimilarText(content, oldText);
+    if (suggestion) {
+      message += `\n\nDid you mean:\n${suggestion}`;
+    }
+  }
+
+  return new Error(message);
+}
+
+/**
+ * Find text in content that is similar to the target (but not identical).
+ * Uses a sliding window to find the best approximate match.
+ */
+function findSimilarText(content: string, target: string): string | undefined {
+  const normalizedContent = normalizeForFuzzyMatch(content);
+  const normalizedTarget = normalizeForFuzzyMatch(target);
+
+  // Don't search if target is too large relative to content
+  if (normalizedTarget.length > normalizedContent.length) return undefined;
+
+  let bestMatch: { index: number; similarity: number } | undefined;
+  const windowSize = Math.min(normalizedTarget.length * 2, normalizedContent.length);
+
+  for (
+    let i = 0;
+    i <= normalizedContent.length - windowSize;
+    i += Math.max(1, Math.floor(windowSize / 4))
+  ) {
+    const window = normalizedContent.slice(i, i + windowSize);
+    const similarity = computeSimilarity(window, normalizedTarget);
+    if (!bestMatch || similarity > bestMatch.similarity) {
+      bestMatch = { index: i, similarity };
+    }
+  }
+
+  // Only suggest if similarity is reasonably high (>0.5)
+  if (bestMatch && bestMatch.similarity > 0.5) {
+    // Extract surrounding context from original content
+    const contextStart = Math.max(0, bestMatch.index - 50);
+    const contextEnd = Math.min(content.length, bestMatch.index + target.length + 50);
+    let snippet = content.slice(contextStart, contextEnd);
+
+    // Normalize line endings for display
+    snippet = snippet.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+    // Truncate if too long
+    if (snippet.length > 300) {
+      snippet = snippet.slice(0, 150) + "\n...\n" + snippet.slice(-150);
+    }
+
+    return snippet;
+  }
+
+  return undefined;
+}
+
+/** Simple character-level similarity metric (0-1) */
+function computeSimilarity(a: string, b: string): number {
+  if (a === b) return 1.0;
+  if (a.length === 0 || b.length === 0) return 0.0;
+
+  const longer = a.length > b.length ? a : b;
+  const shorter = a.length > b.length ? b : a;
+
+  // Simple LCS-based similarity
+  const lcsLength = longestCommonSubsequence(shorter, longer);
+  return (2 * lcsLength) / (a.length + b.length);
+}
+
+/** Compute length of longest common subsequence */
+function longestCommonSubsequence(a: string, b: string): number {
+  // Use a space-efficient approach for longer strings
+  if (a.length > 100 || b.length > 1000) {
+    return approximateLCS(a, b);
+  }
+
+  const dp = Array(a.length + 1)
+    .fill(null)
+    .map(() => Array(b.length + 1).fill(0));
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  return dp[a.length][b.length];
+}
+
+/** Approximate LCS for longer strings using a greedy approach */
+function approximateLCS(a: string, b: string): number {
+  let count = 0;
+  let bIndex = 0;
+  for (let i = 0; i < a.length && bIndex < b.length; i++) {
+    const idx = b.indexOf(a[i], bIndex);
+    if (idx !== -1) {
+      count++;
+      bIndex = idx + 1;
+    }
+  }
+  return count;
 }
 
 function getDuplicateError(
@@ -166,15 +278,49 @@ function getDuplicateError(
   editIndex: number,
   totalEdits: number,
   occurrences: number,
+  oldText?: string,
+  content?: string,
 ): Error {
+  let message: string;
   if (totalEdits === 1) {
-    return new Error(
-      `Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`,
-    );
+    message = `Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`;
+  } else {
+    message = `Found ${occurrences} occurrences of edits[${editIndex}] in ${path}. Each oldText must be unique. Please provide more context to make it unique.`;
   }
-  return new Error(
-    `Found ${occurrences} occurrences of edits[${editIndex}] in ${path}. Each oldText must be unique. Please provide more context to make it unique.`,
-  );
+
+  // Show line numbers of duplicates to help the user
+  if (oldText && content) {
+    const lines = content.split("\n");
+    const normalizedOldText = normalizeForFuzzyMatch(oldText);
+    const positions: number[] = [];
+
+    let searchStart = 0;
+    const normalizedContent = normalizeForFuzzyMatch(content);
+    while (true) {
+      const idx = normalizedContent.indexOf(normalizedOldText, searchStart);
+      if (idx === -1) break;
+
+      // Find line number for this index
+      let lineNum = 1;
+      let charCount = 0;
+      for (let li = 0; li < lines.length; li++) {
+        const lineLength = lines[li].length + 1; // +1 for newline
+        if (charCount + lineLength > idx) {
+          lineNum = li + 1;
+          break;
+        }
+        charCount += lineLength;
+      }
+      positions.push(lineNum);
+      searchStart = idx + 1;
+    }
+
+    if (positions.length > 0) {
+      message += `\n\nOccurrences found at lines: ${positions.join(", ")}`;
+    }
+  }
+
+  return new Error(message);
 }
 
 function getEmptyOldTextError(path: string, editIndex: number, totalEdits: number): Error {
@@ -229,12 +375,19 @@ export function applyEditsToNormalizedContent(
     const edit = normalizedEdits[i];
     const matchResult = fuzzyFindText(baseContent, edit.oldText);
     if (!matchResult.found) {
-      throw getNotFoundError(path, i, normalizedEdits.length);
+      throw getNotFoundError(path, i, normalizedEdits.length, edit.oldText, baseContent);
     }
 
     const occurrences = countOccurrences(baseContent, edit.oldText);
     if (occurrences > 1) {
-      throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
+      throw getDuplicateError(
+        path,
+        i,
+        normalizedEdits.length,
+        occurrences,
+        edit.oldText,
+        baseContent,
+      );
     }
 
     matchedEdits.push({

@@ -37,6 +37,9 @@ for arg in "$@"; do
       log "Options:"
       log "  --daemon      Detach via double-fork (survives gateway death)"
       log "  --no-build    Skip rebuild step"
+      log "  --ui-only     Build only the Control UI (fast)"
+      log "  --force|-f    Restart even with active sessions"
+      log "  --skip-active-check  Skip active session check"
       log "  --help|-h     Show this help"
       log ""
       log "This script:"
@@ -62,6 +65,15 @@ for arg in "$@"; do
       ;;
     --no-build)
       NO_BUILD=1
+      ;;
+    --ui-only)
+      UI_ONLY=1
+      ;;
+    --force|-f)
+      FORCE=1
+      ;;
+    --skip-active-check)
+      SKIP_ACTIVE_CHECK=1
       ;;
   esac
 done
@@ -96,6 +108,49 @@ if [[ "${DAEMON:-0}" -eq 1 && "${DAEMONIZED:-0}" -ne 1 ]]; then
   exit 0
 fi
 
+# ── Check for active sessions ──────────────────────────────────────────
+# Before killing processes, check if any sessions have active file claims.
+# This prevents killing the gateway while agents are mid-write.
+if [[ "${SKIP_ACTIVE_CHECK:-0}" -ne 1 && "${FORCE:-0}" -ne 1 ]]; then
+  if command -v node &>/dev/null; then
+    ACTIVE_CHECK=$(node -e "
+      try {
+        const reg = require('${ROOT_DIR}/dist/session-awareness/session-activity-registry.js');
+        const guard = require('${ROOT_DIR}/dist/session-awareness/restart-guard.js');
+        const result = guard.checkRestartSafety();
+        if (!result.safe) {
+          console.log(JSON.stringify(result));
+          process.exit(1);
+        }
+        console.log('SAFE');
+      } catch (e) {
+        // Module may not exist yet (first build) — skip check
+        console.log('SKIP');
+      }
+    " 2>/dev/null || echo 'SKIP')
+
+    if [[ "$ACTIVE_CHECK" != "SAFE" && "$ACTIVE_CHECK" != "SKIP" ]]; then
+      log_yellow "⚠️  Active sessions detected:"
+      echo "$ACTIVE_CHECK" | node -e "
+        let data = '';
+        process.stdin.on('data', (c) => data += c);
+        process.stdin.on('end', () => {
+          try {
+            const r = JSON.parse(data);
+            console.log(r.summary);
+          } catch { console.log(data); }
+        });
+      " 2>/dev/null || echo "$ACTIVE_CHECK"
+      log_yellow ""
+      log_yellow "Use --force to override, or wait for sessions to complete."
+      if [[ "${CI:-}" != "true" ]]; then
+        exit 1
+      fi
+      log_yellow "CI detected — continuing anyway."
+    fi
+  fi
+fi
+
 # ── Kill old gateway ───────────────────────────────────────────────────
 # This runs INSIDE the daemonized process (or directly if called outside).
 # We are already orphaned from the old gateway, so killing it won't kill us.
@@ -123,8 +178,10 @@ if [[ "$(uname)" == "Darwin" ]]; then
   done
 fi
 
-# Stop launchd agent if loaded
+# Stop launchd agent if loaded, and remove the plist so the next start
+# creates a fresh service definition pointing to the current repo build.
 launchctl bootout gui/"$UID"/ai.openclaw.gateway 2>/dev/null || true
+rm -f ~/Library/LaunchAgents/ai.openclaw.gateway.plist 2>/dev/null || true
 
 # Wait for processes to die
 sleep 2
@@ -141,7 +198,7 @@ done
 sleep 1
 
 # Verify
-REMAINING=$(pgrep -f "node.*dist/index.js gateway" 2>/dev/null | grep -v "^${SELF_PID}$" | wc -l || echo "0")
+REMAINING=$(pgrep -f "node.*dist/index.js gateway" 2>/dev/null | grep -v "^${SELF_PID}$" | wc -l | tr -d '[:space:]' || echo "0")
 if [[ "$REMAINING" -gt 0 ]]; then
   log_yellow "Warning: ${REMAINING} gateway processes may still be running"
   pgrep -af "node.*dist/index.js gateway" 2>/dev/null | grep -v "^${SELF_PID}" || true
@@ -152,6 +209,15 @@ fi
 # ── Build ──────────────────────────────────────────────────────────────
 if [[ "${NO_BUILD:-0}" -eq 1 ]]; then
   step "Skipping rebuild (--no-build specified)"
+elif [[ "${UI_ONLY:-0}" -eq 1 ]]; then
+  step "Building UI only..."
+  cd "${ROOT_DIR}"
+  if pnpm ui:build; then
+    log_green "UI build completed successfully"
+  else
+    log_red "UI build failed!"
+    exit 1
+  fi
 else
   step "Rebuilding project..."
   cd "${ROOT_DIR}"
@@ -159,6 +225,18 @@ else
     log_green "Build completed successfully"
   else
     log_red "Build failed!"
+    exit 1
+  fi
+fi
+
+# ── Verify UI assets exist after build ─────────────────────────────────
+if [[ ! -f "${ROOT_DIR}/dist/control-ui/index.html" ]]; then
+  step "Control UI assets missing after build; running pnpm ui:build..."
+  cd "${ROOT_DIR}"
+  if pnpm ui:build; then
+    log_green "Control UI build completed successfully"
+  else
+    log_red "Control UI build failed!"
     exit 1
   fi
 fi
@@ -179,8 +257,9 @@ if launchctl print gui/"$UID"/ai.openclaw.gateway &>/dev/null; then
     pnpm openclaw gateway start
   fi
 else
-  # No launchd plist loaded — start directly
-  if pnpm openclaw gateway start; then
+  # No launchd plist loaded — install fresh service and start it
+  step "Installing gateway service..."
+  if pnpm openclaw gateway install && pnpm openclaw gateway start; then
     log_green "Gateway started successfully"
   else
     log_red "Failed to start gateway!"

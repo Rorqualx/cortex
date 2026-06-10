@@ -57,6 +57,7 @@ export type SessionListRow = {
   label?: string;
   displayName?: string;
   derivedTitle?: string;
+  llmTitle?: string;
   lastMessagePreview?: string;
   parentSessionKey?: string;
   deliveryContext?: SessionListDeliveryContext;
