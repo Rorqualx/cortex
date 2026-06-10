@@ -232,6 +232,9 @@ describe("resolveTranscriptPolicy", () => {
     expect(policy.applyGoogleTurnOrdering).toBe(true);
     expect(policy.validateGeminiTurns).toBe(true);
     expect(policy.validateAnthropicTurns).toBe(true);
+    // Dangling tool calls (abort + model switch) must get synthetic results so
+    // strict completions providers do not reject the replayed transcript.
+    expect(policy.allowSyntheticToolResults).toBe(true);
   }
 
   function makeOpenAiCompatibleReasoningModel(

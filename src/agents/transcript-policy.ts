@@ -176,7 +176,14 @@ function buildUnownedProviderTransportReplayFallback(params: {
     ...(isAnthropic || isStrictOpenAiCompatible || isClaudeOpenAiResponses
       ? { validateAnthropicTurns: true }
       : {}),
-    ...(isGoogle || isAnthropic || isOpenAiResponsesCompatibleApi(params.modelApi)
+    // Strict OpenAI-completions providers (DeepSeek, Moonshot/Kimi, custom
+    // endpoints) reject transcripts with dangling tool calls — common after an
+    // aborted run followed by a model switch. Synthetic results keep replay
+    // valid the same way Google/Anthropic/Responses transports already do.
+    ...(isGoogle ||
+    isAnthropic ||
+    isStrictOpenAiCompatible ||
+    isOpenAiResponsesCompatibleApi(params.modelApi)
       ? { allowSyntheticToolResults: true }
       : {}),
   };
