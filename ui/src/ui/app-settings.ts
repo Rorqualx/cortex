@@ -459,6 +459,9 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "usage":
         await loadUsage(app);
         break;
+      case "conversations":
+        await loadSessions(app);
+        break;
       case "sessions":
         await Promise.all([loadConfig(app), loadSessions(app)]);
         break;
