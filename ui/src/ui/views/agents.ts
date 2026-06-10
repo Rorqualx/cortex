@@ -96,6 +96,7 @@ export type AgentsProps = {
   runtimeSessionKey: string;
   runtimeSessionMatchesSelectedAgent: boolean;
   modelCatalog: ModelCatalogEntry[];
+  crewMd: string;
   onRefresh: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
@@ -119,6 +120,7 @@ export type AgentsProps = {
   onAgentSkillsClear: (agentId: string) => void;
   onAgentSkillsDisableAll: (agentId: string) => void;
   onSetDefault: (agentId: string) => void;
+  onCrewMdChange: (next: string) => void;
 };
 
 export function renderAgents(props: AgentsProps) {
@@ -244,6 +246,9 @@ export function renderAgents(props: AgentsProps) {
                       onModelChange: props.onModelChange,
                       onModelFallbacksChange: props.onModelFallbacksChange,
                       onSelectPanel: props.onSelectPanel,
+                      crewMd: props.crewMd,
+                      onCrewMdChange: props.onCrewMdChange,
+                      agentsList: props.agentsList,
                     }),
                   )
                 : nothing}

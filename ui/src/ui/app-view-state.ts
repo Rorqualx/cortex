@@ -287,6 +287,7 @@ export type AppViewState = {
   toolsEffectiveError: string | null;
   toolsEffectiveResult: import("./types.js").ToolsEffectiveResult | null;
   agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+  crewMd: string;
   agentFilesLoading: boolean;
   agentFilesError: string | null;
   agentFilesList: AgentsFilesListResult | null;

@@ -98,6 +98,7 @@ export type UiSettings = {
   textScale?: TextScaleStop; // Browser-local text scale percentage
   customTheme?: ImportedCustomTheme;
   locale?: string;
+  crewMd?: string; // Raw Crew.md markdown content
 };
 
 export type { LocalUserIdentity } from "./user-identity.ts";
@@ -239,6 +240,7 @@ export function loadSettings(): UiSettings {
     recentSessionsCollapsed: false,
     borderRadius: 50,
     textScale: 100,
+    crewMd: "",
   };
 
   try {
@@ -306,6 +308,7 @@ export function loadSettings(): UiSettings {
       textScale: normalizeTextScale(parsed.textScale, defaults.textScale),
       customTheme: customTheme ?? undefined,
       locale: isSupportedLocale(parsed.locale) ? parsed.locale : undefined,
+      crewMd: typeof parsed.crewMd === "string" ? parsed.crewMd : defaults.crewMd,
     };
     if ("token" in parsed) {
       persistSettings(settings);

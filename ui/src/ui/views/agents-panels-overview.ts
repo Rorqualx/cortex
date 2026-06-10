@@ -32,11 +32,14 @@ export function renderAgentOverview(params: {
   configSaving: boolean;
   configDirty: boolean;
   modelCatalog: ModelCatalogEntry[];
+  crewMd: string;
   onConfigReload: () => void;
   onConfigSave: () => void;
   onModelChange: (agentId: string, modelId: string | null) => void;
   onModelFallbacksChange: (agentId: string, fallbacks: string[]) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
+  onCrewMdChange: (next: string) => void;
+  agentsList: AgentsListResult | null;
 }) {
   const {
     agent,
@@ -236,6 +239,130 @@ export function renderAgentOverview(params: {
           </button>
         </div>
       </div>
+
+      ${renderCrewSection(params)}
     </section>
+  `;
+}
+
+function renderCrewSection(params: {
+  crewMd: string;
+  onCrewMdChange: (next: string) => void;
+  agentsList: AgentsListResult | null;
+  modelCatalog: ModelCatalogEntry[];
+  onModelChange: (agentId: string, modelId: string | null) => void;
+  configForm: Record<string, unknown> | null;
+}) {
+  const { crewMd, onCrewMdChange, agentsList, modelCatalog, onModelChange, configForm } = params;
+  const allAgents = agentsList?.agents ?? [];
+  const crewIds = crewMd
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const crewMembers = crewIds
+    .map((id) => {
+      const agent = allAgents.find((a) => a.id === id);
+      return agent
+        ? { id: agent.id, name: agent.identity?.name || agent.name || agent.id, model: agent.model }
+        : null;
+    })
+    .filter(Boolean) as Array<{
+    id: string;
+    name: string;
+    model?: { primary?: string; fallbacks?: string[] };
+  }>;
+
+  const availableAgents = allAgents.filter((a) => !crewIds.includes(a.id));
+  const disabled = !configForm;
+
+  return html`
+    <div class="agent-model-select" style="margin-top: 24px;">
+      <div
+        style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;"
+      >
+        <div class="label">Crew.md</div>
+        <button
+          type="button"
+          class="btn btn--sm"
+          @click=${() => {
+            const el = document.getElementById("crew-md-editor");
+            if (el) {
+              el.style.display = el.style.display === "none" ? "block" : "none";
+            }
+          }}
+        >
+          Edit
+        </button>
+      </div>
+
+      <div id="crew-md-editor" style="display:none;margin-bottom:16px;">
+        <textarea
+          class="mono"
+          style="width:100%;min-height:120px;padding:10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--bg-elevated);color:var(--text);font-size:13px;resize:vertical;"
+          .value=${crewMd}
+          @input=${(e: Event) => onCrewMdChange((e.target as HTMLTextAreaElement).value)}
+          placeholder="Enter agent IDs, one per line"
+        ></textarea>
+      </div>
+
+      ${crewMembers.length === 0
+        ? html`<div class="nav-item nav-item--muted" style="padding:8px 0;">
+            No crew members defined.
+          </div>`
+        : html`
+            <div class="agents-overview-grid">
+              ${crewMembers.map(
+                (member) => html`
+                  <div class="agent-kv">
+                    <div class="label">${member.name}</div>
+                    <div>
+                      <select
+                        style="width:100%;"
+                        .value=${member.model?.primary ?? ""}
+                        ?disabled=${disabled}
+                        @change=${(e: Event) =>
+                          onModelChange(member.id, (e.target as HTMLSelectElement).value || null)}
+                      >
+                        <option value="">Inherit default</option>
+                        ${buildModelOptions(
+                          configForm,
+                          member.model?.primary ?? undefined,
+                          modelCatalog,
+                          member.model?.primary ?? null,
+                        )}
+                      </select>
+                    </div>
+                  </div>
+                `,
+              )}
+            </div>
+          `}
+      ${availableAgents.length > 0
+        ? html`
+            <div style="margin-top:16px;">
+              <label class="field">
+                <span>Add to crew</span>
+                <select
+                  ?disabled=${disabled}
+                  @change=${(e: Event) => {
+                    const id = (e.target as HTMLSelectElement).value;
+                    if (id) {
+                      const next = crewMd ? `${crewMd}\n${id}` : id;
+                      onCrewMdChange(next);
+                      (e.target as HTMLSelectElement).value = "";
+                    }
+                  }}
+                >
+                  <option value="">Select agent…</option>
+                  ${availableAgents.map(
+                    (a) =>
+                      html`<option value=${a.id}>${a.identity?.name || a.name || a.id}</option>`,
+                  )}
+                </select>
+              </label>
+            </div>
+          `
+        : nothing}
+    </div>
   `;
 }
