@@ -569,8 +569,6 @@ function renderSidebarSessions(state: AppViewState) {
                 type="button"
                 aria-expanded=${String(!state.settings.recentSessionsCollapsed)}
                 @click=${() => {
-                  if (ch.key !== state.sessionKey) {
-                  }
                   const expanding = state.settings.recentSessionsCollapsed;
                   state.applySettings({
                     ...state.settings,
@@ -2387,8 +2385,6 @@ export function renderApp(state: AppViewState) {
                             <button
                               class="nav-section__label"
                               @click=${() => {
-                                if (ch.key !== state.sessionKey) {
-                                }
                                 const next = { ...state.settings.navGroupsCollapsed };
                                 next[group.label] = !isGroupCollapsed;
                                 state.applySettings({
