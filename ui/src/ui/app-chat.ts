@@ -107,6 +107,8 @@ export type ChatHost = ChatInputHistoryState & {
   chatRunId: string | null;
   chatSending: boolean;
   chatSendStartedAt: number | null;
+  /** Concurrent chat.send requests awaiting their ack (busy-bypass follow-ups). */
+  chatSendsInFlight?: number;
   lastError?: string | null;
   chatError?: string | null;
   basePath: string;
@@ -1033,6 +1035,7 @@ async function sendQueuedChatMessage(
   recordChatSendTiming(host, sendingItem, "request-start", sendingItem.sendSubmittedAtMs);
   host.chatSending = true;
   host.chatSendStartedAt = Date.now();
+  host.chatSendsInFlight = (host.chatSendsInFlight ?? 0) + 1;
   const isVisibleSession = () => visibleSessionMatches(host, sessionKey, prepared.agentId);
   if (isVisibleSession()) {
     setChatError(host, null);
@@ -1208,13 +1211,12 @@ async function sendQueuedChatMessage(
     recordChatSendTiming(host, prepared, "failed", prepared.sendSubmittedAtMs, { error });
     return "failed";
   } finally {
-    // Keep chatSending true while the run is active — the ack arriving
-    // doesn't mean the agent is done, just that the request was accepted.
-    // Clearing chatSending here causes the "thinking" indicator to flash
-    // and disappear before the first delta arrives.
-    if (!host.chatRunId) {
-      host.chatSending = false;
-    }
+    host.chatSendsInFlight = Math.max(0, (host.chatSendsInFlight ?? 1) - 1);
+    // chatSending drives the thinking indicator. Keep it while the run is
+    // active (the ack only means the request was accepted) or while a
+    // concurrent busy-bypass send is still awaiting its own ack — an ack-ok
+    // terminal reconcile above clears it for the finished run only.
+    host.chatSending = Boolean(host.chatRunId) || host.chatSendsInFlight > 0;
   }
 }
 

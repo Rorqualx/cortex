@@ -1463,6 +1463,37 @@ describe("handleSendChat", () => {
     expect(phasesAfterAck).toEqual(expect.arrayContaining(["ack"]));
   });
 
+  it("keeps chatSending true while a concurrent send is still awaiting its ack", async () => {
+    const firstAck = createDeferred<Record<string, unknown>>();
+    const secondAck = createDeferred<Record<string, unknown>>();
+    let chatSendCalls = 0;
+    const request = vi.fn((method: string) => {
+      if (method === "chat.send") {
+        chatSendCalls += 1;
+        return chatSendCalls === 1 ? firstAck.promise : secondAck.promise;
+      }
+      if (method === "chat.history") {
+        return Promise.resolve({ messages: [] });
+      }
+      return Promise.resolve({});
+    });
+    const host = makeHost({ client: { request } as unknown as ChatHost["client"] });
+
+    const firstSend = handleSendChat(host, "first message");
+    const secondSend = handleSendChat(host, "second message");
+    await vi.waitFor(() => expect(chatSendCalls).toBe(2));
+
+    // The first run completes synchronously while the second send is still
+    // awaiting its ack — the thinking indicator must not flash off.
+    firstAck.resolve({ runId: "run-1", status: "ok" });
+    await firstSend;
+    expect(host.chatSending).toBe(true);
+
+    secondAck.resolve({ runId: "run-2", status: "ok" });
+    await secondSend;
+    expect(host.chatSending).toBe(false);
+  });
+
   it("waits for an in-flight model picker update before sending chat", async () => {
     const switchUpdate = createDeferred<boolean>();
     const request = vi.fn(async (method: string) => {
