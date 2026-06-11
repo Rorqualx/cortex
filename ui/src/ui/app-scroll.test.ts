@@ -349,6 +349,55 @@ describe("streaming scroll behavior", () => {
 
     expect(container.scrollTop).toBe(container.scrollHeight);
   });
+
+  it("a superseded schedule does not scroll after a newer schedule declined to", async () => {
+    const { host, container } = createScrollHost({
+      scrollHeight: 2000,
+      scrollTop: 500,
+      clientHeight: 400,
+    });
+    host.chatUserNearBottom = false;
+    host.chatHasAutoScrolled = true;
+    const originalScrollTop = container.scrollTop;
+
+    // The first schedule's render is still pending when a second schedule runs.
+    let resolveFirstUpdate!: () => void;
+    host.updateComplete = new Promise<void>((resolve) => {
+      resolveFirstUpdate = resolve;
+    });
+    scheduleChatScroll(host, false, false, { source: "manual" });
+    host.updateComplete = Promise.resolve();
+    scheduleChatScroll(host);
+    await host.updateComplete;
+    expect(container.scrollTop).toBe(originalScrollTop);
+
+    // The stale manual chain finally runs — it must bail, not force-scroll.
+    resolveFirstUpdate();
+    await Promise.resolve();
+    expect(container.scrollTop).toBe(originalScrollTop);
+  });
+
+  it("the retry does not re-pin a user who scrolled up right after a manual scroll", async () => {
+    const { host, container } = createScrollHost({
+      scrollHeight: 2000,
+      scrollTop: 500,
+      clientHeight: 400,
+    });
+    host.chatUserNearBottom = false;
+    host.chatHasAutoScrolled = true;
+
+    scheduleChatScroll(host, false, false, { source: "manual" });
+    await host.updateComplete;
+    expect(container.scrollTop).toBe(container.scrollHeight);
+
+    // User scrolls up during the 120ms retry window.
+    container.scrollTop = 300;
+    handleChatScroll(host, createScrollEvent(2000, 300, 400));
+    expect(host.chatUserNearBottom).toBe(false);
+
+    vi.advanceTimersByTime(200);
+    expect(container.scrollTop).toBe(300);
+  });
 });
 
 /* ------------------------------------------------------------------ */

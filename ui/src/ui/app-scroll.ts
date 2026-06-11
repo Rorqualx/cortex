@@ -44,12 +44,21 @@ type ChatScrollOptions = {
   source?: "auto" | "manual";
 };
 
+// Cancelling the rAF/timeout handles alone cannot stop a chain whose
+// updateComplete callback has not run yet; that stale chain would assign new
+// handles and its retry could re-pin a user who scrolled up in between. The
+// generation marks each schedule so superseded chains bail at every step.
+const chatScrollGenerations = new WeakMap<object, number>();
+
 export function scheduleChatScroll(
   host: ScrollHost,
   force = false,
   smooth = false,
   options: ChatScrollOptions = {},
 ) {
+  const generation = (chatScrollGenerations.get(host) ?? 0) + 1;
+  chatScrollGenerations.set(host, generation);
+  const isCurrentSchedule = () => chatScrollGenerations.get(host) === generation;
   if (host.chatScrollFrame) {
     cancelAnimationFrame(host.chatScrollFrame);
   }
@@ -73,8 +82,14 @@ export function scheduleChatScroll(
   };
   // Wait for Lit render to complete, then scroll
   void host.updateComplete.then(() => {
+    if (!isCurrentSchedule()) {
+      return;
+    }
     host.chatScrollFrame = requestAnimationFrame(() => {
       host.chatScrollFrame = null;
+      if (!isCurrentSchedule()) {
+        return;
+      }
       const target = pickScrollTarget();
       if (!target) {
         return;
@@ -124,14 +139,19 @@ export function scheduleChatScroll(
       const retryDelay = effectiveForce ? 150 : 120;
       host.chatScrollTimeout = window.setTimeout(() => {
         host.chatScrollTimeout = null;
+        if (!isCurrentSchedule()) {
+          return;
+        }
         const latest = pickScrollTarget();
         if (!latest) {
           return;
         }
         const latestDistanceFromBottom =
           latest.scrollHeight - latest.scrollTop - latest.clientHeight;
+        // Manual is a one-shot action, not a standing mode: if the user
+        // scrolled away during the retry window, the retry must not re-pin.
         const shouldStickRetry =
-          manualScroll ||
+          (manualScroll && host.chatUserNearBottom) ||
           autoScrollMode === "always" ||
           (autoScrollMode === "near-bottom" &&
             (effectiveForce ||
