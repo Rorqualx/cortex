@@ -342,3 +342,17 @@ ui/vite.config.ts                                                       merge=ou
 attestation-key                   export-ignore
 .attestation-key*                 export-ignore
 attestation-key*                  export-ignore
+
+# --- fork: chat UI badge/timer + merge-skew repairs (2026-06-11) ---
+# Live usage badge + stale-dist guard wiring (src) and upstream-port repairs
+# for the 06-04 merge test/source skew. The two scripts/ entries carry the
+# entry-dts cache poisoning fix (upstream-able; revisit on upstream fix).
+scripts/build-all.mjs merge=ours
+scripts/write-plugin-sdk-entry-dts.ts merge=ours
+src/agents/embedded-agent-subscribe.ts merge=ours
+src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.subscribeembeddedagentsession.test.ts merge=ours
+ui/src/ui/app-gateway.node.test.ts merge=ours
+ui/src/ui/app-tool-stream.node.test.ts merge=ours
+ui/src/ui/app-tool-stream.ts merge=ours
+ui/src/ui/chat/grouped-render.test.ts merge=ours
+ui/src/ui/controllers/workboard.test.ts merge=ours
