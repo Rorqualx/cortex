@@ -35,7 +35,13 @@ import {
 const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
 const SYNTHETIC_TRANSCRIPT_REPAIR_RESULT =
   "[openclaw] missing tool result in session history; inserted synthetic error result for transcript repair.";
-const CHAT_HISTORY_REQUEST_LIMIT = 200;
+// Whole-history contract: ask for the server's full per-response window; any
+// byte-bound remainder is auto-drained by drainEarlierMessages with no user
+// interaction.
+const CHAT_HISTORY_REQUEST_LIMIT = 10_000;
+// Backstop only — each drained page covers up to 6MB / 10k messages, so real
+// transcripts exhaust in a handful of iterations.
+const CHAT_HISTORY_DRAIN_MAX_PAGES = 200;
 const STARTUP_CHAT_HISTORY_RETRY_TIMEOUT_MS = 60_000;
 const STARTUP_CHAT_HISTORY_DEFAULT_RETRY_MS = 500;
 const STARTUP_CHAT_HISTORY_MAX_RETRY_MS = 5_000;
@@ -695,6 +701,23 @@ export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
   }
 }
 
+/** Pull every remaining older page until the transcript start, no user action. */
+async function drainEarlierMessages(state: ChatState, sessionKey: string): Promise<void> {
+  for (let page = 0; page < CHAT_HISTORY_DRAIN_MAX_PAGES; page += 1) {
+    if (
+      state.sessionKey !== sessionKey ||
+      !state.chatHistoryHasMore ||
+      !state.chatHistoryNextCursor
+    ) {
+      return;
+    }
+    const loaded = await loadEarlierMessages(state);
+    if (!loaded) {
+      return;
+    }
+  }
+}
+
 export function expandHistoryRenderLimit(state: ChatState): boolean {
   const messagesCount = Array.isArray(state.chatMessages) ? state.chatMessages.length : 0;
   const currentLimit = state.chatHistoryRenderLimit;
@@ -877,6 +900,9 @@ async function loadChatHistoryUncached(
     state.chatHistoryNextCursor = res.nextCursor ?? null;
     state.chatHistoryRenderLimit = CHAT_HISTORY_RENDER_LIMIT;
     state.chatHistoryRenderExpanded = false;
+    if (state.chatHistoryHasMore) {
+      void drainEarlierMessages(state, sessionKey);
+    }
     const resetStream = !state.chatRunId || state.chatRunId === previousRunId;
     if (resetStream) {
       // Guard: don't clear the stream if it's active (non-null), even if empty.

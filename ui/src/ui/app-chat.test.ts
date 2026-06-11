@@ -263,7 +263,7 @@ describe("refreshChat", () => {
     expect(host.chatLoading).toBe(true);
     expect(request).toHaveBeenCalledWith("chat.history", {
       sessionKey: "main",
-      limit: 100,
+      limit: 10_000,
     });
     expect(request).not.toHaveBeenCalledWith("models.list", { view: "configured" });
     expect(request).not.toHaveBeenCalledWith("sessions.list", expect.anything());
@@ -296,7 +296,7 @@ describe("refreshChat", () => {
     expect(request).toHaveBeenCalledWith("chat.history", {
       sessionKey: "global",
       agentId: "work",
-      limit: 100,
+      limit: 10_000,
     });
     expect(request).not.toHaveBeenCalledWith("sessions.list", expect.anything());
     await vi.waitFor(() =>
@@ -319,7 +319,7 @@ describe("refreshChat", () => {
     expect(request).toHaveBeenCalledWith("chat.history", {
       sessionKey: "agent:work:main",
       agentId: "work",
-      limit: 100,
+      limit: 10_000,
     });
     expect(request).not.toHaveBeenCalledWith("sessions.list", expect.anything());
   });
@@ -338,7 +338,7 @@ describe("refreshChat", () => {
     expect(outcome).toBe("resolved");
     expect(request).toHaveBeenCalledWith("chat.history", {
       sessionKey: "agent:work:dashboard",
-      limit: 100,
+      limit: 10_000,
     });
     expect(request).not.toHaveBeenCalledWith("sessions.list", expect.anything());
   });
@@ -363,7 +363,7 @@ describe("refreshChat", () => {
     expect(request).toHaveBeenCalledWith("chat.history", {
       sessionKey: "global",
       agentId: "ops",
-      limit: 100,
+      limit: 10_000,
     });
     expect(request).not.toHaveBeenCalledWith("sessions.list", expect.anything());
   });
@@ -383,7 +383,7 @@ describe("refreshChat", () => {
     expect(outcome).toBe("resolved");
     expect(request).toHaveBeenCalledWith("chat.history", {
       sessionKey: "unknown",
-      limit: 100,
+      limit: 10_000,
     });
     expect(request).not.toHaveBeenCalledWith("sessions.list", expect.anything());
   });
@@ -2633,7 +2633,7 @@ describe("handleSendChat", () => {
     expect(request).toHaveBeenCalledWith("chat.history", {
       sessionKey: "global",
       agentId: "work",
-      limit: 100,
+      limit: 10_000,
     });
     expect(host.chatMessages).toStrictEqual([]);
   });

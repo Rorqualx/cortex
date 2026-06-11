@@ -298,7 +298,7 @@ describe("buildChatItems", () => {
     expect(groups).toStrictEqual([]);
   });
 
-  it("renders only the last 100 history messages and shows a hidden-count notice", () => {
+  it("renders the full history with no hidden-count notice by default", () => {
     const items = buildChatItems(
       createProps({
         messages: Array.from({ length: 105 }, (_, index) => ({
@@ -311,14 +311,14 @@ describe("buildChatItems", () => {
 
     const groups = items.filter((item) => item.kind === "group");
 
-    const noticeGroup = requireGroup(items[0]);
-    expect(noticeGroup.messages).toHaveLength(1);
-    const noticeMessage = messageRecord(noticeGroup);
-    expect(noticeMessage.role).toBe("system");
-    expect(noticeMessage.content).toBe("Showing last 100 messages (5 hidden).");
-    expect(groups).toHaveLength(101);
-    expect(messageRecord(groups[1]).content).toBe("message 5");
+    expect(groups).toHaveLength(105);
+    expect(messageRecord(groups[0]).content).toBe("message 0");
     expect(messageRecord(groups[groups.length - 1]).content).toBe("message 104");
+    expect(
+      groups.some((group) =>
+        String(messageRecord(requireGroup(group)).content).startsWith("Showing last"),
+      ),
+    ).toBe(false);
   });
 
   it("honors a smaller history render window and preserves the hidden-count notice", () => {
@@ -342,7 +342,7 @@ describe("buildChatItems", () => {
     expect(messageRecord(groups[groups.length - 1]).content).toBe("message 104");
   });
 
-  it("budgets rendered history by tool-result content size", () => {
+  it("renders large tool-result history fully with no render budget", () => {
     const largeOutput = "x".repeat(100_000);
     const items = buildChatItems(
       createProps({
@@ -361,12 +361,10 @@ describe("buildChatItems", () => {
     );
 
     const groups = items.filter((item) => item.kind === "group");
-    const noticeGroup = requireGroup(items[0]);
-    expect(messageRecord(noticeGroup).content).toBe("Showing last 2 messages (4 hidden).");
-    expect(groups).toHaveLength(2);
-    expect(groups[1].messages).toHaveLength(2);
-    expect(messageRecord(groups[1], 0).timestamp).toBe(4);
-    expect(messageRecord(groups[1], 1).timestamp).toBe(5);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].messages).toHaveLength(6);
+    expect(messageRecord(groups[0], 0).timestamp).toBe(0);
+    expect(messageRecord(groups[0], 5).timestamp).toBe(5);
   });
 
   it("does not crash when history contains malformed entries", () => {

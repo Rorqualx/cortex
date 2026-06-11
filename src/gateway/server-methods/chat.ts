@@ -2445,7 +2445,10 @@ async function handleChatHistoryRequest({
     agentId: selectedAgent.agentId,
   });
   const resolvedSessionModel = resolveSessionModelRef(cfg, entry, sessionAgentId);
-  const hardMax = 1000;
+  // Whole-history clients (Control UI) request the full transcript in one
+  // response; the 6MB maxHistoryBytes budget is the real payload bound, with
+  // hasMore + cursor covering anything beyond it.
+  const hardMax = 10_000;
   const defaultLimit = 200;
   const requested = typeof limit === "number" ? limit : defaultLimit;
   const max = Math.min(hardMax, requested);

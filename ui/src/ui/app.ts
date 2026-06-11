@@ -284,7 +284,7 @@ export class OpenClawApp extends LitElement {
   @state() chatHistoryHasMore = false;
   @state() chatHistoryNextCursor: string | null = null;
   @state() chatLoadingEarlier = false;
-  @state() chatHistoryRenderLimit: number = 100;
+  @state() chatHistoryRenderLimit: number = Number.POSITIVE_INFINITY;
   @state() chatHistoryRenderExpanded = false;
   @state() chatModelOverrides: Record<string, ChatModelOverride | null> = {};
   @state() chatModelSwitchPromises: Record<string, Promise<boolean>> = {};
