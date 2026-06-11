@@ -303,6 +303,57 @@ describe("loadWorkspaceSkillEntries", () => {
     expect(blockedEntries.map((entry) => entry.skill.name)).not.toContain("prose");
   });
 
+  it("loads promoted skill-forge skills but never staged or retired drafts", async () => {
+    const workspaceDir = await createTempWorkspaceDir();
+    const forgeDir = path.join(workspaceDir, ".forge-skills");
+    await writeSkill({
+      dir: path.join(forgeDir, "forge-promoted"),
+      name: "forge-promoted",
+      description: "Promoted by the forge gate",
+    });
+    await writeSkill({
+      dir: path.join(forgeDir, "_staging", "forge-draft"),
+      name: "forge-draft",
+      description: "Unvetted staging draft",
+    });
+    await writeSkill({
+      dir: path.join(forgeDir, "_retired", "forge-old"),
+      name: "forge-old",
+      description: "Demoted by decay",
+    });
+
+    const entries = loadTestWorkspaceSkillEntries(workspaceDir, {
+      forgeSkillsDir: forgeDir,
+    });
+
+    const promoted = entries.find((entry) => entry.skill.name === "forge-promoted");
+    expect(promoted?.skill.source).toBe("openclaw-skill-forge");
+    const names = entries.map((entry) => entry.skill.name);
+    expect(names).not.toContain("forge-draft");
+    expect(names).not.toContain("forge-old");
+  });
+
+  it("lets workspace skills override same-named forge-promoted skills", async () => {
+    const workspaceDir = await createTempWorkspaceDir();
+    const forgeDir = path.join(workspaceDir, ".forge-skills");
+    await writeSkill({
+      dir: path.join(forgeDir, "shared-name"),
+      name: "shared-name",
+      description: "Forge copy",
+    });
+    await writeWorkspaceSkills(workspaceDir, [
+      { name: "shared-name", description: "Workspace copy" },
+    ]);
+
+    const entries = loadTestWorkspaceSkillEntries(workspaceDir, {
+      forgeSkillsDir: forgeDir,
+    });
+
+    const winner = entries.find((entry) => entry.skill.name === "shared-name");
+    expect(winner?.skill.source).toBe("openclaw-workspace");
+    expect(winner?.skill.description).toBe("Workspace copy");
+  });
+
   it("loads the browser plugin automation skill when the bundled plugin is enabled", async () => {
     const workspaceDir = await createTempWorkspaceDir();
     const managedDir = path.join(workspaceDir, ".managed");

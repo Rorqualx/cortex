@@ -13,6 +13,7 @@ import { walkDirectorySync } from "../../infra/fs-safe.js";
 import { resolveOsHomeDir } from "../../infra/home-dir.js";
 import { isPathInside } from "../../infra/path-guards.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { resolveSkillForgeSkillsRoot } from "../../skill-forge/paths.js";
 import { CONFIG_DIR, resolveHomeDir, resolveUserPath } from "../../utils.js";
 import {
   resolveEffectiveAgentSkillFilter,
@@ -853,6 +854,7 @@ function loadSkillEntries(
     managedSkillsDir?: string;
     bundledSkillsDir?: string;
     pluginSkillsDir?: string;
+    forgeSkillsDir?: string;
   },
 ): SkillEntry[] {
   const limits = resolveSkillsLimits(opts?.config, opts?.agentId);
@@ -1150,6 +1152,23 @@ function loadSkillEntries(
     dir: managedSkillsDir,
     source: "openclaw-managed",
   });
+  // Skill-forge promotes gate-passed skills to <state>/skill-forge/skills/<name>.
+  // Underscore siblings (_staging, _retired) hold unvetted drafts and demoted
+  // skills; loading them would bypass the forge gate, so load per-skill dirs.
+  const forgeSkillsRoot = opts?.forgeSkillsDir ?? resolveSkillForgeSkillsRoot();
+  const forgeSkills = listChildDirectories(forgeSkillsRoot, {
+    followSymlinks: false,
+    maxCandidateDirs: limits.maxCandidatesPerRoot,
+  })
+    .dirs.filter((name) => !name.startsWith("_"))
+    .toSorted()
+    .slice(0, Math.max(0, limits.maxSkillsLoadedPerSource))
+    .flatMap((name) =>
+      loadSkills({
+        dir: path.join(forgeSkillsRoot, name),
+        source: "openclaw-skill-forge",
+      }),
+    );
   const osHomeDir = resolveUserHomeDir();
   const personalAgentsSkillsDir = osHomeDir
     ? path.resolve(osHomeDir, ".agents", "skills")
@@ -1169,7 +1188,11 @@ function loadSkillEntries(
   });
 
   const merged = new Map<string, LoadedSkillRecord>();
-  // Precedence: extra < bundled < managed < agents-skills-personal < agents-skills-project < workspace
+  // Precedence: forge < extra < bundled < managed < agents-skills-personal < agents-skills-project < workspace
+  // Forge-promoted skills are auto-generated, so anything user-installed wins.
+  for (const record of forgeSkills) {
+    merged.set(record.skill.name, record);
+  }
   for (const record of extraSkills) {
     merged.set(record.skill.name, record);
   }
@@ -1448,6 +1471,7 @@ export function loadWorkspaceSkillEntries(
     managedSkillsDir?: string;
     bundledSkillsDir?: string;
     pluginSkillsDir?: string;
+    forgeSkillsDir?: string;
     skillFilter?: string[];
     agentId?: string;
     eligibility?: SkillEligibilityContext;

@@ -1,6 +1,6 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { loadWorkspaceSkillEntries } from "../agents/skills/workspace.js";
+import { loadWorkspaceSkillEntries } from "../skills/loading/workspace.js";
 import {
   autostartStatus,
   installAutostart,
