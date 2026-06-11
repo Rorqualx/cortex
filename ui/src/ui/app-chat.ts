@@ -2127,11 +2127,20 @@ async function refreshChatModels(host: ChatHost) {
     host.chatModelCatalog = [];
     return;
   }
+  const client = host.client;
   host.chatModelsLoading = true;
   try {
-    host.chatModelCatalog = await loadModels(host.client);
+    const models = await loadModels(client);
+    // A reconnect swaps the client while this request is in flight; a late
+    // catalog from the old client must not overwrite the fresh one, matching
+    // the staleness guards in refreshChatMetadata.
+    if (host.client === client && host.connected) {
+      host.chatModelCatalog = models;
+    }
   } finally {
-    host.chatModelsLoading = false;
+    if (host.client === client) {
+      host.chatModelsLoading = false;
+    }
   }
 }
 
