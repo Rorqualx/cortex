@@ -897,7 +897,7 @@ function renderChatQuotaPill(state: AppViewState) {
   `;
 }
 
-export function renderChatAgentSelect(
+function renderChatAgentSelect(
   state: AppViewState,
   onSwitchSession: ChatSessionSwitchHandler,
   options = resolveChatAgentFilterOptions(state),
@@ -2039,6 +2039,60 @@ function resolveAgentPreferredModelValue(state: AppViewState, agentId: string): 
 }
 
 /**
+ * Agent the next new session is created for: the explicit sidebar pick, else
+ * the active session's agent. Picking an agent never switches the chat — the
+ * combo only materializes when New session is clicked.
+ */
+export function resolveSidebarNewSessionAgentId(state: AppViewState): string {
+  const picked = normalizeOptionalString(state.sidebarNewSessionAgentId);
+  if (picked) {
+    return normalizeAgentId(picked);
+  }
+  const parsed = parseAgentSessionKey(state.sessionKey);
+  return normalizeAgentId(parsed?.agentId ?? state.agentsList?.defaultId ?? "main");
+}
+
+export function renderSidebarAgentSelect(state: AppViewState) {
+  // Channel entries switch sessions in the composer variant; a new-session
+  // picker only offers real agents.
+  const options = resolveChatAgentFilterOptions(state).filter(
+    (entry) => !isChannelAgentOptionId(entry.id),
+  );
+  if (options.length <= 1) {
+    return "";
+  }
+  const selectedId = resolveSidebarNewSessionAgentId(state);
+  const selectedLabel = options.find((entry) => entry.id === selectedId)?.label ?? selectedId;
+  return html`
+    <label class="field chat-controls__session chat-controls__agent">
+      <select
+        data-sidebar-agent-select="true"
+        aria-label="New session agent"
+        title=${selectedLabel}
+        .value=${selectedId}
+        ?disabled=${!state.connected}
+        @change=${(event: Event) => {
+          // Only retarget the next new session. The model dropdown follows via
+          // its per-agent keying and falls back to this agent's preferred model.
+          state.sidebarNewSessionAgentId = normalizeAgentId(
+            (event.target as HTMLSelectElement).value,
+          );
+        }}
+      >
+        ${repeat(
+          options,
+          (entry) => entry.id,
+          (entry) =>
+            html`<option value=${entry.id} ?selected=${entry.id === selectedId}>
+              ${entry.label}
+            </option>`,
+        )}
+      </select>
+    </label>
+  `;
+}
+
+/**
  * Model the next new session should start with. The selection is keyed to the
  * agent it was made for: switching agents silently falls back to that agent's
  * preferred model instead of carrying a stale cross-agent pick.
@@ -2048,9 +2102,7 @@ export function resolveSidebarNewSessionModel(state: AppViewState): string {
   if (!selection?.value) {
     return "";
   }
-  return selection.agentId === resolveChatAgentFilterId(state, state.sessionKey)
-    ? selection.value
-    : "";
+  return selection.agentId === resolveSidebarNewSessionAgentId(state) ? selection.value : "";
 }
 
 export function renderSidebarModelSelect(state: AppViewState) {
@@ -2059,7 +2111,7 @@ export function renderSidebarModelSelect(state: AppViewState) {
     return "";
   }
   const displayLookup = buildCatalogDisplayLookup(catalog);
-  const activeAgentId = resolveChatAgentFilterId(state, state.sessionKey);
+  const activeAgentId = resolveSidebarNewSessionAgentId(state);
   const preferred = resolveAgentPreferredModelValue(state, activeAgentId);
   const preferredDisplay = preferred
     ? formatCatalogChatModelDisplayFromLookup(preferred, displayLookup)

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../app-view-state.ts";
 import {
   resolveChatAgentFilterOptions,
+  resolveSidebarNewSessionAgentId,
   resolveSidebarNewSessionModel,
 } from "./session-controls.ts";
 
@@ -56,7 +57,36 @@ describe("agent dropdown labels", () => {
   });
 });
 
+describe("resolveSidebarNewSessionAgentId", () => {
+  it("follows the active session's agent when nothing is picked", () => {
+    expect(resolveSidebarNewSessionAgentId(createState({ sessionKey: "agent:yoren:main" }))).toBe(
+      "yoren",
+    );
+  });
+
+  it("prefers an explicit sidebar pick over the active session", () => {
+    const state = createState({
+      sessionKey: "agent:yoren:main",
+      sidebarNewSessionAgentId: "podrick",
+    });
+    expect(resolveSidebarNewSessionAgentId(state)).toBe("podrick");
+  });
+
+  it("falls back to the default agent for non-agent session keys", () => {
+    expect(resolveSidebarNewSessionAgentId(createState({ sessionKey: "global" }))).toBe("main");
+  });
+});
+
 describe("resolveSidebarNewSessionModel", () => {
+  it("keys the model pick to the picked sidebar agent, not the active session", () => {
+    const state = createState({
+      sessionKey: "agent:yoren:main",
+      sidebarNewSessionAgentId: "main",
+      sidebarNewSessionModel: { agentId: "main", value: "zai/glm-5.1" },
+    });
+    expect(resolveSidebarNewSessionModel(state)).toBe("zai/glm-5.1");
+  });
+
   it("returns the picked model while the same agent is active", () => {
     const state = createState({
       sidebarNewSessionModel: { agentId: "main", value: "zai/glm-5.1" },

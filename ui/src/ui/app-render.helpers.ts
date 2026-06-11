@@ -5,7 +5,6 @@ import {
   createChatSessionsLoadOverrides,
   refreshChat,
   refreshChatAvatar,
-  scopedAgentParamsForSession,
   scopedAgentListParamsForSession,
 } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
@@ -18,6 +17,7 @@ import {
   renderChatModelSelect,
   resetChatSessionPickerState,
   resolveSessionOptionGroups,
+  resolveSidebarNewSessionAgentId,
   resolveSidebarNewSessionModel,
   switchChatModel,
 } from "./chat/session-controls.ts";
@@ -712,9 +712,9 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
   // Draft-only switch: no sessions.create here. The gateway materializes the
   // session when the first message is sent, so an opened-but-unused new chat
   // never registers in session history.
-  const agentId =
-    scopedAgentParamsForSession(state, previousSessionKey).agentId ??
-    resolveAgentIdFromSessionKey(previousSessionKey);
+  // The sidebar combo decides the target agent: an explicit sidebar pick wins,
+  // else the new session stays on the active session's agent.
+  const agentId = resolveSidebarNewSessionAgentId(state);
   const nextSessionKey = `agent:${agentId}:dashboard:${crypto.randomUUID()}`;
   const preservedDraft = state.chatMessage;
   const preservedAttachments = state.chatAttachments;

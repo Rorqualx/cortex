@@ -32,8 +32,8 @@ import {
 } from "./chat/chat-tab-bar.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import {
-  renderChatAgentSelect,
   renderChatSessionSelect,
+  renderSidebarAgentSelect,
   renderSidebarModelSelect,
   resolveChatAgentFilterId,
   resolveChatAgentFilterOptions,
@@ -567,7 +567,7 @@ function renderSidebarSessions(state: AppViewState) {
         ? nothing
         : html`
             <div class="sidebar-agent-controls">
-              ${renderChatAgentSelect(state, switchChatSession)} ${renderSidebarModelSelect(state)}
+              ${renderSidebarAgentSelect(state)} ${renderSidebarModelSelect(state)}
             </div>
           `}
     </section>
