@@ -725,6 +725,12 @@
   min-width: 0;
 }
 
+/* chat-controls__agent carries grid-area: agent for the composer row; in this
+   stacked grid both selects would land in the same implicit area and overlap. */
+.sidebar-agent-controls > .chat-controls__agent {
+  grid-area: auto;
+}
+
 /* Session picker + recent list relocated under the Chat nav item. */
 .sidebar-chat-nav-controls {
   display: grid;
