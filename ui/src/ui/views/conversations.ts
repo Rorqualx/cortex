@@ -61,7 +61,10 @@ function resolveConversationTitle(row: GatewaySessionRow): string {
 }
 
 function resolveConversationPreview(row: GatewaySessionRow, title: string): string | null {
+  // The thread's first user message is the canonical preview; metadata titles
+  // are fallbacks for sessions whose transcript has no readable first message.
   const candidates = [
+    row.firstMessagePreview,
     row.derivedTitle,
     row.goal?.objective,
     row.llmTitle,
@@ -99,6 +102,7 @@ function filterConversations(rows: GatewaySessionRow[], query: string): GatewayS
     const title = resolveConversationTitle(row).toLowerCase();
     if (title.includes(q)) return true;
     if (row.key.toLowerCase().includes(q)) return true;
+    if (row.firstMessagePreview?.toLowerCase().includes(q)) return true;
     if (row.goal?.objective?.toLowerCase().includes(q)) return true;
     if (row.derivedTitle?.toLowerCase().includes(q)) return true;
     if (row.label?.toLowerCase().includes(q)) return true;

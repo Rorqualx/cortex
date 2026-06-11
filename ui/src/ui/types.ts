@@ -472,6 +472,8 @@ export type GatewaySessionRow = {
   derivedTitle?: string;
   /** LLM-generated auto-title from first turn. */
   llmTitle?: string;
+  /** First user message of the thread, normalized for row previews. */
+  firstMessagePreview?: string;
 };
 
 export type SessionsListResult = SessionsListResultBase<GatewaySessionsDefaults, GatewaySessionRow>;

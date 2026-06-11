@@ -222,6 +222,17 @@ function truncateTitle(text: string, maxLen: number): string {
   return cut + "…";
 }
 
+const FIRST_MESSAGE_PREVIEW_MAX_LEN = 140;
+
+/** Normalize the first user message into a row preview, independent of title overrides. */
+function normalizeFirstMessagePreview(firstUserMessage: string | null): string | undefined {
+  const normalized = firstUserMessage?.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return truncateTitle(normalized, FIRST_MESSAGE_PREVIEW_MAX_LEN);
+}
+
 export function deriveSessionTitle(
   entry: SessionEntry | undefined,
   firstUserMessage?: string | null,
@@ -2117,6 +2128,7 @@ export function buildGatewaySessionRow(params: {
       ));
 
   let derivedTitle: string | undefined;
+  let firstMessagePreview: string | undefined;
   let lastMessagePreview: string | undefined;
   if (entry?.sessionId && (params.includeDerivedTitles || params.includeLastMessage)) {
     const fields = readSessionTitleFieldsFromTranscript(
@@ -2127,6 +2139,7 @@ export function buildGatewaySessionRow(params: {
     );
     if (params.includeDerivedTitles) {
       derivedTitle = deriveSessionTitle(entry, fields.firstUserMessage);
+      firstMessagePreview = normalizeFirstMessagePreview(fields.firstUserMessage);
     }
     if (params.includeLastMessage && fields.lastMessagePreview) {
       lastMessagePreview = fields.lastMessagePreview;
@@ -2162,6 +2175,7 @@ export function buildGatewaySessionRow(params: {
     displayName,
     derivedTitle,
     llmTitle: normalizeOptionalString(entry?.llmTitle),
+    firstMessagePreview,
     lastMessagePreview,
     channel,
     subject,
@@ -2829,6 +2843,7 @@ export async function listSessionsFromStoreAsync(params: {
       );
       if (includeDerivedTitles) {
         row.derivedTitle = deriveSessionTitle(entry, fields.firstUserMessage);
+        row.firstMessagePreview = normalizeFirstMessagePreview(fields.firstUserMessage);
       }
       if (includeLastMessage && fields.lastMessagePreview) {
         row.lastMessagePreview = fields.lastMessagePreview;
