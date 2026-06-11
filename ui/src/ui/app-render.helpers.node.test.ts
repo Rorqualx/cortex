@@ -965,6 +965,67 @@ describe("createChatSession", () => {
 });
 
 describe("switchChatSession", () => {
+  it("clears stale history pagination state when switching sessions", () => {
+    const settings = createSettings();
+    const state = {
+      sessionKey: "main",
+      chatMessage: "",
+      chatAttachments: [],
+      chatMessages: [{ role: "assistant", content: "old" }],
+      chatToolMessages: [],
+      chatStreamSegments: [],
+      chatThinkingLevel: null,
+      chatStream: null,
+      chatSideResult: null,
+      lastError: null,
+      compactionStatus: null,
+      fallbackStatus: null,
+      chatAvatarUrl: null,
+      chatQueue: [],
+      chatQueueBySession: {},
+      chatRunId: null,
+      chatOpenSessionTabs: [],
+      sessionsShowArchived: false,
+      chatSideResultTerminalRuns: new Set<string>(),
+      chatStreamStartedAt: null,
+      chatHistoryHasMore: true,
+      chatHistoryNextCursor: "cursor-main",
+      sessionsResult: {
+        ts: 0,
+        path: "",
+        count: 2,
+        defaults: { modelProvider: "openai", model: "gpt-5", contextTokens: null },
+        sessions: [row({ key: "main" }), row({ key: "agent:main:review" })],
+      },
+      settings,
+      announceSessionSwitch: vi.fn(),
+      applySettings(next: typeof settings) {
+        state.settings = next;
+      },
+      loadAssistantIdentity: vi.fn(),
+      resetToolStream: vi.fn(),
+      resetChatScroll: vi.fn(),
+      resetChatInputHistoryNavigation: vi.fn(),
+    } as unknown as AppViewState;
+
+    refreshChatAvatarMock.mockResolvedValue(undefined);
+    refreshSlashCommandsMock.mockResolvedValue(undefined);
+    loadChatHistoryMock.mockResolvedValue(undefined);
+    loadSessionsMock.mockResolvedValue(undefined);
+    syncSelectedSessionMessageSubscriptionMock.mockResolvedValue(undefined);
+
+    switchChatSession(state, "agent:main:review");
+
+    const host = state as unknown as {
+      chatHistoryHasMore: boolean;
+      chatHistoryNextCursor: string | null;
+    };
+    // A scroll-to-top before the new session's history applies must not fetch
+    // earlier pages with the previous session's cursor.
+    expect(host.chatHistoryHasMore).toBe(false);
+    expect(host.chatHistoryNextCursor).toBeNull();
+  });
+
   it("waits for the initial history and message subscription when requested", async () => {
     let resolveHistory!: () => void;
     let resolveSubscription!: () => void;

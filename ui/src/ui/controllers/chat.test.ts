@@ -9,6 +9,7 @@ import {
   abortChatRun,
   handleChatEvent,
   loadChatHistory,
+  loadEarlierMessages,
   requestChatSend,
   requestSkillForgeRevisionChatSend,
   sendChatMessage,
@@ -3380,5 +3381,93 @@ describe("loadChatHistory retry handling", () => {
       { role: "assistant", content: [{ type: "text", text: "visible old" }] },
     ]);
     expect(state.chatThinkingLevel).toBeNull();
+  });
+});
+
+describe("loadEarlierMessages staleness", () => {
+  function createPagedState(
+    request: ReturnType<typeof vi.fn>,
+    overrides: Partial<ChatState> = {},
+  ): ChatState {
+    return createState({
+      client: { request } as unknown as ChatState["client"],
+      chatMessages: [{ role: "assistant", content: [{ type: "text", text: "latest" }] }],
+      chatHistoryHasMore: true,
+      chatHistoryNextCursor: "cursor-1",
+      chatLoadingEarlier: false,
+      ...overrides,
+    });
+  }
+
+  it("prepends an earlier page and advances the cursor when nothing changed", async () => {
+    const pageRequest = createDeferred<Record<string, unknown>>();
+    const request = vi.fn(() => pageRequest.promise);
+    const state = createPagedState(request);
+
+    const earlierLoad = loadEarlierMessages(state);
+    pageRequest.resolve({
+      messages: [{ role: "user", content: [{ type: "text", text: "earlier ask" }] }],
+      hasMore: true,
+      nextCursor: "cursor-2",
+    });
+    await expect(earlierLoad).resolves.toBe(true);
+
+    expect(state.chatMessages).toEqual([
+      { role: "user", content: [{ type: "text", text: "earlier ask" }] },
+      { role: "assistant", content: [{ type: "text", text: "latest" }] },
+    ]);
+    expect(state.chatHistoryNextCursor).toBe("cursor-2");
+    expect(state.chatLoadingEarlier).toBe(false);
+  });
+
+  it("discards an earlier page when a newer history load started mid-flight", async () => {
+    const pageRequest = createDeferred<Record<string, unknown>>();
+    const reloadRequest = createDeferred<Record<string, unknown>>();
+    const request = vi.fn((_method: string, params?: { cursor?: string }) =>
+      params?.cursor ? pageRequest.promise : reloadRequest.promise,
+    );
+    const state = createPagedState(request);
+
+    const earlierLoad = loadEarlierMessages(state);
+    const reload = loadChatHistory(state);
+    reloadRequest.resolve({
+      messages: [{ role: "assistant", content: [{ type: "text", text: "fresh latest" }] }],
+      hasMore: true,
+      nextCursor: "cursor-fresh",
+    });
+    await reload;
+
+    pageRequest.resolve({
+      messages: [{ role: "assistant", content: [{ type: "text", text: "stale earlier" }] }],
+      hasMore: true,
+      nextCursor: "cursor-stale-next",
+    });
+    await expect(earlierLoad).resolves.toBe(false);
+
+    // The stale page must neither prepend nor regress the fresh cursor chain.
+    expect(state.chatMessages).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "fresh latest" }] },
+    ]);
+    expect(state.chatHistoryNextCursor).toBe("cursor-fresh");
+    expect(state.chatLoadingEarlier).toBe(false);
+  });
+
+  it("discards an earlier page after the session switches mid-flight", async () => {
+    const pageRequest = createDeferred<Record<string, unknown>>();
+    const request = vi.fn(() => pageRequest.promise);
+    const state = createPagedState(request, { sessionKey: "main" });
+
+    const earlierLoad = loadEarlierMessages(state);
+    state.sessionKey = "other";
+    pageRequest.resolve({
+      messages: [{ role: "assistant", content: [{ type: "text", text: "main earlier" }] }],
+      hasMore: false,
+    });
+    await expect(earlierLoad).resolves.toBe(false);
+
+    expect(state.chatMessages).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "latest" }] },
+    ]);
+    expect(state.chatHistoryNextCursor).toBe("cursor-1");
   });
 });

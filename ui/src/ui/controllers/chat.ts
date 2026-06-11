@@ -58,6 +58,10 @@ function isLatestChatHistoryRequest(state: ChatState, version: number): boolean 
   return chatHistoryRequestVersions.get(state as object) === version;
 }
 
+function currentChatHistoryVersion(state: ChatState): number {
+  return chatHistoryRequestVersions.get(state as object) ?? 0;
+}
+
 function shouldApplyChatHistoryResult(
   state: ChatState,
   version: number,
@@ -671,6 +675,7 @@ export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
   try {
     const cursor = state.chatHistoryNextCursor;
     const sessionKey = state.sessionKey;
+    const historyVersion = currentChatHistoryVersion(state);
     const requestAgentId = isSelectedGlobalEventSessionKey(sessionKey)
       ? resolveSelectedAgentId(state)
       : undefined;
@@ -680,8 +685,11 @@ export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
       limit: CHAT_HISTORY_REQUEST_LIMIT,
       cursor,
     });
-    // Verify session hasn't changed during the async request.
-    if (state.sessionKey !== sessionKey) {
+    // Discard if the session changed or a newer full history load started:
+    // a page belongs to the pagination chain of the load that produced its
+    // cursor, and applying it would prepend stale messages and regress
+    // chatHistoryNextCursor onto the old chain.
+    if (state.sessionKey !== sessionKey || currentChatHistoryVersion(state) !== historyVersion) {
       return false;
     }
     const messages = Array.isArray(res.messages) ? res.messages : [];
@@ -703,9 +711,13 @@ export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
 
 /** Pull every remaining older page until the transcript start, no user action. */
 async function drainEarlierMessages(state: ChatState, sessionKey: string): Promise<void> {
+  // A drain serves exactly one applied history load; a newer load resets the
+  // cursor chain and spawns its own drain, so this one must stop.
+  const historyVersion = currentChatHistoryVersion(state);
   for (let page = 0; page < CHAT_HISTORY_DRAIN_MAX_PAGES; page += 1) {
     if (
       state.sessionKey !== sessionKey ||
+      currentChatHistoryVersion(state) !== historyVersion ||
       !state.chatHistoryHasMore ||
       !state.chatHistoryNextCursor
     ) {
