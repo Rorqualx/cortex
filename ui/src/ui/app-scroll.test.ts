@@ -401,6 +401,73 @@ describe("streaming scroll behavior", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Earlier-load scroll restoration                                    */
+/* ------------------------------------------------------------------ */
+
+describe("earlier-load scroll restoration", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 1;
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function flushLoadEarlierChain() {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  function createEarlierLoadHost(loaded: boolean) {
+    const { host, container } = createScrollHost({
+      scrollHeight: 2000,
+      scrollTop: 40,
+      clientHeight: 400,
+    });
+    const scrollHost = host as typeof host & {
+      chatHistoryHasMore?: boolean;
+      onLoadEarlier?: () => Promise<boolean>;
+    };
+    scrollHost.chatHistoryHasMore = true;
+    scrollHost.onLoadEarlier = vi.fn().mockResolvedValue(loaded);
+    return { host: scrollHost, container };
+  }
+
+  it("restores the scroll offset after earlier messages prepend", async () => {
+    const { host, container } = createEarlierLoadHost(true);
+
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    expect(host.onLoadEarlier).toHaveBeenCalled();
+
+    // Prepended messages grew the container by 1000px.
+    container.scrollHeight = 3000;
+    await flushLoadEarlierChain();
+
+    expect(container.scrollTop).toBe(1040);
+  });
+
+  it("does not restore a scroll offset when the earlier-page load was discarded", async () => {
+    const { host, container } = createEarlierLoadHost(false);
+
+    handleChatScroll(host, { currentTarget: container } as unknown as Event);
+    expect(host.onLoadEarlier).toHaveBeenCalled();
+
+    // The container grew for another reason (e.g. the new session's history
+    // applied after a switch) — the stale offset must not be applied.
+    container.scrollHeight = 3000;
+    await flushLoadEarlierChain();
+
+    expect(container.scrollTop).toBe(40);
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /*  resetChatScroll                                                    */
 /* ------------------------------------------------------------------ */
 

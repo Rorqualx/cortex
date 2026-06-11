@@ -265,7 +265,13 @@ export function handleChatScroll(host: ScrollHost, event: Event) {
       // Capture scroll position for preservation after messages arrive.
       const prevScrollHeight = container.scrollHeight;
       const prevScrollTop = container.scrollTop;
-      void host.onLoadEarlier?.().then(() => {
+      void host.onLoadEarlier?.().then((loaded) => {
+        // A discarded load (session switched or a newer history load took
+        // over) prepended nothing; adjusting by the height delta would jump
+        // the new session's scroll position.
+        if (!loaded) {
+          return;
+        }
         // After state update triggers re-render, restore scroll position.
         void host.updateComplete.then(() => {
           requestAnimationFrame(() => {
