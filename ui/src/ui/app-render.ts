@@ -1315,10 +1315,6 @@ function buildWorkspaceFileSidebarContent(name: string, content: string): string
 }
 
 export function renderApp(state: AppViewState) {
-  // Expose gateway client globally so edit-save can call chat.branch
-  if (state.client) {
-    (window as any).__oc_client = state.client;
-  }
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
     typeof updatableState.requestUpdate === "function"
@@ -4110,13 +4106,20 @@ export function renderApp(state: AppViewState) {
                       state.chatMessage = "";
                       void (async () => {
                         try {
-                          // Create the branch point (rewind)
+                          // Rewind to just before the edited message so the old
+                          // version moves to the abandoned branch and the edited
+                          // text replaces it.
                           await state.client?.request("chat.branch", {
                             sessionKey: state.sessionKey,
                             messageId,
+                            mode: "before",
                           });
-                        } catch {
-                          /* graceful */
+                        } catch (err) {
+                          // Without the branch point a resend would duplicate the
+                          // message, so surface the failure and stop.
+                          state.chatError = String(err);
+                          state.requestUpdate?.();
+                          return;
                         }
                         // Reload history — this shows only messages up to the branch point
                         state.chatMessages = [];

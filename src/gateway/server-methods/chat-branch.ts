@@ -30,6 +30,12 @@ export interface ChatBranchParams {
   entryId?: string;
   /** LLM message ID — gateway resolves this to the entry ID. */
   messageId?: string;
+  /**
+   * "at" (default) rewinds so the next send follows the target entry.
+   * "before" rewinds to the target's parent so the target itself moves to the
+   * abandoned branch — used by message editing to replace, not duplicate.
+   */
+  mode?: "at" | "before";
   agentId?: string;
 }
 
@@ -64,7 +70,8 @@ export interface SessionBranchPoint {
 
 export interface ChatBranchResult {
   ok: true;
-  branchFromId: string;
+  /** Null when mode "before" rewinds past a root entry. */
+  branchFromId: string | null;
   branchMarkerId: string;
   /** The new active leaf (the branch marker). */
   newLeafId: string;
@@ -95,6 +102,9 @@ function validateChatBranchParams(params: unknown): params is ChatBranchParams {
     return false;
   }
   if (p.agentId !== undefined && typeof p.agentId !== "string") {
+    return false;
+  }
+  if (p.mode !== undefined && p.mode !== "at" && p.mode !== "before") {
     return false;
   }
   return true;
@@ -222,7 +232,7 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
     return;
   }
 
-  const { sessionKey, entryId: rawEntryId, messageId, agentId } = params as ChatBranchParams;
+  const { sessionKey, entryId: rawEntryId, messageId, mode, agentId } = params as ChatBranchParams;
   const agentIdOverride = typeof agentId === "string" ? agentId : undefined;
 
   const { entry } = loadSessionEntry(sessionKey, { agentId: agentIdOverride });
@@ -288,6 +298,10 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
     return;
   }
 
+  // "before" parents the marker on the target's parent, so the target entry
+  // (and everything after it) moves to the abandoned branch.
+  const branchBaseId = mode === "before" ? (targetEntry.parentId ?? null) : resolvedEntryId;
+
   // Create a branch marker entry that becomes the new leaf.
   // When the next chat.send runs, the SessionManager will load from the file,
   // see this marker as the last entry (leaf), and the replay history will
@@ -297,9 +311,9 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
     type: "custom" as const,
     customType: "branch_marker",
     id: markerId,
-    parentId: resolvedEntryId,
+    parentId: branchBaseId,
     timestamp: new Date().toISOString(),
-    branchFromId: resolvedEntryId,
+    branchFromId: branchBaseId,
   };
 
   try {
@@ -315,7 +329,7 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
 
   respond(true, {
     ok: true,
-    branchFromId: resolvedEntryId,
+    branchFromId: branchBaseId,
     branchMarkerId: markerId,
     newLeafId: markerId,
   } satisfies ChatBranchResult);

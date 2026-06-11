@@ -920,10 +920,7 @@ function placeDeleteConfirmPopover(
   popover.dataset.placement = placeBelow ? "below" : "above";
 }
 
-function renderEditButton(
-  group: MessageGroup,
-  _onEdit?: (text: string, messageId: string) => void,
-) {
+function renderEditButton(group: MessageGroup, onEdit?: (text: string, messageId: string) => void) {
   return html`
     <button
       class="chat-group-edit"
@@ -944,7 +941,8 @@ function renderEditButton(
           firstMsg && typeof firstMsg === "object" && firstMsg !== null
             ? ((firstMsg as Record<string, unknown>).id as string | undefined)
             : undefined;
-        enterEditMode(bubble, currentText, () => {}, msgId);
+        if (!msgId || !onEdit) return;
+        enterEditMode(bubble, currentText, (text) => onEdit(text, msgId));
       }}
     >
       <span class="chat-group-edit__icon">
@@ -965,12 +963,7 @@ function renderEditButton(
   `;
 }
 
-function enterEditMode(
-  bubble: HTMLElement,
-  originalText: string,
-  _onSave: (text: string) => void,
-  messageId?: string,
-) {
+function enterEditMode(bubble: HTMLElement, originalText: string, onSave: (text: string) => void) {
   const originalHTML = bubble.innerHTML;
 
   bubble.innerHTML = `
@@ -992,44 +985,14 @@ function enterEditMode(
   };
 
   cancelBtn?.addEventListener("click", cleanup);
-  saveBtn?.addEventListener("click", async () => {
+  saveBtn?.addEventListener("click", () => {
     const newText = textarea?.value?.trim();
+    cleanup();
     if (!newText || newText === originalText) {
-      cleanup();
       return;
     }
-    cleanup();
-
-    // Try to branch from the edited message
-    const client = (window as any).__oc_client;
-    const sessionKey = (window as any).__oc_sessionKey;
-    if (client?.request && messageId && sessionKey) {
-      try {
-        await client.request("chat.branch", { sessionKey, messageId });
-      } catch {
-        /* ok if not supported */
-      }
-    }
-
-    // Populate composer and send
-    const ta = document.querySelector(
-      ".agent-chat__composer-combobox > textarea",
-    ) as HTMLTextAreaElement | null;
-    if (!ta) return;
-    ta.value = newText;
-    ta.dispatchEvent(new Event("input", { bubbles: true }));
-    ta.focus();
-    requestAnimationFrame(() => {
-      ta.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
+    // The host callback owns the branch + resend flow (see onEditMessage).
+    onSave(newText);
   });
 
   const onKey = (ke: KeyboardEvent) => {
@@ -1039,44 +1002,6 @@ function enterEditMode(
     }
   };
   document.addEventListener("keydown", onKey);
-}
-
-function renderBranchButton(group: MessageGroup, onBranch?: (messageId: string) => void) {
-  // Always render the button element so CSS can show/hide it.
-  // If no callback is provided, clicking is a no-op.
-  const firstMsg = group.messages[0]?.message;
-  const messageId =
-    firstMsg && typeof firstMsg === "object" && firstMsg !== null
-      ? (firstMsg as Record<string, unknown>).id
-      : undefined;
-  return html`
-    <button
-      class="chat-group-edit"
-      title="Edit message"
-      aria-label="Edit this message"
-      @click=${(e: Event) => {
-        e.stopPropagation();
-        if (typeof messageId === "string" && onBranch) {
-          onBranch(messageId);
-        }
-      }}
-    >
-      <span class="chat-group-edit__icon">
-        <svg
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          width="13"
-          height="13"
-        >
-          <path d="M11 2a2.828 2.828 0 1 1 4 4L7.5 13.5 2 14l.5-5.5L11 2z" />
-        </svg>
-      </span>
-    </button>
-  `;
 }
 
 function renderDeleteButton(onDelete: () => void, side: DeleteConfirmSide) {
