@@ -295,6 +295,7 @@ describe("workboard controller", () => {
       labels: [],
       agentId: "",
       sessionKey: "agent:main:dashboard:1",
+      section: "tasks",
     });
     expect(state.cards[0]).toMatchObject({ id: "card-2", title: "Write tests" });
     expect(state.draftOpen).toBe(false);
@@ -364,6 +365,7 @@ describe("workboard controller", () => {
         labels: ["ui", "polish"],
         agentId: "dev",
         sessionKey: sampleSession.key,
+        section: "tasks",
       },
     });
     expect(state.cards[0]).toMatchObject({ title: "Updated board", status: "review" });

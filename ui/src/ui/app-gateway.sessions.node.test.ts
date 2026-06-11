@@ -403,7 +403,8 @@ describe("handleGatewayEvent sessions.changed", () => {
     vi.advanceTimersByTime(4_999);
     expect(loadSessionsMock).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    expect(loadSessionsMock).toHaveBeenCalledWith(host);
+    // Fork: debounced reloads load all sessions (activeMinutes: 0) for the conversations view.
+    expect(loadSessionsMock).toHaveBeenCalledWith(host, { activeMinutes: 0 });
   });
 
   it("coalesces unapplied session change reloads into one reconciliation", () => {
@@ -430,7 +431,8 @@ describe("handleGatewayEvent sessions.changed", () => {
     expect(loadSessionsMock).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(loadSessionsMock).toHaveBeenCalledTimes(1);
-    expect(loadSessionsMock).toHaveBeenCalledWith(host);
+    // Fork: debounced reloads load all sessions (activeMinutes: 0) for the conversations view.
+    expect(loadSessionsMock).toHaveBeenCalledWith(host, { activeMinutes: 0 });
   });
 
   it("skips a delayed session reload after the user returns to chat", () => {

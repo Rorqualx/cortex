@@ -819,7 +819,8 @@ describe("grouped chat rendering", () => {
       1_000_000,
     );
     const meta = cached.querySelector<HTMLDetailsElement>("details.msg-meta");
-    expect(meta?.open).toBe(false);
+    // Fork behavior: context meta renders expanded by default (25c18ed479).
+    expect(meta?.open).toBe(true);
     expect(meta?.querySelector(".msg-meta__summary span:last-child")?.textContent).toBe("Context");
     expect(cached.querySelector(".msg-meta__ctx")?.textContent).toBe("44% ctx");
     expect(

@@ -1526,6 +1526,8 @@ describe("connectGateway", () => {
       {
         role: "assistant",
         content: [{ type: "text", text: "Final answer" }],
+        // Finals get a local timestamp so racing history refreshes keep them.
+        timestamp: expect.any(Number),
       },
     ]);
     expect(loadChatHistoryMock).not.toHaveBeenCalled();
@@ -1574,6 +1576,7 @@ describe("connectGateway", () => {
       {
         role: "assistant",
         content: [{ type: "text", text: "Final answer" }],
+        timestamp: expect.any(Number),
       },
     ]);
     expect(host.toolStreamOrder).toHaveLength(1);

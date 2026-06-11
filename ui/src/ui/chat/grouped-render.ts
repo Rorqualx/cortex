@@ -507,7 +507,8 @@ export function renderMessageGroup(
     normalizedRole === "user"
       ? (userLabel ?? resolvedUserName)
       : normalizedRole === "assistant"
-        ? assistantName
+        ? // Forwarded handoffs carry a senderLabel; show source attribution.
+          (userLabel ?? assistantName)
         : normalizedRole === "tool"
           ? "Tool"
           : normalizedRole;

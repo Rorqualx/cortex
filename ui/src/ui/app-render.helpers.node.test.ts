@@ -163,6 +163,7 @@ function createChatSessionState(overrides: Partial<AppViewState> = {}) {
     chatRunId: null,
     chatSending: false,
     chatLoading: false,
+    chatOpenSessionTabs: [],
     chatSideResultTerminalRuns: new Set<string>(),
     chatStreamStartedAt: null,
     connected: true,
@@ -784,46 +785,27 @@ describe("handleChatManualRefresh", () => {
 });
 
 describe("createChatSession", () => {
-  it("creates a dashboard session, switches to it, and preserves the current composer", async () => {
+  // Fork contract (7103a0b6d6): New Chat is draft-only. No sessions.create —
+  // the gateway materializes the session when the first message is sent.
+  it("switches to a draft dashboard session without registering it", async () => {
     const state = createChatSessionState();
-    createSessionAndRefreshMock.mockResolvedValue("agent:ops:dashboard:new-chat");
-    refreshChatAvatarMock.mockResolvedValue(undefined);
-    refreshSlashCommandsMock.mockResolvedValue(undefined);
-    loadChatHistoryMock.mockResolvedValue(undefined);
-    loadSessionsMock.mockResolvedValue(undefined);
 
     await createChatSession(state);
 
-    expect(createSessionAndRefreshMock).toHaveBeenCalledWith(
-      state,
-      {
-        agentId: "ops",
-        parentSessionKey: "agent:ops:main",
-        emitCommandHooks: true,
-      },
-      {
-        activeMinutes: 120,
-        limit: 50,
-        includeGlobal: true,
-        includeUnknown: true,
-        showArchived: false,
-        agentId: "ops",
-      },
-    );
-    expect(state.sessionKey).toBe("agent:ops:dashboard:new-chat");
-    expect(state.settings.sessionKey).toBe("agent:ops:dashboard:new-chat");
+    expect(createSessionAndRefreshMock).not.toHaveBeenCalled();
+    expect(state.sessionKey).toMatch(/^agent:ops:dashboard:[0-9a-f-]{36}$/);
+    expect(state.settings.sessionKey).toBe(state.sessionKey);
     expect(state.chatMessage).toBe("draft prompt");
     expect(state.chatAttachments).toEqual([
       { id: "att-1", mimeType: "image/png", dataUrl: "data:image/png;base64,AAA" },
     ]);
     expect(state.chatMessages).toStrictEqual([]);
-    expect(loadChatHistoryMock).toHaveBeenCalledWith(state);
   });
 
-  it("creates selected global sessions under the same agent used for refresh", async () => {
+  it("creates global drafts under the sidebar-picked agent", async () => {
     const state = createChatSessionState({
       sessionKey: "global",
-      assistantAgentId: "work",
+      sidebarNewSessionAgentId: "work",
       sessionsResult: {
         ts: 0,
         path: "",
@@ -832,69 +814,11 @@ describe("createChatSession", () => {
         sessions: [row({ key: "global", kind: "global" })],
       },
     });
-    createSessionAndRefreshMock.mockResolvedValue("agent:work:dashboard:new-chat");
-    refreshChatAvatarMock.mockResolvedValue(undefined);
-    refreshSlashCommandsMock.mockResolvedValue(undefined);
-    loadChatHistoryMock.mockResolvedValue(undefined);
-    loadSessionsMock.mockResolvedValue(undefined);
 
     await createChatSession(state);
 
-    expect(createSessionAndRefreshMock).toHaveBeenCalledWith(
-      state,
-      {
-        agentId: "work",
-        parentSessionKey: "global",
-        emitCommandHooks: true,
-      },
-      {
-        activeMinutes: 120,
-        limit: 50,
-        includeGlobal: true,
-        includeUnknown: true,
-        showArchived: false,
-        agentId: "work",
-      },
-    );
-    expect(state.sessionKey).toBe("agent:work:dashboard:new-chat");
-  });
-
-  it("preserves draft and attachment edits made while session creation is in flight", async () => {
-    const state = createChatSessionState();
-    const updatedAttachments = [
-      { id: "att-2", mimeType: "image/png", dataUrl: "data:image/png;base64,BBB" },
-    ];
-    createSessionAndRefreshMock.mockImplementation(async () => {
-      state.chatMessage = "updated draft";
-      state.chatAttachments = updatedAttachments;
-      return "agent:ops:dashboard:new-chat";
-    });
-    refreshChatAvatarMock.mockResolvedValue(undefined);
-    refreshSlashCommandsMock.mockResolvedValue(undefined);
-    loadChatHistoryMock.mockResolvedValue(undefined);
-    loadSessionsMock.mockResolvedValue(undefined);
-
-    await createChatSession(state);
-
-    expect(state.sessionKey).toBe("agent:ops:dashboard:new-chat");
-    expect(state.chatMessage).toBe("updated draft");
-    expect(state.chatAttachments).toBe(updatedAttachments);
-    expect(loadChatHistoryMock).toHaveBeenCalledWith(state);
-  });
-
-  it("ignores a stale create response after the active session changes", async () => {
-    const state = createChatSessionState();
-    createSessionAndRefreshMock.mockImplementation(async () => {
-      state.sessionKey = "agent:ops:other";
-      return "agent:ops:dashboard:new-chat";
-    });
-
-    await createChatSession(state);
-
-    expect(state.sessionKey).toBe("agent:ops:other");
-    expect(state.chatMessage).toBe("draft prompt");
-    expect(state.chatMessages).toEqual([{ role: "assistant", content: "old" }]);
-    expect(loadChatHistoryMock).not.toHaveBeenCalled();
+    expect(createSessionAndRefreshMock).not.toHaveBeenCalled();
+    expect(state.sessionKey).toMatch(/^agent:work:dashboard:/);
   });
 
   it("does not create or switch while a run is active", async () => {
@@ -912,55 +836,6 @@ describe("createChatSession", () => {
     expect(state.lastError).toBe(
       "Start a new session after the active run or queued messages finish.",
     );
-  });
-
-  it("shows feedback instead of clearing errors when session loading blocks creation", async () => {
-    const state = createChatSessionState({
-      sessionsLoading: true,
-      lastError: "previous error",
-    });
-
-    await createChatSession(state);
-
-    expect(createSessionAndRefreshMock).not.toHaveBeenCalled();
-    expect(state.sessionKey).toBe("agent:ops:main");
-    expect(state.chatMessage).toBe("draft prompt");
-    expect(state.lastError).toBe(
-      "Session list is still refreshing. Try New Chat again in a moment.",
-    );
-  });
-
-  it("shows creation failure feedback when creation is skipped without a session error", async () => {
-    const state = createChatSessionState({ lastError: "previous error" });
-    createSessionAndRefreshMock.mockResolvedValue(null);
-
-    await createChatSession(state);
-
-    expect(createSessionAndRefreshMock).toHaveBeenCalledTimes(1);
-    expect(state.sessionKey).toBe("agent:ops:main");
-    expect(state.chatMessage).toBe("draft prompt");
-    expect(state.sessionsError).toBeNull();
-    expect(state.lastError).toBe("New Chat could not create a new session. Try again in a moment.");
-    expect(loadChatHistoryMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps refresh feedback when a queued session refresh skips creation", async () => {
-    const state = createChatSessionState({ lastError: "previous error" });
-    createSessionAndRefreshMock.mockImplementation(async () => {
-      state.sessionsLoading = true;
-      return null;
-    });
-
-    await createChatSession(state);
-
-    expect(createSessionAndRefreshMock).toHaveBeenCalledTimes(1);
-    expect(state.sessionKey).toBe("agent:ops:main");
-    expect(state.chatMessage).toBe("draft prompt");
-    expect(state.sessionsError).toBeNull();
-    expect(state.lastError).toBe(
-      "Session list is still refreshing. Try New Chat again in a moment.",
-    );
-    expect(loadChatHistoryMock).not.toHaveBeenCalled();
   });
 });
 
@@ -1037,6 +912,7 @@ describe("switchChatSession", () => {
     });
     const settings = createSettings();
     const state = {
+      chatOpenSessionTabs: [],
       sessionKey: "main",
       chatMessage: "",
       chatAttachments: [],
@@ -1103,6 +979,7 @@ describe("switchChatSession", () => {
   it("refreshes the chat avatar after clearing session-scoped state", async () => {
     const settings = createSettings();
     const state = {
+      chatOpenSessionTabs: [],
       sessionKey: "main",
       chatMessage: "draft",
       chatAttachments: [
@@ -1195,6 +1072,7 @@ describe("switchChatSession", () => {
   it("restores queued messages when switching back to their session", () => {
     const settings = createSettings();
     const state = {
+      chatOpenSessionTabs: [],
       sessionKey: "main",
       chatMessage: "",
       chatAttachments: [],
@@ -1241,6 +1119,7 @@ describe("switchChatSession", () => {
   it("does not force agentId=main for plain session keys", async () => {
     const settings = createSettings();
     const state = {
+      chatOpenSessionTabs: [],
       sessionKey: "main",
       chatMessage: "",
       chatAttachments: [],
@@ -1295,6 +1174,7 @@ describe("dismissChatError", () => {
   it("clears persistent Talk error state", () => {
     const stop = vi.fn();
     const state = {
+      chatOpenSessionTabs: [],
       lastError: 'Realtime voice provider "openai" is not configured',
       lastErrorCode: "UNAVAILABLE",
       realtimeTalkActive: true,
