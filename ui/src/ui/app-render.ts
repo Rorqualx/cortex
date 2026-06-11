@@ -531,7 +531,7 @@ function renderSidebarSessions(state: AppViewState) {
   const collapsed = state.settings.navCollapsed;
   const busy = isSidebarSessionBusy(state);
   const recent = collapsed ? [] : resolveSidebarRecentSessions(state);
-  const newSessionDisabled = !state.connected || state.sessionsLoading || busy || !state.client;
+  const newSessionDisabled = !state.connected || busy || !state.client;
   const newSessionTitle = !state.connected
     ? "Connect to create a new session"
     : busy
@@ -593,7 +593,8 @@ function renderSidebarSessions(state: AppViewState) {
                     requestAnimationFrame(() => {
                       const active = document.querySelector(".sidebar-recent-session--active");
                       if (active) {
-                        active.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                        // Optional call: jsdom elements have no scrollIntoView.
+                        active.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
                       }
                     });
                   }

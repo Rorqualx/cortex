@@ -338,6 +338,7 @@ describe("createSessionAndRefresh", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
     expect(state.sessionsResult?.sessions[0]?.key).toBe("agent:main:dashboard:abc");
     expect(state.sessionsLoading).toBe(false);
@@ -401,6 +402,7 @@ describe("deleteSessionsAndRefresh", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
     expect(state.sessionsLoading).toBe(false);
   });
@@ -433,6 +435,7 @@ describe("deleteSessionsAndRefresh", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
       agentId: "work",
     });
   });
@@ -528,6 +531,7 @@ describe("deleteSessionsAndRefresh", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
     expect(state.sessionsLoading).toBe(false);
   });
@@ -552,6 +556,7 @@ describe("patchSession", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
       agentId: "work",
     });
   });
@@ -804,6 +809,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
   });
 
@@ -834,6 +840,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
   });
 
@@ -862,6 +869,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
   });
 
@@ -891,6 +899,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
   });
 
@@ -921,6 +930,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
       agentId: "ops",
     });
   });
@@ -961,6 +971,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
   });
 
@@ -1061,11 +1072,13 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
     expect(request).toHaveBeenNthCalledWith(2, "sessions.list", {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
     expect(state.sessionsResult?.ts).toBe(2);
     expect(state.sessionsLoading).toBe(false);
@@ -1149,6 +1162,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
     });
     expect(request).toHaveBeenNthCalledWith(2, "sessions.compaction.list", {
       key: "agent:main:main",
@@ -1209,6 +1223,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
       agentId: "work",
     });
     expect(request).toHaveBeenNthCalledWith(3, "sessions.compaction.restore", {
@@ -1220,6 +1235,7 @@ describe("loadSessions", () => {
       includeGlobal: true,
       includeUnknown: true,
       configuredAgentsOnly: true,
+      includeDerivedTitles: true,
       agentId: "work",
     });
   });

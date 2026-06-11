@@ -23,11 +23,7 @@ import { refreshSlashCommands } from "./chat/slash-commands.ts";
 import { resolveControlUiAuthToken } from "./control-ui-auth.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
 import type { ChatState } from "./controllers/chat.ts";
-import {
-  createSessionAndRefresh,
-  loadSessions,
-  syncSelectedSessionMessageSubscription,
-} from "./controllers/sessions.ts";
+import { loadSessions, syncSelectedSessionMessageSubscription } from "./controllers/sessions.ts";
 import { icons } from "./icons.ts";
 import { iconForTab, isSettingsTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
 import { isCronSessionKey, parseSessionKey, resolveSessionDisplayName } from "./session-display.ts";
@@ -197,10 +193,6 @@ function canSwitchToNewChatSession(state: AppViewState): boolean {
 
 const NEW_CHAT_ACTIVE_RUN_MESSAGE =
   "Start a new session after the active run or queued messages finish.";
-const NEW_CHAT_SESSIONS_LOADING_MESSAGE =
-  "Session list is still refreshing. Try New Chat again in a moment.";
-const NEW_CHAT_CREATE_FAILED_MESSAGE =
-  "New Chat could not create a new session. Try again in a moment.";
 
 export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: boolean }) {
   const href = pathForTab(tab, state.basePath);
@@ -711,50 +703,17 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
     state.chatError = state.lastError;
     return false;
   }
-  if (state.sessionsLoading) {
-    state.lastError = NEW_CHAT_SESSIONS_LOADING_MESSAGE;
-    state.chatError = state.lastError;
-    return false;
-  }
 
   state.lastError = null;
   state.chatError = null;
   const previousSessionKey = state.sessionKey;
-  const parentSessionKey = state.sessionsResult?.sessions.some(
-    (row) => row.key === previousSessionKey,
-  )
-    ? previousSessionKey
-    : undefined;
-  const nextSessionKey = await createSessionAndRefresh(
-    state as unknown as Parameters<typeof createSessionAndRefresh>[0],
-    {
-      agentId:
-        scopedAgentParamsForSession(state, previousSessionKey).agentId ??
-        resolveAgentIdFromSessionKey(previousSessionKey),
-      parentSessionKey,
-      emitCommandHooks: parentSessionKey !== undefined ? true : undefined,
-    },
-    {
-      ...createChatSessionsLoadOverrides(state),
-      ...scopedAgentListParamsForSession(state, previousSessionKey),
-    },
-  );
-  if (
-    !nextSessionKey ||
-    state.sessionKey !== previousSessionKey ||
-    !canSwitchToNewChatSession(state)
-  ) {
-    if (!nextSessionKey) {
-      state.lastError =
-        state.sessionsError ??
-        (state.sessionsLoading
-          ? NEW_CHAT_SESSIONS_LOADING_MESSAGE
-          : NEW_CHAT_CREATE_FAILED_MESSAGE);
-      state.chatError = state.lastError;
-    }
-    return false;
-  }
-
+  // Draft-only switch: no sessions.create here. The gateway materializes the
+  // session when the first message is sent, so an opened-but-unused new chat
+  // never registers in session history.
+  const agentId =
+    scopedAgentParamsForSession(state, previousSessionKey).agentId ??
+    resolveAgentIdFromSessionKey(previousSessionKey);
+  const nextSessionKey = `agent:${agentId}:dashboard:${crypto.randomUUID()}`;
   const preservedDraft = state.chatMessage;
   const preservedAttachments = state.chatAttachments;
   switchChatSession(state, nextSessionKey);

@@ -528,7 +528,7 @@ describe("control UI routing", () => {
     expect(window.location.search).toBe("?session=agent%3Amain%3Afirst");
   });
 
-  it("creates a new chat session from the sidebar", async () => {
+  it("opens a draft chat session from the sidebar without registering it", async () => {
     const app = mountApp("/overview");
     app.sessionKey = "agent:main:main";
     app.sessionsResult = createSessionsResult([
@@ -537,14 +537,8 @@ describe("control UI routing", () => {
     app.client = {
       stop: vi.fn(),
       request: vi.fn(async (method: string) => {
-        if (method === "sessions.create") {
-          return { key: "agent:main:fresh" };
-        }
         if (method === "sessions.list") {
-          return createSessionsResult([
-            { key: "agent:main:fresh", label: "Fresh session" },
-            { key: "agent:main:main", label: "Main Session" },
-          ]);
+          return createSessionsResult([{ key: "agent:main:main", label: "Main Session" }]);
         }
         return null;
       }),
@@ -554,15 +548,13 @@ describe("control UI routing", () => {
     expectButtonWithText(app, "New session").click();
 
     await vi.waitFor(() => {
-      expect(app.sessionKey).toBe("agent:main:fresh");
+      expect(app.sessionKey).toMatch(/^agent:main:dashboard:[0-9a-f-]{36}$/);
     });
     expect(app.tab).toBe("chat");
     expect(window.location.pathname).toBe("/chat");
-    expect(app.client?.["request"]).toHaveBeenCalledWith("sessions.create", {
-      agentId: "main",
-      parentSessionKey: "agent:main:main",
-      emitCommandHooks: true,
-    });
+    // The session is a local draft: it must not be created server-side until
+    // the first message is sent.
+    expect(app.client?.["request"]).not.toHaveBeenCalledWith("sessions.create", expect.anything());
   });
 
   it("closes composer view settings on Escape, outside pointerdown, and tab changes", async () => {
