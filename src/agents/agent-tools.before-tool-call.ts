@@ -64,6 +64,7 @@ import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import { normalizeToolName } from "./tool-policy.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { callGatewayTool } from "./tools/gateway.js";
+import { captureToolFilePreImage } from "./turn-file-snapshots.js";
 
 export type ToolOutcomeObservation = {
   toolName: string;
@@ -799,6 +800,17 @@ export async function runBeforeToolCallHook(args: {
 }): Promise<HookOutcome> {
   const toolName = normalizeToolName(args.toolName || "tool");
   const params = args.params;
+
+  // Journal the target file's pre-image before write/edit tools mutate it so
+  // chat.branch can roll back code changes alongside a message edit.
+  captureToolFilePreImage({
+    toolName,
+    params,
+    agentId: args.ctx?.agentId,
+    sessionId: args.ctx?.sessionId,
+    runId: args.ctx?.runId,
+    cwd: args.ctx?.cwd,
+  });
 
   if (args.ctx?.sessionKey) {
     const { getDiagnosticSessionState, logToolLoopAction, detectToolCallLoop, recordToolCall } =

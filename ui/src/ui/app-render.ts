@@ -4100,8 +4100,13 @@ export function renderApp(state: AppViewState) {
                         ]);
                       })();
                     },
-                    onEditMessage: (text, messageId) => {
+                    onEditMessage: (text, entryId) => {
                       if (!state.client || !state.connected) return;
+                      const restoreFiles = window.confirm(
+                        "Also roll back code changes made after this message?\n\n" +
+                          "OK — roll back files and the conversation\n" +
+                          "Cancel — roll back the conversation only",
+                      );
                       // Clear the composer
                       state.chatMessage = "";
                       void (async () => {
@@ -4111,8 +4116,9 @@ export function renderApp(state: AppViewState) {
                           // text replaces it.
                           await state.client?.request("chat.branch", {
                             sessionKey: state.sessionKey,
-                            messageId,
+                            entryId,
                             mode: "before",
+                            restoreFiles,
                           });
                         } catch (err) {
                           // Without the branch point a resend would duplicate the

@@ -935,14 +935,16 @@ function renderEditButton(group: MessageGroup, onEdit?: (text: string, messageId
         ) as HTMLElement | null;
         if (!bubble) return;
         const currentText = bubble.textContent?.trim() ?? "";
-        // Extract message ID from the first message in the group
-        const firstMsg = group.messages[0]?.message;
-        const msgId =
-          firstMsg && typeof firstMsg === "object" && firstMsg !== null
-            ? ((firstMsg as Record<string, unknown>).id as string | undefined)
+        // The transcript entry id lives in __openclaw meta; user messages have
+        // no message.id, so the entry id is the only stable handle for them.
+        const record = group.messages[0]?.message as Record<string, unknown> | undefined;
+        const meta =
+          record && typeof record["__openclaw"] === "object" && record["__openclaw"] !== null
+            ? (record["__openclaw"] as Record<string, unknown>)
             : undefined;
-        if (!msgId || !onEdit) return;
-        enterEditMode(bubble, currentText, (text) => onEdit(text, msgId));
+        const entryId = typeof meta?.id === "string" ? meta.id : undefined;
+        if (!entryId || !onEdit) return;
+        enterEditMode(bubble, currentText, (text) => onEdit(text, entryId));
       }}
     >
       <span class="chat-group-edit__icon">

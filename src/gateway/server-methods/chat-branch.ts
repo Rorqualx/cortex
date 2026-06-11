@@ -18,7 +18,12 @@ import {
   type FileEntry,
   type SessionEntry,
 } from "../../agents/sessions/session-manager.js";
+import {
+  restoreFilesToTimestamp,
+  type FileRestoreReport,
+} from "../../agents/turn-file-snapshots.js";
 import { appendJsonlEntrySync } from "../../config/sessions/transcript-jsonl.js";
+import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { loadSessionEntry } from "../session-utils.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./types.js";
 
@@ -36,6 +41,11 @@ export interface ChatBranchParams {
    * abandoned branch — used by message editing to replace, not duplicate.
    */
   mode?: "at" | "before";
+  /**
+   * Also restore journaled file pre-images captured at/after the target
+   * message, rolling back code changes made by the abandoned turns.
+   */
+  restoreFiles?: boolean;
   agentId?: string;
 }
 
@@ -75,6 +85,9 @@ export interface ChatBranchResult {
   branchMarkerId: string;
   /** The new active leaf (the branch marker). */
   newLeafId: string;
+  /** Present when restoreFiles was requested. */
+  filesRestored?: string[];
+  filesSkipped?: Array<{ path: string; reason: string }>;
 }
 
 export interface ChatBranchesResult {
@@ -105,6 +118,9 @@ function validateChatBranchParams(params: unknown): params is ChatBranchParams {
     return false;
   }
   if (p.mode !== undefined && p.mode !== "at" && p.mode !== "before") {
+    return false;
+  }
+  if (p.restoreFiles !== undefined && typeof p.restoreFiles !== "boolean") {
     return false;
   }
   return true;
@@ -232,7 +248,14 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
     return;
   }
 
-  const { sessionKey, entryId: rawEntryId, messageId, mode, agentId } = params as ChatBranchParams;
+  const {
+    sessionKey,
+    entryId: rawEntryId,
+    messageId,
+    mode,
+    restoreFiles,
+    agentId,
+  } = params as ChatBranchParams;
   const agentIdOverride = typeof agentId === "string" ? agentId : undefined;
 
   const { entry } = loadSessionEntry(sessionKey, { agentId: agentIdOverride });
@@ -327,11 +350,28 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
     return;
   }
 
+  // Roll back journaled file pre-images captured at/after the target message
+  // so the abandoned turns' code changes are undone with the conversation.
+  let restoreReport: FileRestoreReport | undefined;
+  if (restoreFiles && entry?.sessionId) {
+    const cutoffMs = Date.parse(targetEntry.timestamp);
+    if (Number.isFinite(cutoffMs)) {
+      restoreReport = restoreFilesToTimestamp({
+        agentId: agentIdOverride ?? resolveAgentIdFromSessionKey(sessionKey),
+        sessionId: entry.sessionId,
+        cutoffMs,
+      });
+    }
+  }
+
   respond(true, {
     ok: true,
     branchFromId: branchBaseId,
     branchMarkerId: markerId,
     newLeafId: markerId,
+    ...(restoreReport
+      ? { filesRestored: restoreReport.restored, filesSkipped: restoreReport.skipped }
+      : {}),
   } satisfies ChatBranchResult);
 }
 
