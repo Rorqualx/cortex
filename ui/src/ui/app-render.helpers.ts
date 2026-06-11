@@ -18,6 +18,8 @@ import {
   renderChatModelSelect,
   resetChatSessionPickerState,
   resolveSessionOptionGroups,
+  resolveSidebarNewSessionModel,
+  switchChatModel,
 } from "./chat/session-controls.ts";
 import { refreshSlashCommands } from "./chat/slash-commands.ts";
 import { resolveControlUiAuthToken } from "./control-ui-auth.ts";
@@ -719,6 +721,12 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
   switchChatSession(state, nextSessionKey);
   state.chatMessage = preservedDraft;
   state.chatAttachments = preservedAttachments;
+  const newSessionModel = resolveSidebarNewSessionModel(state);
+  if (newSessionModel) {
+    // Start the session on the sidebar agent+model combo. sessions.patch
+    // materializes the entry so the first run already serves the chosen model.
+    void switchChatModel(state, newSessionModel);
+  }
   return true;
 }
 

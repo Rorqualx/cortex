@@ -8,7 +8,14 @@ import {
   scopedAgentParamsForSession,
 } from "../app-chat.ts";
 import type { AppViewState } from "../app-view-state.ts";
-import { createChatModelOverride } from "../chat-model-ref.ts";
+import {
+  buildCatalogDisplayLookup,
+  buildChatModelOptionFromLookup,
+  createChatModelOverride,
+  formatCatalogChatModelDisplayFromLookup,
+  normalizeChatModelOverrideValue,
+  resolvePreferredServerChatModelValue,
+} from "../chat-model-ref.ts";
 import {
   resolveChatModelOverrideValue,
   resolveChatModelSelectState,
@@ -148,8 +155,11 @@ export function renderChatSessionSelect(
   const agentOptions = resolveChatAgentFilterOptions(state);
   const hasAgentSelect = agentOptions.length > 1;
   const compact = options.compact ?? false;
-  const agentSelect = compact ? "" : renderChatAgentSelect(state, onSwitchSession, agentOptions);
   const sessionSwitcherOnly = options.sessionSwitcherOnly ?? false;
+  const agentSelect =
+    compact || sessionSwitcherOnly
+      ? ""
+      : renderChatAgentSelect(state, onSwitchSession, agentOptions);
   const modelSelect = sessionSwitcherOnly ? "" : renderChatModelSelect(state);
   const quotaPill = sessionSwitcherOnly ? "" : renderChatQuotaPill(state);
   const surface = options.surface ?? "desktop";
@@ -159,7 +169,9 @@ export function renderChatSessionSelect(
   const rowClass = [
     "chat-controls__session-row",
     sessionSwitcherOnly ? "chat-controls__session-row--session-switcher" : "",
-    hasAgentSelect && !compact ? "" : "chat-controls__session-row--single-agent",
+    hasAgentSelect && !compact && !sessionSwitcherOnly
+      ? ""
+      : "chat-controls__session-row--single-agent",
     compact ? "chat-controls__session-row--compact" : "",
     quotaPill ? "chat-controls__session-row--has-quota" : "",
     flashSession ? "chat-controls__session-row--flash" : "",
@@ -885,7 +897,7 @@ function renderChatQuotaPill(state: AppViewState) {
   `;
 }
 
-function renderChatAgentSelect(
+export function renderChatAgentSelect(
   state: AppViewState,
   onSwitchSession: ChatSessionSwitchHandler,
   options = resolveChatAgentFilterOptions(state),
@@ -1488,7 +1500,7 @@ async function switchChatFastMode(state: AppViewState, nextFastMode: "" | "on" |
   }
 }
 
-async function switchChatModel(state: AppViewState, nextModel: string): Promise<boolean> {
+export async function switchChatModel(state: AppViewState, nextModel: string): Promise<boolean> {
   if (!state.client || !state.connected) {
     return false;
   }
@@ -1948,19 +1960,36 @@ export function resolveSessionOptionGroups(
   return Array.from(groups.values());
 }
 
-function resolveAgentGroupLabel(state: AppViewState, agentIdRaw: string): string {
+function resolveAgentLookup(state: AppViewState, agentIdRaw: string) {
   const normalized = normalizeLowercaseStringOrEmpty(agentIdRaw);
-  const agent = (state.agentsList?.agents ?? []).find(
+  return (state.agentsList?.agents ?? []).find(
     (entry) => normalizeLowercaseStringOrEmpty(entry.id) === normalized,
   );
+}
+
+function resolveAgentUseCaseLabel(description: string | undefined): string {
+  const trimmed = normalizeOptionalString(description);
+  if (!trimmed) {
+    return "";
+  }
+  // First sentence only: the dropdown wants a short use case, not the blurb.
+  const sentence =
+    trimmed
+      .split(/(?<=[.!?])\s/u, 1)[0]
+      ?.replace(/[.!?]+$/u, "")
+      .trim() ?? "";
+  return sentence.length > 48 ? `${sentence.slice(0, 47)}…` : sentence;
+}
+
+function resolveAgentGroupLabel(state: AppViewState, agentIdRaw: string): string {
+  const agent = resolveAgentLookup(state, agentIdRaw);
   const name =
     normalizeOptionalString(agent?.identity?.name) ?? normalizeOptionalString(agent?.name) ?? "";
-  const modelRaw = normalizeOptionalString(agent?.model?.primary) ?? "";
-  const modelLabel = modelRaw.includes("/") ? modelRaw.split("/").pop()! : modelRaw;
-  if (name && name !== agentIdRaw) {
-    return modelLabel ? `${name} (${modelLabel})` : name;
-  }
-  return modelLabel ? `${agentIdRaw} (${modelLabel})` : agentIdRaw;
+  // Agents are decoupled from models: the parenthetical describes what the
+  // agent is for (its configured description), not which model it prefers.
+  const useCase = resolveAgentUseCaseLabel(agent?.description);
+  const base = name && name !== agentIdRaw ? name : agentIdRaw;
+  return useCase ? `${base} (${useCase})` : base;
 }
 
 function resolveSessionScopedOptionLabel(
@@ -1993,4 +2022,85 @@ function resolveSessionScopedOptionLabel(
   }
 
   return base;
+}
+
+/** Preferred model for an agent: its configured primary, else session defaults. */
+function resolveAgentPreferredModelValue(state: AppViewState, agentId: string): string {
+  const preferred = normalizeOptionalString(resolveAgentLookup(state, agentId)?.model?.primary);
+  const catalog = state.chatModelCatalog ?? [];
+  if (preferred) {
+    return normalizeChatModelOverrideValue(createChatModelOverride(preferred), catalog);
+  }
+  return resolvePreferredServerChatModelValue(
+    state.sessionsResult?.defaults?.model,
+    state.sessionsResult?.defaults?.modelProvider,
+    catalog,
+  );
+}
+
+/**
+ * Model the next new session should start with. The selection is keyed to the
+ * agent it was made for: switching agents silently falls back to that agent's
+ * preferred model instead of carrying a stale cross-agent pick.
+ */
+export function resolveSidebarNewSessionModel(state: AppViewState): string {
+  const selection = state.sidebarNewSessionModel;
+  if (!selection?.value) {
+    return "";
+  }
+  return selection.agentId === resolveChatAgentFilterId(state, state.sessionKey)
+    ? selection.value
+    : "";
+}
+
+export function renderSidebarModelSelect(state: AppViewState) {
+  const catalog = state.chatModelCatalog ?? [];
+  if (catalog.length === 0) {
+    return "";
+  }
+  const displayLookup = buildCatalogDisplayLookup(catalog);
+  const activeAgentId = resolveChatAgentFilterId(state, state.sessionKey);
+  const preferred = resolveAgentPreferredModelValue(state, activeAgentId);
+  const preferredDisplay = preferred
+    ? formatCatalogChatModelDisplayFromLookup(preferred, displayLookup)
+    : "";
+  const current = resolveSidebarNewSessionModel(state);
+  const seen = new Set<string>();
+  const modelOptions: ChatInlineSelectOption[] = [];
+  for (const entry of catalog) {
+    const option = buildChatModelOptionFromLookup(entry, displayLookup);
+    pushUniqueTrimmedSelectOption(modelOptions, seen, option.value, () => option.label);
+  }
+  const defaultOption = {
+    value: "",
+    label: preferredDisplay ? `Preferred (${preferredDisplay})` : "Preferred model",
+  };
+  const selectedLabel =
+    current === ""
+      ? defaultOption.label
+      : (modelOptions.find((entry) => entry.value === current)?.label ?? current);
+  return html`
+    <label class="field chat-controls__session chat-controls__agent sidebar-model-select">
+      <select
+        data-sidebar-model-select="true"
+        aria-label="New session model"
+        title=${selectedLabel}
+        .value=${current}
+        ?disabled=${!state.connected}
+        @change=${(event: Event) => {
+          const value = (event.target as HTMLSelectElement).value;
+          state.sidebarNewSessionModel = value ? { agentId: activeAgentId, value } : null;
+        }}
+      >
+        ${repeat(
+          [defaultOption, ...modelOptions],
+          (entry) => entry.value,
+          (entry) =>
+            html`<option value=${entry.value} ?selected=${entry.value === current}>
+              ${entry.label}
+            </option>`,
+        )}
+      </select>
+    </label>
+  `;
 }

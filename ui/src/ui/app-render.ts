@@ -32,7 +32,9 @@ import {
 } from "./chat/chat-tab-bar.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import {
+  renderChatAgentSelect,
   renderChatSessionSelect,
+  renderSidebarModelSelect,
   resolveChatAgentFilterId,
   resolveChatAgentFilterOptions,
   resolvePreferredSessionForAgent,
@@ -530,7 +532,6 @@ function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] 
 function renderSidebarSessions(state: AppViewState) {
   const collapsed = state.settings.navCollapsed;
   const busy = isSidebarSessionBusy(state);
-  const recent = collapsed ? [] : resolveSidebarRecentSessions(state);
   const newSessionDisabled = !state.connected || busy || !state.client;
   const newSessionTitle = !state.connected
     ? "Connect to create a new session"
@@ -562,6 +563,22 @@ function renderSidebarSessions(state: AppViewState) {
               >${t("chat.runControls.newSession")}</span
             >`}
       </button>
+      ${collapsed
+        ? nothing
+        : html`
+            <div class="sidebar-agent-controls">
+              ${renderChatAgentSelect(state, switchChatSession)} ${renderSidebarModelSelect(state)}
+            </div>
+          `}
+    </section>
+  `;
+}
+
+function renderSidebarChatNavControls(state: AppViewState) {
+  const collapsed = state.settings.navCollapsed;
+  const recent = collapsed ? [] : resolveSidebarRecentSessions(state);
+  return html`
+    <div class="sidebar-chat-nav-controls">
       <div class="sidebar-session-select ${collapsed ? "sidebar-session-select--collapsed" : ""}">
         ${renderChatSessionSelect(state, switchChatSession, {
           compact: collapsed,
@@ -610,7 +627,7 @@ function renderSidebarSessions(state: AppViewState) {
               </div>
             </div>
           `}
-    </section>
+    </div>
   `;
 }
 
@@ -2416,6 +2433,7 @@ export function renderApp(state: AppViewState) {
                           : group.tabs.map((tab) =>
                               renderTab(state, tab, { collapsed: navCollapsed }),
                             )}
+                        ${group.label === "chat" ? renderSidebarChatNavControls(state) : nothing}
                       </div>
                     </section>
                   `;

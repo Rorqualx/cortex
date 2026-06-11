@@ -288,6 +288,7 @@ export class OpenClawApp extends LitElement {
   @state() chatHistoryRenderExpanded = false;
   @state() chatModelOverrides: Record<string, ChatModelOverride | null> = {};
   @state() chatModelSwitchPromises: Record<string, Promise<boolean>> = {};
+  @state() sidebarNewSessionModel: { agentId: string; value: string } | null = null;
   @state() chatModelsLoading = false;
   @state() chatModelCatalog: ModelCatalogEntry[] = [];
   @state() sessionSwitchNotice: { id: number; text: string } | null = null;

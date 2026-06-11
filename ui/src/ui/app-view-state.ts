@@ -127,6 +127,8 @@ export type AppViewState = {
   chatThinkingLevel: string | null;
   chatModelOverrides: Record<string, ChatModelOverride | null>;
   chatModelSwitchPromises: Record<string, Promise<boolean>>;
+  /** Model the next new session starts with, keyed to the agent it was picked for. */
+  sidebarNewSessionModel?: { agentId: string; value: string } | null;
   chatModelsLoading: boolean;
   chatModelCatalog: ModelCatalogEntry[];
   sessionSwitchNotice: { id: number; text: string } | null;

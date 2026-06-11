@@ -718,6 +718,21 @@
   min-width: 0;
 }
 
+/* Agent + new-session-model combo at the top of the sidebar. */
+.sidebar-agent-controls {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Session picker + recent list relocated under the Chat nav item. */
+.sidebar-chat-nav-controls {
+  display: grid;
+  gap: 8px;
+  padding: 2px 0 6px;
+  min-width: 0;
+}
+
 .sidebar-session-select--collapsed {
   justify-items: center;
   position: relative;
