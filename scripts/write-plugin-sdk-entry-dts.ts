@@ -116,14 +116,23 @@ try {
 // The private workspace package keeps source-shaped declaration paths for local
 // package-boundary projects, so bridge them back to the packaged flat entries.
 for (const entry of pluginSdkEntrypoints) {
-  if (!flatDeclarationEntrypointSet.has(entry)) {
-    continue;
-  }
-
   const packageTypeOut = path.join(
     process.cwd(),
     `packages/plugin-sdk/dist/src/plugin-sdk/${entry}.d.ts`,
   );
+  if (!flatDeclarationEntrypointSet.has(entry)) {
+    // Private local-only entries get no flat dist build, so a forwarder here
+    // (left behind by a prior OPENCLAW_BUILD_PRIVATE_QA=1 run) dangles and
+    // breaks extension package-boundary checks. Drop it so the boundary tsc
+    // build re-emits the real source-shaped declaration.
+    if (fs.existsSync(packageTypeOut)) {
+      const existing = fs.readFileSync(packageTypeOut, "utf8");
+      if (existing.startsWith('export * from "../../../../../dist/plugin-sdk/')) {
+        fs.rmSync(packageTypeOut, { force: true });
+      }
+    }
+    continue;
+  }
   fs.mkdirSync(path.dirname(packageTypeOut), { recursive: true });
   fs.writeFileSync(
     packageTypeOut,

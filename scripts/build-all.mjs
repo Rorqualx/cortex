@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
-import { pluginSdkEntrypoints } from "./lib/plugin-sdk-entries.mjs";
+import { publicPluginSdkEntrypoints } from "./lib/plugin-sdk-entries.mjs";
 import { resolvePnpmRunner } from "./pnpm-runner.mjs";
 
 const nodeBin = process.execPath;
@@ -60,7 +60,12 @@ const PLUGIN_SDK_ENTRY_DTS_CACHE_OUTPUTS = [
   { path: "dist/plugin-sdk", extensions: [".d.ts"], recursive: false },
   "dist/plugin-sdk/webhook-path.js",
   "dist/plugin-sdk/.boundary-entry-shims.stamp",
-  ...pluginSdkEntrypoints.map((entry) => `packages/plugin-sdk/dist/src/plugin-sdk/${entry}.d.ts`),
+  // Public entries only: private local-only subpaths keep their tsc-emitted
+  // declarations here; caching them as step outputs restored stale forwarders
+  // over the real files on every cached build (restore: "always").
+  ...publicPluginSdkEntrypoints.map(
+    (entry) => `packages/plugin-sdk/dist/src/plugin-sdk/${entry}.d.ts`,
+  ),
 ];
 const PNPM_STEP_NODE_FALLBACKS = new Map([
   ["plugins:assets:build", ["scripts/bundled-plugin-assets.mjs", "--phase", "build"]],
