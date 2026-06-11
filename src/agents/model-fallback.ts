@@ -760,7 +760,7 @@ export function resolveModelCandidateChain(
     cfg: OpenClawConfig | undefined;
     provider: string;
     model: string;
-    /** Optional explicit fallbacks list; when provided (even empty), replaces agents.defaults.model.fallbacks. */
+    /** Optional explicit fallbacks tried first; default fallbacks and primary always follow as the chain tail. */
     fallbacksOverride?: string[];
   } & ModelManifestNormalizationContext,
 ): ModelCandidate[] {
@@ -869,7 +869,7 @@ function resolveFallbackCandidatesUncached(
     cfg: OpenClawConfig | undefined;
     provider: string;
     model: string;
-    /** Optional explicit fallbacks list; when provided (even empty), replaces agents.defaults.model.fallbacks. */
+    /** Optional explicit fallbacks tried first; default fallbacks and primary always follow as the chain tail. */
     fallbacksOverride?: string[];
   } & ModelManifestNormalizationContext,
 ): ModelCandidate[] {
@@ -911,7 +911,8 @@ function resolveFallbackCandidatesUncached(
     allowPluginNormalization: allowPluginModelAliases,
     manifestPlugins: params.manifestPlugins,
   });
-  const { candidates, addExplicitCandidate } = createModelCandidateCollector(allowlist);
+  const { candidates, addExplicitCandidate, addAllowlistedCandidate } =
+    createModelCandidateCollector(allowlist);
   const resolvedModelAlias = resolveModelRefFromString({
     cfg: params.cfg,
     raw: modelRaw,
@@ -950,10 +951,14 @@ function resolveFallbackCandidatesUncached(
 
   addExplicitCandidate(effectivePrimary);
 
+  // Overrides (per-agent pins, user session models) are tried first but no
+  // longer truncate the chain: default fallbacks and the default primary
+  // always follow so a failing call keeps degrading instead of hard-failing.
+  const defaultFallbacks = resolveAgentModelFallbackValues(params.cfg?.agents?.defaults?.model);
   const modelFallbacks =
     params.fallbacksOverride !== undefined
-      ? params.fallbacksOverride
-      : resolveAgentModelFallbackValues(params.cfg?.agents?.defaults?.model);
+      ? [...params.fallbacksOverride, ...defaultFallbacks]
+      : defaultFallbacks;
 
   for (const raw of modelFallbacks) {
     const resolved = resolveModelRefFromString({
@@ -972,8 +977,21 @@ function resolveFallbackCandidatesUncached(
     addExplicitCandidate(normalizeCandidateRef(resolved.ref.provider, resolved.ref.model));
   }
 
-  if (params.fallbacksOverride === undefined && primary?.provider && primary.model) {
+  if (primary?.provider && primary.model) {
     addExplicitCandidate(normalizeCandidateRef(primary.provider, primary.model));
+  }
+
+  // Exhaustive last resort: every configured provider model joins the chain
+  // (deterministic config order, visibility allowlist still applies) so each
+  // failed call ends only after an attempt at all available models. Cooldown
+  // and skip caches keep known-dead candidates cheap to step over.
+  for (const [providerId, providerConfig] of Object.entries(params.cfg?.models?.providers ?? {})) {
+    for (const entry of providerConfig.models ?? []) {
+      const id = typeof entry?.id === "string" ? entry.id.trim() : "";
+      if (id) {
+        addAllowlistedCandidate(normalizeCandidateRef(providerId, id));
+      }
+    }
   }
 
   return candidates;
@@ -1222,7 +1240,7 @@ export async function runWithModelFallback<T>(
     }) => Promise<void> | void;
     lane?: string;
     agentDir?: string;
-    /** Optional explicit fallbacks list; when provided (even empty), replaces agents.defaults.model.fallbacks. */
+    /** Optional explicit fallbacks tried first; default fallbacks and primary always follow as the chain tail. */
     fallbacksOverride?: string[];
     run: ModelFallbackRunFn<T>;
     onError?: ModelFallbackErrorHandler;

@@ -1629,7 +1629,13 @@ describe("runWithModelFallback", () => {
   });
 
   it("throws unrecognized error on last candidate", async () => {
-    const cfg = makeCfg();
+    const cfg = makeCfg({
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-4.1-mini", fallbacks: [] },
+        },
+      },
+    });
     const run = vi.fn().mockRejectedValueOnce(new Error("something weird"));
 
     await expect(
@@ -1645,7 +1651,13 @@ describe("runWithModelFallback", () => {
   });
 
   it("treats LiveSessionModelSwitchError as failover on last candidate (#58496 family)", async () => {
-    const cfg = makeCfg();
+    const cfg = makeCfg({
+      agents: {
+        defaults: {
+          model: { primary: "anthropic/claude-sonnet-4-6", fallbacks: [] },
+        },
+      },
+    });
     const switchError = new LiveSessionModelSwitchError({
       provider: "anthropic",
       model: "claude-sonnet-4-6",
@@ -1842,7 +1854,10 @@ describe("runWithModelFallback", () => {
         model: "gpt-5.5",
         fallbacksOverride: [],
       }),
-    ).toEqual([{ provider: "tui-pty-mock", model: "gpt-5.5" }]);
+    ).toEqual([
+      { provider: "tui-pty-mock", model: "gpt-5.5" },
+      { provider: "openai", model: "gpt-4.1-mini" },
+    ]);
     expect(
       testing.resolveFallbackCandidates({
         cfg,
@@ -1856,6 +1871,58 @@ describe("runWithModelFallback", () => {
     expect(
       providerModelNormalizationMock.normalizeProviderModelIdWithRuntime,
     ).not.toHaveBeenCalledWith(expect.objectContaining({ provider: "tui-pty-mock" }));
+  });
+
+  it("extends an empty fallbacks override with default fallbacks and primary", () => {
+    const cfg = makeCfg();
+
+    expect(
+      testing.resolveFallbackCandidates({
+        cfg,
+        provider: "zai",
+        model: "glm-5.1",
+        fallbacksOverride: [],
+      }),
+    ).toEqual([
+      { provider: "zai", model: "glm-5.1" },
+      { provider: "anthropic", model: "claude-haiku-3-5" },
+      { provider: "openai", model: "gpt-4.1-mini" },
+    ]);
+  });
+
+  it("appends every configured provider model as exhaustive last-resort candidates", () => {
+    const cfg = makeCfg({
+      models: {
+        providers: {
+          kimi: {
+            api: "anthropic-messages",
+            baseUrl: "https://api.kimi.com/coding/",
+            models: [{ id: "kimi-for-coding" }],
+          },
+          deepseek: {
+            api: "openai-completions",
+            baseUrl: "https://api.deepseek.com/v1",
+            models: [{ id: "deepseek-v4-pro" }, { id: "deepseek-v4-flash" }],
+          },
+        },
+      },
+    } as Partial<OpenClawConfig>);
+
+    expect(
+      testing.resolveFallbackCandidates({
+        cfg,
+        provider: "zai",
+        model: "glm-5.1",
+        fallbacksOverride: ["deepseek/deepseek-v4-pro"],
+      }),
+    ).toEqual([
+      { provider: "zai", model: "glm-5.1" },
+      { provider: "deepseek", model: "deepseek-v4-pro" },
+      { provider: "anthropic", model: "claude-haiku-3-5" },
+      { provider: "openai", model: "gpt-4.1-mini" },
+      { provider: "kimi", model: "kimi-for-coding" },
+      { provider: "deepseek", model: "deepseek-v4-flash" },
+    ]);
   });
 
   it("keeps configured fallbacks before configured primary for duplicate provider model ids", () => {
@@ -2252,7 +2319,7 @@ describe("runWithModelFallback", () => {
     expect(result.attempts).toStrictEqual([]);
   });
 
-  it("does not append configured primary when fallbacksOverride is set", () => {
+  it("appends configured primary after fallbacksOverride", () => {
     const cfg = makeCfg({
       agents: {
         defaults: {
@@ -2273,6 +2340,7 @@ describe("runWithModelFallback", () => {
     ).toEqual([
       { provider: "anthropic", model: "claude-opus-4-5" },
       { provider: "anthropic", model: "claude-haiku-3-5" },
+      { provider: "openai", model: "gpt-4.1-mini" },
     ]);
   });
 
@@ -2388,7 +2456,7 @@ describe("runWithModelFallback", () => {
     });
   });
 
-  it("uses fallbacksOverride instead of agents.defaults.model.fallbacks", () => {
+  it("tries fallbacksOverride before agents.defaults.model.fallbacks", () => {
     const cfg = makeFallbacksOnlyCfg();
 
     const candidates = testing.resolveFallbackCandidates({
@@ -2398,23 +2466,9 @@ describe("runWithModelFallback", () => {
       fallbacksOverride: ["openai/gpt-4.1"],
     });
 
-    expect(candidates).toEqual([
-      { provider: "anthropic", model: "claude-opus-4-5" },
-      { provider: "openai", model: "gpt-4.1" },
-    ]);
-  });
-
-  it("treats an empty fallbacksOverride as disabling global fallbacks", () => {
-    const cfg = makeFallbacksOnlyCfg();
-
-    const candidates = testing.resolveFallbackCandidates({
-      cfg,
-      provider: "anthropic",
-      model: "claude-opus-4-5",
-      fallbacksOverride: [],
-    });
-
-    expect(candidates).toEqual([{ provider: "anthropic", model: "claude-opus-4-5" }]);
+    expect(candidates[0]).toEqual({ provider: "anthropic", model: "claude-opus-4-5" });
+    expect(candidates[1]).toEqual({ provider: "openai", model: "gpt-4.1" });
+    expect(candidates).toContainEqual({ provider: "openai", model: "gpt-5.2" });
   });
 
   it("keeps explicit fallbacks reachable when models allowlist is present", () => {
@@ -2461,7 +2515,10 @@ describe("runWithModelFallback", () => {
         model: "",
         fallbacksOverride: [],
       }),
-    ).toEqual([{ provider: "anthropic", model: "claude-sonnet-4" }]);
+    ).toEqual([
+      { provider: "anthropic", model: "claude-sonnet-4" },
+      { provider: "ollama", model: "llama3" },
+    ]);
     expect(
       testing.resolveFallbackCandidates({
         cfg: ollamaFirst,
@@ -2469,7 +2526,10 @@ describe("runWithModelFallback", () => {
         model: "",
         fallbacksOverride: [],
       }),
-    ).toEqual([{ provider: "ollama", model: "llama3" }]);
+    ).toEqual([
+      { provider: "ollama", model: "llama3" },
+      { provider: "anthropic", model: "claude-sonnet-4" },
+    ]);
   });
 
   it("does not reuse fallback candidate cache entries across manifest normalization snapshots", () => {
@@ -2497,8 +2557,8 @@ describe("runWithModelFallback", () => {
           provider: "demo",
           model: "demo-model",
           fallbacksOverride: [],
-        }),
-      ).toEqual([{ provider: "demo", model: "alpha/demo-model" }]);
+        })[0],
+      ).toEqual({ provider: "demo", model: "alpha/demo-model" });
 
       setCurrentPluginMetadataSnapshot(
         createModelNormalizerSnapshot({
@@ -2513,8 +2573,8 @@ describe("runWithModelFallback", () => {
           provider: "demo",
           model: "demo-model",
           fallbacksOverride: [],
-        }),
-      ).toEqual([{ provider: "demo", model: "bravo/demo-model" }]);
+        })[0],
+      ).toEqual({ provider: "demo", model: "bravo/demo-model" });
     } finally {
       setDefaultPluginMetadataSnapshot();
     }

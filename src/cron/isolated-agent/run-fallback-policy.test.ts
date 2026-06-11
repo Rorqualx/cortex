@@ -291,7 +291,7 @@ describe("resolveCronFallbacksOverride", () => {
     ]);
   });
 
-  it("keeps cron preflight strict when payload fallbacks are explicitly empty", () => {
+  it("extends cron preflight into default fallbacks when payload fallbacks are empty", () => {
     expect(
       resolveCronPreflightCandidates({
         cfg: makeConfig(["openai/gpt-5.4"]),
@@ -304,7 +304,11 @@ describe("resolveCronFallbacksOverride", () => {
           fallbacks: [],
         }),
       }),
-    ).toStrictEqual([{ provider: "ollama", model: "qwen3:32b" }]);
+    ).toStrictEqual([
+      { provider: "ollama", model: "qwen3:32b" },
+      { provider: "openai", model: "gpt-5.4" },
+      { provider: "anthropic", model: "claude-opus-4-6" },
+    ]);
   });
 
   it("documents that cron preflight walks fallbacks before skipping", () => {

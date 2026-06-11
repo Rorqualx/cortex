@@ -168,7 +168,8 @@ describe("runCronIsolatedAgentTurn model provider preflight", () => {
     expect(String(logWarnMock.mock.calls[0]?.[0] ?? "")).not.toContain("Skipping this cron run");
   });
 
-  it("keeps explicit empty payload fallbacks strict when local primary preflight fails", async () => {
+  it("proceeds past a dead local primary via default fallbacks when payload fallbacks are empty", async () => {
+    mockRunCronFallbackPassthrough();
     preflightCronModelProviderMock.mockResolvedValueOnce({
       status: "unavailable",
       reason:
@@ -218,8 +219,8 @@ describe("runCronIsolatedAgentTurn model provider preflight", () => {
       lane: "cron",
     });
 
-    expect(result.status).toBe("skipped");
-    expect(preflightCronModelProviderMock).toHaveBeenCalledOnce();
-    expect(runEmbeddedAgentMock).not.toHaveBeenCalled();
+    expect(result.status).toBe("ok");
+    expect(preflightCronModelProviderMock).toHaveBeenCalled();
+    expect(runEmbeddedAgentMock).toHaveBeenCalled();
   });
 });
