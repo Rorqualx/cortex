@@ -4,7 +4,7 @@ import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../i18n/index.ts";
-import type { CompactionStatus, FallbackStatus } from "../app-tool-stream.ts";
+import type { ChatLiveUsage, CompactionStatus, FallbackStatus } from "../app-tool-stream.ts";
 import {
   getChatAttachmentPreviewUrl,
   registerChatAttachmentPayload,
@@ -97,6 +97,7 @@ export type ChatProps = {
   runStatus?: ChatRunUiStatus | null;
   compactionStatus?: CompactionStatus | null;
   fallbackStatus?: FallbackStatus | null;
+  liveUsage?: ChatLiveUsage | null;
   messages: unknown[];
   sideResult?: ChatSideResult | null;
   toolMessages: unknown[];
@@ -1645,6 +1646,12 @@ export function renderChat(props: ChatProps) {
   const showLoadingSkeleton = props.loading && chatItems.length === 0;
   const threadContextWindow =
     activeSession?.contextTokens ?? props.sessions?.defaults?.contextTokens ?? null;
+  // The reading indicator renders a live elapsed counter, but the item list below
+  // is guard()-ed; without a per-second dep the 1s tick in renderApp never busts
+  // the guard and the counter freezes between stream/tool updates.
+  const liveElapsedTick = chatItems.some((item) => item.kind === "reading-indicator")
+    ? Math.floor(Date.now() / 1000)
+    : -1;
 
   const thread = html`
     <div
@@ -1734,6 +1741,7 @@ export function renderChat(props: ChatProps) {
             props.embedSandboxMode ?? "scripts",
             props.allowExternalEmbedUrls ?? false,
             threadContextWindow,
+            liveElapsedTick,
           ],
           () =>
             repeat(
@@ -2166,6 +2174,8 @@ export function renderChat(props: ChatProps) {
             compactBusy,
             compactDisabled: !props.connected || isBusy || showAbortableUi,
             onCompact: props.onCompact,
+            liveUsage: props.liveUsage ?? null,
+            compaction: props.compactionStatus ?? null,
           })}
           ${renderChatGoal(activeSession?.goal)}
         </div>

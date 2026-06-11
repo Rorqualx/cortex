@@ -1,5 +1,6 @@
 // Control UI chat module implements context notice behavior.
 import { html, nothing } from "lit";
+import type { ChatLiveUsage, CompactionStatus } from "../app-tool-stream.ts";
 import { icons } from "../icons.ts";
 import type { GatewaySessionRow } from "../types.ts";
 
@@ -10,6 +11,8 @@ export type ContextNoticeOptions = {
   compactBusy?: boolean;
   compactDisabled?: boolean;
   onCompact?: () => void | Promise<void>;
+  liveUsage?: ChatLiveUsage | null;
+  compaction?: CompactionStatus | null;
 };
 
 /** Parse a 6-digit CSS hex color string to [r, g, b] integer components. */
@@ -59,6 +62,8 @@ export type ContextNoticeViewModel = {
   bg: string;
   warning: boolean;
   compactRecommended: boolean;
+  /** True when the numbers come from a mid-run usage event, not session rows. */
+  live: boolean;
   breakdown: {
     input: number;
     output: number;
@@ -72,16 +77,20 @@ export type ContextNoticeViewModel = {
 export function getContextNoticeViewModel(
   session: GatewaySessionRow | undefined,
   defaultContextTokens: number | null,
+  liveUsage?: ChatLiveUsage | null,
 ): ContextNoticeViewModel | null {
   const limit = session?.contextTokens ?? defaultContextTokens ?? 0;
   if (!limit) {
     return null;
   }
 
-  const input = session?.inputTokens ?? 0;
-  const output = session?.outputTokens ?? 0;
-  const cacheRead = session?.cacheRead ?? 0;
-  const cacheWrite = session?.cacheWrite ?? 0;
+  // Mid-run usage events supersede session rows (rows refresh only after the
+  // run ends). Event handling already scoped liveUsage to the visible session.
+  const live = Boolean(liveUsage && liveUsage.promptTokens > 0);
+  const input = live ? (liveUsage?.input ?? 0) : (session?.inputTokens ?? 0);
+  const output = live ? (liveUsage?.output ?? 0) : (session?.outputTokens ?? 0);
+  const cacheRead = live ? (liveUsage?.cacheRead ?? 0) : (session?.cacheRead ?? 0);
+  const cacheWrite = live ? (liveUsage?.cacheWrite ?? 0) : (session?.cacheWrite ?? 0);
   const costUsd =
     typeof session?.estimatedCostUsd === "number" && Number.isFinite(session.estimatedCostUsd)
       ? session.estimatedCostUsd
@@ -97,7 +106,7 @@ export function getContextNoticeViewModel(
   };
 
   // Always show the badge when we have a context window — even at 0 tokens used.
-  if (session?.totalTokensFresh === false) {
+  if (!live && session?.totalTokensFresh === false) {
     breakdown.total = 0;
     return {
       pct: 0,
@@ -106,11 +115,12 @@ export function getContextNoticeViewModel(
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning: false,
       compactRecommended: false,
+      live: false,
       breakdown,
     };
   }
 
-  const used = session?.totalTokens ?? 0;
+  const used = live ? (liveUsage?.promptTokens ?? 0) : (session?.totalTokens ?? 0);
   if (typeof used !== "number" || !Number.isFinite(used) || used < 0) {
     breakdown.total = 0;
     return {
@@ -120,6 +130,7 @@ export function getContextNoticeViewModel(
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning: false,
       compactRecommended: false,
+      live: false,
       breakdown,
     };
   }
@@ -133,6 +144,7 @@ export function getContextNoticeViewModel(
     pct,
     detail: `${formatTokensCompact(used)} / ${formatTokensCompact(limit)}`,
     compactRecommended: ratio >= CONTEXT_COMPACT_RATIO,
+    live,
     breakdown,
   };
 
@@ -219,23 +231,38 @@ export function renderContextNotice(
   defaultContextTokens: number | null,
   options: ContextNoticeOptions = {},
 ) {
-  const model = getContextNoticeViewModel(session, defaultContextTokens);
+  const model = getContextNoticeViewModel(session, defaultContextTokens, options.liveUsage);
   if (!model) {
     return nothing;
   }
-  const canRenderCompact = model.compactRecommended && options.onCompact;
+  const compacting =
+    options.compaction?.phase === "active" || options.compaction?.phase === "retrying";
+  const canRenderCompact = model.compactRecommended && options.onCompact && !compacting;
   const compactDisabled = options.compactDisabled === true || options.compactBusy === true;
   const hasBreakdown =
     model.breakdown.input > 0 ||
     model.breakdown.output > 0 ||
     model.breakdown.cacheRead > 0 ||
     model.breakdown.cacheWrite > 0;
+  const stateClasses = [
+    model.warning ? "context-notice--warning" : "context-notice--usage",
+    model.live ? "context-notice--live" : "",
+    compacting ? "context-notice--compacting" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const compactingFragment = compacting
+    ? html`<span class="context-notice__compacting">${icons.loader} Compacting…</span> · `
+    : nothing;
+  const liveDotFragment = model.live
+    ? html`<span class="context-notice__live-dot" aria-hidden="true"></span> `
+    : nothing;
   return html`
     <div
-      class="context-notice ${model.warning ? "context-notice--warning" : "context-notice--usage"}"
+      class="context-notice ${stateClasses}"
       role="status"
       style="--ctx-color:${model.color};--ctx-bg:${model.bg}"
-      title=${`Session context usage: ${model.detail} (${model.pct}%)`}
+      title=${`Session context usage: ${model.detail} (${model.pct}%)${model.live ? " · live" : ""}${compacting ? " · compacting" : ""}`}
     >
       ${model.warning
         ? html`
@@ -261,7 +288,7 @@ export function renderContextNotice(
             </span>
           `}
       <span class="context-notice__label">
-        ${model.pct}% ·
+        ${compactingFragment}${liveDotFragment}${model.pct}% ·
         ${model.detail}${hasBreakdown ? html` · ${renderBreakdown(model.breakdown)}` : nothing}
       </span>
       ${canRenderCompact

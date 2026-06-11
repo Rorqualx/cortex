@@ -4,6 +4,7 @@ import { ACTIVITY_ENTRY_LIMIT, ACTIVITY_OUTPUT_PREVIEW_LIMIT } from "./activity-
 import {
   handleAgentEvent,
   handleSessionOperationEvent,
+  type ChatLiveUsage,
   type FallbackStatus,
   type ToolStreamEntry,
 } from "./app-tool-stream.ts";
@@ -828,6 +829,88 @@ describe("app-tool-stream fallback lifecycle handling", () => {
     expect(host.compactionStatus).toBeNull();
     expect(host.compactionClearTimer).toBeNull();
 
+    vi.useRealTimers();
+  });
+});
+
+describe("app-tool-stream live usage handling", () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  type LiveUsageHost = MutableHost & { chatLiveUsage?: ChatLiveUsage | null };
+
+  it("stores last-call usage from usage events for the visible session", () => {
+    useToolStreamFakeTimers();
+    const host = createHost() as LiveUsageHost;
+
+    handleAgentEvent(
+      host,
+      agentEvent("run-1", 1, "usage", {
+        input: 1_000,
+        output: 200,
+        cacheRead: 40_000,
+        cacheWrite: 2_000,
+        promptTokens: 43_000,
+        runTotalTokens: 43_200,
+      }),
+    );
+
+    expect(host.chatLiveUsage).toEqual({
+      runId: "run-1",
+      sessionKey: "main",
+      input: 1_000,
+      output: 200,
+      cacheRead: 40_000,
+      cacheWrite: 2_000,
+      promptTokens: 43_000,
+      updatedAt: TOOL_STREAM_TEST_NOW,
+    });
+    vi.useRealTimers();
+  });
+
+  it("ignores usage events without a sessionKey or without prompt tokens", () => {
+    useToolStreamFakeTimers();
+    const host = createHost() as LiveUsageHost;
+
+    handleAgentEvent(host, {
+      runId: "run-1",
+      seq: 1,
+      stream: "usage",
+      ts: Date.now(),
+      data: { promptTokens: 10_000 },
+    });
+    expect(host.chatLiveUsage ?? null).toBeNull();
+
+    handleAgentEvent(host, agentEvent("run-1", 2, "usage", { promptTokens: 0, output: 5 }));
+    expect(host.chatLiveUsage ?? null).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("rejects usage events for other sessions", () => {
+    useToolStreamFakeTimers();
+    const host = createHost() as LiveUsageHost;
+
+    handleAgentEvent(host, agentEvent("run-1", 1, "usage", { promptTokens: 9_000 }, "other"));
+    expect(host.chatLiveUsage ?? null).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("clears live usage when compaction completes", () => {
+    useToolStreamFakeTimers();
+    const host = createHost() as LiveUsageHost;
+
+    handleAgentEvent(host, agentEvent("run-1", 1, "usage", { promptTokens: 120_000 }));
+    expect(host.chatLiveUsage?.promptTokens).toBe(120_000);
+
+    handleAgentEvent(host, agentEvent("run-1", 2, "compaction", { phase: "start" }));
+    handleAgentEvent(host, agentEvent("run-1", 3, "compaction", { phase: "end", completed: true }));
+
+    expect(host.chatLiveUsage).toBeNull();
     vi.useRealTimers();
   });
 });

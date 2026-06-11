@@ -1,7 +1,7 @@
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
 import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
-import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
+import type { ChatLiveUsage, CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
 import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "./chat/input-history.ts";
 import type { RealtimeTalkConversationEntry } from "./chat/realtime-talk-conversation.ts";
 import type { RealtimeTalkStatus } from "./chat/realtime-talk.ts";
@@ -118,6 +118,7 @@ export type AppViewState = {
   chatSideResultTerminalRuns: Set<string>;
   compactionStatus: CompactionStatus | null;
   fallbackStatus: FallbackStatus | null;
+  chatLiveUsage: ChatLiveUsage | null;
   chatRunStatus: ChatRunUiStatus | null;
   chatRunStatusClearTimer?: ReturnType<typeof globalThis.setTimeout> | number | null;
   chatAvatarUrl: string | null;

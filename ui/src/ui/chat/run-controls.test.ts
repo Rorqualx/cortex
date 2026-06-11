@@ -342,9 +342,9 @@ describe("context notice", () => {
     expect(lowNotice).toBeInstanceOf(HTMLElement);
     expect([...lowNotice!.classList]).toEqual(["context-notice", "context-notice--usage"]);
     expect(lowNotice!.textContent?.replace(/\s+/gu, " ").trim()).toBe("23% · 46k / 200k");
-    expect(lowNotice!.querySelector(".context-notice__label")?.textContent).toBe(
-      "23% · 46k / 200k",
-    );
+    expect(
+      lowNotice!.querySelector(".context-notice__label")?.textContent?.replace(/\s+/gu, " ").trim(),
+    ).toBe("23% · 46k / 200k");
     expect(container.querySelectorAll(".context-notice__meter")).toHaveLength(1);
     expect(container.querySelector(".context-notice__icon")).toBeNull();
 
@@ -361,7 +361,9 @@ describe("context notice", () => {
     const notice = container.querySelector<HTMLElement>(".context-notice");
     expect(notice).toBeInstanceOf(HTMLElement);
     expect(notice!.textContent?.replace(/\s+/gu, " ").trim()).toBe("95% · 190k / 200k");
-    expect(notice!.querySelector(".context-notice__label")?.textContent).toBe("95% · 190k / 200k");
+    expect(
+      notice!.querySelector(".context-notice__label")?.textContent?.replace(/\s+/gu, " ").trim(),
+    ).toBe("95% · 190k / 200k");
     expect([...notice!.classList]).toEqual(["context-notice", "context-notice--warning"]);
     expect(notice!.getAttribute("title")).toBe("Session context usage: 190k / 200k (95%)");
     expect(notice!.style.getPropertyValue("--ctx-color")).toBe("rgb(4, 5, 6)");
@@ -400,6 +402,7 @@ describe("context notice", () => {
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning: false,
       compactRecommended: false,
+      live: false,
       breakdown: {
         input: 500_000,
         output: 0,
@@ -428,6 +431,7 @@ describe("context notice", () => {
       bg: "color-mix(in srgb, var(--muted) 8%, transparent)",
       warning: false,
       compactRecommended: false,
+      live: false,
       breakdown: {
         input: 0,
         output: 0,
@@ -437,6 +441,76 @@ describe("context notice", () => {
         costUsd: null,
       },
     });
+  });
+
+  it("prefers mid-run live usage over stale session rows and marks the badge live", () => {
+    const container = document.createElement("div");
+    const session: GatewaySessionRow = {
+      key: "main",
+      kind: "direct",
+      updatedAt: null,
+      totalTokens: 46_000,
+      contextTokens: 200_000,
+    };
+    const liveUsage = {
+      runId: "run-1",
+      sessionKey: "main",
+      input: 1_000,
+      output: 500,
+      cacheRead: 88_000,
+      cacheWrite: 3_000,
+      promptTokens: 92_000,
+      updatedAt: 10,
+    };
+
+    const model = getContextNoticeViewModel(session, 200_000, liveUsage);
+    if (!model) {
+      throw new Error("expected live context notice");
+    }
+    expect(model.live).toBe(true);
+    expect(model.pct).toBe(46);
+    expect(model.detail).toBe("92k / 200k");
+    expect(model.breakdown.input).toBe(1_000);
+    expect(model.breakdown.cacheRead).toBe(88_000);
+
+    render(renderContextNotice(session, 200_000, { liveUsage }), container);
+    const notice = container.querySelector<HTMLElement>(".context-notice");
+    expect(notice).toBeInstanceOf(HTMLElement);
+    expect(notice!.classList.contains("context-notice--live")).toBe(true);
+    expect(notice!.querySelector(".context-notice__live-dot")).toBeInstanceOf(HTMLElement);
+    expect(notice!.textContent).toContain("92k / 200k");
+  });
+
+  it("shows compaction progress inside the badge and hides the compact action", () => {
+    const container = document.createElement("div");
+    const session: GatewaySessionRow = {
+      key: "main",
+      kind: "direct",
+      updatedAt: null,
+      totalTokens: 190_000,
+      contextTokens: 200_000,
+    };
+
+    render(
+      renderContextNotice(session, 200_000, {
+        onCompact: vi.fn(),
+        compaction: {
+          phase: "active",
+          runId: "run-1",
+          startedAt: 1,
+          completedAt: null,
+        },
+      }),
+      container,
+    );
+    const notice = container.querySelector<HTMLElement>(".context-notice");
+    expect(notice).toBeInstanceOf(HTMLElement);
+    expect(notice!.classList.contains("context-notice--compacting")).toBe(true);
+    expect(notice!.querySelector(".context-notice__compacting")?.textContent).toContain(
+      "Compacting…",
+    );
+    // Compaction already in flight: the manual compact action is hidden.
+    expect(notice!.querySelector(".context-notice__action")).toBeNull();
   });
 });
 

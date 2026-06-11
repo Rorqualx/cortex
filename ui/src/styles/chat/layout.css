@@ -40,7 +40,11 @@
   cursor: pointer;
   white-space: nowrap;
   position: relative;
-  transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, min-width 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    min-width 0.15s ease;
   align-self: flex-end;
   flex: 1 1 0;
   min-width: 80px;
@@ -130,7 +134,8 @@
 }
 
 @keyframes tab-status-bounce {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0);
   }
   50% {
@@ -165,7 +170,10 @@
   flex-shrink: 0;
   color: color-mix(in srgb, var(--fg) 70%, transparent);
   opacity: 0;
-  transition: opacity 0.1s ease, background 0.1s ease, color 0.1s ease;
+  transition:
+    opacity 0.1s ease,
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .chat-tab-bar__tab:hover .chat-tab-bar__tab-close,
@@ -205,7 +213,10 @@
   color: var(--muted);
   cursor: pointer;
   flex-shrink: 0;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .chat-tab-bar__new:hover:not(:disabled) {
@@ -394,6 +405,49 @@
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+/* Live mid-run usage marker + compaction-in-progress state */
+.context-notice__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ok, #22c55e);
+  animation: ctx-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ctx-live-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.context-notice__compacting {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.context-notice__compacting svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  animation: ctx-compacting-spin 1s linear infinite;
+}
+
+@keyframes ctx-compacting-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.context-notice--compacting .context-notice__meter-fill {
+  animation: ctx-live-pulse 1.2s ease-in-out infinite;
 }
 
 /* Token breakdown segments inside context notice */

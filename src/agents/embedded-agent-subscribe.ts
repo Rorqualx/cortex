@@ -602,6 +602,21 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
     usageTotals.total += usageTotal;
     state.assistantUsageCommitted = true;
+    // Live context counter: session rows only refresh after the run ends, so
+    // Control UI needs a per-call usage event to update its badge mid-run.
+    // promptTokens mirrors session totalTokens semantics (context occupancy).
+    emitAgentEvent({
+      runId: params.runId,
+      stream: "usage",
+      data: {
+        input: usage.input ?? 0,
+        output: usage.output ?? 0,
+        cacheRead: usage.cacheRead ?? 0,
+        cacheWrite: usage.cacheWrite ?? 0,
+        promptTokens: (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0),
+        runTotalTokens: usageTotals.total,
+      },
+    });
   };
   const recordAssistantUsage = (usageLike: unknown) => {
     if (state.assistantUsageCommitted) {

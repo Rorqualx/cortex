@@ -31,6 +31,7 @@ import {
   handleSessionOperationEvent,
   resetToolStream,
   type AgentEventPayload,
+  type ChatLiveUsage,
   type SessionOperationEventPayload,
 } from "./app-tool-stream.ts";
 import { shouldReloadHistoryForFinalEvent } from "./chat-event-reload.ts";
@@ -155,6 +156,10 @@ type GatewayHost = {
   reconcileWebPushState?: () => Promise<void> | void;
   sessionsChangedReloadTimer?: number | ReturnType<typeof globalThis.setTimeout> | null;
   controlUiBootstrapReady?: Promise<void> | null;
+};
+
+type GatewayHostWithLiveUsage = GatewayHost & {
+  chatLiveUsage?: ChatLiveUsage | null;
 };
 
 type GatewayHostWithDeferredSessionMessageReload = GatewayHost & {
@@ -960,6 +965,10 @@ function handleTerminalChatEvent(
     void loadSessions(host as unknown as SessionsState, {
       ...createChatSessionsLoadOverrides(host),
       ...scopedAgentListParamsForRefreshTarget(host, sessionRefreshTarget),
+    }).finally(() => {
+      // Fresh rows now carry the run's final usage; drop the mid-run live
+      // counter so later compactions or other clients' runs are not masked.
+      (host as GatewayHostWithLiveUsage).chatLiveUsage = null;
     });
   }
   // Reload history when tools were used only if the terminal event did not carry

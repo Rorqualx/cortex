@@ -445,6 +445,18 @@ export type CompactionStatus = {
   completedAt: number | null;
 };
 
+/** Last-call usage streamed mid-run (stream:"usage"); drives the live context badge. */
+export type ChatLiveUsage = {
+  runId: string;
+  sessionKey: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  promptTokens: number;
+  updatedAt: number;
+};
+
 export type FallbackStatus = {
   phase?: "active" | "cleared";
   selected: string;
@@ -460,6 +472,7 @@ type CompactionHost = ToolStreamHost & {
   compactionClearTimer?: number | null;
   fallbackStatus?: FallbackStatus | null;
   fallbackClearTimer?: number | null;
+  chatLiveUsage?: ChatLiveUsage | null;
   requestUpdate?: () => void;
 };
 
@@ -500,7 +513,37 @@ function setCompactionComplete(host: CompactionHost, runId: string) {
     startedAt: host.compactionStatus?.startedAt ?? null,
     completedAt: Date.now(),
   };
+  // Compaction shrank the context; pre-compaction live usage would overstate
+  // the badge until the next model call or session refresh supersedes it.
+  host.chatLiveUsage = null;
   scheduleCompactionClear(host, COMPACTION_TOAST_DURATION_MS, { phase: "complete", runId });
+}
+
+function readUsageTokenCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function handleLiveUsageEvent(host: CompactionHost, payload: AgentEventPayload) {
+  // Hidden (non-Control-UI) runs are emitted without a sessionKey; skip them.
+  const sessionKey = toTrimmedString(payload.sessionKey);
+  if (!sessionKey) {
+    return;
+  }
+  const data = payload.data ?? {};
+  const promptTokens = readUsageTokenCount(data.promptTokens);
+  if (promptTokens <= 0) {
+    return;
+  }
+  host.chatLiveUsage = {
+    runId: payload.runId,
+    sessionKey,
+    input: readUsageTokenCount(data.input),
+    output: readUsageTokenCount(data.output),
+    cacheRead: readUsageTokenCount(data.cacheRead),
+    cacheWrite: readUsageTokenCount(data.cacheWrite),
+    promptTokens,
+    updatedAt: Date.now(),
+  };
 }
 
 export function handleSessionOperationEvent(
@@ -755,6 +798,11 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
 
   if (payload.stream === "fallback") {
     handleLifecycleFallbackEvent(host as CompactionHost, payload);
+    return;
+  }
+
+  if (payload.stream === "usage") {
+    handleLiveUsageEvent(host as CompactionHost, payload);
     return;
   }
 

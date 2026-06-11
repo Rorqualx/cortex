@@ -65,6 +65,7 @@ import {
 import {
   resetToolStream as resetToolStreamInternal,
   type ToolStreamEntry,
+  type ChatLiveUsage,
   type CompactionStatus,
   type FallbackStatus,
 } from "./app-tool-stream.ts";
@@ -274,6 +275,7 @@ export class OpenClawApp extends LitElement {
   @state() chatSideResult: ChatSideResult | null = null;
   @state() compactionStatus: CompactionStatus | null = null;
   @state() fallbackStatus: FallbackStatus | null = null;
+  @state() chatLiveUsage: ChatLiveUsage | null = null;
   @state() chatRunStatus: ChatRunUiStatus | null = null;
   chatRunStatusClearTimer: ReturnType<typeof globalThis.setTimeout> | number | null = null;
   @state() chatAvatarUrl: string | null = null;

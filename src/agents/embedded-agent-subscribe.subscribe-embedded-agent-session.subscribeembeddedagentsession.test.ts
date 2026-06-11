@@ -262,6 +262,41 @@ describe("subscribeEmbeddedAgentSession", () => {
     });
   });
 
+  it("emits a live usage agent event when per-call usage commits", () => {
+    const usageEvents: agentEvents.AgentEventPayload[] = [];
+    const unsubscribe = agentEvents.onAgentEvent((evt) => {
+      if (evt.stream === "usage" && evt.runId === "run-live-usage") {
+        usageEvents.push(evt);
+      }
+    });
+    try {
+      const { emit } = createSubscribedSessionHarness({ runId: "run-live-usage" });
+
+      emit({ type: "message_start", message: { role: "assistant" } });
+      emit({
+        type: "message_update",
+        message: { role: "assistant" },
+        assistantMessageEvent: {
+          type: "done",
+          timings: {
+            prompt_n: 30_834,
+            predicted_n: 34,
+          },
+        },
+      });
+
+      expect(usageEvents).toHaveLength(1);
+      expect(usageEvents[0]?.data).toMatchObject({
+        input: 30_834,
+        output: 34,
+        promptTokens: 30_834,
+        runTotalTokens: 30_868,
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it.each([
     ["telegram", "gateway/channels/telegram"],
     [undefined, "agent/embedded"],
