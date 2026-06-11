@@ -33,8 +33,10 @@ import {
 } from "../infra/diagnostics-timeline.js";
 import { isTruthyEnvValue, isVitestRuntimeEnv, logAcceptedEnvOption } from "../infra/env.js";
 import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
+import { requestSafeGatewayRestart } from "../infra/restart-coordinator.js";
 import { readGatewayRestartHandoffSync } from "../infra/restart-handoff.js";
 import { setGatewaySigusr1RestartPolicy, setPreRestartDeferralCheck } from "../infra/restart.js";
+import { armStaleDistRestartGuard } from "../infra/stale-dist-restart.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import type { VoiceWakeRoutingConfig } from "../infra/voicewake-routing.js";
 import { withDiagnosticPhase } from "../logging/diagnostic-phase.js";
@@ -651,6 +653,11 @@ export async function startGatewayServer(
       getActiveEmbeddedRunCount() +
       getActiveTaskCount(),
   );
+  // Arm here (gateway-only) so the guard and its injected restart path are in
+  // memory before any dist rotation; lazy wiring would itself break post-swap.
+  armStaleDistRestartGuard({
+    requestRestart: (reason) => void requestSafeGatewayRestart({ reason }),
+  });
   // Unconditional startup migration: seed gateway.controlUi.allowedOrigins for existing
   // non-loopback installs that upgraded to v2026.2.26+ without required origins.
   const controlUiSeed = minimalTestGateway

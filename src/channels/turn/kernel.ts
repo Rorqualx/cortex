@@ -8,6 +8,7 @@ import {
   createDiagnosticTraceContextFromActiveScope,
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
+import { noteStaleDistCandidateError } from "../../infra/stale-dist-restart.js";
 import { toHistoryMediaEntries } from "../inbound-event/media.js";
 import { createChannelReplyPipeline } from "../message/reply-pipeline.js";
 import type { CreateChannelReplyPipelineParams } from "../message/reply-pipeline.js";
@@ -723,6 +724,9 @@ export async function runChannelTurn<
     );
     result = dispatchResult.dispatched ? { ...dispatchResult, admission } : dispatchResult;
   } catch (err) {
+    // Inbound dispatch lazily imports reply/runtime chunks; this catch is where
+    // a dist rotation under a live gateway surfaces as silent message drops.
+    noteStaleDistCandidateError(err);
     const failedResult: ChannelTurnResult<TDispatchResult> = {
       admission,
       dispatched: false,

@@ -66,6 +66,19 @@ src/agents/templates/*.md linguist-generated=false
 **/*.prompt.md linguist-generated=false
 **/*.agent.md linguist-generated=false
 
+# --- fork: stale-dist restart guard ---
+# Gateway self-restart when dist/ rotates under a live process (upstream
+# openclaw/openclaw#92241 asks for this; drop these entries if upstream lands it).
+# Guard module + tests are fork-exclusive; the other files carry thin wiring
+# (arm call in startGatewayServer, noteStaleDistCandidateError in dispatch
+# catches) plus a FAQ entry.
+src/infra/stale-dist-restart.ts                                         merge=ours
+src/infra/stale-dist-restart.test.ts                                    merge=ours
+src/gateway/server.impl.ts                                              merge=ours
+src/gateway/server/ws-connection/message-handler.ts                     merge=ours
+src/channels/turn/kernel.ts                                             merge=ours
+docs/help/faq.md                                                        merge=ours
+
 # --- fork: merge guard system ---
 # Baseline snapshot and merge guard scripts (fork-exclusive tooling)
 fork-config-baseline.json                                               merge=ours

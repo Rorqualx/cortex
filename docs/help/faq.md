@@ -1467,6 +1467,13 @@ lives on the [Models FAQ](/help/faq-models).
 
   </Accordion>
 
+  <Accordion title="Why did the Gateway restart itself after an update or rebuild?">
+    A running Gateway loads code lazily. If the installed `dist/` tree is replaced underneath it (package update or rollback without a restart, or a source rebuild), already-loaded code starts failing with `ERR_MODULE_NOT_FOUND` for files that no longer exist.
+
+    The Gateway detects this: when a dispatch error carries that signature and the on-disk build identity no longer matches the one the process started with, it logs a warning and performs one safe restart (waiting for in-flight work to drain) so it runs the code that is actually installed. No action is needed; if you see repeated restarts, run `openclaw doctor`.
+
+  </Accordion>
+
   <Accordion title='Why does openclaw gateway status say "Runtime: running" but "Connectivity probe: failed"?'>
     Because "running" is the **supervisor's** view (launchd/systemd/schtasks). The connectivity probe is the CLI actually connecting to the gateway WebSocket.
 

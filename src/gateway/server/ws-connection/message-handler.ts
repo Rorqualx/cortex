@@ -72,6 +72,7 @@ import {
   requestNodePairing,
   updatePairedNodeMetadata,
 } from "../../../infra/node-pairing.js";
+import { noteStaleDistCandidateError } from "../../../infra/stale-dist-restart.js";
 import { upsertPresence } from "../../../infra/system-presence.js";
 import { loadVoiceWakeRoutingConfig } from "../../../infra/voicewake-routing.js";
 import { loadVoiceWakeConfig } from "../../../infra/voicewake.js";
@@ -2094,6 +2095,8 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
         });
       })().catch((err: unknown) => {
         logGateway.error(`request handler failed: ${formatForLog(err)}`);
+        // Lazy handler imports fail here when dist rotated under this process.
+        noteStaleDistCandidateError(err);
         respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
       });
       if (DEVICE_CREDENTIAL_INVALIDATING_METHODS.has(req.method)) {
