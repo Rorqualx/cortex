@@ -28,7 +28,9 @@ export const ChatHistoryParamsSchema = Type.Object(
   {
     sessionKey: NonEmptyString,
     agentId: Type.Optional(NonEmptyString),
-    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+    // Keep in sync with the chat.history handler's hardMax (whole-history UI
+    // requests the full transcript window in one response).
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
     maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 500_000 })),
   },
   { additionalProperties: false },
