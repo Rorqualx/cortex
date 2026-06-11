@@ -170,8 +170,27 @@ function formatRawCatalogLabel(entry: ModelCatalogEntry): string {
   return provider ? `${entry.id} · ${provider}` : entry.id;
 }
 
+// Kimi is reachable through two billing endpoints that surface near-identical
+// model names: the `kimi` provider (Kimi Code subscription) and the `moonshot`
+// provider (platform pay-as-you-go). Sub-label both so the picker shows which
+// quota a selection draws from; the hint joins the name before duplicate-name
+// disambiguation so colliding aliases resolve to the billing label, not raw ids.
+const PROVIDER_BILLING_HINTS: Record<string, string> = {
+  kimi: "Code plan",
+  moonshot: "pay-as-you-go",
+};
+
+function resolveProviderBillingHint(provider: string | null | undefined): string | undefined {
+  return PROVIDER_BILLING_HINTS[provider?.trim().toLowerCase() ?? ""];
+}
+
+function appendProviderBillingHint(label: string, provider: string | null | undefined): string {
+  const hint = resolveProviderBillingHint(provider);
+  return hint && label ? `${label} · ${hint}` : label;
+}
+
 function resolveCatalogDisplayName(entry: ModelCatalogEntry): string {
-  return entry.alias?.trim() || entry.name.trim();
+  return appendProviderBillingHint(entry.alias?.trim() || entry.name.trim(), entry.provider);
 }
 
 function createQualifiedCatalogKey(entry: ModelCatalogEntry): string {

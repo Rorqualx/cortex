@@ -108,6 +108,40 @@ describe("chat-model-ref helpers", () => {
     ).toBe("Claude Sonnet · openrouter");
   });
 
+  it("sub-labels Kimi billing endpoints and resolves colliding aliases through them", () => {
+    const kimiCatalog = createModelCatalog(
+      {
+        id: "kimi-for-coding",
+        name: "Kimi for Coding",
+        provider: "kimi",
+        alias: "Kimi",
+      },
+      {
+        id: "kimi-k2.6",
+        name: "Kimi K2.6",
+        provider: "moonshot",
+        alias: "Kimi",
+      },
+      {
+        id: "moonshot-v1-128k",
+        name: "Moonshot 128K",
+        provider: "moonshot",
+      },
+    );
+
+    expect(buildChatModelOption(kimiCatalog[0], kimiCatalog)).toEqual({
+      value: "kimi/kimi-for-coding",
+      label: "Kimi · Code plan",
+    });
+    expect(buildChatModelOption(kimiCatalog[1], kimiCatalog)).toEqual({
+      value: "moonshot/kimi-k2.6",
+      label: "Kimi · pay-as-you-go",
+    });
+    expect(formatCatalogChatModelDisplay("moonshot/moonshot-v1-128k", kimiCatalog)).toBe(
+      "Moonshot 128K · pay-as-you-go",
+    );
+  });
+
   it("falls back to the raw catalog label when name and provider still collide", () => {
     const duplicateNameAndProviderCatalog = createModelCatalog(
       {
