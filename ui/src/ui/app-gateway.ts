@@ -137,6 +137,7 @@ type GatewayHost = {
   sessionKey: string;
   sessionsShowArchived: boolean;
   chatRunId: string | null;
+  chatSending?: boolean;
   pendingAbort?: { runId?: string | null; sessionKey: string; agentId?: string } | null;
   refreshSessionsAfterChat: Map<string, ChatSessionRefreshTarget>;
   sessionsLoading?: boolean;
@@ -1146,6 +1147,14 @@ function handleSessionMessageGatewayEvent(
         runIdBeforeRefresh,
       ),
     );
+    return;
+  }
+  // A chat.send is between request and ack (ack-ok runs never set chatRunId):
+  // reloading now would apply the just-persisted user message before the ack
+  // path appends its optimistic copy, briefly duplicating it. Defer; the ack
+  // handler (ack ok) or the run's terminal event reloads history itself.
+  if (host.chatSending) {
+    deferredReloadHost.pendingSessionMessageReloadSessionKey = sessionKey;
     return;
   }
   deferredReloadHost.pendingSessionMessageReloadSessionKey = null;

@@ -617,6 +617,29 @@ describe("handleGatewayEvent session.message", () => {
     expect(loadSessionsMock).not.toHaveBeenCalled();
   });
 
+  it("defers the history reload while a chat.send is awaiting its ack", () => {
+    loadChatHistoryMock.mockReset();
+    applySessionsChangedEventMock.mockReset().mockReturnValue({ applied: false });
+    const host = createHost();
+    host.sessionKey = "agent:qa:main";
+    (host as unknown as { chatSending: boolean }).chatSending = true;
+
+    handleGatewayEvent(host, {
+      type: "event",
+      event: "session.message",
+      payload: { sessionKey: "agent:qa:main" },
+      seq: 1,
+    });
+
+    // Reloading mid-send would apply the persisted user message before the
+    // ack path appends its optimistic copy, duplicating it briefly.
+    expect(loadChatHistoryMock).not.toHaveBeenCalled();
+    expect(
+      (host as unknown as { pendingSessionMessageReloadSessionKey?: string | null })
+        .pendingSessionMessageReloadSessionKey,
+    ).toBe("agent:qa:main");
+  });
+
   it("ignores canonical global messages for other agent main aliases", () => {
     loadChatHistoryMock.mockReset();
     loadSessionsMock.mockReset();
