@@ -1641,7 +1641,7 @@
 
 .conversation-row {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
+  grid-template-columns: 8px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
   min-height: 52px;
@@ -1723,6 +1723,40 @@
   border-radius: var(--radius-full);
   background: var(--ok);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.conversation-row__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+.conversation-row:hover .conversation-row__delete,
+.conversation-row__delete:focus-visible {
+  opacity: 1;
+}
+
+.conversation-row__delete:hover {
+  color: var(--danger, #e5484d);
+  background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent);
+}
+
+.conversation-row__delete svg {
+  width: 15px;
+  height: 15px;
 }
 
 .conversations-footer {

@@ -2661,6 +2661,7 @@ export function renderApp(state: AppViewState) {
                   switchChatSession(state, sessionKey);
                   state.setTab("chat" as import("./navigation.ts").Tab);
                 },
+                onDelete: (sessionKey) => void deleteSessionsAndRefresh(state, [sessionKey]),
               }),
             )
           : nothing}

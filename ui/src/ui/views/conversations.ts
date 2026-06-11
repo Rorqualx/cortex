@@ -19,6 +19,7 @@ export type ConversationsProps = {
   onSearchChange: (query: string) => void;
   onRefresh: () => void;
   onNavigateToChat: (sessionKey: string) => void;
+  onDelete: (sessionKey: string) => void;
 };
 
 function resolveAgentName(
@@ -121,6 +122,7 @@ export function renderConversations(props: ConversationsProps) {
     onSearchChange,
     onRefresh,
     onNavigateToChat,
+    onDelete,
   } = props;
 
   const allRows = (result?.sessions ?? [])
@@ -213,6 +215,19 @@ export function renderConversations(props: ConversationsProps) {
               ${hasActiveRun
                 ? html`<span class="conversation-row__live" aria-label="Active run">●</span>`
                 : nothing}
+              <button
+                type="button"
+                class="conversation-row__delete"
+                title="Delete conversation"
+                aria-label=${`Delete conversation: ${title}`}
+                @click=${(event: MouseEvent) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onDelete(row.key);
+                }}
+              >
+                ${icons.trash}
+              </button>
             </a>
           `;
         })}
