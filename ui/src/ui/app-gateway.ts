@@ -947,12 +947,19 @@ function handleTerminalChatEvent(
   const refreshTarget = runId ? host.refreshSessionsAfterChat.get(runId) : undefined;
   if (runId && refreshTarget) {
     host.refreshSessionsAfterChat.delete(runId);
-    if (state === "final") {
-      void loadSessions(host as unknown as SessionsState, {
-        ...createChatSessionsLoadOverrides(host),
-        ...scopedAgentListParamsForRefreshTarget(host, refreshTarget),
-      });
-    }
+  }
+  if (state === "final") {
+    // Refresh sessions after every completed run, not just queued targets: a
+    // model fallback persists an auto override on the session entry and the
+    // composer model picker must pick up the served model from fresh rows.
+    const sessionRefreshTarget = refreshTarget ?? {
+      sessionKey: payload?.sessionKey ?? host.sessionKey,
+      ...(payload?.agentId ? { agentId: payload.agentId } : {}),
+    };
+    void loadSessions(host as unknown as SessionsState, {
+      ...createChatSessionsLoadOverrides(host),
+      ...scopedAgentListParamsForRefreshTarget(host, sessionRefreshTarget),
+    });
   }
   // Reload history when tools were used only if the terminal event did not carry
   // a renderable assistant message. Source-reply finals already contain the UI

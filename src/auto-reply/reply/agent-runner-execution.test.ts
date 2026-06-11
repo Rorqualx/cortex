@@ -6291,12 +6291,11 @@ describe("runAgentTurnWithFallback", () => {
     expect(sessionStore.main.authProfileOverride).toBeUndefined();
   });
 
-  it("does not persist fallback selection for legacy user overrides without modelOverrideSource", async () => {
-    // Regression: older persisted sessions can have a user-selected override
-    // (modelOverride set) but no modelOverrideSource field, because the field
-    // was added later.  These legacy entries must still be protected from
-    // fallback overwrite, matching the backward-compat treatment in
-    // session-reset-service.
+  it("persists fallback selection over legacy user overrides without modelOverrideSource", async () => {
+    // The session model must always reflect the model actually serving
+    // replies (the composer picker mirrors it), so even user-selected
+    // overrides are replaced by the served fallback. The original pick is
+    // preserved as the fallback origin.
     state.runWithModelFallbackMock.mockImplementation(
       async (params: { run: (provider: string, model: string) => Promise<unknown> }) => ({
         result: await params.run("openai", "gpt-5.4"),
@@ -6352,10 +6351,13 @@ describe("runAgentTurnWithFallback", () => {
     });
 
     expect(result.kind).toBe("success");
-    // Legacy user override must survive the fallback unchanged.
-    expect(sessionEntry.providerOverride).toBe("anthropic");
-    expect(sessionEntry.modelOverride).toBe("claude-opus-4-6");
-    expect(sessionEntry.modelOverrideSource).toBeUndefined();
+    // The served fallback replaces the legacy user override; the original
+    // selection is preserved as the fallback origin.
+    expect(sessionEntry.providerOverride).toBe("openai");
+    expect(sessionEntry.modelOverride).toBe("gpt-5.4");
+    expect(sessionEntry.modelOverrideSource).toBe("auto");
+    expect(sessionEntry.modelOverrideFallbackOriginProvider).toBe("bailian");
+    expect(sessionEntry.modelOverrideFallbackOriginModel).toBe("qwen3.6-plus");
   });
 
   it("persists fallback selection for recovered auto overrides without modelOverrideSource", async () => {
@@ -6422,10 +6424,10 @@ describe("runAgentTurnWithFallback", () => {
     expect(sessionEntry.modelOverrideFallbackOriginModel).toBe("MiniMax-M2.7");
   });
 
-  it("does not persist fallback selection when modelOverrideSource is user", async () => {
-    // Regression: fallback persistence overwrote user-initiated /models
-    // selections.  When the user explicitly picked a model, the fallback
-    // should NOT clobber it even when the primary model fails.
+  it("persists fallback selection over a user model override", async () => {
+    // The session model must always reflect the model actually serving
+    // replies (the composer picker mirrors it). The user's pick is preserved
+    // as the fallback origin so the auto primary probe can restore it.
     state.runWithModelFallbackMock.mockImplementation(
       async (params: { run: (provider: string, model: string) => Promise<unknown> }) => ({
         result: await params.run("openai", "gpt-5.4"),
@@ -6481,10 +6483,13 @@ describe("runAgentTurnWithFallback", () => {
     });
 
     expect(result.kind).toBe("success");
-    // The user's /models selection must survive the fallback.
-    expect(sessionEntry.providerOverride).toBe("anthropic");
-    expect(sessionEntry.modelOverride).toBe("claude-opus-4-6");
-    expect(sessionEntry.modelOverrideSource).toBe("user");
+    // The served fallback replaces the user's pick; the pick survives as the
+    // fallback origin.
+    expect(sessionEntry.providerOverride).toBe("openai");
+    expect(sessionEntry.modelOverride).toBe("gpt-5.4");
+    expect(sessionEntry.modelOverrideSource).toBe("auto");
+    expect(sessionEntry.modelOverrideFallbackOriginProvider).toBe("anthropic");
+    expect(sessionEntry.modelOverrideFallbackOriginModel).toBe("claude-opus-4-6");
   });
 
   it("keeps same-provider auth profile when fallback only changes model", async () => {

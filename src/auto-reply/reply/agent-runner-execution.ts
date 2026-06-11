@@ -1728,27 +1728,10 @@ export async function runAgentTurnWithFallback(params: {
       return undefined;
     }
 
-    // Don't overwrite a user-initiated model override (e.g. from /models or
-    // /model) with the fallback model.  The user's explicit selection should
-    // survive transient primary-model failures so subsequent messages still
-    // target the model the user chose.  Fallback persistence is only
-    // appropriate when the override was itself set by a previous fallback
-    // ("auto") or when there is no override yet.
-    //
-    // `modelOverrideSource` was added later, so older persisted sessions can
-    // carry a user-selected override without the source field.  Treat any
-    // entry with a `modelOverride` but missing `modelOverrideSource` as legacy
-    // user state, matching the backward-compat treatment in
-    // session-reset-service.
-    const isUserModelOverride =
-      activeSessionEntry.modelOverrideSource === "user" ||
-      (activeSessionEntry.modelOverrideSource === undefined &&
-        Boolean(normalizeOptionalString(activeSessionEntry.modelOverride)) &&
-        !hasSessionAutoModelFallbackProvenance(activeSessionEntry));
-    if (isUserModelOverride) {
-      return undefined;
-    }
-
+    // User-initiated overrides are persisted too: the session model (and the
+    // composer picker that mirrors it) must always reflect the model that is
+    // actually serving replies. The user's pick is preserved as the fallback
+    // origin so provenance survives and the auto primary probe can restore it.
     const previousState = snapshotFallbackSelectionState(activeSessionEntry);
     const selectionRun =
       candidateRun !== effectiveRun && effectiveRun.autoFallbackPrimaryProbe

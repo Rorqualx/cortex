@@ -40,6 +40,9 @@ type SessionsChatRunState = {
 export type SessionsState = SessionsChatRunState & {
   client: GatewayBrowserClient | null;
   connected: boolean;
+  /** Composer model picker cache; fresh session rows reconcile it (see loadSessionsOnce). */
+  chatModelOverrides?: Record<string, unknown>;
+  chatModelSwitchPromises?: Record<string, Promise<boolean>>;
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;
   sessionsResultAgentId?: string | null;
@@ -1100,6 +1103,36 @@ export async function loadSessions(state: SessionsState, overrides?: LoadSession
   }
 }
 
+/**
+ * Fresh server rows are authoritative for the composer model picker: drop
+ * cached overrides for sessions the result covers so a fallback-served model
+ * (persisted server-side as an auto override) becomes visible. Entries with an
+ * in-flight sessions.patch keep their optimistic value until it resolves.
+ */
+function reconcileChatModelOverridesWithRows(state: SessionsState) {
+  const cache = state.chatModelOverrides;
+  if (!cache) {
+    return;
+  }
+  const cachedKeys = Object.keys(cache);
+  if (cachedKeys.length === 0) {
+    return;
+  }
+  const rowKeys = new Set((state.sessionsResult?.sessions ?? []).map((row) => row.key));
+  const next = { ...cache };
+  let changed = false;
+  for (const key of cachedKeys) {
+    if (!rowKeys.has(key) || state.chatModelSwitchPromises?.[key]) {
+      continue;
+    }
+    delete next[key];
+    changed = true;
+  }
+  if (changed) {
+    state.chatModelOverrides = next;
+  }
+}
+
 async function loadSessionsOnce(
   state: SessionsState,
   client: NonNullable<SessionsState["client"]>,
@@ -1156,6 +1189,7 @@ async function loadSessionsOnce(
           ? appendSessionsResult(state.sessionsResult, projected)
           : projected;
       state.sessionsResultAgentId = resultAgentId;
+      reconcileChatModelOverridesWithRows(state);
       if (hasCurrentChatSession(state)) {
         reconcileChatRunFromCurrentSessionRow(state, {
           publishRunStatus: overrides?.publishChatRunStatus !== false,
