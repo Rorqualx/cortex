@@ -20,6 +20,8 @@ export type ConversationsProps = {
   onRefresh: () => void;
   onNavigateToChat: (sessionKey: string) => void;
   onDelete: (sessionKey: string) => void;
+  /** The gateway refuses to delete this session; hide the delete action for it. */
+  mainSessionKey: string;
 };
 
 function resolveAgentName(
@@ -123,6 +125,7 @@ export function renderConversations(props: ConversationsProps) {
     onRefresh,
     onNavigateToChat,
     onDelete,
+    mainSessionKey,
   } = props;
 
   const allRows = (result?.sessions ?? [])
@@ -215,19 +218,23 @@ export function renderConversations(props: ConversationsProps) {
               ${hasActiveRun
                 ? html`<span class="conversation-row__live" aria-label="Active run">●</span>`
                 : nothing}
-              <button
-                type="button"
-                class="conversation-row__delete"
-                title="Delete conversation"
-                aria-label=${`Delete conversation: ${title}`}
-                @click=${(event: MouseEvent) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onDelete(row.key);
-                }}
-              >
-                ${icons.trash}
-              </button>
+              ${row.key === mainSessionKey
+                ? nothing
+                : html`
+                    <button
+                      type="button"
+                      class="conversation-row__delete"
+                      title="Delete conversation"
+                      aria-label=${`Delete conversation: ${title}`}
+                      @click=${(event: MouseEvent) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onDelete(row.key);
+                      }}
+                    >
+                      ${icons.trash}
+                    </button>
+                  `}
             </a>
           `;
         })}

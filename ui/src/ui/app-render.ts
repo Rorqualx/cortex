@@ -472,6 +472,20 @@ function resolveSidebarDefaultAgentId(state: AppViewState): string {
   );
 }
 
+function resolveMainSessionKeyForState(state: AppViewState): string {
+  // Mirrors the gateway's resolveMainSessionKey guard: the default agent's
+  // main session cannot be deleted, so views hide destructive actions for it.
+  const snapshot = state.hello?.snapshot as
+    | { sessionDefaults?: { mainSessionKey?: string; mainKey?: string } }
+    | undefined;
+  return (
+    normalizeOptionalString(state.agentsList?.mainKey) ??
+    normalizeOptionalString(snapshot?.sessionDefaults?.mainSessionKey) ??
+    normalizeOptionalString(snapshot?.sessionDefaults?.mainKey) ??
+    `agent:${resolveSidebarDefaultAgentId(state)}:main`
+  );
+}
+
 function resolveSidebarSelectedAgentId(state: AppViewState): string {
   const parsed = parseAgentSessionKey(state.sessionKey);
   if (parsed) {
@@ -2662,6 +2676,7 @@ export function renderApp(state: AppViewState) {
                   state.setTab("chat" as import("./navigation.ts").Tab);
                 },
                 onDelete: (sessionKey) => void deleteSessionsAndRefresh(state, [sessionKey]),
+                mainSessionKey: resolveMainSessionKeyForState(state),
               }),
             )
           : nothing}
