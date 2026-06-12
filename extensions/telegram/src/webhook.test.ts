@@ -622,6 +622,25 @@ describe("startTelegramWebhook", () => {
     );
   });
 
+  it("rejects authenticated payloads that are not Telegram updates", async () => {
+    handleUpdateSpy.mockClear();
+    await withStartedWebhook(
+      {
+        secret: TELEGRAM_SECRET,
+        path: TELEGRAM_WEBHOOK_PATH,
+      },
+      async ({ port }) => {
+        const response = await postWebhookJson({
+          url: webhookUrl(port, TELEGRAM_WEBHOOK_PATH),
+          payload: JSON.stringify({ message: { text: "missing update_id" } }),
+          secret: TELEGRAM_SECRET,
+        });
+        expect(response.status).toBe(400);
+        expect(handleUpdateSpy).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   it("acks before webhook update processing finishes", async () => {
     let finishWork: (() => void) | undefined;
     let workStarted = false;

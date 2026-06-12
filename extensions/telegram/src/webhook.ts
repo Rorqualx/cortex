@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { IncomingMessage } from "node:http";
 import net from "node:net";
 import { InputFile } from "grammy";
+import type { Update } from "grammy/types";
 import type { ChannelAccountSnapshot } from "openclaw/plugin-sdk/channel-contract";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { isDiagnosticsEnabled } from "openclaw/plugin-sdk/diagnostic-runtime";
@@ -116,6 +117,17 @@ function hasValidTelegramWebhookSecret(
   expectedSecret: string,
 ): boolean {
   return safeEqualSecret(secretHeader, expectedSecret);
+}
+
+// Bot API guarantees every webhook update is an object with a numeric update_id. Reject
+// other shapes before grammY so a POST that knows the secret cannot feed arbitrary
+// payloads into bot.handleUpdate.
+function parseTelegramUpdateEnvelope(value: unknown): Update | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const updateId = (value as { update_id?: unknown }).update_id;
+  return typeof updateId === "number" && Number.isInteger(updateId) ? (value as Update) : undefined;
 }
 
 function parseIpLiteral(value: string | undefined): string | undefined {
@@ -354,11 +366,17 @@ export async function startTelegramWebhook(opts: {
         return;
       }
 
+      const update = parseTelegramUpdateEnvelope(body.value);
+      if (!update) {
+        respondText(400, "invalid update");
+        return;
+      }
+
       respondText(200);
       status.noteWebhookUpdateReceived();
 
       void (async () => {
-        await bot.handleUpdate(body.value as Parameters<typeof bot.handleUpdate>[0]);
+        await bot.handleUpdate(update);
 
         if (diagnosticsEnabled) {
           logWebhookProcessed({
