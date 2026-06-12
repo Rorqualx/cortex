@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createHierarchicalL3Engine } from "./src/engine.js";
 
 describe("memory-l3 engine factory", () => {
-  it("returns a ContextEngine with the hierarchical-l3 info id", () => {
+  it("returns a ContextEngine with the memory-l3 info id", () => {
     const engine = createHierarchicalL3Engine({});
-    expect(engine.info.id).toBe("hierarchical-l3");
+    // Canonical id matches the registerContextEngine("memory-l3") slot key.
+    expect(engine.info.id).toBe("memory-l3");
     expect(engine.info.name).toBe("Hierarchical Memory (L1/L2/L3)");
     expect(engine.info.ownsCompaction).toBe(false);
   });
