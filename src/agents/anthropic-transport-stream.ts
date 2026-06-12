@@ -1424,7 +1424,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
         });
       }
     })();
-    return eventStream as ReturnType<StreamFn>;
+    return eventStream;
   };
 }
 
