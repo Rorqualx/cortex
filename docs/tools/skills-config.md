@@ -1,11 +1,11 @@
 ---
 title: "Skills config"
 sidebarTitle: "Skills config"
-summary: "Full reference for the skills.* config schema, agent allowlists, workshop settings, and sandbox env var handling."
+summary: "Full reference for the skills.* config schema, agent allowlists, Skill Forge approvals, and sandbox env var handling."
 read_when:
   - Configuring skill loading, install, or gating behavior
   - Setting per-agent skill visibility
-  - Adjusting Skill Workshop limits or approval policy
+  - Adjusting the Skill Forge approval policy
 ---
 
 Most skills configuration lives under `skills` in
@@ -27,11 +27,8 @@ Most skills configuration lives under `skills` in
       nodeManager: "npm",
       allowUploadedArchives: false,
     },
-    workshop: {
-      autonomous: { enabled: false },
+    forge: {
       approvalPolicy: "pending",
-      maxPending: 50,
-      maxSkillBytes: 40000,
     },
     entries: {
       "image-lab": {
@@ -320,26 +317,12 @@ different visible skill set per agent.
   defaults — they do not merge. Set to `[]` to expose no skills for that agent.
 </ParamField>
 
-## Workshop (`skills.workshop`)
+## Skill Forge (`skills.forge`)
 
-<ParamField path="skills.workshop.autonomous.enabled" type="boolean" default="false">
-  When `true`, agents can create pending proposals from durable conversation
-  signals after successful turns. User-prompted skill creation always goes
-  through Skill Workshop regardless of this setting.
-</ParamField>
-
-<ParamField path="skills.workshop.approvalPolicy" type='"pending" | "auto"' default='"pending"'>
-  `pending` requires operator approval before agent-initiated apply, reject, or
-  quarantine. `auto` allows those actions without approval.
-</ParamField>
-
-<ParamField path="skills.workshop.maxPending" type="number" default="50">
-  Maximum pending and quarantined proposals retained per workspace.
-</ParamField>
-
-<ParamField path="skills.workshop.maxSkillBytes" type="number" default="40000">
-  Maximum proposal body size in bytes. Proposal descriptions are hard-capped at
-  160 bytes because they appear in discovery and listing output.
+<ParamField path="skills.forge.approvalPolicy" type='"pending" | "auto"' default='"pending"'>
+  `pending` requires operator approval before agent-initiated `skill_forge`
+  promote or retire actions. `auto` allows those actions without approval.
+  Legacy `skills.workshop` config is migrated by `openclaw doctor --fix`.
 </ParamField>
 
 ## Symlinked skill roots
@@ -422,9 +405,6 @@ watcher is enabled, or on the next agent turn when the watcher detects a change.
   </Card>
   <Card title="Creating skills" href="/tools/creating-skills" icon="hammer">
     Authoring custom workspace skills.
-  </Card>
-  <Card title="Skill Workshop" href="/tools/skill-workshop" icon="flask">
-    Proposal queue for agent-drafted skills.
   </Card>
   <Card title="Slash commands" href="/tools/slash-commands" icon="terminal">
     Native slash-command catalog and chat directives.

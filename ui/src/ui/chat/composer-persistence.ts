@@ -1,7 +1,7 @@
 // Control UI chat module implements composer persistence behavior.
 import { getSafeSessionStorage } from "../../local-storage.ts";
 import { DEFAULT_AGENT_ID, normalizeAgentId, parseAgentSessionKey } from "../session-key.ts";
-import type { ChatAttachment, ChatQueueItem, ChatQueueSkillForgeRevision } from "../ui-types.ts";
+import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import { getChatAttachmentDataUrl } from "./attachment-payload-store.ts";
 
 const STORAGE_KEY_PREFIX = "openclaw.control.chatComposer.v1:";
@@ -168,22 +168,6 @@ function serializeChatAttachment(attachment: ChatAttachment): ChatAttachment | n
   };
 }
 
-function normalizeSkillForgeRevision(value: unknown): ChatQueueSkillForgeRevision | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const entry = value as Record<string, unknown>;
-  const proposalId = normalizeOptionalString(entry.proposalId);
-  if (!proposalId) {
-    return undefined;
-  }
-  const agentId = normalizeOptionalString(entry.agentId);
-  return {
-    proposalId,
-    ...(agentId ? { agentId: normalizeAgentId(agentId) } : {}),
-  };
-}
-
 function serializeQueueItem(item: ChatQueueItem): ChatQueueItem | null {
   const id = normalizeOptionalString(item.id);
   const text = typeof item.text === "string" ? item.text : "";
@@ -206,7 +190,6 @@ function serializeQueueItem(item: ChatQueueItem): ChatQueueItem | null {
     item.sendState === "waiting-model"
       ? item.sendState
       : undefined;
-  const skillForgeRevision = normalizeSkillForgeRevision(item.skillForgeRevision);
   return {
     id,
     text,
@@ -221,7 +204,6 @@ function serializeQueueItem(item: ChatQueueItem): ChatQueueItem | null {
     ...(item.localCommandName ? { localCommandName: item.localCommandName } : {}),
     ...(item.sessionKey ? { sessionKey: item.sessionKey } : {}),
     ...(item.agentId ? { agentId: item.agentId } : {}),
-    ...(skillForgeRevision ? { skillForgeRevision } : {}),
     ...(sendState ? { sendState } : {}),
     ...(item.sendError ? { sendError: item.sendError } : {}),
     ...(item.sendRunId ? { sendRunId: item.sendRunId } : {}),
@@ -293,10 +275,6 @@ function normalizeQueueItem(value: unknown): ChatQueueItem | null {
   const agentId = normalizeOptionalString(entry.agentId);
   if (agentId) {
     item.agentId = normalizeAgentId(agentId);
-  }
-  const skillForgeRevision = normalizeSkillForgeRevision(entry.skillForgeRevision);
-  if (skillForgeRevision) {
-    item.skillForgeRevision = skillForgeRevision;
   }
   return item;
 }

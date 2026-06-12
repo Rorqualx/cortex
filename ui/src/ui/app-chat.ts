@@ -53,7 +53,6 @@ import {
   loadEarlierMessages,
   expandHistoryRenderLimit,
   requestChatSend,
-  requestSkillForgeRevisionChatSend,
   sendDetachedChatMessage,
   sendSteerChatMessage,
   type ChatEventPayload,
@@ -91,12 +90,7 @@ import type {
   ModelCatalogEntry,
 } from "./types.ts";
 import type { SessionsListResult } from "./types.ts";
-import type {
-  ChatAttachment,
-  ChatQueueItem,
-  ChatQueueSkillForgeRevision,
-  ChatSessionRefreshTarget,
-} from "./ui-types.ts";
+import type { ChatAttachment, ChatQueueItem, ChatSessionRefreshTarget } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
 import { isRenderableControlUiAvatarUrl } from "./views/agents-utils.ts";
 
@@ -175,7 +169,6 @@ function setChatError(host: ChatHost, error: string | null) {
 export type ChatSendOptions = {
   confirmReset?: boolean;
   restoreDraft?: boolean;
-  skillForgeRevision?: ChatQueueSkillForgeRevision;
 };
 
 export type ChatAbortOptions = {
@@ -452,7 +445,6 @@ function enqueuePendingSendMessage(
   sendState: ChatQueueItem["sendState"] = host.connected && host.client
     ? "sending"
     : "waiting-reconnect",
-  skillForgeRevision?: ChatQueueSkillForgeRevision,
 ): ChatQueueItem | null {
   const trimmed = text.trim();
   const hasAttachments = Boolean(attachments && attachments.length > 0);
@@ -471,7 +463,6 @@ function enqueuePendingSendMessage(
     sendSubmittedAtMs: submittedAtMs,
     sessionKey: host.sessionKey,
     agentId: scopedAgentIdForSession(host, host.sessionKey),
-    ...(skillForgeRevision ? { skillForgeRevision } : {}),
   };
   host.chatQueue = [...host.chatQueue, pending];
   recordChatSendTiming(host, pending, "pending-visible", submittedAtMs);
@@ -1011,14 +1002,6 @@ async function sendQueuedChatMessage(
     removeQueuedMessageWithoutReleasing(host, id, prepared.sessionKey ?? host.sessionKey);
     return "sent";
   }
-  if (prepared.skillForgeRevision && hasAttachments) {
-    updateQueuedMessageForSession(host, prepared.sessionKey ?? host.sessionKey, id, (item) => ({
-      ...item,
-      sendError: "Skill Forge revision requests do not support attachments.",
-      sendState: "failed",
-    }));
-    return "failed";
-  }
   const sessionKey = prepared.sessionKey ?? host.sessionKey;
   if (!host.connected || !host.client) {
     updateQueuedMessageForSession(host, sessionKey, id, (item) => ({
@@ -1065,24 +1048,13 @@ async function sendQueuedChatMessage(
   }
 
   try {
-    const ack = prepared.skillForgeRevision
-      ? await requestSkillForgeRevisionChatSend(host, {
-          proposalId: prepared.skillForgeRevision.proposalId,
-          ...(prepared.skillForgeRevision.agentId
-            ? { agentId: prepared.skillForgeRevision.agentId }
-            : {}),
-          ...(prepared.agentId ? { targetAgentId: prepared.agentId } : {}),
-          instructions: message,
-          runId,
-          sessionKey,
-        })
-      : await requestChatSend(host, {
-          message,
-          attachments: hasAttachments ? attachments : undefined,
-          runId,
-          sessionKey,
-          agentId: prepared.agentId,
-        });
+    const ack = await requestChatSend(host, {
+      message,
+      attachments: hasAttachments ? attachments : undefined,
+      runId,
+      sessionKey,
+      agentId: prepared.agentId,
+    });
     updateChatSendAckTiming(host, runId, ack, sendingItem, requestStartedAtMs);
     recordChatSendTiming(host, sendingItem, "ack", sendingItem.sendSubmittedAtMs, {
       ackStatus: ack.status,
@@ -1299,14 +1271,11 @@ function chatSubmitKey(
   kind: "btw" | "message",
   message: string,
   attachments: ChatAttachment[],
-  skillForgeRevision?: ChatQueueSkillForgeRevision,
 ): string {
   return JSON.stringify([
     kind,
     host.sessionKey,
     message.trim(),
-    skillForgeRevision?.proposalId ?? "",
-    skillForgeRevision?.agentId ?? "",
     attachments.map(attachmentSubmitSignature),
   ]);
 }
@@ -1742,8 +1711,6 @@ export async function handleSendChat(
   const attachments = host.chatAttachments ?? [];
   const attachmentsToSend = messageOverride == null ? snapshotChatAttachments(attachments) : [];
   const hasAttachments = attachmentsToSend.length > 0;
-  const skillForgeRevision = opts?.skillForgeRevision;
-  const shouldInterpretChatCommands = !skillForgeRevision;
 
   if (!message && !hasAttachments) {
     return;
@@ -1753,74 +1720,72 @@ export async function handleSendChat(
     return;
   }
 
-  if (shouldInterpretChatCommands) {
-    if (isChatStopCommand(message)) {
+  if (isChatStopCommand(message)) {
+    if (messageOverride == null) {
+      recordNonTranscriptInputHistory(host, message);
+    }
+    await handleAbortChat(host);
+    return;
+  }
+
+  if (isBtwCommand(message)) {
+    const submitKey = chatSubmitKey(host, "btw", message, attachmentsToSend);
+    await withChatSubmitGuard(host, submitKey, async () => {
+      const modelSwitchReady = waitForPendingChatModelSwitch(host, submittedSessionKey);
+      if (modelSwitchReady !== true && !(await modelSwitchReady)) {
+        return;
+      }
+      if (host.sessionKey !== submittedSessionKey) {
+        return;
+      }
+      const cleared =
+        messageOverride == null
+          ? clearSubmittedComposerState(host, previousDraft, attachmentsToSend)
+          : {};
       if (messageOverride == null) {
         recordNonTranscriptInputHistory(host, message);
       }
-      await handleAbortChat(host);
-      return;
-    }
-
-    if (isBtwCommand(message)) {
-      const submitKey = chatSubmitKey(host, "btw", message, attachmentsToSend);
-      await withChatSubmitGuard(host, submitKey, async () => {
-        const modelSwitchReady = waitForPendingChatModelSwitch(host, submittedSessionKey);
-        if (modelSwitchReady !== true && !(await modelSwitchReady)) {
-          return;
-        }
-        if (host.sessionKey !== submittedSessionKey) {
-          return;
-        }
-        const cleared =
-          messageOverride == null
-            ? clearSubmittedComposerState(host, previousDraft, attachmentsToSend)
-            : {};
-        if (messageOverride == null) {
-          recordNonTranscriptInputHistory(host, message);
-        }
-        await sendDetachedBtwMessage(host, message, {
-          previousDraft: cleared.previousDraft,
-          attachments: hasAttachments ? attachmentsToSend : undefined,
-          previousAttachments: cleared.previousAttachments,
-        });
+      await sendDetachedBtwMessage(host, message, {
+        previousDraft: cleared.previousDraft,
+        attachments: hasAttachments ? attachmentsToSend : undefined,
+        previousAttachments: cleared.previousAttachments,
       });
-      return;
-    }
+    });
+    return;
+  }
 
-    // Intercept local slash commands (/status, /model, /compact, etc.)
-    const parsed = parseSlashCommand(message);
-    if (parsed?.command.executeLocal) {
-      if (isChatBusy(host) && shouldQueueLocalSlashCommand(parsed.command.key)) {
-        if (messageOverride == null) {
-          recordNonTranscriptInputHistory(host, message);
-          host.chatMessage = "";
-          host.chatAttachments = [];
-          resetChatInputHistoryNavigation(host);
-        }
-        enqueueChatMessage(host, message, undefined, isChatResetCommand(message), {
-          args: parsed.args,
-          name: parsed.command.key,
-        });
-        return;
-      }
-      const prevDraft = messageOverride == null ? previousDraft : undefined;
+  // Intercept local slash commands (/status, /model, /compact, etc.)
+  const parsed = parseSlashCommand(message);
+  if (parsed?.command.executeLocal) {
+    if (isChatBusy(host) && shouldQueueLocalSlashCommand(parsed.command.key)) {
       if (messageOverride == null) {
         recordNonTranscriptInputHistory(host, message);
         host.chatMessage = "";
         host.chatAttachments = [];
         resetChatInputHistoryNavigation(host);
       }
-      await dispatchSlashCommand(host, parsed.command.key, parsed.args, {
-        previousDraft: prevDraft,
-        restoreDraft: Boolean(messageOverride && opts?.restoreDraft),
+      enqueueChatMessage(host, message, undefined, isChatResetCommand(message), {
+        args: parsed.args,
+        name: parsed.command.key,
       });
       return;
     }
+    const prevDraft = messageOverride == null ? previousDraft : undefined;
+    if (messageOverride == null) {
+      recordNonTranscriptInputHistory(host, message);
+      host.chatMessage = "";
+      host.chatAttachments = [];
+      resetChatInputHistoryNavigation(host);
+    }
+    await dispatchSlashCommand(host, parsed.command.key, parsed.args, {
+      previousDraft: prevDraft,
+      restoreDraft: Boolean(messageOverride && opts?.restoreDraft),
+    });
+    return;
   }
 
-  const refreshSessions = shouldInterpretChatCommands && isChatResetCommand(message);
-  const submitKey = chatSubmitKey(host, "message", message, attachmentsToSend, skillForgeRevision);
+  const refreshSessions = isChatResetCommand(message);
+  const submitKey = chatSubmitKey(host, "message", message, attachmentsToSend);
   await withChatSubmitGuard(host, submitKey, async () => {
     if (host.sessionKey !== submittedSessionKey) {
       return;
@@ -1842,7 +1807,6 @@ export async function handleSendChat(
       refreshSessions,
       submittedAtMs,
       waitingForModel ? "waiting-model" : undefined,
-      skillForgeRevision,
     );
     if (!queued) {
       return;

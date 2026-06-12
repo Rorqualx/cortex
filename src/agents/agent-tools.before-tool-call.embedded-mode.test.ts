@@ -333,7 +333,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
         sessionKey: "main",
         config: {
           skills: {
-            workshop: {
+            forge: {
               approvalPolicy: "pending",
             },
           },
@@ -376,7 +376,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
         ctx: {
           config: {
             skills: {
-              workshop: {
+              forge: {
                 approvalPolicy: "pending",
               },
             },
@@ -426,7 +426,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
       ctx: {
         config: {
           skills: {
-            workshop: {
+            forge: {
               approvalPolicy: "pending",
             },
           },
@@ -454,7 +454,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
       ctx: {
         config: {
           skills: {
-            workshop: {
+            forge: {
               approvalPolicy: "auto",
             },
           },

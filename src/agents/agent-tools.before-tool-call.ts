@@ -44,12 +44,12 @@ import {
   type PluginHookToolKind,
 } from "../plugins/types.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
+import { resolveSkillForgeToolApproval } from "../skill-forge/approval-policy.js";
 import {
   resolveSkillTelemetrySource,
   resolveSkillTelemetrySourceValue,
 } from "../skills/loading/source.js";
 import type { SkillSnapshot, SkillTelemetrySource } from "../skills/types.js";
-import { resolveSkillForgeToolApproval } from "../skills/workshop/policy.js";
 import { isPlainObject } from "../utils.js";
 import { adjustedParamsByToolCallId } from "./agent-tools.before-tool-call.state.js";
 import { copyChannelAgentToolMeta, getChannelAgentToolMeta } from "./channel-tools.js";

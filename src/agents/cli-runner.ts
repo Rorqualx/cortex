@@ -19,10 +19,6 @@ import { classifyFailoverReason, isFailoverErrorMessage } from "./embedded-agent
 import type { EmbeddedAgentRunResult } from "./embedded-agent-runner.js";
 import { FailoverError, isFailoverError, resolveFailoverStatus } from "./failover-error.js";
 import {
-  awaitAgentEndSideEffects,
-  runAgentEndSideEffects,
-} from "./harness/agent-end-side-effects.js";
-import {
   bootstrapHarnessContextEngine,
   finalizeHarnessContextEngineTurn,
   runHarnessContextEngineMaintenance,
@@ -30,6 +26,8 @@ import {
 import { buildAgentHookContext } from "./harness/hook-context.js";
 import { buildAgentHookConversationMessages } from "./harness/hook-history.js";
 import {
+  awaitAgentHarnessAgentEndHook,
+  runAgentHarnessAgentEndHook,
   runAgentHarnessLlmInputHook,
   runAgentHarnessLlmOutputHook,
 } from "./harness/lifecycle-hook-helpers.js";
@@ -186,7 +184,7 @@ function buildCliContextEngineAssistantMessage(params: {
   return buildCliHookAssistantMessage(params) as AgentMessage;
 }
 
-type CliAgentEndHookParams = Parameters<typeof runAgentEndSideEffects>[0];
+type CliAgentEndHookParams = Parameters<typeof runAgentHarnessAgentEndHook>[0];
 
 function shouldAwaitCliAgentEndHook(params: RunCliAgentParams): boolean {
   return !params.messageChannel && !params.messageProvider;
@@ -197,10 +195,10 @@ async function runCliAgentEndHook(
   hookParams: CliAgentEndHookParams,
 ): Promise<void> {
   if (shouldAwaitCliAgentEndHook(params)) {
-    await awaitAgentEndSideEffects(hookParams);
+    await awaitAgentHarnessAgentEndHook(hookParams);
     return;
   }
-  runAgentEndSideEffects(hookParams);
+  runAgentHarnessAgentEndHook(hookParams);
 }
 
 async function persistApprovedCliUserTurnTranscript(params: RunCliAgentParams): Promise<void> {

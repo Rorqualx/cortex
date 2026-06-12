@@ -58,45 +58,6 @@ describe("chat composer persistence", () => {
     expect(restored.chatQueue).toEqual(queue);
   });
 
-  it("preserves Skill Forge revision metadata on queued sends", () => {
-    persistChatComposerState(
-      createState({
-        chatQueue: [
-          {
-            id: "revision-queued",
-            text: "Make the support files 5",
-            createdAt: 1,
-            sessionKey: "agent:lily:main",
-            agentId: "lily",
-            sendState: "waiting-reconnect",
-            skillForgeRevision: {
-              proposalId: "support-file-sampler-20260531-68207b7b7f",
-              agentId: "proposal-owner",
-            },
-          },
-        ],
-      }),
-    );
-
-    const restored = createState();
-    expect(restoreChatComposerState(restored)).toBe(true);
-
-    expect(restored.chatQueue).toEqual([
-      {
-        id: "revision-queued",
-        text: "Make the support files 5",
-        createdAt: 1,
-        sessionKey: "agent:lily:main",
-        agentId: "lily",
-        sendState: "waiting-reconnect",
-        skillForgeRevision: {
-          proposalId: "support-file-sampler-20260531-68207b7b7f",
-          agentId: "proposal-owner",
-        },
-      },
-    ]);
-  });
-
   it("scopes persisted composers by gateway and session key", () => {
     persistChatComposerState(createState({ chatMessage: "main draft" }));
 

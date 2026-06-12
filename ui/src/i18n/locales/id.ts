@@ -453,14 +453,6 @@ export const id: TranslationMap = {
     logs: "Log Gateway langsung.",
     dreams: "Konsolidasi memori saat tidur.",
   },
-  skillForge: {
-    header: {
-      useCurrentChat: "Use current chat",
-      useCurrentChatAria: "Use current chat for revision requests",
-      useCurrentChatTooltip:
-        "Send revision requests to the current chat session instead of the proposal's workshop session.",
-    },
-  },
   activity: {
     title: "Aktivitas",
     subtitle: "Aktivitas alat sementara yang berasal dari peristiwa sesi langsung.",

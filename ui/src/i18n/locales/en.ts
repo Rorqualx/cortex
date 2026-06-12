@@ -451,14 +451,6 @@ export const en: TranslationMap = {
     logs: "Live gateway logs.",
     dreams: "Memory dreaming, consolidation, and reflection.",
   },
-  skillForge: {
-    header: {
-      useCurrentChat: "Use current chat",
-      useCurrentChatAria: "Use current chat for revision requests",
-      useCurrentChatTooltip:
-        "Send revision requests to the current chat session instead of the proposal's workshop session.",
-    },
-  },
   activity: {
     title: "Activity",
     subtitle: "Ephemeral tool activity derived from live session events.",

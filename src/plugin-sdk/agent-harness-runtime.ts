@@ -140,12 +140,6 @@ export {
   buildSkillForgePromptSection,
   SKILL_FORGE_TOOL_NAME,
 } from "../agents/skill-forge-prompt.js";
-// Deprecated shipped SDK compat (v2026.6.7-alpha.1): skill_workshop was
-// replaced by skill_forge; remove after one release window.
-export {
-  buildSkillWorkshopPromptSection,
-  SKILL_WORKSHOP_TOOL_NAME,
-} from "../agents/skill-workshop-prompt.js";
 export { resolveAttemptFsWorkspaceOnly } from "../agents/embedded-agent-runner/run/attempt.prompt-helpers.js";
 export { resolveAttemptSpawnWorkspaceDir } from "../agents/embedded-agent-runner/run/attempt.thread-helpers.js";
 export { buildEmbeddedAttemptToolRunContext } from "../agents/embedded-agent-runner/run/attempt.tool-run-context.js";

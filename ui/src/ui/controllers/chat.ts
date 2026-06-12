@@ -1166,33 +1166,6 @@ function resolveChatSendRouting(
   };
 }
 
-export async function requestSkillForgeRevisionChatSend(
-  state: ChatState,
-  params: {
-    proposalId: string;
-    instructions: string;
-    runId: string;
-    sessionKey?: string;
-    agentId?: string;
-    targetAgentId?: string;
-  },
-): Promise<ChatSendAck> {
-  const routing = resolveChatSendRouting(state, {
-    sessionKey: params.sessionKey,
-    agentId: params.targetAgentId,
-  });
-  const payload = await state.client!.request("skills.proposals.requestRevision", {
-    ...(params.agentId ? { agentId: normalizeAgentId(params.agentId) } : {}),
-    ...(routing.selectedAgentId ? { targetAgentId: routing.selectedAgentId } : {}),
-    proposalId: params.proposalId,
-    instructions: params.instructions,
-    sessionKey: routing.sessionKey,
-    ...(routing.sessionId ? { sessionId: routing.sessionId } : {}),
-    idempotencyKey: params.runId,
-  });
-  return normalizeChatSendAck(payload, params.runId);
-}
-
 type AssistantMessageNormalizationOptions = {
   roleRequirement: "required" | "optional";
   roleCaseSensitive?: boolean;

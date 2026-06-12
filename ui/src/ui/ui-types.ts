@@ -8,11 +8,6 @@ export type ChatAttachment = {
   sizeBytes?: number;
 };
 
-export type ChatQueueSkillForgeRevision = {
-  proposalId: string;
-  agentId?: string;
-};
-
 export type ChatQueueItem = {
   id: string;
   text: string;
@@ -31,7 +26,6 @@ export type ChatQueueItem = {
   sendRequestStartedAtMs?: number;
   sessionKey?: string;
   agentId?: string;
-  skillForgeRevision?: ChatQueueSkillForgeRevision;
 };
 
 export type ChatSessionRefreshTarget = {

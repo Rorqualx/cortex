@@ -5,7 +5,6 @@ summary: "Build, test, and publish custom SKILL.md workspace skills for your Ope
 read_when:
   - You are creating a new custom skill
   - You need a quick starter workflow for SKILL.md-based skills
-  - You want to use Skill Workshop to propose a skill for agent review
 ---
 
 Skills teach the agent how and when to use tools. Each skill is a directory
@@ -173,46 +172,6 @@ metadata: { "openclaw": { "requires": { "bins": ["gemini"] }, "primaryEnv": "GEM
   </Accordion>
 </AccordionGroup>
 
-## Propose via Skill Workshop
-
-For agent-drafted skills or when you want operator review before a skill goes
-live, use [Skill Workshop](/tools/skill-workshop) proposals instead of writing
-`SKILL.md` directly.
-
-```bash
-# Propose a brand-new skill
-openclaw skills workshop propose-create \
-  --name "hello-world" \
-  --description "A simple skill that prints a greeting." \
-  --proposal ./PROPOSAL.md
-
-# Propose an update to an existing skill
-openclaw skills workshop propose-update hello-world \
-  --proposal ./PROPOSAL.md \
-  --description "Updated greeting skill"
-```
-
-Use `--proposal-dir` when the proposal includes support files:
-
-```bash
-openclaw skills workshop propose-create \
-  --name "hello-world" \
-  --description "A simple skill that prints a greeting." \
-  --proposal-dir ./hello-world-proposal/
-```
-
-The directory must contain `PROPOSAL.md`. Support files can go in `assets/`,
-`examples/`, `references/`, `scripts/`, or `templates/`.
-
-After review:
-
-```bash
-openclaw skills workshop inspect <proposal-id>
-openclaw skills workshop apply <proposal-id>
-```
-
-See [Skill Workshop](/tools/skill-workshop) for the full proposal lifecycle.
-
 ## Publishing to ClawHub
 
 <Steps>
@@ -255,9 +214,6 @@ See [Skill Workshop](/tools/skill-workshop) for the full proposal lifecycle.
 <CardGroup cols={2}>
   <Card title="Skills reference" href="/tools/skills" icon="puzzle-piece">
     Loading order, gating, allowlists, and SKILL.md format.
-  </Card>
-  <Card title="Skill Workshop" href="/tools/skill-workshop" icon="flask">
-    Proposal queue for agent-drafted skills.
   </Card>
   <Card title="Skills config" href="/tools/skills-config" icon="gear">
     Full `skills.*` config schema.

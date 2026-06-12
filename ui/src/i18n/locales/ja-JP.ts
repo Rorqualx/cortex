@@ -456,14 +456,6 @@ export const ja_JP: TranslationMap = {
     logs: "ライブ Gateway ログ。",
     dreams: "スリープ中のメモリ統合。",
   },
-  skillForge: {
-    header: {
-      useCurrentChat: "Use current chat",
-      useCurrentChatAria: "Use current chat for revision requests",
-      useCurrentChatTooltip:
-        "Send revision requests to the current chat session instead of the proposal's workshop session.",
-    },
-  },
   activity: {
     title: "アクティビティ",
     subtitle: "ライブセッションイベントから生成される一時的なツールアクティビティ。",

@@ -56,19 +56,10 @@ export type SkillsLimitsConfig = {
   maxSkillFileBytes?: number;
 };
 
-/** Autonomous and approval settings for generated skill proposals. */
-export type SkillsWorkshopConfig = {
-  /** Autonomous Skill Forge behavior controlled separately from user-prompted proposals. */
-  autonomous?: {
-    /** Allow agents to create pending proposals from durable conversation signals. */
-    enabled?: boolean;
-  };
-  /** Whether proposal lifecycle actions need explicit approval. */
+/** Approval settings for Skill Forge lifecycle actions. */
+export type SkillsForgeConfig = {
+  /** Whether skill_forge promote/retire actions need explicit approval. */
   approvalPolicy?: "pending" | "auto";
-  /** Maximum pending/quarantined proposals retained per workspace. */
-  maxPending?: number;
-  /** Maximum generated skill proposal size in bytes. */
-  maxSkillBytes?: number;
 };
 
 /** Top-level skills config block in openclaw config. */
@@ -78,6 +69,6 @@ export type SkillsConfig = {
   load?: SkillsLoadConfig;
   install?: SkillsInstallConfig;
   limits?: SkillsLimitsConfig;
-  workshop?: SkillsWorkshopConfig;
+  forge?: SkillsForgeConfig;
   entries?: Record<string, SkillConfig>;
 };

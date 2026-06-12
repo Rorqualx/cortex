@@ -1,9 +1,7 @@
 // Approval policy for skill_forge lifecycle mutations (promote/retire).
-// Lives beside the workshop service because both read skills.workshop config.
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { PluginHookBeforeToolCallResult } from "../../plugins/types.js";
-import { resolveSkillWorkshopConfig } from "./config.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { PluginHookBeforeToolCallResult } from "../plugins/types.js";
 
 // Only promote/retire mutate the live skill set directly; pipeline runs are
 // covered by the forge validation gate, and the remaining actions are reads.
@@ -17,6 +15,11 @@ function readLifecycleAction(params: unknown): SkillForgeLifecycleAction | undef
     return undefined;
   }
   return action as SkillForgeLifecycleAction;
+}
+
+// "pending" (default) gates lifecycle mutations behind user approval; "auto" trusts the agent.
+function resolveApprovalPolicy(config?: OpenClawConfig): "pending" | "auto" {
+  return config?.skills?.forge?.approvalPolicy === "auto" ? "auto" : "pending";
 }
 
 function lifecycleApprovalText(action: SkillForgeLifecycleAction): {
@@ -51,8 +54,7 @@ export function resolveSkillForgeToolApproval(params: {
   if (!action) {
     return undefined;
   }
-  const config = resolveSkillWorkshopConfig(params.config);
-  if (config.approvalPolicy === "auto") {
+  if (resolveApprovalPolicy(params.config) === "auto") {
     return undefined;
   }
   const text = lifecycleApprovalText(action);

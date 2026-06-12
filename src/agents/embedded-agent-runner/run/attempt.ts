@@ -152,8 +152,10 @@ import {
 import { countActiveToolExecutions } from "../../embedded-agent-subscribe.handlers.tools.js";
 import { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
 import { isTimeoutError } from "../../failover-error.js";
-import { runAgentEndSideEffects } from "../../harness/agent-end-side-effects.js";
-import { runAgentHarnessBeforeAgentFinalizeHook } from "../../harness/lifecycle-hook-helpers.js";
+import {
+  runAgentHarnessAgentEndHook,
+  runAgentHarnessBeforeAgentFinalizeHook,
+} from "../../harness/lifecycle-hook-helpers.js";
 import { resolveHeartbeatPromptForSystemPrompt } from "../../heartbeat-system-prompt.js";
 import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
 import {
@@ -4915,7 +4917,7 @@ export async function runEmbeddedAttempt(
         anthropicPayloadLogger?.recordUsage(messagesSnapshot, promptError);
 
         if (!beforeAgentFinalizeRevisionReason) {
-          runAgentEndSideEffects({
+          runAgentHarnessAgentEndHook({
             event: {
               messages: messagesSnapshot,
               success: !aborted && !promptError,

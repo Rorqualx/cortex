@@ -18,9 +18,6 @@ binary presence.
   <Card title="Creating skills" href="/tools/creating-skills" icon="hammer">
     Build and test a custom skill from scratch.
   </Card>
-  <Card title="Skill Workshop" href="/tools/skill-workshop" icon="flask">
-    Review and approve agent-drafted skill proposals.
-  </Card>
   <Card title="Skills config" href="/tools/skills-config" icon="gear">
     Full `skills.*` config schema and agent allowlists.
   </Card>
@@ -120,22 +117,6 @@ skill overrides them. Gate them via `metadata.openclaw.requires.config` on the
 plugin's config entry.
 
 See [Plugins](/tools/plugin) and [Tools](/tools) for the full plugin system.
-
-## Skill Workshop
-
-[Skill Workshop](/tools/skill-workshop) is a proposal queue between the agent
-and your active skill files. When the agent spots reusable work, it drafts a
-proposal instead of writing directly to `SKILL.md`. You review and approve
-before anything changes.
-
-```bash
-openclaw skills workshop list
-openclaw skills workshop inspect <proposal-id>
-openclaw skills workshop apply <proposal-id>
-```
-
-See [Skill Workshop](/tools/skill-workshop) for the full lifecycle, CLI
-reference, and configuration.
 
 ## Installing from ClawHub
 
@@ -568,9 +549,6 @@ Keep descriptions short and descriptive to minimize prompt overhead.
 <CardGroup cols={2}>
   <Card title="Creating skills" href="/tools/creating-skills" icon="hammer">
     Step-by-step guide to authoring a custom skill.
-  </Card>
-  <Card title="Skill Workshop" href="/tools/skill-workshop" icon="flask">
-    Proposal queue for agent-drafted skills.
   </Card>
   <Card title="Skills config" href="/tools/skills-config" icon="gear">
     Full `skills.*` config schema and agent allowlists.

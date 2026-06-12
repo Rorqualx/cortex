@@ -289,7 +289,7 @@
       "text": "Delete message"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-attribute",
       "name": "aria-label",
       "path": "ui/src/ui/chat/grouped-render.ts",
@@ -317,7 +317,7 @@
       "text": "Delete"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-attribute",
       "name": "title",
       "path": "ui/src/ui/chat/grouped-render.ts",
@@ -399,6 +399,20 @@
       "name": "title",
       "path": "ui/src/ui/chat/grouped-render.ts",
       "text": "Unknown date"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/chat/session-controls.ts",
+      "text": "New session agent"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/chat/session-controls.ts",
+      "text": "New session model"
     },
     {
       "count": 1,
@@ -3822,6 +3836,13 @@
       "name": "placeholder",
       "path": "ui/src/ui/views/conversations.ts",
       "text": "Search conversations…"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/conversations.ts",
+      "text": "Delete conversation"
     },
     {
       "count": 1,
