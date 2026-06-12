@@ -314,7 +314,7 @@ function assertDeliverySupport(job: Pick<CronJob, "sessionTarget" | "delivery">)
   if (!job.delivery) {
     return;
   }
-  // No primary delivery and no completion webhook -- nothing to validate.
+  // No primary delivery and no completion destination -- nothing to validate.
   if (job.delivery.mode === "none" && !job.delivery.completionDestination) {
     return;
   }
@@ -339,6 +339,19 @@ function assertDeliverySupport(job: Pick<CronJob, "sessionTarget" | "delivery">)
       );
     }
     job.delivery.completionDestination.to = target;
+  }
+  if (job.delivery.completionDestination?.mode === "announce") {
+    if (job.delivery.mode !== "announce") {
+      throw new Error(
+        'cron completion destination announce is only supported with delivery.mode="announce"',
+      );
+    }
+    // Announce completion destinations require a channel target.
+    if (!job.delivery.completionDestination.to && !job.delivery.completionDestination.channel) {
+      throw new Error(
+        "cron completion destination announce requires delivery.completionDestination.to or .channel",
+      );
+    }
   }
   if (job.delivery.mode === "none") {
     return;
@@ -994,9 +1007,22 @@ function mergeCronDelivery(
       next.completionDestination = undefined;
     } else {
       const to = normalizeOptionalString(patch.completionDestination.to);
+      const channel = normalizeOptionalString(patch.completionDestination.channel) as
+        | CronDelivery["channel"]
+        | undefined;
+      const accountId = normalizeOptionalString(patch.completionDestination.accountId);
+      const threadId =
+        typeof patch.completionDestination.threadId === "string" ||
+        typeof patch.completionDestination.threadId === "number"
+          ? patch.completionDestination.threadId
+          : undefined;
+      const mode = normalizeOptionalString(patch.completionDestination.mode);
       next.completionDestination = {
-        mode: "webhook",
+        mode: (mode === "announce" ? "announce" : "webhook") as "webhook" | "announce",
         ...(to ? { to } : {}),
+        ...(channel ? { channel } : {}),
+        ...(accountId ? { accountId } : {}),
+        ...(threadId !== undefined ? { threadId } : {}),
       };
     }
   }

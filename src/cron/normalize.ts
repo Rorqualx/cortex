@@ -249,8 +249,8 @@ function coerceDelivery(delivery: UnknownRecord) {
     }
   }
   if ("completionDestination" in next) {
-    // Completion destinations are currently webhook-only, so other shapes are
-    // discarded before they can persist as ambiguous config.
+    // Completion destinations support webhook and announce modes; other
+    // shapes are discarded before they can persist as ambiguous config.
     if (next.completionDestination === null) {
       next.completionDestination = null;
     } else {
@@ -270,13 +270,29 @@ function coerceDelivery(delivery: UnknownRecord) {
 function coerceCompletionDestination(value: UnknownRecord) {
   const mode = normalizeOptionalLowercaseString(value.mode);
   const to = normalizeOptionalString(value.to);
-  if (mode !== "webhook") {
+  const channel = normalizeOptionalString(value.channel);
+  const accountId = normalizeOptionalString(value.accountId);
+  const threadId =
+    typeof value.threadId === "string" || typeof value.threadId === "number"
+      ? value.threadId
+      : undefined;
+  if (mode !== "webhook" && mode !== "announce") {
     return null;
   }
-  return {
-    mode,
-    ...(to ? { to } : {}),
-  } satisfies UnknownRecord;
+  const next: UnknownRecord = { mode };
+  if (to) {
+    next.to = to;
+  }
+  if (channel) {
+    next.channel = channel;
+  }
+  if (accountId) {
+    next.accountId = accountId;
+  }
+  if (threadId !== undefined) {
+    next.threadId = threadId;
+  }
+  return next;
 }
 
 function coerceFailureDestination(value: UnknownRecord) {

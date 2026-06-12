@@ -32,6 +32,13 @@ type CronAgentResolver = (requested?: string | null) => {
   cfg: OpenClawConfig;
 };
 
+type CronCompletionAnnounceTarget = {
+  channel: CronMessageChannel;
+  to?: string;
+  accountId?: string;
+  threadId?: string | number;
+};
+
 type CronWebhookTarget = {
   url: string;
   source: "delivery" | "completionDestination";
@@ -78,6 +85,38 @@ function resolveCronWebhookTargets(params: {
     }
   }
 
+  return targets;
+}
+
+/** Resolves completion-destination announce targets for short summary delivery. */
+function resolveCronCompletionAnnounceTargets(params: {
+  delivery?: {
+    mode?: string;
+    completionDestination?: {
+      mode?: string;
+      channel?: string;
+      to?: string;
+      accountId?: string;
+      threadId?: string | number;
+    };
+  };
+}): CronCompletionAnnounceTarget[] {
+  const targets: CronCompletionAnnounceTarget[] = [];
+  const mode = normalizeOptionalLowercaseString(params.delivery?.mode);
+  const completionDest = params.delivery?.completionDestination;
+  if (mode !== "announce" || !completionDest || completionDest.mode !== "announce") {
+    return targets;
+  }
+  const channel = completionDest.channel as CronMessageChannel | undefined;
+  if (!channel && !completionDest.to) {
+    return targets;
+  }
+  targets.push({
+    channel: channel ?? "telegram",
+    ...(completionDest.to ? { to: completionDest.to } : {}),
+    ...(completionDest.accountId ? { accountId: completionDest.accountId } : {}),
+    ...(completionDest.threadId !== undefined ? { threadId: completionDest.threadId } : {}),
+  });
   return targets;
 }
 
@@ -246,6 +285,16 @@ export function dispatchGatewayCronFinishedNotifications(params: {
     );
   }
 
+  if (params.job?.delivery?.completionDestination?.mode === "announce") {
+    const cd = params.job.delivery.completionDestination;
+    if (!cd.channel && !cd.to) {
+      params.logger.warn(
+        { jobId: params.evt.jobId },
+        "cron: skipped completion announce delivery, delivery.completionDestination.channel or .to is required",
+      );
+    }
+  }
+
   if (
     !webhookTargets.some((target) => target.source === "delivery") &&
     params.job?.delivery?.mode === "webhook"
@@ -277,6 +326,14 @@ export function dispatchGatewayCronFinishedNotifications(params: {
     }
   }
 
+  dispatchCronCompletionAnnounce({
+    evt: params.evt,
+    job: params.job,
+    deps: params.deps,
+    logger: params.logger,
+    resolveCronAgent: params.resolveCronAgent,
+  });
+
   dispatchCronFailureDestinationNotifications({
     evt: params.evt,
     job: params.job,
@@ -286,6 +343,76 @@ export function dispatchGatewayCronFinishedNotifications(params: {
     webhookToken,
     globalFailureDestination: params.globalFailureDestination,
   });
+}
+
+/** Builds a short human-readable summary for a completed cron job. */
+function buildCronCompletionSummary(params: { job: CronJob; evt: CronEvent }): string {
+  const { job, evt } = params;
+  const statusEmoji = evt.status === "ok" ? "✅" : evt.status === "error" ? "❌" : "⏭️";
+  const parts: string[] = [`${statusEmoji} Cron job "${job.name}" finished`];
+  if (evt.status === "error" && evt.error) {
+    parts.push(`with error: ${evt.error}`);
+  } else if (evt.status === "ok") {
+    parts.push("successfully");
+  } else if (evt.status === "skipped") {
+    parts.push("(skipped)");
+  }
+  if (evt.summary) {
+    parts.push(`\n\n${evt.summary}`);
+  }
+  if (evt.durationMs != null && evt.durationMs > 0) {
+    const seconds = Math.round(evt.durationMs / 1000);
+    parts.push(`\n\n⏱️ Duration: ${seconds}s`);
+  }
+  if (evt.nextRunAtMs) {
+    const nextRun = new Date(evt.nextRunAtMs);
+    parts.push(`\n🕐 Next run: ${nextRun.toLocaleString()}`);
+  }
+  return parts.join(" ");
+}
+
+/** Sends best-effort completion summary announcements to configured channels. */
+function dispatchCronCompletionAnnounce(params: {
+  evt: CronEvent;
+  job: CronJob;
+  deps: CliDeps;
+  logger: CronLogger;
+  resolveCronAgent: CronAgentResolver;
+}): void {
+  const announceTargets = resolveCronCompletionAnnounceTargets({
+    delivery:
+      params.job?.delivery && typeof params.job.delivery.mode === "string"
+        ? {
+            mode: params.job.delivery.mode,
+            completionDestination: params.job.delivery.completionDestination,
+          }
+        : undefined,
+  });
+
+  if (announceTargets.length === 0) {
+    return;
+  }
+
+  const { agentId, cfg: runtimeConfig } = params.resolveCronAgent(params.job.agentId);
+  const summary = buildCronCompletionSummary({ job: params.job, evt: params.evt });
+  const deliverySessionKey = resolveCronDeliverySessionKey(params.job);
+
+  for (const target of announceTargets) {
+    void sendFailureNotificationAnnounce(
+      params.deps,
+      runtimeConfig,
+      agentId,
+      params.job.id,
+      {
+        channel: target.channel,
+        to: target.to,
+        accountId: target.accountId,
+        sessionKey: deliverySessionKey,
+        threadId: target.threadId,
+      },
+      summary,
+    );
+  }
 }
 
 function dispatchCronFailureDestinationNotifications(params: {

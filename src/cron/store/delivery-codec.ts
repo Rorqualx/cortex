@@ -11,7 +11,10 @@ export function bindDeliveryColumns(
   | "delivery_account_id"
   | "delivery_best_effort"
   | "delivery_channel"
+  | "delivery_completion_account_id"
+  | "delivery_completion_channel"
   | "delivery_completion_mode"
+  | "delivery_completion_thread_id"
   | "delivery_completion_to"
   | "delivery_mode"
   | "delivery_thread_id"
@@ -32,7 +35,14 @@ export function bindDeliveryColumns(
         : String(delivery.threadId),
     delivery_account_id: delivery?.accountId ?? null,
     delivery_best_effort: booleanToInteger(delivery?.bestEffort),
+    delivery_completion_account_id: delivery?.completionDestination?.accountId ?? null,
+    delivery_completion_channel: delivery?.completionDestination?.channel ?? null,
     delivery_completion_mode: delivery?.completionDestination?.mode ?? null,
+    delivery_completion_thread_id:
+      delivery?.completionDestination?.threadId === undefined ||
+      delivery.completionDestination.threadId === null
+        ? null
+        : String(delivery.completionDestination.threadId),
     delivery_completion_to: delivery?.completionDestination?.to ?? null,
     // Empty string is an internal SQLite sentinel for an explicit undefined field.
     // `resolveFailureDestination` uses own-property presence to clear inherited
@@ -73,16 +83,28 @@ export function deliveryFromRow(row: CronJobRow): CronDelivery | undefined {
       row.delivery_account_id ||
       row.delivery_completion_mode ||
       row.delivery_completion_to ||
+      row.delivery_completion_channel ||
+      row.delivery_completion_account_id ||
+      row.delivery_completion_thread_id ||
       row.failure_delivery_channel != null ||
       row.failure_delivery_to != null ||
       row.failure_delivery_mode != null ||
       row.failure_delivery_account_id != null,
     ) || row.delivery_best_effort != null;
   const completionDestination =
-    rowMode === "announce" && row.delivery_completion_mode === "webhook"
+    row.delivery_completion_mode === "webhook" || row.delivery_completion_mode === "announce"
       ? {
-          mode: "webhook" as const,
+          mode: row.delivery_completion_mode as "webhook" | "announce",
           ...(row.delivery_completion_to ? { to: row.delivery_completion_to } : {}),
+          ...(row.delivery_completion_channel
+            ? { channel: row.delivery_completion_channel as CronDelivery["channel"] }
+            : {}),
+          ...(row.delivery_completion_account_id
+            ? { accountId: row.delivery_completion_account_id }
+            : {}),
+          ...(row.delivery_completion_thread_id != null
+            ? { threadId: row.delivery_completion_thread_id }
+            : {}),
         }
       : undefined;
   const failureDestination =

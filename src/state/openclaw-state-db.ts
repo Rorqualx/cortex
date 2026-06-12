@@ -309,6 +309,9 @@ function backfillCronJobsFromJobJson(db: DatabaseSync): void {
             delivery_best_effort = ?,
             delivery_completion_mode = ?,
             delivery_completion_to = ?,
+            delivery_completion_channel = ?,
+            delivery_completion_account_id = ?,
+            delivery_completion_thread_id = ?,
             failure_delivery_mode = ?,
             failure_delivery_channel = ?,
             failure_delivery_to = ?,
@@ -401,6 +404,9 @@ function backfillCronJobsFromJobJson(db: DatabaseSync): void {
       delivery && typeof delivery.bestEffort === "boolean" ? (delivery.bestEffort ? 1 : 0) : null,
       completionDestination ? textField(completionDestination, "mode") : null,
       completionDestination ? textField(completionDestination, "to") : null,
+      completionDestination ? textField(completionDestination, "channel") : null,
+      completionDestination ? textField(completionDestination, "accountId") : null,
+      completionDestination ? textField(completionDestination, "threadId") : null,
       failureDestinationField(failureDestination, "mode"),
       failureDestinationField(failureDestination, "channel"),
       failureDestinationField(failureDestination, "to"),
@@ -561,6 +567,9 @@ function ensureAdditiveStateColumns(db: DatabaseSync): void {
   ensureColumn(db, "cron_jobs", "delivery_best_effort INTEGER");
   ensureColumn(db, "cron_jobs", "delivery_completion_mode TEXT");
   ensureColumn(db, "cron_jobs", "delivery_completion_to TEXT");
+  ensureColumn(db, "cron_jobs", "delivery_completion_channel TEXT");
+  ensureColumn(db, "cron_jobs", "delivery_completion_account_id TEXT");
+  ensureColumn(db, "cron_jobs", "delivery_completion_thread_id TEXT");
   ensureColumn(db, "cron_jobs", "failure_delivery_mode TEXT");
   ensureColumn(db, "cron_jobs", "failure_delivery_channel TEXT");
   ensureColumn(db, "cron_jobs", "failure_delivery_to TEXT");

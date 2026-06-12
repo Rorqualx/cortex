@@ -47,8 +47,11 @@ export type CronDelivery = {
 
 /** Webhook completion destination used alongside chat delivery. */
 export type CronCompletionDestination = {
-  mode: "webhook";
+  mode: "webhook" | "announce";
   to?: string;
+  channel?: CronMessageChannel;
+  accountId?: string;
+  threadId?: string | number;
 };
 
 /** Destination override for failed-run notifications. */

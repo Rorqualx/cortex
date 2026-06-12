@@ -31,7 +31,24 @@ export function assertCronDeliveryInputNonBlankFields(delivery: unknown, fieldPr
 
   const completionDestination = deliveryRecord.completionDestination;
   if (completionDestination && typeof completionDestination === "object") {
-    const completionRecord = completionDestination as { to?: unknown };
+    const completionRecord = completionDestination as {
+      to?: unknown;
+      channel?: unknown;
+      accountId?: unknown;
+      threadId?: unknown;
+    };
     assertNonBlankStringField(`${fieldPrefix}.completionDestination.to`, completionRecord.to);
+    assertNonBlankStringField(
+      `${fieldPrefix}.completionDestination.channel`,
+      completionRecord.channel,
+    );
+    assertNonBlankStringField(
+      `${fieldPrefix}.completionDestination.accountId`,
+      completionRecord.accountId,
+    );
+    assertNonBlankStringField(
+      `${fieldPrefix}.completionDestination.threadId`,
+      completionRecord.threadId,
+    );
   }
 }
