@@ -34,6 +34,32 @@ export const PresenceEntrySchema = Type.Object(
 /** Health snapshot is intentionally opaque because providers contribute nested shapes. */
 export const HealthSnapshotSchema = Type.Any();
 
+/** Payload broadcast on the `presence` event; full snapshot, not a delta. */
+export const PresenceEventSchema = Type.Object(
+  {
+    presence: Type.Array(PresenceEntrySchema),
+  },
+  { additionalProperties: false },
+);
+
+/** Version metadata describing an available OpenClaw update. */
+export const UpdateAvailableDataSchema = Type.Object(
+  {
+    currentVersion: NonEmptyString,
+    latestVersion: NonEmptyString,
+    channel: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+/** Payload broadcast on the `update.available` event; null clears a prior notice. */
+export const UpdateAvailableEventSchema = Type.Object(
+  {
+    updateAvailable: Type.Union([UpdateAvailableDataSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
 /** Default session routing keys included in initial gateway snapshots. */
 export const SessionDefaultsSchema = Type.Object(
   {
@@ -72,13 +98,7 @@ export const SnapshotSchema = Type.Object(
         Type.Literal("trusted-proxy"),
       ]),
     ),
-    updateAvailable: Type.Optional(
-      Type.Object({
-        currentVersion: NonEmptyString,
-        latestVersion: NonEmptyString,
-        channel: NonEmptyString,
-      }),
-    ),
+    updateAvailable: Type.Optional(UpdateAvailableDataSchema),
   },
   { additionalProperties: false },
 );

@@ -60,6 +60,11 @@ export const AgentEventSchema = Type.Object(
     seq: Type.Integer({ minimum: 0 }),
     stream: NonEmptyString,
     ts: Type.Integer({ minimum: 0 }),
+    sessionKey: Type.Optional(NonEmptyString),
+    // sessionId the run was bound to when it started; lifecycle persistence uses it to
+    // reject terminal events from a pre-`sessions.reset` run (see infra/agent-events.ts).
+    sessionId: Type.Optional(NonEmptyString),
+    agentId: Type.Optional(NonEmptyString),
     spawnedBy: Type.Optional(NonEmptyString),
     isHeartbeat: Type.Optional(Type.Boolean()),
     data: Type.Record(Type.String(), Type.Unknown()),

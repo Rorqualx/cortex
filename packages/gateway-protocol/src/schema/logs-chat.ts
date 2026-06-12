@@ -87,6 +87,10 @@ export const ChatSendParamsSchema = Type.Object(
     timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
     systemInputProvenance: Type.Optional(InputProvenanceSchema),
     systemProvenanceReceipt: Type.Optional(Type.String()),
+    // Treat the message as literal text even when it looks like a slash command;
+    // the chat.send handler honors it, so the schema must admit it or the
+    // strict additionalProperties gate rejects the whole send.
+    suppressCommandInterpretation: Type.Optional(Type.Boolean()),
     idempotencyKey: NonEmptyString,
   },
   { additionalProperties: false },
@@ -107,6 +111,49 @@ export const ChatInjectParamsSchema = Type.Object(
     agentId: Type.Optional(NonEmptyString),
     message: NonEmptyString,
     label: Type.Optional(Type.String({ maxLength: 100 })),
+  },
+  { additionalProperties: false },
+);
+
+/** Server-side phase markers for operator chat.send timing diagnostics. */
+const ChatSendTimingPhaseSchema = Type.Union([
+  Type.Literal("dispatch-started"),
+  Type.Literal("model-selected"),
+  Type.Literal("agent-run-started"),
+  Type.Literal("dispatch-completed"),
+  Type.Literal("post-dispatch-completed"),
+]);
+
+/** Payload broadcast on `chat.send_timing` to the operator UI that issued the send. */
+export const ChatSendTimingEventSchema = Type.Object(
+  {
+    phase: ChatSendTimingPhaseSchema,
+    runId: NonEmptyString,
+    sessionKey: NonEmptyString,
+    agentId: Type.Optional(NonEmptyString),
+    ackToPhaseMs: Type.Number({ minimum: 0 }),
+    receivedToPhaseMs: Type.Number({ minimum: 0 }),
+    dispatchStartedToPhaseMs: Type.Optional(Type.Number({ minimum: 0 })),
+    postDispatchMs: Type.Optional(Type.Number({ minimum: 0 })),
+    provider: Type.Optional(Type.String()),
+    model: Type.Optional(Type.String()),
+    agentRunId: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
+/** Payload broadcast on `chat.side_result` for side-channel run output (btw answers). */
+export const ChatSideResultEventSchema = Type.Object(
+  {
+    kind: Type.Literal("btw"),
+    runId: NonEmptyString,
+    sessionKey: NonEmptyString,
+    agentId: Type.Optional(NonEmptyString),
+    question: Type.String(),
+    text: Type.String(),
+    isError: Type.Optional(Type.Boolean()),
+    ts: Type.Integer({ minimum: 0 }),
+    seq: Type.Integer({ minimum: 0 }),
   },
   { additionalProperties: false },
 );

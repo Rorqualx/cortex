@@ -1,5 +1,6 @@
 // Gateway Protocol schema module defines protocol validation shapes.
 import { Type } from "typebox";
+import { ExecApprovalDecisionSchema } from "./exec-approvals.js";
 import { NonEmptyString } from "./primitives.js";
 
 /**
@@ -45,6 +46,82 @@ export const PluginApprovalResolveParamsSchema = Type.Object(
   {
     id: NonEmptyString,
     decision: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+/** One reviewer action button advertised with a plugin approval prompt. */
+export const PluginApprovalActionViewSchema = Type.Object(
+  {
+    kind: Type.Optional(Type.Union([Type.Literal("command"), Type.Literal("decision")])),
+    label: Type.String(),
+    command: Type.String(),
+    decision: Type.Optional(ExecApprovalDecisionSchema),
+    style: Type.Optional(
+      Type.Union([
+        Type.Literal("primary"),
+        Type.Literal("secondary"),
+        Type.Literal("success"),
+        Type.Literal("danger"),
+      ]),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+/** Reviewer-facing snapshot of one pending plugin approval request. */
+export const PluginApprovalRequestPayloadSchema = Type.Object(
+  {
+    pluginId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    title: Type.String(),
+    description: Type.String(),
+    severity: Type.Optional(
+      Type.Union([
+        Type.Literal("info"),
+        Type.Literal("warning"),
+        Type.Literal("critical"),
+        Type.Null(),
+      ]),
+    ),
+    toolName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    toolCallId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    // Immutable keeps the schema-derived fields `readonly`, matching the
+    // server-side payload types that freeze these views after build.
+    allowedDecisions: Type.Optional(
+      Type.Union([Type.Immutable(Type.Array(ExecApprovalDecisionSchema)), Type.Null()]),
+    ),
+    actions: Type.Optional(
+      Type.Union([Type.Immutable(Type.Array(PluginApprovalActionViewSchema)), Type.Null()]),
+    ),
+    agentId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    sessionKey: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    turnSourceChannel: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    turnSourceTo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    turnSourceAccountId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    turnSourceThreadId: Type.Optional(Type.Union([Type.String(), Type.Number(), Type.Null()])),
+  },
+  { additionalProperties: false },
+);
+
+/** Broadcast when a plugin approval starts waiting on a reviewer. */
+export const PluginApprovalRequestedEventSchema = Type.Object(
+  {
+    id: NonEmptyString,
+    request: PluginApprovalRequestPayloadSchema,
+    createdAtMs: Type.Number(),
+    expiresAtMs: Type.Number(),
+  },
+  { additionalProperties: false },
+);
+
+/** Broadcast when a pending plugin approval is decided or expires. */
+export const PluginApprovalResolvedEventSchema = Type.Object(
+  {
+    id: NonEmptyString,
+    decision: ExecApprovalDecisionSchema,
+    resolvedBy: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    ts: Type.Number(),
+    request: Type.Optional(PluginApprovalRequestPayloadSchema),
   },
   { additionalProperties: false },
 );

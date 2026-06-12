@@ -68,6 +68,21 @@ export type PushTestParams = SchemaType<"PushTestParams">;
 export type PushTestResult = SchemaType<"PushTestResult">;
 
 /** Session lifecycle, message routing, compaction, patch, and usage payloads. */
+export type GatewaySessionRow = SchemaType<"GatewaySessionRow">;
+export type GatewaySessionKind = GatewaySessionRow["kind"];
+export type SessionRunStatus = NonNullable<GatewaySessionRow["status"]>;
+export type SubagentRunState = NonNullable<GatewaySessionRow["subagentRunState"]>;
+export type SessionCompactionCheckpointPreview = NonNullable<
+  GatewaySessionRow["latestCompactionCheckpoint"]
+>;
+export type GatewayThinkingLevelOption = NonNullable<GatewaySessionRow["thinkingLevels"]>[number];
+export type GatewaySessionsDefaults = SchemaType<"GatewaySessionsDefaults">;
+export type SessionGoal = SchemaType<"SessionGoal">;
+export type GatewayAgentRuntime = SchemaType<"GatewayAgentRuntime">;
+export type DeliveryContext = SchemaType<"DeliveryContext">;
+export type SessionsListResult = SchemaType<"SessionsListResult">;
+export type SessionsChangedEvent = SchemaType<"SessionsChangedEvent">;
+export type SessionMessageEvent = SchemaType<"SessionMessageEvent">;
 export type SessionsListParams = SchemaType<"SessionsListParams">;
 export type SessionsCleanupParams = SchemaType<"SessionsCleanupParams">;
 export type SessionsPreviewParams = SchemaType<"SessionsPreviewParams">;
@@ -268,6 +283,19 @@ export type ExecApprovalRequestParams = SchemaType<"ExecApprovalRequestParams">;
 export type ExecApprovalResolveParams = SchemaType<"ExecApprovalResolveParams">;
 export type PluginApprovalRequestParams = SchemaType<"PluginApprovalRequestParams">;
 export type PluginApprovalResolveParams = SchemaType<"PluginApprovalResolveParams">;
+export type ExecApprovalDecision = SchemaType<"ExecApprovalDecision">;
+export type ExecApprovalCommandSpan = SchemaType<"ExecApprovalCommandSpan">;
+export type CommandExplanationSummary = SchemaType<"CommandExplanationSummary">;
+export type SystemRunApprovalFileOperand = SchemaType<"SystemRunApprovalFileOperand">;
+export type SystemRunApprovalPlan = SchemaType<"SystemRunApprovalPlan">;
+export type SystemRunApprovalBinding = SchemaType<"SystemRunApprovalBinding">;
+export type ExecApprovalRequestPayload = SchemaType<"ExecApprovalRequestPayload">;
+export type ExecApprovalRequestedEvent = SchemaType<"ExecApprovalRequestedEvent">;
+export type ExecApprovalResolvedEvent = SchemaType<"ExecApprovalResolvedEvent">;
+export type PluginApprovalActionView = SchemaType<"PluginApprovalActionView">;
+export type PluginApprovalRequestPayload = SchemaType<"PluginApprovalRequestPayload">;
+export type PluginApprovalRequestedEvent = SchemaType<"PluginApprovalRequestedEvent">;
+export type PluginApprovalResolvedEvent = SchemaType<"PluginApprovalResolvedEvent">;
 export type DevicePairListParams = SchemaType<"DevicePairListParams">;
 export type DevicePairApproveParams = SchemaType<"DevicePairApproveParams">;
 export type DevicePairRejectParams = SchemaType<"DevicePairRejectParams">;
@@ -277,8 +305,14 @@ export type DeviceTokenRevokeParams = SchemaType<"DeviceTokenRevokeParams">;
 export type ChatAbortParams = SchemaType<"ChatAbortParams">;
 export type ChatInjectParams = SchemaType<"ChatInjectParams">;
 export type ChatEvent = SchemaType<"ChatEvent">;
+export type ChatSendTimingEvent = SchemaType<"ChatSendTimingEvent">;
+/** Server-side phase markers for operator chat.send timing diagnostics. */
+export type ChatSendTimingPhase = ChatSendTimingEvent["phase"];
+export type ChatSideResultEvent = SchemaType<"ChatSideResultEvent">;
+export type PresenceEvent = SchemaType<"PresenceEvent">;
 
 /** Gateway update and process lifecycle event payloads. */
 export type UpdateRunParams = SchemaType<"UpdateRunParams">;
 export type TickEvent = SchemaType<"TickEvent">;
+export type UpdateAvailableEvent = SchemaType<"UpdateAvailableEvent">;
 export type ShutdownEvent = SchemaType<"ShutdownEvent">;

@@ -177,9 +177,18 @@ import {
   ExecApprovalsNodeSetParamsSchema,
   ExecApprovalsSetParamsSchema,
   ExecApprovalsSnapshotSchema,
+  ExecApprovalCommandSpanSchema,
+  ExecApprovalDecisionSchema,
   ExecApprovalGetParamsSchema,
   ExecApprovalRequestParamsSchema,
+  ExecApprovalRequestPayloadSchema,
+  ExecApprovalRequestedEventSchema,
   ExecApprovalResolveParamsSchema,
+  ExecApprovalResolvedEventSchema,
+  CommandExplanationSummarySchema,
+  SystemRunApprovalBindingSchema,
+  SystemRunApprovalFileOperandSchema,
+  SystemRunApprovalPlanSchema,
 } from "./exec-approvals.js";
 import {
   ConnectParamsSchema,
@@ -205,6 +214,8 @@ import {
   ChatMessageGetResultSchema,
   ChatInjectParamsSchema,
   ChatSendParamsSchema,
+  ChatSendTimingEventSchema,
+  ChatSideResultEventSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
 } from "./logs-chat.js";
@@ -232,8 +243,12 @@ import {
   NodeRenameParamsSchema,
 } from "./nodes.js";
 import {
+  PluginApprovalActionViewSchema,
   PluginApprovalRequestParamsSchema,
+  PluginApprovalRequestPayloadSchema,
+  PluginApprovalRequestedEventSchema,
   PluginApprovalResolveParamsSchema,
+  PluginApprovalResolvedEventSchema,
 } from "./plugin-approvals.js";
 import {
   PluginControlUiDescriptorSchema,
@@ -251,6 +266,16 @@ import {
   SecretsResolveParamsSchema,
   SecretsResolveResultSchema,
 } from "./secrets.js";
+import {
+  DeliveryContextSchema,
+  GatewayAgentRuntimeSchema,
+  GatewaySessionRowSchema,
+  GatewaySessionsDefaultsSchema,
+  SessionGoalSchema,
+  SessionMessageEventSchema,
+  SessionsChangedEventSchema,
+  SessionsListResultSchema,
+} from "./session-row.js";
 import {
   SessionsAbortParamsSchema,
   SessionsCompactParamsSchema,
@@ -280,7 +305,13 @@ import {
   SessionsSendParamsSchema,
   SessionsUsageParamsSchema,
 } from "./sessions.js";
-import { PresenceEntrySchema, SnapshotSchema, StateVersionSchema } from "./snapshot.js";
+import {
+  PresenceEntrySchema,
+  PresenceEventSchema,
+  SnapshotSchema,
+  StateVersionSchema,
+  UpdateAvailableEventSchema,
+} from "./snapshot.js";
 import {
   TasksCancelParamsSchema,
   TasksCancelResultSchema,
@@ -364,6 +395,14 @@ export const ProtocolSchemas = {
   SecretsResolveResult: SecretsResolveResultSchema,
 
   // Session lifecycle, message routing, compaction, and usage accounting.
+  GatewaySessionRow: GatewaySessionRowSchema,
+  GatewaySessionsDefaults: GatewaySessionsDefaultsSchema,
+  SessionGoal: SessionGoalSchema,
+  GatewayAgentRuntime: GatewayAgentRuntimeSchema,
+  DeliveryContext: DeliveryContextSchema,
+  SessionsListResult: SessionsListResultSchema,
+  SessionsChangedEvent: SessionsChangedEventSchema,
+  SessionMessageEvent: SessionMessageEventSchema,
   SessionsListParams: SessionsListParamsSchema,
   SessionsCleanupParams: SessionsCleanupParamsSchema,
   SessionsPreviewParams: SessionsPreviewParamsSchema,
@@ -546,8 +585,21 @@ export const ProtocolSchemas = {
   ExecApprovalGetParams: ExecApprovalGetParamsSchema,
   ExecApprovalRequestParams: ExecApprovalRequestParamsSchema,
   ExecApprovalResolveParams: ExecApprovalResolveParamsSchema,
+  ExecApprovalDecision: ExecApprovalDecisionSchema,
+  ExecApprovalCommandSpan: ExecApprovalCommandSpanSchema,
+  CommandExplanationSummary: CommandExplanationSummarySchema,
+  SystemRunApprovalFileOperand: SystemRunApprovalFileOperandSchema,
+  SystemRunApprovalPlan: SystemRunApprovalPlanSchema,
+  SystemRunApprovalBinding: SystemRunApprovalBindingSchema,
+  ExecApprovalRequestPayload: ExecApprovalRequestPayloadSchema,
+  ExecApprovalRequestedEvent: ExecApprovalRequestedEventSchema,
+  ExecApprovalResolvedEvent: ExecApprovalResolvedEventSchema,
   PluginApprovalRequestParams: PluginApprovalRequestParamsSchema,
   PluginApprovalResolveParams: PluginApprovalResolveParamsSchema,
+  PluginApprovalActionView: PluginApprovalActionViewSchema,
+  PluginApprovalRequestPayload: PluginApprovalRequestPayloadSchema,
+  PluginApprovalRequestedEvent: PluginApprovalRequestedEventSchema,
+  PluginApprovalResolvedEvent: PluginApprovalResolvedEventSchema,
   PluginControlUiDescriptor: PluginControlUiDescriptorSchema,
   PluginsSessionActionFailureResult: PluginsSessionActionFailureResultSchema,
   PluginsSessionActionParams: PluginsSessionActionParamsSchema,
@@ -575,6 +627,10 @@ export const ProtocolSchemas = {
   ChatAbortedEvent: ChatAbortedEventSchema,
   ChatErrorEvent: ChatErrorEventSchema,
   ChatEvent: ChatEventSchema,
+  ChatSendTimingEvent: ChatSendTimingEventSchema,
+  ChatSideResultEvent: ChatSideResultEventSchema,
+  PresenceEvent: PresenceEventSchema,
+  UpdateAvailableEvent: UpdateAvailableEventSchema,
   UpdateStatusParams: UpdateStatusParamsSchema,
   UpdateRunParams: UpdateRunParamsSchema,
   TickEvent: TickEventSchema,
