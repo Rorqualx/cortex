@@ -137,7 +137,9 @@
   vertical-align: middle;
   opacity: 0.5;
   pointer-events: auto;
-  transition: opacity 0.15s ease, color 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease;
 }
 
 .chat-group-edit:hover {
@@ -309,7 +311,9 @@ img.chat-avatar {
 
 img.chat-avatar--expandable {
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 img.chat-avatar--expandable:hover {
@@ -838,7 +842,6 @@ details.msg-meta:not([open]) .msg-meta__details {
   justify-content: center;
   padding: 8px 0 4px;
 }
-
 
 /* In-place message edit mode */
 .chat-edit-textarea {
