@@ -396,6 +396,7 @@ export const ja_JP: TranslationMap = {
   },
   nav: {
     chat: "チャット",
+    channels: "Channels",
     control: "コントロール",
     agent: "エージェント",
     settings: "設定",
@@ -410,6 +411,7 @@ export const ja_JP: TranslationMap = {
     workboard: "ワークボード",
     channels: "チャンネル",
     instances: "インスタンス",
+    conversations: "Conversations",
     sessions: "セッション",
     usage: "使用状況",
     cron: "Cron ジョブ",
@@ -435,6 +437,7 @@ export const ja_JP: TranslationMap = {
     workboard: "エージェントの作業キューとセッションの引き継ぎ。",
     channels: "チャンネルと設定。",
     instances: "接続されたクライアントとノード。",
+    conversations: "All chat transcripts.",
     sessions: "アクティブなセッションとデフォルト。",
     usage: "API 使用量とコスト。",
     cron: "ウェイクアップと定期実行。",
@@ -548,6 +551,7 @@ export const ja_JP: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -664,6 +668,10 @@ export const ja_JP: TranslationMap = {
     eventArchived: "アーカイブ済み",
     eventUnarchived: "アーカイブ解除済み",
     eventStale: "古いセッション",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

@@ -392,6 +392,7 @@ export const ko: TranslationMap = {
   },
   nav: {
     chat: "채팅",
+    channels: "Channels",
     control: "Control",
     agent: "에이전트",
     settings: "설정",
@@ -406,6 +407,7 @@ export const ko: TranslationMap = {
     workboard: "워크보드",
     channels: "채널",
     instances: "인스턴스",
+    conversations: "Conversations",
     sessions: "세션",
     usage: "사용량",
     cron: "Cron 작업",
@@ -431,6 +433,7 @@ export const ko: TranslationMap = {
     workboard: "에이전트 작업 대기열 및 세션 인계.",
     channels: "채널 및 설정.",
     instances: "연결된 클라이언트와 노드.",
+    conversations: "All chat transcripts.",
     sessions: "활성 세션 및 기본값.",
     usage: "API 사용량 및 비용.",
     cron: "웨이크업 및 반복 실행.",
@@ -544,6 +547,7 @@ export const ko: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -660,6 +664,10 @@ export const ko: TranslationMap = {
     eventArchived: "보관됨",
     eventUnarchived: "보관 해제됨",
     eventStale: "오래된 세션",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

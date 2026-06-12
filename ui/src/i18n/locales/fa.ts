@@ -394,6 +394,7 @@ export const fa: TranslationMap = {
   },
   nav: {
     chat: "چت",
+    channels: "Channels",
     control: "کنترل",
     agent: "عامل",
     settings: "تنظیمات",
@@ -408,6 +409,7 @@ export const fa: TranslationMap = {
     workboard: "تابلوی کار",
     channels: "کانال‌ها",
     instances: "نمونه‌ها",
+    conversations: "Conversations",
     sessions: "نشست‌ها",
     usage: "مصرف",
     cron: "کارهای Cron",
@@ -433,6 +435,7 @@ export const fa: TranslationMap = {
     workboard: "صف کار عامل و واگذاری جلسه.",
     channels: "کانال‌ها و تنظیمات.",
     instances: "کلاینت‌ها و گره‌های متصل.",
+    conversations: "All chat transcripts.",
     sessions: "نشست‌های فعال و پیش‌فرض‌ها.",
     usage: "مصرف و هزینه‌های API.",
     cron: "بیدارباش‌ها و اجراهای تکرارشونده.",
@@ -546,6 +549,7 @@ export const fa: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -662,6 +666,10 @@ export const fa: TranslationMap = {
     eventArchived: "بایگانی شد",
     eventUnarchived: "از بایگانی خارج شد",
     eventStale: "نشست منقضی‌شده",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

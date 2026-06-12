@@ -396,6 +396,7 @@ export const de: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Steuerung",
     agent: "Agent",
     settings: "Einstellungen",
@@ -410,6 +411,7 @@ export const de: TranslationMap = {
     workboard: "Arbeitsbereich",
     channels: "Kanäle",
     instances: "Instanzen",
+    conversations: "Conversations",
     sessions: "Sitzungen",
     usage: "Nutzung",
     cron: "Cron-Aufgaben",
@@ -435,6 +437,7 @@ export const de: TranslationMap = {
     workboard: "Agenten-Arbeitswarteschlange und Sitzungsübergabe.",
     channels: "Kanäle und Einstellungen verwalten.",
     instances: "Präsenzsignale von verbundenen Clients und Geräten.",
+    conversations: "All chat transcripts.",
     sessions: "Aktive Sitzungen inspizieren und Standardeinstellungen pro Sitzung anpassen.",
     usage: "API-Nutzung und Kosten überwachen.",
     cron: "Aufweckzeiten und wiederkehrende Agent-Läufe planen.",
@@ -548,6 +551,7 @@ export const de: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -664,6 +668,10 @@ export const de: TranslationMap = {
     eventArchived: "Archiviert",
     eventUnarchived: "Aus Archiv wiederhergestellt",
     eventStale: "Veraltete Sitzung",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

@@ -393,6 +393,7 @@ export const vi: TranslationMap = {
   },
   nav: {
     chat: "Trò chuyện",
+    channels: "Channels",
     control: "Điều khiển",
     agent: "Agent",
     settings: "Cài đặt",
@@ -407,6 +408,7 @@ export const vi: TranslationMap = {
     workboard: "Bảng công việc",
     channels: "Kênh",
     instances: "Phiên bản",
+    conversations: "Conversations",
     sessions: "Phiên",
     usage: "Mức sử dụng",
     cron: "Tác vụ Cron",
@@ -432,6 +434,7 @@ export const vi: TranslationMap = {
     workboard: "Hàng đợi công việc của tác nhân và bàn giao phiên.",
     channels: "Kênh và cài đặt.",
     instances: "Máy khách và nút đã kết nối.",
+    conversations: "All chat transcripts.",
     sessions: "Phiên đang hoạt động và mặc định.",
     usage: "Mức sử dụng API và chi phí.",
     cron: "Đánh thức và chạy định kỳ.",
@@ -546,6 +549,7 @@ export const vi: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -662,6 +666,10 @@ export const vi: TranslationMap = {
     eventArchived: "Đã lưu trữ",
     eventUnarchived: "Đã bỏ lưu trữ",
     eventStale: "Phiên đã cũ",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

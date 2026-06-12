@@ -395,6 +395,7 @@ export const tr: TranslationMap = {
   },
   nav: {
     chat: "Sohbet",
+    channels: "Channels",
     control: "Kontrol",
     agent: "Aracı",
     settings: "Ayarlar",
@@ -409,6 +410,7 @@ export const tr: TranslationMap = {
     workboard: "Çalışma panosu",
     channels: "Kanallar",
     instances: "Örnekler",
+    conversations: "Conversations",
     sessions: "Oturumlar",
     usage: "Kullanım",
     cron: "Cron İşleri",
@@ -434,6 +436,7 @@ export const tr: TranslationMap = {
     workboard: "Ajan iş kuyruğu ve oturum devri.",
     channels: "Kanallar ve ayarlar.",
     instances: "Bağlı istemciler ve düğümler.",
+    conversations: "All chat transcripts.",
     sessions: "Etkin oturumlar ve varsayılanlar.",
     usage: "API kullanımı ve maliyetler.",
     cron: "Uyandırmalar ve yinelenen çalıştırmalar.",
@@ -548,6 +551,7 @@ export const tr: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -664,6 +668,10 @@ export const tr: TranslationMap = {
     eventArchived: "Arşivlendi",
     eventUnarchived: "Arşivden çıkarıldı",
     eventStale: "Eski oturum",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

@@ -394,6 +394,7 @@ export const uk: TranslationMap = {
   },
   nav: {
     chat: "Чат",
+    channels: "Channels",
     control: "Керування",
     agent: "Агент",
     settings: "Налаштування",
@@ -408,6 +409,7 @@ export const uk: TranslationMap = {
     workboard: "Робоча дошка",
     channels: "Канали",
     instances: "Екземпляри",
+    conversations: "Conversations",
     sessions: "Сеанси",
     usage: "Використання",
     cron: "Завдання Cron",
@@ -433,6 +435,7 @@ export const uk: TranslationMap = {
     workboard: "Черга завдань агента та передавання сеансів.",
     channels: "Канали та налаштування.",
     instances: "Підключені клієнти та вузли.",
+    conversations: "All chat transcripts.",
     sessions: "Активні сеанси та типові значення.",
     usage: "Використання API та витрати.",
     cron: "Пробудження та повторювані запуски.",
@@ -547,6 +550,7 @@ export const uk: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -663,6 +667,10 @@ export const uk: TranslationMap = {
     eventArchived: "Заархівовано",
     eventUnarchived: "Розархівовано",
     eventStale: "Застарілий сеанс",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

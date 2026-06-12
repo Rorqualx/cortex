@@ -391,6 +391,7 @@ export const th: TranslationMap = {
   },
   nav: {
     chat: "แชต",
+    channels: "Channels",
     control: "ควบคุม",
     agent: "เอเจนต์",
     settings: "การตั้งค่า",
@@ -405,6 +406,7 @@ export const th: TranslationMap = {
     workboard: "กระดานงาน",
     channels: "ช่องทาง",
     instances: "อินสแตนซ์",
+    conversations: "Conversations",
     sessions: "เซสชัน",
     usage: "การใช้งาน",
     cron: "งาน Cron",
@@ -430,6 +432,7 @@ export const th: TranslationMap = {
     workboard: "คิวงานของ Agent และการส่งต่อเซสชัน",
     channels: "ช่องทางและการตั้งค่า",
     instances: "ไคลเอนต์และโหนดที่เชื่อมต่อ",
+    conversations: "All chat transcripts.",
     sessions: "เซสชันที่ใช้งานอยู่และค่าเริ่มต้น",
     usage: "การใช้งาน API และค่าใช้จ่าย",
     cron: "การปลุกและการทำงานตามรอบ",
@@ -543,6 +546,7 @@ export const th: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -659,6 +663,10 @@ export const th: TranslationMap = {
     eventArchived: "เก็บถาวรแล้ว",
     eventUnarchived: "ยกเลิกการเก็บถาวรแล้ว",
     eventStale: "เซสชันหมดอายุ",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

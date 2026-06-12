@@ -393,6 +393,7 @@ export const id: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Kontrol",
     agent: "Agen",
     settings: "Pengaturan",
@@ -407,6 +408,7 @@ export const id: TranslationMap = {
     workboard: "Workboard",
     channels: "Saluran",
     instances: "Instans",
+    conversations: "Conversations",
     sessions: "Sesi",
     usage: "Penggunaan",
     cron: "Tugas Cron",
@@ -432,6 +434,7 @@ export const id: TranslationMap = {
     workboard: "Antrean kerja agen dan serah terima sesi.",
     channels: "Saluran dan pengaturan.",
     instances: "Klien dan node yang terhubung.",
+    conversations: "All chat transcripts.",
     sessions: "Sesi aktif dan default.",
     usage: "Penggunaan API dan biaya.",
     cron: "Bangun dan proses berulang.",
@@ -545,6 +548,7 @@ export const id: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -661,6 +665,10 @@ export const id: TranslationMap = {
     eventArchived: "Diarsipkan",
     eventUnarchived: "Dibatalkan pengarsipannya",
     eventStale: "Sesi kedaluwarsa",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

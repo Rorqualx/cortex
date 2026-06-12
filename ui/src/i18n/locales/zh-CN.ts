@@ -390,6 +390,7 @@ export const zh_CN: TranslationMap = {
   },
   nav: {
     chat: "聊天",
+    channels: "Channels",
     control: "控制",
     agent: "代理",
     settings: "设置",
@@ -404,6 +405,7 @@ export const zh_CN: TranslationMap = {
     workboard: "工作板",
     channels: "频道",
     instances: "实例",
+    conversations: "Conversations",
     sessions: "会话",
     usage: "使用情况",
     cron: "定时任务",
@@ -429,6 +431,7 @@ export const zh_CN: TranslationMap = {
     workboard: "智能体工作队列和会话交接。",
     channels: "频道和设置。",
     instances: "已连接客户端和节点。",
+    conversations: "All chat transcripts.",
     sessions: "活动会话和默认设置。",
     usage: "API 使用情况和成本。",
     cron: "唤醒和重复运行。",
@@ -542,6 +545,7 @@ export const zh_CN: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -658,6 +662,10 @@ export const zh_CN: TranslationMap = {
     eventArchived: "已归档",
     eventUnarchived: "已取消归档",
     eventStale: "过期会话",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

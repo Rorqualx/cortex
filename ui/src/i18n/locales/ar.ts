@@ -392,6 +392,7 @@ export const ar: TranslationMap = {
   },
   nav: {
     chat: "الدردشة",
+    channels: "Channels",
     control: "التحكم",
     agent: "الوكيل",
     settings: "الإعدادات",
@@ -406,6 +407,7 @@ export const ar: TranslationMap = {
     workboard: "لوحة العمل",
     channels: "القنوات",
     instances: "المثيلات",
+    conversations: "Conversations",
     sessions: "الجلسات",
     usage: "الاستخدام",
     cron: "مهام Cron",
@@ -431,6 +433,7 @@ export const ar: TranslationMap = {
     workboard: "قائمة عمل الوكيل وتسليم الجلسات.",
     channels: "القنوات والإعدادات.",
     instances: "العملاء والعقد المتصلة.",
+    conversations: "All chat transcripts.",
     sessions: "الجلسات النشطة والافتراضيات.",
     usage: "استخدام API والتكاليف.",
     cron: "الإيقاظات والتشغيلات المتكررة.",
@@ -544,6 +547,7 @@ export const ar: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -660,6 +664,10 @@ export const ar: TranslationMap = {
     eventArchived: "مؤرشف",
     eventUnarchived: "غير مؤرشف",
     eventStale: "جلسة قديمة",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

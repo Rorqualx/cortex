@@ -395,6 +395,7 @@ export const nl: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Control",
     agent: "Agent",
     settings: "Instellingen",
@@ -409,6 +410,7 @@ export const nl: TranslationMap = {
     workboard: "Werkbord",
     channels: "Kanalen",
     instances: "Instanties",
+    conversations: "Conversations",
     sessions: "Sessies",
     usage: "Gebruik",
     cron: "Cronjobs",
@@ -434,6 +436,7 @@ export const nl: TranslationMap = {
     workboard: "Werkwachtrij voor agents en sessieoverdracht.",
     channels: "Kanalen en instellingen.",
     instances: "Verbonden clients en nodes.",
+    conversations: "All chat transcripts.",
     sessions: "Actieve sessies en standaarden.",
     usage: "API-gebruik en kosten.",
     cron: "Wakeups en terugkerende runs.",
@@ -547,6 +550,7 @@ export const nl: TranslationMap = {
     allAgents: "All agents",
     agentFilter: "Filter by agent",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -663,6 +667,10 @@ export const nl: TranslationMap = {
     eventArchived: "Gearchiveerd",
     eventUnarchived: "Uit archief gehaald",
     eventStale: "Verlopen sessie",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {

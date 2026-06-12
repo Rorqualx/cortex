@@ -1,8 +1,10 @@
 {
   "fallbackKeys": [
-    "skillWorkshop.header.useCurrentChat",
-    "skillWorkshop.header.useCurrentChatAria",
-    "skillWorkshop.header.useCurrentChatTooltip",
+    "nav.channels",
+    "subtitles.conversations",
+    "tabs.conversations",
+    "workboard.addProject",
+    "workboard.agentLinkedWithDescription",
     "workboard.dependencies",
     "workboard.dependenciesBlocked",
     "workboard.dependenciesBlockedTitle",
@@ -29,15 +31,18 @@
     "workboard.detailUpdatedValue",
     "workboard.detailWorkerLogs",
     "workboard.detailWorkerProtocol",
+    "workboard.editProject",
+    "workboard.projectIcon",
+    "workboard.projectName",
     "workboard.unknownStatus",
     "workboard.viewDetails"
   ],
-  "generatedAt": "2026-06-05T02:10:20.929Z",
+  "generatedAt": "2026-06-10T21:56:55.424Z",
   "locale": "zh-CN",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "f70b6a841addd3bd15207867930a15d303b1d8408de36584925865436cfeb4f7",
-  "totalKeys": 1333,
-  "translatedKeys": 1302,
+  "sourceHash": "650d73f812adda5e23433b4cf5746d19eeaeed7694c1bd84864ac7c8ad0d1486",
+  "totalKeys": 1341,
+  "translatedKeys": 1305,
   "workflow": 1
 }
