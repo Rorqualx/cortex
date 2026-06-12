@@ -53,6 +53,7 @@ import {
 import { createHeartbeatResponseTool } from "./tools/heartbeat-response-tool.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
+import { createMemoryInsightsTool } from "./tools/memory-insights.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
@@ -536,6 +537,9 @@ export function createOpenClawTools(
     }),
     createSessionAwarenessTool({
       cwd: workspaceDir,
+    }),
+    createMemoryInsightsTool({
+      workspaceDir,
     }),
     ...collectPresentOpenClawTools([webSearchTool, webFetchTool, imageTool, pdfTool]),
   ];

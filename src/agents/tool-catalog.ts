@@ -141,9 +141,10 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
-    id: "memory_get",
-    label: "memory_get",
-    description: "Read memory files",
+    id: "memory_insights",
+    label: "memory_insights",
+    description:
+      "Read-only summary of memory system state: recent L3 snapshots, report counts, and salient topics",
     sectionId: "memory",
     profiles: ["coding"],
     includeInOpenClawGroup: true,

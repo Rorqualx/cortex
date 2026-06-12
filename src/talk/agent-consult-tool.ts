@@ -78,6 +78,7 @@ const SAFE_READ_ONLY_TOOLS = [
   "x_search",
   "memory_search",
   "memory_get",
+  "memory_insights",
 ] as const;
 
 /** Type guard for user/config supplied consult tool policies. */
