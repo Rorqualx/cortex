@@ -373,8 +373,21 @@ function promote(candidate: ConsolidationCandidate): LongTermFact {
   };
 }
 
+/** Revision trail cap: keeps frontmatter bounded for facts whose text churns. */
+const FACT_HISTORY_LIMIT = 5;
+
 function reaffirm(prior: LongTermFact, candidate: ConsolidationCandidate): LongTermFact {
   const merged = mergeChunkIds(prior.sourceChunkIds, candidate.sourceChunkIds);
+  // EvoMem-style revision trail: when reaffirmation rewrites the canonical
+  // text, keep the superseded text (mirrors LongTermTypedFact.history) so
+  // drift in prose facts stays inspectable.
+  const history: NonNullable<LongTermFact["history"]> = prior.history ? [...prior.history] : [];
+  if (prior.text !== candidate.text) {
+    history.push({ text: prior.text, supersededAt: candidate.lastConfirmedAt });
+    if (history.length > FACT_HISTORY_LIMIT) {
+      history.shift();
+    }
+  }
   return {
     id: prior.id,
     text: candidate.text,
@@ -390,6 +403,7 @@ function reaffirm(prior: LongTermFact, candidate: ConsolidationCandidate): LongT
     // doesn't resolve a stale-vs-typed contradiction; the reconciler must
     // run again with current data to decide.
     supersededBy: prior.supersededBy ?? null,
+    ...(history.length > 0 ? { history } : {}),
   };
 }
 

@@ -132,6 +132,28 @@ describe("consolidateLongTerm", () => {
     expect(reaffirmed.text).toBe("tabs strongly"); // higher importance wins
     expect(reaffirmed.importance).toBe(0.85);
     expect(reaffirmed.lastConfirmedAt).toBe(NOW);
+    // The rewritten canonical text leaves a revision trail entry.
+    expect(reaffirmed.history).toEqual([{ text: "tabs", supersededAt: NOW }]);
+  });
+
+  it("does not grow a history entry when reaffirmation keeps the same text", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [fact("f1", "tabs", 0.7, NOW - 5 * MS_PER_DAY, "user_pref:tabs")],
+      NOW - 5 * MS_PER_DAY,
+    );
+    await writeChunk(
+      "chunk-000001-b",
+      [fact("f2", "tabs", 0.7, NOW - 1 * MS_PER_DAY, "user_pref:tabs")],
+      NOW - 1 * MS_PER_DAY,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 1 * MS_PER_DAY });
+    // Confirm with identical text — no revision occurred.
+    await writeChunk("chunk-000002-c", [fact("f3", "tabs", 0.7, NOW, "user_pref:tabs")], NOW);
+    const result = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    expect(result.reaffirmedCount).toBe(1);
+    const longTerm = await storage.readLongTerm();
+    expect(longTerm.facts[0].history).toBeUndefined();
   });
 
   it("archives an active fact that has not been confirmed in maxAgeWithoutConfirmMs", async () => {

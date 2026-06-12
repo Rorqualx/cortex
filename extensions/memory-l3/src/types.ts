@@ -193,11 +193,13 @@ export type LongTermFact = {
    */
   embedding?: number[];
   /**
-   * Structured history of previous text values, showing how this fact evolved
-   * over time. Each entry captures the prior text, when it was superseded,
-   * and which chunk triggered the update. Optional for backward compat.
+   * Superseded prior texts, oldest first — the prose analogue of
+   * `LongTermTypedFact.history` (same `{value, supersededAt}` shape, keyed
+   * `text` here). Written by reaffirm() only when the canonical text actually
+   * changes; capped so revision-happy facts cannot grow unbounded. Absent on
+   * facts that never changed.
    */
-  history?: Array<{ text: string; updatedAt: number; sourceChunkId: string }>;
+  history?: Array<{ text: string; supersededAt: number }>;
 };
 
 /**
