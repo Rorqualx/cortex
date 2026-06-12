@@ -1,5 +1,5 @@
 // LLM idle-timeout tests cover timeout selection and stream wrapping for
-// embedded provider calls, including local-provider and cron exceptions.
+// embedded provider calls, including the local-provider exception.
 import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coercion";
 import type { AssistantMessageEventStream } from "openclaw/plugin-sdk/llm";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,8 +38,12 @@ describe("resolveLlmIdleTimeoutMs", () => {
     expect(resolveLlmIdleTimeoutMs({ runTimeoutMs: 30_000 })).toBe(30_000);
   });
 
-  it("honors explicit cron run timeouts as the idle watchdog ceiling", () => {
-    expect(resolveLlmIdleTimeoutMs({ trigger: "cron", runTimeoutMs: 600_000 })).toBe(600_000);
+  it("clamps long run timeouts (cron job budgets) at the default idle watchdog", () => {
+    // Regression: cron runs used the whole job budget as the idle watchdog, so
+    // a silent provider call burned the entire cron window (observed 30-minute
+    // hangs at model-call-started) instead of failing over. The run timeout is
+    // a job budget, not a silence allowance.
+    expect(resolveLlmIdleTimeoutMs({ runTimeoutMs: 1_800_000 })).toBe(DEFAULT_LLM_IDLE_TIMEOUT_MS);
   });
 
   it("disables the idle watchdog when an explicit run timeout disables timeouts", () => {
@@ -67,9 +71,9 @@ describe("resolveLlmIdleTimeoutMs", () => {
   });
 
   it("caps provider request timeout at the max safe timeout", () => {
-    expect(
-      resolveLlmIdleTimeoutMs({ trigger: "cron", modelRequestTimeoutMs: 10_000_000_000 }),
-    ).toBe(MAX_TIMER_TIMEOUT_MS);
+    expect(resolveLlmIdleTimeoutMs({ modelRequestTimeoutMs: 10_000_000_000 })).toBe(
+      MAX_TIMER_TIMEOUT_MS,
+    );
   });
 
   it("ignores invalid provider request timeout values", () => {
@@ -131,24 +135,6 @@ describe("resolveLlmIdleTimeoutMs", () => {
         runTimeoutMs: MAX_TIMER_TIMEOUT_MS,
       }),
     ).toBe(180_000);
-  });
-
-  it("uses provider request timeout for cron model calls", () => {
-    expect(resolveLlmIdleTimeoutMs({ trigger: "cron", modelRequestTimeoutMs: 300_000 })).toBe(
-      300_000,
-    );
-  });
-
-  it("disables the default idle timeout for cron when no timeout is configured", () => {
-    expect(resolveLlmIdleTimeoutMs({ trigger: "cron" })).toBe(0);
-
-    const cfg = { agents: { defaults: {} } } as OpenClawConfig;
-    expect(resolveLlmIdleTimeoutMs({ cfg, trigger: "cron" })).toBe(0);
-  });
-
-  it("caps agents.defaults.timeoutSeconds for cron before disabling the default idle timeout", () => {
-    const cfg = { agents: { defaults: { timeoutSeconds: 300 } } } as OpenClawConfig;
-    expect(resolveLlmIdleTimeoutMs({ cfg, trigger: "cron" })).toBe(DEFAULT_LLM_IDLE_TIMEOUT_MS);
   });
 
   it.each([

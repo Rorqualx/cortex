@@ -2819,7 +2819,6 @@ export async function runEmbeddedAttempt(
         (params.timeoutMs !== configuredRunTimeoutMs ? params.timeoutMs : undefined);
       const idleTimeoutMs = resolveLlmIdleTimeoutMs({
         cfg: params.config,
-        trigger: params.trigger,
         runTimeoutMs: resolvedRunTimeoutMs,
         modelRequestTimeoutMs: (params.model as { requestTimeoutMs?: number }).requestTimeoutMs,
         model: params.model as { baseUrl?: string },

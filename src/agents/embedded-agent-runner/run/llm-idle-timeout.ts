@@ -11,7 +11,6 @@ import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { StreamFn } from "../../runtime/index.js";
 import type { MutableAssistantMessageEventStream } from "../../stream-compat.js";
 import { createStreamIteratorWrapper } from "../../stream-iterator-wrapper.js";
-import type { EmbeddedRunTrigger } from "./params.js";
 
 /**
  * Default idle timeout for LLM streaming responses in milliseconds.
@@ -118,7 +117,6 @@ function isOllamaCloudModel(model: { id?: string; provider?: string } | undefine
  */
 export function resolveLlmIdleTimeoutMs(params?: {
   cfg?: OpenClawConfig;
-  trigger?: EmbeddedRunTrigger;
   runTimeoutMs?: number;
   modelRequestTimeoutMs?: number;
   model?: { baseUrl?: string; id?: string; provider?: string };
@@ -172,18 +170,16 @@ export function resolveLlmIdleTimeoutMs(params?: {
     if (runTimeoutMs >= MAX_TIMER_TIMEOUT_MS) {
       return 0;
     }
-    if (params?.trigger === "cron") {
-      return clampTimeoutMs(runTimeoutMs);
-    }
+    // A run timeout is a job budget, not a silence allowance: unattended runs
+    // (cron) must clamp to the implicit watchdog too, so a silent provider
+    // call fails over to the next auth profile/model instead of burning the
+    // whole budget. Slow-but-silent providers opt out explicitly via
+    // `models.providers.<id>.timeoutSeconds` above.
     return clampImplicitTimeoutMs(runTimeoutMs);
   }
 
   if (agentTimeoutMs !== undefined) {
     return clampImplicitTimeoutMs(agentTimeoutMs);
-  }
-
-  if (params?.trigger === "cron") {
-    return 0;
   }
 
   // The default watchdog is a network-silence-as-hang guard for cloud providers.
