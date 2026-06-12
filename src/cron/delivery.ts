@@ -38,6 +38,7 @@ export type CronAnnounceTarget = {
   to?: string;
   accountId?: string;
   sessionKey?: string;
+  threadId?: string | number;
 };
 
 type SuccessfulDeliveryTarget = Extract<DeliveryTargetResolution, { ok: true }>;
@@ -63,6 +64,7 @@ async function resolveCronAnnounceDelivery(params: {
     to: params.target.to,
     accountId: params.target.accountId,
     sessionKey: params.target.sessionKey,
+    threadId: params.target.threadId,
   });
 
   if (!resolvedTarget.ok) {

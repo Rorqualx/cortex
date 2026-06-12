@@ -374,35 +374,36 @@ function buildCronCompletionSummary(params: { job: CronJob; evt: CronEvent }): s
 /** Sends best-effort completion summary announcements to configured channels. */
 function dispatchCronCompletionAnnounce(params: {
   evt: CronEvent;
-  job: CronJob;
+  job?: CronJob;
   deps: CliDeps;
   logger: CronLogger;
   resolveCronAgent: CronAgentResolver;
 }): void {
+  const job = params.job;
+  if (!job?.delivery || typeof job.delivery.mode !== "string") {
+    return;
+  }
   const announceTargets = resolveCronCompletionAnnounceTargets({
-    delivery:
-      params.job?.delivery && typeof params.job.delivery.mode === "string"
-        ? {
-            mode: params.job.delivery.mode,
-            completionDestination: params.job.delivery.completionDestination,
-          }
-        : undefined,
+    delivery: {
+      mode: job.delivery.mode,
+      completionDestination: job.delivery.completionDestination,
+    },
   });
 
   if (announceTargets.length === 0) {
     return;
   }
 
-  const { agentId, cfg: runtimeConfig } = params.resolveCronAgent(params.job.agentId);
-  const summary = buildCronCompletionSummary({ job: params.job, evt: params.evt });
-  const deliverySessionKey = resolveCronDeliverySessionKey(params.job);
+  const { agentId, cfg: runtimeConfig } = params.resolveCronAgent(job.agentId);
+  const summary = buildCronCompletionSummary({ job, evt: params.evt });
+  const deliverySessionKey = resolveCronDeliverySessionKey(job);
 
   for (const target of announceTargets) {
     void sendFailureNotificationAnnounce(
       params.deps,
       runtimeConfig,
       agentId,
-      params.job.id,
+      job.id,
       {
         channel: target.channel,
         to: target.to,
