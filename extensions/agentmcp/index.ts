@@ -17,7 +17,7 @@ import { callWithFallback, loadFallbackConfig, type FallbackResult } from "./lib
 import { resolveFilePaths, FilePathError } from "./lib/file-resolver.js";
 import { estimateCostUsd, formatCostUsd } from "./lib/pricing.js";
 import { makeProvider, readProviderConfig } from "./lib/providers/index.js";
-import type { LlmClient, Provider } from "./lib/providers/types.js";
+import type { LlmCallResult, LlmClient, Provider } from "./lib/providers/types.js";
 import { LlmError } from "./lib/providers/types.js";
 import {
   makeCodeShape,
@@ -50,7 +50,12 @@ function reasoningFloor(model: string, thinking: boolean, requested: number): nu
   return Math.max(requested, isK2Thinking ? 6000 : 3000);
 }
 
-function metaLine(toolName: string, result: any, thinking: boolean, provider: Provider): string {
+function metaLine(
+  toolName: string,
+  result: LlmCallResult,
+  thinking: boolean,
+  provider: Provider,
+): string {
   const thinkingTag = thinking ? "thinking:on" : "thinking:off";
   const cost = formatCostUsd(
     estimateCostUsd(
