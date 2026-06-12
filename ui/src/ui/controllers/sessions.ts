@@ -1,3 +1,4 @@
+import type { ChatModelOverride } from "../chat-model-ref.types.ts";
 // Control UI controller manages sessions gateway state.
 import {
   reconcileChatRunFromCurrentSessionRow,
@@ -41,7 +42,7 @@ export type SessionsState = SessionsChatRunState & {
   client: GatewayBrowserClient | null;
   connected: boolean;
   /** Composer model picker cache; fresh session rows reconcile it (see loadSessionsOnce). */
-  chatModelOverrides?: Record<string, unknown>;
+  chatModelOverrides?: Record<string, ChatModelOverride | null>;
   chatModelSwitchPromises?: Record<string, Promise<boolean>>;
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;
@@ -319,9 +320,9 @@ const SESSION_EVENT_ROW_FIELDS = [
   "spawnedBy",
   "startedAt",
   "status",
-  "archived",
   "subject",
-  "surface",
+  "channel",
+  "groupChannel",
   "systemSent",
   "thinkingDefault",
   "thinkingLevel",
@@ -390,31 +391,13 @@ function normalizeSessionsFilterOverride(value: number | undefined): number | un
 }
 
 function normalizeSessionKind(value: unknown): GatewaySessionRow["kind"] | undefined {
-  return value === "cron" ||
-    value === "direct" ||
-    value === "group" ||
-    value === "global" ||
-    value === "unknown"
+  return value === "direct" || value === "group" || value === "global" || value === "unknown"
     ? value
     : undefined;
 }
 
-export function isArchivedSessionRow(row: GatewaySessionRow): boolean {
-  return row.archived === true;
-}
-
-function filterAvailableSessionRows(
-  rows: GatewaySessionRow[],
-  options: { showArchived: boolean },
-): GatewaySessionRow[] {
-  return rows.filter((row) => row.key && (options.showArchived || !isArchivedSessionRow(row)));
-}
-
-function projectSessionsResultForAvailability(
-  result: SessionsListResult,
-  options: { showArchived: boolean },
-): SessionsListResult {
-  const sessions = filterAvailableSessionRows(result.sessions, options);
+function projectSessionsResultForAvailability(result: SessionsListResult): SessionsListResult {
+  const sessions = result.sessions.filter((row) => row.key);
   return {
     ...result,
     count: sessions.length,
@@ -589,7 +572,7 @@ function resolveCachedChatAgentSessionRowAgentId(
   state: SessionsState,
   row: GatewaySessionRow,
 ): string | null {
-  if (row.kind === "global" || row.kind === "unknown" || row.kind === "cron") {
+  if (row.kind === "global" || row.kind === "unknown") {
     return null;
   }
   if (isSubagentSessionKey(row.key) || row.spawnedBy) {
@@ -600,9 +583,6 @@ function resolveCachedChatAgentSessionRowAgentId(
 }
 
 function upsertCachedChatAgentSessionRow(state: SessionsState, row: GatewaySessionRow): boolean {
-  if (!state.sessionsShowArchived && isArchivedSessionRow(row)) {
-    return invalidateCachedChatAgentSessionRow(state, row.key);
-  }
   const agentId = resolveCachedChatAgentSessionRowAgentId(state, row);
   if (!agentId) {
     return false;
@@ -800,20 +780,6 @@ export function applySessionsChangedEvent(
       ? { applied: true, change: existingIndex >= 0 ? "updated" : "inserted" }
       : { applied: false };
   }
-  if (!state.sessionsShowArchived && isArchivedSessionRow(nextRow)) {
-    const removedCachedRow = invalidateCachedChatAgentSessionRow(state, key);
-    if (existingIndex < 0) {
-      return removedCachedRow ? { applied: true, change: "deleted" } : { applied: false };
-    }
-    state.sessionsResult = {
-      ...state.sessionsResult,
-      count: Math.max(0, state.sessionsResult.count - 1),
-      sessions: previousRows.filter((row) => row.key !== key),
-    };
-    invalidateCheckpointCacheForKey(state, key);
-    return { applied: true, change: "deleted" };
-  }
-
   const nextRows =
     existingIndex >= 0
       ? previousRows.map((row, index) => (index === existingIndex ? nextRow : row))
@@ -888,7 +854,7 @@ export function applyChatHistorySessionInfo(
       };
       return true;
     }
-    const sessions = state.sessionsShowArchived || !isArchivedSessionRow(session) ? [session] : [];
+    const sessions = [session];
     state.sessionsResult = {
       ts: Date.now(),
       path: "",
@@ -1183,7 +1149,7 @@ async function loadSessionsOnce(
     }
     const res = await client.request<SessionsListResult | undefined>("sessions.list", params);
     if (res) {
-      const projected = projectSessionsResultForAvailability(res, { showArchived });
+      const projected = projectSessionsResultForAvailability(res);
       state.sessionsResult =
         overrides?.append === true && offset > 0 && state.sessionsResult
           ? appendSessionsResult(state.sessionsResult, projected)

@@ -429,7 +429,7 @@ describe("connectGateway", () => {
         ts: 0,
         path: "",
         count: 1,
-        defaults: {},
+        defaults: { modelProvider: null, model: null, contextTokens: null },
         sessions: [
           {
             key: "main",
@@ -1217,11 +1217,7 @@ describe("connectGateway", () => {
     host.updateComplete = Promise.resolve();
     host.chatRunId = "run-first-visible";
     host.chatStream = "";
-    (
-      host as TestGatewayHost & {
-        chatSendTimingsByRun: Map<string, Record<string, unknown>>;
-      }
-    ).chatSendTimingsByRun = new Map([
+    host.chatSendTimingsByRun = new Map([
       [
         "run-first-visible",
         {

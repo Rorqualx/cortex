@@ -69,7 +69,6 @@ import {
   type CompactionStatus,
   type FallbackStatus,
 } from "./app-tool-stream.ts";
-import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
 import { AvatarChangeEvent } from "./avatar-lightbox.ts";
 import { restorePersistedTabs, savePersistedTabs } from "./chat/chat-tab-bar.ts";
@@ -96,7 +95,6 @@ import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./contro
 import {
   loadEarlierMessages as loadEarlierMessagesInternal,
   expandHistoryRenderLimit as expandHistoryRenderLimitInternal,
-  type ChatState as ChatStateType,
 } from "./controllers/chat.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type {
@@ -122,7 +120,11 @@ import { importCustomThemeFromUrl } from "./custom-theme.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import { resolveAgentIdFromSessionKey } from "./session-key.ts";
-import type { SidebarContent } from "./sidebar-content.ts";
+import type {
+  CanvasSidebarContent,
+  MarkdownSidebarContent,
+  SidebarContent,
+} from "./sidebar-content.ts";
 import { loadLocalUserIdentity, loadSettings, type UiSettings } from "./storage.ts";
 import { VALID_THEME_NAMES, type ResolvedTheme, type ThemeMode, type ThemeName } from "./theme.ts";
 import type {
@@ -164,7 +166,13 @@ const bootAssistantIdentity = normalizeAssistantIdentity({});
 const bootLocalUserIdentity = loadLocalUserIdentity();
 const FULL_MESSAGE_SIDEBAR_MAX_CHARS = 500_000;
 
-function isSidebarMarkdownLike(content: SidebarContent | null): content is SidebarContent {
+// Only markdown/canvas sidebar variants carry fullMessageRequest/unavailableReason;
+// the guard must narrow to them so the full-message upgrade path typechecks.
+type UpgradableSidebarContent = MarkdownSidebarContent | CanvasSidebarContent;
+
+function isSidebarMarkdownLike(
+  content: SidebarContent | null,
+): content is UpgradableSidebarContent {
   return Boolean(content && (content.kind === "markdown" || content.kind === "canvas"));
 }
 
@@ -252,9 +260,12 @@ export class OpenClawApp extends LitElement {
   currentSessionId: string | null = null;
   @state() chatLoading = false;
   @state() chatSending = false;
+  // Written by app-chat send flow; read by render for elapsed-time display. Intentionally
+  // non-reactive: it piggybacks on the re-renders chat events already trigger.
+  chatSendStartedAt: number | null = null;
   @state() chatMessage = "";
   @state() chatMessages: unknown[] = [];
-  @state() chatToolMessages: unknown[] = [];
+  @state() chatToolMessages: Record<string, unknown>[] = [];
   @state() activityEntries: ActivityEntry[] = [];
   @state() activityFilterText = "";
   @state() activityStatusFilters: Record<ActivityStatus, boolean> = {
@@ -331,7 +342,8 @@ export class OpenClawApp extends LitElement {
     prefixPaddingMs: "",
     reasoningEffort: "",
   };
-  private realtimeTalkSession: RealtimeTalkSession | null = null;
+  // Not private: app-lifecycle teardown stops and clears the live session via LifecycleHost.
+  realtimeTalkSession: RealtimeTalkSession | null = null;
   private realtimeTalkConversationState: RealtimeTalkConversationState =
     createRealtimeTalkConversationState();
   private nativeBridgeCleanup: (() => void) | null = null;
@@ -724,8 +736,7 @@ export class OpenClawApp extends LitElement {
   refreshSessionsAfterChat = new Map<string, import("./ui-types.js").ChatSessionRefreshTarget>();
   chatSideResultTerminalRuns = new Set<string>();
   basePath = "";
-  popStateHandler = () =>
-    onPopStateInternal(this as unknown as Parameters<typeof onPopStateInternal>[0]);
+  popStateHandler = () => onPopStateInternal(this);
   topbarObserver: ResizeObserver | null = null;
   private globalKeydownHandler = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "k") {
@@ -815,7 +826,7 @@ export class OpenClawApp extends LitElement {
     this.onSlashAction = async (action: string) => {
       switch (action) {
         case "new-session":
-          await createChatSessionInternal(this as unknown as AppViewState);
+          await createChatSessionInternal(this);
           break;
         case "export":
           exportChatMarkdown(this.chatMessages, this.assistantName);
@@ -829,7 +840,7 @@ export class OpenClawApp extends LitElement {
     document.addEventListener("keydown", this.globalKeydownHandler);
     document.addEventListener("keydown", this.chatMobileControlsKeydownHandler);
     document.addEventListener("pointerdown", this.chatMobileControlsPointerdownHandler);
-    handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
+    handleConnected(this);
     // Restore persisted tabs or initialize with current session
     const persisted = restorePersistedTabs();
     if (persisted && persisted.openTabs.length > 0) {
@@ -853,7 +864,7 @@ export class OpenClawApp extends LitElement {
   }
 
   protected override firstUpdated() {
-    handleFirstUpdated(this as unknown as Parameters<typeof handleFirstUpdated>[0]);
+    handleFirstUpdated(this);
   }
 
   override disconnectedCallback() {
@@ -876,12 +887,12 @@ export class OpenClawApp extends LitElement {
       AvatarChangeEvent.eventName,
       this.handleAvatarChange as EventListener,
     );
-    handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
+    handleDisconnected(this);
     super.disconnectedCallback();
   }
 
   protected override updated(changed: Map<PropertyKey, unknown>) {
-    handleUpdated(this as unknown as Parameters<typeof handleUpdated>[0], changed);
+    handleUpdated(this, changed);
     // Some render callbacks assign tab directly while preparing nested panel state.
     if (changed.has("tab") && this.tab !== "chat" && this.chatMobileControlsOpen) {
       this.setChatMobileControlsOpen(false);
@@ -905,51 +916,28 @@ export class OpenClawApp extends LitElement {
   }
 
   connect() {
-    connectGatewayInternal(this as unknown as Parameters<typeof connectGatewayInternal>[0]);
+    connectGatewayInternal(this);
   }
 
+  // ScrollHost callbacks: scroll-near-top first expands the local render window,
+  // then falls back to fetching earlier history from the server.
+  onHistoryExpand = () => expandHistoryRenderLimitInternal(this);
+  onLoadEarlier = () => loadEarlierMessagesInternal(this);
+
   handleChatScroll(event: Event) {
-    const host = this as unknown as Parameters<typeof handleChatScrollInternal>[0] & {
-      chatHistoryHasMore?: boolean;
-      chatLoadingEarlier?: boolean;
-      chatHistoryRenderExpanded?: boolean;
-      chatHistoryRenderLimit?: number;
-      chatMessages?: unknown[];
-      onHistoryExpand?: () => boolean;
-      onLoadEarlier?: () => Promise<boolean>;
-    };
-    host.chatHistoryHasMore = this.chatHistoryHasMore;
-    host.chatLoadingEarlier = this.chatLoadingEarlier;
-    host.chatHistoryRenderExpanded = this.chatHistoryRenderExpanded ?? false;
-    host.onHistoryExpand = () => expandHistoryRenderLimitInternal(this as unknown as ChatStateType);
-    host.onLoadEarlier = async () => {
-      const prevScrollHeight =
-        (this.querySelector(".chat-thread") as HTMLElement | null)?.scrollHeight ?? 0;
-      const result = await loadEarlierMessagesInternal(this as unknown as ChatStateType);
-      return result;
-    };
-    handleChatScrollInternal(host, event);
+    handleChatScrollInternal(this, event);
   }
 
   handleLogsScroll(event: Event) {
-    handleLogsScrollInternal(
-      this as unknown as Parameters<typeof handleLogsScrollInternal>[0],
-      event,
-    );
+    handleLogsScrollInternal(this, event);
   }
 
   handleActivityScroll(event: Event) {
-    handleActivityScrollInternal(
-      this as unknown as Parameters<typeof handleActivityScrollInternal>[0],
-      event,
-    );
+    handleActivityScrollInternal(this, event);
   }
 
   scheduleActivityScroll(force = false) {
-    scheduleActivityScrollInternal(
-      this as unknown as Parameters<typeof scheduleActivityScrollInternal>[0],
-      force,
-    );
+    scheduleActivityScrollInternal(this, force);
   }
 
   exportLogs(lines: string[], label: string) {
@@ -957,21 +945,16 @@ export class OpenClawApp extends LitElement {
   }
 
   resetToolStream() {
-    resetToolStreamInternal(this as unknown as Parameters<typeof resetToolStreamInternal>[0]);
+    resetToolStreamInternal(this);
   }
 
   resetChatScroll() {
-    resetChatScrollInternal(this as unknown as Parameters<typeof resetChatScrollInternal>[0]);
+    resetChatScrollInternal(this);
   }
 
   scrollToBottom(opts?: { smooth?: boolean }) {
-    resetChatScrollInternal(this as unknown as Parameters<typeof resetChatScrollInternal>[0]);
-    scheduleChatScrollInternal(
-      this as unknown as Parameters<typeof scheduleChatScrollInternal>[0],
-      true,
-      Boolean(opts?.smooth),
-      { source: "manual" },
-    );
+    resetChatScrollInternal(this);
+    scheduleChatScrollInternal(this, true, Boolean(opts?.smooth), { source: "manual" });
   }
 
   async loadAssistantIdentity() {
@@ -979,14 +962,11 @@ export class OpenClawApp extends LitElement {
   }
 
   applySettings(next: UiSettings) {
-    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], next);
+    applySettingsInternal(this, next);
   }
 
   applyLocalUserIdentity(next: { name?: string | null; avatar?: string | null }) {
-    applyLocalUserIdentityInternal(
-      this as unknown as Parameters<typeof applyLocalUserIdentityInternal>[0],
-      next,
-    );
+    applyLocalUserIdentityInternal(this, next);
   }
 
   private handleAvatarChange = (e: Event) => {
@@ -995,7 +975,7 @@ export class OpenClawApp extends LitElement {
   };
 
   setTab(next: Tab) {
-    setTabInternal(this as unknown as Parameters<typeof setTabInternal>[0], next);
+    setTabInternal(this, next);
     if (next !== "chat") {
       this.setChatMobileControlsOpen(false);
     }
@@ -1030,16 +1010,12 @@ export class OpenClawApp extends LitElement {
   }
 
   setTheme(next: ThemeName, context?: Parameters<typeof setThemeInternal>[2]) {
-    setThemeInternal(this as unknown as Parameters<typeof setThemeInternal>[0], next, context);
+    setThemeInternal(this, next, context);
     this.themeOrder = this.buildThemeOrder(next);
   }
 
   setThemeMode(next: ThemeMode, context?: Parameters<typeof setThemeModeInternal>[2]) {
-    setThemeModeInternal(
-      this as unknown as Parameters<typeof setThemeModeInternal>[0],
-      next,
-      context,
-    );
+    setThemeModeInternal(this, next, context);
   }
 
   setCustomThemeImportUrl(next: string) {
@@ -1070,7 +1046,7 @@ export class OpenClawApp extends LitElement {
         this.theme === "custom" ||
         !this.settings.customTheme ||
         this.customThemeImportSelectOnSuccess;
-      applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
+      applySettingsInternal(this, {
         ...this.settings,
         theme: shouldSelectImportedTheme ? "custom" : this.settings.theme,
         customTheme,
@@ -1096,7 +1072,7 @@ export class OpenClawApp extends LitElement {
     const nextTheme = this.theme === "custom" ? "claw" : this.theme;
     this.customThemeImportExpanded = true;
     this.customThemeImportSelectOnSuccess = false;
-    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
+    applySettingsInternal(this, {
       ...this.settings,
       theme: nextTheme,
       customTheme: undefined,
@@ -1109,7 +1085,7 @@ export class OpenClawApp extends LitElement {
   }
 
   setBorderRadius(value: number) {
-    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
+    applySettingsInternal(this, {
       ...this.settings,
       borderRadius: value,
     });
@@ -1117,7 +1093,7 @@ export class OpenClawApp extends LitElement {
   }
 
   setTextScale(value: number) {
-    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
+    applySettingsInternal(this, {
       ...this.settings,
       textScale: value as typeof this.settings.textScale,
     });
@@ -1158,63 +1134,42 @@ export class OpenClawApp extends LitElement {
   }
 
   async loadOverview(opts?: { refresh?: boolean }) {
-    await loadOverviewInternal(this as unknown as Parameters<typeof loadOverviewInternal>[0], opts);
+    await loadOverviewInternal(this, opts);
   }
 
   async loadCron() {
-    await loadCronInternal(this as unknown as Parameters<typeof loadCronInternal>[0]);
+    await loadCronInternal(this);
   }
 
   async handleAbortChat(opts?: Parameters<typeof handleAbortChatInternal>[1]) {
-    await handleAbortChatInternal(
-      this as unknown as Parameters<typeof handleAbortChatInternal>[0],
-      opts,
-    );
+    await handleAbortChatInternal(this, opts);
   }
 
   handleChatDraftChange(next: string) {
-    handleChatDraftChangeInternal(
-      this as unknown as Parameters<typeof handleChatDraftChangeInternal>[0],
-      next,
-    );
+    handleChatDraftChangeInternal(this, next);
   }
 
   handleChatInputHistoryKey(input: ChatInputHistoryKeyInput): ChatInputHistoryKeyResult {
-    return handleChatInputHistoryKeyInternal(
-      this as unknown as Parameters<typeof handleChatInputHistoryKeyInternal>[0],
-      input,
-    );
+    return handleChatInputHistoryKeyInternal(this, input);
   }
 
   resetChatInputHistoryNavigation() {
-    resetChatInputHistoryNavigationInternal(
-      this as unknown as Parameters<typeof resetChatInputHistoryNavigationInternal>[0],
-    );
+    resetChatInputHistoryNavigationInternal(this);
   }
 
   removeQueuedMessage(id: string) {
-    removeQueuedMessageInternal(
-      this as unknown as Parameters<typeof removeQueuedMessageInternal>[0],
-      id,
-    );
+    removeQueuedMessageInternal(this, id);
   }
 
   async retryQueuedChatMessage(id: string) {
-    await retryQueuedChatMessageInternal(
-      this as unknown as Parameters<typeof retryQueuedChatMessageInternal>[0],
-      id,
-    );
+    await retryQueuedChatMessageInternal(this, id);
   }
 
   async handleSendChat(
     messageOverride?: string,
     opts?: Parameters<typeof handleSendChatInternal>[2],
   ) {
-    await handleSendChatInternal(
-      this as unknown as Parameters<typeof handleSendChatInternal>[0],
-      messageOverride,
-      opts,
-    );
+    await handleSendChatInternal(this, messageOverride, opts);
   }
 
   updateRealtimeTalkOptions(next: Partial<typeof this.realtimeTalkOptions>) {
@@ -1328,10 +1283,7 @@ export class OpenClawApp extends LitElement {
   }
 
   async steerQueuedChatMessage(id: string) {
-    await steerQueuedChatMessageInternal(
-      this as unknown as Parameters<typeof steerQueuedChatMessageInternal>[0],
-      id,
-    );
+    await steerQueuedChatMessageInternal(this, id);
   }
 
   async handleWhatsAppStart(force: boolean) {
@@ -1415,7 +1367,7 @@ export class OpenClawApp extends LitElement {
     const nextToken = this.pendingGatewayToken?.trim() || "";
     this.pendingGatewayUrl = null;
     this.pendingGatewayToken = null;
-    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
+    applySettingsInternal(this, {
       ...this.settings,
       gatewayUrl: nextGatewayUrl,
       token: nextToken,
@@ -1430,7 +1382,7 @@ export class OpenClawApp extends LitElement {
     restoreChatComposerState(this, { preserveCurrent: true });
   }
 
-  private async maybeUpgradeSidebarToFullMessage(content: SidebarContent) {
+  private async maybeUpgradeSidebarToFullMessage(content: UpgradableSidebarContent) {
     const request = content.fullMessageRequest;
     if (!request || !this.client) {
       return;
@@ -1641,7 +1593,7 @@ export class OpenClawApp extends LitElement {
   }
 
   override render() {
-    return renderApp(this as unknown as AppViewState);
+    return renderApp(this);
   }
 }
 

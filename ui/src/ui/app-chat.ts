@@ -1,8 +1,11 @@
 // Control UI module implements app chat behavior.
-import type { CommandsListResult } from "../../../packages/gateway-protocol/src/index.js";
-import { setLastActiveSessionKey } from "./app-last-active-session.ts";
-import { scheduleChatScroll, resetChatScroll } from "./app-scroll.ts";
-import { resetToolStream } from "./app-tool-stream.ts";
+import type {
+  ChatSendTimingPhase as ChatSendTimingWirePhase,
+  CommandsListResult,
+} from "../../../packages/gateway-protocol/src/index.js";
+import { setLastActiveSessionKey, type LastActiveSessionHost } from "./app-last-active-session.ts";
+import { scheduleChatScroll, resetChatScroll, type ScrollHost } from "./app-scroll.ts";
+import { resetToolStream, type ToolStreamHost } from "./app-tool-stream.ts";
 import {
   cloneChatAttachmentsMetadata,
   discardChatAttachmentDataUrls,
@@ -25,7 +28,7 @@ import {
   type ChatInputHistoryKeyResult,
   type ChatInputHistoryState,
 } from "./chat/input-history.ts";
-import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
+import { reconcileChatRunLifecycle, type LocalTerminalReconcile } from "./chat/run-lifecycle.ts";
 import type { ChatSideResult } from "./chat/side-result.ts";
 import { executeSlashCommand } from "./chat/slash-command-executor.ts";
 import {
@@ -97,52 +100,64 @@ import type {
 import { generateUUID } from "./uuid.ts";
 import { isRenderableControlUiAvatarUrl } from "./views/agents-utils.ts";
 
-export type ChatHost = ChatInputHistoryState & {
-  client: GatewayBrowserClient | null;
-  chatStream: string | null;
-  connected: boolean;
-  chatAttachments: ChatAttachment[];
-  chatQueue: ChatQueueItem[];
-  chatQueueBySession?: Record<string, ChatQueueItem[]>;
-  chatRunId: string | null;
-  chatSending: boolean;
-  chatSendStartedAt: number | null;
-  /** Concurrent chat.send requests awaiting their ack (busy-bypass follow-ups). */
-  chatSendsInFlight?: number;
-  lastError?: string | null;
-  chatError?: string | null;
-  basePath: string;
-  settings?: { gatewayUrl?: string | null; token?: string | null };
-  password?: string | null;
-  hello: GatewayHelloOk | null;
-  chatAvatarUrl: string | null;
-  chatAvatarSource?: string | null;
-  chatAvatarStatus?: "none" | "local" | "remote" | "data" | null;
-  chatAvatarReason?: string | null;
-  chatSideResult?: ChatSideResult | null;
-  chatSideResultTerminalRuns?: Set<string>;
-  chatModelOverrides: Record<string, ChatModelOverride | null>;
-  chatModelSwitchPromises?: Record<string, Promise<boolean>>;
-  chatModelsLoading: boolean;
-  chatModelCatalog: ModelCatalogEntry[];
-  sessionsResult?: SessionsListResult | null;
-  sessionsError?: string | null;
-  sessionsShowArchived?: boolean;
-  updateComplete?: Promise<unknown>;
-  requestUpdate?: () => void;
-  refreshSessionsAfterChat: Map<string, ChatSessionRefreshTarget>;
-  pendingAbort?: { runId?: string | null; sessionKey: string; agentId?: string } | null;
-  chatSubmitGuards?: Map<string, Promise<void>>;
-  chatSendTimingsByRun?: Map<string, ChatSendTimingEntry>;
-  assistantAgentId?: string | null;
-  agentsList?: ChatAgentsListSnapshot | null;
-  agentsSelectedId?: string | null;
-  eventLogBuffer?: unknown[];
-  eventLog?: unknown[];
-  tab?: string;
-  /** Callback for slash-command side effects that need app-level access. */
-  onSlashAction?: (action: string) => void | Promise<void>;
-};
+// ChatHost is the intersection of every subsystem state the chat send/abort/queue flow
+// dispatches into (chat controller, sessions reload, scroll scheduling, tool-stream reset,
+// last-active-session persistence), so dispatch calls pass the host straight through.
+// The literal block carries chat-flow fields no subsystem type owns.
+export type ChatHost = ChatInputHistoryState &
+  ChatState &
+  LastActiveSessionHost &
+  ScrollHost &
+  SessionsState &
+  ToolStreamHost & {
+    client: GatewayBrowserClient | null;
+    chatStream: string | null;
+    connected: boolean;
+    chatAttachments: ChatAttachment[];
+    chatQueue: ChatQueueItem[];
+    chatQueueBySession?: Record<string, ChatQueueItem[]>;
+    chatRunId: string | null;
+    chatSending: boolean;
+    chatSendStartedAt: number | null;
+    /** Concurrent chat.send requests awaiting their ack (busy-bypass follow-ups). */
+    chatSendsInFlight?: number;
+    lastError?: string | null;
+    chatError?: string | null;
+    basePath: string;
+    settings?: { gatewayUrl?: string | null; token?: string | null };
+    password?: string | null;
+    hello: GatewayHelloOk | null;
+    chatAvatarUrl: string | null;
+    chatAvatarSource?: string | null;
+    chatAvatarStatus?: "none" | "local" | "remote" | "data" | null;
+    chatAvatarReason?: string | null;
+    chatSideResult?: ChatSideResult | null;
+    chatSideResultTerminalRuns?: Set<string>;
+    chatModelOverrides: Record<string, ChatModelOverride | null>;
+    chatModelSwitchPromises?: Record<string, Promise<boolean>>;
+    chatModelsLoading: boolean;
+    chatModelCatalog: ModelCatalogEntry[];
+    sessionsResult?: SessionsListResult | null;
+    sessionsError?: string | null;
+    sessionsShowArchived?: boolean;
+    updateComplete?: Promise<unknown>;
+    requestUpdate?: () => void;
+    refreshSessionsAfterChat: Map<string, ChatSessionRefreshTarget>;
+    pendingAbort?: { runId?: string | null; sessionKey: string; agentId?: string } | null;
+    chatSubmitGuards?: Map<string, Promise<void>>;
+    chatSendTimingsByRun?: Map<string, ChatSendTimingEntry>;
+    assistantAgentId?: string | null;
+    agentsList?: ChatAgentsListSnapshot | null;
+    agentsSelectedId?: string | null;
+    eventLogBuffer?: unknown[];
+    eventLog?: unknown[];
+    tab?: string;
+    // Written by run-lifecycle terminal reconcile; the chat.send ack guard reads it to
+    // ignore late non-ok acks for runs already reconciled terminal.
+    lastLocalTerminalReconcile?: LocalTerminalReconcile | null;
+    /** Callback for slash-command side effects that need app-level access. */
+    onSlashAction?: (action: string) => void | Promise<void>;
+  };
 
 type ChatAgentsListSnapshot = Partial<Omit<AgentsListResult, "agents">> & {
   agents?: Array<{ id: string }>;
@@ -374,7 +389,7 @@ export async function handleAbortChat(host: ChatHost, opts?: ChatAbortOptions) {
     return;
   }
   clearDraft();
-  await abortChatRun(host as unknown as ChatState);
+  await abortChatRun(host);
 }
 
 function enqueueChatMessage(
@@ -464,7 +479,7 @@ function enqueuePendingSendMessage(
     recordChatSendTiming(host, pending, sendState, submittedAtMs);
   }
   schedulePendingSendPaintTiming(host, pending, submittedAtMs);
-  scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0], true, false, {
+  scheduleChatScroll(host, true, false, {
     source: "manual",
   });
   return pending;
@@ -640,12 +655,9 @@ type ChatSendTimingEntry = {
   firstAssistantVisibleRecorded?: boolean;
 };
 
-type ChatSendServerTimingPhase =
-  | "dispatch-started"
-  | "model-selected"
-  | "agent-run-started"
-  | "dispatch-completed"
-  | "post-dispatch-completed";
+// Wire-contract phases from ChatSendTimingEventSchema; the Set below is the
+// runtime guard for payloads, so both must track the schema.
+type ChatSendServerTimingPhase = ChatSendTimingWirePhase;
 
 const CHAT_SEND_SERVER_TIMING_PHASES = new Set<ChatSendServerTimingPhase>([
   "dispatch-started",
@@ -1046,7 +1058,7 @@ async function sendQueuedChatMessage(
       host.chatStream = "";
       (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt = startedAt;
     }
-    reconcileChatRunLifecycle(host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
+    reconcileChatRunLifecycle(host, {
       clearRunStatus: true,
       clearChatStream: false,
     });
@@ -1054,7 +1066,7 @@ async function sendQueuedChatMessage(
 
   try {
     const ack = prepared.skillForgeRevision
-      ? await requestSkillForgeRevisionChatSend(host as unknown as ChatState, {
+      ? await requestSkillForgeRevisionChatSend(host, {
           proposalId: prepared.skillForgeRevision.proposalId,
           ...(prepared.skillForgeRevision.agentId
             ? { agentId: prepared.skillForgeRevision.agentId }
@@ -1064,7 +1076,7 @@ async function sendQueuedChatMessage(
           runId,
           sessionKey,
         })
-      : await requestChatSend(host as unknown as ChatState, {
+      : await requestChatSend(host, {
           message,
           attachments: hasAttachments ? attachments : undefined,
           runId,
@@ -1079,12 +1091,7 @@ async function sendQueuedChatMessage(
     });
     removeQueuedMessageWithoutReleasing(host, id, sessionKey);
     if (isVisibleSession()) {
-      appendUserChatMessage(
-        host as unknown as ChatState,
-        message,
-        hasAttachments ? attachments : undefined,
-        startedAt,
-      );
+      appendUserChatMessage(host, message, hasAttachments ? attachments : undefined, startedAt);
       if (ack.status === "ok") {
         // ack.status "ok" means the run completed synchronously (e.g. /stop command).
         // Preserve any stream text that may have arrived before the ack resolved.
@@ -1104,50 +1111,40 @@ async function sendQueuedChatMessage(
         ) {
           // Stream has content not yet in messages — keep it visible until history load.
           // The history refresh below will deliver the canonical final message.
-          reconcileChatRunLifecycle(
-            host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],
-            {
-              outcome: "done",
-              sessionStatus: "done",
-              runId: ack.runId,
-              sessionKey,
-              clearLocalRun: true,
-              clearChatStream: false, // ← preserve stream text
-              clearToolStream: true,
-              clearSideResultTerminalRuns: true,
-              publishRunStatus: false,
-              armLocalTerminalReconcile: true,
-            },
-          );
+          reconcileChatRunLifecycle(host, {
+            outcome: "done",
+            sessionStatus: "done",
+            runId: ack.runId,
+            sessionKey,
+            clearLocalRun: true,
+            clearChatStream: false, // ← preserve stream text
+            clearToolStream: true,
+            clearSideResultTerminalRuns: true,
+            publishRunStatus: false,
+            armLocalTerminalReconcile: true,
+          });
         } else {
-          reconcileChatRunLifecycle(
-            host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],
-            {
-              outcome: "done",
-              sessionStatus: "done",
-              runId: ack.runId,
-              sessionKey,
-              clearLocalRun: true,
-              clearChatStream: true,
-              clearToolStream: true,
-              clearSideResultTerminalRuns: true,
-              publishRunStatus: false,
-              armLocalTerminalReconcile: true,
-            },
-          );
+          reconcileChatRunLifecycle(host, {
+            outcome: "done",
+            sessionStatus: "done",
+            runId: ack.runId,
+            sessionKey,
+            clearLocalRun: true,
+            clearChatStream: true,
+            clearToolStream: true,
+            clearSideResultTerminalRuns: true,
+            publishRunStatus: false,
+            armLocalTerminalReconcile: true,
+          });
         }
-        void loadChatHistory(host as unknown as ChatState);
+        void loadChatHistory(host);
       } else {
         // Guard: ignore a late-arriving non-ok ack after the run was already
         // terminal-reconciled by an early chat event. The gateway can deliver
         // the full response (deltas + final) before the chat.send ACK resolves.
         // Re-setting chatRunId/chatStream here would re-stuck the new-session
         // button after the run is already finished.
-        const terminalReconcile = (
-          host as unknown as {
-            lastLocalTerminalReconcile?: { runId: string | null; occurredAt: number } | null;
-          }
-        ).lastLocalTerminalReconcile;
+        const terminalReconcile = host.lastLocalTerminalReconcile;
         const runAlreadyTerminal =
           terminalReconcile &&
           typeof ack.runId === "string" &&
@@ -1161,8 +1158,7 @@ async function sendQueuedChatMessage(
           // until a later delta or final event arrives.
           if (!hasAlreadyAdoptedRunStream) {
             host.chatStream = "";
-            (host as ChatHost & { chatStreamStartedAt?: number | null }).chatStreamStartedAt =
-              startedAt;
+            host.chatStreamStartedAt = startedAt;
           }
         }
       }
@@ -1173,7 +1169,7 @@ async function sendQueuedChatMessage(
         agentId: prepared.agentId,
       };
       if (ack.status === "ok") {
-        void loadSessions(host as unknown as SessionsState, {
+        void loadSessions(host, {
           ...createChatSessionsLoadOverrides(host),
           ...scopedAgentListParamsForRefreshTarget(host, refreshTarget),
         });
@@ -1234,9 +1230,9 @@ async function sendChatMessageNow(
     submittedAtMs?: number;
   },
 ) {
-  resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+  resetToolStream(host);
   // Reset scroll state before sending to ensure auto-scroll works for the response
-  resetChatScroll(host as unknown as Parameters<typeof resetChatScroll>[0]);
+  resetChatScroll(host);
   const queued =
     opts?.queueItemId != null
       ? (host.chatQueue.find((item) => item.id === opts.queueItemId) ?? null)
@@ -1257,10 +1253,7 @@ async function sendChatMessageNow(
   });
   const ok = result === "sent";
   if (ok && host.sessionKey === queuedSessionKey) {
-    setLastActiveSessionKey(
-      host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
-      queuedSessionKey,
-    );
+    setLastActiveSessionKey(host, queuedSessionKey);
     resetChatInputHistoryNavigation(host);
   }
   if (
@@ -1281,7 +1274,7 @@ async function sendChatMessageNow(
   }
   // Force scroll after sending to ensure viewport is at bottom for incoming stream
   if (host.sessionKey === queuedSessionKey) {
-    scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0], true);
+    scheduleChatScroll(host, true);
   }
   if (ok && host.sessionKey === queuedSessionKey && !host.chatRunId) {
     void flushChatQueue(host);
@@ -1415,11 +1408,7 @@ async function sendDetachedBtwMessage(
     previousAttachments?: ChatAttachment[];
   },
 ) {
-  const runId = await sendDetachedChatMessage(
-    host as unknown as ChatState,
-    message,
-    opts?.attachments,
-  );
+  const runId = await sendDetachedChatMessage(host, message, opts?.attachments);
   const ok = Boolean(runId);
   if (!ok && opts?.previousDraft != null) {
     host.chatMessage = opts.previousDraft;
@@ -1428,10 +1417,7 @@ async function sendDetachedBtwMessage(
     host.chatAttachments = opts.previousAttachments;
   }
   if (ok) {
-    setLastActiveSessionKey(
-      host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
-      host.sessionKey,
-    );
+    setLastActiveSessionKey(host, host.sessionKey);
     releaseChatAttachmentPayloads(excludeComposerAttachments(host, opts?.attachments));
   }
   return ok;
@@ -1458,21 +1444,14 @@ export async function steerQueuedChatMessage(host: ChatHost, id: string) {
   host.chatQueue = host.chatQueue.map((entry) =>
     entry.id === id ? { ...entry, kind: "steered", pendingRunId: activeRunId } : entry,
   );
-  const runId = await sendSteerChatMessage(
-    host as unknown as ChatState,
-    message,
-    hasAttachments ? attachments : undefined,
-  );
+  const runId = await sendSteerChatMessage(host, message, hasAttachments ? attachments : undefined);
   if (!runId) {
     host.chatQueue = host.chatQueue.map((entry) => (entry.id === id ? item : entry));
     return;
   }
   releaseChatAttachmentPayloads(attachments);
-  setLastActiveSessionKey(
-    host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
-    host.sessionKey,
-  );
-  scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+  setLastActiveSessionKey(host, host.sessionKey);
+  scheduleChatScroll(host);
 }
 
 async function flushChatQueue(host: ChatHost) {
@@ -1967,7 +1946,7 @@ async function dispatchSlashCommand(
       host,
       `Cannot run \`/${name}\`: Control UI is not connected to the Gateway.`,
     );
-    scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+    scheduleChatScroll(host);
     return;
   }
 
@@ -1982,7 +1961,7 @@ async function dispatchSlashCommand(
   } catch (err) {
     setChatError(host, String(err));
     injectCommandResult(host, `Command \`/${name}\` failed unexpectedly.`);
-    scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+    scheduleChatScroll(host);
     return;
   }
 
@@ -2012,7 +1991,7 @@ async function dispatchSlashCommand(
     await refreshChat(host);
   }
 
-  scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+  scheduleChatScroll(host);
 }
 
 async function clearChatHistory(host: ChatHost) {
@@ -2032,7 +2011,7 @@ async function clearChatHistory(host: ChatHost) {
     host.chatLoadingEarlier = false;
     host.chatHistoryRenderLimit = CHAT_HISTORY_RENDER_LIMIT;
     host.chatHistoryRenderExpanded = false;
-    reconcileChatRunLifecycle(host as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
+    reconcileChatRunLifecycle(host, {
       outcome: hadActiveRun ? "interrupted" : undefined,
       sessionStatus: "killed",
       runId: host.chatRunId,
@@ -2043,11 +2022,11 @@ async function clearChatHistory(host: ChatHost) {
       clearSideResultTerminalRuns: true,
       clearRunStatus: !hadActiveRun,
     });
-    await loadChatHistory(host as unknown as ChatState);
+    await loadChatHistory(host);
   } catch (err) {
     setChatError(host, String(err));
   }
-  scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+  scheduleChatScroll(host);
 }
 
 function injectCommandResult(host: ChatHost, content: string) {
@@ -2068,24 +2047,20 @@ export async function refreshChat(
   const refreshedSessionKey = host.sessionKey;
   const requestUpdate = () => host.requestUpdate?.();
   const previousSessionsResult = host.sessionsResult;
-  const historyLoad = loadChatHistory(host as unknown as ChatState, {
+  const historyLoad = loadChatHistory(host, {
     startup: opts?.startup === true,
   });
   // Fire-and-forget branch data load alongside history
-  void loadBranches(host as unknown as ChatState);
+  void loadBranches(host);
   const historyRefresh = historyLoad.finally(() => {
     if (opts?.scheduleScroll !== false) {
-      scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+      scheduleChatScroll(host);
     }
     requestUpdate();
   });
   const sessionsRefresh = historyLoad.then((history) => {
     if (history?.sessionInfo) {
-      applyChatHistorySessionInfo(
-        host as unknown as SessionsState,
-        history.sessionInfo,
-        history.defaults,
-      );
+      applyChatHistorySessionInfo(host, history.sessionInfo, history.defaults);
     }
   });
   flushChatQueueAfterIdleSessionReconciliation(
@@ -2162,10 +2137,7 @@ async function refreshChatMetadata(host: ChatHost) {
   const client = host.client;
   const sessionKey = host.sessionKey;
   const agentId = resolveAgentIdForSession(host);
-  const metadataAdvertised = isGatewayMethodAdvertised(
-    host as unknown as ChatState,
-    "chat.metadata",
-  );
+  const metadataAdvertised = isGatewayMethodAdvertised(host, "chat.metadata");
   if (metadataAdvertised === false) {
     await Promise.allSettled([refreshChatModels(host), refreshChatCommands(host)]);
     return;

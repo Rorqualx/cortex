@@ -439,21 +439,15 @@ function sessionDetailItems(params: {
   add(t("sessionsView.model"), row.model);
   add(t("sessionsView.provider"), row.modelProvider);
   add(t("sessionsView.runtime"), formatRuntimeMs(row.runtimeMs));
-  add(t("sessionsView.surface"), row.surface);
+  add(t("sessionsView.surface"), row.channel);
   add(t("sessionsView.subject"), row.subject);
-  add(t("sessionsView.room"), row.room);
+  add(t("sessionsView.room"), row.groupChannel);
   add(t("sessionsView.space"), row.space);
   add(t("sessionsView.sessionId"), row.sessionId);
   if (typeof row.hasActiveRun === "boolean") {
     details.push({
       label: t("sessionsView.activeRun"),
       value: row.hasActiveRun ? t("common.yes") : t("common.no"),
-    });
-  }
-  if (typeof row.archived === "boolean") {
-    details.push({
-      label: t("sessionsView.archived"),
-      value: row.archived ? t("common.yes") : t("common.no"),
     });
   }
   return details;
@@ -847,15 +841,13 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
     ? `${pathForTab("chat", props.basePath)}?session=${encodeURIComponent(row.key)}`
     : null;
   const badgeClass =
-    row.kind === "cron"
-      ? "data-table-badge--cron"
-      : row.kind === "direct"
-        ? "data-table-badge--direct"
-        : row.kind === "group"
-          ? "data-table-badge--group"
-          : row.kind === "global"
-            ? "data-table-badge--global"
-            : "data-table-badge--unknown";
+    row.kind === "direct"
+      ? "data-table-badge--direct"
+      : row.kind === "group"
+        ? "data-table-badge--group"
+        : row.kind === "global"
+          ? "data-table-badge--global"
+          : "data-table-badge--unknown";
   const rowClass = [
     "session-data-row",
     hasCheckpoints ? "session-data-row--expandable" : "",

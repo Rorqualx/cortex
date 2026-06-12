@@ -1,8 +1,10 @@
 // Control UI module implements app tool stream behavior.
+import type { AgentEvent } from "../../../packages/gateway-protocol/src/index.js";
 import { updateActivityFromToolEvent, type ActivityEntry } from "./activity-model.ts";
 import { createChatModelOverride } from "./chat-model-ref.ts";
 import type { ChatModelOverride } from "./chat-model-ref.types.ts";
 import { formatUnknownText, truncateText } from "./format.ts";
+import type { GatewayHelloOk } from "./gateway.ts";
 import {
   buildAgentMainSessionKey,
   DEFAULT_AGENT_ID,
@@ -16,15 +18,9 @@ const TOOL_STREAM_LIMIT = 50;
 const TOOL_STREAM_THROTTLE_MS = 80;
 const TOOL_OUTPUT_CHAR_LIMIT = 120_000;
 
-export type AgentEventPayload = {
-  runId: string;
-  seq: number;
-  stream: string;
-  ts: number;
-  sessionKey?: string;
-  agentId?: string;
-  data: Record<string, unknown>;
-};
+// Wire-contract type for "agent" gateway events; the single source is
+// AgentEventSchema in gateway-protocol, shared with the server emit seam.
+export type AgentEventPayload = AgentEvent;
 
 export type SessionOperationEventPayload = {
   operationId?: string;
@@ -49,15 +45,11 @@ export type ToolStreamEntry = {
   message: Record<string, unknown>;
 };
 
-type ToolStreamHost = {
+export type ToolStreamHost = {
   sessionKey: string;
   assistantAgentId?: string | null;
   agentsList?: { defaultId?: string | null } | null;
-  hello?: {
-    snapshot?: {
-      sessionDefaults?: SessionDefaultsSnapshot;
-    };
-  } | null;
+  hello?: GatewayHelloOk | null;
   chatRunId: string | null;
   chatStream: string | null;
   chatStreamStartedAt: number | null;
@@ -257,7 +249,11 @@ function syncSessionStatusModelOverride(host: ToolStreamHost, data: Record<strin
 }
 
 function readSessionDefaults(host: ToolStreamHost): SessionDefaultsSnapshot | undefined {
-  return host.hello?.snapshot?.sessionDefaults;
+  // GatewayHelloOk.snapshot is untyped wire data; narrow only the slice this module reads.
+  const snapshot = host.hello?.snapshot as
+    | { sessionDefaults?: SessionDefaultsSnapshot }
+    | undefined;
+  return snapshot?.sessionDefaults;
 }
 
 function isGlobalSessionKey(sessionKey: string | undefined | null): boolean {

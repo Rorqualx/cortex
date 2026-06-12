@@ -563,72 +563,7 @@ describe("patchSession", () => {
 });
 
 describe("loadSessions", () => {
-  it("hides explicitly archived sessions by default", async () => {
-    const request = vi.fn(async (method: string) => {
-      if (method !== "sessions.list") {
-        throw new Error(`unexpected method: ${method}`);
-      }
-      return {
-        ts: 1,
-        path: "(multiple)",
-        count: 2,
-        defaults: { modelProvider: null, model: null, contextTokens: null },
-        sessions: [
-          { key: "agent:main:main", kind: "direct", updatedAt: 2 },
-          {
-            key: "agent:main:subagent:archived",
-            kind: "direct",
-            updatedAt: 1,
-            status: "done",
-            archived: true,
-          },
-        ],
-      };
-    });
-    const state = createState(request);
-
-    await loadSessions(state);
-
-    expect(state.sessionsResult?.sessions.map((session) => session.key)).toEqual([
-      "agent:main:main",
-    ]);
-    expect(state.sessionsResult?.count).toBe(1);
-  });
-
-  it("includes explicitly archived sessions when explicitly shown", async () => {
-    const request = vi.fn(async (method: string) => {
-      if (method !== "sessions.list") {
-        throw new Error(`unexpected method: ${method}`);
-      }
-      return {
-        ts: 1,
-        path: "(multiple)",
-        count: 2,
-        defaults: { modelProvider: null, model: null, contextTokens: null },
-        sessions: [
-          { key: "agent:main:main", kind: "direct", updatedAt: 2 },
-          {
-            key: "agent:main:subagent:archived",
-            kind: "direct",
-            updatedAt: 1,
-            status: "done",
-            archived: true,
-          },
-        ],
-      };
-    });
-    const state = createState(request, { sessionsShowArchived: true });
-
-    await loadSessions(state);
-
-    expect(state.sessionsResult?.sessions.map((session) => session.key)).toEqual([
-      "agent:main:main",
-      "agent:main:subagent:archived",
-    ]);
-    expect(state.sessionsResult?.count).toBe(2);
-  });
-
-  it("keeps terminal non-archived sessions visible by default", async () => {
+  it("keeps terminal sessions visible by default", async () => {
     const request = vi.fn(async (method: string) => {
       if (method !== "sessions.list") {
         throw new Error(`unexpected method: ${method}`);
@@ -1508,30 +1443,7 @@ describe("applySessionsChangedEvent", () => {
     expect(state.sessionsResult?.sessions[0]?.goal).toBeUndefined();
   });
 
-  it("drops rows that become explicitly archived while archived sessions are hidden", () => {
-    const state = createState(async () => undefined, {
-      sessionsResult: {
-        ts: 1,
-        path: "(multiple)",
-        count: 1,
-        defaults: { modelProvider: null, model: null, contextTokens: null },
-        sessions: [{ key: "agent:main:subagent:done", kind: "direct", updatedAt: 1 }],
-      },
-    });
-
-    const applied = applySessionsChangedEvent(state, {
-      sessionKey: "agent:main:subagent:done",
-      sessionId: "sess-done",
-      status: "done",
-      archived: true,
-      ts: 2,
-    });
-
-    expect(applied).toEqual({ applied: true, change: "deleted" });
-    expect(state.sessionsResult?.sessions).toStrictEqual([]);
-  });
-
-  it("keeps terminal status updates visible while archived sessions are hidden", () => {
+  it("keeps terminal status updates visible", () => {
     const state = createState(async () => undefined, {
       sessionsResult: {
         ts: 1,

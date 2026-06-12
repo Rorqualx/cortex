@@ -85,7 +85,7 @@ import { resetChatViewState } from "./views/chat.ts";
 
 export { setLastActiveSessionKey } from "./app-last-active-session.ts";
 
-type SettingsHost = {
+export type SettingsHost = {
   settings: UiSettings;
   userName?: string | null;
   userAvatar?: string | null;

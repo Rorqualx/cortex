@@ -1,6 +1,7 @@
 // Control UI tests cover chat event reload behavior.
 import { describe, expect, it } from "vitest";
 import { shouldReloadHistoryForFinalEvent } from "./chat-event-reload.ts";
+import type { ChatEventPayload } from "./controllers/chat.ts";
 
 describe("shouldReloadHistoryForFinalEvent", () => {
   it("returns false for non-final events", () => {
@@ -8,9 +9,10 @@ describe("shouldReloadHistoryForFinalEvent", () => {
       shouldReloadHistoryForFinalEvent({
         runId: "run-1",
         sessionKey: "main",
+        seq: 0,
         state: "delta",
         message: { role: "assistant", content: [{ type: "text", text: "x" }] },
-      }),
+      } as ChatEventPayload),
     ).toBe(false);
   });
 
@@ -19,6 +21,7 @@ describe("shouldReloadHistoryForFinalEvent", () => {
       shouldReloadHistoryForFinalEvent({
         runId: "run-1",
         sessionKey: "main",
+        seq: 0,
         state: "final",
       }),
     ).toBe(true);
@@ -29,6 +32,7 @@ describe("shouldReloadHistoryForFinalEvent", () => {
       shouldReloadHistoryForFinalEvent({
         runId: "run-1",
         sessionKey: "main",
+        seq: 0,
         state: "final",
         message: { role: "assistant", content: [{ type: "text", text: "done" }] },
       }),
@@ -40,6 +44,7 @@ describe("shouldReloadHistoryForFinalEvent", () => {
       shouldReloadHistoryForFinalEvent({
         runId: "run-1",
         sessionKey: "main",
+        seq: 0,
         state: "final",
         message: { text: "done" },
       }),
@@ -51,6 +56,7 @@ describe("shouldReloadHistoryForFinalEvent", () => {
       shouldReloadHistoryForFinalEvent({
         runId: "run-1",
         sessionKey: "main",
+        seq: 0,
         state: "final",
         message: { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
       }),
@@ -64,6 +70,7 @@ describe("shouldReloadHistoryForFinalEvent", () => {
         shouldReloadHistoryForFinalEvent({
           runId: "run-1",
           sessionKey: "main",
+          seq: 0,
           state: "final",
           message: { role: "assistant", content: [{ type: "text", text }] },
         }),
@@ -76,6 +83,7 @@ describe("shouldReloadHistoryForFinalEvent", () => {
       shouldReloadHistoryForFinalEvent({
         runId: "run-1",
         sessionKey: "main",
+        seq: 0,
         state: "final",
         message: { role: "user", content: [{ type: "text", text: "echo" }] },
       }),

@@ -516,10 +516,8 @@ function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] 
   return (state.sessionsResult?.sessions ?? [])
     .filter(
       (row) =>
-        !row.archived &&
         row.kind !== "global" &&
         row.kind !== "unknown" &&
-        row.kind !== "cron" &&
         !isCronSessionKey(row.key) &&
         !isSubagentSessionKey(row.key) &&
         !row.spawnedBy &&

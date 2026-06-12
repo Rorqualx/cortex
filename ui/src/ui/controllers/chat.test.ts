@@ -19,17 +19,27 @@ import {
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
+// Fixtures cast `as ChatEventPayload` are intentionally off-contract (e.g. delta events
+// without deltaText) to exercise the defensive paths for unvalidated wire payloads.
 function createState(overrides: Partial<ChatState> = {}): ChatState {
   return {
     chatAttachments: [],
+    chatHistoryHasMore: false,
+    chatHistoryNextCursor: null,
+    chatHistoryRenderExpanded: false,
+    chatHistoryRenderLimit: Number.POSITIVE_INFINITY,
     chatLoading: false,
+    chatLoadingEarlier: false,
     chatMessage: "",
     chatMessages: [],
     chatRunId: null,
     chatSending: false,
+    chatSendStartedAt: null,
     chatStream: null,
     chatStreamStartedAt: null,
     chatThinkingLevel: null,
+    chatThinkingStream: null,
+    chatThinkingStreamStartedAt: null,
     client: null,
     connected: true,
     lastError: null,
@@ -111,6 +121,7 @@ function createOtherRunSilentFinalPayload(text: string): ChatEventPayload {
   return {
     runId: "run-announce",
     sessionKey: "main",
+    seq: 0,
     state: "final",
     message: {
       role: "assistant",
@@ -134,6 +145,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "other",
+      seq: 0,
       state: "final",
     };
     expect(handleChatEvent(state, payload)).toBe(null);
@@ -146,6 +158,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "observed-run",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         role: "assistant",
@@ -166,6 +179,7 @@ describe("handleChatEvent", () => {
       runId: "run-main-global",
       sessionKey: "global",
       agentId: "main",
+      seq: 0,
       state: "final",
     };
 
@@ -181,6 +195,7 @@ describe("handleChatEvent", () => {
       runId: "run-main-global",
       sessionKey: "global",
       agentId: "main",
+      seq: 0,
       state: "final",
     };
 
@@ -197,6 +212,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-default-global",
       sessionKey: "global",
+      seq: 0,
       state: "final",
     };
 
@@ -211,16 +227,17 @@ describe("handleChatEvent", () => {
       chatStream: null,
       chatStreamStartedAt: null,
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-work-global",
       sessionKey: "global",
       agentId: "work",
+      seq: 0,
       state: "delta",
       message: {
         role: "assistant",
         content: [{ type: "text", text: "Work reply" }],
       },
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe("delta");
     expect(state.chatRunId).toBe("run-work-global");
@@ -234,15 +251,16 @@ describe("handleChatEvent", () => {
       chatRunId: "run-1",
       chatStream: null,
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-1",
       sessionKey: "agent:main:main",
+      seq: 0,
       state: "delta",
       message: {
         role: "assistant",
         content: [{ type: "text", text: "Live reply" }],
       },
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe("delta");
     expect(state.chatStream).toBe("Live reply");
@@ -258,6 +276,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       deltaText: " reply",
       message: {
@@ -279,6 +298,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       deltaText: " reply",
       message: {
@@ -300,6 +320,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       deltaText: " reply",
     };
@@ -317,6 +338,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       deltaText: "!",
       message: {
@@ -338,6 +360,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       deltaText: "E",
       message: {
@@ -359,6 +382,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       deltaText: "Alpha",
       replace: true,
@@ -379,15 +403,16 @@ describe("handleChatEvent", () => {
       chatStream: null,
       chatStreamStartedAt: null,
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-feishu-1",
       sessionKey: "agent:main:feishu:direct:peer-1",
+      seq: 0,
       state: "delta",
       message: {
         role: "assistant",
         content: [{ type: "text", text: "Observed reply" }],
       },
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe("delta");
     expect(state.chatRunId).toBe("run-feishu-1");
@@ -402,15 +427,16 @@ describe("handleChatEvent", () => {
       chatStream: null,
       chatStreamStartedAt: null,
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-canonical-main",
       sessionKey: "agent:main:main",
+      seq: 0,
       state: "delta",
       message: {
         role: "assistant",
         content: [{ type: "text", text: "Canonical reply" }],
       },
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe("delta");
     expect(state.chatRunId).toBe("run-canonical-main");
@@ -428,6 +454,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "agent:main:main",
+      seq: 0,
       state: "final",
       message: {
         role: "assistant",
@@ -452,6 +479,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         text: "Live reply",
@@ -520,6 +548,7 @@ describe("handleChatEvent", () => {
       const payload: ChatEventPayload = {
         runId: "run-1",
         sessionKey: "main",
+        seq: 0,
         state: "final",
         message: {
           role: "assistant",
@@ -556,15 +585,16 @@ describe("handleChatEvent", () => {
       chatRunId: "run-1",
       chatStream: "Working...",
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-2",
       sessionKey: "agent:main:main",
+      seq: 0,
       state: "delta",
       message: {
         role: "assistant",
         content: [{ type: "text", text: "Wrong run" }],
       },
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe(null);
     expect(state.chatRunId).toBe("run-1");
@@ -578,12 +608,13 @@ describe("handleChatEvent", () => {
       chatRunId: "run-user",
       chatStream: "Hello",
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-announce",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
-    };
+    } as ChatEventPayload;
     expect(handleChatEvent(state, payload)).toBe(null);
     expect(state.chatRunId).toBe("run-user");
     expect(state.chatStream).toBe("Hello");
@@ -595,12 +626,13 @@ describe("handleChatEvent", () => {
       chatRunId: "run-1",
       chatStream: "Hello",
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       message: { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe("delta");
     expect(state.chatStream).toBe("Hello");
@@ -616,6 +648,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-announce",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         role: "assistant",
@@ -672,12 +705,13 @@ describe("handleChatEvent", () => {
       chatRunId: "run-1",
       chatStream: "Previous visible text",
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       message: { role: "assistant", content: [{ type: "text", text: "HEARTBEAT_OK" }] },
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe("delta");
     expect(state.chatStream).toBe("Previous visible text");
@@ -689,15 +723,16 @@ describe("handleChatEvent", () => {
       chatRunId: "run-1",
       chatStream: "Alpha beta",
     });
-    const payload: ChatEventPayload = {
+    const payload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "delta",
       message: {
         role: "assistant",
         content: [{ type: "text", text: "Alpha" }],
       },
-    };
+    } as ChatEventPayload;
     expect(handleChatEvent(state, payload)).toBe("delta");
     expect(state.chatStream).toBe("Alpha");
   });
@@ -707,6 +742,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-announce",
       sessionKey: "main",
+      seq: 0,
       state: "final",
     };
     expect(handleChatEvent(state, payload)).toBe("final");
@@ -716,10 +752,11 @@ describe("handleChatEvent", () => {
 
   it("keeps active stream for unowned final payloads", () => {
     const state = createActiveStreamingState();
-    const payload: ChatEventPayload = {
+    const payload = {
       sessionKey: "main",
+      seq: 0,
       state: "final",
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe("final");
     expect(state.chatRunId).toBe("run-user");
@@ -730,14 +767,15 @@ describe("handleChatEvent", () => {
 
   it("keeps active stream while appending unowned assistant finals", () => {
     const state = createActiveStreamingState();
-    const payload: ChatEventPayload = {
+    const payload = {
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         role: "assistant",
         content: [{ type: "text", text: "Injected note" }],
       },
-    };
+    } as ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe(null);
     expect(state.chatRunId).toBe("run-user");
@@ -750,10 +788,10 @@ describe("handleChatEvent", () => {
     "keeps active stream for unowned %s payloads",
     (terminalState) => {
       const state = createActiveStreamingState();
-      const payload: ChatEventPayload = {
+      const payload = {
         sessionKey: "main",
         state: terminalState,
-      };
+      } as ChatEventPayload;
 
       expect(handleChatEvent(state, payload)).toBe(null);
       expect(state.chatRunId).toBe("run-user");
@@ -779,6 +817,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
     };
     const assignments = trackChatMessagesAssignments(state);
@@ -803,6 +842,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
     };
     expect(handleChatEvent(state, payload)).toBe("final");
@@ -821,6 +861,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
     };
     expect(handleChatEvent(state, payload)).toBe("final");
@@ -842,6 +883,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: finalMsg,
     };
@@ -879,6 +921,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-2",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: secondAssistant,
     };
@@ -914,6 +957,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: secondAssistant,
     };
@@ -932,6 +976,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         role: "assistant",
@@ -960,6 +1005,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         role: "assistant",
@@ -996,6 +1042,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "aborted",
       message: partialMessage,
     };
@@ -1028,6 +1075,7 @@ describe("handleChatEvent", () => {
     const payload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "aborted",
       message: "not-an-assistant-message",
     } as unknown as ChatEventPayload;
@@ -1057,6 +1105,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "aborted",
       message: {
         role: "user",
@@ -1085,6 +1134,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "aborted",
     };
 
@@ -1109,6 +1159,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: 'No API key found for provider "openai".',
     };
@@ -1140,6 +1191,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: "gateway disconnected",
     };
@@ -1175,6 +1227,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: "gateway disconnected",
       message,
@@ -1199,6 +1252,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: "gateway disconnected",
       message,
@@ -1225,6 +1279,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: "gateway disconnected",
     };
@@ -1251,6 +1306,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: "provider said NOT OK yet",
       message,
@@ -1278,6 +1334,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: "gateway disconnected",
       message,
@@ -1300,6 +1357,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: "raw gateway error",
       message,
@@ -1324,6 +1382,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-failed-before-start",
       sessionKey: "main",
+      seq: 0,
       state: "error",
       errorMessage: "request failed before start",
     };
@@ -1354,6 +1413,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         role: "assistant",
@@ -1379,6 +1439,7 @@ describe("handleChatEvent", () => {
       const payload: ChatEventPayload = {
         runId: "run-1",
         sessionKey: "main",
+        seq: 0,
         state: "final",
         message: {
           role: "assistant",
@@ -1403,6 +1464,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
     };
 
@@ -1420,6 +1482,7 @@ describe("handleChatEvent", () => {
     const payload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "aborted",
       message: "not-an-assistant-message",
     } as unknown as ChatEventPayload;
@@ -1438,6 +1501,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-announce",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         role: "user",
@@ -1460,6 +1524,7 @@ describe("handleChatEvent", () => {
     const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
+      seq: 0,
       state: "final",
       message: {
         role: "assistant",

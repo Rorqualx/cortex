@@ -1,16 +1,14 @@
 // Control UI type declarations define types contracts.
 export type UpdateAvailable = import("../../../src/infra/update-startup.js").UpdateAvailable;
-import type { SessionGoal } from "../../../src/config/sessions/types.js";
 import type { CronJobBase } from "../../../src/cron/types-shared.js";
 import type { ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
 import type {
   GatewayAgentRuntime,
   GatewayAgentRow as SharedGatewayAgentRow,
-  SessionsListResultBase,
   SessionsPatchResultBase,
 } from "../../../src/shared/session-types.js";
 export type { ConfigUiHint, ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
-export type { SessionGoal } from "../../../src/config/sessions/types.js";
+export type { SessionGoal } from "../../../packages/gateway-protocol/src/index.js";
 
 export type ChannelsStatusSnapshot = {
   ts: number;
@@ -307,36 +305,15 @@ export type ConfigSchemaResponse = {
   generatedAt: string;
 };
 
-export type PresenceEntry = {
-  instanceId?: string | null;
-  host?: string | null;
-  ip?: string | null;
-  version?: string | null;
-  platform?: string | null;
-  deviceFamily?: string | null;
-  modelIdentifier?: string | null;
-  roles?: string[] | null;
-  scopes?: string[] | null;
-  mode?: string | null;
-  lastInputSeconds?: number | null;
-  reason?: string | null;
-  text?: string | null;
-  ts?: number | null;
-};
+// Wire type from PresenceEntrySchema; presence entries only ever arrive from the
+// gateway (hello snapshot or `presence` events), so the UI shares the contract type.
+export type PresenceEntry = import("../../../packages/gateway-protocol/src/index.js").PresenceEntry;
 
-export type GatewaySessionsDefaults = {
-  modelProvider: string | null;
-  model: string | null;
-  contextTokens: number | null;
-  thinkingLevels?: GatewayThinkingLevelOption[];
-  thinkingOptions?: string[];
-  thinkingDefault?: string;
-};
+export type GatewaySessionsDefaults =
+  import("../../../packages/gateway-protocol/src/index.js").GatewaySessionsDefaults;
 
-export type GatewayThinkingLevelOption = {
-  id: string;
-  label: string;
-};
+export type GatewayThinkingLevelOption =
+  import("../../../packages/gateway-protocol/src/index.js").GatewayThinkingLevelOption;
 
 export type ChatModelOverride = import("./chat-model-ref.types.ts").ChatModelOverride;
 
@@ -388,95 +365,25 @@ export type AgentsFilesSetResult = {
   file: AgentFileEntry;
 };
 
-export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout";
-export type SubagentRunState = "active" | "interrupted" | "historical";
+export type SessionRunStatus =
+  import("../../../packages/gateway-protocol/src/index.js").SessionRunStatus;
+export type SubagentRunState =
+  import("../../../packages/gateway-protocol/src/index.js").SubagentRunState;
 
-export type SessionCompactionCheckpointReason =
-  | "manual"
-  | "auto-threshold"
-  | "overflow-retry"
-  | "timeout-retry";
+export type SessionCompactionCheckpoint =
+  import("../../../packages/gateway-protocol/src/index.js").SessionCompactionCheckpoint;
 
-export type SessionCompactionTranscriptReference = {
-  sessionId: string;
-  sessionFile?: string;
-  leafId?: string;
-  entryId?: string;
-};
+export type SessionCompactionCheckpointPreview =
+  import("../../../packages/gateway-protocol/src/index.js").SessionCompactionCheckpointPreview;
 
-export type SessionCompactionCheckpoint = {
-  checkpointId: string;
-  sessionKey: string;
-  sessionId: string;
-  createdAt: number;
-  reason: SessionCompactionCheckpointReason;
-  tokensBefore?: number;
-  tokensAfter?: number;
-  summary?: string;
-  firstKeptEntryId?: string;
-  preCompaction: SessionCompactionTranscriptReference;
-  postCompaction: SessionCompactionTranscriptReference;
-};
+// Wire type from GatewaySessionRowSchema; session rows only ever arrive from
+// the gateway (sessions.list, sessions.changed, session.message), so the UI
+// shares the contract type instead of keeping a drift-prone copy.
+export type GatewaySessionRow =
+  import("../../../packages/gateway-protocol/src/index.js").GatewaySessionRow;
 
-export type SessionCompactionCheckpointPreview = Pick<
-  SessionCompactionCheckpoint,
-  "checkpointId" | "createdAt" | "reason"
->;
-
-export type GatewaySessionRow = {
-  key: string;
-  spawnedBy?: string;
-  kind: "cron" | "direct" | "group" | "global" | "unknown";
-  label?: string;
-  displayName?: string;
-  surface?: string;
-  subject?: string;
-  room?: string;
-  space?: string;
-  updatedAt: number | null;
-  sessionId?: string;
-  systemSent?: boolean;
-  abortedLastRun?: boolean;
-  thinkingLevel?: string;
-  thinkingLevels?: GatewayThinkingLevelOption[];
-  thinkingOptions?: string[];
-  thinkingDefault?: string;
-  fastMode?: boolean;
-  verboseLevel?: string;
-  reasoningLevel?: string;
-  elevatedLevel?: string;
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheRead?: number;
-  cacheWrite?: number;
-  totalTokens?: number;
-  totalTokensFresh?: boolean;
-  estimatedCostUsd?: number;
-  status?: SessionRunStatus;
-  archived?: boolean;
-  hasActiveRun?: boolean;
-  subagentRunState?: SubagentRunState;
-  hasActiveSubagentRun?: boolean;
-  startedAt?: number;
-  endedAt?: number;
-  runtimeMs?: number;
-  childSessions?: string[];
-  model?: string;
-  modelProvider?: string;
-  agentRuntime?: GatewayAgentRuntime;
-  contextTokens?: number;
-  compactionCheckpointCount?: number;
-  latestCompactionCheckpoint?: SessionCompactionCheckpointPreview;
-  goal?: SessionGoal;
-  /** Server-derived title from first user message, displayName, or subject. */
-  derivedTitle?: string;
-  /** LLM-generated auto-title from first turn. */
-  llmTitle?: string;
-  /** First user message of the thread, normalized for row previews. */
-  firstMessagePreview?: string;
-};
-
-export type SessionsListResult = SessionsListResultBase<GatewaySessionsDefaults, GatewaySessionRow>;
+export type SessionsListResult =
+  import("../../../packages/gateway-protocol/src/index.js").SessionsListResult;
 
 export type SessionsCompactionListResult = {
   ok: true;

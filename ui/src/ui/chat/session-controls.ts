@@ -400,14 +400,8 @@ function createChatSessionPickerRequestParams(
   return params;
 }
 
-function projectChatSessionPickerResult(
-  state: AppViewState,
-  result: SessionsListResult,
-): SessionsListResult {
-  if (state.sessionsShowArchived) {
-    return result;
-  }
-  const sessions = result.sessions.filter((row) => row.key && row.archived !== true);
+function projectChatSessionPickerResult(result: SessionsListResult): SessionsListResult {
+  const sessions = result.sessions.filter((row) => row.key);
   return {
     ...result,
     count: sessions.length,
@@ -460,7 +454,6 @@ async function loadChatSessionPickerPage(
   requestHostUpdate(state);
   try {
     const page = projectChatSessionPickerResult(
-      state,
       await state.client.request<SessionsListResult>(
         "sessions.list",
         createChatSessionPickerRequestParams(state, { query, offset: options.offset }),
@@ -622,7 +615,7 @@ function resolveSelectedChatSessionLabel(
 
 function formatChatSessionPickerMeta(row: SessionsListResult["sessions"][number]): string {
   const parts = [
-    normalizeOptionalString(row.surface),
+    normalizeOptionalString(row.channel),
     [normalizeOptionalString(row.modelProvider), normalizeOptionalString(row.model)]
       .filter(Boolean)
       .join("/"),

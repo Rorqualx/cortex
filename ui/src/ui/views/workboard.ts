@@ -473,7 +473,7 @@ function nextPosition(cards: readonly WorkboardCard[], status: WorkboardStatus):
 }
 
 function isWorkboardSessionChoice(session: GatewaySessionRow): boolean {
-  if (session.archived || session.kind === "global") {
+  if (session.kind === "global") {
     return false;
   }
   const raw = [session.key, session.label, session.displayName]

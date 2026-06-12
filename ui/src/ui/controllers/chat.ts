@@ -1,3 +1,4 @@
+import type { ChatEvent } from "../../../../packages/gateway-protocol/src/index.js";
 import { getChatAttachmentDataUrl } from "../chat/attachment-payload-store.ts";
 import {
   isAssistantHeartbeatAckForDisplay,
@@ -8,6 +9,7 @@ import {
   CHAT_HISTORY_RENDER_EXPAND_STEP,
 } from "../chat/history-limits.ts";
 import { extractText } from "../chat/message-extract.ts";
+import type { LocalTerminalReconcile } from "../chat/run-lifecycle.ts";
 import { reconcileChatRunLifecycle } from "../chat/run-lifecycle.ts";
 import {
   appendTerminalAssistantMessage,
@@ -430,6 +432,9 @@ export type ChatState = {
   branchPoints?: unknown[];
   /** Currently active branch entry ID (for branch navigation). */
   branchFromId?: string | null;
+  // Written by run-lifecycle terminal reconcile; delta handling reads it to keep a
+  // late delta from re-opening a stream the user already saw finish.
+  lastLocalTerminalReconcile?: LocalTerminalReconcile | null;
 };
 
 type ChatAgentsListSnapshot = Partial<Omit<AgentsListResult, "agents">> & {
@@ -447,17 +452,9 @@ export type ChatHistoryResult = {
   nextCursor?: string;
 };
 
-export type ChatEventPayload = {
-  runId?: string;
-  sessionKey: string;
-  agentId?: string;
-  state: "delta" | "final" | "aborted" | "error";
-  message?: unknown;
-  deltaText?: string;
-  deltaThinking?: string;
-  replace?: boolean;
-  errorMessage?: string;
-};
+// Wire-contract union for "chat" gateway events; the single source is
+// ChatEventSchema in gateway-protocol, shared with the server emit seam.
+export type ChatEventPayload = ChatEvent;
 
 function setChatError(state: ChatState, error: string | null) {
   state.lastError = error;
@@ -544,9 +541,12 @@ function chatEventSessionMatches(state: ChatState, payload: ChatEventPayload): b
   );
 }
 
+type ChatDeltaEventPayload = Extract<ChatEventPayload, { state: "delta" }>;
+type ChatErrorEventPayload = Extract<ChatEventPayload, { state: "error" }>;
+
 function resolveDeltaChatStreamText(
   currentStream: string | null,
-  payload: ChatEventPayload,
+  payload: ChatDeltaEventPayload,
 ): string | null {
   const snapshot = payload.message == null ? null : extractText(payload.message);
   if (typeof payload.deltaText === "string") {
@@ -572,7 +572,7 @@ function resolveDeltaChatStreamText(
 
 function resolveDeltaThinkingStreamText(
   currentStream: string | null,
-  payload: ChatEventPayload,
+  payload: ChatDeltaEventPayload,
 ): string | null {
   if (typeof payload.deltaThinking === "string") {
     if (payload.replace === true) {
@@ -1242,7 +1242,9 @@ function normalizeFinalAssistantMessage(message: unknown): Record<string, unknow
   });
 }
 
-function buildErrorAssistantMessage(payload: ChatEventPayload): Record<string, unknown> | null {
+function buildErrorAssistantMessage(
+  payload: ChatErrorEventPayload,
+): Record<string, unknown> | null {
   const normalized = normalizeFinalAssistantMessage(payload.message);
   if (normalized && !shouldHideAssistantChatMessage(normalized)) {
     return normalized;
@@ -1285,7 +1287,7 @@ export async function sendChatMessage(
 
   state.chatSending = true;
   setChatError(state, null);
-  reconcileChatRunLifecycle(state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
+  reconcileChatRunLifecycle(state, {
     clearRunStatus: true,
   });
   const runId = generateUUID();
@@ -1296,25 +1298,22 @@ export async function sendChatMessage(
   try {
     const ack = await requestChatSend(state, { message: msg, attachments, runId });
     if (ack.status === "ok") {
-      reconcileChatRunLifecycle(
-        state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],
-        {
-          outcome: "done",
-          sessionStatus: "done",
-          runId: ack.runId,
-          sessionKey: state.sessionKey,
-          clearLocalRun: true,
-          clearChatStream: true,
-          armLocalTerminalReconcile: true,
-        },
-      );
+      reconcileChatRunLifecycle(state, {
+        outcome: "done",
+        sessionStatus: "done",
+        runId: ack.runId,
+        sessionKey: state.sessionKey,
+        clearLocalRun: true,
+        clearChatStream: true,
+        armLocalTerminalReconcile: true,
+      });
     } else {
       state.chatRunId = ack.runId;
     }
     return ack.status === "ok" ? ack.runId : runId;
   } catch (err) {
     const error = formatConnectError(err);
-    reconcileChatRunLifecycle(state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
+    reconcileChatRunLifecycle(state, {
       outcome: "interrupted",
       sessionStatus: "failed",
       runId,
@@ -1463,7 +1462,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     outcome: "done" | "interrupted",
     sessionStatus: "done" | "failed" | "killed",
   ) =>
-    reconcileChatRunLifecycle(state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
+    reconcileChatRunLifecycle(state, {
       outcome,
       sessionStatus,
       runId: terminalRunId,
@@ -1481,11 +1480,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     // reconciled the run to done. Processing these would re-activate
     // chatStream/chatThinkingStream after the done badge already flashed,
     // causing the "done → no dots → thinking badge" visual glitch.
-    const terminalReconcile = (
-      state as unknown as {
-        lastLocalTerminalReconcile?: { runId: string | null; occurredAt: number } | null;
-      }
-    ).lastLocalTerminalReconcile;
+    const terminalReconcile = state.lastLocalTerminalReconcile;
     const runAlreadyTerminal =
       terminalReconcile &&
       terminalReconcile.runId != null &&

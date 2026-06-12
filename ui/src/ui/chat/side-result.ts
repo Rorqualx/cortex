@@ -1,15 +1,11 @@
 // Control UI chat module implements side result behavior.
+import type { ChatSideResultEvent } from "../../../../packages/gateway-protocol/src/index.js";
 import { normalizeOptionalString } from "../string-coerce.ts";
 
-export type ChatSideResult = {
-  kind: "btw";
-  runId: string;
-  sessionKey: string;
-  agentId?: string;
-  question: string;
-  text: string;
+// Parsed projection of ChatSideResultEventSchema: seq is consumed at the gateway
+// layer and isError is defaulted to false by the parser below.
+export type ChatSideResult = Omit<ChatSideResultEvent, "seq" | "isError"> & {
   isError: boolean;
-  ts: number;
 };
 
 export function parseChatSideResult(payload: unknown): ChatSideResult | null {

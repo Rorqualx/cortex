@@ -314,13 +314,6 @@ function createChatHeaderState(
           [
             { key: "agent:main:telegram-one", kind: "direct", label: "Telegram one", updatedAt: 4 },
             { key: "agent:main:telegram-two", kind: "direct", label: "Telegram two", updatedAt: 3 },
-            {
-              key: "agent:main:telegram-archived",
-              kind: "direct",
-              label: "Telegram archived",
-              updatedAt: 2,
-              archived: true,
-            },
           ],
           { hasMore: true, nextOffset: 50, totalCount: 4 },
         );

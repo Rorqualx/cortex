@@ -55,6 +55,11 @@ function createScrollHost(
     chatNewMessagesBelow: false,
     chatIsProgrammaticScroll: false,
     chatProgrammaticScrollTarget: 0,
+    chatHistoryHasMore: false,
+    chatLoadingEarlier: false,
+    chatHistoryRenderExpanded: false,
+    onHistoryExpand: undefined as (() => boolean) | undefined,
+    onLoadEarlier: undefined as (() => Promise<boolean>) | undefined,
     settings,
     logsScrollFrame: null as number | null,
     logsAtBottom: true,
@@ -430,13 +435,9 @@ describe("earlier-load scroll restoration", () => {
       scrollTop: 40,
       clientHeight: 400,
     });
-    const scrollHost = host as typeof host & {
-      chatHistoryHasMore?: boolean;
-      onLoadEarlier?: () => Promise<boolean>;
-    };
-    scrollHost.chatHistoryHasMore = true;
-    scrollHost.onLoadEarlier = vi.fn().mockResolvedValue(loaded);
-    return { host: scrollHost, container };
+    host.chatHistoryHasMore = true;
+    host.onLoadEarlier = vi.fn().mockResolvedValue(loaded);
+    return { host, container };
   }
 
   it("restores the scroll offset after earlier messages prepend", async () => {

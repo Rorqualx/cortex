@@ -783,7 +783,7 @@ describe("refreshChatAvatar", () => {
     const host = makeHost({
       basePath: "/openclaw/",
       sessionKey: "agent:main",
-      settings: { token: "session-token" },
+      settings: { token: "session-token" } as ChatHost["settings"],
       password: "shared-password",
       hello: { auth: { deviceToken: "device-token" } } as ChatHost["hello"],
     });
@@ -837,7 +837,7 @@ describe("refreshChatAvatar", () => {
     const host = makeHost({
       basePath: "/openclaw/",
       sessionKey: "agent:main",
-      settings: { token: "session-token" },
+      settings: { token: "session-token" } as ChatHost["settings"],
     });
     await refreshChatAvatar(host);
 

@@ -1,23 +1,27 @@
 // Control UI controller manages exec approval gateway state.
+import type {
+  ExecApprovalDecision as WireExecApprovalDecision,
+  ExecApprovalRequestPayload as WireExecApprovalRequestPayload,
+} from "../../../../packages/gateway-protocol/src/index.js";
 import { normalizeOptionalString } from "../string-coerce.ts";
 
-export type ExecApprovalRequestPayload = {
-  command: string;
-  cwd?: string | null;
-  host?: string | null;
-  security?: string | null;
-  ask?: string | null;
-  agentId?: string | null;
-  resolvedPath?: string | null;
-  sessionKey?: string | null;
-  commandSpans?: readonly {
-    startIndex: number;
-    endIndex: number;
-  }[];
-  allowedDecisions?: readonly ExecApprovalDecision[];
-};
+// UI projection of the wire ExecApprovalRequestPayloadSchema: just the fields
+// the approval prompt renders, so the picker cannot drift from the contract.
+export type ExecApprovalRequestPayload = Pick<
+  WireExecApprovalRequestPayload,
+  | "command"
+  | "cwd"
+  | "host"
+  | "security"
+  | "ask"
+  | "agentId"
+  | "resolvedPath"
+  | "sessionKey"
+  | "commandSpans"
+  | "allowedDecisions"
+>;
 
-export type ExecApprovalDecision = "allow-once" | "allow-always" | "deny";
+export type ExecApprovalDecision = WireExecApprovalDecision;
 
 export type ExecApprovalRequest = {
   id: string;

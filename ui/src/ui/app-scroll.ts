@@ -7,7 +7,7 @@ const HEADER_HIDE_SCROLL_DELTA = 12;
 const HEADER_SHOW_TOP_THRESHOLD = 24;
 const SCROLL_TOP_LOAD_THRESHOLD = 60;
 
-type ScrollHost = {
+export type ScrollHost = {
   updateComplete: Promise<unknown>;
   querySelector: (selectors: string) => Element | null;
   style: CSSStyleDeclaration;

@@ -128,9 +128,9 @@ export function renderConversations(props: ConversationsProps) {
     mainSessionKey,
   } = props;
 
-  const allRows = (result?.sessions ?? [])
-    .filter((row) => !row.archived)
-    .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const allRows = (result?.sessions ?? []).toSorted(
+    (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0),
+  );
 
   const filtered = filterConversations(allRows, searchQuery);
 

@@ -3,7 +3,7 @@ import type { EventLogEntry } from "./app-events.ts";
 import type { GatewayConnectTiming, GatewayRequestTiming } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 
-type ControlUiPerformanceHost = {
+export type ControlUiPerformanceHost = {
   tab: Tab;
   isConnected?: boolean;
   eventLog?: unknown[];
