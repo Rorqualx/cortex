@@ -706,6 +706,7 @@ export async function runExecProcess(opts: {
   const supervisor = getProcessSupervisor();
   const shellRuntimeEnv: Record<string, string> = {
     ...opts.env,
+    AI_AGENT: "openclaw",
     OPENCLAW_SHELL: "exec",
   };
 
