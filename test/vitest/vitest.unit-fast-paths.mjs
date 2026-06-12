@@ -51,6 +51,7 @@ const unitFastCandidateGlobs = [
   "src/routing/**/*.test.ts",
   "src/sessions/**/*.test.ts",
   "src/shared/**/*.test.ts",
+  "src/skill-forge/**/*.test.ts",
   "src/test-utils/**/*.test.ts",
   "src/tasks/**/*.test.ts",
   "src/tts/**/*.test.ts",

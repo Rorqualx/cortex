@@ -1,6 +1,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type { Candidate } from "./detector.js";
+import { distillProseBodyWithLlm, type DistillerLlmResult } from "./distiller-llm.js";
 import { resolveSkillForgeStagedSkillDir } from "./paths.js";
 
 const MAX_SKILL_NAME_LENGTH = 64;
@@ -120,29 +121,71 @@ function bodyForCandidate(candidate: Candidate, toolSequence: string[]): string 
   ].join("\n");
 }
 
+function llmBodyWithProvenance(
+  candidate: Candidate,
+  result: { body: string; provider: string; modelId: string },
+): string {
+  return [
+    result.body.trim(),
+    "",
+    "## Provenance",
+    "",
+    `- Lane: \`${candidate.lane}\``,
+    `- Candidate id: \`${candidate.candidateId}\``,
+    `- Distilled by: \`${result.provider}/${result.modelId}\``,
+    "",
+  ].join("\n");
+}
+
 export type DraftedSkill = {
   name: string;
   skillDir: string;
   skillMdPath: string;
   description: string;
+  /** How the prose body was produced; heuristic drafts keep the TODO marker for a later LLM pass. */
+  distillation: "llm" | "heuristic";
 };
 
 export async function distillCandidateToStaging(params: {
   candidate: Candidate;
   env?: NodeJS.ProcessEnv;
+  /** Injectable LLM prose pass; defaults to the runtime-config-backed distiller. */
+  distillProse?: (input: { candidate: Candidate }) => Promise<DistillerLlmResult>;
 }): Promise<DraftedSkill> {
   const env = params.env ?? process.env;
   const candidate = params.candidate;
   const name = skillNameForCandidate(candidate);
   const toolSequence = candidate.toolSequence;
   const description = descriptionForCandidate(candidate, toolSequence);
-  const body = bodyForCandidate(candidate, toolSequence);
+  // LLM prose is best-effort: skipped/failed distillation falls back to the
+  // heuristic draft (with its TODO marker) so the pipeline never blocks on
+  // provider availability. OPENCLAW_TEST_FAST skips the live pass so tests
+  // never touch runtime config or model auth.
+  const distillProse =
+    params.distillProse ??
+    (env.OPENCLAW_TEST_FAST === "1"
+      ? async (): Promise<DistillerLlmResult> => ({
+          status: "skipped",
+          reason: "OPENCLAW_TEST_FAST=1",
+        })
+      : distillProseBodyWithLlm);
+  const llmResult = await distillProse({ candidate });
+  const body =
+    llmResult.status === "ok"
+      ? llmBodyWithProvenance(candidate, llmResult)
+      : bodyForCandidate(candidate, toolSequence);
   const skillDir = resolveSkillForgeStagedSkillDir({ name, env });
   await fsp.mkdir(skillDir, { recursive: true });
   const skillMdPath = path.join(skillDir, "SKILL.md");
   const frontmatter = `---\nname: ${name}\ndescription: ${escapeYamlScalar(description)}\n---\n\n`;
   await fsp.writeFile(skillMdPath, `${frontmatter}${body}`, "utf8");
-  return { name, skillDir, skillMdPath, description };
+  return {
+    name,
+    skillDir,
+    skillMdPath,
+    description,
+    distillation: llmResult.status === "ok" ? "llm" : "heuristic",
+  };
 }
 
 function escapeYamlScalar(value: string): string {

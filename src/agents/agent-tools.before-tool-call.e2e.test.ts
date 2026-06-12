@@ -3,6 +3,7 @@
  * Covers loop detection, diagnostics, plugin approval, and skill telemetry
  * around wrapped tool execution.
  */
+import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +20,7 @@ import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { setPluginToolMeta } from "../plugins/tools.js";
+import { readTelemetry } from "../skill-forge/telemetry.js";
 import { createCanonicalFixtureSkill } from "../skills/test-support/test-helpers.js";
 import {
   getBeforeToolCallPolicyDiagnosticState,
@@ -668,6 +670,56 @@ describe("before_tool_call loop detection behavior", () => {
       });
       expect(JSON.stringify(emitted)).not.toContain(os.homedir());
     });
+  });
+
+  it("records forge skill usage telemetry when a run reads a forge-promoted SKILL.md", async () => {
+    const stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "openclaw-forge-usage-"));
+    const prevStateDir = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = stateDir;
+    try {
+      const skillBaseDir = path.join(stateDir, "skill-forge", "skills", "forge-skill");
+      const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "skill" }] });
+      const tool = wrapToolWithBeforeToolCallHook({ name: "read", execute } as any, {
+        agentId: "main",
+        sessionKey: "session-key",
+        workspaceDir: "/tmp/openclaw-workspace",
+        skillsSnapshot: {
+          prompt: "",
+          skills: [{ name: "forge-skill" }],
+          resolvedSkills: [
+            createCanonicalFixtureSkill({
+              name: "forge-skill",
+              description: "Forge skill",
+              filePath: path.join(skillBaseDir, "SKILL.md"),
+              baseDir: skillBaseDir,
+              source: "openclaw-skill-forge",
+            }),
+          ],
+        },
+        loopDetection: { enabled: false },
+      });
+
+      await tool.execute(
+        "tool-call-forge-skill",
+        { path: path.join(skillBaseDir, "SKILL.md") },
+        undefined,
+        undefined,
+      );
+
+      // Usage recording is fire-and-forget; wait for the telemetry write to settle.
+      await vi.waitFor(async () => {
+        const entry = await readTelemetry({ name: "forge-skill" });
+        expect(entry?.usageCount).toBe(1);
+        expect(entry?.lastUsedAt).toBeTruthy();
+      });
+    } finally {
+      if (prevStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = prevStateDir;
+      }
+      await fsp.rm(stateDir, { recursive: true, force: true });
+    }
   });
 
   it("does not count unused read params as skill usage", async () => {

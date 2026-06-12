@@ -124,7 +124,7 @@ export async function judgeSkillCandidateWithLlm(params: {
       cfg,
       agentId,
       allowMissingApiKeyModes: ["aws-sdk"],
-      skipPiDiscovery: true,
+      skipAgentDiscovery: true,
     });
   } catch (error) {
     return {

@@ -45,7 +45,9 @@ import {
 } from "../plugins/types.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
 import { resolveSkillForgeToolApproval } from "../skill-forge/approval-policy.js";
+import { recordSkillUsage } from "../skill-forge/telemetry.js";
 import {
+  resolveSkillSource,
   resolveSkillTelemetrySource,
   resolveSkillTelemetrySourceValue,
 } from "../skills/loading/source.js";
@@ -302,6 +304,8 @@ function resolveToolDiagnosticIdentity(tool: AnyAgentTool): ToolDiagnosticIdenti
 type SkillUsageMatch = {
   skillName: string;
   skillSource: SkillTelemetrySource;
+  /** True when the skill was promoted by the skill-forge pipeline; its decay/promotion telemetry keys off usage counts. */
+  forgeSkill: boolean;
   activation: "command" | "read";
 };
 
@@ -343,6 +347,7 @@ function skillInstructionPaths(snapshot: SkillSnapshot | undefined): Map<string,
     const match = {
       skillName,
       skillSource: resolveSkillTelemetrySource(skill),
+      forgeSkill: resolveSkillSource(skill) === "openclaw-skill-forge",
       activation: "read" as const,
     };
     const filePath = typeof skill.filePath === "string" ? skill.filePath.trim() : "";
@@ -369,6 +374,10 @@ function findSkillUsageMatch(params: {
       return {
         skillName: command.skillName,
         skillSource: resolveSkillTelemetrySourceValue(command.skillSource),
+        // Command metadata only carries the collapsed telemetry source; forge
+        // skills are prose-only and activate via SKILL.md reads, so command
+        // activations never need forge usage accounting.
+        forgeSkill: false,
         activation: "command",
       };
     }
@@ -1238,6 +1247,12 @@ export function wrapToolWithBeforeToolCallHook(
           toolParams: executeParams,
           ctx,
         });
+        if (skillMatch?.forgeSkill) {
+          // Forge decay sweeps retire skills with zero usage; record
+          // best-effort so a telemetry write failure never blocks the tool
+          // result or the session.
+          void recordSkillUsage({ name: skillMatch.skillName }).catch(() => {});
+        }
         if (hookOptions.emitDiagnostics) {
           if (skillMatch) {
             emitSkillUsedDiagnostic({

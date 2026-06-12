@@ -111,6 +111,52 @@ describe("distillCandidateToStaging", () => {
     expect(descLine).toContain('"');
   });
 
+  it("uses LLM-distilled prose with provenance when the LLM pass succeeds", async () => {
+    const candidate: Candidate = {
+      lane: "tool-shape",
+      candidateId: "a".repeat(16),
+      toolShapeHash: "a".repeat(16),
+      toolSequence: ["read_file", "edit_file"],
+      captureDirs: ["/a", "/b"],
+      occurrences: 2,
+    };
+    const result = await distillCandidateToStaging({
+      candidate,
+      env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
+      distillProse: async () => ({
+        status: "ok",
+        body: "## Overview\n\nLLM-written workflow prose.",
+        provider: "kimi",
+        modelId: "kimi-for-coding",
+      }),
+    });
+    expect(result.distillation).toBe("llm");
+    const content = await fsp.readFile(result.skillMdPath, "utf8");
+    expect(content).toContain("LLM-written workflow prose.");
+    expect(content).toContain("- Distilled by: `kimi/kimi-for-coding`");
+    expect(content).toContain(`- Candidate id: \`${candidate.candidateId}\``);
+    expect(content).not.toContain(DISTILLER_PROSE_TODO);
+  });
+
+  it("falls back to the heuristic body when the LLM pass fails", async () => {
+    const candidate: Candidate = {
+      lane: "tool-shape",
+      candidateId: "b".repeat(16),
+      toolShapeHash: "b".repeat(16),
+      toolSequence: ["read_file"],
+      captureDirs: ["/a", "/b"],
+      occurrences: 2,
+    };
+    const result = await distillCandidateToStaging({
+      candidate,
+      env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
+      distillProse: async () => ({ status: "failed", reason: "provider unavailable" }),
+    });
+    expect(result.distillation).toBe("heuristic");
+    const content = await fsp.readFile(result.skillMdPath, "utf8");
+    expect(content).toContain(DISTILLER_PROSE_TODO);
+  });
+
   it("renders the tool sequence as a numbered list and notes occurrences for tool-shape lane", async () => {
     const candidate: Candidate = {
       lane: "tool-shape",

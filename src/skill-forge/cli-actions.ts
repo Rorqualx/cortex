@@ -185,11 +185,11 @@ export async function actionPipeline(
     agentId?: string;
   } = {},
 ): Promise<PipelineRunResult> {
+  // useEmbedding / useLlmReplay are accepted but inert: the embedding lane
+  // and LLM replay gate are still stubs (EMBEDDING_LANE_TODO, LLM_REPLAY_TODO).
   return runForgePipeline({
     env: params.env,
     useLlm: params.useLlm,
-    useEmbedding: params.useEmbedding,
-    useLlmReplay: params.useLlmReplay,
     agentId: params.agentId,
   });
 }

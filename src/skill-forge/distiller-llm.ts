@@ -128,7 +128,7 @@ export async function distillProseBodyWithLlm(params: {
       cfg,
       agentId,
       allowMissingApiKeyModes: ["aws-sdk"],
-      skipPiDiscovery: true,
+      skipAgentDiscovery: true,
     });
   } catch (error) {
     return {

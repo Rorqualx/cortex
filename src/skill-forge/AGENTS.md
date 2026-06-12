@@ -54,8 +54,10 @@ session-end signal ──► captureSessionToForge ──► sessions/<id>-<ts>/
 
 - **`detector.ts::embeddingClusteringStub`** — semantic clustering requires an
   external embedding provider. Throws with `EMBEDDING_LANE_TODO` until wired.
-- **`distiller.ts::DISTILLER_PROSE_TODO`** marker is written into every drafted
-  SKILL.md body. An LLM-distillation pass will replace the heuristic prose.
+- **`distiller.ts::DISTILLER_PROSE_TODO`** marker now appears only in fallback
+  drafts: `distillCandidateToStaging` runs `distiller-llm.ts` by default and
+  falls back to the heuristic body when the LLM pass is skipped or fails
+  (`OPENCLAW_TEST_FAST=1` always skips so tests never touch model auth).
 - **`gate.ts::llmReplayGateStub`** — leave-one-out replay with the candidate
   skill loaded. Throws with `LLM_REPLAY_TODO` until wired.
 - **Session-end auto-trigger** — `watcher.ts` polls a trajectory JSONL for
@@ -73,8 +75,10 @@ session-end signal ──► captureSessionToForge ──► sessions/<id>-<ts>/
   under the forge root from other modules.
 - All forge writes happen under `<stateDir>/skill-forge/`. The bundled
   `skills/` directory at the repo root is not touched; promoted skills live in
-  user state. The skill loader must be taught to read the user-state path in
-  a future wiring step (separate from this module).
+  user state. The skill loader includes the forge skills root with source
+  `openclaw-skill-forge` (`src/skills/loading/workspace.ts`), and SKILL.md
+  reads of forge skills record usage via `telemetry.ts::recordSkillUsage`
+  (wired in `src/agents/agent-tools.before-tool-call.ts`).
 - Capture is best-effort. Throws from `exportTrajectoryBundle` (oversized
   session file, event-count overflow) are caught at the forge boundary and
   surfaced as `CaptureSkipped` results, never re-raised into caller hot paths.
