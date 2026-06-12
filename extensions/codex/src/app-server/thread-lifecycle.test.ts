@@ -223,12 +223,12 @@ describe("Codex app-server native code mode config", () => {
     expect(instructions).not.toContain("message,");
   });
 
-  it("uses the shared Skill Workshop guidance when skill_workshop is available", () => {
+  it("uses the shared Skill Forge guidance when skill_forge is available", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }), {
       dynamicTools: [
         {
-          name: "skill_workshop",
-          description: "Manage skill proposals",
+          name: "skill_forge",
+          description: "Manage the Skill Forge pipeline",
           inputSchema: { type: "object" },
           namespace: "openclaw",
           deferLoading: true,
@@ -236,12 +236,12 @@ describe("Codex app-server native code mode config", () => {
       ],
     });
 
-    expect(instructions).toContain("## Skill Workshop");
+    expect(instructions).toContain("## Skill Forge");
     expect(instructions).toContain(
-      "Use `skill_workshop` when the user wants to create, update, revise, list, inspect, apply, reject, or quarantine a reusable skill, Skill Workshop proposal, playbook, workflow, procedure, or durable instruction.",
+      "Use `skill_forge` to inspect, capture, run, promote, retire, and query telemetry for the autonomous Skill Forge pipeline.",
     );
     expect(instructions).toContain(
-      "Use `action=apply`, `action=reject`, or `action=quarantine` only after the user explicitly asks to approve/use/apply, reject, or quarantine a specific proposal.",
+      "Do not directly modify forge skill files with `write`, `edit`, or `exec`. Use `skill_forge` actions to manage the pipeline.",
     );
   });
 

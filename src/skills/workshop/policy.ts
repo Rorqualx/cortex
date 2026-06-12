@@ -1,49 +1,44 @@
-// Workshop policy helpers validate generated skill drafts against workspace policy.
+// Approval policy for skill_forge lifecycle mutations (promote/retire).
+// Lives beside the workshop service because both read skills.workshop config.
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { PluginHookBeforeToolCallResult } from "../../plugins/types.js";
 import { resolveSkillWorkshopConfig } from "./config.js";
 
-const SKILL_WORKSHOP_LIFECYCLE_ACTIONS = new Set(["apply", "reject", "quarantine"]);
+// Only promote/retire mutate the live skill set directly; pipeline runs are
+// covered by the forge validation gate, and the remaining actions are reads.
+const SKILL_FORGE_LIFECYCLE_ACTIONS = new Set(["promote", "retire"]);
 
-type SkillWorkshopLifecycleAction = "apply" | "reject" | "quarantine";
+type SkillForgeLifecycleAction = "promote" | "retire";
 
-// Only lifecycle actions mutate proposals and therefore require approval checks.
-function readLifecycleAction(params: unknown): SkillWorkshopLifecycleAction | undefined {
+function readLifecycleAction(params: unknown): SkillForgeLifecycleAction | undefined {
   const action = asNullableRecord(params)?.action;
-  if (typeof action !== "string" || !SKILL_WORKSHOP_LIFECYCLE_ACTIONS.has(action)) {
+  if (typeof action !== "string" || !SKILL_FORGE_LIFECYCLE_ACTIONS.has(action)) {
     return undefined;
   }
-  return action as SkillWorkshopLifecycleAction;
+  return action as SkillForgeLifecycleAction;
 }
 
-function lifecycleApprovalText(action: SkillWorkshopLifecycleAction): {
+function lifecycleApprovalText(action: SkillForgeLifecycleAction): {
   title: string;
   description: string;
   severity: "info" | "warning";
 } {
-  if (action === "apply") {
+  if (action === "promote") {
     return {
-      title: "Apply workspace skill proposal",
-      description: "Apply a pending workspace skill proposal into live workspace skills.",
+      title: "Promote staged skill",
+      description: "Promote a staged Skill Forge skill into the live skills directory.",
       severity: "warning",
     };
   }
-  if (action === "reject") {
-    return {
-      title: "Reject workspace skill proposal",
-      description: "Reject a pending workspace skill proposal.",
-      severity: "info",
-    };
-  }
   return {
-    title: "Quarantine workspace skill proposal",
-    description: "Quarantine a pending workspace skill proposal.",
+    title: "Retire skill",
+    description: "Retire a promoted Skill Forge skill (or run a decay sweep).",
     severity: "info",
   };
 }
 
-/** Returns approval policy for skill workshop lifecycle tool calls. */
+/** Returns approval policy for skill_forge lifecycle tool calls. */
 export function resolveSkillForgeToolApproval(params: {
   toolName: string;
   toolParams: unknown;

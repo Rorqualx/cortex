@@ -1,10 +1,14 @@
 /**
  * System-prompt contribution for routing durable skill edits through the
  * Skill Workshop tool instead of direct filesystem writes.
+ *
+ * The skill_workshop agent tool was replaced by skill_forge; this module only
+ * remains as a shipped plugin-SDK compat export (agent-harness-runtime).
  */
+/** @deprecated Use SKILL_FORGE_TOOL_NAME — skill_workshop was replaced by skill_forge. */
 export const SKILL_WORKSHOP_TOOL_NAME = "skill_workshop";
 
-/** Build the system-prompt section for Skill Workshop routing rules. */
+/** @deprecated Use buildSkillForgePromptSection — skill_workshop was replaced by skill_forge. */
 export function buildSkillWorkshopPromptSection(): string[] {
   return [
     "## Skill Workshop",

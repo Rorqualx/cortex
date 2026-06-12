@@ -140,6 +140,8 @@ export {
   buildSkillForgePromptSection,
   SKILL_FORGE_TOOL_NAME,
 } from "../agents/skill-forge-prompt.js";
+// Deprecated shipped SDK compat (v2026.6.7-alpha.1): skill_workshop was
+// replaced by skill_forge; remove after one release window.
 export {
   buildSkillWorkshopPromptSection,
   SKILL_WORKSHOP_TOOL_NAME,

@@ -685,47 +685,42 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("If several apply, choose the most specific.");
   });
 
-  it("instructs models to use skill_workshop only when the tool is available", () => {
+  it("instructs models to use skill_forge only when the tool is available", () => {
     const withoutTool = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",
       toolNames: ["read"],
     });
-    expect(withoutTool).not.toContain("## Skill Workshop");
-    expect(withoutTool).not.toContain("use `skill_workshop`");
+    expect(withoutTool).not.toContain("## Skill Forge");
+    expect(withoutTool).not.toContain("Use `skill_forge`");
 
     const withTool = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",
-      toolNames: ["read", "skill_workshop"],
+      toolNames: ["read", "skill_forge"],
     });
     expect(withTool).toContain(
-      "- skill_workshop: Create, update, revise, list, inspect, apply, reject, or quarantine Skill Workshop proposals",
+      "- skill_forge: Inspect, capture, run, promote, retire, and query telemetry for the Skill Forge autonomous pipeline",
     );
-    expect(withTool).toContain("## Skill Workshop");
+    expect(withTool).toContain("## Skill Forge");
     expect(withTool).toContain(
-      "Use `skill_workshop` when the user wants to create, update, revise, list, inspect, apply, reject, or quarantine a reusable skill, Skill Workshop proposal, playbook, workflow, procedure, or durable instruction.",
-    );
-    expect(withTool).toContain(
-      "Treat a request as durable when it should be saved, repeated, proposed, installed later, shared as a skill, or used as a standing workflow instead of answered once in chat.",
+      "Use `skill_forge` to inspect, capture, run, promote, retire, and query telemetry for the autonomous Skill Forge pipeline.",
     );
     expect(withTool).toContain(
-      "Do not create or change skill proposal files manually with `write`, `edit`, `exec`, shell commands, or direct filesystem operations.",
-    );
-    expect(withTool).toContain("keep `description` under 160 bytes");
-    expect(withTool).toContain("`proposal_content` within the configured body limit");
-    expect(withTool).toContain(
-      "Use `action=list` or `action=inspect` only for pending proposal discovery/inspection. Do not use filesystem search for proposal discovery.",
-    );
-    expect(withTool).toContain("`action=revise` for an existing pending proposal");
-    expect(withTool).toContain("pass the proposal or skill name in `name`");
-    expect(withTool).toContain(
-      "Use `action=apply`, `action=reject`, or `action=quarantine` only after the user explicitly asks to approve/use/apply, reject, or quarantine a specific proposal.",
-    );
-    expect(withTool).toContain("Generated skills are pending proposals by default.");
-    expect(withTool).toContain(
-      "Do not apply, reject, or quarantine proposals manually with filesystem operations or shell commands.",
+      "The pipeline automatically captures sessions, detects repeated patterns, distills them into skill drafts, and promotes them after validation.",
     );
     expect(withTool).toContain(
-      "You may gather context first, but the durable proposal write or lifecycle change must use `skill_workshop`.",
+      "Use `action=status` to get an overview of promoted, staged, and retired skills with usage counts.",
+    );
+    expect(withTool).toContain("Use `action=capture` with `session_id`");
+    expect(withTool).toContain(
+      "Use `action=run` to execute the full pipeline (detect → distill → gate → promote) on captured sessions.",
+    );
+    expect(withTool).toContain("Use `action=promote` with `name`");
+    expect(withTool).toContain("Use `action=retire` with `name` and optional `reason`");
+    expect(withTool).toContain(
+      "Use `action=telemetry` to list per-skill usage statistics including use counts and last-used timestamps.",
+    );
+    expect(withTool).toContain(
+      "Do not directly modify forge skill files with `write`, `edit`, or `exec`. Use `skill_forge` actions to manage the pipeline.",
     );
   });
 

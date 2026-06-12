@@ -1,10 +1,10 @@
 // Codex plugin module implements thread lifecycle behavior.
 import {
-  buildSkillWorkshopPromptSection,
+  buildSkillForgePromptSection,
   embeddedAgentLog,
   formatErrorMessage,
   isActiveHarnessContextEngine,
-  SKILL_WORKSHOP_TOOL_NAME,
+  SKILL_FORGE_TOOL_NAME,
   type EmbeddedRunAttemptParams,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { buildCodexUserMcpServersThreadConfigPatch } from "openclaw/plugin-sdk/codex-mcp-projection";
@@ -1264,7 +1264,7 @@ export function buildDeveloperInstructions(
   const sections = [
     "You are a personal agent running inside OpenClaw. OpenClaw has dynamic tools for OpenClaw-owned messaging, cron, sessions, media, gateway, and nodes.",
     buildDeferredDynamicToolManifest(options.dynamicTools),
-    buildSkillWorkshopInstruction(options.dynamicTools),
+    buildSkillForgeInstruction(options.dynamicTools),
     "Use Codex native `spawn_agent` for Codex subagents. Use OpenClaw `sessions_spawn` only for OpenClaw or ACP delegation.",
     buildVisibleReplyInstruction(params, options.dynamicTools),
     nativeCommandGuidance,
@@ -1290,16 +1290,16 @@ function buildDeferredDynamicToolManifest(
   return `Deferred searchable OpenClaw dynamic tools available: ${deferredToolNames.join(", ")}. Use \`tool_search\` to load exact callable specs before use.`;
 }
 
-function buildSkillWorkshopInstruction(
+function buildSkillForgeInstruction(
   dynamicTools: readonly CodexDynamicToolSpec[] | undefined,
 ): string | undefined {
-  const hasSkillWorkshop = (dynamicTools ?? []).some(
-    (tool) => tool.name.trim() === SKILL_WORKSHOP_TOOL_NAME,
+  const hasSkillForge = (dynamicTools ?? []).some(
+    (tool) => tool.name.trim() === SKILL_FORGE_TOOL_NAME,
   );
-  if (!hasSkillWorkshop) {
+  if (!hasSkillForge) {
     return undefined;
   }
-  return buildSkillWorkshopPromptSection().join("\n");
+  return buildSkillForgePromptSection().join("\n");
 }
 
 function buildVisibleReplyInstruction(

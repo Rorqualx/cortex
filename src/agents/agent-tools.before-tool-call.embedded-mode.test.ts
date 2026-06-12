@@ -318,16 +318,16 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
     expect(runBeforeToolCallMock).not.toHaveBeenCalled();
   });
 
-  it("requires approval before skill_workshop applies a proposal", async () => {
+  it("requires approval before skill_forge promotes a staged skill", async () => {
     mockCallGatewayTool.mockResolvedValueOnce({
-      id: "skill-workshop-approval",
+      id: "skill-forge-approval",
       decision: PluginApprovalResolutions.ALLOW_ONCE,
     });
 
     const result = await runBeforeToolCallHook({
-      toolName: "skill_workshop",
-      params: { action: "apply", proposal_id: "weather-20260530-a1b2c3d4e5" },
-      toolCallId: "call-skill-apply",
+      toolName: "skill_forge",
+      params: { action: "promote", name: "weather-helper" },
+      toolCallId: "call-skill-promote",
       ctx: {
         agentId: "main",
         sessionKey: "main",
@@ -343,36 +343,36 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
 
     expect(result).toEqual({
       blocked: false,
-      params: { action: "apply", proposal_id: "weather-20260530-a1b2c3d4e5" },
+      params: { action: "promote", name: "weather-helper" },
       approvalResolution: PluginApprovalResolutions.ALLOW_ONCE,
     });
-    const approvalCall = requireApprovalRequestCall("skill_workshop approval request");
+    const approvalCall = requireApprovalRequestCall("skill_forge approval request");
     expect(approvalCall.request.pluginId).toBeUndefined();
-    expect(approvalCall.request.title).toBe("Apply workspace skill proposal");
+    expect(approvalCall.request.title).toBe("Promote staged skill");
     expect(approvalCall.request.description).toBe(
-      "Apply a pending workspace skill proposal into live workspace skills.",
+      "Promote a staged Skill Forge skill into the live skills directory.",
     );
     expect(approvalCall.request.severity).toBe("warning");
     expect(approvalCall.request.allowedDecisions).toEqual(["allow-once", "deny"]);
-    expect(approvalCall.request.toolName).toBe("skill_workshop");
-    expect(approvalCall.request.toolCallId).toBe("call-skill-apply");
+    expect(approvalCall.request.toolName).toBe("skill_forge");
+    expect(approvalCall.request.toolCallId).toBe("call-skill-promote");
     expect(runBeforeToolCallMock).toHaveBeenCalledTimes(1);
 
     {
       mockCallGatewayTool.mockReset();
       runBeforeToolCallMock.mockReset();
       runBeforeToolCallMock.mockResolvedValue({
-        params: { action: "apply", proposal_id: "weather-20260530-a1b2c3d4e5" },
+        params: { action: "promote", name: "weather-helper" },
       });
       mockCallGatewayTool.mockResolvedValueOnce({
-        id: "skill-workshop-approval",
+        id: "skill-forge-approval",
         decision: PluginApprovalResolutions.ALLOW_ONCE,
       });
 
       const adjustedResult = await runBeforeToolCallHook({
-        toolName: "skill_workshop",
-        params: { action: "inspect", proposal_id: "weather-20260530-a1b2c3d4e5" },
-        toolCallId: "call-skill-hook-apply",
+        toolName: "skill_forge",
+        params: { action: "status" },
+        toolCallId: "call-skill-hook-promote",
         ctx: {
           config: {
             skills: {
@@ -386,20 +386,20 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
 
       expect(adjustedResult).toEqual({
         blocked: false,
-        params: { action: "apply", proposal_id: "weather-20260530-a1b2c3d4e5" },
+        params: { action: "promote", name: "weather-helper" },
         approvalResolution: PluginApprovalResolutions.ALLOW_ONCE,
       });
       const adjustedApprovalCall = requireApprovalRequestCall(
-        "skill_workshop adjusted approval request",
+        "skill_forge adjusted approval request",
       );
-      expect(adjustedApprovalCall.request.title).toBe("Apply workspace skill proposal");
-      expect(adjustedApprovalCall.request.toolName).toBe("skill_workshop");
-      expect(adjustedApprovalCall.request.toolCallId).toBe("call-skill-hook-apply");
+      expect(adjustedApprovalCall.request.title).toBe("Promote staged skill");
+      expect(adjustedApprovalCall.request.toolName).toBe("skill_forge");
+      expect(adjustedApprovalCall.request.toolCallId).toBe("call-skill-hook-promote");
       expect(runBeforeToolCallMock).toHaveBeenCalledTimes(1);
     }
   });
 
-  it("runs trusted policies before skill_workshop lifecycle approval", async () => {
+  it("runs trusted policies before skill_forge lifecycle approval", async () => {
     const registry = createEmptyPluginRegistry();
     registry.trustedToolPolicies = [
       {
@@ -407,11 +407,11 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
         pluginName: "Trusted Policy",
         source: "test",
         policy: {
-          id: "block-skill-workshop",
-          description: "Block skill workshop lifecycle",
+          id: "block-skill-forge",
+          description: "Block skill forge lifecycle",
           evaluate: () => ({
             block: true,
-            blockReason: "trusted policy blocked skill workshop",
+            blockReason: "trusted policy blocked skill forge",
           }),
         },
       },
@@ -420,9 +420,9 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
     (hookRunner.hasHooks as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
     const result = await runBeforeToolCallHook({
-      toolName: "skill_workshop",
-      params: { action: "apply", proposal_id: "weather-20260530-a1b2c3d4e5" },
-      toolCallId: "call-skill-apply",
+      toolName: "skill_forge",
+      params: { action: "promote", name: "weather-helper" },
+      toolCallId: "call-skill-promote",
       ctx: {
         config: {
           skills: {
@@ -438,19 +438,19 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
       blocked: true,
       kind: "veto",
       deniedReason: "plugin-before-tool-call",
-      reason: "trusted policy blocked skill workshop",
-      params: { action: "apply", proposal_id: "weather-20260530-a1b2c3d4e5" },
+      reason: "trusted policy blocked skill forge",
+      params: { action: "promote", name: "weather-helper" },
     });
     expect(mockCallGatewayTool).not.toHaveBeenCalled();
     expect(runBeforeToolCallMock).not.toHaveBeenCalled();
   });
 
-  it("does not require skill_workshop lifecycle approval in auto mode", async () => {
+  it("does not require skill_forge lifecycle approval in auto mode", async () => {
     (hookRunner.hasHooks as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
     const result = await runBeforeToolCallHook({
-      toolName: "skill_workshop",
-      params: { action: "reject", proposal_id: "weather-20260530-a1b2c3d4e5" },
+      toolName: "skill_forge",
+      params: { action: "retire", name: "weather-helper" },
       ctx: {
         config: {
           skills: {
@@ -464,7 +464,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
 
     expect(result).toEqual({
       blocked: false,
-      params: { action: "reject", proposal_id: "weather-20260530-a1b2c3d4e5" },
+      params: { action: "retire", name: "weather-helper" },
     });
     expect(mockCallGatewayTool).not.toHaveBeenCalled();
     expect(runBeforeToolCallMock).not.toHaveBeenCalled();
