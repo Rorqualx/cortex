@@ -2,6 +2,10 @@
 // Projects transcript and lifecycle updates to websocket subscribers.
 import { asPositiveSafeInteger } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import type {
+  SessionMessageEvent,
+  SessionsChangedEvent,
+} from "../../packages/gateway-protocol/src/index.js";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/io.js";
 import { normalizeAgentId } from "../routing/session-key.js";
@@ -42,6 +46,14 @@ function resolveSessionMessageBroadcastKeys(sessionKey: string, agentId?: string
   return [sessionKey];
 }
 
+// Flattened row snapshot shared by session.message and sessions.changed
+// payloads; deriving it from the wire event type keeps every spread site
+// pinned to SessionMessageEventSchema/SessionsChangedEventSchema.
+type GatewaySessionEventSnapshot = Omit<
+  SessionMessageEvent,
+  "sessionKey" | "agentId" | "message" | "messageId" | "messageSeq"
+>;
+
 function buildGatewaySessionSnapshot(params: {
   sessionRow: GatewaySessionRow | null | undefined;
   agentId?: string;
@@ -49,7 +61,7 @@ function buildGatewaySessionSnapshot(params: {
   label?: string;
   displayName?: string;
   parentSessionKey?: string;
-}): Record<string, unknown> {
+}): GatewaySessionEventSnapshot {
   const { sessionRow } = params;
   if (!sessionRow) {
     return {};
@@ -201,7 +213,7 @@ async function handleTranscriptUpdateBroadcast(
         ...(typeof update.messageId === "string" ? { messageId: update.messageId } : {}),
         ...(messageSeq !== undefined ? { messageSeq } : {}),
         ...sessionSnapshot,
-      },
+      } satisfies SessionMessageEvent,
       connIds,
       { dropIfSlow: true },
     );
@@ -224,7 +236,7 @@ async function handleTranscriptUpdateBroadcast(
       ...(typeof update.messageId === "string" ? { messageId: update.messageId } : {}),
       ...(messageSeq !== undefined ? { messageSeq } : {}),
       ...sessionSnapshot,
-    },
+    } satisfies SessionsChangedEvent,
     sessionEventConnIds,
     { dropIfSlow: true },
   );
@@ -255,7 +267,7 @@ export function createLifecycleEventBroadcastHandler(params: {
           displayName: event.displayName,
           parentSessionKey: event.parentSessionKey,
         }),
-      },
+      } satisfies SessionsChangedEvent,
       connIds,
       { dropIfSlow: true },
     );

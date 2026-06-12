@@ -8,8 +8,17 @@ import {
   normalizeOptionalString,
   readStringValue,
 } from "@openclaw/normalization-core/string-coerce";
+import type {
+  ExecApprovalRequestPayload as WireExecApprovalRequestPayload,
+  ExecApprovalRequestedEvent as WireExecApprovalRequestedEvent,
+  ExecApprovalResolvedEvent as WireExecApprovalResolvedEvent,
+  ExecApprovalCommandSpan as WireExecApprovalCommandSpan,
+  ExecApprovalDecision as WireExecApprovalDecision,
+  SystemRunApprovalBinding as WireSystemRunApprovalBinding,
+  SystemRunApprovalFileOperand as WireSystemRunApprovalFileOperand,
+  SystemRunApprovalPlan as WireSystemRunApprovalPlan,
+} from "../../packages/gateway-protocol/src/index.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
-import type { CommandExplanationSummary } from "./command-analysis/explain.js";
 import { resolveAllowAlwaysPatternEntries } from "./exec-approvals-allowlist.js";
 import { analyzeShellCommand, type ExecCommandSegment } from "./exec-approvals-analysis.js";
 import type { ExecAllowlistEntry } from "./exec-approvals.types.js";
@@ -163,75 +172,22 @@ export function resolveExecModePolicy(params: {
   };
 }
 
-export type SystemRunApprovalBinding = {
-  argv: string[];
-  cwd: string | null;
-  agentId: string | null;
-  sessionKey: string | null;
-  envHash: string | null;
-};
+// Approval request/resolved payloads are wire contracts owned by
+// packages/gateway-protocol (ExecApprovalRequestedEventSchema and friends);
+// builders and emit sites typecheck against the schema-derived shapes.
+export type SystemRunApprovalBinding = WireSystemRunApprovalBinding;
 
-export type SystemRunApprovalFileOperand = {
-  argvIndex: number;
-  path: string;
-  sha256: string;
-};
+export type SystemRunApprovalFileOperand = WireSystemRunApprovalFileOperand;
 
-export type SystemRunApprovalPlan = {
-  argv: string[];
-  cwd: string | null;
-  commandText: string;
-  commandPreview?: string | null;
-  agentId: string | null;
-  sessionKey: string | null;
-  mutableFileOperand?: SystemRunApprovalFileOperand | null;
-};
+export type SystemRunApprovalPlan = WireSystemRunApprovalPlan;
 
-export type ExecApprovalCommandSpan = {
-  startIndex: number;
-  endIndex: number;
-};
+export type ExecApprovalCommandSpan = WireExecApprovalCommandSpan;
 
-export type ExecApprovalRequestPayload = {
-  command: string;
-  commandPreview?: string | null;
-  commandArgv?: string[];
-  // Optional UI-safe env key preview for approval prompts.
-  envKeys?: string[];
-  systemRunBinding?: SystemRunApprovalBinding | null;
-  systemRunPlan?: SystemRunApprovalPlan | null;
-  cwd?: string | null;
-  nodeId?: string | null;
-  host?: string | null;
-  security?: string | null;
-  ask?: string | null;
-  warningText?: string | null;
-  commandAnalysis?: CommandExplanationSummary | null;
-  commandSpans?: ExecApprovalCommandSpan[];
-  allowedDecisions?: readonly ExecApprovalDecision[];
-  agentId?: string | null;
-  resolvedPath?: string | null;
-  sessionKey?: string | null;
-  turnSourceChannel?: string | null;
-  turnSourceTo?: string | null;
-  turnSourceAccountId?: string | null;
-  turnSourceThreadId?: string | number | null;
-};
+export type ExecApprovalRequestPayload = WireExecApprovalRequestPayload;
 
-export type ExecApprovalRequest = {
-  id: string;
-  request: ExecApprovalRequestPayload;
-  createdAtMs: number;
-  expiresAtMs: number;
-};
+export type ExecApprovalRequest = WireExecApprovalRequestedEvent;
 
-export type ExecApprovalResolved = {
-  id: string;
-  decision: ExecApprovalDecision;
-  resolvedBy?: string | null;
-  ts: number;
-  request?: ExecApprovalRequest["request"];
-};
+export type ExecApprovalResolved = WireExecApprovalResolvedEvent;
 
 export type ExecApprovalsDefaults = {
   security?: ExecSecurity;
@@ -1537,7 +1493,7 @@ export function maxAsk(a: ExecAsk, b: ExecAsk): ExecAsk {
   return order[a] >= order[b] ? a : b;
 }
 
-export type ExecApprovalDecision = "allow-once" | "allow-always" | "deny";
+export type ExecApprovalDecision = WireExecApprovalDecision;
 export const DEFAULT_EXEC_APPROVAL_DECISIONS = [
   "allow-once",
   "allow-always",

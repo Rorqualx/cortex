@@ -21,6 +21,9 @@ import {
 } from "../../../packages/gateway-protocol/src/client-info.js";
 import {
   ErrorCodes,
+  type ChatSendTimingEvent,
+  type ChatSendTimingPhase,
+  type ChatSideResultEvent,
   errorShape,
   formatValidationErrors,
   validateChatAbortParams,
@@ -226,12 +229,16 @@ type ChatSendAckServerTiming = {
   prepareAttachmentsMs?: number;
 };
 
-type ChatSendServerTimingPhase =
-  | "dispatch-started"
-  | "model-selected"
-  | "agent-run-started"
-  | "dispatch-completed"
-  | "post-dispatch-completed";
+// Wire-contract phase names live in ChatSendTimingEventSchema; alias keeps emit
+// sites from drifting to phases gateway clients do not recognize.
+type ChatSendServerTimingPhase = ChatSendTimingPhase;
+
+// Optional diagnostic fields some timing phases attach (model-selected,
+// agent-run-started, post-dispatch-completed). Keyed to the schema so extras
+// stay inside the wire contract.
+type ChatSendTimingExtra = Partial<
+  Pick<ChatSendTimingEvent, "postDispatchMs" | "provider" | "model" | "agentRunId">
+>;
 
 function roundedChatSendTimingMs(value: number): number {
   return Math.max(0, Math.round(value * 1000) / 1000);
@@ -269,7 +276,7 @@ function emitOperatorChatSendServerTiming(params: {
   receivedAtMs: number;
   ackedAtMs: number;
   dispatchStartedAtMs?: number;
-  extra?: Record<string, string | number>;
+  extra?: ChatSendTimingExtra;
 }) {
   const connId =
     typeof params.client?.connId === "string" && params.client.connId.trim()
@@ -294,7 +301,7 @@ function emitOperatorChatSendServerTiming(params: {
           }
         : {}),
       ...params.extra,
-    },
+    } satisfies ChatSendTimingEvent,
     new Set([connId]),
     { dropIfSlow: true },
   );
@@ -682,16 +689,9 @@ function logAttachmentFailure(
   });
 }
 
-type SideResultPayload = {
-  kind: "btw";
-  runId: string;
-  sessionKey: string;
-  agentId?: string;
-  question: string;
-  text: string;
-  isError?: boolean;
-  ts: number;
-};
+// Wire shape minus the seq that broadcastSideResult stamps at emit time;
+// derived from ChatSideResultEventSchema so emit cannot drift from UI parse.
+type SideResultPayload = Omit<ChatSideResultEvent, "seq">;
 
 function buildTranscriptReplyText(payloads: ReplyPayload[]): string {
   const chunks = payloads
@@ -2241,7 +2241,7 @@ function broadcastSideResult(params: {
     ...params.payload,
     ...(payloadAgentId ? { agentId: payloadAgentId } : {}),
     seq,
-  };
+  } satisfies ChatSideResultEvent;
   params.context.broadcast("chat.side_result", payload);
   sendGlobalAwareNodeChatPayload({
     context: params.context,
@@ -3673,7 +3673,7 @@ export const chatHandlers: GatewayRequestHandlers = {
 
       const emitServerTiming = (
         phase: ChatSendServerTimingPhase,
-        extra?: Record<string, string | number>,
+        extra?: ChatSendTimingExtra,
         dispatchStartedAtMs?: number,
       ) => {
         emitOperatorChatSendServerTiming({

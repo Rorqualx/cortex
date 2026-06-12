@@ -1,3 +1,4 @@
+import type { ChatEvent, SessionsChangedEvent } from "../../packages/gateway-protocol/src/index.js";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { resolveToolSearchCodeDisplayTarget } from "../agents/tool-display-common.js";
 import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS, stripHeartbeatToken } from "../auto-reply/heartbeat.js";
@@ -329,11 +330,13 @@ export function createAgentEventHandler({
     return result;
   };
 
+  // Returns the flattened wire-contract snapshot fields (minus the base event
+  // fields each emit site owns) so sessions.changed emits can satisfies-check.
   const buildSessionEventSnapshot = (
     sessionKey: string,
     evt?: AgentEventPayload,
     agentId?: string,
-  ) => {
+  ): Omit<SessionsChangedEvent, "ts" | "sessionKey" | "agentId"> => {
     const row = loadGatewaySessionRowForSnapshot(sessionKey, agentId ? { agentId } : undefined);
     const omitUnscopedGlobalGoal = sessionKey === "global" && !agentId;
     const lifecyclePatch =
@@ -543,7 +546,7 @@ export function createAgentEventHandler({
             ...(eventRunId !== evt.runId ? { clientRunId: eventRunId } : {}),
             ts: evt.ts,
             ...buildSessionEventSnapshot(sessionKey, evt, sessionAgentId),
-          },
+          } satisfies SessionsChangedEvent,
           sessionEventConnIds,
           { dropIfSlow: true },
         );
@@ -741,7 +744,9 @@ export function createAgentEventHandler({
 
   const sendChatPayload = (
     sessionKey: string,
-    payload: unknown,
+    // Typed against the wire-contract union so emit sites cannot drift from
+    // what gateway clients parse (ChatEventSchema in gateway-protocol).
+    payload: ChatEvent,
     opts?: { agentId?: string; controlUiVisible?: boolean; dropIfSlow?: boolean },
   ) => {
     const deliverySessionKey = resolveSessionDeliveryKey(sessionKey, opts?.agentId);
@@ -814,7 +819,7 @@ export function createAgentEventHandler({
 
   const sendAgentPayload = (
     sessionKey: string | undefined,
-    payload: AgentEventPayload & { spawnedBy?: string },
+    payload: AgentEventPayload,
     opts?: { agentId?: string; controlUiVisible?: boolean; dropIfSlow?: boolean },
   ) => {
     if (opts?.controlUiVisible ?? true) {
@@ -837,7 +842,7 @@ export function createAgentEventHandler({
 
   const sendNodeAgentPayload = (
     sessionKey: string | undefined,
-    payload: AgentEventPayload & { spawnedBy?: string },
+    payload: AgentEventPayload,
     agentId?: string,
   ) => {
     if (sessionKey) {
@@ -899,7 +904,7 @@ export function createAgentEventHandler({
   const buildBufferedAgentEvent = (
     sessionKey: string | undefined,
     agentId: string | undefined,
-    payload: AgentEventPayload & { spawnedBy?: string },
+    payload: AgentEventPayload,
   ): BufferedAgentEvent => (sessionKey ? { sessionKey, agentId, payload } : { agentId, payload });
 
   const mergeBufferedAgentPayload = (
@@ -930,7 +935,7 @@ export function createAgentEventHandler({
     clientRunId: string,
     sessionKey: string | undefined,
     agentId: string | undefined,
-    payload: AgentEventPayload & { spawnedBy?: string },
+    payload: AgentEventPayload,
   ) => {
     const stream = resolveAgentTextThrottleStream(payload);
     if (!stream) {
@@ -1046,6 +1051,9 @@ export function createAgentEventHandler({
       flushBufferedAgentDeltaIfNeeded(clientRunId);
       broadcast("agent", {
         runId: eventRunId,
+        // Stamp the gap-revealing event's seq so this synthetic error conforms to
+        // AgentEventSchema; clients must not treat it as filling the missing range.
+        seq: evt.seq,
         stream: "error",
         ts: Date.now(),
         sessionKey,
@@ -1056,7 +1064,7 @@ export function createAgentEventHandler({
           expected: last + 1,
           received: evt.seq,
         },
-      });
+      } satisfies AgentEventPayload);
     }
     agentRunSeq.set(evt.runId, evt.seq);
     if (isToolEvent) {
@@ -1247,7 +1255,7 @@ export function createAgentEventHandler({
             ...(eventRunId !== evt.runId ? { clientRunId: eventRunId } : {}),
             ts: evt.ts,
             ...buildSessionEventSnapshot(sessionKey, evt, sessionAgentId),
-          },
+          } satisfies SessionsChangedEvent,
           sessionEventConnIds,
           { dropIfSlow: true },
         );

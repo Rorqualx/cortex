@@ -1,4 +1,5 @@
 // Stores and broadcasts agent lifecycle and streaming events.
+import type { AgentEvent } from "../../packages/gateway-protocol/src/index.js";
 import type { VerboseLevel } from "../auto-reply/thinking.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { notifyListeners, registerListener } from "../shared/listeners.js";
@@ -112,22 +113,12 @@ export type AgentPatchSummaryEventData = {
   summary: string;
 };
 
-/** Enriched event delivered to subscribers after sequencing and context stamping. */
-export type AgentEventPayload = {
-  runId: string;
-  seq: number;
-  stream: AgentEventStream;
-  ts: number;
-  data: Record<string, unknown>;
-  sessionKey?: string;
-  /**
-   * sessionId the run was bound to when it started. Lifecycle persistence uses
-   * this to reject terminal events from a pre-`sessions.reset` run that would
-   * otherwise clobber the rotated session row resolved by the shared sessionKey.
-   */
-  sessionId?: string;
-  agentId?: string;
-};
+/**
+ * Enriched event delivered to subscribers after sequencing and context stamping.
+ * Derived from the wire-contract AgentEventSchema so emit sites cannot drift from
+ * what gateway clients parse; only `stream` is re-narrowed to the known stream names.
+ */
+export type AgentEventPayload = Omit<AgentEvent, "stream"> & { stream: AgentEventStream };
 
 /** Per-run metadata used to stamp events and gate Control UI visibility. */
 export type AgentRunContext = {

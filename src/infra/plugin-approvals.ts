@@ -1,51 +1,28 @@
+import type {
+  PluginApprovalActionView as WirePluginApprovalActionView,
+  PluginApprovalRequestPayload as WirePluginApprovalRequestPayload,
+  PluginApprovalRequestedEvent as WirePluginApprovalRequestedEvent,
+  PluginApprovalResolvedEvent as WirePluginApprovalResolvedEvent,
+} from "../../packages/gateway-protocol/src/index.js";
 // Defines plugin approval request/resolution payloads and actions.
 import type { ExecApprovalDecision } from "./exec-approvals.js";
 
 // Plugin approval types and renderers mirror exec approval decisions while
 // keeping plugin-facing request text and action metadata separate.
+// Plugin approval payloads are wire contracts owned by
+// packages/gateway-protocol (PluginApprovalRequestedEventSchema and friends);
+// builders and emit sites typecheck against the schema-derived shapes.
 /** Button/action metadata shown with a plugin approval request. */
-export type PluginApprovalActionView = {
-  kind?: "command" | "decision";
-  label: string;
-  command: string;
-  decision?: ExecApprovalDecision;
-  style?: "primary" | "secondary" | "success" | "danger";
-};
+export type PluginApprovalActionView = WirePluginApprovalActionView;
 
 /** Request payload supplied by plugin approval callers. */
-export type PluginApprovalRequestPayload = {
-  pluginId?: string | null;
-  title: string;
-  description: string;
-  severity?: "info" | "warning" | "critical" | null;
-  toolName?: string | null;
-  toolCallId?: string | null;
-  allowedDecisions?: readonly ExecApprovalDecision[] | null;
-  actions?: readonly PluginApprovalActionView[] | null;
-  agentId?: string | null;
-  sessionKey?: string | null;
-  turnSourceChannel?: string | null;
-  turnSourceTo?: string | null;
-  turnSourceAccountId?: string | null;
-  turnSourceThreadId?: string | number | null;
-};
+export type PluginApprovalRequestPayload = WirePluginApprovalRequestPayload;
 
 /** Timed plugin approval request persisted while awaiting a decision. */
-export type PluginApprovalRequest = {
-  id: string;
-  request: PluginApprovalRequestPayload;
-  createdAtMs: number;
-  expiresAtMs: number;
-};
+export type PluginApprovalRequest = WirePluginApprovalRequestedEvent;
 
 /** Resolved plugin approval decision plus optional request snapshot. */
-export type PluginApprovalResolved = {
-  id: string;
-  decision: ExecApprovalDecision;
-  resolvedBy?: string | null;
-  ts: number;
-  request?: PluginApprovalRequestPayload;
-};
+export type PluginApprovalResolved = WirePluginApprovalResolvedEvent;
 
 export const DEFAULT_PLUGIN_APPROVAL_TIMEOUT_MS = 120_000;
 export const MAX_PLUGIN_APPROVAL_TIMEOUT_MS = 600_000;
