@@ -27,6 +27,7 @@ export type RepetitionCandidate = {
   toolSequence: string[];
   captureDirs: string[];
   occurrences: number;
+  successScore: number;
 };
 
 export type ErrorRecoveryCandidate = {
@@ -37,6 +38,7 @@ export type ErrorRecoveryCandidate = {
   failingTool: string;
   recoveringTool: string;
   rationale: string;
+  successScore: number;
 };
 
 export type ExplicitCandidate = {
@@ -47,6 +49,7 @@ export type ExplicitCandidate = {
   matchedPhrase: string;
   promptExcerpt: string;
   rationale: string;
+  successScore: number;
 };
 
 export type Candidate = RepetitionCandidate | ErrorRecoveryCandidate | ExplicitCandidate;
@@ -228,6 +231,30 @@ export function embeddingClusteringStub(): never {
   throw new Error(EMBEDDING_LANE_TODO);
 }
 
+// Phrase-level markers only: bare words like "no"/"fix"/"error" appear in
+// nearly every ordinary coding request, which would pin every session at 0.5
+// and make the clean-session signal unreachable.
+const FRUSTRATION_MARKERS =
+  /\b(not working|doesn'?t work|does not work|still (?:broken|failing|wrong)|that('?s| is) wrong|you('?re| are) wrong|incorrect|useless|disappointed|give up|never mind)\b/iu;
+
+/**
+ * Session quality signal for gate/telemetry: 1.0 = no tool errors and no
+ * user frustration phrases; 0.5 otherwise. Error-recovery captures contain a
+ * tool error by definition, so that lane always scores 0.5 — its skills keep
+ * the stricter promotion gate.
+ */
+function computeSuccessScore(events: TrajectoryEvent[]): number {
+  if (events.some(isToolErrorResult)) {
+    return 0.5;
+  }
+  for (const text of extractUserMessageTexts(events)) {
+    if (FRUSTRATION_MARKERS.test(text)) {
+      return 0.5;
+    }
+  }
+  return 1.0;
+}
+
 export type DetectorInput = {
   captureDirs: string[];
 };
@@ -238,6 +265,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     events: TrajectoryEvent[];
     toolSequence: string[];
     toolShapeHash: string;
+    successScore: number;
   };
   const perCapture: PerCapture[] = [];
   const rawCandidates: Candidate[] = [];
@@ -249,7 +277,8 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     }
     const toolSequence = extractToolSequence(events);
     const toolShapeHash = hashToolSequence(toolSequence);
-    perCapture.push({ captureDir, events, toolSequence, toolShapeHash });
+    const successScore = computeSuccessScore(events);
+    perCapture.push({ captureDir, events, toolSequence, toolShapeHash, successScore });
 
     for (const motif of detectErrorRecovery(events)) {
       rawCandidates.push({
@@ -262,6 +291,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         failingTool: motif.failingTool,
         recoveringTool: motif.recoveringTool,
         rationale: `Recovered from ${motif.failingTool} failure by calling ${motif.recoveringTool}`,
+        successScore,
       });
     }
 
@@ -274,6 +304,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         matchedPhrase: match.matchedPhrase,
         promptExcerpt: match.promptExcerpt,
         rationale: `User explicitly asked: "${match.matchedPhrase}"`,
+        successScore,
       });
     }
   }
@@ -317,6 +348,9 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
   }
   for (const [hash, members] of clusters) {
     if (members.length >= REPETITION_THRESHOLD) {
+      // One bad session taints the cluster: the relaxed gate is only for
+      // workflows whose every observed run was clean.
+      const allClean = members.every((member) => member.successScore >= 1);
       candidates.push({
         lane: "tool-shape",
         candidateId: hash,
@@ -324,6 +358,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         toolSequence: members[0].toolSequence,
         captureDirs: members.map((member) => member.captureDir),
         occurrences: members.length,
+        successScore: allClean ? 1.0 : 0.5,
       });
     }
   }

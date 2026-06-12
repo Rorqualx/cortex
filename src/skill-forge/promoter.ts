@@ -21,17 +21,28 @@ export async function promoteStagedSkill(params: {
   name: string;
   env?: NodeJS.ProcessEnv;
   now?: Date;
+  successScore?: number;
 }): Promise<PromotionResult> {
   const env = params.env ?? process.env;
   const stagedDir = resolveSkillForgeStagedSkillDir({ name: params.name, env });
-  const verdict = await evaluateGate({ skillDir: stagedDir, name: params.name, env });
+  const verdict = await evaluateGate({
+    skillDir: stagedDir,
+    name: params.name,
+    successScore: params.successScore,
+    env,
+  });
   if (verdict.status === "fail") {
     return { status: "rejected", name: params.name, verdict };
   }
   const promotedDir = resolveSkillForgePromotedSkillDir({ name: params.name, env });
   await fsp.mkdir(path.dirname(promotedDir), { recursive: true });
   await fsp.rename(stagedDir, promotedDir);
-  await recordSkillPromotion({ name: params.name, now: params.now, env });
+  await recordSkillPromotion({
+    name: params.name,
+    now: params.now,
+    successScore: params.successScore,
+    env,
+  });
   return { status: "promoted", name: params.name, promotedDir, verdict };
 }
 

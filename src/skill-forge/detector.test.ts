@@ -210,6 +210,73 @@ describe("runDetector", () => {
     const candidates = await runDetector({ captureDirs: [dir] });
     expect(candidates).toEqual([]);
   });
+
+  it("scores clean explicit captures 1.0 and frustrated or erroring captures 0.5", async () => {
+    const cleanDir = path.join(tmpDir, "cap-clean");
+    await writeCapture(cleanDir, [
+      userMessage("turn this into a skill"),
+      toolCall("read_file"),
+      toolResult("ok"),
+    ]);
+    const frustratedDir = path.join(tmpDir, "cap-frustrated");
+    await writeCapture(frustratedDir, [
+      userMessage("make this a skill"),
+      userMessage("that's wrong, it's still broken"),
+      toolCall("read_file"),
+      toolResult("ok"),
+    ]);
+    const erroringDir = path.join(tmpDir, "cap-error");
+    await writeCapture(erroringDir, [
+      userMessage("save this as a skill"),
+      toolCall("write_file"),
+      toolResult({ isError: true, text: "ENOENT" }),
+      toolCall("mkdir"),
+      toolResult("ok"),
+    ]);
+
+    const candidates = await runDetector({
+      captureDirs: [cleanDir, frustratedDir, erroringDir],
+    });
+    const explicitByDir = new Map(
+      candidates
+        .filter((c): c is Extract<Candidate, { lane: "explicit" }> => c.lane === "explicit")
+        .map((c) => [c.captureDir, c.successScore]),
+    );
+    expect(explicitByDir.get(cleanDir)).toBe(1.0);
+    expect(explicitByDir.get(frustratedDir)).toBe(0.5);
+    expect(explicitByDir.get(erroringDir)).toBe(0.5);
+    // Error-recovery captures contain a tool error by definition.
+    const recovery = candidates.find((c) => c.lane === "error-recovery");
+    expect(recovery?.successScore).toBe(0.5);
+  });
+
+  it("ordinary coding language does not taint the success score", async () => {
+    const dir = path.join(tmpDir, "cap-ordinary");
+    await writeCapture(dir, [
+      userMessage("remember this workflow: fix the error in the parser, no rush"),
+      toolCall("read_file"),
+      toolResult("ok"),
+    ]);
+    const candidates = await runDetector({ captureDirs: [dir] });
+    const explicit = candidates.find((c) => c.lane === "explicit");
+    expect(explicit?.successScore).toBe(1.0);
+  });
+
+  it("one tainted member pins the whole tool-shape cluster at 0.5", async () => {
+    const dirs: string[] = [];
+    for (let i = 0; i < REPETITION_THRESHOLD; i += 1) {
+      const dir = path.join(tmpDir, `cap-cluster-${i}`);
+      dirs.push(dir);
+      const events = [toolCall("read_file"), toolResult("ok"), toolCall("grep"), toolResult("ok")];
+      if (i === 0) {
+        events.unshift(userMessage("this is still not working"));
+      }
+      await writeCapture(dir, events);
+    }
+    const candidates = await runDetector({ captureDirs: dirs });
+    const repetition = candidates.find((c) => c.lane === "tool-shape");
+    expect(repetition?.successScore).toBe(0.5);
+  });
 });
 
 describe("writeCandidatesToForge", () => {
@@ -226,6 +293,7 @@ describe("writeCandidatesToForge", () => {
   it("writes one JSON file per candidate under candidates/", async () => {
     const candidate: Candidate = {
       lane: "explicit",
+      successScore: 1,
       candidateId: "abc123",
       captureDir: "/fake",
       toolSequence: ["a"],

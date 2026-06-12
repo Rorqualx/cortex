@@ -214,6 +214,9 @@ export async function detectEmbeddingRepetitionCandidates(params: {
       toolSequence,
       captureDirs,
       occurrences: cluster.length,
+      // This lane never reads full trajectories, so session quality is
+      // unknowable here; 0.5 keeps the strict promotion gate.
+      successScore: 0.5,
     });
   }
 

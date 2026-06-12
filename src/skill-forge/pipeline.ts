@@ -79,7 +79,11 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
     });
     drafted.push(draft);
     await recordSkillCreation({ name: draft.name, env });
-    const promotion = await promoteStagedSkill({ name: draft.name, env });
+    const promotion = await promoteStagedSkill({
+      name: draft.name,
+      env,
+      successScore: candidate.successScore,
+    });
     promotions.push(promotion);
   }
   return {

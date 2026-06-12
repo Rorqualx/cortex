@@ -65,6 +65,25 @@ describe("validateSkillDir", () => {
     expect(verdict.reasons.some((r) => r.includes("body is too short"))).toBe(true);
   });
 
+  it("relaxes the body minimum for clean-session skills only", async () => {
+    // ~120 chars: under the strict 200 minimum, over the clean-session 100.
+    const midBody =
+      "## Overview\n\nA concise workflow distilled from a clean session. " +
+      "It still explains when to trigger and what to do.";
+    await fsp.writeFile(
+      path.join(tmp, "SKILL.md"),
+      `---\nname: mid-skill\ndescription: x\n---\n\n${midBody}\n`,
+      "utf8",
+    );
+    const strict = await validateSkillDir(tmp);
+    expect(strict.status).toBe("fail");
+    expect(strict.reasons.some((r) => r.includes("body is too short"))).toBe(true);
+    const tainted = await validateSkillDir(tmp, 0.5);
+    expect(tainted.status).toBe("fail");
+    const clean = await validateSkillDir(tmp, 1.0);
+    expect(clean.status).toBe("pass");
+  });
+
   it("fails when scripts/ directory is present", async () => {
     await fsp.writeFile(path.join(tmp, "SKILL.md"), validSkill("ok-skill"), "utf8");
     await fsp.mkdir(path.join(tmp, "scripts"), { recursive: true });

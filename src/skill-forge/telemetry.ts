@@ -13,6 +13,7 @@ export type SkillTelemetryEntry = {
   retiredReason?: string;
   usageCount: number;
   lastUsedAt?: string;
+  successScore?: number;
 };
 
 async function ensureTelemetryDir(env: NodeJS.ProcessEnv): Promise<string> {
@@ -71,17 +72,24 @@ export async function recordSkillPromotion(params: {
   name: string;
   now?: Date;
   env?: NodeJS.ProcessEnv;
+  successScore?: number;
 }): Promise<SkillTelemetryEntry> {
   const existing = await readTelemetry({ name: params.name, env: params.env });
   const now = (params.now ?? new Date()).toISOString();
   const entry: SkillTelemetryEntry = existing
-    ? { ...existing, status: "promoted", promotedAt: now }
+    ? {
+        ...existing,
+        status: "promoted",
+        promotedAt: now,
+        successScore: params.successScore ?? existing.successScore,
+      }
     : {
         name: params.name,
         status: "promoted",
         createdAt: now,
         promotedAt: now,
         usageCount: 0,
+        successScore: params.successScore,
       };
   await writeTelemetry({ entry, env: params.env });
   return entry;

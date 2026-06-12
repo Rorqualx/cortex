@@ -13,7 +13,7 @@ import {
   promoteStagedSkill,
   runDecaySweep,
 } from "./promoter.js";
-import { recordSkillPromotion, recordSkillUsage } from "./telemetry.js";
+import { readTelemetry, recordSkillPromotion, recordSkillUsage } from "./telemetry.js";
 
 const VALID_BODY = `
 # Test Skill
@@ -73,6 +73,18 @@ describe("promoteStagedSkill", () => {
       .then(() => true)
       .catch(() => false);
     expect(promotedExists).toBe(true);
+  });
+
+  it("threads the candidate success score into promotion telemetry", async () => {
+    await writeStagedSkill(stateDir, "scored-skill", validSkill("scored-skill"));
+    const result = await promoteStagedSkill({
+      name: "scored-skill",
+      successScore: 1.0,
+      env: env(),
+    });
+    expect(result.status).toBe("promoted");
+    const entry = await readTelemetry({ name: "scored-skill", env: env() });
+    expect(entry?.successScore).toBe(1.0);
   });
 
   it("returns rejected and leaves staged intact when the gate fails", async () => {

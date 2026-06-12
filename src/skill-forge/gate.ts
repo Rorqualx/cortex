@@ -6,6 +6,7 @@ export const LLM_REPLAY_TODO =
   "Phase 4 LLM-replay gate (leave-one-out re-run with the candidate skill loaded) requires an LLM provider; defer until provider chosen.";
 
 const MIN_BODY_CHARS = 200;
+const CLEAN_SESSION_MIN_BODY_CHARS = 100;
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 
 export type GateVerdict = {
@@ -32,7 +33,10 @@ function frontmatterFields(frontmatter: string): { name?: string; description?: 
   };
 }
 
-export async function validateSkillDir(skillDir: string): Promise<GateVerdict> {
+export async function validateSkillDir(
+  skillDir: string,
+  successScore?: number,
+): Promise<GateVerdict> {
   const skillMdPath = path.join(skillDir, "SKILL.md");
   let content: string;
   try {
@@ -56,8 +60,11 @@ export async function validateSkillDir(skillDir: string): Promise<GateVerdict> {
     reasons.push("description field missing or empty");
   }
   const bodyTrim = body.trim();
-  if (bodyTrim.length < MIN_BODY_CHARS) {
-    reasons.push(`body is too short (${bodyTrim.length} chars; minimum ${MIN_BODY_CHARS})`);
+  // Skills distilled from fully clean sessions (successScore 1.0) earn a
+  // relaxed body minimum; unknown or tainted sessions keep the strict bar.
+  const minBody = (successScore ?? 0) >= 1 ? CLEAN_SESSION_MIN_BODY_CHARS : MIN_BODY_CHARS;
+  if (bodyTrim.length < minBody) {
+    reasons.push(`body is too short (${bodyTrim.length} chars; minimum ${minBody})`);
   }
   try {
     const scriptsStat = await fsp.stat(path.join(skillDir, "scripts"));
@@ -102,9 +109,10 @@ export function llmReplayGateStub(): never {
 export async function evaluateGate(params: {
   skillDir: string;
   name: string;
+  successScore?: number;
   env?: NodeJS.ProcessEnv;
 }): Promise<GateVerdict> {
-  const validation = await validateSkillDir(params.skillDir);
+  const validation = await validateSkillDir(params.skillDir, params.successScore);
   if (validation.status === "fail") {
     return validation;
   }
