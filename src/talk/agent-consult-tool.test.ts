@@ -96,6 +96,7 @@ describe("realtime voice agent consult tool", () => {
       "x_search",
       "memory_search",
       "memory_get",
+      "memory_insights",
     ]);
     expect(resolveRealtimeVoiceAgentConsultToolsAllow("owner")).toBeUndefined();
     expect(resolveRealtimeVoiceAgentConsultToolsAllow("none")).toStrictEqual([]);
