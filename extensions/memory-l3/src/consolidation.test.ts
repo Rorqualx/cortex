@@ -134,6 +134,7 @@ describe("passesPromotionThresholds", () => {
           firstSeenAt: NOW,
           lastConfirmedAt: NOW,
           sourceChunkIds: ["chunk-1"],
+          certainty: "confirmed",
         },
         baseCfg,
       ),
@@ -151,6 +152,7 @@ describe("passesPromotionThresholds", () => {
           firstSeenAt: NOW,
           lastConfirmedAt: NOW,
           sourceChunkIds: ["chunk-1"],
+          certainty: "confirmed",
         },
         baseCfg,
       ),
@@ -168,6 +170,7 @@ describe("passesPromotionThresholds", () => {
           firstSeenAt: NOW - 1 * MS_PER_DAY, // only 1-day span
           lastConfirmedAt: NOW,
           sourceChunkIds: ["chunk-a", "chunk-b", "chunk-c"],
+          certainty: "confirmed",
         },
         baseCfg,
       ),
@@ -185,10 +188,50 @@ describe("passesPromotionThresholds", () => {
           firstSeenAt: NOW - 5 * MS_PER_DAY,
           lastConfirmedAt: NOW,
           sourceChunkIds: ["chunk-a", "chunk-b", "chunk-c"],
+          certainty: "confirmed",
         },
         baseCfg,
       ),
     ).toBe(true);
+  });
+
+  it("denies the high-importance shortcut to tentative facts", () => {
+    expect(
+      passesPromotionThresholds(
+        {
+          dedupKey: "k:1",
+          text: "speculative one-shot",
+          importance: 0.9,
+          recallCount: 1,
+          firstSeenAt: NOW,
+          lastConfirmedAt: NOW,
+          sourceChunkIds: ["chunk-1"],
+          certainty: "tentative",
+        },
+        baseCfg,
+      ),
+    ).toBe(false);
+  });
+
+  it("holds tentative facts to the higher recall and dayspan bars", () => {
+    const tentative = (recallCount: number, spanDays: number) =>
+      passesPromotionThresholds(
+        {
+          dedupKey: "k:1",
+          text: "tentative",
+          importance: 0.7,
+          recallCount,
+          firstSeenAt: NOW - spanDays * MS_PER_DAY,
+          lastConfirmedAt: NOW,
+          sourceChunkIds: ["a", "b", "c"],
+          certainty: "tentative",
+        },
+        baseCfg,
+      );
+    // Clears the confirmed bar (2 recalls / 3 days) but not the tentative bar.
+    expect(tentative(2, 4)).toBe(false);
+    expect(tentative(3, 4)).toBe(false);
+    expect(tentative(3, 6)).toBe(true);
   });
 
   it("rejects when importance is below threshold even with high recall", () => {
@@ -202,6 +245,7 @@ describe("passesPromotionThresholds", () => {
           firstSeenAt: NOW - 10 * MS_PER_DAY,
           lastConfirmedAt: NOW,
           sourceChunkIds: ["a", "b", "c", "d", "e"],
+          certainty: "confirmed",
         },
         baseCfg,
       ),

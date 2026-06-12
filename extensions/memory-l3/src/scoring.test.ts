@@ -139,17 +139,62 @@ describe("scoreFact + composite", () => {
       recencyHalfLifeDays: 7,
       useFsrs: false,
       weightSemantic: 0,
+      weightInformationGain: 0,
     };
     const score = composite(
-      { lexical: 1.0, bm25: 0, importance: 1.0, recency: 1.0, l3Boost: 1.0, semantic: 0 },
+      {
+        lexical: 1.0,
+        bm25: 0,
+        importance: 1.0,
+        recency: 1.0,
+        l3Boost: 1.0,
+        semantic: 0,
+        informationGain: 0,
+      },
       config,
     );
     expect(score).toBeCloseTo(1.0, 6);
     const half = composite(
-      { lexical: 0.5, bm25: 0, importance: 0.5, recency: 0.5, l3Boost: 0.5, semantic: 0 },
+      {
+        lexical: 0.5,
+        bm25: 0,
+        importance: 0.5,
+        recency: 0.5,
+        l3Boost: 0.5,
+        semantic: 0,
+        informationGain: 0,
+      },
       config,
     );
     expect(half).toBeCloseTo(0.5, 6);
+  });
+
+  it("information gain contributes only when weighted", () => {
+    const config = {
+      weightLexical: 0,
+      weightBm25: 0,
+      weightImportance: 0,
+      weightRecency: 0,
+      weightL3Boost: 0,
+      weightLongTermTierBoost: 0,
+      weightMemoryCoreTierMultiplier: 0.7,
+      weightTypedFactTierBoost: 0,
+      recencyHalfLifeDays: 7,
+      useFsrs: false,
+      weightSemantic: 0,
+      weightInformationGain: 0,
+    };
+    const signals = {
+      lexical: 0,
+      bm25: 0,
+      importance: 0,
+      recency: 0,
+      l3Boost: 0,
+      semantic: 0,
+      informationGain: 0.8,
+    };
+    expect(composite(signals, config)).toBe(0);
+    expect(composite(signals, { ...config, weightInformationGain: 0.5 })).toBeCloseTo(0.4, 6);
   });
 
   it("l3Boost contributes via the ε weight", () => {
@@ -165,9 +210,18 @@ describe("scoreFact + composite", () => {
       recencyHalfLifeDays: 7,
       useFsrs: false,
       weightSemantic: 0,
+      weightInformationGain: 0,
     };
     const score = composite(
-      { lexical: 0, bm25: 0, importance: 0, recency: 0, l3Boost: 0.4, semantic: 0 },
+      {
+        lexical: 0,
+        bm25: 0,
+        importance: 0,
+        recency: 0,
+        l3Boost: 0.4,
+        semantic: 0,
+        informationGain: 0,
+      },
       config,
     );
     expect(score).toBeCloseTo(0.2, 6);

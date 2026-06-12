@@ -41,6 +41,142 @@ describe("compactSession", () => {
     expect(caller).not.toHaveBeenCalled();
   });
 
+  it("segments extraction at topic boundaries when segmented compaction is enabled", async () => {
+    await storage.ensureLayout();
+    // 20 messages = two 10-message windows; orthogonal window embeddings
+    // force one boundary at message index 10.
+    for (let i = 0; i < 10; i++) buffer.push("s1", userMsg(`gardening topic message ${i}`));
+    for (let i = 0; i < 10; i++) buffer.push("s1", userMsg(`kubernetes topic message ${i}`));
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({
+        facts: [{ text: "segment fact", importance: 0.7, dedupKey: `seg:${Math.random()}` }],
+      }),
+    );
+    let windowCall = 0;
+    const embeddingProvider = {
+      embed: async () => [1, 0],
+      embedBatch: async (texts: string[]) =>
+        texts.map(() => (windowCall++ % 2 === 0 ? [1, 0] : [0, 1])),
+    };
+    const result = await compactSession({
+      sessionId: "s1",
+      buffer,
+      storage,
+      caller,
+      state,
+      embeddingProvider,
+      segmentedCompaction: true,
+    });
+    // One extraction call per topic segment.
+    expect(caller).toHaveBeenCalledTimes(2);
+    const doc = await storage.readL2Chunk(result.chunkId!, Date.now());
+    expect(doc?.frontmatter.topicSegments).toEqual([
+      { startMsgIndex: 0, endMsgIndex: 10 },
+      { startMsgIndex: 10, endMsgIndex: 20 },
+    ]);
+  });
+
+  it("keeps monolithic extraction when segmented compaction is disabled", async () => {
+    await storage.ensureLayout();
+    for (let i = 0; i < 20; i++) buffer.push("s1", userMsg(`message ${i}`));
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({
+        facts: [{ text: "fact", importance: 0.7, dedupKey: "k:1" }],
+      }),
+    );
+    let windowCall = 0;
+    const embeddingProvider = {
+      embed: async () => [1, 0],
+      embedBatch: async (texts: string[]) =>
+        texts.map(() => (windowCall++ % 2 === 0 ? [1, 0] : [0, 1])),
+    };
+    const result = await compactSession({
+      sessionId: "s1",
+      buffer,
+      storage,
+      caller,
+      state,
+      embeddingProvider,
+      segmentedCompaction: false,
+    });
+    expect(caller).toHaveBeenCalledTimes(1);
+    const doc = await storage.readL2Chunk(result.chunkId!, Date.now());
+    expect(doc?.frontmatter.topicSegments).toBeUndefined();
+  });
+
+  it("persists information gain as novelty against long-term fact embeddings", async () => {
+    await storage.ensureLayout();
+    // Seed one long-term fact whose embedding is identical to what the stub
+    // provider returns — the new chunk covers no new ground (gain 0).
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: 0,
+        facts: [
+          {
+            id: "lt-1",
+            text: "known fact",
+            dedupKey: "known:fact",
+            importance: 0.8,
+            firstSeenAt: 1,
+            lastConfirmedAt: 2,
+            recallCount: 3,
+            sourceChunkIds: ["chunk-0"],
+            archived: false,
+            archivedAt: null,
+            embedding: [1, 0, 0],
+          },
+        ],
+      },
+      "body",
+    );
+    buffer.push("s1", userMsg("Something new."));
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({
+        facts: [{ text: "a fresh fact", importance: 0.7, dedupKey: "fresh:fact" }],
+      }),
+    );
+    const embeddingProvider = {
+      embed: async () => [1, 0, 0],
+      embedBatch: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+    };
+    const result = await compactSession({
+      sessionId: "s1",
+      buffer,
+      storage,
+      caller,
+      state,
+      embeddingProvider,
+    });
+    const doc = await storage.readL2Chunk(result.chunkId!, Date.now());
+    expect(doc?.frontmatter.informationGain).toBeCloseTo(0, 6);
+  });
+
+  it("records full information gain when long-term memory is empty", async () => {
+    await storage.ensureLayout();
+    buffer.push("s1", userMsg("Brand new territory."));
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({
+        facts: [{ text: "novel fact", importance: 0.7, dedupKey: "novel:fact" }],
+      }),
+    );
+    const embeddingProvider = {
+      embed: async () => [0, 1, 0],
+      embedBatch: async (texts: string[]) => texts.map(() => [0, 1, 0]),
+    };
+    const result = await compactSession({
+      sessionId: "s1",
+      buffer,
+      storage,
+      caller,
+      state,
+      embeddingProvider,
+    });
+    const doc = await storage.readL2Chunk(result.chunkId!, Date.now());
+    expect(doc?.frontmatter.informationGain).toBe(1);
+  });
+
   it("extracts facts, persists an L2 chunk, and drains the buffer", async () => {
     buffer.push("s1", userMsg("I prefer morning standups."));
     buffer.push("s1", userMsg("Yes, every weekday."));

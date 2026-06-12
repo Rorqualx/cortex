@@ -28,12 +28,20 @@ export type HebbianConfig = {
   maxEdgeWeight: number;
   /** Enable/disable Hebbian boosting. Default true. */
   enabled: boolean;
+  /**
+   * Attenuation for 2-hop neighbors relative to direct ones. 0 disables the
+   * second hop entirely (current default — raise after measuring recall
+   * delta on real queries). A 2-hop path's strength is its weakest edge, and
+   * nodes already reachable in 1 hop never double-count through hop 2.
+   */
+  twoHopDecay: number;
 };
 
 export const DEFAULT_HEBBIAN_CONFIG: HebbianConfig = {
   neighborWeight: 0.05,
   maxEdgeWeight: 10,
   enabled: true,
+  twoHopDecay: 0,
 };
 
 /**
@@ -124,13 +132,31 @@ export function hebbianBoost(
   if (!config.enabled) return 0;
   const edges = edgeLookup.get(dedupKey);
   if (!edges || edges.length === 0) return 0;
+  const directNeighbors = new Map<string, number>();
   let boost = 0;
   for (const edge of edges) {
     const neighborKey = edge.a === dedupKey ? edge.b : edge.a;
+    const cappedWeight = Math.min(edge.weight, config.maxEdgeWeight);
+    directNeighbors.set(neighborKey, cappedWeight);
     const neighborScore = baseScores.get(neighborKey) ?? 0;
     if (neighborScore <= 0) continue;
-    const cappedWeight = Math.min(edge.weight, config.maxEdgeWeight);
     boost += neighborScore * cappedWeight * config.neighborWeight;
+  }
+  if (config.twoHopDecay <= 0) {
+    return boost;
+  }
+  for (const [neighborKey, firstHopWeight] of directNeighbors) {
+    const secondHopEdges = edgeLookup.get(neighborKey);
+    if (!secondHopEdges) continue;
+    for (const edge of secondHopEdges) {
+      const farKey = edge.a === neighborKey ? edge.b : edge.a;
+      // Skip the origin and anything already counted as a direct neighbor.
+      if (farKey === dedupKey || directNeighbors.has(farKey)) continue;
+      const farScore = baseScores.get(farKey) ?? 0;
+      if (farScore <= 0) continue;
+      const pathWeight = Math.min(firstHopWeight, Math.min(edge.weight, config.maxEdgeWeight));
+      boost += farScore * pathWeight * config.neighborWeight * config.twoHopDecay;
+    }
   }
   return boost;
 }

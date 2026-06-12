@@ -112,7 +112,12 @@ describe("hebbian", () => {
     it("returns 0 when disabled", () => {
       const lookup = buildEdgeLookup([{ a: "k:1", b: "k:2", weight: 5 }]);
       const scores = new Map<string, number>([["k:2", 0.8]]);
-      const config: HebbianConfig = { neighborWeight: 0.05, maxEdgeWeight: 10, enabled: false };
+      const config: HebbianConfig = {
+        neighborWeight: 0.05,
+        maxEdgeWeight: 10,
+        enabled: false,
+        twoHopDecay: 0,
+      };
       assert.strictEqual(hebbianBoost("k:1", lookup, scores, config), 0);
     });
 
@@ -133,7 +138,12 @@ describe("hebbian", () => {
     it("caps edge weight at maxEdgeWeight", () => {
       const lookup = buildEdgeLookup([{ a: "k:1", b: "k:2", weight: 100 }]);
       const scores = new Map<string, number>([["k:2", 1.0]]);
-      const config: HebbianConfig = { neighborWeight: 0.05, maxEdgeWeight: 5, enabled: true };
+      const config: HebbianConfig = {
+        neighborWeight: 0.05,
+        maxEdgeWeight: 5,
+        enabled: true,
+        twoHopDecay: 0,
+      };
       // boost = 1.0 * min(100, 5) * 0.05 = 1.0 * 5 * 0.05 = 0.25
       const boost = hebbianBoost("k:1", lookup, scores, config);
       assert.strictEqual(boost, 0.25);
@@ -151,6 +161,53 @@ describe("hebbian", () => {
       // boost = (0.5 * 2 * 0.05) + (0.4 * 3 * 0.05) = 0.05 + 0.06 = 0.11
       const boost = hebbianBoost("k:1", lookup, scores);
       assert.ok(Math.abs(boost - 0.11) < 1e-10);
+    });
+
+    it("walks two hops with decay when enabled", () => {
+      // k:1 - k:2 - k:3 chain; k:3 only reachable at hop 2.
+      const lookup = buildEdgeLookup([
+        { a: "k:1", b: "k:2", weight: 4 },
+        { a: "k:2", b: "k:3", weight: 2 },
+      ]);
+      const scores = new Map<string, number>([
+        ["k:2", 0.5],
+        ["k:3", 0.8],
+      ]);
+      const config: HebbianConfig = {
+        neighborWeight: 0.05,
+        maxEdgeWeight: 10,
+        enabled: true,
+        twoHopDecay: 0.3,
+      };
+      // hop1: 0.5 * 4 * 0.05 = 0.1
+      // hop2: 0.8 * min(4, 2) * 0.05 * 0.3 = 0.8 * 2 * 0.015 = 0.024
+      const boost = hebbianBoost("k:1", lookup, scores, config);
+      assert.ok(Math.abs(boost - 0.124) < 1e-10);
+      // Default config keeps the second hop dark.
+      const oneHopOnly = hebbianBoost("k:1", lookup, scores);
+      assert.ok(Math.abs(oneHopOnly - 0.1) < 1e-10);
+    });
+
+    it("never double-counts direct neighbors or the origin through hop two", () => {
+      // Triangle: every node is a direct neighbor of every other.
+      const lookup = buildEdgeLookup([
+        { a: "k:1", b: "k:2", weight: 1 },
+        { a: "k:1", b: "k:3", weight: 1 },
+        { a: "k:2", b: "k:3", weight: 1 },
+      ]);
+      const scores = new Map<string, number>([
+        ["k:2", 1],
+        ["k:3", 1],
+      ]);
+      const config: HebbianConfig = {
+        neighborWeight: 0.05,
+        maxEdgeWeight: 10,
+        enabled: true,
+        twoHopDecay: 1,
+      };
+      // Only the two direct contributions: 1 * 1 * 0.05 each.
+      const boost = hebbianBoost("k:1", lookup, scores, config);
+      assert.ok(Math.abs(boost - 0.1) < 1e-10);
     });
 
     it("ignores neighbors with non-positive scores", () => {

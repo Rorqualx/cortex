@@ -9,13 +9,15 @@ import { extractEdges, mergeEdges, type HebbianEdge } from "./hebbian.js";
 import type { IngestBuffer } from "./ingest.js";
 import {
   extractFacts,
+  type ExtractResult,
   type ExtractedDecision,
   type ExtractedActionItem,
   type ExtractedTypedFact,
   formatTranscriptForPrompt,
   type LlmCaller,
 } from "./llm.js";
-import { buildMessageChunks } from "./segmentation.js";
+import { cosineSimilarity } from "./scoring.js";
+import { buildMessageChunks, detectTopicBoundaries, splitByBoundaries } from "./segmentation.js";
 import type { Storage } from "./storage.js";
 import type { L2ChunkFrontmatter, L2Fact, L3State, TypedFact } from "./types.js";
 
@@ -46,6 +48,14 @@ export async function compactSession(params: {
   now?: number;
   /** Embedding provider for message-level chunk embeddings. Optional. */
   embeddingProvider?: EmbeddingProvider;
+  /**
+   * Per-topic extraction (C-DIC-style): segment the buffer at embedding
+   * topic boundaries and run one extraction call per segment. Defaults to
+   * the OPENCLAW_MEMORY_L3_SEGMENTED_COMPACTION=1 env flag. Costs one LLM
+   * call per segment instead of one per tick — keep flagged until the
+   * fact-quality gain is measured against that spend.
+   */
+  segmentedCompaction?: boolean;
 }): Promise<CompactionResult> {
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
@@ -62,9 +72,11 @@ export async function compactSession(params: {
 
   const alreadyKnownSet = new Set(await readRecentDedupKeys(params.storage));
 
-  const extracted = await extractFacts({
+  const { extracted, topicSegments } = await extractWithOptionalSegmentation({
     messages,
     caller: params.caller,
+    embeddingProvider: params.embeddingProvider,
+    segmentedCompaction: params.segmentedCompaction,
   });
 
   const filtered = dropAlreadyKnown(extracted.facts, alreadyKnownSet);
@@ -81,6 +93,40 @@ export async function compactSession(params: {
   const facts: L2Fact[] = deduped.map((f) => liftToL2Fact(f, now));
   const typedFacts: TypedFact[] = groundedTyped.map((t) => liftToTypedFact(t, now));
 
+  // One chunk embedding serves both the information-gain metric (persisted
+  // on the chunk frontmatter) and cross-session topic linking below.
+  // Non-fatal: any failure here just means the chunk persists without them.
+  let chunkEmbedding: number[] | undefined;
+  let linkCandidates: Array<{ chunkId: string; embedding: number[] }> = [];
+  let informationGain: number | undefined;
+  if (params.embeddingProvider && facts.length > 0) {
+    try {
+      const chunkText = facts.map((f) => f.text).join(" ");
+      [chunkEmbedding] = await params.embeddingProvider.embedBatch([chunkText]);
+      if (chunkEmbedding && chunkEmbedding.length > 0) {
+        const longterm = await params.storage.readLongTerm();
+        const withEmbeddings = longterm.facts.filter(
+          (f) => !f.archived && f.embedding && f.embedding.length > 0,
+        );
+        linkCandidates = withEmbeddings.map((f) => ({
+          chunkId: f.sourceChunkIds[0] ?? f.id,
+          embedding: f.embedding!,
+        }));
+        // Novelty vs long-term memory: an empty long-term tier means the
+        // session covered entirely new ground (gain = 1).
+        const maxSimilarity = withEmbeddings.reduce(
+          (max, f) => Math.max(max, cosineSimilarity(chunkEmbedding!, f.embedding!)),
+          0,
+        );
+        informationGain = 1 - maxSimilarity;
+      }
+    } catch (gainErr) {
+      if (DEBUG_ENABLED) {
+        console.error(`[memory-l3] information-gain embedding failed: ${String(gainErr)}`);
+      }
+    }
+  }
+
   const frontmatter: L2ChunkFrontmatter = {
     id: chunkId,
     agentId: params.state.agentId,
@@ -92,6 +138,8 @@ export async function compactSession(params: {
     dedupKeys: facts.map((f) => f.dedupKey),
     decisions: extracted.decisions.length > 0 ? extracted.decisions : undefined,
     actionItems: extracted.actions.length > 0 ? extracted.actions : undefined,
+    informationGain,
+    topicSegments,
   };
 
   await params.storage.writeL2Chunk(
@@ -167,30 +215,17 @@ export async function compactSession(params: {
     }
   }
 
-  // Cross-session topic linking — find related chunks via embedding similarity
-  if (params.embeddingProvider && facts.length > 0) {
+  // Cross-session topic linking — reuses the chunk embedding and long-term
+  // candidates computed for the information-gain metric above.
+  if (chunkEmbedding && chunkEmbedding.length > 0 && linkCandidates.length > 0) {
     try {
-      const chunkText = facts.map((f) => f.text).join(" ");
-      const [chunkEmbedding] = await params.embeddingProvider.embedBatch([chunkText]);
-      if (chunkEmbedding && chunkEmbedding.length > 0) {
-        // Get long-term facts with embeddings as candidate targets
-        const longterm = await params.storage.readLongTerm();
-        const candidates = longterm.facts
-          .filter((f) => !f.archived && f.embedding && f.embedding.length > 0)
-          .map((f) => ({
-            chunkId: f.sourceChunkIds[0] ?? f.id,
-            embedding: f.embedding!,
-          }));
-        if (candidates.length > 0) {
-          const links = await findTopicLinks({
-            chunkId,
-            chunkEmbedding,
-            existingChunks: candidates,
-          });
-          if (links.length > 0) {
-            await params.storage.appendTopicLinks(links);
-          }
-        }
+      const links = await findTopicLinks({
+        chunkId,
+        chunkEmbedding,
+        existingChunks: linkCandidates,
+      });
+      if (links.length > 0) {
+        await params.storage.appendTopicLinks(links);
       }
     } catch (linkErr) {
       if (process.env.OPENCLAW_MEMORY_L3_DEBUG === "1") {
@@ -284,4 +319,79 @@ function formatChunkBody(
   return [factSection, typedSection, decisionsSection, actionsSection, summarySection]
     .filter((s) => s.length > 0)
     .join("\n\n");
+}
+
+// -----------------------------------------------------------------
+// Segmented (per-topic) extraction — C-DIC-style incremental step
+// -----------------------------------------------------------------
+
+/** Bound on extraction calls per tick so a boundary-happy session cannot multiply LLM spend unbounded. */
+const MAX_COMPACTION_SEGMENTS = 4;
+
+/** Merge trailing ranges into one so capping never drops messages. */
+function capSegmentRanges(
+  ranges: Array<{ start: number; end: number }>,
+  max: number,
+): Array<{ start: number; end: number }> {
+  if (ranges.length <= max) {
+    return ranges;
+  }
+  const head = ranges.slice(0, max - 1);
+  const tail = ranges.slice(max - 1);
+  return [...head, { start: tail[0].start, end: tail[tail.length - 1].end }];
+}
+
+/**
+ * Run fact extraction either monolithically (default) or per topic segment
+ * when segmented compaction is enabled and an embedding provider is present.
+ * Boundary-detection failures fall back to the monolithic path — extraction
+ * must never fail because segmentation did.
+ */
+async function extractWithOptionalSegmentation(params: {
+  messages: ReadonlyArray<AgentMessage>;
+  caller: LlmCaller;
+  embeddingProvider?: EmbeddingProvider;
+  segmentedCompaction?: boolean;
+}): Promise<{
+  extracted: ExtractResult;
+  topicSegments?: Array<{ startMsgIndex: number; endMsgIndex: number }>;
+}> {
+  const enabled =
+    params.segmentedCompaction ?? process.env.OPENCLAW_MEMORY_L3_SEGMENTED_COMPACTION === "1";
+  if (enabled && params.embeddingProvider) {
+    try {
+      const boundaries = await detectTopicBoundaries({
+        messages: params.messages,
+        embeddingProvider: params.embeddingProvider,
+      });
+      const ranges = capSegmentRanges(
+        splitByBoundaries(params.messages.length, boundaries),
+        MAX_COMPACTION_SEGMENTS,
+      );
+      if (ranges.length > 1) {
+        const merged: ExtractResult = { facts: [], typedFacts: [], decisions: [], actions: [] };
+        for (const range of ranges) {
+          const segmentMessages = params.messages.slice(range.start, range.end);
+          if (segmentMessages.length === 0) continue;
+          const segment = await extractFacts({ messages: segmentMessages, caller: params.caller });
+          merged.facts.push(...segment.facts);
+          merged.typedFacts.push(...segment.typedFacts);
+          merged.decisions.push(...segment.decisions);
+          merged.actions.push(...segment.actions);
+        }
+        l3debug(
+          `extractWithOptionalSegmentation: ${ranges.length} topic segments over ${params.messages.length} messages`,
+        );
+        return {
+          extracted: merged,
+          topicSegments: ranges.map((r) => ({ startMsgIndex: r.start, endMsgIndex: r.end })),
+        };
+      }
+    } catch (segErr) {
+      if (DEBUG_ENABLED) {
+        console.error(`[memory-l3] segmented extraction failed: ${String(segErr)}`);
+      }
+    }
+  }
+  return { extracted: await extractFacts({ messages: params.messages, caller: params.caller }) };
 }

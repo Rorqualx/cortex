@@ -59,6 +59,24 @@ describe("parseExtractResponse", () => {
     expect(result.typedFacts).toEqual([]);
   });
 
+  it("keeps valid certainty tags and drops unknown values", () => {
+    const raw = JSON.stringify({
+      facts: [
+        { text: "a", importance: 0.7, dedupKey: "k:1", certainty: "tentative" },
+        { text: "b", importance: 0.7, dedupKey: "k:2", certainty: "instructional" },
+        { text: "c", importance: 0.7, dedupKey: "k:3", certainty: "very-sure" },
+        { text: "d", importance: 0.7, dedupKey: "k:4" },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.facts.map((fact) => fact.certainty)).toEqual([
+      "tentative",
+      "instructional",
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("preserves reasoning field when present", () => {
     const raw = JSON.stringify({
       facts: [
@@ -199,7 +217,7 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0].slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0][0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=7");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=8");
     expect(call.systemPrompt).toContain("REASONING");
     expect(call.userPrompt).not.toContain("already-known");
   });

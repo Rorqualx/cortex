@@ -34,6 +34,14 @@ export const INITIAL_L3_STATE: L3State = {
 };
 
 /**
+ * How firmly a prose fact is grounded. "confirmed" = user stated/verified it;
+ * "tentative" = inferred or speculative; "instructional" = explicit directive
+ * about future behavior. Consolidation holds tentative facts to higher
+ * promotion bars so a passing observation cannot become firm L3 memory.
+ */
+export type FactCertainty = "tentative" | "confirmed" | "instructional";
+
+/**
  * A single distilled fact extracted from a chunk of conversation. Importance
  * and dedupKey are used by retrieval scoring and within-chunk dedup.
  */
@@ -53,6 +61,9 @@ export type L2Fact = {
    * Significant facts get a 2.7× slower FSRS decay rate. Absent on facts
    * extracted before PROMPT_VERSION=6. */
   significant?: boolean;
+  /** Grounding strength used by consolidation thresholds. Absent on facts
+   * extracted before PROMPT_VERSION=8; readers treat absent as "confirmed". */
+  certainty?: FactCertainty;
 };
 
 /**
@@ -107,6 +118,20 @@ export type L2ChunkFrontmatter = {
    * compat.
    */
   actionItems?: ExtractedActionItem[];
+  /**
+   * Session novelty at compaction time: 1 - max cosine similarity between
+   * this chunk's combined fact text and existing long-term fact embeddings.
+   * 1 = entirely new ground; 0 = fully covered by long-term memory. Absent
+   * when no embedding provider was available. Consumed by scoring via
+   * `ScoringConfig.weightInformationGain` (zero until calibrated).
+   */
+  informationGain?: number;
+  /**
+   * Message ranges used for per-topic extraction when segmented compaction
+   * was active (OPENCLAW_MEMORY_L3_SEGMENTED_COMPACTION=1). Absent for
+   * monolithic extraction. Indexes are into the compacted message slice.
+   */
+  topicSegments?: Array<{ startMsgIndex: number; endMsgIndex: number }>;
 };
 
 /**
@@ -167,6 +192,12 @@ export type LongTermFact = {
    * jaccard for those. Stored as number array (768-dim for nomic-embed-text).
    */
   embedding?: number[];
+  /**
+   * Structured history of previous text values, showing how this fact evolved
+   * over time. Each entry captures the prior text, when it was superseded,
+   * and which chunk triggered the update. Optional for backward compat.
+   */
+  history?: Array<{ text: string; updatedAt: number; sourceChunkId: string }>;
 };
 
 /**

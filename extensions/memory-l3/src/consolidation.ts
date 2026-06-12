@@ -1,5 +1,5 @@
 import type { Storage } from "./storage.js";
-import type { L2Fact } from "./types.js";
+import type { FactCertainty, L2Fact } from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -13,9 +13,14 @@ export type ConsolidationConfig = {
   /**
    * Single-occurrence shortcut: a fact at this importance promotes immediately
    * without needing recall or dayspan. Mirrors memory-core's pattern of
-   * letting high-confidence one-shots through.
+   * letting high-confidence one-shots through. Tentative facts never take
+   * this shortcut — a speculative one-shot must earn promotion over time.
    */
   highImportancePassthrough: number;
+  /** Recall bar for candidates whose every occurrence was tagged tentative. */
+  tentativeMinRecallCount: number;
+  /** Dayspan bar for tentative-only candidates. */
+  tentativeMinDayspanMs: number;
 };
 
 export const DEFAULT_CONSOLIDATION_CONFIG: ConsolidationConfig = {
@@ -23,6 +28,15 @@ export const DEFAULT_CONSOLIDATION_CONFIG: ConsolidationConfig = {
   minDayspanMs: 3 * MS_PER_DAY,
   minImportance: 0.6,
   highImportancePassthrough: 0.85,
+  tentativeMinRecallCount: 3,
+  tentativeMinDayspanMs: 5 * MS_PER_DAY,
+};
+
+/** Rank for upgrading candidate certainty: any stronger occurrence wins. */
+const CERTAINTY_RANK: Record<FactCertainty, number> = {
+  tentative: 0,
+  confirmed: 1,
+  instructional: 2,
 };
 
 /**
@@ -39,6 +53,12 @@ export type ConsolidationCandidate = {
   lastConfirmedAt: number;
   /** Chunk ids that confirmed this dedupKey, in encounter order. */
   sourceChunkIds: string[];
+  /**
+   * Strongest certainty across occurrences: one confirmed/instructional
+   * sighting lifts the candidate out of the tentative bar. Facts extracted
+   * before PROMPT_VERSION=8 carry no tag and count as confirmed.
+   */
+  certainty: FactCertainty;
 };
 
 /**
@@ -74,6 +94,7 @@ function mergeFact(
       firstSeenAt: fact.createdAt,
       lastConfirmedAt: fact.createdAt,
       sourceChunkIds: [chunkId],
+      certainty: fact.certainty ?? "confirmed",
     });
     return;
   }
@@ -93,6 +114,10 @@ function mergeFact(
   if (!existing.sourceChunkIds.includes(chunkId)) {
     existing.sourceChunkIds.push(chunkId);
   }
+  const factCertainty = fact.certainty ?? "confirmed";
+  if (CERTAINTY_RANK[factCertainty] > CERTAINTY_RANK[existing.certainty]) {
+    existing.certainty = factCertainty;
+  }
 }
 
 /**
@@ -104,11 +129,14 @@ export function passesPromotionThresholds(
   candidate: ConsolidationCandidate,
   config: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG,
 ): boolean {
-  if (candidate.importance >= config.highImportancePassthrough) {
+  const tentative = candidate.certainty === "tentative";
+  if (!tentative && candidate.importance >= config.highImportancePassthrough) {
     return true;
   }
-  if (candidate.recallCount < config.minRecallCount) return false;
-  if (candidate.lastConfirmedAt - candidate.firstSeenAt < config.minDayspanMs) return false;
+  const minRecallCount = tentative ? config.tentativeMinRecallCount : config.minRecallCount;
+  const minDayspanMs = tentative ? config.tentativeMinDayspanMs : config.minDayspanMs;
+  if (candidate.recallCount < minRecallCount) return false;
+  if (candidate.lastConfirmedAt - candidate.firstSeenAt < minDayspanMs) return false;
   if (candidate.importance < config.minImportance) return false;
   return true;
 }

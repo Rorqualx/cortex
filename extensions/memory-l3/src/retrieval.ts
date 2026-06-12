@@ -172,6 +172,8 @@ export async function retrieveTopK(params: {
     tierBoost: number;
     /** Pre-computed embedding vector from LongTermFact.embedding, if present. */
     embedding?: number[];
+    /** Source chunk's session-novelty metric (L2 tier only). */
+    informationGain?: number;
   };
   const items: ScorableItem[] = [];
 
@@ -181,7 +183,14 @@ export async function retrieveTopK(params: {
     const chunkId = doc.frontmatter.id;
     const l3Boost = epochBoosts.get(chunkId) ?? 0;
     for (const fact of doc.frontmatter.facts) {
-      items.push({ fact, chunkId, tier: "l2", l3Boost, tierBoost: 0 });
+      items.push({
+        fact,
+        chunkId,
+        tier: "l2",
+        l3Boost,
+        tierBoost: 0,
+        informationGain: doc.frontmatter.informationGain,
+      });
     }
     for (const typed of doc.frontmatter.typedFacts ?? []) {
       if (canonicalSlots.has(typed.slot)) continue;
@@ -237,6 +246,7 @@ export async function retrieveTopK(params: {
       l3Boost: item.l3Boost,
       corpusStats,
       significant: item.fact.significant,
+      informationGain: item.informationGain,
     });
     // Add embedding-based semantic signal when both query and fact have vectors
     if (
@@ -279,6 +289,7 @@ export async function retrieveTopK(params: {
             recency: 1,
             l3Boost: 0,
             semantic: 0,
+            informationGain: 0,
           },
           chunkId: hit.path,
           tier: "memory-core",

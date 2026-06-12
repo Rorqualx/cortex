@@ -50,6 +50,12 @@ export type ScoringConfig = {
    * Default 0.15.
    */
   weightSemantic: number;
+  /**
+   * Weight for the source chunk's information-gain (session novelty) signal.
+   * Ships at 0 so the metric is collected and visible in signals without
+   * affecting ranking; raise only after calibrating against real recall data.
+   */
+  weightInformationGain: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -67,6 +73,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   recencyHalfLifeDays: 7,
   useFsrs: true,
   weightSemantic: 0.35,
+  weightInformationGain: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -156,6 +163,8 @@ export type Signals = {
   l3Boost: number;
   /** Embedding-based cosine similarity. 0 when embeddings unavailable. */
   semantic: number;
+  /** Source chunk's session-novelty metric. 0 when the chunk predates it. */
+  informationGain: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
@@ -279,6 +288,8 @@ export function scoreFact(params: {
   recallCount?: number;
   /** Whether this fact was flagged as significant by the user ("remember this"). */
   significant?: boolean;
+  /** Source chunk's information-gain metric, when known. */
+  informationGain?: number;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -297,7 +308,15 @@ export function scoreFact(params: {
           significant: params.significant,
         })
       : recencyScore(ageMs, params.config.recencyHalfLifeDays);
-  return { lexical, bm25, importance, recency, l3Boost: params.l3Boost ?? 0, semantic: 0 };
+  return {
+    lexical,
+    bm25,
+    importance,
+    recency,
+    l3Boost: params.l3Boost ?? 0,
+    semantic: 0,
+    informationGain: params.informationGain ?? 0,
+  };
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {
@@ -307,6 +326,7 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.importance * config.weightImportance +
     signals.recency * config.weightRecency +
     signals.l3Boost * config.weightL3Boost +
-    signals.semantic * config.weightSemantic
+    signals.semantic * config.weightSemantic +
+    signals.informationGain * config.weightInformationGain
   );
 }
