@@ -97,6 +97,8 @@ export type MessageSentHookContext = {
   isGroup?: boolean;
   /** Group or channel identifier, if applicable */
   groupId?: string;
+  /** Runtime config for hook handlers that need to resolve their own config */
+  cfg?: OpenClawConfig;
 };
 
 export type MessageSentHookEvent = InternalHookEvent & {

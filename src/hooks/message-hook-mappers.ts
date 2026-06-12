@@ -533,6 +533,7 @@ function toInternalInboundMessageHookContextBase(canonical: CanonicalInboundMess
 
 export function toInternalMessageSentContext(
   canonical: CanonicalSentMessageHookContext,
+  cfg?: OpenClawConfig,
 ): MessageSentHookContext {
   return {
     to: canonical.to,
@@ -545,5 +546,6 @@ export function toInternalMessageSentContext(
     messageId: canonical.messageId,
     ...(canonical.isGroup != null ? { isGroup: canonical.isGroup } : {}),
     ...(canonical.groupId ? { groupId: canonical.groupId } : {}),
+    ...(cfg ? { cfg } : {}),
   };
 }

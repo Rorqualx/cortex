@@ -1002,6 +1002,7 @@ function createMessageSentEmitter(params: {
   sessionKeyForInternalHooks?: string;
   mirrorIsGroup?: boolean;
   mirrorGroupId?: string;
+  cfg?: OpenClawConfig;
 }): { emitMessageSent: (event: MessageSentEvent) => void; hasMessageSentHooks: boolean } {
   const hasMessageSentHooks = params.hookRunner?.hasHooks("message_sent") ?? false;
   const canEmitInternalHook = Boolean(params.sessionKeyForInternalHooks);
@@ -1050,7 +1051,7 @@ function createMessageSentEmitter(params: {
           "message",
           "sent",
           params.sessionKeyForInternalHooks!,
-          toInternalMessageSentContext(canonical),
+          toInternalMessageSentContext(canonical, params.cfg),
         ),
       ),
       "deliverOutboundPayloads: message:sent internal hook failed",
@@ -1556,6 +1557,7 @@ async function deliverOutboundPayloadsCore(
     sessionKeyForInternalHooks,
     mirrorIsGroup,
     mirrorGroupId,
+    cfg,
   });
   const hasMessageSendingHooks = hookRunner?.hasHooks("message_sending") ?? false;
   const diagnosticSessionKey = sessionKeyForDeliveryDiagnostics(params);
