@@ -28,6 +28,7 @@ describe("skillNameForCandidate", () => {
   it("prefixes all generated names with forge-", () => {
     const rep: Candidate = {
       lane: "tool-shape",
+      successScore: 1,
       candidateId: "abcdef1234567890",
       toolShapeHash: "abcdef1234567890",
       toolSequence: ["read_file", "grep"],
@@ -40,6 +41,7 @@ describe("skillNameForCandidate", () => {
   it("uses lane-specific naming components", () => {
     const recovery: Candidate = {
       lane: "error-recovery",
+      successScore: 1,
       candidateId: "1234567890abcdef",
       captureDir: "/cap",
       toolSequence: ["mkdir"],
@@ -68,6 +70,7 @@ describe("distillCandidateToStaging", () => {
   it("writes a SKILL.md under <stateDir>/skill-forge/skills/_staging/<name>/", async () => {
     const candidate: Candidate = {
       lane: "explicit",
+      successScore: 1,
       candidateId: "1234567890abcdef",
       captureDir: "/cap/exp-1",
       toolSequence: ["read_file", "grep"],
@@ -95,6 +98,7 @@ describe("distillCandidateToStaging", () => {
   it("quotes the description when it contains YAML-significant characters", async () => {
     const candidate: Candidate = {
       lane: "tool-shape",
+      successScore: 1,
       candidateId: "h".repeat(16),
       toolShapeHash: "h".repeat(16),
       toolSequence: ["a:b", "c"],
@@ -114,6 +118,7 @@ describe("distillCandidateToStaging", () => {
   it("uses LLM-distilled prose with provenance when the LLM pass succeeds", async () => {
     const candidate: Candidate = {
       lane: "tool-shape",
+      successScore: 1,
       candidateId: "a".repeat(16),
       toolShapeHash: "a".repeat(16),
       toolSequence: ["read_file", "edit_file"],
@@ -141,6 +146,7 @@ describe("distillCandidateToStaging", () => {
   it("falls back to the heuristic body when the LLM pass fails", async () => {
     const candidate: Candidate = {
       lane: "tool-shape",
+      successScore: 1,
       candidateId: "b".repeat(16),
       toolShapeHash: "b".repeat(16),
       toolSequence: ["read_file"],
@@ -160,6 +166,7 @@ describe("distillCandidateToStaging", () => {
   it("renders the tool sequence as a numbered list and notes occurrences for tool-shape lane", async () => {
     const candidate: Candidate = {
       lane: "tool-shape",
+      successScore: 1,
       candidateId: "h".repeat(16),
       toolShapeHash: "h".repeat(16),
       toolSequence: ["read_file", "grep", "edit_file"],
