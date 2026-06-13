@@ -51,7 +51,11 @@ import {
   renderCompactionIndicator,
   renderFallbackIndicator,
 } from "../chat/status-indicators.ts";
-import { getExpandedToolCards, syncToolCardExpansionState } from "../chat/tool-expansion-state.ts";
+import {
+  getExpandedToolCards,
+  markToolDisclosureUserToggled,
+  syncToolCardExpansionState,
+} from "../chat/tool-expansion-state.ts";
 import type { EmbedSandboxMode } from "../embed-sandbox.ts";
 import { icons } from "../icons.ts";
 import { formatGoalDetail, formatGoalSummary } from "../session-goal.ts";
@@ -1635,9 +1639,20 @@ export function renderChat(props: ChatProps) {
     runStatus: props.runStatus as BuildChatItemsProps["runStatus"],
     historyRenderLimit: props.historyRenderLimit,
   });
-  syncToolCardExpansionState(props.sessionKey, chatItems, Boolean(props.autoExpandToolCalls));
+  // Live runs auto-follow the newest tool work: latest disclosure expands,
+  // superseded ones collapse. Terminal status means the run just ended.
+  const chatRunActive =
+    Boolean(props.runId || props.sending || props.stream !== null) &&
+    !hasTerminalRunStatus(props.runStatus);
+  syncToolCardExpansionState(
+    props.sessionKey,
+    chatItems,
+    Boolean(props.autoExpandToolCalls),
+    chatRunActive,
+  );
   const expandedToolCards = getExpandedToolCards(props.sessionKey);
   const toggleToolCardExpanded = (toolCardId: string) => {
+    markToolDisclosureUserToggled(props.sessionKey, toolCardId);
     expandedToolCards.set(toolCardId, !expandedToolCards.get(toolCardId));
     requestUpdate();
   };
@@ -1875,6 +1890,7 @@ export function renderChat(props: ChatProps) {
                     autoExpandToolCalls: Boolean(props.autoExpandToolCalls),
                     isToolMessageExpanded: (messageId: string) => expandedToolCards.get(messageId),
                     onToggleToolMessageExpanded: (messageId: string, expanded?: boolean) => {
+                      markToolDisclosureUserToggled(props.sessionKey, messageId);
                       expandedToolCards.set(
                         messageId,
                         !(expanded ?? expandedToolCards.get(messageId) ?? false),
