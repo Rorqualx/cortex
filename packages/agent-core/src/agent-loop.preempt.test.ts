@@ -1,6 +1,7 @@
 // Covers cooperative steering-preemption of in-flight tool batches.
 import { describe, expect, it } from "vitest";
 import { agentLoop } from "./agent-loop.js";
+import { Agent } from "./agent.js";
 import type { Message, Model } from "./llm.js";
 import type {
   AgentContext,
@@ -173,5 +174,156 @@ describe("agentLoop steering preemption", () => {
     expect(toolResults).toHaveLength(1);
     expect(JSON.stringify(toolResults[0].content)).toContain("edit applied");
     expect(JSON.stringify(toolResults[0].content)).not.toContain("interrupted");
+  });
+});
+
+describe("Agent steering preemption wiring", () => {
+  it("steer() cuts the in-flight preemptable batch when preemptOnSteer is set", async () => {
+    let signalToolStarted!: () => void;
+    const toolStarted = new Promise<void>((resolve) => {
+      signalToolStarted = resolve;
+    });
+    const hangTool: AgentTool = {
+      name: "hang",
+      label: "Hang",
+      description: "Signals it started, then never settles.",
+      parameters: { type: "object", properties: {} },
+      preemptable: true,
+      // Never settles and ignores the signal, so the race is resolved
+      // deterministically by the preempt rather than the tool's own result.
+      execute: () =>
+        new Promise<never>(() => {
+          signalToolStarted();
+        }),
+    } as unknown as AgentTool;
+
+    const agent = new Agent({
+      initialState: { systemPrompt: "", model, thinkingLevel: "off", tools: [hangTool] },
+      convertToLlm: (messages) => messages as Message[],
+      streamFn: scriptedStreamFn([
+        assistant([{ type: "toolCall", id: "t1", name: "hang", arguments: {} }], "toolUse"),
+        assistant([{ type: "text", text: "ok, stopped" }], "stop"),
+      ]),
+      preemptOnSteer: true,
+    });
+
+    const runPromise = agent.prompt("run hang");
+    await toolStarted;
+    agent.steer({ role: "user", content: "stop now", timestamp: 2 });
+    await runPromise;
+
+    const messages = agent.state.messages;
+    const toolResults = messages.filter((m) => m.role === "toolResult");
+    expect(toolResults).toHaveLength(1);
+    expect(JSON.stringify(toolResults[0].content)).toContain(
+      "interrupted to handle a new user message",
+    );
+    const injectedSteer = messages.find(
+      (m) => m.role === "user" && JSON.stringify(m.content ?? "").includes("stop now"),
+    );
+    expect(injectedSteer).toBeDefined();
+  });
+
+  it("does not preempt when preemptOnSteer is unset (steer waits for the batch)", async () => {
+    let signalToolStarted!: () => void;
+    const toolStarted = new Promise<void>((resolve) => {
+      signalToolStarted = resolve;
+    });
+    let aborted = false;
+    const slowTool: AgentTool = {
+      name: "slow",
+      label: "Slow",
+      description: "Resolves shortly after starting; honors abort for assertion.",
+      parameters: { type: "object", properties: {} },
+      preemptable: true,
+      execute: (_id: string, _params: unknown, signal?: AbortSignal) =>
+        new Promise((resolve) => {
+          signal?.addEventListener("abort", () => {
+            aborted = true;
+          });
+          signalToolStarted();
+          setTimeout(
+            () => resolve({ content: [{ type: "text", text: "slow done" }], details: {} }),
+            10,
+          );
+        }),
+    } as unknown as AgentTool;
+
+    const agent = new Agent({
+      initialState: { systemPrompt: "", model, thinkingLevel: "off", tools: [slowTool] },
+      convertToLlm: (messages) => messages as Message[],
+      streamFn: scriptedStreamFn([
+        assistant([{ type: "toolCall", id: "t1", name: "slow", arguments: {} }], "toolUse"),
+        assistant([{ type: "text", text: "done" }], "stop"),
+      ]),
+      // preemptOnSteer omitted -> defaults false.
+    });
+
+    const runPromise = agent.prompt("run slow");
+    await toolStarted;
+    agent.steer({ role: "user", content: "later", timestamp: 2 });
+    await runPromise;
+
+    const toolResults = agent.state.messages.filter((m) => m.role === "toolResult");
+    expect(toolResults).toHaveLength(1);
+    expect(JSON.stringify(toolResults[0].content)).toContain("slow done");
+    expect(aborted).toBe(false);
+  });
+
+  it("preempts the batch when a steer arrived during the turn's streaming", async () => {
+    let agentRef: Agent | undefined;
+    const hangTool: AgentTool = {
+      name: "hang",
+      label: "Hang",
+      description: "Never settles.",
+      parameters: { type: "object", properties: {} },
+      preemptable: true,
+      execute: () => new Promise<never>(() => {}),
+    } as unknown as AgentTool;
+
+    // The first response carries tool calls; while it "streams", a steer is
+    // enqueued so it is already pending when the tool batch begins.
+    let turn = 0;
+    const streamFn: StreamFn = () => {
+      const current = turn;
+      turn += 1;
+      const message =
+        current === 0
+          ? assistant([{ type: "toolCall", id: "t1", name: "hang", arguments: {} }], "toolUse")
+          : assistant([{ type: "text", text: "stopped" }], "stop");
+      return {
+        async *[Symbol.asyncIterator]() {
+          if (current === 0) {
+            agentRef?.steer({ role: "user", content: "stop now", timestamp: 2 });
+          }
+          yield {
+            type: "done" as const,
+            reason: current === 0 ? ("toolUse" as const) : ("stop" as const),
+            message,
+          };
+        },
+        result: async () => message,
+      };
+    };
+
+    agentRef = new Agent({
+      initialState: { systemPrompt: "", model, thinkingLevel: "off", tools: [hangTool] },
+      convertToLlm: (messages) => messages as Message[],
+      streamFn,
+      preemptOnSteer: true,
+    });
+
+    await agentRef.prompt("run hang");
+
+    const messages = agentRef.state.messages;
+    const toolResults = messages.filter((m) => m.role === "toolResult");
+    expect(toolResults).toHaveLength(1);
+    expect(JSON.stringify(toolResults[0].content)).toContain(
+      "interrupted to handle a new user message",
+    );
+    const injectedSteer = messages.find(
+      (m) => m.role === "user" && JSON.stringify(m.content ?? "").includes("stop now"),
+    );
+    expect(injectedSteer).toBeDefined();
   });
 });

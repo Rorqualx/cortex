@@ -508,10 +508,16 @@ export class Agent {
           return undefined;
         }
         // Fresh controller per batch; steer() aborts it to cut in-flight
-        // preemptable tools. A steer between batches drains normally at the
-        // next turn boundary, so the controller is only observed mid-batch.
+        // preemptable tools.
         const controller = new AbortController();
         this.toolBatchPreemptController = controller;
+        // A steer that arrived while the model was still streaming this turn's
+        // response is already queued before the batch starts. Preempt straight
+        // away so the message is not forced to wait for tools the model chose
+        // without having seen it.
+        if (this.steeringQueue.hasItems()) {
+          controller.abort();
+        }
         return controller.signal;
       },
       getSteeringMessages: async () => {
