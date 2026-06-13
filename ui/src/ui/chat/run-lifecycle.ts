@@ -308,14 +308,18 @@ export function reconcileChatRunFromSessionRow(
   if (isSessionRunActive(row)) {
     return false;
   }
-  // A row still reporting "running" is not terminal evidence. Mid-run metadata
-  // emits (token usage, auto-title, goal) re-broadcast the live hasActiveRun,
-  // which can blip false at a turn boundary while status is still "running".
-  // Without this guard `terminalStatus` below treats any defined status as
-  // terminal, so a {status:"running", hasActiveRun:false} event would clear
-  // chatRunId/chatStream and flip the active tab + composer to interrupted
-  // while the agent is still working.
-  if (row.status === "running") {
+  // We only reach here with a live local run (chatRunId or an open chatStream).
+  // The row's live tracker (hasActiveRun) and persisted status disagree during
+  // run transitions, and neither alone is terminal evidence:
+  //  - a freshly started run reports hasActiveRun:true while status still reads
+  //    the previous run's terminal value ({status:"done", hasActiveRun:true});
+  //  - a mid-run metadata refresh can report status:"running" with a blipped
+  //    hasActiveRun:false.
+  // In both cases the run is still alive, so tearing it down clears
+  // chatRunId/chatStream and flips the active tab + composer to done/interrupted
+  // mid-turn. Only tear down on an unambiguous terminal row: the live tracker is
+  // not active AND the status is terminal.
+  if (row.hasActiveRun === true || row.status === "running") {
     return false;
   }
   const terminalStatus = row.status !== undefined;

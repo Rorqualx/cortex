@@ -160,6 +160,20 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
     expect(host.chatStream).toBe("partial...");
   });
 
+  it("keeps a locally-active run alive when a stale row reports status:done with hasActiveRun:true", () => {
+    // Regression: a freshly started run reports hasActiveRun:true while the
+    // persisted status still reads the previous run's "done". The live tracker
+    // says active, so this must not tear the streaming run down.
+    const host = makeHost({
+      chatRunId: "r2",
+      chatStream: "streaming...",
+      sessionsResult: makeSessionsResult([{ key: "s1", hasActiveRun: true, status: "done" }]),
+    });
+    expect(reconcileChatRunFromCurrentSessionRow(host, { publishRunStatus: false })).toBe(false);
+    expect(host.chatRunId).toBe("r2");
+    expect(host.chatStream).toBe("streaming...");
+  });
+
   it("clears selected agent-main alias runs from canonical global history rows", () => {
     const host = makeHost({
       sessionKey: "agent:work:main",
