@@ -216,6 +216,21 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
   ) => AgentLoopTurnUpdate | undefined | Promise<AgentLoopTurnUpdate | undefined>;
 
   /**
+   * Returns a fresh abort signal for the tool batch that is about to run, which
+   * fires when a queued steering message should preempt in-flight tools.
+   *
+   * Called once per turn immediately before tool execution. Only tool calls
+   * whose tool is marked {@link AgentTool.preemptable} receive this signal; a
+   * preemptable tool that aborts is finalized with a synthetic "interrupted"
+   * result so every `tool_use` stays answered. Non-preemptable tools run to
+   * completion with their real results. Return undefined to disable preemption.
+   *
+   * Contract: must not throw. The returned signal is only observed for the
+   * current batch.
+   */
+  beginToolBatchPreempt?: () => AbortSignal | undefined;
+
+  /**
    * Returns steering messages to inject into the conversation mid-run.
    *
    * Called after the current assistant turn finishes executing its tool calls, unless `shouldStopAfterTurn` exits first.
@@ -460,6 +475,18 @@ export interface AgentTool<
    * If omitted, the default execution mode applies.
    */
   executionMode?: ToolExecutionMode;
+  /**
+   * Whether an in-flight call to this tool may be aborted to deliver a steering
+   * message sooner (see {@link AgentLoopConfig.beginToolBatchPreempt}).
+   *
+   * Only set this for tools that honor their abort `signal` and whose work can
+   * be safely discarded mid-flight (e.g. shell commands, long reads). Tools that
+   * mutate state non-atomically (file edits, writes) must leave this `false` so
+   * their results are never reported as interrupted while the side effect lands.
+   *
+   * Defaults to `false`.
+   */
+  preemptable?: boolean;
 }
 
 /** Context snapshot passed into the low-level agent loop. */

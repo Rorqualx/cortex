@@ -405,6 +405,7 @@ export async function createAgentSession(
     },
     steeringMode: settingsManager.getSteeringMode(),
     followUpMode: settingsManager.getFollowUpMode(),
+    preemptOnSteer: settingsManager.getPreemptOnSteer(),
     transport: settingsManager.getTransport(),
     thinkingBudgets: settingsManager.getThinkingBudgets(),
     maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,

@@ -270,12 +270,16 @@ async function runLoop(
       const toolResults: ToolResultMessage[] = [];
       hasMoreToolCalls = false;
       if (toolCalls.length > 0) {
+        // A fresh per-batch signal that fires when a queued steering message
+        // should cut in-flight preemptable tools. undefined when preemption off.
+        const preemptSignal = config.beginToolBatchPreempt?.();
         const executedToolBatch = await executeToolCalls(
           currentContext,
           message,
           config,
           signal,
           emit,
+          preemptSignal,
         );
         toolResults.push(...executedToolBatch.messages);
         hasMoreToolCalls = !executedToolBatch.terminate;
@@ -444,12 +448,54 @@ async function streamAssistantResponse(
 /**
  * Execute tool calls from an assistant message.
  */
+// Result reported for a preemptable tool whose in-flight call was aborted to
+// deliver a steering message sooner. Kept non-terminating so the loop continues
+// to the steering injection rather than ending the batch.
+const INTERRUPTED_BY_STEERING_TEXT =
+  "Tool execution was interrupted to handle a new user message. It was not completed.";
+
+function createPreemptedToolOutcome(toolCall: AgentToolCall): FinalizedToolCallOutcome {
+  return {
+    toolCall,
+    result: { content: [{ type: "text", text: INTERRUPTED_BY_STEERING_TEXT }], details: {} },
+    isError: false,
+  };
+}
+
+// A preemptable tool's call observes both the run abort and the steering-preempt
+// abort; a non-preemptable tool only observes the run abort so its side effect
+// is never cut mid-flight.
+function resolveToolAbortSignal(
+  runSignal: AbortSignal | undefined,
+  preemptSignal: AbortSignal | undefined,
+  preemptable: boolean,
+): AbortSignal | undefined {
+  if (!preemptable || !preemptSignal) {
+    return runSignal;
+  }
+  if (!runSignal) {
+    return preemptSignal;
+  }
+  return AbortSignal.any([runSignal, preemptSignal]);
+}
+
+function whenAborted(signal: AbortSignal): Promise<"preempted"> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve("preempted");
+      return;
+    }
+    signal.addEventListener("abort", () => resolve("preempted"), { once: true });
+  });
+}
+
 async function executeToolCalls(
   currentContext: AgentContext,
   assistantMessage: AssistantMessage,
   config: AgentLoopConfig,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
+  preemptSignal: AbortSignal | undefined,
 ): Promise<ExecutedToolCallBatch> {
   const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
   const hasSequentialToolCall = toolCalls.some(
@@ -463,6 +509,7 @@ async function executeToolCalls(
       config,
       signal,
       emit,
+      preemptSignal,
     );
   }
   return executeToolCallsParallel(
@@ -472,6 +519,7 @@ async function executeToolCalls(
     config,
     signal,
     emit,
+    preemptSignal,
   );
 }
 
@@ -487,6 +535,7 @@ async function executeToolCallsSequential(
   config: AgentLoopConfig,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
+  preemptSignal: AbortSignal | undefined,
 ): Promise<ExecutedToolCallBatch> {
   const finalizedCalls: FinalizedToolCallOutcome[] = [];
   const messages: ToolResultMessage[] = [];
@@ -499,30 +548,42 @@ async function executeToolCallsSequential(
       args: toolCall.arguments,
     });
 
-    const preparation = await prepareToolCall(
-      currentContext,
-      assistantMessage,
-      toolCall,
-      config,
-      signal,
-    );
     let finalized: FinalizedToolCallOutcome;
-    if (preparation.kind === "immediate") {
-      finalized = {
-        toolCall,
-        result: preparation.result,
-        isError: preparation.isError,
-      };
+    if (preemptSignal?.aborted) {
+      // A steering message arrived before this tool started; it never ran, so
+      // reporting it interrupted is accurate regardless of preemptability. The
+      // remaining tools in this batch follow the same path on the next pass.
+      finalized = createPreemptedToolOutcome(toolCall);
     } else {
-      const executed = await executePreparedToolCall(preparation, signal, emit);
-      finalized = await finalizeExecutedToolCall(
+      const preparation = await prepareToolCall(
         currentContext,
         assistantMessage,
-        preparation,
-        executed,
+        toolCall,
         config,
         signal,
       );
+      if (preparation.kind === "immediate") {
+        finalized = {
+          toolCall,
+          result: preparation.result,
+          isError: preparation.isError,
+        };
+      } else {
+        const toolSignal = resolveToolAbortSignal(
+          signal,
+          preemptSignal,
+          preparation.tool.preemptable === true,
+        );
+        const executed = await executePreparedToolCall(preparation, toolSignal, emit);
+        finalized = await finalizeExecutedToolCall(
+          currentContext,
+          assistantMessage,
+          preparation,
+          executed,
+          config,
+          toolSignal,
+        );
+      }
     }
 
     await emitToolExecutionEnd(finalized, emit);
@@ -542,6 +603,12 @@ async function executeToolCallsSequential(
   };
 }
 
+type DeferredParallelToolEntry = {
+  toolCall: AgentToolCall;
+  preemptable: boolean;
+  run: () => Promise<FinalizedToolCallOutcome>;
+};
+
 async function executeToolCallsParallel(
   currentContext: AgentContext,
   assistantMessage: AssistantMessage,
@@ -549,8 +616,9 @@ async function executeToolCallsParallel(
   config: AgentLoopConfig,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
+  preemptSignal: AbortSignal | undefined,
 ): Promise<ExecutedToolCallBatch> {
-  const finalizedCalls: FinalizedToolCallEntry[] = [];
+  const entries: Array<FinalizedToolCallOutcome | DeferredParallelToolEntry> = [];
 
   for (const toolCall of toolCalls) {
     await emit({
@@ -574,34 +642,68 @@ async function executeToolCallsParallel(
         isError: preparation.isError,
       } satisfies FinalizedToolCallOutcome;
       await emitToolExecutionEnd(finalized, emit);
-      finalizedCalls.push(finalized);
+      entries.push(finalized);
       if (signal?.aborted) {
         break;
       }
       continue;
     }
 
-    finalizedCalls.push(async () => {
-      const executed = await executePreparedToolCall(preparation, signal, emit);
-      const finalized = await finalizeExecutedToolCall(
-        currentContext,
-        assistantMessage,
-        preparation,
-        executed,
-        config,
-        signal,
-      );
-      await emitToolExecutionEnd(finalized, emit);
-      return finalized;
+    // A preemptable tool's call also observes the steering-preempt signal so it
+    // can stop early; a non-preemptable tool keeps running on the run signal so
+    // its side effect always lands and is reported with its real result.
+    const preemptable = preparation.tool.preemptable === true;
+    const toolSignal = resolveToolAbortSignal(signal, preemptSignal, preemptable);
+    entries.push({
+      toolCall,
+      preemptable,
+      run: async () => {
+        const executed = await executePreparedToolCall(preparation, toolSignal, emit);
+        return finalizeExecutedToolCall(
+          currentContext,
+          assistantMessage,
+          preparation,
+          executed,
+          config,
+          toolSignal,
+        );
+      },
     });
     if (signal?.aborted) {
       break;
     }
   }
 
+  const preempted = preemptSignal ? whenAborted(preemptSignal) : undefined;
   const orderedFinalizedCalls = await Promise.all(
-    finalizedCalls.map((entry) => (typeof entry === "function" ? entry() : Promise.resolve(entry))),
+    entries.map(async (entry): Promise<FinalizedToolCallOutcome> => {
+      if (!("run" in entry)) {
+        // Immediate outcome; tool_execution_end already emitted above.
+        return entry;
+      }
+      const real = entry.run();
+      if (entry.preemptable && preempted) {
+        const settled = await Promise.race([
+          real.then((outcome) => ({ outcome })),
+          preempted.then(() => ({ outcome: undefined as FinalizedToolCallOutcome | undefined })),
+        ]);
+        if (!settled.outcome) {
+          // The tool was signaled to abort; ignore its late result/error and
+          // finalize it as interrupted so the tool_use stays answered.
+          real.catch(() => {});
+          const interrupted = createPreemptedToolOutcome(entry.toolCall);
+          await emitToolExecutionEnd(interrupted, emit);
+          return interrupted;
+        }
+        await emitToolExecutionEnd(settled.outcome, emit);
+        return settled.outcome;
+      }
+      const outcome = await real;
+      await emitToolExecutionEnd(outcome, emit);
+      return outcome;
+    }),
   );
+
   const messages: ToolResultMessage[] = [];
   for (const finalized of orderedFinalizedCalls) {
     const toolResultMessage = createToolResultMessage(finalized);
@@ -638,8 +740,6 @@ type FinalizedToolCallOutcome = {
   result: AgentToolResult<unknown>;
   isError: boolean;
 };
-
-type FinalizedToolCallEntry = FinalizedToolCallOutcome | (() => Promise<FinalizedToolCallOutcome>);
 
 function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): boolean {
   return (

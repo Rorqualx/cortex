@@ -296,6 +296,9 @@ export function createBashToolDefinition(
     description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
     promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
     parameters: bashSchema,
+    // The child process is killed on abort, so a long-running command can be
+    // cut to deliver a follow-up sooner when preemption is enabled.
+    preemptable: true,
     async execute(
       toolCallId,
       { command, timeout }: { command: string; timeout?: number },

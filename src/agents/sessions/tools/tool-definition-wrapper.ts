@@ -23,6 +23,7 @@ export function wrapToolDefinition<
     parameters: definition.parameters,
     prepareArguments: definition.prepareArguments,
     executionMode: definition.executionMode,
+    preemptable: definition.preemptable,
     execute: (toolCallId, params, signal, onUpdate) =>
       definition.execute(toolCallId, params, signal, onUpdate, ctxFactory?.() as ExtensionContext),
   };
@@ -50,6 +51,7 @@ export function createToolDefinitionFromAgentTool(tool: AgentTool): ToolDefiniti
     parameters: tool.parameters,
     prepareArguments: tool.prepareArguments,
     executionMode: tool.executionMode,
+    preemptable: tool.preemptable,
     execute: async (toolCallId, params, signal, onUpdate) =>
       tool.execute(toolCallId, params, signal, onUpdate),
   };

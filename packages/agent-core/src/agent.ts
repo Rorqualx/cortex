@@ -147,6 +147,12 @@ export interface AgentOptions {
   maxRetryDelayMs?: number;
   /** Default strategy for executing multiple tool calls in one assistant message. */
   toolExecution?: ToolExecutionMode;
+  /**
+   * When true, a steering message aborts in-flight `preemptable` tool calls so
+   * it can be delivered before the current tool batch finishes. Defaults to
+   * false (steering waits for the running batch).
+   */
+  preemptOnSteer?: boolean;
 }
 
 class PendingMessageQueue {
@@ -238,6 +244,10 @@ export class Agent {
   public maxRetryDelayMs?: number;
   /** Tool execution strategy for assistant messages that contain multiple tool calls. */
   public toolExecution: ToolExecutionMode;
+  /** When true, steering aborts in-flight preemptable tools instead of waiting for the batch. */
+  public preemptOnSteer: boolean;
+  /** Abort controller for the current tool batch, fired when preempting on steer. */
+  private toolBatchPreemptController?: AbortController;
 
   constructor(options: AgentOptions = {}) {
     this.mutableState = createMutableAgentState(options.initialState);
@@ -258,6 +268,7 @@ export class Agent {
     this.transport = options.transport ?? "auto";
     this.maxRetryDelayMs = options.maxRetryDelayMs;
     this.toolExecution = options.toolExecution ?? "parallel";
+    this.preemptOnSteer = options.preemptOnSteer ?? false;
   }
 
   /**
@@ -307,6 +318,11 @@ export class Agent {
   /** Queue a message to be injected after the current assistant turn finishes. */
   steer(message: AgentMessage): void {
     this.steeringQueue.enqueue(message);
+    if (this.preemptOnSteer) {
+      // Cut the in-flight tool batch (preemptable tools only) so this message is
+      // delivered at the next turn boundary instead of after the whole batch.
+      this.toolBatchPreemptController?.abort();
+    }
   }
 
   /** Queue a message to run only after the agent would otherwise stop. */
@@ -487,6 +503,17 @@ export class Agent {
       convertToLlm: this.convertToLlm,
       transformContext: this.transformContext,
       getApiKey: this.getApiKey,
+      beginToolBatchPreempt: () => {
+        if (!this.preemptOnSteer) {
+          return undefined;
+        }
+        // Fresh controller per batch; steer() aborts it to cut in-flight
+        // preemptable tools. A steer between batches drains normally at the
+        // next turn boundary, so the controller is only observed mid-batch.
+        const controller = new AbortController();
+        this.toolBatchPreemptController = controller;
+        return controller.signal;
+      },
       getSteeringMessages: async () => {
         if (skipInitialSteeringPoll) {
           skipInitialSteeringPoll = false;

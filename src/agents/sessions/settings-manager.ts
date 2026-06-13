@@ -88,6 +88,9 @@ export interface Settings {
   transport?: TransportSetting; // default: "auto"
   steeringMode?: "all" | "one-at-a-time";
   followUpMode?: "all" | "one-at-a-time";
+  // When true, a follow-up aborts in-flight preemptable tools (e.g. bash) so it
+  // reaches the model before the current tool batch finishes. Default: false.
+  preemptOnSteer?: boolean;
   theme?: string;
   compaction?: CompactionSettings;
   branchSummary?: BranchSummarySettings;
@@ -661,6 +664,16 @@ export class SettingsManager {
   setFollowUpMode(mode: "all" | "one-at-a-time"): void {
     this.globalSettings.followUpMode = mode;
     this.markModified("followUpMode");
+    this.save();
+  }
+
+  getPreemptOnSteer(): boolean {
+    return this.settings.preemptOnSteer === true;
+  }
+
+  setPreemptOnSteer(enabled: boolean): void {
+    this.globalSettings.preemptOnSteer = enabled;
+    this.markModified("preemptOnSteer");
     this.save();
   }
 

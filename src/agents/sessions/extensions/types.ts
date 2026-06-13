@@ -523,6 +523,13 @@ export interface ToolDefinition<
    */
   executionMode?: ToolExecutionMode;
 
+  /**
+   * Whether an in-flight call may be aborted to deliver a steering message
+   * sooner when preemption is enabled. Only safe for tools that honor their
+   * abort `signal` and whose work can be discarded mid-flight. Defaults to false.
+   */
+  preemptable?: boolean;
+
   /** Execute the tool. */
   execute(
     toolCallId: string,
