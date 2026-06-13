@@ -65,7 +65,7 @@ import {
   loadChatHistory,
   loadEarlierMessages,
   expandHistoryRenderLimit,
-  requestChatSend,
+  sendChatMessage,
 } from "./controllers/chat.ts";
 import {
   applyConfig,
@@ -1865,13 +1865,7 @@ export function renderApp(state: AppViewState) {
             assistantAvatarUploadBusy: state.assistantAvatarUploadBusy,
             assistantAvatarUploadError: state.assistantAvatarUploadError,
             onAssistantAvatarOverrideChange: (dataUrl) => {
-              setAssistantAvatarOverride(state, dataUrl);
-              state.chatAvatarUrl = dataUrl;
-              state.chatAvatarSource = dataUrl;
-              state.chatAvatarStatus = "data";
-              state.chatAvatarReason = null;
-              state.assistantAvatarUploadError = null;
-              requestHostUpdate?.();
+              state.applyAssistantAvatarOverride?.(dataUrl);
             },
             onAssistantAvatarClearOverride: () => {
               setAssistantAvatarOverride(state, null);
@@ -4117,15 +4111,16 @@ export function renderApp(state: AppViewState) {
                         ]);
                       })();
                     },
-                    onEditMessage: (text, entryId) => {
+                    onEditMessage: (text, entryId, restoreFiles) => {
                       if (!state.client || !state.connected) return;
-                      const restoreFiles = window.confirm(
-                        "Also roll back code changes made after this message?\n\n" +
-                          "OK — roll back files and the conversation\n" +
-                          "Cancel — roll back the conversation only",
-                      );
-                      // Clear the composer
+                      // The rollback choice is now made inline in the edit bubble
+                      // (see enterEditMode) and arrives as restoreFiles.
                       state.chatMessage = "";
+                      // Show the reading indicator immediately: branching plus the
+                      // history reload below can take a few seconds and would
+                      // otherwise leave the thread blank with no feedback.
+                      state.chatSending = true;
+                      state.requestUpdate?.();
                       void (async () => {
                         try {
                           // Rewind to just before the edited message so the old
@@ -4140,6 +4135,7 @@ export function renderApp(state: AppViewState) {
                         } catch (err) {
                           // Without the branch point a resend would duplicate the
                           // message, so surface the failure and stop.
+                          state.chatSending = false;
                           state.chatError = String(err);
                           state.requestUpdate?.();
                           return;
@@ -4149,13 +4145,12 @@ export function renderApp(state: AppViewState) {
                         state.chatToolMessages = [];
                         await loadChatHistory(state, { startup: false });
                         await loadBranches(state);
-                        state.requestUpdate?.();
-                        // Auto-send the edited message
-                        await requestChatSend(state, {
-                          message: text,
-                          runId: crypto.randomUUID(),
-                          sessionKey: state.sessionKey,
-                        });
+                        // Hand off to the normal send path so the run id, stream,
+                        // and optimistic user message drive the sending/receiving
+                        // indicators. It re-arms chatSending itself (and early-
+                        // returns if it's already set), so clear ours first.
+                        state.chatSending = false;
+                        await sendChatMessage(state, text);
                       })();
                     },
                     basePath: state.basePath ?? "",

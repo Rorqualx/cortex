@@ -505,6 +505,7 @@ export type AppViewState = ScrollHost &
     setTextScale: (value: number) => void;
     applySettings: (next: UiSettings) => void;
     applyLocalUserIdentity?: (next: { name?: string | null; avatar?: string | null }) => void;
+    applyAssistantAvatarOverride?: (dataUrl: string) => void;
     loadOverview: (opts?: { refresh?: boolean }) => Promise<void>;
     loadAssistantIdentity: () => Promise<void>;
     loadCron: () => Promise<void>;

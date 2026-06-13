@@ -211,8 +211,9 @@ export type ChatProps = {
   onBranchNavigate?: (entryId: string, direction: "prev" | "next") => void;
   /** Branch-from-message handler: triggered when user clicks edit/branch on any message. */
   onBranchFromMessage?: (messageId: string) => void;
-  /** Edit message: populates composer with the message text for editing/branching. */
-  onEditMessage?: (text: string, messageId: string) => void;
+  /** Edit message: rewinds to the message and resends the edited text. restoreFiles
+   * also rolls back code changes made after it (chosen inline in the edit bubble). */
+  onEditMessage?: (text: string, messageId: string, restoreFiles: boolean) => void;
 };
 
 const pinnedMessagesMap = new Map<string, PinnedMessages>();

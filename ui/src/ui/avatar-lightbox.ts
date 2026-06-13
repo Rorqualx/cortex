@@ -3,17 +3,23 @@
 
 import { html, LitElement, css, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
+import {
+  loadLocalUserIdentity,
+  saveLocalAssistantIdentity,
+  saveLocalUserIdentity,
+} from "./storage.ts";
 
-const LOCAL_USER_IDENTITY_KEY = "openclaw.control.user.v1";
+/** Which identity a lightbox edits. Agent crops must not touch the user store. */
+export type AvatarTarget = "user" | "assistant";
 
-/** Custom event fired when the user avatar changes from the lightbox. */
-export class AvatarChangeEvent extends CustomEvent<{ avatar: string }> {
+/** Custom event fired when an avatar changes from the lightbox. */
+export class AvatarChangeEvent extends CustomEvent<{ avatar: string; target: AvatarTarget }> {
   static eventName = "avatar-change" as const;
-  constructor(avatar: string) {
+  constructor(avatar: string, target: AvatarTarget = "user") {
     super(AvatarChangeEvent.eventName, {
       bubbles: true,
       composed: true,
-      detail: { avatar },
+      detail: { avatar, target },
     });
   }
 }
@@ -25,6 +31,8 @@ export class AvatarLightbox extends LitElement {
   @property({ type: Boolean }) editable = true;
   /** If true, show the Remove button. Default false. */
   @property({ type: Boolean }) removable = false;
+  /** Which identity this lightbox edits. Default user. */
+  @property() target: AvatarTarget = "user";
 
   @state() private cropping = false;
   @state() private cropUrl: string | null = null;
@@ -514,13 +522,10 @@ export class AvatarLightbox extends LitElement {
 
   private removeAvatar() {
     try {
-      const raw = localStorage.getItem(LOCAL_USER_IDENTITY_KEY);
-      const existing = raw ? JSON.parse(raw) : {};
-      const identity = { ...existing, avatar: null };
-      localStorage.setItem(LOCAL_USER_IDENTITY_KEY, JSON.stringify(identity));
+      this.persistAvatar(null);
 
-      this.dispatchEvent(new AvatarChangeEvent(""));
-      document.dispatchEvent(new AvatarChangeEvent(""));
+      this.dispatchEvent(new AvatarChangeEvent("", this.target));
+      document.dispatchEvent(new AvatarChangeEvent("", this.target));
 
       this.saved = true;
       setTimeout(() => this.close(), 800);
@@ -531,16 +536,13 @@ export class AvatarLightbox extends LitElement {
 
   private applyAvatar(dataUrl: string) {
     try {
-      // Write to localStorage using the same format as the rest of the app
-      const raw = localStorage.getItem(LOCAL_USER_IDENTITY_KEY);
-      const existing = raw ? JSON.parse(raw) : {};
-      const identity = { ...existing, avatar: dataUrl };
-      localStorage.setItem(LOCAL_USER_IDENTITY_KEY, JSON.stringify(identity));
+      this.persistAvatar(dataUrl);
 
-      // Dispatch custom event so the app can update its reactive state
-      this.dispatchEvent(new AvatarChangeEvent(dataUrl));
-      // Also dispatch on document for reachability from shadow DOM
-      document.dispatchEvent(new AvatarChangeEvent(dataUrl));
+      // Dispatch so the app updates its reactive state; the document hop reaches
+      // listeners from the shadow DOM, and target tells the host which identity
+      // to apply so an agent crop never lands on the user's avatar.
+      this.dispatchEvent(new AvatarChangeEvent(dataUrl, this.target));
+      document.dispatchEvent(new AvatarChangeEvent(dataUrl, this.target));
 
       this.src = dataUrl;
       this.cropping = false;
@@ -552,6 +554,16 @@ export class AvatarLightbox extends LitElement {
     } catch {
       // localStorage quota — best effort
     }
+  }
+
+  // Persist to the store that matches what this lightbox edits. Agent avatars
+  // own a separate local identity from the user's; never cross them.
+  private persistAvatar(avatar: string | null) {
+    if (this.target === "assistant") {
+      saveLocalAssistantIdentity({ avatar });
+      return;
+    }
+    saveLocalUserIdentity({ ...loadLocalUserIdentity(), avatar });
   }
 
   // ─── Upload ───
@@ -623,13 +635,14 @@ declare global {
 export function openAvatarLightbox(
   src: string,
   alt: string = "",
-  opts?: { editable?: boolean; removable?: boolean },
+  opts?: { editable?: boolean; removable?: boolean; target?: AvatarTarget },
 ) {
   const lightbox = document.createElement("avatar-lightbox");
   lightbox.src = src;
   lightbox.alt = alt;
   lightbox.editable = opts?.editable ?? true;
   lightbox.removable = opts?.removable ?? false;
+  lightbox.target = opts?.target ?? "user";
   lightbox.addEventListener("click", () => lightbox.close?.());
   document.body.appendChild(lightbox);
 }

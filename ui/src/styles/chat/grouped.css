@@ -847,7 +847,10 @@ details.msg-meta:not([open]) .msg-meta__details {
 .chat-edit-textarea {
   display: block;
   width: 100%;
-  min-height: 60px;
+  /* Editing shows the full message, so size to fit: a comfortable floor, then
+     auto-grown to content (see enterEditMode) up to a capped, scrollable max. */
+  min-height: 120px;
+  max-height: min(60vh, 520px);
   padding: 8px 10px;
   border: 1px solid var(--accent-soft, #6aa0e0);
   border-radius: var(--radius-md, 6px);
@@ -857,6 +860,7 @@ details.msg-meta:not([open]) .msg-meta__details {
   font-size: 14px;
   line-height: 1.5;
   resize: vertical;
+  overflow-y: auto;
   outline: none;
   box-sizing: border-box;
 }
@@ -869,6 +873,15 @@ details.msg-meta:not([open]) .msg-meta__details {
   display: flex;
   gap: 6px;
   margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+/* Inline rollback prompt shown after Save, in place of the edit buttons. */
+.chat-edit-confirm__prompt {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted, #9aa);
 }
 
 .chat-edit-save,

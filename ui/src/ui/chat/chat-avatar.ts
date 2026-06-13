@@ -103,7 +103,7 @@ export function renderChatAvatar(
         class="chat-avatar ${className} chat-avatar--expandable"
         src="${assistantAvatar}"
         alt="${assistantName}"
-        @click=${() => openAvatarLightbox(assistantAvatar, assistantName)}
+        @click=${() => openAvatarLightbox(assistantAvatar, assistantName, { target: "assistant" })}
       />`;
     }
     if (assistantAvatarText) {

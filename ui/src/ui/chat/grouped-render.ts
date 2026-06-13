@@ -493,7 +493,7 @@ export function renderMessageGroup(
     contextWindow?: number | null;
     onDelete?: () => void;
     onBranchFromMessage?: (messageId: string) => void;
-    onEditMessage?: (text: string, messageId: string) => void;
+    onEditMessage?: (text: string, messageId: string, restoreFiles: boolean) => void;
   },
 ) {
   const normalizedRole = normalizeRoleForGrouping(group.role);
@@ -921,7 +921,10 @@ function placeDeleteConfirmPopover(
   popover.dataset.placement = placeBelow ? "below" : "above";
 }
 
-function renderEditButton(group: MessageGroup, onEdit?: (text: string, messageId: string) => void) {
+function renderEditButton(
+  group: MessageGroup,
+  onEdit?: (text: string, messageId: string, restoreFiles: boolean) => void,
+) {
   return html`
     <button
       class="chat-group-edit"
@@ -945,7 +948,9 @@ function renderEditButton(group: MessageGroup, onEdit?: (text: string, messageId
             : undefined;
         const entryId = typeof meta?.id === "string" ? meta.id : undefined;
         if (!entryId || !onEdit) return;
-        enterEditMode(bubble, currentText, (text) => onEdit(text, entryId));
+        enterEditMode(bubble, currentText, (text, restoreFiles) =>
+          onEdit(text, entryId, restoreFiles),
+        );
       }}
     >
       <span class="chat-group-edit__icon">
@@ -966,45 +971,93 @@ function renderEditButton(group: MessageGroup, onEdit?: (text: string, messageId
   `;
 }
 
-function enterEditMode(bubble: HTMLElement, originalText: string, onSave: (text: string) => void) {
+function enterEditMode(
+  bubble: HTMLElement,
+  originalText: string,
+  onSave: (text: string, restoreFiles: boolean) => void,
+) {
   const originalHTML = bubble.innerHTML;
 
+  // Textarea is stable across steps; only the action slot swaps between the
+  // edit controls and the inline rollback prompt.
   bubble.innerHTML = `
     <textarea class="chat-edit-textarea">${escapeHTML(originalText)}</textarea>
-    <div class="chat-edit-actions">
-      <button class="btn btn--sm chat-edit-save">Save</button>
-      <button class="btn btn--sm btn--subtle chat-edit-cancel">Cancel</button>
-    </div>
+    <div class="chat-edit-actions-slot"></div>
   `;
 
   const textarea = bubble.querySelector(".chat-edit-textarea") as HTMLTextAreaElement;
-  const saveBtn = bubble.querySelector(".chat-edit-save") as HTMLElement;
-  const cancelBtn = bubble.querySelector(".chat-edit-cancel") as HTMLElement;
+  const slot = bubble.querySelector(".chat-edit-actions-slot") as HTMLElement;
 
   textarea?.focus();
 
+  // Grow the box to fit the message (capped by max-height in CSS, which then
+  // scrolls) so editing a long message isn't cramped into a few lines.
+  if (textarea) {
+    const autosize = () => {
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    };
+    autosize();
+    textarea.addEventListener("input", autosize);
+  }
+
+  let keyHandler: ((e: KeyboardEvent) => void) | null = null;
   const cleanup = () => {
+    if (keyHandler) {
+      document.removeEventListener("keydown", keyHandler);
+    }
     bubble.innerHTML = originalHTML;
   };
 
-  cancelBtn?.addEventListener("click", cleanup);
-  saveBtn?.addEventListener("click", () => {
-    const newText = textarea?.value?.trim();
-    cleanup();
-    if (!newText || newText === originalText) {
-      return;
-    }
-    // The host callback owns the branch + resend flow (see onEditMessage).
-    onSave(newText);
-  });
+  // Step 2: the rollback prompt takes over the action slot once an edit is
+  // confirmed, so the choice lives in the bubble instead of a browser popup.
+  const showRollbackPrompt = (text: string) => {
+    slot.innerHTML = `
+      <p class="chat-edit-confirm__prompt">Also roll back code changes made after this message?</p>
+      <div class="chat-edit-actions">
+        <button class="btn btn--sm chat-edit-rollback-all">Files + conversation</button>
+        <button class="btn btn--sm btn--subtle chat-edit-rollback-convo">Conversation only</button>
+        <button class="btn btn--sm btn--subtle chat-edit-rollback-back">Back</button>
+      </div>
+    `;
+    const confirm = (restoreFiles: boolean) => () => {
+      cleanup();
+      // The host callback owns the branch + resend flow (see onEditMessage).
+      onSave(text, restoreFiles);
+    };
+    slot.querySelector(".chat-edit-rollback-all")?.addEventListener("click", confirm(true));
+    slot.querySelector(".chat-edit-rollback-convo")?.addEventListener("click", confirm(false));
+    slot.querySelector(".chat-edit-rollback-back")?.addEventListener("click", showEditActions);
+  };
 
-  const onKey = (ke: KeyboardEvent) => {
+  // Step 1: the Save/Cancel controls. Cancel restores the original bubble; Save
+  // either no-ops (empty/unchanged) or advances to the rollback prompt.
+  function showEditActions() {
+    slot.innerHTML = `
+      <div class="chat-edit-actions">
+        <button class="btn btn--sm chat-edit-save">Save</button>
+        <button class="btn btn--sm btn--subtle chat-edit-cancel">Cancel</button>
+      </div>
+    `;
+    slot.querySelector(".chat-edit-cancel")?.addEventListener("click", cleanup);
+    slot.querySelector(".chat-edit-save")?.addEventListener("click", () => {
+      const newText = textarea?.value?.trim();
+      if (!newText || newText === originalText) {
+        cleanup();
+        return;
+      }
+      showRollbackPrompt(newText);
+    });
+  }
+
+  showEditActions();
+
+  keyHandler = (ke: KeyboardEvent) => {
     if (ke.key === "Escape") {
       cleanup();
-      document.removeEventListener("keydown", onKey);
     }
   };
-  document.addEventListener("keydown", onKey);
+  document.addEventListener("keydown", keyHandler);
 }
 
 function renderDeleteButton(onDelete: () => void, side: DeleteConfirmSide) {

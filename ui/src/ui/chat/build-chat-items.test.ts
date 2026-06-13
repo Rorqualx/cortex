@@ -1,6 +1,7 @@
 // Control UI tests cover build chat items behavior.
 import { describe, expect, it } from "vitest";
 import type { MessageGroup } from "../types/chat-types.ts";
+import type { SessionBranchPoint } from "./branch-service.ts";
 import { buildChatItems, type BuildChatItemsProps } from "./build-chat-items.ts";
 
 const SENDER_METADATA_BLOCK =
@@ -867,6 +868,59 @@ describe("buildChatItems", () => {
     const keyWithLongHistory = keyOf(4);
     expect(keyWithShortHistory).toBe("tool:tool:call-edit-1");
     expect(keyWithLongHistory).toBe(keyWithShortHistory);
+  });
+
+  function branchPoint(overrides: Partial<SessionBranchPoint>): SessionBranchPoint {
+    return {
+      entryId: "e1",
+      parentId: null,
+      childCount: 2,
+      childIds: ["a", "b"],
+      isActive: false,
+      isLeaf: false,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      type: "message",
+      ...overrides,
+    };
+  }
+
+  it("places a matching branch divider next to its anchor, not at the bottom", () => {
+    const items = buildChatItems(
+      createProps({
+        messages: [
+          { role: "user", id: "m1", content: "first", timestamp: 1000 },
+          {
+            role: "assistant",
+            id: "m2",
+            content: [{ type: "text", text: "reply" }],
+            timestamp: 1001,
+          },
+        ],
+        branchPoints: [branchPoint({ entryId: "e1", messageId: "m1" })],
+      }),
+    );
+
+    const branchIndex = items.findIndex((item) => item.kind === "branch-point");
+    expect(branchIndex).toBe(1); // between the user group and the assistant group
+    expect(items[branchIndex]).toMatchObject({
+      kind: "branch-point",
+      entryId: "e1",
+      childCount: 2,
+    });
+    expect(items.at(-1)?.kind).not.toBe("branch-point");
+  });
+
+  it("surfaces an orphaned branch point (first-message edit) at the top", () => {
+    const items = buildChatItems(
+      createProps({
+        // The abandoned original isn't on the displayed path, so its branch
+        // point can't anchor to a visible message.
+        messages: [{ role: "user", id: "edited", content: "edited first", timestamp: 2000 }],
+        branchPoints: [branchPoint({ entryId: "orig", messageId: "abandoned-original" })],
+      }),
+    );
+
+    expect(items[0]).toMatchObject({ kind: "branch-point", entryId: "orig", childCount: 2 });
   });
 });
 

@@ -403,6 +403,11 @@ function chatItemTimestamp(item: ChatItem): number | null {
         : rawMessageTimestamp(item.message);
     case "divider":
       return item.timestamp;
+    case "branch-point":
+      // Sort the divider to its anchor message's time (or top of thread for an
+      // orphaned branch). Without a case here it returns null and the visible-
+      // time sort would dump every branch divider at the bottom of the thread.
+      return item.timestamp;
     case "stream":
       return item.startedAt;
     case "reading-indicator":
@@ -594,6 +599,7 @@ function injectBranchPointDividers(
     }
   }
 
+  const matched = new Set<SessionBranchPoint>();
   for (const item of items) {
     result.push(item);
     if (item.kind !== "message") {
@@ -608,21 +614,44 @@ function injectBranchPointDividers(
       if (points) {
         const itemTs = chatItemTimestamp(item);
         for (const bp of points) {
-          result.push({
-            kind: "branch-point",
-            key: `branch:${bp.entryId}:${item.key}`,
-            entryId: bp.entryId,
-            childCount: bp.childCount,
-            activeChildIndex: bp.isActive ? 0 : 0,
-            label: bp.label,
-            timestamp: itemTs ?? Date.now(),
-          });
+          matched.add(bp);
+          result.push(
+            branchPointDivider(bp, `branch:${bp.entryId}:${item.key}`, itemTs ?? Date.now()),
+          );
         }
       }
     }
   }
 
-  return result;
+  // A branch point whose anchor message isn't on the displayed (active) path —
+  // e.g. editing the first message, where the abandoned original sits off the
+  // active leaf — would otherwise vanish, leaving no way back to that
+  // conversation. Surface those at the top of the thread.
+  const orphaned = branchPoints.filter((bp) => bp.childCount > 1 && !matched.has(bp));
+  if (orphaned.length === 0) {
+    return result;
+  }
+  const topDividers = orphaned.map((bp, index) =>
+    // NEGATIVE_INFINITY keeps these at the very top of the thread after the
+    // visible-time sort, where the "back to the original conversation" control belongs.
+    branchPointDivider(bp, `branch-top:${bp.entryId}:${index}`, Number.NEGATIVE_INFINITY),
+  );
+  return [...topDividers, ...result];
+}
+
+function branchPointDivider(bp: SessionBranchPoint, key: string, timestamp: number): ChatItem {
+  return {
+    kind: "branch-point",
+    key,
+    entryId: bp.entryId,
+    childCount: bp.childCount,
+    // activeChildIndex isn't derivable from the branches payload yet (it lacks
+    // the active child id), so the counter shows position 1; the nav arrows
+    // still switch branches via onBranchNavigate.
+    activeChildIndex: 0,
+    label: bp.label,
+    timestamp,
+  };
 }
 
 export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | MessageGroup> {

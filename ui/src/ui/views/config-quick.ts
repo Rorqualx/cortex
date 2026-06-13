@@ -261,7 +261,7 @@ function renderAssistantAvatarPreview(props: QuickSettingsProps) {
       class="qs-assistant-avatar qs-avatar--expandable"
       src=${assistantAvatarUrl}
       alt=${assistantName}
-      @click=${() => openAvatarLightbox(assistantAvatarUrl, assistantName)}
+      @click=${() => openAvatarLightbox(assistantAvatarUrl, assistantName, { target: "assistant" })}
     />`;
   }
   const assistantAvatarText = resolveAssistantTextAvatar(

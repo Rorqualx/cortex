@@ -91,7 +91,10 @@ import {
   loadToolsEffective as loadToolsEffectiveInternal,
   refreshVisibleToolsEffectiveForCurrentSession as refreshVisibleToolsEffectiveForCurrentSessionInternal,
 } from "./controllers/agents.ts";
-import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import {
+  loadAssistantIdentity as loadAssistantIdentityInternal,
+  setAssistantAvatarOverride,
+} from "./controllers/assistant-identity.ts";
 import {
   loadEarlierMessages as loadEarlierMessagesInternal,
   expandHistoryRenderLimit as expandHistoryRenderLimitInternal,
@@ -969,8 +972,27 @@ export class OpenClawApp extends LitElement {
     applyLocalUserIdentityInternal(this, next);
   }
 
+  // Apply an assistant avatar crop/upload: persist the override and sync the
+  // chat-header avatar so the agent's picture updates immediately. Shared by the
+  // lightbox event and the quick-settings override handler.
+  applyAssistantAvatarOverride(dataUrl: string) {
+    setAssistantAvatarOverride(this, dataUrl);
+    this.chatAvatarUrl = dataUrl;
+    this.chatAvatarSource = dataUrl;
+    this.chatAvatarStatus = "data";
+    this.chatAvatarReason = null;
+    this.assistantAvatarUploadError = null;
+    this.requestUpdate();
+  }
+
   private handleAvatarChange = (e: Event) => {
-    const { avatar } = (e as AvatarChangeEvent).detail;
+    const { avatar, target } = (e as AvatarChangeEvent).detail;
+    // Route by target so an agent crop updates the assistant identity, not the
+    // user's. Assistant removal isn't offered, so only the set path applies.
+    if (target === "assistant" && avatar) {
+      this.applyAssistantAvatarOverride(avatar);
+      return;
+    }
     this.applyLocalUserIdentity({ avatar: avatar || null });
   };
 
