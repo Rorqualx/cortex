@@ -838,6 +838,36 @@ describe("buildChatItems", () => {
     expect(action.kind).toBe("session-checkpoints");
     expect(action.label).toBe("Open checkpoints");
   });
+
+  it("keeps a live tool message's key stable as history grows", () => {
+    // Live tool cards live in toolMessages and are keyed before the message is
+    // persisted. The key must not move when history length changes mid-run, or
+    // `repeat` remounts the card and replays its entrance animation in a loop.
+    const liveTool = {
+      role: "tool",
+      toolCallId: "call-edit-1",
+      toolName: "edit",
+      content: "edit output",
+      timestamp: 1_000,
+    };
+    const keyOf = (historyLen: number) => {
+      const groups = messageGroups({
+        messages: Array.from({ length: historyLen }, (_, i) => ({
+          role: "assistant",
+          content: [{ type: "text", text: `reply ${i}` }],
+          timestamp: 500 + i,
+        })),
+        toolMessages: [liveTool],
+      });
+      const toolGroup = groups.find((group) => group.role === "tool");
+      return toolGroup?.messages[0]?.key;
+    };
+
+    const keyWithShortHistory = keyOf(1);
+    const keyWithLongHistory = keyOf(4);
+    expect(keyWithShortHistory).toBe("tool:tool:call-edit-1");
+    expect(keyWithLongHistory).toBe(keyWithShortHistory);
+  });
 });
 
 function canvasBlocksIn(group: MessageGroup): unknown[] {

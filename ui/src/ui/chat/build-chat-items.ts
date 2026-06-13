@@ -854,19 +854,12 @@ function messageKey(message: unknown, index: number): string {
   const toolCallId = typeof m.toolCallId === "string" ? m.toolCallId : "";
   if (toolCallId) {
     const role = typeof m.role === "string" ? m.role : "unknown";
-    const id = typeof m.id === "string" ? m.id : "";
-    if (id) {
-      return `tool:${role}:${toolCallId}:${id}`;
-    }
-    const messageId = typeof m.messageId === "string" ? m.messageId : "";
-    if (messageId) {
-      return `tool:${role}:${toolCallId}:${messageId}`;
-    }
-    const timestamp = typeof m.timestamp === "number" ? m.timestamp : null;
-    if (timestamp != null) {
-      return `tool:${role}:${toolCallId}:${timestamp}:${index}`;
-    }
-    return `tool:${role}:${toolCallId}:${index}`;
+    // Key on the call id alone: it is assigned at creation and is identical
+    // for the live (pre-persist) and persisted copies of the same tool message.
+    // Folding in id/messageId/timestamp/index made the key flip across the
+    // live→persisted boundary and as history grew mid-run, so `repeat` remounted
+    // the card every render tick and replayed its entrance animation in a loop.
+    return `tool:${role}:${toolCallId}`;
   }
   const id = typeof m.id === "string" ? m.id : "";
   if (id) {
