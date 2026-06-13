@@ -115,6 +115,7 @@ import { admitReplyTurn, resolveReplyTurnKind } from "./reply-turn-admission.js"
 import { resolveRoutedDeliveryThreadId } from "./routed-delivery-thread.js";
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
 import { resolveSourceReplyVisibilityPolicy } from "./source-reply-delivery-mode.js";
+import { steerWithCompactionRetry } from "./steer-compaction-retry.js";
 import { createTypingSignaler } from "./typing-mode.js";
 import type { TypingController } from "./typing.js";
 
@@ -1234,14 +1235,16 @@ export async function runReplyAgent(params: {
     const steerSessionId =
       (sessionKey ? replyRunRegistry.resolveSessionId(sessionKey) : undefined) ??
       followupRun.run.sessionId;
-    const steerOutcome = await queueEmbeddedAgentMessageWithOutcomeAsync(
-      steerSessionId,
-      followupRun.prompt,
-      {
-        steeringMode: "all",
-        ...(resolvedQueue.debounceMs !== undefined ? { debounceMs: resolvedQueue.debounceMs } : {}),
-      },
-    );
+    // debounceMs is intentionally not forwarded: it only coalesces the followup
+    // queue. A single steer injection has nothing to coalesce, so debouncing it
+    // would just delay delivery to the next turn boundary.
+    const steerOutcome = await steerWithCompactionRetry({
+      attempt: () =>
+        queueEmbeddedAgentMessageWithOutcomeAsync(steerSessionId, followupRun.prompt, {
+          steeringMode: "all",
+        }),
+      isRunActive,
+    });
     if (steerOutcome.queued) {
       await touchActiveSessionEntry();
       typing.cleanup();
