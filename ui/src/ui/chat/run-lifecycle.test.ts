@@ -146,6 +146,20 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
     expect(host.lastLocalTerminalReconcile).toBeNull();
   });
 
+  it("keeps a locally-active run alive on a mid-run hasActiveRun:false blip while status stays running", () => {
+    // Regression: a turn-boundary metadata emit can report
+    // {status:"running", hasActiveRun:false}. That must not tear the run down,
+    // or the active tab's spinner flips to the done/interrupted dot mid-turn.
+    const host = makeHost({
+      chatRunId: "r1",
+      chatStream: "partial...",
+      sessionsResult: makeSessionsResult([{ key: "s1", hasActiveRun: false, status: "running" }]),
+    });
+    expect(reconcileChatRunFromCurrentSessionRow(host, { publishRunStatus: false })).toBe(false);
+    expect(host.chatRunId).toBe("r1");
+    expect(host.chatStream).toBe("partial...");
+  });
+
   it("clears selected agent-main alias runs from canonical global history rows", () => {
     const host = makeHost({
       sessionKey: "agent:work:main",
