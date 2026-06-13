@@ -578,6 +578,57 @@ describe("grouped chat rendering", () => {
     expect(userBubble.querySelector(".chat-bubble-actions")).toBeNull();
   });
 
+  it("offers a view-full expand on history-truncated user messages", () => {
+    const container = document.createElement("div");
+    const onOpenSidebar = vi.fn();
+    renderGroupedMessage(
+      container,
+      {
+        role: "user",
+        content: "A very long prompt\n...(truncated)...",
+        timestamp: 1001,
+        __openclaw: { id: "msg-user-1", truncated: true },
+      },
+      "user",
+      { onOpenSidebar, sessionKey: "agent:main" },
+    );
+
+    const userBubble = expectElement(container, ".chat-group.user .chat-bubble", HTMLElement);
+    const expandButton = userBubble.querySelector<HTMLButtonElement>(".chat-expand-btn");
+    expect(expandButton).toBeInstanceOf(HTMLButtonElement);
+    expect(expandButton?.getAttribute("aria-label")).toBe("View full message");
+
+    expandButton?.click();
+    expect(onOpenSidebar).toHaveBeenCalledTimes(1);
+    const content = onOpenSidebar.mock.calls[0]?.[0] as {
+      fullMessageRequest?: Record<string, unknown>;
+    };
+    expect(content.fullMessageRequest).toEqual({
+      sessionKey: "agent:main",
+      messageId: "msg-user-1",
+      kind: "user_message",
+    });
+  });
+
+  it("leaves untruncated user messages without an expand action", () => {
+    const container = document.createElement("div");
+    const onOpenSidebar = vi.fn();
+    renderGroupedMessage(
+      container,
+      {
+        role: "user",
+        content: "short prompt",
+        timestamp: 1001,
+        __openclaw: { id: "msg-user-2" },
+      },
+      "user",
+      { onOpenSidebar, sessionKey: "agent:main" },
+    );
+
+    const userBubble = expectElement(container, ".chat-group.user .chat-bubble", HTMLElement);
+    expect(userBubble.querySelector(".chat-expand-btn")).toBeNull();
+  });
+
   it("renders user markdown without code-block copy chrome", () => {
     const container = document.createElement("div");
     const markdown = "```bash\npython3 - <<'PY'\nprint('ok')\nPY\n```";

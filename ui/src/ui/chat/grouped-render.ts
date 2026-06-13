@@ -8,7 +8,7 @@ import type { EmbedSandboxMode } from "../embed-sandbox.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml, toStreamingMarkdownHtml } from "../markdown.ts";
 import { openExternalUrlSafe } from "../open-external-url.ts";
-import type { SidebarContent } from "../sidebar-content.ts";
+import type { SidebarContent, SidebarFullMessageRequest } from "../sidebar-content.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { resolveToolDisplay } from "../tool-display.ts";
 import type {
@@ -1739,14 +1739,17 @@ function renderExpandButton(
     sessionKey?: string;
     agentId?: string;
     messageId?: string;
+    kind?: SidebarFullMessageRequest["kind"];
+    label?: string;
   },
 ) {
+  const label = options?.label ?? "Open in canvas";
   return html`
     <button
       class="btn btn--xs chat-expand-btn"
       type="button"
-      title="Open in canvas"
-      aria-label="Open in canvas"
+      title=${label}
+      aria-label=${label}
       @click=${() =>
         onOpenSidebar({
           kind: "markdown",
@@ -1757,7 +1760,7 @@ function renderExpandButton(
                   sessionKey: options.sessionKey,
                   ...(options.agentId ? { agentId: options.agentId } : {}),
                   messageId: options.messageId,
-                  kind: "assistant_message" as const,
+                  kind: options.kind ?? "assistant_message",
                 },
               }
             : {}),
@@ -1837,9 +1840,6 @@ function renderGroupedMessage(
   const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
   const markdown = markdownBase;
   const markdownRenderOptions = role === "user" ? { codeBlockChrome: "none" as const } : undefined;
-  const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
-  const canExpand = role === "assistant" && Boolean(onOpenSidebar && markdown?.trim());
-  const hasActions = canCopyMarkdown || canExpand;
   const transcriptMeta =
     m["__openclaw"] && typeof m["__openclaw"] === "object" && !Array.isArray(m["__openclaw"])
       ? (m["__openclaw"] as Record<string, unknown>)
@@ -1855,6 +1855,15 @@ function renderGroupedMessage(
     !m.openclawMessageToolMirror &&
     (transcriptMeta?.truncated === true || markdown?.includes("\n...(truncated)...")),
   );
+  const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
+  // Assistants always get the open-in-canvas affordance. User messages are
+  // locally authored and stay uncluttered, but a history-truncated one needs a
+  // way to fetch its full text, so expand appears only when the display copy was
+  // actually clipped and the full transcript row is refetchable.
+  const canExpand =
+    Boolean(onOpenSidebar && markdown?.trim()) &&
+    (role === "assistant" || (role === "user" && shouldFetchFullMessage));
+  const hasActions = canCopyMarkdown || canExpand;
 
   // Detect pure-JSON messages and render as collapsible block
   const jsonResult = markdown && !opts.isStreaming ? detectJson(markdown) : null;
@@ -1938,6 +1947,8 @@ function renderGroupedMessage(
                   sessionKey: opts.sessionKey,
                   agentId: opts.agentId,
                   messageId: shouldFetchFullMessage ? sidebarMessageId : undefined,
+                  kind: role === "user" ? "user_message" : "assistant_message",
+                  ...(role === "user" ? { label: "View full message" } : {}),
                 })
               : nothing}
             ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
