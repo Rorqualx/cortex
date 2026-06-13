@@ -25,11 +25,12 @@ function messageSentEvent(params: {
   channelId?: string;
   to?: string;
   success?: boolean;
+  content?: string;
 }) {
   return createHookEvent("message", "sent", "agent:main:main", {
     ...(params.cfg ? { cfg: params.cfg } : {}),
     to: params.to ?? "user-1",
-    content: "All done",
+    content: params.content ?? "All done",
     channelId: params.channelId ?? "webchat",
     success: params.success ?? true,
   });
@@ -45,8 +46,8 @@ beforeEach(() => {
 });
 
 describe("message-completion-notifier hook", () => {
-  it("notifies the default channel when a watched-channel message is sent", async () => {
-    await handler(messageSentEvent({ cfg: notifierConfig(configuredEntry) }));
+  it("sends the agent's reply as the notification body on a watched channel", async () => {
+    await handler(messageSentEvent({ cfg: notifierConfig(configuredEntry), content: "All done" }));
 
     expect(sendBatch).toHaveBeenCalledTimes(1);
     expect(sendBatch).toHaveBeenCalledWith(
@@ -54,22 +55,31 @@ describe("message-completion-notifier hook", () => {
         channel: "telegram",
         to: "12345",
         accountId: "default",
-        payloads: [{ text: "✅ Done" }],
+        payloads: [{ text: "All done" }],
         bestEffort: true,
       }),
     );
   });
 
-  it("honors custom watch/notify channels, message, and thread id", async () => {
+  it("falls back to the configured message when the turn produced no reply text", async () => {
+    const cfg = notifierConfig({ ...configuredEntry, message: "✅ Done" });
+
+    await handler(messageSentEvent({ cfg, content: "   " }));
+
+    expect(sendBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ payloads: [{ text: "✅ Done" }] }),
+    );
+  });
+
+  it("honors custom watch/notify channels and thread id", async () => {
     const cfg = notifierConfig({
       ...configuredEntry,
       watchChannel: "discord",
       notifyChannel: "slack",
       notifyThreadId: 42,
-      message: "Session finished",
     });
 
-    await handler(messageSentEvent({ cfg, channelId: "discord" }));
+    await handler(messageSentEvent({ cfg, channelId: "discord", content: "Session finished" }));
 
     expect(sendBatch).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1398,6 +1398,33 @@ export async function dispatchReplyFromConfig(
     normalizedCurrentSurface === INTERNAL_MESSAGE_CHANNEL &&
     (normalizedSurfaceChannel === INTERNAL_MESSAGE_CHANNEL || !normalizedSurfaceChannel) &&
     !effectiveExplicitDeliverRoute;
+  // Bridge a completed internal webchat (Control UI) turn to the internal
+  // `message:sent` hook. Outbound delivery (deliver.ts) emits message:sent only
+  // for deliverable channels; webchat is the internal channel and is streamed,
+  // not delivered, so without this no message:sent fires for Control-UI turns
+  // and message:sent hooks (e.g. message-completion-notifier, watchChannel
+  // "webchat") never run. Guarded to fire at most once per dispatch.
+  let webchatTurnCompletionHookEmitted = false;
+  const emitWebchatTurnCompletionHook = (replyText: string) => {
+    if (webchatTurnCompletionHookEmitted || !isInternalWebchatTurn || !sessionKey) {
+      return;
+    }
+    webchatTurnCompletionHookEmitted = true;
+    fireAndForgetHook(
+      triggerInternalHook(
+        createInternalHookEvent("message", "sent", sessionKey, {
+          to: replyRoute.to ?? ctx.SenderId ?? sessionKey,
+          content: replyText,
+          success: true,
+          channelId: INTERNAL_MESSAGE_CHANNEL,
+          accountId: replyRoute.accountId,
+          conversationId: replyRoute.to ?? sessionKey,
+          cfg,
+        }),
+      ),
+      "dispatch-from-config: webchat message:sent internal hook failed",
+    );
+  };
   const hasRouteReplyCandidate = Boolean(
     !suppressAcpChildUserDelivery &&
     !isInternalWebchatTurn &&
@@ -2853,6 +2880,7 @@ export async function dispatchReplyFromConfig(
           ),
         );
         if (tailDispatchResult?.handled) {
+          emitWebchatTurnCompletionHook(accumulatedBlockText);
           recordAgentDispatchCompleted("completed");
           completeDispatchReplyOperation();
           return attachSourceReplyDeliveryMode({
@@ -3008,6 +3036,13 @@ export async function dispatchReplyFromConfig(
     const counts = dispatcher.getQueuedCounts();
     counts.final += routedFinalCount;
     commitInboundDedupeIfClaimed();
+    emitWebchatTurnCompletionHook(
+      accumulatedBlockText ||
+        replies
+          .map((reply) => (typeof reply.text === "string" ? reply.text : ""))
+          .filter(Boolean)
+          .join("\n"),
+    );
     recordAgentDispatchCompleted("completed");
     recordProcessed(
       "completed",

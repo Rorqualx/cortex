@@ -28,7 +28,11 @@ const handler: HookHandler = async (event) => {
   const notifyTo = hookConfig?.notifyTo as string | undefined;
   const notifyAccountId = hookConfig?.notifyAccountId as string | undefined;
   const notifyThreadId = hookConfig?.notifyThreadId as string | number | undefined;
-  const message = (hookConfig?.message as string) ?? "✅ Done";
+  // Send the agent's reply as the notification body. The configured `message`
+  // is the fallback used only when the completed turn produced no text.
+  const fallbackMessage = (hookConfig?.message as string) ?? "✅ Done";
+  const replyContent = event.context.content.trim();
+  const text = replyContent || fallbackMessage;
 
   const channelId = event.context.channelId;
   if (channelId !== watchChannel) {
@@ -50,7 +54,7 @@ const handler: HookHandler = async (event) => {
       to: notifyTo,
       accountId: notifyAccountId,
       ...(notifyThreadId !== undefined ? { threadId: notifyThreadId } : {}),
-      payloads: [{ text: message }],
+      payloads: [{ text }],
       bestEffort: true,
     });
     logger.debug("Completion notification sent successfully");

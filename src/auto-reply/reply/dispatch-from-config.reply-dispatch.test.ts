@@ -20,6 +20,7 @@ import {
   sessionStoreMocks,
   setDiscordTestRegistry,
 } from "./dispatch-from-config.shared.test-harness.js";
+import { buildTestCtx } from "./test-ctx.js";
 
 let dispatchReplyFromConfig: typeof import("./dispatch-from-config.js").dispatchReplyFromConfig;
 let resetInboundDedupe: typeof import("./inbound-dedupe.js").resetInboundDedupe;
@@ -212,6 +213,58 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
     expect(sessionStoreMocks.currentEntry?.pendingFinalDeliveryAttemptCount).toBeUndefined();
     expect(sessionStoreMocks.currentEntry?.pendingFinalDeliveryLastError).toBeUndefined();
     expect(sessionStoreMocks.currentEntry?.pendingFinalDeliveryContext).toBeUndefined();
+  });
+
+  it("bridges a completed webchat (Control UI) turn to the internal message:sent hook", async () => {
+    // Webchat is the internal channel; its replies are streamed, never sent
+    // through outbound delivery (the only other place message:sent fires). This
+    // bridge is what lets message:sent hooks (e.g. message-completion-notifier
+    // with watchChannel "webchat") observe Control UI turn completion.
+    hookMocks.runner.hasHooks.mockReturnValue(false);
+
+    await dispatchReplyFromConfig({
+      ctx: buildTestCtx({
+        Body: "hello",
+        BodyForAgent: "hello",
+        From: "user1",
+        Provider: "webchat",
+        Surface: "webchat",
+        ChatType: "private",
+        SessionKey: "agent:test:session",
+      }),
+      cfg: emptyConfig,
+      dispatcher: createDispatcher(),
+      replyResolver: async () => ({ text: "model reply" }),
+    });
+
+    const sentCall = internalHookMocks.createInternalHookEvent.mock.calls.find(
+      (call) => call[0] === "message" && call[1] === "sent",
+    );
+    expect(sentCall).toBeDefined();
+    expect(sentCall?.[2]).toBe("agent:test:session");
+    expect(sentCall?.[3]).toMatchObject({
+      channelId: "webchat",
+      content: "model reply",
+      success: true,
+    });
+  });
+
+  it("does not emit a webchat message:sent hook for a deliverable-channel turn", async () => {
+    // Deliverable channels (telegram, etc.) already emit message:sent from the
+    // outbound delivery path, so dispatch must not double-emit for them.
+    hookMocks.runner.hasHooks.mockReturnValue(false);
+
+    await dispatchReplyFromConfig({
+      ctx: createHookCtx(),
+      cfg: emptyConfig,
+      dispatcher: createDispatcher(),
+      replyResolver: async () => ({ text: "model reply" }),
+    });
+
+    const sentCall = internalHookMocks.createInternalHookEvent.mock.calls.find(
+      (call) => call[0] === "message" && call[1] === "sent",
+    );
+    expect(sentCall).toBeUndefined();
   });
 
   it("preserves pending final delivery when final dispatch fails", async () => {
