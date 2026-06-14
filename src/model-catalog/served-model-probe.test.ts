@@ -47,6 +47,25 @@ describe("probeServedModel", () => {
       }),
     ).toBeNull();
   });
+
+  it("uses the Anthropic /v1/messages shape when protocol=anthropic", async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ model: "kimi-for-coding" }));
+    const served = await probeServedModel({
+      baseUrl: "https://api.kimi.com/coding",
+      apiKey: "k",
+      modelId: "kimi-for-coding",
+      protocol: "anthropic",
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(served).toBe("kimi-for-coding");
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe("https://api.kimi.com/coding/v1/messages");
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["x-api-key"]).toBe("k");
+    expect(headers.authorization).toBeUndefined();
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toMatchObject({ model: "kimi-for-coding", max_tokens: 1 });
+  });
 });
 
 describe("probeServedModels", () => {

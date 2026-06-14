@@ -3,7 +3,11 @@
  *  - auto-populates models the endpoint returned that aren't already present
  *    (minimal entries; rich metadata still comes from the manifest when known);
  *  - hides models flagged deprecated for this install (vanished upstream), even
- *    when a stale manifest/config row still declares them.
+ *    when a stale manifest/config row still declares them;
+ *  - refreshes an existing entry's display name from the live discovered name
+ *    when discovery supplies one (e.g. the Kimi coding plan reports
+ *    display_name "K2.7 Code" for model id `kimi-for-coding`), so the model
+ *    version surfaces without a static config edit.
  *
  * Pure over already-read records so it is testable without the state DB; the DB
  * read happens at the catalog-load call site and is best-effort.
@@ -29,9 +33,22 @@ export function applyDiscoveredCatalog(params: {
   const deprecatedKeys = new Set(
     params.deprecated.map((row) => entryKey(row.provider, row.modelId)),
   );
-  const kept = params.models.filter(
-    (entry) => !deprecatedKeys.has(entryKey(entry.provider, entry.id)),
-  );
+  // Live display names (e.g. a model version) refresh an existing entry's name.
+  const activeNameByKey = new Map<string, string>();
+  for (const row of params.active) {
+    const name = row.name?.trim();
+    if (name) {
+      activeNameByKey.set(entryKey(row.provider, row.modelId), name);
+    }
+  }
+  const kept = params.models
+    .filter((entry) => !deprecatedKeys.has(entryKey(entry.provider, entry.id)))
+    .map((entry) => {
+      const discoveredName = activeNameByKey.get(entryKey(entry.provider, entry.id));
+      return discoveredName && discoveredName !== entry.name
+        ? { ...entry, name: discoveredName }
+        : entry;
+    });
 
   const presentKeys = new Set(kept.map((entry) => entryKey(entry.provider, entry.id)));
   for (const row of params.active) {

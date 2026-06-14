@@ -14,10 +14,24 @@ import { isRecord } from "../utils.js";
 export type ServedModelObservation = { requested: string; served: string };
 
 const DEFAULT_PROBE_TIMEOUT_MS = 15_000;
+const ANTHROPIC_VERSION = "2023-06-01";
+
+/** Provider wire protocol used to shape the probe request. */
+export type ProbeProtocol = "openai" | "anthropic";
+
+/** Maps a provider `api` value to the probe protocol. */
+export function probeProtocolForApi(api: string | undefined): ProbeProtocol {
+  return api === "anthropic-messages" ? "anthropic" : "openai";
+}
 
 function buildCompletionsUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, "");
   return `${trimmed}/chat/completions`;
+}
+
+function buildAnthropicMessagesUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  return `${trimmed}/v1/messages`;
 }
 
 function readServedModel(payload: unknown): string | null {
@@ -32,10 +46,54 @@ function readServedModel(payload: unknown): string | null {
  * Probes one model id and returns the served model id, or null on any failure
  * (transport, non-200, missing `model` field). Never throws.
  */
+function buildProbeRequest(
+  protocol: ProbeProtocol,
+  baseUrl: string,
+  apiKey: string,
+  modelId: string,
+): { url: string; init: RequestInit } {
+  if (protocol === "anthropic") {
+    return {
+      url: buildAnthropicMessagesUrl(baseUrl),
+      init: {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": ANTHROPIC_VERSION,
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          model: modelId,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      },
+    };
+  }
+  return {
+    url: buildCompletionsUrl(baseUrl),
+    init: {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: "user", content: "hi" }],
+        max_tokens: 1,
+      }),
+    },
+  };
+}
+
 export async function probeServedModel(params: {
   baseUrl: string;
   apiKey: string;
   modelId: string;
+  protocol?: ProbeProtocol;
   timeoutMs?: number;
   fetchFn?: typeof fetch;
 }): Promise<string | null> {
@@ -52,20 +110,8 @@ export async function probeServedModel(params: {
     params.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS,
   );
   try {
-    const response = await fetchFn(buildCompletionsUrl(baseUrl), {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages: [{ role: "user", content: "hi" }],
-        max_tokens: 1,
-      }),
-      signal: controller.signal,
-    });
+    const { url, init } = buildProbeRequest(params.protocol ?? "openai", baseUrl, apiKey, modelId);
+    const response = await fetchFn(url, { ...init, signal: controller.signal });
     if (!response.ok) {
       return null;
     }
@@ -86,6 +132,7 @@ export async function probeServedModels(params: {
   baseUrl: string;
   apiKey: string;
   modelIds: readonly string[];
+  protocol?: ProbeProtocol;
   timeoutMs?: number;
   fetchFn?: typeof fetch;
 }): Promise<ServedModelObservation[]> {
@@ -101,6 +148,7 @@ export async function probeServedModels(params: {
       baseUrl: params.baseUrl,
       apiKey: params.apiKey,
       modelId: requested,
+      ...(params.protocol ? { protocol: params.protocol } : {}),
       ...(params.timeoutMs !== undefined ? { timeoutMs: params.timeoutMs } : {}),
       ...(params.fetchFn ? { fetchFn: params.fetchFn } : {}),
     });

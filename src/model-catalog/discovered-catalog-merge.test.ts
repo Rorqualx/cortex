@@ -56,6 +56,27 @@ describe("applyDiscoveredCatalog", () => {
     expect(result.find((m) => m.id === "glm-5")?.reasoning).toBe(true);
   });
 
+  it("refreshes an existing entry's name from the live discovered display name", () => {
+    const models: ModelCatalogEntry[] = [
+      { id: "kimi-for-coding", name: "Kimi Code", provider: "kimi" },
+    ];
+    const result = applyDiscoveredCatalog({
+      models,
+      active: [{ ...rec("kimi", "kimi-for-coding", "active"), name: "K2.7 Code" }],
+      deprecated: [],
+    });
+    expect(result.find((m) => m.id === "kimi-for-coding")?.name).toBe("K2.7 Code");
+  });
+
+  it("keeps the existing name when discovery supplies no display name", () => {
+    const result = applyDiscoveredCatalog({
+      models: base,
+      active: [rec("zai", "glm-5", "active")], // rec() name is null
+      deprecated: [],
+    });
+    expect(result.find((m) => m.id === "glm-5")?.name).toBe("GLM-5");
+  });
+
   it("is a no-op when there are no discovered rows", () => {
     expect(applyDiscoveredCatalog({ models: base, active: [], deprecated: [] })).toEqual(base);
   });

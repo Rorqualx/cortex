@@ -13,12 +13,12 @@ import { resolveApiKeyForProvider } from "../agents/model-auth.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
 import { upsertProbedServedModels } from "./discovered-store.js";
-import { fetchOpenAiCompatibleModels } from "./model-discovery.js";
+import { fetchAnthropicMessagesModels, fetchOpenAiCompatibleModels } from "./model-discovery.js";
 import { type ReconcileResult, reconcileProviderModels } from "./reconcile.js";
-import { probeServedModels } from "./served-model-probe.js";
+import { probeProtocolForApi, probeServedModels } from "./served-model-probe.js";
 
-/** Resolved network target for a provider's /models endpoint. */
-export type DiscoveryEndpoint = { baseUrl: string; apiKey: string };
+/** Resolved network target for a provider's /models endpoint, with wire protocol. */
+export type DiscoveryEndpoint = { baseUrl: string; apiKey: string; api?: string };
 
 /** Per-provider discovery outcome surfaced to CLI/doctor/log. */
 export type ProviderDiscoveryReport = {
@@ -67,14 +67,19 @@ export async function resolveDiscoveryEndpoint(
   provider: string,
 ): Promise<DiscoveryEndpoint | null> {
   const providerId = normalizeModelCatalogProviderId(provider);
-  const baseUrl = cfg.models?.providers?.[providerId]?.baseUrl?.trim();
+  const providerConfig = cfg.models?.providers?.[providerId];
+  const baseUrl = providerConfig?.baseUrl?.trim();
   if (!baseUrl) {
     return null;
   }
+  const api = providerConfig?.api;
   try {
     const resolved = await resolveApiKeyForProvider({ provider: providerId, cfg });
     const apiKey = resolved.apiKey?.trim();
-    return apiKey ? { baseUrl, apiKey } : null;
+    if (!apiKey) {
+      return null;
+    }
+    return { baseUrl, apiKey, ...(api ? { api } : {}) };
   } catch {
     // resolveApiKeyForProvider throws when no credential is found; treat as skip.
     return null;
@@ -110,11 +115,18 @@ export async function runProviderModelDiscovery(params: {
   if (!endpoint) {
     return { provider, ok: false, reason: "no configured baseUrl/credentials" };
   }
-  const fetchResult = await fetchOpenAiCompatibleModels({
-    baseUrl: endpoint.baseUrl,
-    apiKey: endpoint.apiKey,
-    fetchFn: params.fetchFn,
-  });
+  const isAnthropic = endpoint.api === "anthropic-messages";
+  const fetchResult = isAnthropic
+    ? await fetchAnthropicMessagesModels({
+        baseUrl: endpoint.baseUrl,
+        apiKey: endpoint.apiKey,
+        fetchFn: params.fetchFn,
+      })
+    : await fetchOpenAiCompatibleModels({
+        baseUrl: endpoint.baseUrl,
+        apiKey: endpoint.apiKey,
+        fetchFn: params.fetchFn,
+      });
 
   // Probe served ids (network) before opening the write transaction. Served ids
   // that the /models list omits get recorded as source="probe".
@@ -127,6 +139,7 @@ export async function runProviderModelDiscovery(params: {
       baseUrl: endpoint.baseUrl,
       apiKey: endpoint.apiKey,
       modelIds: collectProbeCandidateIds(params.cfg, provider, fetchResult),
+      protocol: probeProtocolForApi(endpoint.api),
       ...(params.fetchFn ? { fetchFn: params.fetchFn } : {}),
     });
     const seen = new Set<string>();

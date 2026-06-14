@@ -19,10 +19,16 @@ export type FetchModelsResult =
   | { ok: false; error: string; status?: number };
 
 const DEFAULT_DISCOVERY_TIMEOUT_MS = 15_000;
+const ANTHROPIC_VERSION = "2023-06-01";
 
 function buildModelsUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, "");
   return `${trimmed}/models`;
+}
+
+function buildAnthropicModelsUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  return `${trimmed}/v1/models`;
 }
 
 /** Normalize an upstream `created` value (seconds or ms) to milliseconds. */
@@ -112,6 +118,60 @@ export async function fetchOpenAiCompatibleModels(params: {
     if (models.length === 0) {
       // Treat an empty list as a non-result so reconcile never deprecates the
       // whole catalog off a degenerate response.
+      return { ok: false, error: "empty model list" };
+    }
+    return { ok: true, models };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * GET `<baseUrl>/v1/models` for Anthropic-protocol providers (e.g. the Kimi
+ * coding plan, `api: anthropic-messages`). Uses `x-api-key` + `anthropic-version`
+ * and the same `data[]` mapping (Anthropic entries carry `display_name`, so the
+ * model version like "K2.7 Code" is captured as the name). Never throws.
+ */
+export async function fetchAnthropicMessagesModels(params: {
+  baseUrl: string;
+  apiKey: string;
+  timeoutMs?: number;
+  fetchFn?: typeof fetch;
+}): Promise<FetchModelsResult> {
+  const baseUrl = params.baseUrl.trim();
+  if (!baseUrl) {
+    return { ok: false, error: "missing baseUrl" };
+  }
+  if (!params.apiKey.trim()) {
+    return { ok: false, error: "missing apiKey" };
+  }
+  const fetchFn = params.fetchFn ?? fetch;
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    params.timeoutMs ?? DEFAULT_DISCOVERY_TIMEOUT_MS,
+  );
+  try {
+    const response = await fetchFn(buildAnthropicModelsUrl(baseUrl), {
+      method: "GET",
+      headers: {
+        "x-api-key": params.apiKey.trim(),
+        "anthropic-version": ANTHROPIC_VERSION,
+        accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return { ok: false, error: `HTTP ${response.status}`, status: response.status };
+    }
+    const list = readModelList((await response.json()) as unknown);
+    if (!list) {
+      return { ok: false, error: "unexpected /v1/models response shape" };
+    }
+    const models = list.map(mapModelEntry).filter((m): m is DiscoveredModelInput => m !== null);
+    if (models.length === 0) {
       return { ok: false, error: "empty model list" };
     }
     return { ok: true, models };

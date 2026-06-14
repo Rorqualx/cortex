@@ -1,6 +1,6 @@
 // Covers the OpenAI-compatible /models fetcher mapping + failure guards.
 import { describe, expect, it, vi } from "vitest";
-import { fetchOpenAiCompatibleModels } from "./model-discovery.js";
+import { fetchAnthropicMessagesModels, fetchOpenAiCompatibleModels } from "./model-discovery.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -8,6 +8,49 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+describe("fetchAnthropicMessagesModels", () => {
+  it("fetches /v1/models with anthropic headers and captures display_name as the version", async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({
+        object: "list",
+        data: [
+          {
+            id: "kimi-for-coding",
+            display_name: "K2.7 Code",
+            object: "model",
+            created: 1761264000,
+          },
+        ],
+      }),
+    );
+    const result = await fetchAnthropicMessagesModels({
+      baseUrl: "https://api.kimi.com/coding",
+      apiKey: "k",
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.models[0]).toMatchObject({ modelId: "kimi-for-coding", name: "K2.7 Code" });
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe("https://api.kimi.com/coding/v1/models");
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["x-api-key"]).toBe("k");
+    expect(headers["anthropic-version"]).toBeTruthy();
+  });
+
+  it("returns ok:false on a non-200", async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ error: "nope" }, 401));
+    const result = await fetchAnthropicMessagesModels({
+      baseUrl: "https://x",
+      apiKey: "k",
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(false);
+  });
+});
 
 describe("fetchOpenAiCompatibleModels", () => {
   it("maps a z.ai-style list response to discovered inputs", async () => {
