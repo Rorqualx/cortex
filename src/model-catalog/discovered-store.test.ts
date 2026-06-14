@@ -8,6 +8,7 @@ import {
 import { createTrackedTempDirs } from "../test-utils/tracked-temp-dirs.js";
 import {
   listDiscoveredModels,
+  listSilentUpgrades,
   markDiscoveredModelsDeprecated,
   upsertActiveDiscoveredModels,
   upsertProbedServedModels,
@@ -89,6 +90,21 @@ describe("discovered-store", () => {
     upsertActiveDiscoveredModels(db, "zai", [{ modelId: "glm-5.2", raw: { id: "glm-5.2" } }], 1200);
     probe = listDiscoveredModels(db, { provider: "zai", source: "probe" });
     expect(probe).toHaveLength(0);
+  });
+
+  it("reads silent upgrades from probe rows' upgradedFrom", async () => {
+    const { db } = await openTempDb();
+    upsertProbedServedModels(
+      db,
+      "zai",
+      [{ modelId: "glm-5.2", raw: { id: "glm-5.2", via: "probe", upgradedFrom: ["glm-5.1"] } }],
+      1000,
+    );
+    // A probe row without upgradedFrom contributes no upgrade.
+    upsertProbedServedModels(db, "zai", [{ modelId: "glm-4.6v", raw: { id: "glm-4.6v" } }], 1000);
+    expect(listSilentUpgrades(db, "zai")).toEqual([
+      { provider: "zai", from: "glm-5.1", to: "glm-5.2" },
+    ]);
   });
 
   it("scopes provider and status filters", async () => {

@@ -133,7 +133,9 @@ export async function runProviderModelDiscovery(params: {
   const liveSet = new Set(
     (fetchResult.ok ? fetchResult.models.map((m) => m.modelId) : []).map((id) => id.toLowerCase()),
   );
-  let newServed: string[] = [];
+  const newServed: string[] = [];
+  // served (lowercased) -> requested ids that were silently served as it (upgrades).
+  const upgradeFromByServed = new Map<string, Set<string>>();
   if (params.probeServed) {
     const observations = await probeServedModels({
       baseUrl: endpoint.baseUrl,
@@ -143,11 +145,22 @@ export async function runProviderModelDiscovery(params: {
       ...(params.fetchFn ? { fetchFn: params.fetchFn } : {}),
     });
     const seen = new Set<string>();
-    for (const { served } of observations) {
+    for (const { requested, served } of observations) {
       const key = served.toLowerCase();
-      if (key && !liveSet.has(key) && !seen.has(key)) {
+      if (!key || liveSet.has(key)) {
+        continue;
+      }
+      if (!seen.has(key)) {
         seen.add(key);
         newServed.push(served);
+      }
+      if (requested.toLowerCase() !== key) {
+        // A requested id that the provider answered with a different served id =
+        // a silent upgrade (e.g. glm-5.1 served as glm-5.2). Record the link so
+        // doctor --fix can repoint pins/aliases off the superseded id.
+        const from = upgradeFromByServed.get(key) ?? new Set<string>();
+        from.add(requested);
+        upgradeFromByServed.set(key, from);
       }
     }
   }
@@ -158,7 +171,13 @@ export async function runProviderModelDiscovery(params: {
       upsertProbedServedModels(
         db,
         provider,
-        newServed.map((id) => ({ modelId: id, raw: { id, via: "probe" } })),
+        newServed.map((id) => {
+          const upgradedFrom = [...(upgradeFromByServed.get(id.toLowerCase()) ?? [])];
+          return {
+            modelId: id,
+            raw: { id, via: "probe", ...(upgradedFrom.length > 0 ? { upgradedFrom } : {}) },
+          };
+        }),
         params.nowMs,
       );
     }

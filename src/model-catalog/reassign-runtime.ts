@@ -1,4 +1,3 @@
-import { listAgentIds } from "../agents/agent-scope-config.js";
 /**
  * Runtime wiring for model reassignment: reads the deprecated discovery snapshot,
  * the live catalog, and every model binding (crons, agent sessions, aliases),
@@ -6,6 +5,8 @@ import { listAgentIds } from "../agents/agent-scope-config.js";
  * the doctor check and gateway task lazy-import it without pulling the state DB,
  * cron store, and session store into light import paths.
  */
+import { normalizeModelCatalogProviderId } from "@openclaw/model-catalog-core/model-catalog-refs";
+import { listAgentIds } from "../agents/agent-scope-config.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { loadModelCatalog } from "../agents/model-catalog.js";
 import type { ModelCatalogEntry } from "../agents/model-catalog.types.js";
@@ -26,7 +27,7 @@ import {
   saveCronJobsStore,
 } from "../cron/store.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
-import { listDiscoveredModels } from "./discovered-store.js";
+import { listDiscoveredModels, listSilentUpgrades } from "./discovered-store.js";
 import type { ReassignApplyDeps } from "./reassign-apply.js";
 import {
   collectAgentBindings,
@@ -124,7 +125,8 @@ export async function buildRuntimeReassignmentPlan(
 ): Promise<RuntimeReassignmentPlan> {
   const { db } = openOpenClawStateDatabase();
   const deprecated = listDiscoveredModels(db, { status: "deprecated" });
-  if (deprecated.length === 0) {
+  const upgrades = listSilentUpgrades(db);
+  if (deprecated.length === 0 && upgrades.length === 0) {
     return { plan: { actions: [], unresolved: [] }, deprecatedCount: 0 };
   }
 
@@ -135,17 +137,49 @@ export async function buildRuntimeReassignmentPlan(
     defaultProvider: DEFAULT_PROVIDER,
     defaultModel: DEFAULT_MODEL,
   });
-  const replacements = buildReplacementDecisions({
+  const deprecatedReplacements = buildReplacementDecisions({
     deprecated: deprecated.map((row) => ({ provider: row.provider, modelId: row.modelId })),
     candidates,
     defaultModelByProvider: new Map([[defaultRef.provider, defaultRef.model]]),
   });
+  // Silent upgrades repoint the superseded id directly onto its served id.
+  const upgradeReplacements = upgrades.map((u) => ({
+    provider: u.provider,
+    deprecatedModelId: u.from,
+    replacementModelId: u.to,
+  }));
+  const replacements = [...deprecatedReplacements, ...upgradeReplacements];
 
   const aliasIndex = buildModelAliasIndex({ cfg, defaultProvider: DEFAULT_PROVIDER });
   const resolveRef = buildResolveRef(cfg, aliasIndex);
   const bindings = collectAllBindings(cfg, resolveRef, aliasIndex);
   const plan = planReassignments({ bindings, replacements });
   return { plan, deprecatedCount: deprecated.length };
+}
+
+/**
+ * Builds a `(provider, modelId) => displayName` lookup from active discovered
+ * rows, so alias repointing can relabel to the live display name (e.g. the Kimi
+ * coding plan's "K2.7 Code") when discovery provides one.
+ */
+export function buildDiscoveredDisplayNames(): (
+  provider: string,
+  modelId: string,
+) => string | undefined {
+  const { db } = openOpenClawStateDatabase();
+  const rows = listDiscoveredModels(db, { status: "active" });
+  const byKey = new Map<string, string>();
+  for (const row of rows) {
+    const name = row.name?.trim();
+    if (name) {
+      byKey.set(
+        `${normalizeModelCatalogProviderId(row.provider)}/${row.modelId.toLowerCase()}`,
+        name,
+      );
+    }
+  }
+  return (provider, modelId) =>
+    byKey.get(`${normalizeModelCatalogProviderId(provider)}/${modelId.trim().toLowerCase()}`);
 }
 
 /** Store deps that apply a plan to the real cron + session stores. */

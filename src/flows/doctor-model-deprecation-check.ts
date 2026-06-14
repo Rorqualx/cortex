@@ -47,20 +47,22 @@ export const MODEL_DEPRECATION_HEALTH_CHECK: HealthCheck = {
       severity: action.binding.kind === "alias" ? ("info" as const) : ("warning" as const),
       message:
         action.outcome === "rewrite"
-          ? `Pinned to a deprecated model; reassign ${describeReassignment(action)}.`
+          ? `Pinned to a deprecated or superseded model; reassign ${describeReassignment(action)}.`
           : `Pinned to a deprecated model with no replacement: ${describeReassignment(action)}.`,
-      fixHint: "Run `openclaw doctor --fix` to reassign deprecated model pins.",
+      fixHint: "Run `openclaw doctor --fix` to reassign deprecated/superseded model pins.",
     }));
   },
   async repair(ctx: HealthRepairContext): Promise<HealthRepairResult> {
-    const { buildRuntimeReassignmentPlan, buildRuntimeApplyDeps } =
+    const { buildRuntimeReassignmentPlan, buildRuntimeApplyDeps, buildDiscoveredDisplayNames } =
       await import("../model-catalog/reassign-runtime.js");
     const { applyReassignmentPlan } = await import("../model-catalog/reassign-apply.js");
+    const { applyAliasReassignments } = await import("../model-catalog/reassign-alias.js");
     const { plan } = await buildRuntimeReassignmentPlan(ctx.cfg);
     if (plan.actions.length === 0) {
-      return { status: "skipped", reason: "no deprecated model pins", changes: [] };
+      return { status: "skipped", reason: "no deprecated or superseded model pins", changes: [] };
     }
-    const deps = buildRuntimeApplyDeps({ nowMs: Date.now(), dryRun: ctx.dryRun === true });
+    const dryRun = ctx.dryRun === true;
+    const deps = buildRuntimeApplyDeps({ nowMs: Date.now(), dryRun });
     const result = await applyReassignmentPlan(plan, deps);
 
     const changes: string[] = [
@@ -77,25 +79,51 @@ export const MODEL_DEPRECATION_HEALTH_CHECK: HealthCheck = {
           : `agent ${c.agentId} (${c.sessionKey}) cleared override ${c.from}`,
       ),
     ];
-    const warnings =
-      result.deadAliases.length > 0
-        ? [
-            `Aliases still point at deprecated models: ${result.deadAliases.join(", ")}. Remove them from agents.defaults.models.`,
-          ]
-        : [];
+
+    // Aliases live in openclaw.json; doctor --fix is the flow allowed to rewrite
+    // it. Repoint/relabel/drop alias entries and return the new config to persist.
+    let config: HealthRepairResult["config"];
+    const aliasMap = ctx.cfg.agents?.defaults?.models;
+    if (aliasMap && typeof aliasMap === "object" && !Array.isArray(aliasMap)) {
+      const displayNameFor = buildDiscoveredDisplayNames();
+      const { aliases, changes: aliasChanges } = applyAliasReassignments({
+        aliases: aliasMap as Record<string, { alias?: string }>,
+        actions: plan.actions,
+        displayNameFor,
+      });
+      for (const c of aliasChanges) {
+        changes.push(
+          c.outcome === "repoint"
+            ? `alias "${c.alias}" ${c.fromKey} -> ${c.toKey} (label "${c.newLabel}")`
+            : `dropped alias "${c.alias}" (${c.fromKey})`,
+        );
+      }
+      if (aliasChanges.length > 0 && !dryRun) {
+        const next = structuredClone(ctx.cfg);
+        next.agents = next.agents ?? {};
+        next.agents.defaults = next.agents.defaults ?? {};
+        (next.agents.defaults as { models?: unknown }).models = aliases;
+        config = next;
+      }
+    }
+
     const effects =
       changes.length > 0
         ? [
             {
               kind: "state" as const,
-              action:
-                ctx.dryRun === true
-                  ? "would-reassign-deprecated-model-pins"
-                  : "reassign-deprecated-model-pins",
+              action: dryRun
+                ? "would-reassign-deprecated-model-pins"
+                : "reassign-deprecated-model-pins",
               dryRunSafe: false,
             },
           ]
         : [];
-    return { status: changes.length > 0 ? "repaired" : "skipped", changes, warnings, effects };
+    return {
+      status: changes.length > 0 ? "repaired" : "skipped",
+      changes,
+      effects,
+      ...(config ? { config } : {}),
+    };
   },
 };

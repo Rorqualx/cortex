@@ -166,6 +166,53 @@ export function upsertActiveDiscoveredModels(
   }
 }
 
+/** A silently-upgraded model: requests for `from` are served as `to` (same provider). */
+export type SilentModelUpgrade = { provider: string; from: string; to: string };
+
+/**
+ * Reads silent upgrades recorded by the served-model probe: probe rows whose
+ * `raw_json.upgradedFrom` lists requested ids the provider answered with a
+ * different served id. Used by doctor --fix to repoint pins/aliases off the
+ * superseded id onto the served one.
+ */
+export function listSilentUpgrades(db: DatabaseSync, provider?: string): SilentModelUpgrade[] {
+  let query = getDiscoveredStoreKysely(db)
+    .selectFrom("model_catalog_discovered")
+    .select(["provider", "model_id", "raw_json"])
+    .where("source", "=", "probe");
+  const normalizedProvider = provider ? normalizeModelCatalogProviderId(provider) : undefined;
+  if (normalizedProvider) {
+    query = query.where("provider", "=", normalizedProvider);
+  }
+  query = query.orderBy("provider", "asc").orderBy("model_id", "asc");
+  const upgrades: SilentModelUpgrade[] = [];
+  const seen = new Set<string>();
+  for (const row of executeSqliteQuerySync(db, query).rows) {
+    let upgradedFrom: unknown;
+    try {
+      upgradedFrom = (JSON.parse(row.raw_json) as { upgradedFrom?: unknown }).upgradedFrom;
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(upgradedFrom)) {
+      continue;
+    }
+    for (const fromRaw of upgradedFrom) {
+      const from = typeof fromRaw === "string" ? fromRaw.trim() : "";
+      if (!from || from.toLowerCase() === row.model_id.toLowerCase()) {
+        continue;
+      }
+      const key = `${row.provider}/${from.toLowerCase()}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      upgrades.push({ provider: row.provider, from, to: row.model_id });
+    }
+  }
+  return upgrades;
+}
+
 /**
  * Records models observed as the served model id from completion responses
  * (source="probe"): unlisted or silently-upgraded models the /models list omits.
