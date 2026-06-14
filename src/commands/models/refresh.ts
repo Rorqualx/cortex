@@ -25,10 +25,12 @@ function formatReport(report: ProviderDiscoveryReport): string {
   }
   const added = report.added.length ? report.added.join(", ") : "none";
   const deprecated = report.deprecated.length ? report.deprecated.join(", ") : "none";
+  const probed = report.probedAdded?.length ? report.probedAdded.join(", ") : "none";
   return [
     `  ${report.provider}: ${report.activeCount} live model(s)`,
-    `    added:      ${added}`,
-    `    deprecated: ${deprecated}`,
+    `    added:        ${added}`,
+    `    served-only:  ${probed}`,
+    `    deprecated:   ${deprecated}`,
   ].join("\n");
 }
 
@@ -50,7 +52,7 @@ export async function modelsRefreshCommand(
   const nowMs = Date.now();
   const reports: ProviderDiscoveryReport[] = [];
   for (const provider of providers) {
-    reports.push(await runProviderModelDiscovery({ provider, cfg, nowMs }));
+    reports.push(await runProviderModelDiscovery({ provider, cfg, nowMs, probeServed: true }));
   }
 
   if (opts.json) {

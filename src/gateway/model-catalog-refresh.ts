@@ -36,12 +36,17 @@ export async function runModelCatalogRefreshOnce(
 ): Promise<void> {
   const { runAllRefreshableProviderDiscovery } =
     await import("../model-catalog/discovery-orchestrator.js");
-  const reports = await runAllRefreshableProviderDiscovery({ cfg: config, nowMs: Date.now() });
+  const reports = await runAllRefreshableProviderDiscovery({
+    cfg: config,
+    nowMs: Date.now(),
+    probeServed: true,
+  });
   const added = reports.reduce((sum, r) => sum + (r.ok ? r.added.length : 0), 0);
   const deprecated = reports.reduce((sum, r) => sum + (r.ok ? r.deprecated.length : 0), 0);
-  if (added > 0 || deprecated > 0) {
+  const probed = reports.reduce((sum, r) => sum + (r.probedAdded?.length ?? 0), 0);
+  if (added > 0 || deprecated > 0 || probed > 0) {
     log.info(
-      `model discovery: +${added} new, ${deprecated} deprecated across ${reports.length} provider(s)`,
+      `model discovery: +${added} new, +${probed} served-only, ${deprecated} deprecated across ${reports.length} provider(s)`,
     );
   }
   if (deprecated === 0) {

@@ -10,6 +10,7 @@ import {
   listDiscoveredModels,
   markDiscoveredModelsDeprecated,
   upsertActiveDiscoveredModels,
+  upsertProbedServedModels,
 } from "./discovered-store.js";
 
 const tempDirs = createTrackedTempDirs();
@@ -69,6 +70,25 @@ describe("discovered-store", () => {
     row = listDiscoveredModels(db, { provider: "zai" })[0];
     expect(row?.status).toBe("active");
     expect(row?.deprecatedAtMs).toBeNull();
+  });
+
+  it("records probe-sourced models and never downgrades a models-sourced row", async () => {
+    const { db } = await openTempDb();
+    // Probe discovers an unlisted served model.
+    upsertProbedServedModels(db, "zai", [{ modelId: "glm-5.2", raw: { id: "glm-5.2" } }], 1000);
+    let probe = listDiscoveredModels(db, { provider: "zai", source: "probe" });
+    expect(probe.map((r) => r.modelId)).toEqual(["glm-5.2"]);
+
+    // A models-sourced row stays models even if probe re-sees it.
+    upsertActiveDiscoveredModels(db, "zai", [{ modelId: "glm-5.1", raw: { id: "glm-5.1" } }], 1000);
+    upsertProbedServedModels(db, "zai", [{ modelId: "glm-5.1", raw: { id: "glm-5.1" } }], 1100);
+    expect(
+      listDiscoveredModels(db, { provider: "zai", source: "models" }).map((r) => r.modelId),
+    ).toEqual(["glm-5.1"]);
+    // And if /models later lists the probed id, it upgrades to models source.
+    upsertActiveDiscoveredModels(db, "zai", [{ modelId: "glm-5.2", raw: { id: "glm-5.2" } }], 1200);
+    probe = listDiscoveredModels(db, { provider: "zai", source: "probe" });
+    expect(probe).toHaveLength(0);
   });
 
   it("scopes provider and status filters", async () => {

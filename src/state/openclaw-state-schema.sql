@@ -1253,6 +1253,11 @@ CREATE TABLE IF NOT EXISTS model_catalog_discovered (
   merge_key TEXT NOT NULL,
   name TEXT,
   status TEXT NOT NULL DEFAULT 'active',
+  -- How the model was discovered: 'models' (endpoint GET /models list) or 'probe'
+  -- (served model id observed from a completion response, e.g. an unlisted/upgraded
+  -- model). Probe rows have an independent lifecycle: the /models reconcile never
+  -- deprecates them, since they are expected to be absent from the /models list.
+  source TEXT NOT NULL DEFAULT 'models',
   created_remote_ms INTEGER,
   first_seen_at_ms INTEGER NOT NULL,
   last_seen_at_ms INTEGER NOT NULL,

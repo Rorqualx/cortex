@@ -22,6 +22,14 @@ type DiscoveredStoreDatabase = Pick<OpenClawStateKyselyDatabase, "model_catalog_
 /** Availability of a discovered model for this install's configured endpoint. */
 export type DiscoveredModelStatus = "active" | "deprecated";
 
+/**
+ * How a model was discovered. "models" = listed by the provider's GET /models;
+ * "probe" = observed as the served model id in a completion response (an unlisted
+ * or silently-upgraded model). Probe rows are never deprecated by the /models
+ * reconcile, since /models is expected not to list them.
+ */
+export type DiscoveredModelSource = "models" | "probe";
+
 /** One model id returned by a provider /models fetch, before persistence. */
 export type DiscoveredModelInput = {
   modelId: string;
@@ -40,6 +48,7 @@ export type DiscoveredModelRecord = {
   ref: string;
   name: string | null;
   status: DiscoveredModelStatus;
+  source: DiscoveredModelSource;
   createdRemoteMs: number | null;
   lastSeenAtMs: number;
   deprecatedAtMs: number | null;
@@ -53,10 +62,14 @@ function toStatus(raw: string): DiscoveredModelStatus {
   return raw === "deprecated" ? "deprecated" : "active";
 }
 
+function toSource(raw: string): DiscoveredModelSource {
+  return raw === "probe" ? "probe" : "models";
+}
+
 /** Loads discovered rows, optionally scoped to one provider, in deterministic order. */
 export function listDiscoveredModels(
   db: DatabaseSync,
-  opts?: { provider?: string; status?: DiscoveredModelStatus },
+  opts?: { provider?: string; status?: DiscoveredModelStatus; source?: DiscoveredModelSource },
 ): DiscoveredModelRecord[] {
   let query = getDiscoveredStoreKysely(db)
     .selectFrom("model_catalog_discovered")
@@ -66,6 +79,7 @@ export function listDiscoveredModels(
       "ref",
       "name",
       "status",
+      "source",
       "created_remote_ms",
       "last_seen_at_ms",
       "deprecated_at_ms",
@@ -77,6 +91,9 @@ export function listDiscoveredModels(
   if (opts?.status) {
     query = query.where("status", "=", opts.status);
   }
+  if (opts?.source) {
+    query = query.where("source", "=", opts.source);
+  }
   query = query.orderBy("provider", "asc").orderBy("model_id", "asc");
   return executeSqliteQuerySync(db, query).rows.map((row) => ({
     provider: row.provider,
@@ -84,6 +101,7 @@ export function listDiscoveredModels(
     ref: row.ref,
     name: row.name,
     status: toStatus(row.status),
+    source: toSource(row.source),
     createdRemoteMs: row.created_remote_ms,
     lastSeenAtMs: row.last_seen_at_ms,
     deprecatedAtMs: row.deprecated_at_ms,
@@ -121,6 +139,7 @@ export function upsertActiveDiscoveredModels(
           merge_key: buildModelCatalogMergeKey(normalizedProvider, modelId),
           name,
           status: "active",
+          source: "models",
           created_remote_ms: createdRemoteMs,
           first_seen_at_ms: nowMs,
           last_seen_at_ms: nowMs,
@@ -129,12 +148,69 @@ export function upsertActiveDiscoveredModels(
           updated_at: nowMs,
         })
         // Re-seeing a model keeps its original first_seen and clears any prior
-        // deprecation; we never overwrite first_seen_at_ms on conflict.
+        // deprecation; we never overwrite first_seen_at_ms on conflict. A model
+        // now listed by /models is authoritative, so it upgrades to source=models.
         .onConflict((conflict) =>
           conflict.columns(["provider", "model_id"]).doUpdateSet({
             name,
             status: "active",
+            source: "models",
             created_remote_ms: createdRemoteMs,
+            last_seen_at_ms: nowMs,
+            deprecated_at_ms: null,
+            raw_json: rawJson,
+            updated_at: nowMs,
+          }),
+        ),
+    );
+  }
+}
+
+/**
+ * Records models observed as the served model id from completion responses
+ * (source="probe"): unlisted or silently-upgraded models the /models list omits.
+ * On conflict it refreshes last-seen/name/status but never downgrades an existing
+ * source=models row to probe (the authoritative /models listing wins).
+ */
+export function upsertProbedServedModels(
+  db: DatabaseSync,
+  provider: string,
+  models: readonly DiscoveredModelInput[],
+  nowMs: number,
+): void {
+  const normalizedProvider = normalizeModelCatalogProviderId(provider);
+  for (const model of models) {
+    const modelId = model.modelId.trim();
+    if (!modelId) {
+      continue;
+    }
+    const name = model.name?.trim() || null;
+    const createdRemoteMs = model.createdRemoteMs ?? null;
+    const rawJson = JSON.stringify(model.raw ?? { id: modelId });
+    executeSqliteQuerySync(
+      db,
+      getDiscoveredStoreKysely(db)
+        .insertInto("model_catalog_discovered")
+        .values({
+          provider: normalizedProvider,
+          model_id: modelId,
+          ref: buildModelCatalogRef(normalizedProvider, modelId),
+          merge_key: buildModelCatalogMergeKey(normalizedProvider, modelId),
+          name,
+          status: "active",
+          source: "probe",
+          created_remote_ms: createdRemoteMs,
+          first_seen_at_ms: nowMs,
+          last_seen_at_ms: nowMs,
+          deprecated_at_ms: null,
+          raw_json: rawJson,
+          updated_at: nowMs,
+        })
+        // Omit `source` on conflict so an existing source=models row is preserved.
+        .onConflict((conflict) =>
+          conflict.columns(["provider", "model_id"]).doUpdateSet({
+            name,
+            status: "active",
             last_seen_at_ms: nowMs,
             deprecated_at_ms: null,
             raw_json: rawJson,

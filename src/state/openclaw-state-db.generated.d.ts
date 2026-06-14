@@ -644,6 +644,7 @@ export interface ModelCatalogDiscovered {
   provider: string;
   raw_json: string;
   ref: string;
+  source: Generated<string>;
   status: Generated<string>;
   updated_at: number;
 }

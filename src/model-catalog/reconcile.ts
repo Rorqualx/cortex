@@ -45,7 +45,10 @@ export function reconcileProviderModels(
     return { ok: false, reason: fetchResult.error };
   }
   const before = listDiscoveredModels(db, { provider });
-  const existingActive = before.filter((row) => row.status === "active");
+  // Only /models-listed rows participate in vanish-deprecation; probe-sourced rows
+  // (served-but-unlisted, e.g. an upgraded model id) are expected to be absent
+  // from the /models list and must not be deprecated by it.
+  const existingActive = before.filter((row) => row.status === "active" && row.source === "models");
   const existingIds = new Set(before.map((row) => row.modelId.trim().toLowerCase()));
   const liveIds = fetchResult.models.map((m) => m.modelId);
   const added = liveIds.filter((id) => !existingIds.has(id.trim().toLowerCase()));

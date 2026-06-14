@@ -533,6 +533,7 @@ function ensureAdditiveStateColumns(db: DatabaseSync): void {
   ensureColumn(db, "cron_run_logs", "entry_json TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, "cron_run_logs", "created_at INTEGER NOT NULL DEFAULT 0");
   backfillCronRunLogEntryJson(db);
+  ensureColumn(db, "model_catalog_discovered", "source TEXT NOT NULL DEFAULT 'models'");
   ensureColumn(db, "cron_jobs", "description TEXT");
   ensureColumn(db, "cron_jobs", "name TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "cron_jobs", "enabled INTEGER NOT NULL DEFAULT 1");

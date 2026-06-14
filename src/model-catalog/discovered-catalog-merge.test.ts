@@ -15,6 +15,7 @@ function rec(
     ref: `${provider}/${modelId}`,
     name: null,
     status,
+    source: "models",
     createdRemoteMs: null,
     lastSeenAtMs: 0,
     deprecatedAtMs: status === "deprecated" ? 1 : null,

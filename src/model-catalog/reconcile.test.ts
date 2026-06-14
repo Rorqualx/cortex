@@ -6,7 +6,7 @@ import {
   openOpenClawStateDatabase,
 } from "../state/openclaw-state-db.js";
 import { createTrackedTempDirs } from "../test-utils/tracked-temp-dirs.js";
-import { listDiscoveredModels } from "./discovered-store.js";
+import { listDiscoveredModels, upsertProbedServedModels } from "./discovered-store.js";
 import { pickReplacementModel, reconcileProviderModels } from "./reconcile.js";
 
 const tempDirs = createTrackedTempDirs();
@@ -45,6 +45,24 @@ describe("reconcileProviderModels", () => {
     const rows = listDiscoveredModels(db, { provider: "zai" });
     expect(rows.find((r) => r.modelId === "glm-4.7")?.status).toBe("deprecated");
     expect(rows.find((r) => r.modelId === "glm-5.1")?.status).toBe("active");
+  });
+
+  it("never deprecates probe-sourced models absent from the /models list", async () => {
+    const { db } = await openTempDb();
+    // glm-5.1 is listed by /models; glm-5.2 is only ever served (probe-sourced).
+    reconcileProviderModels(db, { provider: "zai", fetchResult: liveOk(["glm-5.1"]), nowMs: 1000 });
+    upsertProbedServedModels(db, "zai", [{ modelId: "glm-5.2", raw: { id: "glm-5.2" } }], 1000);
+
+    // A later /models reconcile (still only lists glm-5.1) must not deprecate glm-5.2.
+    const result = reconcileProviderModels(db, {
+      provider: "zai",
+      fetchResult: liveOk(["glm-5.1"]),
+      nowMs: 2000,
+    });
+    expect(result).toMatchObject({ deprecated: [] });
+    const rows = listDiscoveredModels(db, { provider: "zai" });
+    expect(rows.find((r) => r.modelId === "glm-5.2")?.status).toBe("active");
+    expect(rows.find((r) => r.modelId === "glm-5.2")?.source).toBe("probe");
   });
 
   it("skips reconcile (no deprecation) when the fetch failed", async () => {
