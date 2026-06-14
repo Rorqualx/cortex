@@ -4,6 +4,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isVitestRuntimeEnv } from "../infra/env.js";
 import { startHeartbeatRunner, type HeartbeatRunner } from "../infra/heartbeat-runner.js";
 import type { PluginMetadataRegistryView } from "../plugins/plugin-metadata-snapshot.types.js";
+import { startGatewayModelCatalogRefresh } from "./model-catalog-refresh.js";
 import { isGatewayModelPricingEnabled } from "./model-pricing-config.js";
 import type { startGatewayMaintenanceTimers } from "./server-maintenance.js";
 import {
@@ -220,11 +221,19 @@ export function activateGatewayScheduledServices(params: {
   logCron: { error: (message: string) => void };
   log: GatewayRuntimeServiceLogger;
   pluginLookUpTable?: PluginMetadataRegistryView;
-}): { heartbeatRunner: HeartbeatRunner; stopModelPricingRefresh: () => void } {
+}): {
+  heartbeatRunner: HeartbeatRunner;
+  stopModelPricingRefresh: () => void;
+  stopModelCatalogRefresh: () => void;
+} {
   if (params.minimalTestGateway) {
     // Minimal gateways keep handles callable but inert so tests can share shutdown paths with
     // production starts without launching background loops.
-    return { heartbeatRunner: createNoopHeartbeatRunner(), stopModelPricingRefresh: () => {} };
+    return {
+      heartbeatRunner: createNoopHeartbeatRunner(),
+      stopModelPricingRefresh: () => {},
+      stopModelCatalogRefresh: () => {},
+    };
   }
   const heartbeatRunner = startHeartbeatRunner({ cfg: params.cfgAtStart });
   if (params.startCron !== false) {
@@ -249,5 +258,11 @@ export function activateGatewayScheduledServices(params: {
         log: params.log,
       })
     : () => {};
-  return { heartbeatRunner, stopModelPricingRefresh };
+  const stopModelCatalogRefresh = !isVitestRuntimeEnv()
+    ? startGatewayModelCatalogRefresh({
+        config: params.cfgAtStart,
+        getLog: () => params.log.child("model-catalog"),
+      })
+    : () => {};
+  return { heartbeatRunner, stopModelPricingRefresh, stopModelCatalogRefresh };
 }

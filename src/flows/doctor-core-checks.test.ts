@@ -186,8 +186,14 @@ describe("registerCoreHealthChecks", () => {
       "core/doctor/gateway-daemon",
     ];
 
+    // Net-new core checks that are not conversions of legacy doctor checks (so
+    // they have no entry in the conversion inventory).
+    const newCoreChecksOutsideConversionInventory = new Set<string>([
+      "core/doctor/browser-clawd-profile-residue",
+      "core/doctor/model-deprecation",
+    ]);
     for (const id of CORE_HEALTH_CHECKS.map((check) => check.id)) {
-      if (id === "core/doctor/browser-clawd-profile-residue") {
+      if (newCoreChecksOutsideConversionInventory.has(id)) {
         continue;
       }
       expect(coreTargets.has(id)).toBe(true);

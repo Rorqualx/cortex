@@ -78,6 +78,9 @@ let importAgentDiscovery = defaultImportAgentDiscovery;
 const modelSuppressionLoader = createLazyImportLoader(
   () => import("./model-suppression.runtime.js"),
 );
+const discoveredCatalogLoader = createLazyImportLoader(
+  () => import("../model-catalog/discovered-catalog.runtime.js"),
+);
 const providerApiKeyResolverLoader = createLazyImportLoader(
   () => import("./models-config.providers.secrets.js"),
 );
@@ -468,6 +471,17 @@ function loadReadOnlyStaticModelCatalog(params?: {
   return sortModelCatalogEntries(models);
 }
 
+// Overlay the live-discovery snapshot (auto-populate new models, hide deprecated)
+// onto an assembled catalog. Best-effort: a state-DB issue leaves the catalog as-is.
+async function applyDiscoveredOverlay(models: ModelCatalogEntry[]): Promise<ModelCatalogEntry[]> {
+  try {
+    const { applyDiscoveredCatalogFromState } = await discoveredCatalogLoader.load();
+    return applyDiscoveredCatalogFromState(models);
+  } catch {
+    return models;
+  }
+}
+
 export async function loadModelCatalog(params?: {
   config?: OpenClawConfig;
   useCache?: boolean;
@@ -477,11 +491,11 @@ export async function loadModelCatalog(params?: {
   const readOnly = params?.readOnly === true;
   if (readOnly) {
     try {
-      return await loadReadOnlyPersistedModelCatalog(params);
+      return await applyDiscoveredOverlay(await loadReadOnlyPersistedModelCatalog(params));
     } catch {
       // Keep gateway models.list on side-effect-free sources. The RPC timeout
       // cannot fire while provider discovery blocks the event loop.
-      return loadReadOnlyStaticModelCatalog(params);
+      return await applyDiscoveredOverlay(loadReadOnlyStaticModelCatalog(params));
     }
   }
   if (!readOnly && params?.useCache === false) {
@@ -654,7 +668,8 @@ export async function loadModelCatalog(params?: {
         }
       }
 
-      const sorted = sortModels(models);
+      const withDiscovered = await applyDiscoveredOverlay(models);
+      const sorted = sortModels(withDiscovered);
       logStage("complete", `entries=${sorted.length}`);
       return sorted;
     } catch (error) {

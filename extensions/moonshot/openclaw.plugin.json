@@ -121,7 +121,7 @@
       }
     },
     "discovery": {
-      "moonshot": "static"
+      "moonshot": "refreshable"
     }
   },
   "setup": {

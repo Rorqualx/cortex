@@ -1243,4 +1243,29 @@ CREATE TABLE IF NOT EXISTS workboard_card_attachments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workboard_card_attachments_card_id
-  ON workboard_card_attachments(card_id);\n`;
+  ON workboard_card_attachments(card_id);
+
+-- Live model discovery snapshot. Records the per-install result of polling a
+-- refreshable provider's /models endpoint so the runtime catalog can auto-populate
+-- new models and flag vanished ones deprecated WITHOUT rewriting openclaw.json.
+-- Status is install-scoped: it reflects what THIS install's configured endpoint +
+-- credentials can actually reach, and is only flipped to 'deprecated' after a
+-- successful, non-empty fetch (an outage never wipes the catalog).
+CREATE TABLE IF NOT EXISTS model_catalog_discovered (
+  provider TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  merge_key TEXT NOT NULL,
+  name TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_remote_ms INTEGER,
+  first_seen_at_ms INTEGER NOT NULL,
+  last_seen_at_ms INTEGER NOT NULL,
+  deprecated_at_ms INTEGER,
+  raw_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (provider, model_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_catalog_discovered_provider_status
+  ON model_catalog_discovered(provider, status, model_id);\n`;

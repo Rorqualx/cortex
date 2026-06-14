@@ -27,6 +27,7 @@ import { resolveGatewayAuthToken } from "../gateway/auth-token-resolution.js";
 import { resolveGatewayAuth } from "../gateway/auth.js";
 import { getSkippedExecRefStaticError } from "../secrets/exec-resolution-policy.js";
 import type { SkillStatusEntry } from "../skills/discovery/status.js";
+import { MODEL_DEPRECATION_HEALTH_CHECK } from "./doctor-model-deprecation-check.js";
 import { registerHealthCheck } from "./health-check-registry.js";
 import type { HealthCheck, HealthCheckContext, HealthFinding } from "./health-checks.js";
 
@@ -988,6 +989,7 @@ export function createCoreHealthChecks(
     workspaceStatusCheck,
     createSkillsReadinessCheck(deps),
     browserClawdProfileResidueCheck,
+    MODEL_DEPRECATION_HEALTH_CHECK,
     finalConfigValidationCheck,
   ];
 }

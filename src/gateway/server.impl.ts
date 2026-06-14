@@ -995,6 +995,7 @@ export async function startGatewayServer(
       disposeAuthRateLimiter: () => authRateLimiter.dispose(),
       disposeBrowserAuthRateLimiter: () => browserAuthRateLimiter.dispose(),
       stopModelPricingRefresh: runtimeState.stopModelPricingRefresh,
+      stopModelCatalogRefresh: runtimeState.stopModelCatalogRefresh,
       stopChannelHealthMonitor: () => runtimeState?.channelHealthMonitor?.stop(),
       stopReadinessEventLoopHealth: readinessEventLoopHealth.stop,
       clearSecretsRuntimeSnapshot,
@@ -1560,6 +1561,7 @@ export async function startGatewayServer(
         });
         runtimeState.heartbeatRunner = activated.heartbeatRunner;
         runtimeState.stopModelPricingRefresh = activated.stopModelPricingRefresh;
+        runtimeState.stopModelCatalogRefresh = activated.stopModelCatalogRefresh;
       });
     };
     ({

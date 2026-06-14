@@ -513,6 +513,8 @@ const ModelProviderSchema = z
     authHeader: z.boolean().optional(),
     request: ConfiguredModelProviderRequestSchema,
     models: z.array(ModelDefinitionSchema).optional(),
+    // Opts a configured provider into live /models discovery (default static).
+    discovery: z.union([z.literal("static"), z.literal("refreshable")]).optional(),
   })
   .strict();
 
@@ -554,6 +556,8 @@ export const ModelsConfigSchema = z
     mode: z.union([z.literal("merge"), z.literal("replace")]).optional(),
     providers: ModelProvidersSchema.optional(),
     pricing: ModelPricingConfigSchema,
+    // Gateway background model-discovery cadence in hours (default 24, 0 = off).
+    refreshIntervalHours: z.number().min(0).optional(),
   })
   .strict()
   .optional();

@@ -216,6 +216,12 @@ export type ModelProviderConfig = {
   auth?: ModelProviderAuthMode;
   /** Default API adapter for models under this provider. */
   api?: ModelApi;
+  /**
+   * Live model-list discovery lifecycle. "refreshable" opts this provider into
+   * periodic /models polling that auto-populates new models and flags vanished
+   * ones deprecated; defaults to "static" (no polling). See src/model-catalog.
+   */
+  discovery?: "static" | "refreshable";
   /** Provider-level default context window. */
   contextWindow?: number;
   /** Provider-level effective runtime context cap. */
@@ -283,6 +289,13 @@ export type ModelsConfig = {
   providers?: Record<string, ModelProviderConfig>;
   /** Pricing enrichment settings. */
   pricing?: ModelPricingConfig;
+  /**
+   * Cadence (hours) of the gateway background refresh that discovers live models
+   * for `discovery: "refreshable"` providers and reassigns deprecated pins.
+   * Default 24; 0 disables the periodic task (manual `openclaw models refresh`
+   * and `openclaw doctor --fix` still work).
+   */
+  refreshIntervalHours?: number;
 };
 
 /** Top-level models config input before provider entries are normalized. */

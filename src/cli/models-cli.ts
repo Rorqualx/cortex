@@ -290,6 +290,18 @@ export function registerModelsCli(program: Command) {
       });
     });
 
+  models
+    .command("refresh")
+    .description("Poll providers' live /models and update the discovered catalog")
+    .option("--provider <id>", "Refresh a single provider (overrides refreshable opt-in)")
+    .option("--json", "Output JSON", false)
+    .action(async (opts) => {
+      await withModelsRuntime(async ({ defaultRuntime }) => {
+        const { modelsRefreshCommand } = await import("../commands/models/refresh.js");
+        await modelsRefreshCommand(opts, defaultRuntime);
+      });
+    });
+
   models.action(async (opts) => {
     await withModelsRuntime(async ({ defaultRuntime }) => {
       const { modelsStatusCommand } = await loadModelsStatusCommands();
