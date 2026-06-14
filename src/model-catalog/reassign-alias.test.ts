@@ -81,6 +81,25 @@ describe("applyAliasReassignments", () => {
     expect(next["zai/glm-5.2"]).toEqual({ alias: "GLM", thinking: "high" });
   });
 
+  it("drops the source alias instead of clobbering an already-aliased target", () => {
+    // glm-5.2 already has its own alias; repointing "GLM 5" onto it must not clobber it.
+    const map: AliasModelMap = {
+      "zai/glm-5": { alias: "GLM 5" },
+      "zai/glm-5.2": { alias: "GLM 5.2" },
+    };
+    const actions: ReassignmentAction[] = [
+      {
+        binding: { kind: "alias", alias: "GLM 5", ref: { provider: "zai", modelId: "glm-5" } },
+        outcome: "rewrite",
+        replacementModelId: "glm-5.2",
+      },
+    ];
+    const { aliases: next, changes } = applyAliasReassignments({ aliases: map, actions });
+    expect(next["zai/glm-5"]).toBeUndefined();
+    expect(next["zai/glm-5.2"]).toEqual({ alias: "GLM 5.2" }); // preserved, not clobbered
+    expect(changes).toEqual([{ alias: "GLM 5", outcome: "drop", fromKey: "zai/glm-5" }]);
+  });
+
   it("ignores non-alias actions and unmatched aliases", () => {
     const actions: ReassignmentAction[] = [
       {

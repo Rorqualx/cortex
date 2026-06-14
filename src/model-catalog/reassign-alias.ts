@@ -65,6 +65,13 @@ export function applyAliasReassignments(params: {
     if (toKey === fromKey) {
       continue;
     }
+    if (Object.hasOwn(next, toKey)) {
+      // The replacement model already has its own alias; repointing would clobber
+      // it. Drop the now-redundant source alias instead of overwriting the target.
+      delete next[fromKey];
+      changes.push({ alias, outcome: "drop", fromKey });
+      continue;
+    }
     const liveName = params
       .displayNameFor?.(action.binding.ref.provider, action.replacementModelId)
       ?.trim();
