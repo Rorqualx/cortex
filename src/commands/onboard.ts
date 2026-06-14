@@ -18,6 +18,7 @@ import {
 } from "./auth-choice-legacy.js";
 import { DEFAULT_WORKSPACE, handleReset } from "./onboard-helpers.js";
 import { runInteractiveSetup } from "./onboard-interactive.js";
+import { refreshDiscoveredModelsAfterOnboard } from "./onboard-model-refresh.js";
 import { runNonInteractiveSetup } from "./onboard-non-interactive.js";
 import type { OnboardOptions, ResetScope } from "./onboard-types.js";
 
@@ -112,10 +113,11 @@ export async function setupWizardCommand(
 
   if (normalizedOpts.nonInteractive) {
     await runNonInteractiveSetup(normalizedOpts, runtime);
-    return;
+  } else {
+    await runInteractiveSetup(normalizedOpts, runtime);
   }
-
-  await runInteractiveSetup(normalizedOpts, runtime);
+  // Once a provider is configured, auto-discover its live models (best-effort).
+  await refreshDiscoveredModelsAfterOnboard(runtime);
 }
 
 export const onboardCommand = setupWizardCommand;
