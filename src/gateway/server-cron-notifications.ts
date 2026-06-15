@@ -102,9 +102,8 @@ function resolveCronCompletionAnnounceTargets(params: {
   };
 }): CronCompletionAnnounceTarget[] {
   const targets: CronCompletionAnnounceTarget[] = [];
-  const mode = normalizeOptionalLowercaseString(params.delivery?.mode);
   const completionDest = params.delivery?.completionDestination;
-  if (mode !== "announce" || !completionDest || completionDest.mode !== "announce") {
+  if (!completionDest || completionDest.mode !== "announce") {
     return targets;
   }
   const channel = completionDest.channel as CronMessageChannel | undefined;
