@@ -2,7 +2,9 @@
 export {
   formatEmbeddedAgentQueueFailureSummary,
   isEmbeddedAgentRunActive,
+  isEmbeddedAgentRunHandleActive,
   queueEmbeddedAgentMessage,
   queueEmbeddedAgentMessageWithOutcomeAsync,
+  resolveActiveEmbeddedRunHandleSessionId,
   resolveActiveEmbeddedRunSessionId,
 } from "../../agents/embedded-agent-runner/runs.js";

@@ -132,6 +132,7 @@ import type {
   DispatchFromConfigResult,
 } from "./dispatch-from-config.types.js";
 import { resolveEffectiveReplyRoute } from "./effective-reply-route.js";
+import { tryFastSteerActiveFollowup } from "./fast-steer.js";
 import { withFullRuntimeReplyConfig } from "./get-reply-fast-path.js";
 import { claimInboundDedupe, commitInboundDedupe, releaseInboundDedupe } from "./inbound-dedupe.js";
 import { hasInboundAudio } from "./inbound-media.js";
@@ -1997,6 +1998,37 @@ export async function dispatchReplyFromConfig(
       completeDispatchReplyOperation();
       return attachSourceReplyDeliveryMode({ queuedFinal, counts });
     }
+    // Fast-path a plain visible follow-up into an already-active embedded run:
+    // when the run is live and the queue mode is steer, inject the text as a
+    // steering message (drains at the run's next turn boundary) instead of
+    // blocking on the dispatch reply slot until the whole run ends. Any case this
+    // does not handle returns false and falls through to the normal admission
+    // below, which serializes a fresh run. Skipped for room events and Slack
+    // routed-thread turns, which carry their own routing semantics.
+    const fastSteerEligible =
+      resolveReplyTurnKind(params.replyOptions) === "visible" &&
+      ctx.InboundEventKind !== "room_event" &&
+      !isSlackDirectRoutedThreadTurn(ctx);
+    if (
+      fastSteerEligible &&
+      (await tryFastSteerActiveFollowup({
+        sessionKey: sessionStoreEntry.sessionKey ?? sessionKey,
+        rawText: ctx.RawBody ?? ctx.Body ?? "",
+        cfg,
+        channel: ctx.Provider ?? ctx.Surface,
+        sessionEntry: sessionStoreEntry.entry,
+      }))
+    ) {
+      recordProcessed("completed", { reason: "fast_steer" });
+      markIdle("message_completed");
+      commitInboundDedupeIfClaimed();
+      completeDispatchReplyOperation();
+      return attachSourceReplyDeliveryMode({
+        queuedFinal: false,
+        counts: dispatcher.getQueuedCounts(),
+      });
+    }
+
     // Register the dispatch-owned operation before any plugin hook or model work
     // so /stop can abort pre-run and in-run stalls through the same session lane.
     if ((await ensureDispatchReplyOperation("pre_dispatch")).status === "busy") {
@@ -2542,6 +2574,7 @@ export async function dispatchReplyFromConfig(
             onAssistantMessageStart: wrapProgressCallback(
               params.replyOptions?.onAssistantMessageStart,
             ),
+            onAssistantMessagePersisted: params.replyOptions?.onAssistantMessagePersisted,
             onBlockReplyQueued: wrapProgressCallback(params.replyOptions?.onBlockReplyQueued),
             onToolStart: wrapProgressCallback(params.replyOptions?.onToolStart, {
               forwardWhenSourceDeliverySuppressed: true,

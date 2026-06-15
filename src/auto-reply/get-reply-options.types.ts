@@ -108,6 +108,13 @@ export type GetReplyOptions = {
   onReasoningEnd?: () => Promise<void> | void;
   /** Called when a new assistant message starts (e.g., after tool call or thinking block). */
   onAssistantMessageStart?: () => Promise<void> | void;
+  /**
+   * Called when a model-visible assistant turn commits to the transcript. Lets a
+   * channel deliver turns produced outside an active dispatch (e.g. a steered
+   * follow-up turn injected into an already-running embedded run). Receives the
+   * persisted assistant message.
+   */
+  onAssistantMessagePersisted?: (message: unknown) => Promise<void> | void;
   /** Called synchronously when a block reply is logically emitted, before async
    * delivery drains. Useful for channels that need to rotate preview state at
    * block boundaries without waiting for transport acks. */

@@ -1744,6 +1744,7 @@ export async function runEmbeddedAgent(
             suppressAssistantErrorPersistence: params.suppressAssistantErrorPersistence,
             onUserMessagePersisted,
             onAssistantErrorMessagePersisted: params.onAssistantErrorMessagePersisted,
+            onAssistantMessagePersisted: params.onAssistantMessagePersisted,
           })
             .catch((err: unknown): never => {
               throw postCompactionAbortError ?? err;

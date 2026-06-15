@@ -2299,6 +2299,7 @@ export async function runAgentTurnWithFallback(params: {
                     onAssistantErrorMessagePersisted: () => {
                       assistantErrorPersistedAcrossFallback = true;
                     },
+                    onAssistantMessagePersisted: params.opts?.onAssistantMessagePersisted,
                     toolResultFormat: (() => {
                       const channel = resolveMessageChannel(
                         params.sessionCtx.Surface,

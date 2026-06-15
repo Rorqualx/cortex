@@ -163,6 +163,7 @@ import { formatForLog } from "../ws-log.js";
 import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
 import { normalizeRpcAttachmentsToChatAttachments } from "./attachment-normalize.js";
 import { normalizeWebchatReplyMediaPathsForDisplay } from "./chat-reply-media.js";
+import { createSteeredFollowupReplyGate } from "./chat-steered-reply-gate.js";
 import {
   appendInjectedAssistantMessageToTranscript,
   type GatewayInjectedTtsSupplementMarker,
@@ -3690,6 +3691,12 @@ export const chatHandlers: GatewayRequestHandlers = {
         });
       };
       const dispatchStartedAtMs = performance.now();
+      // Classifies each committed assistant turn as the run's primary reply (owned
+      // by this dispatch's delivery path) or a steered follow-up reply we must
+      // broadcast ourselves. Lives in the dispatch closure so its per-run count
+      // survives attempt retries (which happen below this frame). See
+      // chat-steered-reply-gate.ts.
+      const classifySteeredReply = createSteeredFollowupReplyGate();
       emitServerTiming("dispatch-started");
       void measureDiagnosticsTimelineSpan(
         "gateway.chat_send.dispatch_inbound",
@@ -3706,6 +3713,25 @@ export const chatHandlers: GatewayRequestHandlers = {
             },
             replyOptions: {
               runId: clientRunId,
+              onAssistantMessagePersisted: (message) => {
+                const decision = classifySteeredReply(
+                  (message as { stopReason?: string }).stopReason,
+                );
+                if (decision.kind !== "steered") {
+                  return;
+                }
+                // Use a runId distinct from the active run so the client treats this
+                // as an out-of-band final (append the message) instead of the active
+                // run's own terminal (which would reconcile the still-streaming run
+                // to "done"). Same semantics as a sub-agent announce final.
+                broadcastChatFinal({
+                  context,
+                  runId: `${clientRunId}:followup:${decision.followupIndex}`,
+                  sessionKey,
+                  agentId,
+                  message: message as Record<string, unknown>,
+                });
+              },
               ...(isOperatorUiClient(clientInfo)
                 ? {
                     promptCacheKey: resolveWebchatPromptCacheKey({

@@ -63,6 +63,7 @@ import {
 import { getPluginToolMeta } from "../../../plugins/tools.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
 import { annotateInterSessionPromptText } from "../../../sessions/input-provenance.js";
+import { isTranscriptOnlyOpenClawAssistantMessage } from "../../../shared/transcript-only-openclaw-assistant.js";
 import { resolveSkillsPromptForRun } from "../../../skills/loading/workspace.js";
 import { resolveEmbeddedRunSkillEntries } from "../../../skills/runtime/embedded-run-entries.js";
 import {
@@ -2007,8 +2008,22 @@ export async function runEmbeddedAttempt(
         suppressTranscriptOnlyAssistantPersistence:
           params.suppressTranscriptOnlyAssistantPersistence,
         suppressAssistantErrorPersistence: params.suppressAssistantErrorPersistence,
-        onMessagePersisted: () => {
+        onMessagePersisted: (message) => {
           sessionLockController.refreshAfterOwnedSessionWrite();
+          // Surface model-visible assistant turns so the originating channel can
+          // deliver turns produced outside an active dispatch (e.g. a drained steer
+          // turn injected into this still-live run). Skip transcript-only mirror
+          // lines and error turns, which the channel handles on their own paths.
+          // The channel decides which of these are its primary reply vs a steered
+          // follow-up turn (it sees the per-run turn order across retries).
+          if (
+            params.onAssistantMessagePersisted &&
+            message.role === "assistant" &&
+            (message as { stopReason?: string }).stopReason !== "error" &&
+            !isTranscriptOnlyOpenClawAssistantMessage(message)
+          ) {
+            params.onAssistantMessagePersisted(message);
+          }
         },
         withCompactionPersistence: (append, validateAppend) =>
           sessionLockController.withOwnedSessionFileWrite(append, validateAppend),

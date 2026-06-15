@@ -250,6 +250,13 @@ export type RunEmbeddedAgentParams = {
     message: Extract<AgentMessage, { role: "assistant" }>,
   ) => void;
   /**
+   * Called when a model-visible (non-error, non-transcript-only) assistant turn
+   * is committed to the transcript. Lets the originating channel surface turns
+   * produced outside an active dispatch — e.g. a steered follow-up turn injected
+   * into an already-running embedded run, which no live dispatch is delivering.
+   */
+  onAssistantMessagePersisted?: (message: Extract<AgentMessage, { role: "assistant" }>) => void;
+  /**
    * Dispose bundled MCP runtimes when the overall run ends instead of preserving
    * the session-scoped cache. Intended for one-shot local CLI runs that must
    * exit promptly after emitting the final JSON result.
