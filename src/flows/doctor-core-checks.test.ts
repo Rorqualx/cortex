@@ -191,6 +191,7 @@ describe("registerCoreHealthChecks", () => {
     const newCoreChecksOutsideConversionInventory = new Set<string>([
       "core/doctor/browser-clawd-profile-residue",
       "core/doctor/model-deprecation",
+      "core/doctor/skill-forge-stale-state",
     ]);
     for (const id of CORE_HEALTH_CHECKS.map((check) => check.id)) {
       if (newCoreChecksOutsideConversionInventory.has(id)) {

@@ -53,6 +53,10 @@ describe("skillNameForCandidate", () => {
     expect(name).toContain("recover");
     expect(name).toContain("write-file");
     expect(name).toContain("mkdir");
+    // No candidate-id suffix: the name is the stable capability key so re-detected
+    // motifs dedupe to one skill instead of a fresh duplicate per capture.
+    expect(name).toBe("forge-recover-write-file-via-mkdir");
+    expect(name).not.toContain(recovery.candidateId.slice(0, 6));
   });
 });
 

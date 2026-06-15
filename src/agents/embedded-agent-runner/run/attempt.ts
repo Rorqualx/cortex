@@ -428,6 +428,7 @@ import {
   selectCompactionTimeoutSnapshot,
   shouldFlagCompactionTimeout,
 } from "./compaction-timeout.js";
+import { installForgeRecoveryHook } from "./forge-recovery-hook.js";
 import {
   resolveFinalAssistantRawText,
   resolveFinalAssistantVisibleText,
@@ -2300,6 +2301,13 @@ export async function runEmbeddedAttempt(
         onDeliveredSourceReply: () => {
           didDeliverSourceReplyViaMessageTool = true;
         },
+      });
+      // Surface a matching SkillForge recovery skill when a tool errors, so the
+      // forged recovery prose is actually applied instead of sitting unused.
+      installForgeRecoveryHook({
+        agent: activeSession.agent,
+        ...(skillsSnapshotForRun ? { skillsSnapshot: skillsSnapshotForRun } : {}),
+        ...(params.config ? { config: params.config } : {}),
       });
       prepStages.mark("agent-session");
       if (isRawModelRun) {

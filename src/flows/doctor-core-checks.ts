@@ -34,6 +34,36 @@ import type { HealthCheck, HealthCheckContext, HealthFinding } from "./health-ch
 const BROWSER_CLAWD_PROFILE_RESIDUE_CHECK_ID = "core/doctor/browser-clawd-profile-residue";
 const CODEX_SESSION_ROUTES_CHECK_ID = "core/doctor/codex-session-routes";
 const FINAL_CONFIG_VALIDATION_CHECK_ID = "core/doctor/final-config-validation";
+const SKILL_FORGE_STALE_STATE_CHECK_ID = "core/doctor/skill-forge-stale-state";
+
+const skillForgeStaleStateCheck: HealthCheck = {
+  id: SKILL_FORGE_STALE_STATE_CHECK_ID,
+  kind: "core",
+  description:
+    "SkillForge has no orphaned legacy staging dir or pre-fix duplicate recovery skills.",
+  source: "doctor",
+  async detect() {
+    const { detectSkillForgeStaleState, summarizeSkillForgeStaleState } =
+      await import("../commands/doctor-skill-forge-state.js");
+    const state = await detectSkillForgeStaleState();
+    return summarizeSkillForgeStaleState(state).map(
+      (message): HealthFinding => ({
+        checkId: SKILL_FORGE_STALE_STATE_CHECK_ID,
+        severity: "info",
+        message,
+        fixHint: "Run `openclaw doctor --fix` to clean up SkillForge state.",
+      }),
+    );
+  },
+  async repair(ctx) {
+    const { repairSkillForgeStaleState } = await import("../commands/doctor-skill-forge-state.js");
+    const result = await repairSkillForgeStaleState({ dryRun: ctx.dryRun === true });
+    if (result.changes.length === 0) {
+      return { status: "skipped", reason: "no stale SkillForge state", changes: [] };
+    }
+    return { changes: result.changes, effects: result.effects };
+  },
+};
 
 const loadDoctorCoreChecksRuntimeModule = async () =>
   await import("./doctor-core-checks.runtime.js");
@@ -989,6 +1019,7 @@ export function createCoreHealthChecks(
     workspaceStatusCheck,
     createSkillsReadinessCheck(deps),
     browserClawdProfileResidueCheck,
+    skillForgeStaleStateCheck,
     MODEL_DEPRECATION_HEALTH_CHECK,
     finalConfigValidationCheck,
   ];

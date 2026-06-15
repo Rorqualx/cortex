@@ -35,8 +35,13 @@ export function skillNameForCandidate(candidate: Candidate): string {
     );
   }
   if (candidate.lane === "error-recovery") {
+    // Capability identity (failing→recovering tool) is the dedup key, so no hash
+    // suffix: a recurring motif maps to one stable skill name across runs. The
+    // old per-candidate suffix made every re-detection a fresh duplicate the
+    // gate's name-collision check could not recognize. Pipeline skip + gate now
+    // key off this stable name.
     return normalizeSkillName(
-      `${FORGE_NAME_PREFIX}recover-${candidate.failingTool}-via-${candidate.recoveringTool}-${candidate.candidateId.slice(0, 6)}`,
+      `${FORGE_NAME_PREFIX}recover-${candidate.failingTool}-via-${candidate.recoveringTool}`,
     );
   }
   return normalizeSkillName(`${FORGE_NAME_PREFIX}explicit-${candidate.candidateId.slice(0, 8)}`);

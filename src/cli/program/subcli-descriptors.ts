@@ -170,6 +170,11 @@ const subCliCommandCatalog = defineCommandDescriptorCatalog([
     hasSubcommands: true,
   },
   {
+    name: "skill-forge",
+    description: "Autonomous skill-forge pipeline: capture, detect, distill, promote",
+    hasSubcommands: true,
+  },
+  {
     name: "update",
     description: "Update OpenClaw and inspect update channel status",
     hasSubcommands: true,

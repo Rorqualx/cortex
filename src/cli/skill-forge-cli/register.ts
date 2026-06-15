@@ -127,13 +127,7 @@ function registerPipelineCommand(parent: Command): void {
       }
       console.log(`drafted: ${result.drafted.length}`);
       for (const draft of result.drafted) {
-        const distilledBy =
-          draft.distilledBy.kind === "llm"
-            ? `${draft.distilledBy.provider}/${draft.distilledBy.modelId}`
-            : draft.distilledBy.kind === "llm-fallback"
-              ? `heuristic (LLM fallback: ${draft.distilledBy.reason})`
-              : "heuristic";
-        console.log(`  ${draft.name} [${distilledBy}] -> ${draft.skillMdPath}`);
+        console.log(`  ${draft.name} [${draft.distillation}] -> ${draft.skillMdPath}`);
       }
       console.log(`promotions: ${result.promotions.length}`);
       for (const promotion of result.promotions) {
@@ -144,6 +138,10 @@ function registerPipelineCommand(parent: Command): void {
             `  rejected: ${promotion.name} (reasons: ${promotion.verdict.reasons.join("; ")})`,
           );
         }
+      }
+      console.log(`skipped (already crystallized): ${result.skipped.length}`);
+      for (const name of result.skipped) {
+        console.log(`  ${name}`);
       }
     });
 }

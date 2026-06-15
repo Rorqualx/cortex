@@ -2,7 +2,12 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { runDetector, writeCandidatesToForge, type Candidate } from "./detector.js";
 import { distillProseBodyWithLlm } from "./distiller-llm.js";
-import { distillCandidateToStaging, type DraftedSkill } from "./distiller.js";
+import {
+  distillCandidateToStaging,
+  skillNameForCandidate,
+  type DraftedSkill,
+} from "./distiller.js";
+import { nameCollisionCheck } from "./gate.js";
 import { resolveSkillForgeSessionsDir } from "./paths.js";
 import { promoteStagedSkill, type PromotionResult } from "./promoter.js";
 import { recordSkillCreation } from "./telemetry.js";
@@ -24,6 +29,8 @@ export type PipelineRunResult = {
   candidateFiles: string[];
   drafted: DraftedSkill[];
   promotions: PromotionResult[];
+  /** Candidate skill names skipped because the capability was already crystallized (promoted/retired). */
+  skipped: string[];
 };
 
 /** Maps CLI-level useLlm/agentId options onto the distiller's injectable seam. */
@@ -71,7 +78,20 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
   const distillProse = input.distillProse ?? resolveDistillProseOverride(input);
   const drafted: DraftedSkill[] = [];
   const promotions: PromotionResult[] = [];
+  const skipped: string[] = [];
   for (const candidate of candidates) {
+    const name = skillNameForCandidate(candidate);
+    // Skip candidates whose capability is already crystallized. The detector
+    // emits a stable name per capability, so a promoted/retired match means this
+    // skill already exists; re-distilling would re-stage a duplicate that the
+    // gate then rejects, leaving orphaned staging dirs — the churn that buried
+    // working skills under unused re-forges. The candidate file is still written
+    // above, so the detection is not lost.
+    const collision = await nameCollisionCheck({ name, env });
+    if (collision.status === "fail") {
+      skipped.push(name);
+      continue;
+    }
     const draft = await distillCandidateToStaging({
       candidate,
       env,
@@ -92,5 +112,6 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
     candidateFiles,
     drafted,
     promotions,
+    skipped,
   };
 }

@@ -60,6 +60,13 @@ export type SkillsLimitsConfig = {
 export type SkillsForgeConfig = {
   /** Whether skill_forge promote/retire actions need explicit approval. */
   approvalPolicy?: "pending" | "auto";
+  /**
+   * Auto-invoke promoted recovery skills on matching tool errors: inline the
+   * skill's guidance into the failed tool result and record usage so the decay
+   * sweep keeps it. Default on; set false to disable the runtime nudge without
+   * unloading the skills.
+   */
+  autoInvoke?: boolean;
 };
 
 /** Top-level skills config block in openclaw config. */

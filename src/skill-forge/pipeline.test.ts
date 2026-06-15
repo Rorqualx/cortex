@@ -89,6 +89,33 @@ describe("runForgePipeline", () => {
       candidateFiles: [],
       drafted: [],
       promotions: [],
+      skipped: [],
     });
+  });
+
+  it("skips an already-crystallized capability on re-run instead of re-staging a duplicate", async () => {
+    const sessionsDir = resolveSkillForgeSessionsDir(env());
+    for (let i = 0; i < 3; i += 1) {
+      await writeCapture(path.join(sessionsDir, `cap-${i}-2026-05-20T18-00-${i}0`), [
+        event("tool.call", { name: "read_file" }),
+        event("tool.result", { message: { role: "toolResult", content: "ok" } }),
+        event("tool.call", { name: "grep" }),
+        event("tool.result", { message: { role: "toolResult", content: "ok" } }),
+      ]);
+    }
+
+    const first = await runForgePipeline({ env: env() });
+    expect(first.drafted).toHaveLength(1);
+    expect(first.promotions[0]?.status).toBe("promoted");
+    expect(first.skipped).toEqual([]);
+    const promotedName = first.drafted[0].name;
+
+    // Same captures, same detected candidate name: the second run must not
+    // re-draft or re-promote — the skill is already crystallized.
+    const second = await runForgePipeline({ env: env() });
+    expect(second.candidates).toHaveLength(1);
+    expect(second.drafted).toHaveLength(0);
+    expect(second.promotions).toHaveLength(0);
+    expect(second.skipped).toEqual([promotedName]);
   });
 });
