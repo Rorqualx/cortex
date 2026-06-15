@@ -749,6 +749,22 @@ export async function createEmbeddedAttemptSessionLockController(params: {
       return;
     }
 
+    // The fence baseline was captured while the canonical session file did not
+    // exist (the run's first transcript commit had not landed when the prompt
+    // lock released -- e.g. a long single turn still streaming to the trajectory,
+    // or a drained steer whose user line is the first canonical write). A
+    // creation from an absent baseline is this attempt's own first write, not a
+    // foreign takeover: there is no prior transcript state to clobber. Adopt it as
+    // the new baseline. Existing-file advances never reach here -- they are
+    // resolved by the owned-write/benign/rewrite checks above and still throw on a
+    // genuine takeover, so this does not weaken that boundary.
+    if (!fenceFingerprint?.exists && current.exists) {
+      fenceSnapshot = await readSessionFileFenceSnapshot(params.lockOptions.sessionFile);
+      fenceFingerprint = fenceSnapshot.fingerprint;
+      fenceGeneration = trustSessionFileState(sessionFileFenceKey, current) ?? fenceGeneration;
+      return;
+    }
+
     takeoverDetected = true;
     throw new EmbeddedAttemptSessionTakeoverError(params.lockOptions.sessionFile);
   }
@@ -950,9 +966,23 @@ export async function createEmbeddedAttemptSessionLockController(params: {
       await releaseHeldLockWithFence();
     },
     refreshAfterOwnedSessionWrite(): void {
-      if (fenceActive && !takeoverDetected) {
-        fenceFingerprint = readSessionFileFingerprintSync(params.lockOptions.sessionFile);
-        fenceSnapshot = { fingerprint: fenceFingerprint };
+      if (!fenceActive || takeoverDetected) {
+        return;
+      }
+      const fingerprint = readSessionFileFingerprintSync(params.lockOptions.sessionFile);
+      fenceFingerprint = fingerprint;
+      fenceSnapshot = { fingerprint };
+      // Publish this in-process persist to the cross-controller owned-write map so a
+      // SIBLING attempt over the same session file recognizes the advance as a
+      // legitimate local write instead of tripping its takeover fence. This is the
+      // steered-message case: a drained steering message persists a non-assistant
+      // (user) line while another attempt has released its prompt lock, and the
+      // benign-advance check only clears assistant transcript lines. The grant only
+      // extends to siblings the trust this controller already applies locally above;
+      // an external writer never reaches this hook, so an unclaimed change still trips
+      // the fence (see assertSessionFileFence owned-write check).
+      if (fingerprint.exists) {
+        fenceGeneration = recordOwnedSessionFileWrite(sessionFileFenceKey, fingerprint);
       }
     },
     withOwnedSessionFileWrite<T>(
