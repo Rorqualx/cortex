@@ -33,6 +33,8 @@ import {
 import { GatewayRequestError, type GatewayBrowserClient, type GatewayHelloOk } from "../gateway.ts";
 import {
   areUiSessionKeysEquivalent,
+  canonicalizeBareUiSessionKey,
+  DEFAULT_AGENT_ID,
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../session-key.ts";
@@ -531,7 +533,18 @@ function chatEventAgentScopeMatches(state: ChatState, payload: ChatEventPayload)
 }
 
 function chatEventSessionMatches(state: ChatState, payload: ChatEventPayload): boolean {
-  if (areUiSessionKeysEquivalent(payload.sessionKey, state.sessionKey)) {
+  // A `?session=foo` deep link stores the raw "foo" as the selected key, but the
+  // gateway broadcasts the canonical agent-scoped form ("agent:<default>:foo").
+  // Match against both so out-of-band finals (steered follow-up turns, sub-agent
+  // announces) are not dropped for a session selected by a bare key.
+  const canonicalSelected = canonicalizeBareUiSessionKey(
+    state.sessionKey,
+    resolveDefaultAgentId(state) ?? DEFAULT_AGENT_ID,
+  );
+  if (
+    areUiSessionKeysEquivalent(payload.sessionKey, state.sessionKey) ||
+    areUiSessionKeysEquivalent(payload.sessionKey, canonicalSelected)
+  ) {
     return chatEventAgentScopeMatches(state, payload);
   }
   return (

@@ -171,6 +171,24 @@ export function areUiSessionKeysEquivalent(
   return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
 }
 
+/**
+ * Canonicalizes a bare/raw selected session key (e.g. "foo" from a `?session=foo`
+ * deep link) to the agent-scoped form the gateway broadcasts: `agent:<defaultAgentId>:foo`.
+ * Keys that are empty, the "global" scope, or already agent-scoped are returned
+ * unchanged. Used so chat-event matching recognizes the gateway's (always
+ * agent-scoped) broadcasts for a session the UI selected by a bare key.
+ */
+export function canonicalizeBareUiSessionKey(
+  sessionKey: string | undefined | null,
+  defaultAgentId: string,
+): string {
+  const normalized = normalizeLowercaseStringOrEmpty(sessionKey);
+  if (!normalized || isUiGlobalSessionKey(normalized) || parseAgentSessionKey(normalized)) {
+    return normalized;
+  }
+  return `agent:${normalizeAgentId(defaultAgentId)}:${normalized}`;
+}
+
 export function resolveAgentIdFromSessionKey(sessionKey: string | undefined | null): string {
   const parsed = parseAgentSessionKey(sessionKey);
   return normalizeAgentId(parsed?.agentId ?? DEFAULT_AGENT_ID);
