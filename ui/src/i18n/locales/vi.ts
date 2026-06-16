@@ -416,6 +416,7 @@ export const vi: TranslationMap = {
     skillForge: "Xưởng kỹ năng",
     nodes: "Nút",
     chat: "Trò chuyện",
+    vault: "Vault",
     config: "Cấu hình",
     communications: "Liên lạc",
     appearance: "Giao diện",
@@ -443,6 +444,7 @@ export const vi: TranslationMap = {
       "Xem xét, tinh chỉnh và áp dụng các đề xuất trước khi chúng trở thành kỹ năng đang hoạt động.",
     nodes: "Thiết bị đã ghép nối và lệnh.",
     chat: "Trò chuyện Gateway để can thiệp nhanh.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Chỉnh sửa openclaw.json.",
     communications: "Kênh, tin nhắn và cài đặt âm thanh.",
     appearance: "Giao diện, UI và cài đặt trình hướng dẫn thiết lập.",
@@ -929,6 +931,9 @@ export const vi: TranslationMap = {
       simmeringIdeas: "đang ủ những ý tưởng còn dang dở…",
       whisperingVectorStore: "đang thì thầm với vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

@@ -418,6 +418,7 @@ export const tr: TranslationMap = {
     skillForge: "Skill Atölyesi",
     nodes: "Düğümler",
     chat: "Sohbet",
+    vault: "Vault",
     config: "Yapılandırma",
     communications: "İletişim",
     appearance: "Görünüm",
@@ -445,6 +446,7 @@ export const tr: TranslationMap = {
       "Teklifleri canlı becerilere dönüşmeden önce gözden geçirin, iyileştirin ve uygulayın.",
     nodes: "Eşleştirilmiş cihazlar ve komutlar.",
     chat: "Hızlı müdahaleler için Gateway sohbeti.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "openclaw.json dosyasını düzenleyin.",
     communications: "Kanallar, mesajlar ve ses ayarları.",
     appearance: "Tema, UI ve kurulum sihirbazı ayarları.",
@@ -935,6 +937,9 @@ export const tr: TranslationMap = {
       simmeringIdeas: "yarı şekillenmiş fikirler demleniyor…",
       whisperingVectorStore: "vector store'a fısıldanıyor…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

@@ -51,6 +51,8 @@ import {
   createUpdateGoalTool,
 } from "./tools/goal-tools.js";
 import { createHeartbeatResponseTool } from "./tools/heartbeat-response-tool.js";
+import { createGatewaySecretApprover } from "./tools/http-request.approval.js";
+import { createHttpRequestTool } from "./tools/http-request.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
 import { createMemoryInsightsTool } from "./tools/memory-insights.js";
@@ -369,6 +371,23 @@ export function createOpenClawTools(
   });
   options?.recordToolPrepStage?.("openclaw-tools:nodes-tool");
   const embedded = isEmbeddedMode();
+  // Egress tool that brokers saved vault credentials. Returns null until the
+  // user has saved at least one secret, so it stays opt-in per deployment. The
+  // approver routes "ask"-policy prompts through the plugin-approval pipeline
+  // (Control UI modal + bound channel); absent it, "ask" fails closed.
+  const httpRequestTool = embedded
+    ? null
+    : createHttpRequestTool({
+        approveSecretUse: createGatewaySecretApprover({
+          agentId: sessionAgentId,
+          sessionKey: options?.agentSessionKey,
+          turnSourceChannel: options?.agentChannel,
+          turnSourceTo: options?.currentChannelId ?? options?.agentTo,
+          turnSourceAccountId: options?.agentAccountId,
+          turnSourceThreadId: options?.currentThreadTs ?? options?.agentThreadId,
+        }),
+      });
+  options?.recordToolPrepStage?.("openclaw-tools:http-request-tool");
   const explicitFactoryAllowlist = mergeFactoryPolicyList(
     resolvedConfig?.tools?.allow,
     resolvedConfig?.tools?.alsoAllow,
@@ -541,7 +560,13 @@ export function createOpenClawTools(
     createMemoryInsightsTool({
       workspaceDir,
     }),
-    ...collectPresentOpenClawTools([webSearchTool, webFetchTool, imageTool, pdfTool]),
+    ...collectPresentOpenClawTools([
+      webSearchTool,
+      webFetchTool,
+      httpRequestTool,
+      imageTool,
+      pdfTool,
+    ]),
   ];
   options?.recordToolPrepStage?.("openclaw-tools:core-tool-list");
   let allTools = tools;

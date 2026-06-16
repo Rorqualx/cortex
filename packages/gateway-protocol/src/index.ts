@@ -208,6 +208,16 @@ import {
   ExecApprovalResolveParamsSchema,
   type ExecApprovalDecision,
   ExecApprovalDecisionSchema,
+  type VaultListParams,
+  VaultListParamsSchema,
+  type VaultListResult,
+  type VaultSaveParams,
+  VaultSaveParamsSchema,
+  type VaultDeleteParams,
+  VaultDeleteParamsSchema,
+  type VaultMutationResult,
+  type VaultSecretEntry,
+  type VaultApprovalPolicy,
   type ExecApprovalCommandSpan,
   ExecApprovalCommandSpanSchema,
   type CommandExplanationSummary,
@@ -860,6 +870,9 @@ export const validateExecApprovalRequestParams = lazyCompile<ExecApprovalRequest
 export const validateExecApprovalResolveParams = lazyCompile<ExecApprovalResolveParams>(
   ExecApprovalResolveParamsSchema,
 );
+export const validateVaultListParams = lazyCompile<VaultListParams>(VaultListParamsSchema);
+export const validateVaultSaveParams = lazyCompile<VaultSaveParams>(VaultSaveParamsSchema);
+export const validateVaultDeleteParams = lazyCompile<VaultDeleteParams>(VaultDeleteParamsSchema);
 export const validatePluginApprovalRequestParams = lazyCompile<PluginApprovalRequestParams>(
   PluginApprovalRequestParamsSchema,
 );
@@ -1160,6 +1173,9 @@ export {
   ExecApprovalRequestParamsSchema,
   ExecApprovalResolveParamsSchema,
   ExecApprovalDecisionSchema,
+  VaultListParamsSchema,
+  VaultSaveParamsSchema,
+  VaultDeleteParamsSchema,
   ExecApprovalCommandSpanSchema,
   CommandExplanationSummarySchema,
   SystemRunApprovalFileOperandSchema,
@@ -1386,6 +1402,13 @@ export type {
   ExecApprovalRequestParams,
   ExecApprovalResolveParams,
   ExecApprovalDecision,
+  VaultListParams,
+  VaultListResult,
+  VaultSaveParams,
+  VaultDeleteParams,
+  VaultMutationResult,
+  VaultSecretEntry,
+  VaultApprovalPolicy,
   ExecApprovalCommandSpan,
   CommandExplanationSummary,
   SystemRunApprovalFileOperand,

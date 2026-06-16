@@ -106,6 +106,7 @@ export type AppViewState = ScrollHost &
     chatSessionMessageSubscriptionRequestedKey?: string | null;
     chatLoading: boolean;
     chatSending: boolean;
+    vaultComposerModalOpen: boolean;
     chatSendStartedAt: number | null;
     chatMessage: string;
     chatAttachments: ChatAttachment[];

@@ -416,6 +416,7 @@ export const es: TranslationMap = {
     skillForge: "Taller de Skills",
     nodes: "Nodos",
     chat: "Chat",
+    vault: "Vault",
     config: "Configuración",
     communications: "Comunicaciones",
     appearance: "Apariencia",
@@ -443,6 +444,7 @@ export const es: TranslationMap = {
       "Revisa, perfecciona y aplica propuestas antes de que se conviertan en Skills activas.",
     nodes: "Dispositivos emparejados, capacidades y exposición de comandos.",
     chat: "Sesión de chat directa con la puerta de enlace para intervenciones rápidas.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Editar ~/.openclaw/openclaw.json de forma segura.",
     communications: "Canales, mensajes y configuración de audio.",
     appearance: "Configuración del tema, la UI y el asistente de configuración.",
@@ -933,6 +935,9 @@ export const es: TranslationMap = {
       simmeringIdeas: "dejando hervir a fuego lento ideas a medio formar…",
       whisperingVectorStore: "susurrándole al vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

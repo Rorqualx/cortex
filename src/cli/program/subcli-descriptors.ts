@@ -51,6 +51,11 @@ const subCliCommandCatalog = defineCommandDescriptorCatalog([
     hasSubcommands: true,
   },
   {
+    name: "vault",
+    description: "Manage saved API credentials the agent uses without ever seeing them",
+    hasSubcommands: true,
+  },
+  {
     name: "nodes",
     description: "Pair nodes and run node-host commands through the Gateway",
     hasSubcommands: true,

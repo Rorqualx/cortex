@@ -29,4 +29,5 @@ export * from "./schema/tasks.js";
 export * from "./schema/types.js";
 export * from "./schema/plugin-approvals.js";
 export * from "./schema/plugins.js";
+export * from "./schema/vault.js";
 export * from "./schema/wizard.js";

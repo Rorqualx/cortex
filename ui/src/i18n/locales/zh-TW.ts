@@ -413,6 +413,7 @@ export const zh_TW: TranslationMap = {
     skillForge: "Skill Forge",
     nodes: "節點",
     chat: "聊天",
+    vault: "Vault",
     config: "配置",
     communications: "通訊",
     appearance: "外觀與設置",
@@ -439,6 +440,7 @@ export const zh_TW: TranslationMap = {
     skillForge: "在提案成為上線技能之前，先進行審閱、調整並套用。",
     nodes: "配對設備和命令。",
     chat: "網關聊天，快速干預。",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "編輯 openclaw.json。",
     communications: "頻道、消息和音頻設置。",
     appearance: "主題、界面和設置向導設置。",
@@ -919,6 +921,9 @@ export const zh_TW: TranslationMap = {
       simmeringIdeas: "正在醞釀尚未成形的想法…",
       whisperingVectorStore: "正在向向量儲存低語…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

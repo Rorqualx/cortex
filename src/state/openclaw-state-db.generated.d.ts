@@ -906,6 +906,27 @@ export interface UpdateCheckState {
   updated_at_ms: number;
 }
 
+export interface VaultSecret {
+  approval_policy: Generated<string>;
+  created_at: number;
+  credential_type: string | null;
+  description: string | null;
+  header_template: string;
+  host_allowlist_json: string;
+  name: string;
+  updated_at: number;
+  value_cipher: string;
+  value_iv: string;
+  value_tag: string;
+}
+
+export interface VaultSecretGrant {
+  decision: string;
+  granted_at: number;
+  host: string;
+  name: string;
+}
+
 export interface VoicewakeRoutingConfig {
   config_key: string;
   default_target_agent_id: string | null;
@@ -1045,6 +1066,8 @@ export interface DB {
   task_runs: TaskRuns;
   tui_last_sessions: TuiLastSessions;
   update_check_state: UpdateCheckState;
+  vault_secret: VaultSecret;
+  vault_secret_grant: VaultSecretGrant;
   voicewake_routing_config: VoicewakeRoutingConfig;
   voicewake_routing_routes: VoicewakeRoutingRoutes;
   voicewake_triggers: VoicewakeTriggers;

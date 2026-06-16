@@ -415,6 +415,7 @@ export const ar: TranslationMap = {
     skillForge: "ورشة Skills",
     nodes: "العقد",
     chat: "الدردشة",
+    vault: "Vault",
     config: "الإعدادات",
     communications: "الاتصالات",
     appearance: "المظهر",
@@ -441,6 +442,7 @@ export const ar: TranslationMap = {
     skillForge: "راجع المقترحات وحسّنها وطبّقها قبل أن تصبح مهارات نشطة.",
     nodes: "الأجهزة المقترنة والأوامر.",
     chat: "دردشة Gateway للتدخلات السريعة.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "تعديل openclaw.json.",
     communications: "القنوات، والرسائل، وإعدادات الصوت.",
     appearance: "السمة، وواجهة المستخدم، وإعدادات معالج الإعداد.",
@@ -923,6 +925,9 @@ export const ar: TranslationMap = {
       simmeringIdeas: "جارٍ إنضاج الأفكار نصف المتشكّلة…",
       whisperingVectorStore: "جارٍ الهمس إلى مخزن المتجهات…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

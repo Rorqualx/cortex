@@ -417,6 +417,7 @@ export const fa: TranslationMap = {
     skillForge: "کارگاه Skill",
     nodes: "گره‌ها",
     chat: "چت",
+    vault: "Vault",
     config: "Config",
     communications: "ارتباطات",
     appearance: "ظاهر",
@@ -443,6 +444,7 @@ export const fa: TranslationMap = {
     skillForge: "پیشنهادها را پیش از تبدیل‌شدن به مهارت‌های فعال، بررسی، اصلاح و اعمال کنید.",
     nodes: "دستگاه‌های جفت‌شده و فرمان‌ها.",
     chat: "چت Gateway برای مداخله‌های سریع.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "ویرایش openclaw.json.",
     communications: "کانال‌ها، پیام‌ها و تنظیمات صوتی.",
     appearance: "تنظیمات پوسته، UI و جادوگر راه‌اندازی.",
@@ -930,6 +932,9 @@ export const fa: TranslationMap = {
       simmeringIdeas: "در حال جا افتادن ایده‌های نیمه‌شکل‌گرفته…",
       whisperingVectorStore: "در حال نجوا با vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

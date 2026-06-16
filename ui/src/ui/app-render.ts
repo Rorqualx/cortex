@@ -684,6 +684,11 @@ const lazyConversations = createLazyView(
   notifyLazyViewChanged,
 );
 const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewChanged);
+const lazyVault = createLazyView(() => import("./views/vault-view.ts"), notifyLazyViewChanged);
+const lazyVaultAddModal = createLazyView(
+  () => import("./components/vault-add-modal.ts"),
+  notifyLazyViewChanged,
+);
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
 const lazyInstances = createLazyView(() => import("./views/instances.ts"), notifyLazyViewChanged);
 const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
@@ -2882,6 +2887,12 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
         ${renderUsageTab(state, lazyUsage)}
+        ${state.tab === "vault"
+          ? renderLazyView(
+              lazyVault,
+              () => html`<openclaw-vault-view .client=${state.client}></openclaw-vault-view>`,
+            )
+          : nothing}
         ${state.tab === "cron" ? renderCronQuickCreateForTab(state, requestHostUpdate) : nothing}
         ${state.tab === "cron"
           ? renderLazyView(lazyCron, (m) =>
@@ -4299,6 +4310,17 @@ export function renderApp(state: AppViewState) {
           : nothing}
       </main>
       ${renderExecApprovalPrompt(state)} ${renderGatewayUrlConfirmation(state)}
+      ${state.vaultComposerModalOpen
+        ? renderLazyView(
+            lazyVaultAddModal,
+            () => html`<openclaw-vault-add-modal
+              .client=${state.client}
+              @vault-close=${() => {
+                state.vaultComposerModalOpen = false;
+              }}
+            ></openclaw-vault-add-modal>`,
+          )
+        : nothing}
       ${renderDreamingRestartConfirmation({
         open: state.dreamingRestartConfirmOpen,
         loading: state.dreamingRestartConfirmLoading,

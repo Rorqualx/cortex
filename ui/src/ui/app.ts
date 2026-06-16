@@ -263,6 +263,7 @@ export class OpenClawApp extends LitElement {
   currentSessionId: string | null = null;
   @state() chatLoading = false;
   @state() chatSending = false;
+  @state() vaultComposerModalOpen = false;
   // Written by app-chat send flow; read by render for elapsed-time display. Intentionally
   // non-reactive: it piggybacks on the re-renders chat events already trigger.
   chatSendStartedAt: number | null = null;

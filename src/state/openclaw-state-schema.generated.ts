@@ -1273,4 +1273,36 @@ CREATE TABLE IF NOT EXISTS model_catalog_discovered (
 );
 
 CREATE INDEX IF NOT EXISTS idx_model_catalog_discovered_provider_status
-  ON model_catalog_discovered(provider, status, model_id);\n`;
+  ON model_catalog_discovered(provider, status, model_id);
+
+-- User-saved API credentials brokered to the agent at egress. The plaintext
+-- value is AES-256-GCM encrypted (value_iv/value_cipher/value_tag); the key
+-- never lives here. host_allowlist_json bounds where the runtime may inject the
+-- secret so a saved key cannot be aimed at an arbitrary host. approval_policy is
+-- 'auto' (inject silently) or 'ask' (prompt on first use per host).
+CREATE TABLE IF NOT EXISTS vault_secret (
+  name TEXT NOT NULL PRIMARY KEY,
+  host_allowlist_json TEXT NOT NULL,
+  header_template TEXT NOT NULL,
+  value_iv TEXT NOT NULL,
+  value_cipher TEXT NOT NULL,
+  value_tag TEXT NOT NULL,
+  approval_policy TEXT NOT NULL DEFAULT 'ask',
+  -- Human/model-facing metadata. credential_type is a UI label (bearer, api_key,
+  -- basic, custom) that drives header_template; description is free-text shown to
+  -- the operator and surfaced (without the value) so the model knows what it is.
+  credential_type TEXT,
+  description TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Persisted "allow always" decisions for an (entry, host) pair so an approved
+-- secret use does not re-prompt on every subsequent same-host call.
+CREATE TABLE IF NOT EXISTS vault_secret_grant (
+  name TEXT NOT NULL,
+  host TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  granted_at INTEGER NOT NULL,
+  PRIMARY KEY (name, host)
+);\n`;

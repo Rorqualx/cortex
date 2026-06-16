@@ -13,6 +13,40 @@ const DEFAULT_REDACT_MIN_LENGTH = 18;
 const DEFAULT_REDACT_KEEP_START = 6;
 const DEFAULT_REDACT_KEEP_END = 4;
 
+// Live plaintext secret values registered at runtime (e.g. a vault credential
+// the egress tool just injected). These are scrubbed unconditionally — even when
+// pattern redaction is "off" — because an active credential must never reach a
+// log line or transcript regardless of its surrounding text shape.
+const MIN_DYNAMIC_SECRET_LENGTH = 6;
+const DYNAMIC_SECRET_PLACEHOLDER = "[redacted secret]";
+const dynamicSecretValues = new Set<string>();
+
+/** Register a live plaintext value to be scrubbed from all redacted output. */
+export function registerDynamicSecret(value: string): void {
+  if (value.length >= MIN_DYNAMIC_SECRET_LENGTH) {
+    dynamicSecretValues.add(value);
+  }
+}
+
+/** Drop all registered dynamic secrets (test reset / explicit teardown). */
+export function clearDynamicSecrets(): void {
+  dynamicSecretValues.clear();
+}
+
+/** Replace any registered live secret value found in `text` with a placeholder. */
+export function scrubDynamicSecrets(text: string): string {
+  if (!text || dynamicSecretValues.size === 0) {
+    return text;
+  }
+  let out = text;
+  for (const value of dynamicSecretValues) {
+    if (out.includes(value)) {
+      out = out.split(value).join(DYNAMIC_SECRET_PLACEHOLDER);
+    }
+  }
+  return out;
+}
+
 const PAYMENT_CREDENTIAL_ENV_KEYS = String.raw`CARD[_-]?NUMBER|CARD[_-]?CVC|CARD[_-]?CVV|CVC|CVV|SECURITY[_-]?CODE|PAYMENT[_-]?CREDENTIAL|SHARED[_-]?PAYMENT[_-]?TOKEN`;
 const PAYMENT_CREDENTIAL_QUERY_KEYS = String.raw`card[-_]?number|card[-_]?cvc|card[-_]?cvv|cvc|cvv|security[-_]?code|payment[-_]?credential|shared[-_]?payment[-_]?token`;
 const PAYMENT_CREDENTIAL_JSON_KEYS = String.raw`cardNumber|card_number|cardCvc|card_cvc|cardCvv|card_cvv|cvc|cvv|securityCode|security_code|paymentCredential|payment_credential|sharedPaymentToken|shared_payment_token`;
@@ -267,18 +301,21 @@ export function redactSensitiveText(text: string, options?: RedactOptions): stri
   if (!text) {
     return text;
   }
+  // Scrub live registered secrets first and unconditionally, before any
+  // mode/pattern short-circuit can return the text untouched.
+  const scrubbed = scrubDynamicSecrets(text);
   const resolvedOptions = options ?? resolveConfigRedaction();
   if (normalizeMode(resolvedOptions.mode) === "off") {
-    return text;
+    return scrubbed;
   }
-  if (!resolvedOptions.patterns?.length && !couldMatchDefaultRedactPatterns(text)) {
-    return text;
+  if (!resolvedOptions.patterns?.length && !couldMatchDefaultRedactPatterns(scrubbed)) {
+    return scrubbed;
   }
   const resolved = resolveRedactOptions(resolvedOptions);
   if (!resolved.patterns.length) {
-    return text;
+    return scrubbed;
   }
-  return redactText(text, resolved.patterns);
+  return redactText(scrubbed, resolved.patterns);
 }
 
 export function redactToolDetail(detail: string): string {

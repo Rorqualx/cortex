@@ -2,7 +2,10 @@
   "fallbackKeys": [
     "nav.channels",
     "subtitles.conversations",
+    "subtitles.vault",
     "tabs.conversations",
+    "tabs.vault",
+    "vault.addCredential",
     "workboard.addProject",
     "workboard.agentLinkedWithDescription",
     "workboard.dependencies",
@@ -37,12 +40,12 @@
     "workboard.unknownStatus",
     "workboard.viewDetails"
   ],
-  "generatedAt": "2026-06-12T04:43:13.206Z",
+  "generatedAt": "2026-06-16T03:30:23.058Z",
   "locale": "it",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "93b1023a05ef3d04d7a3bf7cdaa191372ecb30565b7e8366b51469bab213d209",
-  "totalKeys": 1338,
+  "sourceHash": "6d8a43db4846dcc0bad29501916a265ccff2d4bbc0168352a49b30590cb55d94",
+  "totalKeys": 1341,
   "translatedKeys": 1302,
   "workflow": 1
 }

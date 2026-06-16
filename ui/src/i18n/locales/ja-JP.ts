@@ -419,6 +419,7 @@ export const ja_JP: TranslationMap = {
     skillForge: "Skill Forge",
     nodes: "ノード",
     chat: "チャット",
+    vault: "Vault",
     config: "設定",
     communications: "通信",
     appearance: "表示",
@@ -445,6 +446,7 @@ export const ja_JP: TranslationMap = {
     skillForge: "提案がライブスキルになる前に、確認、調整、適用します。",
     nodes: "ペアリング済みデバイスとコマンド。",
     chat: "すばやく介入するための Gateway チャット。",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "openclaw.json を編集。",
     communications: "チャンネル、メッセージ、音声設定。",
     appearance: "テーマ、UI、セットアップウィザードの設定。",
@@ -932,6 +934,9 @@ export const ja_JP: TranslationMap = {
       simmeringIdeas: "まだ形になっていないアイデアを温め中…",
       whisperingVectorStore: "ベクトルストアにささやきかけ中…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

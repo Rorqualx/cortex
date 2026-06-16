@@ -662,6 +662,8 @@ function ensureAdditiveStateColumns(db: DatabaseSync): void {
   ensureColumn(db, "gateway_restart_sentinel", "doctor_hint TEXT");
   ensureColumn(db, "gateway_restart_sentinel", "stats_json TEXT");
   ensureColumn(db, "subagent_runs", "task_name TEXT");
+  ensureColumn(db, "vault_secret", "credential_type TEXT");
+  ensureColumn(db, "vault_secret", "description TEXT");
 }
 
 function ensureSchema(db: DatabaseSync, pathname: string): void {

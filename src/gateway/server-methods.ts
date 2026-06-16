@@ -85,6 +85,10 @@ const loadCommandsHandlers = lazyHandlerModule(
   () => import("./server-methods/commands.js"),
   (module) => module.commandsHandlers,
 );
+const loadVaultHandlers = lazyHandlerModule(
+  () => import("./server-methods/vault.js"),
+  (module) => module.vaultHandlers,
+);
 const loadConfigHandlers = lazyHandlerModule(
   () => import("./server-methods/config.js"),
   (module) => module.configHandlers,
@@ -301,6 +305,10 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: ["commands.list"],
     loadHandlers: loadCommandsHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["vault.list", "vault.save", "vault.delete"],
+    loadHandlers: loadVaultHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: [

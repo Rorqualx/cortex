@@ -17,6 +17,7 @@ export const TAB_GROUPS = [
       "sessions",
       "usage",
       "cron",
+      "vault",
     ],
   },
   { label: "agent", tabs: ["agents", "skills", "skillForge", "nodes", "dreams"] },
@@ -41,6 +42,7 @@ export type Tab =
   | "skillForge"
   | "nodes"
   | "chat"
+  | "vault"
   | "config"
   | "communications"
   | "appearance"
@@ -80,6 +82,7 @@ const TAB_PATHS: Record<Tab, string> = {
   skillForge: "/skills/forge",
   nodes: "/nodes",
   chat: "/chat",
+  vault: "/vault",
   config: "/config",
   communications: "/communications",
   appearance: "/appearance",
@@ -233,6 +236,8 @@ export function iconForTab(tab: Tab): IconName {
       return "barChart";
     case "cron":
       return "loader";
+    case "vault":
+      return "globe";
     case "skills":
       return "zap";
     case "skillForge":

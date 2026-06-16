@@ -414,6 +414,7 @@ export const th: TranslationMap = {
     skillForge: "Skill Forge",
     nodes: "โหนด",
     chat: "แชต",
+    vault: "Vault",
     config: "Config",
     communications: "การสื่อสาร",
     appearance: "ลักษณะที่ปรากฏ",
@@ -440,6 +441,7 @@ export const th: TranslationMap = {
     skillForge: "ตรวจสอบ ปรับแต่ง และนำข้อเสนอไปใช้ก่อนที่จะกลายเป็น Skills ที่ใช้งานจริง",
     nodes: "อุปกรณ์ที่จับคู่และคำสั่ง",
     chat: "แชตเกตเวย์สำหรับการดำเนินการอย่างรวดเร็ว",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "แก้ไข openclaw.json",
     communications: "ช่องทาง ข้อความ และการตั้งค่าเสียง",
     appearance: "ธีม UI และการตั้งค่าตัวช่วยเริ่มต้น",
@@ -920,6 +922,9 @@ export const th: TranslationMap = {
       simmeringIdeas: "กำลังเคี่ยวความคิดที่ยังไม่เป็นรูปเป็นร่าง…",
       whisperingVectorStore: "กำลังกระซิบกับ vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

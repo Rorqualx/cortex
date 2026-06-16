@@ -417,6 +417,7 @@ export const uk: TranslationMap = {
     skillForge: "Майстерня Skills",
     nodes: "Вузли",
     chat: "Чат",
+    vault: "Vault",
     config: "Конфігурація",
     communications: "Комунікації",
     appearance: "Зовнішній вигляд",
@@ -444,6 +445,7 @@ export const uk: TranslationMap = {
       "Переглядайте, уточнюйте й застосовуйте пропозиції, перш ніж вони стануть активними Skills.",
     nodes: "Спарені пристрої та команди.",
     chat: "Чат шлюзу для швидких втручань.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Редагування openclaw.json.",
     communications: "Канали, повідомлення та налаштування аудіо.",
     appearance: "Тема, інтерфейс і налаштування майстра налаштування.",
@@ -935,6 +937,9 @@ export const uk: TranslationMap = {
       simmeringIdeas: "томління напівсформованих ідей…",
       whisperingVectorStore: "шепіт до vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

@@ -416,6 +416,7 @@ export const id: TranslationMap = {
     skillForge: "Skill Forge",
     nodes: "Node",
     chat: "Chat",
+    vault: "Vault",
     config: "Konfigurasi",
     communications: "Komunikasi",
     appearance: "Tampilan",
@@ -442,6 +443,7 @@ export const id: TranslationMap = {
     skillForge: "Tinjau, sempurnakan, dan terapkan proposal sebelum menjadi Skills aktif.",
     nodes: "Perangkat yang dipasangkan dan perintah.",
     chat: "Chat Gateway untuk intervensi cepat.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Edit openclaw.json.",
     communications: "Saluran, pesan, dan pengaturan audio.",
     appearance: "Tema, UI, dan pengaturan wizard penyiapan.",
@@ -930,6 +932,9 @@ export const id: TranslationMap = {
       simmeringIdeas: "mematangkan ide-ide yang belum sepenuhnya terbentuk…",
       whisperingVectorStore: "berbisik kepada vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

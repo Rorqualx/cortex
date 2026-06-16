@@ -418,6 +418,7 @@ export const nl: TranslationMap = {
     skillForge: "Skill Forge",
     nodes: "Nodes",
     chat: "Chat",
+    vault: "Vault",
     config: "Config",
     communications: "Communicatie",
     appearance: "Weergave",
@@ -444,6 +445,7 @@ export const nl: TranslationMap = {
     skillForge: "Bekijk, verfijn en pas voorstellen toe voordat ze live Skills worden.",
     nodes: "Gekoppelde apparaten en commando's.",
     chat: "Gateway-chat voor snelle interventies.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Bewerk openclaw.json.",
     communications: "Kanalen, berichten en audio-instellingen.",
     appearance: "Thema, UI en instellingen voor de installatiewizard.",
@@ -933,6 +935,9 @@ export const nl: TranslationMap = {
       simmeringIdeas: "halfgevormde ideeën laten sudderen…",
       whisperingVectorStore: "fluisteren tegen de vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

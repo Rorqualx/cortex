@@ -415,6 +415,7 @@ export const ko: TranslationMap = {
     skillForge: "Skill Forge",
     nodes: "노드",
     chat: "채팅",
+    vault: "Vault",
     config: "구성",
     communications: "커뮤니케이션",
     appearance: "모양",
@@ -441,6 +442,7 @@ export const ko: TranslationMap = {
     skillForge: "제안이 실제 Skills가 되기 전에 검토하고, 다듬고, 적용하세요.",
     nodes: "페어링된 디바이스 및 명령.",
     chat: "빠른 개입을 위한 Gateway 채팅.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "openclaw.json 편집.",
     communications: "채널, 메시지, 오디오 설정.",
     appearance: "테마, UI, 설정 마법사 설정.",
@@ -928,6 +930,9 @@ export const ko: TranslationMap = {
       simmeringIdeas: "덜 다듬어진 아이디어를 천천히 익히는 중…",
       whisperingVectorStore: "벡터 저장소에 속삭이는 중…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {
