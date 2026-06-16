@@ -90,7 +90,18 @@ describe("runForgePipeline", () => {
       drafted: [],
       promotions: [],
       skipped: [],
+      embedding: { status: "disabled" },
     });
+  });
+
+  it("reports embedding lane unavailable when no embedding provider resolves", async () => {
+    const result = await runForgePipeline({ env: env(), useEmbedding: true });
+    expect(result.embedding.status).toBe("unavailable");
+  });
+
+  it("runs the llm-replay lane with no judged skills when there are no captures", async () => {
+    const result = await runForgePipeline({ env: env(), useLlmReplay: true });
+    expect(result.llmReplay).toEqual({ status: "ran", judged: [] });
   });
 
   it("skips an already-crystallized capability on re-run instead of re-staging a duplicate", async () => {
