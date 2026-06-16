@@ -12,6 +12,20 @@
 import type { Tool } from "../../llm/types.js";
 import type { CCRStore } from "./store.js";
 
+/**
+ * The ccr_retrieve tool is an LLM schema tool (sent to the model alongside other
+ * tool schemas) that also carries a runtime `execute` dispatched by the CCR
+ * retrieval path — not the standard AgentTool runtime, so its execute returns the
+ * raw retrieval payload rather than an `AgentToolResult`.
+ */
+export type CcrRetrieveTool = Tool & {
+  execute: (
+    toolCallId: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
+};
+
 export type { CCRRetrieveParams } from "./retrieval-tool.js";
 export { CCR_RETRIEVE_TOOL_NAME, ccrRetrieveToolDefinition } from "./retrieval-tool.js";
 import { CCR_RETRIEVE_TOOL_NAME } from "./retrieval-tool.js";
@@ -20,7 +34,7 @@ import { CCR_RETRIEVE_TOOL_NAME } from "./retrieval-tool.js";
  * Create the ccr_retrieve tool with an execute function bound to a CCR store.
  * Returns null if the store is not available (graceful degradation).
  */
-export function createCCRRetrieveTool(store: CCRStore | undefined): Tool | null {
+export function createCCRRetrieveTool(store: CCRStore | undefined): CcrRetrieveTool | null {
   if (!store || store.isClosed) {
     return null;
   }

@@ -162,7 +162,6 @@ type ScoredItem = {
  *   - 55% by importance score (highest-scoring items)
  */
 function selectItems(scored: ScoredItem[], maxItems: number): ScoredItem[] {
-  const total = scored.length;
   const headCount = Math.max(1, Math.round(maxItems * 0.3));
   const tailCount = Math.max(1, Math.round(maxItems * 0.15));
   const meritCount = maxItems - headCount - tailCount;

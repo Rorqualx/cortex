@@ -67,7 +67,7 @@ export function compressSearchResults(content: string, targetRatio: number): Com
   const maxPerFile = Math.max(2, Math.ceil(targetRatio * 10));
   const selected: GrepEntry[] = [];
 
-  for (const [file, entries] of byFile) {
+  for (const [, entries] of byFile) {
     // Always include error matches
     const errors = entries.filter((e) => isErrorLine(e.text));
     const nonErrors = entries.filter((e) => !isErrorLine(e.text));
@@ -123,7 +123,7 @@ export function compressSearchResults(content: string, targetRatio: number): Com
 // File listing compression
 // ---------------------------------------------------------------------------
 
-function compressFileListing(content: string, targetRatio: number): CompressorOutput {
+function compressFileListing(content: string, _targetRatio: number): CompressorOutput {
   const originalChars = content.length;
   const lines = content.split("\n").filter((l) => l.trim().length > 0);
 

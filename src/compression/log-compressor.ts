@@ -6,8 +6,6 @@
  * Keeps first and last N lines of any continuous block.
  */
 import type { CompressorOutput } from "./types.js";
-
-const LOG_LEVEL_RE = /^\s*\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}/;
 const PYTEST_RE = /^\s*(PASSED|FAILED|ERROR|SKIP|XFAIL|XPASS)/;
 const NPM_RE = /^\s*(npm|yarn|pnpm)\s+(warn|error|info)/;
 const TEST_FRAMEWORK_RE = /^\s*(✓|✗|✔|✘|PASS|FAIL|PASSING|FAILING|ok|not ok)\b/i;

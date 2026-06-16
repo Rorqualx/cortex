@@ -23,8 +23,8 @@ import { ContextTracker } from "./ccr/context-tracker.js";
 import { buildCompressionMarker } from "./ccr/retrieval-tool.js";
 import { CCRStore } from "./ccr/store.js";
 import { routeAndCompress } from "./content-router.js";
-import { enforceTokenBudget, estimateTokens } from "./token-budget-enforcer.js";
-import type { CompressionConfig, CompressionResult, CompressionStats, CCREntry } from "./types.js";
+import { enforceTokenBudget } from "./token-budget-enforcer.js";
+import type { CompressionConfig, CompressionResult, CompressionStats } from "./types.js";
 import { DEFAULT_COMPRESSION_CONFIG } from "./types.js";
 
 export type { CompressionConfig, CompressionResult, CompressionStats };

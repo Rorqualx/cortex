@@ -198,10 +198,10 @@ export class CCRStore {
         "DELETE FROM ccr_cache WHERE hash IN (SELECT hash FROM ccr_cache ORDER BY last_accessed_at ASC LIMIT ?)",
       );
       evictStmt.run(excess);
-      return result.changes + excess;
+      return Number(result.changes) + excess;
     }
 
-    return result.changes;
+    return Number(result.changes);
   }
 
   /**

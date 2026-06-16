@@ -9,7 +9,7 @@ import type { CompressorOutput } from "./types.js";
 /** Matches a diff hunk header: @@ -a,b +c,d @@ */
 const HUNK_HEADER = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/;
 
-export function compressDiffOutput(content: string, targetRatio: number): CompressorOutput {
+export function compressDiffOutput(content: string, _targetRatio: number): CompressorOutput {
   const originalChars = content.length;
   const passthrough: CompressorOutput = {
     content,
