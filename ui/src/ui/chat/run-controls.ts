@@ -59,7 +59,7 @@ export function renderChatRunControls(props: ChatRunControlsProps) {
                 }
                 props.onSend();
               }}
-              ?disabled=${!props.connected || props.sending}
+              ?disabled=${!props.connected}
               title=${t("chat.runControls.queue")}
               aria-label=${t("chat.runControls.queueMessage")}
             >

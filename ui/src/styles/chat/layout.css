@@ -450,6 +450,13 @@
   animation: ctx-live-pulse 1.2s ease-in-out infinite;
 }
 
+/* Live elapsed counter inside context notice (mirrors the thinking badge) */
+.context-notice__elapsed {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
 /* Token breakdown segments inside context notice */
 .ctx-bd {
   display: inline-flex;
@@ -996,7 +1003,6 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  margin-left: auto;
   min-width: 0;
 }
 
@@ -1004,6 +1010,15 @@
   display: inline-flex;
   flex: 0 1 220px;
   min-width: 0;
+}
+
+/* Chat-settings actions surfaced as inline composer icon buttons (like attach/mic). */
+.chat-composer-quick-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .chat-composer-model-control .chat-controls__model {

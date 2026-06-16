@@ -2193,6 +2193,7 @@ export function renderChat(props: ChatProps) {
             onCompact: props.onCompact,
             liveUsage: props.liveUsage ?? null,
             compaction: props.compactionStatus ?? null,
+            runStartedAt: isBusy ? (props.streamStartedAt ?? props.sendStartedAt ?? null) : null,
           })}
           ${renderChatGoal(activeSession?.goal)}
         </div>

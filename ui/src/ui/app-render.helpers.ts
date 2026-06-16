@@ -378,125 +378,108 @@ export function renderChatControls(state: AppViewState) {
       ></path>
     </svg>
   `;
-  const settingsOpen = state.chatMobileControlsOpen;
-  const settingsLabel = t("chat.settings");
-  const settingsTitle = t("chat.settings");
+  const autoScrollMode = normalizeChatAutoScrollMode(state.settings.chatAutoScroll);
+  const autoScrollActive = autoScrollMode !== "off";
+  const autoScrollLabel = `${t("chat.autoScrollMode")}: ${chatAutoScrollLabel(autoScrollMode)}`;
 
+  // Surface each chat-settings action as its own composer icon button (like the
+  // attach/mic buttons) instead of hiding them behind a "Chat settings" dropdown.
+  // The mobile gear (renderChatMobileToggle) still owns the collapsed list.
   return html`
-    <div
-      class="chat-composer-model-control"
-      @click=${() => {
-        if (state.chatMobileControlsOpen) {
-          state.setChatMobileControlsOpen(false);
-        }
-      }}
-    >
-      ${renderChatModelSelect(state)}
-    </div>
-    <div class="chat-settings-popover-wrapper">
+    <div class="chat-composer-model-control">${renderChatModelSelect(state)}</div>
+    <div class="chat-composer-quick-actions">
       <button
-        class="chat-settings-chip ${settingsOpen ? "chat-settings-chip--open" : ""}"
-        type="button"
-        title=${settingsTitle}
-        aria-label=${settingsTitle}
-        aria-expanded=${settingsOpen}
-        aria-controls="chat-composer-settings-popover"
-        @click=${(e: Event) => {
-          e.stopPropagation();
-          (e.currentTarget as HTMLElement)
-            .closest(".agent-chat__composer-controls")
-            ?.querySelectorAll("details.chat-controls__inline-select[open]")
-            .forEach((details) => details.removeAttribute("open"));
-          state.setChatMobileControlsOpen(!settingsOpen, {
-            trigger: e.currentTarget as HTMLElement,
+        class="agent-chat__input-btn"
+        ?disabled=${refreshDisabled}
+        @click=${() => {
+          if (!refreshDisabled) {
+            void handleChatManualRefresh(state as ChatRefreshHost);
+          }
+        }}
+        title=${t("common.refresh")}
+        aria-label=${t("common.refresh")}
+      >
+        ${icons.refresh}
+        <span class="agent-chat__control-label">${t("common.refresh")}</span>
+      </button>
+      <button
+        class="agent-chat__input-btn ${autoScrollActive ? "agent-chat__input-btn--active" : ""}"
+        data-chat-auto-scroll-toggle="true"
+        data-chat-auto-scroll-mode=${autoScrollMode}
+        @click=${() => {
+          state.applySettings({
+            ...state.settings,
+            chatAutoScroll: nextChatAutoScrollMode(autoScrollMode),
           });
         }}
+        aria-pressed=${autoScrollActive}
+        title=${autoScrollLabel}
+        aria-label=${autoScrollLabel}
       >
-        <span class="chat-settings-chip__icon">${icons.settings}</span>
-        <span class="chat-settings-chip__text">${settingsLabel}</span>
-        <span class="chat-settings-chip__chevron">${icons.chevronDown}</span>
+        ${icons.scrollText}
+        <span class="agent-chat__control-label">${t("chat.autoScrollMode")}</span>
       </button>
-      <div
-        id="chat-composer-settings-popover"
-        class="chat-settings-popover ${settingsOpen ? "chat-settings-popover--open" : ""}"
-        role="dialog"
-        aria-label=${settingsTitle}
+      <button
+        class="agent-chat__input-btn ${showThinking ? "agent-chat__input-btn--active" : ""}"
+        ?disabled=${disableThinkingToggle}
+        @click=${() => {
+          if (disableThinkingToggle) {
+            return;
+          }
+          state.applySettings({
+            ...state.settings,
+            chatShowThinking: !state.settings.chatShowThinking,
+          });
+        }}
+        aria-pressed=${showThinking}
+        title=${thinkingLabel}
+        aria-label=${thinkingLabel}
       >
-        <div class="chat-settings-popover__section">
-          <span class="chat-settings-popover__label">${settingsLabel}</span>
-          <div class="chat-settings-popover__toggles">
-            <button
-              class="btn btn--sm btn--icon chat-settings-action"
-              ?disabled=${refreshDisabled}
-              @click=${() => {
-                if (!refreshDisabled) {
-                  void handleChatManualRefresh(state as ChatRefreshHost);
-                }
-              }}
-              title=${t("common.refresh")}
-              aria-label=${t("common.refresh")}
-              data-tooltip=${t("common.refresh")}
-            >
-              ${icons.refresh}
-              <span class="chat-settings-action__text">${t("common.refresh")}</span>
-            </button>
-            ${renderChatAutoScrollToggle(state, { labelled: true })}
-            <button
-              class="btn btn--sm btn--icon chat-settings-action ${showThinking ? "active" : ""}"
-              ?disabled=${disableThinkingToggle}
-              @click=${() => {
-                if (disableThinkingToggle) {
-                  return;
-                }
-                state.applySettings({
-                  ...state.settings,
-                  chatShowThinking: !state.settings.chatShowThinking,
-                });
-              }}
-              aria-pressed=${showThinking}
-              title=${thinkingLabel}
-              aria-label=${thinkingLabel}
-              data-tooltip=${thinkingLabel}
-            >
-              ${icons.brain}
-              <span class="chat-settings-action__text">${t("cron.form.thinking")}</span>
-            </button>
-            <button
-              class="btn btn--sm btn--icon chat-settings-action ${showToolCalls ? "active" : ""}"
-              ?disabled=${disableThinkingToggle}
-              @click=${() => {
-                if (disableThinkingToggle) {
-                  return;
-                }
-                state.applySettings({
-                  ...state.settings,
-                  chatShowToolCalls: !state.settings.chatShowToolCalls,
-                });
-              }}
-              aria-pressed=${showToolCalls}
-              title=${toolCallsLabel}
-              aria-label=${toolCallsLabel}
-              data-tooltip=${toolCallsLabel}
-            >
-              ${toolCallsIcon}
-              <span class="chat-settings-action__text">${t("agents.tabs.tools")}</span>
-            </button>
-            <button
-              class="btn btn--sm btn--icon chat-settings-action ${hideCron ? "active" : ""}"
-              @click=${() => {
-                state.sessionsHideCron = !hideCron;
-              }}
-              aria-pressed=${hideCron}
-              title=${cronLabel}
-              aria-label=${cronLabel}
-              data-tooltip=${cronLabel}
-            >
-              ${renderCronFilterIcon(hiddenCronCount)}
-              <span class="chat-settings-action__text">${t("cron.jobList.history")}</span>
-            </button>
-          </div>
-        </div>
-      </div>
+        ${icons.brain}
+        <span class="agent-chat__control-label">${t("cron.form.thinking")}</span>
+      </button>
+      <button
+        class="agent-chat__input-btn ${showToolCalls ? "agent-chat__input-btn--active" : ""}"
+        ?disabled=${disableThinkingToggle}
+        @click=${() => {
+          if (disableThinkingToggle) {
+            return;
+          }
+          state.applySettings({
+            ...state.settings,
+            chatShowToolCalls: !state.settings.chatShowToolCalls,
+          });
+        }}
+        aria-pressed=${showToolCalls}
+        title=${toolCallsLabel}
+        aria-label=${toolCallsLabel}
+      >
+        ${toolCallsIcon}
+        <span class="agent-chat__control-label">${t("agents.tabs.tools")}</span>
+      </button>
+      <button
+        class="agent-chat__input-btn ${hideCron ? "agent-chat__input-btn--active" : ""}"
+        @click=${() => {
+          state.sessionsHideCron = !hideCron;
+        }}
+        aria-pressed=${hideCron}
+        title=${cronLabel}
+        aria-label=${cronLabel}
+      >
+        ${renderCronFilterIcon(hiddenCronCount)}
+        <span class="agent-chat__control-label">${t("cron.jobList.history")}</span>
+      </button>
+      <button
+        class="agent-chat__input-btn"
+        @click=${() => {
+          state.vaultComposerModalOpen = true;
+        }}
+        title=${t("vault.addCredential")}
+        aria-label=${t("vault.addCredential")}
+      >
+        ${icons.key}
+        <span class="agent-chat__control-label">${t("vault.addCredential")}</span>
+      </button>
     </div>
   `;
 }

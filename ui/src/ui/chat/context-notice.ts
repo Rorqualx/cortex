@@ -1,6 +1,7 @@
 // Control UI chat module implements context notice behavior.
 import { html, nothing } from "lit";
 import type { ChatLiveUsage, CompactionStatus } from "../app-tool-stream.ts";
+import { formatElapsed } from "../format.ts";
 import { icons } from "../icons.ts";
 import type { GatewaySessionRow } from "../types.ts";
 
@@ -13,6 +14,8 @@ export type ContextNoticeOptions = {
   onCompact?: () => void | Promise<void>;
   liveUsage?: ChatLiveUsage | null;
   compaction?: CompactionStatus | null;
+  /** Run start time; when set, the badge shows a live elapsed counter like the thinking badge. */
+  runStartedAt?: number | null;
 };
 
 /** Parse a 6-digit CSS hex color string to [r, g, b] integer components. */
@@ -257,6 +260,16 @@ export function renderContextNotice(
   const liveDotFragment = model.live
     ? html`<span class="context-notice__live-dot" aria-hidden="true"></span> `
     : nothing;
+  // Live elapsed counter, mirroring the thinking badge; caller passes runStartedAt
+  // only while a run is active, so it disappears when the run ends. renderApp's 1s
+  // tick refreshes it (this badge sits outside the guard()-ed thread).
+  const elapsedFragment =
+    options.runStartedAt != null
+      ? html` ·
+          <span class="context-notice__elapsed"
+            >${formatElapsed(Date.now() - options.runStartedAt)}</span
+          >`
+      : nothing;
   return html`
     <div
       class="context-notice ${stateClasses}"
@@ -289,7 +302,9 @@ export function renderContextNotice(
           `}
       <span class="context-notice__label">
         ${compactingFragment}${liveDotFragment}${model.pct}% ·
-        ${model.detail}${hasBreakdown ? html` · ${renderBreakdown(model.breakdown)}` : nothing}
+        ${model.detail}${hasBreakdown
+          ? html` · ${renderBreakdown(model.breakdown)}`
+          : nothing}${elapsedFragment}
       </span>
       ${canRenderCompact
         ? html`

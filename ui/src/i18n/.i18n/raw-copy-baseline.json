@@ -300,13 +300,6 @@
       "kind": "html-attribute",
       "name": "aria-label",
       "path": "ui/src/ui/chat/grouped-render.ts",
-      "text": "Open in canvas"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "aria-label",
-      "path": "ui/src/ui/chat/grouped-render.ts",
       "text": "Tool returned an error"
     },
     {
@@ -322,13 +315,6 @@
       "name": "title",
       "path": "ui/src/ui/chat/grouped-render.ts",
       "text": "Edit message"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "title",
-      "path": "ui/src/ui/chat/grouped-render.ts",
-      "text": "Open in canvas"
     },
     {
       "count": 1,
@@ -392,6 +378,13 @@
       "name": "label",
       "path": "ui/src/ui/chat/grouped-render.ts",
       "text": "Unknown date"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/chat/grouped-render.ts",
+      "text": "View full message"
     },
     {
       "count": 1,
@@ -609,6 +602,146 @@
       "name": "text",
       "path": "ui/src/ui/components/file-preview-modal.ts",
       "text": "No files match."
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "api.stripe.com"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "sk_live_…"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "stripe"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Stripe live secret key for charges"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "X-API-Key"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Allowed hosts (comma-separated)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Ask me each new host"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Cancel"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Credential type"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Description (optional)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Encrypted on the gateway and injected into requests only for the hosts you allow. The agent uses it without ever seeing the value."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Header name"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Name"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Secret value (key or password)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Use automatically"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "When the agent uses it"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "API key (custom header)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "API token (Bearer)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Basic auth (base64 user:pass)"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "text": "Custom header"
     },
     {
       "count": 1,
@@ -5754,6 +5887,125 @@
       "name": "aria-label",
       "path": "ui/src/ui/views/usage-render-overview.ts",
       "text": "Remove session filter"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "api.stripe.com"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "sk_live_…"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "stripe"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Add a credential"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Allowed hosts (comma-separated)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "and never sees the value."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Ask before use"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Delete"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "http_request"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Inject automatically"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Injection policy"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Loading…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Name"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "No saved credentials yet."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Saved API credentials are encrypted on the gateway and injected into outbound requests only for their allowlisted hosts. The agent uses them via"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Saved credentials"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/vault-view.ts",
+      "text": "Secret value"
     },
     {
       "count": 1,

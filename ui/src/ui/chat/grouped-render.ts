@@ -5,6 +5,7 @@ import { until } from "lit/directives/until.js";
 import { getSafeLocalStorage } from "../../local-storage.ts";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import type { EmbedSandboxMode } from "../embed-sandbox.ts";
+import { formatElapsed } from "../format.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml, toStreamingMarkdownHtml } from "../markdown.ts";
 import { openExternalUrlSafe } from "../open-external-url.ts";
@@ -52,14 +53,6 @@ export type ChatTimestampDisplay = {
   title: string;
   dateTime: string;
 };
-
-function formatElapsed(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rs = s % 60;
-  return `${m}m ${rs}s`;
-}
 
 export function formatChatTimestampForDisplay(timestamp: number): ChatTimestampDisplay {
   const date = new Date(timestamp);

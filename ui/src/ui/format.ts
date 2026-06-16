@@ -77,6 +77,15 @@ export function formatDateTimeMs(
   return timestampMs === undefined ? fallback : new Date(timestampMs).toLocaleString([], options);
 }
 
+/** Live elapsed counter shared by the thinking badge and composer context badge. */
+export function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return `${m}m ${rs}s`;
+}
+
 export function formatList(values?: Array<string | null | undefined>): string {
   if (!values || values.length === 0) {
     return "none";
