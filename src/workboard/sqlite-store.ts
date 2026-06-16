@@ -23,6 +23,7 @@ import type {
   WorkboardNotification,
   WorkboardProof,
   WorkboardRunAttempt,
+  WorkboardSection,
   WorkboardWorkerLog,
 } from "./types.js";
 

@@ -15,6 +15,7 @@ import type { WorkboardKeyedStore } from "./persistence-types.js";
 
 // ── JSON helpers ────────────────────────────────────────────────────
 
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- caller-specified JSON deserialization target type.
 function parse<T>(raw: unknown): T | undefined {
   if (typeof raw !== "string") {
     return undefined;
@@ -47,15 +48,8 @@ function createSqliteKeyedStore<T extends { version?: number }>(
       );
     },
 
-    async update(key: string, value: T): Promise<void> {
-      db.prepare(`UPDATE ${table} SET version = version + 1, data = ? WHERE id = ?`).run(
-        JSON.stringify(value),
-        key,
-      );
-    },
-
-    async delete(key: string): Promise<void> {
-      db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(key);
+    async delete(key: string): Promise<boolean> {
+      return db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(key).changes > 0;
     },
 
     async entries(): Promise<Array<{ key: string; value: T }>> {
@@ -66,17 +60,6 @@ function createSqliteKeyedStore<T extends { version?: number }>(
       return rows
         .map((r) => ({ key: r.id, value: parse<T>(r.data) }))
         .filter((e): e is { key: string; value: T } => e.value != null);
-    },
-
-    async count(): Promise<number> {
-      const row = db.prepare(`SELECT COUNT(*) as cnt FROM ${table}`).get() as {
-        cnt: number;
-      };
-      return row?.cnt ?? 0;
-    },
-
-    close(): void {
-      // Core DB lifecycle is managed externally — no-op here
     },
   };
 }
@@ -109,18 +92,11 @@ function createAttachmentStore(
       const contentBuf = value.contentBase64 ? Buffer.from(value.contentBase64, "base64") : null;
       db.prepare(
         `INSERT OR REPLACE INTO workboard_card_attachments (id, card_id, version, data, content) VALUES (?, ?, 1, ?, ?)`,
-      ).run(key, value.cardId, JSON.stringify(value), contentBuf);
+      ).run(key, value.attachment.cardId, JSON.stringify(value), contentBuf);
     },
 
-    async update(key: string, value: PersistedWorkboardAttachment): Promise<void> {
-      const contentBuf = value.contentBase64 ? Buffer.from(value.contentBase64, "base64") : null;
-      db.prepare(
-        `UPDATE workboard_card_attachments SET version = version + 1, data = ?, content = ? WHERE id = ?`,
-      ).run(JSON.stringify(value), contentBuf, key);
-    },
-
-    async delete(key: string): Promise<void> {
-      db.prepare(`DELETE FROM workboard_card_attachments WHERE id = ?`).run(key);
+    async delete(key: string): Promise<boolean> {
+      return db.prepare(`DELETE FROM workboard_card_attachments WHERE id = ?`).run(key).changes > 0;
     },
 
     async entries(): Promise<Array<{ key: string; value: PersistedWorkboardAttachment }>> {
@@ -132,15 +108,6 @@ function createAttachmentStore(
         .map((r) => ({ key: r.id, value: parse<PersistedWorkboardAttachment>(r.data) }))
         .filter((e): e is { key: string; value: PersistedWorkboardAttachment } => e.value != null);
     },
-
-    async count(): Promise<number> {
-      const row = db.prepare(`SELECT COUNT(*) as cnt FROM workboard_card_attachments`).get() as {
-        cnt: number;
-      };
-      return row?.cnt ?? 0;
-    },
-
-    close(): void {},
   };
 }
 
