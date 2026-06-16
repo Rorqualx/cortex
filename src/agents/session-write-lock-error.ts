@@ -13,8 +13,18 @@ export class SessionWriteLockTimeoutError extends Error {
   readonly timeoutMs: number;
   readonly owner: string;
   readonly lockPath: string;
+  /** PID recorded in the contended lock, when one was readable. */
+  readonly ownerPid: number | undefined;
+  /** Whether that owner PID was alive when the acquire gave up. */
+  readonly ownerPidAlive: boolean;
 
-  constructor(params: { timeoutMs: number; owner: string; lockPath: string }) {
+  constructor(params: {
+    timeoutMs: number;
+    owner: string;
+    lockPath: string;
+    ownerPid?: number | undefined;
+    ownerPidAlive?: boolean;
+  }) {
     super(
       `session file locked (timeout ${params.timeoutMs}ms): ${params.owner} ${params.lockPath}`,
     );
@@ -22,6 +32,8 @@ export class SessionWriteLockTimeoutError extends Error {
     this.timeoutMs = params.timeoutMs;
     this.owner = params.owner;
     this.lockPath = params.lockPath;
+    this.ownerPid = params.ownerPid;
+    this.ownerPidAlive = params.ownerPidAlive ?? false;
   }
 }
 
@@ -71,4 +83,23 @@ export function isSessionWriteLockStaleError(err: unknown): boolean {
 /** Returns whether an error is any session write-lock acquisition failure. */
 export function isSessionWriteLockAcquireError(err: unknown): boolean {
   return isSessionWriteLockTimeoutError(err) || isSessionWriteLockStaleError(err);
+}
+
+/**
+ * Returns whether a timeout error means a still-live run in THIS process holds
+ * the session write lock (e.g. a prior turn mid tool-call). Such contention is
+ * not a real failure — the holder is making legitimate progress and will
+ * release — so callers can surface a "still working" notice instead of the raw
+ * lock-timeout diagnostic. A dead/stale or different-process owner is excluded
+ * so genuine lock failures still propagate.
+ */
+export function isSessionWriteLockBusyWithActiveRun(err: unknown): boolean {
+  if (!isSessionWriteLockTimeoutError(err)) {
+    return false;
+  }
+  const { ownerPid, ownerPidAlive } = err as {
+    ownerPid?: unknown;
+    ownerPidAlive?: unknown;
+  };
+  return typeof ownerPid === "number" && ownerPid === process.pid && ownerPidAlive === true;
 }

@@ -55,6 +55,7 @@ import {
 } from "../../agents/model-selection.js";
 import { resolveOpenAIRuntimeProvider } from "../../agents/openai-routing.js";
 import { buildAgentRuntimeOutcomePlan } from "../../agents/runtime-plan/build.js";
+import { isSessionWriteLockBusyWithActiveRun } from "../../agents/session-write-lock-error.js";
 import {
   resolveGroupSessionKey,
   type SessionEntry,
@@ -99,6 +100,7 @@ import {
 import {
   GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
   HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  SESSION_BUSY_WITH_ACTIVE_RUN_TEXT,
 } from "./agent-runner-failure-copy.js";
 import {
   buildEmbeddedRunExecutionParams,
@@ -864,6 +866,19 @@ export function buildKnownAgentRunFailureReplyPayload(params: {
   resolvedVerboseLevel: VerboseLevel | undefined;
   cfg?: OpenClawConfig;
 }): ReplyPayload | undefined {
+  if (isSessionWriteLockBusyWithActiveRun(params.err)) {
+    // A live in-process turn still holds the session lock; this is contention,
+    // not a failure (see the main run-execution handler for the rationale).
+    return markAgentRunFailureReplyPayload({
+      text: resolveExternalRunFailureTextForConversation({
+        text: SESSION_BUSY_WITH_ACTIVE_RUN_TEXT,
+        sessionCtx: params.sessionCtx,
+        isGenericRunnerFailure: false,
+        cfg: params.cfg,
+      }),
+    });
+  }
+
   const message = formatErrorMessage(params.err);
   const isFallbackSummary = isFallbackSummaryError(params.err);
   const isBilling = isFallbackSummary
@@ -2865,6 +2880,26 @@ export async function runAgentTurnWithFallback(params: {
           setTimeout(resolve, TRANSIENT_HTTP_RETRY_DELAY_MS);
         });
         continue;
+      }
+
+      // A still-live turn in this gateway holds the session write lock (e.g. a
+      // prior turn mid tool-call). The follow-up can't run concurrently without
+      // racing the transcript, so surface a calm "still working" notice instead
+      // of the raw lock-timeout diagnostic. Not a real failure: the holder will
+      // release once its turn finishes.
+      if (isSessionWriteLockBusyWithActiveRun(err)) {
+        params.replyOperation?.fail("run_failed", err);
+        return {
+          kind: "final",
+          payload: markAgentRunFailureReplyPayload({
+            text: resolveExternalRunFailureTextForConversation({
+              text: SESSION_BUSY_WITH_ACTIVE_RUN_TEXT,
+              sessionCtx: params.sessionCtx,
+              isGenericRunnerFailure: false,
+              cfg: params.followupRun.run.config,
+            }),
+          }),
+        };
       }
 
       defaultRuntime.error(`Embedded agent failed before reply: ${message}`);

@@ -4,6 +4,7 @@ import { OAuthRefreshFailureError } from "../../agents/auth-profiles/oauth-refre
 import { FailoverError } from "../../agents/failover-error.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 import { MissingProviderAuthError } from "../../agents/model-auth.js";
+import { SessionWriteLockTimeoutError } from "../../agents/session-write-lock-error.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import type { ModelDefinitionConfig } from "../../config/types.models.js";
 import { CommandLaneClearedError, GatewayDrainingError } from "../../process/command-queue.js";
@@ -5456,6 +5457,49 @@ describe("runAgentTurnWithFallback", () => {
       expect(result.payload.text).toBe(
         "⚠️ Agent failed before reply: LLM error server_error: Something exploded. Please try again, or use /new to start a fresh session.",
       );
+    }
+  });
+
+  it("surfaces a calm busy notice when a live in-process run holds the session lock", async () => {
+    state.runEmbeddedAgentMock.mockRejectedValueOnce(
+      new SessionWriteLockTimeoutError({
+        timeoutMs: 60_000,
+        owner: `pid=${process.pid} alive=true ageMs=225167`,
+        lockPath: "/tmp/session.jsonl.lock",
+        ownerPid: process.pid,
+        ownerPidAlive: true,
+      }),
+    );
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback({
+      commandBody: "did sothing happen",
+      followupRun: createFollowupRun(),
+      sessionCtx: {
+        Provider: "webchat",
+        MessageSid: "msg",
+      } as unknown as TemplateContext,
+      opts: {},
+      typingSignals: createMockTypingSignaler(),
+      blockReplyPipeline: null,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      applyReplyToMode: (payload) => payload,
+      shouldEmitToolResult: () => true,
+      shouldEmitToolOutput: () => false,
+      pendingToolTasks: new Set(),
+      resetSessionAfterRoleOrderingConflict: async () => false,
+      isHeartbeat: false,
+      sessionKey: "main",
+      getActiveSessionEntry: () => undefined,
+      resolvedVerboseLevel: "on",
+    });
+
+    expect(result.kind).toBe("final");
+    if (result.kind === "final") {
+      expect(result.payload.text).toContain("Still finishing your previous message");
+      expect(result.payload.text).not.toContain("session file locked");
+      expect(result.payload.text).not.toContain("Agent failed before reply");
     }
   });
 

@@ -920,7 +920,13 @@ export async function acquireSessionWriteLock(params: {
         respectMaxHold: !heldByThisProcess,
       });
       const owner = describeLockOwnerForError({ payload, inspected });
-      throw new SessionWriteLockTimeoutError({ timeoutMs, owner, lockPath });
+      throw new SessionWriteLockTimeoutError({
+        timeoutMs,
+        owner,
+        lockPath,
+        ownerPid: inspected.pid ?? undefined,
+        ownerPidAlive: inspected.pidAlive,
+      });
     }
     try {
       const lock = await SESSION_LOCKS.acquire(sessionFile, {
@@ -1028,7 +1034,13 @@ export async function acquireSessionWriteLock(params: {
           staleReasons: inspected.staleReasons,
         });
       }
-      throw new SessionWriteLockTimeoutError({ timeoutMs, owner, lockPath: errorLockPath });
+      throw new SessionWriteLockTimeoutError({
+        timeoutMs,
+        owner,
+        lockPath: errorLockPath,
+        ownerPid: inspected.pid ?? undefined,
+        ownerPidAlive: inspected.pidAlive,
+      });
     }
   }
 }

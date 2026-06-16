@@ -5,6 +5,13 @@ export const GENERIC_EXTERNAL_RUN_FAILURE_TEXT =
 export const HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT =
   "⚠️ Heartbeat check failed before it could produce an update. The main chat session remains available.";
 
+// Shown when a follow-up arrives while a prior turn still holds the session
+// write lock (e.g. mid tool-call). The active turn owns the transcript, so the
+// follow-up can't run concurrently — tell the user it's still working rather
+// than surfacing the raw lock-timeout diagnostic.
+export const SESSION_BUSY_WITH_ACTIVE_RUN_TEXT =
+  "⏳ Still finishing your previous message — I can't start this one until the current turn wraps up. Send it again in a moment and I'll pick it up.";
+
 /** True when text is exactly the generic external run failure copy. */
 export function isGenericExternalRunFailureText(text: string | undefined): boolean {
   return text?.trim() === GENERIC_EXTERNAL_RUN_FAILURE_TEXT;
