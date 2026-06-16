@@ -14,6 +14,8 @@ import {
   claimFileForWrite,
   releaseFileClaim,
   formatWriteGuardError,
+  checkReadBeforeMutation,
+  formatReadBeforeEditError,
 } from "../session-awareness/file-write-guard.js";
 import { applyUpdateHunk } from "./apply-patch-update.js";
 import { toRelativeSandboxPath, resolvePathFromInput } from "./path-policy.js";
@@ -121,7 +123,13 @@ export function createApplyPatchTool(
       // ── Cross-session write conflict check ──
       // Parse the patch to extract target file paths, then claim each one.
       // If any file is claimed by another session, block the entire patch.
-      const targetPaths = parsePatchFilePaths(input);
+      const parsedHunks = parsePatchText(input).hunks;
+      const targetPaths = parsedHunks.map((h) => h.path);
+      // Only `update` hunks mutate existing content and need a prior read; `add`
+      // creates and `delete` removes, neither of which requires reading first.
+      const updatePaths = new Set(
+        parsedHunks.filter((h) => h.kind === "update").map((h) => h.path),
+      );
       const resolvedPaths: string[] = [];
       const { resolvePathFromInput } = await import("./path-policy.js");
       const { resolve } = await import("node:path");
@@ -131,6 +139,16 @@ export function createApplyPatchTool(
           : workspaceOnly !== false
             ? resolvePathFromInput(relPath, cwd)
             : resolve(cwd, relPath);
+        // Read-before-edit: block blind updates before claiming, releasing prior claims.
+        if (updatePaths.has(relPath)) {
+          const readCheck = checkReadBeforeMutation(absPath, "apply_patch");
+          if (!readCheck.ok) {
+            for (const rp of resolvedPaths) {
+              releaseFileClaim(rp);
+            }
+            throw new Error(formatReadBeforeEditError(readCheck.error));
+          }
+        }
         resolvedPaths.push(absPath);
         const claim = claimFileForWrite(absPath, "apply_patch");
         if (!claim.ok) {
@@ -162,12 +180,6 @@ export function createApplyPatchTool(
       }
     },
   };
-}
-
-/** Parse patch text and return the set of file paths that would be affected. */
-export function parsePatchFilePaths(input: string): string[] {
-  const parsed = parsePatchText(input);
-  return parsed.hunks.map((h) => h.path);
 }
 
 /** Parse and apply a patch envelope to the configured filesystem target. */

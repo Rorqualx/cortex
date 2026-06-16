@@ -11,6 +11,8 @@ import {
   claimFileForWrite,
   releaseFileClaim,
   formatWriteGuardError,
+  checkReadBeforeMutation,
+  formatReadBeforeEditError,
 } from "../../../session-awareness/file-write-guard.js";
 
 const fileMutationQueues = new Map<string, Promise<void>>();
@@ -43,6 +45,12 @@ export async function withFileMutationQueue<T>(
   options?: { toolName?: string },
 ): Promise<T> {
   const key = getMutationQueueKey(filePath);
+
+  // ── Read-before-edit check (no-op for non-edit tools / new files / outside a session) ──
+  const readCheck = checkReadBeforeMutation(filePath, options?.toolName ?? "unknown");
+  if (!readCheck.ok) {
+    throw new Error(formatReadBeforeEditError(readCheck.error));
+  }
 
   // ── Cross-session write conflict check ──
   const claimResult = claimFileForWrite(filePath, options?.toolName ?? "unknown");

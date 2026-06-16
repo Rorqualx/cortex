@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import { expandHomePrefix } from "../infra/home-dir.js";
 import { parseAlternatives } from "./matcher.js";
-import type { PrefixRule, BannedPrefix, ExecPolicyToml } from "./types.js";
+import type { PrefixRule, BannedPrefix, ExecPolicyToml, WebPolicy } from "./types.js";
 
 const DEFAULT_POLICY_PATH = "~/.openclaw/exec-policy.toml";
 
@@ -41,9 +41,32 @@ function parseBannedFromToml(raw: NonNullable<ExecPolicyToml["banned"]>[number])
   };
 }
 
+function normalizeHosts(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((h): h is string => typeof h === "string")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function parseWebFromToml(raw: ExecPolicyToml["web"]): WebPolicy | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const allow = normalizeHosts(raw.allow);
+  const deny = normalizeHosts(raw.deny);
+  if (allow.length === 0 && deny.length === 0) {
+    return undefined;
+  }
+  return { allow, deny };
+}
+
 export function parsePolicyToml(tomlText: string): {
   rules: PrefixRule[];
   banned: BannedPrefix[];
+  web?: WebPolicy;
 } {
   const parsed = parseToml(tomlText) as unknown as ExecPolicyToml;
   const rules: PrefixRule[] = [];
@@ -61,7 +84,7 @@ export function parsePolicyToml(tomlText: string): {
     }
   }
 
-  return { rules, banned };
+  return { rules, banned, web: parseWebFromToml(parsed.web) };
 }
 
 /**
@@ -83,7 +106,7 @@ export function indexRules(rules: PrefixRule[]): Map<string, PrefixRule[]> {
 
 export function loadPolicyFromFile(
   filePath: string,
-): { rules: PrefixRule[]; banned: BannedPrefix[] } | null {
+): { rules: PrefixRule[]; banned: BannedPrefix[]; web?: WebPolicy } | null {
   try {
     if (!fs.existsSync(filePath)) return null;
     const raw = fs.readFileSync(filePath, "utf8");

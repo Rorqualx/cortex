@@ -80,7 +80,10 @@ import { createChannelMessageReplyPipeline } from "../../plugin-sdk/channel-outb
 import type { ChannelRouteRef } from "../../plugin-sdk/channel-route.js";
 import { isPluginOwnedSessionBindingRecord } from "../../plugins/conversation-binding.js";
 import { normalizeAgentId, scopeLegacySessionKeyToAgent } from "../../routing/session-key.js";
-import { sessionActivityRegistry as sessionAwarenessRegistry } from "../../session-awareness/index.js";
+import {
+  readLedger,
+  sessionActivityRegistry as sessionAwarenessRegistry,
+} from "../../session-awareness/index.js";
 import { normalizeInputProvenance, type InputProvenance } from "../../sessions/input-provenance.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
@@ -4485,12 +4488,14 @@ export const chatHandlers: GatewayRequestHandlers = {
           context.removeChatRun(clientRunId, clientRunId, sessionKey);
           // Release all file claims held by this session
           sessionAwarenessRegistry.releaseAllForSession(sessionKey);
+          readLedger.clearSession(sessionKey);
         });
     } catch (err) {
       activeRunAbort.cleanup();
       clearActiveChatSendDedupeRun(context.dedupe, activeChatSendDedupeKey, clientRunId);
       context.removeChatRun(clientRunId, clientRunId, sessionKey);
       sessionAwarenessRegistry.releaseAllForSession(sessionKey);
+      readLedger.clearSession(sessionKey);
       const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
       const payload = {
         runId: clientRunId,

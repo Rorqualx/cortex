@@ -20,6 +20,14 @@ export interface BannedPrefix {
   justification?: string;
 }
 
+/** Web egress allowlist/denylist of host-glob patterns (e.g. "docs.openclaw.ai", "*.github.com", "*"). */
+export interface WebPolicy {
+  /** Hosts permitted to be fetched. When non-empty, a host must match to be allowed. */
+  allow: string[];
+  /** Hosts always forbidden. Deny wins over allow. */
+  deny: string[];
+}
+
 /** The full policy object loaded from config. */
 export interface ExecPolicy {
   /** Prefix rules indexed by first-token for O(1) lookup. */
@@ -30,6 +38,8 @@ export interface ExecPolicy {
   banned: BannedPrefix[];
   /** Whether this is a default-generated policy (no user file). */
   isDefault: boolean;
+  /** Optional web egress policy. Absent → web fetches are unrestricted (default). */
+  web?: WebPolicy;
 }
 
 /** Result of evaluating a command against the policy. */
@@ -55,4 +65,8 @@ export interface ExecPolicyToml {
     pattern: string | string[];
     justification?: string;
   }>;
+  web?: {
+    allow?: string[];
+    deny?: string[];
+  };
 }

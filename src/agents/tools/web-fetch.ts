@@ -10,6 +10,7 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import { Type } from "typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { evaluateWebPolicy, loadPolicy } from "../../exec-policy/index.js";
 import { SsrFBlockedError, type LookupFn, type SsrFPolicy } from "../../infra/net/ssrf.js";
 import { logDebug } from "../../logger.js";
 import type { RuntimeWebFetchMetadata } from "../../secrets/runtime-web-tools.types.js";
@@ -418,7 +419,30 @@ async function maybeFetchProviderWebFetchPayload(
   return payload;
 }
 
+function webEgressBlockedError(url: string, redirected: boolean): Error {
+  let host = url;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    /* keep the raw url in the message */
+  }
+  const how = redirected ? `redirected to ${host}, which is` : `${host} is`;
+  return new Error(
+    `Web fetch blocked by egress policy: ${how} not allowed. ` +
+      `Add it to the [web] allow list in ~/.openclaw/exec-policy.toml.`,
+  );
+}
+
 async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string, unknown>> {
+  // Egress allowlist (optional `[web]` section of ~/.openclaw/exec-policy.toml).
+  // Snapshot once and reuse for the post-redirect re-check below; loadPolicy() is
+  // cached by file hash. Checked before cache/network so a denied host is never
+  // served from cache or fetched.
+  const execPolicy = loadPolicy();
+  if (evaluateWebPolicy(params.url, execPolicy) === "forbidden") {
+    throw webEgressBlockedError(params.url, false);
+  }
+
   const allowRfc2544BenchmarkRange = params.ssrfPolicy?.allowRfc2544BenchmarkRange === true;
   const allowIpv6UniqueLocalRange = params.ssrfPolicy?.allowIpv6UniqueLocalRange === true;
   const useTrustedEnvProxy = params.useTrustedEnvProxy;
@@ -500,6 +524,12 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
   }
 
   try {
+    // Re-check the post-redirect host: a redirect may have landed on a denied host
+    // even when the requested URL was allowed. The connection already happened, but
+    // this prevents returning content fetched from a denied final host.
+    if (finalUrl !== params.url && evaluateWebPolicy(finalUrl, execPolicy) === "forbidden") {
+      throw webEgressBlockedError(finalUrl, true);
+    }
     if (!res.ok) {
       if (params.signal?.aborted) {
         throw params.signal.reason instanceof Error ? params.signal.reason : new Error("aborted");

@@ -4,7 +4,7 @@
  * Reads text and image files through local or injected operations with highlighting, resizing, and bounded output.
  */
 import { constants } from "node:fs";
-import { access as fsAccess, readFile as fsReadFile } from "node:fs/promises";
+import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -14,6 +14,7 @@ import {
   normalizeMediaReferenceSource,
   resolveMediaReferenceLocalPath,
 } from "../../../media/media-reference.js";
+import { readLedger } from "../../../session-awareness/read-ledger.js";
 import { getReadmePath } from "../../config.js";
 import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.js";
 import {
@@ -340,6 +341,20 @@ export function createReadToolDefinition(
               // Read text content.
               const buffer = await ops.readFile(absolutePath);
               const textContent = buffer.toString("utf-8");
+              // Record this read in the session ledger (powers read-before-edit and
+              // the unchanged-repeat annotation). mtime is best-effort: remote/injected
+              // ReadOperations backends may not be stat-able, so we degrade to size-only.
+              const fileSize = buffer.length;
+              let mtimeMs: number | undefined;
+              try {
+                mtimeMs = (await fsStat(absolutePath)).mtimeMs;
+              } catch {
+                mtimeMs = undefined;
+              }
+              const isFullRead = offset === undefined && limit === undefined;
+              const unchangedRepeat =
+                isFullRead && readLedger.wasReadFresh(absolutePath, { size: fileSize, mtimeMs });
+              readLedger.recordRead(absolutePath, { size: fileSize, mtimeMs });
               const allLines = textContent.split("\n");
               const totalFileLines = allLines.length;
               // Apply offset if specified. Convert from 1-indexed input to 0-indexed array access.
@@ -392,6 +407,12 @@ export function createReadToolDefinition(
               } else {
                 // No truncation and no remaining user-limited content.
                 outputText = truncation.content;
+              }
+              if (unchangedRepeat) {
+                // Cheap, compaction-safe signal: full content is still returned, we
+                // just flag that it matches what the model already read this session.
+                const label = formatPathRelativeToCwdOrAbsolute(absolutePath, cwd);
+                outputText = `[${label} unchanged since your earlier read this session]\n${outputText}`;
               }
               content = [{ type: "text", text: outputText }];
             }

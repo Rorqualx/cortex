@@ -41,9 +41,14 @@ export {
   claimFileForWrite,
   releaseFileClaim,
   formatWriteGuardError,
+  checkReadBeforeMutation,
+  formatReadBeforeEditError,
   type WriteGuardResult,
   type WriteGuardError,
+  type ReadBeforeEditError,
 } from "./file-write-guard.js";
+
+export { readLedger, type ReadRecord, type ReadStat } from "./read-ledger.js";
 
 export {
   checkRestartSafety,

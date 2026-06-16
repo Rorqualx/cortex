@@ -141,6 +141,8 @@ export function loadPolicy(): ExecPolicy {
     allRules: mergedRules,
     banned: mergedBanned,
     isDefault: false,
+    // Web egress is user-only: defaults never restrict it, so existing users are unaffected.
+    ...(userPolicy.web ? { web: userPolicy.web } : {}),
   };
 
   cachedPolicy = policy;
