@@ -183,13 +183,10 @@ export function enforceTokenBudget(
     return messages;
   }
 
-  // Identify protected indices: first system message + last user message
+  // Identify protected indices: the last user message. (System prompts are not
+  // part of the message array — they are passed separately — so there is no
+  // system message to protect here.)
   const protectedIndices = new Set<number>();
-
-  // First message is usually system
-  if (messages.length > 0 && messages[0].role === "system") {
-    protectedIndices.add(0);
-  }
 
   // Last user message
   for (let i = messages.length - 1; i >= 0; i--) {

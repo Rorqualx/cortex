@@ -436,7 +436,6 @@ describe("TokenBudgetEnforcer", () => {
   it("drops tool results when over budget", () => {
     const largeContent = "x".repeat(10000);
     const messages = [
-      { role: "system" as const, content: "You are helpful." },
       {
         role: "toolResult" as const,
         toolCallId: "1",
@@ -448,8 +447,7 @@ describe("TokenBudgetEnforcer", () => {
       { role: "user" as const, content: "what did you find?" },
     ];
     const result = enforceTokenBudget(messages, 100, DEFAULT_COMPRESSION_CONFIG);
-    // System + user should survive, tool result should be dropped
-    expect(result.some((m) => m.role === "system")).toBe(true);
+    // The last user message should survive; the oversized tool result is dropped.
     expect(result.some((m) => m.role === "user")).toBe(true);
     expect(result.length).toBeLessThan(messages.length);
   });
@@ -945,87 +943,6 @@ describe("compressAssembledContext with CCR", () => {
     const toolMsg = result.messages[0];
     const text = (toolMsg as { content: { text: string }[] }).content[0]?.text ?? "";
     expect(text).not.toContain("Retrieve: hash=");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Phase 3: CacheAligner
-// ---------------------------------------------------------------------------
-
-import { alignCachePrefix } from "./cache-aligner.js";
-
-describe("CacheAligner", () => {
-  it("moves dynamic lines to tail block in system messages", () => {
-    const messages = [
-      {
-        role: "system" as const,
-        content:
-          "You are helpful.\nCurrent date: 2026-06-07\nSession: sess_abc123def\nAlways be concise.",
-      },
-      { role: "user" as const, content: "hello" },
-    ];
-    const result = alignCachePrefix(messages);
-    expect(result.length).toBe(2);
-
-    const sysContent = result[0].content as string;
-    // Static lines should be at the top
-    expect(sysContent).toContain("You are helpful.");
-    expect(sysContent).toContain("Always be concise.");
-    // Dynamic lines should be in the tail
-    expect(sysContent).toContain("[Dynamic Context]");
-    expect(sysContent).toContain("2026-06-07");
-    expect(sysContent).toContain("sess_abc123def");
-  });
-
-  it("does not modify non-system messages", () => {
-    const messages = [
-      { role: "user" as const, content: "The date is 2026-06-07 and session is sess_abc" },
-    ];
-    const result = alignCachePrefix(messages);
-    expect(result[0].content).toBe("The date is 2026-06-07 and session is sess_abc");
-  });
-
-  it("passes through when no dynamic content found", () => {
-    const messages = [{ role: "system" as const, content: "You are helpful.\nAlways be concise." }];
-    const result = alignCachePrefix(messages);
-    expect(result).toBe(messages); // same reference — no copy needed
-  });
-
-  it("passes through when all content is dynamic", () => {
-    const messages = [{ role: "system" as const, content: "2026-06-07T12:00:00\nsess_abc123" }];
-    const result = alignCachePrefix(messages);
-    expect(result).toBe(messages);
-  });
-
-  it("handles ISO timestamps as dynamic", () => {
-    const sysContent = "Static instruction.\nLast updated: 2026-06-07T15:30:00Z";
-    const messages = [{ role: "system" as const, content: sysContent }];
-    const result = alignCachePrefix(messages);
-    const aligned = result[0].content as string;
-    expect(aligned).toContain("[Dynamic Context]");
-    expect(aligned.indexOf("Static instruction")).toBeLessThan(
-      aligned.indexOf("[Dynamic Context]"),
-    );
-  });
-
-  it("handles array content system messages", () => {
-    const messages = [
-      {
-        role: "system" as const,
-        content: [{ type: "text" as const, text: "Static.\nDate: 2026-06-07" }],
-      },
-    ];
-    const result = alignCachePrefix(messages);
-    const text = (result[0].content as { text: string }[])[0].text;
-    expect(text).toContain("[Dynamic Context]");
-  });
-
-  it("does not treat separators as dynamic", () => {
-    const sysContent = "Instructions\n---\nMore instructions";
-    const messages = [{ role: "system" as const, content: sysContent }];
-    const result = alignCachePrefix(messages);
-    // No dynamic content → passthrough
-    expect(result).toBe(messages);
   });
 });
 

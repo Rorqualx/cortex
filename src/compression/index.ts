@@ -18,7 +18,6 @@
  */
 import { createHash } from "node:crypto";
 import type { AgentMessage } from "../agents/runtime/index.js";
-import { alignCachePrefix } from "./cache-aligner.js";
 import { ContextTracker } from "./ccr/context-tracker.js";
 import { buildCompressionMarker } from "./ccr/retrieval-tool.js";
 import { CCRStore } from "./ccr/store.js";
@@ -63,11 +62,10 @@ export async function compressAssembledContext(
   ccrStore?: CCRStore,
   contextTracker?: ContextTracker,
 ): Promise<CompressionResultWithCCR> {
-  // Stage 1: Cache alignment (Phase 3 — currently a passthrough)
-  const aligned = alignCachePrefix(messages);
-
-  // Stage 2: Compress tool-result content + optional CCR storage
-  const compressed = compressToolResults(aligned, config, ccrStore, contextTracker);
+  // Stage 1: Compress tool-result content + optional CCR storage.
+  // (System-prompt cache-prefix stabilization lives in agents/system-prompt-cache-boundary.ts,
+  // which operates on the system prompt — not the message array — so no alignment step here.)
+  const compressed = compressToolResults(messages, config, ccrStore, contextTracker);
 
   // Stage 3: Token budget enforcement
   let finalMessages = compressed.messages;
@@ -223,19 +221,13 @@ function extractTextContent(msg: AgentMessage): string | null {
   return null;
 }
 
-function replaceToolResultContent(msg: AgentMessage, newContent: string): AgentMessage {
-  if (typeof msg.content === "string") {
-    return { ...msg, content: newContent };
-  }
+type ToolResultMsg = Extract<AgentMessage, { role: "toolResult" }>;
 
-  if (Array.isArray(msg.content)) {
-    return {
-      ...msg,
-      content: [{ type: "text" as const, text: newContent }],
-    };
-  }
-
-  return msg;
+// Only ever called on toolResult messages (the compress loop filters by role).
+// ToolResult content is always a content-block array, so we rebuild it as a
+// single text block holding the compressed payload.
+function replaceToolResultContent(msg: ToolResultMsg, newContent: string): ToolResultMsg {
+  return { ...msg, content: [{ type: "text" as const, text: newContent }] };
 }
 
 function estimateTotalChars(messages: AgentMessage[]): number {
