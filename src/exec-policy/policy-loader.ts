@@ -9,7 +9,9 @@ let cachedHash: string | null = null;
 
 function fileHash(filePath: string): string | null {
   try {
-    if (!fs.existsSync(filePath)) return null;
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
     const stat = fs.statSync(filePath);
     return `${stat.mtimeMs}:${stat.size}`;
   } catch {
@@ -23,7 +25,9 @@ function fileHash(filePath: string): string | null {
  */
 export function ensureDefaultPolicyFile(): void {
   const filePath = resolvePolicyPath();
-  if (fs.existsSync(filePath)) return;
+  if (fs.existsSync(filePath)) {
+    return;
+  }
 
   const lines: string[] = [
     "# OpenClaw Exec Policy",
@@ -45,7 +49,7 @@ export function ensureDefaultPolicyFile(): void {
   lines.push("# === Git (read-only) ===");
   const defaultRules = getDefaultRules();
   for (const r of defaultRules.filter(
-    (r) => r.pattern[0]?.[0] === "git" && r.decision === "allow",
+    (rule) => rule.pattern[0]?.[0] === "git" && rule.decision === "allow",
   )) {
     const p = r.pattern.map((a) =>
       a.length === 1 ? `"${a[0]}"` : `[${a.map((x) => `"${x}"`).join(", ")}]`,
@@ -53,19 +57,23 @@ export function ensureDefaultPolicyFile(): void {
     lines.push("[[rule]]");
     lines.push(`pattern = [${p.join(", ")}]`);
     lines.push(`decision = "${r.decision}"`);
-    if (r.justification) lines.push(`justification = "${r.justification}"`);
+    if (r.justification) {
+      lines.push(`justification = "${r.justification}"`);
+    }
     lines.push("");
   }
 
   lines.push("# === Forbidden commands ===");
-  for (const r of defaultRules.filter((r) => r.decision === "forbidden")) {
+  for (const r of defaultRules.filter((rule) => rule.decision === "forbidden")) {
     const p = r.pattern.map((a) =>
       a.length === 1 ? `"${a[0]}"` : `[${a.map((x) => `"${x}"`).join(", ")}]`,
     );
     lines.push("[[rule]]");
     lines.push(`pattern = [${p.join(", ")}]`);
     lines.push(`decision = "${r.decision}"`);
-    if (r.justification) lines.push(`justification = "${r.justification}"`);
+    if (r.justification) {
+      lines.push(`justification = "${r.justification}"`);
+    }
     lines.push("");
   }
 
@@ -73,7 +81,9 @@ export function ensureDefaultPolicyFile(): void {
   for (const b of getDefaultBanned()) {
     lines.push("[[banned]]");
     lines.push(`pattern = [${b.pattern.map((p) => `"${p}"`).join(", ")}]`);
-    if (b.justification) lines.push(`justification = "${b.justification}"`);
+    if (b.justification) {
+      lines.push(`justification = "${b.justification}"`);
+    }
     lines.push("");
   }
 

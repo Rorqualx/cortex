@@ -12,7 +12,9 @@ export function resolvePolicyPath(): string {
 
 function normalizeDecision(value: string): "allow" | "prompt" | "forbidden" {
   const lower = value.toLowerCase().trim();
-  if (lower === "allow" || lower === "prompt" || lower === "forbidden") return lower;
+  if (lower === "allow" || lower === "prompt" || lower === "forbidden") {
+    return lower;
+  }
   return "prompt"; // Safe default for unknown decisions
 }
 
@@ -93,7 +95,9 @@ export function parsePolicyToml(tomlText: string): {
 export function indexRules(rules: PrefixRule[]): Map<string, PrefixRule[]> {
   const index = new Map<string, PrefixRule[]>();
   for (const rule of rules) {
-    if (rule.pattern.length === 0) continue;
+    if (rule.pattern.length === 0) {
+      continue;
+    }
     const firstAlternatives = rule.pattern[0];
     for (const alt of firstAlternatives) {
       const existing = index.get(alt) ?? [];
@@ -108,7 +112,9 @@ export function loadPolicyFromFile(
   filePath: string,
 ): { rules: PrefixRule[]; banned: BannedPrefix[]; web?: WebPolicy } | null {
   try {
-    if (!fs.existsSync(filePath)) return null;
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
     const raw = fs.readFileSync(filePath, "utf8");
     return parsePolicyToml(raw);
   } catch {

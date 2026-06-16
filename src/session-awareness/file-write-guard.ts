@@ -43,7 +43,7 @@ export interface WriteGuardError {
  * - { allowed: true } if no conflict or guard is disabled
  * - { allowed: false, conflict } if another session has claimed the file
  */
-export function checkFileWrite(filePath: string, toolName: string): WriteGuardResult {
+export function checkFileWrite(filePath: string, _toolName: string): WriteGuardResult {
   const ctx = getSessionContext();
 
   if (!ctx) {
@@ -203,7 +203,7 @@ export function formatWriteGuardError(error: WriteGuardError): string {
   return [
     `⛔ Cross-session write conflict:`,
     ``,
-    `${error.message}`,
+    error.message,
     ``,
     `💡 ${error.suggestion}`,
     ``,

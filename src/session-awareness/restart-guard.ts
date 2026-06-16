@@ -10,11 +10,7 @@
  *   node -e "const { checkRestartSafety } = require('./dist/session-awareness/restart-guard.js'); console.log(JSON.stringify(checkRestartSafety()));"
  */
 
-import {
-  sessionActivityRegistry,
-  type SessionActivity,
-  type ScopedClaim,
-} from "./session-activity-registry.js";
+import { sessionActivityRegistry, type ScopedClaim } from "./session-activity-registry.js";
 
 export interface RestartSafetyCheck {
   /** Whether it's safe to restart (no active sessions). */
@@ -77,7 +73,9 @@ export function checkRestartSafety(): RestartSafetyCheck {
 
   // Add sessions that have scoped claims but no file claims
   for (const scoped of allScopedClaims) {
-    if (sessionMap.has(scoped.sessionKey)) continue;
+    if (sessionMap.has(scoped.sessionKey)) {
+      continue;
+    }
     const session: RestartSafetySession = {
       sessionKey: scoped.sessionKey,
       agentId: scoped.agentId,

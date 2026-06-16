@@ -42,8 +42,12 @@ export function parseAlternatives(
  * the corresponding command token.
  */
 export function matchesPrefix(commandTokens: string[], pattern: string[][]): boolean {
-  if (pattern.length === 0) return false;
-  if (commandTokens.length < pattern.length) return false;
+  if (pattern.length === 0) {
+    return false;
+  }
+  if (commandTokens.length < pattern.length) {
+    return false;
+  }
 
   for (let i = 0; i < pattern.length; i++) {
     const alternatives = pattern[i];
@@ -141,7 +145,9 @@ export function evaluateBanned(
  * When rules match at DIFFERENT specificity, the longest (most specific) match wins.
  */
 export function effectiveDecision(matchedRules: PrefixRule[]): ExecPolicyDecision {
-  if (matchedRules.length === 0) return "prompt";
+  if (matchedRules.length === 0) {
+    return "prompt";
+  }
 
   // Group by specificity (pattern length)
   const bySpec = new Map<number, ExecPolicyDecision[]>();
@@ -157,8 +163,12 @@ export function effectiveDecision(matchedRules: PrefixRule[]): ExecPolicyDecisio
   const decisions = bySpec.get(maxSpec) ?? [];
 
   // Within same specificity, strictest wins
-  if (decisions.includes("forbidden")) return "forbidden";
-  if (decisions.includes("prompt")) return "prompt";
+  if (decisions.includes("forbidden")) {
+    return "forbidden";
+  }
+  if (decisions.includes("prompt")) {
+    return "prompt";
+  }
   return "allow";
 }
 

@@ -131,14 +131,12 @@ export function createApplyPatchTool(
         parsedHunks.filter((h) => h.kind === "update").map((h) => h.path),
       );
       const resolvedPaths: string[] = [];
-      const { resolvePathFromInput } = await import("./path-policy.js");
-      const { resolve } = await import("node:path");
       for (const relPath of targetPaths) {
         const absPath = sandbox
           ? relPath // sandbox paths are resolved internally
-          : workspaceOnly !== false
+          : workspaceOnly
             ? resolvePathFromInput(relPath, cwd)
-            : resolve(cwd, relPath);
+            : path.resolve(cwd, relPath);
         // Read-before-edit: block blind updates before claiming, releasing prior claims.
         if (updatePaths.has(relPath)) {
           const readCheck = checkReadBeforeMutation(absPath, "apply_patch");

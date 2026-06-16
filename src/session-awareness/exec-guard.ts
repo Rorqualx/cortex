@@ -164,9 +164,13 @@ export function checkExecGuard(command: string, cwd: string): ExecGuardResult {
  * Release an exec guard claim after the command completes.
  */
 export function releaseExecGuard(scopeKey: string | undefined): void {
-  if (!scopeKey) return;
+  if (!scopeKey) {
+    return;
+  }
   const ctx = getSessionContext();
-  if (!ctx || !sessionActivityRegistry.enabled) return;
+  if (!ctx || !sessionActivityRegistry.enabled) {
+    return;
+  }
   sessionActivityRegistry.releaseScoped(ctx.sessionKey, scopeKey);
 }
 
@@ -177,7 +181,7 @@ export function formatExecGuardError(error: ExecGuardError): string {
   return [
     `⛔ Cross-session operation conflict:`,
     ``,
-    `${error.message}`,
+    error.message,
     ``,
     `💡 ${error.suggestion}`,
     ``,

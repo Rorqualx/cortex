@@ -114,21 +114,21 @@ export class SessionActivityRegistry {
   private readonly sessions = new Map<string, SessionActivity>(); // sessionKey → metadata
   private readonly scopedClaims = new Map<string, ScopedClaim>(); // scopeKey → claim
   private readonly claimExpiryMs: number;
-  private _enabled: boolean;
+  private enabledFlag: boolean;
 
   constructor(options?: SessionActivityRegistryOptions) {
     this.claimExpiryMs = options?.claimExpiryMs ?? DEFAULT_CLAIM_EXPIRY_MS;
-    this._enabled = options?.enabled ?? true;
+    this.enabledFlag = options?.enabled ?? true;
   }
 
   // ── Configuration ──────────────────────────────────────────────────
 
   get enabled(): boolean {
-    return this._enabled;
+    return this.enabledFlag;
   }
 
   setEnabled(value: boolean): void {
-    this._enabled = value;
+    this.enabledFlag = value;
   }
 
   // ── Claim Management ───────────────────────────────────────────────
@@ -145,7 +145,7 @@ export class SessionActivityRegistry {
     toolName: string,
     options?: { agentId?: string },
   ): { ok: true; claim: FileClaim } | { ok: false; conflict: FileConflict } {
-    if (!this._enabled) {
+    if (!this.enabledFlag) {
       const resolvedPath = resolveFilePath(filePath);
       const claim: FileClaim = {
         sessionKey,
@@ -236,7 +236,9 @@ export class SessionActivityRegistry {
   isFileClaimed(filePath: string): boolean {
     const resolvedPath = resolveFilePath(filePath);
     const claim = this.claims.get(resolvedPath);
-    if (!claim) return false;
+    if (!claim) {
+      return false;
+    }
     // Check for expiry
     if (Date.now() - claim.claimedAt > this.claimExpiryMs) {
       this.claims.delete(resolvedPath);
@@ -251,7 +253,9 @@ export class SessionActivityRegistry {
   getFileClaim(filePath: string): FileClaim | undefined {
     const resolvedPath = resolveFilePath(filePath);
     const claim = this.claims.get(resolvedPath);
-    if (!claim) return undefined;
+    if (!claim) {
+      return undefined;
+    }
     if (Date.now() - claim.claimedAt > this.claimExpiryMs) {
       this.claims.delete(resolvedPath);
       return undefined;
@@ -265,12 +269,16 @@ export class SessionActivityRegistry {
   checkConflict(sessionKey: string, filePath: string): FileConflict | undefined {
     const resolvedPath = resolveFilePath(filePath);
     const existing = this.claims.get(resolvedPath);
-    if (!existing) return undefined;
+    if (!existing) {
+      return undefined;
+    }
     if (Date.now() - existing.claimedAt > this.claimExpiryMs) {
       this.claims.delete(resolvedPath);
       return undefined;
     }
-    if (existing.sessionKey === sessionKey) return undefined;
+    if (existing.sessionKey === sessionKey) {
+      return undefined;
+    }
     return { filePath, claimedBy: existing };
   }
 
@@ -348,7 +356,7 @@ export class SessionActivityRegistry {
     description: string,
     options?: { agentId?: string },
   ): { ok: true; claim: ScopedClaim } | { ok: false; conflict: ScopedConflict } {
-    if (!this._enabled) {
+    if (!this.enabledFlag) {
       return {
         ok: true,
         claim: {
@@ -425,12 +433,16 @@ export class SessionActivityRegistry {
    */
   checkScopedConflict(sessionKey: string, scopeKey: string): ScopedConflict | undefined {
     const existing = this.scopedClaims.get(scopeKey);
-    if (!existing) return undefined;
+    if (!existing) {
+      return undefined;
+    }
     if (Date.now() - existing.claimedAt > this.claimExpiryMs) {
       this.scopedClaims.delete(scopeKey);
       return undefined;
     }
-    if (existing.sessionKey === sessionKey) return undefined;
+    if (existing.sessionKey === sessionKey) {
+      return undefined;
+    }
     return { scope: existing.scope, claimedBy: existing };
   }
 
@@ -448,7 +460,9 @@ export class SessionActivityRegistry {
     const existing = this.sessions.get(sessionKey);
     if (existing) {
       existing.lastActiveAt = now;
-      if (agentId) existing.agentId = agentId;
+      if (agentId) {
+        existing.agentId = agentId;
+      }
     } else {
       this.sessions.set(sessionKey, {
         sessionKey,

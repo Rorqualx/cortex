@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, unlinkSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 /**
@@ -12,12 +12,7 @@ import { join } from "node:path";
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { checkExecGuard, releaseExecGuard, formatExecGuardError } from "./exec-guard.js";
-import {
-  checkFileWrite,
-  claimFileForWrite,
-  releaseFileClaim,
-  formatWriteGuardError,
-} from "./file-write-guard.js";
+import { claimFileForWrite, formatWriteGuardError } from "./file-write-guard.js";
 import { SessionActivityRegistry, sessionActivityRegistry } from "./session-activity-registry.js";
 import {
   getSessionContext,
@@ -129,7 +124,9 @@ describe("SessionActivityRegistry", () => {
       const fastRegistry = new SessionActivityRegistry({ claimExpiryMs: 50 });
       fastRegistry.claimFile("session-a", "/tmp/test.ts", "write");
       // Wait for expiry
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => {
+        setTimeout(r, 100);
+      });
       const result = fastRegistry.claimFile("session-b", "/tmp/test.ts", "edit");
       expect(result.ok).toBe(true);
     });
@@ -137,7 +134,9 @@ describe("SessionActivityRegistry", () => {
     it("expireStaleClaims removes old entries", async () => {
       const fastRegistry = new SessionActivityRegistry({ claimExpiryMs: 50 });
       fastRegistry.claimFile("session-a", "/tmp/test.ts", "write");
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => {
+        setTimeout(r, 100);
+      });
       const expired = fastRegistry.expireStaleClaims();
       expect(expired).toBe(1);
       expect(fastRegistry.claimCount).toBe(0);
@@ -184,7 +183,9 @@ describe("SessionContext", () => {
   it("propagates through async operations", async () => {
     await runWithSessionContext({ sessionKey: "async-session" }, async () => {
       expect(getSessionKey()).toBe("async-session");
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => {
+        setTimeout(r, 10);
+      });
       expect(getSessionKey()).toBe("async-session");
     });
   });

@@ -64,7 +64,6 @@ import { formatErrorMessage, formatUncaughtError } from "../../infra/errors.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import { normalizeReplyPayloadsForDelivery } from "../../infra/outbound/payloads.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
-import { logLargePayload } from "../../logging/diagnostic-payload.js";
 import {
   appendLocalMediaParentRoots,
   getAgentScopedMediaLocalRoots,
@@ -127,7 +126,6 @@ import {
   augmentChatHistoryWithCanvasBlocks,
   dropPreSessionStartAnnouncePairs,
   projectChatDisplayMessage,
-  projectChatDisplayMessages,
   projectRecentChatDisplayMessages,
   resolveEffectiveChatHistoryMaxChars,
 } from "../chat-display-projection.js";
@@ -158,7 +156,6 @@ import {
   readRecentSessionMessagesWithStatsAsync,
   resolveGatewayModelSupportsImages,
   resolveDeletedAgentIdFromSessionKey,
-  readRecentSessionMessagesAsync,
   resolveSessionModelRef,
   resolveSessionStoreKey,
 } from "../session-utils.js";
@@ -2460,7 +2457,7 @@ async function handleChatHistoryRequest({
   const effectiveMaxChars = resolveEffectiveChatHistoryMaxChars(cfg, maxChars);
   const perMessageHardCap = Math.min(CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES, maxHistoryBytes);
 
-  let paginationHasMore = false;
+  let paginationHasMore: boolean;
   let paginationNextCursor: string | undefined;
   let bounded: { messages: unknown[]; placeholderCount: number };
 
@@ -2565,8 +2562,8 @@ async function handleChatHistoryRequest({
         localMessages.length > rawHistoryWindow.maxMessages ? 1 : 0
       ] as Record<string, unknown> | undefined;
       const seq =
-        firstRaw?.__openclaw && typeof firstRaw.__openclaw === "object"
-          ? (firstRaw.__openclaw as Record<string, unknown>).seq
+        firstRaw?.["__openclaw"] && typeof firstRaw["__openclaw"] === "object"
+          ? (firstRaw["__openclaw"] as Record<string, unknown>).seq
           : undefined;
       if (typeof seq === "number" && seq > 0) {
         paginationNextCursor = `seq:${seq}`;
