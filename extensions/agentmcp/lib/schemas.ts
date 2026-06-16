@@ -355,7 +355,6 @@ export function makeSwarmShape(provider: Provider) {
   // Drop max_iterations from the explore base (swarm has per-agent caps
   // instead of one global iteration cap) by destructuring it out.
   const explore = makeExploreShape(provider);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { max_iterations: _drop, ...exploreNoMaxIter } = explore;
   return {
     ...exploreNoMaxIter,
@@ -399,7 +398,6 @@ export function makeSwarmV2Shape(provider: Provider) {
   // max_iterations_per_subagent for sub-agents) AND num_agents (the CEO
   // decides per-spawn dynamically; not a fixed cap).
   const explore = makeExploreShape(provider);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { max_iterations: _drop, ...exploreNoMaxIter } = explore;
 
   // Per-provider iter cap default. Plan §"Per-provider max_iterations_per_subagent":
