@@ -95,7 +95,9 @@ export function verifySignedReceipt(signed: SignedAttestationReceipt, key: strin
     const expected = signReceipt(signed, key, signed.algorithm);
     const expectedBuf = Buffer.from(expected, "hex");
     const actualBuf = Buffer.from(signed.signature, "hex");
-    if (expectedBuf.length !== actualBuf.length) return false;
+    if (expectedBuf.length !== actualBuf.length) {
+      return false;
+    }
     return timingSafeEqual(expectedBuf, actualBuf);
   } catch {
     return false;

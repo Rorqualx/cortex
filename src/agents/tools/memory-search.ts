@@ -101,7 +101,9 @@ async function loadSummariesWithEmbeddings(
     for (const dateDir of dateDirs) {
       const datePath = path.join(transcriptsDir, dateDir);
       const stat = await fs.promises.stat(datePath).catch(() => null);
-      if (!stat?.isDirectory()) continue;
+      if (!stat?.isDirectory()) {
+        continue;
+      }
 
       // Read session directories within date directory
       const sessionDirs = await fs.promises.readdir(datePath).catch(() => []);
@@ -111,7 +113,9 @@ async function loadSummariesWithEmbeddings(
 
         // Try to read summary.json
         const summaryContent = await fs.promises.readFile(summaryPath, "utf-8").catch(() => null);
-        if (!summaryContent) continue;
+        if (!summaryContent) {
+          continue;
+        }
 
         const summary = JSON.parse(summaryContent) as TranscriptsSummary;
         if (summary.embedding) {
@@ -176,7 +180,7 @@ export async function executeMemorySearch(params: {
       similarityScore: cosineSimilarity(queryEmbedding, summary.embedding),
     }))
     .filter((result) => result.similarityScore >= minScore)
-    .sort((a, b) => b.similarityScore - a.similarityScore)
+    .toSorted((a, b) => b.similarityScore - a.similarityScore)
     .slice(0, topK);
 
   return results;

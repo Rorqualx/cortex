@@ -1958,7 +1958,9 @@ function projectLabelFromName(name: string, icon: string): string {
 function findProjectLabel(card: WorkboardCard, projectId: string): string | undefined {
   return card.labels.find((label) => {
     const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
-    if (!match) return false;
+    if (!match) {
+      return false;
+    }
     const name = match[1]?.trim();
     const id = name?.toLowerCase().replace(/\s+/g, "-");
     return id === projectId;
@@ -2000,7 +2002,9 @@ async function saveProjectModal(props: WorkboardProps) {
   try {
     for (const card of cardsToUpdate) {
       const oldLabel = findProjectLabel(card, editingId);
-      if (!oldLabel) continue;
+      if (!oldLabel) {
+        continue;
+      }
       const newLabels = card.labels.map((label) => (label === oldLabel ? newLabel : label));
       await client.request("workboard.cards.update", {
         id: card.id,
@@ -2033,11 +2037,15 @@ async function deleteProjectFromCards(params: {
 }) {
   const { host, project, client, requestUpdate } = params;
   const state = getWorkboardState(host);
-  if (!client) return;
+  if (!client) {
+    return;
+  }
 
   const projectId = project.id;
   const cardsToUpdate = state.cards.filter((card) => findProjectLabel(card, projectId));
-  if (cardsToUpdate.length === 0) return;
+  if (cardsToUpdate.length === 0) {
+    return;
+  }
 
   state.loading = true;
   state.error = null;
@@ -2047,7 +2055,9 @@ async function deleteProjectFromCards(params: {
     for (const card of cardsToUpdate) {
       const newLabels = card.labels.filter((label) => {
         const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
-        if (!match) return true;
+        if (!match) {
+          return true;
+        }
         const name = match[1]?.trim();
         const id = name?.toLowerCase().replace(/\s+/g, "-");
         return id !== projectId;

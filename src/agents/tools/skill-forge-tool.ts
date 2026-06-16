@@ -330,9 +330,13 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
 
 function readMaxUnusedDaysParam(params: Record<string, unknown>): number | undefined {
   const val = params.max_unused_days;
-  if (val === undefined || val === null) return undefined;
+  if (val === undefined || val === null) {
+    return undefined;
+  }
   const parsed = Number(val);
-  if (!Number.isFinite(parsed) || parsed < 1) return undefined;
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return undefined;
+  }
   return Math.floor(parsed);
 }
 
@@ -343,7 +347,9 @@ async function listDirs(dirPath: string): Promise<string[]> {
     for (const entry of entries) {
       try {
         const stat = await fsp.stat(path.join(dirPath, entry));
-        if (stat.isDirectory()) dirs.push(entry);
+        if (stat.isDirectory()) {
+          dirs.push(entry);
+        }
       } catch {
         // skip
       }
@@ -358,7 +364,9 @@ async function readSkillDesc(skillDir: string): Promise<string> {
   try {
     const content = await fsp.readFile(path.join(skillDir, "SKILL.md"), "utf8");
     const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-    if (!match) return "";
+    if (!match) {
+      return "";
+    }
     const descMatch = match[1].match(/^description:\s*['"]?(.+?)['"]?\s*$/m);
     return descMatch?.[1]?.trim() ?? "";
   } catch {

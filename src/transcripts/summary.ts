@@ -119,7 +119,9 @@ export function renderTranscriptsMarkdown(summary: TranscriptsSummary): string {
  */
 export function buildSummaryEmbeddingText(summary: TranscriptsSummary): string {
   const parts: string[] = [];
-  if (summary.overview) parts.push(summary.overview);
+  if (summary.overview) {
+    parts.push(summary.overview);
+  }
   if (summary.decisions.length > 0) {
     parts.push("Decisions:");
     parts.push(...summary.decisions);

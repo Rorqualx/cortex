@@ -89,7 +89,9 @@ function pkgSectionsHash(src) {
     const pkg = JSON.parse(src);
     const sections = {};
     for (const k of ["scripts", "dependencies", "devDependencies"]) {
-      if (pkg[k] !== undefined) sections[k] = pkg[k];
+      if (pkg[k] !== undefined) {
+        sections[k] = pkg[k];
+      }
     }
     return sha256(JSON.stringify(sections));
   } catch {
@@ -99,11 +101,19 @@ function pkgSectionsHash(src) {
 
 function fileInfo(path) {
   const src = read(path);
-  if (src === null) return null;
+  if (src === null) {
+    return null;
+  }
   const info = { hash: sha256(src) };
-  if (path === ".gitattributes") info.mergeOursLines = gitattrMergeLines(src);
-  if (path.endsWith(".json") && path !== "package.json") info.jsonKeys = jsonTopKeys(src);
-  if (path === "package.json") info.pkgSectionsHash = pkgSectionsHash(src);
+  if (path === ".gitattributes") {
+    info.mergeOursLines = gitattrMergeLines(src);
+  }
+  if (path.endsWith(".json") && path !== "package.json") {
+    info.jsonKeys = jsonTopKeys(src);
+  }
+  if (path === "package.json") {
+    info.pkgSectionsHash = pkgSectionsHash(src);
+  }
   return info;
 }
 
@@ -115,7 +125,9 @@ function buildSnapshot() {
     process.exit(1);
   }
   const files = {};
-  for (const f of CRITICAL_FILES) files[f] = fileInfo(f);
+  for (const f of CRITICAL_FILES) {
+    files[f] = fileInfo(f);
+  }
   return { timestamp: new Date().toISOString(), branch, headSha, files };
 }
 
@@ -138,7 +150,9 @@ function verify() {
   }
   const baseline = JSON.parse(raw);
   const current = {};
-  for (const f of CRITICAL_FILES) current[f] = fileInfo(f);
+  for (const f of CRITICAL_FILES) {
+    current[f] = fileInfo(f);
+  }
 
   let ok = true;
   const report = [];
@@ -162,24 +176,37 @@ function verify() {
     }
 
     const issues = [];
-    if (b.hash !== cur.hash) issues.push("hash");
-    if (JSON.stringify(b.jsonKeys?.sort()) !== JSON.stringify(cur.jsonKeys?.sort()))
+    if (b.hash !== cur.hash) {
+      issues.push("hash");
+    }
+    if (JSON.stringify(b.jsonKeys?.toSorted()) !== JSON.stringify(cur.jsonKeys?.toSorted())) {
       issues.push("jsonKeys");
-    if (JSON.stringify(b.mergeOursLines?.sort()) !== JSON.stringify(cur.mergeOursLines?.sort()))
+    }
+    if (
+      JSON.stringify(b.mergeOursLines?.toSorted()) !==
+      JSON.stringify(cur.mergeOursLines?.toSorted())
+    ) {
       issues.push("merge=ours lines");
-    if (b.pkgSectionsHash !== cur.pkgSectionsHash) issues.push("pkg sections");
+    }
+    if (b.pkgSectionsHash !== cur.pkgSectionsHash) {
+      issues.push("pkg sections");
+    }
 
     if (issues.length) {
       ok = false;
       report.push({ f, status: "DRIFT", detail: issues.join(", ") });
-    } else report.push({ f, status: "PASS", detail: "" });
+    } else {
+      report.push({ f, status: "PASS", detail: "" });
+    }
   }
 
   for (const p of FORK_EXCLUSIVE_PATHS) {
     if (!pathOk(p)) {
       ok = false;
       report.push({ f: p, status: "MISSING", detail: "fork path gone" });
-    } else report.push({ f: p, status: "PASS", detail: "" });
+    } else {
+      report.push({ f: p, status: "PASS", detail: "" });
+    }
   }
 
   for (const r of report) {
@@ -210,25 +237,38 @@ function diff() {
   for (const f of CRITICAL_FILES) {
     const b = baseline.files[f],
       cur = current.files[f];
-    if (!b && !cur) continue;
+    if (!b && !cur) {
+      continue;
+    }
     const changes = [];
 
     if (b && cur) {
-      if (b.hash !== cur.hash)
+      if (b.hash !== cur.hash) {
         changes.push(`hash ${b.hash.slice(0, 10)} → ${cur.hash.slice(0, 10)}`);
+      }
       if (b.jsonKeys && cur.jsonKeys) {
         const added = cur.jsonKeys.filter((k) => !b.jsonKeys.includes(k));
         const gone = b.jsonKeys.filter((k) => !cur.jsonKeys.includes(k));
-        if (added.length) changes.push(`keys +${added}`);
-        if (gone.length) changes.push(`keys -${gone}`);
+        if (added.length) {
+          changes.push(`keys +${added}`);
+        }
+        if (gone.length) {
+          changes.push(`keys -${gone}`);
+        }
       }
       if (b.mergeOursLines && cur.mergeOursLines) {
         const added = cur.mergeOursLines.filter((l) => !b.mergeOursLines.includes(l));
         const gone = b.mergeOursLines.filter((l) => !cur.mergeOursLines.includes(l));
-        if (added.length) changes.push(`merge=ours +${added.length}`);
-        if (gone.length) changes.push(`merge=ours -${gone.length}`);
+        if (added.length) {
+          changes.push(`merge=ours +${added.length}`);
+        }
+        if (gone.length) {
+          changes.push(`merge=ours -${gone.length}`);
+        }
       }
-      if (b.pkgSectionsHash !== cur.pkgSectionsHash) changes.push("pkg sections changed");
+      if (b.pkgSectionsHash !== cur.pkgSectionsHash) {
+        changes.push("pkg sections changed");
+      }
     } else if (!b) {
       changes.push("file appeared");
     } else {
@@ -238,7 +278,9 @@ function diff() {
     if (changes.length) {
       any = true;
       console.log(c.yellow(`\n  📄 ${f}`));
-      for (const ch of changes) console.log(`      ${c.dim("→")} ${ch}`);
+      for (const ch of changes) {
+        console.log(`      ${c.dim("→")} ${ch}`);
+      }
     }
   }
 
@@ -249,16 +291,21 @@ function diff() {
     }
   }
 
-  if (!any) console.log(c.green("✓ No drift."));
+  if (!any) {
+    console.log(c.green("✓ No drift."));
+  }
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────
 
 const cmd = process.argv[2];
-if (cmd === "generate") generate();
-else if (cmd === "verify") verify();
-else if (cmd === "diff") diff();
-else {
+if (cmd === "generate") {
+  generate();
+} else if (cmd === "verify") {
+  verify();
+} else if (cmd === "diff") {
+  diff();
+} else {
   console.error("Usage: fork-config-snapshot.mjs <generate|verify|diff>");
   process.exit(1);
 }

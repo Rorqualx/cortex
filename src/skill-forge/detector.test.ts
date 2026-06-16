@@ -242,7 +242,7 @@ describe("runDetector", () => {
         .filter((c): c is Extract<Candidate, { lane: "explicit" }> => c.lane === "explicit")
         .map((c) => [c.captureDir, c.successScore]),
     );
-    expect(explicitByDir.get(cleanDir)).toBe(1.0);
+    expect(explicitByDir.get(cleanDir)).toBe(1);
     expect(explicitByDir.get(frustratedDir)).toBe(0.5);
     expect(explicitByDir.get(erroringDir)).toBe(0.5);
     // Error-recovery captures contain a tool error by definition.
@@ -259,7 +259,7 @@ describe("runDetector", () => {
     ]);
     const candidates = await runDetector({ captureDirs: [dir] });
     const explicit = candidates.find((c) => c.lane === "explicit");
-    expect(explicit?.successScore).toBe(1.0);
+    expect(explicit?.successScore).toBe(1);
   });
 
   it("one tainted member pins the whole tool-shape cluster at 0.5", async () => {

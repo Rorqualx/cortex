@@ -255,7 +255,9 @@ describe("subagent-isolation: end-to-end integration", () => {
 
       // Verify others were deleted
       for (let i = 0; i < isolatedIds.length; i++) {
-        if (i === accessedIndex) continue;
+        if (i === accessedIndex) {
+          continue;
+        }
 
         const exists = await isolatedTranscriptExists({
           agentDir: testAgentDir,

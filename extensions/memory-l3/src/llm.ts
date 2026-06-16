@@ -214,7 +214,9 @@ export function parseJsonResponse(raw: string): unknown {
 function normalizeFacts(facts: ReadonlyArray<unknown>): ExtractedFact[] {
   const out: ExtractedFact[] = [];
   for (const candidate of facts) {
-    if (!candidate || typeof candidate !== "object") continue;
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
     const o = candidate as Record<string, unknown>;
     // GLM-5.1 inconsistently emits the prose field as "text", "fact", or
     // "content" depending on phase of the moon. Accept any of them; the
@@ -230,10 +232,14 @@ function normalizeFacts(facts: ReadonlyArray<unknown>): ExtractedFact[] {
             : null;
     const dedupRaw =
       typeof o.dedupKey === "string" ? o.dedupKey : typeof o.key === "string" ? o.key : null;
-    if (textRaw === null || dedupRaw === null) continue;
+    if (textRaw === null || dedupRaw === null) {
+      continue;
+    }
     const text = textRaw.trim();
     const dedupKey = dedupRaw.trim();
-    if (text.length === 0 || dedupKey.length === 0) continue;
+    if (text.length === 0 || dedupKey.length === 0) {
+      continue;
+    }
     const importanceRaw = typeof o.importance === "number" ? o.importance : 0.5;
     out.push({
       text,
@@ -259,7 +265,9 @@ function normalizeCertainty(value: unknown): FactCertainty | undefined {
 function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[] {
   const out: ExtractedTypedFact[] = [];
   for (const candidate of facts) {
-    if (!candidate || typeof candidate !== "object") continue;
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
     const o = candidate as Record<string, unknown>;
     // Same field-name tolerance pattern as normalizeFacts: accept common
     // synonyms the model emits when it drifts from the schema. "span" is a
@@ -274,9 +282,13 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
           : typeof o.source === "string"
             ? o.source
             : null;
-    if (slotRaw === null || valueRaw === null || spanRaw === null) continue;
+    if (slotRaw === null || valueRaw === null || spanRaw === null) {
+      continue;
+    }
     const slot = slotRaw.trim();
-    if (slot.length === 0 || valueRaw.length === 0 || spanRaw.length === 0) continue;
+    if (slot.length === 0 || valueRaw.length === 0 || spanRaw.length === 0) {
+      continue;
+    }
     const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
     const unit = typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null;
     out.push({
@@ -293,7 +305,9 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
 function normalizeDecisions(items: ReadonlyArray<unknown>): ExtractedDecision[] {
   const out: ExtractedDecision[] = [];
   for (const candidate of items) {
-    if (!candidate || typeof candidate !== "object") continue;
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
     const o = candidate as Record<string, unknown>;
     const textRaw =
       typeof o.text === "string"
@@ -311,9 +325,13 @@ function normalizeDecisions(items: ReadonlyArray<unknown>): ExtractedDecision[] 
           : typeof o.source === "string"
             ? o.source
             : null;
-    if (textRaw === null || spanRaw === null) continue;
+    if (textRaw === null || spanRaw === null) {
+      continue;
+    }
     const text = textRaw.trim();
-    if (text.length === 0 || spanRaw.length === 0) continue;
+    if (text.length === 0 || spanRaw.length === 0) {
+      continue;
+    }
     const makerRaw =
       typeof o.maker === "string" ? o.maker : typeof o.who === "string" ? o.who : "unknown";
     const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
@@ -330,7 +348,9 @@ function normalizeDecisions(items: ReadonlyArray<unknown>): ExtractedDecision[] 
 function normalizeActions(items: ReadonlyArray<unknown>): ExtractedActionItem[] {
   const out: ExtractedActionItem[] = [];
   for (const candidate of items) {
-    if (!candidate || typeof candidate !== "object") continue;
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
     const o = candidate as Record<string, unknown>;
     const textRaw =
       typeof o.text === "string"
@@ -348,9 +368,13 @@ function normalizeActions(items: ReadonlyArray<unknown>): ExtractedActionItem[] 
           : typeof o.source === "string"
             ? o.source
             : null;
-    if (textRaw === null || spanRaw === null) continue;
+    if (textRaw === null || spanRaw === null) {
+      continue;
+    }
     const text = textRaw.trim();
-    if (text.length === 0 || spanRaw.length === 0) continue;
+    if (text.length === 0 || spanRaw.length === 0) {
+      continue;
+    }
     const ownerRaw =
       typeof o.owner === "string"
         ? o.owner
@@ -391,19 +415,30 @@ function buildExtractUserPrompt(messages: ReadonlyArray<AgentMessage>): string {
 function formatMessageForPrompt(message: AgentMessage): string {
   const m = message as { role?: string; content?: unknown };
   const text = stringifyContent(m.content);
-  if (!m.role || text.length === 0) return "";
+  if (!m.role || text.length === 0) {
+    return "";
+  }
   return `${m.role}: ${text}`;
 }
 
 function stringifyContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
   const parts: string[] = [];
   for (const block of content) {
-    if (!block || typeof block !== "object") continue;
+    if (!block || typeof block !== "object") {
+      continue;
+    }
     const b = block as { type?: string; text?: string; thinking?: string };
-    if (typeof b.text === "string") parts.push(b.text);
-    else if (typeof b.thinking === "string") parts.push(`[thinking] ${b.thinking}`);
+    if (typeof b.text === "string") {
+      parts.push(b.text);
+    } else if (typeof b.thinking === "string") {
+      parts.push(`[thinking] ${b.thinking}`);
+    }
   }
   return parts.join("\n");
 }

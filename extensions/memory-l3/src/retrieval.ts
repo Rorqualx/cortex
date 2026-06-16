@@ -124,12 +124,18 @@ export async function retrieveTopK(params: {
   queryEmbedding?: number[];
 }): Promise<RetrievedFact[]> {
   const topK = Math.max(0, params.topK);
-  if (topK === 0) return [];
+  if (topK === 0) {
+    return [];
+  }
   const queryTokens = tokenize(params.query);
-  if (queryTokens.size === 0) return [];
+  if (queryTokens.size === 0) {
+    return [];
+  }
 
   const paths = await params.storage.listL2ChunkPaths();
-  if (paths.length === 0) return [];
+  if (paths.length === 0) {
+    return [];
+  }
 
   const now = params.now ?? Date.now();
   const config = params.config ?? DEFAULT_SCORING_CONFIG;
@@ -179,7 +185,9 @@ export async function retrieveTopK(params: {
 
   for (const filePath of candidatePaths) {
     const doc = await params.storage.readL2ChunkAtPath(filePath);
-    if (!doc) continue;
+    if (!doc) {
+      continue;
+    }
     const chunkId = doc.frontmatter.id;
     const l3Boost = epochBoosts.get(chunkId) ?? 0;
     for (const fact of doc.frontmatter.facts) {
@@ -193,7 +201,9 @@ export async function retrieveTopK(params: {
       });
     }
     for (const typed of doc.frontmatter.typedFacts ?? []) {
-      if (canonicalSlots.has(typed.slot)) continue;
+      if (canonicalSlots.has(typed.slot)) {
+        continue;
+      }
       items.push({
         fact: typedFactAsL2Fact(typed),
         chunkId,
@@ -206,7 +216,9 @@ export async function retrieveTopK(params: {
 
   // Long-term typed tier
   for (const ltt of longtermTyped.facts) {
-    if (ltt.archived) continue;
+    if (ltt.archived) {
+      continue;
+    }
     items.push({
       fact: longTermTypedAsL2Fact(ltt),
       chunkId: "longterm-typed",
@@ -219,8 +231,12 @@ export async function retrieveTopK(params: {
   // Long-term prose tier
   const longterm = await params.storage.readLongTerm();
   for (const lt of longterm.facts) {
-    if (lt.archived) continue;
-    if (lt.supersededBy) continue;
+    if (lt.archived) {
+      continue;
+    }
+    if (lt.supersededBy) {
+      continue;
+    }
     items.push({
       fact: longTermAsL2Fact(lt),
       chunkId: "longterm",
@@ -278,7 +294,9 @@ export async function retrieveTopK(params: {
           dedupKey: `memory-core:${hit.path}:${hit.startLine}`,
         };
         const score = hit.score * config.weightMemoryCoreTierMultiplier;
-        if (score <= 0) continue;
+        if (score <= 0) {
+          continue;
+        }
         scored.push({
           fact,
           score,
@@ -344,7 +362,9 @@ export async function retrieveTopK(params: {
     try {
       const shared = await readSharedFacts(params.sharedMemoryDir);
       for (const sf of shared) {
-        if (sf.archived) continue;
+        if (sf.archived) {
+          continue;
+        }
         const fact: L2Fact = {
           id: sf.id,
           text: sf.text,
@@ -434,16 +454,20 @@ export async function retrieveTopK(params: {
   // When top-K is sparse (< topK/2 results from fact tiers), expand
   // search into raw message-level chunks. This catches relevant
   // conversation context that wasn't captured as structured facts.
-  let result = scored.slice(0, topK);
+  const result = scored.slice(0, topK);
   if (params.queryEmbedding && result.length < Math.ceil(topK / 2)) {
     try {
       const msgChunkIds = await params.storage.listMessageChunkIds();
       for (const cid of msgChunkIds) {
         const chunks = await params.storage.readMessageChunks(cid);
         for (const chunk of chunks) {
-          if (!chunk.embedding || chunk.embedding.length !== params.queryEmbedding.length) continue;
+          if (!chunk.embedding || chunk.embedding.length !== params.queryEmbedding.length) {
+            continue;
+          }
           const sim = cosineSimilarity(params.queryEmbedding, chunk.embedding);
-          if (sim < 0.3) continue; // Minimum relevance threshold
+          if (sim < 0.3) {
+            continue;
+          } // Minimum relevance threshold
           result.push({
             fact: {
               id: chunk.id,
@@ -528,15 +552,23 @@ async function buildEpochBoostMap(
 ): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   const paths = await storage.listL3EpochPaths();
-  if (paths.length === 0) return out;
+  if (paths.length === 0) {
+    return out;
+  }
   for (const filePath of paths) {
     const doc = await storage.readL3EpochAtPath(filePath);
-    if (!doc) continue;
+    if (!doc) {
+      continue;
+    }
     const epochScore = scoreEpochAgainstQuery(doc.frontmatter, queryTokens);
-    if (epochScore <= 0) continue;
+    if (epochScore <= 0) {
+      continue;
+    }
     const startSeq = chunkSeq(doc.frontmatter.startChunkId);
     const endSeq = chunkSeq(doc.frontmatter.endChunkId);
-    if (startSeq === null || endSeq === null) continue;
+    if (startSeq === null || endSeq === null) {
+      continue;
+    }
     // Mark the boost by the (startSeq..endSeq) range; chunk lookup happens
     // through chunkSeqInRange when we apply the map back to facts. For O(1)
     // application we eagerly resolve via a per-seq marker since chunk ids
@@ -550,33 +582,45 @@ async function resolveBoostMap(
   storage: Storage,
   rangeMap: Map<string, number>,
 ): Promise<Map<string, number>> {
-  if (rangeMap.size === 0) return new Map();
+  if (rangeMap.size === 0) {
+    return new Map();
+  }
   const ranges: Array<{ start: number; end: number; score: number }> = [];
   for (const [key, score] of rangeMap) {
     const m = /^__range__(\d+)_(\d+)$/.exec(key);
-    if (!m) continue;
+    if (!m) {
+      continue;
+    }
     ranges.push({ start: Number.parseInt(m[1], 10), end: Number.parseInt(m[2], 10), score });
   }
   const out = new Map<string, number>();
   const paths = await storage.listL2ChunkPaths();
   for (const filePath of paths) {
     const doc = await storage.readL2ChunkAtPath(filePath);
-    if (!doc) continue;
+    if (!doc) {
+      continue;
+    }
     const seq = chunkSeq(doc.frontmatter.id);
-    if (seq === null) continue;
+    if (seq === null) {
+      continue;
+    }
     let best = 0;
     for (const range of ranges) {
       if (seq >= range.start && seq <= range.end && range.score > best) {
         best = range.score;
       }
     }
-    if (best > 0) out.set(doc.frontmatter.id, best);
+    if (best > 0) {
+      out.set(doc.frontmatter.id, best);
+    }
   }
   return out;
 }
 
 function scoreEpochAgainstQuery(epoch: L3EpochFrontmatter, queryTokens: Set<string>): number {
-  if (epoch.representativeFacts.length === 0) return 0;
+  if (epoch.representativeFacts.length === 0) {
+    return 0;
+  }
   const epochText = epoch.representativeFacts.map((f) => f.text).join(" ");
   return jaccard(queryTokens, tokenize(epochText));
 }
@@ -598,22 +642,32 @@ async function selectEpochPaths(
   topN: number,
 ): Promise<string[]> {
   const allPaths = await storage.listL2ChunkPaths();
-  if (allPaths.length === 0) return [];
+  if (allPaths.length === 0) {
+    return [];
+  }
 
   // Few chunks — not worth filtering, just return everything
-  if (allPaths.length <= 8) return allPaths;
+  if (allPaths.length <= 8) {
+    return allPaths;
+  }
 
   // Score each epoch
   const epochPaths = await storage.listL3EpochPaths();
-  if (epochPaths.length === 0) return allPaths; // No epochs yet
+  if (epochPaths.length === 0) {
+    return allPaths;
+  } // No epochs yet
 
   const scored: Array<{ score: number; startSeq: number; endSeq: number }> = [];
   for (const epPath of epochPaths) {
     const doc = await storage.readL3EpochAtPath(epPath);
-    if (!doc) continue;
+    if (!doc) {
+      continue;
+    }
     const startSeq = chunkSeq(doc.frontmatter.startChunkId);
     const endSeq = chunkSeq(doc.frontmatter.endChunkId);
-    if (startSeq === null || endSeq === null) continue;
+    if (startSeq === null || endSeq === null) {
+      continue;
+    }
     const score = scoreEpochAgainstQuery(doc.frontmatter, queryTokens);
     scored.push({ score, startSeq, endSeq });
   }
@@ -639,14 +693,18 @@ async function selectEpochPaths(
   const selected = new Set<string>();
   for (const filePath of allPaths) {
     const doc = await storage.readL2ChunkAtPath(filePath);
-    if (!doc) continue;
+    if (!doc) {
+      continue;
+    }
     const seq = chunkSeq(doc.frontmatter.id);
     if (seq === null) {
       selected.add(filePath); // Include non-sequenced chunks
       continue;
     }
     const inRange = topEpochs.some((e) => seq >= e.startSeq && seq <= e.endSeq);
-    if (inRange) selected.add(filePath);
+    if (inRange) {
+      selected.add(filePath);
+    }
   }
 
   return allPaths.filter((p) => selected.has(p));
@@ -661,7 +719,9 @@ export function formatMemorySection(
   facts: ReadonlyArray<RetrievedFact>,
   options?: { now?: number },
 ): string {
-  if (facts.length === 0) return "";
+  if (facts.length === 0) {
+    return "";
+  }
   const now = options?.now;
   const lines = facts.map((r) => {
     const marker = tierMarker(r.tier);
@@ -683,13 +743,25 @@ export function formatMemorySection(
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function formatRelativeAge(ageMs: number): string {
-  if (!Number.isFinite(ageMs) || ageMs < 0) return "(now)";
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
+    return "(now)";
+  }
   const days = ageMs / MS_PER_DAY;
-  if (days < 1) return "(today)";
-  if (days < 2) return "(yesterday)";
-  if (days < 14) return `(${Math.round(days)}d ago)`;
-  if (days < 60) return `(${Math.round(days / 7)}w ago)`;
-  if (days < 365) return `(${Math.round(days / 30)}mo ago)`;
+  if (days < 1) {
+    return "(today)";
+  }
+  if (days < 2) {
+    return "(yesterday)";
+  }
+  if (days < 14) {
+    return `(${Math.round(days)}d ago)`;
+  }
+  if (days < 60) {
+    return `(${Math.round(days / 7)}w ago)`;
+  }
+  if (days < 365) {
+    return `(${Math.round(days / 30)}mo ago)`;
+  }
   return `(${(days / 365).toFixed(1)}y ago)`;
 }
 

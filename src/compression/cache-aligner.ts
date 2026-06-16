@@ -33,8 +33,12 @@ const SEPARATOR_RE = /^\s*(---+|===+|```|#)\s*$/;
  */
 function isDynamicLine(line: string): boolean {
   const trimmed = line.trim();
-  if (trimmed.length === 0) return false;
-  if (SEPARATOR_RE.test(trimmed)) return false;
+  if (trimmed.length === 0) {
+    return false;
+  }
+  if (SEPARATOR_RE.test(trimmed)) {
+    return false;
+  }
   return DYNAMIC_PATTERNS.some((p) => p.test(trimmed));
 }
 
@@ -97,8 +101,12 @@ export function alignCachePrefix(messages: AgentMessage[]): AgentMessage[] {
 // ---------------------------------------------------------------------------
 
 function extractSystemContent(msg: AgentMessage): string | null {
-  if (!("content" in msg) || !msg.content) return null;
-  if (typeof msg.content === "string") return msg.content;
+  if (!("content" in msg) || !msg.content) {
+    return null;
+  }
+  if (typeof msg.content === "string") {
+    return msg.content;
+  }
   if (Array.isArray(msg.content)) {
     return msg.content
       .map((part: unknown) => {

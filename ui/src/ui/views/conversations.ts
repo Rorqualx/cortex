@@ -100,15 +100,29 @@ function resolveConversationMeta(row: GatewaySessionRow): string {
 
 function filterConversations(rows: GatewaySessionRow[], query: string): GatewaySessionRow[] {
   const q = normalizeOptionalString(query)?.toLowerCase() ?? "";
-  if (!q) return rows;
+  if (!q) {
+    return rows;
+  }
   return rows.filter((row) => {
     const title = resolveConversationTitle(row).toLowerCase();
-    if (title.includes(q)) return true;
-    if (row.key.toLowerCase().includes(q)) return true;
-    if (row.firstMessagePreview?.toLowerCase().includes(q)) return true;
-    if (row.goal?.objective?.toLowerCase().includes(q)) return true;
-    if (row.derivedTitle?.toLowerCase().includes(q)) return true;
-    if (row.label?.toLowerCase().includes(q)) return true;
+    if (title.includes(q)) {
+      return true;
+    }
+    if (row.key.toLowerCase().includes(q)) {
+      return true;
+    }
+    if (row.firstMessagePreview?.toLowerCase().includes(q)) {
+      return true;
+    }
+    if (row.goal?.objective?.toLowerCase().includes(q)) {
+      return true;
+    }
+    if (row.derivedTitle?.toLowerCase().includes(q)) {
+      return true;
+    }
+    if (row.label?.toLowerCase().includes(q)) {
+      return true;
+    }
     return false;
   });
 }

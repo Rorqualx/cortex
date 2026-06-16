@@ -95,8 +95,12 @@ export async function loadSkillForgeStatus(
   state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
   options?: { force?: boolean },
 ): Promise<void> {
-  if (!state.client || !state.connected || state.skillForgeLoading) return;
-  if (state.skillForgeLoaded && !options?.force) return;
+  if (!state.client || !state.connected || state.skillForgeLoading) {
+    return;
+  }
+  if (state.skillForgeLoaded && !options?.force) {
+    return;
+  }
 
   state.skillForgeLoading = true;
   state.skillForgeError = null;
@@ -122,7 +126,9 @@ export async function loadSkillForgeStatus(
 export async function runForgePipeline(
   state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
 ): Promise<void> {
-  if (!state.client || !state.connected || state.skillForgeRunBusy) return;
+  if (!state.client || !state.connected || state.skillForgeRunBusy) {
+    return;
+  }
 
   state.skillForgeRunBusy = true;
   state.skillForgeError = null;
@@ -148,7 +154,9 @@ export async function promoteSkill(
   state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
   name: string,
 ): Promise<void> {
-  if (!state.client || !state.connected || state.skillForgeActionBusy) return;
+  if (!state.client || !state.connected || state.skillForgeActionBusy) {
+    return;
+  }
 
   state.skillForgeActionBusy = name;
   state.skillForgeError = null;
@@ -172,7 +180,9 @@ export async function retireSkill(
   name: string,
   reason?: string,
 ): Promise<void> {
-  if (!state.client || !state.connected || state.skillForgeActionBusy) return;
+  if (!state.client || !state.connected || state.skillForgeActionBusy) {
+    return;
+  }
 
   state.skillForgeActionBusy = name;
   state.skillForgeError = null;
@@ -197,7 +207,9 @@ export async function retireSkill(
 export async function runDecaySweep(
   state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
 ): Promise<void> {
-  if (!state.client || !state.connected || state.skillForgeRunBusy) return;
+  if (!state.client || !state.connected || state.skillForgeRunBusy) {
+    return;
+  }
 
   state.skillForgeRunBusy = true;
   state.skillForgeError = null;
@@ -219,7 +231,9 @@ export async function runDecaySweep(
 // ── Selection / filtering ──────────────────────────────────────────
 
 export function allSkills(state: SkillForgeState): ForgeSkill[] {
-  if (!state.skillForgeStatus) return [];
+  if (!state.skillForgeStatus) {
+    return [];
+  }
   const { promoted, staged, retired } = state.skillForgeStatus.skills;
   return [...promoted, ...staged, ...retired];
 }
@@ -267,7 +281,9 @@ const FORGE_MODE_KEY = "openclaw:skill-forge-mode:v1";
 export function loadSkillForgeMode(): "board" | "grid" {
   try {
     const stored = localStorage.getItem(FORGE_MODE_KEY);
-    if (stored === "grid") return "grid";
+    if (stored === "grid") {
+      return "grid";
+    }
   } catch {}
   return "board";
 }
@@ -280,8 +296,12 @@ export function setSkillForgeMode(state: SkillForgeState, mode: "board" | "grid"
 }
 
 function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
+  if (err instanceof Error) {
+    return err.message;
+  }
+  if (typeof err === "string") {
+    return err;
+  }
   try {
     return JSON.stringify(err);
   } catch {

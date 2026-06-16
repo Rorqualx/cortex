@@ -79,15 +79,23 @@ function errorHint(provider: Provider, status: number | undefined, model: string
     const env = provider === "zai" ? "ZAI_API_KEY" : `${provider.toUpperCase()}_API_KEY`;
     return `\nFix: check ${env}.`;
   }
-  if (status === 404) return `\nFix: model '${model}' may not be enabled.`;
-  if (status === 429) return "\nFix: rate-limited.";
+  if (status === 404) {
+    return `\nFix: model '${model}' may not be enabled.`;
+  }
+  if (status === 429) {
+    return "\nFix: rate-limited.";
+  }
   return "";
 }
 
 function formatLlmError(err: LlmError, model: string): string {
   let msg = `[${err.provider} error] ${err.message}`;
-  if (err.status) msg += ` (HTTP ${err.status})`;
-  if (err.body) msg += `\nBody: ${err.body}`;
+  if (err.status) {
+    msg += ` (HTTP ${err.status})`;
+  }
+  if (err.body) {
+    msg += `\nBody: ${err.body}`;
+  }
   msg += errorHint(err.provider, err.status, model);
   return msg;
 }
@@ -183,9 +191,15 @@ async function runDelegation(input: RunInput): Promise<any> {
         output_tokens: result.outputTokens,
         latency_ms: result.latencyMs,
       };
-      if (result.cacheHitTokens !== undefined) json.cache_hit_tokens = result.cacheHitTokens;
-      if (result.cacheMissTokens !== undefined) json.cache_miss_tokens = result.cacheMissTokens;
-      if (result.reasoningContent) json.reasoning_content = result.reasoningContent;
+      if (result.cacheHitTokens !== undefined) {
+        json.cache_hit_tokens = result.cacheHitTokens;
+      }
+      if (result.cacheMissTokens !== undefined) {
+        json.cache_miss_tokens = result.cacheMissTokens;
+      }
+      if (result.reasoningContent) {
+        json.reasoning_content = result.reasoningContent;
+      }
       return { content: [{ type: "text", text: JSON.stringify(json, null, 2) }] };
     }
     return {
@@ -275,9 +289,15 @@ function createTool(input: ToolCreationInput): AnyAgentTool {
 
     // Simple delegation tools (code, review, research, delegate, vision)
     let prefix = "";
-    if (kind === "code" && args.language) prefix = `Language: ${args.language}\n\n`;
-    if (kind === "review" && args.focus?.length > 0) prefix = `Focus: ${args.focus.join(", ")}\n\n`;
-    if (kind === "research") prefix = `Citation style: ${args.cite_format ?? "inline"}\n\n`;
+    if (kind === "code" && args.language) {
+      prefix = `Language: ${args.language}\n\n`;
+    }
+    if (kind === "review" && args.focus?.length > 0) {
+      prefix = `Focus: ${args.focus.join(", ")}\n\n`;
+    }
+    if (kind === "research") {
+      prefix = `Citation style: ${args.cite_format ?? "inline"}\n\n`;
+    }
 
     const effectiveMax = ["review", "research"].includes(kind)
       ? reasoningFloor(model, thinking, maxOutputTokens)
@@ -338,9 +358,9 @@ export default definePluginEntry({
     // Resolve plugin config from the global openclaw config file instead.
     let pluginConfig: Record<string, any> = {};
     try {
-      const fs = require("fs");
-      const path = require("path");
-      const os = require("os");
+      const fs = require("node:fs");
+      const path = require("node:path");
+      const os = require("node:os");
       const configPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
       const raw = JSON.parse(fs.readFileSync(configPath, "utf-8"));
       pluginConfig = raw?.plugins?.entries?.agentmcp?.config ?? {};
@@ -385,11 +405,15 @@ export default definePluginEntry({
     let registered = 0;
     for (const provider of PROVIDERS) {
       const client = clients[provider];
-      if (!client) continue;
+      if (!client) {
+        continue;
+      }
 
       const supportedKinds = SUPPORTED_TOOLS[provider] as ToolKind[];
       for (const kind of PLUGIN_TOOLS) {
-        if (!supportedKinds.includes(kind)) continue;
+        if (!supportedKinds.includes(kind)) {
+          continue;
+        }
         api.registerTool(() =>
           createTool({
             provider,

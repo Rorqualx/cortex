@@ -185,14 +185,13 @@ export function navigateBranch(state: BranchState, direction: "prev" | "next"): 
         direction === "next"
           ? (activeChildIdx + 1) % branch.childIds.length
           : (activeChildIdx - 1 + branch.childIds.length) % branch.childIds.length;
-      return branch.childIds[newIdx]!;
-    } else {
-      const newIdx =
-        direction === "next"
-          ? (idx + 1) % branch.childIds.length
-          : (idx - 1 + branch.childIds.length) % branch.childIds.length;
-      return branch.childIds[newIdx]!;
+      return branch.childIds[newIdx];
     }
+    const newIdx =
+      direction === "next"
+        ? (idx + 1) % branch.childIds.length
+        : (idx - 1 + branch.childIds.length) % branch.childIds.length;
+    return branch.childIds[newIdx];
   }
 
   return null;

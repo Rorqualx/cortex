@@ -21,7 +21,9 @@ import { CCR_RETRIEVE_TOOL_NAME } from "./retrieval-tool.js";
  * Returns null if the store is not available (graceful degradation).
  */
 export function createCCRRetrieveTool(store: CCRStore | undefined): Tool | null {
-  if (!store || store.isClosed) return null;
+  if (!store || store.isClosed) {
+    return null;
+  }
 
   return {
     name: CCR_RETRIEVE_TOOL_NAME,

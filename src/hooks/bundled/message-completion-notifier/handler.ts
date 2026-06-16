@@ -50,7 +50,7 @@ const handler: HookHandler = async (event) => {
   try {
     await sendDurableMessageBatch({
       cfg,
-      channel: notifyChannel as Exclude<string, "none">,
+      channel: notifyChannel,
       to: notifyTo,
       accountId: notifyAccountId,
       ...(notifyThreadId !== undefined ? { threadId: notifyThreadId } : {}),

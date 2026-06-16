@@ -207,7 +207,9 @@ export class HierarchicalL3Engine implements ContextEngine {
   }
 
   private async buildMemorySection(prompt: string | undefined): Promise<string | undefined> {
-    if (!prompt || prompt.length === 0) return undefined;
+    if (!prompt || prompt.length === 0) {
+      return undefined;
+    }
     const top = await retrieveTopK({
       query: prompt,
       storage: this.storage,
@@ -217,13 +219,19 @@ export class HierarchicalL3Engine implements ContextEngine {
       sharedMemoryDir: this.sharedMemoryDir,
       queryEmbedding: await this.resolveQueryEmbedding(prompt),
     });
-    if (top.length === 0) return undefined;
+    if (top.length === 0) {
+      return undefined;
+    }
     return formatMemorySection(top, { now: Date.now() });
   }
 
   private resolveMemoryCoreLookup(): MemoryCoreLookup | undefined {
-    if (this.memoryCoreLookupOverride) return this.memoryCoreLookupOverride;
-    if (!this.config || !this.state?.agentId) return undefined;
+    if (this.memoryCoreLookupOverride) {
+      return this.memoryCoreLookupOverride;
+    }
+    if (!this.config || !this.state?.agentId) {
+      return undefined;
+    }
     const cfg = this.config;
     const agentId = this.state.agentId;
     return async (query) => {
@@ -233,7 +241,9 @@ export class HierarchicalL3Engine implements ContextEngine {
           agentId,
           purpose: "default",
         });
-        if (!manager || error) return [];
+        if (!manager || error) {
+          return [];
+        }
         const hits = await manager.search(query, { maxResults: ASSEMBLE_TOP_K });
         return hits.map((h) => ({
           path: h.path,
@@ -270,7 +280,9 @@ export class HierarchicalL3Engine implements ContextEngine {
         return;
       }
     }
-    if (params.isHeartbeat || !this.state) return;
+    if (params.isHeartbeat || !this.state) {
+      return;
+    }
 
     // OpenClaw's runtime hands us the full session message array each turn
     // and never invokes ingest/ingestBatch separately. Pull the tail we
@@ -295,7 +307,9 @@ export class HierarchicalL3Engine implements ContextEngine {
     l3debug(
       `afterTurn(): sessionId=${params.sessionId} totalMessages=${params.messages.length} compactedSoFar=${compactedSoFar} newTail=${tail.length} totalBuffered=${totalBuffered} threshold=${AFTER_TURN_COMPACTION_THRESHOLD_TOKENS}`,
     );
-    if (totalBuffered < AFTER_TURN_COMPACTION_THRESHOLD_TOKENS) return;
+    if (totalBuffered < AFTER_TURN_COMPACTION_THRESHOLD_TOKENS) {
+      return;
+    }
     const caller = await this.resolveCaller();
     if (!caller) {
       l3debug("afterTurn(): no caller resolved; skipping compaction");
@@ -481,7 +495,9 @@ export class HierarchicalL3Engine implements ContextEngine {
    */
   private async resolveQueryEmbedding(query: string): Promise<number[] | undefined> {
     const provider = await this.resolveEmbeddingProvider();
-    if (!provider) return undefined;
+    if (!provider) {
+      return undefined;
+    }
     try {
       return await provider.embed(query);
     } catch {
@@ -551,9 +567,13 @@ export class HierarchicalL3Engine implements ContextEngine {
   }
 
   private async resolveCaller(): Promise<LlmCaller | null> {
-    if (this.callerOverride) return this.callerOverride;
+    if (this.callerOverride) {
+      return this.callerOverride;
+    }
     const apiKey = await this.resolveZaiKey();
-    if (!apiKey) return null;
+    if (!apiKey) {
+      return null;
+    }
     return createGlmCaller({ apiKey });
   }
 
@@ -566,7 +586,9 @@ export class HierarchicalL3Engine implements ContextEngine {
    *   5. <agentDir>/agent/auth-profiles.json → profiles["zai:default"].key
    */
   private async resolveZaiKey(): Promise<string | null> {
-    if (this.cachedZaiKey !== undefined) return this.cachedZaiKey;
+    if (this.cachedZaiKey !== undefined) {
+      return this.cachedZaiKey;
+    }
     // 1–2. Environment variables
     const fromEnv = process.env.ZAI_API_KEY ?? process.env.Z_AI_API_KEY ?? "";
     if (fromEnv.length > 0) {
@@ -603,7 +625,9 @@ export class HierarchicalL3Engine implements ContextEngine {
  * the agent id. Returns null when the path doesn't fit the expected shape.
  */
 function deriveAgentIdFromAgentDir(agentDir: string | undefined): string | null {
-  if (!agentDir) return null;
+  if (!agentDir) {
+    return null;
+  }
   const parent = path.dirname(agentDir);
   const candidate = path.basename(parent);
   if (!candidate || candidate === "." || candidate === "/" || candidate === "..") {
@@ -619,7 +643,9 @@ function deriveAgentIdFromAgentDir(agentDir: string | undefined): string | null 
  *   2. models.providers.zai.apiKey               (provider config)
  */
 function readZaiKeyFromConfig(config: OpenClawConfig | undefined): string | null {
-  if (!config || typeof config !== "object") return null;
+  if (!config || typeof config !== "object") {
+    return null;
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyCfg = config as any;
   // Path 1: agentmcp plugin config
@@ -636,7 +662,9 @@ function readZaiKeyFromConfig(config: OpenClawConfig | undefined): string | null
 }
 
 async function readZaiKeyFromAuthProfiles(agentDir: string | undefined): Promise<string | null> {
-  if (!agentDir) return null;
+  if (!agentDir) {
+    return null;
+  }
   // OpenClaw's runtime hands us the inner `<agentRoot>/agent/` directory.
   // The auth-profiles file lives directly inside it, alongside auth-state.json,
   // models.json, etc. Don't double-join "agent".

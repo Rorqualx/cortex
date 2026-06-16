@@ -126,7 +126,9 @@ export function findConstantFields(
 // ---------------------------------------------------------------------------
 
 function positionalScore(index: number, total: number): number {
-  if (total <= 2) return 1;
+  if (total <= 2) {
+    return 1;
+  }
   const relativePos = index / (total - 1); // 0 = first, 1 = last
   // Peaks at start (0) and end (1), lowest in middle (0.5)
   // |x - 0.5| is 0.5 at edges, 0 in middle → multiply by 2 to get 1 at edges, 0 in middle

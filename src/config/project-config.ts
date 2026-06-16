@@ -54,16 +54,22 @@ const MAX_CACHE_SIZE = 50;
 
 function getCached(filePath: string): CacheEntry | null {
   const stat = fs.statSync(filePath, { throwIfNoEntry: false });
-  if (!stat) return null;
+  if (!stat) {
+    return null;
+  }
   const entry = cache.get(filePath);
-  if (entry && entry.mtimeMs === stat.mtimeMs) return entry;
+  if (entry && entry.mtimeMs === stat.mtimeMs) {
+    return entry;
+  }
   return null;
 }
 
 function setCached(filePath: string, parsed: Record<string, unknown>, mtimeMs: number): void {
   if (cache.size >= MAX_CACHE_SIZE) {
     const firstKey = cache.keys().next().value;
-    if (firstKey !== undefined) cache.delete(firstKey);
+    if (firstKey !== undefined) {
+      cache.delete(firstKey);
+    }
   }
   cache.set(filePath, { parsed, mtimeMs });
 }
@@ -87,15 +93,23 @@ export function discoverProjectRoot(cwd: string): string | null {
   while (true) {
     if (current === globalDir) {
       const parent = path.dirname(current);
-      if (parent === current) return null;
+      if (parent === current) {
+        return null;
+      }
       current = parent;
       continue;
     }
     const candidate = path.join(current, ".openclaw.json");
-    if (fs.existsSync(candidate)) return current;
-    if (current === home || current === "/") return null;
+    if (fs.existsSync(candidate)) {
+      return current;
+    }
+    if (current === home || current === "/") {
+      return null;
+    }
     const parent = path.dirname(current);
-    if (parent === current) return null;
+    if (parent === current) {
+      return null;
+    }
     current = parent;
   }
 }
@@ -108,10 +122,14 @@ export function filterProjectFields(config: Record<string, unknown>): Record<str
       const allowed = ALLOWED_PREFIXES.some(
         (a) => isSubPathOrEqual(dotPath, a) || isSubPathOrEqual(a, dotPath),
       );
-      if (!allowed) continue;
+      if (!allowed) {
+        continue;
+      }
       if (isObject(value)) {
         const filtered = recurse(value, dotPath);
-        if (Object.keys(filtered).length > 0) result[key] = filtered;
+        if (Object.keys(filtered).length > 0) {
+          result[key] = filtered;
+        }
       } else {
         result[key] = value;
       }
@@ -127,11 +145,13 @@ export function deepMerge(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { ...base };
   for (const override of overrides) {
-    if (!override) continue;
+    if (!override) {
+      continue;
+    }
     for (const key of Object.keys(override)) {
       const val = override[key];
       if (isObject(val) && isObject(result[key])) {
-        result[key] = deepMerge(result[key] as Record<string, unknown>, val);
+        result[key] = deepMerge(result[key], val);
       } else if (val !== undefined) {
         result[key] = val;
       }
@@ -149,7 +169,7 @@ export function validateProjectConfig(raw: string, filePath: string): Record<str
     return parsed as Record<string, unknown>;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Invalid project config at ${filePath}: ${message}`);
+    throw new Error(`Invalid project config at ${filePath}: ${message}`, { cause: err });
   }
 }
 
@@ -166,9 +186,13 @@ export function loadProjectConfig(
 
   function loadLayer(filePath: string): Record<string, unknown> | null {
     const stat = fs.statSync(filePath, { throwIfNoEntry: false });
-    if (!stat) return null;
+    if (!stat) {
+      return null;
+    }
     const cached = getCached(filePath);
-    if (cached) return cached.parsed;
+    if (cached) {
+      return cached.parsed;
+    }
     const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = validateProjectConfig(raw, filePath);
     setCached(filePath, parsed, stat.mtimeMs);

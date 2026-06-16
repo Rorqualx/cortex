@@ -181,7 +181,7 @@ describe("agent-steering-queue properties", () => {
 
             // Should be ordered by runId localeCompare
             const runIdsInOrder = items.map((i) => i.runId);
-            const sortedRunIds = [...runIdsInOrder].sort();
+            const sortedRunIds = [...runIdsInOrder].toSorted();
             expect(runIdsInOrder).toEqual(sortedRunIds);
           },
         ),
@@ -410,7 +410,9 @@ describe("agent-steering-queue properties", () => {
               leaseId,
             });
 
-            if (!result) return;
+            if (!result) {
+              return;
+            }
 
             // All leased runs should have the same leaseId
             for (const runId of result.runIds) {
@@ -490,7 +492,9 @@ describe("agent-steering-queue properties", () => {
               now,
             });
 
-            if (!result) return;
+            if (!result) {
+              return;
+            }
 
             // All leased runs should have steeringLeasedAt set
             for (const runId of result.runIds) {
@@ -556,7 +560,9 @@ describe("agent-steering-queue properties", () => {
               leaseId,
             });
 
-            if (!result) return;
+            if (!result) {
+              return;
+            }
 
             // All leased runs should have status in_progress
             for (const runId of result.runIds) {
@@ -622,7 +628,9 @@ describe("agent-steering-queue properties", () => {
               leaseId,
             });
 
-            if (!result) return;
+            if (!result) {
+              return;
+            }
 
             // All leased runs should have cleanupHandled set to true
             for (const runId of result.runIds) {
@@ -704,7 +712,9 @@ describe("agent-steering-queue properties", () => {
               now,
             });
 
-            if (!leaseResult) return;
+            if (!leaseResult) {
+              return;
+            }
 
             // Then ack them
             const acked = ackLeasedAgentSteeringItemsFromSubagentRuns({

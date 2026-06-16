@@ -38,7 +38,9 @@ function buildFilesystemPolicy(
   protectedNames: ProtectedMetadataName[],
   params: Map<string, string>,
 ): string {
-  if (roots.length === 0) return "";
+  if (roots.length === 0) {
+    return "";
+  }
 
   const prefix = actionToParamPrefix(action);
   const parts: string[] = [];
@@ -131,7 +133,7 @@ function buildNetworkPolicy(config: SeatbeltConfig): string {
           '(allow network-outbound (remote ip "localhost:*"))',
           '(allow network-inbound (local ip "localhost:*"))',
           ...(config.proxyPorts ?? []).map(
-            (port) => `(allow network-outbound (remote ip \"localhost:${port}\"))`,
+            (port) => `(allow network-outbound (remote ip "localhost:${port}"))`,
           ),
         ].join("\n") + "\n"
       );
@@ -146,7 +148,9 @@ function buildNetworkPolicy(config: SeatbeltConfig): string {
  * Build unix domain socket policy.
  */
 function buildUnixSocketPolicy(config: SeatbeltConfig): string {
-  if (!config.allowUnixSockets) return "";
+  if (!config.allowUnixSockets) {
+    return "";
+  }
   return "\n; === unix domain sockets ===\n(allow system-socket (socket-domain AF_UNIX))\n(allow network-bind (local unix-socket))\n(allow network-outbound (remote unix-socket))\n";
 }
 
@@ -171,7 +175,9 @@ export function buildSeatbeltProfile(config: SeatbeltConfig): {
     [], // no metadata protection for reads
     params,
   );
-  if (readPolicy) sections.push(readPolicy);
+  if (readPolicy) {
+    sections.push(readPolicy);
+  }
 
   // Writable roots
   const writePolicy = buildFilesystemPolicy(
@@ -180,7 +186,9 @@ export function buildSeatbeltProfile(config: SeatbeltConfig): {
     config.protectedMetadata,
     params,
   );
-  if (writePolicy) sections.push(writePolicy);
+  if (writePolicy) {
+    sections.push(writePolicy);
+  }
 
   // Network
   sections.push(buildNetworkPolicy(config));

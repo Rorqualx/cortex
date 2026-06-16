@@ -59,13 +59,17 @@ function readModelEnv(provider: Provider, kind: ToolKind, fallback: string): str
   // installs); DeepSeek/Kimi use their own prefix.
   const prefix = provider === "zai" ? "GLM" : TOOL_PREFIX[provider].toUpperCase();
   const perTool = process.env[`${prefix}_MODEL_${kind.toUpperCase()}`];
-  if (perTool && perTool.trim() !== "") return perTool;
+  if (perTool && perTool.trim() !== "") {
+    return perTool;
+  }
   // Only `delegate` falls back to the provider-global *_MODEL var. Other
   // tool kinds (vision in particular) have type-specific defaults — a
   // generic text-model GLM_MODEL setting must not override `glm-4.6v`.
   if (kind === "delegate") {
     const global = process.env[`${prefix}_MODEL`];
-    if (global && global.trim() !== "") return global;
+    if (global && global.trim() !== "") {
+      return global;
+    }
   }
   return fallback;
 }

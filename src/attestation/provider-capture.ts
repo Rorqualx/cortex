@@ -20,7 +20,9 @@ const KNOWN_HEADERS: Record<string, string[]> = {
  * Falls back to the known set, then to empty if unrecognized.
  */
 export function getProviderHeaders(provider: string, config?: ProviderAttestationConfig): string[] {
-  if (config && !config.captureHeaders) return [];
+  if (config && !config.captureHeaders) {
+    return [];
+  }
   return KNOWN_HEADERS[provider] ?? [];
 }
 
@@ -62,7 +64,9 @@ export function captureProviderAttestations(
 function findHeader(headers: Record<string, string>, name: string): string | undefined {
   const lower = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === lower) return value;
+    if (key.toLowerCase() === lower) {
+      return value;
+    }
   }
   return undefined;
 }

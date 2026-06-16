@@ -143,17 +143,17 @@ describe("scoreFact + composite", () => {
     };
     const score = composite(
       {
-        lexical: 1.0,
+        lexical: 1,
         bm25: 0,
-        importance: 1.0,
-        recency: 1.0,
-        l3Boost: 1.0,
+        importance: 1,
+        recency: 1,
+        l3Boost: 1,
         semantic: 0,
         informationGain: 0,
       },
       config,
     );
-    expect(score).toBeCloseTo(1.0, 6);
+    expect(score).toBeCloseTo(1, 6);
     const half = composite(
       {
         lexical: 0.5,

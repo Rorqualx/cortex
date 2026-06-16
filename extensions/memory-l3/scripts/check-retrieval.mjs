@@ -32,44 +32,60 @@ function tokenize(text) {
 }
 
 function jaccard(a, b) {
-  if (a.size === 0 || b.size === 0) return 0;
+  if (a.size === 0 || b.size === 0) {
+    return 0;
+  }
   let intersect = 0;
-  for (const t of a) if (b.has(t)) intersect += 1;
+  for (const t of a) {
+    if (b.has(t)) intersect += 1;
+  }
   const union = a.size + b.size - intersect;
   return union === 0 ? 0 : intersect / union;
 }
 
 function recencyScore(ageMs, halfLifeDays) {
-  if (halfLifeDays <= 0) return 1;
+  if (halfLifeDays <= 0) {
+    return 1;
+  }
   const ageDays = Math.max(0, ageMs) / (1000 * 60 * 60 * 24);
   return Math.exp((-Math.LN2 * ageDays) / halfLifeDays);
 }
 
 function readFrontmatter(file) {
   const raw = readFileSync(file, "utf8");
-  if (!raw.startsWith("---\n")) return null;
+  if (!raw.startsWith("---\n")) {
+    return null;
+  }
   const closeAt = raw.indexOf("\n---\n", 4);
-  if (closeAt < 0) return null;
+  if (closeAt < 0) {
+    return null;
+  }
   return JSON.parse(raw.slice(4, closeAt));
 }
 
 function listL2Chunks() {
-  if (!existsSync(L2_DIR)) return [];
+  if (!existsSync(L2_DIR)) {
+    return [];
+  }
   const out = [];
-  for (const partition of readdirSync(L2_DIR).sort()) {
+  for (const partition of readdirSync(L2_DIR).toSorted()) {
     const partitionDir = path.join(L2_DIR, partition);
-    for (const file of readdirSync(partitionDir).sort()) {
-      if (file.endsWith(".md")) out.push(path.join(partitionDir, file));
+    for (const file of readdirSync(partitionDir).toSorted()) {
+      if (file.endsWith(".md")) {
+        out.push(path.join(partitionDir, file));
+      }
     }
   }
   return out;
 }
 
 function listL3Epochs() {
-  if (!existsSync(L3_DIR)) return [];
+  if (!existsSync(L3_DIR)) {
+    return [];
+  }
   return readdirSync(L3_DIR)
     .filter((f) => f.endsWith(".md"))
-    .sort()
+    .toSorted()
     .map((f) => path.join(L3_DIR, f));
 }
 
@@ -82,13 +98,19 @@ function buildEpochBoostMap(queryTokens) {
   const ranges = [];
   for (const file of listL3Epochs()) {
     const fm = readFrontmatter(file);
-    if (!fm) continue;
+    if (!fm) {
+      continue;
+    }
     const epochText = (fm.representativeFacts ?? []).map((f) => f.text).join(" ");
     const score = jaccard(queryTokens, tokenize(epochText));
-    if (score <= 0) continue;
+    if (score <= 0) {
+      continue;
+    }
     const startSeq = chunkSeq(fm.startChunkId);
     const endSeq = chunkSeq(fm.endChunkId);
-    if (startSeq === null || endSeq === null) continue;
+    if (startSeq === null || endSeq === null) {
+      continue;
+    }
     ranges.push({ start: startSeq, end: endSeq, score });
   }
   return ranges;
@@ -96,7 +118,9 @@ function buildEpochBoostMap(queryTokens) {
 
 function l3BoostFor(chunkId, ranges) {
   const seq = chunkSeq(chunkId);
-  if (seq === null) return 0;
+  if (seq === null) {
+    return 0;
+  }
   let best = 0;
   for (const range of ranges) {
     if (seq >= range.start && seq <= range.end && range.score > best) {
@@ -118,7 +142,9 @@ const scored = [];
 
 for (const file of listL2Chunks()) {
   const fm = readFrontmatter(file);
-  if (!fm) continue;
+  if (!fm) {
+    continue;
+  }
   const l3Boost = l3BoostFor(fm.id, epochRanges);
   for (const fact of fm.facts ?? []) {
     const factTokens = tokenize(fact.text);
@@ -143,7 +169,7 @@ const top = scored.slice(0, TOP_K);
 
 console.log(`L3 root:   ${L3_ROOT}`);
 console.log(`Query:     ${QUERY}`);
-console.log(`Tokens:    ${[...queryTokens].sort().join(" ")}`);
+console.log(`Tokens:    ${[...queryTokens].toSorted().join(" ")}`);
 console.log(`Chunks:    ${listL2Chunks().length}  Epochs: ${listL3Epochs().length}`);
 console.log(`Scored:    ${scored.length}`);
 console.log("");

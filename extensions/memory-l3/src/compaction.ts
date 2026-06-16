@@ -23,7 +23,9 @@ import type { L2ChunkFrontmatter, L2Fact, L3State, TypedFact } from "./types.js"
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 function l3debug(msg: string): void {
-  if (DEBUG_ENABLED) console.error(`[memory-l3/compaction] ${msg}`);
+  if (DEBUG_ENABLED) {
+    console.error(`[memory-l3/compaction] ${msg}`);
+  }
 }
 
 export type CompactionResult = {
@@ -269,12 +271,16 @@ function liftToTypedFact(extracted: ExtractedTypedFact, createdAt: number): Type
 
 async function readRecentDedupKeys(storage: Storage): Promise<string[]> {
   const paths = await storage.listL2ChunkPaths();
-  if (paths.length === 0) return [];
+  if (paths.length === 0) {
+    return [];
+  }
   const tail = paths.slice(-RECENT_CHUNKS_TO_SCAN);
   const keys: string[] = [];
   for (const filePath of tail) {
     const doc = await storage.readL2ChunkAtPath(filePath);
-    if (!doc) continue;
+    if (!doc) {
+      continue;
+    }
     for (const key of doc.frontmatter.dedupKeys) {
       keys.push(key);
     }
@@ -372,7 +378,9 @@ async function extractWithOptionalSegmentation(params: {
         const merged: ExtractResult = { facts: [], typedFacts: [], decisions: [], actions: [] };
         for (const range of ranges) {
           const segmentMessages = params.messages.slice(range.start, range.end);
-          if (segmentMessages.length === 0) continue;
+          if (segmentMessages.length === 0) {
+            continue;
+          }
           const segment = await extractFacts({ messages: segmentMessages, caller: params.caller });
           merged.facts.push(...segment.facts);
           merged.typedFacts.push(...segment.typedFacts);

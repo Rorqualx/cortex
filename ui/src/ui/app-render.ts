@@ -336,9 +336,13 @@ function resolveChannelsNavItems(
   const surfaceToAgents = new Map<string, Set<string>>();
   for (const row of allCachedSessions) {
     const parsed = parseAgentSessionKey(row.key);
-    if (!parsed) continue;
+    if (!parsed) {
+      continue;
+    }
     const surface = parsed.rest.split(":")[0]?.toLowerCase();
-    if (!surface || !AGENT_CHANNEL_SURFACE_META[surface]) continue;
+    if (!surface || !AGENT_CHANNEL_SURFACE_META[surface]) {
+      continue;
+    }
     const agents = surfaceToAgents.get(surface) ?? new Set<string>();
     agents.add(parsed.agentId);
     surfaceToAgents.set(surface, agents);
@@ -374,7 +378,9 @@ function resolveChannelsNavItems(
   for (const surface of agentSurfaceAgents.keys()) {
     ids.add(surface);
   }
-  if (ids.size === 0) return [];
+  if (ids.size === 0) {
+    return [];
+  }
 
   // Preserve server-provided order, then append any remaining ids
   const ordered: string[] = [];
@@ -2231,7 +2237,9 @@ export function renderApp(state: AppViewState) {
       chatWorkspaceFiles.error = null;
       try {
         const reqParams: Record<string, string> = { agentId: chatAgentId, name };
-        if (filePath) reqParams.path = filePath;
+        if (filePath) {
+          reqParams.path = filePath;
+        }
         const res = await state.client.request<AgentsFilesGetResult | null>(
           "agents.files.get",
           reqParams,
@@ -2251,13 +2259,13 @@ export function renderApp(state: AppViewState) {
           /\.(?:md|markdown|mdx)$/i.test(name)
             ? {
                 kind: "markdown",
-                content: content,
+                content,
                 rawText: content,
               }
             : {
                 kind: "code",
                 fileName: name,
-                content: content,
+                content,
                 language: name.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "",
                 rawText: content,
                 reading: true,
@@ -3580,7 +3588,9 @@ export function renderApp(state: AppViewState) {
               // Find the write tool entry to get content from args
               let writeContent: string | undefined;
               for (const entry of state.toolStreamById.values()) {
-                if (entry.name !== "write" || !entry.output) continue;
+                if (entry.name !== "write" || !entry.output) {
+                  continue;
+                }
                 const a = entry.args as Record<string, unknown> | undefined;
                 const fp = String(a?.path ?? a?.file_path ?? a?.filePath ?? "");
                 if (fp === key && typeof a?.content === "string") {
@@ -3645,7 +3655,9 @@ export function renderApp(state: AppViewState) {
                   try {
                     // Re-read sidebarContent in case it changed since scheduling
                     const scNow = state.sidebarContent;
-                    if (scNow?.kind !== "code") return;
+                    if (scNow?.kind !== "code") {
+                      return;
+                    }
                     const key = `${activeFile?.dir}/${scNow.fileName}`;
                     const result = await state.client?.request<{
                       file?: { content?: string };
@@ -3687,12 +3699,21 @@ export function renderApp(state: AppViewState) {
               }
               // Scan for recently-completed edits/writes on this file
               for (const entry of state.toolStreamById.values()) {
-                if (entry.name !== "edit" && entry.name !== "apply_patch" && entry.name !== "write")
+                if (
+                  entry.name !== "edit" &&
+                  entry.name !== "apply_patch" &&
+                  entry.name !== "write"
+                ) {
                   continue;
-                if (!entry.output) continue;
+                }
+                if (!entry.output) {
+                  continue;
+                }
                 const args = entry.args as Record<string, unknown> | undefined;
                 const filePath = String(args?.path ?? args?.file_path ?? args?.filePath ?? "");
-                if (!filePath.endsWith(sc.fileName)) continue;
+                if (!filePath.endsWith(sc.fileName)) {
+                  continue;
+                }
                 // Use args content as dedup key since entry.id is often undefined
                 let editKey: string;
                 if (entry.name === "write") {
@@ -3703,7 +3724,9 @@ export function renderApp(state: AppViewState) {
                     filePath + ":" + editsArr.map((e: any) => String(e?.oldText ?? "")).join("|");
                 }
                 const lastEditKey = codeViewerLastEditId.get(state) ?? "";
-                if (editKey === lastEditKey) continue;
+                if (editKey === lastEditKey) {
+                  continue;
+                }
                 // New edit detected — cancel any previous edit timer first
                 clearTimeout(codeViewerEditTimer.get(state));
                 codeViewerEditTimer.delete(state);
@@ -3715,8 +3738,12 @@ export function renderApp(state: AppViewState) {
                   const removed: string[] = [];
                   const added: string[] = [];
                   for (const e of edits) {
-                    if (typeof e?.oldText === "string") removed.push(...e.oldText.split("\n"));
-                    if (typeof e?.newText === "string") added.push(...e.newText.split("\n"));
+                    if (typeof e?.oldText === "string") {
+                      removed.push(...e.oldText.split("\n"));
+                    }
+                    if (typeof e?.newText === "string") {
+                      added.push(...e.newText.split("\n"));
+                    }
                   }
                   if (removed.length || added.length) {
                     // Find where the edit landed in the current file content.
@@ -3724,8 +3751,9 @@ export function renderApp(state: AppViewState) {
                     // then fall back to removed lines if content is still old.
                     let matchLineIndex: number | undefined;
                     const fileLines = sc.content.split("\n");
-                    if (fileLines.length > 1 && fileLines[fileLines.length - 1].trim() === "")
+                    if (fileLines.length > 1 && fileLines[fileLines.length - 1].trim() === "") {
                       fileLines.pop();
+                    }
                     // Try added lines first (content is post-edit)
                     const firstAdded = added[0]?.trim();
                     if (firstAdded) {
@@ -3829,8 +3857,9 @@ export function renderApp(state: AppViewState) {
                     firstDiff < oldLines.length &&
                     firstDiff < newLines.length &&
                     oldLines[firstDiff] === newLines[firstDiff]
-                  )
+                  ) {
                     firstDiff++;
+                  }
                   let oldEnd = oldLines.length - 1;
                   let newEnd = newLines.length - 1;
                   while (
@@ -4064,8 +4093,8 @@ export function renderApp(state: AppViewState) {
                         state.chatError = state.lastError;
                       }
                     }),
-                    historyHasMore: state.chatHistoryHasMore === true,
-                    loadingEarlier: state.chatLoadingEarlier === true,
+                    historyHasMore: state.chatHistoryHasMore,
+                    loadingEarlier: state.chatLoadingEarlier,
                     onLoadEarlier: () => void loadEarlierMessages(state),
                     historyRenderLimit: state.chatHistoryRenderLimit,
                     agentsList: state.agentsList,
@@ -4107,7 +4136,9 @@ export function renderApp(state: AppViewState) {
                     },
                     onBranchFromMessage: (messageId) => {
                       void (async () => {
-                        if (!state.client || !state.connected) return;
+                        if (!state.client || !state.connected) {
+                          return;
+                        }
                         try {
                           await state.client.request("chat.branch", {
                             sessionKey: state.sessionKey,
@@ -4123,7 +4154,9 @@ export function renderApp(state: AppViewState) {
                       })();
                     },
                     onEditMessage: (text, entryId, restoreFiles) => {
-                      if (!state.client || !state.connected) return;
+                      if (!state.client || !state.connected) {
+                        return;
+                      }
                       // The rollback choice is now made inline in the edit bubble
                       // (see enterEditMode) and arrives as restoreFiles.
                       state.chatMessage = "";

@@ -384,7 +384,9 @@ export class AvatarLightbox extends LitElement {
 
   private initCropCanvas() {
     const canvas = this.shadowRoot?.getElementById("crop-canvas") as HTMLCanvasElement | null;
-    if (!canvas) return;
+    if (!canvas) {
+      return;
+    }
     this.canvasEl = canvas;
 
     const img = new Image();
@@ -416,9 +418,13 @@ export class AvatarLightbox extends LitElement {
   private drawCropOverlay() {
     const canvas = this.canvasEl;
     const img = this.imgEl;
-    if (!canvas || !img) return;
+    if (!canvas || !img) {
+      return;
+    }
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) {
+      return;
+    }
     const { x, y, size } = this.crop;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -449,7 +455,9 @@ export class AvatarLightbox extends LitElement {
 
   private updateCropPreview() {
     const img = this.imgEl;
-    if (!img) return;
+    if (!img) {
+      return;
+    }
     const { x, y, size } = this.crop;
     const tc = document.createElement("canvas");
     tc.width = size;
@@ -473,7 +481,9 @@ export class AvatarLightbox extends LitElement {
   };
 
   private onPointerMove = (e: MouseEvent) => {
-    if (!this.dragging) return;
+    if (!this.dragging) {
+      return;
+    }
     this.updateCropFromPointer(e.clientX, e.clientY);
   };
 
@@ -490,7 +500,9 @@ export class AvatarLightbox extends LitElement {
 
   private onTouchMove = (e: TouchEvent) => {
     e.preventDefault();
-    if (!this.dragging) return;
+    if (!this.dragging) {
+      return;
+    }
     const t = e.touches[0];
     this.updateCropFromPointer(t.clientX, t.clientY);
   };
@@ -501,13 +513,17 @@ export class AvatarLightbox extends LitElement {
     const dx = p.x - this.dragStart.x;
     const dy = p.y - this.dragStart.y;
     const side = Math.max(Math.abs(dx), Math.abs(dy));
-    if (side < 10) return;
+    if (side < 10) {
+      return;
+    }
     const sx = dx >= 0 ? this.dragStart.x : this.dragStart.x - side;
     const sy = dy >= 0 ? this.dragStart.y : this.dragStart.y - side;
     const cx = Math.max(0, Math.min(sx, canvas.width - side));
     const cy = Math.max(0, Math.min(sy, canvas.height - side));
     const cs = Math.min(side, canvas.width - cx, canvas.height - cy);
-    if (cs < 20) return;
+    if (cs < 20) {
+      return;
+    }
     this.crop = { x: cx, y: cy, size: cs };
     this.drawCropOverlay();
     this.updateCropPreview();
@@ -516,7 +532,9 @@ export class AvatarLightbox extends LitElement {
   // ─── Save ───
 
   private saveCrop() {
-    if (!this.cropUrl) return;
+    if (!this.cropUrl) {
+      return;
+    }
     this.applyAvatar(this.cropUrl);
   }
 
@@ -579,7 +597,9 @@ export class AvatarLightbox extends LitElement {
   private handleUpload(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file) return;
+    if (!file) {
+      return;
+    }
 
     // Validate size (keep under 1.5MB after base64 expansion)
     if (file.size > 1_500_000) {

@@ -21,25 +21,33 @@ function cancelReadingScroll() {
 }
 
 function triggerReadingScroll(fileName: string) {
-  if (fileName === lastReadingScrollFile) return;
+  if (fileName === lastReadingScrollFile) {
+    return;
+  }
   lastReadingScrollFile = fileName;
   // Wait for unsafeHTML to commit, then animate scroll on the sidebar content container
   setTimeout(() => {
     const sidebarContent = document.querySelector(".sidebar-content") as HTMLElement | null;
-    if (!sidebarContent) return;
+    if (!sidebarContent) {
+      return;
+    }
     const duration = 2500;
     const startTime = performance.now();
     const scrollHeight = sidebarContent.scrollHeight - sidebarContent.clientHeight;
-    if (scrollHeight <= 0) return;
+    if (scrollHeight <= 0) {
+      return;
+    }
     sidebarContent.scrollTop = 0;
     function animate(now: number) {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      const eased =
-        progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      const eased = progress < 0.5 ? 2 * progress * progress : 1 - (-2 * progress + 2) ** 2 / 2;
       sidebarContent.scrollTop = eased * scrollHeight;
-      if (progress < 1) readingAnimFrameId = requestAnimationFrame(animate);
-      else readingAnimFrameId = null;
+      if (progress < 1) {
+        readingAnimFrameId = requestAnimationFrame(animate);
+      } else {
+        readingAnimFrameId = null;
+      }
     }
     readingAnimFrameId = requestAnimationFrame(animate);
   }, 100);
@@ -48,7 +56,9 @@ function triggerReadingScroll(fileName: string) {
 /** Dedicated edit scan: sweeps from top to the diff location, holds, then resolves. */
 function triggerEditScan(editKey: string) {
   // Only fire once per unique edit
-  if (editKey === lastEditScanKey) return;
+  if (editKey === lastEditScanKey) {
+    return;
+  }
   lastEditScanKey = editKey;
 
   // Kill any active read scan
@@ -57,11 +67,15 @@ function triggerEditScan(editKey: string) {
 
   setTimeout(() => {
     const sidebarContent = document.querySelector(".sidebar-content") as HTMLElement | null;
-    if (!sidebarContent) return;
+    if (!sidebarContent) {
+      return;
+    }
     const diffLine = document.querySelector(
       ".code-viewer__code-line--removed",
     ) as HTMLElement | null;
-    if (!diffLine) return;
+    if (!diffLine) {
+      return;
+    }
 
     // Calculate where the diff line is relative to the scroll container
     const containerTop = sidebarContent.getBoundingClientRect().top;
@@ -76,10 +90,11 @@ function triggerEditScan(editKey: string) {
     function animate(now: number) {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      const eased =
-        progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      const eased = progress < 0.5 ? 2 * progress * progress : 1 - (-2 * progress + 2) ** 2 / 2;
       sidebarContent.scrollTop = startScroll + eased * (targetScroll - startScroll);
-      if (progress < 1) requestAnimationFrame(animate);
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
     }
     requestAnimationFrame(animate);
   }, 120);
@@ -115,9 +130,13 @@ function renderCodeViewer(content: import("../sidebar-content.ts").CodeSidebarCo
   const highlighted = highlightCode(content.content, lang);
   const lines = highlighted.split("\n");
   // Remove trailing empty line from trailing newline
-  if (lines.length > 1 && lines[lines.length - 1].trim() === "") lines.pop();
+  if (lines.length > 1 && lines[lines.length - 1].trim() === "") {
+    lines.pop();
+  }
   const rawLines = content.content.split("\n");
-  if (rawLines.length > 1 && rawLines[rawLines.length - 1].trim() === "") rawLines.pop();
+  if (rawLines.length > 1 && rawLines[rawLines.length - 1].trim() === "") {
+    rawLines.pop();
+  }
   const lineCount = lines.length;
   const gutterWidth = String(lineCount).length + 1;
   const readingClass = content.reading
@@ -125,11 +144,14 @@ function renderCodeViewer(content: import("../sidebar-content.ts").CodeSidebarCo
     : content.editing
       ? " code-viewer--editing"
       : "";
-  if (content.reading) triggerReadingScroll(content.fileName);
-  if (content.editing && content.pendingEdit)
+  if (content.reading) {
+    triggerReadingScroll(content.fileName);
+  }
+  if (content.editing && content.pendingEdit) {
     triggerEditScan(
       content.pendingEdit.removed.join("|") + "->" + content.pendingEdit.added.join("|"),
     );
+  }
 
   // Resolve inline diff position
   let diffStart = -1;
@@ -142,14 +164,18 @@ function renderCodeViewer(content: import("../sidebar-content.ts").CodeSidebarCo
       const firstAdded = pe.added[0];
       if (firstAdded) {
         const idx = rawLines.findIndex((l) => l.trim() === firstAdded.trim());
-        if (idx >= 0) diffStart = idx;
+        if (idx >= 0) {
+          diffStart = idx;
+        }
       }
       // If not found, try removed lines (pre-edit content)
       if (diffStart < 0) {
         const firstRemoved = pe.removed[0];
         if (firstRemoved) {
           const idx = rawLines.findIndex((l) => l.trim() === firstRemoved.trim());
-          if (idx >= 0) diffStart = idx;
+          if (idx >= 0) {
+            diffStart = idx;
+          }
         }
       }
     }

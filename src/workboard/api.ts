@@ -11,7 +11,9 @@ export { WorkboardStore } from "./store.js";
 
 function readId(p: Record<string, unknown>) {
   const v = p.id;
-  if (typeof v === "string" && v.trim()) return v.trim();
+  if (typeof v === "string" && v.trim()) {
+    return v.trim();
+  }
   throw Object.assign(new Error("missing parameter: id"), { code: "workboard_error" });
 }
 
@@ -42,7 +44,9 @@ export function createWorkboardGatewayHandlers(
 
     "workboard.cards.read": async (p: Record<string, unknown>) => {
       const card = await s.get(readId(p));
-      if (!card) throw Object.assign(new Error("card not found"), { code: "workboard_error" });
+      if (!card) {
+        throw Object.assign(new Error("card not found"), { code: "workboard_error" });
+      }
       return { card: redactToken(card as unknown as Record<string, unknown>) };
     },
 

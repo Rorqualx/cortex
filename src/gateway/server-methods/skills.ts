@@ -114,7 +114,9 @@ async function listDirs(dirPath: string): Promise<string[]> {
     for (const entry of entries) {
       try {
         const stat = await fsp.stat(path.join(dirPath, entry));
-        if (stat.isDirectory()) dirs.push(entry);
+        if (stat.isDirectory()) {
+          dirs.push(entry);
+        }
       } catch {
         // skip
       }
@@ -132,7 +134,9 @@ async function readSkillDescription(skillDir: string): Promise<string> {
     const content = await fsp.readFile(mdPath, "utf8");
     // Parse YAML frontmatter between --- markers
     const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-    if (!match) return "";
+    if (!match) {
+      return "";
+    }
     const descMatch = match[1].match(/^description:\s*['"]?(.+?)['"]?\s*$/m);
     return descMatch?.[1]?.trim() ?? "";
   } catch {
@@ -160,7 +164,9 @@ async function listCandidateFiles(candidatesDir: string): Promise<
       rationale: string;
     }> = [];
     for (const entry of entries) {
-      if (!entry.endsWith(".json")) continue;
+      if (!entry.endsWith(".json")) {
+        continue;
+      }
       try {
         const raw = await fsp.readFile(path.join(candidatesDir, entry), "utf8");
         const data = JSON.parse(raw);

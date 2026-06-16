@@ -178,9 +178,9 @@ function selectItems(scored: ScoredItem[], maxItems: number): ScoredItem[] {
   // Sort remaining by score descending, take top meritCount
   const remaining = scored
     .filter((s) => !taken.has(s.index))
-    .sort((a, b) => b.score - a.score)
+    .toSorted((a, b) => b.score - a.score)
     .slice(0, Math.max(0, meritCount));
 
   // Merge and restore original order
-  return [...head, ...remaining, ...tail].sort((a, b) => a.index - b.index);
+  return [...head, ...remaining, ...tail].toSorted((a, b) => a.index - b.index);
 }

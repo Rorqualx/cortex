@@ -70,7 +70,9 @@ export async function aggregateCandidates(storage: Storage): Promise<Consolidati
   const paths = await storage.listL2ChunkPaths();
   for (const filePath of paths) {
     const doc = await storage.readL2ChunkAtPath(filePath);
-    if (!doc) continue;
+    if (!doc) {
+      continue;
+    }
     const chunkId = doc.frontmatter.id;
     for (const fact of doc.frontmatter.facts) {
       mergeFact(candidates, fact, chunkId);
@@ -135,9 +137,15 @@ export function passesPromotionThresholds(
   }
   const minRecallCount = tentative ? config.tentativeMinRecallCount : config.minRecallCount;
   const minDayspanMs = tentative ? config.tentativeMinDayspanMs : config.minDayspanMs;
-  if (candidate.recallCount < minRecallCount) return false;
-  if (candidate.lastConfirmedAt - candidate.firstSeenAt < minDayspanMs) return false;
-  if (candidate.importance < config.minImportance) return false;
+  if (candidate.recallCount < minRecallCount) {
+    return false;
+  }
+  if (candidate.lastConfirmedAt - candidate.firstSeenAt < minDayspanMs) {
+    return false;
+  }
+  if (candidate.importance < config.minImportance) {
+    return false;
+  }
   return true;
 }
 

@@ -131,14 +131,14 @@ export class Storage {
     const partitions = (await fs.readdir(root, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
-      .sort();
+      .toSorted();
     const out: string[] = [];
     for (const partition of partitions) {
       const partitionDir = path.join(root, partition);
       const files = (await fs.readdir(partitionDir, { withFileTypes: true }))
         .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
         .map((entry) => entry.name)
-        .sort();
+        .toSorted();
       for (const file of files) {
         out.push(path.join(partitionDir, file));
       }
@@ -168,7 +168,7 @@ export class Storage {
     const files = (await fs.readdir(root, { withFileTypes: true }))
       .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
       .map((entry) => entry.name)
-      .sort();
+      .toSorted();
     return files.map((file) => path.join(root, file));
   }
 
@@ -238,7 +238,9 @@ export class Storage {
 
   /** Write message-level chunks for a given L2 chunk. */
   async writeMessageChunks(chunks: ReadonlyArray<MessageChunk>): Promise<void> {
-    if (chunks.length === 0) return;
+    if (chunks.length === 0) {
+      return;
+    }
     await this.mutex.run(async () => {
       const chunkDir = path.join(this.root, MSG_DIR, chunks[0].chunkId);
       await fs.mkdir(chunkDir, { recursive: true });
@@ -264,7 +266,9 @@ export class Storage {
       const raw = await fs.readFile(target, "utf8");
       return JSON.parse(raw) as MessageChunk[];
     } catch (err) {
-      if (isNotFound(err)) return [];
+      if (isNotFound(err)) {
+        return [];
+      }
       throw err;
     }
   }
@@ -272,7 +276,9 @@ export class Storage {
   /** List all chunk IDs that have message-level index data. */
   async listMessageChunkIds(): Promise<string[]> {
     const root = path.join(this.root, MSG_DIR);
-    if (!existsSync(root)) return [];
+    if (!existsSync(root)) {
+      return [];
+    }
     const entries = await fs.readdir(root, { withFileTypes: true });
     return entries.filter((e) => e.isDirectory()).map((e) => e.name);
   }
@@ -296,7 +302,9 @@ export class Storage {
       const raw = await fs.readFile(target, "utf8");
       return JSON.parse(raw) as Entity[];
     } catch (err) {
-      if (isNotFound(err)) return [];
+      if (isNotFound(err)) {
+        return [];
+      }
       throw err;
     }
   }
@@ -307,13 +315,17 @@ export class Storage {
 
   /** Append topic links to the link graph (dedup by source+target pair). */
   async appendTopicLinks(links: ReadonlyArray<TopicLink>): Promise<void> {
-    if (links.length === 0) return;
+    if (links.length === 0) {
+      return;
+    }
     await this.mutex.run(async () => {
       const target = path.join(this.root, "topic-links.json");
       const existing = await this.readTopicLinks();
       const keySet = new Set(existing.map((l) => `${l.sourceChunkId}::${l.targetChunkId}`));
       const newLinks = links.filter((l) => !keySet.has(`${l.sourceChunkId}::${l.targetChunkId}`));
-      if (newLinks.length === 0) return;
+      if (newLinks.length === 0) {
+        return;
+      }
       existing.push(...newLinks);
       await atomicWriteFile(target, `${JSON.stringify(existing, null, 2)}\n`);
     });
@@ -326,7 +338,9 @@ export class Storage {
       const raw = await fs.readFile(target, "utf8");
       return JSON.parse(raw) as TopicLink[];
     } catch (err) {
-      if (isNotFound(err)) return [];
+      if (isNotFound(err)) {
+        return [];
+      }
       throw err;
     }
   }
@@ -350,7 +364,9 @@ export class Storage {
       const raw = await fs.readFile(target, "utf8");
       return JSON.parse(raw) as RetrievalSignal[];
     } catch (err) {
-      if (isNotFound(err)) return [];
+      if (isNotFound(err)) {
+        return [];
+      }
       throw err;
     }
   }
@@ -367,7 +383,9 @@ export class Storage {
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
     } catch (err) {
-      if (isNotFound(err)) return [];
+      if (isNotFound(err)) {
+        return [];
+      }
       throw err;
     }
   }

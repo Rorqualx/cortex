@@ -10,7 +10,6 @@ import { createWorkboardCoreDbStores } from "./core-db-store.js";
 import { registerWorkboardGatewayMethods } from "./gateway.js";
 import { WorkboardStore } from "./store.js";
 import { createWorkboardTools } from "./tools.js";
-import { type WorkboardModuleConfig } from "./types.js";
 
 export type { WorkboardCard, WorkboardBoard, WorkboardStatus, WorkboardPriority } from "./types.js";
 

@@ -22,19 +22,27 @@ const CONFIG = {
 
 function readFrontmatter(file) {
   const raw = readFileSync(file, "utf8");
-  if (!raw.startsWith("---\n")) return null;
+  if (!raw.startsWith("---\n")) {
+    return null;
+  }
   const closeAt = raw.indexOf("\n---\n", 4);
-  if (closeAt < 0) return null;
+  if (closeAt < 0) {
+    return null;
+  }
   return JSON.parse(raw.slice(4, closeAt));
 }
 
 function listL2Chunks() {
-  if (!existsSync(L2_DIR)) return [];
+  if (!existsSync(L2_DIR)) {
+    return [];
+  }
   const out = [];
-  for (const partition of readdirSync(L2_DIR).sort()) {
+  for (const partition of readdirSync(L2_DIR).toSorted()) {
     const partitionDir = path.join(L2_DIR, partition);
-    for (const file of readdirSync(partitionDir).sort()) {
-      if (file.endsWith(".md")) out.push(path.join(partitionDir, file));
+    for (const file of readdirSync(partitionDir).toSorted()) {
+      if (file.endsWith(".md")) {
+        out.push(path.join(partitionDir, file));
+      }
     }
   }
   return out;
@@ -44,7 +52,9 @@ function aggregate() {
   const candidates = new Map();
   for (const file of listL2Chunks()) {
     const fm = readFrontmatter(file);
-    if (!fm) continue;
+    if (!fm) {
+      continue;
+    }
     const chunkId = fm.id;
     for (const fact of fm.facts ?? []) {
       const existing = candidates.get(fact.dedupKey);
@@ -80,18 +90,22 @@ function aggregate() {
 }
 
 function passes(c) {
-  if (c.importance >= CONFIG.highImportancePassthrough)
+  if (c.importance >= CONFIG.highImportancePassthrough) {
     return { pass: true, reason: "high-importance shortcut" };
+  }
   const dayspan = c.lastConfirmedAt - c.firstSeenAt;
-  if (c.recallCount < CONFIG.minRecallCount)
+  if (c.recallCount < CONFIG.minRecallCount) {
     return { pass: false, reason: `recall=${c.recallCount} < ${CONFIG.minRecallCount}` };
-  if (dayspan < CONFIG.minDayspanMs)
+  }
+  if (dayspan < CONFIG.minDayspanMs) {
     return { pass: false, reason: `dayspan=${(dayspan / MS_PER_DAY).toFixed(1)}d < 3d` };
-  if (c.importance < CONFIG.minImportance)
+  }
+  if (c.importance < CONFIG.minImportance) {
     return {
       pass: false,
       reason: `importance=${c.importance.toFixed(2)} < ${CONFIG.minImportance}`,
     };
+  }
   return { pass: true, reason: "recall+dayspan+importance" };
 }
 
@@ -109,12 +123,15 @@ const accepted = [];
 const rejected = [];
 for (const c of candidates) {
   const verdict = passes(c);
-  if (verdict.pass) accepted.push({ c, reason: verdict.reason });
-  else rejected.push({ c, reason: verdict.reason });
+  if (verdict.pass) {
+    accepted.push({ c, reason: verdict.reason });
+  } else {
+    rejected.push({ c, reason: verdict.reason });
+  }
 }
 
 console.log(`Would promote (${accepted.length}):`);
-for (const { c, reason } of accepted.sort((a, b) => b.c.importance - a.c.importance)) {
+for (const { c, reason } of accepted.toSorted((a, b) => b.c.importance - a.c.importance)) {
   console.log(`  ★ [${c.importance.toFixed(2)}] ${c.dedupKey}`);
   console.log(
     `    via: ${reason}; recall=${c.recallCount}, dayspan=${((c.lastConfirmedAt - c.firstSeenAt) / MS_PER_DAY).toFixed(1)}d`,
@@ -123,7 +140,11 @@ for (const { c, reason } of accepted.sort((a, b) => b.c.importance - a.c.importa
 }
 console.log("");
 console.log(`Would NOT promote (${rejected.length}):`);
-for (const { c, reason } of rejected.sort((a, b) => b.c.importance - a.c.importance).slice(0, 10)) {
+for (const { c, reason } of rejected
+  .toSorted((a, b) => b.c.importance - a.c.importance)
+  .slice(0, 10)) {
   console.log(`  · [${c.importance.toFixed(2)}] ${c.dedupKey} — ${reason}`);
 }
-if (rejected.length > 10) console.log(`  ... and ${rejected.length - 10} more.`);
+if (rejected.length > 10) {
+  console.log(`  ... and ${rejected.length - 10} more.`);
+}

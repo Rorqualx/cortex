@@ -98,13 +98,13 @@ describe("consolidateLongTerm", () => {
     );
     await writeChunk(
       "chunk-000001-b",
-      [fact("f2", "tabs", 0.7, NOW - 1 * MS_PER_DAY, "user_pref:tabs")],
-      NOW - 1 * MS_PER_DAY,
+      [fact("f2", "tabs", 0.7, NOW - Number(MS_PER_DAY), "user_pref:tabs")],
+      NOW - Number(MS_PER_DAY),
     );
     const r1 = await consolidateLongTerm({
       storage,
       agentId: "j-rorqual",
-      now: NOW - 1 * MS_PER_DAY,
+      now: NOW - Number(MS_PER_DAY),
     });
     expect(r1.promotedCount).toBe(1);
 
@@ -144,10 +144,10 @@ describe("consolidateLongTerm", () => {
     );
     await writeChunk(
       "chunk-000001-b",
-      [fact("f2", "tabs", 0.7, NOW - 1 * MS_PER_DAY, "user_pref:tabs")],
-      NOW - 1 * MS_PER_DAY,
+      [fact("f2", "tabs", 0.7, NOW - Number(MS_PER_DAY), "user_pref:tabs")],
+      NOW - Number(MS_PER_DAY),
     );
-    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 1 * MS_PER_DAY });
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - Number(MS_PER_DAY) });
     // Confirm with identical text — no revision occurred.
     await writeChunk("chunk-000002-c", [fact("f3", "tabs", 0.7, NOW, "user_pref:tabs")], NOW);
     const result = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
@@ -200,7 +200,7 @@ describe("consolidateLongTerm", () => {
     const result = await consolidateLongTerm({
       storage,
       agentId: "j-rorqual",
-      now: NOW + 1 * MS_PER_DAY, // well under default 60-day window
+      now: NOW + Number(MS_PER_DAY), // well under default 60-day window
     });
     expect(result.archivedCount).toBe(0);
     const lt = await storage.readLongTerm();
@@ -260,7 +260,7 @@ describe("consolidateLongTerm", () => {
     const fs = await import("node:fs/promises");
     await fs.unlink(chunkPath);
 
-    const tightConfig: LongTermConfig = { maxAgeWithoutConfirmMs: 1 * MS_PER_DAY };
+    const tightConfig: LongTermConfig = { maxAgeWithoutConfirmMs: Number(MS_PER_DAY) };
     const result = await consolidateLongTerm({
       storage,
       agentId: "j-rorqual",

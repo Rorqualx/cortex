@@ -77,20 +77,31 @@ Emit strict JSON only, with no surrounding prose. Schema:
 If no new facts to emit, output: { "facts": [] }`;
 
 function stringifyContent(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
   const parts = [];
   for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    if (typeof block.text === "string") parts.push(block.text);
-    else if (typeof block.thinking === "string") parts.push(`[thinking] ${block.thinking}`);
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+    if (typeof block.text === "string") {
+      parts.push(block.text);
+    } else if (typeof block.thinking === "string") {
+      parts.push(`[thinking] ${block.thinking}`);
+    }
   }
   return parts.join("\n");
 }
 
 function formatMessageForPrompt(message) {
   const text = stringifyContent(message?.content);
-  if (!message?.role || text.length === 0) return "";
+  if (!message?.role || text.length === 0) {
+    return "";
+  }
   return `${message.role}: ${text}`;
 }
 
@@ -117,24 +128,32 @@ function buildV2LegacyUserPrompt(messages, alreadyKnownKeys) {
 async function loadRecentDedupKeys() {
   const dateDirs = await readdir(L3_L2_ROOT).catch(() => []);
   const allChunkPaths = [];
-  for (const dateDir of dateDirs.sort()) {
+  for (const dateDir of dateDirs.toSorted()) {
     const full = path.join(L3_L2_ROOT, dateDir);
     const files = await readdir(full).catch(() => []);
-    for (const f of files.sort()) {
-      if (f.endsWith(".md")) allChunkPaths.push(path.join(full, f));
+    for (const f of files.toSorted()) {
+      if (f.endsWith(".md")) {
+        allChunkPaths.push(path.join(full, f));
+      }
     }
   }
   const tail = allChunkPaths.slice(-RECENT_CHUNKS_TO_SCAN);
   const keys = [];
   for (const filePath of tail) {
     const text = await readFile(filePath, "utf8").catch(() => null);
-    if (!text) continue;
+    if (!text) {
+      continue;
+    }
     const m = /^---\n([\s\S]*?)\n---/.exec(text);
-    if (!m) continue;
+    if (!m) {
+      continue;
+    }
     try {
       const fm = JSON.parse(m[1]);
       if (Array.isArray(fm.dedupKeys)) {
-        for (const k of fm.dedupKeys) keys.push(k);
+        for (const k of fm.dedupKeys) {
+          keys.push(k);
+        }
       }
     } catch {
       // skip malformed chunk
@@ -145,13 +164,19 @@ async function loadRecentDedupKeys() {
 
 async function resolveZaiKey() {
   const fromEnv = process.env.ZAI_API_KEY ?? process.env.Z_AI_API_KEY;
-  if (fromEnv) return { key: fromEnv, source: "env" };
+  if (fromEnv) {
+    return { key: fromEnv, source: "env" };
+  }
   const authPath = path.join(HOME, ".openclaw/agents/main/agent/auth-profiles.json");
   const text = await readFile(authPath, "utf8").catch(() => null);
-  if (!text) throw new Error(`Could not read auth profiles at ${authPath}`);
+  if (!text) {
+    throw new Error(`Could not read auth profiles at ${authPath}`);
+  }
   const json = JSON.parse(text);
   const key = json?.profiles?.["zai:default"]?.key;
-  if (!key) throw new Error(`No zai:default key in ${authPath}`);
+  if (!key) {
+    throw new Error(`No zai:default key in ${authPath}`);
+  }
   return { key, source: authPath };
 }
 
@@ -181,8 +206,8 @@ async function callGlm({ apiKey, systemPrompt, userPrompt }) {
   let json;
   try {
     json = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Non-JSON response in ${elapsedMs}ms: ${text.slice(0, 800)}`);
+  } catch {
+    throw new Error(`Non-JSON response in ${elapsedMs}ms: ${text.slice(0, 800)}`, { cause: e });
   }
   return {
     content: json.choices?.[0]?.message?.content ?? "",
@@ -238,11 +263,15 @@ function groundTypedFacts(typedFacts, transcript) {
       passed.push(t);
     } else {
       let reason = "unknown";
-      if (typeof t?.value !== "string" || t.value.length === 0) reason = "value_empty";
-      else if (typeof t?.sourceSpan !== "string" || t.sourceSpan.length === 0)
+      if (typeof t?.value !== "string" || t.value.length === 0) {
+        reason = "value_empty";
+      } else if (typeof t?.sourceSpan !== "string" || t.sourceSpan.length === 0) {
         reason = "span_empty";
-      else if (!t.sourceSpan.includes(t.value)) reason = "value_not_in_span";
-      else if (!transcript.includes(t.sourceSpan)) reason = "span_not_in_transcript";
+      } else if (!t.sourceSpan.includes(t.value)) {
+        reason = "value_not_in_span";
+      } else if (!transcript.includes(t.sourceSpan)) {
+        reason = "span_not_in_transcript";
+      }
       failed.push({ slot: t?.slot, value: t?.value, reason });
     }
   }
@@ -257,7 +286,9 @@ function summarizeContent(messages) {
     counts[m.role] = (counts[m.role] ?? 0) + 1;
     const text = stringifyContent(m.content);
     totalChars += text.length;
-    if (text.trim() === "HEARTBEAT_OK" || text.includes("HEARTBEAT")) heartbeats += 1;
+    if (text.trim() === "HEARTBEAT_OK" || text.includes("HEARTBEAT")) {
+      heartbeats += 1;
+    }
   }
   return { counts, totalChars, heartbeats };
 }

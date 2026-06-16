@@ -45,8 +45,12 @@ describe("compactSession", () => {
     await storage.ensureLayout();
     // 20 messages = two 10-message windows; orthogonal window embeddings
     // force one boundary at message index 10.
-    for (let i = 0; i < 10; i++) buffer.push("s1", userMsg(`gardening topic message ${i}`));
-    for (let i = 0; i < 10; i++) buffer.push("s1", userMsg(`kubernetes topic message ${i}`));
+    for (let i = 0; i < 10; i++) {
+      buffer.push("s1", userMsg(`gardening topic message ${i}`));
+    }
+    for (let i = 0; i < 10; i++) {
+      buffer.push("s1", userMsg(`kubernetes topic message ${i}`));
+    }
     const caller: LlmCaller = vi.fn(async () =>
       JSON.stringify({
         facts: [{ text: "segment fact", importance: 0.7, dedupKey: `seg:${Math.random()}` }],
@@ -78,7 +82,9 @@ describe("compactSession", () => {
 
   it("keeps monolithic extraction when segmented compaction is disabled", async () => {
     await storage.ensureLayout();
-    for (let i = 0; i < 20; i++) buffer.push("s1", userMsg(`message ${i}`));
+    for (let i = 0; i < 20; i++) {
+      buffer.push("s1", userMsg(`message ${i}`));
+    }
     const caller: LlmCaller = vi.fn(async () =>
       JSON.stringify({
         facts: [{ text: "fact", importance: 0.7, dedupKey: "k:1" }],

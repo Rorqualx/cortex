@@ -51,12 +51,16 @@ function buildPrompt(qtype, question, answer, response) {
 
 async function resolveZaiKey() {
   const fromEnv = process.env.ZAI_API_KEY ?? process.env.Z_AI_API_KEY;
-  if (fromEnv) return fromEnv;
+  if (fromEnv) {
+    return fromEnv;
+  }
   const authPath = path.join(HOME, ".openclaw/agents/main/agent/auth-profiles.json");
   const text = await readFile(authPath, "utf8");
   const json = JSON.parse(text);
   const key = json?.profiles?.["zai:default"]?.key;
-  if (!key) throw new Error(`No zai:default key in ${authPath}`);
+  if (!key) {
+    throw new Error(`No zai:default key in ${authPath}`);
+  }
   return key;
 }
 
@@ -70,25 +74,37 @@ async function callJudge({ apiKey, prompt }) {
     messages: [{ role: "user", content: prompt }],
     temperature: 0,
   };
-  if (!isOpenAI) body.thinking = { type: "disabled" };
+  if (!isOpenAI) {
+    body.thinking = { type: "disabled" };
+  }
   const resp = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(body),
   });
   const text = await resp.text();
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text.slice(0, 300)}`);
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status}: ${text.slice(0, 300)}`);
+  }
   const json = JSON.parse(text);
   return json.choices?.[0]?.message?.content ?? "";
 }
 
 function parseVerdict(raw) {
   const s = raw.trim().toLowerCase();
-  if (s.startsWith("yes")) return true;
-  if (s.startsWith("no")) return false;
+  if (s.startsWith("yes")) {
+    return true;
+  }
+  if (s.startsWith("no")) {
+    return false;
+  }
   // Some models elaborate. Fall back to substring search.
-  if (/\byes\b/.test(s) && !/\bno\b/.test(s.split("\n")[0])) return true;
-  if (/\bno\b/.test(s)) return false;
+  if (/\byes\b/.test(s) && !/\bno\b/.test(s.split("\n")[0])) {
+    return true;
+  }
+  if (/\bno\b/.test(s)) {
+    return false;
+  }
   return null;
 }
 
@@ -100,7 +116,9 @@ async function runWithConcurrency(items, concurrency, fn) {
     while (true) {
       const idx = next;
       next += 1;
-      if (idx >= items.length) return;
+      if (idx >= items.length) {
+        return;
+      }
       try {
         results[idx] = await fn(items[idx], idx);
       } catch (e) {
@@ -129,7 +147,9 @@ async function main() {
   const tasks = hypotheses
     .map((h) => {
       const q = byId.get(h.question_id);
-      if (!q) return null;
+      if (!q) {
+        return null;
+      }
       return { hyp: h, oracle: q };
     })
     .filter(Boolean);
@@ -165,23 +185,33 @@ async function main() {
   let unparseable = 0;
   for (const v of verdicts) {
     const t = v.question_type;
-    if (!byType[t]) byType[t] = { total: 0, hits: 0 };
+    if (!byType[t]) {
+      byType[t] = { total: 0, hits: 0 };
+    }
     byType[t].total += 1;
-    if (v.verdict === true) byType[t].hits += 1;
-    if (v.verdict === null) unparseable += 1;
+    if (v.verdict === true) {
+      byType[t].hits += 1;
+    }
+    if (v.verdict === null) {
+      unparseable += 1;
+    }
   }
 
   console.log(`\n=== LLM-judge results (judge=${JUDGE_MODEL}) ===`);
   for (const t of QUESTION_TYPES) {
     const b = byType[t];
-    if (!b) continue;
+    if (!b) {
+      continue;
+    }
     const pct = b.total > 0 ? Math.round((b.hits / b.total) * 100) : 0;
     console.log(`  ${t.padEnd(28)} ${b.hits}/${b.total} (${pct}%)`);
   }
   const totalHits = verdicts.filter((v) => v.verdict === true).length;
   const overallPct = Math.round((totalHits / verdicts.length) * 100);
   console.log(`  ${"OVERALL".padEnd(28)} ${totalHits}/${verdicts.length} (${overallPct}%)`);
-  if (unparseable > 0) console.log(`  unparseable verdicts: ${unparseable}`);
+  if (unparseable > 0) {
+    console.log(`  unparseable verdicts: ${unparseable}`);
+  }
   console.log(`  wall-clock: ${elapsedMin} min`);
 
   const outPath = `${hypArg}.eval-${JUDGE_MODEL}.jsonl`;

@@ -92,7 +92,7 @@ export function listRefreshableProviders(cfg: OpenClawConfig): string[] {
   return Object.entries(providers)
     .filter(([, providerConfig]) => providerConfig?.discovery === "refreshable")
     .map(([providerId]) => normalizeModelCatalogProviderId(providerId))
-    .sort();
+    .toSorted();
 }
 
 /** Runs discovery + reconcile for one provider. Skips cleanly when unconfigured.

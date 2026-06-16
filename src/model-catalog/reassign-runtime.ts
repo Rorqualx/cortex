@@ -18,7 +18,6 @@ import {
 import { resolveDefaultSessionStorePath } from "../config/sessions/paths.js";
 import { readSessionEntries } from "../config/sessions/store-load.js";
 import { applySessionStoreEntryPatch } from "../config/sessions/store.js";
-import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   loadCronJobsStore,
@@ -195,7 +194,7 @@ export function buildRuntimeApplyDeps(params: {
       await applySessionStoreEntryPatch({
         storePath: resolveDefaultSessionStorePath(agentId),
         sessionKey,
-        patch: patch as Partial<SessionEntry>,
+        patch: patch,
       });
     },
     nowMs: params.nowMs,

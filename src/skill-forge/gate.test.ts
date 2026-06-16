@@ -80,7 +80,7 @@ describe("validateSkillDir", () => {
     expect(strict.reasons.some((r) => r.includes("body is too short"))).toBe(true);
     const tainted = await validateSkillDir(tmp, 0.5);
     expect(tainted.status).toBe("fail");
-    const clean = await validateSkillDir(tmp, 1.0);
+    const clean = await validateSkillDir(tmp, 1);
     expect(clean.status).toBe("pass");
   });
 

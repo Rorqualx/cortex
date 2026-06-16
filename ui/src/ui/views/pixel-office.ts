@@ -49,17 +49,25 @@ function deriveProjectsFromCards(cards: readonly WorkboardCard[]): ProjectOffice
   for (const card of cards) {
     for (const label of card.labels) {
       const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
-      if (!match) continue;
+      if (!match) {
+        continue;
+      }
       const name = match[1]?.trim();
       const icon = match[2]?.trim() ?? "📁";
-      if (!name) continue;
+      if (!name) {
+        continue;
+      }
 
       const existing = projectMap.get(name);
       if (existing) {
-        if (card.agentId) existing.agents.add(card.agentId);
+        if (card.agentId) {
+          existing.agents.add(card.agentId);
+        }
       } else {
         const agents = new Set<string>();
-        if (card.agentId) agents.add(card.agentId);
+        if (card.agentId) {
+          agents.add(card.agentId);
+        }
         projectMap.set(name, { icon, agents });
       }
     }
@@ -90,7 +98,7 @@ function deriveProjectsFromCards(cards: readonly WorkboardCard[]): ProjectOffice
     }
   }
 
-  return derived.sort((a, b) => a.name.localeCompare(b.name));
+  return derived.toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
 // ── Pixel sprite builder ───────────────────────────────────────────

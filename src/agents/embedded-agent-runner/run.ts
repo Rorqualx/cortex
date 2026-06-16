@@ -536,7 +536,9 @@ export async function runEmbeddedAgent(
     ? { sessionKey: effectiveSessionKey, agentId: params.agentId }
     : undefined;
   const wrapWithSessionContext = <T>(task: () => Promise<T>): (() => Promise<T>) => {
-    if (!sessionContextInfo) return task;
+    if (!sessionContextInfo) {
+      return task;
+    }
     return () => runWithSessionContext(sessionContextInfo, task);
   };
   const enqueueGlobal = <T>(task: () => Promise<T>, opts?: CommandQueueEnqueueOptions) => {

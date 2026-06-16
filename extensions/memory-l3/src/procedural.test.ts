@@ -64,18 +64,18 @@ describe("procedural", () => {
     it("parses a valid skill with tools", () => {
       const result = parseSkillMd(SAMPLE_SKILL_MD);
       assert.ok(result);
-      assert.strictEqual(result!.name, "forge-recover-bash-via-read-abc123");
-      assert.ok(result!.description.includes("bash fails"));
-      assert.strictEqual(result!.toolSequence.length, 3);
-      assert.strictEqual(result!.toolSequence[0], "exec");
-      assert.strictEqual(result!.lane, "error-recovery");
+      assert.strictEqual(result.name, "forge-recover-bash-via-read-abc123");
+      assert.ok(result.description.includes("bash fails"));
+      assert.strictEqual(result.toolSequence.length, 3);
+      assert.strictEqual(result.toolSequence[0], "exec");
+      assert.strictEqual(result.lane, "error-recovery");
     });
 
     it("parses a skill with no tools", () => {
       const result = parseSkillMd(SAMPLE_SKILL_NO_TOOLS);
       assert.ok(result);
-      assert.strictEqual(result!.toolSequence.length, 0);
-      assert.strictEqual(result!.lane, "explicit");
+      assert.strictEqual(result.toolSequence.length, 0);
+      assert.strictEqual(result.lane, "explicit");
     });
 
     it("detects tool-shape lane", () => {

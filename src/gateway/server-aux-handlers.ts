@@ -270,7 +270,9 @@ export function createGatewayAuxHandlers(params: {
     (method: string) => async (opts: Parameters<GatewayRequestHandler>[0]) => {
       const handlers = await getWorkboardGatewayHandlers();
       const handler = handlers[method];
-      if (!handler) throw new Error(`workboard handler not found: ${method}`);
+      if (!handler) {
+        throw new Error(`workboard handler not found: ${method}`);
+      }
       await handler(opts);
     };
 

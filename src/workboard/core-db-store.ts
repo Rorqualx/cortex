@@ -16,7 +16,9 @@ import type { WorkboardKeyedStore } from "./persistence-types.js";
 // ── JSON helpers ────────────────────────────────────────────────────
 
 function parse<T>(raw: unknown): T | undefined {
-  if (typeof raw !== "string") return undefined;
+  if (typeof raw !== "string") {
+    return undefined;
+  }
   try {
     return JSON.parse(raw) as T;
   } catch {
@@ -89,9 +91,13 @@ function createAttachmentStore(
       const row = db
         .prepare(`SELECT data, content FROM workboard_card_attachments WHERE id = ?`)
         .get(key) as { data: string; content: Buffer | null } | undefined;
-      if (!row) return undefined;
+      if (!row) {
+        return undefined;
+      }
       const parsed = parse<PersistedWorkboardAttachment>(row.data);
-      if (!parsed) return undefined;
+      if (!parsed) {
+        return undefined;
+      }
       // Merge BLOB content into the parsed object
       if (row.content) {
         parsed.contentBase64 = row.content.toString("base64");
@@ -141,7 +147,7 @@ function createAttachmentStore(
 // ── Factory ─────────────────────────────────────────────────────────
 
 export type CoreDbWorkboardStores = {
-  cards: WorkboardKeyedStore<PersistedWorkboardCard>;
+  cards: WorkboardKeyedStore;
   boards: WorkboardKeyedStore<PersistedWorkboardBoard>;
   subscriptions: WorkboardKeyedStore<PersistedWorkboardNotificationSubscription>;
   attachments: WorkboardKeyedStore<PersistedWorkboardAttachment>;

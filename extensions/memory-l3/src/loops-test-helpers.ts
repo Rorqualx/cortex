@@ -139,8 +139,12 @@ export function createConceptStubCaller(
     const facts: Array<{ text: string; importance: number; dedupKey: string }> = [];
     const emitted = new Set<string>();
     for (const concept of concepts) {
-      if (alreadyKnown.has(concept.id)) continue;
-      if (emitted.has(concept.id)) continue;
+      if (alreadyKnown.has(concept.id)) {
+        continue;
+      }
+      if (emitted.has(concept.id)) {
+        continue;
+      }
       const allTexts = [concept.canonical, ...concept.paraphrases].map((s) => s.toLowerCase());
       if (allTexts.some((t) => transcript.includes(t))) {
         facts.push({ text: concept.canonical, importance, dedupKey: concept.id });
@@ -154,7 +158,9 @@ export function createConceptStubCaller(
 function parseAlreadyKnown(prompt: string): Set<string> {
   const match = /<already-known>([\s\S]*?)<\/already-known>/.exec(prompt);
   const out = new Set<string>();
-  if (!match) return out;
+  if (!match) {
+    return out;
+  }
   for (const raw of match[1].split("\n")) {
     const cleaned = raw.replace(/^[\s\-•]+/, "").trim();
     if (cleaned.length > 0 && cleaned !== "(none)") {

@@ -29,7 +29,9 @@ export type FallbackConfig = {
 const DEFAULT_FALLBACK_CHAIN: Provider[] = ["zai", "deepseek", "kimi"];
 
 function parseFallbackChain(env?: string): Provider[] {
-  if (!env) return DEFAULT_FALLBACK_CHAIN;
+  if (!env) {
+    return DEFAULT_FALLBACK_CHAIN;
+  }
   const providers = env
     .split(",")
     .map((p) => p.trim().toLowerCase())
@@ -48,15 +50,21 @@ export function loadFallbackConfig(): FallbackConfig {
 
 /** Check if an error should trigger provider fallback. */
 export function isRetryableError(err: unknown, config: FallbackConfig): boolean {
-  if (!(err instanceof Error)) return false;
+  if (!(err instanceof Error)) {
+    return false;
+  }
   // LlmError with retryable status
   if ("status" in err && typeof (err as any).status === "number") {
     return config.retryableStatuses.includes((err as any).status);
   }
   // Network/timeout errors (no status, or AbortError)
   if (config.fallbackOnNetworkError) {
-    if (err.name === "AbortError") return true;
-    if ("provider" in err) return true; // LlmError without status = network issue
+    if (err.name === "AbortError") {
+      return true;
+    }
+    if ("provider" in err) {
+      return true;
+    } // LlmError without status = network issue
   }
   return false;
 }
@@ -68,10 +76,14 @@ export function nextFallbackProvider(
   available: Set<Provider>,
 ): Provider | undefined {
   const idx = chain.indexOf(current);
-  if (idx === -1) return undefined;
+  if (idx === -1) {
+    return undefined;
+  }
   for (let i = idx + 1; i < chain.length; i++) {
     const p = chain[i];
-    if (available.has(p)) return p;
+    if (available.has(p)) {
+      return p;
+    }
   }
   return undefined;
 }

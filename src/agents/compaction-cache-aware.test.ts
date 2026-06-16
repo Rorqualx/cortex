@@ -108,7 +108,7 @@ describe("compaction: cache-aware chunking", () => {
       expect(result.hasBoundary).toBe(true);
       expect(result.cachedTokens).toBeGreaterThan(0);
       expect(result.dynamicTokens).toBeGreaterThan(0);
-      expect(result.cachedTokens).toBeLessThan(result.dynamicTokens!);
+      expect(result.cachedTokens).toBeLessThan(result.dynamicTokens);
     });
 
     it("should handle messages with non-string bodies gracefully", () => {

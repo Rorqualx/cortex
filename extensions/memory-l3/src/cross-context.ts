@@ -38,9 +38,13 @@ const INITIAL_SHARED_STORE: SharedStore = {
  * Defaults to `~/.openclaw/shared-memory/`; override via env or param.
  */
 export function resolveSharedMemoryDir(override?: string): string {
-  if (override && override.length > 0) return override;
+  if (override && override.length > 0) {
+    return override;
+  }
   const fromEnv = process.env.OPENCLAW_SHARED_MEMORY_DIR;
-  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  if (fromEnv && fromEnv.length > 0) {
+    return fromEnv;
+  }
   return path.join(os.homedir(), ".openclaw", "shared-memory");
 }
 
@@ -55,7 +59,9 @@ export async function readSharedFacts(sharedDir?: string): Promise<SharedLongTer
     const parsed = JSON.parse(raw) as SharedStore;
     return Array.isArray(parsed.facts) ? parsed.facts : [];
   } catch (err) {
-    if (isNotFound(err)) return [];
+    if (isNotFound(err)) {
+      return [];
+    }
     throw err;
   }
 }
@@ -141,7 +147,9 @@ export async function publishToFacts(
 export function resolveConflicts(facts: ReadonlyArray<SharedLongTermFact>): SharedLongTermFact[] {
   const byDedupKey = new Map<string, SharedLongTermFact[]>();
   for (const fact of facts) {
-    if (fact.archived) continue;
+    if (fact.archived) {
+      continue;
+    }
     const list = byDedupKey.get(fact.dedupKey) ?? [];
     list.push(fact);
     byDedupKey.set(fact.dedupKey, list);
@@ -156,7 +164,9 @@ export function resolveConflicts(facts: ReadonlyArray<SharedLongTermFact>): Shar
     // Sort by importance descending, then by lastConfirmedAt as tiebreaker
     candidates.sort((a, b) => {
       const impDiff = b.importance - a.importance;
-      if (Math.abs(impDiff) > 0.001) return impDiff;
+      if (Math.abs(impDiff) > 0.001) {
+        return impDiff;
+      }
       return b.lastConfirmedAt - a.lastConfirmedAt;
     });
     // Winner stays active; rest get archived

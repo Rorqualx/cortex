@@ -201,9 +201,13 @@ function compressToolResults(
 // ---------------------------------------------------------------------------
 
 function extractTextContent(msg: AgentMessage): string | null {
-  if (!("content" in msg) || !msg.content) return null;
+  if (!("content" in msg) || !msg.content) {
+    return null;
+  }
 
-  if (typeof msg.content === "string") return msg.content;
+  if (typeof msg.content === "string") {
+    return msg.content;
+  }
 
   if (Array.isArray(msg.content)) {
     return msg.content
@@ -238,7 +242,9 @@ function estimateTotalChars(messages: AgentMessage[]): number {
   let total = 0;
   for (const msg of messages) {
     const text = extractTextContent(msg);
-    if (text) total += text.length;
+    if (text) {
+      total += text.length;
+    }
   }
   return total;
 }
@@ -252,7 +258,9 @@ function estimateItemCount(content: string): number {
   if (trimmed.startsWith("[")) {
     try {
       const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) return parsed.length;
+      if (Array.isArray(parsed)) {
+        return parsed.length;
+      }
     } catch {
       /* not json */
     }
@@ -272,7 +280,9 @@ function sha256(content: string): string {
 export function resolveCompressionConfig(
   userConfig?: Partial<CompressionConfig>,
 ): CompressionConfig {
-  if (!userConfig) return { ...DEFAULT_COMPRESSION_CONFIG };
+  if (!userConfig) {
+    return { ...DEFAULT_COMPRESSION_CONFIG };
+  }
 
   return {
     enabled: userConfig.enabled ?? DEFAULT_COMPRESSION_CONFIG.enabled,
@@ -302,12 +312,14 @@ export function resolveCompressionConfig(
  * or if node:sqlite is unavailable.
  */
 export function createCCRStore(config: CompressionConfig, agentDir: string): CCRStore | undefined {
-  if (!config.ccr.enabled) return undefined;
+  if (!config.ccr.enabled) {
+    return undefined;
+  }
 
   const dbPath = config.ccr.dbPath ?? `${agentDir}/compression-cache.db`;
   try {
     return new CCRStore(dbPath, config.ccr.maxEntries, config.ccr.ttlSeconds);
-  } catch (err) {
+  } catch {
     // CCR is optional — degrade gracefully if SQLite is unavailable
     return undefined;
   }

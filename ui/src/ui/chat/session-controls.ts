@@ -98,7 +98,9 @@ function surfaceLabel(surface: string): string {
 /** Extract channel surface from a session key (e.g. "agent:main:telegram:direct:peer" → "telegram"). */
 function channelFromSessionKey(key: string): string | null {
   const parsed = parseAgentSessionKey(key);
-  if (!parsed) return null;
+  if (!parsed) {
+    return null;
+  }
   const restLower = normalizeLowercaseStringOrEmpty(parsed.rest);
   const channelSegment = restLower.split(":")[0];
   return CHANNEL_SURFACES_FOR_AGENT_DROPDOWN.has(channelSegment) ? channelSegment : null;
@@ -109,15 +111,25 @@ function isChannelSessionRow(
   state: AppViewState,
   row: SessionsListResult["sessions"][number],
 ): boolean {
-  if (row.kind === "global" || row.kind === "unknown") return false;
-  if (isCronSessionKey(row.key)) return false;
-  if (isSubagentSessionKey(row.key) || row.spawnedBy) return false;
+  if (row.kind === "global" || row.kind === "unknown") {
+    return false;
+  }
+  if (isCronSessionKey(row.key)) {
+    return false;
+  }
+  if (isSubagentSessionKey(row.key) || row.spawnedBy) {
+    return false;
+  }
   const channel = channelFromSessionKey(row.key);
-  if (!channel) return false;
+  if (!channel) {
+    return false;
+  }
   // Exclude the agent's main session (the default chat)
   const defaultAgentId = normalizeAgentId(state.agentsList?.defaultId ?? "main");
   const mainKey = buildAgentMainSessionKey({ agentId: defaultAgentId });
-  if (parseAgentSessionKey(row.key)?.rest === "main" || row.key === mainKey) return false;
+  if (parseAgentSessionKey(row.key)?.rest === "main" || row.key === mainKey) {
+    return false;
+  }
   return true;
 }
 
@@ -1626,7 +1638,9 @@ export function resolveChatAgentFilterId(state: AppViewState, sessionKey: string
 
 function _sessionIsChannelSession(state: AppViewState, sessionKey: string): boolean {
   const row = state.sessionsResult?.sessions.find((r) => r.key === sessionKey);
-  if (!row) return false;
+  if (!row) {
+    return false;
+  }
   return isChannelSessionRow(state, row);
 }
 
@@ -1737,7 +1751,9 @@ export function resolvePreferredSessionForAgentSurface(
         return false;
       }
       const parsed = parseAgentSessionKey(row.key);
-      if (!parsed) return false;
+      if (!parsed) {
+        return false;
+      }
       return normalizeLowercaseStringOrEmpty(parsed.rest).startsWith(`${normalizedSurface}:`);
     })
     .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
@@ -1784,7 +1800,9 @@ export function resolveChatAgentFilterOptions(state: AppViewState): ChatAgentFil
   channelRows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   for (const row of channelRows) {
     const id = channelAgentOptionIdFromSessionKey(row.key);
-    if (seen.has(id)) continue;
+    if (seen.has(id)) {
+      continue;
+    }
     seen.add(id);
     const name =
       normalizeOptionalString(row.derivedTitle) ??

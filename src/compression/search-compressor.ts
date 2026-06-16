@@ -42,10 +42,14 @@ export function compressSearchResults(content: string, targetRatio: number): Com
   let errorMatches = 0;
 
   for (const match of grepMatches) {
-    if (!match) continue;
+    if (!match) {
+      continue;
+    }
     totalMatches++;
     const isErr = isErrorLine(match.text);
-    if (isErr) errorMatches++;
+    if (isErr) {
+      errorMatches++;
+    }
 
     let entries = byFile.get(match.file);
     if (!entries) {
@@ -184,12 +188,12 @@ function parseGrepLine(line: string): GrepEntry | null {
   // Try range format first
   const rangeMatch = GREP_RANGE.exec(line);
   if (rangeMatch) {
-    return { file: rangeMatch[1], line: parseInt(rangeMatch[2], 10), text: rangeMatch[4] };
+    return { file: rangeMatch[1], line: Number.parseInt(rangeMatch[2], 10), text: rangeMatch[4] };
   }
   // Try standard format
   const match = GREP_LINE.exec(line);
   if (match) {
-    return { file: match[1], line: parseInt(match[2], 10), text: match[3] };
+    return { file: match[1], line: Number.parseInt(match[2], 10), text: match[3] };
   }
   return null;
 }

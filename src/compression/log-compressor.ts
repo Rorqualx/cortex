@@ -40,7 +40,9 @@ export function compressLogOutput(content: string, targetRatio: number): Compres
     const isStackTrace = isStackLine(line);
     const isImportant = isErr || isStackTrace || isTestResult(line);
 
-    if (isErr) errorLines++;
+    if (isErr) {
+      errorLines++;
+    }
 
     // Check for repeated lines
     const normalized = normalizeForComparison(line);
@@ -114,22 +116,42 @@ export function compressLogOutput(content: string, targetRatio: number): Compres
 
 function isErrorOrWarning(line: string): boolean {
   const lower = line.toLowerCase().trim();
-  if (lower.length === 0) return false;
+  if (lower.length === 0) {
+    return false;
+  }
 
   // Log-level patterns
-  if (/\b(error|fatal|critical|panic)\b/i.test(lower)) return true;
-  if (/\b(warn(ing)?)\b/i.test(lower) && !lower.startsWith("#")) return true;
+  if (/\b(error|fatal|critical|panic)\b/i.test(lower)) {
+    return true;
+  }
+  if (/\b(warn(ing)?)\b/i.test(lower) && !lower.startsWith("#")) {
+    return true;
+  }
 
   // Build tool patterns
-  if (NPM_RE.test(lower)) return true;
-  if (PYTEST_RE.test(line)) return true;
-  if (/\bmake\b.*\*\*/i.test(lower)) return true; // make error
-  if (/^>\s/.test(line)) return true; // TypeScript/tsconfig error prefix
+  if (NPM_RE.test(lower)) {
+    return true;
+  }
+  if (PYTEST_RE.test(line)) {
+    return true;
+  }
+  if (/\bmake\b.*\*\*/i.test(lower)) {
+    return true;
+  } // make error
+  if (/^>\s/.test(line)) {
+    return true;
+  } // TypeScript/tsconfig error prefix
 
   // Stack traces
-  if (/^\s+at\s/.test(line)) return true; // JS/TS stack
-  if (/^\s+File\s+"/.test(line)) return true; // Python stack
-  if (/Traceback/.test(line)) return true;
+  if (/^\s+at\s/.test(line)) {
+    return true;
+  } // JS/TS stack
+  if (/^\s+File\s+"/.test(line)) {
+    return true;
+  } // Python stack
+  if (line.includes("Traceback")) {
+    return true;
+  }
 
   return false;
 }

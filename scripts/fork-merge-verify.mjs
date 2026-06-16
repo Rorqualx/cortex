@@ -27,9 +27,9 @@ const c = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
 };
 
-const args = process.argv.slice(2);
-const quick = args.includes("--quick");
-const regen = args.includes("--regenerate");
+const args = new Set(process.argv.slice(2));
+const quick = args.has("--quick");
+const regen = args.has("--regenerate");
 
 let fails = 0,
   warns = 0;
@@ -82,9 +82,15 @@ if (grep.out) {
     .filter((f) => !legitPatterns.some((p) => p.test(f)));
   if (hits.length) {
     bad("Conflict markers found:");
-    for (const f of hits.slice(0, 15)) console.log(c.red(`    ${f}`));
-  } else ok("No conflict markers (excluding test fixtures)");
-} else ok("No conflict markers");
+    for (const f of hits.slice(0, 15)) {
+      console.log(c.red(`    ${f}`));
+    }
+  } else {
+    ok("No conflict markers (excluding test fixtures)");
+  }
+} else {
+  ok("No conflict markers");
+}
 
 // Also check for =======
 const grep2 = run(
@@ -107,7 +113,9 @@ for (const [p, label] of forkPaths) {
   if (!existsSync(p)) {
     bad(`${label}: ${p} — MISSING`);
     allForkOk = false;
-  } else ok(`${label} present`);
+  } else {
+    ok(`${label} present`);
+  }
 }
 
 // ── 3. .gitattributes ────────────────────────────────────────────────────
@@ -116,9 +124,13 @@ sec(".gitattributes integrity");
 const attrs = run("cat .gitattributes");
 if (attrs.ok) {
   const oursLines = attrs.out.split("\n").filter((l) => l.includes("merge=ours"));
-  if (oursLines.length === 0) bad("No merge=ours entries found!");
-  else if (oursLines.length < 20) hm(`Only ${oursLines.length} merge=ours entries (expected ~28+)`);
-  else ok(`${oursLines.length} merge=ours entries`);
+  if (oursLines.length === 0) {
+    bad("No merge=ours entries found!");
+  } else if (oursLines.length < 20) {
+    hm(`Only ${oursLines.length} merge=ours entries (expected ~28+)`);
+  } else {
+    ok(`${oursLines.length} merge=ours entries`);
+  }
 
   // Check that key fork protections exist
   const required = [
@@ -128,9 +140,13 @@ if (attrs.ok) {
     "src/agents/doom-loop-guard.ts",
   ];
   for (const r of required) {
-    if (!attrs.out.includes(r)) bad(`Missing protection for: ${r}`);
+    if (!attrs.out.includes(r)) {
+      bad(`Missing protection for: ${r}`);
+    }
   }
-} else bad("Cannot read .gitattributes");
+} else {
+  bad("Cannot read .gitattributes");
+}
 
 // ── 4. Config baseline drift ─────────────────────────────────────────────
 
@@ -139,37 +155,52 @@ const drift = run("node scripts/fork-config-snapshot.mjs verify");
 if (drift.code === 1) {
   hm("Config drift detected — expected after upstream merge");
   hm("Run with --regenerate to update baseline");
-} else ok("No config drift");
+} else {
+  ok("No config drift");
+}
 
 // ── 5. TypeScript (slow) ─────────────────────────────────────────────────
 
 if (!quick) {
   sec("TypeScript compilation");
   const tsc = run("npx tsc --noEmit 2>&1");
-  if (tsc.code === 0 || tsc.ok) ok("TypeScript compiles");
-  else {
+  if (tsc.code === 0 || tsc.ok) {
+    ok("TypeScript compiles");
+  } else {
     const lines = (tsc.out || tsc.err || "").split("\n").slice(0, 8);
     bad("TypeScript errors:");
-    for (const l of lines) console.log(c.red(`    ${l}`));
+    for (const l of lines) {
+      console.log(c.red(`    ${l}`));
+    }
   }
-} else sec("TypeScript (skipped — --quick)");
+} else {
+  sec("TypeScript (skipped — --quick)");
+}
 
 // ── 6. Unit tests (slow) ─────────────────────────────────────────────────
 
 if (!quick) {
   sec("Unit tests");
   const test = run("node scripts/run-vitest.mjs --reporter=verbose 2>&1 | tail -5");
-  if (test.ok || test.out?.includes("passed")) ok("Tests pass");
-  else hm("Test status unclear — run manually");
-} else sec("Tests (skipped — --quick)");
+  if (test.ok || test.out?.includes("passed")) {
+    ok("Tests pass");
+  } else {
+    hm("Test status unclear — run manually");
+  }
+} else {
+  sec("Tests (skipped — --quick)");
+}
 
 // ── 7. Gateway smoke ─────────────────────────────────────────────────────
 
 sec("Gateway smoke");
 const gw = run("node -e \"require('./dist/gateway.js')\" 2>&1 || true");
 // Just check the build exists
-if (existsSync("dist/gateway.js")) ok("Gateway build exists");
-else hm("dist/gateway.js not found — run build");
+if (existsSync("dist/gateway.js")) {
+  ok("Gateway build exists");
+} else {
+  hm("dist/gateway.js not found — run build");
+}
 
 // ── Summary ──────────────────────────────────────────────────────────────
 
@@ -179,8 +210,11 @@ if (fails === 0) {
   if (regen) {
     console.log(c.bold("\nRegenerating baseline..."));
     const gen = run("node scripts/fork-config-snapshot.mjs generate");
-    if (gen.ok) console.log(c.green("✓ Baseline updated"));
-    else console.log(c.red("✗ Baseline update failed"));
+    if (gen.ok) {
+      console.log(c.green("✓ Baseline updated"));
+    } else {
+      console.log(c.red("✗ Baseline update failed"));
+    }
   } else {
     console.log(c.dim("\nTo update baseline: node scripts/fork-merge-verify.mjs --regenerate"));
   }

@@ -32,7 +32,7 @@ export const LEGACY_CONFIG_MIGRATIONS_RUNTIME_SKILLS: LegacyConfigMigrationSpec[
           : undefined;
       const forge = getRecord(skills.forge);
       if (approvalPolicy && !forge?.approvalPolicy) {
-        skills.forge = { ...(forge ?? {}), approvalPolicy };
+        skills.forge = { ...forge, approvalPolicy };
         changes.push("Moved skills.workshop.approvalPolicy → skills.forge.approvalPolicy.");
       }
       delete skills.workshop;

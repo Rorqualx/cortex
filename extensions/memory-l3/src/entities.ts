@@ -25,7 +25,9 @@ import type {
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 function l3debug(msg: string): void {
-  if (DEBUG_ENABLED) console.error(`[memory-l3/entities] ${msg}`);
+  if (DEBUG_ENABLED) {
+    console.error(`[memory-l3/entities] ${msg}`);
+  }
 }
 
 // -----------------------------------------------------------------
@@ -67,7 +69,9 @@ export function extractEntitiesFromFacts(params: {
 
   const addEntity = (name: string, category: EntityCategory, aliases?: string[]): void => {
     const normalizedName = name.trim().toLowerCase();
-    if (normalizedName.length < 2) return;
+    if (normalizedName.length < 2) {
+      return;
+    }
     if (!entities.has(normalizedName)) {
       entities.set(normalizedName, {
         id: `entity-${normalizedName.replace(/\s+/g, "-")}`,
@@ -140,7 +144,9 @@ export function extractEntitiesFromFacts(params: {
     for (const m of hostnameMatches) {
       const host = m[1];
       // Skip common English words that look like hostnames
-      if (/^(e\.g|etc|i\.e|vs)\.$/i.test(host)) continue;
+      if (/^(e\.g|etc|i\.e|vs)\.$/i.test(host)) {
+        continue;
+      }
       if (host.includes(".") && !host.endsWith(".")) {
         addEntity(host, "infrastructure");
       }
@@ -270,8 +276,12 @@ export async function findTopicLinks(params: {
   const links: TopicLink[] = [];
 
   for (const existing of params.existingChunks) {
-    if (existing.chunkId === params.chunkId) continue;
-    if (!existing.embedding || existing.embedding.length !== params.chunkEmbedding.length) continue;
+    if (existing.chunkId === params.chunkId) {
+      continue;
+    }
+    if (!existing.embedding || existing.embedding.length !== params.chunkEmbedding.length) {
+      continue;
+    }
 
     const sim = cosineSimilarity(params.chunkEmbedding, existing.embedding);
     if (sim >= threshold) {
@@ -330,8 +340,8 @@ export function adjustImportance(params: {
 
     // Decay: exponential decay from last confirmation
     const daysSinceConfirmation = (now - fact.lastConfirmedAt) / MS_PER_DAY;
-    const decayRate = fact.significant ? 2.7 : 1.0; // Significant facts decay slower
-    const decayFactor = Math.pow(0.5, daysSinceConfirmation / (halfLifeDays * decayRate));
+    const decayRate = fact.significant ? 2.7 : 1; // Significant facts decay slower
+    const decayFactor = 0.5 ** (daysSinceConfirmation / (halfLifeDays * decayRate));
     const decayedImportance = baseImportance * (0.7 + 0.3 * decayFactor); // Never below 70% of original
 
     // Boost: additive based on recent retrieval count
@@ -345,7 +355,7 @@ export function adjustImportance(params: {
       }
     }
 
-    const newImportance = Math.min(1.0, decayedImportance + boost);
+    const newImportance = Math.min(1, decayedImportance + boost);
 
     // Only update if changed meaningfully (> 0.01 delta)
     if (Math.abs(newImportance - baseImportance) < 0.01) {

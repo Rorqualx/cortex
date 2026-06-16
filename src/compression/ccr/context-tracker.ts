@@ -42,7 +42,9 @@ export class ContextTracker {
    */
   detectRelevance(query: string): CCREntry[] {
     const queryKeywords = this.extractKeywords(query);
-    if (queryKeywords.length === 0) return [];
+    if (queryKeywords.length === 0) {
+      return [];
+    }
 
     // Score each entry by how many query keywords it matches
     const scores = new Map<number, number>();
@@ -60,7 +62,7 @@ export class ContextTracker {
     const threshold = queryKeywords.length >= 3 ? 2 : 1;
     const relevant = [...scores.entries()]
       .filter(([, score]) => score >= threshold)
-      .sort((a, b) => b[1] - a[1])
+      .toSorted((a, b) => b[1] - a[1])
       .map(([idx]) => this.entries[idx]);
 
     return relevant;

@@ -13,11 +13,7 @@ import {
   formatValidationErrors,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { uuidv7 } from "../../agents/runtime/index.js";
-import {
-  loadEntriesFromFile,
-  type FileEntry,
-  type SessionEntry,
-} from "../../agents/sessions/session-manager.js";
+import { loadEntriesFromFile, type SessionEntry } from "../../agents/sessions/session-manager.js";
 import {
   restoreFilesToTimestamp,
   type FileRestoreReport,
@@ -196,7 +192,7 @@ function resolveBranchPoints(entries: SessionEntry[]): {
     }
     // parentKey === "__root__" means root entries (parentId === null)
     const isRoot = parentKey === "__root__";
-    const branchFromId = isRoot ? childEntries[0]!.id : parentKey;
+    const branchFromId = isRoot ? childEntries[0].id : parentKey;
     const branchEntry = isRoot ? null : byId.get(parentKey);
 
     // Extract messageId from the entry identified by branchFromId
@@ -215,7 +211,7 @@ function resolveBranchPoints(entries: SessionEntry[]): {
       isActive: activePath.has(branchFromId),
       isLeaf: branchFromId === leafId,
       label: undefined, // labels are loaded separately via SessionManager
-      timestamp: branchEntry?.timestamp ?? childEntries[0]!.timestamp,
+      timestamp: branchEntry?.timestamp ?? childEntries[0].timestamp,
       type: branchEntry?.type ?? "message",
       messageId,
     });
@@ -269,7 +265,7 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
   let entries: SessionEntry[];
   try {
     entries = loadEntriesFromFile(sessionFile).filter(
-      (e): e is SessionEntry => (e as FileEntry).type !== "session",
+      (e): e is SessionEntry => e.type !== "session",
     );
   } catch {
     respond(
@@ -403,7 +399,7 @@ async function handleChatBranchesRequest(opts: GatewayRequestHandlerOptions): Pr
   let entries: SessionEntry[];
   try {
     entries = loadEntriesFromFile(sessionFile).filter(
-      (e): e is SessionEntry => (e as FileEntry).type !== "session",
+      (e): e is SessionEntry => e.type !== "session",
     );
   } catch {
     respond(

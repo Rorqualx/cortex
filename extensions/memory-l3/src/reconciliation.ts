@@ -90,13 +90,21 @@ export async function reconcileCrossBrain(params: {
   let newlyMarkedStale = 0;
   let unmarkedNowAgreed = 0;
   const updatedFacts = longterm.facts.map((fact) => {
-    if (fact.archived) return fact;
+    if (fact.archived) {
+      return fact;
+    }
     const decision = decisions.get(fact.id);
-    if (!decision) return fact;
+    if (!decision) {
+      return fact;
+    }
     const priorMark = fact.supersededBy ?? null;
     if (decision.verdict === "stale") {
-      if (priorMark === decision.supersededBy) return fact;
-      if (priorMark === null) newlyMarkedStale += 1;
+      if (priorMark === decision.supersededBy) {
+        return fact;
+      }
+      if (priorMark === null) {
+        newlyMarkedStale += 1;
+      }
       return { ...fact, supersededBy: decision.supersededBy };
     }
     if (priorMark !== null) {
@@ -210,7 +218,9 @@ export async function reconcileProseInterference(params: {
       const a = active[i];
       const b = active[j];
       const sim = jaccard(tokenized.get(a.id)!, tokenized.get(b.id)!);
-      if (sim < INTERFERENCE_JACCARD_THRESHOLD) continue;
+      if (sim < INTERFERENCE_JACCARD_THRESHOLD) {
+        continue;
+      }
 
       // Determine older and newer
       const older = a.lastConfirmedAt <= b.lastConfirmedAt ? a : b;
@@ -218,10 +228,14 @@ export async function reconcileProseInterference(params: {
 
       // Must be from different days to indicate drift
       const dayDiff = Math.abs(newer.lastConfirmedAt - older.lastConfirmedAt) / MS_PER_DAY;
-      if (dayDiff < 1) continue;
+      if (dayDiff < 1) {
+        continue;
+      }
 
       // Don't supersede a fact that was already superseded by something else
-      if (supersededByFactId.has(older.id)) continue;
+      if (supersededByFactId.has(older.id)) {
+        continue;
+      }
 
       supersededByFactId.set(older.id, `prose:${newer.dedupKey}`);
     }
@@ -231,14 +245,20 @@ export async function reconcileProseInterference(params: {
   let newlySuperseded = 0;
   let cleared = 0;
   const updatedFacts = longterm.facts.map((fact) => {
-    if (fact.archived) return fact;
+    if (fact.archived) {
+      return fact;
+    }
 
     // Check if this fact should gain a new mark
     const newMark = supersededByFactId.get(fact.id);
     if (newMark) {
       const priorMark = fact.supersededBy ?? null;
-      if (priorMark === newMark) return fact; // already marked
-      if (priorMark === null) newlySuperseded += 1;
+      if (priorMark === newMark) {
+        return fact;
+      } // already marked
+      if (priorMark === null) {
+        newlySuperseded += 1;
+      }
       return { ...fact, supersededBy: newMark };
     }
 
@@ -284,18 +304,32 @@ function parseDecisions(
   } catch {
     return out;
   }
-  if (!parsed || typeof parsed !== "object") return out;
+  if (!parsed || typeof parsed !== "object") {
+    return out;
+  }
   const decisions = (parsed as { decisions?: unknown }).decisions;
-  if (!Array.isArray(decisions)) return out;
+  if (!Array.isArray(decisions)) {
+    return out;
+  }
   for (const candidate of decisions) {
-    if (!candidate || typeof candidate !== "object") continue;
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
     const o = candidate as Record<string, unknown>;
-    if (typeof o.factId !== "string") continue;
-    if (!validIds.has(o.factId)) continue;
-    if (o.verdict !== "stale" && o.verdict !== "agreed") continue;
+    if (typeof o.factId !== "string") {
+      continue;
+    }
+    if (!validIds.has(o.factId)) {
+      continue;
+    }
+    if (o.verdict !== "stale" && o.verdict !== "agreed") {
+      continue;
+    }
     if (o.verdict === "stale") {
       const slot = typeof o.supersededBy === "string" ? o.supersededBy : null;
-      if (!slot || !validSlots.has(slot)) continue;
+      if (!slot || !validSlots.has(slot)) {
+        continue;
+      }
       out.set(o.factId, { verdict: "stale", supersededBy: slot });
     } else {
       out.set(o.factId, { verdict: "agreed", supersededBy: null });

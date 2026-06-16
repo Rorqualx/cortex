@@ -37,8 +37,12 @@ export async function maybeWriteEpoch(params: {
 
   for (const filePath of recentPaths) {
     const doc = await params.storage.readL2ChunkAtPath(filePath);
-    if (!doc) continue;
-    if (firstChunkId === undefined) firstChunkId = doc.frontmatter.id;
+    if (!doc) {
+      continue;
+    }
+    if (firstChunkId === undefined) {
+      firstChunkId = doc.frontmatter.id;
+    }
     lastChunkId = doc.frontmatter.id;
     for (const fact of doc.frontmatter.facts) {
       facts.push(fact);
@@ -50,7 +54,9 @@ export async function maybeWriteEpoch(params: {
   }
 
   facts.sort((a, b) => {
-    if (b.importance !== a.importance) return b.importance - a.importance;
+    if (b.importance !== a.importance) {
+      return b.importance - a.importance;
+    }
     return b.createdAt - a.createdAt;
   });
   const representative = facts.slice(0, REPRESENTATIVE_FACT_COUNT);

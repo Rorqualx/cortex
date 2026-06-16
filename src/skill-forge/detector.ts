@@ -252,7 +252,7 @@ function computeSuccessScore(events: TrajectoryEvent[]): number {
       return 0.5;
     }
   }
-  return 1.0;
+  return 1;
 }
 
 export type DetectorInput = {
@@ -331,7 +331,9 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
       candidates.push(deduped);
     } else if (raw.lane === "explicit") {
       const key = raw.matchedPhrase?.toLowerCase() ?? "";
-      if (seenExplicit.has(key)) continue;
+      if (seenExplicit.has(key)) {
+        continue;
+      }
       seenExplicit.set(key, raw);
       candidates.push(raw);
     }
@@ -358,7 +360,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         toolSequence: members[0].toolSequence,
         captureDirs: members.map((member) => member.captureDir),
         occurrences: members.length,
-        successScore: allClean ? 1.0 : 0.5,
+        successScore: allClean ? 1 : 0.5,
       });
     }
   }

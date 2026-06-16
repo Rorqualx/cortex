@@ -136,7 +136,9 @@ export function totalChainDuration(chain: CustodyChain): number {
  * Get the depth of the chain (length of longest parent → child path).
  */
 export function chainDepth(chain: CustodyChain): number {
-  if (chain.links.length === 0) return 0;
+  if (chain.links.length === 0) {
+    return 0;
+  }
   const childMap = new Map<string, CustodyChainLink[]>();
   for (const link of chain.links) {
     if (link.parentReceiptId !== null) {
@@ -147,10 +149,14 @@ export function chainDepth(chain: CustodyChain): number {
   }
   function depthFrom(receiptId: string): number {
     const children = childMap.get(receiptId) ?? [];
-    if (children.length === 0) return 1;
+    if (children.length === 0) {
+      return 1;
+    }
     return 1 + Math.max(...children.map((c) => depthFrom(c.receiptId)));
   }
   const roots = chain.links.filter((l) => l.parentReceiptId === null);
-  if (roots.length === 0) return chain.links.length; // No root — return link count as fallback.
+  if (roots.length === 0) {
+    return chain.links.length;
+  } // No root — return link count as fallback.
   return Math.max(...roots.map((r) => depthFrom(r.receiptId)));
 }

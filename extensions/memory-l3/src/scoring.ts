@@ -140,10 +140,12 @@ export function fsrsRetrievability(params: {
 }): number {
   const fsrs = params.fsrs ?? DEFAULT_FSRS_PARAMS;
   const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
-  if (params.halfLifeDays <= 0) return 1;
+  if (params.halfLifeDays <= 0) {
+    return 1;
+  }
 
   // Compute per-fact stability based on recall history
-  let stability = params.halfLifeDays * Math.pow(fsrs.w1, Math.max(0, params.recallCount - 1));
+  let stability = params.halfLifeDays * fsrs.w1 ** Math.max(0, params.recallCount - 1);
   stability *= 1 + fsrs.w0; // difficulty adjustment
 
   // Significance boost (emotional tagging from ZenBrain)
@@ -180,10 +182,14 @@ export function tokenize(text: string): Set<string> {
 }
 
 export function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
+  if (a.size === 0 || b.size === 0) {
+    return 0;
+  }
   let intersect = 0;
   for (const t of a) {
-    if (b.has(t)) intersect += 1;
+    if (b.has(t)) {
+      intersect += 1;
+    }
   }
   const union = a.size + b.size - intersect;
   return union === 0 ? 0 : intersect / union;
@@ -192,7 +198,9 @@ export function jaccard(a: Set<string>, b: Set<string>): number {
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 export function recencyScore(ageMs: number, halfLifeDays: number): number {
-  if (halfLifeDays <= 0) return 1;
+  if (halfLifeDays <= 0) {
+    return 1;
+  }
   const ageDays = Math.max(0, ageMs) / MS_PER_DAY;
   return Math.exp((-Math.LN2 * ageDays) / halfLifeDays);
 }
@@ -206,7 +214,9 @@ export function recencyScore(ageMs: number, halfLifeDays: number): number {
  * Returns 0 if either vector is empty or lengths mismatch.
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) {
+    return 0;
+  }
   let dot = 0;
   let magA = 0;
   let magB = 0;
@@ -239,7 +249,9 @@ export function bm25Score(
   const docLen = factTokens.size;
   let score = 0;
   for (const term of queryTokens) {
-    if (!factTokens.has(term)) continue;
+    if (!factTokens.has(term)) {
+      continue;
+    }
     const df = corpusStats.df.get(term) ?? 0;
     const idf = Math.log(1 + (corpusStats.total - df + 0.5) / (df + 0.5));
     // Presence-based tf=1: facts are short, so counting occurrences within

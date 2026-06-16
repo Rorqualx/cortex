@@ -45,9 +45,13 @@ const PROCEDURAL_HALF_LIFE_DAYS = 30;
  * Defaults to `~/.openclaw/skill-forge/skills/`; override via env or param.
  */
 export function resolveSkillForgeDir(override?: string): string {
-  if (override && override.length > 0) return override;
+  if (override && override.length > 0) {
+    return override;
+  }
   const fromEnv = process.env.OPENCLAW_SKILL_FORGE_DIR;
-  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  if (fromEnv && fromEnv.length > 0) {
+    return fromEnv;
+  }
   return path.join(os.homedir(), ".openclaw", "skill-forge", "skills");
 }
 
@@ -63,9 +67,13 @@ export function parseSkillMd(raw: string): {
 } | null {
   // Extract YAML frontmatter between --- fences
   const opener = raw.indexOf("---\n");
-  if (opener !== 0) return null;
+  if (opener !== 0) {
+    return null;
+  }
   const closeAt = raw.indexOf("\n---\n", opener + 4);
-  if (closeAt < 0) return null;
+  if (closeAt < 0) {
+    return null;
+  }
 
   const frontRaw = raw.slice(opener + 4, closeAt);
   const body = raw.slice(closeAt + 5);
@@ -89,7 +97,9 @@ export function parseSkillMd(raw: string): {
     }
   }
 
-  if (name.length === 0) return null;
+  if (name.length === 0) {
+    return null;
+  }
 
   // Extract tool sequence from numbered list in body: "1. `tool_name`"
   const toolSequence: string[] = [];
@@ -134,7 +144,9 @@ export async function readPromotedSkills(skillForgeDir?: string): Promise<Proced
       continue;
     }
     const parsed = parseSkillMd(raw);
-    if (!parsed) continue;
+    if (!parsed) {
+      continue;
+    }
 
     // Check for telemetry data alongside SKILL.md
     let usageCount = 0;

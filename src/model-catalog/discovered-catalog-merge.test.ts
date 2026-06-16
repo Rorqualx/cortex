@@ -43,7 +43,7 @@ describe("applyDiscoveredCatalog", () => {
       active: [rec("zai", "glm-5", "active"), rec("zai", "glm-6", "active")],
       deprecated: [],
     });
-    expect(result.map((m) => m.id).sort()).toEqual(["glm-5", "glm-5v-turbo", "glm-6"]);
+    expect(result.map((m) => m.id).toSorted()).toEqual(["glm-5", "glm-5v-turbo", "glm-6"]);
   });
 
   it("preserves existing manifest metadata for already-present models", () => {

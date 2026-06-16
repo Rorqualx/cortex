@@ -206,13 +206,17 @@ export function fileIcon(name: string): string {
   const lower = name.toLowerCase();
 
   // 1. Exact filename match
-  if (FILE_NAME_ICONS[lower]) return FILE_NAME_ICONS[lower];
+  if (FILE_NAME_ICONS[lower]) {
+    return FILE_NAME_ICONS[lower];
+  }
 
   // 2. Extension match
   const dotIndex = lower.lastIndexOf(".");
   if (dotIndex !== -1) {
     const ext = lower.slice(dotIndex + 1);
-    if (FILE_TYPE_ICONS[ext]) return FILE_TYPE_ICONS[ext];
+    if (FILE_TYPE_ICONS[ext]) {
+      return FILE_TYPE_ICONS[ext];
+    }
   }
 
   // 3. Fallback

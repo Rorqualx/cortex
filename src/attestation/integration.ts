@@ -49,7 +49,9 @@ export const DEFAULT_ATTESTATION_CONFIG: AttestationConfig = {
  * Merge partial config from openclaw.json with defaults.
  */
 export function resolveAttestationConfig(partial?: Partial<AttestationConfig>): AttestationConfig {
-  if (!partial) return { ...DEFAULT_ATTESTATION_CONFIG };
+  if (!partial) {
+    return { ...DEFAULT_ATTESTATION_CONFIG };
+  }
   return {
     enabled: partial.enabled ?? DEFAULT_ATTESTATION_CONFIG.enabled,
     algorithm: partial.algorithm ?? DEFAULT_ATTESTATION_CONFIG.algorithm,
@@ -88,7 +90,9 @@ export function createAttestationForResponse(params: {
   modelOverrides?: string[];
   durationMs?: number;
 }): AttestationRecord | null {
-  if (!params.config.enabled) return null;
+  if (!params.config.enabled) {
+    return null;
+  }
 
   // Layer 1: Create receipt.
   const receipt = createReceipt({
@@ -200,7 +204,9 @@ export function verifySessionChain(
   | { valid: false; brokenAt: CustodyChainLink }
   | { valid: false; error: string } {
   const chain = chainRegistry.get(sessionId);
-  if (!chain) return { valid: false, error: `No chain found for session ${sessionId}` };
+  if (!chain) {
+    return { valid: false, error: `No chain found for session ${sessionId}` };
+  }
   return verifyChain(chain);
 }
 

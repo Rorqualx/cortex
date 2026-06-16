@@ -67,7 +67,9 @@ function buildForwardReferenceIndex(messages: AgentMessage[]): Set<number> {
   // a tool result, that tool result has forward relevance
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    if (msg.role !== "assistant") continue;
+    if (msg.role !== "assistant") {
+      continue;
+    }
 
     // Check if this assistant message has tool calls referencing earlier results
     const content = "content" in msg ? msg.content : null;
@@ -200,14 +202,16 @@ export function enforceTokenBudget(
   // Sort non-protected by score ascending (drop lowest first)
   const droppable = estimates
     .filter((e) => !protectedIndices.has(e.index))
-    .sort((a, b) => a.score - b.score);
+    .toSorted((a, b) => a.score - b.score);
 
   // Drop messages until under budget
   const dropIndices = new Set<number>();
   let currentTokens = totalTokens;
 
   for (const entry of droppable) {
-    if (currentTokens <= tokenBudget) break;
+    if (currentTokens <= tokenBudget) {
+      break;
+    }
     dropIndices.add(entry.index);
     currentTokens -= entry.tokens;
   }

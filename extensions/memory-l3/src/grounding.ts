@@ -19,8 +19,12 @@ export function groundTypedFact(
   fact: { value: string; sourceSpan: string },
   transcript: string,
 ): GroundingResult {
-  if (fact.value.length === 0) return { ok: false, reason: "value_empty" };
-  if (fact.sourceSpan.length === 0) return { ok: false, reason: "span_empty" };
+  if (fact.value.length === 0) {
+    return { ok: false, reason: "value_empty" };
+  }
+  if (fact.sourceSpan.length === 0) {
+    return { ok: false, reason: "span_empty" };
+  }
   if (!fact.sourceSpan.includes(fact.value)) {
     return { ok: false, reason: "value_not_in_span" };
   }
@@ -42,9 +46,13 @@ export function groundAndDedupTypedFacts(
   const seenSlots = new Set<string>();
   const out: ExtractedTypedFact[] = [];
   for (const fact of facts) {
-    if (seenSlots.has(fact.slot)) continue;
+    if (seenSlots.has(fact.slot)) {
+      continue;
+    }
     const result = groundTypedFact(fact, transcript);
-    if (!result.ok) continue;
+    if (!result.ok) {
+      continue;
+    }
     seenSlots.add(fact.slot);
     out.push(fact);
   }

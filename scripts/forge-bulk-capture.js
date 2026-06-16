@@ -23,7 +23,9 @@ function extractEventsFromJsonl(content) {
   const events = [];
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      continue;
+    }
     try {
       events.push(JSON.parse(trimmed));
     } catch {}
@@ -110,7 +112,7 @@ async function main() {
   console.log(`Found ${sessionFiles.length} session transcripts`);
 
   // Check existing forge captures
-  let existingDirs = new Set();
+  const existingDirs = new Set();
   try {
     const forgeEntries = await fsp.readdir(FORGE_DIR);
     for (const d of forgeEntries) {

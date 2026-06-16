@@ -15,7 +15,9 @@ import type { L2ChunkFrontmatter, L3State, LongTermFact, LongTermFrontmatter } f
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 function l3debug(msg: string): void {
-  if (DEBUG_ENABLED) console.error(`[memory-l3/longterm] ${msg}`);
+  if (DEBUG_ENABLED) {
+    console.error(`[memory-l3/longterm] ${msg}`);
+  }
 }
 
 export type LongTermConfig = {
@@ -178,7 +180,9 @@ export async function consolidateLongTerm(params: {
   // to incorrectly grant grace to the second-to-last fact.
   const epochPopSnapshot = new Map<string, number>();
   for (const fact of merged.values()) {
-    if (fact.archived) continue;
+    if (fact.archived) {
+      continue;
+    }
     const epochKey = formatDateString(fact.firstSeenAt);
     epochPopSnapshot.set(epochKey, (epochPopSnapshot.get(epochKey) ?? 0) + 1);
   }
@@ -192,10 +196,16 @@ export async function consolidateLongTerm(params: {
     epochKey: string;
   }> = [];
   for (const [key, fact] of merged) {
-    if (fact.archived) continue;
-    if (promotableByKey.has(key)) continue;
+    if (fact.archived) {
+      continue;
+    }
+    if (promotableByKey.has(key)) {
+      continue;
+    }
     const age = params.now - fact.lastConfirmedAt;
-    if (age < longTermConfig.maxAgeWithoutConfirmMs) continue;
+    if (age < longTermConfig.maxAgeWithoutConfirmMs) {
+      continue;
+    }
     archivalCandidates.push({ key, fact, age, epochKey: formatDateString(fact.firstSeenAt) });
   }
 
@@ -232,7 +242,9 @@ export async function consolidateLongTerm(params: {
     }
     merged.set(key, archive(fact, params.now));
     archivedCount += 1;
-    if (pop > 0) remainingEpochPop.set(epochKey, pop - 1);
+    if (pop > 0) {
+      remainingEpochPop.set(epochKey, pop - 1);
+    }
   }
 
   // -----------------------------------------------------------------
@@ -247,7 +259,7 @@ export async function consolidateLongTerm(params: {
   // duplicate facts from accumulating (e.g., "fork is on memory-fork" and
   // "the branch is memory-fork" have different dedupKeys but are
   // semantically identical).
-  if (longTermConfig.semanticDedupThreshold < 1.0) {
+  if (longTermConfig.semanticDedupThreshold < 1) {
     const activeFacts = [...merged.values()].filter((f) => !f.archived);
     if (activeFacts.length >= 2) {
       // Pre-compute jaccard tokens for fallback
@@ -263,7 +275,9 @@ export async function consolidateLongTerm(params: {
         for (let j = i + 1; j < activeFacts.length; j++) {
           const a = activeFacts[i];
           const b = activeFacts[j];
-          if (toArchive.has(a.dedupKey) || toArchive.has(b.dedupKey)) continue;
+          if (toArchive.has(a.dedupKey) || toArchive.has(b.dedupKey)) {
+            continue;
+          }
 
           // Use cosine similarity on embeddings when both facts have them,
           // otherwise fall back to jaccard.
@@ -278,7 +292,9 @@ export async function consolidateLongTerm(params: {
           } else {
             sim = jaccard(factTokens.get(a.dedupKey)!, factTokens.get(b.dedupKey)!);
           }
-          if (sim < longTermConfig.semanticDedupThreshold) continue;
+          if (sim < longTermConfig.semanticDedupThreshold) {
+            continue;
+          }
 
           // Archive the lower-importance (or older if tied) fact
           const victim =
@@ -415,7 +431,9 @@ function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<str
   const seen = new Set<string>(prior);
   const out: string[] = [...prior];
   for (const id of incoming) {
-    if (seen.has(id)) continue;
+    if (seen.has(id)) {
+      continue;
+    }
     seen.add(id);
     out.push(id);
   }
@@ -424,13 +442,15 @@ function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<str
 
 /** Stable ordering: active facts by importance desc, then archived facts. */
 function orderFacts(facts: LongTermFact[]): LongTermFact[] {
-  const active = facts.filter((f) => !f.archived).sort(byImportanceDesc);
-  const archived = facts.filter((f) => f.archived).sort(byImportanceDesc);
+  const active = facts.filter((f) => !f.archived).toSorted(byImportanceDesc);
+  const archived = facts.filter((f) => f.archived).toSorted(byImportanceDesc);
   return [...active, ...archived];
 }
 
 function byImportanceDesc(a: LongTermFact, b: LongTermFact): number {
-  if (b.importance !== a.importance) return b.importance - a.importance;
+  if (b.importance !== a.importance) {
+    return b.importance - a.importance;
+  }
   return a.dedupKey.localeCompare(b.dedupKey);
 }
 

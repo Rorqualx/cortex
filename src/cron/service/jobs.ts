@@ -1018,7 +1018,7 @@ function mergeCronDelivery(
           : undefined;
       const mode = normalizeOptionalString(patch.completionDestination.mode);
       next.completionDestination = {
-        mode: (mode === "announce" ? "announce" : "webhook") as "webhook" | "announce",
+        mode: mode === "announce" ? "announce" : "webhook",
         ...(to ? { to } : {}),
         ...(channel ? { channel } : {}),
         ...(accountId ? { accountId } : {}),

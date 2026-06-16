@@ -58,7 +58,7 @@ describe("steerWithCompactionRetry", () => {
       delay,
     });
     expect(outcome.queued).toBe(false);
-    expect(outcome.queued === false && outcome.reason).toBe("compacting");
+    expect(!outcome.queued && outcome.reason).toBe("compacting");
     // initial attempt + 4 polls (0,250,500,750) before the clock reaches 1000.
     expect(attempt).toHaveBeenCalledTimes(5);
   });
@@ -77,7 +77,7 @@ describe("steerWithCompactionRetry", () => {
   it("does not retry a terminal (non-compacting) failure", async () => {
     const attempt = vi.fn().mockResolvedValueOnce(noActiveRun());
     const outcome = await steerWithCompactionRetry({ attempt, delay: noDelay });
-    expect(outcome.queued === false && outcome.reason).toBe("no_active_run");
+    expect(!outcome.queued && outcome.reason).toBe("no_active_run");
     expect(attempt).toHaveBeenCalledTimes(1);
   });
 });

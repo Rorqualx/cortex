@@ -120,7 +120,9 @@ if (!status.ok) {
 }
 if (status.stdout) {
   fail(`Working tree dirty — ${status.stdout.split("\n").length} files`);
-} else pass("Clean working tree");
+} else {
+  pass("Clean working tree");
+}
 
 if (failures) {
   console.log(c.red("\nAborting: commit or stash changes first."));
@@ -154,7 +156,9 @@ if (!dryRun.ok) {
   if (dryRun.stderr?.includes("CONFLICT")) {
     fail("Merge conflicts detected:");
     const conflicts = dryRun.stdout.split("\n").filter((l) => l.includes("CONFLICT"));
-    for (const l of conflicts) console.log(c.red(`    ${l}`));
+    for (const l of conflicts) {
+      console.log(c.red(`    ${l}`));
+    }
   } else {
     fail(`Merge failed: ${dryRun.stderr || dryRun.stdout}`);
   }
@@ -195,7 +199,9 @@ if (allMarkers.stdout) {
     .filter((f) => !legitPatterns.some((p) => p.test(f)));
   if (hits.length) {
     fail("Conflict markers found in working tree:");
-    for (const f of hits.slice(0, 10)) console.log(c.red(`    ${f}`));
+    for (const f of hits.slice(0, 10)) {
+      console.log(c.red(`    ${f}`));
+    }
   } else {
     pass("No conflict markers in tree (excluding fixtures)");
   }
@@ -214,11 +220,15 @@ for (const proto of PROTECTED_FILES) {
   const matching = changedFiles.filter((f) => f.startsWith(proto));
   if (matching.length) {
     warn(`Protected path touched: ${proto}`);
-    for (const f of matching) console.log(c.yellow(`    ${f}`));
+    for (const f of matching) {
+      console.log(c.yellow(`    ${f}`));
+    }
     protectedHits++;
   }
 }
-if (protectedHits === 0) pass("No protected files modified");
+if (protectedHits === 0) {
+  pass("No protected files modified");
+}
 
 // ── 6. Fork-exclusive paths ──────────────────────────────────────────────
 
@@ -238,7 +248,9 @@ for (const p of forkPaths) {
     forkOk = false;
   }
 }
-if (forkOk) pass("All fork-exclusive paths present");
+if (forkOk) {
+  pass("All fork-exclusive paths present");
+}
 
 // ── 7. .gitattributes merge=ours check ───────────────────────────────────
 
@@ -270,8 +282,12 @@ if (!skipTsc) {
   } else {
     const errors = (tsc.stdout || tsc.stderr || "").split("\n").slice(0, 5);
     fail("TypeScript compilation errors:");
-    for (const e of errors) console.log(c.red(`    ${e}`));
-    if (errors.length >= 5) console.log(c.dim("    ... (truncated)"));
+    for (const e of errors) {
+      console.log(c.red(`    ${e}`));
+    }
+    if (errors.length >= 5) {
+      console.log(c.dim("    ... (truncated)"));
+    }
   }
 } else {
   section("TypeScript compilation (skipped)");

@@ -18,7 +18,9 @@ export {
  * Detect the current platform's sandbox capability.
  */
 export function getOsSandboxType(): "seatbelt" | "bubblewrap" | "none" {
-  if (process.platform === "darwin") return "seatbelt";
+  if (process.platform === "darwin") {
+    return "seatbelt";
+  }
   // Linux: bubblewrap is available if bwrap is installed
   // For now, defer Linux support — return "none" until we add bwrap detection
   return "none";
@@ -103,10 +105,14 @@ export function shouldApplyOsSandbox(
   isDockerExec?: boolean,
 ): boolean {
   // Never sandbox commands already running inside Docker
-  if (isDockerExec) return false;
+  if (isDockerExec) {
+    return false;
+  }
 
   // Check explicit config
-  if (!osSandboxConfig?.enabled) return false;
+  if (!osSandboxConfig?.enabled) {
+    return false;
+  }
 
   // Platform support check
   return isOsSandboxAvailable();

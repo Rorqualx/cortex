@@ -22,7 +22,7 @@ export function sha256(data: string): string {
  * Serialization is deterministic: keys are sorted, no whitespace.
  */
 export function hashJson(value: unknown): string {
-  const serialized = JSON.stringify(value, Object.keys(value as object).sort());
+  const serialized = JSON.stringify(value, Object.keys(value as object).toSorted());
   return sha256(serialized);
 }
 
@@ -79,7 +79,7 @@ export function verifyReceipt(
  * Keys sorted, no whitespace — suitable for signing.
  */
 export function serializeReceipt(receipt: AttestationReceipt): string {
-  return JSON.stringify(receipt, Object.keys(receipt).sort());
+  return JSON.stringify(receipt, Object.keys(receipt).toSorted());
 }
 
 /**

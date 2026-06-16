@@ -199,7 +199,7 @@ export const arbSessionKey = fc.string({ minLength: 32, maxLength: 64 }).map((s)
     .map((c) => c.charCodeAt(0).toString(16).padStart(2, "0"))
     .join("")
     .padEnd(32, "0")
-    .substring(0, 64);
+    .slice(0, 64);
 });
 
 /**
@@ -258,7 +258,9 @@ export const arbError = fc
   })
   .map((err) => {
     const error = new Error(err.message);
-    if (err.name) error.name = err.name;
+    if (err.name) {
+      error.name = err.name;
+    }
     return error;
   });
 
@@ -353,14 +355,16 @@ export const arbActiveDeliveryState = fc.constantFrom("pending", "in_progress", 
  */
 export function arbUniqueArray<T>(
   arb: fc.Arbitrary<T>,
-  constraints?: fc.ArrayConstraints | undefined,
+  constraints?: fc.ArrayConstraints,
 ): fc.Arbitrary<T[]> {
   return arb.array(constraints).filter((arr) => {
     const seen = new Set();
     for (const item of arr) {
       // Use string representation for comparison
       const key = String(item);
-      if (seen.has(key)) return false;
+      if (seen.has(key)) {
+        return false;
+      }
       seen.add(key);
     }
     return true;
@@ -411,7 +415,9 @@ export function arbArraySummingTo(
     })
     .map((arr) => {
       const sum = arr.reduce((a, b) => a + b, 0);
-      if (sum === 0) return arr.map(() => Math.floor(target / arr.length));
+      if (sum === 0) {
+        return arr.map(() => Math.floor(target / arr.length));
+      }
       const ratio = target / sum;
       return arr.map((v) => Math.max(1, Math.floor(v * ratio)));
     });

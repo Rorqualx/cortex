@@ -55,7 +55,7 @@ export function applyAliasReassignments(params: {
     if (!fromKey) {
       continue;
     }
-    const entry = next[fromKey] as AliasEntry;
+    const entry = next[fromKey];
     if (action.outcome === "clear") {
       delete next[fromKey];
       changes.push({ alias, outcome: "drop", fromKey });

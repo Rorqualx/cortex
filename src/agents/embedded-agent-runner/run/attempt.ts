@@ -3065,7 +3065,7 @@ export async function runEmbeddedAttempt(
               resolveCompressionConfig,
               createCCRStore,
               createCCRRetrieveTool,
-              // @ts-ignore — compression module excluded from DTS build; runtime import works.
+              // @ts-expect-error — compression module excluded from DTS build; runtime import works.
             } = await import("../../compression/index.js");
             const resolved = resolveCompressionConfig(compressionConfig);
             const currentMessages = activeSession.messages;

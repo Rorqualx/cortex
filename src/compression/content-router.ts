@@ -22,19 +22,27 @@ export function routeAndCompress(content: string, config: CompressionConfig): Co
 
   switch (contentType) {
     case "json_array":
-      if (!config.enabledTypes.jsonArrays) break;
+      if (!config.enabledTypes.jsonArrays) {
+        break;
+      }
       return crushJsonArray(content, config.maxArrayItems, config.targetRatio);
 
     case "search":
-      if (!config.enabledTypes.searchResults) break;
+      if (!config.enabledTypes.searchResults) {
+        break;
+      }
       return compressSearchResults(content, config.targetRatio);
 
     case "diff":
-      if (!config.enabledTypes.diffs) break;
+      if (!config.enabledTypes.diffs) {
+        break;
+      }
       return compressDiffOutput(content, config.targetRatio);
 
     case "log":
-      if (!config.enabledTypes.logs) break;
+      if (!config.enabledTypes.logs) {
+        break;
+      }
       return compressLogOutput(content, config.targetRatio);
 
     case "passthrough":
@@ -59,7 +67,9 @@ type ContentType = "json_array" | "search" | "diff" | "log" | "passthrough";
 
 function detectContentType(content: string): ContentType {
   const trimmed = content.trim();
-  if (trimmed.length === 0) return "passthrough";
+  if (trimmed.length === 0) {
+    return "passthrough";
+  }
 
   // 1. JSON array
   if (trimmed.startsWith("[")) {
@@ -95,10 +105,18 @@ function isDiffContent(content: string): boolean {
   const lines = content.split("\n");
   let diffMarkers = 0;
   for (const line of lines.slice(0, 20)) {
-    if (line.startsWith("diff --git")) diffMarkers++;
-    if (line.startsWith("@@")) diffMarkers++;
-    if (line.startsWith("---")) diffMarkers++;
-    if (line.startsWith("+++")) diffMarkers++;
+    if (line.startsWith("diff --git")) {
+      diffMarkers++;
+    }
+    if (line.startsWith("@@")) {
+      diffMarkers++;
+    }
+    if (line.startsWith("---")) {
+      diffMarkers++;
+    }
+    if (line.startsWith("+++")) {
+      diffMarkers++;
+    }
   }
   return diffMarkers >= 3;
 }
@@ -109,9 +127,13 @@ function isSearchContent(content: string): boolean {
   const sampleSize = Math.min(lines.length, 30);
   for (let i = 0; i < sampleSize; i++) {
     // file:line:content format
-    if (/^\/?\S+:\d+:/.test(lines[i])) grepLines++;
+    if (/^\/?\S+:\d+:/.test(lines[i])) {
+      grepLines++;
+    }
     // Just file paths
-    else if (/^\/?\S+\.\w{1,10}$/.test(lines[i].trim())) grepLines++;
+    else if (/^\/?\S+\.\w{1,10}$/.test(lines[i].trim())) {
+      grepLines++;
+    }
   }
   return grepLines > sampleSize * 0.5;
 }
@@ -122,13 +144,21 @@ function isLogContent(content: string): boolean {
   const sampleSize = Math.min(lines.length, 20);
   for (let i = 0; i < sampleSize; i++) {
     // Timestamp patterns
-    if (/^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(lines[i])) logLines++;
+    if (/^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(lines[i])) {
+      logLines++;
+    }
     // Log levels
-    else if (/\b(ERROR|WARN|INFO|DEBUG|TRACE|FATAL)\b/.test(lines[i])) logLines++;
+    else if (/\b(ERROR|WARN|INFO|DEBUG|TRACE|FATAL)\b/.test(lines[i])) {
+      logLines++;
+    }
     // Build tool output
-    else if (/^\s*\[(ERROR|WARN|INFO)\]/.test(lines[i])) logLines++;
-    else if (/\b(passed|failed|skipped)\s*\d*\b/i.test(lines[i])) logLines++;
-    else if (/npm (warn|error|info)/i.test(lines[i])) logLines++;
+    else if (/^\s*\[(ERROR|WARN|INFO)\]/.test(lines[i])) {
+      logLines++;
+    } else if (/\b(passed|failed|skipped)\s*\d*\b/i.test(lines[i])) {
+      logLines++;
+    } else if (/npm (warn|error|info)/i.test(lines[i])) {
+      logLines++;
+    }
   }
   return logLines > sampleSize * 0.4;
 }

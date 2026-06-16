@@ -79,12 +79,12 @@ describe("promoteStagedSkill", () => {
     await writeStagedSkill(stateDir, "scored-skill", validSkill("scored-skill"));
     const result = await promoteStagedSkill({
       name: "scored-skill",
-      successScore: 1.0,
+      successScore: 1,
       env: env(),
     });
     expect(result.status).toBe("promoted");
     const entry = await readTelemetry({ name: "scored-skill", env: env() });
-    expect(entry?.successScore).toBe(1.0);
+    expect(entry?.successScore).toBe(1);
   });
 
   it("returns rejected and leaves staged intact when the gate fails", async () => {

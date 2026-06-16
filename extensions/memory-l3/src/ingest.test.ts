@@ -22,7 +22,7 @@ describe("IngestBuffer", () => {
     expect(buffer.tokens("s1")).toBeGreaterThan(0);
     expect(buffer.tokens("s2")).toBeGreaterThan(0);
     expect(buffer.totalTokens()).toBe(buffer.tokens("s1") + buffer.tokens("s2"));
-    expect(buffer.sessionIds().sort()).toEqual(["s1", "s2"]);
+    expect(buffer.sessionIds().toSorted()).toEqual(["s1", "s2"]);
   });
 
   it("pushBatch returns ingested count and accumulates tokens", () => {

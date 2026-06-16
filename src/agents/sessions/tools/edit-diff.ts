@@ -184,7 +184,9 @@ function findSimilarText(content: string, target: string): string | undefined {
   const normalizedTarget = normalizeForFuzzyMatch(target);
 
   // Don't search if target is too large relative to content
-  if (normalizedTarget.length > normalizedContent.length) return undefined;
+  if (normalizedTarget.length > normalizedContent.length) {
+    return undefined;
+  }
 
   let bestMatch: { index: number; similarity: number } | undefined;
   const windowSize = Math.min(normalizedTarget.length * 2, normalizedContent.length);
@@ -224,8 +226,12 @@ function findSimilarText(content: string, target: string): string | undefined {
 
 /** Simple character-level similarity metric (0-1) */
 function computeSimilarity(a: string, b: string): number {
-  if (a === b) return 1.0;
-  if (a.length === 0 || b.length === 0) return 0.0;
+  if (a === b) {
+    return 1.0;
+  }
+  if (a.length === 0 || b.length === 0) {
+    return 0.0;
+  }
 
   const longer = a.length > b.length ? a : b;
   const shorter = a.length > b.length ? b : a;
@@ -298,7 +304,9 @@ function getDuplicateError(
     const normalizedContent = normalizeForFuzzyMatch(content);
     while (true) {
       const idx = normalizedContent.indexOf(normalizedOldText, searchStart);
-      if (idx === -1) break;
+      if (idx === -1) {
+        break;
+      }
 
       // Find line number for this index
       let lineNum = 1;

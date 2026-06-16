@@ -137,7 +137,7 @@ describe("hebbian", () => {
 
     it("caps edge weight at maxEdgeWeight", () => {
       const lookup = buildEdgeLookup([{ a: "k:1", b: "k:2", weight: 100 }]);
-      const scores = new Map<string, number>([["k:2", 1.0]]);
+      const scores = new Map<string, number>([["k:2", 1]]);
       const config: HebbianConfig = {
         neighborWeight: 0.05,
         maxEdgeWeight: 5,

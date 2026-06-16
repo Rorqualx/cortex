@@ -65,7 +65,9 @@ export class CCRStore {
    * If content already exists (same hash), update last_accessed_at.
    */
   store(content: string, metadata: Omit<CCREntry, "hash" | "originalContent">): string {
-    if (this.closed) throw new Error("CCRStore is closed");
+    if (this.closed) {
+      throw new Error("CCRStore is closed");
+    }
 
     const hash = sha256(content);
     const now = Date.now();
@@ -96,11 +98,15 @@ export class CCRStore {
    * Retrieve original content by hash. Returns null if not found.
    */
   retrieve(hash: string): string | null {
-    if (this.closed) return null;
+    if (this.closed) {
+      return null;
+    }
 
     const stmt = this.db.prepare("SELECT content FROM ccr_cache WHERE hash = ?");
     const row = stmt.get(hash) as { content: string } | undefined;
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
 
     // Update access metadata
     const update = this.db.prepare(
@@ -115,13 +121,17 @@ export class CCRStore {
    * Get metadata for a cached entry (without the content itself).
    */
   getMeta(hash: string): CCREntry | null {
-    if (this.closed) return null;
+    if (this.closed) {
+      return null;
+    }
 
     const stmt = this.db.prepare(
       "SELECT hash, content_type, original_chars, compressed_chars, message_index, created_at FROM ccr_cache WHERE hash = ?",
     );
     const row = stmt.get(hash) as Record<string, unknown> | undefined;
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
 
     return {
       hash: row.hash as string,
@@ -139,10 +149,14 @@ export class CCRStore {
    * Returns matching content snippets (up to maxResults).
    */
   search(hash: string, query: string, maxResults: number = 5): string[] {
-    if (this.closed) return [];
+    if (this.closed) {
+      return [];
+    }
 
     const content = this.retrieve(hash);
-    if (!content) return [];
+    if (!content) {
+      return [];
+    }
 
     // Simple line-based keyword search
     const keywords = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -150,7 +164,9 @@ export class CCRStore {
     const matches: string[] = [];
 
     for (const line of lines) {
-      if (matches.length >= maxResults) break;
+      if (matches.length >= maxResults) {
+        break;
+      }
       const lower = line.toLowerCase();
       if (keywords.every((kw) => lower.includes(kw))) {
         matches.push(line);
@@ -164,7 +180,9 @@ export class CCRStore {
    * Evict expired entries. Returns number of entries evicted.
    */
   evict(): number {
-    if (this.closed) return 0;
+    if (this.closed) {
+      return 0;
+    }
 
     const cutoff = Date.now() - this.ttlSeconds * 1000;
 
@@ -190,7 +208,9 @@ export class CCRStore {
    * Get count of cached entries.
    */
   getCount(): number {
-    if (this.closed) return 0;
+    if (this.closed) {
+      return 0;
+    }
     const stmt = this.db.prepare("SELECT COUNT(*) as cnt FROM ccr_cache");
     const row = stmt.get() as { cnt: number };
     return row.cnt;
@@ -200,7 +220,9 @@ export class CCRStore {
    * Close the database connection.
    */
   close(): void {
-    if (this.closed) return;
+    if (this.closed) {
+      return;
+    }
     this.closed = true;
     this.db.close();
   }

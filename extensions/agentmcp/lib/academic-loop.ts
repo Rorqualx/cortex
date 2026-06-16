@@ -68,7 +68,7 @@ async function jsonCall<T extends z.ZodTypeAny>(
 ): Promise<z.infer<T>> {
   const sys = `${opts.system}\n\nRespond with a single JSON object. Schema:\n${opts.schemaHint}\n\nOutput only the JSON object — no markdown fences, no preamble. Strings inside JSON must escape any internal double quotes as \\".`;
   const thinking = opts.thinking ?? false;
-  const baseTemp = opts.temperature ?? (thinking ? 1.0 : 0);
+  const baseTemp = opts.temperature ?? (thinking ? 1 : 0);
   const maxTokens = opts.maxTokens ?? 16000;
 
   let lastError = "";
@@ -134,16 +134,22 @@ function planCachePath(question: string, planModel: string): string {
 }
 
 function readPlanCache(question: string, planModel: string): string[] | undefined {
-  if (process.env.SKIP_PLAN_CACHE === "1") return undefined;
+  if (process.env.SKIP_PLAN_CACHE === "1") {
+    return undefined;
+  }
   const p = planCachePath(question, planModel);
-  if (!existsSync(p)) return undefined;
+  if (!existsSync(p)) {
+    return undefined;
+  }
   try {
     const data = JSON.parse(readFileSync(p, "utf-8")) as {
       question: string;
       model: string;
       queries: string[];
     };
-    if (data.question !== question || data.model !== planModel) return undefined;
+    if (data.question !== question || data.model !== planModel) {
+      return undefined;
+    }
     return data.queries;
   } catch {
     return undefined;
@@ -151,7 +157,9 @@ function readPlanCache(question: string, planModel: string): string[] | undefine
 }
 
 function writePlanCache(question: string, planModel: string, queries: string[]): void {
-  if (process.env.SKIP_PLAN_CACHE === "1") return;
+  if (process.env.SKIP_PLAN_CACHE === "1") {
+    return;
+  }
   try {
     mkdirSync(PLAN_CACHE_DIR, { recursive: true });
     writeFileSync(
@@ -200,7 +208,9 @@ async function searchS2(query: string, limit: number): Promise<Paper[]> {
   const headers: Record<string, string> = {
     "User-Agent": `academic-deep-research/0.2 (mailto:${MAILTO})`,
   };
-  if (process.env.S2_API_KEY) headers["x-api-key"] = process.env.S2_API_KEY;
+  if (process.env.S2_API_KEY) {
+    headers["x-api-key"] = process.env.S2_API_KEY;
+  }
   const res = await fetch(url, { headers });
   if (!res.ok) {
     console.error(
@@ -288,7 +298,9 @@ async function searchOpenAlex(query: string, limit: number): Promise<Paper[]> {
 
 async function searchCore(query: string, limit: number): Promise<Paper[]> {
   const apiKey = process.env.CORE_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) {
+    return [];
+  }
   const res = await fetch("https://api.core.ac.uk/v3/search/works", {
     method: "POST",
     headers: {
@@ -361,23 +373,25 @@ async function searchDoaj(query: string, limit: number): Promise<Paper[]> {
         typeof bj.year === "number"
           ? bj.year
           : typeof bj.year === "string"
-            ? parseInt(bj.year, 10) || 0
+            ? Number.parseInt(bj.year, 10) || 0
             : 0;
       const isPdf =
         fulltextLink?.content_type?.toLowerCase() === "pdf" ||
         /\.pdf(?:[?#]|$)/i.test(fulltextLink?.url ?? "");
-      return {
-        paperId: doi ? `doi:${doi.replace(/^https?:\/\/doi\.org\//i, "")}` : `doaj:${r.id}`,
-        title: bj.title!,
-        abstract: bj.abstract!,
-        authors: (bj.author ?? []).map((a) => a.name ?? "").filter(Boolean),
-        year: yearNum,
-        venue: bj.journal?.title ?? bj.journal?.publisher ?? undefined,
-        citationCount: 0,
-        url: fulltextLink?.url ?? `https://doaj.org/article/${r.id}`,
-        source: "doaj" as const,
-        ...(isPdf && fulltextLink?.url ? { fulltextUrl: fulltextLink.url } : {}),
-      };
+      return Object.assign(
+        {
+          paperId: doi ? `doi:${doi.replace(/^https?:\/\/doi\.org\//i, "")}` : `doaj:${r.id}`,
+          title: bj.title!,
+          abstract: bj.abstract!,
+          authors: (bj.author ?? []).map((a) => a.name ?? "").filter(Boolean),
+          year: yearNum,
+          venue: bj.journal?.title ?? bj.journal?.publisher ?? undefined,
+          citationCount: 0,
+          url: fulltextLink?.url ?? `https://doaj.org/article/${r.id}`,
+          source: "doaj" as const,
+        },
+        isPdf && fulltextLink?.url ? { fulltextUrl: fulltextLink.url } : {},
+      );
     });
 }
 
@@ -429,7 +443,7 @@ async function searchOsti(query: string, limit: number): Promise<Paper[]> {
             .replace(/\s*\(ORCID:[^)]+\)\s*/g, "")
             .trim(),
         ),
-        year: parseInt((p.publication_date ?? "").slice(0, 4), 10) || 0,
+        year: Number.parseInt((p.publication_date ?? "").slice(0, 4), 10) || 0,
         venue: p.journal_name ?? "DOE OSTI",
         citationCount: 0,
         url: fulltextHref ?? `https://www.osti.gov/biblio/${p.osti_id}`,
@@ -474,7 +488,7 @@ async function searchNtrs(query: string, limit: number): Promise<Paper[]> {
         authors: (p.authorAffiliations ?? [])
           .map((a) => a.meta?.author?.name ?? "")
           .filter(Boolean),
-        year: parseInt((p.publications?.[0]?.publicationDate ?? "").slice(0, 4), 10) || 0,
+        year: Number.parseInt((p.publications?.[0]?.publicationDate ?? "").slice(0, 4), 10) || 0,
         venue,
         citationCount: 0,
         url: `https://ntrs.nasa.gov/citations/${p.id}`,
@@ -489,14 +503,30 @@ function deriveFedFunders(sponsors: string[]): string[] {
   const tags = new Set<string>();
   for (const s of sponsors) {
     const u = s.toUpperCase();
-    if (u.includes("DOE")) tags.add("DOE");
-    if (u.includes("NSF")) tags.add("NSF");
-    if (u.includes("NIH")) tags.add("NIH");
-    if (u.includes("NASA")) tags.add("NASA");
-    if (u.includes("USDA")) tags.add("USDA");
-    if (u.includes("DARPA")) tags.add("DARPA");
-    if (u.includes("EPA")) tags.add("EPA");
-    if (u.includes("ARPA-E")) tags.add("ARPA-E");
+    if (u.includes("DOE")) {
+      tags.add("DOE");
+    }
+    if (u.includes("NSF")) {
+      tags.add("NSF");
+    }
+    if (u.includes("NIH")) {
+      tags.add("NIH");
+    }
+    if (u.includes("NASA")) {
+      tags.add("NASA");
+    }
+    if (u.includes("USDA")) {
+      tags.add("USDA");
+    }
+    if (u.includes("DARPA")) {
+      tags.add("DARPA");
+    }
+    if (u.includes("EPA")) {
+      tags.add("EPA");
+    }
+    if (u.includes("ARPA-E")) {
+      tags.add("ARPA-E");
+    }
   }
   return tags.size > 0 ? [...tags] : ["DOE"];
 }
@@ -538,7 +568,7 @@ async function searchCrossref(query: string, limit: number): Promise<Paper[]> {
     .filter((p) => p.title?.[0] && p.abstract)
     .map((p) => ({
       paperId: `doi:${p.DOI}`,
-      title: p.title![0]!,
+      title: p.title![0],
       abstract: stripJatsTags(p.abstract!),
       authors: (p.author ?? []).map((a) => a.name ?? `${a.given ?? ""} ${a.family ?? ""}`.trim()),
       year: p.issued?.["date-parts"]?.[0]?.[0] ?? 0,
@@ -553,11 +583,14 @@ async function searchCrossref(query: string, limit: number): Promise<Paper[]> {
 function tagFederalFunders(funders: Array<{ DOI?: string; name?: string }>): string[] {
   const tags = new Set<string>();
   for (const f of funders) {
-    if (f.DOI && FEDERAL_FUNDER_DOIS[f.DOI]) tags.add(FEDERAL_FUNDER_DOIS[f.DOI]!);
-    else if (f.name) {
+    if (f.DOI && FEDERAL_FUNDER_DOIS[f.DOI]) {
+      tags.add(FEDERAL_FUNDER_DOIS[f.DOI]);
+    } else if (f.name) {
       const upper = f.name.toUpperCase();
       for (const agency of ["NIH", "NSF", "DOE", "NASA", "USDA", "DARPA", "EPA"]) {
-        if (upper.includes(agency)) tags.add(agency);
+        if (upper.includes(agency)) {
+          tags.add(agency);
+        }
       }
     }
   }
@@ -610,7 +643,9 @@ async function searchEuropePMC(query: string, limit: number): Promise<Paper[]> {
       const fed = new Set<string>();
       for (const a of grantAgencies) {
         for (const tag of ["NIH", "NSF", "DOE", "NASA", "USDA", "DARPA", "EPA"]) {
-          if (a.includes(tag)) fed.add(tag);
+          if (a.includes(tag)) {
+            fed.add(tag);
+          }
         }
       }
       return {
@@ -621,7 +656,7 @@ async function searchEuropePMC(query: string, limit: number): Promise<Paper[]> {
           .split(",")
           .map((a) => a.trim())
           .filter(Boolean),
-        year: parseInt(p.pubYear ?? "0", 10) || 0,
+        year: Number.parseInt(p.pubYear ?? "0", 10) || 0,
         venue: p.journalTitle ?? undefined,
         citationCount: p.citedByCount ?? 0,
         url: p.doi
@@ -663,10 +698,12 @@ function parseArxivAtom(xml: string): Paper[] {
     const abstract = collapse(textOf(e, "summary"));
     const published = textOf(e, "published");
     const doi = textOf(e, "arxiv:doi") || textOf(e, "doi");
-    if (!title || !abstract || !id) continue;
-    const authors = [...e.matchAll(/<author>\s*<name>([^<]+)<\/name>/g)].map((m) => m[1]!.trim());
+    if (!title || !abstract || !id) {
+      continue;
+    }
+    const authors = [...e.matchAll(/<author>\s*<name>([^<]+)<\/name>/g)].map((m) => m[1].trim());
     const arxivId = id.replace(/^https?:\/\/arxiv\.org\/abs\//, "").replace(/v\d+$/, "");
-    const year = parseInt(published.slice(0, 4), 10) || 0;
+    const year = Number.parseInt(published.slice(0, 4), 10) || 0;
     papers.push({
       paperId: doi ? `doi:${doi}` : `arxiv:${arxivId}`,
       title,
@@ -688,7 +725,7 @@ function textOf(xml: string, tag: string): string {
     `<${tag.replace(":", "\\:")}[^>]*>([\\s\\S]*?)<\\/${tag.replace(":", "\\:")}>`,
   );
   const m = xml.match(re);
-  return m ? decodeXml(m[1]!.trim()) : "";
+  return m ? decodeXml(m[1].trim()) : "";
 }
 
 function decodeXml(s: string): string {
@@ -707,7 +744,9 @@ function collapse(s: string): string {
 function reconstructAbstract(idx: Record<string, number[]>): string {
   const positions: Array<[number, string]> = [];
   for (const [word, posList] of Object.entries(idx)) {
-    for (const pos of posList) positions.push([pos, word]);
+    for (const pos of posList) {
+      positions.push([pos, word]);
+    }
   }
   positions.sort(([a], [b]) => a - b);
   return positions.map(([, w]) => w).join(" ");
@@ -731,7 +770,7 @@ function dedupePapers(papers: Paper[]): Paper[] {
       fundedBy: mergeFunders(winner.fundedBy, loser.fundedBy),
     });
   }
-  return [...seen.values()].sort((a, b) => b.citationCount - a.citationCount);
+  return [...seen.values()].toSorted((a, b) => b.citationCount - a.citationCount);
 }
 
 function mergeFunders(a?: string[], b?: string[]): string[] | undefined {
@@ -751,7 +790,7 @@ async function enrichWithOAUrls(papers: Paper[]): Promise<{
   const candidates = papers.filter(
     (p) => !p.fulltextUrl && !p.pmcid && p.paperId.startsWith("doi:"),
   );
-  const unpaywallEnabled = !!UNPAYWALL_EMAIL && !UNPAYWALL_EMAIL.endsWith("@example.com");
+  const unpaywallEnabled = Boolean(UNPAYWALL_EMAIL) && !UNPAYWALL_EMAIL.endsWith("@example.com");
   if (!unpaywallEnabled && candidates.length === 0) {
     return { tried: 0, resolved: 0, viaUnpaywall: 0, viaOpenAlex: 0, skipped: true };
   }
@@ -768,8 +807,10 @@ async function enrichWithOAUrls(papers: Paper[]): Promise<{
   async function worker(): Promise<void> {
     while (true) {
       const i = cursor++;
-      if (i >= candidates.length) return;
-      const p = candidates[i]!;
+      if (i >= candidates.length) {
+        return;
+      }
+      const p = candidates[i];
       tried++;
       const doi = p.paperId.slice(4);
       let oaUrl: string | undefined;
@@ -807,12 +848,16 @@ async function resolveDoiOaUrlUnpaywall(doi: string): Promise<string | undefined
   const url = `https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(UNPAYWALL_EMAIL!)}`;
   const ctrl = AbortSignal.timeout(8000);
   const res = await fetch(url, { signal: ctrl });
-  if (!res.ok) return undefined;
+  if (!res.ok) {
+    return undefined;
+  }
   const data = (await res.json()) as {
     is_oa?: boolean;
     best_oa_location?: { url_for_pdf?: string; url?: string };
   };
-  if (!data.is_oa) return undefined;
+  if (!data.is_oa) {
+    return undefined;
+  }
   return data.best_oa_location?.url_for_pdf ?? data.best_oa_location?.url;
 }
 
@@ -820,12 +865,16 @@ async function resolveDoiOaUrlOpenAlex(doi: string): Promise<string | undefined>
   const url = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}?select=open_access,primary_location&mailto=${encodeURIComponent(MAILTO)}`;
   const ctrl = AbortSignal.timeout(8000);
   const res = await fetch(url, { signal: ctrl });
-  if (!res.ok) return undefined;
+  if (!res.ok) {
+    return undefined;
+  }
   const data = (await res.json()) as {
     open_access?: { is_oa?: boolean; oa_url?: string | null };
     primary_location?: { pdf_url?: string | null };
   };
-  if (!data.open_access?.is_oa) return undefined;
+  if (!data.open_access?.is_oa) {
+    return undefined;
+  }
   return data.primary_location?.pdf_url ?? data.open_access.oa_url ?? undefined;
 }
 
@@ -849,7 +898,9 @@ async function enrichWithSciHubUrls(
     (p) => !p.fulltextUrl && !p.pmcid && p.paperId.startsWith("doi:"),
   );
   const perMirror: Record<string, number> = {};
-  if (candidates.length === 0) return { tried: 0, resolved: 0, perMirror };
+  if (candidates.length === 0) {
+    return { tried: 0, resolved: 0, perMirror };
+  }
 
   let tried = 0;
   let resolved = 0;
@@ -858,8 +909,10 @@ async function enrichWithSciHubUrls(
   async function worker(): Promise<void> {
     while (true) {
       const i = cursor++;
-      if (i >= candidates.length) return;
-      const p = candidates[i]!;
+      if (i >= candidates.length) {
+        return;
+      }
+      const p = candidates[i];
       tried++;
       const doi = p.paperId.slice(4);
       const hit = await resolveDoiViaSciHub(doi);
@@ -884,12 +937,18 @@ async function resolveDoiViaSciHub(
         headers: { "User-Agent": SCIHUB_UA, Accept: "text/html,*/*" },
         redirect: "follow",
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        continue;
+      }
       const ctype = res.headers.get("content-type") ?? "";
-      if (!ctype.includes("html")) continue;
+      if (!ctype.includes("html")) {
+        continue;
+      }
       const html = await res.text();
       const pdfUrl = extractSciHubPdfUrl(html, mirror);
-      if (pdfUrl) return { url: pdfUrl, mirror };
+      if (pdfUrl) {
+        return { url: pdfUrl, mirror };
+      }
     } catch {
       /* swallow — try next mirror */
     }
@@ -909,15 +968,21 @@ function extractSciHubPdfUrl(html: string, mirror: string): string | undefined {
   ];
   for (const re of patterns) {
     const m = re.exec(html);
-    if (m?.[1]) return resolveSciHubUrl(m[1], mirror);
+    if (m?.[1]) {
+      return resolveSciHubUrl(m[1], mirror);
+    }
   }
   return undefined;
 }
 
 function resolveSciHubUrl(raw: string, mirror: string): string {
   const cleaned = raw.replace(/#.*$/, "");
-  if (cleaned.startsWith("//")) return `https:${cleaned}`;
-  if (cleaned.startsWith("/")) return `${mirror}${cleaned}`;
+  if (cleaned.startsWith("//")) {
+    return `https:${cleaned}`;
+  }
+  if (cleaned.startsWith("/")) {
+    return `${mirror}${cleaned}`;
+  }
   return cleaned;
 }
 
@@ -975,16 +1040,21 @@ async function enrichWithAnnasArchiveUrls(
   async function worker(): Promise<void> {
     while (true) {
       const i = cursor++;
-      if (i >= candidates.length) return;
-      const p = candidates[i]!;
+      if (i >= candidates.length) {
+        return;
+      }
+      const p = candidates[i];
       tried++;
       const doi = p.paperId.slice(4);
       const hit = await resolveDoiViaAnnasArchive(doi);
       if (hit) {
         p.fulltextUrl = hit.url;
         resolved++;
-        if (hit.via === "member") viaMember++;
-        else viaScidb++;
+        if (hit.via === "member") {
+          viaMember++;
+        } else {
+          viaScidb++;
+        }
       }
     }
   }
@@ -998,13 +1068,20 @@ async function resolveDoiViaAnnasArchive(
   for (const mirror of ANNAS_MIRRORS) {
     const scidbUrl = `${mirror}/scidb/${encodeURIComponent(doi)}`;
     const html = await fetchAnnasHtml(scidbUrl);
-    if (!html) continue;
+    if (!html) {
+      continue;
+    }
     // "No results" guard — page renders an empty state for unknown DOIs.
-    if (/no\s+results|not\s+available|sorry/i.test(html.slice(0, 4000)) && !/\/md5\//.test(html)) {
+    if (
+      /no\s+results|not\s+available|sorry/i.test(html.slice(0, 4000)) &&
+      !html.includes("\/md5\/")
+    ) {
       return undefined;
     }
     const md5 = extractAnnasMd5(html);
-    if (!md5) continue;
+    if (!md5) {
+      continue;
+    }
 
     // Member-key path: get a direct CDN URL the PDF fetcher can consume.
     if (ANNAS_API_KEY) {
@@ -1013,7 +1090,9 @@ async function resolveDoiViaAnnasArchive(
         const apiBody = await fetchAnnasHtml(apiUrl);
         if (apiBody) {
           const data = JSON.parse(apiBody) as { download_url?: string };
-          if (data.download_url) return { url: data.download_url, via: "member" };
+          if (data.download_url) {
+            return { url: data.download_url, via: "member" };
+          }
         }
       } catch {
         /* fall through to scidb URL */
@@ -1038,14 +1117,20 @@ async function fetchAnnasHtml(url: string): Promise<string | undefined> {
         }),
         signal: AbortSignal.timeout(ANNAS_TIMEOUT_MS + 15000),
       });
-      if (!res.ok) return undefined;
+      if (!res.ok) {
+        return undefined;
+      }
       const data = (await res.json()) as {
         status?: string;
         solution?: { status?: number; response?: string };
       };
-      if (data.status !== "ok") return undefined;
+      if (data.status !== "ok") {
+        return undefined;
+      }
       const sol = data.solution;
-      if (!sol?.response || (sol.status ?? 0) >= 400) return undefined;
+      if (!sol?.response || (sol.status ?? 0) >= 400) {
+        return undefined;
+      }
       return sol.response;
     } catch {
       return undefined;
@@ -1058,7 +1143,9 @@ async function fetchAnnasHtml(url: string): Promise<string | undefined> {
       headers: { "User-Agent": ANNAS_UA, Accept: "text/html,*/*" },
       redirect: "follow",
     });
-    if (!res.ok) return undefined;
+    if (!res.ok) {
+      return undefined;
+    }
     return await res.text();
   } catch {
     return undefined;
@@ -1090,7 +1177,9 @@ async function enrichWithFulltext(
       let pmcid = p.pmcid;
       if (!pmcid && p.paperId.startsWith("doi:")) {
         pmcid = await resolveDoiToPmcid(p.paperId.slice(4));
-        if (pmcid) p.pmcid = pmcid;
+        if (pmcid) {
+          p.pmcid = pmcid;
+        }
       }
       if (pmcid) {
         tried++;
@@ -1135,11 +1224,15 @@ async function fetchPdfFulltext(url: string): Promise<string | undefined> {
     redirect: "follow",
     signal: ctrl,
   });
-  if (!res.ok) return undefined;
+  if (!res.ok) {
+    return undefined;
+  }
   const ct = (res.headers.get("content-type") ?? "").toLowerCase();
   if (ct.startsWith("text/plain") || url.toLowerCase().endsWith(".txt")) {
     const text = await res.text();
-    if (!text) return undefined;
+    if (!text) {
+      return undefined;
+    }
     return text
       .replace(/[ \t]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")
@@ -1154,7 +1247,9 @@ async function fetchPdfFulltext(url: string): Promise<string | undefined> {
     return undefined;
   }
   const buf = await res.arrayBuffer();
-  if (buf.byteLength === 0 || buf.byteLength > PDF_MAX_BYTES) return undefined;
+  if (buf.byteLength === 0 || buf.byteLength > PDF_MAX_BYTES) {
+    return undefined;
+  }
 
   const tmpPath = `/tmp/ads-pdf-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`;
   const { writeFileSync, unlinkSync } = await import("node:fs");
@@ -1166,7 +1261,9 @@ async function fetchPdfFulltext(url: string): Promise<string | undefined> {
       stdio: ["pipe", "pipe", "ignore"],
     });
     const text = proc.stdout;
-    if (!text) return undefined;
+    if (!text) {
+      return undefined;
+    }
     return text
       .replace(/\f/g, "\n")
       .replace(/[ \t]+/g, " ")
@@ -1183,7 +1280,9 @@ async function fetchPdfFulltext(url: string): Promise<string | undefined> {
 async function resolveDoiToPmcid(doi: string): Promise<string | undefined> {
   const url = `https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/?ids=${encodeURIComponent(doi)}&format=json&tool=academic-deep-research&email=${encodeURIComponent(MAILTO)}`;
   const res = await fetch(url);
-  if (!res.ok) return undefined;
+  if (!res.ok) {
+    return undefined;
+  }
   const data = (await res.json()) as { records?: Array<{ pmcid?: string }> };
   return data.records?.[0]?.pmcid;
 }
@@ -1194,26 +1293,35 @@ async function fetchPmcFulltext(pmcid: string): Promise<string | undefined> {
   const res = await fetch(url, {
     headers: { "User-Agent": `academic-deep-research/0.5 (mailto:${MAILTO})` },
   });
-  if (!res.ok) return undefined;
+  if (!res.ok) {
+    return undefined;
+  }
   const xml = await res.text();
-  if (xml.includes("<error>") || !xml.includes("<body>")) return undefined;
+  if (xml.includes("<error>") || !xml.includes("<body>")) {
+    return undefined;
+  }
   return parseJatsBody(xml);
 }
 
 function parseJatsBody(xml: string): string {
   const bodyMatch = xml.match(/<body[^>]*>([\s\S]*?)<\/body>/);
-  if (!bodyMatch) return "";
-  const body = bodyMatch[1]!;
+  if (!bodyMatch) {
+    return "";
+  }
+  const body = bodyMatch[1];
   const sections: string[] = [];
   const secRegex = /<sec[^>]*>([\s\S]*?)<\/sec>/g;
   let m: RegExpExecArray | null;
   while ((m = secRegex.exec(body)) !== null) {
-    const secXml = m[1]!;
+    const secXml = m[1];
     const titleMatch = secXml.match(/<title[^>]*>([\s\S]*?)<\/title>/);
-    const title = titleMatch ? stripXml(titleMatch[1]!) : "";
+    const title = titleMatch ? stripXml(titleMatch[1]) : "";
     const text = stripXml(secXml.replace(/<title[^>]*>[\s\S]*?<\/title>/, ""));
-    if (title) sections.push(`## ${title}\n${text}`);
-    else sections.push(text);
+    if (title) {
+      sections.push(`## ${title}\n${text}`);
+    } else {
+      sections.push(text);
+    }
   }
   const flat = sections.length > 0 ? sections.join("\n\n") : stripXml(body);
   return flat.slice(0, FULLTEXT_CHAR_CAP);
@@ -1255,7 +1363,9 @@ async function scoreRelevance(
   client: LlmClient,
   relevanceModel: string,
 ): Promise<Map<string, RelevanceVerdict>> {
-  if (papers.length === 0) return new Map();
+  if (papers.length === 0) {
+    return new Map();
+  }
 
   const candidates = papers
     .map((p, i) => `[${i}] ${p.title}\n    ${p.abstract.slice(0, 400).replace(/\s+/g, " ")}`)
@@ -1282,13 +1392,17 @@ Score conservatively. Do NOT count keyword matches alone as relevance — judge 
   const result = new Map<string, RelevanceVerdict>();
   for (const v of out.scores) {
     const p = papers[v.paper_index];
-    if (!p) continue;
+    if (!p) {
+      continue;
+    }
     result.set(p.paperId, { score: v.relevance, reason: v.reason });
   }
 
   if (process.env.DEBUG_RELEVANCE === "1") {
     const dist: Record<number, number> = {};
-    for (const v of result.values()) dist[v.score] = (dist[v.score] ?? 0) + 1;
+    for (const v of result.values()) {
+      dist[v.score] = (dist[v.score] ?? 0) + 1;
+    }
     console.error(
       `[relevance] returned ${out.scores.length} scores for ${papers.length} papers; matched ${result.size}; distribution ${JSON.stringify(dist)}`,
     );
@@ -1412,7 +1526,7 @@ async function verify(
 
   report.paragraphs.forEach((para, pi) => {
     para.citations.forEach((c, ci) => {
-      const key = `${pi}:${ci}` as VerificationKey;
+      const key = `${pi}:${ci}`;
       const list = byPaper.get(c.paper_id) ?? [];
       list.push({ key, claim: c.claim, span: c.supporting_span });
       byPaper.set(c.paper_id, list);
@@ -1431,7 +1545,9 @@ async function verify(
   ): Promise<void> {
     const paper = idToPaper.get(paperId);
     if (!paper) {
-      for (const c of claims) results.set(c.key, { score: 0, issue: "paper not in corpus" });
+      for (const c of claims) {
+        results.set(c.key, { score: 0, issue: "paper not in corpus" });
+      }
       return;
     }
 
@@ -1463,7 +1579,9 @@ Score conservatively. If the source doesn't contain the supporting_span verbatim
         });
         for (const v of out.scores) {
           const c = claims[v.claim_index];
-          if (!c) continue;
+          if (!c) {
+            continue;
+          }
           results.set(c.key, { score: v.support_score, issue: v.issue });
         }
         return;
@@ -1475,20 +1593,25 @@ Score conservatively. If the source doesn't contain the supporting_span verbatim
           continue;
         }
         console.error(`[verify] paper=${paperId} failed: ${msg}`);
-        for (const c of claims) results.set(c.key, { score: -1, issue: "verifier call failed" });
+        for (const c of claims) {
+          results.set(c.key, { score: -1, issue: "verifier call failed" });
+        }
         return;
       }
     }
     console.error(`[verify] paper=${paperId} exhausted retries (rate-limited)`);
-    for (const c of claims)
+    for (const c of claims) {
       results.set(c.key, { score: -1, issue: "rate-limited; retries exhausted" });
+    }
   }
 
   async function worker(): Promise<void> {
     while (true) {
       const i = cursor++;
-      if (i >= entries.length) return;
-      const [paperId, claims] = entries[i]!;
+      if (i >= entries.length) {
+        return;
+      }
+      const [paperId, claims] = entries[i];
       await verifyOnePaper(paperId, claims);
     }
   }
@@ -1519,17 +1642,21 @@ function renderMarkdown(
     const inline = para.citations
       .map((c, ci) => {
         const ref = shortRef(idToPaper.get(c.paper_id), c.paper_id);
-        const verdict = verdicts?.get(`${pi}:${ci}` as VerificationKey);
+        const verdict = verdicts?.get(`${pi}:${ci}`);
         const tag = verdict !== undefined ? ` ${scoreEmoji(verdict.score)}${verdict.score}` : "";
         return `[${ref}${tag}]`;
       })
       .join(" ");
     md += `${para.content} ${inline}\n\n`;
-    for (const c of para.citations) cited.add(c.paper_id);
+    for (const c of para.citations) {
+      cited.add(c.paper_id);
+    }
   });
 
   md += `## Open questions\n\n`;
-  for (const q of report.open_questions) md += `- ${q}\n`;
+  for (const q of report.open_questions) {
+    md += `- ${q}\n`;
+  }
 
   md += `\n## Bibliography\n\n`;
   let i = 1;
@@ -1558,15 +1685,16 @@ function renderMarkdown(
     para.citations.forEach((c, ci) => {
       totalCites++;
       const p = idToPaper.get(c.paper_id);
-      if (!p) hallucinated++;
-      else {
+      if (!p) {
+        hallucinated++;
+      } else {
         const haystack = (p.abstract + " " + (p.fulltext ?? "")).toLowerCase();
         if (haystack.includes(c.supporting_span.toLowerCase().slice(0, 50))) {
           spansVerified++;
         }
       }
       conf[c.confidence] = (conf[c.confidence] ?? 0) + 1;
-      const v = verdicts?.get(`${pi}:${ci}` as VerificationKey);
+      const v = verdicts?.get(`${pi}:${ci}`);
       if (v && v.score >= 0) {
         verifierSum += v.score;
         verifierCounted++;
@@ -1597,14 +1725,22 @@ function renderMarkdown(
 }
 
 function scoreEmoji(score: number): string {
-  if (score >= 3) return "✓";
-  if (score >= 2) return "~";
-  if (score >= 0) return "⚠";
+  if (score >= 3) {
+    return "✓";
+  }
+  if (score >= 2) {
+    return "~";
+  }
+  if (score >= 0) {
+    return "⚠";
+  }
   return "?";
 }
 
 function shortRef(p: Paper | undefined, fallback: string): string {
-  if (!p) return fallback;
+  if (!p) {
+    return fallback;
+  }
   const first = p.authors[0]?.split(" ").pop() ?? "Anon";
   return `${first}${p.authors.length > 1 ? "+" : ""} ${p.year}`;
 }
@@ -1685,21 +1821,28 @@ function computeStats(
       cited.add(c.paper_id);
       totalCites++;
       const p = idToPaper.get(c.paper_id);
-      if (!p) hallucinated++;
-      else {
+      if (!p) {
+        hallucinated++;
+      } else {
         const haystack = (p.abstract + " " + (p.fulltext ?? "")).toLowerCase();
         if (haystack.includes(c.supporting_span.toLowerCase().slice(0, 50))) {
           spansVerified++;
         }
       }
-      if (c.confidence === "well-supported") conf.wellSupported++;
-      else if (c.confidence === "contested") conf.contested++;
-      else conf.preliminary++;
-      const v = verdicts?.get(`${pi}:${ci}` as VerificationKey);
+      if (c.confidence === "well-supported") {
+        conf.wellSupported++;
+      } else if (c.confidence === "contested") {
+        conf.contested++;
+      } else {
+        conf.preliminary++;
+      }
+      const v = verdicts?.get(`${pi}:${ci}`);
       if (v && v.score >= 0) {
         verifierSum += v.score;
         verifierCounted++;
-        if (v.score < 2) verifierLow++;
+        if (v.score < 2) {
+          verifierLow++;
+        }
       }
     });
   });
@@ -1710,7 +1853,7 @@ function computeStats(
     const allScores = [...relevance.values()].map((v) => v.score);
     relMean = allScores.reduce((a, b) => a + b, 0) / allScores.length;
     const keptScores = papers
-      .map((p) => relevance!.get(p.paperId)?.score)
+      .map((p) => relevance.get(p.paperId)?.score)
       .filter((s): s is number => s !== undefined);
     if (keptScores.length > 0) {
       keptMeanRel = keptScores.reduce((a, b) => a + b, 0) / keptScores.length;
@@ -1721,9 +1864,15 @@ function computeStats(
   let citedWithFulltext = 0;
   for (const id of cited) {
     const p = papers.find((q) => q.paperId === id);
-    if (!p) continue;
-    if (p.fundedBy && p.fundedBy.length > 0) federallyFundedCited++;
-    if (p.fulltext) citedWithFulltext++;
+    if (!p) {
+      continue;
+    }
+    if (p.fundedBy && p.fundedBy.length > 0) {
+      federallyFundedCited++;
+    }
+    if (p.fulltext) {
+      citedWithFulltext++;
+    }
   }
 
   return {
@@ -1876,19 +2025,21 @@ export async function runAcademicLoop(opts: AcademicLoopOpts): Promise<RunResult
       `[relevance] scoring ${papers.length} candidates against question (${relevanceModel})`,
     );
     relevance = await scoreRelevance(question, papers, client, relevanceModel);
-    const ranked = [...papers].sort((a, b) => {
+    const ranked = [...papers].toSorted((a, b) => {
       const sa = relevance!.get(a.paperId)?.score ?? 0;
       const sb = relevance!.get(b.paperId)?.score ?? 0;
-      if (sa !== sb) return sb - sa;
+      if (sa !== sb) {
+        return sb - sa;
+      }
       return b.citationCount - a.citationCount;
     });
     filteredPapers = ranked.slice(0, RELEVANCE_TOP_K);
     const minKept =
       filteredPapers.length > 0
-        ? (relevance.get(filteredPapers[filteredPapers.length - 1]!.paperId)?.score ?? 0)
+        ? (relevance.get(filteredPapers[filteredPapers.length - 1].paperId)?.score ?? 0)
         : 0;
     const maxDropped = ranked[RELEVANCE_TOP_K]
-      ? (relevance.get(ranked[RELEVANCE_TOP_K]!.paperId)?.score ?? 0)
+      ? (relevance.get(ranked[RELEVANCE_TOP_K].paperId)?.score ?? 0)
       : 0;
     console.error(
       `[relevance] kept top ${filteredPapers.length}/${papers.length} (min kept score ${minKept}, max dropped score ${maxDropped})`,
@@ -1953,7 +2104,9 @@ export async function runAcademicLoop(opts: AcademicLoopOpts): Promise<RunResult
     const withPmcid = filteredPapers.filter((p) => p.pmcid).length;
     const withFulltextUrl = filteredPapers.filter((p) => p.fulltextUrl).length;
     const sourceMix: Record<string, number> = {};
-    for (const p of filteredPapers) sourceMix[p.source] = (sourceMix[p.source] ?? 0) + 1;
+    for (const p of filteredPapers) {
+      sourceMix[p.source] = (sourceMix[p.source] ?? 0) + 1;
+    }
     console.error(
       `[fulltext] enriching ${filteredPapers.length} papers (sources=${JSON.stringify(sourceMix)}, pmcid=${withPmcid}, fulltextUrl=${withFulltextUrl})`,
     );

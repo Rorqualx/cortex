@@ -64,8 +64,8 @@ describe("aggregateCandidates", () => {
     );
     await writeChunk(
       "chunk-000001-b",
-      [fact("f2", "tabs preferred", 0.8, NOW - 1 * MS_PER_DAY, "user_pref:tabs")],
-      NOW - 1 * MS_PER_DAY,
+      [fact("f2", "tabs preferred", 0.8, NOW - Number(MS_PER_DAY), "user_pref:tabs")],
+      NOW - Number(MS_PER_DAY),
     );
     const result = await aggregateCandidates(storage);
     expect(result).toHaveLength(1);
@@ -73,7 +73,7 @@ describe("aggregateCandidates", () => {
     expect(c.dedupKey).toBe("user_pref:tabs");
     expect(c.recallCount).toBe(2);
     expect(c.firstSeenAt).toBe(NOW - 5 * MS_PER_DAY);
-    expect(c.lastConfirmedAt).toBe(NOW - 1 * MS_PER_DAY);
+    expect(c.lastConfirmedAt).toBe(NOW - Number(MS_PER_DAY));
     expect(c.sourceChunkIds).toEqual(["chunk-000000-a", "chunk-000001-b"]);
   });
 
@@ -85,8 +85,8 @@ describe("aggregateCandidates", () => {
     );
     await writeChunk(
       "chunk-000001-b",
-      [fact("f2", "strong phrasing", 0.9, NOW - 1 * MS_PER_DAY, "k:1")],
-      NOW - 1 * MS_PER_DAY,
+      [fact("f2", "strong phrasing", 0.9, NOW - Number(MS_PER_DAY), "k:1")],
+      NOW - Number(MS_PER_DAY),
     );
     const [c] = await aggregateCandidates(storage);
     expect(c.text).toBe("strong phrasing");
@@ -101,8 +101,8 @@ describe("aggregateCandidates", () => {
     );
     await writeChunk(
       "chunk-000001-b",
-      [fact("f2", "newer phrasing", 0.7, NOW - 1 * MS_PER_DAY, "k:1")],
-      NOW - 1 * MS_PER_DAY,
+      [fact("f2", "newer phrasing", 0.7, NOW - Number(MS_PER_DAY), "k:1")],
+      NOW - Number(MS_PER_DAY),
     );
     const [c] = await aggregateCandidates(storage);
     expect(c.text).toBe("newer phrasing");
@@ -167,7 +167,7 @@ describe("passesPromotionThresholds", () => {
           text: "shouldering through",
           importance: 0.7,
           recallCount: 3,
-          firstSeenAt: NOW - 1 * MS_PER_DAY, // only 1-day span
+          firstSeenAt: NOW - Number(MS_PER_DAY), // only 1-day span
           lastConfirmedAt: NOW,
           sourceChunkIds: ["chunk-a", "chunk-b", "chunk-c"],
           certainty: "confirmed",
@@ -272,7 +272,7 @@ describe("selectPromotable", () => {
     await writeChunk("chunk-000003-d", [fact("f4", "tabs again", 0.7, NOW, "user_pref:tabs")], NOW);
 
     const result = await selectPromotable(storage);
-    const keys = result.map((r) => r.dedupKey).sort();
+    const keys = result.map((r) => r.dedupKey).toSorted();
     expect(keys).toEqual(["user:identity", "user_pref:tabs"]);
   });
 });

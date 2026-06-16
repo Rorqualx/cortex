@@ -889,12 +889,16 @@ function extractActiveFileFromToolCall(
   _workspace: string | undefined,
 ): ActiveFileResult {
   const args = typeof rawArgs === "string" ? safeJsonParse(rawArgs) : rawArgs;
-  if (!args || typeof args !== "object") return null;
+  if (!args || typeof args !== "object") {
+    return null;
+  }
   const a = args as Record<string, unknown>;
   // bash/exec: workdir reveals the active directory (no specific file)
   if (name === "bash" && typeof a.workdir === "string" && a.workdir.trim()) {
     const dir = a.workdir.replace(/\/+$/, "");
-    if (dir) return { dir, fileName: "", toolName: name };
+    if (dir) {
+      return { dir, fileName: "", toolName: name };
+    }
   }
   // file tools: extract directory + basename from the path argument
   const filePath = a.path ?? a.file_path ?? a.filePath;
@@ -903,7 +907,9 @@ function extractActiveFileFromToolCall(
     const lastSlash = trimmed.lastIndexOf("/");
     const dir = lastSlash > 0 ? trimmed.substring(0, lastSlash) : trimmed;
     const fileName = lastSlash >= 0 ? trimmed.substring(lastSlash + 1) : trimmed;
-    if (dir) return { dir, fileName, toolName: name };
+    if (dir) {
+      return { dir, fileName, toolName: name };
+    }
   }
   return null;
 }
@@ -922,11 +928,15 @@ export function resolveActiveFileFromMessages(
 ): ActiveFileResult {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i] as Record<string, unknown> | undefined;
-    if (!msg) continue;
+    if (!msg) {
+      continue;
+    }
 
     // Skip tool-result messages — they have toolName but no arguments
     const role = typeof msg.role === "string" ? msg.role.toLowerCase() : "";
-    if (RESULT_ROLES.has(role)) continue;
+    if (RESULT_ROLES.has(role)) {
+      continue;
+    }
 
     // Shape 2: top-level toolName / tool_name + args / arguments
     const topLevelName =
@@ -941,7 +951,9 @@ export function resolveActiveFileFromMessages(
           msg.args ?? msg.arguments ?? msg.input ?? msg.params,
           workspace,
         );
-        if (result) return result;
+        if (result) {
+          return result;
+        }
       }
     }
 
@@ -949,20 +961,28 @@ export function resolveActiveFileFromMessages(
     const content = Array.isArray(msg.content) ? msg.content : [];
     for (let j = content.length - 1; j >= 0; j--) {
       const item = content[j] as Record<string, unknown> | undefined;
-      if (!item) continue;
+      if (!item) {
+        continue;
+      }
       const kind = (typeof item.type === "string" ? item.type : "").toLowerCase();
       const isToolCall =
         ["toolcall", "tool_call", "tooluse", "tool_use"].includes(kind) ||
         (typeof item.name === "string" && (item.arguments != null || item.args != null));
-      if (!isToolCall) continue;
+      if (!isToolCall) {
+        continue;
+      }
       const name = (typeof item.name === "string" ? item.name : "").toLowerCase();
-      if (!FILE_TOOL_NAMES.has(name)) continue;
+      if (!FILE_TOOL_NAMES.has(name)) {
+        continue;
+      }
       const result = extractActiveFileFromToolCall(
         name,
         item.arguments ?? item.args ?? item.input,
         workspace,
       );
-      if (result) return result;
+      if (result) {
+        return result;
+      }
     }
   }
   return null;
@@ -1080,7 +1100,9 @@ function renderWorkspaceFileRail(
 // Retries because the file list may not be in the DOM yet when the
 // active directory changes and files load asynchronously.
 function scheduleAgentFileScroll(activeFileName: string | undefined) {
-  if (!activeFileName || activeFileName === lastScrolledAgentFile) return;
+  if (!activeFileName || activeFileName === lastScrolledAgentFile) {
+    return;
+  }
   lastScrolledAgentFile = activeFileName;
   const tryScroll = (attempt: number) => {
     const el = document.querySelector(".chat-workspace-rail__file--agent-active");
@@ -1583,7 +1605,9 @@ export function renderChat(props: ChatProps) {
       const m = props.messages[i] as Record<string, unknown>;
       if (m.role === "assistant") {
         const content = m.content;
-        if (typeof content === "string" && content.trim()) return content.trim();
+        if (typeof content === "string" && content.trim()) {
+          return content.trim();
+        }
         if (Array.isArray(content)) {
           for (const block of content) {
             if (

@@ -15,7 +15,9 @@ import type { MessageChunk, TopicBoundary } from "./types.js";
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 function l3debug(msg: string): void {
-  if (DEBUG_ENABLED) console.error(`[memory-l3/segmentation] ${msg}`);
+  if (DEBUG_ENABLED) {
+    console.error(`[memory-l3/segmentation] ${msg}`);
+  }
 }
 
 // -----------------------------------------------------------------
@@ -68,7 +70,9 @@ export async function detectTopicBoundaries(params: {
     const text = slice
       .map((m) => {
         const content = m.content;
-        if (typeof content === "string") return content;
+        if (typeof content === "string") {
+          return content;
+        }
         if (Array.isArray(content)) {
           return content
             .filter((b): b is { type: string; text?: string } => typeof b === "object" && b != null)
@@ -79,17 +83,23 @@ export async function detectTopicBoundaries(params: {
       })
       .filter((s) => s.length > 0)
       .join(" ");
-    if (text.length > 0) windows.push(text);
+    if (text.length > 0) {
+      windows.push(text);
+    }
   }
 
-  if (windows.length < 2) return [];
+  if (windows.length < 2) {
+    return [];
+  }
 
   // Batch-embed all windows at once
   const embeddings = await params.embeddingProvider.embedBatch(windows);
 
   const boundaries: TopicBoundary[] = [];
   for (let i = 1; i < embeddings.length; i++) {
-    if (!embeddings[i - 1] || !embeddings[i]) continue;
+    if (!embeddings[i - 1] || !embeddings[i]) {
+      continue;
+    }
     const sim = cosineSimilarity(embeddings[i - 1], embeddings[i]);
     if (sim < threshold) {
       boundaries.push({
@@ -163,7 +173,9 @@ export async function buildMessageChunks(params: {
   const now = params.now ?? Date.now();
   const step = Math.max(1, windowSize - overlap);
 
-  if (params.messages.length === 0) return [];
+  if (params.messages.length === 0) {
+    return [];
+  }
 
   const chunks: Array<{ start: number; end: number; text: string }> = [];
   for (let i = 0; i < params.messages.length; i += step) {
@@ -172,7 +184,9 @@ export async function buildMessageChunks(params: {
     const text = slice
       .map((m) => {
         const content = m.content;
-        if (typeof content === "string") return content;
+        if (typeof content === "string") {
+          return content;
+        }
         if (Array.isArray(content)) {
           return content
             .filter((b): b is { type: string; text?: string } => typeof b === "object" && b != null)
@@ -188,7 +202,9 @@ export async function buildMessageChunks(params: {
     }
   }
 
-  if (chunks.length === 0) return [];
+  if (chunks.length === 0) {
+    return [];
+  }
 
   // Batch-embed all chunk texts at once
   const texts = chunks.map((c) => c.text);

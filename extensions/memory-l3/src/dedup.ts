@@ -11,7 +11,9 @@ export function dedupWithinChunk(facts: ReadonlyArray<ExtractedFact>): Extracted
   const seen = new Set<string>();
   const out: ExtractedFact[] = [];
   for (const fact of facts) {
-    if (seen.has(fact.dedupKey)) continue;
+    if (seen.has(fact.dedupKey)) {
+      continue;
+    }
     seen.add(fact.dedupKey);
     out.push(fact);
   }

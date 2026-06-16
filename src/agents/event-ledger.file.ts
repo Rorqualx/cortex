@@ -292,7 +292,7 @@ export class FileEventLedger implements EventLedger {
    */
   private getEnabledStreams(): EventStream[] {
     return Object.entries(this.config.streams)
-      .filter(([_, enabled]) => enabled !== false)
+      .filter(([_, enabled]) => enabled)
       .map(([stream]) => stream as EventStream);
   }
 

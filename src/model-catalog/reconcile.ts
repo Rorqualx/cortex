@@ -94,7 +94,7 @@ function compareScores(
       return delta;
     }
   }
-  return (a[4] as string).localeCompare(b[4] as string);
+  return a[4].localeCompare(b[4]);
 }
 
 /**
@@ -119,5 +119,5 @@ export function pickReplacementModel(params: {
       id: candidate.id,
       score: scoreCandidate(deprecated, candidate, defaultModelId),
     }))
-    .sort((a, b) => compareScores(a.score, b.score))[0].id;
+    .toSorted((a, b) => compareScores(a.score, b.score))[0].id;
 }

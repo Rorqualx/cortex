@@ -83,7 +83,9 @@ export async function consolidateLongTermTyped(params: {
   let unarchivedCount = 0;
 
   for (const candidate of candidates.values()) {
-    if (candidate.recallCount < config.minRecallCount) continue;
+    if (candidate.recallCount < config.minRecallCount) {
+      continue;
+    }
     const prior = merged.get(candidate.slot);
     if (!prior) {
       merged.set(candidate.slot, promote(candidate));
@@ -92,8 +94,11 @@ export async function consolidateLongTermTyped(params: {
     }
     if (prior.value === candidate.latest.value) {
       const reaffirmed = reaffirm(prior, candidate);
-      if (prior.archived && !reaffirmed.archived) unarchivedCount += 1;
-      else reaffirmedCount += 1;
+      if (prior.archived && !reaffirmed.archived) {
+        unarchivedCount += 1;
+      } else {
+        reaffirmedCount += 1;
+      }
       merged.set(candidate.slot, reaffirmed);
     } else {
       merged.set(candidate.slot, supersede(prior, candidate, params.now));
@@ -103,9 +108,15 @@ export async function consolidateLongTermTyped(params: {
 
   let archivedCount = 0;
   for (const [slot, fact] of merged) {
-    if (fact.archived) continue;
-    if (candidates.has(slot)) continue;
-    if (params.now - fact.lastConfirmedAt < config.maxAgeWithoutConfirmMs) continue;
+    if (fact.archived) {
+      continue;
+    }
+    if (candidates.has(slot)) {
+      continue;
+    }
+    if (params.now - fact.lastConfirmedAt < config.maxAgeWithoutConfirmMs) {
+      continue;
+    }
     merged.set(slot, archive(fact, params.now));
     archivedCount += 1;
   }
@@ -134,7 +145,9 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
   const paths = await storage.listL2ChunkPaths();
   for (const filePath of paths) {
     const doc = await storage.readL2ChunkAtPath(filePath);
-    if (!doc) continue;
+    if (!doc) {
+      continue;
+    }
     const chunkId = doc.frontmatter.id;
     for (const t of doc.frontmatter.typedFacts ?? []) {
       const cur = out.get(t.slot);
@@ -150,7 +163,9 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
         continue;
       }
       cur.recallCount += 1;
-      if (!cur.sourceChunkIds.includes(chunkId)) cur.sourceChunkIds.push(chunkId);
+      if (!cur.sourceChunkIds.includes(chunkId)) {
+        cur.sourceChunkIds.push(chunkId);
+      }
       cur.firstSeenAt = Math.min(cur.firstSeenAt, t.createdAt);
       if (t.createdAt > cur.latest.createdAt) {
         if (t.value !== cur.latest.value) {
@@ -168,7 +183,7 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
 function promote(c: TypedCandidate): LongTermTypedFact {
   const history = c.prior
     .slice()
-    .sort((a, b) => a.createdAt - b.createdAt)
+    .toSorted((a, b) => a.createdAt - b.createdAt)
     .map((p) => ({ value: p.value, supersededAt: c.latest.createdAt }));
   return {
     id: `ltt-${randomUUID().slice(0, 8)}`,
@@ -226,7 +241,9 @@ function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<str
   const seen = new Set<string>(prior);
   const out: string[] = [...prior];
   for (const id of incoming) {
-    if (seen.has(id)) continue;
+    if (seen.has(id)) {
+      continue;
+    }
     seen.add(id);
     out.push(id);
   }
@@ -234,8 +251,8 @@ function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<str
 }
 
 function orderTypedFacts(facts: LongTermTypedFact[]): LongTermTypedFact[] {
-  const active = facts.filter((f) => !f.archived).sort(bySlot);
-  const archived = facts.filter((f) => f.archived).sort(bySlot);
+  const active = facts.filter((f) => !f.archived).toSorted(bySlot);
+  const archived = facts.filter((f) => f.archived).toSorted(bySlot);
   return [...active, ...archived];
 }
 

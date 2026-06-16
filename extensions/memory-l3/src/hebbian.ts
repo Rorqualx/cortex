@@ -58,13 +58,17 @@ export function edgeKey(a: string, b: string): string {
  * For N facts, produces N*(N-1)/2 edges.
  */
 export function extractEdges(facts: ReadonlyArray<L2Fact>): HebbianEdge[] {
-  if (facts.length < 2) return [];
+  if (facts.length < 2) {
+    return [];
+  }
   const edges: HebbianEdge[] = [];
   for (let i = 0; i < facts.length; i++) {
     for (let j = i + 1; j < facts.length; j++) {
       const a = facts[i].dedupKey;
       const b = facts[j].dedupKey;
-      if (a === b) continue;
+      if (a === b) {
+        continue;
+      }
       const [sorted_a, sorted_b] = a < b ? [a, b] : [b, a];
       edges.push({ a: sorted_a, b: sorted_b, weight: 1 });
     }
@@ -93,7 +97,7 @@ export function mergeEdges(
       map.set(key, { ...edge });
     }
   }
-  return Array.from(map.values()).sort((a, b) =>
+  return Array.from(map.values()).toSorted((a, b) =>
     edgeKey(a.a, a.b).localeCompare(edgeKey(b.a, b.b)),
   );
 }
@@ -129,9 +133,13 @@ export function hebbianBoost(
   baseScores: Map<string, number>,
   config: HebbianConfig = DEFAULT_HEBBIAN_CONFIG,
 ): number {
-  if (!config.enabled) return 0;
+  if (!config.enabled) {
+    return 0;
+  }
   const edges = edgeLookup.get(dedupKey);
-  if (!edges || edges.length === 0) return 0;
+  if (!edges || edges.length === 0) {
+    return 0;
+  }
   const directNeighbors = new Map<string, number>();
   let boost = 0;
   for (const edge of edges) {
@@ -139,7 +147,9 @@ export function hebbianBoost(
     const cappedWeight = Math.min(edge.weight, config.maxEdgeWeight);
     directNeighbors.set(neighborKey, cappedWeight);
     const neighborScore = baseScores.get(neighborKey) ?? 0;
-    if (neighborScore <= 0) continue;
+    if (neighborScore <= 0) {
+      continue;
+    }
     boost += neighborScore * cappedWeight * config.neighborWeight;
   }
   if (config.twoHopDecay <= 0) {
@@ -147,13 +157,19 @@ export function hebbianBoost(
   }
   for (const [neighborKey, firstHopWeight] of directNeighbors) {
     const secondHopEdges = edgeLookup.get(neighborKey);
-    if (!secondHopEdges) continue;
+    if (!secondHopEdges) {
+      continue;
+    }
     for (const edge of secondHopEdges) {
       const farKey = edge.a === neighborKey ? edge.b : edge.a;
       // Skip the origin and anything already counted as a direct neighbor.
-      if (farKey === dedupKey || directNeighbors.has(farKey)) continue;
+      if (farKey === dedupKey || directNeighbors.has(farKey)) {
+        continue;
+      }
       const farScore = baseScores.get(farKey) ?? 0;
-      if (farScore <= 0) continue;
+      if (farScore <= 0) {
+        continue;
+      }
       const pathWeight = Math.min(firstHopWeight, Math.min(edge.weight, config.maxEdgeWeight));
       boost += farScore * pathWeight * config.neighborWeight * config.twoHopDecay;
     }

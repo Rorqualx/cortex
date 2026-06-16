@@ -930,7 +930,9 @@ function renderEditButton(
         const bubble = groupEl?.querySelector(
           ".chat-bubble:not(.chat-bubble--tool-shell)",
         ) as HTMLElement | null;
-        if (!bubble) return;
+        if (!bubble) {
+          return;
+        }
         const currentText = bubble.textContent?.trim() ?? "";
         // The transcript entry id lives in __openclaw meta; user messages have
         // no message.id, so the entry id is the only stable handle for them.
@@ -940,7 +942,9 @@ function renderEditButton(
             ? (record["__openclaw"] as Record<string, unknown>)
             : undefined;
         const entryId = typeof meta?.id === "string" ? meta.id : undefined;
-        if (!entryId || !onEdit) return;
+        if (!entryId || !onEdit) {
+          return;
+        }
         enterEditMode(bubble, currentText, (text, restoreFiles) =>
           onEdit(text, entryId, restoreFiles),
         );

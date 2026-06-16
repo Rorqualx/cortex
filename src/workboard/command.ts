@@ -152,7 +152,7 @@ export function registerWorkboardCommand(
     exposeSenderIsOwner: true,
     handler: async (ctx) =>
       await handleWorkboardCommand({
-        store: store,
+        store,
         args: (ctx as any).args,
         senderIsOwner: (ctx as any).senderIsOwner,
         gatewayClientScopes: (ctx as any).gatewayClientScopes,

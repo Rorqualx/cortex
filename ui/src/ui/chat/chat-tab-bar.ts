@@ -3,7 +3,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../i18n/index.ts";
 import { getSafeLocalStorage } from "../../local-storage.ts";
-import { type AppViewState } from "../app-view-state.ts";
+import type { AppViewState } from "../app-view-state.ts";
 import { icons } from "../icons.ts";
 import { resolveSessionDisplayName } from "../session-display.ts";
 import { normalizeAgentId, parseAgentSessionKey } from "../session-key.ts";
@@ -22,7 +22,9 @@ function loadPersistedTabs(): PersistedTabState | null {
   try {
     const storage = getSafeLocalStorage();
     const raw = storage?.getItem(TAB_STATE_KEY);
-    if (!raw) return null;
+    if (!raw) {
+      return null;
+    }
     const parsed = JSON.parse(raw) as PersistedTabState;
     if (Array.isArray(parsed.openTabs) && typeof parsed.activeTab === "string") {
       return parsed;
@@ -36,7 +38,9 @@ function loadPersistedTabs(): PersistedTabState | null {
 export function savePersistedTabs(openTabs: string[], activeTab: string): void {
   try {
     const storage = getSafeLocalStorage();
-    if (!storage) return;
+    if (!storage) {
+      return;
+    }
     const state: PersistedTabState = { openTabs, activeTab };
     storage.setItem(TAB_STATE_KEY, JSON.stringify(state));
   } catch {
@@ -196,7 +200,9 @@ function resolveTabRunState(
 function renderTabStatusDot(
   runState: "active" | "done" | "interrupted" | "idle",
 ): typeof nothing | TemplateResult {
-  if (runState === "idle") return nothing;
+  if (runState === "idle") {
+    return nothing;
+  }
 
   if (runState === "active") {
     return html`
@@ -255,7 +261,9 @@ export function renderChatTabBar(
   const scheduleActiveTabScroll = () => {
     requestAnimationFrame(() => {
       const bar = document.querySelector(".chat-tab-bar__tabs");
-      if (!bar) return;
+      if (!bar) {
+        return;
+      }
       const active = bar.querySelector(".chat-tab-bar__tab--active");
       if (active) {
         active.scrollIntoView({ inline: "nearest", behavior: "smooth", block: "nearest" });
@@ -300,7 +308,9 @@ export function renderChatTabBar(
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = "move";
     }
-    if (!draggedSessionKey) return;
+    if (!draggedSessionKey) {
+      return;
+    }
 
     const target = e.currentTarget as HTMLElement;
     // Determine if cursor is on left or right half
@@ -344,7 +354,9 @@ export function renderChatTabBar(
       "chat-tab-bar__tab--drag-over-right",
     );
 
-    if (!draggedSessionKey || draggedSessionKey === targetKey) return;
+    if (!draggedSessionKey || draggedSessionKey === targetKey) {
+      return;
+    }
 
     const rect = target.getBoundingClientRect();
     const midX = rect.left + rect.width / 2;
@@ -353,11 +365,15 @@ export function renderChatTabBar(
     // Reorder the tabs array
     const currentTabs = [...effectiveTabs];
     const dragIdx = currentTabs.indexOf(draggedSessionKey);
-    if (dragIdx === -1) return;
+    if (dragIdx === -1) {
+      return;
+    }
     currentTabs.splice(dragIdx, 1);
 
     let targetIdx = currentTabs.indexOf(targetKey);
-    if (targetIdx === -1) return;
+    if (targetIdx === -1) {
+      return;
+    }
 
     if (!insertBefore) {
       targetIdx += 1;
@@ -395,9 +411,13 @@ export function renderChatTabBar(
           // horizontal scroll so tabs push left/right when the cursor
           // hovers over the tab bar.
           const container = e.currentTarget as HTMLElement;
-          if (container.scrollWidth <= container.clientWidth) return; // nothing to scroll
+          if (container.scrollWidth <= container.clientWidth) {
+            return;
+          } // nothing to scroll
           const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-          if (dx === 0) return;
+          if (dx === 0) {
+            return;
+          }
           // Only prevent default when we actually scroll (avoids eating
           // vertical page scroll when tabs fit without overflow).
           if (container.scrollWidth > container.clientWidth) {

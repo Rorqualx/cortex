@@ -216,7 +216,9 @@ function listDirectoryFiles(dirPath: string): AgentFileEntry[] {
     const entries = fsSync.readdirSync(dirPath, { withFileTypes: true });
     const files: AgentFileEntry[] = [];
     for (const entry of entries) {
-      if (entry.name.startsWith(".")) continue; // skip hidden files
+      if (entry.name.startsWith(".")) {
+        continue;
+      } // skip hidden files
       const fullPath = path.join(dirPath, entry.name);
       if (entry.isFile()) {
         try {
@@ -233,7 +235,7 @@ function listDirectoryFiles(dirPath: string): AgentFileEntry[] {
         }
       }
     }
-    return files.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 100);
+    return files.toSorted((a, b) => a.name.localeCompare(b.name)).slice(0, 100);
   } catch {
     return [];
   }

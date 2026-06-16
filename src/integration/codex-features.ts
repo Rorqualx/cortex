@@ -84,7 +84,9 @@ export function loadProjectConfigFromCwd(
   globalConfig: Record<string, unknown>,
 ): ProjectConfigResult | null {
   const projectRoot = discoverProjectRoot(cwd);
-  if (!projectRoot) return null;
+  if (!projectRoot) {
+    return null;
+  }
   return loadProjectConfig(projectRoot, globalConfig);
 }
 
@@ -104,9 +106,13 @@ export function loadProjectConfigFromCwd(
 export function resolveCollaborationModeConfig(
   modeInput: string | undefined,
 ): Record<string, unknown> | null {
-  if (!modeInput) return null;
+  if (!modeInput) {
+    return null;
+  }
   const mode = parseCollaborationMode(modeInput);
-  if (!mode) return null;
+  if (!mode) {
+    return null;
+  }
   return collaborationModeToConfigOverrides(mode);
 }
 

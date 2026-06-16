@@ -88,28 +88,46 @@ function tokenize(text) {
 }
 
 function jaccard(a, b) {
-  if (a.size === 0 || b.size === 0) return 0;
+  if (a.size === 0 || b.size === 0) {
+    return 0;
+  }
   let intersect = 0;
-  for (const t of a) if (b.has(t)) intersect += 1;
+  for (const t of a) {
+    if (b.has(t)) intersect += 1;
+  }
   const union = a.size + b.size - intersect;
   return union === 0 ? 0 : intersect / union;
 }
 
 function formatRelativeAge(ageMs) {
-  if (!Number.isFinite(ageMs) || ageMs < 0) return "(now)";
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
+    return "(now)";
+  }
   const days = ageMs / MS_PER_DAY;
-  if (days < 1) return "(today)";
-  if (days < 2) return "(yesterday)";
-  if (days < 14) return `(${Math.round(days)}d ago)`;
-  if (days < 60) return `(${Math.round(days / 7)}w ago)`;
-  if (days < 365) return `(${Math.round(days / 30)}mo ago)`;
+  if (days < 1) {
+    return "(today)";
+  }
+  if (days < 2) {
+    return "(yesterday)";
+  }
+  if (days < 14) {
+    return `(${Math.round(days)}d ago)`;
+  }
+  if (days < 60) {
+    return `(${Math.round(days / 7)}w ago)`;
+  }
+  if (days < 365) {
+    return `(${Math.round(days / 30)}mo ago)`;
+  }
   return `(${(days / 365).toFixed(1)}y ago)`;
 }
 
 // Verbatim from packages/memory-host-sdk/src/host/internal.ts:483-507.
 // Cosine similarity in 0..1 (clamped). Returns 0 on empty/zero vectors.
 function cosineSimilarity(a, b) {
-  if (!a || !b || a.length === 0 || a.length !== b.length) return 0;
+  if (!a || !b || a.length === 0 || a.length !== b.length) {
+    return 0;
+  }
   let dot = 0;
   let na = 0;
   let nb = 0;
@@ -118,7 +136,9 @@ function cosineSimilarity(a, b) {
     na += a[i] * a[i];
     nb += b[i] * b[i];
   }
-  if (na === 0 || nb === 0) return 0;
+  if (na === 0 || nb === 0) {
+    return 0;
+  }
   const sim = dot / (Math.sqrt(na) * Math.sqrt(nb));
   return Math.max(0, Math.min(1, sim));
 }
@@ -132,10 +152,16 @@ function resetEmbedCache() {
 }
 
 async function embedText(text) {
-  if (LEXICAL_ONLY) return null;
-  if (typeof text !== "string" || text.length === 0) return null;
+  if (LEXICAL_ONLY) {
+    return null;
+  }
+  if (typeof text !== "string" || text.length === 0) {
+    return null;
+  }
   const cached = embedCache.get(text);
-  if (cached) return cached;
+  if (cached) {
+    return cached;
+  }
   try {
     const resp = await fetch(`${OLLAMA_URL}/api/embeddings`, {
       method: "POST",
@@ -148,7 +174,9 @@ async function embedText(text) {
     }
     const json = await resp.json();
     const vec = Array.isArray(json?.embedding) ? json.embedding : null;
-    if (vec) embedCache.set(text, vec);
+    if (vec) {
+      embedCache.set(text, vec);
+    }
     return vec;
   } catch {
     embedFailures += 1;
@@ -166,12 +194,16 @@ function buildExtractUserPrompt(messages) {
 
 async function resolveZaiKey() {
   const fromEnv = process.env.ZAI_API_KEY ?? process.env.Z_AI_API_KEY;
-  if (fromEnv) return fromEnv;
+  if (fromEnv) {
+    return fromEnv;
+  }
   const authPath = path.join(HOME, ".openclaw/agents/main/agent/auth-profiles.json");
   const text = await readFile(authPath, "utf8");
   const json = JSON.parse(text);
   const key = json?.profiles?.["zai:default"]?.key;
-  if (!key) throw new Error(`No zai:default key in ${authPath}`);
+  if (!key) {
+    throw new Error(`No zai:default key in ${authPath}`);
+  }
   return key;
 }
 
@@ -190,7 +222,9 @@ async function callGlm({ apiKey, systemPrompt, userPrompt }) {
     }),
   });
   const text = await resp.text();
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text.slice(0, 400)}`);
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status}: ${text.slice(0, 400)}`);
+  }
   const json = JSON.parse(text);
   return json.choices?.[0]?.message?.content ?? "";
 }
@@ -199,7 +233,9 @@ async function callGlm({ apiKey, systemPrompt, userPrompt }) {
 // prose field as "text", "fact", or "content"; same for "dedupKey" vs "key".
 // Tolerate all three; downstream code reads .text and .dedupKey.
 function normalizeFact(o) {
-  if (!o || typeof o !== "object") return null;
+  if (!o || typeof o !== "object") {
+    return null;
+  }
   const text =
     typeof o.text === "string"
       ? o.text
@@ -210,7 +246,9 @@ function normalizeFact(o) {
           : null;
   const dedupKey =
     typeof o.dedupKey === "string" ? o.dedupKey : typeof o.key === "string" ? o.key : null;
-  if (!text || !dedupKey) return null;
+  if (!text || !dedupKey) {
+    return null;
+  }
   return {
     text: text.trim(),
     dedupKey: dedupKey.trim(),
@@ -219,7 +257,9 @@ function normalizeFact(o) {
 }
 
 function normalizeTypedFact(o) {
-  if (!o || typeof o !== "object") return null;
+  if (!o || typeof o !== "object") {
+    return null;
+  }
   const slot = typeof o.slot === "string" ? o.slot : typeof o.key === "string" ? o.key : null;
   const value = typeof o.value === "string" ? o.value : null;
   const sourceSpan =
@@ -230,7 +270,9 @@ function normalizeTypedFact(o) {
         : typeof o.source === "string"
           ? o.source
           : null;
-  if (!slot || !value || !sourceSpan) return null;
+  if (!slot || !value || !sourceSpan) {
+    return null;
+  }
   return {
     slot: slot.trim(),
     value,
@@ -281,7 +323,9 @@ const RECENCY_HALF_LIFE_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function recencyScore(ageMs) {
-  if (ageMs < 0) return 1;
+  if (ageMs < 0) {
+    return 1;
+  }
   const ageDays = ageMs / MS_PER_DAY;
   return Math.exp((-Math.LN2 * ageDays) / RECENCY_HALF_LIFE_DAYS);
 }
@@ -316,7 +360,9 @@ async function retrieveTopK({ question, facts, typedFacts, now, k }) {
       createdAt: t.createdAt ?? now,
     });
   }
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) {
+    return [];
+  }
 
   // Lexical leg: rank by Jaccard score (desc). Zero scores get rank = +Infinity (RRF contribution 0).
   const withLex = candidates.map((c, i) => ({
@@ -326,7 +372,9 @@ async function retrieveTopK({ question, facts, typedFacts, now, k }) {
   withLex.sort((a, b) => b.lex - a.lex);
   const lexRank = new Array(candidates.length).fill(Infinity);
   for (let r = 0; r < withLex.length; r += 1) {
-    if (withLex[r].lex > 0) lexRank[withLex[r].i] = r;
+    if (withLex[r].lex > 0) {
+      lexRank[withLex[r].i] = r;
+    }
   }
 
   // Semantic leg: embed question + each fact text, rank by cosine.
@@ -340,7 +388,9 @@ async function retrieveTopK({ question, facts, typedFacts, now, k }) {
     }));
     withSem.sort((a, b) => b.sim - a.sim);
     for (let r = 0; r < withSem.length; r += 1) {
-      if (withSem[r].sim > 0) semRank[withSem[r].i] = r;
+      if (withSem[r].sim > 0) {
+        semRank[withSem[r].i] = r;
+      }
     }
   }
 
@@ -348,9 +398,15 @@ async function retrieveTopK({ question, facts, typedFacts, now, k }) {
   const scored = candidates
     .map((c, i) => {
       let rrf = 0;
-      if (Number.isFinite(lexRank[i])) rrf += 1 / (RRF_K + lexRank[i]);
-      if (Number.isFinite(semRank[i])) rrf += 1 / (RRF_K + semRank[i]);
-      if (rrf === 0) return null;
+      if (Number.isFinite(lexRank[i])) {
+        rrf += 1 / (RRF_K + lexRank[i]);
+      }
+      if (Number.isFinite(semRank[i])) {
+        rrf += 1 / (RRF_K + semRank[i]);
+      }
+      if (rrf === 0) {
+        return null;
+      }
       const tierBoost = c.kind === "typed" ? 0.005 : 0;
       const impPrior = c.importance * 0.003;
       return {
@@ -370,10 +426,14 @@ async function retrieveTopK({ question, facts, typedFacts, now, k }) {
 
 function parseHaystackDate(s) {
   // Format: "2023/04/10 (Mon) 17:50" — split on space, take date and time.
-  if (!s || typeof s !== "string") return Date.now();
+  if (!s || typeof s !== "string") {
+    return Date.now();
+  }
   const m = /^(\d{4})\/(\d{2})\/(\d{2})\s+\([A-Za-z]+\)\s+(\d{1,2}):(\d{2})/.exec(s);
-  if (!m) return Date.now();
-  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  if (!m) {
+    return Date.now();
+  }
+  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
 }
 
 async function runQuestion({ apiKey, question }) {
@@ -390,7 +450,9 @@ async function runQuestion({ apiKey, question }) {
       userPrompt: buildExtractUserPrompt(session),
     });
     const parsed = tryParseExtract(raw);
-    for (const f of parsed.facts) allFacts.push({ ...f, createdAt: sessionTime });
+    for (const f of parsed.facts) {
+      allFacts.push({ ...f, createdAt: sessionTime });
+    }
     for (const t of groundTypedFacts(parsed.typedFacts, transcript)) {
       allTyped.push({ ...t, createdAt: sessionTime });
     }
@@ -432,14 +494,18 @@ async function runQuestion({ apiKey, question }) {
 // `Answer:` line (case-insensitive). Falls back to the last non-empty
 // line if the model didn't follow the format.
 function parseHypothesis(raw) {
-  if (!raw) return "";
+  if (!raw) {
+    return "";
+  }
   const lines = raw
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const m = /^answer\s*:\s*(.*)$/i.exec(lines[i]);
-    if (m) return m[1].trim();
+    if (m) {
+      return m[1].trim();
+    }
   }
   return lines[lines.length - 1] ?? "";
 }
@@ -468,7 +534,9 @@ async function runWithConcurrency(items, concurrency, fn) {
     while (true) {
       const idx = next;
       next += 1;
-      if (idx >= items.length) return;
+      if (idx >= items.length) {
+        return;
+      }
       try {
         results[idx] = await fn(items[idx], idx);
       } catch (e) {
@@ -514,16 +582,24 @@ async function main() {
   for (let i = 0; i < results.length; i += 1) {
     const r = results[i];
     const t = filtered[i].question_type;
-    if (!byType[t]) byType[t] = { total: 0, hits: 0, errors: 0 };
+    if (!byType[t]) {
+      byType[t] = { total: 0, hits: 0, errors: 0 };
+    }
     byType[t].total += 1;
-    if (r.exact_hit) byType[t].hits += 1;
-    if (r.error) byType[t].errors += 1;
+    if (r.exact_hit) {
+      byType[t].hits += 1;
+    }
+    if (r.error) {
+      byType[t].errors += 1;
+    }
   }
 
   console.log(`\n=== Per-type results ===`);
   for (const t of QUESTION_TYPES) {
     const b = byType[t];
-    if (!b) continue;
+    if (!b) {
+      continue;
+    }
     const pct = b.total > 0 ? Math.round((b.hits / b.total) * 100) : 0;
     const errSuffix = b.errors > 0 ? ` [${b.errors} errors]` : "";
     console.log(`  ${t.padEnd(28)} ${b.hits}/${b.total} (${pct}%)${errSuffix}`);

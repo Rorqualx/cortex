@@ -72,8 +72,12 @@ const ChatCompletionResponse = z.object({
 const DEFAULT_TIMEOUT_MS = 600_000;
 
 function formatHint(format: LlmCallParams["format"]): string {
-  if (format === "json") return "\n\nRespond with valid JSON only. No prose, no markdown fences.";
-  if (format === "markdown") return "\n\nRespond in Markdown.";
+  if (format === "json") {
+    return "\n\nRespond with valid JSON only. No prose, no markdown fences.";
+  }
+  if (format === "markdown") {
+    return "\n\nRespond in Markdown.";
+  }
   return "";
 }
 
@@ -114,9 +118,13 @@ function defaultTemperature(
   thinking: boolean,
   explicit: number | undefined,
 ): number {
-  if (explicit !== undefined) return explicit;
-  if (isK2Model(model)) return thinking ? 1.0 : 0.6;
-  return thinking ? 1.0 : 0.3;
+  if (explicit !== undefined) {
+    return explicit;
+  }
+  if (isK2Model(model)) {
+    return thinking ? 1.0 : 0.6;
+  }
+  return thinking ? 1 : 0.3;
 }
 
 function thinkingField(thinking: boolean): Record<string, unknown> {
@@ -187,25 +195,41 @@ type StreamAccumulator = {
 };
 
 function foldDelta(acc: StreamAccumulator, chunk: Record<string, unknown>): void {
-  if (typeof chunk["model"] === "string" && !acc.model) acc.model = chunk["model"];
-  if (typeof chunk["id"] === "string" && !acc.id) acc.id = chunk["id"];
+  if (typeof chunk["model"] === "string" && !acc.model) {
+    acc.model = chunk["model"];
+  }
+  if (typeof chunk["id"] === "string" && !acc.id) {
+    acc.id = chunk["id"];
+  }
   // Final chunk often carries usage at the top level (with empty choices[]).
   const usage = chunk["usage"] as StreamAccumulator["usage"] | undefined;
-  if (usage && typeof usage === "object") acc.usage = usage;
+  if (usage && typeof usage === "object") {
+    acc.usage = usage;
+  }
 
   const choices = chunk["choices"] as Array<Record<string, unknown>> | undefined;
-  if (!Array.isArray(choices) || choices.length === 0) return;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return;
+  }
   const choice = choices[0];
-  if (!choice) return;
+  if (!choice) {
+    return;
+  }
   const finishReason = choice["finish_reason"];
-  if (finishReason !== null && finishReason !== undefined)
+  if (finishReason !== null && finishReason !== undefined) {
     acc.finish_reason = finishReason as string;
+  }
 
   const delta = choice["delta"] as Record<string, unknown> | undefined;
-  if (!delta) return;
-  if (typeof delta["content"] === "string") acc.content += delta["content"];
-  if (typeof delta["reasoning_content"] === "string")
+  if (!delta) {
+    return;
+  }
+  if (typeof delta["content"] === "string") {
+    acc.content += delta["content"];
+  }
+  if (typeof delta["reasoning_content"] === "string") {
     acc.reasoning_content += delta["reasoning_content"];
+  }
 
   const toolCalls = delta["tool_calls"] as Array<Record<string, unknown>> | undefined;
   if (Array.isArray(toolCalls)) {
@@ -216,11 +240,17 @@ function foldDelta(acc: StreamAccumulator, chunk: Record<string, unknown>): void
         entry = { arguments: "" };
         acc.tool_calls_by_index.set(idx, entry);
       }
-      if (typeof tc["id"] === "string") entry.id = tc["id"];
+      if (typeof tc["id"] === "string") {
+        entry.id = tc["id"];
+      }
       const fn = tc["function"] as Record<string, unknown> | undefined;
       if (fn) {
-        if (typeof fn["name"] === "string") entry.name = fn["name"];
-        if (typeof fn["arguments"] === "string") entry.arguments += fn["arguments"];
+        if (typeof fn["name"] === "string") {
+          entry.name = fn["name"];
+        }
+        if (typeof fn["arguments"] === "string") {
+          entry.arguments += fn["arguments"];
+        }
       }
     }
   }
@@ -230,10 +260,12 @@ function foldDelta(acc: StreamAccumulator, chunk: Record<string, unknown>): void
 // the existing shapeResult / ChatCompletionResponse logic works unchanged.
 function synthesizeResponse(acc: StreamAccumulator): unknown {
   const message: Record<string, unknown> = { role: "assistant", content: acc.content };
-  if (acc.reasoning_content) message["reasoning_content"] = acc.reasoning_content;
+  if (acc.reasoning_content) {
+    message["reasoning_content"] = acc.reasoning_content;
+  }
   if (acc.tool_calls_by_index.size > 0) {
     message["tool_calls"] = [...acc.tool_calls_by_index.entries()]
-      .sort((a, b) => a[0] - b[0])
+      .toSorted((a, b) => a[0] - b[0])
       .map(([, v]) => ({
         id: v.id ?? "",
         type: "function",
@@ -262,8 +294,11 @@ async function postJsonStream(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const onExternalAbort = () => controller.abort();
   if (externalSignal) {
-    if (externalSignal.aborted) controller.abort();
-    else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+    }
   }
   try {
     const res = await fetch(url, {
@@ -296,7 +331,9 @@ async function postJsonStream(
     const reader = res.body.getReader();
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) {
+        break;
+      }
       buffer += decoder.decode(value, { stream: true });
       // SSE events are separated by blank lines. Process every complete event
       // currently in the buffer and keep the trailing partial.
@@ -305,9 +342,13 @@ async function postJsonStream(
         const event = buffer.slice(0, nlIdx);
         buffer = buffer.slice(nlIdx + 2);
         for (const line of event.split("\n")) {
-          if (!line.startsWith("data:")) continue;
+          if (!line.startsWith("data:")) {
+            continue;
+          }
           const payload = line.slice(5).trim();
-          if (payload === "" || payload === "[DONE]") continue;
+          if (payload === "" || payload === "[DONE]") {
+            continue;
+          }
           try {
             const parsed = JSON.parse(payload) as Record<string, unknown>;
             foldDelta(acc, parsed);
@@ -326,7 +367,9 @@ async function postJsonStream(
     };
   } finally {
     clearTimeout(timer);
-    if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
   }
 }
 
@@ -335,7 +378,9 @@ function isAbortError(err: unknown): boolean {
 }
 
 function wrapTransportError(err: unknown, timeoutMs: number): LlmError {
-  if (err instanceof LlmError) return err;
+  if (err instanceof LlmError) {
+    return err;
+  }
   if (isAbortError(err)) {
     return new LlmError(`Kimi request timed out after ${timeoutMs}ms`, "kimi");
   }
@@ -400,7 +445,9 @@ async function executeWithRetry(
   try {
     return await executeRequest(url, apiKey, body, timeoutMs, signal);
   } catch (err) {
-    if (signal?.aborted) throw err;
+    if (signal?.aborted) {
+      throw err;
+    }
     if (err instanceof LlmError && err.status !== undefined && err.status >= 500) {
       await new Promise((r) => setTimeout(r, 500));
       return executeRequest(url, apiKey, body, timeoutMs, signal);

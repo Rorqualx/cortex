@@ -67,9 +67,13 @@ describe("Loop A: duplicate accumulation", () => {
     const distinctKeys = new Set<string>();
     for (const filePath of chunkPaths) {
       const doc = await storage.readL2ChunkAtPath(filePath);
-      if (!doc) continue;
+      if (!doc) {
+        continue;
+      }
       totalFacts += doc.frontmatter.facts.length;
-      for (const f of doc.frontmatter.facts) distinctKeys.add(f.dedupKey);
+      for (const f of doc.frontmatter.facts) {
+        distinctKeys.add(f.dedupKey);
+      }
     }
 
     const dedupRatio = totalFacts / Math.max(1, distinctKeys.size);
@@ -87,7 +91,7 @@ describe("Loop A: duplicate accumulation", () => {
 describe("Loop C: recency dominance", () => {
   it("does not let a 30-day-old identical-text fact fall >30% below the fresh copy", async () => {
     const oldT = NOW - 30 * MS_PER_DAY;
-    const newT = NOW - 1 * MS_PER_DAY;
+    const newT = NOW - Number(MS_PER_DAY);
     const sharedText = "user prefers morning standups";
     await storage.writeL2Chunk(
       {
@@ -140,7 +144,9 @@ describe("Loop C: recency dominance", () => {
     const fOld = top.find((r) => r.fact.id === "f-old");
     expect(fNew).toBeDefined();
     expect(fOld).toBeDefined();
-    if (!fNew || !fOld) return;
+    if (!fNew || !fOld) {
+      return;
+    }
     const gap = (fNew.score - fOld.score) / fNew.score;
     expect(gap).toBeLessThanOrEqual(0.3);
   });
@@ -258,13 +264,13 @@ describe("Loop E: long-term promotion mixed-signal corpus", () => {
         agentId: "j-rorqual",
         startTurnIndex: 0,
         endTurnIndex: 1,
-        createdAt: NOW - 1 * MS_PER_DAY,
+        createdAt: NOW - Number(MS_PER_DAY),
         facts: [
           {
             id: "f-identity",
             text: "user's name is Joe; based in Denver",
             importance: 0.9,
-            createdAt: NOW - 1 * MS_PER_DAY,
+            createdAt: NOW - Number(MS_PER_DAY),
             dedupKey: "user:identity",
           },
         ],
@@ -280,13 +286,13 @@ describe("Loop E: long-term promotion mixed-signal corpus", () => {
         agentId: "j-rorqual",
         startTurnIndex: 0,
         endTurnIndex: 1,
-        createdAt: NOW - 1 * MS_PER_DAY,
+        createdAt: NOW - Number(MS_PER_DAY),
         facts: [
           {
             id: "f-trivia",
             text: "user mentioned a movie once",
             importance: 0.3,
-            createdAt: NOW - 1 * MS_PER_DAY,
+            createdAt: NOW - Number(MS_PER_DAY),
             dedupKey: "trivia:movie",
           },
         ],
@@ -308,7 +314,7 @@ describe("Loop E: long-term promotion mixed-signal corpus", () => {
     const promotedKeys = lt.facts
       .filter((f) => !f.archived)
       .map((f) => f.dedupKey)
-      .sort();
+      .toSorted();
     expect(promotedKeys).toEqual(["user:identity", "user_pref:tabs"]);
 
     const tabs = lt.facts.find((f) => f.dedupKey === "user_pref:tabs");
