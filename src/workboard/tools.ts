@@ -1,7 +1,7 @@
-// Workboard plugin module implements tools behavior.
-import { jsonResult, readStringParam } from "../../agents/tools/common.js";
-import type { AnyAgentTool } from "../../plugins/types.js";
 import { Type } from "../agents/schema/typebox.js";
+// Workboard plugin module implements tools behavior.
+import { jsonResult, readStringParam } from "../agents/tools/common.js";
+import type { AnyAgentTool } from "../plugins/types.js";
 import { WorkboardStore } from "./store.js";
 import type { WorkboardCard } from "./types.js";
 

@@ -1,5 +1,5 @@
 // Workboard plugin module implements gateway behavior.
-import { formatErrorMessage } from "../../infra/errors.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import { dispatchAndStartWorkboardCards } from "./dispatcher.js";
 import { WorkboardStore } from "./store.js";
 import { WORKBOARD_STATUSES, type WorkboardCard } from "./types.js";

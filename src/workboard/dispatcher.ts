@@ -1,7 +1,7 @@
-import { spawnSubagentDirect, type SpawnSubagentParams } from "../../agents/subagent-spawn.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { spawnSubagentDirect, type SpawnSubagentParams } from "../agents/subagent-spawn.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 // Workboard plugin module implements dispatcher behavior.
-import { formatErrorMessage } from "../../infra/errors.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import { WorkboardStore, type WorkboardDispatchResult } from "./store.js";
 import type { WorkboardCard, WorkboardExecution } from "./types.js";
 

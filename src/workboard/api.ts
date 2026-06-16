@@ -1,4 +1,4 @@
-import type { GatewayMethodHandler } from "../../gateway/methods/descriptor.js";
+import type { GatewayMethodHandler } from "../gateway/methods/descriptor.js";
 /**
  * Workboard API — bridge from store to core gateway method registry.
  *
