@@ -6,8 +6,6 @@
  * gateway RPC methods.
  */
 
-import type { ChatItem } from "../types/chat-types.ts";
-
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface SessionBranchPoint {

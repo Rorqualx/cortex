@@ -5,9 +5,8 @@ import { formatRelativeTimestamp, parseSessionKeyParts } from "../format.ts";
 import { icons } from "../icons.ts";
 import { pathForTab } from "../navigation.ts";
 import { isSessionRunActive } from "../session-run-state.ts";
-import { normalizeLowercaseStringOrEmpty, normalizeOptionalString } from "../string-coerce.ts";
+import { normalizeOptionalString } from "../string-coerce.ts";
 import type { AgentIdentityResult, GatewaySessionRow, SessionsListResult } from "../types.ts";
-import { resolveAgentRuntimeLabel } from "./agents-utils.ts";
 
 export type ConversationsProps = {
   loading: boolean;
@@ -31,11 +30,7 @@ function resolveAgentName(
   const identity = Object.hasOwn(agentIdentityById, agentId)
     ? (agentIdentityById[agentId] ?? null)
     : null;
-  return (
-    normalizeOptionalString(identity?.name) ||
-    normalizeOptionalString(identity?.displayName) ||
-    agentId
-  );
+  return normalizeOptionalString(identity?.name) || agentId;
 }
 
 function resolveConversationTitle(row: GatewaySessionRow): string {
@@ -57,8 +52,11 @@ function resolveConversationTitle(row: GatewaySessionRow): string {
     return row.displayName;
   }
   const parsed = parseSessionKeyParts(row.key);
-  if (parsed?.rest && parsed.rest !== "main") {
-    return parsed.rest;
+  if (parsed) {
+    const rest = `${parsed.channel}:${parsed.accountId}`;
+    if (rest !== "main") {
+      return rest;
+    }
   }
   return row.key;
 }

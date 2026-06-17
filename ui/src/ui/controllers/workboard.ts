@@ -261,6 +261,7 @@ export type WorkboardCard = {
   title: string;
   notes?: string;
   status: WorkboardStatus;
+  section?: string;
   priority: WorkboardPriority;
   labels: string[];
   agentId?: string;
@@ -380,7 +381,7 @@ export type WorkboardUiState = {
   draftProjectIcon: string;
 };
 
-type WorkboardHost = object;
+export type WorkboardHost = object;
 
 const workboardStates = new WeakMap<WorkboardHost, WorkboardUiState>();
 const workboardLoadPromises = new WeakMap<WorkboardHost, Promise<void>>();

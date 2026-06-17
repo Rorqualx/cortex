@@ -803,7 +803,7 @@ export async function loadBranches(state: ChatState): Promise<void> {
 export async function handleBranchNavigate(
   state: ChatState,
   entryId: string,
-  direction: "prev" | "next",
+  _direction: "prev" | "next",
 ): Promise<void> {
   if (!state.client || !state.connected) {
     return;

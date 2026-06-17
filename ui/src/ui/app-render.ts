@@ -25,11 +25,7 @@ import {
 } from "./app-render.helpers.ts";
 import { hasOperatorAdminAccess, hasOperatorWriteAccess, warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
-import {
-  renderChatTabBar,
-  savePersistedTabs,
-  dismissActiveTabDoneDot,
-} from "./chat/chat-tab-bar.ts";
+import { renderChatTabBar, savePersistedTabs } from "./chat/chat-tab-bar.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import {
   renderChatSessionSelect,
@@ -64,7 +60,6 @@ import {
   loadBranches,
   loadChatHistory,
   loadEarlierMessages,
-  expandHistoryRenderLimit,
   sendChatMessage,
 } from "./controllers/chat.ts";
 import {
@@ -142,9 +137,6 @@ import {
   toggleSessionCompactionCheckpoints,
 } from "./controllers/sessions.ts";
 import {
-  filteredSkills as filterSkillForgeSkills,
-  countSkillForge as countSkillForgeSkills,
-  loadSkillForgeStatus,
   runForgePipeline,
   promoteSkill,
   retireSkill,
@@ -228,7 +220,6 @@ import { renderDreaming } from "./views/dreaming.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
-import { triggerEditScan } from "./views/markdown-sidebar.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
 
@@ -245,18 +236,12 @@ function runUiTask<Args extends unknown[]>(
   };
 }
 
-const SKILL_FORGE_MODE_KEY = "openclaw:control-ui:skill-forge-mode:v1";
-
 export function loadSkillForgeMode(): "board" | "grid" {
   return loadSkillForgeModeController();
 }
 
 function setSkillForgeModeLocal(state: AppViewState, mode: "board" | "grid"): void {
   setSkillForgeMode(state, mode);
-}
-
-function renderSkillForgeHeaderControls(state: AppViewState) {
-  return html``;
 }
 
 function renderSettingsSectionNav(state: AppViewState) {
@@ -1322,22 +1307,6 @@ function renderCronQuickCreateForTab(
       requestHostUpdate?.();
     },
   });
-}
-
-function buildWorkspaceFileSidebarContent(name: string, content: string): string {
-  if (/\.(?:md|markdown|mdx)$/i.test(name)) {
-    return content;
-  }
-  const language = name.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "";
-  // Cap code content so the markdown fence renderer handles it (with line numbers)
-  // instead of falling back to plain-text rendering for large files.
-  const MAX_CODE_CHARS = 35_000;
-  const suffix =
-    content.length > MAX_CODE_CHARS
-      ? `\n\n… truncated (${content.length.toLocaleString()} chars, showing first ${MAX_CODE_CHARS.toLocaleString()}).`
-      : "";
-  const code = content.length > MAX_CODE_CHARS ? content.substring(0, MAX_CODE_CHARS) : content;
-  return `# ${name}${suffix}\n\n\`\`\`${language}\n${code}\n\`\`\``;
 }
 
 export function renderApp(state: AppViewState) {
@@ -2538,7 +2507,6 @@ export function renderApp(state: AppViewState) {
                 <div class="page-sub">${subtitleForTab(state.tab)}</div>
               </div>
               <div class="page-meta">
-                ${state.tab === "skillForge" ? renderSkillForgeHeaderControls(state) : nothing}
                 ${state.tab === "dreams"
                   ? html`
                       <div class="dreaming-header-controls">

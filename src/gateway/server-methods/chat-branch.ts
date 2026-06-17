@@ -7,11 +7,7 @@
  *                 child counts, and labels for UI navigation.
  */
 
-import {
-  ErrorCodes,
-  errorShape,
-  formatValidationErrors,
-} from "../../../packages/gateway-protocol/src/index.js";
+import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import { uuidv7 } from "../../agents/runtime/index.js";
 import { loadEntriesFromFile, type SessionEntry } from "../../agents/sessions/session-manager.js";
 import {
@@ -97,7 +93,6 @@ export interface ChatBranchesResult {
 // ── Parameter validation ───────────────────────────────────────────────────
 
 const MIN_SESSION_KEY_LENGTH = 1;
-const MIN_ENTRY_ID_LENGTH = 1;
 
 function validateChatBranchParams(params: unknown): params is ChatBranchParams {
   if (!params || typeof params !== "object") {
@@ -230,7 +225,7 @@ function resolveBranchPoints(entries: SessionEntry[]): {
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Promise<void> {
-  const { params, respond, context } = opts;
+  const { params, respond } = opts;
 
   if (!validateChatBranchParams(params)) {
     respond(

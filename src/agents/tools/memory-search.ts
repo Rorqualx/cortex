@@ -6,7 +6,7 @@
  */
 
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { ToolDefinition } from "./common.js";
+import type { TranscriptsSummary } from "../../transcripts/summary.js";
 
 /**
  * Memory search result containing matched summary with similarity score
@@ -80,17 +80,13 @@ async function generateQueryEmbedding(params: {
  *
  * Reads all transcript summaries and filters to those with embedding vectors.
  */
-async function loadSummariesWithEmbeddings(
-  cfg: OpenClawConfig,
-): Promise<Array<SessionSummaryWithEmbedding>> {
+async function loadSummariesWithEmbeddings(): Promise<Array<SessionSummaryWithEmbedding>> {
   const { resolveStateDir } = await import("../../config/paths.js");
-  const { TranscriptsStore } = await import("../../transcripts/store.js");
   const path = await import("node:path");
 
   // Use transcripts directory from state dir
   const stateDir = resolveStateDir();
   const transcriptsDir = path.join(stateDir, "transcripts");
-  const store = new TranscriptsStore(transcriptsDir);
 
   try {
     const summaries: Array<SessionSummaryWithEmbedding> = [];
@@ -122,7 +118,7 @@ async function loadSummariesWithEmbeddings(
           summaries.push({
             sessionId: summary.sessionId,
             title: summary.title || "Untitled",
-            summary: summary.summary || "",
+            summary: summary.overview || "",
             decisions: summary.decisions || [],
             actionItems: summary.actionItems || [],
             risks: summary.risks || [],
@@ -166,7 +162,7 @@ export async function executeMemorySearch(params: {
   const queryEmbedding = await generateQueryEmbedding({ query, cfg });
 
   // 2. Load all summaries with embeddings
-  const summaries = await loadSummariesWithEmbeddings(cfg);
+  const summaries = await loadSummariesWithEmbeddings();
 
   // 3. Compute cosine similarity for each summary
   const results = summaries
@@ -191,7 +187,7 @@ export async function executeMemorySearch(params: {
  *
  * Can be registered as an agent tool for semantic transcript search.
  */
-export const memorySearchTool: ToolDefinition = {
+export const memorySearchTool = {
   name: "memory_search",
   description:
     "Search across session summaries using semantic similarity. Finds relevant past conversations based on meaning, not just keywords.",

@@ -27,31 +27,19 @@
  */
 
 import {
-  getCollaborationModeProfile,
   parseCollaborationMode,
   collaborationModeToConfigOverrides,
 } from "../agents/collaboration-modes.js";
-import type { CollaborationMode } from "../agents/collaboration-modes.js";
 import {
   resolveAttestationConfig as resolveAttestationConfigInternal,
   createAttestationForResponse,
   DEFAULT_ATTESTATION_CONFIG,
 } from "../attestation/integration.js";
 import type { AttestationConfig, AttestationRecord } from "../attestation/types.js";
-import {
-  discoverProjectRoot,
-  loadProjectConfig,
-  clearCache as clearProjectConfigCache,
-} from "../config/project-config.js";
+import { discoverProjectRoot, loadProjectConfig } from "../config/project-config.js";
 import type { ProjectConfigResult } from "../config/project-config.js";
 import { evaluatePolicy, loadPolicy } from "../exec-policy/index.js";
-import type { PolicyEvaluation, ExecPolicy } from "../exec-policy/index.js";
-import {
-  buildDefaultOsSandboxConfig,
-  shouldApplyOsSandbox,
-  wrapWithSeatbelt,
-} from "../sandbox/os-sandbox.js";
-import type { OsSandboxConfig } from "../sandbox/os-sandbox.js";
+import { buildDefaultOsSandboxConfig, shouldApplyOsSandbox } from "../sandbox/os-sandbox.js";
 
 // Re-export for convenience
 export {

@@ -33,7 +33,6 @@ import type {
   AttestationRecord,
   CustodyChain,
   ProviderAttestationConfig,
-  SignedAttestationReceipt,
 } from "./types.js";
 import type { CustodyChainLink } from "./types.js";
 

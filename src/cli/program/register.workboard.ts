@@ -2,7 +2,6 @@
  * Workboard CLI subcommands — core-native replacement for extensions/workboard/src/cli.ts.
  */
 import type { Command } from "commander";
-import { getRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { resolveWorkboardCardByIdOrPrefix } from "../../workboard/card-lookup.js";
 import { WorkboardStore } from "../../workboard/store.js";
@@ -44,11 +43,13 @@ export function registerWorkboardCli(program: Command) {
     .action(async (opts) => {
       try {
         const store = resolveStore();
-        const result = await store.list({
-          status: opts.status as string | undefined,
-          section: opts.section as string | undefined,
-          boardId: opts.board as string | undefined,
-        });
+        const cards = await store.list({ boardId: opts.board as string | undefined });
+        // list() filters by board only; apply status/section at the CLI layer.
+        const status = opts.status as string | undefined;
+        const section = opts.section as string | undefined;
+        const result = cards.filter(
+          (card) => (!status || card.status === status) && (!section || card.section === section),
+        );
         if (opts.json) {
           process.stdout.write(JSON.stringify(result, null, 2) + "\n");
         } else {
@@ -86,20 +87,15 @@ export function registerWorkboardCli(program: Command) {
     .option("--priority <priority>", "Priority (low/normal/high/urgent)", "normal")
     .option("--agent <agentId>", "Assigned agent")
     .action(async (title: string, opts) => {
-      const config = getRuntimeConfigSnapshot() ?? {};
       try {
-        const result = await callGatewayFromCli(
-          "workboard.cards.create-card",
-          {
-            title,
-            notes: opts.notes as string | undefined,
-            status: opts.status as string,
-            priority: opts.priority as string,
-            agentId: opts.agent as string | undefined,
-          },
-          config,
-        );
-        const data = (result as { response?: unknown })?.response;
+        const result = await callGatewayFromCli("workboard.cards.create", opts, {
+          title,
+          notes: opts.notes as string | undefined,
+          status: opts.status as string,
+          priority: opts.priority as string,
+          agentId: opts.agent as string | undefined,
+        });
+        const data = (result as { card?: unknown })?.card;
         process.stdout.write(JSON.stringify(data, null, 2) + "\n");
       } catch (error) {
         process.stderr.write(`Error: ${formatErrorMessage(error)}\n`);
@@ -125,14 +121,9 @@ export function registerWorkboardCli(program: Command) {
             ].join("\n") + "\n",
           );
         } else {
-          const config = getRuntimeConfigSnapshot() ?? {};
-          const result = await callGatewayFromCli(
-            "workboard.cards.dispatch",
-            {
-              maxStarts: Number(opts.maxStarts),
-            },
-            config,
-          );
+          const result = await callGatewayFromCli("workboard.cards.dispatch", opts, {
+            maxStarts: Number(opts.maxStarts),
+          });
           process.stdout.write(JSON.stringify(result, null, 2) + "\n");
         }
       } catch (error) {

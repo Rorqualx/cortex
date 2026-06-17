@@ -71,7 +71,7 @@ import {
 } from "./app-tool-stream.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
 import { AvatarChangeEvent } from "./avatar-lightbox.ts";
-import { restorePersistedTabs, savePersistedTabs } from "./chat/chat-tab-bar.ts";
+import { restorePersistedTabs } from "./chat/chat-tab-bar.ts";
 import { restoreChatComposerState } from "./chat/composer-persistence.ts";
 import { exportChatMarkdown } from "./chat/export.ts";
 import {

@@ -1,4 +1,4 @@
-import { isSeatbeltAvailable, buildDefaultSeatbeltConfig } from "./seatbelt/index.js";
+import { buildDefaultSeatbeltConfig } from "./seatbelt/index.js";
 /**
  * OS-level sandbox detection and configuration.
  *

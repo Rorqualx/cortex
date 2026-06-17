@@ -43,7 +43,6 @@ export class AvatarLightbox extends LitElement {
   private crop = { x: 0, y: 0, size: 0 };
   private dragging = false;
   private dragStart = { x: 0, y: 0 };
-  private fileInput?: HTMLInputElement;
 
   static override styles = css`
     :host {
@@ -589,7 +588,6 @@ export class AvatarLightbox extends LitElement {
   private triggerUpload() {
     const input = this.shadowRoot?.getElementById("avatar-upload") as HTMLInputElement | null;
     if (input) {
-      this.fileInput = input;
       input.click();
     }
   }
@@ -633,7 +631,7 @@ export class AvatarLightbox extends LitElement {
     }
   };
 
-  private close = () => {
+  close = () => {
     this.remove();
   };
 }

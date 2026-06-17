@@ -1,7 +1,6 @@
 // Control UI view renders markdown sidebar screen content.
 import { html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
-import { ref } from "lit/directives/ref.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { resolveCanvasIframeUrl } from "../canvas-url.ts";
 import { resolveEmbedSandbox, type EmbedSandboxMode } from "../embed-sandbox.ts";
@@ -38,7 +37,7 @@ function triggerReadingScroll(fileName: string) {
       return;
     }
     sidebarContent.scrollTop = 0;
-    function animate(now: number) {
+    const animate = (now: number) => {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const eased = progress < 0.5 ? 2 * progress * progress : 1 - (-2 * progress + 2) ** 2 / 2;
@@ -48,7 +47,7 @@ function triggerReadingScroll(fileName: string) {
       } else {
         readingAnimFrameId = null;
       }
-    }
+    };
     readingAnimFrameId = requestAnimationFrame(animate);
   }, 100);
 }
@@ -87,7 +86,7 @@ function triggerEditScan(editKey: string) {
 
     sidebarContent.scrollTop = 0;
 
-    function animate(now: number) {
+    const animate = (now: number) => {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const eased = progress < 0.5 ? 2 * progress * progress : 1 - (-2 * progress + 2) ** 2 / 2;
@@ -95,7 +94,7 @@ function triggerEditScan(editKey: string) {
       if (progress < 1) {
         requestAnimationFrame(animate);
       }
-    }
+    };
     requestAnimationFrame(animate);
   }, 120);
 }
@@ -138,7 +137,6 @@ function renderCodeViewer(content: import("../sidebar-content.ts").CodeSidebarCo
     rawLines.pop();
   }
   const lineCount = lines.length;
-  const gutterWidth = String(lineCount).length + 1;
   const readingClass = content.reading
     ? " code-viewer--reading"
     : content.editing

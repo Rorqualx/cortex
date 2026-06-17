@@ -607,14 +607,6 @@ export function registerSessionLifecycleListener(): () => void {
   import("../sessions/session-lifecycle-events.js")
     .then((mod) => {
       unsubscribe = mod.onSessionLifecycleEvent((event) => {
-        // Map session lifecycle event to our event types
-        const typeMap: Record<string, "created" | "started" | "stopped" | "deleted"> = {
-          created: "created",
-          started: "started",
-          stopped: "stopped",
-          deleted: "deleted",
-        };
-
         // Infer type from reason or default to created
         let eventType: "created" | "started" | "stopped" | "deleted" = "created";
         const reason = event.reason?.toLowerCase() ?? "";

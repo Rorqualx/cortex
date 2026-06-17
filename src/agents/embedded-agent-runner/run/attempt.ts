@@ -3093,7 +3093,6 @@ export async function runEmbeddedAttempt(
             // Schedule CCR cleanup after the attempt completes
             if (ccrStore) {
               const storeRef = ccrStore;
-              const attemptRunId = params.runId;
               // Use process.nextTick-like cleanup via the session dispose chain
               const origDispose = activeSession.dispose.bind(activeSession);
               activeSession.dispose = () => {

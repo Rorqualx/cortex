@@ -133,7 +133,7 @@ export async function writeIsolatedTranscript(params: {
   runId?: string;
   childSessionKey?: string;
   tokens?: number;
-}): Promise<{ id: string; path: number }> {
+}): Promise<{ id: string; path: string }> {
   const { agentDir, id, content, runId, childSessionKey, tokens } = params;
 
   const dir = resolveIsolatedTranscriptDir(agentDir);

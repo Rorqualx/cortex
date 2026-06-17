@@ -3,7 +3,6 @@
  *
  * Creates the per-run tool inventory from config, channel context, sandbox policy, auth stores, and plugin tools.
  */
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import type { InboundEventKind } from "../channels/inbound-event/kind.js";
 import { selectApplicableRuntimeConfig } from "../config/config.js";
@@ -43,6 +42,7 @@ import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js"
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { createCronTool } from "./tools/cron-tool.js";
+import { createDelegationTools } from "./tools/delegation/tools.js";
 import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import {
@@ -448,6 +448,12 @@ export function createOpenClawTools(
     }),
     ...(includeTranscriptsTool ? [createTranscriptsTool({ config: resolvedConfig })] : []),
     ...collectPresentOpenClawTools([imageGenerateTool, musicGenerateTool, videoGenerateTool]),
+    ...createDelegationTools({
+      config: resolvedConfig,
+      agentDir: options?.agentDir,
+      workspaceDir,
+      agentSessionKey: options?.agentSessionKey,
+    }),
     ...(embedded
       ? []
       : [

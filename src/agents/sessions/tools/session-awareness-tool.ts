@@ -8,7 +8,6 @@ import { resolve } from "node:path";
 import { Type } from "typebox";
 import {
   sessionActivityRegistry,
-  type SessionActivity,
   type FileClaim,
 } from "../../../session-awareness/session-activity-registry.js";
 import type { AgentTool } from "../../runtime/index.js";

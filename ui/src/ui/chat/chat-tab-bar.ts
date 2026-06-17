@@ -77,7 +77,7 @@ let lastChatRunId: string | null = null;
 const GOAL_TAB_MAX_LEN = 28;
 
 function resolveChatTabLabel(
-  state: AppViewState,
+  _state: AppViewState,
   sessionKey: string,
   sessions: SessionsListResult | null | undefined,
 ): string {

@@ -17,7 +17,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import type {
   AuditEvent,
   EventLedger,

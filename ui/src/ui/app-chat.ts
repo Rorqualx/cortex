@@ -47,11 +47,8 @@ import {
 import {
   abortChatRun,
   appendUserChatMessage,
-  handleBranchNavigate,
   loadBranches,
   loadChatHistory,
-  loadEarlierMessages,
-  expandHistoryRenderLimit,
   requestChatSend,
   sendDetachedChatMessage,
   sendSteerChatMessage,

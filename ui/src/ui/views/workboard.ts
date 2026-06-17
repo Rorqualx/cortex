@@ -23,6 +23,7 @@ import {
   type WorkboardExecutionMode,
   type WorkboardCard,
   type WorkboardEvent,
+  type WorkboardHost,
   type WorkboardLifecycle,
   type WorkboardPriority,
   type WorkboardStatus,

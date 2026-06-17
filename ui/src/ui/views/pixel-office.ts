@@ -457,7 +457,7 @@ const TRASH_ICON = html`<svg
 function renderProjectCell(
   project: ProjectOffice,
   agentStates: AgentState[],
-  sessions: GatewaySessionRow[],
+  _sessions: GatewaySessionRow[],
   options: {
     editable?: boolean;
     onEdit?: (project: ProjectOffice) => void;

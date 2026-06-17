@@ -43,6 +43,10 @@ export type CodeSidebarContent = {
   reading?: boolean;
   editing?: boolean;
   pendingEdit?: PendingEdit | null;
+  // Kept in sync with the other sidebar variants so the SidebarContent union
+  // exposes these uniformly (indexed access + raw-content passthrough).
+  fullMessageRequest?: SidebarFullMessageRequest;
+  unavailableReason?: "not_found" | "oversized" | "not_visible" | null;
 };
 
 export type SidebarContent = MarkdownSidebarContent | CanvasSidebarContent | CodeSidebarContent;

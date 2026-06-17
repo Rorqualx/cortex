@@ -698,7 +698,6 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
 
   state.lastError = null;
   state.chatError = null;
-  const previousSessionKey = state.sessionKey;
   // Draft-only switch: no sessions.create here. The gateway materializes the
   // session when the first message is sent, so an opened-but-unused new chat
   // never registers in session history.

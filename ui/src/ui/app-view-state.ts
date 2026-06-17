@@ -106,6 +106,12 @@ export type AppViewState = ScrollHost &
     chatSessionMessageSubscriptionRequestedKey?: string | null;
     chatLoading: boolean;
     chatSending: boolean;
+    // Branch points for the active thread, populated by the chat controller and
+    // read by the message-editor branch-navigation handlers.
+    branchPoints?: unknown[];
+    // LitElement re-render trigger; present because the runtime state is the app
+    // component. Optional so non-element state shapes (tests) stay assignable.
+    requestUpdate?: () => void;
     vaultComposerModalOpen: boolean;
     chatSendStartedAt: number | null;
     chatMessage: string;

@@ -1,6 +1,6 @@
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { isPrereleaseSemverVersion, parseRegistryNpmSpec } from "../infra/npm-registry-spec.js";
 import type { UpdateChannel } from "../infra/update-channels.js";
-import { normalizeOptionalString } from "../shared/string-coerce.js";
 
 export function resolveChannelAwareNpmSpec(params: {
   npmSpec?: string;
