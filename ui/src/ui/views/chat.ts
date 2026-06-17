@@ -494,8 +494,8 @@ interface ChatEphemeralState {
   searchOpen: boolean;
   searchQuery: string;
   pinnedExpanded: boolean;
-  /** Timestamp of the last Escape press; drives single- vs double-press intent. */
-  lastEscAt: number;
+  /** Pending deferred-abort timer from a first Escape; non-null means "armed". */
+  escAbortTimer: number | null;
 }
 
 function createChatEphemeralState(): ChatEphemeralState {
@@ -510,11 +510,12 @@ function createChatEphemeralState(): ChatEphemeralState {
     searchOpen: false,
     searchQuery: "",
     pinnedExpanded: false,
-    lastEscAt: 0,
+    escAbortTimer: null,
   };
 }
 
-// Two Escape presses within this window count as a double-press (edit intent).
+// A second Escape within this window is a double-press (edit intent); it also
+// bounds how long the single-press abort waits before firing.
 const DOUBLE_ESC_WINDOW_MS = 400;
 
 const vs = createChatEphemeralState();
@@ -2047,21 +2048,24 @@ export function renderChat(props: ChatProps) {
     // Escape, in order of precedence (slash menu / side result already handled
     // and returned above): close search; a single press interrupts the active
     // run; a quick second press opens the last user message for editing, where
-    // saving branches the conversation. vs.lastEscAt persists across re-renders.
+    // saving branches the conversation. The single-press abort is DEFERRED by
+    // one double-press window so a double-press never fires it — otherwise the
+    // abort's terminal re-render would tear the transcript out from under the
+    // inline editor the second press is about to open. vs.escAbortTimer persists
+    // across re-renders.
     if (e.key === "Escape") {
       e.preventDefault();
       if (vs.searchOpen) {
         vs.searchOpen = false;
         vs.searchQuery = "";
-        vs.lastEscAt = 0;
         requestUpdate();
         return;
       }
-      const now = Date.now();
-      const isDoublePress = now - vs.lastEscAt <= DOUBLE_ESC_WINDOW_MS;
-      // Reset on a double so a third press starts a fresh single-press window.
-      vs.lastEscAt = isDoublePress ? 0 : now;
-      if (isDoublePress) {
+      // A pending timer means this is the second press: cancel the deferred
+      // abort and open the last user message for editing instead.
+      if (vs.escAbortTimer !== null) {
+        clearTimeout(vs.escAbortTimer);
+        vs.escAbortTimer = null;
         // enterEditMode installs a document-level keydown listener that cancels
         // the edit on Escape; without stopping propagation this very keypress
         // would bubble to it and close the editor we are about to open.
@@ -2078,10 +2082,14 @@ export function renderChat(props: ChatProps) {
         }
         return;
       }
-      // Single press: stop the in-flight turn if one is interruptible.
-      if (showAbortableUi) {
-        props.onAbort?.();
-      }
+      // First press: arm the window. If no second press arrives, interrupt the
+      // run (when one is interruptible); a second press cancels this above.
+      vs.escAbortTimer = window.setTimeout(() => {
+        vs.escAbortTimer = null;
+        if (showAbortableUi) {
+          props.onAbort?.();
+        }
+      }, DOUBLE_ESC_WINDOW_MS);
       return;
     }
 

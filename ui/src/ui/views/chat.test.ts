@@ -3383,18 +3383,17 @@ describe("chat session controls", () => {
 });
 
 describe("chat Escape interrupt and double-press edit", () => {
-  // Escape handling keys off Date.now to tell single from double presses, and the
-  // view's ephemeral lastEscAt persists across renders and tests. Drive a fake
-  // clock above any real timestamp so leftover state never reads as a double, and
-  // start each test well outside the double-press window.
-  let now = 5_000_000_000_000;
+  // The single-press abort is deferred by one double-press window (setTimeout) so
+  // a double-press can cancel it; drive fake timers to control that boundary.
   beforeEach(() => {
-    now += 1000;
-    vi.spyOn(Date, "now").mockImplementation(() => now);
+    vi.useFakeTimers();
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
+
+  const DOUBLE_PRESS_WINDOW_MS = 400;
 
   function pressEscape(container: HTMLElement) {
     const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
@@ -3412,33 +3411,37 @@ describe("chat Escape interrupt and double-press edit", () => {
     return onEditClick;
   }
 
-  it("interrupts the active run on a single Escape", () => {
+  it("interrupts the active run after the double-press window on a single Escape", () => {
     const onAbort = vi.fn();
     const container = renderChatView({ canAbort: true, onAbort });
 
     pressEscape(container);
+    expect(onAbort).not.toHaveBeenCalled(); // deferred until the window elapses
 
+    vi.advanceTimersByTime(DOUBLE_PRESS_WINDOW_MS);
     expect(onAbort).toHaveBeenCalledTimes(1);
   });
 
-  it("does nothing on Escape when no run is in progress", () => {
+  it("does not interrupt when no run is in progress", () => {
     const onAbort = vi.fn();
     const container = renderChatView({ canAbort: false, onAbort });
 
     pressEscape(container);
+    vi.advanceTimersByTime(DOUBLE_PRESS_WINDOW_MS);
 
     expect(onAbort).not.toHaveBeenCalled();
   });
 
-  it("opens a user message for editing on a double Escape", () => {
+  it("opens the editor and skips the abort entirely on a double Escape", () => {
     const onAbort = vi.fn();
     const container = renderChatView({ canAbort: true, onAbort });
     const onEditClick = appendEditButton(container);
 
-    pressEscape(container); // single press: interrupts the run
-    pressEscape(container); // second press within the window: opens the editor
+    pressEscape(container); // arms the deferred abort
+    pressEscape(container); // cancels it and opens the editor
+    vi.advanceTimersByTime(DOUBLE_PRESS_WINDOW_MS);
 
-    expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(onAbort).not.toHaveBeenCalled();
     expect(onEditClick).toHaveBeenCalledTimes(1);
   });
 
@@ -3460,8 +3463,9 @@ describe("chat Escape interrupt and double-press edit", () => {
     const onEditClick = appendEditButton(container);
 
     pressEscape(container);
-    now += 1000; // beyond the double-press window
+    vi.advanceTimersByTime(DOUBLE_PRESS_WINDOW_MS); // first press fires its abort
     pressEscape(container);
+    vi.advanceTimersByTime(DOUBLE_PRESS_WINDOW_MS); // second press fires its own
 
     expect(onEditClick).not.toHaveBeenCalled();
     expect(onAbort).toHaveBeenCalledTimes(2);

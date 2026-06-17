@@ -1038,7 +1038,9 @@ function enterEditMode(
     slot.querySelector(".chat-edit-cancel")?.addEventListener("click", cleanup);
     slot.querySelector(".chat-edit-save")?.addEventListener("click", () => {
       const newText = textarea?.value?.trim();
-      if (!newText || newText === originalText) {
+      // Empty is a no-op, but unchanged text still resends: Save means "branch
+      // and rerun from here," which is the whole point of the Escape-edit flow.
+      if (!newText) {
         cleanup();
         return;
       }
