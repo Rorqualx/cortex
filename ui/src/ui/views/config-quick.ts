@@ -58,7 +58,10 @@ export type QuickSettingsProps = {
   currentModel: string;
   thinkingLevel: string;
   fastMode: boolean;
-  onModelChange?: () => void;
+  modelOptions?: { value: string; label: string }[];
+  selectedModelValue?: string;
+  modelSelectDisabled?: boolean;
+  onModelSelect?: (value: string) => void;
   onThinkingChange?: (level: string) => void;
   onFastModeToggle?: () => void;
 
@@ -417,6 +420,33 @@ function renderCardHeader(icon: TemplateResult, title: string, action?: Template
   `;
 }
 
+function renderModelSelect(props: QuickSettingsProps) {
+  const options = props.modelOptions ?? [];
+  // No catalog yet (loading / disconnected): show the resolved name read-only so the row never looks empty.
+  if (options.length === 0) {
+    return html`
+      <span class="qs-row__value"><code>${props.currentModel || "default"}</code></span>
+    `;
+  }
+  const selected = props.selectedModelValue ?? "";
+  return html`
+    <select
+      class="qs-row__value qs-select"
+      ?disabled=${props.modelSelectDisabled}
+      .value=${selected}
+      @change=${(e: Event) => props.onModelSelect?.((e.target as HTMLSelectElement).value)}
+    >
+      ${options.map(
+        (option) => html`
+          <option value=${option.value} ?selected=${option.value === selected}>
+            ${option.label}
+          </option>
+        `,
+      )}
+    </select>
+  `;
+}
+
 function renderModelCard(props: QuickSettingsProps) {
   return html`
     <div class="qs-card qs-card--model">
@@ -424,10 +454,7 @@ function renderModelCard(props: QuickSettingsProps) {
       <div class="qs-card__body">
         <div class="qs-row">
           <span class="qs-row__label">Model</span>
-          <button class="qs-row__value qs-row__value--action" @click=${props.onModelChange}>
-            <code>${props.currentModel || "default"}</code>
-            <span class="qs-row__chevron">${icons.chevronRight}</span>
-          </button>
+          ${renderModelSelect(props)}
         </div>
         <div class="qs-row">
           <span class="qs-row__label">Thinking</span>

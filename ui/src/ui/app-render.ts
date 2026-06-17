@@ -25,6 +25,7 @@ import {
 } from "./app-render.helpers.ts";
 import { hasOperatorAdminAccess, hasOperatorWriteAccess, warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
+import { resolveChatModelSelectState } from "./chat-model-select-state.ts";
 import { renderChatTabBar, savePersistedTabs } from "./chat/chat-tab-bar.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import {
@@ -35,6 +36,7 @@ import {
   resolveChatAgentFilterOptions,
   resolvePreferredSessionForAgent,
   resolvePreferredSessionForAgentSurface,
+  switchChatModel,
 } from "./chat/session-controls.ts";
 import {
   controlUiNowMs,
@@ -1764,14 +1766,17 @@ export function renderApp(state: AppViewState) {
             typeof activeSession?.fastMode === "boolean"
               ? activeSession.fastMode
               : agentsDefaults.fastMode === true;
+          const modelSelect = resolveChatModelSelectState(state);
+          const modelSwitching = Boolean(state.chatModelSwitchPromises?.[state.sessionKey]);
           return renderQuickSettings({
             currentModel,
             thinkingLevel,
             fastMode,
-            onModelChange: () => {
-              state.configSettingsMode = "advanced";
-              state.aiAgentsActiveSection = "models";
-              state.setTab("aiAgents");
+            modelOptions: [{ value: "", label: modelSelect.defaultLabel }, ...modelSelect.options],
+            selectedModelValue: modelSelect.currentOverride,
+            modelSelectDisabled: !state.connected || !state.client || modelSwitching,
+            onModelSelect: (value) => {
+              void switchChatModel(state, value).then(() => requestHostUpdate?.());
             },
             onThinkingChange: (level) => {
               void patchSession(state, state.sessionKey, { thinkingLevel: level }).then(() =>

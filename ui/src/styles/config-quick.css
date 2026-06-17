@@ -322,6 +322,40 @@
   color: var(--accent);
 }
 
+.qs-select {
+  cursor: pointer;
+  max-width: 60%;
+  flex: 0 1 auto;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 80%, var(--bg-elevated) 20%);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  text-align: right;
+  text-align-last: right;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.qs-select:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.qs-select:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border) 45%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.qs-select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .qs-row--tool-profile {
   align-items: stretch;
   flex-direction: column;

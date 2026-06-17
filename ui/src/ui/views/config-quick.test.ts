@@ -36,7 +36,13 @@ function createProps(overrides: Partial<QuickSettingsProps> = {}): QuickSettings
     currentModel: "gpt-5.5",
     thinkingLevel: "off",
     fastMode: false,
-    onModelChange: vi.fn(),
+    modelOptions: [
+      { value: "", label: "Default (gpt-5.5)" },
+      { value: "gpt-5.5", label: "gpt-5.5" },
+      { value: "kimi-for-coding", label: "kimi-for-coding" },
+    ],
+    selectedModelValue: "",
+    onModelSelect: vi.fn(),
     onThinkingChange: vi.fn(),
     onFastModeToggle: vi.fn(),
     channels: [],
@@ -187,6 +193,37 @@ describe("renderQuickSettings", () => {
       "qs-segmented__btn--compact",
       "qs-segmented__btn--active",
     ]);
+  });
+
+  it("lets operators switch the model from a dropdown in Model quick settings", () => {
+    const onModelSelect = vi.fn();
+    const container = document.createElement("div");
+
+    render(
+      renderQuickSettings(createProps({ selectedModelValue: "gpt-5.5", onModelSelect })),
+      container,
+    );
+
+    const modelRow = expectRowByLabel(container, "Model");
+    const select = modelRow.querySelector("select.qs-select");
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    const options = Array.from((select as HTMLSelectElement).options).map((o) => o.value);
+    expect(options).toEqual(["", "gpt-5.5", "kimi-for-coding"]);
+    expect((select as HTMLSelectElement).value).toBe("gpt-5.5");
+
+    (select as HTMLSelectElement).value = "kimi-for-coding";
+    select?.dispatchEvent(new Event("change"));
+    expect(onModelSelect).toHaveBeenCalledWith("kimi-for-coding");
+  });
+
+  it("falls back to a read-only model name when no options are available", () => {
+    const container = document.createElement("div");
+
+    render(renderQuickSettings(createProps({ modelOptions: [] })), container);
+
+    const modelRow = expectRowByLabel(container, "Model");
+    expect(modelRow.querySelector("select")).toBeNull();
+    expect(modelRow.querySelector("code")?.textContent?.trim()).toBe("gpt-5.5");
   });
 
   it("lets operators change text size from Appearance quick settings", () => {
