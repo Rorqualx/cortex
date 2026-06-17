@@ -153,6 +153,8 @@ import {
 import { countActiveToolExecutions } from "../../embedded-agent-subscribe.handlers.tools.js";
 import { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
 import { isTimeoutError } from "../../failover-error.js";
+import { isGroundingFaithfulnessEnabled } from "../../grounding/config.js";
+import { runGroundingFinalizeGate } from "../../grounding/finalize-gate.js";
 import {
   runAgentHarnessAgentEndHook,
   runAgentHarnessBeforeAgentFinalizeHook,
@@ -3217,6 +3219,11 @@ export async function runEmbeddedAttempt(
         );
       // Hook runner was already obtained earlier before tool creation.
       const hookAgentId = sessionAgentId;
+      const groundingFaithfulnessEnabled = isGroundingFaithfulnessEnabled({
+        config: params.config,
+        agentId: hookAgentId,
+        sessionKey: params.sessionKey,
+      });
       let beforeAgentFinalizeRevisionReason: string | undefined;
       const onBlockReply = params.onBlockReply
         ? bindOwnedSessionTranscriptWrites(ownedTranscriptWriteContext, params.onBlockReply)
@@ -3224,111 +3231,128 @@ export async function runEmbeddedAttempt(
       const onBlockReplyFlush = params.onBlockReplyFlush
         ? bindOwnedSessionTranscriptWrites(ownedTranscriptWriteContext, params.onBlockReplyFlush)
         : undefined;
-      const onBeforeTerminalDelivery = hookRunner?.hasHooks("before_agent_finalize")
-        ? async (event: {
-            messages: AgentMessage[];
-            willRetry: boolean;
-            lastAssistant?: AgentMessage;
-            assistantTexts: readonly string[];
-            hasAssistantVisibleText: boolean;
-            isError: boolean;
-            incompleteTerminalAssistant: boolean;
-            hadDeterministicSideEffect: boolean;
-          }): Promise<void | { suppressTerminalDelivery: true }> => {
-            if (
-              beforeAgentFinalizeRevisionReason ||
-              event.willRetry ||
-              event.isError ||
-              event.incompleteTerminalAssistant ||
-              !event.hasAssistantVisibleText
-            ) {
-              return;
-            }
-            const lastAssistant = event.lastAssistant as AssistantMessage | undefined;
-            const lastAssistantMessage =
-              normalizeOptionalString(resolveFinalAssistantVisibleText(lastAssistant)) ??
-              normalizeOptionalString(resolveFinalAssistantRawText(lastAssistant)) ??
-              normalizeOptionalString(event.assistantTexts.join("\n\n"));
-            if (!lastAssistantMessage) {
-              return;
-            }
-            const hasCompletedClientToolCall = clientToolCallSlots.some((slot) => slot.completed);
-            const silentFinalReply =
-              params.silentExpected && isSilentReplyText(lastAssistantMessage, SILENT_REPLY_TOKEN);
-            if (
-              aborted ||
-              promptError ||
-              timedOut ||
-              hasCompletedClientToolCall ||
-              yieldDetected ||
-              silentFinalReply
-            ) {
-              return;
-            }
-            const hookMessages = projectToolSearchTargetTranscriptMessages(
-              activeSession.messages.slice(),
-              toolSearchTargetTranscriptProjections,
-            );
-            const reportedModelRef = resolveReportedModelRef({
-              provider: params.provider,
-              model: params.modelId,
-              assistant: lastAssistant,
-            });
-            const maxRevisionAttempts = params.maxBeforeAgentFinalizeRevisions ?? 0;
-            if (
-              maxRevisionAttempts > 0 &&
-              (params.beforeAgentFinalizeRevisionAttempts ?? 0) >= maxRevisionAttempts
-            ) {
-              log.warn(
-                `before_agent_finalize revision limit reached; finalizing ` +
-                  `runId=${params.runId} sessionId=${params.sessionId} ` +
-                  `attempts=${params.beforeAgentFinalizeRevisionAttempts ?? 0}/${maxRevisionAttempts}`,
+      const onBeforeTerminalDelivery =
+        hookRunner?.hasHooks("before_agent_finalize") || groundingFaithfulnessEnabled
+          ? async (event: {
+              messages: AgentMessage[];
+              willRetry: boolean;
+              lastAssistant?: AgentMessage;
+              assistantTexts: readonly string[];
+              hasAssistantVisibleText: boolean;
+              isError: boolean;
+              incompleteTerminalAssistant: boolean;
+              hadDeterministicSideEffect: boolean;
+            }): Promise<void | { suppressTerminalDelivery: true }> => {
+              if (
+                beforeAgentFinalizeRevisionReason ||
+                event.willRetry ||
+                event.isError ||
+                event.incompleteTerminalAssistant ||
+                !event.hasAssistantVisibleText
+              ) {
+                return;
+              }
+              const lastAssistant = event.lastAssistant as AssistantMessage | undefined;
+              const lastAssistantMessage =
+                normalizeOptionalString(resolveFinalAssistantVisibleText(lastAssistant)) ??
+                normalizeOptionalString(resolveFinalAssistantRawText(lastAssistant)) ??
+                normalizeOptionalString(event.assistantTexts.join("\n\n"));
+              if (!lastAssistantMessage) {
+                return;
+              }
+              const hasCompletedClientToolCall = clientToolCallSlots.some((slot) => slot.completed);
+              const silentFinalReply =
+                params.silentExpected &&
+                isSilentReplyText(lastAssistantMessage, SILENT_REPLY_TOKEN);
+              if (
+                aborted ||
+                promptError ||
+                timedOut ||
+                hasCompletedClientToolCall ||
+                yieldDetected ||
+                silentFinalReply
+              ) {
+                return;
+              }
+              const hookMessages = projectToolSearchTargetTranscriptMessages(
+                activeSession.messages.slice(),
+                toolSearchTargetTranscriptProjections,
               );
-              return;
+              const reportedModelRef = resolveReportedModelRef({
+                provider: params.provider,
+                model: params.modelId,
+                assistant: lastAssistant,
+              });
+              const maxRevisionAttempts = params.maxBeforeAgentFinalizeRevisions ?? 0;
+              if (
+                maxRevisionAttempts > 0 &&
+                (params.beforeAgentFinalizeRevisionAttempts ?? 0) >= maxRevisionAttempts
+              ) {
+                log.warn(
+                  `before_agent_finalize revision limit reached; finalizing ` +
+                    `runId=${params.runId} sessionId=${params.sessionId} ` +
+                    `attempts=${params.beforeAgentFinalizeRevisionAttempts ?? 0}/${maxRevisionAttempts}`,
+                );
+                return;
+              }
+              const outcome = await runAgentHarnessBeforeAgentFinalizeHook({
+                event: {
+                  runId: params.runId,
+                  sessionId: params.sessionId,
+                  ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+                  provider: reportedModelRef.provider,
+                  model: reportedModelRef.model,
+                  ...((params.cwd ?? params.workspaceDir)
+                    ? { cwd: params.cwd ?? params.workspaceDir }
+                    : {}),
+                  ...(params.sessionFile ? { transcriptPath: params.sessionFile } : {}),
+                  stopHookActive: false,
+                  lastAssistantMessage,
+                  messages: hookMessages,
+                },
+                ctx: {
+                  runId: params.runId,
+                  trace: freezeDiagnosticTraceContext(diagnosticTrace),
+                  agentId: hookAgentId,
+                  sessionKey: params.sessionKey,
+                  sessionId: params.sessionId,
+                  workspaceDir: params.workspaceDir,
+                  modelProviderId: reportedModelRef.provider,
+                  modelId: reportedModelRef.model,
+                  trigger: params.trigger,
+                  ...buildAgentHookContextChannelFields(params),
+                },
+                hookRunner,
+              });
+              let revisionReason = outcome.action === "revise" ? outcome.reason : undefined;
+              // Run the opt-in faithfulness gate only when no plugin hook already
+              // asked for a revision; it shares the revision-limit guard above.
+              if (!revisionReason && groundingFaithfulnessEnabled) {
+                const groundingDecision = await runGroundingFinalizeGate({
+                  cfg: params.config,
+                  agentId: hookAgentId,
+                  finalAnswer: lastAssistantMessage,
+                  messages: hookMessages,
+                  signal: runAbortController.signal,
+                });
+                if (groundingDecision.action === "revise") {
+                  revisionReason = groundingDecision.reason;
+                }
+              }
+              if (!revisionReason) {
+                return;
+              }
+              if (event.hadDeterministicSideEffect) {
+                log.warn(
+                  `before_agent_finalize requested revision after potential side effects; finalizing ` +
+                    `runId=${params.runId} sessionId=${params.sessionId}`,
+                );
+                return;
+              }
+              beforeAgentFinalizeRevisionReason = revisionReason;
+              return { suppressTerminalDelivery: true };
             }
-            const outcome = await runAgentHarnessBeforeAgentFinalizeHook({
-              event: {
-                runId: params.runId,
-                sessionId: params.sessionId,
-                ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
-                provider: reportedModelRef.provider,
-                model: reportedModelRef.model,
-                ...((params.cwd ?? params.workspaceDir)
-                  ? { cwd: params.cwd ?? params.workspaceDir }
-                  : {}),
-                ...(params.sessionFile ? { transcriptPath: params.sessionFile } : {}),
-                stopHookActive: false,
-                lastAssistantMessage,
-                messages: hookMessages,
-              },
-              ctx: {
-                runId: params.runId,
-                trace: freezeDiagnosticTraceContext(diagnosticTrace),
-                agentId: hookAgentId,
-                sessionKey: params.sessionKey,
-                sessionId: params.sessionId,
-                workspaceDir: params.workspaceDir,
-                modelProviderId: reportedModelRef.provider,
-                modelId: reportedModelRef.model,
-                trigger: params.trigger,
-                ...buildAgentHookContextChannelFields(params),
-              },
-              hookRunner,
-            });
-            if (outcome.action !== "revise") {
-              return;
-            }
-            if (event.hadDeterministicSideEffect) {
-              log.warn(
-                `before_agent_finalize requested revision after potential side effects; finalizing ` +
-                  `runId=${params.runId} sessionId=${params.sessionId}`,
-              );
-              return;
-            }
-            beforeAgentFinalizeRevisionReason = outcome.reason;
-            return { suppressTerminalDelivery: true };
-          }
-        : undefined;
+          : undefined;
 
       let toolMetasForTerminal: readonly AsyncStartedToolMeta[] = [];
       const subscription = subscribeEmbeddedAgentSession(

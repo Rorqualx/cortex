@@ -1063,6 +1063,7 @@ export const AgentEntrySchema = z
     experimental: z
       .object({
         localModelLean: z.boolean().optional(),
+        groundingFaithfulness: z.boolean().optional(),
       })
       .strict()
       .optional(),

@@ -292,6 +292,12 @@ export type AgentDefaultsConfig = {
      * model backends. Experimental preview only.
      */
     localModelLean?: boolean;
+    /**
+     * Opt-in: at agent finalize, verify the final answer is supported by the
+     * conversation's user/tool material and ask for one revision when it is not.
+     * Adds a model call per checked answer. Experimental preview only.
+     */
+    groundingFaithfulness?: boolean;
   };
   /**
    * Agent-visible bootstrap truncation warning mode:
