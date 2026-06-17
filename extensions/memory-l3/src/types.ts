@@ -398,3 +398,16 @@ export type RetrievalSignal = {
   /** First retrieval timestamp. */
   firstRecalledAt: number;
 };
+
+/**
+ * Gap analysis result from Sufficient Context Agent. Indicates which
+ * fields or entities from the query are missing from the retrieved facts.
+ */
+export type MissingFact = {
+  /** Unique identifier for this gap analysis (e.g., query hash). */
+  queryId: string;
+  /** Field names or entity types that were requested but not found. */
+  missingFields: string[];
+  /** Suggested follow-up queries to retrieve the missing information. */
+  suggestedQueries: string[];
+};

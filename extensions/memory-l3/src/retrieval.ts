@@ -31,6 +31,7 @@ import type {
   L3EpochFrontmatter,
   LongTermFact,
   LongTermTypedFact,
+  MissingFact,
   TypedFact,
 } from "./types.js";
 
@@ -88,6 +89,16 @@ export type RetrievedFact = {
   tier: RetrievalTier;
 };
 
+/**
+ * Result from Sufficient Context Agent: includes retrieved facts plus
+ * optional gap analysis and suggested follow-up queries.
+ */
+export type RetrievalResult = {
+  facts: RetrievedFact[];
+  /** Gap analysis from Sufficient Context Agent, if enabled. */
+  missingInfo?: MissingFact;
+};
+
 export async function retrieveTopK(params: {
   query: string;
   storage: Storage;
@@ -122,19 +133,24 @@ export async function retrieveTopK(params: {
    * composite score.
    */
   queryEmbedding?: number[];
-}): Promise<RetrievedFact[]> {
+  /**
+   * When true, enables Sufficient Context Agent post-retrieval gap analysis.
+   * Default true.
+   */
+  enableSufficientContext?: boolean;
+}): Promise<RetrievalResult> {
   const topK = Math.max(0, params.topK);
   if (topK === 0) {
-    return [];
+    return { facts: [] };
   }
   const queryTokens = tokenize(params.query);
   if (queryTokens.size === 0) {
-    return [];
+    return { facts: [] };
   }
 
   const paths = await params.storage.listL2ChunkPaths();
   if (paths.length === 0) {
-    return [];
+    return { facts: [] };
   }
 
   const now = params.now ?? Date.now();
@@ -497,7 +513,19 @@ export async function retrieveTopK(params: {
     }
   }
 
-  return result.slice(0, topK);
+  const finalFacts = result.slice(0, topK);
+
+  // -----------------------------------------------------------------
+  // Sufficient Context Agent (gap analysis)
+  // -----------------------------------------------------------------
+  // Post-retrieval sufficiency check: compare what the query asked for
+  // against what we actually retrieved, trigger follow-up searches for gaps.
+  const missingInfo =
+    params.enableSufficientContext !== false
+      ? await checkSufficientContext(params.query, finalFacts, params.storage)
+      : undefined;
+
+  return { facts: finalFacts, missingInfo };
 }
 
 function longTermAsL2Fact(lt: LongTermFact): L2Fact {
@@ -782,4 +810,134 @@ function tierMarker(tier: RetrievalTier): string {
     case "l2":
       return "·";
   }
+}
+
+/**
+ * Sufficient Context Agent: performs gap analysis after retrieval.
+ *
+ * Parses the query for explicit requirements (entities, fields), compares
+ * against retrieved facts, and outputs a structured gap analysis with
+ * suggested follow-up queries for missing information.
+ *
+ * This is inspired by Google's multi-agent RAG framework, where a dedicated
+ * agent evaluates retrieved snippets and triggers follow-up searches for
+ * missing information.
+ */
+async function checkSufficientContext(
+  query: string,
+  facts: RetrievedFact[],
+  storage: Storage,
+): Promise<MissingFact | undefined> {
+  // Extract requested entities/fields from the query
+  const requestedFields = extractRequestedFields(query);
+  if (requestedFields.length === 0) {
+    // No explicit requirements detected - no gap analysis needed
+    return undefined;
+  }
+
+  // Check which requested fields are covered by retrieved facts
+  const missingFields: string[] = [];
+
+  for (const field of requestedFields) {
+    const fieldLower = field.toLowerCase();
+    // Simple lexical check: does the field appear in any retrieved fact?
+    const found = facts.some((f) => f.fact.text.toLowerCase().includes(fieldLower));
+    if (!found) {
+      missingFields.push(field);
+    }
+  }
+
+  if (missingFields.length === 0) {
+    // All requested fields covered
+    return undefined;
+  }
+
+  // Generate follow-up query suggestions
+  const suggestedQueries = generateFollowUpQueries(query, missingFields);
+
+  // Simple query ID hash (for deduplication across calls)
+  const queryId = simpleHash(query);
+
+  return { queryId, missingFields, suggestedQueries };
+}
+
+/**
+ * Extract explicit requirements from the query string.
+ *
+ * Looks for patterns like:
+ * - "What is X, Y, and Z?" -> ["X", "Y", "Z"]
+ * - "Show me the IP and port" -> ["IP", "port"]
+ * - "Username and password" -> ["username", "password"]
+ *
+ * Returns a list of field names that the query explicitly requests.
+ */
+function extractRequestedFields(query: string): string[] {
+  const fields: string[] = [];
+
+  // Pattern 1: comma-separated lists ("X, Y, and Z")
+  const commaListPattern =
+    /(?:what|show|tell|get|find|list)(?:\s+(?:me|us|the|all))?\s+(?:the\s+)?([a-z][a-z0-9_\-]*\s*(?:,\s*[a-z][a-z0-9_\-]*\s*)+(?:\s+and\s+[a-z][a-z0-9_\-]*)?)/gi;
+  const commaMatch = commaListPattern.exec(query);
+  if (commaMatch) {
+    const listPart = commaMatch[1];
+    // Split by comma, clean up "and" articles
+    const items = listPart
+      .split(/,\s*|\s+and\s+/i)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    fields.push(...items);
+  }
+
+  // Pattern 2: "X and Y" pairs
+  const andPattern =
+    /(?:what|show|tell|get|find)(?:\s+(?:me|us|the))?\s+(?:the\s+)?([a-z][a-z0-9_\-]*\s+and\s+[a-z][a-z0-9_\-]*)/gi;
+  const andMatch = andPattern.exec(query);
+  if (andMatch && !commaMatch) {
+    // Only use this if we didn't already match a comma list
+    const pairPart = andMatch[1];
+    const items = pairPart.split(/\s+and\s+/i).map((s) => s.trim());
+    fields.push(...items);
+  }
+
+  // Pattern 3: possessive requests ("Joe's phone", "server's IP")
+  const possessivePattern = /([a-z][a-z0-9_\-]*'s\s+[a-z][a-z0-9_\-]+)/gi;
+  for (const match of query.matchAll(possessivePattern)) {
+    fields.push(match[1]);
+  }
+
+  return fields;
+}
+
+/**
+ * Generate follow-up queries for missing fields.
+ *
+ * Creates targeted queries that focus specifically on the missing
+ * information, e.g., if original was "What is X, Y, and Z?" and Y is missing,
+ * suggests "What is Y?" and "Tell me about Y".
+ */
+function generateFollowUpQueries(originalQuery: string, missingFields: string[]): string[] {
+  const queries: string[] = [];
+
+  for (const field of missingFields) {
+    // Generate 2-3 variations per missing field
+    queries.push(`What is ${field}?`);
+    queries.push(`Tell me about ${field}`);
+    queries.push(`${field} information`);
+  }
+
+  // Cap at 6 suggestions total to avoid overwhelming the caller
+  return queries.slice(0, 6);
+}
+
+/**
+ * Simple string hash for query deduplication.
+ */
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16);
 }

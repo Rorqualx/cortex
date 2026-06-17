@@ -42,22 +42,24 @@ const writeChunk = async (
 
 describe("retrieveTopK", () => {
   it("returns [] when no chunks exist", async () => {
-    const result = await retrieveTopK({ query: "anything", storage, topK: 5 });
-    expect(result).toEqual([]);
+    const { facts } = await retrieveTopK({ query: "anything", storage, topK: 5 });
+    expect(facts).toEqual([]);
   });
 
   it("returns [] for an empty query", async () => {
     await writeChunk("chunk-1", [
       { id: "f1", text: "morning standups", importance: 0.5, createdAt: NOW, dedupKey: "k:1" },
     ]);
-    expect(await retrieveTopK({ query: "", storage, topK: 5 })).toEqual([]);
+    const { facts } = await retrieveTopK({ query: "", storage, topK: 5 });
+    expect(facts).toEqual([]);
   });
 
   it("returns [] when topK is 0", async () => {
     await writeChunk("chunk-1", [
       { id: "f1", text: "morning standups", importance: 0.5, createdAt: NOW, dedupKey: "k:1" },
     ]);
-    expect(await retrieveTopK({ query: "morning", storage, topK: 0 })).toEqual([]);
+    const { facts } = await retrieveTopK({ query: "morning", storage, topK: 0 });
+    expect(facts).toEqual([]);
   });
 
   it("ranks lexically matching facts above non-matching", async () => {
@@ -77,7 +79,7 @@ describe("retrieveTopK", () => {
         dedupKey: "k:2",
       },
     ]);
-    const result = await retrieveTopK({
+    const { facts: result } = await retrieveTopK({
       query: "morning standups",
       storage,
       topK: 5,
@@ -93,7 +95,7 @@ describe("retrieveTopK", () => {
       { id: "b", text: "morning coffee", importance: 0.5, createdAt: NOW, dedupKey: "k:b" },
       { id: "c", text: "morning routine", importance: 0.5, createdAt: NOW, dedupKey: "k:c" },
     ]);
-    const result = await retrieveTopK({ query: "morning", storage, topK: 2, now: NOW });
+    const { facts: result } = await retrieveTopK({ query: "morning", storage, topK: 2, now: NOW });
     expect(result).toHaveLength(2);
   });
 
@@ -110,7 +112,12 @@ describe("retrieveTopK", () => {
       [{ id: "new", text: "morning task", importance: 0.5, createdAt: fresh, dedupKey: "k:new" }],
       fresh,
     );
-    const result = await retrieveTopK({ query: "morning task", storage, topK: 2, now: NOW });
+    const { facts: result } = await retrieveTopK({
+      query: "morning task",
+      storage,
+      topK: 2,
+      now: NOW,
+    });
     expect(result[0].fact.id).toBe("new");
   });
 
@@ -118,7 +125,7 @@ describe("retrieveTopK", () => {
     await writeChunk("chunk-1", [
       { id: "f1", text: "morning standup", importance: 0.7, createdAt: NOW, dedupKey: "k:1" },
     ]);
-    const result = await retrieveTopK({ query: "morning", storage, topK: 1, now: NOW });
+    const { facts: result } = await retrieveTopK({ query: "morning", storage, topK: 1, now: NOW });
     expect(result[0].signals.lexical).toBeGreaterThan(0);
     expect(result[0].signals.importance).toBe(0.7);
     expect(result[0].signals.recency).toBeCloseTo(1, 4);
@@ -154,7 +161,7 @@ describe("retrieveTopK with L3 boost", () => {
       },
       "",
     );
-    const result = await retrieveTopK({
+    const { facts: result } = await retrieveTopK({
       query: "deadline",
       storage,
       topK: 5,
@@ -255,7 +262,7 @@ describe("retrieveTopK long-term tier", () => {
       "",
     );
 
-    const result = await retrieveTopK({
+    const { facts: result } = await retrieveTopK({
       query: "tabs vs spaces",
       storage,
       topK: 5,
@@ -293,7 +300,7 @@ describe("retrieveTopK long-term tier", () => {
       },
       "",
     );
-    const result = await retrieveTopK({ query: "tabs", storage, topK: 5, now: NOW });
+    const { facts: result } = await retrieveTopK({ query: "tabs", storage, topK: 5, now: NOW });
     expect(result.find((r) => r.fact.id === "lt-archived")).toBeUndefined();
   });
 
@@ -326,7 +333,12 @@ describe("retrieveTopK long-term tier", () => {
       },
       "",
     );
-    const result = await retrieveTopK({ query: "lunch ideas", storage, topK: 5, now: NOW });
+    const { facts: result } = await retrieveTopK({
+      query: "lunch ideas",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
     const ltHit = result.find((r) => r.tier === "longterm");
     expect(ltHit).toBeDefined();
     expect(ltHit?.signals.lexical).toBe(0);
@@ -367,7 +379,12 @@ describe("retrieveTopK long-term tier", () => {
       },
       "",
     );
-    const result = await retrieveTopK({ query: "lunch ideas", storage, topK: 5, now: NOW });
+    const { facts: result } = await retrieveTopK({
+      query: "lunch ideas",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
     const l2Idx = result.findIndex((r) => r.fact.id === "l2-relevant");
     const ltIdx = result.findIndex((r) => r.fact.id === "lt-unrelated");
     expect(l2Idx).toBeGreaterThanOrEqual(0);
@@ -408,7 +425,12 @@ describe("retrieveTopK long-term tier", () => {
       },
       "",
     );
-    const result = await retrieveTopK({ query: "tabs preferred", storage, topK: 5, now: NOW });
+    const { facts: result } = await retrieveTopK({
+      query: "tabs preferred",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
     expect(result.length).toBeGreaterThanOrEqual(2);
     expect(result[0].tier).toBe("longterm");
   });
@@ -440,7 +462,7 @@ describe("retrieveTopK typed-fact tier", () => {
         },
       ],
     );
-    const result = await retrieveTopK({
+    const { facts: result } = await retrieveTopK({
       query: "192.168.50.128",
       storage,
       topK: 5,
@@ -464,7 +486,7 @@ describe("retrieveTopK typed-fact tier", () => {
         createdAt: NOW,
       },
     ]);
-    const result = await retrieveTopK({ query: "balance", storage, topK: 5, now: NOW });
+    const { facts: result } = await retrieveTopK({ query: "balance", storage, topK: 5, now: NOW });
     const hit = result.find((r) => r.tier === "typed");
     expect(hit?.fact.text).toBe("user:account_balance = 1234.56 USD");
   });
@@ -494,7 +516,12 @@ describe("retrieveTopK typed-fact tier", () => {
         },
       ],
     );
-    const result = await retrieveTopK({ query: "phone 555-1234", storage, topK: 5, now: NOW });
+    const { facts: result } = await retrieveTopK({
+      query: "phone 555-1234",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
     expect(result[0].tier).toBe("typed");
     expect(result[0].fact.id).toBe("tf-phone");
   });
@@ -585,7 +612,7 @@ describe("retrieveTopK cross-brain reconciliation", () => {
       },
       "",
     );
-    const result = await retrieveTopK({ query: "balance", storage, topK: 5, now: NOW });
+    const { facts: result } = await retrieveTopK({ query: "balance", storage, topK: 5, now: NOW });
     expect(result.find((r) => r.fact.id === "lt-stale")).toBeUndefined();
   });
 });
@@ -642,7 +669,7 @@ describe("retrieveTopK longterm-typed tier", () => {
       "",
     );
 
-    const result = await retrieveTopK({
+    const { facts: result } = await retrieveTopK({
       query: "balance",
       storage,
       topK: 10,
@@ -689,7 +716,7 @@ describe("retrieveTopK memory-core tier", () => {
         snippet: "user prefers morning standups (per dreaming consolidation)",
       },
     ];
-    const result = await retrieveTopK({
+    const { facts: result } = await retrieveTopK({
       query: "morning standups",
       storage,
       topK: 5,
@@ -711,7 +738,7 @@ describe("retrieveTopK memory-core tier", () => {
     const memoryCoreLookup = async (_query: string) => {
       throw new Error("memory-core unavailable");
     };
-    const result = await retrieveTopK({
+    const { facts: result } = await retrieveTopK({
       query: "alpha",
       storage,
       topK: 5,
@@ -727,7 +754,7 @@ describe("retrieveTopK memory-core tier", () => {
     await writeChunk("chunk-000000-x", [
       { id: "f1", text: "alpha", importance: 0.5, createdAt: NOW, dedupKey: "k:alpha" },
     ]);
-    const result = await retrieveTopK({ query: "alpha", storage, topK: 5, now: NOW });
+    const { facts: result } = await retrieveTopK({ query: "alpha", storage, topK: 5, now: NOW });
     expect(result.every((r) => r.tier === "l2")).toBe(true);
   });
 });
