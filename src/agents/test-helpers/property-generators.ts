@@ -20,12 +20,7 @@
  */
 
 import * as fc from "fast-check";
-import type {
-  AgentMessage,
-  SubagentRunRecord,
-  ToolPolicyLike,
-  SubagentCompletionDeliveryState,
-} from "../index.js";
+import type { SubagentRunRecord } from "../subagent-registry.types.js";
 
 /**
  * Common tool names for policy testing
@@ -139,26 +134,15 @@ export const arbSubagentCompletionDeliveryState = fc.record({
  * Generates minimal valid SubagentRunRecord structures
  * suitable for testing queue and registry operations.
  */
-export const arbSubagentRunRecord = fc
-  .record({
-    id: arbUUID,
-    parentId: arbUUID,
-    agentId: fc.string({ minLength: 1, maxLength: 100 }),
-    childSessionKey: arbUUID,
-    status: fc.constantFrom("pending", "running", "terminal"),
-    createdAt: fc.integer({ min: 0, max: Date.now() }),
-    startedAt: fc.option(fc.integer({ min: 0, max: Date.now() })),
-    endedAt: fc.option(fc.integer({ min: 0, max: Date.now() })),
-    delivery: arbSubagentCompletionDeliveryState,
-    cleanupHandled: fc.boolean(),
-    cleanupCompletedAt: fc.option(fc.integer({ min: 0, max: Date.now() })),
-  })
-  .map((record): SubagentRunRecord => {
-    return {
-      ...record,
-      status: record.status as SubagentRunRecord["status"],
-    };
-  });
+export const arbSubagentRunRecord: fc.Arbitrary<SubagentRunRecord> = fc.record({
+  runId: arbUUID,
+  childSessionKey: arbUUID,
+  requesterSessionKey: arbUUID,
+  requesterDisplayKey: fc.string({ minLength: 1, maxLength: 100 }),
+  task: fc.string({ minLength: 1, maxLength: 200 }),
+  cleanup: fc.constantFrom("delete", "keep"),
+  createdAt: fc.integer({ min: 0, max: Date.now() }),
+});
 
 /**
  * Arbitrary generator for tool definitions
@@ -357,7 +341,7 @@ export function arbUniqueArray<T>(
   arb: fc.Arbitrary<T>,
   constraints?: fc.ArrayConstraints,
 ): fc.Arbitrary<T[]> {
-  return arb.array(constraints).filter((arr) => {
+  return fc.array(arb, constraints).filter((arr) => {
     const seen = new Set();
     for (const item of arr) {
       // Use string representation for comparison
@@ -380,7 +364,7 @@ export function arbSortedArray<T>(
   arb: fc.Arbitrary<T>,
   compareFn?: (a: T, b: T) => number,
 ): fc.Arbitrary<T[]> {
-  return arb.array().map((arr) => arr.toSorted(compareFn));
+  return fc.array(arb).map((arr) => arr.toSorted(compareFn));
 }
 
 /**
