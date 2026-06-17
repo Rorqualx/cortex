@@ -25,9 +25,7 @@ export function parseLlmJson(raw: string): LlmJsonResult {
   // Attempt 1: strip fences (if any) and parse directly.
   const defenced = trimmed.replace(FENCE_OPEN, "").replace(FENCE_CLOSE, "");
   const direct = tryParse(defenced);
-  if ("ok" in direct) {
-    return direct;
-  }
+  if ("ok" in direct) return direct;
 
   // Attempt 2: extract the first balanced {...} block from the raw text. This
   // handles "Sure, here's the JSON: {...}" or "{...}\n\nLet me know if you
@@ -36,9 +34,7 @@ export function parseLlmJson(raw: string): LlmJsonResult {
   const extracted = extractFirstJsonObject(trimmed);
   if (extracted !== null) {
     const second = tryParse(extracted);
-    if ("ok" in second) {
-      return second;
-    }
+    if ("ok" in second) return second;
     return {
       err: { kind: "parse", message: `extracted block failed parse: ${second.err.message}` },
     };
@@ -68,14 +64,12 @@ function tryParse(s: string): { ok: unknown } | { err: { message: string } } {
 // (inclusive of outer braces) or null if no balanced block is found.
 function extractFirstJsonObject(s: string): string | null {
   const start = s.indexOf("{");
-  if (start === -1) {
-    return null;
-  }
+  if (start === -1) return null;
   let depth = 0;
   let inString = false;
   let escape = false;
   for (let i = start; i < s.length; i++) {
-    const ch = s[i];
+    const ch = s[i]!;
     if (escape) {
       escape = false;
       continue;

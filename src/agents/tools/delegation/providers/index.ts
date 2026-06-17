@@ -25,9 +25,7 @@ const ENV_PREFIX: Record<Provider, string> = {
 
 function readTimeoutEnv(name: string): number | undefined {
   const raw = process.env[name];
-  if (!raw) {
-    return undefined;
-  }
+  if (!raw) return undefined;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
@@ -39,9 +37,7 @@ function readTimeoutEnv(name: string): number | undefined {
 export function readProviderConfig(provider: Provider): LlmConfig | undefined {
   const prefix = ENV_PREFIX[provider];
   const apiKey = process.env[`${prefix}_API_KEY`];
-  if (!apiKey || apiKey.trim() === "") {
-    return undefined;
-  }
+  if (!apiKey || apiKey.trim() === "") return undefined;
   const baseUrl = process.env[`${prefix}_BASE_URL`] ?? DEFAULT_BASE_URLS[provider];
   const timeoutMs = readTimeoutEnv(`${prefix}_TIMEOUT_MS`);
   return timeoutMs !== undefined ? { apiKey, baseUrl, timeoutMs } : { apiKey, baseUrl };

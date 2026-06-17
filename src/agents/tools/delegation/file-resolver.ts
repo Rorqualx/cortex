@@ -31,9 +31,7 @@ function defaultAllowedRoots(): string[] {
 
 function readAllowedRoots(): string[] {
   const raw = process.env["MCP_FILE_PATHS_ALLOWED_ROOTS"];
-  if (!raw) {
-    return defaultAllowedRoots();
-  }
+  if (!raw) return defaultAllowedRoots();
   const roots = raw
     .split(":")
     .map((s) => s.trim())
@@ -83,9 +81,7 @@ export async function resolveOneFile(p: string): Promise<string> {
 }
 
 export async function resolveFilePaths(paths: string[] | undefined): Promise<string[]> {
-  if (!paths || paths.length === 0) {
-    return [];
-  }
+  if (!paths || paths.length === 0) return [];
   const out: string[] = [];
   for (const p of paths) {
     out.push(await resolveOneFile(p));

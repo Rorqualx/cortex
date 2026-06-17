@@ -72,12 +72,8 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 function formatHint(format: LlmCallParams["format"]): string {
   // DeepSeek's json_object mode requires the word "json" in the prompt — the
   // markdown/text hints stay aligned with OpenAI's expectations.
-  if (format === "json") {
-    return "\n\nRespond with valid JSON only. No prose, no markdown fences.";
-  }
-  if (format === "markdown") {
-    return "\n\nRespond in Markdown.";
-  }
+  if (format === "json") return "\n\nRespond with valid JSON only. No prose, no markdown fences.";
+  if (format === "markdown") return "\n\nRespond in Markdown.";
   return "";
 }
 
@@ -141,9 +137,7 @@ function applyTemperature(
     return;
   }
   // Omit the field when thinking is on (DeepSeek docs say it's a no-op).
-  if (!thinking) {
-    body["temperature"] = 0.3;
-  }
+  if (!thinking) body["temperature"] = 0.3;
 }
 
 function buildRequestBody(params: LlmCallParams): Record<string, unknown> {
@@ -196,11 +190,8 @@ async function postJson(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const onExternalAbort = () => controller.abort();
   if (externalSignal) {
-    if (externalSignal.aborted) {
-      controller.abort();
-    } else {
-      externalSignal.addEventListener("abort", onExternalAbort, { once: true });
-    }
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
   }
   try {
     const res = await fetch(url, {
@@ -217,9 +208,7 @@ async function postJson(
     return { status: res.status, statusText: res.statusText, ok: res.ok, bodyText };
   } finally {
     clearTimeout(timer);
-    if (externalSignal) {
-      externalSignal.removeEventListener("abort", onExternalAbort);
-    }
+    if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
   }
 }
 
@@ -228,9 +217,7 @@ function isAbortError(err: unknown): boolean {
 }
 
 function wrapTransportError(err: unknown, timeoutMs: number): LlmError {
-  if (err instanceof LlmError) {
-    return err;
-  }
+  if (err instanceof LlmError) return err;
   if (isAbortError(err)) {
     return new LlmError(`DeepSeek request timed out after ${timeoutMs}ms`, "deepseek");
   }
@@ -304,9 +291,7 @@ async function executeWithRetry(
   try {
     return await executeRequest(url, apiKey, body, timeoutMs, signal);
   } catch (err) {
-    if (signal?.aborted) {
-      throw err;
-    }
+    if (signal?.aborted) throw err;
     if (err instanceof LlmError && err.status !== undefined && err.status >= 500) {
       await new Promise((r) => setTimeout(r, 500));
       return executeRequest(url, apiKey, body, timeoutMs, signal);

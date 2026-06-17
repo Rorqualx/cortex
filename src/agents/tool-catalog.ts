@@ -55,6 +55,7 @@ const CORE_TOOL_SECTION_ORDER: Array<{ id: string; label: string }> = [
   { id: "nodes", label: "Nodes" },
   { id: "agents", label: "Agents" },
   { id: "media", label: "Media" },
+  { id: "delegation", label: "Delegation" },
 ];
 
 const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
@@ -363,6 +364,80 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     description: "Text-to-speech conversion",
     sectionId: "media",
     profiles: [],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_code",
+    label: "delegate_code",
+    description:
+      "Delegate code generation/modification to an auto-routed model (provider fallback)",
+    sectionId: "delegation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_review",
+    label: "delegate_review",
+    description: "Delegate a code/diff review to an auto-routed reasoning model",
+    sectionId: "delegation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_research",
+    label: "delegate_research",
+    description: "Read-and-synthesize-with-citations over supplied context",
+    sectionId: "delegation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_generic",
+    label: "delegate_generic",
+    description: "Generic delegation to an auto-routed model with provider fallback",
+    sectionId: "delegation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_plan",
+    label: "delegate_plan",
+    description: "Decompose a task into an agentic step plan",
+    sectionId: "delegation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_vision",
+    label: "delegate_vision",
+    description: "Analyze image(s) and answer a task",
+    sectionId: "delegation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_explore",
+    label: "delegate_explore",
+    description: "Explore a local codebase via a server-side ReAct loop",
+    sectionId: "delegation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_swarm",
+    label: "delegate_swarm",
+    description:
+      "Run an iterative recursive agent swarm for wide enumeration / multi-round drilling",
+    sectionId: "delegation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "delegate_academic",
+    label: "delegate_academic",
+    description: "Academic deep-research with citation grounding",
+    sectionId: "delegation",
+    profiles: ["coding"],
     includeInOpenClawGroup: true,
   },
 ];

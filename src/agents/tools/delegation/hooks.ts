@@ -52,9 +52,7 @@ export type PreToolHookDecision = { decision: "allow" } | { decision: "deny"; re
  */
 export function getPreToolHookCommand(): string | null {
   const raw = process.env["MCP_EXPLORE_PRETOOL_HOOK"];
-  if (!raw || raw.trim() === "") {
-    return null;
-  }
+  if (!raw || raw.trim() === "") return null;
   return raw.trim();
 }
 
@@ -63,9 +61,7 @@ export function getPreToolHookCommand(): string | null {
  */
 export function getStopHookCommand(): string | null {
   const raw = process.env["MCP_EXPLORE_STOP_HOOK"];
-  if (!raw || raw.trim() === "") {
-    return null;
-  }
+  if (!raw || raw.trim() === "") return null;
   return raw.trim();
 }
 

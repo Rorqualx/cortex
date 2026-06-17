@@ -56,6 +56,15 @@ describe("tool-catalog", () => {
       "image_generate",
       "music_generate",
       "video_generate",
+      "delegate_code",
+      "delegate_review",
+      "delegate_research",
+      "delegate_generic",
+      "delegate_plan",
+      "delegate_vision",
+      "delegate_explore",
+      "delegate_swarm",
+      "delegate_academic",
       "bundle-mcp",
     ]);
   });
