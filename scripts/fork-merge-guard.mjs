@@ -313,7 +313,7 @@ if (failures === 0) {
   console.log(c.green(`✓ Merge is SAFE — ${warnings} warning(s), 0 failures`));
   if (doApply) {
     console.log(c.bold("\nCommitting merge..."));
-    const commit = run('git commit -m "Merge upstream into memory-fork (guard-approved)"');
+    const commit = run('git commit -m "Merge upstream into main (guard-approved)"');
     if (commit.ok) {
       console.log(c.green("✓ Merge committed"));
       console.log(c.yellow("\nNext steps:"));
