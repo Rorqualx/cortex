@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { html, render } from "lit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n, t } from "../../i18n/index.ts";
 import { switchChatSession } from "../app-render.helpers.ts";
 import type { AppViewState } from "../app-view-state.ts";
@@ -3379,5 +3379,91 @@ describe("chat session controls", () => {
     expect(getChatThinkingValue(thinkingSelect)).toBe("");
     expect(thinkingOptions[0]?.textContent?.trim()).toBe("Default");
     expect(thinkingSelect.title).toContain("Adaptive");
+  });
+});
+
+describe("chat Escape interrupt and double-press edit", () => {
+  // Escape handling keys off Date.now to tell single from double presses, and the
+  // view's ephemeral lastEscAt persists across renders and tests. Drive a fake
+  // clock above any real timestamp so leftover state never reads as a double, and
+  // start each test well outside the double-press window.
+  let now = 5_000_000_000_000;
+  beforeEach(() => {
+    now += 1000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function pressEscape(container: HTMLElement) {
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    textarea!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  }
+
+  function appendEditButton(container: HTMLElement) {
+    const editBtn = document.createElement("button");
+    editBtn.className = "chat-group-edit";
+    editBtn.scrollIntoView = () => undefined; // jsdom has no layout
+    const onEditClick = vi.fn();
+    editBtn.addEventListener("click", onEditClick);
+    container.appendChild(editBtn);
+    return onEditClick;
+  }
+
+  it("interrupts the active run on a single Escape", () => {
+    const onAbort = vi.fn();
+    const container = renderChatView({ canAbort: true, onAbort });
+
+    pressEscape(container);
+
+    expect(onAbort).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing on Escape when no run is in progress", () => {
+    const onAbort = vi.fn();
+    const container = renderChatView({ canAbort: false, onAbort });
+
+    pressEscape(container);
+
+    expect(onAbort).not.toHaveBeenCalled();
+  });
+
+  it("opens a user message for editing on a double Escape", () => {
+    const onAbort = vi.fn();
+    const container = renderChatView({ canAbort: true, onAbort });
+    const onEditClick = appendEditButton(container);
+
+    pressEscape(container); // single press: interrupts the run
+    pressEscape(container); // second press within the window: opens the editor
+
+    expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(onEditClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the last user message (not the first) on a double Escape", () => {
+    const container = renderChatView({ canAbort: true });
+    const onFirstEditClick = appendEditButton(container);
+    const onLastEditClick = appendEditButton(container);
+
+    pressEscape(container);
+    pressEscape(container);
+
+    expect(onFirstEditClick).not.toHaveBeenCalled();
+    expect(onLastEditClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats slow consecutive Escapes as independent single presses", () => {
+    const onAbort = vi.fn();
+    const container = renderChatView({ canAbort: true, onAbort });
+    const onEditClick = appendEditButton(container);
+
+    pressEscape(container);
+    now += 1000; // beyond the double-press window
+    pressEscape(container);
+
+    expect(onEditClick).not.toHaveBeenCalled();
+    expect(onAbort).toHaveBeenCalledTimes(2);
   });
 });

@@ -494,6 +494,8 @@ interface ChatEphemeralState {
   searchOpen: boolean;
   searchQuery: string;
   pinnedExpanded: boolean;
+  /** Timestamp of the last Escape press; drives single- vs double-press intent. */
+  lastEscAt: number;
 }
 
 function createChatEphemeralState(): ChatEphemeralState {
@@ -508,8 +510,12 @@ function createChatEphemeralState(): ChatEphemeralState {
     searchOpen: false,
     searchQuery: "",
     pinnedExpanded: false,
+    lastEscAt: 0,
   };
 }
+
+// Two Escape presses within this window count as a double-press (edit intent).
+const DOUBLE_ESC_WINDOW_MS = 400;
 
 const vs = createChatEphemeralState();
 
@@ -2035,6 +2041,47 @@ export function renderChat(props: ChatProps) {
     if (e.key === "Escape" && props.sideResult && !vs.searchOpen) {
       e.preventDefault();
       props.onDismissSideResult?.();
+      return;
+    }
+
+    // Escape, in order of precedence (slash menu / side result already handled
+    // and returned above): close search; a single press interrupts the active
+    // run; a quick second press opens the last user message for editing, where
+    // saving branches the conversation. vs.lastEscAt persists across re-renders.
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (vs.searchOpen) {
+        vs.searchOpen = false;
+        vs.searchQuery = "";
+        vs.lastEscAt = 0;
+        requestUpdate();
+        return;
+      }
+      const now = Date.now();
+      const isDoublePress = now - vs.lastEscAt <= DOUBLE_ESC_WINDOW_MS;
+      // Reset on a double so a third press starts a fresh single-press window.
+      vs.lastEscAt = isDoublePress ? 0 : now;
+      if (isDoublePress) {
+        // enterEditMode installs a document-level keydown listener that cancels
+        // the edit on Escape; without stopping propagation this very keypress
+        // would bubble to it and close the editor we are about to open.
+        e.stopPropagation();
+        // Reuse the per-message edit affordance so the entry-id lookup and the
+        // branch-on-save flow stay owned by enterEditMode/onEditMessage. The
+        // last edit button in DOM order is the most recent user message.
+        const root = (e.target as HTMLElement).getRootNode() as Document | ShadowRoot;
+        const editButtons = root.querySelectorAll?.(".chat-group-edit");
+        const lastEdit = editButtons?.[editButtons.length - 1] as HTMLElement | undefined;
+        if (lastEdit) {
+          lastEdit.scrollIntoView({ block: "center" });
+          lastEdit.click();
+        }
+        return;
+      }
+      // Single press: stop the in-flight turn if one is interruptible.
+      if (showAbortableUi) {
+        props.onAbort?.();
+      }
       return;
     }
 
