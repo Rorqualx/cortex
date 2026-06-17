@@ -4,6 +4,7 @@ import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
 import {
+  confirmDestructiveSessionReset,
   createChatSessionsLoadOverrides,
   hasAbortableSessionRun,
   refreshChat,
@@ -4036,6 +4037,9 @@ export function renderApp(state: AppViewState) {
                     onNewSession: () => void createChatSession(state),
                     onClearHistory: runUiTask(async () => {
                       if (!state.client || !state.connected) {
+                        return;
+                      }
+                      if (!confirmDestructiveSessionReset(state)) {
                         return;
                       }
                       const hadActiveRun = hasAbortableSessionRun(state);

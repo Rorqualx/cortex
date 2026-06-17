@@ -278,6 +278,23 @@ function confirmChatResetCommand(text: string) {
   return globalThis.confirm("Start a new session? This will reset the current chat.");
 }
 
+/**
+ * Guard the destructive reset paths (`/clear`, `/reset`, Clear history) so a
+ * populated conversation is never wiped without a prompt. No-ops for empty
+ * sessions; `/new` is non-destructive and intentionally not guarded.
+ */
+export function confirmDestructiveSessionReset(host: { chatMessages?: unknown[] }): boolean {
+  if (!host.chatMessages || host.chatMessages.length === 0) {
+    return true;
+  }
+  if (typeof globalThis.confirm !== "function") {
+    return false;
+  }
+  return globalThis.confirm(
+    "Clear this chat? The conversation is archived (recoverable as a Previous: session) and a new chat starts.",
+  );
+}
+
 function isBtwCommand(text: string) {
   return /^\/(?:btw|side)(?::|\s|$)/i.test(text.trim());
 }
@@ -1887,6 +1904,9 @@ async function dispatchSlashCommand(
       await host.onSlashAction("new-session");
       return;
     case "reset":
+      if (!confirmDestructiveSessionReset(host)) {
+        return;
+      }
       await sendChatMessageNow(host, "/reset", {
         refreshSessions: true,
         previousDraft: sendOpts?.previousDraft,
@@ -1957,6 +1977,9 @@ async function dispatchSlashCommand(
 
 async function clearChatHistory(host: ChatHost) {
   if (!host.client || !host.connected) {
+    return;
+  }
+  if (!confirmDestructiveSessionReset(host)) {
     return;
   }
   const hadActiveRun = hasAbortableSessionRun(host);

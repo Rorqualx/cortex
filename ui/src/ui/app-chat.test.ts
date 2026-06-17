@@ -1334,6 +1334,60 @@ describe("handleSendChat", () => {
     expect(host.chatMessage).toBe("");
   });
 
+  it("cancels /clear when the session has messages and confirmation is declined", async () => {
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const request = vi.fn(async (method: string) => {
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    const host = makeHost({
+      client: { request } as unknown as ChatHost["client"],
+      chatMessage: "/clear",
+      sessionKey: "agent:main",
+      chatMessages: [{ role: "user", content: "keep me", timestamp: 1 }],
+    });
+
+    await handleSendChat(host);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
+    expect(host.chatMessages).toStrictEqual([{ role: "user", content: "keep me", timestamp: 1 }]);
+  });
+
+  it("runs /clear after confirmation when the session has messages", async () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    const request = vi.fn(async (_method: string) => ({}));
+    const host = makeHost({
+      client: { request } as unknown as ChatHost["client"],
+      chatMessage: "/clear",
+      sessionKey: "agent:main",
+      chatMessages: [{ role: "user", content: "wipe me", timestamp: 1 }],
+    });
+
+    await handleSendChat(host);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls.map((c) => c[0])).toContain("sessions.reset");
+  });
+
+  it("clears an empty session without a confirmation prompt", async () => {
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const request = vi.fn(async (_method: string) => ({}));
+    const host = makeHost({
+      client: { request } as unknown as ChatHost["client"],
+      chatMessage: "/clear",
+      sessionKey: "agent:main",
+      chatMessages: [],
+    });
+
+    await handleSendChat(host);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(request.mock.calls.map((c) => c[0])).toContain("sessions.reset");
+  });
+
   it("records visible send timing phases for a normal chat send", async () => {
     const request = vi.fn(async (method: string) => {
       if (method === "chat.send") {
@@ -2497,6 +2551,10 @@ describe("handleSendChat", () => {
   });
 
   it("clears BTW side results when /clear resets chat history", async () => {
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    ); // /clear now confirms before wiping
     const request = vi.fn(async (method: string) => {
       if (method === "sessions.reset") {
         return { ok: true };
@@ -2534,6 +2592,10 @@ describe("handleSendChat", () => {
   });
 
   it("scopes /clear resets for selected-agent global sessions", async () => {
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    ); // /clear now confirms before wiping
     const request = vi.fn(async (method: string) => {
       if (method === "sessions.reset") {
         return { ok: true };
