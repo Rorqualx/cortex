@@ -1,21 +1,14 @@
 // Control UI view renders the Skill Forge pipeline dashboard.
 
 import { html, nothing } from "lit-html";
-import { ifDefined } from "lit-html/directives/if-defined.js";
 import type {
   ForgeSkill,
   ForgeSkillStatus,
   ForgeCandidate,
   SkillForgeState,
   ForgeActionNotice,
-  ForgeStatus,
 } from "../controllers/skill-forge.ts";
-import {
-  filteredSkills,
-  countSkillForge,
-  allSkills,
-  allCandidates,
-} from "../controllers/skill-forge.ts";
+import { filteredSkills, countSkillForge, allCandidates } from "../controllers/skill-forge.ts";
 
 export type SkillForgeProps = SkillForgeState & {
   onRunPipeline: () => void;
@@ -52,6 +45,7 @@ export function renderSkillForge(props: SkillForgeProps) {
   const selected = skills.find((s) => s.name === props.skillForgeSelectedName);
   const staged = props.skillForgeStatus?.skills.staged ?? [];
   const promoted = props.skillForgeStatus?.skills.promoted ?? [];
+  const isEmpty = candidates.length === 0 && staged.length === 0 && promoted.length === 0;
 
   return html`
     <section class="skill-forge sf-mode-${props.skillForgeMode}">
@@ -59,16 +53,62 @@ export function renderSkillForge(props: SkillForgeProps) {
       ${props.skillForgeActionNotice ? renderActionNotice(props.skillForgeActionNotice) : nothing}
       ${props.skillForgeLoading && !props.skillForgeLoaded
         ? renderLoading()
-        : html`
-            ${candidates.length > 0 ? renderCandidatesSection(props, candidates) : nothing}
-            ${staged.length > 0 ? renderStagedSection(props, staged) : nothing}
-            ${promoted.length > 0 ? renderPromotedSection(props, promoted) : nothing}
-            ${candidates.length === 0 && staged.length === 0 && promoted.length === 0
-              ? renderEmpty(props)
-              : nothing}
-          `}
+        : isEmpty
+          ? renderEmpty(props)
+          : props.skillForgeMode === "grid"
+            ? renderBody(props, skills, selected)
+            : html`
+                ${candidates.length > 0 ? renderCandidatesSection(candidates) : nothing}
+                ${staged.length > 0 ? renderStagedSection(props, staged) : nothing}
+                ${promoted.length > 0 ? renderPromotedSection(props, promoted) : nothing}
+              `}
     </section>
   `;
+}
+
+// ── Body (grid mode: queue list + resizable detail panel) ──────────
+
+const QUEUE_MIN_WIDTH = 240;
+const QUEUE_MAX_WIDTH = 560;
+
+function renderBody(
+  props: SkillForgeProps,
+  skills: ForgeSkill[],
+  selected: ForgeSkill | undefined,
+) {
+  const width = Math.max(QUEUE_MIN_WIDTH, Math.min(QUEUE_MAX_WIDTH, props.skillForgeQueueWidth));
+  return html`
+    <div class="sf-body">
+      <div class="sf-queue" style="width: ${width}px; position: relative;">
+        ${renderQueue(props, skills, selected)}
+        <div class="sf-divider" style="right: 0;" @pointerdown=${queueResizeHandler(props)}></div>
+      </div>
+      <div class="sf-detail">${selected ? renderDetail(props, selected) : renderNoSelection()}</div>
+    </div>
+  `;
+}
+
+// Drag the divider to resize the queue column; clamps to the queue width bounds
+// and tears down the window listeners on pointerup so no drag state leaks.
+function queueResizeHandler(props: SkillForgeProps) {
+  return (event: PointerEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = Math.max(
+      QUEUE_MIN_WIDTH,
+      Math.min(QUEUE_MAX_WIDTH, props.skillForgeQueueWidth),
+    );
+    const onMove = (move: PointerEvent) => {
+      const next = startWidth + (move.clientX - startX);
+      props.onQueueWidthChange(Math.max(QUEUE_MIN_WIDTH, Math.min(QUEUE_MAX_WIDTH, next)));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 }
 
 // ── Toolbar ────────────────────────────────────────────────────────
@@ -90,6 +130,22 @@ function renderToolbar(props: SkillForgeProps, counts: Record<string, number>) {
         )}
       </div>
       <div class="sf-toolbar__actions">
+        <div class="sf-mode-toggle">
+          <button
+            class="sf-filter-tab ${props.skillForgeMode === "board" ? "is-active" : ""}"
+            @click=${() => props.onModeChange("board")}
+            title="Pipeline board view"
+          >
+            ▦ Board
+          </button>
+          <button
+            class="sf-filter-tab ${props.skillForgeMode === "grid" ? "is-active" : ""}"
+            @click=${() => props.onModeChange("grid")}
+            title="Queue + detail view"
+          >
+            ☰ List
+          </button>
+        </div>
         <input
           type="search"
           class="sf-search"
@@ -119,7 +175,7 @@ function renderToolbar(props: SkillForgeProps, counts: Record<string, number>) {
 
 // ── Candidates section (detected patterns, pre-draft) ──────────────
 
-function renderCandidatesSection(props: SkillForgeProps, candidates: ForgeCandidate[]) {
+function renderCandidatesSection(candidates: ForgeCandidate[]) {
   return html`
     <div class="sf-pipeline-section">
       <div class="sf-pipeline-section__header">

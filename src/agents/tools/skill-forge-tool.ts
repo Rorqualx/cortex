@@ -22,7 +22,7 @@ import {
   DEFAULT_DECAY_POLICY,
 } from "../../skill-forge/promoter.js";
 import { listTelemetryEntries, type SkillTelemetryEntry } from "../../skill-forge/telemetry.js";
-import { readTelemetry, recordSkillDemotion } from "../../skill-forge/telemetry.js";
+import { recordSkillDemotion } from "../../skill-forge/telemetry.js";
 import type { CaptureResult } from "../../skill-forge/types.js";
 import { stringEnum } from "../schema/typebox.js";
 import {
@@ -284,7 +284,7 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
 
   async function handleRetire(params: Record<string, unknown>) {
     const name = readStringParam(params, "name");
-    const maxUnusedDays = readMaxUnusedDaysParam(params) ?? 30;
+    const maxUnusedDays = readMaxUnusedDaysParam(params) ?? DEFAULT_DECAY_POLICY.maxUnusedDays;
 
     if (name) {
       const reason = readStringParam(params, "reason") ?? "manual retirement";

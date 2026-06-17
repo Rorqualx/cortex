@@ -1,6 +1,6 @@
 // Control UI controller for the Skill Forge pipeline.
 
-import type { OpenClawClient } from "../../../dist/control-ui/client.js";
+import type { GatewayBrowserClient } from "../gateway.ts";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ export type SkillForgeState = {
   skillForgeSelectedName: string | null;
   skillForgeRunBusy: boolean;
   skillForgeActionBusy: string | null;
-  skillForgeActionNotice: SkillForgeActionNotice | null;
+  skillForgeActionNotice: ForgeActionNotice | null;
   skillForgeActionNoticeTimer?: ReturnType<typeof globalThis.setTimeout> | number | null;
   skillForgeFilter: ForgeSkillStatus | "all";
   skillForgeQuery: string;
@@ -80,6 +80,9 @@ function clearActionNoticeTimer(state: SkillForgeState): void {
 }
 
 function setActionNotice(state: SkillForgeState, type: "success" | "error", message: string): void {
+  // Clear any in-flight dismissal timer so rapid successive notices don't leak
+  // orphan timeouts that fire against a newer notice.
+  clearActionNoticeTimer(state);
   state.skillForgeActionNotice = { type, message };
   state.skillForgeActionNoticeTimer = globalThis.setTimeout(() => {
     if (state.skillForgeActionNotice) {
@@ -92,7 +95,7 @@ function setActionNotice(state: SkillForgeState, type: "success" | "error", mess
 // ── Data loading ───────────────────────────────────────────────────
 
 export async function loadSkillForgeStatus(
-  state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
+  state: SkillForgeState & { client?: GatewayBrowserClient | null; connected?: boolean },
   options?: { force?: boolean },
 ): Promise<void> {
   if (!state.client || !state.connected || state.skillForgeLoading) {
@@ -124,7 +127,7 @@ export async function loadSkillForgeStatus(
 // ── Actions ────────────────────────────────────────────────────────
 
 export async function runForgePipeline(
-  state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
+  state: SkillForgeState & { client?: GatewayBrowserClient | null; connected?: boolean },
 ): Promise<void> {
   if (!state.client || !state.connected || state.skillForgeRunBusy) {
     return;
@@ -151,7 +154,7 @@ export async function runForgePipeline(
 }
 
 export async function promoteSkill(
-  state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
+  state: SkillForgeState & { client?: GatewayBrowserClient | null; connected?: boolean },
   name: string,
 ): Promise<void> {
   if (!state.client || !state.connected || state.skillForgeActionBusy) {
@@ -176,7 +179,7 @@ export async function promoteSkill(
 }
 
 export async function retireSkill(
-  state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
+  state: SkillForgeState & { client?: GatewayBrowserClient | null; connected?: boolean },
   name: string,
   reason?: string,
 ): Promise<void> {
@@ -205,7 +208,7 @@ export async function retireSkill(
 }
 
 export async function runDecaySweep(
-  state: SkillForgeState & { client?: OpenClawClient | null; connected?: boolean },
+  state: SkillForgeState & { client?: GatewayBrowserClient | null; connected?: boolean },
 ): Promise<void> {
   if (!state.client || !state.connected || state.skillForgeRunBusy) {
     return;
