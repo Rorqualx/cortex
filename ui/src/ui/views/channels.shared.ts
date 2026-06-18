@@ -162,8 +162,27 @@ export function renderSingleAccountChannelCard(params: {
       ${params.lastError
         ? html`<div class="callout danger" style="margin-top: 12px;">${params.lastError}</div>`
         : nothing}
-      ${params.secondaryCallout ?? nothing} ${params.extraContent ?? nothing}
-      ${params.configSection} ${params.footer ?? nothing}
+
+      <details class="channel-card__details">
+        <summary class="channel-card__details-summary">
+          <span>Configuration</span>
+          <svg
+            class="channel-card__details-chevron"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </summary>
+        <div class="channel-card__details-body">
+          ${params.secondaryCallout ?? nothing} ${params.extraContent ?? nothing}
+          ${params.configSection} ${params.footer ?? nothing}
+        </div>
+      </details>
     </div>
   `;
 }

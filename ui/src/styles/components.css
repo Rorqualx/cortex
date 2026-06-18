@@ -387,12 +387,16 @@
    Channels - Compact card
    =========================================== */
 
-/* Auto-fit so a single channel fills the row instead of stranding the right
-   half empty, while two or more reflow into side-by-side columns. */
+/* Fixed-width tracks packed from the left: a lone channel stays a compact card
+   instead of stretching full-width (which left the status strip sparse), while
+   more channels reflow into side-by-side columns. The min(320px, 100%) floor
+   clamps the track to the container on narrow viewports so a 320px card cannot
+   overflow into horizontal scroll. */
 .channels-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 360px));
+  justify-content: start;
 }
 
 .channel-card__head {
@@ -447,10 +451,10 @@
 .channel-status-strip {
   display: flex;
   flex-wrap: wrap;
-  column-gap: 28px;
-  row-gap: 12px;
-  margin-top: 16px;
-  padding: 14px 16px;
+  column-gap: 20px;
+  row-gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
@@ -476,6 +480,52 @@
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text-strong);
+}
+
+/* Collapse the channel config below the metrics strip: closed by default so the
+   card shows just the at-a-glance metrics, expandable to reach the full form. */
+.channel-card__details {
+  margin-top: 14px;
+}
+
+.channel-card__details-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--duration-fast) ease;
+}
+
+.channel-card__details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.channel-card__details-summary:hover {
+  border-color: var(--border-strong);
+}
+
+.channel-card__details-chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.channel-card__details[open] .channel-card__details-chevron {
+  transform: rotate(180deg);
+}
+
+.channel-card__details-body {
+  margin-top: 12px;
 }
 
 .account-card-list {
