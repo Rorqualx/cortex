@@ -1,0 +1,6 @@
+src/agents/compaction-cache-aware.test.ts
+src/agents/embedded-agent-runner-extraparams-resolve.test.ts
+src/agents/tool-policy-deny-first.test.ts
+src/tasks/task-flow-registry.audit.test.ts
+src/tasks/task-flow-registry.maintenance.test.ts
+src/tasks/task-owner-access.test.ts
