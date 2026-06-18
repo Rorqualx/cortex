@@ -91,6 +91,12 @@ export const tr: TranslationMap = {
       subtitle: "Gateway'den alınan kanal durumu anlık görüntüleri.",
       noSnapshotYet: "Henüz anlık görüntü yok.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "Kanal durumu ve yapılandırması.",
     },

@@ -91,6 +91,12 @@ export const uk: TranslationMap = {
       subtitle: "Знімки стану каналу з Gateway.",
       noSnapshotYet: "Ще немає знімка.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "Стан каналу та конфігурація.",
     },

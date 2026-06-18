@@ -91,6 +91,12 @@ export const pl: TranslationMap = {
       subtitle: "Migawki stanu kanału z Gateway.",
       noSnapshotYet: "Brak migawki.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "Stan kanału i konfiguracja.",
     },

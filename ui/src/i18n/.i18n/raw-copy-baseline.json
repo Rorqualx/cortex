@@ -1774,6 +1774,13 @@
     },
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/channels.shared.ts",
+      "text": "Configuration"
+    },
+    {
+      "count": 1,
       "kind": "object-property",
       "name": "subtitle",
       "path": "ui/src/ui/views/channels.signal.ts",
@@ -2439,6 +2446,13 @@
     },
     {
       "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/views/config-form.render.ts",
+      "text": "Close"
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config-form.render.ts",
@@ -2991,7 +3005,7 @@
       "text": "Configure channels"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config-quick.ts",
@@ -3047,7 +3061,7 @@
       "text": "Choose image"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config-quick.ts",
@@ -3201,7 +3215,7 @@
       "text": "Selected"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config-quick.ts",

@@ -91,6 +91,12 @@ export const ko: TranslationMap = {
       subtitle: "Gateway의 채널 상태 스냅샷입니다.",
       noSnapshotYet: "아직 스냅샷이 없습니다.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "채널 상태 및 구성.",
     },

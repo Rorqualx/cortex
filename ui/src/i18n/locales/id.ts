@@ -91,6 +91,12 @@ export const id: TranslationMap = {
       subtitle: "Snapshot status saluran dari gateway.",
       noSnapshotYet: "Belum ada snapshot.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "Status dan konfigurasi saluran.",
     },

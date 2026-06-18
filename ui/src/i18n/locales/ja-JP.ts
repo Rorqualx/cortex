@@ -91,6 +91,12 @@ export const ja_JP: TranslationMap = {
       subtitle: "Gateway からのチャネル状態スナップショット。",
       noSnapshotYet: "まだスナップショットがありません。",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "チャネルの状態と設定。",
     },

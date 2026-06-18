@@ -32,6 +32,7 @@ import { renderSlackCard } from "./channels.slack.ts";
 import { renderTelegramCard } from "./channels.telegram.ts";
 import type { ChannelKey, ChannelsChannelData, ChannelsProps } from "./channels.types.ts";
 import { renderWhatsAppCard } from "./channels.whatsapp.ts";
+import { analyzeConfigSchema, renderChannelConfigModal, renderConfigForm } from "./config-form.ts";
 
 export function renderChannels(props: ChannelsProps) {
   const channels = props.snapshot?.channels as Record<string, unknown> | null;
@@ -58,6 +59,10 @@ export function renderChannels(props: ChannelsProps) {
     });
   const showingStaleSnapshot = Boolean(props.loading && props.snapshot && props.lastSuccessAt);
   const partialWarnings = props.snapshot?.warnings?.filter((warning) => warning.trim()) ?? [];
+  // Consolidated channel config: the full all-channels tile grid (formerly the
+  // Communications -> Channels page) now lives here, below the runtime status
+  // cards. Tiles open the shared focused per-channel modal.
+  const configAnalysis = analyzeConfigSchema(props.configSchema);
 
   return html`
     <section class="channels-grid">
@@ -77,7 +82,42 @@ export function renderChannels(props: ChannelsProps) {
     </section>
 
     <section class="card" style="margin-top: 18px;">
-      <div class="row" style="justify-content: space-between;">
+      <div class="card-title">${t("channels.configure.title")}</div>
+      <div class="card-sub" style="margin-bottom: 14px;">${t("channels.configure.subtitle")}</div>
+      ${props.configSchemaLoading
+        ? html`<div class="muted">${t("channels.configure.loading")}</div>`
+        : configAnalysis.schema
+          ? renderConfigForm({
+              schema: configAnalysis.schema,
+              uiHints: props.configUiHints,
+              value: props.configForm,
+              rawAvailable: true,
+              disabled: props.configSaving || !props.configForm,
+              unsupportedPaths: configAnalysis.unsupportedPaths,
+              onPatch: props.onConfigPatch,
+              activeSection: "channels",
+              onOpenChannelModal: props.onOpenChannelModal,
+            })
+          : html`<div class="muted">${t("channels.configure.unavailable")}</div>`}
+    </section>
+
+    ${renderChannelConfigModal({
+      channelKey: props.channelModalKey,
+      schema: configAnalysis.schema,
+      unsupportedPaths: configAnalysis.unsupportedPaths,
+      uiHints: props.configUiHints,
+      value: props.configForm,
+      rawAvailable: true,
+      disabled: props.configSaving || !props.configForm,
+      onPatch: props.onConfigPatch,
+      onClose: props.onCloseChannelModal,
+    })}
+
+    <details class="card" style="margin-top: 18px;">
+      <summary
+        class="row"
+        style="justify-content: space-between; cursor: pointer; list-style: none;"
+      >
         <div>
           <div class="card-title">${t("channels.health.title")}</div>
           <div class="card-sub">${t("channels.health.subtitle")}</div>
@@ -85,7 +125,7 @@ export function renderChannels(props: ChannelsProps) {
         <div class="muted">
           ${props.lastSuccessAt ? formatRelativeTimestamp(props.lastSuccessAt) : t("common.na")}
         </div>
-      </div>
+      </summary>
       ${showingStaleSnapshot
         ? html`
             <div class="callout info" style="margin-top: 12px;">
@@ -108,7 +148,7 @@ export function renderChannels(props: ChannelsProps) {
 ${props.snapshot ? JSON.stringify(props.snapshot, null, 2) : t("channels.health.noSnapshotYet")}
       </pre
       >
-    </section>
+    </details>
   `;
 }
 

@@ -91,6 +91,12 @@ export const fa: TranslationMap = {
       subtitle: "نماهای لحظه‌ای وضعیت کانال از Gateway.",
       noSnapshotYet: "هنوز نمای لحظه‌ای وجود ندارد.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "وضعیت و پیکربندی کانال.",
     },

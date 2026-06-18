@@ -22,7 +22,12 @@ import {
   schemaType,
   type JsonSchema,
 } from "./config-form.shared.ts";
-import { analyzeConfigSchema, renderConfigForm, SECTION_META } from "./config-form.ts";
+import {
+  analyzeConfigSchema,
+  renderChannelConfigModal,
+  renderConfigForm,
+  SECTION_META,
+} from "./config-form.ts";
 
 const BORDER_RADIUS_LABELS: Record<BorderRadiusStop, string> = {
   0: "None",
@@ -1909,74 +1914,22 @@ export function renderConfig(props: ConfigProps) {
             </div>`
           : nothing}
       </main>
-      ${renderChannelConfigModal(props, analysis, rawAvailable, isSensitivePathRevealed, (path) => {
-        toggleSensitivePathReveal(path);
-        requestUpdate();
+      ${renderChannelConfigModal({
+        channelKey: props.channelModalKey ?? null,
+        schema: analysis.schema,
+        unsupportedPaths: analysis.unsupportedPaths,
+        uiHints: props.uiHints,
+        value: props.formValue,
+        rawAvailable,
+        disabled: props.loading || !props.formValue,
+        isSensitivePathRevealed,
+        onToggleSensitivePath: (path) => {
+          toggleSensitivePathReveal(path);
+          requestUpdate();
+        },
+        onPatch: props.onFormPatch,
+        onClose: () => props.onCloseChannelModal?.(),
       })}
-    </div>
-  `;
-}
-
-// Focused per-channel config overlay: opens when a channels-section tile is
-// clicked (channelModalKey set). Reuses the scoped subsection render so the modal
-// body shows just that one channel's form instead of the whole section.
-function renderChannelConfigModal(
-  props: ConfigProps,
-  analysis: ReturnType<typeof analyzeConfigSchema>,
-  rawAvailable: boolean,
-  isSensitivePathRevealed: (path: Array<string | number>) => boolean,
-  onToggleSensitivePath: (path: Array<string | number>) => void,
-) {
-  const key = props.channelModalKey;
-  if (!key || !analysis.schema) {
-    return nothing;
-  }
-  const channelSchema = analysis.schema.properties?.channels?.properties?.[key];
-  const label = channelSchema?.title ?? humanize(key);
-  const close = () => props.onCloseChannelModal?.();
-  return html`
-    <div
-      class="channel-modal"
-      @click=${(e: MouseEvent) => {
-        if (e.target === e.currentTarget) {
-          close();
-        }
-      }}
-    >
-      <div class="channel-modal__panel" role="dialog" aria-modal="true" aria-label=${label}>
-        <div class="channel-modal__head">
-          <div class="channel-modal__title">${label}</div>
-          <button class="channel-modal__close" aria-label="Close" @click=${close}>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div class="channel-modal__body">
-          ${renderConfigForm({
-            schema: analysis.schema,
-            uiHints: props.uiHints,
-            value: props.formValue,
-            rawAvailable,
-            disabled: props.loading || !props.formValue,
-            unsupportedPaths: analysis.unsupportedPaths,
-            onPatch: props.onFormPatch,
-            searchQuery: "",
-            activeSection: "channels",
-            activeSubsection: key,
-            revealSensitive: false,
-            isSensitivePathRevealed,
-            onToggleSensitivePath,
-          })}
-        </div>
-      </div>
     </div>
   `;
 }

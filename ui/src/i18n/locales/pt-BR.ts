@@ -91,6 +91,12 @@ export const pt_BR: TranslationMap = {
       subtitle: "Instantâneos do status do canal do gateway.",
       noSnapshotYet: "Ainda não há instantâneo.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "Status e configuração do canal.",
     },

@@ -91,6 +91,12 @@ export const nl: TranslationMap = {
       subtitle: "Momentopnamen van kanaalstatus vanuit de Gateway.",
       noSnapshotYet: "Nog geen momentopname.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "Kanaalstatus en -configuratie.",
     },

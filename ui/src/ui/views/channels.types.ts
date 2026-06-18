@@ -33,6 +33,10 @@ export type ChannelsProps = {
   configUiHints: ConfigUiHints;
   configSaving: boolean;
   configFormDirty: boolean;
+  /** Channel key whose focused config modal is open (consolidated tiles), or null. */
+  channelModalKey: string | null;
+  onOpenChannelModal: (sectionKey: string, key: string) => void;
+  onCloseChannelModal: () => void;
   nostrProfileFormState: NostrProfileFormState | null;
   nostrProfileAccountId: string | null;
   onRefresh: (probe: boolean) => void;

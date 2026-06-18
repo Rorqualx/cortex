@@ -91,6 +91,12 @@ export const zh_TW: TranslationMap = {
       subtitle: "來自 Gateway 的頻道狀態快照。",
       noSnapshotYet: "尚無快照。",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "頻道狀態與設定。",
     },

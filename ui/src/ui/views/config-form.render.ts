@@ -365,6 +365,76 @@ function matchesSearch(params: {
   });
 }
 
+// Focused per-channel config overlay. Opens when a channels-section tile is
+// clicked; the body reuses the scoped subsection render so the modal shows just
+// that one channel's form. Shared by the config editor (config.ts) and the
+// consolidated Channels tab (channels.ts).
+export function renderChannelConfigModal(params: {
+  channelKey: string | null;
+  schema: JsonSchema | null;
+  unsupportedPaths?: string[];
+  uiHints: ConfigUiHints;
+  value: Record<string, unknown> | null;
+  rawAvailable: boolean;
+  disabled: boolean;
+  isSensitivePathRevealed?: (path: Array<string | number>) => boolean;
+  onToggleSensitivePath?: (path: Array<string | number>) => void;
+  onPatch: (path: Array<string | number>, value: unknown) => void;
+  onClose: () => void;
+}) {
+  const key = params.channelKey;
+  if (!key || !params.schema) {
+    return nothing;
+  }
+  const channelSchema = params.schema.properties?.channels?.properties?.[key];
+  const label = channelSchema?.title ?? humanize(key);
+  return html`
+    <div
+      class="channel-modal"
+      @click=${(e: MouseEvent) => {
+        if (e.target === e.currentTarget) {
+          params.onClose();
+        }
+      }}
+    >
+      <div class="channel-modal__panel" role="dialog" aria-modal="true" aria-label=${label}>
+        <div class="channel-modal__head">
+          <div class="channel-modal__title">${label}</div>
+          <button class="channel-modal__close" aria-label="Close" @click=${params.onClose}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="channel-modal__body">
+          ${renderConfigForm({
+            schema: params.schema,
+            uiHints: params.uiHints,
+            value: params.value,
+            rawAvailable: params.rawAvailable,
+            disabled: params.disabled,
+            unsupportedPaths: params.unsupportedPaths,
+            onPatch: params.onPatch,
+            searchQuery: "",
+            activeSection: "channels",
+            activeSubsection: key,
+            revealSensitive: false,
+            isSensitivePathRevealed: params.isSensitivePathRevealed,
+            onToggleSensitivePath: params.onToggleSensitivePath,
+          })}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // Channels section: a grid of tiles (name + tags) that open a focused per-channel
 // config modal. Keeps the section scannable instead of stacking every channel's
 // full form inline. The schema tags ("network"/"channels") are read directly off

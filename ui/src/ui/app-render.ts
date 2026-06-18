@@ -883,13 +883,15 @@ function dismissUpdateBanner(updateAvailable: unknown) {
   }
 }
 
+// "channels" intentionally omitted: channel configuration is consolidated into
+// the dedicated Channels tab (renderChannels), so Communications only owns the
+// message/delivery sections.
 const COMMUNICATION_SECTION_KEYS = [
   "messages",
   "broadcast",
   "__notifications__",
   "talk",
   "audio",
-  "channels",
 ] as const;
 const APPEARANCE_SECTION_KEYS = ["__appearance__", "ui", "wizard"] as const;
 const AUTOMATION_SECTION_KEYS = [
@@ -954,6 +956,8 @@ type ConfigTabOverrides = Pick<
   >;
 
 const SCOPED_CONFIG_SECTION_KEYS = new Set<string>([
+  // "channels" lives in the dedicated Channels tab, not the main config selection.
+  "channels",
   ...COMMUNICATION_SECTION_KEYS,
   ...APPEARANCE_SECTION_KEYS,
   ...AUTOMATION_SECTION_KEYS,
@@ -2003,6 +2007,8 @@ export function renderApp(state: AppViewState) {
             requestHostUpdate?.();
           },
           excludeSections: [
+            // Channels config has a dedicated tab now; keep it out of main Settings.
+            "channels",
             ...COMMUNICATION_SECTION_KEYS,
             ...AUTOMATION_SECTION_KEYS,
             ...INFRASTRUCTURE_SECTION_KEYS,
@@ -2030,6 +2036,13 @@ export function renderApp(state: AppViewState) {
             configUiHints: state.configUiHints,
             configSaving: state.configSaving,
             configFormDirty: state.configFormDirty,
+            channelModalKey: state.configChannelModalKey,
+            onOpenChannelModal: (_sectionKey: string, key: string) => {
+              state.configChannelModalKey = key;
+            },
+            onCloseChannelModal: () => {
+              state.configChannelModalKey = null;
+            },
             nostrProfileFormState: state.nostrProfileFormState,
             nostrProfileAccountId: state.nostrProfileAccountId,
             onRefresh: (probe) => void loadChannels(state, probe),
@@ -2961,9 +2974,12 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${renderUsageTab(state, lazyUsage)}
         ${state.tab === "vault"
-          ? renderLazyView(
-              lazyVault,
-              () => html`<openclaw-vault-view .client=${state.client}></openclaw-vault-view>`,
+          ? renderSettingsWorkspace(
+              state,
+              renderLazyView(
+                lazyVault,
+                () => html`<openclaw-vault-view .client=${state.client}></openclaw-vault-view>`,
+              ),
             )
           : nothing}
         ${state.tab === "cron" ? renderCronQuickCreateForTab(state, requestHostUpdate) : nothing}
@@ -4270,7 +4286,10 @@ export function renderApp(state: AppViewState) {
               )}
             `
           : nothing}
-        ${isSettingsTab(state.tab) && state.tab !== "debug" && state.tab !== "logs"
+        ${isSettingsTab(state.tab) &&
+        state.tab !== "debug" &&
+        state.tab !== "logs" &&
+        state.tab !== "vault"
           ? renderSettingsWorkspace(state, renderConfigTabForActiveTab())
           : renderConfigTabForActiveTab()}
         ${state.tab === "debug"

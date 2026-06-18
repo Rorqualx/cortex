@@ -91,6 +91,12 @@ export const vi: TranslationMap = {
       subtitle: "Ảnh chụp trạng thái kênh từ gateway.",
       noSnapshotYet: "Chưa có ảnh chụp.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "Trạng thái và cấu hình kênh.",
     },

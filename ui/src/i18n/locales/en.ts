@@ -90,6 +90,12 @@ export const en: TranslationMap = {
       subtitle: "Channel status snapshots from the gateway.",
       noSnapshotYet: "No snapshot yet.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "Channel status and configuration.",
     },

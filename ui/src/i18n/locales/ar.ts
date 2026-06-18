@@ -91,6 +91,12 @@ export const ar: TranslationMap = {
       subtitle: "لقطات حالة القنوات من Gateway.",
       noSnapshotYet: "لا توجد لقطة بعد.",
     },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
+    },
     generic: {
       subtitle: "حالة القناة وإعداداتها.",
     },

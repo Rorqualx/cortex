@@ -1,5 +1,9 @@
 {
   "fallbackKeys": [
+    "channels.configure.loading",
+    "channels.configure.subtitle",
+    "channels.configure.title",
+    "channels.configure.unavailable",
     "channels.status.notConfigured",
     "channels.status.stopped",
     "nav.channels",
@@ -42,12 +46,12 @@
     "workboard.unknownStatus",
     "workboard.viewDetails"
   ],
-  "generatedAt": "2026-06-18T00:13:02.497Z",
+  "generatedAt": "2026-06-18T04:28:56.507Z",
   "locale": "it",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "70ca768bcbb72251a5e2d133f2464bef09a5637b6285a731607a5395b49b033f",
-  "totalKeys": 1343,
+  "sourceHash": "1a898aac6df728dfd1d0d53b64e9fd168c067f34e6a68e8dc728f6d7fb1f64b1",
+  "totalKeys": 1347,
   "translatedKeys": 1302,
   "workflow": 1
 }

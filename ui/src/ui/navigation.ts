@@ -17,7 +17,6 @@ export const TAB_GROUPS = [
       "sessions",
       "usage",
       "cron",
-      "vault",
     ],
   },
   { label: "agent", tabs: ["agents", "skills", "skillForge", "nodes", "dreams"] },
@@ -61,6 +60,7 @@ export const SETTINGS_TABS = [
   "appearance",
   "automation",
   "mcp",
+  "vault",
   "infrastructure",
   "aiAgents",
   "debug",
@@ -237,7 +237,7 @@ export function iconForTab(tab: Tab): IconName {
     case "cron":
       return "loader";
     case "vault":
-      return "globe";
+      return "key";
     case "skills":
       return "zap";
     case "skillForge":
