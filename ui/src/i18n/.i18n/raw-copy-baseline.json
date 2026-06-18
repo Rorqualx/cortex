@@ -199,6 +199,41 @@
     },
     {
       "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/channels-modal.ts",
+      "text": "Close"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/channels-modal.ts",
+      "text": "Configure channels"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/channels-modal.ts",
+      "text": "Configure channels"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/channels-modal.ts",
+      "text": "Connect a channel to reach your agent there."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/channels-modal.ts",
+      "text": "No channels available."
+    },
+    {
+      "count": 1,
       "kind": "object-property",
       "name": "description",
       "path": "ui/src/ui/chat/build-chat-items.ts",
@@ -2932,6 +2967,13 @@
       "kind": "html-attribute",
       "name": "aria-label",
       "path": "ui/src/ui/views/config-quick.ts",
+      "text": "Configure channels"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/views/config-quick.ts",
       "text": "Your local chat identity"
     },
     {
@@ -2940,6 +2982,13 @@
       "name": "placeholder",
       "path": "ui/src/ui/views/config-quick.ts",
       "text": "JD or 🦞"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/config-quick.ts",
+      "text": "Configure channels"
     },
     {
       "count": 1,
@@ -5144,6 +5193,20 @@
       "kind": "html-attribute",
       "name": "title",
       "path": "ui/src/ui/views/skill-forge.ts",
+      "text": "Pipeline board view"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/skill-forge.ts",
+      "text": "Queue + detail view"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/skill-forge.ts",
       "text": "Retire stale skills (>30d unused)"
     },
     {
@@ -5152,6 +5215,13 @@
       "name": "title",
       "path": "ui/src/ui/views/skill-forge.ts",
       "text": "Run forge pipeline"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/skill-forge.ts",
+      "text": "▦ Board"
     },
     {
       "count": 1,
@@ -5173,6 +5243,13 @@
       "name": "text",
       "path": "ui/src/ui/views/skill-forge.ts",
       "text": "✗ Retire"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/skill-forge.ts",
+      "text": "☰ List"
     },
     {
       "count": 1,

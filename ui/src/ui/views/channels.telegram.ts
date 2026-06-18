@@ -8,6 +8,7 @@ import {
   formatNullableBoolean,
   renderSingleAccountChannelCard,
   resolveChannelConfigured,
+  resolveChannelStatusBadge,
 } from "./channels.shared.ts";
 import type { ChannelsProps } from "./channels.types.ts";
 
@@ -88,6 +89,7 @@ export function renderTelegramCard(params: {
   return renderSingleAccountChannelCard({
     title: "Telegram",
     subtitle: "Bot status and channel configuration.",
+    status: resolveChannelStatusBadge(configured, telegram?.running ?? null),
     accountCountLabel,
     statusRows: [
       { label: t("common.configured"), value: formatNullableBoolean(configured) },

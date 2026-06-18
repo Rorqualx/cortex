@@ -383,6 +383,101 @@
   color: var(--muted);
 }
 
+/* ===========================================
+   Channels - Compact card
+   =========================================== */
+
+/* Auto-fit so a single channel fills the row instead of stranding the right
+   half empty, while two or more reflow into side-by-side columns. */
+.channels-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
+}
+
+.channel-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.channel-card__heading {
+  min-width: 0;
+}
+
+.channel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  color: var(--muted);
+}
+
+.channel-badge__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.channel-badge--ok {
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.channel-badge--warn {
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.channel-badge--idle {
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  color: var(--muted);
+}
+
+/* Replaces the tall full-width .status-list: a wrapping strip of compact
+   label/value pairs that keeps the at-a-glance facts on one or two lines. */
+.channel-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 28px;
+  row-gap: 12px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.channel-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.channel-stat__label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.channel-stat__value {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+}
+
 .account-card-list {
   margin-top: 16px;
   display: grid;

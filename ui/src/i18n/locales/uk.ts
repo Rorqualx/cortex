@@ -82,6 +82,10 @@ export const uk: TranslationMap = {
     logout: "Вийти",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Стан каналу",
       subtitle: "Знімки стану каналу з Gateway.",

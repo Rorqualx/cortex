@@ -1,12 +1,14 @@
 // Control UI tests cover channels behavior.
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
-import type { WhatsAppStatus } from "../types.ts";
+import type { TelegramStatus, WhatsAppStatus } from "../types.ts";
 import {
   channelEnabled,
   resolveChannelConfigured,
   resolveChannelDisplayState,
+  resolveChannelStatusBadge,
 } from "./channels.shared.ts";
+import { renderTelegramCard } from "./channels.telegram.ts";
 import type { ChannelsProps } from "./channels.types.ts";
 import { renderWhatsAppCard } from "./channels.whatsapp.ts";
 
@@ -200,5 +202,43 @@ describe("WhatsApp card actions", () => {
     });
 
     expect(labels).toEqual(["Save", "Reload", "Show QR", "Wait for scan", "Logout", "Refresh"]);
+  });
+});
+
+describe("compact channel card", () => {
+  it("derives the header badge from configured/running flags", () => {
+    expect(resolveChannelStatusBadge(true, true)).toEqual({ label: "Running", tone: "ok" });
+    expect(resolveChannelStatusBadge(true, false)).toEqual({ label: "Stopped", tone: "warn" });
+    expect(resolveChannelStatusBadge(false, false)).toEqual({
+      label: "Not configured",
+      tone: "idle",
+    });
+  });
+
+  it("renders Telegram as a compact strip with a running badge, not the tall status list", () => {
+    const telegram: TelegramStatus = { configured: true, running: true, mode: "polling" };
+    const props = createProps({
+      ts: Date.now(),
+      channelOrder: ["telegram"],
+      channelLabels: { telegram: "Telegram" },
+      channels: { telegram },
+      channelAccounts: {},
+      channelDefaultAccountId: {},
+    });
+
+    const container = document.createElement("div");
+    render(
+      renderTelegramCard({ props, telegram, telegramAccounts: [], accountCountLabel: null }),
+      container,
+    );
+
+    // Compact strip replaces the old full-width .status-list rows.
+    expect(container.querySelector(".channel-status-strip")).toBeTruthy();
+    expect(container.querySelector(".status-list")).toBeNull();
+    expect(container.querySelectorAll(".channel-stat")).toHaveLength(5);
+
+    const badge = container.querySelector(".channel-badge");
+    expect(badge?.classList.contains("channel-badge--ok")).toBe(true);
+    expect(badge?.textContent?.trim()).toContain("Running");
   });
 });

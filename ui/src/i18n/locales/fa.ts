@@ -82,6 +82,10 @@ export const fa: TranslationMap = {
     logout: "خروج",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "سلامت کانال",
       subtitle: "نماهای لحظه‌ای وضعیت کانال از Gateway.",

@@ -82,6 +82,10 @@ export const vi: TranslationMap = {
     logout: "Đăng xuất",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Tình trạng kênh",
       subtitle: "Ảnh chụp trạng thái kênh từ gateway.",

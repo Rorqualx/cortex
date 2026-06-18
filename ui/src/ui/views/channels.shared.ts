@@ -18,6 +18,37 @@ type ChannelStatusRow = {
   value: unknown;
 };
 
+/** At-a-glance channel state shown as a pill in the card header. */
+export type ChannelStatusBadge = {
+  label: string;
+  tone: "ok" | "warn" | "idle";
+};
+
+/** Derive the header pill from the canonical configured/running flags. */
+export function resolveChannelStatusBadge(
+  configured: boolean | null,
+  running: boolean | null,
+): ChannelStatusBadge {
+  if (running === true) {
+    return { label: t("common.running"), tone: "ok" };
+  }
+  if (configured === true) {
+    return { label: t("channels.status.stopped"), tone: "warn" };
+  }
+  return { label: t("channels.status.notConfigured"), tone: "idle" };
+}
+
+function renderChannelStatusBadge(status: ChannelStatusBadge | undefined) {
+  if (!status) {
+    return nothing;
+  }
+  return html`
+    <span class="channel-badge channel-badge--${status.tone}">
+      <span class="channel-badge__dot"></span>${status.label}
+    </span>
+  `;
+}
+
 function resolveChannelStatus(
   key: ChannelKey,
   props: ChannelsProps,
@@ -97,6 +128,7 @@ export function formatNullableBoolean(value: boolean | null): string {
 export function renderSingleAccountChannelCard(params: {
   title: string;
   subtitle: string;
+  status?: ChannelStatusBadge;
   accountCountLabel: unknown;
   statusRows: readonly ChannelStatusRow[];
   lastError?: string | null;
@@ -106,17 +138,22 @@ export function renderSingleAccountChannelCard(params: {
   footer?: unknown;
 }) {
   return html`
-    <div class="card">
-      <div class="card-title">${params.title}</div>
-      <div class="card-sub">${params.subtitle}</div>
+    <div class="card channel-card">
+      <div class="channel-card__head">
+        <div class="channel-card__heading">
+          <div class="card-title">${params.title}</div>
+          <div class="card-sub">${params.subtitle}</div>
+        </div>
+        ${renderChannelStatusBadge(params.status)}
+      </div>
       ${params.accountCountLabel}
 
-      <div class="status-list" style="margin-top: 16px;">
+      <div class="channel-status-strip">
         ${params.statusRows.map(
           (row) => html`
-            <div>
-              <span class="label">${row.label}</span>
-              <span>${row.value}</span>
+            <div class="channel-stat">
+              <span class="channel-stat__label">${row.label}</span>
+              <span class="channel-stat__value">${row.value}</span>
             </div>
           `,
         )}

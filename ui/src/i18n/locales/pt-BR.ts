@@ -82,6 +82,10 @@ export const pt_BR: TranslationMap = {
     logout: "Sair",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Saúde do canal",
       subtitle: "Instantâneos do status do canal do gateway.",

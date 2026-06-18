@@ -82,6 +82,10 @@ export const ko: TranslationMap = {
     logout: "로그아웃",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "채널 상태",
       subtitle: "Gateway의 채널 상태 스냅샷입니다.",

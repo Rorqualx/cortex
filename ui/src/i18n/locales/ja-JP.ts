@@ -82,6 +82,10 @@ export const ja_JP: TranslationMap = {
     logout: "ログアウト",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "チャネルの状態",
       subtitle: "Gateway からのチャネル状態スナップショット。",

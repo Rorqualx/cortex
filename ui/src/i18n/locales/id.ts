@@ -82,6 +82,10 @@ export const id: TranslationMap = {
     logout: "Keluar",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Kesehatan saluran",
       subtitle: "Snapshot status saluran dari gateway.",

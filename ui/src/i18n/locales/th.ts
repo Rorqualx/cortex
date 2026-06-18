@@ -82,6 +82,10 @@ export const th: TranslationMap = {
     logout: "ออกจากระบบ",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "สถานะช่องทาง",
       subtitle: "ภาพรวมสถานะของช่องทางจากเกตเวย์",

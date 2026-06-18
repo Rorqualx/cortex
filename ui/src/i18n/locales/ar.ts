@@ -82,6 +82,10 @@ export const ar: TranslationMap = {
     logout: "تسجيل الخروج",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "صحة القنوات",
       subtitle: "لقطات حالة القنوات من Gateway.",

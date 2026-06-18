@@ -82,6 +82,10 @@ export const tr: TranslationMap = {
     logout: "Çıkış yap",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Kanal durumu",
       subtitle: "Gateway'den alınan kanal durumu anlık görüntüleri.",

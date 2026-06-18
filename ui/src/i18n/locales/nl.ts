@@ -82,6 +82,10 @@ export const nl: TranslationMap = {
     logout: "Uitloggen",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Kanaalstatus",
       subtitle: "Momentopnamen van kanaalstatus vanuit de Gateway.",

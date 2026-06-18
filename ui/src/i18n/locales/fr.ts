@@ -82,6 +82,10 @@ export const fr: TranslationMap = {
     logout: "Se déconnecter",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Santé du canal",
       subtitle: "Instantanés de l’état du canal depuis le gateway.",

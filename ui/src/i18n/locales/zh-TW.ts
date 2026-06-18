@@ -82,6 +82,10 @@ export const zh_TW: TranslationMap = {
     logout: "登出",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "頻道健康狀態",
       subtitle: "來自 Gateway 的頻道狀態快照。",

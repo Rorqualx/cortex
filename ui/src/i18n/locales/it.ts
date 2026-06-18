@@ -82,6 +82,10 @@ export const it: TranslationMap = {
     logout: "Esci",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Integrità canali",
       subtitle: "Snapshot dello stato dei canali dal gateway.",
