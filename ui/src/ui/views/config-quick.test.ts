@@ -539,4 +539,48 @@ describe("renderQuickSettings", () => {
     expect(setTheme).toHaveBeenCalledWith("custom", { element: customThemeButton });
     expect(onOpenCustomThemeImport).not.toHaveBeenCalled();
   });
+
+  it("opens the channels modal from the Channels card and configures the chosen channel", async () => {
+    for (const stale of document.querySelectorAll("channels-modal")) {
+      stale.remove();
+    }
+    const onChannelConfigure = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+
+    render(
+      renderQuickSettings(
+        createProps({
+          channels: [{ id: "telegram", label: "Telegram", connected: true, detail: "Configured" }],
+          availableChannels: [
+            { id: "telegram", label: "Telegram", connected: true, detail: "Configured" },
+            { id: "discord", label: "Discord", connected: false },
+          ],
+          onChannelConfigure,
+        }),
+      ),
+      container,
+    );
+
+    const addButton = container.querySelector<HTMLButtonElement>(".qs-card--channels .qs-icon-btn");
+    expect(addButton).toBeInstanceOf(HTMLButtonElement);
+    addButton?.click();
+
+    const modal = document.querySelector("channels-modal");
+    expect(modal).toBeTruthy();
+    await modal?.updateComplete;
+    const rows = modal?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".cfg-btn");
+    expect(rows?.length).toBe(2);
+
+    const discordButton = Array.from(rows ?? []).find((btn) =>
+      btn.closest(".row")?.querySelector(".row__label")?.textContent?.includes("Discord"),
+    );
+    discordButton?.click();
+
+    expect(onChannelConfigure).toHaveBeenCalledWith("discord");
+    // Selecting a channel dismisses the body-level overlay.
+    expect(document.querySelector("channels-modal")).toBeNull();
+
+    container.remove();
+  });
 });
