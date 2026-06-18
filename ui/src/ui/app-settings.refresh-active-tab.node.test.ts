@@ -431,6 +431,28 @@ describe("refreshActiveTab", () => {
     });
   });
 
+  it("loads skills and cron jobs for the config tab Automations card", async () => {
+    const host = createHost();
+    host.tab = "config";
+
+    await refreshActiveTab(host as never);
+
+    expect(mocks.loadConfigMock).toHaveBeenCalledOnce();
+    expect(mocks.loadSkillsMock).toHaveBeenCalledWith(host);
+    expect(mocks.loadCronJobsPageMock).toHaveBeenCalledWith(host);
+  });
+
+  it("does not load skills or cron jobs for sibling config-family tabs", async () => {
+    const host = createHost();
+    host.tab = "communications";
+
+    await refreshActiveTab(host as never);
+
+    expect(mocks.loadConfigMock).toHaveBeenCalledOnce();
+    expect(mocks.loadSkillsMock).not.toHaveBeenCalled();
+    expect(mocks.loadCronJobsPageMock).not.toHaveBeenCalled();
+  });
+
   it("loads scoped settings snapshots before starting the schema refresh", async () => {
     const host = createHost();
     host.tab = "communications";
