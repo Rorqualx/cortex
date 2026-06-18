@@ -10,13 +10,31 @@ export const telegramChannelConfigUiHints = {
     label: "Telegram Custom Commands",
     help: "Additional Telegram bot menu commands (merged with native; conflicts ignored).",
   },
+  // Primary fields lead the form (negative order beats the unset=0 default, which
+  // then sorts the optional long tail alphabetically below). Keeps the configured
+  // values — enabled/botToken/accounts/allowFrom/groups — visible at the top
+  // instead of buried under empty advanced fields.
+  enabled: {
+    order: -100,
+  },
   botToken: {
     label: "Telegram Bot Token",
     help: "Telegram bot token used to authenticate Bot API requests for this account/provider config. Use secret/env substitution and rotate tokens if exposure is suspected.",
+    order: -90,
+  },
+  accounts: {
+    order: -80,
   },
   dmPolicy: {
     label: "Telegram DM Policy",
     help: 'Direct message access control ("pairing" recommended). "open" requires channels.telegram.allowFrom=["*"].',
+    order: -70,
+  },
+  allowFrom: {
+    order: -60,
+  },
+  groups: {
+    order: -50,
   },
   configWrites: {
     label: "Telegram Config Writes",

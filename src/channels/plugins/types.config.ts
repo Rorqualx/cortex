@@ -10,6 +10,9 @@ export type ChannelConfigUiHint = {
   label?: string;
   help?: string;
   tags?: string[];
+  /** Form display order (lower sorts first; unset = 0, then alphabetical).
+      Lets a channel surface primary fields above the optional long tail. */
+  order?: number;
   advanced?: boolean;
   sensitive?: boolean;
   placeholder?: string;
