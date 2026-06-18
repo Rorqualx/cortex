@@ -95,6 +95,9 @@ export type AppViewState = ScrollHost &
     assistantAvatarUploadBusy: boolean;
     assistantAvatarUploadError: string | null;
     assistantAgentId: string | null;
+    // Per-agent avatar images for the Personal card, keyed by agent id. Values are
+    // blob: URLs from authenticated gateway fetches (see controllers/agent-avatars.ts).
+    agentAvatarUrls: Record<string, string>;
     userName?: string | null;
     userAvatar?: string | null;
     localMediaPreviewRoots: string[];

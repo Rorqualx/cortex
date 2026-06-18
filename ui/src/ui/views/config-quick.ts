@@ -8,6 +8,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../i18n/index.ts";
 import { openAvatarLightbox } from "../avatar-lightbox.ts";
+import { openChannelsModal } from "../channels-modal.ts";
 import { icons } from "../icons.ts";
 import type { BorderRadiusStop, TextScaleStop } from "../storage.ts";
 import { normalizeOptionalString } from "../string-coerce.ts";
@@ -67,6 +68,9 @@ export type QuickSettingsProps = {
 
   // Channels
   channels: QuickSettingsChannel[];
+  /** Full channel catalog (configured + not) for the "+" configure modal.
+      Falls back to `channels` when omitted. */
+  availableChannels?: QuickSettingsChannel[];
   onChannelConfigure?: (channelId: string) => void;
 
   // Automations
@@ -125,8 +129,25 @@ export type QuickSettingsProps = {
   assistantAvatarUploadError?: string | null;
   onAssistantAvatarOverrideChange?: (dataUrl: string) => void | Promise<void>;
   onAssistantAvatarClearOverride?: () => void | Promise<void>;
+  agents?: QuickSettingsAgentCard[];
+  onAgentAvatarOverrideChange?: (agentId: string, dataUrl: string) => void | Promise<void>;
+  onAgentAvatarClearOverride?: (agentId: string) => void | Promise<void>;
   basePath?: string | null;
   version: string;
+};
+
+export type QuickSettingsAgentCard = {
+  id: string;
+  name: string;
+  description?: string | null;
+  emoji?: string | null;
+  // Renderable image for this agent: a browser-local override (data URL) or an
+  // authenticated gateway blob URL. Null falls back to the emoji, then the logo.
+  avatarUrl?: string | null;
+  isDefault?: boolean;
+  hasOverride?: boolean;
+  uploadBusy?: boolean;
+  uploadError?: string | null;
 };
 
 // ── Theme options ──
@@ -334,6 +355,29 @@ function handleAssistantAvatarFileSelect(e: Event, props: QuickSettingsProps) {
   input.value = "";
 }
 
+function handleAgentAvatarFileSelect(e: Event, props: QuickSettingsProps, agentId: string) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  const onAgentAvatarOverrideChange = props.onAgentAvatarOverrideChange;
+  if (!file || !onAgentAvatarOverrideChange) {
+    input.value = "";
+    return;
+  }
+  if (file.size > MAX_ASSISTANT_AVATAR_UPLOAD_BYTES) {
+    input.value = "";
+    return;
+  }
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    const result = typeof reader.result === "string" ? reader.result : "";
+    if (result) {
+      void onAgentAvatarOverrideChange(agentId, result);
+    }
+  });
+  reader.readAsDataURL(file);
+  input.value = "";
+}
+
 type ProfileSettings = {
   bootstrapMaxChars: number;
   bootstrapTotalMaxChars: number;
@@ -493,11 +537,33 @@ function renderChannelsCard(props: QuickSettingsProps) {
   const badge =
     connectedCount > 0
       ? html`<span class="qs-badge qs-badge--ok">${connectedCount} connected</span>`
-      : undefined;
+      : nothing;
+  const headerActions = html`
+    <div class="qs-header-actions">
+      ${badge}
+      <button
+        class="qs-icon-btn"
+        title="Configure channels"
+        aria-label="Configure channels"
+        @click=${() =>
+          openChannelsModal({
+            channels: (props.availableChannels ?? props.channels).map((ch) => ({
+              id: ch.id,
+              label: ch.label,
+              configured: ch.connected,
+              detail: ch.detail,
+            })),
+            onConfigure: (id) => props.onChannelConfigure?.(id),
+          })}
+      >
+        ${icons.plus}
+      </button>
+    </div>
+  `;
 
   return html`
     <div class="qs-card qs-card--channels">
-      ${renderCardHeader(icons.send, "Channels", badge)}
+      ${renderCardHeader(icons.send, "Channels", headerActions)}
       <div class="qs-card__body">
         ${props.channels.length === 0
           ? html`<div class="qs-empty muted">No channels configured</div>`
@@ -731,12 +797,93 @@ function renderAppearanceCard(props: QuickSettingsProps) {
   `;
 }
 
-function renderPersonalCard(props: QuickSettingsProps) {
-  const identity = normalizeLocalUserIdentity({
-    name: null,
-    avatar: props.userAvatar ?? null,
-  });
-  const avatarText = resolveLocalUserAvatarText(identity) ?? "";
+function renderAgentCardAvatar(props: QuickSettingsProps, agent: QuickSettingsAgentCard) {
+  const name = normalizeOptionalString(agent.name) ?? agent.id;
+  const imageUrl = normalizeOptionalString(agent.avatarUrl);
+  if (imageUrl) {
+    // Only the default agent's image opens the lightbox: its crop/save path
+    // targets the legacy single-assistant store, which is the default agent.
+    // Non-default agents edit via the explicit file input below instead.
+    return agent.isDefault
+      ? html`<img
+          class="qs-assistant-avatar qs-avatar--expandable"
+          src=${imageUrl}
+          alt=${name}
+          @click=${() => openAvatarLightbox(imageUrl, name, { target: "assistant" })}
+        />`
+      : html`<img class="qs-assistant-avatar" src=${imageUrl} alt=${name} />`;
+  }
+  const text = resolveAssistantTextAvatar(agent.emoji);
+  if (text) {
+    return html`<div class="qs-assistant-avatar qs-assistant-avatar--text" aria-label=${name}>
+      ${text}
+    </div>`;
+  }
+  return html`<img
+    class="qs-assistant-avatar qs-assistant-avatar--fallback"
+    src=${assistantAvatarFallbackUrl(props.basePath ?? "")}
+    alt=${name}
+  />`;
+}
+
+function renderAgentIdentityCard(props: QuickSettingsProps, agent: QuickSettingsAgentCard) {
+  const name = normalizeOptionalString(agent.name) ?? agent.id;
+  const description = normalizeOptionalString(agent.description);
+  const canEdit = Boolean(props.onAgentAvatarOverrideChange);
+  const hasOverride = Boolean(agent.hasOverride);
+  return html`
+    <section class="qs-identity-card qs-identity-card--assistant" aria-label=${`${name} identity`}>
+      ${renderAgentCardAvatar(props, agent)}
+      <div class="qs-identity-card__copy">
+        <div class="qs-identity-card__eyebrow">Assistant</div>
+        <div class="qs-identity-card__title">${name}</div>
+        ${description ? html`<div class="qs-identity-card__sub">${description}</div>` : nothing}
+        ${canEdit
+          ? html`
+              <div class="qs-identity-card__repair">
+                <div class="qs-identity-card__actions">
+                  <label class="btn btn--sm">
+                    ${agent.uploadBusy
+                      ? "Saving..."
+                      : hasOverride
+                        ? "Replace image"
+                        : "Choose image"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      ?disabled=${agent.uploadBusy === true}
+                      @change=${(e: Event) => handleAgentAvatarFileSelect(e, props, agent.id)}
+                    />
+                  </label>
+                  ${hasOverride
+                    ? html`
+                        <button
+                          type="button"
+                          class="btn btn--sm btn--ghost"
+                          ?disabled=${agent.uploadBusy === true}
+                          @click=${() => {
+                            void props.onAgentAvatarClearOverride?.(agent.id);
+                          }}
+                        >
+                          Clear avatar
+                        </button>
+                      `
+                    : nothing}
+                </div>
+                <div class="muted">Stored in this browser only.</div>
+              </div>
+            `
+          : nothing}
+        ${agent.uploadError
+          ? html`<div class="qs-identity-card__error">${agent.uploadError}</div>`
+          : nothing}
+      </div>
+    </section>
+  `;
+}
+
+function renderLegacyAssistantCard(props: QuickSettingsProps) {
   const assistantName = normalizeOptionalString(props.assistantName) ?? "Assistant";
   const assistantAvatarUrl = resolveAssistantPreviewAvatarUrl(props);
   const assistantAvatarRendered = Boolean(
@@ -762,6 +909,78 @@ function renderPersonalCard(props: QuickSettingsProps) {
       : assistantAvatarRendered
         ? "From IDENTITY.md"
         : "Fallback logo";
+  return html`
+    <section class="qs-identity-card qs-identity-card--assistant" aria-label="Assistant identity">
+      ${renderAssistantAvatarPreview(props)}
+      <div class="qs-identity-card__copy">
+        <div class="qs-identity-card__eyebrow">Assistant</div>
+        <div class="qs-identity-card__title">${assistantName}</div>
+        <div class="qs-identity-card__sub">${assistantAvatarSubtitle}</div>
+        ${assistantAvatarSource
+          ? html`
+              <div class="qs-identity-card__source" title=${props.assistantAvatarSource ?? ""}>
+                <span>${assistantAvatarSourceLabel}</span>
+                <code>${assistantAvatarSource}</code>
+              </div>
+            `
+          : nothing}
+        ${assistantAvatarIssue
+          ? html`<div class="qs-identity-card__issue">${assistantAvatarIssue}</div>`
+          : nothing}
+        ${canOverrideAssistantAvatar
+          ? html`
+              <div class="qs-identity-card__repair">
+                <div class="qs-identity-card__actions">
+                  <label class="btn btn--sm">
+                    ${props.assistantAvatarUploadBusy
+                      ? "Saving..."
+                      : assistantAvatarOverride
+                        ? "Replace image"
+                        : "Choose image"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      ?disabled=${props.assistantAvatarUploadBusy === true}
+                      @change=${(e: Event) => handleAssistantAvatarFileSelect(e, props)}
+                    />
+                  </label>
+                  ${assistantAvatarOverride
+                    ? html`
+                        <button
+                          type="button"
+                          class="btn btn--sm btn--ghost"
+                          ?disabled=${props.assistantAvatarUploadBusy === true}
+                          @click=${() => {
+                            void props.onAssistantAvatarClearOverride?.();
+                          }}
+                        >
+                          Clear override
+                        </button>
+                      `
+                    : nothing}
+                </div>
+                <div class="muted">
+                  Stores a Control UI override. Clear it to return to IDENTITY.md.
+                </div>
+              </div>
+            `
+          : nothing}
+        ${props.assistantAvatarUploadError
+          ? html`<div class="qs-identity-card__error">${props.assistantAvatarUploadError}</div>`
+          : nothing}
+      </div>
+    </section>
+  `;
+}
+
+function renderPersonalCard(props: QuickSettingsProps) {
+  const identity = normalizeLocalUserIdentity({
+    name: null,
+    avatar: props.userAvatar ?? null,
+  });
+  const avatarText = resolveLocalUserAvatarText(identity) ?? "";
+  const agents = props.agents ?? [];
   return html`
     <div class="qs-card qs-card--personal">
       ${renderCardHeader(icons.image, "Personal")}
@@ -813,75 +1032,9 @@ function renderPersonalCard(props: QuickSettingsProps) {
               </div>
             </div>
           </section>
-          <section
-            class="qs-identity-card qs-identity-card--assistant"
-            aria-label="Assistant identity"
-          >
-            ${renderAssistantAvatarPreview(props)}
-            <div class="qs-identity-card__copy">
-              <div class="qs-identity-card__eyebrow">Assistant</div>
-              <div class="qs-identity-card__title">${assistantName}</div>
-              <div class="qs-identity-card__sub">${assistantAvatarSubtitle}</div>
-              ${assistantAvatarSource
-                ? html`
-                    <div
-                      class="qs-identity-card__source"
-                      title=${props.assistantAvatarSource ?? ""}
-                    >
-                      <span>${assistantAvatarSourceLabel}</span>
-                      <code>${assistantAvatarSource}</code>
-                    </div>
-                  `
-                : nothing}
-              ${assistantAvatarIssue
-                ? html`<div class="qs-identity-card__issue">${assistantAvatarIssue}</div>`
-                : nothing}
-              ${canOverrideAssistantAvatar
-                ? html`
-                    <div class="qs-identity-card__repair">
-                      <div class="qs-identity-card__actions">
-                        <label class="btn btn--sm">
-                          ${props.assistantAvatarUploadBusy
-                            ? "Saving..."
-                            : assistantAvatarOverride
-                              ? "Replace image"
-                              : "Choose image"}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            hidden
-                            ?disabled=${props.assistantAvatarUploadBusy === true}
-                            @change=${(e: Event) => handleAssistantAvatarFileSelect(e, props)}
-                          />
-                        </label>
-                        ${assistantAvatarOverride
-                          ? html`
-                              <button
-                                type="button"
-                                class="btn btn--sm btn--ghost"
-                                ?disabled=${props.assistantAvatarUploadBusy === true}
-                                @click=${() => {
-                                  void props.onAssistantAvatarClearOverride?.();
-                                }}
-                              >
-                                Clear override
-                              </button>
-                            `
-                          : nothing}
-                      </div>
-                      <div class="muted">
-                        Stores a Control UI override. Clear it to return to IDENTITY.md.
-                      </div>
-                    </div>
-                  `
-                : nothing}
-              ${props.assistantAvatarUploadError
-                ? html`<div class="qs-identity-card__error">
-                    ${props.assistantAvatarUploadError}
-                  </div>`
-                : nothing}
-            </div>
-          </section>
+          ${agents.length > 0
+            ? agents.map((agent) => renderAgentIdentityCard(props, agent))
+            : renderLegacyAssistantCard(props)}
         </div>
       </div>
     </div>

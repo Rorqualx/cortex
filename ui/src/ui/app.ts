@@ -297,6 +297,7 @@ export class OpenClawApp extends LitElement {
   @state() chatAvatarSource: string | null = null;
   @state() chatAvatarStatus: "none" | "local" | "remote" | "data" | null = null;
   @state() chatAvatarReason: string | null = null;
+  @state() agentAvatarUrls: Record<string, string> = {};
   @state() chatThinkingLevel: string | null = null;
   @state() chatHistoryHasMore = false;
   @state() chatHistoryNextCursor: string | null = null;

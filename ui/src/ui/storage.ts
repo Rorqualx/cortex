@@ -381,6 +381,67 @@ export function saveLocalAssistantIdentity(next: LocalAssistantIdentity) {
   }
 }
 
+const LOCAL_AGENT_AVATARS_KEY = "openclaw.control.agent-avatars.v1";
+
+function loadAgentAvatarOverrideMap(): Record<string, string> {
+  const storage = getSafeLocalStorage();
+  try {
+    const raw = storage?.getItem(LOCAL_AGENT_AVATARS_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const [id, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value) {
+        out[id] = value;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+// Per-agent browser-local avatar overrides. The default agent keeps using
+// LOCAL_ASSISTANT_IDENTITY_KEY so the chat-header avatar, lightbox, and bootstrap
+// paths (which read that legacy key) stay in sync; every other agent lives in
+// this map. One store per agent — no dual write.
+export function getLocalAgentAvatarOverride(agentId: string, defaultId: string): string | null {
+  if (agentId === defaultId) {
+    return loadLocalAssistantIdentity().avatar;
+  }
+  return loadAgentAvatarOverrideMap()[agentId] ?? null;
+}
+
+export function setLocalAgentAvatarOverride(
+  agentId: string,
+  defaultId: string,
+  avatar: string | null,
+) {
+  if (agentId === defaultId) {
+    saveLocalAssistantIdentity({ avatar });
+    return;
+  }
+  const storage = getSafeLocalStorage();
+  const map = loadAgentAvatarOverrideMap();
+  if (avatar) {
+    map[agentId] = avatar;
+  } else {
+    delete map[agentId];
+  }
+  try {
+    if (Object.keys(map).length === 0) {
+      storage?.removeItem(LOCAL_AGENT_AVATARS_KEY);
+      return;
+    }
+    storage?.setItem(LOCAL_AGENT_AVATARS_KEY, JSON.stringify(map));
+  } catch {
+    // best-effort — quota exceeded or security restrictions should not
+    // prevent in-memory identity updates from being applied
+  }
+}
+
 function persistSettings(next: UiSettings) {
   persistSessionToken(next.gatewayUrl, next.token);
   const storage = getSafeLocalStorage();

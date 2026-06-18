@@ -44,6 +44,7 @@ import {
   recordControlUiRenderTiming,
   roundedControlUiDurationMs,
 } from "./control-ui-performance.ts";
+import { refreshAgentAvatarCards } from "./controllers/agent-avatars.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -190,7 +191,11 @@ import {
   parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
 } from "./session-key.ts";
-import { loadLocalAssistantIdentity } from "./storage.ts";
+import {
+  getLocalAgentAvatarOverride,
+  loadLocalAssistantIdentity,
+  setLocalAgentAvatarOverride,
+} from "./storage.ts";
 import { normalizeStringEntries } from "./string-coerce.ts";
 import { normalizeOptionalString } from "./string-coerce.ts";
 import type {
@@ -211,7 +216,11 @@ import {
 import { renderChat, resolveActiveFileFromMessages } from "./views/chat.ts";
 import { renderCommandPalette } from "./views/command-palette.ts";
 import { getPresetById } from "./views/config-presets.ts";
-import { renderQuickSettings, type QuickSettingsChannel } from "./views/config-quick.ts";
+import {
+  renderQuickSettings,
+  type QuickSettingsAgentCard,
+  type QuickSettingsChannel,
+} from "./views/config-quick.ts";
 import { renderConfig, type ConfigProps } from "./views/config.ts";
 import {
   renderCronQuickCreate,
@@ -1113,38 +1122,57 @@ function formatQuickSettingsLabel(id: string): string {
     .join(" ");
 }
 
-function extractQuickSettingsChannels(state: AppViewState): QuickSettingsChannel[] {
+const KNOWN_CHANNEL_LABELS = new Map<string, string>(
+  KNOWN_CHANNEL_IDS.map(({ id, label }) => [id, label]),
+);
+
+function readChannelsConfig(state: AppViewState): Record<string, unknown> {
   const config = state.configForm ?? state.configSnapshot?.config;
   if (!config || typeof config !== "object") {
-    return [];
+    return {};
   }
-  const channelsConfig =
-    "channels" in config && config.channels && typeof config.channels === "object"
-      ? (config.channels as Record<string, unknown>)
-      : {};
+  return "channels" in config && config.channels && typeof config.channels === "object"
+    ? (config.channels as Record<string, unknown>)
+    : {};
+}
+
+function toQuickSettingsChannel(
+  channelsConfig: Record<string, unknown>,
+  id: string,
+): QuickSettingsChannel {
+  const channelConfig = channelsConfig[id];
+  const hasConfig =
+    channelConfig != null &&
+    typeof channelConfig === "object" &&
+    Object.keys(channelConfig).length > 0;
+  return {
+    id,
+    label: KNOWN_CHANNEL_LABELS.get(id) ?? formatQuickSettingsLabel(id),
+    connected: hasConfig,
+    detail: hasConfig ? "Configured" : undefined,
+  };
+}
+
+function extractQuickSettingsChannels(state: AppViewState): QuickSettingsChannel[] {
+  const channelsConfig = readChannelsConfig(state);
   const configuredIds = Object.keys(channelsConfig).filter((id) => id.trim().length > 0);
   const channelIds =
     configuredIds.length > 0
       ? configuredIds.toSorted((a, b) => a.localeCompare(b))
       : KNOWN_CHANNEL_IDS.map(({ id }) => id);
-  const knownLabels = new Map<string, string>(
-    KNOWN_CHANNEL_IDS.map(({ id, label }) => [id, label]),
-  );
-  const channels: QuickSettingsChannel[] = [];
-  for (const id of channelIds) {
-    const channelConfig = channelsConfig[id];
-    const hasConfig =
-      channelConfig != null &&
-      typeof channelConfig === "object" &&
-      Object.keys(channelConfig).length > 0;
-    channels.push({
-      id,
-      label: knownLabels.get(id) ?? formatQuickSettingsLabel(id),
-      connected: hasConfig,
-      detail: hasConfig ? "Configured" : undefined,
-    });
-  }
-  return channels;
+  return channelIds.map((id) => toQuickSettingsChannel(channelsConfig, id));
+}
+
+// Full channel catalog (known roster plus any extra configured ids) for the
+// Channels card "+" modal, so operators can reach channels that aren't
+// configured yet. The card list stays focused on configured channels.
+function extractQuickSettingsChannelCatalog(state: AppViewState): QuickSettingsChannel[] {
+  const channelsConfig = readChannelsConfig(state);
+  const knownIds: string[] = KNOWN_CHANNEL_IDS.map(({ id }) => id);
+  const extraIds = Object.keys(channelsConfig)
+    .filter((id) => id.trim().length > 0 && !knownIds.includes(id))
+    .toSorted((a, b) => a.localeCompare(b));
+  return [...knownIds, ...extraIds].map((id) => toQuickSettingsChannel(channelsConfig, id));
 }
 
 function extractMcpServerCount(state: AppViewState): number {
@@ -1389,6 +1417,30 @@ export function renderApp(state: AppViewState) {
       ? buildAssistantAvatarRoute(state.basePath, state.assistantAgentId)
       : (state.chatAvatarUrl ??
         (configAssistantAvatarMissing ? null : (assistantAvatarUrl ?? null))));
+  const defaultAgentId = state.agentsList?.defaultId ?? "";
+  const quickSettingsAgents: QuickSettingsAgentCard[] = (state.agentsList?.agents ?? []).map(
+    (agent) => {
+      const override = getLocalAgentAvatarOverride(agent.id, defaultAgentId);
+      const blobUrl = state.agentAvatarUrls?.[agent.id] ?? null;
+      const isDefault = agent.id === defaultAgentId;
+      return {
+        id: agent.id,
+        name:
+          normalizeOptionalString(agent.name) ??
+          normalizeOptionalString(agent.identity?.name) ??
+          agent.id,
+        description: normalizeOptionalString(agent.description),
+        emoji: normalizeOptionalString(agent.identity?.emoji),
+        avatarUrl: override ?? blobUrl,
+        isDefault,
+        hasOverride: Boolean(override),
+        // The default agent reuses the legacy single-assistant upload state; other
+        // agents persist synchronously, so they never enter a busy/error state.
+        uploadBusy: isDefault ? state.assistantAvatarUploadBusy : false,
+        uploadError: isDefault ? state.assistantAvatarUploadError : null,
+      };
+    },
+  );
   const configValue =
     state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null);
   const configuredDreaming = resolveConfiguredDreaming(configValue);
@@ -1790,6 +1842,7 @@ export function renderApp(state: AppViewState) {
               );
             },
             channels: extractQuickSettingsChannels(state),
+            availableChannels: extractQuickSettingsChannelCatalog(state),
             onChannelConfigure: () => {
               state.setTab("channels");
             },
@@ -1861,6 +1914,37 @@ export function renderApp(state: AppViewState) {
               state.chatAvatarReason = null;
               state.assistantAvatarUploadError = null;
               void state.loadAssistantIdentity?.().finally(() => requestHostUpdate?.());
+              requestHostUpdate?.();
+            },
+            agents: quickSettingsAgents,
+            onAgentAvatarOverrideChange: (agentId, dataUrl) => {
+              // The default agent flows through the legacy override so the chat
+              // header, lightbox, and bootstrap stay consistent; others persist
+              // browser-locally per agent.
+              if (agentId === defaultAgentId) {
+                state.applyAssistantAvatarOverride?.(dataUrl);
+                void refreshAgentAvatarCards(state);
+                requestHostUpdate?.();
+                return;
+              }
+              setLocalAgentAvatarOverride(agentId, defaultAgentId, dataUrl);
+              requestHostUpdate?.();
+            },
+            onAgentAvatarClearOverride: (agentId) => {
+              if (agentId === defaultAgentId) {
+                setAssistantAvatarOverride(state, null);
+                state.chatAvatarUrl = null;
+                state.chatAvatarSource = null;
+                state.chatAvatarStatus = null;
+                state.chatAvatarReason = null;
+                state.assistantAvatarUploadError = null;
+                void state.loadAssistantIdentity?.().finally(() => requestHostUpdate?.());
+                // Re-fetch the default agent's IDENTITY.md photo for the grid.
+                void refreshAgentAvatarCards(state);
+                requestHostUpdate?.();
+                return;
+              }
+              setLocalAgentAvatarOverride(agentId, defaultAgentId, null);
               requestHostUpdate?.();
             },
             basePath: state.basePath ?? "",

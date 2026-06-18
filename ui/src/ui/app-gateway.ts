@@ -48,6 +48,7 @@ import {
   recordControlUiConnectTiming,
   recordControlUiRpcTiming,
 } from "./control-ui-performance.ts";
+import { refreshAgentAvatarCards } from "./controllers/agent-avatars.ts";
 import { loadAgents, type AgentsState } from "./controllers/agents.ts";
 import {
   loadAssistantIdentity,
@@ -149,6 +150,7 @@ export type GatewayHost = AgentsState &
     assistantName: string;
     assistantAvatar: string | null;
     assistantAgentId: string | null;
+    agentAvatarUrls: Record<string, string>;
     serverVersion: string | null;
     pendingUpdateExpectedVersion: string | null;
     updateStatusBanner: { tone: "danger" | "warn" | "info"; text: string } | null;
@@ -693,6 +695,7 @@ async function loadAgentsThenRefreshActiveTab(host: GatewayHost) {
   }
   try {
     await loadAgents(host);
+    void refreshAgentAvatarCards(host);
     refreshAfterAgents = fallbackUnconfiguredSessionSelection(host) || refreshAfterAgents;
   } catch (err: unknown) {
     agentsError = normalizeStartupRefreshError(err);
