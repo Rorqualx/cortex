@@ -267,6 +267,7 @@ export type AppViewState = ScrollHost &
     configSearchQuery: string;
     configActiveSection: string | null;
     configActiveSubsection: string | null;
+    configChannelModalKey: string | null;
     pendingUpdateExpectedVersion: string | null;
     updateStatusBanner: { tone: "danger" | "warn" | "info"; text: string } | null;
     communicationsFormMode: "form" | "raw";

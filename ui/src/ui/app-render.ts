@@ -1684,6 +1684,13 @@ export function renderApp(state: AppViewState) {
     onRequestUpdate: requestHostUpdate,
     onFormPatch: (path: Array<string | number>, value: unknown) =>
       updateConfigFormValue(state, path, value),
+    channelModalKey: state.configChannelModalKey,
+    onOpenChannelModal: (_sectionKey: string, key: string) => {
+      state.configChannelModalKey = key;
+    },
+    onCloseChannelModal: () => {
+      state.configChannelModalKey = null;
+    },
     onReload: () => void loadConfig(state, { discardPendingChanges: true }),
     onReset: () => resetConfigPendingChanges(state),
     onSave: () => void saveConfig(state),

@@ -20,6 +20,10 @@ export type ConfigFormProps = {
   isSensitivePathRevealed?: (path: Array<string | number>) => boolean;
   onToggleSensitivePath?: (path: Array<string | number>) => void;
   onPatch: (path: Array<string | number>, value: unknown) => void;
+  /** When set, the channels section renders its entries as tiles that open a
+      focused config modal (see config.ts) instead of inline collapsibles. Omit
+      it when rendering the modal body so the scoped form renders normally. */
+  onOpenChannelModal?: (sectionKey: string, key: string) => void;
 };
 
 // SVG Icons for section cards (Lucide-style)
@@ -361,6 +365,52 @@ function matchesSearch(params: {
   });
 }
 
+// Channels section: a grid of tiles (name + tags) that open a focused per-channel
+// config modal. Keeps the section scannable instead of stacking every channel's
+// full form inline. The schema tags ("network"/"channels") are read directly off
+// each property so tiles match the inline cards they replace.
+function renderChannelTiles(
+  sectionKey: string,
+  node: JsonSchema,
+  onOpen: (sectionKey: string, key: string) => void,
+  hints: ConfigUiHints,
+) {
+  const props = node.properties ?? {};
+  const entries = Object.entries(props).toSorted((a, b) => {
+    const orderA = hintForPath([sectionKey, a[0]], hints)?.order ?? 0;
+    const orderB = hintForPath([sectionKey, b[0]], hints)?.order ?? 0;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    return a[0].localeCompare(b[0]);
+  });
+  return html`
+    <div class="channel-tiles cfg-fields">
+      ${entries.map(([key, child]) => {
+        const hint = hintForPath([sectionKey, key], hints);
+        const label = hint?.label ?? child.title ?? humanize(key);
+        const rawTags = child["x-tags"] ?? child.tags;
+        const tags = Array.isArray(rawTags)
+          ? rawTags.filter((tag): tag is string => typeof tag === "string")
+          : [];
+        return html`
+          <button type="button" class="channel-tile" @click=${() => onOpen(sectionKey, key)}>
+            <span class="channel-tile__body">
+              <span class="channel-tile__title">${label}</span>
+              ${tags.length
+                ? html`<span class="channel-tile__tags"
+                    >${tags.map((tag) => html`<span class="cfg-tag">${tag}</span>`)}</span
+                  >`
+                : nothing}
+            </span>
+            <span class="channel-tile__chevron">${icons.chevronRight}</span>
+          </button>
+        `;
+      })}
+    </div>
+  `;
+}
+
 export function renderConfigForm(props: ConfigFormProps) {
   if (!props.schema) {
     return html` <div class="muted">Schema unavailable.</div> `;
@@ -459,21 +509,28 @@ export function renderConfigForm(props: ConfigFormProps) {
           `
         : nothing}
       <div class="config-section-card__content">
-        ${renderNode({
-          schema: params.node,
-          value: params.nodeValue,
-          path: params.path,
-          hints: props.uiHints,
-          rawAvailable: props.rawAvailable ?? true,
-          unsupported,
-          disabled: props.disabled ?? false,
-          showLabel: false,
-          searchCriteria,
-          revealSensitive: props.revealSensitive ?? false,
-          isSensitivePathRevealed: props.isSensitivePathRevealed,
-          onToggleSensitivePath: props.onToggleSensitivePath,
-          onPatch: props.onPatch,
-        })}
+        ${props.onOpenChannelModal && params.sectionKey === "channels"
+          ? renderChannelTiles(
+              params.sectionKey,
+              params.node,
+              props.onOpenChannelModal,
+              props.uiHints,
+            )
+          : renderNode({
+              schema: params.node,
+              value: params.nodeValue,
+              path: params.path,
+              hints: props.uiHints,
+              rawAvailable: props.rawAvailable ?? true,
+              unsupported,
+              disabled: props.disabled ?? false,
+              showLabel: false,
+              searchCriteria,
+              revealSensitive: props.revealSensitive ?? false,
+              isSensitivePathRevealed: props.isSensitivePathRevealed,
+              onToggleSensitivePath: props.onToggleSensitivePath,
+              onPatch: props.onPatch,
+            })}
       </div>
     </section>
   `;

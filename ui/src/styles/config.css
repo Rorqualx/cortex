@@ -1170,6 +1170,10 @@
   display: grid;
   gap: 14px;
   width: 100%;
+  /* Cap wide enough for up to four side-by-side card columns (see the
+     section-content grid below) so the form fills the space instead of stranding
+     the right side empty, while still bounding line length on ultra-wide screens. */
+  max-width: 1600px;
   min-width: 0;
 }
 
@@ -1287,6 +1291,27 @@
   animation-delay: 200ms;
 }
 
+/* Channels section: drop the outer section card to a bare layout wrapper so the
+   channel tiles (.channel-tile) sit directly on the page as a scannable grid
+   rather than inside one shared elevated container. */
+#config-section-channels.config-section-card {
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+
+#config-section-channels.config-section-card:hover {
+  box-shadow: none;
+}
+
+:root[data-theme-mode="light"] #config-section-channels.config-section-card {
+  background: transparent;
+}
+
+#config-section-channels > .config-section-card__content {
+  padding: 0;
+}
+
 /* ===========================================
    Form Fields
    =========================================== */
@@ -1294,6 +1319,189 @@
 .cfg-fields {
   display: grid;
   gap: 14px;
+}
+
+/* Top-level section list flows into multiple columns on wide screens so cards
+   fill the width instead of stacking down the left with the right side empty.
+   minmax yields up to three columns at the form's max-width and collapses toward
+   one when narrow; start-alignment keeps a collapsed card from stretching to a
+   tall neighbour. Scoped to the section content's direct list so nested object
+   fields stay single-column. */
+.config-section-card__content > .cfg-fields {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  align-items: start;
+  gap: 18px 20px;
+}
+
+/* Channels section tiles: scannable buttons that open a focused per-channel
+   config modal instead of expanding the whole form inline. */
+.channel-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+:root[data-theme-mode="light"] .channel-tile {
+  background: white;
+}
+
+.channel-tile:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.channel-tile:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.channel-tile__body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.channel-tile__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.channel-tile__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.channel-tile__chevron {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.channel-tile__chevron svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Focused per-channel config modal (config.ts renderChannelConfigModal). */
+.channel-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: channel-modal-fade 0.15s ease-out;
+}
+
+@keyframes channel-modal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.channel-modal__panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 96vw);
+  max-height: 92vh;
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+.channel-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.channel-modal__title {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+}
+
+.channel-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.channel-modal__close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.channel-modal__close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.channel-modal__body {
+  padding: 22px 24px;
+  overflow-y: auto;
+}
+
+/* Inside the modal the section chrome is redundant (the modal has its own header)
+   and a single column reads as the focused, least-overwhelming view. */
+.channel-modal .config-form--modern {
+  max-width: 100%;
+}
+
+.channel-modal .config-section-card {
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+
+.channel-modal .config-section-card__content {
+  padding: 0;
+}
+
+.channel-modal .config-section-card__content > .cfg-fields {
+  grid-template-columns: 1fr;
 }
 
 .cfg-fields--inline {

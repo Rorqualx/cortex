@@ -1041,7 +1041,7 @@ function renderObject(params: {
 
   // Nested objects get collapsible treatment
   return html`
-    <details class="cfg-object" ?open=${path.length <= 2}>
+    <details class="cfg-object" ?open=${path.length <= 1}>
       <summary class="cfg-object__header">
         <span class="cfg-object__title-wrap">
           <span class="cfg-object__title">${label}</span>
