@@ -1333,6 +1333,20 @@
   gap: 18px 20px;
 }
 
+/* Field packing: short leaf inputs share columns at every nesting level so the
+   form fills its width instead of stacking single-file. Structural cards
+   (nested objects/arrays/maps) and multi-line text fields are wide by nature, so
+   they always claim the full row — tiling two tall, ragged cards side by side is
+   exactly what stranded the right edge empty before. Applies to the active
+   section's top grid and to nested object/inline groups, which use the same
+   responsive track below. */
+.config-form--modern .cfg-object,
+.config-form--modern .cfg-array,
+.config-form--modern .cfg-map,
+.config-form--modern .cfg-field:has(.cfg-textarea) {
+  grid-column: 1 / -1;
+}
+
 /* Channels section tiles: scannable buttons that open a focused per-channel
    config modal instead of expanding the whole form inline. */
 .channel-tile {
@@ -1500,12 +1514,16 @@
   padding: 0;
 }
 
-.channel-modal .config-section-card__content > .cfg-fields {
+.channel-modal .config-section-card__content > .cfg-fields,
+.channel-modal .cfg-object__content,
+.channel-modal .cfg-fields--inline {
   grid-template-columns: 1fr;
 }
 
 .cfg-fields--inline {
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  align-items: start;
+  gap: 10px 16px;
 }
 
 .cfg-field {
@@ -2042,7 +2060,11 @@
 .cfg-object__content {
   padding: 12px;
   display: grid;
-  gap: 12px;
+  /* Narrower track than the top grid: nested cards sit in tighter space, but
+     short leaf fields still pack two-up instead of stacking full-width. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  align-items: start;
+  gap: 12px 16px;
   border-top: 1px solid var(--border);
 }
 
