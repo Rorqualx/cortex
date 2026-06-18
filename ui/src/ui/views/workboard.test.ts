@@ -77,7 +77,7 @@ describe("renderWorkboard", () => {
     expect(container.textContent).toContain("Wire dashboard tab");
     expect(container.textContent).toContain("Running");
     expect(container.textContent).toContain("Dashboard session");
-    expect(container.querySelectorAll(".workboard-column")).toHaveLength(9);
+    expect(container.querySelectorAll(".workboard-column")).toHaveLength(36);
     expect(container.querySelector(".workboard-card__priority")?.textContent).toContain("high");
   });
 
@@ -907,7 +907,9 @@ describe("renderWorkboard", () => {
       position: 1000,
     });
     const blockedColumn = [...container.querySelectorAll<HTMLElement>(".workboard-column")].find(
-      (column) => column.querySelector("h2")?.textContent === "Blocked",
+      (column) =>
+        column.querySelector("h2")?.textContent === "Blocked" &&
+        column.textContent?.includes("Keyboard move"),
     );
     expect(blockedColumn?.textContent).toContain("Keyboard move");
     expect(state.cards[0]).toMatchObject({ status: "blocked", updatedAt: 2 });
@@ -1660,7 +1662,7 @@ describe("renderWorkboard", () => {
     title!.dispatchEvent(new InputEvent("input", { bubbles: true }));
     const priority = [
       ...container.querySelectorAll<HTMLSelectElement>(".workboard-draft__meta select"),
-    ].at(1);
+    ].at(2);
     priority!.value = "high";
     priority!.dispatchEvent(new Event("change", { bubbles: true }));
     container
@@ -1669,11 +1671,12 @@ describe("renderWorkboard", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(request).toHaveBeenCalledWith("workboard.cards.update", {
+    expect(request).toHaveBeenLastCalledWith("workboard.cards.update", {
       id: "card-1",
       patch: expect.objectContaining({
         title: "Renamed",
         priority: "high",
+        section: "tasks",
       }),
     });
     expect(state.cards[0]).toMatchObject({ title: "Renamed", priority: "high", updatedAt: 2 });
@@ -1689,7 +1692,7 @@ describe("renderWorkboard", () => {
       "Renamed",
     );
     expect(
-      [...container.querySelectorAll<HTMLSelectElement>(".workboard-draft__meta select")].at(1)
+      [...container.querySelectorAll<HTMLSelectElement>(".workboard-draft__meta select")].at(2)
         ?.value,
     ).toBe("high");
   });
@@ -1908,7 +1911,7 @@ describe("renderWorkboard", () => {
 
     const sessionOptions = [
       ...container.querySelectorAll<HTMLSelectElement>(".workboard-draft__meta select"),
-    ].at(3);
+    ].at(4);
     const labels = [...(sessionOptions?.querySelectorAll("option") ?? [])].map((option) =>
       option.textContent?.trim(),
     );
@@ -1961,5 +1964,380 @@ describe("renderWorkboard", () => {
 
     expect(request).toHaveBeenCalledOnce();
     expect(getWorkboardState(host).error).toBe("workboard unavailable");
+  });
+
+  it("groups cards into sections by their section field", () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.cards = [
+      {
+        id: "card-1",
+        title: "Goal card",
+        status: "todo",
+        section: "goals",
+        priority: "normal",
+        labels: [],
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "card-2",
+        title: "Implementation card",
+        status: "running",
+        section: "implementations",
+        priority: "high",
+        labels: [],
+        position: 2000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "card-3",
+        title: "Task card",
+        status: "todo",
+        section: "tasks",
+        priority: "normal",
+        labels: [],
+        position: 3000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "card-4",
+        title: "Idea card",
+        status: "backlog",
+        section: "ideas",
+        priority: "low",
+        labels: [],
+        position: 4000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const container = document.createElement("div");
+
+    render(
+      renderWorkboard({
+        host,
+        client: null,
+        connected: true,
+        pluginEnabled: true,
+        agentsList: null,
+        sessions: [],
+        onOpenSession: () => undefined,
+      }),
+      container,
+    );
+
+    const sections = container.querySelectorAll(".workboard-section");
+    expect(sections.length).toBe(4);
+
+    const sectionTitles = [...container.querySelectorAll(".workboard-section__title")].map((el) =>
+      el.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(sectionTitles.some((t) => t?.includes("🎯 Goals"))).toBe(true);
+    expect(sectionTitles.some((t) => t?.includes("🔧 Implementations"))).toBe(true);
+    expect(sectionTitles.some((t) => t?.includes("✅ Tasks"))).toBe(true);
+    expect(sectionTitles.some((t) => t?.includes("💡 Ideas"))).toBe(true);
+
+    // Card should be in the right section
+    const goalsSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
+      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Goals"),
+    );
+    expect(goalsSection?.textContent).toContain("Goal card");
+    expect(goalsSection?.textContent).not.toContain("Idea card");
+  });
+
+  it("defaults cards without a section to the tasks section", () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.cards = [
+      {
+        id: "card-1",
+        title: "No section card",
+        status: "todo",
+        priority: "normal",
+        labels: [],
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const container = document.createElement("div");
+
+    render(
+      renderWorkboard({
+        host,
+        client: null,
+        connected: true,
+        pluginEnabled: true,
+        agentsList: null,
+        sessions: [],
+        onOpenSession: () => undefined,
+      }),
+      container,
+    );
+
+    const tasksSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
+      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Tasks"),
+    );
+    expect(tasksSection?.textContent).toContain("No section card");
+  });
+
+  it("shows card counts per section", () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.cards = [
+      {
+        id: "card-1",
+        title: "Goal 1",
+        status: "todo",
+        section: "goals",
+        priority: "normal",
+        labels: [],
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "card-2",
+        title: "Goal 2",
+        status: "running",
+        section: "goals",
+        priority: "high",
+        labels: [],
+        position: 2000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "card-3",
+        title: "Task 1",
+        status: "todo",
+        section: "tasks",
+        priority: "normal",
+        labels: [],
+        position: 3000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const container = document.createElement("div");
+
+    render(
+      renderWorkboard({
+        host,
+        client: null,
+        connected: true,
+        pluginEnabled: true,
+        agentsList: null,
+        sessions: [],
+        onOpenSession: () => undefined,
+      }),
+      container,
+    );
+
+    const goalsSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
+      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Goals"),
+    );
+    const tasksSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
+      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Tasks"),
+    );
+    const ideasSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
+      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Ideas"),
+    );
+
+    expect(goalsSection?.querySelector(".workboard-section__count")?.textContent).toBe("2");
+    expect(tasksSection?.querySelector(".workboard-section__count")?.textContent).toBe("1");
+    expect(ideasSection?.querySelector(".workboard-section__count")?.textContent).toBe("0");
+  });
+
+  it("opens sections that contain cards and collapses empty ones", () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.cards = [
+      {
+        id: "card-1",
+        title: "Only task",
+        status: "todo",
+        section: "tasks",
+        priority: "normal",
+        labels: [],
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const container = document.createElement("div");
+
+    render(
+      renderWorkboard({
+        host,
+        client: null,
+        connected: true,
+        pluginEnabled: true,
+        agentsList: null,
+        sessions: [],
+        onOpenSession: () => undefined,
+      }),
+      container,
+    );
+
+    const sections = container.querySelectorAll<HTMLDetailsElement>(".workboard-section");
+    for (const section of sections) {
+      const hasCards = section.querySelector(".workboard-card") !== null;
+      expect(section.open).toBe(hasCards);
+    }
+  });
+
+  it("shows a section dropdown in the create modal defaulting to tasks", () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.draftOpen = true;
+    const container = document.createElement("div");
+
+    render(
+      renderWorkboard({
+        host,
+        client: null,
+        connected: true,
+        pluginEnabled: true,
+        agentsList: null,
+        sessions: [],
+        onOpenSession: () => undefined,
+      }),
+      container,
+    );
+
+    const sectionSelect = [
+      ...container.querySelectorAll<HTMLSelectElement>(".workboard-draft__meta select"),
+    ].find((select) => {
+      const label = select.previousElementSibling?.textContent;
+      return label === "Section";
+    });
+    expect(sectionSelect).toBeInstanceOf(HTMLSelectElement);
+    expect(sectionSelect?.value).toBe("tasks");
+
+    const options = [...(sectionSelect?.querySelectorAll("option") ?? [])].map((o) => o.value);
+    expect(options).toEqual(["goals", "implementations", "tasks", "ideas"]);
+  });
+
+  it("shows the correct section value when editing a card", () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.cards = [
+      {
+        id: "card-1",
+        title: "Edit me",
+        status: "todo",
+        section: "ideas",
+        priority: "normal",
+        labels: [],
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const container = document.createElement("div");
+
+    render(
+      renderWorkboard({
+        host,
+        client: null,
+        connected: true,
+        pluginEnabled: true,
+        agentsList: null,
+        sessions: [],
+        onOpenSession: () => undefined,
+      }),
+      container,
+    );
+
+    container
+      .querySelector<HTMLButtonElement>('button[title="Edit card"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    render(
+      renderWorkboard({
+        host,
+        client: null,
+        connected: true,
+        pluginEnabled: true,
+        agentsList: null,
+        sessions: [],
+        onOpenSession: () => undefined,
+      }),
+      container,
+    );
+
+    const sectionSelect = [
+      ...container.querySelectorAll<HTMLSelectElement>(".workboard-draft__meta select"),
+    ].find((select) => {
+      const label = select.previousElementSibling?.textContent;
+      return label === "Section";
+    });
+    expect(sectionSelect?.value).toBe("ideas");
+  });
+
+  it("submits the selected section when creating a card", async () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.draftOpen = true;
+    state.draftTitle = "New goal";
+    const request = vi.fn(async () => ({
+      card: {
+        id: "card-new",
+        title: "New goal",
+        status: "todo",
+        section: "goals",
+        priority: "normal",
+        labels: [],
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    }));
+    const props = {
+      host,
+      client: { request } as unknown as GatewayBrowserClient,
+      connected: true,
+      pluginEnabled: true,
+      agentsList: null,
+      sessions: [],
+      onOpenSession: () => undefined,
+      onRequestUpdate: () => undefined,
+    };
+    const container = document.createElement("div");
+
+    render(renderWorkboard(props), container);
+
+    const sectionSelect = [
+      ...container.querySelectorAll<HTMLSelectElement>(".workboard-draft__meta select"),
+    ].find((select) => {
+      const label = select.previousElementSibling?.textContent;
+      return label === "Section";
+    });
+    sectionSelect!.value = "goals";
+    sectionSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    container
+      .querySelector<HTMLFormElement>(".workboard-draft")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(request).toHaveBeenCalledWith(
+      "workboard.cards.create",
+      expect.objectContaining({
+        section: "goals",
+        title: "New goal",
+      }),
+    );
   });
 });

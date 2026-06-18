@@ -186,7 +186,15 @@ function statusColumn(page: Page, status: string) {
 }
 
 function cardInColumn(page: Page, status: string, title: string) {
-  return statusColumn(page, status).locator(".workboard-card", { hasText: title }).first();
+  return page
+    .locator(".workboard-column")
+    .filter({
+      has: page.locator(".workboard-column__header h2", {
+        hasText: new RegExp(`^${status}$`, "u"),
+      }),
+    })
+    .locator(".workboard-card", { hasText: title })
+    .first();
 }
 
 async function newRecordedPage(label: string): Promise<RecordedPage> {
@@ -306,6 +314,13 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
     try {
       const response = await writable.page.goto(`${server.baseUrl}workboard`);
       expect(response?.status()).toBe(200);
+      // With sectioned layout, empty sections are collapsed; wait for sections then open them.
+      await writable.page.locator(".workboard-section").first().waitFor({ state: "attached" });
+      await writable.page.evaluate(() => {
+        document.querySelectorAll("details.workboard-section").forEach((details) => {
+          details.open = true;
+        });
+      });
       await statusColumn(writable.page, "Todo").waitFor({ state: "visible" });
       await captureScreenshot(writable.page, artifacts, "01-empty-board");
 
