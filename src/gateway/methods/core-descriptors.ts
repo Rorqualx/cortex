@@ -233,6 +233,8 @@ export const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "workboard.cards.create", scope: "operator.write" },
   { name: "workboard.cards.update", scope: "operator.write" },
   { name: "workboard.cards.delete", scope: "operator.write" },
+  { name: "workboard.cards.specify", scope: "operator.write" },
+  { name: "workboard.cards.decompose", scope: "operator.write" },
   { name: "workboard.cards.read", scope: "operator.read" },
   { name: "workboard.cards.claim", scope: "operator.write" },
   { name: "workboard.cards.release", scope: "operator.write" },

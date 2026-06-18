@@ -13,6 +13,7 @@ import {
   DEDUPE_TTL_MS,
   HEALTH_REFRESH_INTERVAL_MS,
   TICK_INTERVAL_MS,
+  WORKBOARD_DISPATCH_INTERVAL_MS,
 } from "./server-constants.js";
 import type { DedupeEntry } from "./server-shared.js";
 import { formatError } from "./server-utils.js";
@@ -62,6 +63,7 @@ export function startGatewayMaintenanceTimers(params: {
   healthInterval: ReturnType<typeof setInterval>;
   dedupeCleanup: ReturnType<typeof setInterval>;
   mediaCleanup: ReturnType<typeof setInterval> | null;
+  workboardDispatch: ReturnType<typeof setInterval>;
 } {
   setBroadcastHealthUpdate((snap: HealthSummary) => {
     params.broadcast("health", snap, {
@@ -255,8 +257,32 @@ export function startGatewayMaintenanceTimers(params: {
     sweepStaleRunContexts();
   }, 60_000);
 
+  // Autonomous Workboard dispatch: advance card lifecycle and start worker/
+  // orchestrator subagents for opted-in boards. Lazy-imported so the store and
+  // agent runtime load only when the tick first fires (skipped in test gateways).
+  // Skip a tick if the previous pass is still running so slow passes (context
+  // build + claims + spawns) do not overlap; the claim guard already prevents
+  // double-spawn, this just avoids wasted work.
+  let workboardDispatchInFlight = false;
+  const workboardDispatch = setInterval(() => {
+    if (workboardDispatchInFlight) {
+      return;
+    }
+    workboardDispatchInFlight = true;
+    void (async () => {
+      try {
+        const { runGatewayWorkboardDispatchPass } = await import("./workboard-dispatch.js");
+        await runGatewayWorkboardDispatchPass();
+      } catch (err) {
+        params.logHealth.error(`workboard dispatch failed: ${formatError(err)}`);
+      } finally {
+        workboardDispatchInFlight = false;
+      }
+    })();
+  }, WORKBOARD_DISPATCH_INTERVAL_MS);
+
   if (typeof params.mediaCleanupTtlMs !== "number") {
-    return { tickInterval, healthInterval, dedupeCleanup, mediaCleanup: null };
+    return { tickInterval, healthInterval, dedupeCleanup, mediaCleanup: null, workboardDispatch };
   }
 
   let mediaCleanupInFlight: Promise<void> | null = null;
@@ -283,5 +309,5 @@ export function startGatewayMaintenanceTimers(params: {
 
   void runMediaCleanup();
 
-  return { tickInterval, healthInterval, dedupeCleanup, mediaCleanup };
+  return { tickInterval, healthInterval, dedupeCleanup, mediaCleanup, workboardDispatch };
 }

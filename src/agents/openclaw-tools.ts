@@ -73,6 +73,7 @@ import { createTtsTool } from "./tools/tts-tool.js";
 import { createUpdatePlanTool } from "./tools/update-plan-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
+import { createWorkboardTools } from "./tools/workboard-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 type OpenClawToolsDeps = {
@@ -484,6 +485,9 @@ export function createOpenClawTools(
       sessionAgentId,
       config: resolvedConfig,
     }),
+    // Available to embedded workers too — dispatched worker/orchestrator subagents
+    // drive the board through these (specify/decompose/complete/block).
+    ...createWorkboardTools({ config: resolvedConfig, callGateway: effectiveCallGateway }),
     ...(options?.sandboxed
       ? []
       : [

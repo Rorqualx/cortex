@@ -26,6 +26,24 @@ function redactToken<T extends Record<string, unknown>>(obj: T): T {
   return obj;
 }
 
+// specify/decompose mutate claimed cards; a caller that holds the claim passes
+// its ownerId/token so assertCanMutateClaimedCard authorizes it. Absent both,
+// scope is undefined (trusted/unclaimed-card path).
+function mutationScope(
+  p: Record<string, unknown>,
+): { ownerId?: string; token?: string } | undefined {
+  const ownerId = typeof p.ownerId === "string" && p.ownerId.trim() ? p.ownerId.trim() : undefined;
+  const token =
+    typeof p.claimToken === "string" && p.claimToken.trim()
+      ? p.claimToken.trim()
+      : typeof p.token === "string" && p.token.trim()
+        ? p.token.trim()
+        : undefined;
+  return ownerId || token
+    ? { ...(ownerId ? { ownerId } : {}), ...(token ? { token } : {}) }
+    : undefined;
+}
+
 export function createWorkboardGatewayHandlers(
   store: WorkboardStore,
 ): Record<string, GatewayMethodHandler> {
@@ -58,6 +76,29 @@ export function createWorkboardGatewayHandlers(
     "workboard.cards.delete": async (p: Record<string, unknown>) => {
       await s.delete(readId(p));
       return true;
+    },
+
+    "workboard.cards.specify": async (p: Record<string, unknown>) => {
+      const card = await s.specify(
+        readId(p),
+        p as Parameters<typeof s.specify>[1],
+        mutationScope(p),
+      );
+      return { card: redactToken(card as unknown as Record<string, unknown>) };
+    },
+
+    "workboard.cards.decompose": async (p: Record<string, unknown>) => {
+      const result = await s.decompose(
+        readId(p),
+        p as Parameters<typeof s.decompose>[1],
+        mutationScope(p),
+      );
+      return {
+        parent: redactToken(result.parent as unknown as Record<string, unknown>),
+        children: result.children.map((child) =>
+          redactToken(child as unknown as Record<string, unknown>),
+        ),
+      };
     },
 
     "workboard.cards.claim": async (p: Record<string, unknown>) => {

@@ -284,6 +284,8 @@ export function createGatewayAuxHandlers(params: {
     "workboard.cards.read",
     "workboard.cards.update",
     "workboard.cards.delete",
+    "workboard.cards.specify",
+    "workboard.cards.decompose",
     "workboard.cards.claim",
     "workboard.cards.release",
     "workboard.cards.heartbeat",
@@ -358,23 +360,31 @@ function bridgeWorkboardHandler(
   };
 }
 
+let _workboardStore: Promise<import("../workboard/store.js").WorkboardStore> | null = null;
+
+/**
+ * Shared singleton Workboard store. The RPC handlers and the dispatcher tick must
+ * use the SAME instance so their read-modify-write mutations serialize through one
+ * enqueueMutation queue (separate instances over the same DB could race a card).
+ */
+export function getWorkboardStore(): Promise<import("../workboard/store.js").WorkboardStore> {
+  if (!_workboardStore) {
+    _workboardStore = (async () => {
+      const { openWorkboardCoreStore } = await import("../workboard/core-db-store.js");
+      return openWorkboardCoreStore();
+    })();
+  }
+  return _workboardStore;
+}
+
 let _workboardGatewayHandlers: Promise<GatewayRequestHandlers> | null = null;
 
 /** Lazy-load workboard gateway handlers (first call opens DB + creates store). */
 export function getWorkboardGatewayHandlers(): Promise<GatewayRequestHandlers> {
   if (!_workboardGatewayHandlers) {
     _workboardGatewayHandlers = (async () => {
-      const { createWorkboardGatewayHandlers, WorkboardStore } =
-        await import("../workboard/api.js");
-      const { openOpenClawStateDatabase } = await import("../state/openclaw-state-db.js");
-      const { createWorkboardCoreDbStores } = await import("../workboard/core-db-store.js");
-      const stateDb = openOpenClawStateDatabase();
-      const stores = createWorkboardCoreDbStores(stateDb.db);
-      const store = new WorkboardStore(stores.cards, {
-        boards: stores.boards,
-        subscriptions: stores.subscriptions,
-        attachments: stores.attachments,
-      });
+      const { createWorkboardGatewayHandlers } = await import("../workboard/api.js");
+      const store = await getWorkboardStore();
       const handlers = createWorkboardGatewayHandlers(store);
       const wrapped: GatewayRequestHandlers = {};
       for (const [name, fn] of Object.entries(handlers)) {

@@ -23,5 +23,8 @@ export const setMaxChatHistoryMessagesBytesForTest = (value?: number) => {
 };
 export const TICK_INTERVAL_MS = 30_000;
 export const HEALTH_REFRESH_INTERVAL_MS = 60_000;
+// Workboard dispatcher cadence: advance card lifecycle and spawn worker/
+// orchestrator subagents for boards that opted into autonomous orchestration.
+export const WORKBOARD_DISPATCH_INTERVAL_MS = 60_000;
 export const DEDUPE_TTL_MS = 5 * 60_000;
 export const DEDUPE_MAX = 1000;
