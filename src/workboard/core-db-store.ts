@@ -5,6 +5,7 @@
  * (or whichever DatabaseSync is provided) instead of its own file.
  */
 import type { DatabaseSync } from "node:sqlite";
+import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import type {
   PersistedWorkboardAttachment,
   PersistedWorkboardBoard,
@@ -12,6 +13,7 @@ import type {
   PersistedWorkboardNotificationSubscription,
 } from "./persistence-types.js";
 import type { WorkboardKeyedStore } from "./persistence-types.js";
+import { WorkboardStore } from "./store.js";
 
 // ── JSON helpers ────────────────────────────────────────────────────
 
@@ -130,4 +132,19 @@ export function createWorkboardCoreDbStores(db: DatabaseSync): CoreDbWorkboardSt
     ),
     attachments: createAttachmentStore(db),
   };
+}
+
+/**
+ * Canonical workboard store, backed by the shared state DB. Both the gateway
+ * (server-aux-handlers) and the CLI open the board here so cards written by one
+ * are visible to the other — the legacy dedicated sqlite-store split them.
+ */
+export function openWorkboardCoreStore(env?: NodeJS.ProcessEnv): WorkboardStore {
+  const stateDb = openOpenClawStateDatabase(env ? { env } : {});
+  const stores = createWorkboardCoreDbStores(stateDb.db);
+  return new WorkboardStore(stores.cards, {
+    boards: stores.boards,
+    subscriptions: stores.subscriptions,
+    attachments: stores.attachments,
+  });
 }

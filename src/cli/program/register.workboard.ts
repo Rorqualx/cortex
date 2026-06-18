@@ -4,15 +4,18 @@
 import type { Command } from "commander";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { resolveWorkboardCardByIdOrPrefix } from "../../workboard/card-lookup.js";
-import { WorkboardStore } from "../../workboard/store.js";
-import type { WorkboardDispatchResult, WorkboardStore as WbStore } from "../../workboard/store.js";
+import type { WorkboardStore as WbStore } from "../../workboard/store.js";
 import type { WorkboardCard } from "../../workboard/types.js";
 import { callGatewayFromCli } from "../gateway-rpc.js";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-function resolveStore(): WbStore {
-  return WorkboardStore.openSqlite();
+// Read through the shared state DB — the same canonical store the gateway
+// serves — so CLI `list`/`show` see cards created via the gateway and vice
+// versa. Dynamic import keeps core-db-store off the eager CLI import graph.
+async function resolveStore(): Promise<WbStore> {
+  const { openWorkboardCoreStore } = await import("../../workboard/core-db-store.js");
+  return openWorkboardCoreStore();
 }
 
 async function formatCards(cards: WorkboardCard[], label: string): Promise<string> {
@@ -42,7 +45,7 @@ export function registerWorkboardCli(program: Command) {
     .option("--json", "Output JSON")
     .action(async (opts) => {
       try {
-        const store = resolveStore();
+        const store = await resolveStore();
         const cards = await store.list({ boardId: opts.board as string | undefined });
         // list() filters by board only; apply status/section at the CLI layer.
         const status = opts.status as string | undefined;
@@ -65,7 +68,7 @@ export function registerWorkboardCli(program: Command) {
     .description("Show card details")
     .action(async (id: string) => {
       try {
-        const store = resolveStore();
+        const store = await resolveStore();
         const entries = await store.list();
         const card = resolveWorkboardCardByIdOrPrefix(entries, id);
         if (!card) {
@@ -109,15 +112,19 @@ export function registerWorkboardCli(program: Command) {
     .option("--dry-run", "Show what would happen without starting workers")
     .action(async (opts) => {
       try {
-        const store = resolveStore();
+        const store = await resolveStore();
         if (opts.dryRun) {
-          const result: WorkboardDispatchResult = await store.dispatch(Date.now());
+          // Read-only preview. store.dispatch() mutates (promotes/blocks/claims),
+          // so a dry run must not call it — especially now that the CLI shares the
+          // gateway's canonical DB. Report the current actionable card counts.
+          const cards = await store.list();
+          const count = (status: string) => cards.filter((card) => card.status === status).length;
           process.stdout.write(
             [
-              `promoted: ${result.promoted.length}`,
-              `blocked: ${result.blocked.length}`,
-              `reclaimed: ${result.reclaimed.length}`,
-              `orchestrated: ${result.orchestrated.length}`,
+              `ready: ${count("ready")}`,
+              `running: ${count("running")}`,
+              `blocked: ${count("blocked")}`,
+              `triage: ${count("triage")}`,
             ].join("\n") + "\n",
           );
         } else {

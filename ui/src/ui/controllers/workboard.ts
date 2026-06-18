@@ -905,6 +905,9 @@ function normalizeCard(value: unknown): WorkboardCard | null {
     createdAt: typeof value.createdAt === "number" ? value.createdAt : 0,
     updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : 0,
     ...(typeof value.notes === "string" ? { notes: value.notes } : {}),
+    // Carry the card's section so the board buckets it into Goals/Implementations/
+    // Ideas; without this every card falls into the "tasks" default (see renderSectionedBoard).
+    ...(typeof value.section === "string" ? { section: value.section } : {}),
     ...(typeof value.agentId === "string" ? { agentId: value.agentId } : {}),
     ...(typeof value.sessionKey === "string" ? { sessionKey: value.sessionKey } : {}),
     ...(typeof value.runId === "string" ? { runId: value.runId } : {}),

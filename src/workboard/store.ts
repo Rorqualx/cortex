@@ -12,7 +12,6 @@ import type {
   PersistedWorkboardNotificationSubscription,
   WorkboardKeyedStore,
 } from "./persistence-types.js";
-import { createWorkboardSqliteStores } from "./sqlite-store.js";
 import {
   WORKBOARD_DIAGNOSTIC_KINDS,
   WORKBOARD_DIAGNOSTIC_SEVERITIES,
@@ -25,6 +24,7 @@ import {
   WORKBOARD_NOTIFICATION_KINDS,
   WORKBOARD_PRIORITIES,
   WORKBOARD_PROOF_STATUSES,
+  WORKBOARD_SECTIONS,
   WORKBOARD_STATUSES,
   WORKBOARD_TEMPLATE_IDS,
   type WorkboardCard,
@@ -56,6 +56,7 @@ import {
   type WorkboardProof,
   type WorkboardProofStatus,
   type WorkboardRunAttempt,
+  type WorkboardSection,
   type WorkboardStatus,
   type WorkboardTemplateId,
   type WorkboardWorkerLog,
@@ -106,6 +107,7 @@ export type WorkboardCardInput = {
   title?: unknown;
   notes?: unknown;
   status?: unknown;
+  section?: unknown;
   priority?: unknown;
   labels?: unknown;
   agentId?: unknown;
@@ -506,6 +508,19 @@ function normalizePriority(value: unknown, fallback: WorkboardPriority): Workboa
     return value as WorkboardPriority;
   }
   throw new Error(`priority must be one of: ${WORKBOARD_PRIORITIES.join(", ")}.`);
+}
+
+function normalizeSection(
+  value: unknown,
+  fallback: WorkboardSection | undefined,
+): WorkboardSection | undefined {
+  if (typeof value !== "string" || !value.trim()) {
+    return fallback;
+  }
+  if ((WORKBOARD_SECTIONS as readonly string[]).includes(value)) {
+    return value as WorkboardSection;
+  }
+  throw new Error(`section must be one of: ${WORKBOARD_SECTIONS.join(", ")}.`);
 }
 
 function normalizeLabels(value: unknown, fallback: string[] = []): string[] {
@@ -2537,6 +2552,7 @@ export class WorkboardStore {
           ...cards.filter((card) => card.status === status).map((card) => card.position),
         ) + POSITION_STEP;
     const notes = normalizeNotes(input.notes);
+    const section = normalizeSection(input.section, "tasks");
     const agentId = normalizeOptionalString(input.agentId);
     const sessionKey = normalizeOptionalString(input.sessionKey);
     const runId = normalizeOptionalString(input.runId);
@@ -2590,6 +2606,7 @@ export class WorkboardStore {
         },
       ],
       ...(notes ? { notes } : {}),
+      ...(section ? { section } : {}),
       ...(agentId ? { agentId } : {}),
       ...(sessionKey ? { sessionKey } : {}),
       ...(runId ? { runId } : {}),
@@ -2722,6 +2739,10 @@ export class WorkboardStore {
       notes:
         effectivePatch.notes === undefined ? existing.notes : normalizeNotes(effectivePatch.notes),
       status,
+      section:
+        effectivePatch.section === undefined
+          ? existing.section
+          : normalizeSection(effectivePatch.section, existing.section),
       priority:
         effectivePatch.priority === undefined
           ? existing.priority
@@ -4322,14 +4343,5 @@ export class WorkboardStore {
         }) as WorkboardKeyedStore<PersistedWorkboardAttachment>,
       },
     );
-  }
-
-  static openSqlite() {
-    const stores = createWorkboardSqliteStores();
-    return new WorkboardStore(stores.cards, {
-      boards: stores.boards,
-      subscriptions: stores.subscriptions,
-      attachments: stores.attachments,
-    });
   }
 }

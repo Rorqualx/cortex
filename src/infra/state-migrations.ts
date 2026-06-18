@@ -57,6 +57,7 @@ import {
 import { normalizeSessionKeyPreservingOpaquePeerIds } from "../sessions/session-key-utils.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
+import { migrateLegacyWorkboardDb } from "../workboard/legacy-db-migration.js";
 import { expandHomePrefix } from "./home-dir.js";
 import {
   executeSqliteQuerySync,
@@ -2977,6 +2978,7 @@ export async function runLegacyStateMigrations(params: {
 }): Promise<{ changes: string[]; warnings: string[] }> {
   const now = params.now ?? (() => Date.now());
   const detected = params.detected;
+  const workboardDb = await migrateLegacyWorkboardDb({ stateDir: detected.stateDir });
   const pluginStateSidecar = await migrateLegacyPluginStateSidecar({
     stateDir: detected.stateDir,
   });
@@ -3015,6 +3017,7 @@ export async function runLegacyStateMigrations(params: {
       ...taskStateSidecars.changes,
       ...deliveryQueues.changes,
       ...preSessionChannelPlans.changes,
+      ...workboardDb.changes,
       ...pluginPlans.changes,
       ...sessions.changes,
       ...acpSessionMetadata.changes,
@@ -3027,6 +3030,7 @@ export async function runLegacyStateMigrations(params: {
       ...taskStateSidecars.warnings,
       ...deliveryQueues.warnings,
       ...preSessionChannelPlans.warnings,
+      ...workboardDb.warnings,
       ...pluginPlans.warnings,
       ...sessions.warnings,
       ...acpSessionMetadata.warnings,
@@ -3339,6 +3343,9 @@ export async function autoMigrateLegacyState(params: {
     env,
     homedir: params.homedir,
   });
+  // Runs unconditionally (a no-op when the legacy file is absent) so it still
+  // fires on the early-return path below, where no other legacy state exists.
+  const workboardDb = await migrateLegacyWorkboardDb({ stateDir: detected.stateDir });
   const hasCustomAgentDir = env.OPENCLAW_AGENT_DIR?.trim() || env.PI_CODING_AGENT_DIR?.trim();
   if (hasCustomAgentDir) {
     const pluginStateSidecar = await migrateLegacyPluginStateSidecar({
@@ -3364,6 +3371,7 @@ export async function autoMigrateLegacyState(params: {
       ...stateDirResult.changes,
       ...orphanKeys.changes,
       ...acpSessionMetadata.changes,
+      ...workboardDb.changes,
       ...pluginStateSidecar.changes,
       ...pluginInstallIndex.changes,
       ...taskStateSidecars.changes,
@@ -3375,6 +3383,7 @@ export async function autoMigrateLegacyState(params: {
       ...stateDirResult.warnings,
       ...orphanKeys.warnings,
       ...acpSessionMetadata.warnings,
+      ...workboardDb.warnings,
       ...pluginStateSidecar.warnings,
       ...pluginInstallIndex.warnings,
       ...taskStateSidecars.warnings,
@@ -3388,6 +3397,7 @@ export async function autoMigrateLegacyState(params: {
         stateDirResult.migrated ||
         orphanKeys.changes.length > 0 ||
         acpSessionMetadata.changes.length > 0 ||
+        workboardDb.changes.length > 0 ||
         pluginStateSidecar.changes.length > 0 ||
         pluginInstallIndex.changes.length > 0 ||
         taskStateSidecars.changes.length > 0 ||
@@ -3413,18 +3423,21 @@ export async function autoMigrateLegacyState(params: {
       ...stateDirResult.changes,
       ...orphanKeys.changes,
       ...acpSessionMetadata.changes,
+      ...workboardDb.changes,
     ];
     const warnings = [
       ...stateDirResult.warnings,
       ...orphanKeys.warnings,
       ...acpSessionMetadata.warnings,
+      ...workboardDb.warnings,
     ];
     logMigrationResults(changes, warnings);
     return {
       migrated:
         stateDirResult.migrated ||
         orphanKeys.changes.length > 0 ||
-        acpSessionMetadata.changes.length > 0,
+        acpSessionMetadata.changes.length > 0 ||
+        workboardDb.changes.length > 0,
       skipped: false,
       changes,
       warnings,
@@ -3467,6 +3480,7 @@ export async function autoMigrateLegacyState(params: {
     ...stateDirResult.changes,
     ...orphanKeys.changes,
     ...acpSessionMetadata.changes,
+    ...workboardDb.changes,
     ...pluginStateSidecar.changes,
     ...pluginInstallIndex.changes,
     ...taskStateSidecars.changes,
@@ -3482,6 +3496,7 @@ export async function autoMigrateLegacyState(params: {
     ...stateDirResult.warnings,
     ...orphanKeys.warnings,
     ...acpSessionMetadata.warnings,
+    ...workboardDb.warnings,
     ...pluginStateSidecar.warnings,
     ...pluginInstallIndex.warnings,
     ...taskStateSidecars.warnings,
