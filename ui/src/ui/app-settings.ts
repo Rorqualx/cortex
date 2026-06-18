@@ -50,6 +50,7 @@ import {
   loadModelAuthStatusState,
   type ModelAuthStatusState,
 } from "./controllers/model-auth-status.ts";
+import { loadModels } from "./controllers/models.ts";
 import { loadNodes, type NodesState } from "./controllers/nodes.ts";
 import { loadPresence, type PresenceState } from "./controllers/presence.ts";
 import { loadSessions, type SessionsState } from "./controllers/sessions.ts";
@@ -79,6 +80,7 @@ import {
 import { normalizeOptionalString } from "./string-coerce.ts";
 import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition.ts";
 import { resolveTheme, type ResolvedTheme, type ThemeMode, type ThemeName } from "./theme.ts";
+import type { ModelCatalogEntry } from "./types.ts";
 import type { AgentsListResult, AttentionItem } from "./types.ts";
 import { normalizeLocalUserIdentity } from "./user-identity.ts";
 import { resetChatViewState } from "./views/chat.ts";
@@ -401,6 +403,22 @@ async function refreshAgentsTab(host: SettingsHost, app: SettingsAppHost) {
   }
 }
 
+// Quick Settings renders an inline model dropdown sourced from chatModelCatalog,
+// but the config tab (unlike the chat tab) never loads that catalog — leaving the
+// dropdown with only the current/default model. Populate it on config-tab
+// activation so the full configured catalog is available, matching the chat picker.
+async function refreshConfigModelCatalog(app: SettingsAppHost) {
+  const client = app.client;
+  if (!client || !app.connected) {
+    return;
+  }
+  const models = await loadModels(client);
+  // A reconnect can swap the client mid-flight; don't apply a stale catalog.
+  if (app.client === client && models.length > 0) {
+    (app as unknown as { chatModelCatalog: ModelCatalogEntry[] }).chatModelCatalog = models;
+  }
+}
+
 function loadConfigSchemaAfterPrimary(
   host: SettingsHost,
   app: SettingsAppHost,
@@ -420,6 +438,23 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
   try {
     switch (host.tab) {
       case "config":
+        {
+          const primaryRefresh = loadConfig(app);
+          loadConfigSchemaAfterPrimary(host, app, primaryRefresh);
+          // The Automations summary card counts live cron jobs and installed
+          // skills, which come from their own RPCs — loadConfig alone leaves
+          // both at 0. Fetch them alongside config (non-blocking) so the card
+          // shows real counts, matching the dedicated cron/skills tabs.
+          // The model catalog feeds the Quick Settings model dropdown (chat tab
+          // loads it separately); refresh it here so the dropdown is populated.
+          void Promise.allSettled([
+            loadSkills(app),
+            loadCronJobsPage(app),
+            refreshConfigModelCatalog(app),
+          ]).finally(() => host.requestUpdate?.());
+          await primaryRefresh;
+        }
+        break;
       case "communications":
       case "appearance":
       case "automation":
