@@ -42,6 +42,14 @@ describe("tallyClaim (majority-refute)", () => {
     expect(tallyClaim([...refuted(3), ...supported(2)]).survived).toBe(false);
   });
 
+  it("fails closed on a tie (even skeptic count from partial budget)", () => {
+    expect(tallyClaim([...refuted(1), ...supported(1)]).survived).toBe(false);
+    expect(tallyClaim([...refuted(2), ...supported(2)]).survived).toBe(false);
+    // a lone skeptic still decides: support survives, refute kills
+    expect(tallyClaim([...supported(1)]).survived).toBe(true);
+    expect(tallyClaim([...refuted(1)]).survived).toBe(false);
+  });
+
   it("reports the vote split", () => {
     const t = tallyClaim([...refuted(2), ...supported(1)]);
     expect(t).toMatchObject({ refutedVotes: 2, supportedVotes: 1, survived: false });
@@ -106,5 +114,23 @@ describe("verify_claims handler budget", () => {
     // Exactly the 3 reservable verifiers ran; the cap was never exceeded.
     expect(state.subagentCount()).toBe(3);
     expect(state.flatAgents.filter((a) => a.kind === "verifier")).toHaveLength(3);
+  });
+
+  it("skips entirely (no verifiers spawned) when the wall already fired", async () => {
+    const state = makeSharedState({
+      provider: "zai",
+      wallMs: 60_000,
+      maxTotalSubagents: 10,
+      maxDepth: 3,
+    });
+    state.wallController.abort();
+    const tool = makeVerifyClaimsTool(0, 0, baseInput(), supportingClient(), state, []);
+    const res = await tool.handler(
+      { claims: [{ claim: "some load-bearing claim to verify here" }] },
+      { signal: new AbortController().signal, iteration: 1, remainingWallMs: 0 },
+    );
+    expect(res.meta).toMatchObject({ error: "wall_aborted" });
+    expect(state.flatAgents.filter((a) => a.kind === "verifier")).toHaveLength(0);
+    expect(state.verifiedClaims).toBe(0);
   });
 });

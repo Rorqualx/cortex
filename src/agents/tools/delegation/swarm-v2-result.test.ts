@@ -237,4 +237,18 @@ describe("fallbackSynthesisV2", () => {
     expect(out).toContain("Failed sub-agents");
     expect(out).toContain("exploded");
   });
+
+  it("excludes verifier records — skeptic reasoning never reaches the user", () => {
+    const out = fallbackSynthesisV2(
+      "task",
+      [
+        makeSub({ index: 1, kind: "worker", ok: true, content: "WORKER-FINDING" }),
+        makeSub({ index: 2, kind: "verifier", ok: true, content: "VERDICT: REFUTED skeptic-essay" }),
+      ],
+      "wall hit",
+    );
+    expect(out).toContain("WORKER-FINDING");
+    expect(out).not.toContain("skeptic-essay");
+    expect(out).toContain("1 ok, 0 failed"); // the verifier is not counted as a sub-agent
+  });
 });

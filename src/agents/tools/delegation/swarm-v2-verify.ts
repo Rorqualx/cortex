@@ -53,7 +53,12 @@ export function parseVerdict(content: string): Verdict {
   return "refuted";
 }
 
-/** Majority-refute vote. A claim survives iff refuted votes are below a majority. */
+/**
+ * Majority-refute vote. A claim survives only with a STRICT majority of support.
+ * Ties fail closed — adversarial verification defaults to refuted, and an even
+ * skeptic count is reachable when partial budget gives a claim fewer than the
+ * requested (odd) K. For odd counts this is identical to "refuted < majority".
+ */
 export function tallyClaim(verdicts: Verdict[]): {
   refutedVotes: number;
   supportedVotes: number;
@@ -61,8 +66,7 @@ export function tallyClaim(verdicts: Verdict[]): {
 } {
   const refutedVotes = verdicts.filter((v) => v === "refuted").length;
   const supportedVotes = verdicts.length - refutedVotes;
-  const majority = Math.floor(verdicts.length / 2) + 1;
-  return { refutedVotes, supportedVotes, survived: refutedVotes < majority };
+  return { refutedVotes, supportedVotes, survived: supportedVotes > refutedVotes };
 }
 
 // === Validation ===
@@ -322,6 +326,17 @@ export function makeVerifyClaimsTool(
     name: "verify_claims",
     definition: makeVerifyToolDefinition(state),
     handler: async (args, _ctx: ExtraToolCtx): Promise<ExtraToolResult> => {
+      // If the shared wall already fired, every verifier's explore-loop would
+      // abort immediately and parse as REFUTED (fail-closed) — that would refute
+      // valid claims for the wrong reason. Skip rather than poison the verdicts.
+      if (state.wallController.signal.aborted) {
+        return {
+          content:
+            "[verify_claims] skipped — the swarm wall budget already fired. Synthesize from existing results and treat unverified claims as unproven.",
+          meta: { error: "wall_aborted" },
+        };
+      }
+
       const validation = validateClaims(args);
       if ("fatal" in validation) {
         return {
@@ -402,37 +417,47 @@ export function makeVerifyClaimsTool(
         recordsByClaim[claimIdx]!.push(res);
       }
 
-      // Tally each claim; claims that got no skeptic (budget) are unverified.
-      const verdicts: ClaimVerdict[] = [];
-      const unverified: number[] = [];
+      // Tally per claim, keeping everything POSITION-indexed by ci (not keyed by
+      // claim text — two claims can share a string). Each verifier's verdict is
+      // parsed exactly once here and threaded to the renderer.
+      const verdictByClaim: Array<ClaimVerdict | null> = validation.ok.map(() => null);
+      const recordVerdicts: Verdict[][] = validation.ok.map(() => []);
+      let verifiedCount = 0;
       let survivedCount = 0;
       let refutedCount = 0;
       for (let ci = 0; ci < validation.ok.length; ci++) {
         const records = recordsByClaim[ci]!;
-        if (records.length === 0) {
-          unverified.push(ci);
-          continue;
-        }
-        const t = tallyClaim(records.map((r) => parseVerdict(r.content)));
+        if (records.length === 0) continue; // unverified: no budget reached this claim
+        const perRecord = records.map((r) => parseVerdict(r.content));
+        recordVerdicts[ci] = perRecord;
+        const t = tallyClaim(perRecord);
+        verifiedCount++;
         if (t.survived) survivedCount++;
         else refutedCount++;
-        verdicts.push({
+        verdictByClaim[ci] = {
           claim: validation.ok[ci]!.spec.claim,
           survived: t.survived,
           refutedVotes: t.refutedVotes,
           supportedVotes: t.supportedVotes,
           verifierIndices: reservedByClaim[ci]!,
-        });
+        };
       }
-      state.recordVerification(verdicts.length, survivedCount, refutedCount);
+      state.recordVerification(verifiedCount, survivedCount, refutedCount);
 
       return {
-        content: renderVerifyResult(verdicts, unverified, validation.ok, recordsByClaim, k, state),
+        content: renderVerifyResult(
+          verdictByClaim,
+          validation.ok,
+          recordsByClaim,
+          recordVerdicts,
+          k,
+          state,
+        ),
         meta: {
-          verifiedClaims: verdicts.length,
+          verifiedClaims: verifiedCount,
           survived: survivedCount,
           refuted: refutedCount,
-          unverified: unverified.length,
+          unverified: validation.ok.length - verifiedCount,
           verifiersPerClaim: k,
         },
       };
@@ -441,31 +466,36 @@ export function makeVerifyClaimsTool(
 }
 
 function renderVerifyResult(
-  verdicts: ClaimVerdict[],
-  unverified: number[],
+  verdictByClaim: Array<ClaimVerdict | null>,
   validated: ValidatedClaim[],
   recordsByClaim: SubagentV2Result[][],
+  recordVerdicts: Verdict[][],
   k: number,
   state: SwarmV2SharedState,
 ): string {
+  const survived = verdictByClaim.filter((v) => v?.survived).length;
+  const refuted = verdictByClaim.filter((v) => v && !v.survived).length;
+  const unverified = verdictByClaim.filter((v) => v === null).length;
   const lines: string[] = [
-    `verify_claims complete: ${verdicts.filter((v) => v.survived).length} survived, ` +
-      `${verdicts.filter((v) => !v.survived).length} refuted, ${unverified.length} unverified ` +
+    `verify_claims complete: ${survived} survived, ${refuted} refuted, ${unverified} unverified ` +
       `(${k} skeptics/claim). Tree: spawned=${state.subagentCount()}/${state.subagentCapacity()}.`,
   ];
   for (let ci = 0; ci < validated.length; ci++) {
     const claim = validated[ci]!.spec.claim;
-    if (unverified.includes(ci)) {
+    const v = verdictByClaim[ci];
+    if (!v) {
       lines.push(`\n[Claim ${ci} — UNVERIFIED (no budget)] ${claim}`);
       continue;
     }
-    const v = verdicts.find((x) => x.claim === claim)!;
     const tag = v.survived ? "SURVIVED" : "REFUTED";
     lines.push(
       `\n[Claim ${ci} — ${tag}, ${v.refutedVotes}/${v.refutedVotes + v.supportedVotes} refuted] ${claim}`,
     );
-    for (const rec of recordsByClaim[ci]!) {
-      const verdict = parseVerdict(rec.content).toUpperCase();
+    const records = recordsByClaim[ci]!;
+    const verdicts = recordVerdicts[ci]!;
+    for (let j = 0; j < records.length; j++) {
+      const rec = records[j]!;
+      const verdict = verdicts[j]!.toUpperCase();
       const excerpt =
         rec.content.length > VERIFIER_EXCERPT_CAP
           ? rec.content.slice(0, VERIFIER_EXCERPT_CAP) + "…"
@@ -473,7 +503,7 @@ function renderVerifyResult(
       lines.push(`  · skeptic ${rec.index} [${verdict}]: ${excerpt}`);
     }
   }
-  if (unverified.length > 0) {
+  if (unverified > 0) {
     lines.push(
       `\nUNVERIFIED claims had no verification budget — treat them as unproven in your synthesis.`,
     );

@@ -138,7 +138,10 @@ export function fallbackSynthesisV2(
   agents: SubagentV2Result[],
   reason: string,
 ): string {
-  const subagents = agents.filter((a) => a.depth > 0);
+  // Workers only — same contract as adjudicateHalt. Verifiers are adversarial
+  // skeptics; their "VERDICT: REFUTED…" reasoning is not a research finding and
+  // must never be emitted to the user as one.
+  const subagents = agents.filter((a) => a.depth > 0 && a.kind !== "verifier");
   if (subagents.length === 0) {
     return `[swarm v2 fallback] ${reason}; no sub-agents were spawned. Original task:\n${task}`;
   }
