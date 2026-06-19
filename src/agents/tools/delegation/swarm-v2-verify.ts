@@ -16,7 +16,6 @@ import type { ExploreToolName } from "./explore-tools.js";
 import type { LlmClient } from "./providers/types.js";
 import { deriveAgentOk } from "./swarm-v2-result.js";
 import type { SwarmV2SharedState } from "./swarm-v2-state.js";
-import { SYSTEM_PROMPTS } from "./system-prompts.js";
 import {
   MAX_CLAIMS_PER_VERIFY_CALL,
   MAX_VERIFIERS_PER_CLAIM,
@@ -31,6 +30,7 @@ import {
   type Verdict,
   type VerifyClaimSpec,
 } from "./swarm-v2-types.js";
+import { SYSTEM_PROMPTS } from "./system-prompts.js";
 
 // Skeptics only read — they refute by inspecting the codebase, not by writing.
 const VERIFIER_TOOLS: ExploreToolName[] = ["list_dir", "read_file", "glob", "grep"];
@@ -89,7 +89,9 @@ function validateClaims(
   if (!Array.isArray(claims)) return { fatal: "args.claims must be an array" };
   if (claims.length === 0) return { fatal: "args.claims must have at least 1 element" };
   if (claims.length > MAX_CLAIMS_PER_VERIFY_CALL) {
-    return { fatal: `args.claims max ${MAX_CLAIMS_PER_VERIFY_CALL} per call (got ${claims.length})` };
+    return {
+      fatal: `args.claims max ${MAX_CLAIMS_PER_VERIFY_CALL} per call (got ${claims.length})`,
+    };
   }
 
   const ok: ValidatedClaim[] = [];
@@ -284,7 +286,8 @@ function makeVerifyToolDefinition(state: SwarmV2SharedState): ExtraTool["definit
                 },
                 evidence: {
                   type: "string",
-                  description: "Optional supporting evidence to hand the skeptics (file:line, metric, quote).",
+                  description:
+                    "Optional supporting evidence to hand the skeptics (file:line, metric, quote).",
                 },
                 context_indices: {
                   type: "array",

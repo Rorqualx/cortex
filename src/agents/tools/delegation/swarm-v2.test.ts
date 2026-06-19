@@ -123,12 +123,21 @@ function makeVerifyingMock(): LlmClient {
         const issued = (name: string) =>
           params.messages.some(
             (m) =>
-              m.role === "assistant" && (m.tool_calls ?? []).some((tc) => tc.function.name === name),
+              m.role === "assistant" &&
+              (m.tool_calls ?? []).some((tc) => tc.function.name === name),
           );
         if (!issued("spawn_subagents")) {
           return toolCall(
             "spawn_subagents",
-            { subtasks: [{ objective: "enumerate the relevant findings", allowed_tools: ["read_file"], thinking: false }] },
+            {
+              subtasks: [
+                {
+                  objective: "enumerate the relevant findings",
+                  allowed_tools: ["read_file"],
+                  thinking: false,
+                },
+              ],
+            },
             "spawn-1",
           );
         }
@@ -180,7 +189,10 @@ describe("runSwarmV2Loop", () => {
 
   it("caps the tree at the spawn budget and drops the overflow", async () => {
     // capacity 1 sub-agent, but the CEO asks for 3 in one call.
-    const res = await runSwarmV2Loop(makeSwarmMock(3), baseInput({ maxDepth: 1, maxTotalSubagents: 2 }));
+    const res = await runSwarmV2Loop(
+      makeSwarmMock(3),
+      baseInput({ maxDepth: 1, maxTotalSubagents: 2 }),
+    );
     expect(res.stats.totalAgents).toBe(2); // CEO + 1 (the other 2 dropped)
     expect(res.stats.okAgents).toBe(2);
   });

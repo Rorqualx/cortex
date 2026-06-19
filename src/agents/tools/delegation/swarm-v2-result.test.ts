@@ -160,7 +160,10 @@ describe("adjudicateHalt precedence", () => {
       spawnedCount: 3,
       maxTotalSubagents: 3, // capacity 2; spawnedCount 3 > 2 => exhausted
       ceoResult: ceo("ceo synth"),
-      flatAgents: [makeSub({ ok: false, error: "f1" }), makeSub({ index: 2, ok: false, error: "f2" })],
+      flatAgents: [
+        makeSub({ ok: false, error: "f1" }),
+        makeSub({ index: 2, ok: false, error: "f2" }),
+      ],
     });
     expect(r.haltReason).toBe("spawn_budget_exhausted");
     expect(r.content).toContain("fallback synthesis");
@@ -243,7 +246,12 @@ describe("fallbackSynthesisV2", () => {
       "task",
       [
         makeSub({ index: 1, kind: "worker", ok: true, content: "WORKER-FINDING" }),
-        makeSub({ index: 2, kind: "verifier", ok: true, content: "VERDICT: REFUTED skeptic-essay" }),
+        makeSub({
+          index: 2,
+          kind: "verifier",
+          ok: true,
+          content: "VERDICT: REFUTED skeptic-essay",
+        }),
       ],
       "wall hit",
     );

@@ -49,9 +49,10 @@ export interface AdjudicateHaltInput {
  * Invariant exploited below: once the empty-synthesis case returns, every later
  * branch sees non-empty trimmed CEO content.
  */
-export function adjudicateHalt(
-  input: AdjudicateHaltInput,
-): { haltReason: SwarmV2HaltReason; content: string } {
+export function adjudicateHalt(input: AdjudicateHaltInput): {
+  haltReason: SwarmV2HaltReason;
+  content: string;
+} {
   const { task, ceoResult, runError, wallAborted, flatAgents, spawnedCount, maxTotalSubagents } =
     input;
 
@@ -112,7 +113,11 @@ export function adjudicateHalt(
   if (spawnedCount > maxTotalSubagents - 1 && allSubsFailed) {
     return {
       haltReason: "spawn_budget_exhausted",
-      content: fallbackSynthesisV2(task, flatAgents, "spawn budget exhausted with all sub-agents failed"),
+      content: fallbackSynthesisV2(
+        task,
+        flatAgents,
+        "spawn budget exhausted with all sub-agents failed",
+      ),
     };
   }
 

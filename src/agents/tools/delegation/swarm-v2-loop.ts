@@ -12,7 +12,6 @@ import type { LlmClient } from "./providers/types.js";
 import { adjudicateHalt, deriveAgentOk } from "./swarm-v2-result.js";
 import { makeSpawnSubagentsTool } from "./swarm-v2-spawn.js";
 import { makeSharedState } from "./swarm-v2-state.js";
-import { makeVerifyClaimsTool } from "./swarm-v2-verify.js";
 import {
   MAX_DEPTH_HARD,
   MAX_TOTAL_SUBAGENTS_HARD,
@@ -21,6 +20,7 @@ import {
   type SwarmV2Result,
   type SwarmV2Stats,
 } from "./swarm-v2-types.js";
+import { makeVerifyClaimsTool } from "./swarm-v2-verify.js";
 import { SYSTEM_PROMPTS } from "./system-prompts.js";
 
 const DEFAULT_WALL_MS = 1_800_000; // 30 min — longer than v1's 20 min because v2 trees are bigger
