@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-06-19T06:29:01.859Z",
+  "timestamp": "2026-06-19T20:01:19.680Z",
   "branch": "resync/upstream-2026-06-19",
-  "headSha": "324ea7c7c519e3e78c536af79cb0ee16718d2a37",
+  "headSha": "ac0dd58cb9e8115b360f120d128b360e1aa2127f",
   "files": {
     ".gitattributes": {
-      "hash": "6f5aa519e6319adce8d71808ff4058df45077cf35414d8e74eb7c9c100df0c3f",
+      "hash": "2848f043e5f8bd29ced53b42eb17a5b8426ae2395163407307d5ffbd1ba686f6",
       "mergeOursLines": [
         "extensions/memory-l3/**                                              merge=ours",
         "memory/.l3/**                                                        merge=ours",
@@ -287,7 +287,20 @@
         "ui/src/ui/app-tool-stream.node.test.ts merge=ours",
         "ui/src/ui/app-tool-stream.ts merge=ours",
         "ui/src/ui/chat/grouped-render.test.ts merge=ours",
-        "ui/src/ui/controllers/workboard.test.ts merge=ours"
+        "ui/src/ui/controllers/workboard.test.ts merge=ours",
+        "extensions/codex/src/app-server/thread-lifecycle.binding.test.ts         merge=ours",
+        "extensions/openshell/src/openshell-core.test.ts                          merge=ours",
+        "src/agents/agent-tools.before-tool-call.integration.e2e.test.ts          merge=ours",
+        "src/agents/bash-tools.exec-host-gateway.test.ts                          merge=ours",
+        "src/agents/cli-runner.reliability.test.ts                                merge=ours",
+        "src/agents/embedded-agent-runner/run.incomplete-turn.test.ts             merge=ours",
+        "src/agents/embedded-agent-runner/run/attempt.session-lock.test.ts        merge=ours",
+        "src/agents/embedded-agent-runner/run/attempt.spawn-workspace.context-engine.test.ts merge=ours",
+        "src/agents/embedded-agent-runner/run/compaction-retry-aggregate-timeout.test.ts merge=ours",
+        "src/agents/sandbox/browser.create.test.ts                                merge=ours",
+        "src/agents/sandbox/ssh-backend.test.ts                                   merge=ours",
+        "src/gateway/server-chat.agent-events.test.ts                             merge=ours",
+        "src/gateway/server.sessions.reset-cleanup.test.ts                        merge=ours"
       ]
     },
     ".pre-commit-config.yaml": {
