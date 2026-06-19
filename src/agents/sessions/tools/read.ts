@@ -8,6 +8,7 @@ import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "node
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { decodeWindowsTextFileBuffer } from "../../../infra/windows-encoding.js";
 import type { ImageContent, Model, TextContent } from "../../../llm/types.js";
 import {
   classifyMediaReferenceSource,
@@ -57,6 +58,8 @@ const COMPACT_RESOURCE_FILE_NAMES = new Set(["AGENTS.md", "AGENTS.MD", "CLAUDE.m
 export interface ReadOperations {
   /** Resolve a user-supplied path for this read backend. */
   resolvePath?: (filePath: string, cwd: string) => string | Promise<string>;
+  /** Decode text bytes for this backend. Custom backends default to UTF-8. */
+  decodeText?: (params: { buffer: Buffer; absolutePath: string }) => string;
   /** Read file contents as a Buffer */
   readFile: (absolutePath: string) => Promise<Buffer>;
   /** Check if file is readable (throw if not) */
@@ -67,6 +70,7 @@ export interface ReadOperations {
 
 const defaultReadOperations: ReadOperations = {
   resolvePath: resolveLocalReadPath,
+  decodeText: ({ buffer }) => decodeWindowsTextFileBuffer({ buffer }),
   readFile: (path) => fsReadFile(path),
   access: (path) => fsAccess(path, constants.R_OK),
   detectImageMimeType: detectSupportedImageMimeTypeFromFile,
@@ -340,7 +344,10 @@ export function createReadToolDefinition(
             } else {
               // Read text content.
               const buffer = await ops.readFile(absolutePath);
-              const textContent = buffer.toString("utf-8");
+              // ENHANCE-OURS: adopt upstream's pluggable decodeText, keep our
+              // session-ledger recording (read-before-edit + unchanged-repeat).
+              const textContent =
+                ops.decodeText?.({ buffer, absolutePath }) ?? buffer.toString("utf8");
               // Record this read in the session ledger (powers read-before-edit and
               // the unchanged-repeat annotation). mtime is best-effort: remote/injected
               // ReadOperations backends may not be stat-able, so we degrade to size-only.

@@ -1,7 +1,6 @@
 // Human-facing background task commands.
 // Handles task listing/show/cancel/notify/audit plus registry maintenance for tasks, flows, and sessions.
 
-import fs from "node:fs";
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { isRich, theme } from "../../packages/terminal-core/src/theme.js";
@@ -9,15 +8,11 @@ import { formatCliCommand } from "../cli/command-format.js";
 import { formatLookupMiss } from "../cli/error-format.js";
 import { getRuntimeConfig } from "../config/config.js";
 import {
-  loadSessionStore,
-  pruneStaleEntries,
   resolveAllAgentSessionStoreTargetsSync,
-  updateSessionStore,
-  type SessionEntry,
+  runSessionRegistryMaintenanceForStore,
 } from "../config/sessions.js";
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
 import type { RuntimeEnv } from "../runtime.js";
-import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { getTaskById, updateTaskNotifyPolicyById } from "../tasks/runtime-internal.js";
 import { cancelDetachedTaskRunById } from "../tasks/task-executor.js";
 import { listTaskFlowAuditFindings } from "../tasks/task-flow-registry.audit.js";
@@ -78,6 +73,38 @@ async function loadTaskCancelConfig() {
   return getRuntimeConfig();
 }
 
+type GatewayTaskCancelSummary = {
+  id?: string;
+  taskId?: string;
+  runtime?: string;
+  runId?: string;
+};
+
+type GatewayTaskCancelResult = {
+  found?: boolean;
+  cancelled?: boolean;
+  reason?: string;
+  task?: GatewayTaskCancelSummary;
+};
+
+async function tryCancelCronTaskViaGateway(
+  task: TaskRecord,
+): Promise<GatewayTaskCancelResult | null> {
+  if (task.runtime !== "cron") {
+    return null;
+  }
+  try {
+    const { callGateway } = await import("../gateway/call.js");
+    return await callGateway<GatewayTaskCancelResult>({
+      method: "tasks.cancel",
+      params: { taskId: task.taskId },
+      timeoutMs: 5_000,
+    });
+  } catch {
+    return null;
+  }
+}
+
 function configureTaskMaintenanceFromConfig(): void {
   const cfg = getRuntimeConfig();
   configureTaskRegistryMaintenance({
@@ -101,14 +128,6 @@ type SessionRegistryMaintenanceSummary = {
   stores: SessionRegistryMaintenanceStoreSummary[];
 };
 
-function parseCronRunSessionJobId(sessionKey: string): string | undefined {
-  const parsed = parseAgentSessionKey(sessionKey);
-  if (!parsed) {
-    return undefined;
-  }
-  return /^cron:([^:]+):run:[^:]+$/u.exec(parsed.rest)?.[1];
-}
-
 function readRunningCronJobIds(): Set<string> {
   try {
     const cronStorePath = resolveCronJobsStorePath(getRuntimeConfig().cron?.store);
@@ -123,27 +142,6 @@ function readRunningCronJobIds(): Set<string> {
   }
 }
 
-function buildSessionRegistryPreserveKeys(params: {
-  store: Record<string, SessionEntry>;
-  runningCronJobIds: ReadonlySet<string>;
-}): { preserveKeys: Set<string>; preservedRunning: number } {
-  const preserveKeys = new Set<string>();
-  let preservedRunning = 0;
-  for (const key of Object.keys(params.store)) {
-    const jobId = parseCronRunSessionJobId(key);
-    if (!jobId) {
-      // Non-cron session rows are outside this maintenance pass; preserve them.
-      preserveKeys.add(key);
-      continue;
-    }
-    if (params.runningCronJobIds.has(jobId)) {
-      preserveKeys.add(key);
-      preservedRunning += 1;
-    }
-  }
-  return { preserveKeys, preservedRunning };
-}
-
 async function runSessionRegistryMaintenance(params: {
   apply: boolean;
 }): Promise<SessionRegistryMaintenanceSummary> {
@@ -151,67 +149,19 @@ async function runSessionRegistryMaintenance(params: {
   const runningCronJobIds = readRunningCronJobIds();
   const stores: SessionRegistryMaintenanceStoreSummary[] = [];
   for (const target of resolveAllAgentSessionStoreTargetsSync(cfg)) {
-    if (!fs.existsSync(target.storePath)) {
-      stores.push({
-        agentId: target.agentId,
-        storePath: target.storePath,
-        beforeCount: 0,
-        afterCount: 0,
-        pruned: 0,
-        preservedRunning: 0,
-      });
-      continue;
-    }
-    const beforeStore = loadSessionStore(target.storePath, { skipCache: true });
-    const beforeCount = Object.keys(beforeStore).length;
-    if (params.apply) {
-      // Apply mode mutates each store atomically through updateSessionStore.
-      const applied = await updateSessionStore(
-        target.storePath,
-        (store) => {
-          const { preserveKeys, preservedRunning } = buildSessionRegistryPreserveKeys({
-            store,
-            runningCronJobIds,
-          });
-          const pruned = pruneStaleEntries(store, SESSION_REGISTRY_RETENTION_MS, {
-            log: false,
-            preserveKeys,
-          });
-          return {
-            pruned,
-            afterCount: Object.keys(store).length,
-            preservedRunning,
-          };
-        },
-        { skipMaintenance: true },
-      );
-      stores.push({
-        agentId: target.agentId,
-        storePath: target.storePath,
-        beforeCount,
-        afterCount: applied.afterCount,
-        pruned: applied.pruned,
-        preservedRunning: applied.preservedRunning,
-      });
-      continue;
-    }
-    const previewStore = structuredClone(beforeStore);
-    // Preview mode runs pruning against a clone so dry-run output cannot change stores.
-    const { preserveKeys, preservedRunning } = buildSessionRegistryPreserveKeys({
-      store: previewStore,
+    const result = await runSessionRegistryMaintenanceForStore({
+      apply: params.apply,
+      retentionMs: SESSION_REGISTRY_RETENTION_MS,
       runningCronJobIds,
-    });
-    const pruned = pruneStaleEntries(previewStore, SESSION_REGISTRY_RETENTION_MS, {
-      log: false,
-      preserveKeys,
+      storePath: target.storePath,
     });
     stores.push({
       agentId: target.agentId,
       storePath: target.storePath,
-      beforeCount,
-      afterCount: Object.keys(previewStore).length,
-      pruned,
-      preservedRunning,
+      beforeCount: result.beforeCount,
+      afterCount: result.afterCount,
+      pruned: result.pruned,
+      preservedRunning: result.preservedRunning,
     });
   }
   return {
@@ -496,6 +446,24 @@ export async function tasksCancelCommand(opts: { lookup: string }, runtime: Runt
   if (!task) {
     runtime.error(formatTaskLookupMiss(opts.lookup));
     runtime.exit(1);
+    return;
+  }
+  const gatewayResult = await tryCancelCronTaskViaGateway(task);
+  if (gatewayResult) {
+    if (!gatewayResult.found) {
+      runtime.error(gatewayResult.reason ?? formatTaskLookupMiss(opts.lookup));
+      runtime.exit(1);
+      return;
+    }
+    if (!gatewayResult.cancelled) {
+      runtime.error(gatewayResult.reason ?? `Could not cancel task: ${opts.lookup}`);
+      runtime.exit(1);
+      return;
+    }
+    const updated = gatewayResult.task;
+    runtime.log(
+      `Cancelled ${updated?.taskId ?? updated?.id ?? task.taskId} (${updated?.runtime ?? task.runtime})${updated?.runId ? ` run ${updated.runId}` : ""}.`,
+    );
     return;
   }
   const result = await cancelDetachedTaskRunById({

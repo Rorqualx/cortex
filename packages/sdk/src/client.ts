@@ -70,7 +70,9 @@ function runStatusFromWaitPayload(payload: unknown): RunResult["status"] {
   const statusAlreadyTimeoutAttributed = status === "timeout" || status === "timed_out";
   const hardTimeout =
     !pendingError &&
-    ((record.providerStarted === true && statusAlreadyTimeoutAttributed) ||
+    ((stopReason !== "restart" &&
+      record.providerStarted === true &&
+      statusAlreadyTimeoutAttributed) ||
       timeoutPhase === "preflight" ||
       timeoutPhase === "provider" ||
       timeoutPhase === "post_turn");
@@ -93,6 +95,7 @@ function runStatusFromWaitPayload(payload: unknown): RunResult["status"] {
     stopReason === "canceled" ||
     stopReason === "killed" ||
     stopReason === "auth-revoked" ||
+    stopReason === "restart" ||
     stopReason === "rpc" ||
     stopReason === "user" ||
     (record.aborted === true && stopReason === "stop")
@@ -324,8 +327,10 @@ export class OpenClaw {
   });
   private readonly replayByRunId = new Map<string, OpenClawEvent[]>();
   private connected = false;
+  private closed = false;
   private eventPumpPromise: Promise<void> | null = null;
   private eventPumpReady: Promise<void> | null = null;
+  private closePromise: Promise<void> | null = null;
 
   constructor(options: OpenClawOptions = {}) {
     this.transport =
@@ -348,24 +353,45 @@ export class OpenClaw {
   }
 
   async connect(): Promise<void> {
+    this.assertOpen();
     if (this.connected) {
       await this.startEventPump();
+      this.assertOpen();
       return;
     }
     if (isConnectableTransport(this.transport)) {
       await this.transport.connect();
     }
+    this.assertOpen();
     this.connected = true;
     await this.startEventPump();
+    this.assertOpen();
   }
 
   async close(): Promise<void> {
-    await this.transport.close?.();
-    await this.eventPumpPromise?.catch(() => {});
-    this.normalizedEvents.close();
-    this.eventPumpPromise = null;
-    this.eventPumpReady = null;
-    this.connected = false;
+    if (this.closePromise) {
+      return await this.closePromise;
+    }
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    this.closePromise = (async () => {
+      try {
+        await this.transport.close?.();
+        await this.eventPumpPromise?.catch(() => {});
+      } finally {
+        this.normalizedEvents.close();
+        this.eventPumpPromise = null;
+        this.eventPumpReady = null;
+        this.connected = false;
+      }
+    })();
+    try {
+      await this.closePromise;
+    } finally {
+      this.closePromise = null;
+    }
   }
 
   async request<T = unknown>(
@@ -374,6 +400,7 @@ export class OpenClaw {
     options?: GatewayRequestOptions,
   ): Promise<T> {
     await this.connect();
+    this.assertOpen();
     return await this.transport.request<T>(method, params, options);
   }
 
@@ -389,13 +416,21 @@ export class OpenClaw {
   }
 
   rawEvents(filter?: (event: GatewayEvent) => boolean): AsyncIterable<GatewayEvent> {
+    this.assertOpen();
     return this.transport.events(filter);
+  }
+
+  private assertOpen(): void {
+    if (this.closed) {
+      throw new Error("OpenClaw SDK client is closed");
+    }
   }
 
   private async *iterateEvents(
     filter?: (event: OpenClawEvent) => boolean,
   ): AsyncIterable<OpenClawEvent> {
     await this.connect();
+    this.assertOpen();
     for await (const event of this.normalizedEvents.stream(filter)) {
       yield event;
     }
@@ -406,6 +441,7 @@ export class OpenClaw {
     filter?: (event: OpenClawEvent) => boolean,
   ): AsyncIterable<OpenClawEvent> {
     await this.connect();
+    this.assertOpen();
     const replayEvents = this.replaySnapshot(runId);
     let hasCanonicalAssistantRunEvent = replayEvents.some(isAssistantRunEvent);
     let hasTerminalRunEvent = replayEvents.some(isTerminalRunEvent);
@@ -445,7 +481,6 @@ export class OpenClaw {
     const matches = (event: OpenClawEvent) => event.runId === runId;
     const liveSource = this.normalizedEvents.stream(matches, { replay: true });
     const live = liveSource[Symbol.asyncIterator]();
-    let nextLive = live.next();
     const seen = new Set<string>();
     try {
       for (const event of replayEvents) {
@@ -460,11 +495,10 @@ export class OpenClaw {
         yield runEvent;
       }
       while (true) {
-        const next = await nextLive;
+        const next = await live.next();
         if (next.done) {
           break;
         }
-        nextLive = live.next();
         if (seen.has(next.value.id)) {
           continue;
         }
@@ -496,8 +530,11 @@ export class OpenClaw {
       };
     });
     this.eventPumpPromise = (async () => {
-      const iterator = this.transport.events()[Symbol.asyncIterator]();
+      let iterator: AsyncIterator<GatewayEvent> | undefined;
+      let pumpError: unknown;
+      let hasPumpError = false;
       try {
+        iterator = this.transport.events()[Symbol.asyncIterator]();
         while (true) {
           const next = iterator.next();
           await Promise.resolve();
@@ -510,14 +547,28 @@ export class OpenClaw {
           this.recordReplayEvent(normalized);
           this.normalizedEvents.publish(normalized);
         }
+      } catch (error) {
+        pumpError = error;
+        hasPumpError = true;
       } finally {
         markReady();
-        await iterator.return?.();
-        this.normalizedEvents.close();
+        try {
+          await iterator?.return?.();
+        } catch (error) {
+          if (!hasPumpError) {
+            pumpError = error;
+            hasPumpError = true;
+          }
+        }
       }
-    })().catch(() => {
-      markReady();
+      if (hasPumpError) {
+        this.normalizedEvents.close(pumpError);
+        return;
+      }
       this.normalizedEvents.close();
+    })().catch((error: unknown) => {
+      markReady();
+      this.normalizedEvents.close(error);
     });
     return this.eventPumpReady;
   }

@@ -79,7 +79,13 @@ describe("plugin update unchanged Docker E2E", () => {
 
     expect(script).toContain("OPENCLAW_PLUGIN_UPDATE_TIMEOUT_SECONDS");
     expect(script).toContain(
+      "openclaw_e2e_read_positive_int_env OPENCLAW_PLUGIN_UPDATE_TIMEOUT_SECONDS 180",
+    );
+    expect(script).toContain(
       'openclaw_e2e_maybe_timeout "${plugin_update_timeout_seconds}s" node "$entry" plugins update',
+    );
+    expect(script).not.toContain(
+      'plugin_update_timeout_seconds="${OPENCLAW_PLUGIN_UPDATE_TIMEOUT_SECONDS:-180}"',
     );
     expect(script).not.toMatch(
       /^\s*timeout "\$\{plugin_update_timeout_seconds\}s" node "\$entry"/mu,
@@ -149,6 +155,12 @@ describe("plugin update unchanged Docker E2E", () => {
     const script = readFileSync(CORRUPT_UPDATE_SCENARIO_SCRIPT, "utf8");
 
     expect(script).toContain("OPENCLAW_UPDATE_CORRUPT_PLUGIN_TIMEOUT_SECONDS");
+    expect(script).toContain(
+      "openclaw_e2e_read_positive_int_env OPENCLAW_UPDATE_CORRUPT_PLUGIN_TIMEOUT_SECONDS 900",
+    );
+    expect(script).not.toContain(
+      'update_timeout_seconds="${OPENCLAW_UPDATE_CORRUPT_PLUGIN_TIMEOUT_SECONDS:-900}"',
+    );
     expect(
       script.match(/openclaw_e2e_maybe_timeout "\$\{update_timeout_seconds\}s" \\/gu)?.length,
     ).toBe(2);
@@ -163,6 +175,8 @@ describe("plugin update unchanged Docker E2E", () => {
     expect(script).toContain(
       "updated OpenClaw entry failed or timed out after ${update_timeout_seconds}s",
     );
+    expect(script.match(/openclaw_e2e_print_log \/tmp\/openclaw-update-corrupt-/g)).toHaveLength(8);
+    expect(script).not.toContain("cat /tmp/openclaw-update-corrupt-");
   });
 
   it("requires disabled-after-failure corrupt plugin updates to stay warnings", () => {
@@ -193,7 +207,7 @@ describe("plugin update unchanged Docker E2E", () => {
             message:
               `Plugin "${CORRUPT_PLUGIN_ID}" could not be processed after the core update: ` +
               disabledAfterFailure.npm.outcomes[0].message +
-              " Run openclaw doctor --fix to attempt automatic repair. " +
+              " Run openclaw update repair to retry post-update plugin repair. " +
               `Run openclaw plugins inspect ${CORRUPT_PLUGIN_ID} --runtime --json for details.`,
           },
         ],

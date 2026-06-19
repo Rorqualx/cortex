@@ -15,8 +15,6 @@ import {
   FIREWORKS_DEFAULT_CONTEXT_WINDOW,
   FIREWORKS_DEFAULT_MAX_TOKENS,
   FIREWORKS_DEFAULT_MODEL_ID,
-  FIREWORKS_K2_6_CONTEXT_WINDOW,
-  FIREWORKS_K2_6_MAX_TOKENS,
   FIREWORKS_K2_6_MODEL_ID,
 } from "./provider-catalog.js";
 import { resolveThinkingProfile } from "./provider-policy-api.js";
@@ -72,8 +70,8 @@ describe("fireworks provider plugin", () => {
     ]);
     expect(models[0]?.reasoning).toBe(false);
     expect(models[0]?.input).toEqual(["text", "image"]);
-    expect(models[0]?.contextWindow).toBe(FIREWORKS_K2_6_CONTEXT_WINDOW);
-    expect(models[0]?.maxTokens).toBe(FIREWORKS_K2_6_MAX_TOKENS);
+    expect(models[0]?.contextWindow).toBe(262144);
+    expect(models[0]?.maxTokens).toBe(262144);
     expect(models[1]?.reasoning).toBe(false);
     expect(models[1]?.input).toEqual(["text", "image"]);
     expect(models[1]?.contextWindow).toBe(FIREWORKS_DEFAULT_CONTEXT_WINDOW);
@@ -144,19 +142,19 @@ describe("fireworks provider plugin", () => {
     expect(resolved?.reasoning).toBe(false);
   });
 
-  it("disables reasoning metadata for Fireworks Kimi k2.6 dynamic models", async () => {
+  it("defers manifest catalog models to core static-catalog resolution", async () => {
     const provider = await registerSingleProviderPlugin(fireworksPlugin);
-    const resolved = provider.resolveDynamicModel?.(
-      createProviderDynamicModelContext({
-        provider: "fireworks",
-        modelId: "accounts/fireworks/models/kimi-k2p6",
-        models: [createFireworksDefaultRuntimeModel({ reasoning: false })],
-      }),
-    );
+    for (const modelId of [FIREWORKS_K2_6_MODEL_ID, FIREWORKS_DEFAULT_MODEL_ID]) {
+      const resolved = provider.resolveDynamicModel?.(
+        createProviderDynamicModelContext({
+          provider: "fireworks",
+          modelId,
+          models: [createFireworksDefaultRuntimeModel({ reasoning: false })],
+        }),
+      );
 
-    expect(resolved?.provider).toBe("fireworks");
-    expect(resolved?.id).toBe("accounts/fireworks/models/kimi-k2p6");
-    expect(resolved?.reasoning).toBe(false);
+      expect(resolved).toBeUndefined();
+    }
   });
 
   it("exposes off-only thinking policy for Fireworks Kimi models", async () => {

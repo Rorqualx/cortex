@@ -237,13 +237,6 @@ export function createEventDispatcher(account: ResolvedFeishuAccount): Lark.Even
 }
 
 /**
- * Get a cached client for an account (if exists).
- */
-export function getFeishuClient(accountId: string): Lark.Client | null {
-  return clientCache.get(accountId)?.client ?? null;
-}
-
-/**
  * Clear client cache for a specific account or all accounts.
  */
 export function clearClientCache(accountId?: string): void {
@@ -260,4 +253,5 @@ export function setFeishuClientRuntimeForTest(overrides?: {
   feishuClientSdk = overrides?.sdk
     ? { ...defaultFeishuClientSdk, ...overrides.sdk }
     : defaultFeishuClientSdk;
+  clearClientCache();
 }

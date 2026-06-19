@@ -252,6 +252,14 @@ export const ExecApprovalRequestParamsSchema = Type.Object(
     security: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     ask: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     warningText: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    // ENHANCE-OURS: adopt upstream's unavailableDecisions; keep our named
+    // ExecApprovalCommandSpanSchema ref (defined above, reused at line ~203).
+    unavailableDecisions: Type.Optional(
+      Type.Array(Type.String({ enum: ["allow-always"] }), {
+        minItems: 1,
+        maxItems: 1,
+      }),
+    ),
     commandSpans: Type.Optional(Type.Array(ExecApprovalCommandSpanSchema)),
     agentId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     resolvedPath: Type.Optional(Type.Union([Type.String(), Type.Null()])),

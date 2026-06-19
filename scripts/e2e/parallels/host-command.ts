@@ -253,6 +253,7 @@ export function resolveHostCommandInvocation(
   if (isBareCommand(command, "pnpm")) {
     const runner = resolvePnpmRunner({
       comSpec,
+      env,
       npmExecPath: env.npm_execpath,
       nodeExecPath: options.execPath ?? process.execPath,
       platform,
@@ -530,6 +531,9 @@ export async function runStreaming(
           }, options.timeoutMs);
 
     child.on("error", (error) => {
+      if (timer) {
+        clearTimeout(timer);
+      }
       if (killTimer) {
         clearTimeout(killTimer);
       }

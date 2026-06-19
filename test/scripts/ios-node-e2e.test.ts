@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
+import { createBoundedChildOutput } from "../helpers/bounded-child-output.js";
 
 type ScriptResult = {
   status: number | null;
@@ -163,7 +164,7 @@ async function listenGateway(params: {
   return `ws://127.0.0.1:${address.port}`;
 }
 
-function runScript(url: string): Promise<ScriptResult> {
+function runScript(url: string, extraArgs: readonly string[] = []): Promise<ScriptResult> {
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
@@ -176,11 +177,12 @@ function runScript(url: string): Promise<ScriptResult> {
         "--token",
         "token",
         "--json",
+        ...extraArgs,
       ],
       { stdio: "pipe" },
     );
-    let stdout = "";
-    let stderr = "";
+    const stdout = createBoundedChildOutput();
+    const stderr = createBoundedChildOutput();
     let settled = false;
     const timeout = setTimeout(() => {
       if (settled) {
@@ -188,14 +190,20 @@ function runScript(url: string): Promise<ScriptResult> {
       }
       settled = true;
       child.kill("SIGKILL");
-      resolve({ status: null, signal: "SIGKILL", stdout, stderr, timedOut: true });
+      resolve({
+        status: null,
+        signal: "SIGKILL",
+        stdout: stdout.text(),
+        stderr: stderr.text(),
+        timedOut: true,
+      });
     }, 5000);
     timeout.unref?.();
     child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
+      stdout.append(chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
+      stderr.append(chunk);
     });
     child.on("close", (status, signal) => {
       if (settled) {
@@ -203,12 +211,20 @@ function runScript(url: string): Promise<ScriptResult> {
       }
       settled = true;
       clearTimeout(timeout);
-      resolve({ status, signal, stdout, stderr, timedOut: false });
+      resolve({ status, signal, stdout: stdout.text(), stderr: stderr.text(), timedOut: false });
     });
   });
 }
 
 describe("ios-node-e2e", () => {
+  it("rejects malformed wait seconds before connecting", async () => {
+    const result = await runScript("ws://127.0.0.1:9", ["--wait-seconds", "1e3"]);
+
+    expect(result).toMatchObject({ signal: null, status: 1, timedOut: false });
+    expect(result.stderr).toContain("--wait-seconds must be a positive integer; got: 1e3");
+    expect(result.stdout).toBe("");
+  });
+
   it("fails empty node invoke payloads instead of counting them as proof", async () => {
     const invokeParams: Array<{ command?: string; idempotencyKey?: string }> = [];
     const url = await listenGateway({ mode: "empty", invokeParams });
