@@ -130,3 +130,30 @@ Pass-2 ENHANCE candidates flagged: `server-chat.ts` run-terminal-persistence tra
 - UI (97 tsgo errors) — app-render/chat/cron + i18n regeneration.
 - Cron delivery schema (`delivery-codec.ts` columns) + doctor migration.
 - Then: full 7-lane tsgo green, fork-merge-verify --full, $autoreview, Crabbox behavior proof, land.
+
+---
+
+## PASS 2 OUTCOME (2026-06-19) — UI GREEN except 2 product decisions
+
+Commits added: `e6e7573c9b` (UI 154→14, codex 34→10).
+
+tsgo state (fresh): CORE+EXT non-codex **0**; test:ui **14**; codex/copilot **10**.
+The remaining **24 errors all reduce to TWO convergent PRODUCT decisions** (owner-gated, NOT mechanical):
+
+### Decision A — Workboard (14 UI errors)
+Both forks rewrote workboard in incompatible directions:
+- Fork: `src/workboard` core + LLM idea→goal→impl→task loop; UI controller 2,455 lines.
+- Upstream: lifecycle-task-polling ops UI; controller 4,127 lines, 138 lifecycle-polling refs.
+The 14 errors are upstream's `app-lifecycle.node.test.ts` expecting upstream's `configureWorkboardPolling` + `WorkboardUiState` lifecycle fields the fork doesn't have.
+Options: (a) keep fork workboard, delete/skip upstream lifecycle-polling test; (b) adopt upstream ops UI + re-integrate fork LLM-loop; (c) merge both feature sets. **Needs maintainer direction.**
+
+### Decision B — Codex app-server (10 errors)
+Fork deliberately stripped codex app-server (~19.6k deletions vs base — removed web-search, trimmed thread-lifecycle ~489 lines); upstream expanded it. Auto-merged consumers expect upstream functions (`resolveCodexAppServerRequestModelSelection`, etc.) + fields (`persistentWebSearchAllowed`, `activeTurnIds`). Codex owner-gate (AGENTS.md) applies.
+Options: (a) keep fork-trimmed codex, make it internally consistent (port only the few functions fork consumers need); (b) adopt upstream's expanded codex. **Needs maintainer direction (why was codex stripped?).**
+
+### Functional debt (tsgo-green, not build-blocking) — pending decision batch
+- Skills/workshop ⟷ skill-forge: fork removed skill-workshop (kept-deleted); confirm.
+- Cron delivery schema: `delivery-codec.ts` kept-ours columns vs upstream `_mode/_to`; needs doctor migration once direction set.
+
+### Everything else: GREEN
+Layers 1-4 (core/ext) + UI shell/chat/cron/storage/sidebar all reconciled to 0 errors with fork features preserved.
