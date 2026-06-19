@@ -221,3 +221,16 @@ Ran `pnpm test:fast` (unit config, 244 files, excludes e2e/live) on huey native 
   - workboard store + sqlite-store-policy (filesystem-policy: SSHFS/network-volume detection + sqlite journaling; main "persists boards/cards" store test PASSES). 
   These depend on huey's filesystem/home-dir + Node 22 (CI truth is Node 24); they pass in proper CI.
 Conclusion: every merge-caused behavior failure found and fixed; merge is behaviorally sound.
+
+---
+
+## $AUTOREVIEW (workflow-backed, high effort — 2026-06-19)
+34 agents, 8 finder angles, every candidate independently verified → 10 verified findings on the reconciliation diff. Actionable (6) fixed (commits 270dafac1c, 1ebe426698):
+- **SECURITY** exec-approvals-analysis splitShellPipeline: restored heredoc/$()/backtick/newline → ok:false so bash-tools falls back to line-by-line /approve scan (wave-2 had a "minimal" splitter that let /approve/login slip past the exec block). Verified via tsx: heredoc/newline/$()/backtick → ok:false, plain pipe → ok:true.
+- chat.ts: pass `entry` to resolveDeletedAgentIdFromSessionKey (deleted-agent ACP session no longer locked out).
+- incomplete-turn.ts: restored hasTerminalOutput arg (no false "agent couldn't generate a response" on length-capped turns that answered).
+- config/sessions/store.ts: restored .catch retry-reset on both lazy loaders (transient import failure no longer permanently poisons archiving/cleanup).
+- agent-runner-execution.ts: thread cfg into resolveSessionRuntimeOverrideForProvider (CLI-runtime-alias honored on fallback).
+- codex thread-lifecycle.ts: honest comment on web-search flags (provider removed; caller-compat only).
+Deferred (4, inert quality smells, not correctness): dead chatAbortControllers param, unbounded dynamic-secret Set O(n) scan, dead opToNext bookkeeping, duplicated shell tokenizers.
+Verified on huey: tsgo core+ext 0 errors; full unit suite 2176 passed / 6 failed (only the 4 pre-existing environmental files) — no regression from the fixes.
