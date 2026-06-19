@@ -9,14 +9,15 @@
 
 import { runExploreLoop, type ExploreInput, type ExploreResult } from "./explore-loop.js";
 import type { LlmClient } from "./providers/types.js";
+import { adjudicateHalt, deriveAgentOk } from "./swarm-v2-result.js";
 import { makeSpawnSubagentsTool } from "./swarm-v2-spawn.js";
 import { makeSharedState } from "./swarm-v2-state.js";
+import { makeVerifyClaimsTool } from "./swarm-v2-verify.js";
 import {
   MAX_DEPTH_HARD,
   MAX_TOTAL_SUBAGENTS_HARD,
   type SubagentV2Result,
   type SwarmV2Input,
-  type SwarmV2HaltReason,
   type SwarmV2Result,
   type SwarmV2Stats,
 } from "./swarm-v2-types.js";
@@ -58,8 +59,10 @@ export async function runSwarmV2Loop(
   // CEO's spawn tool. parentIndex=0, parentDepth=0. The CEO is outside the
   // semaphore (depth 0); the spawn tool's release/reacquire hooks are no-ops
   // from explore-loop because we don't pass extraToolCtx for the CEO.
+  // Both the CEO's spawn and verify children push into the same index list.
   const ceoChildIndices: number[] = [];
   const spawnTool = makeSpawnSubagentsTool(0, 0, input, client, state, ceoChildIndices);
+  const verifyTool = makeVerifyClaimsTool(0, 0, input, client, state, ceoChildIndices);
 
   const ceoInput: ExploreInput = {
     task: input.task,
@@ -79,7 +82,7 @@ export async function runSwarmV2Loop(
     wallDeadlineMs: state.startedAt + state.wallMs, // shared-wall deadline for synthesis reserve
 
     maxBudgetUsd: input.maxBudgetUsd,
-    extraTools: [spawnTool],
+    extraTools: [spawnTool, verifyTool],
     // No extraToolCtx for the CEO — depth 0 is outside the semaphore.
     systemPromptAppendix: SYSTEM_PROMPTS.swarm_v2_ceo,
   };
@@ -94,13 +97,16 @@ export async function runSwarmV2Loop(
 
   const ceoLatencyMs = Date.now() - startedAt;
 
-  // Build the CEO's record (always at index 0 in flatAgents).
+  // Build the CEO's record (always at index 0 in flatAgents). ok/errorReason via
+  // the shared deriveAgentOk so the CEO and sub-agents judge success identically.
+  const ceoDerived = ceoResult ? deriveAgentOk(ceoResult.stats, ceoResult.content ?? "") : null;
   const ceoRecord: SubagentV2Result = ceoResult
     ? {
         index: 0,
         parentIndex: null,
         depth: 0,
-        ok: ceoResult.stats.subtype === "success" && (ceoResult.content ?? "").trim().length > 0,
+        kind: "worker",
+        ok: ceoDerived!.ok,
         objective: input.task,
         allowedTools: [...CEO_FS_TOOLS, "spawn_subagents"],
         thinking: input.thinking,
@@ -114,6 +120,7 @@ export async function runSwarmV2Loop(
         latencyMs: ceoLatencyMs,
         ...(ceoResult.stats.costUsd !== undefined ? { costUsd: ceoResult.stats.costUsd } : {}),
         ...(ceoResult.stats.stopReason ? { finishReason: ceoResult.stats.stopReason } : {}),
+        ...(ceoDerived!.errorReason ? { error: ceoDerived!.errorReason } : {}),
         content: ceoResult.content ?? "",
         childIndices: ceoChildIndices,
       }
@@ -121,6 +128,7 @@ export async function runSwarmV2Loop(
         index: 0,
         parentIndex: null,
         depth: 0,
+        kind: "worker",
         ok: false,
         objective: input.task,
         allowedTools: [...CEO_FS_TOOLS, "spawn_subagents"],
@@ -136,86 +144,19 @@ export async function runSwarmV2Loop(
       };
   state.recordAgent(ceoRecord);
 
-  // === Adjudicate final answer (resolves blocker #5: CEO synthesis termination) ===
-
-  const ceoContent = (ceoResult?.content ?? "").trim();
-  const wallAborted = state.wallController.signal.aborted;
-  const ceoHalt = ceoResult?.stats.haltReason;
-
-  let haltReason: SwarmV2HaltReason;
-  let finalContent: string;
-
-  if (!ceoResult) {
-    haltReason = "error";
-    finalContent = `[swarm v2 error] CEO explore-loop failed: ${runError ?? "unknown"}`;
-  } else if (ceoContent.length === 0) {
-    // Empty-content fallback. K2.6 risk acknowledged in plan. Mirror v1's
-    // fallbackSynthesis pattern.
-    haltReason = "ceo_synthesis_empty";
-    finalContent = fallbackSynthesisV2(input.task, state.flatAgents, "CEO produced empty content");
-  } else if (wallAborted) {
-    // HARD wall abort: the wall fired before/while the CEO synthesized, so
-    // ceoContent is a partial or mid-reasoning fragment — NOT an answer. Never
-    // discard the sub-agents' completed verdicts; emit them verbatim and append
-    // the CEO's partial notes as context. (Layer 1's synthesis reserve makes
-    // this path rare; this is the safety net for when synthesis overruns it.)
-    haltReason = "wall_cap";
-    const okSubsForWall = state.flatAgents.filter((a) => a.depth > 0 && a.ok);
-    if (okSubsForWall.length > 0) {
-      finalContent = fallbackSynthesisV2(
-        input.task,
-        state.flatAgents,
-        "wall budget hit before the CEO could synthesize",
-      );
-      if (ceoContent.length > 0) {
-        finalContent += `\n\n## CEO partial notes (incomplete — wall hit mid-synthesis)\n\n${ceoContent}`;
-      }
-    } else {
-      finalContent =
-        ceoContent.length > 0
-          ? ceoContent
-          : fallbackSynthesisV2(
-              input.task,
-              state.flatAgents,
-              "wall budget hit; no successful sub-agents",
-            );
-    }
-  } else if (ceoHalt === "wall_cap") {
-    // Graceful soft-wall synthesis: the CEO crossed the synthesis-reserve
-    // deadline and produced a real answer before the hard wall fired. ceoContent
-    // is trustworthy here (it came from the forced synthesis turn).
-    haltReason = "wall_cap";
-    finalContent = ceoContent;
-  } else if (ceoHalt === "iter_cap") {
-    haltReason = "ceo_iter_cap";
-    finalContent = ceoContent;
-  } else if (ceoHalt === "no_progress") {
-    haltReason = "ceo_no_progress";
-    finalContent = ceoContent;
-  } else if (
-    state.spawnedCount > maxTotalSubagents - 1 &&
-    state.flatAgents.filter((a) => a.depth > 0 && !a.ok).length ===
-      state.flatAgents.filter((a) => a.depth > 0).length
-  ) {
-    // Budget exhausted AND every sub-agent failed
-    haltReason = "spawn_budget_exhausted";
-    finalContent = fallbackSynthesisV2(
-      input.task,
-      state.flatAgents,
-      "spawn budget exhausted with all sub-agents failed",
-    );
-  } else if (
-    state.flatAgents.filter((a) => a.depth > 0).length > 0 &&
-    state.flatAgents.filter((a) => a.depth > 0 && a.ok).length === 0
-  ) {
-    // Sub-agents were spawned but all failed
-    haltReason = "all_subagents_failed";
-    // CEO content still exists (we already handled empty above), so use it but flag.
-    finalContent = `[swarm v2 note] all ${state.flatAgents.filter((a) => a.depth > 0).length} sub-agents failed; CEO synthesized from fs-tool work alone:\n\n${ceoContent}`;
-  } else {
-    haltReason = "stop";
-    finalContent = ceoContent;
-  }
+  // === Adjudicate final answer ===
+  // Precedence + fallback logic lives in adjudicateHalt (swarm-v2-result) so it
+  // can be unit-tested without a live provider. flatAgents already includes the
+  // CEO at index 0; adjudicateHalt scopes sub-agent checks to depth>0.
+  const { haltReason, content: finalContent } = adjudicateHalt({
+    task: input.task,
+    ceoResult,
+    runError,
+    wallAborted: state.wallController.signal.aborted,
+    flatAgents: state.flatAgents,
+    spawnedCount: state.spawnedCount,
+    maxTotalSubagents,
+  });
 
   // Sort flatAgents by index for stable ordering across the tree (CEO at 0).
   state.flatAgents.sort((a, b) => a.index - b.index);
@@ -242,43 +183,18 @@ export async function runSwarmV2Loop(
     outputTokens: totalOutputTokens,
     ...(totalCacheHits > 0 ? { cacheHitTokens: totalCacheHits } : {}),
     ...(totalCost > 0 ? { costUsd: totalCost } : {}),
+    ...(state.verifiedClaims > 0
+      ? {
+          verification: {
+            claims: state.verifiedClaims,
+            survived: state.survivedClaims,
+            refuted: state.refutedClaims,
+            verifierAgents: state.flatAgents.filter((a) => a.kind === "verifier").length,
+          },
+        }
+      : {}),
     latencyMs: Date.now() - startedAt,
     flatAgents: state.flatAgents,
   };
   return { content: finalContent, haltReason, stats };
-}
-
-// === fallbackSynthesisV2 (mirrors v1's fallbackSynthesis pattern) ===
-
-function fallbackSynthesisV2(task: string, agents: SubagentV2Result[], reason: string): string {
-  const subagents = agents.filter((a) => a.depth > 0);
-  if (subagents.length === 0) {
-    return `[swarm v2 fallback] ${reason}; no sub-agents were spawned. Original task:\n${task}`;
-  }
-  const okSubs = subagents.filter((a) => a.ok);
-  const failSubs = subagents.filter((a) => !a.ok);
-  const lines: string[] = [
-    `[swarm v2 fallback synthesis] ${reason}; emitting raw sub-agent outputs verbatim.`,
-    "",
-    `Original task: ${task}`,
-    "",
-    `Sub-agent results: ${okSubs.length} ok, ${failSubs.length} failed.`,
-    "",
-  ];
-  for (const a of okSubs) {
-    lines.push(
-      `## Sub-agent ${a.index} (depth=${a.depth}, ${a.iterations} iters, ${(a.latencyMs / 1000).toFixed(1)}s)`,
-      `**Objective:** ${a.objective}`,
-      "",
-      a.content,
-      "",
-    );
-  }
-  if (failSubs.length > 0) {
-    lines.push("## Failed sub-agents", "");
-    for (const a of failSubs) {
-      lines.push(`- Sub-agent ${a.index} (depth=${a.depth}): ${a.error ?? "unknown error"}`);
-    }
-  }
-  return lines.join("\n");
 }

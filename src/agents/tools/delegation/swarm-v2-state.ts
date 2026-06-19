@@ -23,14 +23,30 @@ export interface SwarmV2SharedState {
   /** Recursion depth cap. Default MAX_DEPTH_HARD (3). */
   readonly maxDepth: number;
 
-  /** Mutable: monotonic counter, also serves as the next agent's index. */
+  /**
+   * Mutable: monotonic agent counter AND the next agent's global index AND the
+   * budget gate — incremented once per reserved agent, starting at 1 (the CEO
+   * holds index 0). It counts the CEO, so it is NOT the sub-agent count; use the
+   * subagentCount()/remainingSlots()/subagentCapacity() views for display.
+   */
   spawnedCount: number;
   /** Mutable: max depth observed in any successful spawn (0 = CEO only). */
   maxDepthReached: number;
   /** Mutable: count of distinct spawn_subagents calls from the CEO. */
   spawnRoundsByCeo: number;
+  /** Mutable: verify_claims tallies accumulated across all CEO verify calls. */
+  verifiedClaims: number;
+  survivedClaims: number;
+  refutedClaims: number;
   /** Mutable: flat tree of all agent results, ordered by global index. */
   flatAgents: SubagentV2Result[];
+
+  /** Sub-agents reserved so far (excludes the CEO). Display view of spawnedCount. */
+  subagentCount(): number;
+  /** Sub-agent slots still available before the budget cap. */
+  remainingSlots(): number;
+  /** Total sub-agent slots the tree can ever hold (excludes the CEO). */
+  subagentCapacity(): number;
 
   /** True iff acquiring a new agent slot would exceed the cap. Atomic-ish: read in same tick. */
   isSpawnDisabled(elapsedMs?: number): boolean;
@@ -43,6 +59,8 @@ export interface SwarmV2SharedState {
   tryReserveAgentSlot(): number | null;
   /** Append a completed agent's result to flatAgents. Updates maxDepthReached. */
   recordAgent(result: SubagentV2Result): void;
+  /** Accumulate one verify_claims call's tally into the verification stats. */
+  recordVerification(claims: number, survived: number, refuted: number): void;
 }
 
 export interface MakeSharedStateInput {
@@ -75,7 +93,22 @@ export function makeSharedState(input: MakeSharedStateInput): SwarmV2SharedState
     spawnedCount: 1,
     maxDepthReached: 0,
     spawnRoundsByCeo: 0,
+    verifiedClaims: 0,
+    survivedClaims: 0,
+    refutedClaims: 0,
     flatAgents: [],
+
+    // Display views; all the spawnedCount-includes-the-CEO arithmetic lives here
+    // so call sites never hand-roll the off-by-one.
+    subagentCount(): number {
+      return this.spawnedCount - 1;
+    },
+    remainingSlots(): number {
+      return this.maxTotalSubagents - this.spawnedCount;
+    },
+    subagentCapacity(): number {
+      return this.maxTotalSubagents - 1;
+    },
 
     isSpawnDisabled(elapsedMs?: number): boolean {
       // 80%-wall soft gate: when elapsed/wall > 0.80, spawn omitted from
@@ -101,6 +134,12 @@ export function makeSharedState(input: MakeSharedStateInput): SwarmV2SharedState
       if (result.depth > this.maxDepthReached) {
         this.maxDepthReached = result.depth;
       }
+    },
+
+    recordVerification(claims: number, survived: number, refuted: number): void {
+      this.verifiedClaims += claims;
+      this.survivedClaims += survived;
+      this.refutedClaims += refuted;
     },
   };
 

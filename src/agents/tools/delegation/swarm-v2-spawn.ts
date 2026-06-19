@@ -14,6 +14,7 @@
 import { runExploreLoop, type ExploreInput, type ExploreResult } from "./explore-loop.js";
 import { EXPLORE_TOOL_NAMES, type ExploreToolName } from "./explore-tools.js";
 import type { LlmClient } from "./providers/types.js";
+import { deriveAgentOk } from "./swarm-v2-result.js";
 import type { SwarmV2SharedState } from "./swarm-v2-state.js";
 import {
   SUBAGENT_CONTENT_CAP_TO_PARENT,
@@ -46,7 +47,7 @@ function makeSpawnToolDefinition(
   parentDepth: number,
   state: SwarmV2SharedState,
 ): ExtraTool["definition"] {
-  const remaining = state.maxTotalSubagents - state.spawnedCount;
+  const remaining = state.remainingSlots();
   const childDepth = parentDepth + 1;
   return {
     type: "function",
@@ -56,7 +57,7 @@ function makeSpawnToolDefinition(
         `Fan out N parallel ReAct sub-agents (each a full explore-loop with the standard 10 fs/web/bash tools). ` +
         `Sub-agents run concurrently; you receive their results before deciding the next round. ` +
         `Current depth=${parentDepth}, child depth=${childDepth}/${state.maxDepth}. ` +
-        `Tree budget: ${remaining}/${state.maxTotalSubagents - 1} sub-agent slots remaining. ` +
+        `Tree budget: ${remaining}/${state.subagentCapacity()} sub-agent slots remaining. ` +
         `Max 16 subtasks per call; call MULTIPLE times across iterations as findings emerge. ` +
         `Subtasks within ONE call must be independent (no inter-agent communication). ` +
         `Each sub-agent finishes with a synthesis turn; their content is returned to you truncated to ${SUBAGENT_CONTENT_CAP_TO_PARENT} chars.`,
@@ -307,6 +308,7 @@ async function runOneSubAgentV2(input: RunOneSubAgentV2Input): Promise<SubagentV
         index: myIndex,
         parentIndex,
         depth: myDepth,
+        kind: "worker",
         ok: false,
         objective: spec.objective,
         allowedTools: spec.allowed_tools,
@@ -323,21 +325,16 @@ async function runOneSubAgentV2(input: RunOneSubAgentV2Input): Promise<SubagentV
     }
 
     const { stats, content } = result;
-    // Empty-content guard: same defense as v1 (swarm-loop.ts:531). K2.6
-    // reasoning runaway can produce subtype=success with empty content.
-    const subtypeOk = stats.subtype === "success";
-    const contentEmpty = (content ?? "").trim().length === 0;
-    const finalOk = subtypeOk && !contentEmpty;
-    const errorReason = !subtypeOk
-      ? `subtype=${stats.subtype} halt=${stats.haltReason}`
-      : contentEmpty
-        ? `subtype=success but empty content (likely reasoning runaway at synthesis turn; outputTokens=${stats.outputTokens})`
-        : undefined;
+    // ok/errorReason via the shared deriveAgentOk (same contract as the CEO
+    // record). The empty-content guard matters because K2.6 reasoning runaway can
+    // return subtype=success with no synthesis.
+    const { ok: finalOk, errorReason } = deriveAgentOk(stats, content ?? "");
 
     return {
       index: myIndex,
       parentIndex,
       depth: myDepth,
+      kind: "worker",
       ok: finalOk,
       objective: spec.objective,
       allowedTools: spec.allowed_tools,
@@ -458,6 +455,7 @@ export function makeSpawnSubagentsTool(
             index: r.index,
             parentIndex: parentIndex,
             depth: childDepth,
+            kind: "worker",
             ok: false,
             objective: r.vs.spec.objective,
             allowedTools: r.vs.spec.allowed_tools,
@@ -496,7 +494,7 @@ export function makeSpawnSubagentsTool(
 
       const header =
         `spawn_subagents complete: ${okCount}/${children.length} ok, ${failCount} failed.\n` +
-        `Tree state: spawned=${state.spawnedCount - 1}/${state.maxTotalSubagents - 1}, ` +
+        `Tree state: spawned=${state.subagentCount()}/${state.subagentCapacity()}, ` +
         `depth_reached=${state.maxDepthReached}.` +
         droppedNote +
         validationNote;

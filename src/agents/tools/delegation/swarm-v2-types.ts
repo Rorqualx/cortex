@@ -66,6 +66,30 @@ export interface SubtaskV2Spec {
   max_iterations?: number;
 }
 
+// === Verify spec: what `verify_claims` accepts per element ===
+
+export interface VerifyClaimSpec {
+  /** The load-bearing claim to put under adversarial scrutiny. */
+  claim: string;
+  /** Optional supporting evidence the worker offered (file:line, metric, quote). */
+  evidence?: string;
+  /** Zero-based indices into the parent's context array routed to each verifier. */
+  context_indices?: number[];
+}
+
+/** A single skeptic's verdict. Anything but a clear SUPPORTED counts as refuted. */
+export type Verdict = "refuted" | "supported";
+
+/** Per-claim tally after K skeptics vote. survived iff refuted votes < majority. */
+export interface ClaimVerdict {
+  claim: string;
+  survived: boolean;
+  refutedVotes: number;
+  supportedVotes: number;
+  /** Indices of the verifier agents that judged this claim. */
+  verifierIndices: number[];
+}
+
 // === Sub-agent result: what runOneSubAgentV2 returns ===
 
 export interface SubagentV2Result {
@@ -75,6 +99,13 @@ export interface SubagentV2Result {
   parentIndex: number | null;
   /** 0 = CEO, 1-3 = sub-agents. */
   depth: number;
+  /**
+   * Role in the tree. "worker" = a spawn_subagents explorer (and the CEO).
+   * "verifier" = an adversarial skeptic from verify_claims. Worker-failure
+   * adjudication (all_subagents_failed) ignores verifiers — a refuted claim is
+   * a successful verification, not a swarm failure.
+   */
+  kind: "worker" | "verifier";
   ok: boolean;
   objective: string;
   allowedTools: string[];
@@ -102,7 +133,7 @@ export type SwarmV2HaltReason =
   | "ceo_iter_cap" // CEO's explore-loop reached max_orchestration_rounds
   | "ceo_synthesis_empty" // CEO finished but produced empty content; fallback fired
   | "ceo_no_progress" // explore-loop's no-progress detector tripped on CEO
-  | "spawn_budget_exhausted" // 100-agent ceiling hit; CEO synthesizes from what landed
+  | "spawn_budget_exhausted" // 200-agent ceiling hit; CEO synthesizes from what landed
   | "all_subagents_failed" // every spawn round produced 0 ok agents
   | "error"; // unrecoverable provider/network error
 
@@ -120,6 +151,13 @@ export interface SwarmV2Stats {
   cacheHitTokens?: number;
   costUsd?: number;
   latencyMs: number;
+  /** Adversarial-verification summary. Absent when the CEO never called verify_claims. */
+  verification?: {
+    claims: number;
+    survived: number;
+    refuted: number;
+    verifierAgents: number;
+  };
   /** Flat list, ordered by global index. CEO is index 0. */
   flatAgents: SubagentV2Result[];
 }
@@ -144,7 +182,7 @@ export interface SwarmV2Input {
   thinking: boolean;
   format: "text" | "markdown" | "json";
   maxOutputTokens: number;
-  /** Hard cap on total agents in the tree (default 100, max 100). */
+  /** Hard cap on total agents in the tree (default 200, max 200). */
   maxTotalSubagents?: number | undefined;
   /** Recursion depth cap (default 3, max 3). 1 = no recursion (CEO + leaves). */
   maxDepth?: number | undefined;
@@ -165,18 +203,19 @@ export interface SwarmV2Input {
 /**
  * Cap on each sub-agent's content when packaged into a tool-result string for
  * its parent. v1 truncates at 12000 chars before passing to the aggregator;
- * v2 tightens to 8000 because at the 100-agent ceiling, raw payloads from
+ * v2 tightens to 8000 because at the 200-agent ceiling, raw payloads from
  * all leaves could otherwise approach 1.2MB before any CEO synthesis turn.
  * The flatAgents array preserves the FULL pre-truncation content for trace
  * + final-stats consumers; only the inline tool-result render is truncated.
  */
 export const SUBAGENT_CONTENT_CAP_TO_PARENT = 8000;
 
-/** Hard ceiling on total agents in the tree. Schema enforces; runtime defends.
- *  Lifted 100→200 in 2026-05-10 parity push: the original 100 was Kimi Agent
- *  Swarm parity; with measured ~10 calls/agent on tool-call-dense scenarios,
- *  200 unlocks the headroom needed to clear the 1,500-tool-calls bar. The
- *  schema default stays at 100 so existing callers see no behavior change. */
+/** Hard ceiling AND the effective default for total agents in the tree (the
+ *  delegate_swarm tool does not expose maxTotalSubagents, so runtime resolves
+ *  `input.maxTotalSubagents ?? MAX_TOTAL_SUBAGENTS_HARD` to this value).
+ *  Lifted 100→200 in the 2026-05-10 parity push: the original 100 was Kimi
+ *  Agent Swarm parity; with measured ~10 calls/agent on tool-call-dense
+ *  scenarios, 200 unlocks the headroom needed to clear the 1,500-tool-calls bar. */
 export const MAX_TOTAL_SUBAGENTS_HARD = 200;
 
 /** Hard ceiling on recursion depth. Schema enforces; tool-definition omission defends. */
@@ -184,3 +223,10 @@ export const MAX_DEPTH_HARD = 3;
 
 /** Wall-budget fraction past which spawn_subagents is omitted from catalogs (forces synthesis). */
 export const SPAWN_SOFT_GATE_FRACTION = 0.8;
+
+/** Default skeptics per claim for verify_claims. Odd so a majority always exists. */
+export const VERIFIERS_PER_CLAIM_DEFAULT = 3;
+/** Upper bound on skeptics per claim (keeps one verify call from draining the tree budget). */
+export const MAX_VERIFIERS_PER_CLAIM = 5;
+/** Upper bound on claims per verify_claims call. */
+export const MAX_CLAIMS_PER_VERIFY_CALL = 8;
