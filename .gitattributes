@@ -371,3 +371,5 @@ src/agents/sandbox/browser.create.test.ts                                merge=o
 src/agents/sandbox/ssh-backend.test.ts                                   merge=ours
 src/gateway/server-chat.agent-events.test.ts                             merge=ours
 src/gateway/server.sessions.reset-cleanup.test.ts                        merge=ours
+packages/agent-core/src/agent-loop.test.ts                              merge=ours
+src/llm/providers/mistral.test.ts                                       merge=ours
