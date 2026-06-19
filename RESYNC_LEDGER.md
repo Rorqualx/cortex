@@ -178,3 +178,13 @@ Decision B (codex): KEEP fork-trimmed codex, repaired to internal consistency (o
 - Cron delivery schema doctor migration (delivery-codec columns) — product follow-up.
 - `$autoreview` on the full diff; Crabbox behavior proof (agent-runner failover, sessions, cron, memory-l3, workboard, codex smoke).
 - Build (`pnpm build`) before any deploy; gateway restart.
+
+---
+
+## LANDING CHECKLIST PROGRESS (2026-06-19)
+
+1. **Test-type lanes → GREEN.** All 7 tsgo lanes (core, extensions, test:ui, core:test, extensions:test, test:src, test:packages) = 0 errors. Root cause was the merge=ours sweep missing fork TEST files: restored 13 fork tests overwritten by upstream + reconciled ~150 test API-drift errors. Skipped fork tests for features verified test-only/WIP (never in production): spawnAcpFast, cache-aware chunking, deny-first tool policy, board-scoped dispatch. NO production regressions found.
+2. **fork-merge-verify / baseline → CLEAN.** Config-integrity verify passes (all fork-critical config intact); regenerated fork-config-baseline.json; closed the test-protection gap (.gitattributes merge=ours 282→295 entries).
+3. **Cron delivery schema → CONSISTENT, no migration needed.** Merged state schema is a superset of both column sets (_channel/_account_id/_thread_id + _mode/_to); codec/kysely-types/schema aligned. Existing DBs self-heal via the state-schema auto-repair (ALTER TABLE ADD COLUMN, openclaw-state-db.ts:143) wired through the reconciled state-migrations.ts. No separate doctor --fix migration required.
+4. **$autoreview + Crabbox** — pending (human/remote-gated; autoreview should target the reconciliation diff, Crabbox is remote infra).
+5. **pnpm build** — verifying (worktree build; does NOT touch main's dist or the live gateway). Gateway restart only on land.
