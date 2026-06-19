@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../test-helpers/storage.ts";
-import { AvatarChangeEvent, AvatarLightbox } from "./avatar-lightbox.ts";
+import { AvatarChangeEvent, AvatarLightbox, type AvatarTarget } from "./avatar-lightbox.ts";
 import {
   loadLocalAssistantIdentity,
   loadLocalUserIdentity,
@@ -13,10 +13,10 @@ const DATA_URL = "data:image/png;base64,AAAA";
 
 // saveCrop/cropUrl are private; reach them directly to drive the save path
 // without staging a full crop gesture.
-type LightboxInternals = AvatarLightbox & { cropUrl: string | null; saveCrop(): void };
+type LightboxInternals = { target: AvatarTarget; cropUrl: string | null; saveCrop(): void };
 
-function makeLightbox(target: "user" | "assistant"): LightboxInternals {
-  const el = new AvatarLightbox() as LightboxInternals;
+function makeLightbox(target: AvatarTarget): LightboxInternals {
+  const el = new AvatarLightbox() as unknown as LightboxInternals;
   el.target = target;
   el.cropUrl = DATA_URL;
   return el;

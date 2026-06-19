@@ -339,7 +339,7 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
       await writable.page.locator(".workboard-section").first().waitFor({ state: "attached" });
       await writable.page.evaluate(() => {
         document.querySelectorAll("details.workboard-section").forEach((details) => {
-          details.open = true;
+          (details as HTMLDetailsElement).open = true;
         });
       });
       await statusColumn(writable.page, "Todo").waitFor({ state: "visible" });

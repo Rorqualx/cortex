@@ -21,7 +21,7 @@ export type BuildChatItemsProps = {
   streamSegments: Array<{ text: string; ts: number }>;
   stream: string | null;
   streamStartedAt: number | null;
-  sendStartedAt: number | null;
+  sendStartedAt?: number | null;
   thinkingStream?: string | null;
   thinkingStreamStartedAt?: number | null;
   sending?: boolean;

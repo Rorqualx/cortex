@@ -81,6 +81,10 @@ import {
   type RealtimeTalkConversationState,
 } from "./chat/realtime-talk-conversation.ts";
 import {
+  reconcileRealtimeTalkCatalogSelection,
+  type RealtimeTalkCatalogProvider,
+} from "./chat/realtime-talk-catalog.ts";
+import {
   RealtimeTalkSession,
   type RealtimeTalkLaunchOptions,
   type RealtimeTalkStatus,
@@ -337,6 +341,7 @@ export class OpenClawApp extends LitElement {
   @state() realtimeTalkTranscript: string | null = null;
   @state() realtimeTalkConversation: RealtimeTalkConversationEntry[] = [];
   @state() realtimeTalkOptionsOpen = false;
+  @state() realtimeTalkCatalogProviders: RealtimeTalkCatalogProvider[] | null = null;
   @state() realtimeTalkOptions = {
     provider: "",
     model: "",
@@ -438,6 +443,7 @@ export class OpenClawApp extends LitElement {
   /** Channels section: key of the channel whose focused config modal is open. */
   @state() configChannelModalKey: string | null = null;
   @state() pendingUpdateExpectedVersion: string | null = null;
+  @state() pendingUpdateHandoff = false;
   @state() updateStatusBanner: { tone: "danger" | "warn" | "info"; text: string } | null = null;
   @state() communicationsFormMode: "form" | "raw" = "form";
   @state() communicationsSearchQuery = "";
@@ -643,6 +649,9 @@ export class OpenClawApp extends LitElement {
   @state() overviewLogCursor = 0;
 
   @state() skillsLoading = false;
+  @state() skillsAgentId: string | null = null;
+  // Non-reactive revision counter bumped by setSkillsAgentId to invalidate in-flight loads.
+  skillsAgentRevision = 0;
   @state() skillsReport: SkillStatusReport | null = null;
   @state() skillsError: string | null = null;
   @state() skillsFilter = "";
@@ -1200,6 +1209,29 @@ export class OpenClawApp extends LitElement {
 
   updateRealtimeTalkOptions(next: Partial<typeof this.realtimeTalkOptions>) {
     this.realtimeTalkOptions = { ...this.realtimeTalkOptions, ...next };
+  }
+
+  async fetchRealtimeTalkCatalog() {
+    if (!this.client || !this.connected) {
+      return;
+    }
+    this.realtimeTalkCatalogProviders = null;
+    try {
+      const result = await this.client.request<{
+        realtime?: { providers?: RealtimeTalkCatalogProvider[] };
+      }>("talk.catalog", {});
+      const providers = result?.realtime?.providers ?? [];
+      this.realtimeTalkCatalogProviders = providers;
+      const update = reconcileRealtimeTalkCatalogSelection({
+        providers,
+        selection: this.realtimeTalkOptions,
+      });
+      if (update) {
+        this.updateRealtimeTalkOptions(update);
+      }
+    } catch {
+      this.realtimeTalkCatalogProviders = null;
+    }
   }
 
   private buildRealtimeTalkLaunchOptions(): RealtimeTalkLaunchOptions {

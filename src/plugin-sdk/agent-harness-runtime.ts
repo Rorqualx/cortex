@@ -124,9 +124,25 @@ export {
 } from "../auto-reply/heartbeat-tool-response.js";
 export { isMessagingTool, isMessagingToolSendAction } from "../agents/embedded-agent-messaging.js";
 export {
+  extractMessagingToolSend,
+  extractMessagingToolSendResult,
   extractToolResultMediaArtifact,
   filterToolResultMediaUrls,
+  isToolResultError,
+  sanitizeToolResult,
 } from "../agents/embedded-agent-subscribe.tools.js";
+// Re-exported for harness consumers (codex app-server) that build tool results
+// and terminal presentations outside the embedded runner.
+export {
+  finalizeToolTerminalPresentation,
+  resolveToolTerminalPresentation,
+} from "../agents/agent-tools.before-tool-call.js";
+export {
+  consumeAdjustedParamsForToolCall,
+  consumePreExecutionBlockedToolCall,
+} from "../agents/agent-tools.before-tool-call.state.js";
+export { getChannelAgentToolMeta } from "../agents/channel-tools.js";
+export { isReplaySafeToolCall } from "../agents/tool-mutation.js";
 export { normalizeUsage } from "../agents/usage.js";
 export { resolveOpenClawAgentDir } from "./agent-dir-compat.js";
 export {

@@ -269,6 +269,7 @@ export type AppViewState = ScrollHost &
     configActiveSubsection: string | null;
     configChannelModalKey: string | null;
     pendingUpdateExpectedVersion: string | null;
+    pendingUpdateHandoff: boolean;
     updateStatusBanner: { tone: "danger" | "warn" | "info"; text: string } | null;
     communicationsFormMode: "form" | "raw";
     communicationsSearchQuery: string;
@@ -435,6 +436,8 @@ export type AppViewState = ScrollHost &
   > &
   Pick<CronModelSuggestionsState, "cronModelSuggestions"> & {
     skillsLoading: boolean;
+    skillsAgentId: string | null;
+    skillsAgentRevision: number;
     skillsReport: SkillStatusReport | null;
     skillsError: string | null;
     skillsFilter: string;

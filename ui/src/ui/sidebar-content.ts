@@ -25,6 +25,16 @@ export type CanvasSidebarContent = {
   unavailableReason?: "not_found" | "oversized" | "not_visible" | null;
 };
 
+export type ImageSidebarContent = {
+  kind: "image";
+  title: string;
+  src: string;
+  mimeType?: string | null;
+  rawText?: string | null;
+  fullMessageRequest?: SidebarFullMessageRequest;
+  unavailableReason?: "not_found" | "oversized" | "not_visible" | null;
+};
+
 export type PendingEdit = {
   type: "edit" | "apply_patch";
   /** Line-based hunks: removed lines and added lines */
@@ -49,4 +59,8 @@ export type CodeSidebarContent = {
   unavailableReason?: "not_found" | "oversized" | "not_visible" | null;
 };
 
-export type SidebarContent = MarkdownSidebarContent | CanvasSidebarContent | CodeSidebarContent;
+export type SidebarContent =
+  | MarkdownSidebarContent
+  | CanvasSidebarContent
+  | ImageSidebarContent
+  | CodeSidebarContent;

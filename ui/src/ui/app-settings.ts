@@ -55,7 +55,7 @@ import { loadNodes, type NodesState } from "./controllers/nodes.ts";
 import { loadPresence, type PresenceState } from "./controllers/presence.ts";
 import { loadSessions, type SessionsState } from "./controllers/sessions.ts";
 import { loadSkillForgeStatus, type SkillForgeState } from "./controllers/skill-forge.ts";
-import { loadSkills, type SkillsState } from "./controllers/skills.ts";
+import { loadSkills, reconcileSkillsAgentId, type SkillsState } from "./controllers/skills.ts";
 import { loadUsage, type UsageState } from "./controllers/usage.ts";
 import { loadWorkboard } from "./controllers/workboard.ts";
 import { resolveCronJobLastRunStatus } from "./cron-status.ts";
@@ -511,6 +511,8 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         await loadCron(host);
         break;
       case "skills":
+        await loadAgents(app);
+        reconcileSkillsAgentId(app, app.agentsList);
         await loadSkills(app);
         break;
       case "skillForge":

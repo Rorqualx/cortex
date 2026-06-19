@@ -609,6 +609,9 @@ describe("app-tool-stream fallback lifecycle handling", () => {
     const host = createHost({
       sessionKey: "main",
       hello: {
+        type: "hello-ok" as const,
+        protocol: 1,
+        auth: { role: "owner", scopes: [] as string[] },
         snapshot: {
           sessionDefaults: {
             defaultAgentId: "main",

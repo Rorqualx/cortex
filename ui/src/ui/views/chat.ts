@@ -67,6 +67,7 @@ import type {
   SessionGoal,
   SessionsListResult,
 } from "../types.ts";
+import type { RealtimeTalkCatalogProvider } from "../chat/realtime-talk-catalog.ts";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import { resolveLocalUserName } from "../user-identity.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
@@ -108,10 +109,10 @@ export type ChatProps = {
   streamSegments: Array<{ text: string; ts: number }>;
   stream: string | null;
   streamStartedAt: number | null;
-  sendStartedAt: number | null;
+  sendStartedAt?: number | null;
   runId?: string | null;
-  thinkingStream: string | null;
-  thinkingStreamStartedAt: number | null;
+  thinkingStream?: string | null;
+  thinkingStreamStartedAt?: number | null;
   assistantAvatarUrl?: string | null;
   draft: string;
   queue: ChatQueueItem[];
@@ -121,6 +122,7 @@ export type ChatProps = {
   realtimeTalkTranscript?: string | null;
   realtimeTalkConversation?: RealtimeTalkConversationEntry[];
   realtimeTalkOptionsOpen?: boolean;
+  realtimeTalkCatalogProviders?: RealtimeTalkCatalogProvider[] | null;
   realtimeTalkOptions?: {
     provider: string;
     model: string;
@@ -159,6 +161,7 @@ export type ChatProps = {
   onDraftChange: (next: string) => void;
   onRequestUpdate?: () => void;
   onHistoryKeydown?: (input: ChatInputHistoryKeyInput) => ChatInputHistoryKeyResult;
+  onSlashIntent?: () => void | Promise<void>;
   onSend: () => void;
   onCompact?: () => void | Promise<void>;
   onOpenSessionCheckpoints?: () => void | Promise<void>;
@@ -168,6 +171,7 @@ export type ChatProps = {
     next: Partial<NonNullable<ChatProps["realtimeTalkOptions"]>>,
   ) => void;
   onDismissError?: () => void;
+  onDismissRealtimeTalkError?: () => void;
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
   onQueueRetry?: (id: string) => void;
@@ -194,6 +198,27 @@ export type ChatProps = {
   onChatScroll?: (event: Event) => void;
   basePath?: string;
   composerControls?: TemplateResult | typeof nothing | ReturnType<typeof guard>;
+  sessionWorkspace?: {
+    collapsed: boolean;
+    sessionKey: string;
+    list: {
+      sessionKey: string;
+      root?: string;
+      files: unknown[];
+      browser?: unknown;
+      artifacts?: unknown[];
+    } | null;
+    loading: boolean;
+    error: string | null;
+    activeId: string | null;
+    onToggleCollapsed: () => void;
+    onRefresh: () => void;
+    onBrowsePath: (path: string) => void;
+    onCopyPath: (path: string) => void;
+    onOpenFile: (path: string) => void;
+    onSearch: (search: string) => void;
+    onOpenArtifact: (artifactId: string) => void;
+  };
   workspaceFiles?: {
     agentId: string;
     list: AgentsFilesListResult | null;
