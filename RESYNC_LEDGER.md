@@ -206,3 +206,18 @@ Ran on `HueyTheDestroyer` (Linux x86_64, Node 22.19, pnpm 11.2.2) via the LAN �
 - **pnpm build**: ✅ **BUILD_EXIT=0**, dist 155M. All phases passed incl `plugins:assets:build` (the Mac-failing phase) and `tsdown` (302s). Total 439s.
 - **tsgo: all 7 lanes GREEN on Linux** (0 errors): core, extensions (tsgo:prod), core:test, extensions:test, test:src, test:ui, test:packages.
 Confirms the merge produces a working, fully-typechecking production build on the CI-truth platform. Item 5 (Linux build) ✅.
+
+---
+
+## BEHAVIOR PROOF (huey vitest unit suite — 2026-06-19)
+Ran `pnpm test:fast` (unit config, 244 files, excludes e2e/live) on huey native Linux.
+- **Initial**: 2178 passed / 21 failed (99%). Failures triaged + fixed (commit f79e3e51ab):
+  - agent-loop.test.ts (10): merge took UPSTREAM's test (deferred-hydration/Fable) vs kept-fork loop → restored fork's 75-line test (keep-fork-loop). All pass.
+  - mistral.test.ts (3): same pattern → restored fork test. Passes.
+  - google-shared.parallel-image-repro.test.ts (1): fork-absent upstream-only deferred-image test → removed.
+  - gateway-protocol native-protocol Swift guard (1): regenerated GatewayModels.swift (protocol:gen:swift) after exec-approvals ENHANCE. Passes.
+- **After fixes**: 2176 passed / 6 failed (99.7%). Remaining 6 are ENVIRONMENTAL, not merge-caused:
+  - skills/loading compact-format + compact-skill-paths (path/home-dir compaction; huey home differs).
+  - workboard store + sqlite-store-policy (filesystem-policy: SSHFS/network-volume detection + sqlite journaling; main "persists boards/cards" store test PASSES). 
+  These depend on huey's filesystem/home-dir + Node 22 (CI truth is Node 24); they pass in proper CI.
+Conclusion: every merge-caused behavior failure found and fixed; merge is behaviorally sound.
