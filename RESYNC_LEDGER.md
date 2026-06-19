@@ -188,3 +188,12 @@ Decision B (codex): KEEP fork-trimmed codex, repaired to internal consistency (o
 3. **Cron delivery schema → CONSISTENT, no migration needed.** Merged state schema is a superset of both column sets (_channel/_account_id/_thread_id + _mode/_to); codec/kysely-types/schema aligned. Existing DBs self-heal via the state-schema auto-repair (ALTER TABLE ADD COLUMN, openclaw-state-db.ts:143) wired through the reconciled state-migrations.ts. No separate doctor --fix migration required.
 4. **$autoreview + Crabbox** — pending (human/remote-gated; autoreview should target the reconciliation diff, Crabbox is remote infra).
 5. **pnpm build** — verifying (worktree build; does NOT touch main's dist or the live gateway). Gateway restart only on land.
+
+### Items 4-5 status (land-gated, require Linux/remote)
+- **pnpm build: BLOCKED on this Mac (environment, NOT code).** `build-all` plugins:assets:build re-runs `pnpm install`, which fails on `node-llama-cpp`'s native postinstall (host Node is x86_64-under-Rosetta; needs native arm64). Failed in 11.8s before main TS bundling. Per AGENTS.md, build/CI truth is Linux Node 24 → run on Crabbox/Testbox. Code is fully typecheck-verified (all 7 tsgo lanes green).
+- **$autoreview**: run against the RECONCILIATION diff (the resync commits), not the 2,356-commit upstream merge.
+- **Crabbox behavior proof**: remote infra — agent-runner failover, sessions reset, cron delivery, memory-l3, workboard LLM-loop, codex smoke.
+- **Gateway restart**: only after landing to main (branch is isolated; main + live gateway untouched).
+
+## FINAL STATE
+Branch `resync/upstream-2026-06-19`: upstream 2,356 commits integrated, ~15 resync commits, ALL 7 tsgo lanes GREEN, config-integrity clean, cron schema consistent. Remaining before land: Linux build + Crabbox behavior proof + $autoreview on reconciliation diff. Nothing on main; live gateway untouched.
