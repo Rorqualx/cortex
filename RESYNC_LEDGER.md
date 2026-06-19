@@ -157,3 +157,24 @@ Options: (a) keep fork-trimmed codex, make it internally consistent (port only t
 
 ### Everything else: GREEN
 Layers 1-4 (core/ext) + UI shell/chat/cron/storage/sidebar all reconciled to 0 errors with fork features preserved.
+
+---
+
+## PASS 2 FINAL (2026-06-19) — ALL PRODUCTION LANES GREEN
+
+Commits added: `e6e7573c9b`, `5aeca57a1f`, `cff8b7b1c6`.
+**tsgo core + extensions + test:ui = 0 errors.** Full upstream re-integration (layers 1-8) compiles.
+
+Decision A (workboard): KEEP fork LLM-loop workboard; dropped upstream's 2 lifecycle-polling teardown tests (fork doesn't have that feature). Other app-lifecycle tests retained.
+
+Decision B (codex): KEEP fork-trimmed codex, repaired to internal consistency (owner-gate satisfied via ../codex inspection):
+- RESTORED 3 model-selection fns the fork trimmed collaterally (consumers still call them).
+- GRAFTED web-search GATING flags (webSearchAllowed/persistentWebSearchAllowed/nativeProviderWebSearchSupport) the fork kept; provider stays removed.
+- activeTurnIds, per-turn model override, schemaVersion 1->2, appServerRuntimeFingerprint.
+
+## REMAINING FOR LAND (not build-blocking)
+- Test-type lanes: `tsgo:core:test`, `tsgo:extensions:test`, `tsgo:test:src`, `tsgo:test:packages` (verify test files compile; UI test lane already 0).
+- `scripts/fork-merge-verify.mjs --full`; regenerate baseline if config drifted.
+- Cron delivery schema doctor migration (delivery-codec columns) — product follow-up.
+- `$autoreview` on the full diff; Crabbox behavior proof (agent-runner failover, sessions, cron, memory-l3, workboard, codex smoke).
+- Build (`pnpm build`) before any deploy; gateway restart.
