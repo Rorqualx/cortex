@@ -197,3 +197,12 @@ Decision B (codex): KEEP fork-trimmed codex, repaired to internal consistency (o
 
 ## FINAL STATE
 Branch `resync/upstream-2026-06-19`: upstream 2,356 commits integrated, ~15 resync commits, ALL 7 tsgo lanes GREEN, config-integrity clean, cron schema consistent. Remaining before land: Linux build + Crabbox behavior proof + $autoreview on reconciliation diff. Nothing on main; live gateway untouched.
+
+---
+
+## LINUX VERIFICATION (huey, native x86_64 — 2026-06-19)
+Ran on `HueyTheDestroyer` (Linux x86_64, Node 22.19, pnpm 11.2.2) via the LAN — the build the Mac couldn't do (Mac's node-llama-cpp fails under x64 Rosetta).
+- **pnpm install**: ✅ 42s native — node-llama-cpp built cleanly (the exact Mac blocker).
+- **pnpm build**: ✅ **BUILD_EXIT=0**, dist 155M. All phases passed incl `plugins:assets:build` (the Mac-failing phase) and `tsdown` (302s). Total 439s.
+- **tsgo: all 7 lanes GREEN on Linux** (0 errors): core, extensions (tsgo:prod), core:test, extensions:test, test:src, test:ui, test:packages.
+Confirms the merge produces a working, fully-typechecking production build on the CI-truth platform. Item 5 (Linux build) ✅.
