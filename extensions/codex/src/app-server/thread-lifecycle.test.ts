@@ -118,6 +118,8 @@ function createThreadLifecycleAppServerOptions(): Parameters<
       args: ["app-server"],
       headers: {},
     },
+    connectionClass: "local-loopback",
+    remoteAppsSubstrate: "preconfigured",
     codeModeOnly: false,
     requestTimeoutMs: 60_000,
     turnCompletionIdleTimeoutMs: 60_000,
@@ -195,11 +197,13 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }), {
       dynamicTools: [
         {
+          type: "function" as const,
           name: "message",
           description: "Send a message",
           inputSchema: { type: "object" },
         },
         {
+          type: "function" as const,
           name: "music_generate",
           description: "Create music",
           inputSchema: { type: "object" },
@@ -207,6 +211,7 @@ describe("Codex app-server native code mode config", () => {
           deferLoading: true,
         },
         {
+          type: "function" as const,
           name: "image_generate",
           description: "Create images",
           inputSchema: { type: "object" },
@@ -227,6 +232,7 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }), {
       dynamicTools: [
         {
+          type: "function" as const,
           name: "skill_forge",
           description: "Manage the Skill Forge pipeline",
           inputSchema: { type: "object" },
@@ -249,6 +255,7 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }), {
       dynamicTools: [
         {
+          type: "function" as const,
           name: "message",
           description: "Send a message",
           inputSchema: { type: "object" },
@@ -270,6 +277,7 @@ describe("Codex app-server native code mode config", () => {
     };
     const directFingerprint = codexDynamicToolsFingerprint([
       {
+        type: "function" as const,
         name: "message",
         description: "Send a visible message",
         inputSchema,
@@ -277,6 +285,7 @@ describe("Codex app-server native code mode config", () => {
     ]);
     const searchableFingerprint = codexDynamicToolsFingerprint([
       {
+        type: "function" as const,
         name: "message",
         description: "Load and send a visible message",
         inputSchema,
@@ -595,6 +604,8 @@ describe("Codex app-server turn params", () => {
         args: ["app-server", "--listen", "stdio://"],
         headers: {},
       },
+      connectionClass: "local-loopback" as const,
+      remoteAppsSubstrate: "preconfigured" as const,
       codeModeOnly: false,
       requestTimeoutMs: 60_000,
       turnCompletionIdleTimeoutMs: 60_000,

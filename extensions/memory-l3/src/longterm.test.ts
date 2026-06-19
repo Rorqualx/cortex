@@ -260,7 +260,7 @@ describe("consolidateLongTerm", () => {
     const fs = await import("node:fs/promises");
     await fs.unlink(chunkPath);
 
-    const tightConfig: LongTermConfig = { maxAgeWithoutConfirmMs: Number(MS_PER_DAY) };
+    const tightConfig: LongTermConfig = { maxAgeWithoutConfirmMs: Number(MS_PER_DAY), epochGraceMultiplier: 1.5, semanticDedupThreshold: 0.85 };
     const result = await consolidateLongTerm({
       storage,
       agentId: "j-rorqual",
@@ -389,6 +389,7 @@ describe("consolidateLongTerm", () => {
     const noGraceConfig: LongTermConfig = {
       maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
       epochGraceMultiplier: 1,
+      semanticDedupThreshold: 0.85,
     };
     // At 65 days, no grace — archives immediately
     const result = await consolidateLongTerm({

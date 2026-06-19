@@ -28,6 +28,7 @@ import { scoreItem, buildFieldStats, findConstantFields } from "./scoring.js";
 import { compressSearchResults } from "./search-compressor.js";
 import { crushJsonArray } from "./smart-crusher.js";
 import { enforceTokenBudget, estimateTokens } from "./token-budget-enforcer.js";
+import type { AgentMessage } from "../agents/runtime/index.js";
 import type { CompressionConfig } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -428,14 +429,14 @@ describe("TokenBudgetEnforcer", () => {
     const messages = [
       { role: "user" as const, content: "hello" },
       { role: "assistant" as const, content: "hi there" },
-    ];
+    ] as unknown as unknown as AgentMessage[];
     const result = enforceTokenBudget(messages, 10000, DEFAULT_COMPRESSION_CONFIG);
     expect(result).toEqual(messages);
   });
 
   it("drops tool results when over budget", () => {
     const largeContent = "x".repeat(10000);
-    const messages = [
+    const messages: AgentMessage[] = [
       {
         role: "toolResult" as const,
         toolCallId: "1",
@@ -443,8 +444,8 @@ describe("TokenBudgetEnforcer", () => {
         content: [{ type: "text" as const, text: largeContent }],
         isError: false,
         timestamp: Date.now(),
-      },
-      { role: "user" as const, content: "what did you find?" },
+      } as unknown as AgentMessage,
+      { role: "user" as const, content: "what did you find?" } as unknown as AgentMessage,
     ];
     const result = enforceTokenBudget(messages, 100, DEFAULT_COMPRESSION_CONFIG);
     // The last user message should survive; the oversized tool result is dropped.
@@ -462,13 +463,13 @@ describe("compressAssembledContext", () => {
 
   it("compresses tool result messages", async () => {
     const largeJson = generateJsonArray(200);
-    const messages = [
-      { role: "system" as const, content: "System prompt" },
-      { role: "user" as const, content: "Search for errors" },
+    const messages: AgentMessage[] = [
+      { role: "system" as const, content: "System prompt" } as unknown as AgentMessage,
+      { role: "user" as const, content: "Search for errors" } as unknown as AgentMessage,
       {
         role: "assistant" as const,
         content: [{ type: "toolCall" as const, id: "tc1", toolName: "grep", args: {} }],
-      },
+      } as unknown as AgentMessage,
       {
         role: "toolResult" as const,
         toolCallId: "tc1",
@@ -476,7 +477,7 @@ describe("compressAssembledContext", () => {
         content: [{ type: "text" as const, text: largeJson }],
         isError: false,
         timestamp: Date.now(),
-      },
+      } as unknown as AgentMessage,
     ];
 
     const result = await compressAssembledContext(messages, config);
@@ -486,19 +487,19 @@ describe("compressAssembledContext", () => {
   });
 
   it("does not compress user or system messages", async () => {
-    const messages = [
-      { role: "system" as const, content: "System prompt that is quite long but not JSON" },
+    const messages: AgentMessage[] = [
+      { role: "system" as const, content: "System prompt that is quite long but not JSON" } as unknown as AgentMessage,
       {
         role: "user" as const,
         content:
           "Please help me with this really long request that has lots of text but is not a tool result",
-      },
+      } as unknown as AgentMessage,
     ];
 
     const result = await compressAssembledContext(messages, config);
     expect(result.stats.messagesCompressed).toBe(0);
-    expect(result.messages[0].content).toBe("System prompt that is quite long but not JSON");
-    expect(result.messages[1].content).toBe(
+    expect((result.messages[0] as { content: string }).content).toBe("System prompt that is quite long but not JSON");
+    expect((result.messages[1] as { content: string }).content).toBe(
       "Please help me with this really long request that has lots of text but is not a tool result",
     );
   });
@@ -542,7 +543,7 @@ describe("resolveCompressionConfig", () => {
 
   it("preserves nested config", () => {
     const config = resolveCompressionConfig({
-      ccr: { enabled: true, maxEntries: 500 },
+      ccr: { enabled: true, maxEntries: 500, ttlSeconds: 3600 },
     });
     expect(config.ccr.enabled).toBe(true);
     expect(config.ccr.maxEntries).toBe(500);
@@ -933,7 +934,7 @@ describe("compressAssembledContext with CCR", () => {
       },
     ];
 
-    const noCcrConfig = makeConfig({ minContentChars: 100, ccr: { enabled: false } });
+    const noCcrConfig = makeConfig({ minContentChars: 100, ccr: { enabled: false, maxEntries: 1000, ttlSeconds: 3600 } });
     const result = await compressAssembledContext(messages, noCcrConfig);
 
     expect(result.stats.messagesCompressed).toBe(1);
@@ -953,13 +954,13 @@ describe("compressAssembledContext with CCR", () => {
 describe("TokenBudgetEnforcer forward references", () => {
   it("keeps assistant-toolResult pairs together", () => {
     const largeContent = "x".repeat(5000);
-    const messages = [
-      { role: "system" as const, content: "System" },
-      { role: "user" as const, content: "search for errors" },
+    const messages: AgentMessage[] = [
+      { role: "system" as const, content: "System" } as unknown as AgentMessage,
+      { role: "user" as const, content: "search for errors" } as unknown as AgentMessage,
       {
         role: "assistant" as const,
         content: [{ type: "toolCall" as const, id: "tc1", toolName: "grep", args: {} }],
-      },
+      } as unknown as AgentMessage,
       {
         role: "toolResult" as const,
         toolCallId: "tc1",
@@ -967,9 +968,9 @@ describe("TokenBudgetEnforcer forward references", () => {
         content: [{ type: "text" as const, text: largeContent }],
         isError: false,
         timestamp: Date.now(),
-      },
-      { role: "assistant" as const, content: "I found errors in the code." },
-      { role: "user" as const, content: "what about this?" },
+      } as unknown as AgentMessage,
+      { role: "assistant" as const, content: "I found errors in the code." } as unknown as AgentMessage,
+      { role: "user" as const, content: "what about this?" } as unknown as AgentMessage,
     ];
     // Small budget should prefer to keep the pair
     const result = enforceTokenBudget(messages, 500, DEFAULT_COMPRESSION_CONFIG);

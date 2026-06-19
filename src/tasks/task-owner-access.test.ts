@@ -24,14 +24,6 @@ function createTaskRecord(params: Parameters<typeof createTaskRecordOrNull>[0]):
   return task;
 }
 
-function createTaskRecord(params: Parameters<typeof createTaskRecordOrNull>[0]): TaskRecord {
-  const task = createTaskRecordOrNull(params);
-  if (!task) {
-    throw new Error("expected task creation to succeed");
-  }
-  return task;
-}
-
 afterEach(() => {
   resetTaskRegistryForTests({ persist: false });
   ORIGINAL_ENV.restore();

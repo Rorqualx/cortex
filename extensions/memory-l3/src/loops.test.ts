@@ -134,12 +134,13 @@ describe("Loop C: recency dominance", () => {
       "",
     );
 
-    const top = await retrieveTopK({
+    const topResult = await retrieveTopK({
       query: sharedText,
       storage,
       topK: 5,
       now: NOW,
     });
+    const top = topResult.facts;
     const fNew = top.find((r) => r.fact.id === "f-new");
     const fOld = top.find((r) => r.fact.id === "f-old");
     expect(fNew).toBeDefined();
@@ -213,7 +214,8 @@ describe("Loop 5: long-horizon needle recall", () => {
       );
     }
 
-    const top = await retrieveTopK({ query: needleQuery, storage, topK: 5, now: NOW });
+    const topResult = await retrieveTopK({ query: needleQuery, storage, topK: 5, now: NOW });
+    const top = topResult.facts;
     const needleIds = new Set(needleAges.map((_, i) => `needle-${i}`));
     const hits = top.filter((r) => needleIds.has(r.fact.id)).length;
     expect(top).toHaveLength(5);
@@ -369,14 +371,14 @@ describe("Loop F: demotion of stale long-term facts", () => {
 
     // Verify retrieval surfaces the active long-term fact at T=now-90d
     // (still inside the 60-day window).
-    const beforeStale = await retrieveTopK({
+    const beforeStaleResult = await retrieveTopK({
       query: "ephemeral high-importance fact",
       storage,
       topK: 5,
       now: NOW - 90 * MS_PER_DAY,
     });
     expect(
-      beforeStale.find(
+      beforeStaleResult.facts.find(
         (r) => (r.tier === "longterm" && r.fact.id === "f1") || r.fact.dedupKey === "ephemeral:1",
       ),
     ).toBeUndefined();
@@ -399,12 +401,12 @@ describe("Loop F: demotion of stale long-term facts", () => {
     expect(ltFinal.facts[0].archivedAt).toBe(NOW);
 
     // Retrieval should not surface the archived fact even on a perfect query.
-    const afterStale = await retrieveTopK({
+    const afterStaleResult = await retrieveTopK({
       query: "ephemeral high-importance fact",
       storage,
       topK: 5,
       now: NOW,
     });
-    expect(afterStale.find((r) => r.fact.dedupKey === "ephemeral:1")).toBeUndefined();
+    expect(afterStaleResult.facts.find((r) => r.fact.dedupKey === "ephemeral:1")).toBeUndefined();
   });
 });

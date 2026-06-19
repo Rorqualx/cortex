@@ -2,16 +2,14 @@
 import { describe, expect, it } from "vitest";
 import { agentLoop } from "./agent-loop.js";
 import { Agent } from "./agent.js";
-import type { Message, Model } from "./llm.js";
+import type { AssistantMessage, Message, Model, ToolResultMessage } from "./llm.js";
 import type {
   AgentContext,
   AgentEvent,
   AgentLoopConfig,
   AgentMessage,
   AgentTool,
-  AssistantMessage,
   StreamFn,
-  ToolResultMessage,
 } from "./types.js";
 
 const model: Model = {
@@ -37,7 +35,14 @@ function assistant(
     api: model.api,
     provider: model.provider,
     model: model.id,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
     stopReason,
     timestamp: 1,
   } satisfies AssistantMessage;

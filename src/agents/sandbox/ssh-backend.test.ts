@@ -119,6 +119,7 @@ function createBackendSandboxConfig(params?: { binds?: string[]; target?: string
     }),
     tools: { allow: [], deny: [] },
     prune: createSandboxPruneConfig(),
+    osSandbox: { enabled: false, extraWritableRoots: [], extraProtectedMetadata: [], network: "deny" },
   };
 }
 
@@ -283,6 +284,7 @@ describe("ssh sandbox backend", () => {
         },
         tools: { allow: [], deny: [] },
         prune: { idleHours: 24, maxAgeDays: 7 },
+        osSandbox: { enabled: false, extraWritableRoots: [], extraProtectedMetadata: [], network: "deny" },
       },
     });
 

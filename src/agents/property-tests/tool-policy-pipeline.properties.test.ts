@@ -16,21 +16,26 @@ import * as fc from "fast-check";
 import { describe, expect, beforeEach, it } from "vitest";
 import type { AnyAgentTool } from "../agent-tools.types.js";
 import { COMMON_TOOL_NAMES } from "../test-helpers/property-generators.js";
+import type { ToolPolicyPipelineStep } from "../tool-policy-pipeline.js";
 import {
   applyToolPolicyPipeline,
   buildDefaultToolPolicyPipelineSteps,
-  ToolPolicyPipelineStep,
 } from "../tool-policy-pipeline.js";
 
 /**
  * Create mock tool definitions from names
  */
 function createMockTools(names: string[]): AnyAgentTool[] {
-  return names.map((name) => ({
-    name,
-    schema: { type: "object" as const },
-    handler: async () => ({ ok: true, value: null }),
-  }));
+  return names.map(
+    (name) =>
+      ({
+        name,
+        label: name,
+        description: `Mock tool: ${name}`,
+        parameters: { type: "object" as const },
+        execute: async () => ({ ok: true as const, value: null }),
+      }) as unknown as AnyAgentTool,
+  );
 }
 
 /**
@@ -420,7 +425,7 @@ describe("tool-policy-pipeline DENY_FIRST properties", () => {
 
             if (overlapping.length === 0) {
               // Skip if no overlap to test
-              return true;
+              return;
             }
 
             const steps: ToolPolicyPipelineStep[] = [

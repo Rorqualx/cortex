@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { ResolvedOsSandbox } from "./os-sandbox.js";
 import {
   getOsSandboxType,
   isOsSandboxAvailable,
@@ -56,7 +57,8 @@ describe("shouldApplyOsSandbox", () => {
   });
 
   it("returns false when explicitly disabled", () => {
-    expect(shouldApplyOsSandbox(false, false)).toBe(false);
+    const disabled: ResolvedOsSandbox = { enabled: false, extraWritableRoots: [], extraProtectedMetadata: [], network: "allow" };
+    expect(shouldApplyOsSandbox(disabled, false)).toBe(false);
   });
 
   it("returns false by default (opt-in only)", () => {
@@ -67,7 +69,8 @@ describe("shouldApplyOsSandbox", () => {
 
   it("respects explicit enable", () => {
     if (process.platform === "darwin") {
-      expect(shouldApplyOsSandbox(true, false)).toBe(true);
+      const enabled: ResolvedOsSandbox = { enabled: true, extraWritableRoots: [], extraProtectedMetadata: [], network: "allow" };
+      expect(shouldApplyOsSandbox(enabled, false)).toBe(true);
     }
   });
 });

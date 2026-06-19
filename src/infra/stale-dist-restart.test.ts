@@ -91,7 +91,7 @@ describe("stale dist restart guard", () => {
   });
 
   it("stays disarmed when no identity file resolves at arm time", async () => {
-    await withTempDir({ prefix: "openclaw-stale-dist-" }, (tmp) => {
+    await withTempDir({ prefix: "openclaw-stale-dist-" }, async (tmp) => {
       const requestRestart = vi.fn();
       const armed = armStaleDistRestartGuard({
         requestRestart,

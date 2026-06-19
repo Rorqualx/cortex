@@ -6,6 +6,7 @@ import {
   extractFacts,
   parseExtractResponse,
   parseJsonResponse,
+  type LlmCaller,
 } from "./llm.js";
 
 describe("parseJsonResponse", () => {
@@ -191,7 +192,7 @@ describe("parseExtractResponse", () => {
 
 describe("extractFacts", () => {
   it("calls the caller with the v4 system prompt and returns parsed result", async () => {
-    const caller = vi.fn(async () =>
+    const caller = vi.fn<LlmCaller>(async () =>
       JSON.stringify({
         facts: [
           { text: "user prefers morning standups", importance: 0.8, dedupKey: "user:standups" },
@@ -234,10 +235,9 @@ describe("extractFacts", () => {
 
 describe("createGlmCaller", () => {
   it("posts to the default Z.ai endpoint with the model and bearer token", async () => {
-    const fetchImpl = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ choices: [{ message: { content: "hello" } }] }),
-    }));
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "hello" } }] }) }) as Response
+    );
     const caller = createGlmCaller({
       apiKey: "test-key",
       fetchImpl: fetchImpl as never,

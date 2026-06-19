@@ -20,7 +20,7 @@ import {
   ackLeasedAgentSteeringItemsFromSubagentRuns,
   releaseLeasedAgentSteeringItemsFromSubagentRuns,
 } from "../agent-steering-queue.js";
-import type { AgentSteeringQueueItem, SubagentRunRecord } from "../subagent-registry.types.js";
+import type { SubagentRunRecord } from "../subagent-registry.types.js";
 import { arbUUID, arbTimestamp } from "../test-helpers/property-generators.js";
 
 describe("agent-steering-queue properties", () => {
@@ -31,8 +31,7 @@ describe("agent-steering-queue properties", () => {
           // Generate array of runs with different endedAt timestamps
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constantFrom("pending", "running", "terminal"),
@@ -61,7 +60,7 @@ describe("agent-steering-queue properties", () => {
           ),
           arbUUID, // requesterSessionKey
           (runs, requesterSessionKey) => {
-            const runsMap = new Map(runs.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runs.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const items = listPendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -87,8 +86,7 @@ describe("agent-steering-queue properties", () => {
         fc.property(
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constantFrom("pending", "running", "terminal"),
@@ -117,7 +115,7 @@ describe("agent-steering-queue properties", () => {
           ),
           arbUUID,
           (runs, requesterSessionKey) => {
-            const runsMap = new Map(runs.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runs.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const items = listPendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -144,8 +142,7 @@ describe("agent-steering-queue properties", () => {
         fc.property(
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.constant("test-agent"),
               childSessionKey: arbUUID,
               status: fc.constant("terminal" as const),
@@ -173,7 +170,7 @@ describe("agent-steering-queue properties", () => {
             { minLength: 2, maxLength: 10 },
           ),
           (runs) => {
-            const runsMap = new Map(runs.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runs.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const items = listPendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -236,8 +233,8 @@ describe("agent-steering-queue properties", () => {
                 fallbackFrozenResultText,
                 frozenResultText,
               ]) => ({
-                id,
-                parentId,
+                runId: id,
+                requesterAgentId: parentId,
                 agentId,
                 childSessionKey,
                 status,
@@ -269,7 +266,7 @@ describe("agent-steering-queue properties", () => {
               (r) => r.delivery.payload.requesterSessionKey === targetSessionKey,
             );
 
-            const runsMap = new Map(runsWithTarget.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runsWithTarget.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const items = listPendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey: targetSessionKey,
@@ -289,8 +286,7 @@ describe("agent-steering-queue properties", () => {
         fc.property(
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constantFrom("pending", "running", "terminal"),
@@ -337,7 +333,7 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithSession.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const items = listPendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -362,8 +358,7 @@ describe("agent-steering-queue properties", () => {
           arbUUID, // requesterSessionKey
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constantFrom("pending", "running", "terminal"),
@@ -403,7 +398,7 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithSession.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const result = leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -426,7 +421,7 @@ describe("agent-steering-queue properties", () => {
               if (run.delivery?.steeringLeaseId) {
                 const existingLease = leaseIds.has(run.delivery.steeringLeaseId);
                 if (existingLease && run.delivery.steeringLeaseId !== leaseId) {
-                  throw new Error(`Run ${run.id} has conflicting lease ID`);
+                  throw new Error(`Run ${(run as { runId?: string }).runId ?? "?"} has conflicting lease ID`);
                 }
                 leaseIds.add(run.delivery.steeringLeaseId);
               }
@@ -443,8 +438,7 @@ describe("agent-steering-queue properties", () => {
           arbUUID,
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constantFrom("pending", "running", "terminal"),
@@ -484,7 +478,7 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithSession.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const result = leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -513,8 +507,7 @@ describe("agent-steering-queue properties", () => {
           arbUUID,
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constantFrom("pending", "running", "terminal"),
@@ -553,7 +546,7 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithSession.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const result = leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -581,8 +574,7 @@ describe("agent-steering-queue properties", () => {
           arbUUID,
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constantFrom("pending", "running", "terminal"),
@@ -621,7 +613,7 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithSession.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const result = leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -651,8 +643,7 @@ describe("agent-steering-queue properties", () => {
           arbUUID, // requesterSessionKey
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constant("terminal" as const),
@@ -704,7 +695,7 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithSession.map((r) => [r.id, r as SubagentRunRecord]));
+            const runsMap = new Map(runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
             const leaseResult = leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
@@ -745,8 +736,7 @@ describe("agent-steering-queue properties", () => {
           arbUUID, // requesterSessionKey
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constant("terminal" as const),
@@ -798,9 +788,9 @@ describe("agent-steering-queue properties", () => {
             }));
 
             const runsMap = new Map(
-              runsWithDifferentLeases.map((r) => [r.id, r as SubagentRunRecord]),
+              runsWithDifferentLeases.map((r) => [r.runId, r as unknown as SubagentRunRecord]),
             );
-            const runIdsWithOurLease = runs.filter((_, i) => i % 2 === 0).map((r) => r.id);
+            const runIdsWithOurLease = runs.filter((_, i) => i % 2 === 0).map((r) => r.runId);
 
             const originalLeaseIds = new Map<string, string | undefined>();
             for (const [id, run] of runsMap) {
@@ -814,7 +804,7 @@ describe("agent-steering-queue properties", () => {
             });
 
             // Runs with different lease ID should be unchanged
-            for (const runId of runs.filter((_, i) => i % 2 === 1).map((r) => r.id)) {
+            for (const runId of runs.filter((_, i) => i % 2 === 1).map((r) => r.runId)) {
               const run = runsMap.get(runId);
               expect(run?.delivery?.steeringLeaseId).toBe(originalLeaseIds.get(runId));
             }
@@ -833,8 +823,7 @@ describe("agent-steering-queue properties", () => {
           fc.tuple(fc.constantFrom("pending", "suspended"), fc.boolean()),
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constant("terminal" as const),
@@ -888,8 +877,8 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithStatus.map((r) => [r.id, r as SubagentRunRecord]));
-            const runIds = runs.map((r) => r.id);
+            const runsMap = new Map(runsWithStatus.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
+            const runIds = runs.map((r) => r.runId);
 
             const released = releaseLeasedAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
@@ -922,8 +911,7 @@ describe("agent-steering-queue properties", () => {
           arbUUID,
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constant("terminal" as const),
@@ -973,8 +961,8 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithSession.map((r) => [r.id, r as SubagentRunRecord]));
-            const runIds = runs.map((r) => r.id);
+            const runsMap = new Map(runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
+            const runIds = runs.map((r) => r.runId);
 
             releaseLeasedAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
@@ -999,8 +987,7 @@ describe("agent-steering-queue properties", () => {
           arbUUID,
           fc.array(
             fc.record({
-              id: arbUUID,
-              parentId: arbUUID,
+              runId: arbUUID,
               agentId: fc.string(),
               childSessionKey: arbUUID,
               status: fc.constant("terminal" as const),
@@ -1050,8 +1037,8 @@ describe("agent-steering-queue properties", () => {
               },
             }));
 
-            const runsMap = new Map(runsWithSession.map((r) => [r.id, r as SubagentRunRecord]));
-            const runIds = runs.map((r) => r.id);
+            const runsMap = new Map(runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]));
+            const runIds = runs.map((r) => r.runId);
 
             const originalCleanupHandled = new Map<string, boolean>();
             for (const [id, run] of runsMap) {

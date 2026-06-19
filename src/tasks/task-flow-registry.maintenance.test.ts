@@ -53,34 +53,6 @@ function createRunningTaskRun(
   return task;
 }
 
-function createFlowRecord(params: Parameters<typeof createFlowRecordOrNull>[0]): TaskFlowRecord {
-  const flow = createFlowRecordOrNull(params);
-  if (!flow) {
-    throw new Error("expected TaskFlow creation to succeed");
-  }
-  return flow;
-}
-
-function createManagedTaskFlow(
-  params: Parameters<typeof createManagedTaskFlowOrNull>[0],
-): TaskFlowRecord {
-  const flow = createManagedTaskFlowOrNull(params);
-  if (!flow) {
-    throw new Error("expected managed TaskFlow creation to succeed");
-  }
-  return flow;
-}
-
-function createRunningTaskRun(
-  params: Parameters<typeof createRunningTaskRunOrNull>[0],
-): TaskRecord {
-  const task = createRunningTaskRunOrNull(params);
-  if (!task) {
-    throw new Error("expected running task creation to succeed");
-  }
-  return task;
-}
-
 async function withTaskFlowMaintenanceStateDir(
   run: (root: string) => Promise<void>,
 ): Promise<void> {

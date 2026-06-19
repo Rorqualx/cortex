@@ -58,41 +58,6 @@ function requireFinding(
   return finding;
 }
 
-function createManagedTaskFlow(
-  params: Parameters<typeof createManagedTaskFlowOrNull>[0],
-): TaskFlowRecord {
-  const flow = createManagedTaskFlowOrNull(params);
-  if (!flow) {
-    throw new Error("expected managed TaskFlow creation to succeed");
-  }
-  return flow;
-}
-
-function createRunningTaskRun(
-  params: Parameters<typeof createRunningTaskRunOrNull>[0],
-): TaskRecord {
-  const task = createRunningTaskRunOrNull(params);
-  if (!task) {
-    throw new Error("expected running task creation to succeed");
-  }
-  return task;
-}
-
-function requireFinding(
-  findings: TaskFlowAuditFinding[],
-  code: TaskFlowAuditCode,
-  flowId?: string,
-): TaskFlowAuditFinding {
-  const finding = findings.find(
-    (candidate) =>
-      candidate.code === code && (flowId === undefined || candidate.flow?.flowId === flowId),
-  );
-  if (!finding) {
-    throw new Error(`Expected ${code} finding${flowId ? ` for ${flowId}` : ""}`);
-  }
-  return finding;
-}
-
 async function withTaskFlowAuditStateDir(run: (root: string) => Promise<void>): Promise<void> {
   await withOpenClawTestState(
     {

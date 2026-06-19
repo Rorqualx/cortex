@@ -11,7 +11,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe("fetchAnthropicMessagesModels", () => {
   it("fetches /v1/models with anthropic headers and captures display_name as the version", async () => {
-    const fetchFn = vi.fn(async () =>
+    const fetchFn = vi.fn<typeof fetch>(async () =>
       jsonResponse({
         object: "list",
         data: [

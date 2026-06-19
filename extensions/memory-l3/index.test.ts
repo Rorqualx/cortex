@@ -63,7 +63,7 @@ describe("afterTurn buffer-threshold trigger", () => {
         return JSON.stringify({ facts: [] });
       };
       const engine = new HierarchicalL3Engine(storage, { caller: stub });
-      await engine.bootstrap({} as never);
+      await engine.bootstrap();
 
       const fatMessage = { role: "user", content: "x".repeat(20000) } as never;
       await engine.ingest({ sessionId: "s1", message: fatMessage });
@@ -95,7 +95,7 @@ describe("afterTurn buffer-threshold trigger", () => {
         return JSON.stringify({ facts: [] });
       };
       const engine = new HierarchicalL3Engine(storage, { caller: stub });
-      await engine.bootstrap({} as never);
+      await engine.bootstrap();
       await engine.ingest({ sessionId: "s1", message: { role: "user", content: "tiny" } as never });
       await engine.afterTurn({
         sessionId: "s1",

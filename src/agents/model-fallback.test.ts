@@ -1906,7 +1906,7 @@ describe("runWithModelFallback", () => {
           },
         },
       },
-    } as Partial<OpenClawConfig>);
+    } as unknown as Partial<OpenClawConfig>);
 
     expect(
       testing.resolveFallbackCandidates({

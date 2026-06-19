@@ -20,6 +20,8 @@ function createThreadLifecycleAppServerOptions(): Parameters<
       args: ["app-server"],
       headers: {},
     },
+    connectionClass: "local-loopback",
+    remoteAppsSubstrate: "preconfigured",
     requestTimeoutMs: 60_000,
     turnCompletionIdleTimeoutMs: 60_000,
     approvalPolicy: "never",
@@ -34,6 +36,7 @@ function createMessageDynamicTool(
   actions: string[] = ["send"],
 ): Parameters<typeof startOrResumeThread>[0]["dynamicTools"][number] {
   return {
+    type: "function",
     name: "message",
     description,
     inputSchema: {
@@ -54,6 +57,7 @@ function createNamedDynamicTool(
   name: string,
 ): Parameters<typeof startOrResumeThread>[0]["dynamicTools"][number] {
   return {
+    type: "function",
     name,
     description: `${name} test tool`,
     inputSchema: {
@@ -1445,6 +1449,8 @@ describe("Codex app-server thread lifecycle bindings", () => {
           args: ["app-server"],
           headers: {},
         },
+        connectionClass: "local-loopback" as const,
+        remoteAppsSubstrate: "preconfigured" as const,
         codeModeOnly: false,
         requestTimeoutMs: 60_000,
         turnCompletionIdleTimeoutMs: 60_000,

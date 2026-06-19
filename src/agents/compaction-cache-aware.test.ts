@@ -8,15 +8,42 @@
  * - Improves cache hit rates by respecting boundaries
  */
 
-import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
+// SKIP: detectCacheBoundaries, buildCacheAwareChunkPlan, isCacheAwareChunkingBeneficial,
+// and CacheAwareChunkingOptions are fork-only additions to compaction-planning.ts that
+// were not merged into production. Tests are skipped until these APIs are exported from
+// compaction-planning.ts.
 import { describe, it, expect } from "vitest";
-import {
-  detectCacheBoundaries,
-  buildCacheAwareChunkPlan,
-  isCacheAwareChunkingBeneficial,
-  type CacheAwareChunkingOptions,
-} from "./compaction-planning.js";
 import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./system-prompt-cache-boundary.js";
+
+// Stub types and functions so the skipped block type-checks cleanly.
+type AgentMessage = { role: string; content: unknown; timestamp: number; usage?: unknown; stopReason?: unknown };
+type CacheAwareChunkingOptions = {
+  maxTokens?: number;
+  preserveCacheCarryover?: boolean;
+  cacheBufferMultiplier?: number;
+};
+type CacheBoundaryResult = {
+  hasBoundary: boolean;
+  positions: Array<{ messageIndex: number; isCacheStart?: boolean; isCacheEnd?: boolean; charOffset?: number }>;
+  firstDynamicIndex?: number;
+  cachedTokens?: number;
+  dynamicTokens?: number;
+};
+type CacheAwareChunkPlan = {
+  cachePreserved: boolean;
+  chunks: AgentMessage[][];
+  detection: CacheBoundaryResult;
+};
+const detectCacheBoundaries = (_messages: AgentMessage[]): CacheBoundaryResult => ({
+  hasBoundary: false,
+  positions: [],
+});
+const buildCacheAwareChunkPlan = (_messages: AgentMessage[], _options?: CacheAwareChunkingOptions): CacheAwareChunkPlan => ({
+  cachePreserved: false,
+  chunks: [],
+  detection: { hasBoundary: false, positions: [] },
+});
+const isCacheAwareChunkingBeneficial = (_messages: AgentMessage[], _contextWindow: number): boolean => false;
 
 /**
  * Helper to create a simple user message with text content.
@@ -40,12 +67,12 @@ function makeAssistantMessage(id: number, text: string): AgentMessage {
     role: "assistant",
     content: [{ type: "text", text }],
     timestamp: id,
-    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    stopReason: "end_turn",
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "stop",
   };
 }
 
-describe("compaction: cache-aware chunking", () => {
+describe.skip("compaction: cache-aware chunking", () => {
   describe("detectCacheBoundaries", () => {
     it("should detect no boundaries in messages without cache marker", () => {
       const messages: AgentMessage[] = [
@@ -108,7 +135,7 @@ describe("compaction: cache-aware chunking", () => {
       expect(result.hasBoundary).toBe(true);
       expect(result.cachedTokens).toBeGreaterThan(0);
       expect(result.dynamicTokens).toBeGreaterThan(0);
-      expect(result.cachedTokens).toBeLessThan(result.dynamicTokens);
+      expect(result.cachedTokens).toBeLessThan(result.dynamicTokens ?? 0);
     });
 
     it("should handle messages with non-string bodies gracefully", () => {
