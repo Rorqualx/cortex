@@ -130,12 +130,26 @@ const writerStoreFileStats = new WeakMap<
 
 function loadSessionArchiveRuntime() {
   // Archive cleanup is a cold maintenance path, so keep it lazy to avoid gateway import cycles.
-  sessionArchiveRuntimePromise ??= import("../../gateway/session-archive.runtime.js");
+  if (!sessionArchiveRuntimePromise) {
+    sessionArchiveRuntimePromise = import("../../gateway/session-archive.runtime.js").catch(
+      (err) => {
+        // Reset so the next call retries after transient build/disk races.
+        sessionArchiveRuntimePromise = null;
+        throw err;
+      },
+    );
+  }
   return sessionArchiveRuntimePromise;
 }
 
 function loadTrajectoryCleanupRuntime() {
-  trajectoryCleanupRuntimePromise ??= import("../../trajectory/cleanup.js");
+  if (!trajectoryCleanupRuntimePromise) {
+    trajectoryCleanupRuntimePromise = import("../../trajectory/cleanup.js").catch((err) => {
+      // Reset so the next call retries after transient build/disk races.
+      trajectoryCleanupRuntimePromise = null;
+      throw err;
+    });
+  }
   return trajectoryCleanupRuntimePromise;
 }
 

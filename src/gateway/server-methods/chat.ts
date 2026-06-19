@@ -3042,7 +3042,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
     const requestedSessionId = normalizeOptionalText(p.sessionId);
     const backingSessionId = entry?.sessionId ?? requestedSessionId;
-    const deletedAgentId = resolveDeletedAgentIdFromSessionKey(cfg, sessionKey);
+    const deletedAgentId = resolveDeletedAgentIdFromSessionKey(cfg, sessionKey, entry);
     if (deletedAgentId !== null) {
       respond(
         false,

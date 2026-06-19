@@ -293,7 +293,10 @@ export async function startOrResumeThread(params: {
   dynamicTools: CodexDynamicToolSpec[];
   appServer: CodexAppServerRuntimeOptions;
   developerInstructions?: string;
-  // Gates codex's native web_search (app-server protocol web_search: Option<bool>).
+  // Web-search allow/support flags forwarded from attempt-startup. The fork
+  // removed the codex native web-search PROVIDER, so these are accepted for
+  // caller compatibility but do not gate a provider here; native web_search is
+  // governed by the app-server config defaults.
   webSearchAllowed?: boolean;
   persistentWebSearchAllowed?: boolean;
   nativeProviderWebSearchSupport?: CodexNativeWebSearchSupport;

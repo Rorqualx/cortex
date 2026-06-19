@@ -251,12 +251,16 @@ function splitCommandChain(command: string): string[] | null {
 function splitShellPipeline(
   command: string,
 ): { ok: boolean; reason?: string; segments: string[] } {
-  // Minimal pipeline splitter: split on unquoted | not part of ||.
+  // Split on unquoted | (not ||). Bail (ok:false) on heredocs, command
+  // substitution, or raw newlines so the caller falls back to a line-by-line
+  // scan — those can hide a /approve or interactive-login command on a separate
+  // logical line that single-segment pipeline parsing would miss.
   const segments: string[] = [];
   let buf = "";
   let inSingle = false;
   let inDouble = false;
   let escaped = false;
+  let unsafe = false;
 
   for (let i = 0; i < command.length; i += 1) {
     const ch = command[i];
@@ -301,6 +305,15 @@ function splitShellPipeline(
       buf += ch;
       continue;
     }
+    // Unquoted constructs that defeat single-segment pipeline analysis — flag
+    // so the caller falls back to line-by-line scanning.
+    if (ch === "\n" || ch === "\r" || ch === "`") {
+      unsafe = true;
+    } else if (ch === "$" && next === "(") {
+      unsafe = true;
+    } else if (ch === "<" && next === "<") {
+      unsafe = true;
+    }
     // Unquoted | that is not part of || operator
     if (ch === "|" && next !== "|" && command[i - 1] !== "|") {
       const trimmed = buf.trim();
@@ -315,6 +328,13 @@ function splitShellPipeline(
   const trimmed = buf.trim();
   if (trimmed) {
     segments.push(trimmed);
+  }
+  if (unsafe) {
+    return {
+      ok: false,
+      reason: "heredoc, command substitution, or newline requires line-by-line analysis",
+      segments: [],
+    };
   }
   if (segments.length === 0) {
     return { ok: false, reason: "empty command", segments: [] };

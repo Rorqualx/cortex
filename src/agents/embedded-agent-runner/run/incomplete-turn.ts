@@ -375,6 +375,7 @@ export function resolveIncompleteTurnPayloadText(params: {
   const stopReason = params.attempt.lastAssistant?.stopReason;
   const incompleteTerminalAssistant = isIncompleteTerminalAssistantTurn({
     hasAssistantVisibleText: params.payloadCount > 0,
+    hasTerminalOutput: hasAttemptTerminalState(params.attempt),
     lastAssistant: params.attempt.lastAssistant,
   });
   const reasoningOnlyAssistant = isReasoningOnlyAssistantTurn(assistant);
