@@ -98,3 +98,35 @@ Per-change rubric: evaluate upstream's change in isolation → in fork context �
 - **Other**: `scripts/e2e/npm-telegram-rtt-docker.sh` (UD — upstream deleted; take deletion), `src/workboard/sqlite-store-policy.test.ts` (UA).
 
 UI/extension tsgo lanes expected RED at the pass-1 checkpoint — by design.
+
+---
+
+## PASS 1 OUTCOME (2026-06-19) — FOUNDATIONAL GREEN
+
+Commits on `resync/upstream-2026-06-19`:
+- `362baacbc0` merge upstream/main (2,356 commits; 4,505 auto-merged, 82 conflicts resolved)
+- `324ea7c7c5` reconcile layers 1-4 to green (Wave-1 4 agents + Wave-2 agent + manual)
+- `6ea7510a5e` regenerate fork-config baseline
+
+**tsgo gate (layers 1-4 = core + extensions, non-UI/non-codex): 0 errors.**
+Deferred to pass 2 (red by design): UI 97, codex+copilot 34.
+
+Key convergent verdicts:
+- `config/sessions/store.ts` — ADOPT-UPSTREAM (was upstream's base + additive rewrite) + graft fork `runQuotaSuspensionMaintenance`.
+- `config/sessions/types.ts` — ENHANCE: graft upstream `restartRecoveryRuns`/`RestartRecoveryRun`; keep fork `messageToolPolicyHash`.
+- agent-runner (`run.ts`/`attempt.ts`/subscribe/model-fallback) — ENHANCE: graft upstream rate-limit-retry + exhaustion-result; preserve fork steering/session-lock.
+- `infra/exec-approvals.ts` — KEEP-OURS wire alias (wire type already complete); restore fork `analyzeShellCommand` in exec-approvals-analysis.
+- `infra/agent-events.ts` — ADOPT upstream explicit payload type; graft `emitAgentPlanEvent`.
+- `redact.ts` — ENHANCE (fork scrub + upstream redactFormBodies). `model-catalog.ts` — ENHANCE (fork discovery + upstream cache).
+- `agent-auth-json.ts` — adapt to upstream `AgentCredentialMap` rename.
+- memory-l3 — adapt to upstream `AgentMessage` union + embedding API; prune dead code.
+
+Pass-2 ENHANCE candidates flagged: `server-chat.ts` run-terminal-persistence tracking (kept-ours, unused bindings removed); `attempt.ts` quota model (still calls fork `runQuotaSuspensionMaintenance`).
+
+## PASS 2 TODO (layers 5-8)
+- Workboard convergent reconcile (extensions/workboard plugin→core vs upstream ops UI + src/workboard).
+- Skills/workshop ⟷ skill-forge convergent reconcile (DU keep-deleted provisional this pass).
+- Codex/copilot (34 tsgo errors) — codex app-server convergent; respect AGENTS.md codex hard gate.
+- UI (97 tsgo errors) — app-render/chat/cron + i18n regeneration.
+- Cron delivery schema (`delivery-codec.ts` columns) + doctor migration.
+- Then: full 7-lane tsgo green, fork-merge-verify --full, $autoreview, Crabbox behavior proof, land.
