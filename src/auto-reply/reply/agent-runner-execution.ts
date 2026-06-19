@@ -2069,6 +2069,7 @@ export async function runAgentTurnWithFallback(params: {
             resolveSessionRuntimeOverrideForProvider({
               provider,
               entry: params.getActiveSessionEntry(),
+              cfg: runtimeConfig,
             }),
           prepareAgentHarnessRuntime: async ({ provider, model, agentHarnessRuntimeOverride }) => {
             await agentTurnTiming.measure("fallback_prepare_harness", () =>
@@ -2153,6 +2154,7 @@ export async function runAgentTurnWithFallback(params: {
                 const resolvedSessionRuntimeOverride = resolveSessionRuntimeOverrideForProvider({
                   provider,
                   entry: params.getActiveSessionEntry(),
+                  cfg: runtimeConfig,
                 });
                 const resolvedSelectedAuthProfile = resolveRunAuthProfile(candidateRun, provider, {
                   config: runtimeConfig,
