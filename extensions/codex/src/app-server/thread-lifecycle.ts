@@ -22,6 +22,7 @@ import {
   resolveCodexContextEngineProjectionReserveTokens,
 } from "./context-engine-projection.js";
 import { shouldDisableCodexToolSearchForModel } from "./dynamic-tool-profile.js";
+import type { CodexNativeWebSearchSupport } from "./web-search.js";
 import { invalidInlineImageText, sanitizeInlineImageDataUrl } from "./image-payload-sanitizer.js";
 import {
   isCodexPluginThreadBindingStale,
@@ -59,6 +60,10 @@ import {
 export type CodexAppServerThreadLifecycle = {
   action: "started" | "resumed";
   rotatedContextEngineBinding?: boolean;
+  // Active codex turns at resume (codex app-server protocol: thread_history
+  // active_turn_snapshot/has_active_turn). Optional: the fork's trimmed codex
+  // does not always populate it; consumers handle undefined.
+  activeTurnIds?: string[];
 };
 
 export type CodexAppServerThreadLifecycleBinding = CodexAppServerThreadBinding & {
@@ -288,6 +293,11 @@ export async function startOrResumeThread(params: {
   dynamicTools: CodexDynamicToolSpec[];
   appServer: CodexAppServerRuntimeOptions;
   developerInstructions?: string;
+  // Gates codex's native web_search (app-server protocol web_search: Option<bool>).
+  webSearchAllowed?: boolean;
+  persistentWebSearchAllowed?: boolean;
+  nativeProviderWebSearchSupport?: CodexNativeWebSearchSupport;
+  appServerRuntimeFingerprint?: string;
   config?: JsonObject;
   finalConfigPatch?: JsonObject;
   buildFinalConfigPatch?: (
@@ -742,7 +752,7 @@ export async function startOrResumeThread(params: {
     action: rotatedContextEngineBinding ? "rotated" : "started",
   });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     threadId: response.thread.id,
     sessionFile: params.params.sessionFile,
     cwd: params.cwd,
@@ -1039,6 +1049,10 @@ export function buildTurnStartParams(
     promptText?: string;
     sandboxPolicy?: CodexSandboxPolicy;
     environmentSelection?: CodexTurnEnvironmentParams[];
+    // Per-turn model override (e.g. resumed thread's bound model); falls back to
+    // the attempt's modelId below.
+    model?: string;
+    modelProvider?: string;
     turnScopedDeveloperInstructions?: string;
     skillsCollaborationInstructions?: string;
     memoryCollaborationInstructions?: string;
@@ -1053,7 +1067,7 @@ export function buildTurnStartParams(
     approvalsReviewer: options.appServer.approvalsReviewer,
     sandboxPolicy:
       options.sandboxPolicy ?? codexSandboxPolicyForTurn(options.appServer.sandbox, options.cwd),
-    model: params.modelId,
+    model: options.model ?? params.modelId,
     personality: CODEX_NATIVE_PERSONALITY_NONE,
     ...(options.appServer.serviceTier ? { serviceTier: options.appServer.serviceTier } : {}),
     effort: resolveReasoningEffort(params.thinkLevel, params.modelId),
@@ -1334,6 +1348,107 @@ function buildUserInput(
   });
   return [{ type: "text", text: promptText, text_elements: [] }, ...imageInputs];
 }
+
+export function resolveCodexBindingModelProviderFallback(params: {
+  provider?: string;
+  currentModel: string | undefined;
+  bindingModel: string | undefined;
+  bindingModelProvider: string | undefined;
+}): string | undefined {
+  const provider = params.provider?.trim().toLowerCase();
+  if (provider && provider !== "codex") {
+    return undefined;
+  }
+  const currentModel = params.currentModel?.trim();
+  const bindingModel = params.bindingModel?.trim();
+  if (
+    currentModel &&
+    bindingModel &&
+    currentModel === bindingModel &&
+    params.bindingModelProvider
+  ) {
+    return params.bindingModelProvider;
+  }
+  return hasProviderQualifiedModelRef(currentModel) ? undefined : params.bindingModelProvider;
+}
+
+export function resolveCodexAppServerThreadModelSelection(params: {
+  provider: string;
+  model: string;
+  binding?: Pick<
+    CodexAppServerThreadBinding,
+    "threadId" | "authProfileId" | "model" | "modelProvider"
+  >;
+  authProfileId?: string;
+  authProfileStore?: CodexAppServerAuthProfileLookup["authProfileStore"];
+  agentDir?: string;
+  config?: CodexAppServerAuthProfileLookup["config"];
+}): { model: string; modelProvider?: string } {
+  const authProfileId = params.authProfileId ?? params.binding?.authProfileId;
+  const explicitModelProvider = resolveCodexAppServerModelProvider({
+    provider: params.provider,
+    authProfileId,
+    authProfileStore: params.authProfileStore,
+    agentDir: params.agentDir,
+    config: params.config,
+  });
+  const bindingModelProvider = params.binding?.threadId
+    ? resolveCodexBindingModelProviderFallback({
+        provider: params.provider,
+        currentModel: params.model,
+        bindingModel: params.binding.model,
+        bindingModelProvider: params.binding.modelProvider,
+      })
+    : undefined;
+  return resolveCodexAppServerRequestModelSelection({
+    model: params.model,
+    modelProvider: explicitModelProvider ?? bindingModelProvider,
+    authProfileId,
+    authProfileStore: params.authProfileStore,
+    agentDir: params.agentDir,
+    config: params.config,
+  });
+}
+
+export function resolveCodexAppServerRequestModelSelection(params: {
+  model: string;
+  modelProvider?: string | null;
+  authProfileId?: string;
+  authProfileStore?: CodexAppServerAuthProfileLookup["authProfileStore"];
+  agentDir?: string;
+  config?: CodexAppServerAuthProfileLookup["config"];
+}): { model: string; modelProvider?: string } {
+  const model = params.model.trim();
+  const modelProvider = params.modelProvider?.trim();
+  if (modelProvider) {
+    return { model, modelProvider };
+  }
+  // Codex app-server expects provider-qualified refs as separate fields. Keep
+  // explicit providers intact so provider-owned slashy model ids are not split.
+  const slashIndex = model.indexOf("/");
+  if (slashIndex <= 0 || slashIndex >= model.length - 1) {
+    return { model };
+  }
+  const inferredProvider = model.slice(0, slashIndex);
+  const inferredModelProvider = resolveCodexAppServerModelProvider({
+    provider: inferredProvider,
+    authProfileId: params.authProfileId,
+    authProfileStore: params.authProfileStore,
+    agentDir: params.agentDir,
+    config: params.config,
+  });
+  return {
+    model: model.slice(slashIndex + 1).trim(),
+    ...(inferredModelProvider ? { modelProvider: inferredModelProvider } : {}),
+  };
+}
+
+function hasProviderQualifiedModelRef(model: string | undefined): boolean {
+  const trimmed = model?.trim();
+  const slashIndex = trimmed?.indexOf("/") ?? -1;
+  return slashIndex > 0 && slashIndex < (trimmed?.length ?? 0) - 1;
+}
+
 
 export function resolveCodexAppServerModelProvider(params: {
   provider: string;
