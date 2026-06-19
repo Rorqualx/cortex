@@ -356,3 +356,18 @@ ui/src/ui/app-tool-stream.node.test.ts merge=ours
 ui/src/ui/app-tool-stream.ts merge=ours
 ui/src/ui/chat/grouped-render.test.ts merge=ours
 ui/src/ui/controllers/workboard.test.ts merge=ours
+
+# --- fork: test-surface protection (missed by 2026-06-11 sweep, restored in resync) ---
+extensions/codex/src/app-server/thread-lifecycle.binding.test.ts         merge=ours
+extensions/openshell/src/openshell-core.test.ts                          merge=ours
+src/agents/agent-tools.before-tool-call.integration.e2e.test.ts          merge=ours
+src/agents/bash-tools.exec-host-gateway.test.ts                          merge=ours
+src/agents/cli-runner.reliability.test.ts                                merge=ours
+src/agents/embedded-agent-runner/run.incomplete-turn.test.ts             merge=ours
+src/agents/embedded-agent-runner/run/attempt.session-lock.test.ts        merge=ours
+src/agents/embedded-agent-runner/run/attempt.spawn-workspace.context-engine.test.ts merge=ours
+src/agents/embedded-agent-runner/run/compaction-retry-aggregate-timeout.test.ts merge=ours
+src/agents/sandbox/browser.create.test.ts                                merge=ours
+src/agents/sandbox/ssh-backend.test.ts                                   merge=ours
+src/gateway/server-chat.agent-events.test.ts                             merge=ours
+src/gateway/server.sessions.reset-cleanup.test.ts                        merge=ours
