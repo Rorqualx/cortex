@@ -293,8 +293,8 @@ export type ExtractedActionItem = {
   text: string;
   /** Who is responsible ("user", "agent", "unassigned"). */
   owner: string;
-  /** Optional deadline or time context. */
-  deadline?: string;
+  /** Optional deadline or time context; null when none was extracted. */
+  deadline: string | null;
   /** Confidence 0..1. */
   confidence: number;
   /** Verbatim source span from the conversation. */

@@ -110,14 +110,17 @@ const REPLAY_UNSAFE_FALLBACK_METADATA: EmbeddedRunAttemptResult["replayMetadata"
 
 export function isIncompleteTerminalAssistantTurn(params: {
   hasAssistantVisibleText: boolean;
+  hasTerminalOutput?: boolean;
   lastAssistant?: { stopReason?: string } | null;
 }): boolean {
+  const stopReason = params.lastAssistant?.stopReason;
   // A tool-use stop reason means the model issued a tool call and expected
   // to continue after tool results. If the session ended before the
   // post-tool assistant message arrived, the turn is incomplete regardless
   // of whether pre-tool text exists — that text is preliminary analysis,
-  // not the final answer. (#76477)
-  return params.lastAssistant?.stopReason === "toolUse";
+  // not the final answer. (#76477) A `length` stop without committed terminal
+  // output means the budget ended before a complete final answer.
+  return stopReason === "toolUse" || (stopReason === "length" && !params.hasTerminalOutput);
 }
 
 const PLANNING_ONLY_PROMISE_RE =
@@ -261,6 +264,57 @@ export function resolveAttemptReplayMetadata(attempt: {
   replayMetadata?: EmbeddedRunAttemptResult["replayMetadata"] | null;
 }): EmbeddedRunAttemptResult["replayMetadata"] {
   return attempt.replayMetadata ?? REPLAY_UNSAFE_FALLBACK_METADATA;
+}
+
+type TerminalAttemptState = Pick<
+  EmbeddedRunAttemptResult,
+  | "clientToolCalls"
+  | "yieldDetected"
+  | "didSendDeterministicApprovalPrompt"
+  | "heartbeatToolResponse"
+  | "lastToolError"
+  | "toolMediaUrls"
+  | "toolAudioAsVoice"
+  | "toolTrustedLocalMedia"
+  | "hasToolMediaBlockReply"
+  | "didDeliverSourceReplyViaMessageTool"
+  | "messagingToolSourceReplyPayloads"
+  | "successfulCronAdds"
+> &
+  Partial<
+    Pick<
+      EmbeddedRunAttemptResult,
+      | "acceptedSessionSpawns"
+      | "messagingToolSentTexts"
+      | "messagingToolSentMediaUrls"
+      | "messagingToolSentTargets"
+    >
+  > & {
+    toolMetas?: readonly { asyncStarted?: boolean }[];
+  };
+
+export function hasAttemptTerminalState(attempt: TerminalAttemptState): boolean {
+  return Boolean(
+    attempt.clientToolCalls ||
+    attempt.yieldDetected ||
+    attempt.didSendDeterministicApprovalPrompt ||
+    attempt.heartbeatToolResponse ||
+    attempt.lastToolError ||
+    attempt.toolMediaUrls?.some((url) => url.trim().length > 0) ||
+    attempt.toolAudioAsVoice ||
+    attempt.toolTrustedLocalMedia ||
+    attempt.hasToolMediaBlockReply ||
+    attempt.didDeliverSourceReplyViaMessageTool ||
+    attempt.messagingToolSourceReplyPayloads?.length ||
+    hasCommittedMessagingToolDeliveryEvidence({
+      messagingToolSentTexts: attempt.messagingToolSentTexts ?? [],
+      messagingToolSentMediaUrls: attempt.messagingToolSentMediaUrls ?? [],
+      messagingToolSentTargets: attempt.messagingToolSentTargets ?? [],
+    }) ||
+    hasAcceptedSessionSpawn(attempt.acceptedSessionSpawns) ||
+    hasAsyncStartedToolActivity(attempt.toolMetas) ||
+    (attempt.successfulCronAdds ?? 0) > 0,
+  );
 }
 
 /**

@@ -10,7 +10,7 @@
 
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { EmbeddingProvider } from "./engine.js";
-import { cosineSimilarity, tokenize } from "./scoring.js";
+import { cosineSimilarity } from "./scoring.js";
 import type { MessageChunk, TopicBoundary } from "./types.js";
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
@@ -69,7 +69,7 @@ export async function detectTopicBoundaries(params: {
     const slice = params.messages.slice(i, Math.min(i + windowSize, params.messages.length));
     const text = slice
       .map((m) => {
-        const content = m.content;
+        const content = (m as { content?: unknown }).content;
         if (typeof content === "string") {
           return content;
         }
@@ -183,7 +183,7 @@ export async function buildMessageChunks(params: {
     const slice = params.messages.slice(i, end);
     const text = slice
       .map((m) => {
-        const content = m.content;
+        const content = (m as { content?: unknown }).content;
         if (typeof content === "string") {
           return content;
         }

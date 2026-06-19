@@ -219,10 +219,10 @@ export class HierarchicalL3Engine implements ContextEngine {
       sharedMemoryDir: this.sharedMemoryDir,
       queryEmbedding: await this.resolveQueryEmbedding(prompt),
     });
-    if (top.length === 0) {
+    if (top.facts.length === 0) {
       return undefined;
     }
-    return formatMemorySection(top, { now: Date.now() });
+    return formatMemorySection(top.facts, { now: Date.now() });
   }
 
   private resolveMemoryCoreLookup(): MemoryCoreLookup | undefined {
@@ -534,10 +534,15 @@ export class HierarchicalL3Engine implements ContextEngine {
       // openclaw package but not exported via plugin-sdk. Since memory-l3
       // runs in the same process, the relative import resolves at runtime.
       const providerRuntime =
-        await import("../../src/plugins/memory-embedding-provider-runtime.js");
+        await import("../../../src/plugins/memory-embedding-provider-runtime.js");
       const adapter = providerRuntime.getMemoryEmbeddingProvider("openai", this.config);
       if (!adapter) {
         l3debug("resolveEmbeddingProvider(): no openai adapter found; semantic channel disabled");
+        this.resolvedEmbeddingProvider = null;
+        return undefined;
+      }
+      if (!this.config || !adapter.defaultModel) {
+        l3debug("resolveEmbeddingProvider(): missing config or model; semantic channel disabled");
         this.resolvedEmbeddingProvider = null;
         return undefined;
       }
@@ -550,10 +555,10 @@ export class HierarchicalL3Engine implements ContextEngine {
         this.resolvedEmbeddingProvider = null;
         return undefined;
       }
-      // Wrap the core EmbeddingProvider (which has embed/embedBatch/close)
-      // as our local EmbeddingProvider type (same shape, just to be explicit).
+      // Wrap the core MemoryEmbeddingProvider (embedQuery/embedBatch)
+      // as our local EmbeddingProvider type (embed/embedBatch).
       const wrapped: EmbeddingProvider = {
-        embed: (text: string) => provider.embed(text),
+        embed: (text: string) => provider.embedQuery(text),
         embedBatch: (texts: string[]) => provider.embedBatch(texts),
       };
       this.resolvedEmbeddingProvider = wrapped;

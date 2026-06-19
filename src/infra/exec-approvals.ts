@@ -19,13 +19,11 @@ import type {
   SystemRunApprovalPlan as WireSystemRunApprovalPlan,
 } from "../../packages/gateway-protocol/src/index.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
-import type { CommandExplanationSummary } from "./command-analysis/explain.js";
 import {
   type AllowAlwaysPattern,
   resolveAllowAlwaysPatternEntries,
 } from "./exec-approvals-allowlist.js";
-// UNION: keep our analyzeShellCommand (used in body) alongside upstream's type-only import.
-import { analyzeShellCommand, type ExecCommandSegment } from "./exec-approvals-analysis.js";
+import type { ExecCommandSegment } from "./exec-approvals-analysis.js";
 import type { ExecAllowlistEntry } from "./exec-approvals.types.js";
 import type { ExecAuthorizationPlan } from "./exec-authorization-plan.js";
 import {

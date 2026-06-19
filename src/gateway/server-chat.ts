@@ -254,6 +254,20 @@ export type AgentEventHandlerOptions = {
     clientRunId: string;
     sessionKey: string;
   }) => void;
+  markTrackedRunTerminalPersisted?: (params: {
+    runId: string;
+    clientRunId: string;
+    sessionKey: string;
+  }) => void;
+  trackTrackedRunTerminalPersistence?: (params: {
+    runId: string;
+    clientRunId: string;
+    sessionKey: string;
+    sessionId?: string;
+    observedAt: number;
+    persistence: Promise<void>;
+  }) => void;
+  resolveActiveLifecycleGenerationForRun?: (runId: string) => string | undefined;
 };
 
 export function createAgentEventHandler({

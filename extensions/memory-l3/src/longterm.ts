@@ -7,10 +7,10 @@ import {
   DEFAULT_CONSOLIDATION_CONFIG,
   selectPromotable,
 } from "./consolidation.js";
-import { adjustImportance, recordRetrievalSignals } from "./entities.js";
+import { adjustImportance } from "./entities.js";
 import { cosineSimilarity, jaccard, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
-import type { L2ChunkFrontmatter, L3State, LongTermFact, LongTermFrontmatter } from "./types.js";
+import type { LongTermFact, LongTermFrontmatter } from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";

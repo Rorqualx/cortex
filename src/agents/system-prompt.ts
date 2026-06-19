@@ -485,6 +485,7 @@ function buildMessagingSection(params: {
   messageChannelOptions?: string;
   messageToolHints?: string[];
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
+  requireExplicitMessageTarget?: boolean;
   silentReplyPromptMode?: SilentReplyPromptMode;
 }) {
   if (params.isMinimal) {
@@ -521,7 +522,9 @@ function buildMessagingSection(params: {
           "### message tool",
           "- Use `message` for proactive sends + channel actions (polls, reactions, etc.).",
           messageToolOnly
-            ? "- For `action=send`, include `message`. The target defaults to the current source channel; include `target` only when sending somewhere else."
+            ? params.requireExplicitMessageTarget
+              ? "- For `action=send`, include `target` and `message`; `target` is required for this turn."
+              : "- For `action=send`, include `message`. The target defaults to the current source channel; include `target` only when sending somewhere else."
             : "- For `action=send`, include `target` and `message`.",
           params.messageChannelOptions
             ? `- No current/default source channel: include \`channel\` for proactive sends; valid ids: ${params.messageChannelOptions}.`
@@ -665,6 +668,8 @@ export function buildAgentSystemPrompt(params: {
   ownerDisplaySecret?: string;
   reasoningTagHint?: boolean;
   toolNames?: string[];
+  /** Callable tool names used for capability guidance without listing them as visible tools. */
+  capabilityToolNames?: string[];
   toolSummaries?: Record<string, string>;
   modelAliasLines?: string[];
   userTimezone?: string;
@@ -684,6 +689,7 @@ export function buildAgentSystemPrompt(params: {
   /** Controls the generic silent-reply section. Channel-aware prompts can set "none". */
   silentReplyPromptMode?: SilentReplyPromptMode;
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
+  requireExplicitMessageTarget?: boolean;
   /** Prompt-only strength for delegating non-trivial work through sub-agents. Defaults to "suggest". */
   subagentDelegationMode?: SubagentDelegationMode;
   /** Whether ACP-specific routing guidance should be included. Defaults to true. */
@@ -709,6 +715,8 @@ export function buildAgentSystemPrompt(params: {
     activeProcessSessions?: ActiveProcessSessionReference[];
   };
   messageToolHints?: string[];
+  /** Deferred tool-schema directory guidance appended to the Tooling section. */
+  toolSchemaDirectoryPrompt?: string;
   sandboxInfo?: EmbeddedSandboxInfo;
   /** Whether read/write/edit/apply_patch are restricted to the workspace root. */
   fsWorkspaceOnly?: boolean;
@@ -809,7 +817,11 @@ export function buildAgentSystemPrompt(params: {
     canonicalByNormalized.get(normalized) ?? normalized;
 
   const normalizedTools = canonicalToolNames.map((tool) => tool.toLowerCase());
-  const availableTools = new Set(normalizedTools);
+  const visibleTools = new Set(normalizedTools);
+  const availableTools = new Set([
+    ...visibleTools,
+    ...normalizeStringEntriesLower(params.capabilityToolNames),
+  ]);
   const hasSessionsSpawn = availableTools.has("sessions_spawn");
   const acpHarnessSpawnAllowed = hasSessionsSpawn && acpSpawnRuntimeEnabled;
   const nativeCommandGuidanceLines = normalizeUniqueStringEntries(
@@ -826,7 +838,7 @@ export function buildAgentSystemPrompt(params: {
   const extraTools = Array.from(
     new Set(normalizedTools.filter((tool) => !toolOrder.includes(tool))),
   );
-  const enabledTools = toolOrder.filter((tool) => availableTools.has(tool));
+  const enabledTools = toolOrder.filter((tool) => visibleTools.has(tool));
   const toolLines = enabledTools.map((tool) => {
     const summary = coreToolSummaries[tool] ?? externalToolSummaries.get(tool);
     const name = resolveToolName(tool);
@@ -837,6 +849,7 @@ export function buildAgentSystemPrompt(params: {
     const name = resolveToolName(tool);
     toolLines.push(summary ? `- ${name}: ${summary}` : `- ${name}`);
   }
+  const toolSchemaDirectoryPrompt = params.toolSchemaDirectoryPrompt?.trim();
   const renderOpenClawToolWorkflowHints = shouldRenderOpenClawToolWorkflowHints({
     surface: promptSurface,
     hasToolList: toolLines.length > 0,
@@ -966,6 +979,8 @@ export function buildAgentSystemPrompt(params: {
     promptMode,
     promptSurface,
     toolLines,
+    toolSchemaDirectoryPrompt,
+    capabilityToolNames: [...availableTools].toSorted(),
     renderOpenClawToolWorkflowHints,
     hasGateway,
     readToolName,
@@ -1015,6 +1030,9 @@ export function buildAgentSystemPrompt(params: {
             execToolName,
             processToolName,
           }),
+      ...(toolSchemaDirectoryPrompt
+        ? ["", "### Deferred Tool Schemas", toolSchemaDirectoryPrompt]
+        : []),
       "TOOLS.md is usage guidance, not availability.",
       ...(renderOpenClawToolWorkflowHints
         ? [
@@ -1262,6 +1280,7 @@ export function buildAgentSystemPrompt(params: {
       messageChannelOptions,
       messageToolHints: params.messageToolHints,
       sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
+      requireExplicitMessageTarget: params.requireExplicitMessageTarget,
       silentReplyPromptMode,
     }),
     ...buildVoiceSection({ isMinimal, ttsHint: params.ttsHint }),

@@ -405,7 +405,9 @@ async function streamAssistantResponse(
       case "toolcall_start":
       case "toolcall_delta":
       case "toolcall_end":
-        if (partialMessage) {
+        // `text_delta` may omit `partial` to avoid retaining a full assistant
+        // message per token; in that case keep the last start/end checkpoint.
+        if (partialMessage && event.partial) {
           const message = event.partial;
           partialMessage = message;
           context.messages[context.messages.length - 1] = message;

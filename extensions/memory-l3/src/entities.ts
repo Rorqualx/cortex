@@ -11,9 +11,7 @@
  *   frequency, reinforcing frequently-used facts and decaying idle ones.
  */
 
-import type { EmbeddingProvider } from "./engine.js";
-import { cosineSimilarity, tokenize } from "./scoring.js";
-import type { Storage } from "./storage.js";
+import { cosineSimilarity } from "./scoring.js";
 import type {
   L2Fact,
   LongTermFact,
@@ -131,7 +129,6 @@ export function extractEntitiesFromFacts(params: {
   // Extract from prose facts via keyword patterns
   for (const fact of params.facts) {
     const text = fact.text;
-    const tokens = tokenize(text);
 
     // Infrastructure: IP-like patterns
     const ipMatches = text.matchAll(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g);

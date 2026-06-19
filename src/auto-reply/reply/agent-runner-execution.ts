@@ -47,7 +47,10 @@ import { ensureSelectedAgentHarnessPlugin } from "../../agents/harness/runtime-p
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 import { isMissingProviderAuthError } from "../../agents/model-auth.js";
 import { runWithModelFallback, isFallbackSummaryError } from "../../agents/model-fallback.js";
-import { resolveCliRuntimeExecutionProvider } from "../../agents/model-runtime-aliases.js";
+import {
+  isCliRuntimeAliasForProvider,
+  resolveCliRuntimeExecutionProvider,
+} from "../../agents/model-runtime-aliases.js";
 import {
   isCliProvider,
   resolveModelRefFromString,
@@ -275,6 +278,83 @@ function readApprovalScopeValue(value: unknown): "turn" | "session" | undefined 
   return value === "turn" || value === "session" ? value : undefined;
 }
 
+function readRecordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readFiniteNumberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readNullableNumberValue(value: unknown): number | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  return readFiniteNumberValue(value);
+}
+
+function isCommandToolName(name: string | undefined): boolean {
+  const normalized = normalizeLowercaseStringOrEmpty(name);
+  return normalized === "exec" || normalized === "bash" || normalized === "shell";
+}
+
+export function buildCommandOutputFromToolResultEvent(evt: {
+  stream: string;
+  data: Record<string, unknown>;
+}): Parameters<NonNullable<GetReplyOptions["onCommandOutput"]>>[0] | undefined {
+  if (evt.stream !== "tool" || readStringValue(evt.data.phase) !== "result") {
+    return undefined;
+  }
+  const name = readStringValue(evt.data.name);
+  if (!isCommandToolName(name)) {
+    return undefined;
+  }
+  const result = readRecordValue(evt.data.result);
+  const details = readRecordValue(result?.details);
+  const output =
+    readStringValue(evt.data.output) ??
+    readStringValue(result?.output) ??
+    readStringValue(details?.output);
+  const explicitStatus =
+    readStringValue(evt.data.status) ??
+    readStringValue(result?.status) ??
+    readStringValue(details?.status);
+  const exitCode = readNullableNumberValue(
+    result?.exitCode ?? details?.exitCode ?? evt.data.exitCode,
+  );
+  const durationMs = readFiniteNumberValue(
+    result?.durationMs ?? details?.durationMs ?? evt.data.durationMs,
+  );
+  const cwd = readStringValue(evt.data.cwd);
+  const hasConcreteCommandResult =
+    output !== undefined ||
+    explicitStatus !== undefined ||
+    exitCode !== undefined ||
+    durationMs !== undefined ||
+    cwd !== undefined ||
+    (result !== undefined && Object.keys(result).length > 0);
+  if (!hasConcreteCommandResult) {
+    return undefined;
+  }
+  const errorStatus =
+    evt.data.isError === true ? "failed" : evt.data.isError === false ? "completed" : undefined;
+  const status = explicitStatus ?? errorStatus;
+  return {
+    itemId: readStringValue(evt.data.itemId),
+    phase: "end",
+    title: readStringValue(evt.data.title),
+    toolCallId: readStringValue(evt.data.toolCallId),
+    name,
+    output,
+    status,
+    exitCode,
+    durationMs,
+    cwd,
+  };
+}
+
 /** One attempted runtime fallback candidate and its failure reason. */
 export type RuntimeFallbackAttempt = {
   provider: string;
@@ -293,11 +373,14 @@ export type AgentRunLoopResult =
       runResult: Awaited<ReturnType<typeof runEmbeddedAgent>>;
       fallbackProvider?: string;
       fallbackModel?: string;
+      fallbackExhausted?: true;
       fallbackAttempts: RuntimeFallbackAttempt[];
       didLogHeartbeatStrip: boolean;
       autoCompactionCount: number;
       /** Payload keys sent directly (not via pipeline) during tool flush. */
       directlySentBlockKeys?: Set<string>;
+      /** Payloads successfully sent directly during tool flush. */
+      directlySentBlockPayloads?: ReplyPayload[];
     }
   | { kind: "final"; payload: ReplyPayload };
 
@@ -1393,6 +1476,7 @@ function emitModelFallbackStepLifecycle(params: {
 export function resolveSessionRuntimeOverrideForProvider(params: {
   provider: string;
   entry?: Pick<SessionEntry, "agentRuntimeOverride">;
+  cfg?: OpenClawConfig;
 }): string | undefined {
   const provider = normalizeLowercaseStringOrEmpty(params.provider);
   const runtime = normalizeLowercaseStringOrEmpty(params.entry?.agentRuntimeOverride);
@@ -1401,6 +1485,9 @@ export function resolveSessionRuntimeOverrideForProvider(params: {
   }
   if (provider === "openai" && runtime === "codex") {
     return "codex";
+  }
+  if (isCliRuntimeAliasForProvider({ provider, runtime, cfg: params.cfg })) {
+    return runtime;
   }
   return undefined;
 }
@@ -1514,6 +1601,7 @@ export async function runAgentTurnWithFallback(params: {
   let autoCompactionCount = 0;
   // Track payloads sent directly (not via pipeline) during tool flush to avoid duplicates.
   const directlySentBlockKeys = new Set<string>();
+  const directlySentBlockPayloads: Array<ReplyPayload | undefined> = [];
   const runnableRun = resolveRunAfterAutoFallbackPrimaryProbeRecheck({
     run: params.followupRun.run,
     entry: params.activeSessionStore?.[params.sessionKey ?? ""] ?? params.getActiveSessionEntry(),
@@ -1691,6 +1779,7 @@ export async function runAgentTurnWithFallback(params: {
   let attemptedRuntimeProvider = fallbackProvider;
   let attemptedRuntimeModel = fallbackModel;
   let fallbackAttempts: RuntimeFallbackAttempt[] = [];
+  let fallbackExhausted = false;
   let transientHttpRetriesRemaining = 1;
   const consumeTransientHttpRetry = () => transientHttpRetriesRemaining-- > 0;
   let liveModelSwitchRetries = 0;
@@ -1941,6 +2030,7 @@ export async function runAgentTurnWithFallback(params: {
             blockStreamingEnabled: params.blockStreamingEnabled,
             blockReplyPipeline,
             directlySentBlockKeys,
+            directlySentBlockPayloads,
           })
         : undefined;
       let messageToolOnlyDeliveryCompleted = false;
@@ -2679,6 +2769,7 @@ export async function runAgentTurnWithFallback(params: {
       runResult = fallbackResult.result;
       fallbackProvider = fallbackResult.provider;
       fallbackModel = fallbackResult.model;
+      fallbackExhausted = fallbackResult.outcome === "exhausted";
       fallbackAttempts = Array.isArray(fallbackResult.attempts)
         ? fallbackResult.attempts.map((attempt) => ({
             provider: attempt.provider,
@@ -3037,9 +3128,13 @@ export async function runAgentTurnWithFallback(params: {
     runResult,
     fallbackProvider,
     fallbackModel,
+    ...(fallbackExhausted ? { fallbackExhausted: true as const } : {}),
     fallbackAttempts,
     didLogHeartbeatStrip,
     autoCompactionCount,
     directlySentBlockKeys: directlySentBlockKeys.size > 0 ? directlySentBlockKeys : undefined,
+    directlySentBlockPayloads: directlySentBlockPayloads.filter(
+      (payload): payload is ReplyPayload => payload !== undefined,
+    ),
   };
 }

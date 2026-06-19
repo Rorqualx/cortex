@@ -19,7 +19,6 @@ import type { SwarmV2SharedState } from "./swarm-v2-state.js";
 import {
   MAX_CLAIMS_PER_VERIFY_CALL,
   MAX_VERIFIERS_PER_CLAIM,
-  SUBAGENT_CONTENT_CAP_TO_PARENT,
   VERIFIERS_PER_CLAIM_DEFAULT,
   type ClaimVerdict,
   type ExtraTool,

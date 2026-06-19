@@ -93,6 +93,7 @@ import { GATEWAY_EVENTS } from "./server-methods-list.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "./server-methods/types.js";
 import { setFallbackGatewayContextResolver } from "./server-plugins.js";
 import type { GatewayPluginReloadResult } from "./server-reload-handlers.js";
+import type { RestartRecoveryCandidate } from "./chat-abort.js";
 import { createGatewayRuntimeState } from "./server-runtime-state.js";
 import {
   enforceSharedGatewaySessionGenerationForConfigWrite,
@@ -932,6 +933,7 @@ export async function startGatewayServer(
       getReadiness,
     }),
   );
+  const restartRecoveryCandidates = new Map<string, RestartRecoveryCandidate>();
   const { createGatewayNodeSessionRuntime } = await import("./server-node-session-runtime.js");
   const {
     nodeRegistry,
@@ -1103,6 +1105,7 @@ export async function startGatewayServer(
           logHealth,
           dedupe,
           chatAbortControllers,
+          restartRecoveryCandidates,
           chatRunState,
           chatRunBuffers,
           chatDeltaSentAt,
@@ -1145,6 +1148,7 @@ export async function startGatewayServer(
         sessionEventSubscribers,
         sessionMessageSubscribers,
         chatAbortControllers,
+        restartRecoveryCandidates,
       }),
     );
     Object.assign(runtimeState, runtimeSubscriptions);

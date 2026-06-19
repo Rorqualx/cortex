@@ -1448,6 +1448,7 @@ export function resolveSkillsPromptForRun(params: {
   config?: OpenClawConfig;
   workspaceDir: string;
   agentId?: string;
+  eligibility?: SkillEligibilityContext;
 }): string {
   const snapshotPrompt = params.skillsSnapshot?.prompt?.trim();
   if (snapshotPrompt) {
@@ -1458,6 +1459,7 @@ export function resolveSkillsPromptForRun(params: {
       entries: params.entries,
       config: params.config,
       agentId: params.agentId,
+      eligibility: params.eligibility,
     });
     return prompt.trim() ? prompt : "";
   }

@@ -264,6 +264,8 @@ export type ModelFallbackResultClassification =
       status?: number;
       code?: string;
       rawError?: string;
+      preserveResultOnExhaustion?: boolean;
+      preserveResultPriority?: number;
     }
   | {
       error: unknown;
@@ -280,11 +282,23 @@ type ModelFallbackResultClassifier<T> = (attempt: {
 }) => ModelFallbackResultClassification | Promise<ModelFallbackResultClassification>;
 
 type ModelFallbackRunResult<T> = {
+  outcome: "completed" | "exhausted";
   result: T;
   provider: string;
   model: string;
   attempts: FallbackAttempt[];
 };
+
+type ModelFallbackExhaustionResult<T> = Pick<
+  ModelFallbackRunResult<T>,
+  "result" | "provider" | "model"
+> & {
+  priority: number;
+};
+type ModelFallbackClassifiedResult<T> = Pick<
+  ModelFallbackRunResult<T>,
+  "result" | "provider" | "model"
+>;
 
 type ModelFallbackAuthRuntime = typeof import("./model-fallback-auth.runtime.js");
 
@@ -305,6 +319,7 @@ function buildFallbackSuccess<T>(params: {
   attempts: FallbackAttempt[];
 }): ModelFallbackRunResult<T> {
   return {
+    outcome: "completed",
     result: params.result,
     provider: params.provider,
     model: params.model,
@@ -364,7 +379,14 @@ async function runFallbackAttempt<T>(params: {
   total: number;
   attribution?: FailoverAttribution;
   abortSignal?: AbortSignal;
-}): Promise<{ success: ModelFallbackRunResult<T> } | { error: unknown }> {
+}): Promise<
+  | { success: ModelFallbackRunResult<T> }
+  | {
+      error: unknown;
+      classifiedResult?: ModelFallbackClassifiedResult<T>;
+      exhaustionResult?: ModelFallbackExhaustionResult<T>;
+    }
+> {
   const runResult = await runFallbackCandidate({
     run: params.run,
     provider: params.provider,
@@ -390,7 +412,32 @@ async function runFallbackAttempt<T>(params: {
       if (isTerminalAbort(params.abortSignal)) {
         throw toLintErrorObject(classifiedError, "Non-Error thrown");
       }
-      return { error: classifiedError };
+      const preserveResultOnExhaustion =
+        classification &&
+        "preserveResultOnExhaustion" in classification &&
+        classification.preserveResultOnExhaustion === true;
+      return {
+        error: classifiedError,
+        classifiedResult: {
+          result: runResult.result,
+          provider: params.provider,
+          model: params.model,
+        },
+        ...(preserveResultOnExhaustion
+          ? {
+              exhaustionResult: {
+                result: runResult.result,
+                provider: params.provider,
+                model: params.model,
+                priority:
+                  typeof classification.preserveResultPriority === "number" &&
+                  Number.isFinite(classification.preserveResultPriority)
+                    ? classification.preserveResultPriority
+                    : 0,
+              },
+            }
+          : {}),
+      };
     }
     return {
       success: buildFallbackSuccess({
@@ -1246,6 +1293,7 @@ export async function runWithModelFallback<T>(
     onError?: ModelFallbackErrorHandler;
     onFallbackStep?: ModelFallbackStepHandler;
     classifyResult?: ModelFallbackResultClassifier<T>;
+    mergeExhaustedResult?: (params: { latestResult: T; preferredResult: T }) => T;
     skipAuthProfileRuntime?: boolean;
     abortSignal?: AbortSignal;
   } & ModelManifestNormalizationContext,
@@ -1271,6 +1319,8 @@ export async function runWithModelFallback<T>(
     : null;
   const attempts: FallbackAttempt[] = [];
   let lastError: unknown;
+  let latestClassifiedResult: ModelFallbackClassifiedResult<T> | undefined;
+  let exhaustionResult: ModelFallbackExhaustionResult<T> | undefined;
   const cooldownProbeUsedProviders = new Set<string>();
   const observeDecision = async (decision: ModelFallbackDecisionParams) => {
     if (!params.onFallbackStep && !isModelFallbackDecisionLogEnabled()) {
@@ -1572,6 +1622,18 @@ export async function runWithModelFallback<T>(
       return attemptRun.success;
     }
     const err = attemptRun.error;
+    // Track the most recent usable result and the highest-priority result a
+    // classifier asked us to preserve, so an exhausted chain can still return a
+    // partial answer instead of throwing when mergeExhaustedResult is provided.
+    if (attemptRun.classifiedResult) {
+      latestClassifiedResult = attemptRun.classifiedResult;
+    }
+    if (
+      attemptRun.exhaustionResult &&
+      (!exhaustionResult || attemptRun.exhaustionResult.priority >= exhaustionResult.priority)
+    ) {
+      exhaustionResult = attemptRun.exhaustionResult;
+    }
     {
       // Local runtime coordination errors (session write-lock timeout, embedded
       // attempt session takeover) are not provider/model failures. Aborting
@@ -1700,6 +1762,31 @@ export async function runWithModelFallback<T>(
         total: candidates.length,
       });
     }
+  }
+
+  // When every candidate failed but a classifier preserved a partial result,
+  // return it as an exhausted outcome instead of throwing. mergeExhaustedResult
+  // lets the caller fold the latest attempt's result into the preferred one.
+  if (exhaustionResult) {
+    if (latestClassifiedResult && params.mergeExhaustedResult) {
+      return {
+        outcome: "exhausted",
+        result: params.mergeExhaustedResult({
+          latestResult: latestClassifiedResult.result,
+          preferredResult: exhaustionResult.result,
+        }),
+        provider: latestClassifiedResult.provider,
+        model: latestClassifiedResult.model,
+        attempts,
+      };
+    }
+    return {
+      outcome: "exhausted",
+      result: exhaustionResult.result,
+      provider: exhaustionResult.provider,
+      model: exhaustionResult.model,
+      attempts,
+    };
   }
 
   return throwFallbackFailureSummary({

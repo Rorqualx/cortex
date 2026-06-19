@@ -27,12 +27,6 @@ export type SharedStore = {
   lastUpdatedAt: number;
 };
 
-const INITIAL_SHARED_STORE: SharedStore = {
-  version: 1,
-  facts: [],
-  lastUpdatedAt: 0,
-};
-
 /**
  * Resolve the shared memory directory path.
  * Defaults to `~/.openclaw/shared-memory/`; override via env or param.
@@ -156,7 +150,7 @@ export function resolveConflicts(facts: ReadonlyArray<SharedLongTermFact>): Shar
   }
 
   const result: SharedLongTermFact[] = [];
-  for (const [dedupKey, candidates] of byDedupKey) {
+  for (const candidates of byDedupKey.values()) {
     if (candidates.length <= 1) {
       result.push(...candidates);
       continue;

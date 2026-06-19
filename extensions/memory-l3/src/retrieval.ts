@@ -1,4 +1,4 @@
-import { readSharedFacts, type SharedLongTermFact } from "./cross-context.js";
+import { readSharedFacts } from "./cross-context.js";
 import { recordRetrievalSignals } from "./entities.js";
 import {
   buildEdgeLookup,
@@ -18,7 +18,6 @@ import {
   cosineSimilarity,
   DEFAULT_SCORING_CONFIG,
   type CorpusStats,
-  fsrsRetrievability,
   jaccard,
   type ScoringConfig,
   scoreFact,
@@ -500,6 +499,7 @@ export async function retrieveTopK(params: {
               recency: 1,
               l3Boost: 0,
               semantic: sim,
+              informationGain: 0,
             },
             chunkId: cid,
             tier: "l2" as RetrievalTier,
@@ -522,7 +522,7 @@ export async function retrieveTopK(params: {
   // against what we actually retrieved, trigger follow-up searches for gaps.
   const missingInfo =
     params.enableSufficientContext !== false
-      ? await checkSufficientContext(params.query, finalFacts, params.storage)
+      ? await checkSufficientContext(params.query, finalFacts)
       : undefined;
 
   return { facts: finalFacts, missingInfo };
@@ -826,7 +826,6 @@ function tierMarker(tier: RetrievalTier): string {
 async function checkSufficientContext(
   query: string,
   facts: RetrievedFact[],
-  storage: Storage,
 ): Promise<MissingFact | undefined> {
   // Extract requested entities/fields from the query
   const requestedFields = extractRequestedFields(query);
@@ -853,7 +852,7 @@ async function checkSufficientContext(
   }
 
   // Generate follow-up query suggestions
-  const suggestedQueries = generateFollowUpQueries(query, missingFields);
+  const suggestedQueries = generateFollowUpQueries(missingFields);
 
   // Simple query ID hash (for deduplication across calls)
   const queryId = simpleHash(query);
@@ -915,7 +914,7 @@ function extractRequestedFields(query: string): string[] {
  * information, e.g., if original was "What is X, Y, and Z?" and Y is missing,
  * suggests "What is Y?" and "Tell me about Y".
  */
-function generateFollowUpQueries(originalQuery: string, missingFields: string[]): string[] {
+function generateFollowUpQueries(missingFields: string[]): string[] {
   const queries: string[] = [];
 
   for (const field of missingFields) {

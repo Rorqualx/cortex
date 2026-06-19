@@ -27,6 +27,7 @@ import {
   MAX_PLUGIN_APPROVAL_TIMEOUT_MS,
 } from "../infra/plugin-approvals.js";
 import type { SessionState } from "../logging/diagnostic-session-state.js";
+import { redactToolDetail } from "../logging/redact.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { deriveToolParams } from "../plugins/host-tool-param-parsers.js";
@@ -52,8 +53,19 @@ import {
   resolveSkillTelemetrySourceValue,
 } from "../skills/loading/source.js";
 import type { SkillSnapshot, SkillTelemetrySource } from "../skills/types.js";
-import { isPlainObject } from "../utils.js";
-import { adjustedParamsByToolCallId } from "./agent-tools.before-tool-call.state.js";
+import { isPlainObject, truncateUtf16Safe } from "../utils.js";
+import {
+  adjustedParamsByToolCallId,
+  buildAdjustedParamsKey,
+  preExecutionBlockedToolCallIds,
+  recordStructuredReplaySafeToolCall,
+  structuredReplaySafeToolCallIds,
+} from "./agent-tools.before-tool-call.state.js";
+export {
+  consumeAdjustedParamsForToolCall,
+  consumePreExecutionBlockedToolCall,
+  peekAdjustedParamsForToolCall,
+} from "./agent-tools.before-tool-call.state.js";
 import { copyChannelAgentToolMeta, getChannelAgentToolMeta } from "./channel-tools.js";
 import {
   getCodeModeExecBeforeHookMetadata,
@@ -64,6 +76,7 @@ import {
 } from "./code-mode-control-tools.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import { normalizeToolName } from "./tool-policy.js";
+import { getToolTerminalPresentation } from "./tool-terminal-presentation.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { callGatewayTool } from "./tools/gateway.js";
 import { captureToolFilePreImage } from "./turn-file-snapshots.js";
@@ -72,6 +85,10 @@ export type ToolOutcomeObservation = {
   toolName: string;
   argsHash: string;
   resultHash: string;
+  /** Monotonic model-call order within the owning embedded run. */
+  toolCallOrdinal?: number;
+  terminalPresentation?: string;
+  presentationOnly?: boolean;
 };
 
 export type ToolOutcomeObserver = (observation: ToolOutcomeObservation) => void;
@@ -203,8 +220,19 @@ const BEFORE_TOOL_CALL_HOOK_CONTEXT = Symbol("beforeToolCallHookContext");
 const BEFORE_TOOL_CALL_HOOK_FAILURE_REASON =
   "Tool call blocked because before_tool_call hook failed";
 const MAX_TRACKED_ADJUSTED_PARAMS = 1024;
+const MAX_PENDING_TERMINAL_PRESENTATIONS = 1024;
 const LOOP_WARNING_BUCKET_SIZE = 10;
 const MAX_LOOP_WARNING_KEYS = 256;
+const MAX_TERMINAL_PRESENTATION_CHARS = 2_000;
+const pendingTerminalPresentationByToolCall = new Map<
+  string,
+  {
+    observer: ToolOutcomeObserver;
+    tool: AnyAgentTool;
+    toolParams: unknown;
+    toolCallOrdinal?: number;
+  }
+>();
 
 /**
  * Error used when before_tool_call intentionally vetoes a tool call.
@@ -242,17 +270,127 @@ export function isBeforeToolCallBlockedError(err: unknown): err is BeforeToolCal
   return err instanceof BeforeToolCallBlockedError;
 }
 
+export function resolveToolTerminalPresentation(params: {
+  tool: AnyAgentTool;
+  toolParams: unknown;
+  result: Awaited<ReturnType<AnyAgentTool["execute"]>>;
+}): string | undefined {
+  try {
+    const taggedTool = params.tool as unknown as Record<symbol, unknown>;
+    const sourceTool = taggedTool[BEFORE_TOOL_CALL_SOURCE_TOOL];
+    const presentationTool =
+      sourceTool && typeof sourceTool === "object" ? (sourceTool as AnyAgentTool) : params.tool;
+    const text = getToolTerminalPresentation(presentationTool)?.(
+      params.toolParams,
+      params.result,
+    )?.text.trim();
+    if (!text) {
+      return undefined;
+    }
+    return truncateUtf16Safe(redactToolDetail(text), MAX_TERMINAL_PRESENTATION_CHARS);
+  } catch (err) {
+    log.warn(
+      `terminal tool presentation failed: tool=${params.tool.name || "tool"} error=${String(err)}`,
+    );
+    return undefined;
+  }
+}
+
+// Trusted terminal summaries are deferred past harness result middleware, so the
+// pending observer/tool/params are stashed until finalizeToolTerminalPresentation
+// runs. Without this hand-off the middleware-adjusted result would lose its
+// presentation observer and the summary would never reach the run.
+function rememberPendingTerminalPresentation(params: {
+  ctx?: HookContext;
+  tool: AnyAgentTool;
+  toolParams: unknown;
+  toolCallId?: string;
+  toolCallOrdinal?: number;
+}): void {
+  if (!params.toolCallId || !params.ctx?.onToolOutcome) {
+    return;
+  }
+  const key = buildAdjustedParamsKey({
+    runId: params.ctx.runId,
+    toolCallId: params.toolCallId,
+  });
+  pendingTerminalPresentationByToolCall.set(key, {
+    observer: params.ctx.onToolOutcome,
+    tool: params.tool,
+    toolParams: structuredClone(params.toolParams),
+    toolCallOrdinal: params.toolCallOrdinal,
+  });
+  while (pendingTerminalPresentationByToolCall.size > MAX_PENDING_TERMINAL_PRESENTATIONS) {
+    const oldestKey = pendingTerminalPresentationByToolCall.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    pendingTerminalPresentationByToolCall.delete(oldestKey);
+  }
+}
+
+/** Finalizes a trusted terminal summary after harness result middleware. */
+export function finalizeToolTerminalPresentation(params: {
+  toolCallId: string;
+  runId?: string;
+  result: Awaited<ReturnType<AnyAgentTool["execute"]>>;
+  isError: boolean;
+  observer?: ToolOutcomeObserver;
+  toolName?: string;
+  toolCallOrdinal?: number;
+}): void {
+  const key = buildAdjustedParamsKey({
+    runId: params.runId,
+    toolCallId: params.toolCallId,
+  });
+  const pending = pendingTerminalPresentationByToolCall.get(key);
+  pendingTerminalPresentationByToolCall.delete(key);
+  const observer = pending?.observer ?? params.observer;
+  if (!observer) {
+    return;
+  }
+  const toolCallOrdinal = pending?.toolCallOrdinal ?? params.toolCallOrdinal;
+  observer({
+    toolName: pending?.tool.name || params.toolName || "tool",
+    argsHash: "",
+    resultHash: "",
+    ...(toolCallOrdinal !== undefined ? { toolCallOrdinal } : {}),
+    terminalPresentation: params.isError
+      ? undefined
+      : pending
+        ? resolveToolTerminalPresentation({
+            tool: pending.tool,
+            toolParams: pending.toolParams,
+            result: params.result,
+          })
+        : undefined,
+    presentationOnly: true,
+  });
+}
+
+/** Record that one concrete core-owned tool call may use structured replay classification. */
+export function recordStructuredReplayTrustForToolCall(
+  toolCallId: string | undefined,
+  tool: AnyAgentTool,
+  runId?: string,
+): void {
+  if (!toolCallId || getPluginToolMeta(tool) || getChannelAgentToolMeta(tool as never)) {
+    return;
+  }
+  recordStructuredReplaySafeToolCall(toolCallId, runId);
+  while (structuredReplaySafeToolCallIds.size > MAX_TRACKED_ADJUSTED_PARAMS) {
+    const oldest = structuredReplaySafeToolCallIds.values().next().value;
+    if (!oldest) {
+      break;
+    }
+    structuredReplaySafeToolCallIds.delete(oldest);
+  }
+}
+
 const loadBeforeToolCallRuntime = createLazyRuntimeSurface(
   () => import("./agent-tools.before-tool-call.runtime.js"),
   ({ beforeToolCallRuntime }) => beforeToolCallRuntime,
 );
-
-function buildAdjustedParamsKey(params: { runId?: string; toolCallId: string }): string {
-  if (params.runId && params.runId.trim()) {
-    return `${params.runId}:${params.toolCallId}`;
-  }
-  return params.toolCallId;
-}
 
 function mergeParamsWithApprovalOverrides(
   originalParams: unknown,
@@ -699,7 +837,12 @@ async function resolveSkillForgeApprovalForFinalParams(params: {
 export function buildBlockedToolResult(params: {
   reason: string;
   deniedReason?: HookBlockedReason;
+  toolCallId?: string;
+  runId?: string;
 }) {
+  // Mark the call as blocked before execution so structured replay can drop the
+  // dangling tool call instead of replaying a synthetic result for it.
+  recordPreExecutionBlockedToolCall(params.toolCallId, params.runId);
   return {
     content: [{ type: "text" as const, text: params.reason }],
     details: {
@@ -708,6 +851,20 @@ export function buildBlockedToolResult(params: {
       reason: params.reason,
     },
   };
+}
+
+function recordPreExecutionBlockedToolCall(toolCallId?: string, runId?: string): void {
+  if (!toolCallId) {
+    return;
+  }
+  preExecutionBlockedToolCallIds.add(buildAdjustedParamsKey({ runId, toolCallId }));
+  while (preExecutionBlockedToolCallIds.size > MAX_TRACKED_ADJUSTED_PARAMS) {
+    const oldest = preExecutionBlockedToolCallIds.values().next().value;
+    if (!oldest) {
+      break;
+    }
+    preExecutionBlockedToolCallIds.delete(oldest);
+  }
 }
 
 function summarizeToolParams(params: unknown): DiagnosticToolParamsSummary {
@@ -1242,6 +1399,15 @@ export function wrapToolWithBeforeToolCallHook(
           toolCallId,
           result,
         });
+        // Stash the presentation observer so the deferred finalize step (run after
+        // harness result middleware in embedded extensions) can emit the trusted
+        // terminal summary against the middleware-adjusted result.
+        rememberPendingTerminalPresentation({
+          ctx,
+          tool,
+          toolParams: executeParams,
+          toolCallId,
+        });
         const skillMatch = findSkillUsageMatch({
           toolName: normalizedToolName,
           toolParams: executeParams,
@@ -1370,14 +1536,6 @@ export function copyBeforeToolCallHookMarker(source: AnyAgentTool, target: AnyAg
     value: hookContext,
     enumerable: false,
   });
-}
-
-/** Consume and remove hook-adjusted params for a completed tool call. */
-export function consumeAdjustedParamsForToolCall(toolCallId: string, runId?: string): unknown {
-  const adjustedParamsKey = buildAdjustedParamsKey({ runId, toolCallId });
-  const params = adjustedParamsByToolCallId.get(adjustedParamsKey);
-  adjustedParamsByToolCallId.delete(adjustedParamsKey);
-  return params;
 }
 
 /** Test-only access to before_tool_call internals. */

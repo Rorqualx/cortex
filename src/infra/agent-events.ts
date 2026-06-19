@@ -54,6 +54,15 @@ export type AgentItemEventData = {
   approvalSlug?: string;
 };
 
+/** Plan event payload (planning-only retry path). */
+export type AgentPlanEventData = {
+  phase: "update";
+  title: string;
+  explanation?: string;
+  steps?: string[];
+  source?: string;
+};
+
 /** Approval event phase for request/resolution transitions. */
 export type AgentApprovalEventPhase = "requested" | "resolved";
 /** Approval status after routing, user action, or delivery failure. */
@@ -470,6 +479,20 @@ export function emitAgentEvent(event: Omit<AgentEventPayload, "seq" | "ts">) {
     });
   }
   notifyListeners(state.listeners, enriched);
+}
+
+/** Emits a plan update event on the shared agent event bus. */
+export function emitAgentPlanEvent(params: {
+  runId: string;
+  data: AgentPlanEventData;
+  sessionKey?: string;
+}) {
+  emitAgentEvent({
+    runId: params.runId,
+    stream: "plan",
+    data: params.data as unknown as Record<string, unknown>,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
 }
 
 /** Emits an item activity event on the shared agent event bus. */

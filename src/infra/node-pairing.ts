@@ -439,6 +439,14 @@ export async function finalizeNodePairingCleanupClaim(
   });
 }
 
+export async function getPairedNode(
+  nodeId: string,
+  baseDir?: string,
+): Promise<NodePairingPairedNode | null> {
+  const state = await loadState(baseDir);
+  return state.pairedByNodeId[normalizeNodeId(nodeId)] ?? null;
+}
+
 /** Create or refresh a pending node pairing request for operator approval. */
 export async function requestNodePairing(
   req: NodePairingRequestInput,

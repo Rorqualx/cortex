@@ -1,4 +1,6 @@
 // Bridge builder for users upgrading from bundled plugins to external plugin packages.
+import path from "node:path";
+import { buildBundledPluginLoadPathAliases } from "../plugins/bundled-load-path-aliases.js";
 import type { ExternalizedBundledPluginBridge } from "../plugins/externalized-bundled-plugins.js";
 import { readPersistedInstalledPluginIndex } from "../plugins/installed-plugin-index-store.js";
 import type { InstalledPluginIndexRecord } from "../plugins/installed-plugin-index.js";
@@ -75,5 +77,32 @@ export async function listPersistedBundledPluginLocationBridges(options: {
       manifestByPluginId.get(record.pluginId),
     );
     return bridge ? [bridge] : [];
+  });
+}
+
+export type PersistedBundledPluginRecoveryLocation = {
+  pluginId: string;
+  loadPaths: readonly string[];
+};
+
+// Recovers candidate on-disk load paths for previously bundled plugins from the
+// pre-update registry. Used to prune stale owned load paths when a bundled
+// plugin is no longer present in the current build.
+export async function listPersistedBundledPluginRecoveryLocations(options: {
+  env?: NodeJS.ProcessEnv;
+}): Promise<readonly PersistedBundledPluginRecoveryLocation[]> {
+  const index = await readPersistedInstalledPluginIndex(options);
+  if (!index) {
+    return [];
+  }
+  return index.plugins.flatMap((record) => {
+    const rootDir = record.rootDir.trim();
+    if (record.origin !== "bundled" || !path.isAbsolute(rootDir)) {
+      return [];
+    }
+    const loadPaths = Array.from(
+      new Set([rootDir, ...buildBundledPluginLoadPathAliases(rootDir).map((alias) => alias.path)]),
+    );
+    return [{ pluginId: record.pluginId, loadPaths }];
   });
 }

@@ -41,7 +41,7 @@ import type { ToolFsPolicy } from "./tool-fs-policy.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import type { AnyAgentTool } from "./tools/common.js";
-import { createCronTool } from "./tools/cron-tool.js";
+import { createCronTool, type CronCreatorToolAllowlistEntry } from "./tools/cron-tool.js";
 import { createDelegationTools } from "./tools/delegation/tools.js";
 import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
@@ -91,6 +91,7 @@ export function createOpenClawTools(
   options?: {
     sandboxBrowserBridgeUrl?: string;
     allowHostBrowserControl?: boolean;
+    oneShotCliRun?: boolean;
     agentSessionKey?: string;
     /**
      * The actual live run session key. When the tool is constructed with a sandbox/policy
@@ -114,8 +115,12 @@ export function createOpenClawTools(
     config?: OpenClawConfig;
     pluginToolAllowlist?: string[];
     pluginToolDenylist?: string[];
+    /** Collector populated with the cron tool's creator allowlist so policy filtering can cap cron-spawned agent turns. */
+    cronCreatorToolAllowlist?: CronCreatorToolAllowlistEntry[];
     /** Current channel ID for auto-threading. */
     currentChannelId?: string;
+    /** Routable target for the current conversation when it differs from the native channel ID. */
+    currentMessagingTarget?: string;
     /** Current thread timestamp for auto-threading. */
     currentThreadTs?: string;
     /** Current inbound message id for action fallbacks. */
@@ -434,6 +439,9 @@ export function createOpenClawTools(
               accountId: options?.agentAccountId,
               threadId: options?.currentThreadTs ?? options?.agentThreadId,
             },
+            ...(options?.cronCreatorToolAllowlist
+              ? { creatorToolAllowlist: options.cronCreatorToolAllowlist }
+              : {}),
             ...(options?.cronSelfRemoveOnlyJobId
               ? { selfRemoveOnlyJobId: options.cronSelfRemoveOnlyJobId }
               : {}),

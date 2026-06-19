@@ -14,7 +14,7 @@ const log = createSubsystemLogger("agents/post-compaction-guard");
 
 const DEFAULT_WINDOW_SIZE = 3;
 
-type PostCompactionGuardObservation = {
+export type PostCompactionGuardObservation = {
   toolName: string;
   argsHash: string;
   resultHash: string;

@@ -158,9 +158,12 @@ import {
   resolveFinalAssistantVisibleText,
   resolveMaxRunRetryIterations,
   resolveReportedModelRef,
+  MAX_SAME_MODEL_RATE_LIMIT_RETRIES,
   resolveOverloadFailoverBackoffMs,
   resolveOverloadProfileRotationLimit,
   resolveRateLimitProfileRotationLimit,
+  resolveNextSameModelRateLimitRetryCount,
+  resolveSameModelRateLimitRetryDelayMs,
   type RuntimeAuthState,
   scrubAnthropicRefusalMagic,
 } from "./run/helpers.js";
@@ -1278,6 +1281,7 @@ export async function runEmbeddedAgent(
         prompt: params.prompt,
       });
       let rateLimitProfileRotations = 0;
+      let consecutiveSameModelRateLimitRetries = 0;
       let timeoutCompactionAttempts = 0;
       let codexAppServerRecoveryRetries = 0;
       // Silent-error retry: non-strict-agentic models (e.g. ollama/glm-5.1) can
@@ -1390,6 +1394,35 @@ export async function runEmbeddedAgent(
           }
           throw err;
         }
+      };
+      const maybeRetrySameModelRateLimit = async (retry?: {
+        retryAfterSeconds?: number;
+      }): Promise<boolean> => {
+        if (consecutiveSameModelRateLimitRetries >= MAX_SAME_MODEL_RATE_LIMIT_RETRIES) {
+          return false;
+        }
+        const delayMs = resolveSameModelRateLimitRetryDelayMs({
+          retriesSoFar: consecutiveSameModelRateLimitRetries,
+          retryAfterSeconds: retry?.retryAfterSeconds,
+        });
+        log.warn(
+          `rate-limit same-model retry ${consecutiveSameModelRateLimitRetries + 1}/${MAX_SAME_MODEL_RATE_LIMIT_RETRIES} for ${sanitizeForLog(provider)}/${sanitizeForLog(modelId)}: delayMs=${delayMs}`,
+        );
+        try {
+          await sleepWithAbort(delayMs, params.abortSignal);
+        } catch (err) {
+          if (params.abortSignal?.aborted) {
+            const abortErr = new Error("Operation aborted", { cause: err });
+            abortErr.name = "AbortError";
+            throw abortErr;
+          }
+          throw err;
+        }
+        consecutiveSameModelRateLimitRetries = resolveNextSameModelRateLimitRetryCount({
+          retriesSoFar: consecutiveSameModelRateLimitRetries,
+          retriedSameModelRateLimit: true,
+        });
+        return true;
       };
       // Resolve the context engine once and reuse across retries to avoid
       // repeated initialization/connection overhead per attempt.
@@ -2904,6 +2937,7 @@ export async function runEmbeddedAgent(
               !fallbackConfigured &&
               canRestartForLiveSwitch &&
               sameModelIdleTimeoutRetries < MAX_SAME_MODEL_IDLE_TIMEOUT_RETRIES,
+            allowSameModelRateLimitRetry: rateLimitProfileRotations < rateLimitProfileRotationLimit,
             assistantProfileFailureReason,
             lastProfileId,
             modelId,
@@ -2924,6 +2958,7 @@ export async function runEmbeddedAgent(
             warn: (message) => log.warn(message),
             maybeMarkAuthProfileFailure,
             maybeEscalateRateLimitProfileFallback,
+            maybeRetrySameModelRateLimit,
             maybeBackoffBeforeOverloadFailover,
             advanceAuthProfile: advanceAttemptAuthProfile,
           });

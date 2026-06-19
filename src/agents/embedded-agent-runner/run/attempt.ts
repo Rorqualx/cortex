@@ -1669,7 +1669,7 @@ export async function runEmbeddedAttempt(
       visibleTools: effectiveTools,
       uncompactedTools: uncompactedEffectiveTools,
       clientTools,
-      catalogRegistered: toolSearch.catalogRegistered,
+      clientToolsCataloged: toolSearch.catalogRegistered,
       catalogToolCount: toolSearch.catalogToolCount,
       controlsEnabled: toolSearchControlsEnabledForRun || codeModeControlsEnabledForRun,
       controlNames: codeModeControlsEnabledForRun

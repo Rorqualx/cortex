@@ -21,8 +21,10 @@ export { ensureSandboxWorkspaceForSession, resolveSandboxContext } from "./sandb
 export {
   getSandboxBackendFactory,
   getSandboxBackendManager,
+  getSandboxBackendWorkdirResolver,
   registerSandboxBackend,
   requireSandboxBackendFactory,
+  type SandboxBackendWorkdirResolver,
 } from "./sandbox/backend.js";
 
 export { buildSandboxCreateArgs, isDockerDaemonUnavailable } from "./sandbox/docker.js";
