@@ -64,6 +64,7 @@ import {
   loadBranches,
   loadChatHistory,
   loadEarlierMessages,
+  editResendRunId,
   sendChatMessage,
 } from "./controllers/chat.ts";
 import {
@@ -1345,6 +1346,10 @@ function renderCronQuickCreateForTab(
     },
   });
 }
+
+// Re-entrancy guard for the edit/resend handler: a rapid second Save must not
+// run chat.branch (history rewind) twice. Keyed by view state so it is per-tab.
+const editResendInFlight = new WeakSet<object>();
 
 export function renderApp(state: AppViewState) {
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
@@ -4255,6 +4260,12 @@ export function renderApp(state: AppViewState) {
                       if (!state.client || !state.connected) {
                         return;
                       }
+                      // Block a re-entrant Save while this edit's branch+resend is
+                      // still running so chat.branch is not applied twice.
+                      if (editResendInFlight.has(state)) {
+                        return;
+                      }
+                      editResendInFlight.add(state);
                       // The rollback choice is now made inline in the edit bubble
                       // (see enterEditMode) and arrives as restoreFiles.
                       state.chatMessage = "";
@@ -4285,15 +4296,21 @@ export function renderApp(state: AppViewState) {
                         // Reload history — this shows only messages up to the branch point
                         state.chatMessages = [];
                         state.chatToolMessages = [];
-                        await loadChatHistory(state, { startup: false });
-                        await loadBranches(state);
+                        await Promise.all([
+                          loadChatHistory(state, { startup: false }),
+                          loadBranches(state),
+                        ]);
                         // Hand off to the normal send path so the run id, stream,
                         // and optimistic user message drive the sending/receiving
                         // indicators. It re-arms chatSending itself (and early-
                         // returns if it's already set), so clear ours first.
                         state.chatSending = false;
-                        await sendChatMessage(state, text);
-                      })();
+                        await sendChatMessage(state, text, undefined, {
+                          runId: editResendRunId(entryId, text),
+                        });
+                      })().finally(() => {
+                        editResendInFlight.delete(state);
+                      });
                     },
                     basePath: state.basePath ?? "",
                   }),

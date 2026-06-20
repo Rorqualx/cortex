@@ -1251,10 +1251,28 @@ function buildErrorAssistantMessage(
   };
 }
 
+// Stable idempotency key for an edit/resend of a given transcript entry. Reusing
+// it across re-fires of the same edit (an impatient second Save after the run
+// already started) collapses them onto one run via the gateway idempotency cache
+// instead of spawning a duplicate. Distinct edits (different entry or text) get
+// distinct keys and run normally. Tradeoff: re-saving the same entry to identical
+// text within the gateway idempotency window returns the prior run instead of
+// regenerating — acceptable since an identical re-edit is a no-op change. FNV-1a
+// collision risk (distinct text, same key) is negligible per user.
+export function editResendRunId(entryId: string, text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `edit-${entryId}-${text.length}-${(hash >>> 0).toString(36)}`;
+}
+
 export async function sendChatMessage(
   state: ChatState,
   message: string,
   attachments?: ChatAttachment[],
+  opts?: { runId?: string },
 ): Promise<string | null> {
   if (!state.client || !state.connected) {
     return null;
@@ -1276,7 +1294,9 @@ export async function sendChatMessage(
   reconcileChatRunLifecycle(state, {
     clearRunStatus: true,
   });
-  const runId = generateUUID();
+  // A caller-supplied stable key lets a re-fired edit/resend reuse the same run
+  // (idempotency cache) rather than dispatch a duplicate; otherwise a fresh id.
+  const runId = opts?.runId ?? generateUUID();
   state.chatRunId = runId;
   state.chatStream = "";
   state.chatStreamStartedAt = now;

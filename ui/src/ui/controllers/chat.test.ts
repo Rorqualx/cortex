@@ -7,6 +7,7 @@ import {
 import { GatewayRequestError } from "../gateway.ts";
 import {
   abortChatRun,
+  editResendRunId,
   handleChatEvent,
   loadChatHistory,
   loadEarlierMessages,
@@ -1785,6 +1786,14 @@ describe("loadChatHistory filtering", () => {
   });
 });
 
+describe("editResendRunId", () => {
+  it("is stable for the same entry+text and differs for distinct edits", () => {
+    expect(editResendRunId("e1", "hello")).toBe(editResendRunId("e1", "hello"));
+    expect(editResendRunId("e1", "hello")).not.toBe(editResendRunId("e1", "hello!"));
+    expect(editResendRunId("e1", "hello")).not.toBe(editResendRunId("e2", "hello"));
+  });
+});
+
 describe("sendChatMessage", () => {
   it("does not start a second chat.send while the first send is awaiting ack", async () => {
     const sent = createDeferred<unknown>();
@@ -1806,6 +1815,21 @@ describe("sendChatMessage", () => {
     await expect(first).resolves.toBe(activeRunId);
     expect(request).toHaveBeenCalledTimes(1);
     expect(state.chatMessages).toHaveLength(1);
+  });
+
+  it("uses a caller-supplied stable runId as the idempotency key for an edit resend", async () => {
+    const request = vi.fn().mockResolvedValue({ runId: "edit-e1-5-abc", status: "started" });
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+    });
+
+    await sendChatMessage(state, "edited text", undefined, { runId: "edit-e1-5-abc" });
+
+    expect(request).toHaveBeenCalledWith(
+      "chat.send",
+      expect.objectContaining({ idempotencyKey: "edit-e1-5-abc", message: "edited text" }),
+    );
   });
 
   it("passes the backing session id from history when sending after reconnect", async () => {
