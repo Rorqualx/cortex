@@ -14,6 +14,126 @@ export type GateVerdict = {
   reasons: string[];
 };
 
+export type SecurityFinding = {
+  id: string;
+  severity: "critical" | "warning";
+  message: string;
+  file: string;
+  line?: number;
+};
+
+export type SecurityScanResult = {
+  status: "pass" | "fail";
+  findings: SecurityFinding[];
+};
+
+const SECURITY_PATTERNS: Array<{
+  id: string;
+  severity: "critical" | "warning";
+  regex: RegExp;
+  message: string;
+}> = [
+  {
+    id: "env-harvest",
+    severity: "critical",
+    regex: /\b(?:process\.env\b|os\.environ\b|process\.env\.[A-Z_]+)\b/gu,
+    message: "Environment variable harvesting detected",
+  },
+  {
+    id: "disk-wipe",
+    severity: "critical",
+    regex: /(?:rm\s+-rf\s+\/|dd\s+if=|mkfs\.|>\s*\/dev\/(?:sd|hd|nvme|disk)|shred\s+-|wiperam)/giu,
+    message: "Disk-destructive command detected",
+  },
+  {
+    id: "prompt-injection",
+    severity: "critical",
+    regex:
+      /\b(?:ignore previous|ignore the above|ignore all previous|system prompt|you are now|override previous|disregard earlier)\b/giu,
+    message: "Prompt override instruction detected",
+  },
+  {
+    id: "unpinned-install",
+    severity: "warning",
+    regex: /\bcurl\s+(?:[^|]|\S)*\|\s*(?:bash|sh|zsh)\b/giu,
+    message: "Unpinned curl-pipe installation detected",
+  },
+  {
+    id: "hardcoded-key",
+    severity: "critical",
+    regex:
+      /\b(?:sk-[a-zA-Z0-9]{24,}|AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36,}|ssh-rsa\s+AAAA[0-9A-Z+/=]{32,}|eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*|api[_-]?key\s*[:=]\s*["']?[a-zA-Z0-9]{16,})\b/gu,
+    message: "Hardcoded credential or API key detected",
+  },
+];
+
+function scanContent(content: string, fileName: string): SecurityFinding[] {
+  const findings: SecurityFinding[] = [];
+  const lines = content.split("\n");
+  for (const pattern of SECURITY_PATTERNS) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      pattern.regex.lastIndex = 0;
+      if (pattern.regex.test(line)) {
+        findings.push({
+          id: pattern.id,
+          severity: pattern.severity,
+          message: pattern.message,
+          file: fileName,
+          line: lineIndex + 1,
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+export async function staticSecurityScan(skillDir: string): Promise<SecurityScanResult> {
+  const findings: SecurityFinding[] = [];
+
+  // Scan SKILL.md
+  const skillMdPath = path.join(skillDir, "SKILL.md");
+  let skillMdContent: string;
+  try {
+    skillMdContent = await fsp.readFile(skillMdPath, "utf8");
+  } catch {
+    return {
+      status: "fail",
+      findings: [
+        {
+          id: "missing-skill",
+          severity: "critical",
+          message: "SKILL.md missing",
+          file: "SKILL.md",
+        },
+      ],
+    };
+  }
+  findings.push(...scanContent(skillMdContent, "SKILL.md"));
+
+  // Scan any script files in the directory
+  const entries = await fsp.readdir(skillDir).catch(() => [] as string[]);
+  const scriptExts = new Set([".js", ".ts", ".mjs", ".cjs", ".sh", ".py", ".rb"]);
+  for (const entry of entries) {
+    const ext = path.extname(entry).toLowerCase();
+    if (scriptExts.has(ext)) {
+      const filePath = path.join(skillDir, entry);
+      try {
+        const content = await fsp.readFile(filePath, "utf8");
+        findings.push(...scanContent(content, entry));
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+
+  const criticalCount = findings.filter((f) => f.severity === "critical").length;
+  return {
+    status: criticalCount > 0 ? "fail" : "pass",
+    findings,
+  };
+}
+
 function frontmatterFields(frontmatter: string): { name?: string; description?: string } {
   const nameMatch = frontmatter.match(/^name:\s*(.+)$/mu);
   const descriptionMatch = frontmatter.match(/^description:\s*(.+)$/mu);
@@ -112,6 +232,18 @@ export async function evaluateGate(params: {
   successScore?: number;
   env?: NodeJS.ProcessEnv;
 }): Promise<GateVerdict> {
+  const security = await staticSecurityScan(params.skillDir);
+  if (security.status === "fail") {
+    const criticalFindings = security.findings.filter((f) => f.severity === "critical");
+    if (criticalFindings.length > 0) {
+      return {
+        status: "fail",
+        reasons: criticalFindings.map(
+          (f) => `[security] ${f.message} (${f.id} at ${f.file}${f.line ? `:${f.line}` : ""})`,
+        ),
+      };
+    }
+  }
   const validation = await validateSkillDir(params.skillDir, params.successScore);
   if (validation.status === "fail") {
     return validation;
