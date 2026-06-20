@@ -16,6 +16,7 @@ import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { shouldIncludeHook } from "./config.js";
 import { hasConfiguredInternalHooks, resolveConfiguredInternalHookNames } from "./configured.js";
 import { buildImportUrl } from "./import-url.js";
+import { isKnownInternalHookEvent } from "./internal-hook-types.js";
 import type { InternalHookHandler } from "./internal-hooks.js";
 import { registerInternalHook, unregisterInternalHook } from "./internal-hooks.js";
 import { getLegacyInternalHookHandlers } from "./legacy-config.js";
@@ -169,6 +170,14 @@ export async function loadInternalHooks(
         }
 
         for (const event of events) {
+          if (!isKnownInternalHookEvent(event)) {
+            // No dispatch site emits this key, so the handler would never fire.
+            // Usually a HOOK.md typo (e.g. "command:exec"); if a real new event
+            // was added, list it in KNOWN_INTERNAL_HOOK_EVENTS.
+            log.warn(
+              `Hook '${safeLogValue(entry.hook.name)}' subscribes to unknown event '${safeLogValue(event)}' — no dispatch site emits it; handler will never fire.`,
+            );
+          }
           registerInternalHook(event, handler);
           loadedHookRegistrations.push({ event, handler });
         }

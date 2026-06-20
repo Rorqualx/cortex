@@ -149,7 +149,13 @@ function loadHooksFromDir(params: {
   }
 
   const hooks: LoadedHook[] = [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  // Sort by name so hooks in the same source dir register — and therefore
+  // dispatch — in a stable cross-machine order. Raw readdir order is
+  // filesystem-dependent, and hooks mutate event.messages / prompt content,
+  // so unsorted order would defeat prompt-cache determinism.
+  const entries = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
   for (const entry of entries) {
     if (!entry.isDirectory()) {

@@ -17,3 +17,47 @@ export interface InternalHookEvent {
 }
 
 export type InternalHookHandler = (event: InternalHookEvent) => Promise<void> | void;
+
+/**
+ * Canonical set of internal hook event keys that a dispatch site actually emits.
+ * A key is either a bare type (subscribe to every action of that type) or a
+ * `type:action` / `type:action:phase` key. The loader uses this to warn when a
+ * hook subscribes to an event nothing emits (a HOOK.md typo or stale registry),
+ * which would otherwise fail silently — the handler simply never fires.
+ *
+ * CONTRACT: keep in sync with the `createInternalHookEvent(...)` emission sites.
+ * Command actions are the closed set new|reset|stop; compaction emits the
+ * two-segment compact:before / compact:after actions under the `session` type.
+ */
+export const KNOWN_INTERNAL_HOOK_EVENTS: ReadonlySet<string> = new Set([
+  // Bare types — a hook may subscribe to every action of a type.
+  "command",
+  "session",
+  "agent",
+  "gateway",
+  "message",
+  // command:<action> — closed set (ResetCommandAction + stop)
+  "command:new",
+  "command:reset",
+  "command:stop",
+  // session:<action>
+  "session:patch",
+  "session:compact:before",
+  "session:compact:after",
+  // agent:<action>
+  "agent:bootstrap",
+  // gateway:<action>
+  "gateway:startup",
+  "gateway:shutdown",
+  "gateway:pre-restart",
+  // message:<action>
+  "message:received",
+  "message:transcribed",
+  "message:preprocessed",
+  "message:sent",
+]);
+
+/** True when `event` is a hook event key that some dispatch site emits. */
+export function isKnownInternalHookEvent(event: string): boolean {
+  return KNOWN_INTERNAL_HOOK_EVENTS.has(event);
+}
