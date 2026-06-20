@@ -35,13 +35,19 @@ for file in "${files[@]}"; do
   fi
 done
 
+# Guard the expansion: under `set -u`, "${restage_files[@]}" on an empty array
+# aborts with "unbound variable" on Bash 3.2 (macOS default) — reachable when
+# every staged file is gitignored (e.g. a force-added ignored path).
 format_files=()
-while IFS= read -r -d '' file; do
-  format_files+=("$file")
-done < <(node "$FILTER_FILES" format -- "${restage_files[@]}")
+if [ "${#restage_files[@]}" -gt 0 ]; then
+  while IFS= read -r -d '' file; do
+    format_files+=("$file")
+  done < <(node "$FILTER_FILES" format -- "${restage_files[@]}")
+fi
 
 if [ "${#format_files[@]}" -gt 0 ]; then
-  "$RUN_NODE_TOOL" oxfmt --write --no-error-on-unmatched-pattern "${format_files[@]}"
+  # `--` terminates options so a filename beginning with `-` can't be read as an oxfmt flag.
+  "$RUN_NODE_TOOL" oxfmt --write --no-error-on-unmatched-pattern -- "${format_files[@]}"
 fi
 
 if [ "${#restage_files[@]}" -gt 0 ]; then
