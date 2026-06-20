@@ -323,6 +323,33 @@ describe("compactSession", () => {
     expect(doc?.frontmatter.typedFacts?.[0].value).toBe("192.168.50.128");
   });
 
+  it("uses the native compaction prompt when nativeCompaction is enabled", async () => {
+    buffer.push("s1", userMsg("I prefer morning standups."));
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({
+        facts: [
+          {
+            text: "usr:morning_standups=9AM",
+            importance: 0.8,
+            dedupKey: "user_preference:morning_standups",
+          },
+        ],
+      }),
+    );
+    await storage.ensureLayout();
+    await compactSession({
+      sessionId: "s1",
+      buffer,
+      storage,
+      caller,
+      state,
+      nativeCompaction: true,
+    });
+    expect(caller).toHaveBeenCalledTimes(1);
+    const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0][0].systemPrompt;
+    expect(systemPrompt).toContain("PROMPT_VERSION=8-NATIVE");
+  });
+
   it("writes the L1 archive with the original messages", async () => {
     buffer.push("s1", userMsg("first"));
     buffer.push("s1", userMsg("second"));

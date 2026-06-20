@@ -6,10 +6,11 @@
 // and a summary table comparing hypothesis to ground truth.
 //
 // Usage:
-//   node extensions/memory-l3/scripts/run-longmemeval.mjs [--limit=N] [--type=TYPE] [--stratified=PER_TYPE] [--concurrency=N]
+//   node extensions/memory-l3/scripts/run-longmemeval.mjs [--limit=N] [--type=TYPE] [--stratified=PER_TYPE] [--concurrency=N] [--native]
 //
 // Defaults: 5 questions, single-session-user (smallest subset), concurrency=1.
 // --stratified=30 runs N questions per type (6 types × N), overrides --type/--limit.
+// --native uses the dense, token-efficient compaction prompt (A/B test mode).
 
 import { readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
@@ -29,6 +30,7 @@ const STRATIFIED = argVal("stratified") ? Number.parseInt(argVal("stratified"), 
 const CONCURRENCY = Number.parseInt(argVal("concurrency") ?? "1", 10);
 const TOP_K = 20;
 const LEXICAL_ONLY = args.includes("--lexical-only");
+const NATIVE = args.includes("--native");
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const EMBED_MODEL = process.env.EMBED_MODEL ?? "nomic-embed-text";
 const RRF_K = 60;
@@ -49,6 +51,30 @@ const EXTRACT_SYSTEM_PROMPT_V4 = `You are a memory extraction assistant. Read th
 Rules (PROMPT_VERSION=4):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
+- TYPED FACTS: emit only when a precise verbatim value appears in the conversation. Each typed fact must include:
+  - slot: kebab-case scoped name like "user:phone" or "infra:pi_hole_ip" or "release:version".
+  - value: the EXACT substring from the conversation, character-for-character (case- and whitespace-sensitive).
+  - sourceSpan: surrounding context (15-200 chars) containing value, copied verbatim from the conversation.
+  - unit: optional unit ("USD", "MB", "v", etc) or null.
+  - confidence: 0.0-1.0.
+  Skip typedFacts emission when no verbatim values are present.
+
+Emit strict JSON only, with no surrounding prose. Schema:
+{
+  "facts": [{ "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case" }],
+  "typedFacts": [{ "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }]
+}
+
+If nothing to emit, output: { "facts": [], "typedFacts": [] }`;
+
+const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Read the conversation chunk and extract two complementary kinds of facts in a dense, model-native format optimized for token efficiency:
+
+1. PROSE FACTS — compressed, token-efficient units. Drop articles, filler words, and redundant connectors. Abbreviate common words where meaning is preserved. Preserve exact entities (names, numbers, dates, IDs, paths, versions, URLs) verbatim. Use compact notation: e.g., "usr:morning_standups=9AM" instead of full sentences.
+2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY (numbers, IDs, dates, phone numbers, IP addresses, file paths, version strings, URLs, currency amounts).
+
+Rules (PROMPT_VERSION=4-NATIVE):
+- IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
+- DEDUPKEY: *** kebab-case key like "user_preference:morning_standups".
 - TYPED FACTS: emit only when a precise verbatim value appears in the conversation. Each typed fact must include:
   - slot: kebab-case scoped name like "user:phone" or "infra:pi_hole_ip" or "release:version".
   - value: the EXACT substring from the conversation, character-for-character (case- and whitespace-sensitive).
@@ -446,7 +472,7 @@ async function runQuestion({ apiKey, question }) {
     const transcript = formatTranscript(session);
     const raw = await callGlm({
       apiKey,
-      systemPrompt: EXTRACT_SYSTEM_PROMPT_V4,
+      systemPrompt: NATIVE ? EXTRACT_SYSTEM_PROMPT_NATIVE : EXTRACT_SYSTEM_PROMPT_V4,
       userPrompt: buildExtractUserPrompt(session),
     });
     const parsed = tryParseExtract(raw);
@@ -624,7 +650,9 @@ async function main() {
     }
   }
 
-  const tag = STRATIFIED !== null ? `stratified${STRATIFIED}` : `${TYPE}-n${filtered.length}`;
+  const tag =
+    (STRATIFIED !== null ? `stratified${STRATIFIED}` : `${TYPE}-n${filtered.length}`) +
+    (NATIVE ? "-native" : "");
   const outPath = `/tmp/longmemeval/hypothesis-${tag}.jsonl`;
   await writeFile(
     outPath,

@@ -101,6 +101,52 @@ Schema:
 
 If nothing to emit, output: { "facts": [], "typedFacts": [], "decisions": [], "actions": [] }`;
 
+const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Read the conversation chunk and extract three complementary kinds of information in a dense, model-native format optimized for token efficiency:
+
+1. PROSE FACTS — compressed, token-efficient units. Drop articles, filler words, and redundant connectors. Abbreviate common words where meaning is preserved. Preserve exact entities (names, numbers, dates, IDs, paths, versions, URLs) verbatim. Use compact notation: e.g., "usr:morning_standups=9AM" instead of full sentences.
+2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
+3. DECISIONS & ACTIONS — structured decisions reached and action items identified.
+
+Rules (PROMPT_VERSION=8-NATIVE):
+- IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
+- DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
+- REASONING: one optional compressed sentence explaining WHY this fact is worth remembering across sessions.
+- SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
+- CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
+- TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
+- DECISIONS: emit when a clear decision, conclusion, or agreement was reached. Each must have:
+  - text: compressed description of what was decided.
+  - maker: "user", "agent", or "both".
+  - confidence: 0.0-1.0.
+  - sourceSpan: verbatim context from conversation.
+- ACTIONS: emit when a concrete task, follow-up, or action item is identified. Each must have:
+  - text: compressed description of what needs to be done.
+  - owner: "user", "agent", or "unassigned".
+  - deadline: optional deadline or time context string, or null.
+  - confidence: 0.0-1.0.
+  - sourceSpan: verbatim context from conversation.
+  Skip decisions/actions when none are present.
+
+Emit strict JSON only, with no surrounding prose.
+
+Schema:
+{
+  "facts": [
+    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional" }
+  ],
+  "typedFacts": [
+    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
+  ],
+  "decisions": [
+    { "text": "what was decided", "maker": "user|agent|both", "confidence": 0.9, "sourceSpan": "verbatim context" }
+  ],
+  "actions": [
+    { "text": "what to do", "owner": "user|agent|unassigned", "deadline": null, "confidence": 0.8, "sourceSpan": "verbatim context" }
+  ]
+}
+
+If nothing to emit, output: { "facts": [], "typedFacts": [], "decisions": [], "actions": [] }`;
+
 export type ExtractedFact = {
   text: string;
   importance: number;
@@ -150,6 +196,19 @@ export async function extractFacts(params: {
   const userPrompt = buildExtractUserPrompt(params.messages);
   const raw = await params.caller({
     systemPrompt: EXTRACT_SYSTEM_PROMPT,
+    userPrompt,
+    thinking: false,
+  });
+  return parseExtractResponse(raw);
+}
+
+export async function extractFactsNative(params: {
+  messages: ReadonlyArray<AgentMessage>;
+  caller: LlmCaller;
+}): Promise<ExtractResult> {
+  const userPrompt = buildExtractUserPrompt(params.messages);
+  const raw = await params.caller({
+    systemPrompt: EXTRACT_SYSTEM_PROMPT_NATIVE,
     userPrompt,
     thinking: false,
   });

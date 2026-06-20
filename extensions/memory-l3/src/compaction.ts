@@ -9,6 +9,7 @@ import { extractEdges, mergeEdges, type HebbianEdge } from "./hebbian.js";
 import type { IngestBuffer } from "./ingest.js";
 import {
   extractFacts,
+  extractFactsNative,
   type ExtractResult,
   type ExtractedDecision,
   type ExtractedActionItem,
@@ -58,6 +59,13 @@ export async function compactSession(params: {
    * fact-quality gain is measured against that spend.
    */
   segmentedCompaction?: boolean;
+  /**
+   * Native compaction (BabelTele-style): use a dense, token-efficient
+   * extraction prompt that drops articles/filler and abbreviates where
+   * possible. Flag-gated A/B test; defaults to the
+   * OPENCLAW_MEMORY_L3_NATIVE_COMPACTION=1 env flag.
+   */
+  nativeCompaction?: boolean;
 }): Promise<CompactionResult> {
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
@@ -79,6 +87,7 @@ export async function compactSession(params: {
     caller: params.caller,
     embeddingProvider: params.embeddingProvider,
     segmentedCompaction: params.segmentedCompaction,
+    nativeCompaction: params.nativeCompaction,
   });
 
   const filtered = dropAlreadyKnown(extracted.facts, alreadyKnownSet);
@@ -358,12 +367,16 @@ async function extractWithOptionalSegmentation(params: {
   caller: LlmCaller;
   embeddingProvider?: EmbeddingProvider;
   segmentedCompaction?: boolean;
+  nativeCompaction?: boolean;
 }): Promise<{
   extracted: ExtractResult;
   topicSegments?: Array<{ startMsgIndex: number; endMsgIndex: number }>;
 }> {
   const enabled =
     params.segmentedCompaction ?? process.env.OPENCLAW_MEMORY_L3_SEGMENTED_COMPACTION === "1";
+  const native =
+    params.nativeCompaction ?? process.env.OPENCLAW_MEMORY_L3_NATIVE_COMPACTION === "1";
+  const extractFn = native ? extractFactsNative : extractFacts;
   if (enabled && params.embeddingProvider) {
     try {
       const boundaries = await detectTopicBoundaries({
@@ -381,7 +394,7 @@ async function extractWithOptionalSegmentation(params: {
           if (segmentMessages.length === 0) {
             continue;
           }
-          const segment = await extractFacts({ messages: segmentMessages, caller: params.caller });
+          const segment = await extractFn({ messages: segmentMessages, caller: params.caller });
           merged.facts.push(...segment.facts);
           merged.typedFacts.push(...segment.typedFacts);
           merged.decisions.push(...segment.decisions);
@@ -401,5 +414,5 @@ async function extractWithOptionalSegmentation(params: {
       }
     }
   }
-  return { extracted: await extractFacts({ messages: params.messages, caller: params.caller }) };
+  return { extracted: await extractFn({ messages: params.messages, caller: params.caller }) };
 }
