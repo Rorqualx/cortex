@@ -77,6 +77,34 @@ export function extractEdges(facts: ReadonlyArray<L2Fact>): HebbianEdge[] {
 }
 
 /**
+ * Extract co-occurrence edges from retrieval results.
+ * Facts that surface together in the same retrieval query strengthen
+ * their associative link even when they come from different chunks.
+ * Mirrors `extractEdges` but accepts a generic result shape so retrieval
+ * can call it without a circular dependency on `hebbian.ts`.
+ */
+export function extractEdgesFromRetrieval(
+  results: ReadonlyArray<{ fact: { dedupKey: string } }>,
+): HebbianEdge[] {
+  if (results.length < 2) {
+    return [];
+  }
+  const edges: HebbianEdge[] = [];
+  for (let i = 0; i < results.length; i++) {
+    for (let j = i + 1; j < results.length; j++) {
+      const a = results[i].fact.dedupKey;
+      const b = results[j].fact.dedupKey;
+      if (a === b) {
+        continue;
+      }
+      const [sorted_a, sorted_b] = a < b ? [a, b] : [b, a];
+      edges.push({ a: sorted_a, b: sorted_b, weight: 1 });
+    }
+  }
+  return edges;
+}
+
+/**
  * Merge new edges into existing edge map, incrementing weight for
  * repeated co-occurrences across chunks.
  */

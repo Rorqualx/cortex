@@ -5,6 +5,7 @@ import {
   type HebbianEdge,
   buildEdgeLookup,
   extractEdges,
+  extractEdgesFromRetrieval,
   hebbianBoost,
   mergeEdges,
   edgeKey,
@@ -219,6 +220,46 @@ describe("hebbian", () => {
       // k:2 has no score (0), only k:3 contributes
       const boost = hebbianBoost("k:1", lookup, scores);
       assert.ok(Math.abs(boost - 0.06) < 1e-10); // 0.4 * 3 * 0.05
+    });
+  });
+
+  describe("extractEdgesFromRetrieval", () => {
+    it("returns empty for 0 or 1 results", () => {
+      assert.deepStrictEqual(extractEdgesFromRetrieval([]), []);
+      assert.deepStrictEqual(extractEdgesFromRetrieval([{ fact: { dedupKey: "k:a" } }]), []);
+    });
+
+    it("creates one edge for two retrieval results", () => {
+      const results = [{ fact: { dedupKey: "key:alpha" } }, { fact: { dedupKey: "key:beta" } }];
+      const edges = extractEdgesFromRetrieval(results);
+      assert.strictEqual(edges.length, 1);
+      assert.strictEqual(edges[0].weight, 1);
+      assert.strictEqual(edges[0].a, "key:alpha");
+      assert.strictEqual(edges[0].b, "key:beta");
+    });
+
+    it("creates N*(N-1)/2 edges for N results", () => {
+      const results = [
+        { fact: { dedupKey: "k:1" } },
+        { fact: { dedupKey: "k:2" } },
+        { fact: { dedupKey: "k:3" } },
+        { fact: { dedupKey: "k:4" } },
+      ];
+      const edges = extractEdgesFromRetrieval(results);
+      assert.strictEqual(edges.length, 6); // 4*3/2
+    });
+
+    it("skips edges between facts with same dedupKey", () => {
+      const results = [{ fact: { dedupKey: "same" } }, { fact: { dedupKey: "same" } }];
+      const edges = extractEdgesFromRetrieval(results);
+      assert.strictEqual(edges.length, 0);
+    });
+
+    it("sorts keys canonically", () => {
+      const results = [{ fact: { dedupKey: "key:zebra" } }, { fact: { dedupKey: "key:ant" } }];
+      const edges = extractEdgesFromRetrieval(results);
+      assert.strictEqual(edges[0].a, "key:ant");
+      assert.strictEqual(edges[0].b, "key:zebra");
     });
   });
 

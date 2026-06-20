@@ -2,7 +2,9 @@ import { readSharedFacts } from "./cross-context.js";
 import { recordRetrievalSignals } from "./entities.js";
 import {
   buildEdgeLookup,
+  extractEdgesFromRetrieval,
   hebbianBoost,
+  mergeEdges,
   type HebbianConfig,
   type HebbianEdge,
   DEFAULT_HEBBIAN_CONFIG,
@@ -514,6 +516,24 @@ export async function retrieveTopK(params: {
   }
 
   const finalFacts = result.slice(0, topK);
+
+  // -----------------------------------------------------------------
+  // Retrieval-time Hebbian edge strengthening (AtomMem-style)
+  // -----------------------------------------------------------------
+  // Facts that surface together in the same retrieval result strengthen
+  // their associative link even when they come from different chunks.
+  // This bridges the gap left by same-chunk co-occurrence extraction.
+  try {
+    const edgeRaw = await params.storage.readEdgeMap();
+    const existingEdges = Array.isArray(edgeRaw) ? (edgeRaw as HebbianEdge[]) : [];
+    const newEdges = extractEdgesFromRetrieval(finalFacts);
+    if (newEdges.length > 0) {
+      const merged = mergeEdges(existingEdges, newEdges);
+      await params.storage.writeEdgeMap(merged);
+    }
+  } catch {
+    // Edge strengthening is non-critical — skip silently
+  }
 
   // -----------------------------------------------------------------
   // Sufficient Context Agent (gap analysis)
