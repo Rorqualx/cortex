@@ -1,3 +1,10 @@
+import { splitShellArgs } from "../utils/shell-argv.js";
+import type {
+  ExecCommandAnalysis,
+  ExecCommandSegment,
+  ShellChainOperator,
+} from "./exec-command-analysis-types.js";
+import { resolveCommandResolutionFromArgv } from "./exec-command-resolution.js";
 // Shared exec approval analysis types and Windows-only shell enforcement helpers.
 import {
   analyzeWindowsShellCommand,
@@ -5,9 +12,6 @@ import {
   rebuildWindowsShellCommandFromSource,
   windowsEscapeArg,
 } from "./windows-shell-command.js";
-import type { ExecCommandAnalysis, ExecCommandSegment, ShellChainOperator } from "./exec-command-analysis-types.js";
-import { resolveCommandResolutionFromArgv } from "./exec-command-resolution.js";
-import { splitShellArgs } from "../utils/shell-argv.js";
 
 export { analyzeArgvCommand } from "./exec-argv-analysis.js";
 
@@ -248,9 +252,7 @@ function splitCommandChain(command: string): string[] | null {
   return parts.map((p) => p.part);
 }
 
-function splitShellPipeline(
-  command: string,
-): { ok: boolean; reason?: string; segments: string[] } {
+function splitShellPipeline(command: string): { ok: boolean; reason?: string; segments: string[] } {
   // Split on unquoted | (not ||). Bail (ok:false) on heredocs, command
   // substitution, or raw newlines so the caller falls back to a line-by-line
   // scan — those can hide a /approve or interactive-login command on a separate

@@ -22,7 +22,6 @@ import {
   resolveCodexContextEngineProjectionReserveTokens,
 } from "./context-engine-projection.js";
 import { shouldDisableCodexToolSearchForModel } from "./dynamic-tool-profile.js";
-import type { CodexNativeWebSearchSupport } from "./web-search.js";
 import { invalidInlineImageText, sanitizeInlineImageDataUrl } from "./image-payload-sanitizer.js";
 import {
   isCodexPluginThreadBindingStale,
@@ -56,6 +55,7 @@ import {
   type CodexAppServerContextEngineProjectionBinding,
   type CodexAppServerThreadBinding,
 } from "./session-binding.js";
+import type { CodexNativeWebSearchSupport } from "./web-search.js";
 
 export type CodexAppServerThreadLifecycle = {
   action: "started" | "resumed";
@@ -1451,7 +1451,6 @@ function hasProviderQualifiedModelRef(model: string | undefined): boolean {
   const slashIndex = trimmed?.indexOf("/") ?? -1;
   return slashIndex > 0 && slashIndex < (trimmed?.length ?? 0) - 1;
 }
-
 
 export function resolveCodexAppServerModelProvider(params: {
   provider: string;
