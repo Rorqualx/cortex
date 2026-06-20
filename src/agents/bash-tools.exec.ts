@@ -90,6 +90,7 @@ export type {
   ExecToolDefaults,
   ExecToolDetails,
 } from "./bash-tools.exec-types.js";
+import { checkBashCommandDiscipline } from "./bash-command-discipline.js";
 
 type ExecToolArgs = Record<string, unknown> & {
   command: string;
@@ -1673,6 +1674,17 @@ export function createExecTool(
         workdir = resolveWorkdir(rawWorkdir, warnings);
       }
       rejectUnsafeControlShellCommand(params.command);
+      // Discipline guard: steer the model off low-value/high-backtrack shell
+      // patterns (recursive grep, foreground long-runs, cat/sed reads, unsafe
+      // git). On by default; per-rule disable via tools.bashDiscipline.
+      const disciplineViolation = checkBashCommandDiscipline({
+        command: params.command,
+        background: params.background === true,
+        config: defaults?.config?.tools?.bashDiscipline,
+      });
+      if (disciplineViolation) {
+        throw new Error(disciplineViolation.reason);
+      }
 
       const inheritedBaseEnv = coerceEnv(process.env);
       const resolvedExecEnvState = getResolvedExecEnvPreparedState(params);

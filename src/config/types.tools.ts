@@ -596,6 +596,22 @@ export type MemorySearchConfig = {
   };
 };
 
+/**
+ * Bash-command discipline rules (all on by default). Each `false` disables one
+ * rule; `enabled: false` disables the whole guard. See bash-command-discipline.ts.
+ */
+export type BashDisciplineConfig = {
+  enabled?: boolean;
+  /** Block recursive/codebase grep|rg (redirect to ast-grep). */
+  astGrep?: boolean;
+  /** Block foreground dev/serve/watch/follow/large-sleep (require background). */
+  background?: boolean;
+  /** Block bare cat/sed/head/tail file reads (redirect to the read tool). */
+  preferRead?: boolean;
+  /** Block force-push, reset --hard, clean -fd. */
+  git?: boolean;
+};
+
 export type ToolsConfig = {
   /** Base tool profile applied before allow/deny lists. */
   profile?: ToolProfileId;
@@ -607,6 +623,8 @@ export type ToolsConfig = {
   byProvider?: Record<string, ToolPolicyConfig>;
   /** Per-sender tool policy overrides keyed by sender identity. */
   toolsBySender?: GroupToolPolicyBySenderConfig;
+  /** Bash-command discipline guard (ast-grep/background/read/git rules). On by default. */
+  bashDiscipline?: BashDisciplineConfig;
   web?: {
     search?: {
       /** Enable managed web_search and optional Codex-native web search. */
