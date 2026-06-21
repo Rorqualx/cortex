@@ -26,6 +26,7 @@ import {
   repairDreamingArtifacts,
   writeBackfillDiaryEntries,
 } from "./doctor.memory-core-runtime.js";
+import { L3_LAYERS, isL3LayerId, renderL3Layer } from "./doctor.memory-l3-layers.js";
 import { normalizeTrimmedString } from "./record-shared.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -693,6 +694,34 @@ const SKIPPED_MEMORY_EMBEDDING_PROBE = {
 } as const;
 
 export const doctorHandlers: GatewayRequestHandlers = {
+  // Memory-l3 "ZenBrain" layer viewer: list the 7 layers, or (with `layer`)
+  // return that layer rendered as human-readable markdown for the Control UI.
+  "doctor.memory.l3Layers": async ({ respond, context, params }) => {
+    const cfg = context.getRuntimeConfig();
+    const requestedAgentId =
+      typeof params?.agentId === "string" ? normalizeAgentId(params.agentId) : null;
+    const agentId = requestedAgentId || resolveDefaultAgentId(cfg);
+    const layer = isL3LayerId(params?.layer) ? params.layer : null;
+    if (!layer) {
+      respond(true, { agentId, layers: L3_LAYERS }, undefined);
+      return;
+    }
+    try {
+      const markdown = await renderL3Layer(cfg, agentId, layer);
+      respond(true, { agentId, layer, markdown }, undefined);
+    } catch (err) {
+      respond(
+        true,
+        {
+          agentId,
+          layer,
+          markdown: `_Failed to read layer: ${formatError(err)}_`,
+          error: formatError(err),
+        },
+        undefined,
+      );
+    }
+  },
   "doctor.memory.status": async ({ respond, context, params }) => {
     const cfg = context.getRuntimeConfig();
     const requestedAgentId =
