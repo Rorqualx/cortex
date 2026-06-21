@@ -71,6 +71,7 @@ import {
   createChatSession,
   dismissChatError,
   handleChatManualRefresh,
+  collectChannelChatNavCandidates,
   isCronSessionKey,
   parseSessionKey,
   resolveAssistantAttachmentAuthToken,
@@ -1194,5 +1195,60 @@ describe("dismissChatError", () => {
     expect(state.realtimeTalkStatus).toBe("idle");
     expect(state.realtimeTalkDetail).toBeNull();
     expect(state.realtimeTalkTranscript).toBeNull();
+  });
+});
+
+describe("collectChannelChatNavCandidates", () => {
+  it("returns one candidate per channel conversation, newest first", () => {
+    const sessions = [
+      row({ key: "agent:main:telegram:direct:111", channel: "telegram", updatedAt: 100 }),
+      row({
+        key: "agent:main:telegram:group:222",
+        channel: "telegram",
+        kind: "group",
+        updatedAt: 300,
+      }),
+      row({ key: "agent:main:discord:direct:333", channel: "discord", updatedAt: 200 }),
+    ];
+    const candidates = collectChannelChatNavCandidates(sessions, new Set(["telegram", "discord"]));
+    expect(candidates.map((c) => c.key)).toEqual([
+      "agent:main:telegram:group:222",
+      "agent:main:discord:direct:333",
+      "agent:main:telegram:direct:111",
+    ]);
+    expect(candidates.map((c) => c.channelId)).toEqual(["telegram", "discord", "telegram"]);
+  });
+
+  it("excludes non-channel, unknown-channel, subagent, cron, and spawned rows", () => {
+    const sessions = [
+      row({ key: "agent:main:main", kind: "global", channel: "telegram" }),
+      row({ key: "agent:main:matrix:direct:444", channel: "matrix" }),
+      row({ key: "agent:main:subagent:abc", channel: "telegram" }),
+      row({ key: "agent:main:cron:job1", channel: "telegram" }),
+      row({
+        key: "agent:main:telegram:direct:555",
+        channel: "telegram",
+        spawnedBy: "agent:main:main",
+      }),
+    ];
+    expect(collectChannelChatNavCandidates(sessions, new Set(["telegram"]))).toEqual([]);
+  });
+
+  it("derives the channel from the key, dedupes keeping the freshest, and ignores a stale row.channel", () => {
+    const sessions = [
+      // No explicit channel field; channel derived from the session key.
+      row({ key: "agent:main:telegram:direct:777", updatedAt: 10 }),
+      // Same key, fresher snapshot — must win over the stale one above.
+      row({ key: "agent:main:telegram:direct:777", updatedAt: 50 }),
+      // Stale row.channel not in knownChannelIds, but the key identifies telegram.
+      row({ key: "agent:main:telegram:direct:888", channel: "stale-bot", updatedAt: 5 }),
+    ];
+    const candidates = collectChannelChatNavCandidates(sessions, new Set(["telegram"]));
+    expect(candidates.map((c) => c.key)).toEqual([
+      "agent:main:telegram:direct:777",
+      "agent:main:telegram:direct:888",
+    ]);
+    expect(candidates[0].updatedAt).toBe(50);
+    expect(candidates.every((c) => c.channelId === "telegram")).toBe(true);
   });
 });

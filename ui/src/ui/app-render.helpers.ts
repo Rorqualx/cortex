@@ -31,6 +31,7 @@ import { iconForTab, isSettingsTab, pathForTab, titleForTab, type Tab } from "./
 import { isCronSessionKey, parseSessionKey, resolveSessionDisplayName } from "./session-display.ts";
 import {
   isSessionKeyTiedToAgent,
+  isSubagentSessionKey,
   normalizeAgentId,
   parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
@@ -83,6 +84,55 @@ export async function handleChatManualRefresh(state: ChatRefreshHost): Promise<v
       state.chatNewMessagesBelow = false;
     });
   }
+}
+
+export type ChannelChatNavCandidate = {
+  key: string;
+  row: SessionsListResult["sessions"][number];
+  channelId: string;
+  updatedAt: number;
+};
+
+/**
+ * One candidate per inbound channel conversation (telegram/discord/…), newest
+ * first. `knownChannelIds` gates which sessions count as channel chats so
+ * non-channel rows (main/global/subagent/cron/spawned) are excluded. Dedupes by
+ * session key keeping the freshest snapshot (the two caches we read can each hold
+ * the same key); labels are resolved by the caller for only the rows that survive
+ * its cap.
+ */
+export function collectChannelChatNavCandidates(
+  sessions: readonly SessionsListResult["sessions"][number][],
+  knownChannelIds: ReadonlySet<string>,
+): ChannelChatNavCandidate[] {
+  const byKey = new Map<string, ChannelChatNavCandidate>();
+  for (const row of sessions) {
+    if (row.kind !== "direct" && row.kind !== "group") {
+      continue;
+    }
+    if (row.spawnedBy || isSubagentSessionKey(row.key) || isCronSessionKey(row.key)) {
+      continue;
+    }
+    // The session key is the authoritative channel source; row.channel/origin are
+    // fallbacks for keys that aren't channel-shaped. Take the first candidate the
+    // gateway actually knows, so a stale row.channel can't drop a real chat.
+    const fromKey = parseAgentSessionKey(row.key)?.rest.split(":")[0]?.toLowerCase();
+    const channelId = [
+      fromKey,
+      row.channel?.toLowerCase(),
+      row.origin?.surface?.toLowerCase(),
+    ].find((candidate) => candidate && knownChannelIds.has(candidate));
+    if (!channelId) {
+      continue;
+    }
+    const lowerKey = row.key.toLowerCase();
+    const updatedAt = row.updatedAt ?? 0;
+    const existing = byKey.get(lowerKey);
+    if (!existing || updatedAt > existing.updatedAt) {
+      byKey.set(lowerKey, { key: row.key, row, channelId, updatedAt });
+    }
+  }
+  return [...byKey.values()].toSorted((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function resolveAssistantAttachmentAuthToken(
