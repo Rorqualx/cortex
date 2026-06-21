@@ -342,6 +342,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: [
       "doctor.memory.status",
+      "doctor.memory.l3Layers",
       "doctor.memory.dreamDiary",
       "doctor.memory.backfillDreamDiary",
       "doctor.memory.resetDreamDiary",
