@@ -52,8 +52,10 @@ export type ScoringConfig = {
   weightSemantic: number;
   /**
    * Weight for the source chunk's information-gain (session novelty) signal.
-   * Ships at 0 so the metric is collected and visible in signals without
-   * affecting ranking; raise only after calibrating against real recall data.
+   * Small by design: novel L2 facts (high 1−cosine to long-term) get a slight
+   * lift so genuinely new session content surfaces over rehashed evergreen
+   * facts, without letting novelty override lexical/semantic relevance.
+   * Only L2 facts carry an informationGain; other tiers score it as 0.
    */
   weightInformationGain: number;
 };
@@ -73,7 +75,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   recencyHalfLifeDays: 7,
   useFsrs: true,
   weightSemantic: 0.35,
-  weightInformationGain: 0,
+  weightInformationGain: 0.05,
 };
 
 // ---------------------------------------------------------------------------
@@ -100,7 +102,11 @@ export type FsrsParams = {
   w0: number;
   /** Stability growth on successful recall. Default 1.3. */
   w1: number;
-  /** Base decay rate. Default 0.4. */
+  /**
+   * Global decay-rate multiplier on the forgetting curve. 1.0 = neutral
+   * Ebbinghaus (half-life = stability·ln2); >1 forgets faster, <1 slower.
+   * Default 1.0.
+   */
   w2: number;
   /** Significance multiplier — "remember this" facts decay 2.7× slower. Default 2.7. */
   significanceBoost: number;
@@ -109,14 +115,14 @@ export type FsrsParams = {
 export const DEFAULT_FSRS_PARAMS: FsrsParams = {
   w0: 0.3,
   w1: 1.3,
-  w2: 0.4,
+  w2: 1.0,
   significanceBoost: 2.7,
 };
 
 /**
  * Compute FSRS-based retrievability for a fact.
  *
- * R(t) = e^(-t / S)
+ * R(t) = e^(-(w2 · t) / S)   (w2 = global decay-rate multiplier, default 1.0)
  *
  * Where S (stability) grows with recallCount:
  *   S = baseHalfLifeDays × w1^(recallCount - 1) × (1 + difficulty)
@@ -153,8 +159,11 @@ export function fsrsRetrievability(params: {
     stability *= fsrs.significanceBoost;
   }
 
-  // R(t) = e^(-t / S) — standard Ebbinghaus curve with per-fact stability
-  return Math.exp(-ageDays / stability);
+  // R(t) = e^(-(w2 · t) / S) — Ebbinghaus curve with per-fact stability, where
+  // w2 scales global forgetting speed (1.0 = neutral). Kept separate from
+  // stability so it tunes the curve uniformly without distorting per-fact
+  // recall growth.
+  return Math.exp(-(fsrs.w2 * ageDays) / stability);
 }
 
 export type Signals = {

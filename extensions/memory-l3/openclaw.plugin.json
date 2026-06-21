@@ -7,7 +7,7 @@
   "name": "Hierarchical Memory (L1/L2/L3)",
   "description": "Layered memory context engine: sliding-window L1, chunk fact-list L2, epoch digest L3.",
   "contracts": {
-    "contextEngines": ["hierarchical-l3"],
+    "contextEngines": ["memory-l3"],
     "tools": ["memory_insights"]
   },
   "configSchema": {
@@ -22,7 +22,7 @@
   "uiHints": {
     "enabled": {
       "label": "Enable Hierarchical Memory",
-      "help": "Register the hierarchical-l3 context engine for opt-in selection by agents."
+      "help": "Register the memory-l3 context engine for opt-in selection by agents (plugins.slots.contextEngine: \"memory-l3\")."
     }
   }
 }
