@@ -11,9 +11,40 @@ import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { recordSkillUsage } from "../../../skill-forge/telemetry.js";
 import type { SkillSnapshot } from "../../../skills/types.js";
 import type { AfterToolCallContext, AfterToolCallResult, Agent } from "../../runtime/index.js";
+import { readToolResultDetails, readToolResultStatus } from "../../tool-result-error.js";
 
 const FORGE_SKILL_SOURCE = "openclaw-skill-forge";
 const RECOVERY_NAME_PREFIX = "forge-recover-";
+
+// Result statuses that mean the tool GENUINELY failed in a way a recovery skill
+// could address. Deliberately narrower than isToolResultError(): we exclude
+// non-zero exitCode (a successful grep/diff/test exits non-zero), and user/policy
+// outcomes (aborted/cancelled/blocked/denied/disabled) where retrying via another
+// tool would not help. Tool throws are surfaced by the tool adapter as
+// details.status "error" + details.error, so those are caught here.
+const RECOVERABLE_FAILURE_STATUSES = new Set([
+  "error",
+  "failed",
+  "failure",
+  "timeout",
+  "timed_out",
+]);
+
+/** Whether a tool RESULT represents a genuine, recovery-worthy failure (no throw needed). */
+function isRecoverableToolFailure(result: unknown): boolean {
+  const details = readToolResultDetails(result);
+  if (!details) {
+    return false;
+  }
+  if (details.ok === false || details.success === false) {
+    return true;
+  }
+  if (typeof details.error === "string" && details.error.length > 0) {
+    return true;
+  }
+  const status = readToolResultStatus(result);
+  return status !== undefined && RECOVERABLE_FAILURE_STATUSES.has(status);
+}
 // Cap inlined prose so an oversized SKILL.md cannot blow up the tool-result payload.
 const MAX_INLINE_BODY_CHARS = 4000;
 
@@ -69,7 +100,15 @@ export function installForgeRecoveryHook(params: {
     signal?: AbortSignal,
   ): Promise<AfterToolCallResult | undefined> => {
     const hookResult = await previousAfterToolCall?.(context, signal);
-    if (!context.isError) {
+    // context.isError reflects only whether the tool THREW. OpenClaw tools
+    // surface most failures as a structured error RESULT (details.status
+    // "error", details.error) without throwing — agent-core then reports
+    // isError=false — so also consult the result and any upstream hook's
+    // authoritative isError flag. Without this, recovery never fires for the
+    // common (non-throwing) failure case.
+    const failed =
+      context.isError || hookResult?.isError === true || isRecoverableToolFailure(context.result);
+    if (!failed) {
       return hookResult;
     }
     const failingTool = toNameToken(context.toolCall.name);

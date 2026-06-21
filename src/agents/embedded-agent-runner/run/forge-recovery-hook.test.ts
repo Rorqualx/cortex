@@ -61,6 +61,47 @@ describe("installForgeRecoveryHook", () => {
     expect(recordUsage).toHaveBeenCalledExactlyOnceWith("forge-recover-exec-via-exec");
   });
 
+  it("fires for a content-encoded error result even when context.isError is false", async () => {
+    // OpenClaw tools surface most failures as a structured error RESULT
+    // (details.status === "error") without throwing, so agent-core reports
+    // context.isError === false. Recovery must still fire via isToolResultError.
+    const skills = await snapshotWith("forge-recover-read-via-exec", "Read recovery.");
+    const recordUsage = vi.fn();
+    const { agent, getHook } = fakeAgent();
+    installForgeRecoveryHook({ agent, skillsSnapshot: skills, recordUsage });
+
+    const context = {
+      toolCall: { name: "read" },
+      isError: false,
+      result: { content: [{ type: "text", text: "ENOENT" }], details: { status: "error" } },
+    } as unknown as AfterToolCallContext;
+    const result = await getHook()!(context);
+    const text = result?.content?.map((c) => (c.type === "text" ? c.text : "")).join("") ?? "";
+    expect(text).toContain("forge-recover-read-via-exec");
+    expect(recordUsage).toHaveBeenCalledExactlyOnceWith("forge-recover-read-via-exec");
+  });
+
+  it("does NOT fire on a successful command that merely exits non-zero", async () => {
+    // grep with no match / diff with changes / test failures exit non-zero but
+    // are status "completed" — not a recovery-worthy failure. Recovery must skip.
+    const skills = await snapshotWith("forge-recover-exec-via-exec", "Recovery body.");
+    const recordUsage = vi.fn();
+    const { agent, getHook } = fakeAgent();
+    installForgeRecoveryHook({ agent, skillsSnapshot: skills, recordUsage });
+
+    const context = {
+      toolCall: { name: "exec" },
+      isError: false,
+      result: {
+        content: [{ type: "text", text: "no match" }],
+        details: { status: "completed", exitCode: 1 },
+      },
+    } as unknown as AfterToolCallContext;
+    const result = await getHook()!(context);
+    expect(result).toBeUndefined();
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
   it("fires at most once per attempt for the same skill", async () => {
     const skills = await snapshotWith("forge-recover-exec-via-exec", "Recovery body.");
     const recordUsage = vi.fn();
