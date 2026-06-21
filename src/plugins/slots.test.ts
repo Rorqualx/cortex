@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import {
   applyExclusiveSlotSelection,
+  defaultSlotIdForKey,
   hasKind,
   kindsEqual,
   normalizeKinds,
+  preferredSlotIdForKey,
   slotKeysForPluginKind,
 } from "./slots.js";
 import type { PluginKind } from "./types.js";
@@ -262,6 +264,21 @@ describe("applyExclusiveSlotSelection", () => {
     expect(result.config.plugins?.slots?.memory).toBe("new-memory");
     // legacy still owns contextEngine via default — must NOT be disabled
     expect(result.config.plugins?.entries?.legacy?.enabled).not.toBe(false);
+  });
+});
+
+describe("slot defaults", () => {
+  it("keeps the reserved built-in as the structural default", () => {
+    expect(defaultSlotIdForKey("contextEngine")).toBe("legacy");
+    expect(defaultSlotIdForKey("memory")).toBe("memory-core");
+  });
+
+  it("prefers memory-l3 for an unset contextEngine slot", () => {
+    expect(preferredSlotIdForKey("contextEngine")).toBe("memory-l3");
+  });
+
+  it("falls back to the structural default when no preferred override exists", () => {
+    expect(preferredSlotIdForKey("memory")).toBe("memory-core");
   });
 });
 

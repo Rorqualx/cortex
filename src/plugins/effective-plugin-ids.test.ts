@@ -116,6 +116,10 @@ describe("resolveEffectivePluginIds", () => {
     ).toStrictEqual([]);
   });
 
+  it("preloads the preferred context engine (memory-l3) when the slot is unset", () => {
+    expect(resolve({ plugins: { slots: {} } })).toStrictEqual(["memory-l3"]);
+  });
+
   it.each([
     {
       name: "plugins disabled",

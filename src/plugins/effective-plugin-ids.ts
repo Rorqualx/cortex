@@ -15,7 +15,7 @@ import {
 import { normalizePluginsConfig } from "./config-state.js";
 import { loadManifestMetadataSnapshot } from "./manifest-contract-eligibility.js";
 import { passesManifestOwnerBasePolicy } from "./manifest-owner-policy.js";
-import { defaultSlotIdForKey } from "./slots.js";
+import { defaultSlotIdForKey, preferredSlotIdForKey } from "./slots.js";
 
 function collectConfiguredChannelIds(
   config: OpenClawConfig,
@@ -128,7 +128,10 @@ function collectSelectedContextEnginePluginIds(config: OpenClawConfig): string[]
   if (!plugins.enabled) {
     return [];
   }
-  const pluginId = plugins.slots.contextEngine;
+  // Unset slot falls back to the preferred engine so the fork's default
+  // context-engine plugin (memory-l3) is loaded/enabled without explicit config.
+  // The reserved built-in default (legacy) is not a plugin, so it stays excluded.
+  const pluginId = plugins.slots.contextEngine ?? preferredSlotIdForKey("contextEngine");
   if (!pluginId || pluginId === defaultSlotIdForKey("contextEngine")) {
     return [];
   }

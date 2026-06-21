@@ -1,7 +1,7 @@
 // Context-engine registry owns engine registration, resolution, compatibility, and quarantine.
 import { sanitizeForLog } from "../../packages/terminal-core/src/ansi.js";
 import type { OpenClawConfig } from "../config/types.js";
-import { defaultSlotIdForKey } from "../plugins/slots.js";
+import { defaultSlotIdForKey, preferredSlotIdForKey } from "../plugins/slots.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import {
   clearPersistedContextEngineQuarantineForProcess,
@@ -908,10 +908,13 @@ export async function resolveContextEngine(
   options?: ResolveContextEngineOptions,
 ): Promise<ContextEngine> {
   const slotValue = config?.plugins?.slots?.contextEngine;
+  // Unset slot resolves to the preferred engine (memory-l3 in this fork), not
+  // the built-in. Since preferred !== default, an unregistered/disabled preferred
+  // engine takes the non-default path below and degrades to the built-in default.
   const engineId =
     typeof slotValue === "string" && slotValue.trim()
       ? slotValue.trim()
-      : defaultSlotIdForKey("contextEngine");
+      : preferredSlotIdForKey("contextEngine");
 
   const defaultEngineId = defaultSlotIdForKey("contextEngine");
   const isDefaultEngine = engineId === defaultEngineId;

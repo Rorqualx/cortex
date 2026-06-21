@@ -15,9 +15,22 @@ const SLOT_BY_KIND: Record<PluginKind, PluginSlotKey> = {
   "context-engine": "contextEngine",
 };
 
+// The reserved built-in slot owners. `legacy` is the core-owned context engine
+// (always registered, never a plugin) — it stays the structural default so slot
+// reservation, effective-id, and host-compat logic keep treating it as the
+// built-in. The fork's preferred engine is layered separately, see
+// PREFERRED_SLOT_BY_KEY.
 const DEFAULT_SLOT_BY_KEY: Record<PluginSlotKey, string> = {
   memory: "memory-core",
   contextEngine: "legacy",
+};
+
+// Engine selected when a slot is unset. The Cortex fork ships the memory-l3
+// context engine on by default; it is a real bundled plugin (so it must load
+// and register normally — unlike the reserved built-in), and resolution still
+// degrades to the built-in default if it is disabled/unregistered.
+const PREFERRED_SLOT_BY_KEY: Partial<Record<PluginSlotKey, string>> = {
+  contextEngine: "memory-l3",
 };
 
 /** Normalize a kind field to an array for uniform iteration. */
@@ -56,6 +69,17 @@ export function slotKeysForPluginKind(kind?: PluginKind | PluginKind[]): PluginS
 /** Returns the implicit plugin id that owns a slot before config overrides it. */
 export function defaultSlotIdForKey(slotKey: PluginSlotKey): string {
   return DEFAULT_SLOT_BY_KEY[slotKey];
+}
+
+/**
+ * Returns the engine selected when a slot is unset. Defaults to the reserved
+ * built-in (`defaultSlotIdForKey`) unless the fork prefers another engine for
+ * that slot (e.g. memory-l3 for contextEngine). The preferred engine is a normal
+ * plugin id, so resolution treats it as a non-default selection and degrades to
+ * the built-in default if it is unavailable.
+ */
+export function preferredSlotIdForKey(slotKey: PluginSlotKey): string {
+  return PREFERRED_SLOT_BY_KEY[slotKey] ?? DEFAULT_SLOT_BY_KEY[slotKey];
 }
 
 export type SlotSelectionResult = {

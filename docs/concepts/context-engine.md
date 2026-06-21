@@ -60,8 +60,10 @@ OpenClaw ships with a built-in `legacy` engine and uses it by default - most use
     Restart the gateway after installing and configuring.
 
   </Step>
-  <Step title="Switch back to legacy (optional)">
-    Set `contextEngine` to `"legacy"` (or remove the key entirely - `"legacy"` is the default).
+  <Step title="Switch to the built-in legacy engine (optional)">
+    Set `contextEngine` to `"legacy"` explicitly. Removing the key no longer
+    selects legacy: an unset slot now defaults to the bundled `memory-l3`
+    engine, and `"legacy"` is the reserved built-in fallback.
   </Step>
 </Steps>
 
@@ -112,7 +114,7 @@ The built-in `legacy` engine preserves OpenClaw's original behavior:
 
 The legacy engine does not register tools or provide a `systemPromptAddition`.
 
-When no `plugins.slots.contextEngine` is set (or it's set to `"legacy"`), this engine is used automatically.
+This built-in engine is used when `plugins.slots.contextEngine` is set to `"legacy"`, and as the automatic fallback whenever the selected engine is unavailable. Note: an unset slot now defaults to the bundled `memory-l3` engine, so set `"legacy"` explicitly to use this one.
 
 ## Plugin engines
 
