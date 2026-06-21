@@ -530,12 +530,12 @@ export class HierarchicalL3Engine implements ContextEngine {
 
     // 2. Try to resolve from core OpenClaw embedding provider infrastructure
     try {
-      // Dynamic import: the embedding provider runtime is part of the core
-      // openclaw package but not exported via plugin-sdk. Since memory-l3
-      // runs in the same process, the relative import resolves at runtime.
-      const providerRuntime =
-        await import("../../../src/plugins/memory-embedding-provider-runtime.js");
-      const adapter = providerRuntime.getMemoryEmbeddingProvider("openai", this.config);
+      // Lazy import via the public SDK seam (loaded only when the semantic
+      // channel is first needed) — keeps the embedding runtime out of the eager
+      // module graph without reaching into core `src/**`.
+      const { getMemoryEmbeddingProvider } =
+        await import("openclaw/plugin-sdk/memory-core-host-engine-embeddings");
+      const adapter = getMemoryEmbeddingProvider("openai", this.config);
       if (!adapter) {
         l3debug("resolveEmbeddingProvider(): no openai adapter found; semantic channel disabled");
         this.resolvedEmbeddingProvider = null;

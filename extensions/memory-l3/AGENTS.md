@@ -76,21 +76,17 @@ What the SQLite move buys (the reasons the rule exists): ACID + WAL cross-proces
 safety (fixes the shared-store bug), one canonical store with doctor-owned
 migration, and indexed access by id/`chunk_id`/`created_at`.
 
-Phase D follow-up (optional optimization, not required for compliance): break
-`l3_message_chunks` + long-term facts into per-row embedding columns mirrored to a
-`sqlite-vec` virtual table for ANN, replacing the current in-JS `cosineSimilarity`
-over JSON-`TEXT` embeddings.
+Deferred optimization (not required for compliance; revisit at ~10k+ message
+chunks): mirror `l3_message_chunks` embeddings into a `sqlite-vec` virtual table
+for ANN, replacing the in-JS `cosineSimilarity` scan in retrieval's message-chunk
+fallback. At current scale (~1k chunks) the in-JS path is sub-millisecond and the
+only cost is loading the embeddings on a fallback miss, so the dual-path
+(vec-when-available + in-JS fallback, as memory-core does) is not yet worth it.
+sqlite-vec is confirmed available in this runtime (memory-core uses it).
 
-## Deliberate deviation 2 — importing core runtime from `src/**`
+## Resolved deviation 2 — embedding provider via the SDK seam (was a `src/**` deep import)
 
-Root/extensions rule: plugins import only `openclaw/plugin-sdk/*` and local barrels, never core `src/**`. **L3 intentionally deep-imports** `../../../src/plugins/memory-embedding-provider-runtime.js` (`engine.ts`) to reuse core's embedding provider.
-
-Why the rule exists:
-
-- The boundary is the contract third-party plugins see; deep imports couple us to private internals that can change without notice.
-- **Packaging**: external plugins are excluded from core dist, so a `../../../src/...` import only resolves because L3 is bundled in-tree — it would break if L3 were ever externalized.
-
-Why it's acceptable for now: L3 is a **bundled** Cortex plugin shipped inside core dist, so the relative import resolves and we accept the coupling rather than duplicate the provider logic. Proper fix = expose the embedding provider through a `openclaw/plugin-sdk/*` seam, then switch to it. Do that before externalizing L3.
+Root/extensions rule: plugins import only `openclaw/plugin-sdk/*` and local barrels, never core `src/**`. `engine.ts` previously deep-imported `../../../src/plugins/memory-embedding-provider-runtime.js`; it now lazily imports `getMemoryEmbeddingProvider` from `openclaw/plugin-sdk/memory-core-host-engine-embeddings` (which re-exports the same function), so no `src/**` path remains. The import stays dynamic so the embedding runtime loads only when the semantic channel is first used. L3 can now be externalized without rewiring this seam.
 
 ## Tuning knobs (live)
 
