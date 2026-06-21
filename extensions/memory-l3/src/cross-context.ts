@@ -1,19 +1,37 @@
 /**
  * Cross-context memory — shared long-term fact store across agents/sessions.
  *
- * ZenBrain Layer 7: agents, cron-spawned sessions, and sub-agents all share
- * a common long-term fact store at `~/.openclaw/shared-memory/longterm-shared.json`.
- * Each agent publishes its promoted long-term facts after consolidation;
- * retrieval includes shared facts as a cross-context tier.
+ * ZenBrain Layer 7: agents, cron-spawned sessions, and sub-agents all share a
+ * common long-term fact store. Backed by a dedicated cross-agent SQLite DB at
+ * `<sharedDir>/longterm-shared.sqlite` (default `~/.openclaw/shared-memory/`,
+ * overridable via `OPENCLAW_SHARED_MEMORY_DIR`). Each agent publishes its
+ * promoted long-term facts after consolidation; retrieval includes shared
+ * facts as a cross-context tier.
+ *
+ * Why SQLite, not the old `longterm-shared.json`: this store is the one L3 tier
+ * written by multiple processes concurrently (gateway, CLI, crons, sub-agents).
+ * The prior atomic write-rename had no cross-process lock, so two agents
+ * publishing at once could silently clobber each other's facts. `publishToFacts`
+ * now does read-merge-write inside a single `BEGIN IMMEDIATE` transaction over a
+ * WAL database, which serializes publishers across processes. The legacy JSON
+ * store is imported once by `openclaw doctor --fix` (see `doctor-contract-api.ts`),
+ * never read at runtime.
  *
  * Conflict resolution: when multiple agents promote facts with the same
- * dedupKey, the fact with the highest importance wins. Superseded facts
- * are archived (not deleted) for forensics.
+ * dedupKey, the fact with the highest importance wins. Superseded facts are
+ * archived (not deleted) for forensics.
  */
 
-import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import {
+  closeMemorySqliteWalMaintenance,
+  configureMemorySqliteWalMaintenance,
+  ensureDir,
+  requireNodeSqlite,
+} from "openclaw/plugin-sdk/memory-core-host-engine-storage";
+import { runSqliteImmediateTransactionSync } from "openclaw/plugin-sdk/sqlite-runtime";
 import type { LongTermFact } from "./types.js";
 
 export type SharedLongTermFact = LongTermFact & {
@@ -21,11 +39,32 @@ export type SharedLongTermFact = LongTermFact & {
   sourceAgentId: string;
 };
 
+/**
+ * Legacy on-disk wrapper shape for `longterm-shared.json`. Retained only so the
+ * doctor migration can parse the shipped file; runtime no longer reads it.
+ */
 export type SharedStore = {
   version: 1;
   facts: SharedLongTermFact[];
   lastUpdatedAt: number;
 };
+
+/** Dedicated cross-agent DB filename under the shared-memory dir. */
+export const SHARED_STORE_DB_FILE = "longterm-shared.sqlite";
+/** Legacy JSON store filename the doctor migration imports from. */
+export const SHARED_STORE_LEGACY_JSON_FILE = "longterm-shared.json";
+
+const SHARED_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS l3_shared_longterm (
+  row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fact_id TEXT NOT NULL,
+  source_agent_id TEXT NOT NULL,
+  dedup_key TEXT NOT NULL,
+  archived INTEGER NOT NULL DEFAULT 0,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS l3_shared_longterm_dedup ON l3_shared_longterm (dedup_key);
+`;
 
 /**
  * Resolve the shared memory directory path.
@@ -42,42 +81,105 @@ export function resolveSharedMemoryDir(override?: string): string {
   return path.join(os.homedir(), ".openclaw", "shared-memory");
 }
 
+/** Absolute path to the shared-store SQLite DB. */
+export function resolveSharedStoreDbPath(sharedDir?: string): string {
+  return path.join(resolveSharedMemoryDir(sharedDir), SHARED_STORE_DB_FILE);
+}
+
 /**
- * Read shared facts from the store. Returns empty array when missing.
+ * Open (creating if needed) the shared-store DB with WAL maintenance. The caller
+ * owns the handle and must release it via `closeSharedDb`. Each public entry
+ * point opens and closes its own handle so the store stays usable from any
+ * process without a long-lived connection.
  */
-export async function readSharedFacts(sharedDir?: string): Promise<SharedLongTermFact[]> {
-  const dir = resolveSharedMemoryDir(sharedDir);
-  const target = path.join(dir, "longterm-shared.json");
+function openSharedDb(sharedDir?: string): DatabaseSync {
+  const dbPath = resolveSharedStoreDbPath(sharedDir);
+  ensureDir(path.dirname(dbPath));
+  const { DatabaseSync } = requireNodeSqlite();
+  const db = new DatabaseSync(dbPath);
   try {
-    const raw = await fs.readFile(target, "utf8");
-    const parsed = JSON.parse(raw) as SharedStore;
-    return Array.isArray(parsed.facts) ? parsed.facts : [];
+    // busyTimeoutMs lets a publisher wait out a peer's BEGIN IMMEDIATE instead
+    // of failing fast under cross-process contention.
+    configureMemorySqliteWalMaintenance(db, { busyTimeoutMs: 5000, databasePath: dbPath });
+    db.exec(SHARED_SCHEMA_SQL);
+    return db;
   } catch (err) {
-    if (isNotFound(err)) {
-      return [];
+    try {
+      closeMemorySqliteWalMaintenance(db);
+      db.close();
+    } catch {
+      // Preserve the original open error; cleanup failure is secondary.
     }
     throw err;
   }
 }
 
+function closeSharedDb(db: DatabaseSync): void {
+  closeMemorySqliteWalMaintenance(db);
+  db.close();
+}
+
+/** Load every stored fact (active and archived), preserving insertion order. */
+function readAllSync(db: DatabaseSync): SharedLongTermFact[] {
+  const rows = db.prepare("SELECT payload FROM l3_shared_longterm ORDER BY row_id").all() as Array<{
+    payload: string;
+  }>;
+  const facts: SharedLongTermFact[] = [];
+  for (const row of rows) {
+    try {
+      facts.push(JSON.parse(row.payload) as SharedLongTermFact);
+    } catch {
+      // A single corrupt row must not take down cross-context recall.
+    }
+  }
+  return facts;
+}
+
 /**
- * Write shared facts to the store atomically.
+ * Replace the entire stored set. Mirrors the previous full-file rewrite, but as
+ * a DELETE + INSERT that the caller wraps in an immediate transaction.
+ */
+function replaceAllSync(db: DatabaseSync, facts: ReadonlyArray<SharedLongTermFact>): void {
+  db.exec("DELETE FROM l3_shared_longterm");
+  const insert = db.prepare(
+    "INSERT INTO l3_shared_longterm (fact_id, source_agent_id, dedup_key, archived, payload) VALUES (?, ?, ?, ?, ?)",
+  );
+  for (const fact of facts) {
+    insert.run(
+      fact.id,
+      fact.sourceAgentId,
+      fact.dedupKey,
+      fact.archived ? 1 : 0,
+      JSON.stringify(fact),
+    );
+  }
+}
+
+/**
+ * Read shared facts from the store. Returns empty array when the store is new.
+ */
+export async function readSharedFacts(sharedDir?: string): Promise<SharedLongTermFact[]> {
+  const db = openSharedDb(sharedDir);
+  try {
+    return readAllSync(db);
+  } finally {
+    closeSharedDb(db);
+  }
+}
+
+/**
+ * Replace the shared store with `facts`, transactionally.
  */
 export async function writeSharedFacts(
   facts: SharedLongTermFact[],
   sharedDir?: string,
 ): Promise<void> {
-  const dir = resolveSharedMemoryDir(sharedDir);
-  await fs.mkdir(dir, { recursive: true });
-  const target = path.join(dir, "longterm-shared.json");
-  const store: SharedStore = {
-    version: 1,
-    facts,
-    lastUpdatedAt: Date.now(),
-  };
-  const tmp = `${target}.tmp.${process.pid}.${Date.now()}`;
-  await fs.writeFile(tmp, `${JSON.stringify(store, null, 2)}\n`, "utf8");
-  await fs.rename(tmp, target);
+  const db = openSharedDb(sharedDir);
+  try {
+    runSqliteImmediateTransactionSync(db, () => replaceAllSync(db, facts));
+  } finally {
+    closeSharedDb(db);
+  }
 }
 
 /**
@@ -90,47 +192,59 @@ function mergeKey(fact: SharedLongTermFact): string {
 
 /**
  * Publish an agent's promoted long-term facts into the shared store.
- * Dedupes by (agentId + dedupKey), keeping the most recent version.
- * Then runs conflict resolution for cross-agent dedupKey collisions.
+ * Dedupes by (agentId + dedupKey), keeping the most recent version, then runs
+ * conflict resolution for cross-agent dedupKey collisions.
+ *
+ * Read-merge-write runs inside one BEGIN IMMEDIATE transaction so concurrent
+ * publishers from other processes serialize instead of clobbering each other.
  */
 export async function publishToFacts(
   agentId: string,
   facts: ReadonlyArray<LongTermFact>,
   sharedDir?: string,
 ): Promise<{ published: number; conflicts: number }> {
-  const existing = await readSharedFacts(sharedDir);
-  const activeExisting = existing.filter((f) => !f.archived);
-
-  // Stamp agent ID on new facts
-  const newShared: SharedLongTermFact[] = facts
-    .filter((f) => !f.archived)
-    .map((f) => ({ ...f, sourceAgentId: agentId }));
-
-  // Merge: dedupe by (agentId + dedupKey), keep most recent
-  const merged = new Map<string, SharedLongTermFact>();
-  for (const fact of activeExisting) {
-    merged.set(mergeKey(fact), fact);
-  }
-  for (const fact of newShared) {
-    const key = mergeKey(fact);
-    const current = merged.get(key);
-    if (!current || fact.lastConfirmedAt >= current.lastConfirmedAt) {
-      merged.set(key, fact);
+  // Stamp agent ID on new facts (independent of the transaction).
+  const newShared: SharedLongTermFact[] = [];
+  for (const fact of facts) {
+    if (!fact.archived) {
+      newShared.push({ ...fact, sourceAgentId: agentId });
     }
   }
 
-  // Also preserve archived facts for forensics
-  const archived = existing.filter((f) => f.archived);
+  const db = openSharedDb(sharedDir);
+  try {
+    return runSqliteImmediateTransactionSync(db, () => {
+      const existing = readAllSync(db);
+      const activeExisting = existing.filter((f) => !f.archived);
 
-  // Conflict resolution: same dedupKey from different agents
-  const allActive = Array.from(merged.values());
-  const resolved = resolveConflicts(allActive);
+      // Merge: dedupe by (agentId + dedupKey), keep most recent
+      const merged = new Map<string, SharedLongTermFact>();
+      for (const fact of activeExisting) {
+        merged.set(mergeKey(fact), fact);
+      }
+      for (const fact of newShared) {
+        const key = mergeKey(fact);
+        const current = merged.get(key);
+        if (!current || fact.lastConfirmedAt >= current.lastConfirmedAt) {
+          merged.set(key, fact);
+        }
+      }
 
-  const finalFacts = [...resolved, ...archived];
-  await writeSharedFacts(finalFacts, sharedDir);
+      // Also preserve archived facts for forensics
+      const archived = existing.filter((f) => f.archived);
 
-  const conflicts = allActive.length - resolved.filter((f) => !f.archived).length;
-  return { published: newShared.length, conflicts: Math.max(0, -conflicts) };
+      // Conflict resolution: same dedupKey from different agents
+      const allActive = Array.from(merged.values());
+      const resolved = resolveConflicts(allActive);
+
+      replaceAllSync(db, [...resolved, ...archived]);
+
+      const conflicts = allActive.length - resolved.filter((f) => !f.archived).length;
+      return { published: newShared.length, conflicts: Math.max(0, -conflicts) };
+    });
+  } finally {
+    closeSharedDb(db);
+  }
 }
 
 /**
@@ -175,10 +289,4 @@ export function resolveConflicts(facts: ReadonlyArray<SharedLongTermFact>): Shar
   }
 
   return result;
-}
-
-function isNotFound(err: unknown): boolean {
-  return Boolean(
-    err && typeof err === "object" && "code" in err && (err as { code: unknown }).code === "ENOENT",
-  );
 }

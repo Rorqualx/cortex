@@ -156,5 +156,25 @@ describe("cross-context", () => {
       assert.strictEqual(active[0].dedupKey, "key:active");
       await cleanup();
     });
+
+    it("preserves concurrent publishes from different agents (no lost update)", async () => {
+      // Regression: the prior JSON store did async read-then-write, so two
+      // publishers racing through Promise.all could both read the empty store
+      // and the second write would clobber the first. The SQLite path does
+      // read-merge-write inside one BEGIN IMMEDIATE transaction, so both
+      // agents' facts must survive.
+      const dir = path.join(tmpBase, "publish-concurrent");
+      await Promise.all([
+        publishToFacts("agent-1", [makeLongTermFact("key:a", { text: "from agent-1" })], dir),
+        publishToFacts("agent-2", [makeLongTermFact("key:b", { text: "from agent-2" })], dir),
+      ]);
+      const stored = await readSharedFacts(dir);
+      const active = stored.filter((f) => !f.archived);
+      assert.strictEqual(active.length, 2);
+      const agents = new Set(active.map((f) => f.sourceAgentId));
+      assert.ok(agents.has("agent-1"));
+      assert.ok(agents.has("agent-2"));
+      await cleanup();
+    });
   });
 });
