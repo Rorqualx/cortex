@@ -17,32 +17,69 @@ the safety net. Do not make memory-l3 the structural `DEFAULT_SLOT_BY_KEY` value
 that id is reserved for core-owned engines and would block the plugin from
 registering and loading.
 
-Now that L3 is default-on, the storage revisit-trigger below is live: L3 is no
-longer single-writer-by-opt-in, so migrating the mutable indexes to SQLite is
-owed work (tracked, not yet done).
+Now that L3 is default-on, the storage migration to SQLite is **done** (deviation 1
+below): the shared store and all per-agent tiers are SQLite-backed.
 
 ## Canonical identity
 
 - Engine id is **`memory-l3`** everywhere that matters: `registerContextEngine("memory-l3")` (`index.ts`), `engine.info.id` (`engine.ts`), manifest `id` + `contracts.contextEngines`, and the slot value users set (`plugins.slots.contextEngine: "memory-l3"`). Resolution is by registered id only (`src/context-engine/registry.ts` `resolveContextEngine`) — the manifest contract is discovery/health metadata.
 - "hierarchical-l3" survives only as a **human/brand label** in output headers and prose (e.g. `## Memory (hierarchical-l3)`), never as an id. Do not reintroduce it as a contract/slot id.
 
-## Deliberate deviation 1 — file-based storage (not SQLite)
+## Resolved deviation 1 — storage is now SQLite (was file-based)
 
-Root rule: OpenClaw-owned runtime state is SQLite-only, no JSON/JSONL/markdown sidecars. **L3 intentionally violates this**: all tiers live as files under `<workspace>/.openclaw/l3/` plus `~/.openclaw/shared-memory/longterm-shared.json`, with embeddings as inline JSON arrays and no FTS.
+Root rule: OpenClaw-owned runtime state is SQLite-only, no JSON/JSONL/markdown
+sidecars. L3 historically violated this for all tiers; it now complies. Canonical
+state lives in SQLite, with the human-readable markdown tiers kept as regenerated
+**exports** (not source of truth).
 
-Why the rule exists (and what we trade away by deviating):
+- **Shared store** → dedicated WAL DB `<sharedDir>/longterm-shared.sqlite`
+  (default `~/.openclaw/shared-memory/`, `OPENCLAW_SHARED_MEMORY_DIR` override),
+  in `cross-context.ts`. `publishToFacts` does read-merge-write inside one
+  `BEGIN IMMEDIATE` transaction, fixing the cross-process lost-update bug the old
+  atomic-rename JSON store had (it was the one genuinely multi-writer tier).
+- **Per-agent tiers** → dedicated per-root DB `<workspace>/.openclaw/l3/l3.sqlite`
+  (`storage.ts`). A dedicated DB — rather than the shared per-agent
+  `openclaw-agent.sqlite` — is justified by L3's distinct schema, embedding volume,
+  and workspace-scoped lifecycle, and keeps `new Storage(root)` / `fromWorkspace`
+  signature-stable for the ~16 call sites/tests. Tables: `l3_kv` (state + both
+  long-term frontmatters), `l3_l2_chunks`, `l3_epochs`, `l3_message_chunks`
+  (embeddings as a JSON `TEXT` column for now — see Phase D follow-up),
+  `l3_entities`, `l3_topic_links`, `l3_retrieval_signals`, `l3_edges`. Writes go
+  through `runSqliteImmediateTransactionSync`; the in-process `AsyncMutex` is gone.
+- **Markdown exports (derived, not canonical):** `l2/*.md`, `l3/*.md`,
+  `longterm.md`, `longterm-typed.md` are written through after each commit (same
+  bytes as before) so operator grep/diff still works; reads always come from the
+  DB, so exports cannot drift. `listL2ChunkPaths`/`listL3EpochPaths` return these
+  export paths as tokens (so `insights.ts`' date-partition parse keeps working);
+  `readL2ChunkAtPath` resolves the chunk id from the token basename.
+- **Kept as files (named artifacts, by design):** `l1_archive/*.jsonl` (replay
+  log) and the `<workspace>/memory/.l3/<date>.md` mirror memory-core's indexer +
+  dreaming consume. WAL `-wal`/`-shm` are SQLite-internal, not JSON sidecars.
 
-- **Atomicity/concurrency** — SQLite gives ACID + WAL across processes (gateway, CLI, crons, sub-agents). We only have an in-process `AsyncMutex` + atomic write-rename (`storage.ts`), so cross-process concurrent writes are _not_ guaranteed safe.
-- **One source of truth + migrations** — doctor owns one canonical store; sidecars become migration debt (cf. the `.migrated` files the short-term store left behind).
-- **Indexed query/perf** — FTS + indexes vs O(n) full-file JSON scans loaded into memory.
+Legacy file state is imported once by `doctor-contract-api.ts` (`openclaw doctor
+--fix`) — two `stateMigrations`: the shared store, and the per-agent tiers (which
+open each root's `l3.sqlite`, import every tier via the `Storage` writers, then
+archive the DB-only index JSON to `.migrated`). Idempotency comes from the
+archived `state.json` sentinel — a completed migration renames it, so re-runs
+skip. The import is NOT skipped just because the DB already has rows: if the
+runtime wrote into a fresh DB before the migration ran, skipping would orphan the
+on-disk memory permanently, so the importer proceeds (self-healing) and warns. The
+runtime never reads legacy files.
 
-Why we chose files anyway:
+**Deploy runbook (required):** because the SQLite runtime starts empty until the
+import runs, deploys must run `openclaw doctor --fix` before the new runtime begins
+writing — i.e. build → stop gateway → `openclaw doctor --fix` → start gateway. If
+the runtime writes first there is a brief amnesia window (then self-healed by the
+next `doctor --fix`), but ordering doctor before start avoids it entirely.
 
-- The tier model is **human-inspectable by design** — `l2/*.md`, `l3/*.md`, `longterm.md`, `longterm-typed.md` are meant to be read/diffed/grepped by an operator, and the long-term tier is deliberately mirrored to `<workspace>/memory/.l3/<date>.md` so memory-core's indexer + dreaming pick it up unchanged.
-- Append-only JSONL (`l1_archive/`) is a replay artifact, a legitimate named-product-artifact use.
-- L3 is opt-in/experimental and single-writer in practice (one agent per workspace).
+What the SQLite move buys (the reasons the rule exists): ACID + WAL cross-process
+safety (fixes the shared-store bug), one canonical store with doctor-owned
+migration, and indexed access by id/`chunk_id`/`created_at`.
 
-Revisit trigger: if L3 goes default-on or multi-writer, migrate the mutable indexes (`edges.json`, `entities.json`, `retrieval-signals.json`, `topic-links.json`, `state.json`, `msg/*/chunks.json`, shared store) into the per-agent / shared SQLite DBs. Keep the markdown tiers as exported artifacts.
+Phase D follow-up (optional optimization, not required for compliance): break
+`l3_message_chunks` + long-term facts into per-row embedding columns mirrored to a
+`sqlite-vec` virtual table for ANN, replacing the current in-JS `cosineSimilarity`
+over JSON-`TEXT` embeddings.
 
 ## Deliberate deviation 2 — importing core runtime from `src/**`
 
