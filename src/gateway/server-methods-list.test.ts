@@ -66,3 +66,12 @@ describe("listGatewayMethods", () => {
     expect(methods).toContain("talk.session.close");
   });
 });
+
+describe("core method spec wiring", () => {
+  it("advertises doctor.memory.l3Layers (descriptor + lazy handler wired)", () => {
+    // Regression guard: a descriptor without a matching createLazyCoreHandlers
+    // entry is silently dropped from the advertised list and dispatches as
+    // "unknown method". This caught that gap for the L3 layer viewer RPC.
+    expect(listGatewayMethods()).toContain("doctor.memory.l3Layers");
+  });
+});
