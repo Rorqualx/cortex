@@ -239,7 +239,9 @@ describe("consolidateLongTermTyped", () => {
       now: NOW - 90 * DAY,
     });
 
-    rmSync(path.join(storage.root, "l2"), { recursive: true, force: true });
+    for (const token of await storage.listL2ChunkPaths()) {
+      await storage.deleteL2Chunk(token);
+    }
 
     const out = await consolidateLongTermTyped({
       storage,

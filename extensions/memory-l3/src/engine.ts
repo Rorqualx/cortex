@@ -618,8 +618,13 @@ export class HierarchicalL3Engine implements ContextEngine {
   }
 
   async dispose(): Promise<void> {
-    if (this.state) {
-      await this.storage.writeState(this.state);
+    try {
+      if (this.state) {
+        await this.storage.writeState(this.state);
+      }
+    } finally {
+      // Release the cached SQLite handle + its WAL-maintenance timer.
+      this.storage.close();
     }
   }
 }

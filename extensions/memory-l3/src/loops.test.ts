@@ -91,7 +91,7 @@ describe("Loop A: duplicate accumulation", () => {
 describe("Loop C: recency dominance", () => {
   it("does not let a 30-day-old identical-text fact fall >30% below the fresh copy", async () => {
     const oldT = NOW - 30 * MS_PER_DAY;
-    const newT = NOW - Number(MS_PER_DAY);
+    const newT = NOW - MS_PER_DAY;
     const sharedText = "user prefers morning standups";
     await storage.writeL2Chunk(
       {
@@ -266,13 +266,13 @@ describe("Loop E: long-term promotion mixed-signal corpus", () => {
         agentId: "j-rorqual",
         startTurnIndex: 0,
         endTurnIndex: 1,
-        createdAt: NOW - Number(MS_PER_DAY),
+        createdAt: NOW - MS_PER_DAY,
         facts: [
           {
             id: "f-identity",
             text: "user's name is Joe; based in Denver",
             importance: 0.9,
-            createdAt: NOW - Number(MS_PER_DAY),
+            createdAt: NOW - MS_PER_DAY,
             dedupKey: "user:identity",
           },
         ],
@@ -288,13 +288,13 @@ describe("Loop E: long-term promotion mixed-signal corpus", () => {
         agentId: "j-rorqual",
         startTurnIndex: 0,
         endTurnIndex: 1,
-        createdAt: NOW - Number(MS_PER_DAY),
+        createdAt: NOW - MS_PER_DAY,
         facts: [
           {
             id: "f-trivia",
             text: "user mentioned a movie once",
             importance: 0.3,
-            createdAt: NOW - Number(MS_PER_DAY),
+            createdAt: NOW - MS_PER_DAY,
             dedupKey: "trivia:movie",
           },
         ],
@@ -365,9 +365,7 @@ describe("Loop F: demotion of stale long-term facts", () => {
     expect(ltAfterPromote.facts[0].archived).toBe(false);
 
     // Remove the L2 chunk so the next consolidation has no candidates.
-    const fs = await import("node:fs/promises");
-    const chunkPath = (await storage.listL2ChunkPaths())[0];
-    await fs.unlink(chunkPath);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
 
     // Verify retrieval surfaces the active long-term fact at T=now-90d
     // (still inside the 60-day window).

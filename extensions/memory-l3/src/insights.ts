@@ -171,9 +171,15 @@ export function createMemoryInsightsTool(ctx: OpenClawPluginToolContext) {
     parameters: MemoryInsightsToolSchema,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       const storage = Storage.fromWorkspace(ctx.workspaceDir);
-      const days = typeof rawParams.days === "number" ? rawParams.days : undefined;
-      const limit = typeof rawParams.limit === "number" ? rawParams.limit : undefined;
-      return jsonResult(await collectMemoryInsights({ storage, days, limit }));
+      // Close the per-call DB handle so each tool invocation does not leak a
+      // SQLite connection + WAL-maintenance timer for the gateway's lifetime.
+      try {
+        const days = typeof rawParams.days === "number" ? rawParams.days : undefined;
+        const limit = typeof rawParams.limit === "number" ? rawParams.limit : undefined;
+        return jsonResult(await collectMemoryInsights({ storage, days, limit }));
+      } finally {
+        storage.close();
+      }
     },
   };
 }

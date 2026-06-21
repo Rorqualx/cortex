@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { DatabaseSync, StatementSync } from "node:sqlite";
+import {
+  closeMemorySqliteWalMaintenance,
+  configureMemorySqliteWalMaintenance,
+  ensureDir,
+  parseEmbedding,
+  requireNodeSqlite,
+} from "openclaw/plugin-sdk/memory-core-host-engine-storage";
+import { runSqliteImmediateTransactionSync } from "openclaw/plugin-sdk/sqlite-runtime";
 import {
   type FrontmatterDocument,
   INITIAL_L3_STATE,
@@ -19,28 +27,87 @@ import {
   type RetrievalSignal,
 } from "./types.js";
 
-const STATE_FILENAME = "state.json";
-const LONG_TERM_FILENAME = "longterm.md";
-const LONG_TERM_TYPED_FILENAME = "longterm-typed.md";
+const DB_FILENAME = "l3.sqlite";
 const L1_ARCHIVE_DIR = "l1_archive";
 const L2_DIR = "l2";
 const L3_DIR = "l3";
-const MSG_DIR = "msg";
+const LONG_TERM_FILENAME = "longterm.md";
+const LONG_TERM_TYPED_FILENAME = "longterm-typed.md";
+
+const KV_STATE = "state";
+const KV_LONG_TERM = "longterm";
+const KV_LONG_TERM_TYPED = "longterm_typed";
+
+const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS l3_kv (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS l3_l2_chunks (
+  id TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  frontmatter TEXT NOT NULL,
+  body TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS l3_l2_chunks_created ON l3_l2_chunks (created_at, id);
+CREATE TABLE IF NOT EXISTS l3_epochs (
+  id TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL,
+  frontmatter TEXT NOT NULL,
+  body TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS l3_epochs_created ON l3_epochs (created_at, id);
+CREATE TABLE IF NOT EXISTS l3_message_chunks (
+  id TEXT PRIMARY KEY,
+  chunk_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  start_msg_index INTEGER NOT NULL,
+  end_msg_index INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  embedding TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS l3_message_chunks_chunk ON l3_message_chunks (chunk_id, seq);
+CREATE TABLE IF NOT EXISTS l3_entities (
+  id TEXT PRIMARY KEY,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS l3_topic_links (
+  source_chunk_id TEXT NOT NULL,
+  target_chunk_id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (source_chunk_id, target_chunk_id)
+);
+CREATE TABLE IF NOT EXISTS l3_retrieval_signals (
+  fact_id TEXT PRIMARY KEY,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS l3_edges (
+  row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  data TEXT NOT NULL
+);
+`;
 
 /**
- * On-disk layout under `<root>/`:
+ * SQLite-backed storage for one L3 root.
  *
- *   state.json                          engine-wide cursors
- *   l1_archive/<chunk-id>.jsonl         raw transcript spillover (replayable)
- *   l2/<YYYY-MM-DD>/<chunk-id>.md       JSON-frontmatter + body summary
- *   l3/<epoch-id>.md                    JSON-frontmatter + digest body
+ * Canonical state lives in a dedicated per-root database at `<root>/l3.sqlite`
+ * (WAL). A dedicated DB — rather than the shared per-agent `openclaw-agent.sqlite`
+ * — is justified by L3's distinct schema, embedding volume, and workspace-scoped
+ * lifecycle (the same reasoning behind the cross-agent shared store; see the
+ * decision record in `AGENTS.md`). `new Storage(root)` and `fromWorkspace` keep
+ * their original signatures so every caller and test is unchanged.
  *
- * One Storage instance scopes to one root. All writes are atomic
- * (write-temp + rename) and serialized through an in-memory mutex.
+ * Human-inspectable tiers (`l2/*.md`, `l3/*.md`, `longterm.md`,
+ * `longterm-typed.md`) are written through as regenerated EXPORTS after each
+ * commit so operators keep their grep/diff workflow; reads always come from the
+ * DB, so the exports can never drift from the source of truth. The raw L1
+ * archive (`l1_archive/*.jsonl`) stays a file — it is an append-only replay
+ * artifact, not index state.
  */
 export class Storage {
   readonly root: string;
-  private readonly mutex = new AsyncMutex();
+  private db: DatabaseSync | null = null;
 
   constructor(root: string) {
     this.root = root;
@@ -59,343 +126,432 @@ export class Storage {
     return new Storage(fallback);
   }
 
-  async ensureLayout(): Promise<void> {
-    await fs.mkdir(this.root, { recursive: true });
-    await fs.mkdir(path.join(this.root, L1_ARCHIVE_DIR), { recursive: true });
-    await fs.mkdir(path.join(this.root, L2_DIR), { recursive: true });
-    await fs.mkdir(path.join(this.root, L3_DIR), { recursive: true });
-  }
-
-  /** Read engine state, returning a fresh INITIAL_L3_STATE when absent. */
-  async readState(): Promise<L3State> {
-    const target = path.join(this.root, STATE_FILENAME);
+  /** Open (once) and return the per-root WAL database, ensuring the L3 schema. */
+  private database(): DatabaseSync {
+    if (this.db) {
+      return this.db;
+    }
+    ensureDir(this.root);
+    const dbPath = path.join(this.root, DB_FILENAME);
+    const { DatabaseSync } = requireNodeSqlite();
+    const db = new DatabaseSync(dbPath);
     try {
-      const raw = await fs.readFile(target, "utf8");
-      const parsed = JSON.parse(raw) as Partial<L3State>;
-      return { ...INITIAL_L3_STATE, ...parsed };
+      configureMemorySqliteWalMaintenance(db, { busyTimeoutMs: 5000, databasePath: dbPath });
+      db.exec(SCHEMA_SQL);
     } catch (err) {
-      if (isNotFound(err)) {
-        return { ...INITIAL_L3_STATE };
+      try {
+        closeMemorySqliteWalMaintenance(db);
+        db.close();
+      } catch {
+        // Preserve the original open error; cleanup failure is secondary.
       }
       throw err;
     }
+    this.db = db;
+    return db;
+  }
+
+  /** Close the database handle. Safe to call when never opened. */
+  close(): void {
+    if (!this.db) {
+      return;
+    }
+    closeMemorySqliteWalMaintenance(this.db);
+    this.db.close();
+    this.db = null;
+  }
+
+  async ensureLayout(): Promise<void> {
+    await fs.mkdir(this.root, { recursive: true });
+    await fs.mkdir(path.join(this.root, L1_ARCHIVE_DIR), { recursive: true });
+    // Open the DB up front so a fresh root is immediately usable.
+    this.database();
+  }
+
+  // -----------------------------------------------------------------
+  // Engine state
+  // -----------------------------------------------------------------
+
+  /** Read engine state, returning a fresh INITIAL_L3_STATE when absent. */
+  async readState(): Promise<L3State> {
+    const raw = this.readKv(KV_STATE);
+    if (raw === null) {
+      return { ...INITIAL_L3_STATE };
+    }
+    return { ...INITIAL_L3_STATE, ...(JSON.parse(raw) as Partial<L3State>) };
   }
 
   async writeState(state: L3State): Promise<void> {
-    await this.mutex.run(async () => {
-      const target = path.join(this.root, STATE_FILENAME);
-      await atomicWriteFile(target, `${JSON.stringify(state, null, 2)}\n`);
-    });
+    this.writeKv(KV_STATE, JSON.stringify(state));
   }
+
+  // -----------------------------------------------------------------
+  // L1 archive — append-only replay artifact, kept as a JSONL file
+  // -----------------------------------------------------------------
 
   /** Append one JSONL record to the L1 archive for `chunkId`. */
   async appendL1Archive(chunkId: string, entry: unknown): Promise<void> {
-    await this.mutex.run(async () => {
-      const target = path.join(this.root, L1_ARCHIVE_DIR, `${chunkId}.jsonl`);
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await fs.appendFile(target, `${JSON.stringify(entry)}\n`, "utf8");
-    });
+    const target = path.join(this.root, L1_ARCHIVE_DIR, `${chunkId}.jsonl`);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.appendFile(target, `${JSON.stringify(entry)}\n`, "utf8");
   }
 
+  // -----------------------------------------------------------------
+  // L2 chunks (summary tier) — DB canonical, markdown export
+  // -----------------------------------------------------------------
+
   async writeL2Chunk(frontmatter: L2ChunkFrontmatter, body: string): Promise<string> {
-    return await this.mutex.run(async () => {
-      const datePartition = formatDatePartition(frontmatter.createdAt);
-      const target = path.join(this.root, L2_DIR, datePartition, `${frontmatter.id}.md`);
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
-      return target;
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      db.prepare(
+        "INSERT OR REPLACE INTO l3_l2_chunks (id, created_at, frontmatter, body) VALUES (?, ?, ?, ?)",
+      ).run(frontmatter.id, frontmatter.createdAt, JSON.stringify(frontmatter), markdownBody(body));
     });
+    const exportPath = this.l2ChunkPath(frontmatter.id, frontmatter.createdAt);
+    await this.exportFrontmatterDocument(exportPath, frontmatter, body);
+    return exportPath;
   }
 
   async readL2Chunk(
     chunkId: string,
-    createdAt: number,
+    _createdAt: number,
   ): Promise<FrontmatterDocument<L2ChunkFrontmatter> | null> {
-    const datePartition = formatDatePartition(createdAt);
-    const target = path.join(this.root, L2_DIR, datePartition, `${chunkId}.md`);
-    return await readFrontmatterDocument<L2ChunkFrontmatter>(target);
+    return this.readChunkRow<L2ChunkFrontmatter>("l3_l2_chunks", chunkId);
   }
 
+  /**
+   * Read an L2 chunk. The arg is a token from `listL2ChunkPaths` — an export
+   * path whose basename is the chunk id (see class doc); reads come from the DB.
+   */
   async readL2ChunkAtPath(
-    filePath: string,
+    chunkToken: string,
   ): Promise<FrontmatterDocument<L2ChunkFrontmatter> | null> {
-    return await readFrontmatterDocument<L2ChunkFrontmatter>(filePath);
+    return this.readChunkRow<L2ChunkFrontmatter>("l3_l2_chunks", chunkIdFromToken(chunkToken));
   }
 
-  /** List every persisted L2 chunk path, sorted chronologically by partition. */
+  /**
+   * List every L2 chunk as an export-path token, chronological (oldest first).
+   * Tokens are `<root>/l2/<YYYY-MM-DD>/<id>.md` so callers that derive the date
+   * partition or round-trip through `readL2ChunkAtPath` keep working.
+   */
   async listL2ChunkPaths(): Promise<string[]> {
-    const root = path.join(this.root, L2_DIR);
-    if (!existsSync(root)) {
-      return [];
-    }
-    const partitions = (await fs.readdir(root, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .toSorted();
-    const out: string[] = [];
-    for (const partition of partitions) {
-      const partitionDir = path.join(root, partition);
-      const files = (await fs.readdir(partitionDir, { withFileTypes: true }))
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-        .map((entry) => entry.name)
-        .toSorted();
-      for (const file of files) {
-        out.push(path.join(partitionDir, file));
-      }
-    }
-    return out;
+    const rows = this.database()
+      .prepare("SELECT id, created_at FROM l3_l2_chunks ORDER BY created_at, id")
+      .all() as Array<{ id: string; created_at: number }>;
+    return rows.map((row) => this.l2ChunkPath(row.id, row.created_at));
   }
+
+  /** Delete one L2 chunk (DB row + best-effort export file). Used for pruning. */
+  async deleteL2Chunk(chunkToken: string): Promise<void> {
+    const id = chunkIdFromToken(chunkToken);
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      db.prepare("DELETE FROM l3_l2_chunks WHERE id = ?").run(id);
+    });
+    if (chunkToken.includes(path.sep) || chunkToken.endsWith(".md")) {
+      await fs.rm(chunkToken, { force: true });
+    }
+  }
+
+  // -----------------------------------------------------------------
+  // L3 epochs (roll-up tier) — DB canonical, markdown export
+  // -----------------------------------------------------------------
 
   async writeL3Epoch(frontmatter: L3EpochFrontmatter, body: string): Promise<string> {
-    return await this.mutex.run(async () => {
-      const target = path.join(this.root, L3_DIR, `${frontmatter.id}.md`);
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
-      return target;
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      db.prepare(
+        "INSERT OR REPLACE INTO l3_epochs (id, created_at, frontmatter, body) VALUES (?, ?, ?, ?)",
+      ).run(frontmatter.id, frontmatter.createdAt, JSON.stringify(frontmatter), markdownBody(body));
     });
+    const exportPath = path.join(this.root, L3_DIR, `${frontmatter.id}.md`);
+    await this.exportFrontmatterDocument(exportPath, frontmatter, body);
+    return exportPath;
   }
 
   async readL3Epoch(epochId: string): Promise<FrontmatterDocument<L3EpochFrontmatter> | null> {
-    const target = path.join(this.root, L3_DIR, `${epochId}.md`);
-    return await readFrontmatterDocument<L3EpochFrontmatter>(target);
+    return this.readChunkRow<L3EpochFrontmatter>("l3_epochs", epochId);
   }
 
+  /** List every L3 epoch as an export-path token `<root>/l3/<id>.md`, oldest first. */
   async listL3EpochPaths(): Promise<string[]> {
-    const root = path.join(this.root, L3_DIR);
-    if (!existsSync(root)) {
-      return [];
-    }
-    const files = (await fs.readdir(root, { withFileTypes: true }))
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-      .map((entry) => entry.name)
-      .toSorted();
-    return files.map((file) => path.join(root, file));
+    const rows = this.database()
+      .prepare("SELECT id FROM l3_epochs ORDER BY created_at, id")
+      .all() as Array<{ id: string }>;
+    return rows.map((row) => path.join(this.root, L3_DIR, `${row.id}.md`));
   }
 
+  /** Read an L3 epoch. The arg is a token from `listL3EpochPaths` (see class doc). */
   async readL3EpochAtPath(
-    filePath: string,
+    epochToken: string,
   ): Promise<FrontmatterDocument<L3EpochFrontmatter> | null> {
-    return await readFrontmatterDocument<L3EpochFrontmatter>(filePath);
+    return this.readChunkRow<L3EpochFrontmatter>("l3_epochs", chunkIdFromToken(epochToken));
   }
+
+  // -----------------------------------------------------------------
+  // Long-term tiers (prose + typed) — DB canonical, markdown export
+  // -----------------------------------------------------------------
 
   /**
-   * Read the long-term tier file. Returns a fresh INITIAL_LONG_TERM_FRONTMATTER
-   * (no facts) when the file is absent, so callers can treat the tier as
-   * always-readable.
+   * Read the long-term tier. Returns a fresh INITIAL_LONG_TERM_FRONTMATTER (no
+   * facts) when absent, so callers can treat the tier as always-readable.
    */
   async readLongTerm(): Promise<LongTermFrontmatter> {
-    const target = path.join(this.root, LONG_TERM_FILENAME);
-    const doc = await readFrontmatterDocument<LongTermFrontmatter>(target);
-    if (doc === null) {
+    const raw = this.readKv(KV_LONG_TERM);
+    if (raw === null) {
       return { ...INITIAL_LONG_TERM_FRONTMATTER };
     }
-    return doc.frontmatter;
+    return JSON.parse(raw) as LongTermFrontmatter;
   }
 
   /**
-   * Atomically rewrite `<root>/longterm.md`. The body is a stable, ordered
-   * markdown listing of the active facts for human inspection — frontmatter
-   * remains the source of truth.
+   * Persist the long-term tier, then regenerate `<root>/longterm.md` (a stable,
+   * ordered, human-inspectable listing). The DB frontmatter is the source of
+   * truth; the markdown is a derived export.
    */
   async writeLongTerm(frontmatter: LongTermFrontmatter, body: string): Promise<string> {
-    return await this.mutex.run(async () => {
-      const target = path.join(this.root, LONG_TERM_FILENAME);
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
-      return target;
-    });
+    this.writeKv(KV_LONG_TERM, JSON.stringify(frontmatter));
+    const exportPath = path.join(this.root, LONG_TERM_FILENAME);
+    await this.exportFrontmatterDocument(exportPath, frontmatter, body);
+    return exportPath;
   }
 
-  /**
-   * Read the long-term typed-fact tier. Returns a fresh
-   * INITIAL_LONG_TERM_TYPED_FRONTMATTER when the file is absent.
-   */
+  /** Read the long-term typed-fact tier. Returns INITIAL when absent. */
   async readLongTermTyped(): Promise<LongTermTypedFrontmatter> {
-    const target = path.join(this.root, LONG_TERM_TYPED_FILENAME);
-    const doc = await readFrontmatterDocument<LongTermTypedFrontmatter>(target);
-    if (doc === null) {
+    const raw = this.readKv(KV_LONG_TERM_TYPED);
+    if (raw === null) {
       return { ...INITIAL_LONG_TERM_TYPED_FRONTMATTER };
     }
-    return doc.frontmatter;
+    return JSON.parse(raw) as LongTermTypedFrontmatter;
   }
 
-  /**
-   * Atomically rewrite `<root>/longterm-typed.md` — the canonical
-   * current-value-per-slot view across all L2 chunks' typed facts.
-   */
+  /** Persist the typed long-term tier, then regenerate `<root>/longterm-typed.md`. */
   async writeLongTermTyped(frontmatter: LongTermTypedFrontmatter, body: string): Promise<string> {
-    return await this.mutex.run(async () => {
-      const target = path.join(this.root, LONG_TERM_TYPED_FILENAME);
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
-      return target;
-    });
+    this.writeKv(KV_LONG_TERM_TYPED, JSON.stringify(frontmatter));
+    const exportPath = path.join(this.root, LONG_TERM_TYPED_FILENAME);
+    await this.exportFrontmatterDocument(exportPath, frontmatter, body);
+    return exportPath;
   }
 
   // -----------------------------------------------------------------
   // Message-level embedding chunks
   // -----------------------------------------------------------------
 
-  /** Write message-level chunks for a given L2 chunk. */
+  /** Write message-level chunks for a given L2 chunk (replaces that chunk's rows). */
   async writeMessageChunks(chunks: ReadonlyArray<MessageChunk>): Promise<void> {
     if (chunks.length === 0) {
       return;
     }
-    await this.mutex.run(async () => {
-      const chunkDir = path.join(this.root, MSG_DIR, chunks[0].chunkId);
-      await fs.mkdir(chunkDir, { recursive: true });
-      const data = chunks.map((c) => ({
-        id: c.id,
-        seq: c.seq,
-        startMsgIndex: c.startMsgIndex,
-        endMsgIndex: c.endMsgIndex,
-        text: c.text,
-        embedding: c.embedding,
-        createdAt: c.createdAt,
-        chunkId: c.chunkId,
-      }));
-      const target = path.join(chunkDir, "chunks.json");
-      await atomicWriteFile(target, `${JSON.stringify(data, null, 2)}\n`);
+    const db = this.database();
+    const parentChunkId = chunks[0].chunkId;
+    runSqliteImmediateTransactionSync(db, () => {
+      db.prepare("DELETE FROM l3_message_chunks WHERE chunk_id = ?").run(parentChunkId);
+      const insert = db.prepare(
+        "INSERT OR REPLACE INTO l3_message_chunks " +
+          "(id, chunk_id, seq, start_msg_index, end_msg_index, text, embedding, created_at) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      for (const c of chunks) {
+        insert.run(
+          c.id,
+          c.chunkId,
+          c.seq,
+          c.startMsgIndex,
+          c.endMsgIndex,
+          c.text,
+          JSON.stringify(c.embedding),
+          c.createdAt,
+        );
+      }
     });
   }
 
-  /** Read message-level chunks for a given L2 chunk ID. */
+  /** Read message-level chunks for a given L2 chunk ID, ordered by sequence. */
   async readMessageChunks(chunkId: string): Promise<MessageChunk[]> {
-    const target = path.join(this.root, MSG_DIR, chunkId, "chunks.json");
-    try {
-      const raw = await fs.readFile(target, "utf8");
-      return JSON.parse(raw) as MessageChunk[];
-    } catch (err) {
-      if (isNotFound(err)) {
-        return [];
-      }
-      throw err;
-    }
+    const rows = this.database()
+      .prepare(
+        "SELECT id, chunk_id, seq, start_msg_index, end_msg_index, text, embedding, created_at " +
+          "FROM l3_message_chunks WHERE chunk_id = ? ORDER BY seq",
+      )
+      .all(chunkId) as Array<{
+      id: string;
+      chunk_id: string;
+      seq: number;
+      start_msg_index: number;
+      end_msg_index: number;
+      text: string;
+      embedding: string;
+      created_at: number;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      seq: row.seq,
+      startMsgIndex: row.start_msg_index,
+      endMsgIndex: row.end_msg_index,
+      text: row.text,
+      embedding: parseEmbedding(row.embedding),
+      createdAt: row.created_at,
+      chunkId: row.chunk_id,
+    }));
   }
 
   /** List all chunk IDs that have message-level index data. */
   async listMessageChunkIds(): Promise<string[]> {
-    const root = path.join(this.root, MSG_DIR);
-    if (!existsSync(root)) {
-      return [];
-    }
-    const entries = await fs.readdir(root, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    const rows = this.database()
+      .prepare("SELECT DISTINCT chunk_id FROM l3_message_chunks")
+      .all() as Array<{ chunk_id: string }>;
+    return rows.map((row) => row.chunk_id);
   }
 
   // -----------------------------------------------------------------
-  // Entity index
+  // Entity index (full replacement)
   // -----------------------------------------------------------------
 
-  /** Write the entity index (full replacement). */
   async writeEntityIndex(entities: ReadonlyArray<Entity>): Promise<void> {
-    await this.mutex.run(async () => {
-      const target = path.join(this.root, "entities.json");
-      await atomicWriteFile(target, `${JSON.stringify(entities, null, 2)}\n`);
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      db.exec("DELETE FROM l3_entities");
+      const insert = db.prepare("INSERT OR REPLACE INTO l3_entities (id, data) VALUES (?, ?)");
+      for (const entity of entities) {
+        insert.run(entity.id, JSON.stringify(entity));
+      }
     });
   }
 
-  /** Read the entity index. Returns empty array if not yet created. */
   async readEntityIndex(): Promise<Entity[]> {
-    const target = path.join(this.root, "entities.json");
-    try {
-      const raw = await fs.readFile(target, "utf8");
-      return JSON.parse(raw) as Entity[];
-    } catch (err) {
-      if (isNotFound(err)) {
-        return [];
-      }
-      throw err;
-    }
+    return this.readJsonRows<Entity>("SELECT data FROM l3_entities");
   }
 
   // -----------------------------------------------------------------
-  // Topic links (cross-session graph)
+  // Topic links (cross-session graph) — dedup by (source, target) PK
   // -----------------------------------------------------------------
 
-  /** Append topic links to the link graph (dedup by source+target pair). */
   async appendTopicLinks(links: ReadonlyArray<TopicLink>): Promise<void> {
     if (links.length === 0) {
       return;
     }
-    await this.mutex.run(async () => {
-      const target = path.join(this.root, "topic-links.json");
-      const existing = await this.readTopicLinks();
-      const keySet = new Set(existing.map((l) => `${l.sourceChunkId}::${l.targetChunkId}`));
-      const newLinks = links.filter((l) => !keySet.has(`${l.sourceChunkId}::${l.targetChunkId}`));
-      if (newLinks.length === 0) {
-        return;
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      const insert = db.prepare(
+        "INSERT OR IGNORE INTO l3_topic_links (source_chunk_id, target_chunk_id, data) VALUES (?, ?, ?)",
+      );
+      for (const link of links) {
+        insert.run(link.sourceChunkId, link.targetChunkId, JSON.stringify(link));
       }
-      existing.push(...newLinks);
-      await atomicWriteFile(target, `${JSON.stringify(existing, null, 2)}\n`);
     });
   }
 
-  /** Read all topic links. */
   async readTopicLinks(): Promise<TopicLink[]> {
-    const target = path.join(this.root, "topic-links.json");
-    try {
-      const raw = await fs.readFile(target, "utf8");
-      return JSON.parse(raw) as TopicLink[];
-    } catch (err) {
-      if (isNotFound(err)) {
-        return [];
-      }
-      throw err;
-    }
+    return this.readJsonRows<TopicLink>("SELECT data FROM l3_topic_links");
   }
 
   // -----------------------------------------------------------------
-  // Retrieval signals (dynamic importance)
+  // Retrieval signals (dynamic importance) — full replacement
   // -----------------------------------------------------------------
 
-  /** Write retrieval signals (full replacement). */
   async writeRetrievalSignals(signals: ReadonlyArray<RetrievalSignal>): Promise<void> {
-    await this.mutex.run(async () => {
-      const target = path.join(this.root, "retrieval-signals.json");
-      await atomicWriteFile(target, `${JSON.stringify(signals, null, 2)}\n`);
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      db.exec("DELETE FROM l3_retrieval_signals");
+      const insert = db.prepare(
+        "INSERT OR REPLACE INTO l3_retrieval_signals (fact_id, data) VALUES (?, ?)",
+      );
+      for (const signal of signals) {
+        insert.run(signal.factId, JSON.stringify(signal));
+      }
     });
   }
 
-  /** Read retrieval signals. */
   async readRetrievalSignals(): Promise<RetrievalSignal[]> {
-    const target = path.join(this.root, "retrieval-signals.json");
-    try {
-      const raw = await fs.readFile(target, "utf8");
-      return JSON.parse(raw) as RetrievalSignal[];
-    } catch (err) {
-      if (isNotFound(err)) {
-        return [];
-      }
-      throw err;
-    }
+    return this.readJsonRows<RetrievalSignal>("SELECT data FROM l3_retrieval_signals");
   }
 
   // -----------------------------------------------------------------
-  // Hebbian edge map
+  // Hebbian edge map (opaque array, full replacement)
   // -----------------------------------------------------------------
 
-  /** Read the Hebbian co-occurrence edge map from `edges.json`. */
   async readEdgeMap(): Promise<unknown[]> {
-    const target = path.join(this.root, "edges.json");
-    try {
-      const raw = await fs.readFile(target, "utf8");
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (err) {
-      if (isNotFound(err)) {
-        return [];
-      }
-      throw err;
-    }
+    return this.readJsonRows<unknown>("SELECT data FROM l3_edges ORDER BY row_id");
   }
 
-  /** Write the Hebbian co-occurrence edge map to `edges.json`. */
   async writeEdgeMap(edges: unknown[]): Promise<void> {
-    await this.mutex.run(async () => {
-      const target = path.join(this.root, "edges.json");
-      await atomicWriteFile(target, `${JSON.stringify(edges, null, 2)}\n`);
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      db.exec("DELETE FROM l3_edges");
+      const insert = db.prepare("INSERT INTO l3_edges (data) VALUES (?)");
+      for (const edge of edges) {
+        insert.run(JSON.stringify(edge));
+      }
     });
+  }
+
+  // -----------------------------------------------------------------
+  // Internal helpers
+  // -----------------------------------------------------------------
+
+  private readKv(key: string): string | null {
+    const row = this.database().prepare("SELECT value FROM l3_kv WHERE key = ?").get(key) as
+      | { value: string }
+      | undefined;
+    return row?.value ?? null;
+  }
+
+  private writeKv(key: string, value: string): void {
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      db.prepare("INSERT OR REPLACE INTO l3_kv (key, value) VALUES (?, ?)").run(key, value);
+    });
+  }
+
+  private async readChunkRow<TFrontmatter>(
+    table: "l3_l2_chunks" | "l3_epochs",
+    id: string,
+  ): Promise<FrontmatterDocument<TFrontmatter> | null> {
+    const row = this.database()
+      .prepare(`SELECT frontmatter, body FROM ${table} WHERE id = ?`)
+      .get(id) as { frontmatter: string; body: string } | undefined;
+    if (!row) {
+      return null;
+    }
+    return { frontmatter: JSON.parse(row.frontmatter) as TFrontmatter, body: row.body };
+  }
+
+  /** Export-path token for an L2 chunk, matching the on-disk markdown layout. */
+  private l2ChunkPath(id: string, createdAt: number): string {
+    return path.join(this.root, L2_DIR, formatDatePartition(createdAt), `${id}.md`);
+  }
+
+  private readJsonRows<T>(sql: string): T[] {
+    const stmt: StatementSync = this.database().prepare(sql);
+    const rows = stmt.all() as Array<{ data: string }>;
+    const out: T[] = [];
+    for (const row of rows) {
+      try {
+        out.push(JSON.parse(row.data) as T);
+      } catch {
+        // A single corrupt row must not take down the whole index read.
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Write a regenerated `.md` export of a tier. Best-effort: an export failure
+   * (e.g. read-only workspace) must not fail the canonical DB write that already
+   * committed. Bytes match the previous on-disk format so operator grep/diff
+   * workflows are preserved.
+   */
+  private async exportFrontmatterDocument(
+    target: string,
+    frontmatter: unknown,
+    body: string,
+  ): Promise<void> {
+    try {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await atomicWriteFile(target, formatFrontmatterDocument(frontmatter, body));
+    } catch {
+      // Export is derived from the DB; losing it is recoverable on next write.
+    }
   }
 }
 
@@ -403,6 +559,19 @@ async function atomicWriteFile(target: string, contents: string): Promise<void> 
   const tmp = `${target}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
   await fs.writeFile(tmp, contents, "utf8");
   await fs.rename(tmp, target);
+}
+
+/**
+ * Normalize a tier body to the exact bytes the prior markdown round-trip
+ * produced (`<trimmed body>\n`), so DB readback matches the legacy file readback.
+ */
+function markdownBody(body: string): string {
+  return `${body.trimEnd()}\n`;
+}
+
+/** Extract the chunk/epoch id from a list token (export path) or bare id. */
+function chunkIdFromToken(token: string): string {
+  return path.basename(token).replace(/\.md$/, "");
 }
 
 function formatDatePartition(unixMs: number): string {
@@ -416,55 +585,4 @@ function formatDatePartition(unixMs: number): string {
 function formatFrontmatterDocument(frontmatter: unknown, body: string): string {
   const trimmedBody = body.trimEnd();
   return `---\n${JSON.stringify(frontmatter, null, 2)}\n---\n${trimmedBody}\n`;
-}
-
-async function readFrontmatterDocument<TFrontmatter>(
-  target: string,
-): Promise<FrontmatterDocument<TFrontmatter> | null> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(target, "utf8");
-  } catch (err) {
-    if (isNotFound(err)) {
-      return null;
-    }
-    throw err;
-  }
-  const opener = raw.indexOf("---\n");
-  if (opener !== 0) {
-    throw new Error(`Malformed frontmatter document at ${target}: missing opening fence`);
-  }
-  const closeAt = raw.indexOf("\n---\n", opener + 4);
-  if (closeAt < 0) {
-    throw new Error(`Malformed frontmatter document at ${target}: missing closing fence`);
-  }
-  const frontJson = raw.slice(opener + 4, closeAt);
-  const body = raw.slice(closeAt + 5);
-  const frontmatter = JSON.parse(frontJson) as TFrontmatter;
-  return { frontmatter, body };
-}
-
-function isNotFound(err: unknown): boolean {
-  return Boolean(
-    err && typeof err === "object" && "code" in err && (err as { code: unknown }).code === "ENOENT",
-  );
-}
-
-class AsyncMutex {
-  private chain: Promise<void> = Promise.resolve();
-
-  async run<T>(fn: () => Promise<T>): Promise<T> {
-    let release!: () => void;
-    const next = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const prev = this.chain;
-    this.chain = prev.then(() => next);
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  }
 }
