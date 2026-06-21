@@ -1,9 +1,9 @@
-// memory_insights tests cover read-only memory state summaries from a workspace.
+// memory_reports tests cover read-only memory-directory summaries from a workspace.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTrackedTempDirs } from "../../test-utils/tracked-temp-dirs.js";
-import { createMemoryInsightsTool } from "./memory-insights.js";
+import { createMemoryReportsTool } from "./memory-reports.js";
 
 const tempDirs = createTrackedTempDirs();
 
@@ -11,7 +11,7 @@ afterEach(async () => {
   await tempDirs.cleanup();
 });
 
-type MemoryInsightsDetails = {
+type MemoryReportsDetails = {
   totalReports: number;
   totalL3Snapshots: number;
   recentReports: Array<{ name: string; path: string }>;
@@ -22,10 +22,10 @@ type MemoryInsightsDetails = {
 async function runTool(
   workspaceDir: string,
   args: Record<string, unknown> = {},
-): Promise<MemoryInsightsDetails> {
-  const tool = createMemoryInsightsTool({ workspaceDir });
-  const result = await tool.execute("call-memory-insights", args);
-  return result.details as MemoryInsightsDetails;
+): Promise<MemoryReportsDetails> {
+  const tool = createMemoryReportsTool({ workspaceDir });
+  const result = await tool.execute("call-memory-reports", args);
+  return result.details as MemoryReportsDetails;
 }
 
 async function writeMemoryFile(workspaceDir: string, relPath: string, content: string) {
@@ -34,9 +34,9 @@ async function writeMemoryFile(workspaceDir: string, relPath: string, content: s
   await fs.writeFile(filePath, content, "utf-8");
 }
 
-describe("memory_insights tool", () => {
+describe("memory_reports tool", () => {
   it("returns empty state when the memory directory is missing", async () => {
-    const workspaceDir = await tempDirs.make("openclaw-memory-insights-");
+    const workspaceDir = await tempDirs.make("openclaw-memory-reports-");
 
     const details = await runTool(workspaceDir);
 
@@ -50,7 +50,7 @@ describe("memory_insights tool", () => {
   });
 
   it("counts reports and L3 snapshots with newest-first relative paths", async () => {
-    const workspaceDir = await tempDirs.make("openclaw-memory-insights-");
+    const workspaceDir = await tempDirs.make("openclaw-memory-reports-");
     await writeMemoryFile(workspaceDir, "memory/reports/2026-06-01-alpha.md", "# Alpha");
     await writeMemoryFile(workspaceDir, "memory/reports/2026-06-03-gamma.md", "# Gamma");
     await writeMemoryFile(workspaceDir, "memory/reports/2026-06-02-beta.md", "# Beta");
@@ -75,7 +75,7 @@ describe("memory_insights tool", () => {
   });
 
   it("limits recent entries while keeping total counts", async () => {
-    const workspaceDir = await tempDirs.make("openclaw-memory-insights-");
+    const workspaceDir = await tempDirs.make("openclaw-memory-reports-");
     for (let i = 1; i <= 4; i++) {
       await writeMemoryFile(workspaceDir, `memory/reports/2026-06-0${i}.md`, `# Report ${i}`);
     }
@@ -87,7 +87,7 @@ describe("memory_insights tool", () => {
   });
 
   it("clamps out-of-range limit values instead of failing", async () => {
-    const workspaceDir = await tempDirs.make("openclaw-memory-insights-");
+    const workspaceDir = await tempDirs.make("openclaw-memory-reports-");
     await writeMemoryFile(workspaceDir, "memory/reports/2026-06-01.md", "# Report");
 
     const details = await runTool(workspaceDir, { limit: -5 });
@@ -96,7 +96,7 @@ describe("memory_insights tool", () => {
   });
 
   it("extracts deduped heading topics from recent reports and snapshots", async () => {
-    const workspaceDir = await tempDirs.make("openclaw-memory-insights-");
+    const workspaceDir = await tempDirs.make("openclaw-memory-reports-");
     await writeMemoryFile(
       workspaceDir,
       "memory/reports/2026-06-01.md",
@@ -119,7 +119,7 @@ describe("memory_insights tool", () => {
   });
 
   it("omits topics when includeTopics is false", async () => {
-    const workspaceDir = await tempDirs.make("openclaw-memory-insights-");
+    const workspaceDir = await tempDirs.make("openclaw-memory-reports-");
     await writeMemoryFile(workspaceDir, "memory/reports/2026-06-01.md", "# Topic Heading");
 
     const details = await runTool(workspaceDir, { includeTopics: false });

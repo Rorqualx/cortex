@@ -296,6 +296,7 @@ const TRUSTED_TOOL_RESULT_MEDIA = new Set([
   "image_generate",
   "memory_get",
   "memory_insights",
+  "memory_reports",
   "memory_search",
   "message",
   "music_generate",

@@ -407,6 +407,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Memory Insights",
       detailKeys: ["limit"],
     },
+    memory_reports: {
+      emoji: "🧠",
+      title: "Memory Reports",
+      detailKeys: ["limit"],
+    },
     memory_get: {
       emoji: "📓",
       title: "Memory Get",

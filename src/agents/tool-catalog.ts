@@ -150,10 +150,10 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
-    id: "memory_insights",
-    label: "memory_insights",
+    id: "memory_reports",
+    label: "memory_reports",
     description:
-      "Read-only summary of memory system state: recent L3 snapshots, report counts, and salient topics",
+      "Read-only summary of the workspace memory directory: recent dreaming reports, L3 snapshot files, report counts, and salient topics",
     sectionId: "memory",
     profiles: ["coding"],
     includeInOpenClawGroup: true,

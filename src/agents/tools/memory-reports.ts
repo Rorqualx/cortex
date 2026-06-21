@@ -1,8 +1,11 @@
 /**
- * memory_insights built-in tool.
+ * memory_reports built-in tool.
  *
- * Read-only summary of memory system state: recent L3 snapshots,
- * report counts, and salient topics from the workspace memory directory.
+ * Read-only summary of the workspace memory directory: recent dreaming
+ * reports, L3 snapshot files, report counts, and salient topics. This scans
+ * memory-core's on-disk artifacts (memory/reports + memory/.l3) and is
+ * distinct from the memory-l3 plugin's `memory_insights`, which reports L3
+ * SQLite engine trends.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -10,7 +13,7 @@ import { Type } from "typebox";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult } from "./common.js";
 
-const MemoryInsightsToolSchema = Type.Object({
+const MemoryReportsToolSchema = Type.Object({
   limit: Type.Optional(Type.Number({ default: 5, minimum: 1, maximum: 20 })),
   includeTopics: Type.Optional(Type.Boolean({ default: true })),
 });
@@ -57,13 +60,13 @@ function extractTopics(lines: string[]): string[] {
   return [...topics];
 }
 
-export function createMemoryInsightsTool(opts?: { workspaceDir?: string }): AnyAgentTool {
+export function createMemoryReportsTool(opts?: { workspaceDir?: string }): AnyAgentTool {
   return {
-    label: "Memory Insights",
-    name: "memory_insights",
+    label: "Memory Reports",
+    name: "memory_reports",
     description:
-      "Read-only summary of memory system state. Returns recent L3 snapshots, report counts, and salient topics from the workspace memory directory. Does not mutate memory.",
-    parameters: MemoryInsightsToolSchema,
+      "Read-only summary of the workspace memory directory: recent dreaming reports, L3 snapshot files, report counts, and salient topics. Does not mutate memory.",
+    parameters: MemoryReportsToolSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const limit =
@@ -77,10 +80,14 @@ export function createMemoryInsightsTool(opts?: { workspaceDir?: string }): AnyA
       const reportsDir = path.join(memoryDir, "reports");
       const l3Dir = path.join(memoryDir, ".l3");
 
-      const reportFiles = (await safeReaddir(reportsDir))
+      const [reportEntries, l3Entries] = await Promise.all([
+        safeReaddir(reportsDir),
+        safeReaddir(l3Dir),
+      ]);
+      const reportFiles = reportEntries
         .filter((f) => f.endsWith(".md"))
         .toSorted((a, b) => b.localeCompare(a));
-      const l3Files = (await safeReaddir(l3Dir))
+      const l3Files = l3Entries
         .filter((f) => f.endsWith(".md"))
         .toSorted((a, b) => b.localeCompare(a));
 
@@ -93,9 +100,13 @@ export function createMemoryInsightsTool(opts?: { workspaceDir?: string }): AnyA
           ...recentReports.map((f) => path.join(reportsDir, f)),
           ...recentL3.map((f) => path.join(l3Dir, f)),
         ];
+        // Reads are independent; await them together so the summary cost is the
+        // slowest single file, not the sum. Order is preserved for deterministic topics.
+        const previews = await Promise.all(
+          topicSources.map((filePath) => readFilePreview(filePath, 30)),
+        );
         const allTopics = new Set<string>();
-        for (const filePath of topicSources) {
-          const lines = await readFilePreview(filePath, 30);
+        for (const lines of previews) {
           for (const topic of extractTopics(lines)) {
             allTopics.add(topic);
           }

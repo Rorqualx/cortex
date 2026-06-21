@@ -55,7 +55,7 @@ import { createGatewaySecretApprover } from "./tools/http-request.approval.js";
 import { createHttpRequestTool } from "./tools/http-request.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
-import { createMemoryInsightsTool } from "./tools/memory-insights.js";
+import { createMemoryReportsTool } from "./tools/memory-reports.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
@@ -575,7 +575,7 @@ export function createOpenClawTools(
     createSessionAwarenessTool({
       cwd: workspaceDir,
     }),
-    createMemoryInsightsTool({
+    createMemoryReportsTool({
       workspaceDir,
     }),
     ...collectPresentOpenClawTools([
