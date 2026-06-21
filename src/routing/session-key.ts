@@ -151,6 +151,11 @@ export function isUnscopedSessionKeySentinel(sessionKey: string | undefined | nu
   return lowered === "global" || lowered === "unknown";
 }
 
+/** Control-UI ("dashboard"/webchat) chat sessions: `agent:<id>:dashboard:<uuid>`. */
+export function isDashboardSessionKey(sessionKey: string | undefined | null): boolean {
+  return normalizeLowercaseStringOrEmpty(sessionKey).includes(":dashboard:");
+}
+
 export function scopeLegacySessionKeyToAgent(params: {
   agentId?: string | undefined;
   sessionKey?: string | undefined;

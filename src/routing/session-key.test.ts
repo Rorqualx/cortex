@@ -15,6 +15,7 @@ import {
   parseAgentSessionKey,
   resolveEventSessionKey,
   scopedHeartbeatWakeOptions,
+  isDashboardSessionKey,
   isUnscopedSessionKeySentinel,
   scopeLegacySessionKeyToAgent,
   toAgentStoreSessionKey,
@@ -65,6 +66,18 @@ describe("scopeLegacySessionKeyToAgent", () => {
     expect(scopeLegacySessionKeyToAgent({ agentId: "ops", sessionKey: "UNKNOWN" })).toBe(
       "agent:ops:unknown",
     );
+  });
+});
+
+describe("isDashboardSessionKey", () => {
+  it("matches Control-UI dashboard/webchat keys and nothing else", () => {
+    expect(isDashboardSessionKey("agent:main:dashboard:77752245-cddc")).toBe(true);
+    expect(isDashboardSessionKey("agent:main:dashboard:previous-abc")).toBe(true);
+    expect(isDashboardSessionKey("AGENT:MAIN:DASHBOARD:XYZ")).toBe(true);
+    expect(isDashboardSessionKey("agent:main:telegram:direct:781")).toBe(false);
+    expect(isDashboardSessionKey("agent:main:main")).toBe(false);
+    expect(isDashboardSessionKey("")).toBe(false);
+    expect(isDashboardSessionKey(undefined)).toBe(false);
   });
 });
 

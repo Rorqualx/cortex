@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   extractFirstUserMessageText,
   preserveResetSessionForDiscovery,
-} from "./session-reset-service.js";
+} from "../config/sessions/preserve-reset-discovery.js";
 
 async function seedArchive(dir: string, sessionId: string, userText: string) {
   const archivedPath = path.join(dir, `${sessionId}.jsonl.reset.2026-06-17T20-57-45.973Z`);

@@ -709,6 +709,54 @@ describe("session accessor file-backed seam", () => {
     });
     expect(fs.existsSync(previousTranscript)).toBe(false);
     expect(fs.existsSync(result.previousSessionTranscript.sessionFile ?? "")).toBe(true);
+    // Channel rollovers must NOT spawn a "Previous:" discovery entry.
+    expect(
+      loadSessionEntry({
+        sessionKey: "agent:main:dashboard:previous-previous-rollover",
+        storePath,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("keeps a dashboard rollover discoverable as a Previous: entry", async () => {
+    const now = Date.now();
+    const sessionKey = "agent:main:dashboard:tab-news";
+    const previousTranscript = path.join(tempDir, "prev-dash.jsonl");
+    const previousEntry: SessionEntry = {
+      sessionFile: previousTranscript,
+      sessionId: "prev-dash",
+      updatedAt: now,
+    };
+    const nextEntry: SessionEntry = {
+      sessionFile: path.join(tempDir, "next-dash.jsonl"),
+      sessionId: "next-dash",
+      updatedAt: now + 1,
+    };
+    fs.writeFileSync(
+      previousTranscript,
+      '{"type":"session","id":"prev-dash"}\n' +
+        '{"type":"message","message":{"role":"user","content":"set up the newsies telegram bot"}}\n',
+      "utf-8",
+    );
+    await upsertSessionEntry({ sessionKey, storePath }, previousEntry);
+
+    await persistSessionRolloverLifecycle({
+      activeSessionKey: sessionKey,
+      agentId: "main",
+      previousEntry,
+      sessionEntry: nextEntry,
+      sessionKey,
+      storePath,
+    });
+
+    const preserved = loadSessionEntry({
+      sessionKey: "agent:main:dashboard:previous-prev-dash",
+      storePath,
+    });
+    expect(preserved?.displayName).toBe("Previous: set up the newsies telegram bot");
+    expect(preserved?.sessionId).toBe("prev-dash");
+    // The canonical transcript copy is restored (not just the .reset archive).
+    expect(fs.existsSync(path.join(tempDir, "prev-dash.jsonl"))).toBe(true);
   });
 
   it("loads and appends transcript events through a session scope", async () => {

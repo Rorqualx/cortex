@@ -27,6 +27,7 @@ import {
   clearPluginOwnedSessionState,
   type PluginHostSessionCleanupStoreParams,
 } from "./plugin-host-cleanup.js";
+import { preserveResetSessionForDiscovery } from "./preserve-reset-discovery.js";
 import { resolveAndPersistSessionFile } from "./session-file.js";
 import type {
   ResolvedSessionMaintenanceConfig,
@@ -835,6 +836,7 @@ export async function persistSessionRolloverLifecycle(params: {
     agentId: params.agentId,
     onArchiveError: params.onArchiveError,
     previousEntry: params.previousEntry,
+    sessionKey: params.sessionKey,
     storePath: params.storePath,
   });
 
@@ -1520,6 +1522,7 @@ async function archivePreviousSessionTranscript(params: {
   agentId: string;
   onArchiveError?: (error: unknown, sourcePath: string) => void;
   previousEntry?: SessionEntry;
+  sessionKey: string;
   storePath: string;
 }): Promise<SessionLifecycleTranscriptInfo> {
   if (!params.previousEntry?.sessionId) {
@@ -1534,6 +1537,17 @@ async function archivePreviousSessionTranscript(params: {
     agentId: params.agentId,
     reason: "reset",
     onArchiveError: params.onArchiveError,
+  });
+  // Reply-session rollover rotates the old session out from under an open tab;
+  // keep dashboard conversations discoverable as a "Previous:" entry. The helper
+  // self-gates to dashboard keys, matching performGatewaySessionReset. Best-effort.
+  await preserveResetSessionForDiscovery({
+    storePath: params.storePath,
+    primaryKey: params.sessionKey,
+    agentId: params.agentId,
+    oldSessionId: params.previousEntry.sessionId,
+    oldEntry: params.previousEntry,
+    archivedPath: archivedTranscripts[0]?.archivedPath,
   });
   return resolveStableSessionEndTranscript({
     sessionId: params.previousEntry.sessionId,

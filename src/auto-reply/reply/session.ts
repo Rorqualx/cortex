@@ -53,7 +53,11 @@ import { deliverSessionMaintenanceWarning } from "../../infra/session-maintenanc
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import type { PluginHookSessionEndReason } from "../../plugins/hook-types.js";
-import { isAcpSessionKey, normalizeMainKey } from "../../routing/session-key.js";
+import {
+  isAcpSessionKey,
+  isDashboardSessionKey,
+  normalizeMainKey,
+} from "../../routing/session-key.js";
 import { isInterSessionInputProvenance } from "../../sessions/input-provenance.js";
 import {
   normalizeDeliveryChannelRoute,
@@ -431,7 +435,12 @@ export async function initSessionState(params: {
     Boolean(entry?.sessionId) &&
     typeof entry?.updatedAt === "number" &&
     Number.isFinite(entry.updatedAt);
-  const skipImplicitExpiry = hasProviderOwnedSession(entry) && resetPolicy.configured !== true;
+  // Control-UI chat tabs are user-managed (explicit "New session" button), so the
+  // daily/idle auto-reset must never rotate them out from under an open tab; only
+  // channel/provider-owned sessions implicitly expire.
+  const skipImplicitExpiry =
+    isDashboardSessionKey(sessionKey) ||
+    (hasProviderOwnedSession(entry) && resetPolicy.configured !== true);
   const lifecycleTimestamps = resolveSessionLifecycleTimestamps({
     entry,
     agentId,

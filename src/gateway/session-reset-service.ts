@@ -34,6 +34,7 @@ import {
   updateSessionStore,
 } from "../config/sessions.js";
 import { resolveSessionFilePath, resolveSessionFilePathOptions } from "../config/sessions/paths.js";
+import { preserveResetSessionForDiscovery } from "../config/sessions/preserve-reset-discovery.js";
 import { resolveResetPreservedSelection } from "../config/sessions/reset-preserved-selection.js";
 import {
   canonicalizeAbsoluteSessionFilePath,
@@ -746,139 +747,6 @@ export async function emitGatewayBeforeResetPluginHook(params: {
     .catch((err: unknown) => {
       logVerbose(`before_reset hook failed: ${String(err)}`);
     });
-}
-
-// Only webchat/dashboard tabs lose discoverability when reset rotates the
-// session out from under them; channel sessions (Telegram/Signal `/new`) reset
-// routinely and must not spawn a "Previous:" entry on every reset.
-const DASHBOARD_SESSION_KEY_RE = /:dashboard:/;
-
-export function extractFirstUserMessageText(messages: unknown[]): string | undefined {
-  for (const message of messages) {
-    if (!message || typeof message !== "object") {
-      continue;
-    }
-    const record = message as { role?: unknown; content?: unknown };
-    if (record.role !== "user") {
-      continue;
-    }
-    const { content } = record;
-    let text = "";
-    if (typeof content === "string") {
-      text = content;
-    } else if (Array.isArray(content)) {
-      text = content
-        .map((part) =>
-          part && typeof part === "object" && (part as { type?: unknown }).type === "text"
-            ? String((part as { text?: unknown }).text ?? "")
-            : "",
-        )
-        .join(" ");
-    }
-    text = text.trim();
-    // Skip system/cron-injected user turns; they are not a real conversation.
-    if (text && !text.startsWith("[OpenClaw") && !text.startsWith("[cron")) {
-      return text;
-    }
-  }
-  return undefined;
-}
-
-// The first real user turn sits near the top of a transcript (after the
-// session/model/thinking headers), so a bounded prefix read avoids loading
-// multi-MB transcripts whole just to derive a title.
-const PRESERVE_RESET_HEAD_BYTES = 256 * 1024;
-
-async function readArchivedHeadMessages(filePath: string): Promise<unknown[]> {
-  const handle = await fs.promises.open(filePath, "r");
-  try {
-    const buf = Buffer.alloc(PRESERVE_RESET_HEAD_BYTES);
-    const { bytesRead } = await handle.read(buf, 0, PRESERVE_RESET_HEAD_BYTES, 0);
-    const lines = buf.subarray(0, bytesRead).toString("utf-8").split("\n");
-    // A full buffer likely cut the final record mid-line; drop the partial.
-    if (bytesRead === PRESERVE_RESET_HEAD_BYTES) {
-      lines.pop();
-    }
-    const messages: unknown[] = [];
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        continue;
-      }
-      try {
-        const record = JSON.parse(trimmed) as { type?: unknown; message?: unknown };
-        if (record.type === "message" && record.message) {
-          messages.push(record.message);
-        }
-      } catch {
-        // Ignore unparseable/partial lines.
-      }
-    }
-    return messages;
-  } finally {
-    await handle.close();
-  }
-}
-
-// After a reset archives a dashboard transcript, keep the old conversation
-// discoverable: restore a canonical transcript copy and register a
-// `previous-<id>` store entry for it so it stays in the session list instead of
-// becoming an orphaned file. Pointing at a fresh canonical copy (not the .reset
-// archive) keeps the archive an immutable snapshot if the user reopens and
-// continues the session. Best effort — never block or fail the reset itself.
-export async function preserveResetSessionForDiscovery(params: {
-  storePath: string;
-  primaryKey: string;
-  agentId?: string;
-  oldSessionId?: string;
-  oldEntry?: SessionEntry;
-  archivedPath?: string;
-}): Promise<void> {
-  const { storePath, primaryKey, oldSessionId, oldEntry, archivedPath } = params;
-  if (!oldSessionId || !archivedPath || !DASHBOARD_SESSION_KEY_RE.test(primaryKey)) {
-    return;
-  }
-  try {
-    const firstUserText = extractFirstUserMessageText(await readArchivedHeadMessages(archivedPath));
-    // Nothing the user typed -> nothing worth keeping in the list.
-    if (!firstUserText) {
-      return;
-    }
-    // `<sid>.jsonl.reset.<ts>` -> `<sid>.jsonl`; the reset already freed this
-    // canonical path by archiving, and the new session uses a different id.
-    const canonicalPath = archivedPath.replace(/\.reset\.[^/]+$/, "");
-    if (canonicalPath === archivedPath) {
-      return;
-    }
-    if (!fs.existsSync(canonicalPath)) {
-      await fs.promises.copyFile(archivedPath, canonicalPath);
-    }
-    const parsed = parseAgentSessionKey(primaryKey);
-    const agentId = normalizeAgentId(params.agentId ?? parsed?.agentId);
-    const previousKey = `agent:${agentId}:dashboard:previous-${oldSessionId}`;
-    const title = firstUserText.replace(/\s+/g, " ").slice(0, 60);
-    await updateSessionStore(storePath, (store) => {
-      const existing = store[previousKey];
-      if (existing) {
-        return existing;
-      }
-      const entry: SessionEntry = {
-        sessionId: oldSessionId,
-        sessionFile: canonicalPath,
-        updatedAt: oldEntry?.updatedAt ?? Date.now(),
-        sessionStartedAt: oldEntry?.sessionStartedAt,
-        systemSent: true,
-        abortedLastRun: false,
-        displayName: `Previous: ${title}`,
-        chatType: oldEntry?.chatType,
-        origin: snapshotSessionOrigin(oldEntry),
-      };
-      store[previousKey] = entry;
-      return entry;
-    });
-  } catch (err) {
-    logVerbose(`preserve-reset session keep-listed failed: ${String(err)}`);
-  }
 }
 
 export async function performGatewaySessionReset(params: {
