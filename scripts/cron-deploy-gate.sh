@@ -46,10 +46,16 @@ log="$(mktemp)"
 # (it otherwise aborts the deps-sync purge with ERR_..._NO_TTY). --frozen-lockfile
 # installs exactly the deploy commit's deps and fails if package.json/lockfile
 # drifted — which is itself a deploy blocker worth catching.
+#
+# Resource cap: a full install+build is the heaviest moment of the whole cron run
+# and executes on the box hosting the live gateway. Run it CPU-de-prioritized so
+# the build cannot starve the gateway into a crash-restart that kills the in-flight
+# job before it deploys. (nice only reorders CPU, not RAM, but removes the CPU
+# contention that compounded past OOM/crash deaths during this gate.)
 if (
   cd "$WORKTREE" &&
-    CI=1 pnpm install --frozen-lockfile --config.confirm-modules-purge=false &&
-    CI=1 pnpm build
+    CI=1 nice -n 19 pnpm install --frozen-lockfile --config.confirm-modules-purge=false &&
+    CI=1 nice -n 19 pnpm build
 ) >"$log" 2>&1; then
   echo "GATE-PASS: deploy build verified at $SHORT (live gateway untouched)"
   rm -f "$log"

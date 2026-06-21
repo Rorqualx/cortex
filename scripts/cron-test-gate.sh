@@ -29,7 +29,14 @@ trap 'rm -f "$RESULTS"' EXIT
 echo "Test gate: running unit-fast suite (failures compared to baseline, not pass/fail)..."
 # Exit code is ignored on purpose — pre-existing failures are expected; the JSON
 # reporter gives the deterministic failing-file set we actually compare.
-CI=1 node scripts/run-vitest.mjs run \
+#
+# Resource cap: this gate runs IN-PROCESS on the box hosting the live gateway.
+# An unbounded vitest fan-out (up to 16 workers) spikes RAM and has crash-killed
+# the gateway mid-run (cron job recorded "interrupted by gateway restart" with no
+# deploy). Cap workers low and de-prioritize CPU so the live gateway survives the
+# gate; the gate is latency-tolerant, the gateway is not.
+CI=1 OPENCLAW_VITEST_MAX_WORKERS="${CRON_GATE_VITEST_WORKERS:-2}" \
+  nice -n 19 node scripts/run-vitest.mjs run \
   --config test/vitest/vitest.unit-fast.config.ts \
   --reporter=json --outputFile="$RESULTS" >/dev/null 2>&1 || true
 
