@@ -1424,6 +1424,7 @@ export const de: TranslationMap = {
     },
     selectors: {
       agentFilter: "Sitzungen nach Agent filtern",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "Sitzungen suchen",
       clearSessionSearch: "Sitzungssuche löschen",

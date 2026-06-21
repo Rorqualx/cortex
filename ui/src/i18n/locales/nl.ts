@@ -1420,6 +1420,7 @@ export const nl: TranslationMap = {
     },
     selectors: {
       agentFilter: "Sessies filteren op agent",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "Sessies zoeken",
       clearSessionSearch: "Sessiezoekopdracht wissen",

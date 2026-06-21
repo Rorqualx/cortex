@@ -1,8 +1,10 @@
 // Control UI tests cover agent dropdown labels and the sidebar new-session model.
 import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../app-view-state.ts";
+import type { SessionsListResult } from "../types.ts";
 import {
   resolveChatAgentFilterOptions,
+  resolveSessionOptionGroups,
   resolveSidebarNewSessionAgentId,
   resolveSidebarNewSessionModel,
 } from "./session-controls.ts";
@@ -74,6 +76,36 @@ describe("resolveSidebarNewSessionAgentId", () => {
 
   it("falls back to the default agent for non-agent session keys", () => {
     expect(resolveSidebarNewSessionAgentId(createState({ sessionKey: "global" }))).toBe("main");
+  });
+});
+
+describe("resolveSessionOptionGroups cross-agent filter", () => {
+  const sessionsResult = {
+    sessions: [
+      { key: "agent:main:main", kind: "agent", updatedAt: 3 },
+      { key: "agent:yoren:main", kind: "agent", updatedAt: 2 },
+      { key: "agent:podrick:main", kind: "agent", updatedAt: 1 },
+    ],
+  } as unknown as SessionsListResult;
+
+  it("scopes the picker to the active agent when the All filter is off", () => {
+    const state = createState({ sessionKey: "agent:main:main", sessionsResult });
+    const groups = resolveSessionOptionGroups(state, state.sessionKey, state.sessionsResult);
+    expect(groups.map((group) => group.id)).toEqual(["agent:main"]);
+  });
+
+  it("lists every configured agent's chats when the All filter is on", () => {
+    const state = createState({
+      sessionKey: "agent:main:main",
+      sessionsResult,
+      chatAgentFilterAll: true,
+    });
+    const groups = resolveSessionOptionGroups(state, state.sessionKey, state.sessionsResult);
+    expect(groups.map((group) => group.id).sort()).toEqual([
+      "agent:main",
+      "agent:podrick",
+      "agent:yoren",
+    ]);
   });
 });
 

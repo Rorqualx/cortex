@@ -1383,6 +1383,7 @@ export const th: TranslationMap = {
     },
     selectors: {
       agentFilter: "กรองเซสชันตามเอเจนต์",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "ค้นหาเซสชัน",
       clearSessionSearch: "ล้างการค้นหาเซสชัน",

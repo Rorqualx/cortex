@@ -1406,6 +1406,7 @@ export const vi: TranslationMap = {
     },
     selectors: {
       agentFilter: "Lọc phiên theo tác nhân",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "Tìm kiếm phiên",
       clearSessionSearch: "Xóa tìm kiếm phiên",

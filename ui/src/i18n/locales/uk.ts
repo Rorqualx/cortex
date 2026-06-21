@@ -1418,6 +1418,7 @@ export const uk: TranslationMap = {
     },
     selectors: {
       agentFilter: "Фільтрувати сеанси за агентом",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "Пошук сеансів",
       clearSessionSearch: "Очистити пошук сеансів",

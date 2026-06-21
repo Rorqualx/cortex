@@ -1416,6 +1416,7 @@ export const fa: TranslationMap = {
     },
     selectors: {
       agentFilter: "فیلتر کردن نشست‌ها بر اساس عامل",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "جستجوی نشست‌ها",
       clearSessionSearch: "پاک کردن جستجوی نشست",

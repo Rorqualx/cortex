@@ -168,6 +168,9 @@ export type AppViewState = ScrollHost &
     chatSessionPickerLoading: boolean;
     chatSessionPickerError: string | null;
     chatSessionPickerResult: SessionsListResult | null;
+    // When true the sidebar agent dropdown shows "All" and the session picker
+    // lists every configured agent's chats instead of scoping to one agent.
+    chatAgentFilterAll?: boolean;
     sessionsResultAgentId?: string | null;
     chatAgentSessionRowsByAgent?: Record<string, SessionsListResult["sessions"]>;
     announceSessionSwitch?: (sessionKey: string, label: string) => void;

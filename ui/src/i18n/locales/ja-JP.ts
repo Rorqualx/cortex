@@ -1419,6 +1419,7 @@ export const ja_JP: TranslationMap = {
     },
     selectors: {
       agentFilter: "エージェントでセッションを絞り込む",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "セッションを検索",
       clearSessionSearch: "セッション検索をクリア",

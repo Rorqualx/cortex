@@ -1414,6 +1414,7 @@ export const id: TranslationMap = {
     },
     selectors: {
       agentFilter: "Filter sesi berdasarkan agen",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "Cari sesi",
       clearSessionSearch: "Hapus pencarian sesi",

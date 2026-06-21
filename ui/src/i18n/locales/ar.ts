@@ -1398,6 +1398,7 @@ export const ar: TranslationMap = {
     },
     selectors: {
       agentFilter: "تصفية الجلسات حسب الوكيل",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "البحث في الجلسات",
       clearSessionSearch: "مسح البحث في الجلسات",

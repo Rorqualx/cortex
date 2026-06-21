@@ -1510,7 +1510,9 @@ export function renderApp(state: AppViewState) {
     ...resolveDreamingAgentOptions(state),
   ];
   const rawDreamingSelectedAgentId =
-    state.selectedAgentId === ALL_AGENTS_ID
+    // Default to the aggregate "All" view until the user explicitly picks an
+    // agent (null = untouched); an explicit pick follows the active chat agent.
+    state.selectedAgentId === null || state.selectedAgentId === ALL_AGENTS_ID
       ? ALL_AGENTS_ID
       : resolveChatAgentFilterId(state, state.sessionKey);
   // Channel/ad-hoc sessions resolve to non-agent ids absent from the dreaming

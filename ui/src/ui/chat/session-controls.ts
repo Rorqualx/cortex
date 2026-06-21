@@ -79,6 +79,12 @@ const CHANNEL_SURFACES_FOR_AGENT_DROPDOWN = new Set([
 
 const CHANNEL_AGENT_OPTION_PREFIX = "$";
 
+/**
+ * Sentinel agent-dropdown value for the cross-agent "All" view. Never a real
+ * normalized agent id, so it is matched as a literal before any agent routing.
+ */
+const CHAT_AGENT_FILTER_ALL_ID = "__all__";
+
 function isChannelAgentOptionId(id: string): boolean {
   return id.startsWith(CHANNEL_AGENT_OPTION_PREFIX) && id.length > 1;
 }
@@ -393,7 +399,9 @@ function createChatSessionPickerRequestParams(
     activeSessionRow?.kind === "unknown" ||
     state.sessionKey === "global" ||
     state.sessionKey === "unknown";
-  if (activeAgentSession || !isGlobalScopeSession) {
+  // "All" mode fetches across every configured agent, so the agentId scope is
+  // omitted (configuredAgentsOnly still excludes ad-hoc/unknown sessions).
+  if (state.chatAgentFilterAll !== true && (activeAgentSession || !isGlobalScopeSession)) {
     params.agentId = normalizeAgentId(
       activeAgentSession?.agentId ?? state.agentsList?.defaultId ?? "main",
     );
@@ -902,6 +910,23 @@ function renderChatQuotaPill(state: AppViewState) {
   `;
 }
 
+/**
+ * Toggle the cross-agent "All" session filter. Picker results are agent-scoped
+ * server-side, so the cached page is dropped and refetched when the picker is
+ * open so the (un)scoped rows match the new mode.
+ */
+function setChatAgentFilterAll(state: AppViewState, value: boolean) {
+  if ((state.chatAgentFilterAll === true) === value) {
+    return;
+  }
+  state.chatAgentFilterAll = value;
+  state.chatSessionPickerResult = null;
+  if (state.chatSessionPickerOpen) {
+    void loadChatSessionPickerPage(state);
+  }
+  requestHostUpdate(state);
+}
+
 function renderChatAgentSelect(
   state: AppViewState,
   onSwitchSession: ChatSessionSwitchHandler,
@@ -910,8 +935,14 @@ function renderChatAgentSelect(
   if (options.length <= 1) {
     return "";
   }
-  const activeAgentId = resolveChatAgentFilterId(state, state.sessionKey);
-  const selectedLabel = options.find((entry) => entry.id === activeAgentId)?.label ?? activeAgentId;
+  const allActive = state.chatAgentFilterAll === true;
+  const allLabel = t("chat.selectors.allAgents");
+  const activeAgentId = allActive
+    ? CHAT_AGENT_FILTER_ALL_ID
+    : resolveChatAgentFilterId(state, state.sessionKey);
+  const selectedLabel = allActive
+    ? allLabel
+    : (options.find((entry) => entry.id === activeAgentId)?.label ?? activeAgentId);
 
   // Build optgroups: agents first, then channel sessions grouped by surface
   const agentOptions: ChatAgentFilterOption[] = [];
@@ -938,7 +969,12 @@ function renderChatAgentSelect(
         ?disabled=${!state.connected}
         @change=${(e: Event) => {
           const rawValue = (e.target as HTMLSelectElement).value;
+          if (rawValue === CHAT_AGENT_FILTER_ALL_ID) {
+            setChatAgentFilterAll(state, true);
+            return;
+          }
           if (isChannelAgentOptionId(rawValue)) {
+            setChatAgentFilterAll(state, false);
             const sessionKey = channelSessionKeyFromOptionId(rawValue);
             if (sessionKey !== state.sessionKey) {
               onSwitchSession(state, sessionKey);
@@ -946,12 +982,14 @@ function renderChatAgentSelect(
             return;
           }
           const nextAgentId = normalizeAgentId(rawValue);
-          if (nextAgentId === activeAgentId) {
+          if (!allActive && nextAgentId === activeAgentId) {
             return;
           }
+          setChatAgentFilterAll(state, false);
           onSwitchSession(state, resolvePreferredSessionForAgent(state, nextAgentId));
         }}
       >
+        <option value=${CHAT_AGENT_FILTER_ALL_ID} ?selected=${allActive}>${allLabel}</option>
         ${agentOptions.length > 0
           ? html`<optgroup label="Agents">
               ${repeat(
@@ -1846,6 +1884,7 @@ export function resolveSessionOptionGroups(
 ): SessionOptionGroup[] {
   const rows = sessions?.sessions ?? [];
   const hideCron = state.sessionsHideCron ?? true;
+  const allAgents = state.chatAgentFilterAll === true;
   const activeAgentId = resolveChatAgentFilterId(state, sessionKey);
   const defaultAgentId = normalizeAgentId(state.agentsList?.defaultId ?? "main");
   const byKey = new Map<string, SessionsListResult["sessions"][number]>();
@@ -1892,7 +1931,10 @@ export function resolveSessionOptionGroups(
   };
 
   for (const row of rows) {
+    // "All" mode lists every configured agent's chats (still grouped per agent),
+    // so the per-agent scope filter is skipped.
     if (
+      !allAgents &&
       !isSessionKeyTiedToAgent(row.key, activeAgentId, defaultAgentId) &&
       row.key !== sessionKey
     ) {

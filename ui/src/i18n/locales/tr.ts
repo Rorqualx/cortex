@@ -1420,6 +1420,7 @@ export const tr: TranslationMap = {
     },
     selectors: {
       agentFilter: "Oturumları ajana göre filtrele",
+      allAgents: "All agents",
       session: "Chat session",
       sessionSearch: "Oturumlarda ara",
       clearSessionSearch: "Oturum aramasını temizle",
