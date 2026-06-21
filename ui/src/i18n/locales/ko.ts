@@ -878,6 +878,7 @@ export const ko: TranslationMap = {
     agentSelect: {
       label: "에이전트",
       ariaLabel: "Dreaming agent",
+      allAgents: "All agents",
     },
     tabs: {
       scene: "장면",

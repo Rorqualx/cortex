@@ -878,6 +878,7 @@ export const vi: TranslationMap = {
     agentSelect: {
       label: "Agent",
       ariaLabel: "Dreaming agent",
+      allAgents: "All agents",
     },
     tabs: {
       scene: "Cảnh",

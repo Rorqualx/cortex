@@ -880,6 +880,7 @@ export const id: TranslationMap = {
     agentSelect: {
       label: "Agen",
       ariaLabel: "Dreaming agent",
+      allAgents: "All agents",
     },
     tabs: {
       scene: "Scene",

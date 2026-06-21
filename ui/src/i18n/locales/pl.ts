@@ -882,6 +882,7 @@ export const pl: TranslationMap = {
     agentSelect: {
       label: "Agent",
       ariaLabel: "Dreaming agent",
+      allAgents: "All agents",
     },
     tabs: {
       scene: "Scena",

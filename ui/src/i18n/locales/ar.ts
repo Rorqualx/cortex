@@ -873,6 +873,7 @@ export const ar: TranslationMap = {
     agentSelect: {
       label: "الوكيل",
       ariaLabel: "Dreaming agent",
+      allAgents: "All agents",
     },
     tabs: {
       scene: "المشهد",

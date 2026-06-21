@@ -881,6 +881,7 @@ export const fa: TranslationMap = {
     agentSelect: {
       label: "عامل",
       ariaLabel: "Dreaming agent",
+      allAgents: "All agents",
     },
     tabs: {
       scene: "صحنه",

@@ -11,6 +11,7 @@ import path from "node:path";
 import { resolveAgentWorkspaceDir } from "../../agents/agent-scope.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { requireNodeSqlite } from "../../infra/node-sqlite.js";
+import { normalizeAgentId } from "../../routing/session-key.js";
 
 export type L3LayerDescriptor = {
   id: string;
@@ -247,37 +248,87 @@ function renderSharedStore(dbPath: string): string {
   }
 }
 
-/** Render one ZenBrain layer to human-readable markdown. */
+/** Layers that are global (not workspace-scoped); rendered once even in "all" mode. */
+const GLOBAL_LAYER_IDS = new Set(["procedural", "shared"]);
+
+/** Render a workspace-scoped layer rooted at one L3 root. */
+async function renderLayerForRoot(root: string, layerId: string): Promise<string> {
+  switch (layerId) {
+    case "l1":
+      return renderL1Archive(path.join(root, "l1_archive"));
+    case "l2":
+      return renderChunkExports(path.join(root, "l2"), true, "_No summary chunks yet._");
+    case "l3":
+      return renderChunkExports(path.join(root, "l3"), false, "_No epoch digests yet._");
+    case "longterm":
+      return (
+        (await readBodyExport(path.join(root, "longterm.md"))) ?? "_No long-term prose facts yet._"
+      );
+    case "longterm-typed":
+      return (
+        (await readBodyExport(path.join(root, "longterm-typed.md"))) ?? "_No typed facts yet._"
+      );
+    default:
+      return "_Unknown layer._";
+  }
+}
+
+/** Render a global (cross-agent) layer. */
+async function renderGlobalLayer(layerId: string): Promise<string> {
+  if (layerId === "procedural") {
+    return renderProcedural(skillForgeDir());
+  }
+  if (layerId === "shared") {
+    return renderSharedStore(sharedStoreDbPath());
+  }
+  return "_Unknown layer._";
+}
+
+/** Distinct L3 roots across all configured agents (agents often share a workspace). */
+function uniqueL3Roots(cfg: OpenClawConfig): string[] {
+  const list = Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
+  const seen = new Set<string>();
+  const roots: string[] = [];
+  for (const entry of list) {
+    if (!entry || typeof entry.id !== "string") {
+      continue;
+    }
+    const root = l3Root(cfg, normalizeAgentId(entry.id));
+    if (!seen.has(root)) {
+      seen.add(root);
+      roots.push(root);
+    }
+  }
+  return roots;
+}
+
+/** Render one ZenBrain layer for a single agent. */
 export async function renderL3Layer(
   cfg: OpenClawConfig,
   agentId: string,
   layerId: string,
 ): Promise<string> {
-  const root = l3Root(cfg, agentId);
-  switch (layerId) {
-    case "l1":
-      return clamp(await renderL1Archive(path.join(root, "l1_archive")));
-    case "l2":
-      return clamp(
-        await renderChunkExports(path.join(root, "l2"), true, "_No summary chunks yet._"),
-      );
-    case "l3":
-      return clamp(
-        await renderChunkExports(path.join(root, "l3"), false, "_No epoch digests yet._"),
-      );
-    case "longterm":
-      return clamp(
-        (await readBodyExport(path.join(root, "longterm.md"))) ?? "_No long-term prose facts yet._",
-      );
-    case "longterm-typed":
-      return clamp(
-        (await readBodyExport(path.join(root, "longterm-typed.md"))) ?? "_No typed facts yet._",
-      );
-    case "procedural":
-      return clamp(await renderProcedural(skillForgeDir()));
-    case "shared":
-      return clamp(renderSharedStore(sharedStoreDbPath()));
-    default:
-      return "_Unknown layer._";
+  if (GLOBAL_LAYER_IDS.has(layerId)) {
+    return clamp(await renderGlobalLayer(layerId));
   }
+  return clamp(await renderLayerForRoot(l3Root(cfg, agentId), layerId));
+}
+
+/** Render one ZenBrain layer aggregated across every agent's workspace. */
+export async function renderL3LayerForAllAgents(
+  cfg: OpenClawConfig,
+  layerId: string,
+): Promise<string> {
+  if (GLOBAL_LAYER_IDS.has(layerId)) {
+    return clamp(await renderGlobalLayer(layerId));
+  }
+  const roots = uniqueL3Roots(cfg);
+  if (roots.length <= 1) {
+    return clamp(await renderLayerForRoot(roots[0] ?? l3Root(cfg, ""), layerId));
+  }
+  const sections: string[] = [];
+  for (const root of roots) {
+    sections.push(`# ${root}\n\n${await renderLayerForRoot(root, layerId)}`);
+  }
+  return clamp(sections.join("\n\n---\n\n"));
 }

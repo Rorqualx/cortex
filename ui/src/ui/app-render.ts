@@ -114,6 +114,7 @@ import {
   backfillDreamDiary,
   copyDreamingArchivePath,
   dedupeDreamDiary,
+  ALL_AGENTS_ID,
   loadDreamDiary,
   loadDreamingStatus,
   loadL3LayerContent,
@@ -1504,8 +1505,14 @@ export function renderApp(state: AppViewState) {
   const configuredDreaming = resolveConfiguredDreaming(configValue);
   const dreamingOn = state.dreamingStatus?.enabled ?? configuredDreaming.enabled;
   const dreamingNextCycle = resolveDreamingNextCycle(state.dreamingStatus);
-  const dreamingAgentOptions = resolveDreamingAgentOptions(state);
-  const rawDreamingSelectedAgentId = resolveChatAgentFilterId(state, state.sessionKey);
+  const dreamingAgentOptions = [
+    { id: ALL_AGENTS_ID, label: t("dreaming.agentSelect.allAgents") },
+    ...resolveDreamingAgentOptions(state),
+  ];
+  const rawDreamingSelectedAgentId =
+    state.selectedAgentId === ALL_AGENTS_ID
+      ? ALL_AGENTS_ID
+      : resolveChatAgentFilterId(state, state.sessionKey);
   // Channel/ad-hoc sessions resolve to non-agent ids absent from the dreaming
   // picker; fall back to the first real agent so a button always reflects state.
   const dreamingSelectedAgentId = dreamingAgentOptions.some(
@@ -4468,7 +4475,11 @@ export function renderApp(state: AppViewState) {
               onRefresh: refreshDreaming,
               onSelectAgent: (agentId: string) => {
                 state.selectedAgentId = agentId;
-                switchChatSession(state, resolvePreferredSessionForAgent(state, agentId));
+                // "All agents" is an aggregate view, not a real chat agent — keep
+                // the active chat session unchanged when it is selected.
+                if (agentId !== ALL_AGENTS_ID) {
+                  switchChatSession(state, resolvePreferredSessionForAgent(state, agentId));
+                }
                 void loadDreamingStatus(state);
                 void loadDreamDiary(state);
               },

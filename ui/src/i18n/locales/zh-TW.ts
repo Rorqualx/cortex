@@ -870,6 +870,7 @@ export const zh_TW: TranslationMap = {
     agentSelect: {
       label: "代理",
       ariaLabel: "Dreaming agent",
+      allAgents: "All agents",
     },
     tabs: {
       scene: "場景",

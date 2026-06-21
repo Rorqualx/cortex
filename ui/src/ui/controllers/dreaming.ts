@@ -337,8 +337,22 @@ function normalizeTrimmedString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/** Sentinel agent id for the "All agents" aggregate view (Layers tab). */
+export const ALL_AGENTS_ID = "__all__";
+
+/** True when the aggregate "All agents" option is selected. */
+function isAllAgentsSelected(state: DreamingState): boolean {
+  return normalizeTrimmedString(state.selectedAgentId) === ALL_AGENTS_ID;
+}
+
 function resolveSelectedAgentId(state: DreamingState): string | null {
-  return normalizeTrimmedString(state.selectedAgentId) ?? null;
+  const raw = normalizeTrimmedString(state.selectedAgentId);
+  // "All agents" is a viewer-only aggregate; per-agent RPCs (status/diary) fall
+  // back to the default agent so they keep working.
+  if (raw === ALL_AGENTS_ID) {
+    return null;
+  }
+  return raw ?? null;
 }
 
 function buildSelectedAgentPayloadForAgentId(
@@ -865,11 +879,12 @@ export async function loadL3LayerList(state: DreamingState): Promise<DreamingL3L
   if (!state.client || !state.connected) {
     return [];
   }
-  const agentId = resolveSelectedAgentId(state);
   try {
     const payload = await state.client.request<{ layers?: DreamingL3Layer[] }>(
       "doctor.memory.l3Layers",
-      buildSelectedAgentPayloadForAgentId(agentId),
+      isAllAgentsSelected(state)
+        ? { allAgents: true }
+        : buildSelectedAgentPayloadForAgentId(resolveSelectedAgentId(state)),
     );
     return Array.isArray(payload?.layers) ? payload.layers : [];
   } catch {
@@ -885,10 +900,11 @@ export async function loadL3LayerContent(
   if (!state.client || !state.connected) {
     return null;
   }
-  const agentId = resolveSelectedAgentId(state);
   try {
     const payload = await state.client.request<{ markdown?: string }>("doctor.memory.l3Layers", {
-      ...buildSelectedAgentPayloadForAgentId(agentId),
+      ...(isAllAgentsSelected(state)
+        ? { allAgents: true }
+        : buildSelectedAgentPayloadForAgentId(resolveSelectedAgentId(state))),
       layer: layerId,
     });
     return typeof payload?.markdown === "string" ? payload.markdown : null;

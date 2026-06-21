@@ -26,7 +26,12 @@ import {
   repairDreamingArtifacts,
   writeBackfillDiaryEntries,
 } from "./doctor.memory-core-runtime.js";
-import { L3_LAYERS, isL3LayerId, renderL3Layer } from "./doctor.memory-l3-layers.js";
+import {
+  L3_LAYERS,
+  isL3LayerId,
+  renderL3Layer,
+  renderL3LayerForAllAgents,
+} from "./doctor.memory-l3-layers.js";
 import { normalizeTrimmedString } from "./record-shared.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -701,14 +706,25 @@ export const doctorHandlers: GatewayRequestHandlers = {
     const requestedAgentId =
       typeof params?.agentId === "string" ? normalizeAgentId(params.agentId) : null;
     const agentId = requestedAgentId || resolveDefaultAgentId(cfg);
+    const allAgents = params?.allAgents === true;
     const layer = isL3LayerId(params?.layer) ? params.layer : null;
     if (!layer) {
-      respond(true, { agentId, layers: L3_LAYERS }, undefined);
+      respond(
+        true,
+        { agentId: allAgents ? "all" : agentId, allAgents, layers: L3_LAYERS },
+        undefined,
+      );
       return;
     }
     try {
-      const markdown = await renderL3Layer(cfg, agentId, layer);
-      respond(true, { agentId, layer, markdown }, undefined);
+      const markdown = allAgents
+        ? await renderL3LayerForAllAgents(cfg, layer)
+        : await renderL3Layer(cfg, agentId, layer);
+      respond(
+        true,
+        { agentId: allAgents ? "all" : agentId, allAgents, layer, markdown },
+        undefined,
+      );
     } catch (err) {
       respond(
         true,

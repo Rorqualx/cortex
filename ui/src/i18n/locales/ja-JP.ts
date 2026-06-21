@@ -885,6 +885,7 @@ export const ja_JP: TranslationMap = {
     agentSelect: {
       label: "エージェント",
       ariaLabel: "Dreaming agent",
+      allAgents: "All agents",
     },
     tabs: {
       scene: "Scene",

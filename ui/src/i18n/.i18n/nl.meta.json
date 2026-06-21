@@ -6,6 +6,7 @@
     "channels.configure.unavailable",
     "channels.status.notConfigured",
     "channels.status.stopped",
+    "dreaming.agentSelect.allAgents",
     "dreaming.layers.empty",
     "dreaming.layers.error",
     "dreaming.layers.explainer",
@@ -28,12 +29,12 @@
     "workboard.projectIcon",
     "workboard.projectName"
   ],
-  "generatedAt": "2026-06-21T18:48:40.707Z",
+  "generatedAt": "2026-06-21T19:47:49.627Z",
   "locale": "nl",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "a3b02c186fce3052b7ac5e96e066269f6842f6fe970aa6ed002124e72a3f628b",
-  "totalKeys": 1435,
+  "sourceHash": "14b45e481c1e833a43f4325d93b2cd7907259f764d09457ae1c3fd3c10659471",
+  "totalKeys": 1436,
   "translatedKeys": 1408,
   "workflow": 1
 }

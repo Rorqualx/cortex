@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { L3_LAYERS, isL3LayerId, renderL3Layer } from "./doctor.memory-l3-layers.js";
+import {
+  L3_LAYERS,
+  isL3LayerId,
+  renderL3Layer,
+  renderL3LayerForAllAgents,
+} from "./doctor.memory-l3-layers.js";
 
 describe("doctor.memory.l3Layers rendering", () => {
   let rootDir = "";
@@ -109,6 +114,13 @@ describe("doctor.memory.l3Layers rendering", () => {
         process.env.OPENCLAW_SHARED_MEMORY_DIR = prev;
       }
     }
+  });
+
+  it("aggregates a layer across all agents (single shared workspace → one render)", async () => {
+    await writeExport("longterm.md", { version: 1 }, "## pref:tabs\nUser prefers tabs.");
+    // config has one agent → one unique workspace → renders that root once.
+    const md = await renderL3LayerForAllAgents(config, "longterm");
+    expect(md).toContain("User prefers tabs.");
   });
 
   it("renders an empty-note for the shared store when its DB is absent", async () => {
