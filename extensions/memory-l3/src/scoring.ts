@@ -58,6 +58,17 @@ export type ScoringConfig = {
    * Only L2 facts carry an informationGain; other tiers score it as 0.
    */
   weightInformationGain: number;
+  /**
+   * Weight for goal-relevance signal. When a query-goal embedding is
+   * available, facts semantically aligned with the current task/goal get
+   * a boost. Default 0.1.
+   */
+  weightGoalRelevance: number;
+  /**
+   * Weight for source-reliability signal. Facts with higher certainty
+   * (confirmed > instructional > tentative) score higher. Default 0.1.
+   */
+  weightReliability: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -76,6 +87,8 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   useFsrs: true,
   weightSemantic: 0.35,
   weightInformationGain: 0.05,
+  weightGoalRelevance: 0.1,
+  weightReliability: 0.1,
 };
 
 // ---------------------------------------------------------------------------
@@ -176,6 +189,10 @@ export type Signals = {
   semantic: number;
   /** Source chunk's session-novelty metric. 0 when the chunk predates it. */
   informationGain: number;
+  /** Goal-relevance score from query-goal embedding alignment. 0 when unavailable. */
+  goalRelevance: number;
+  /** Source reliability derived from fact certainty (confirmed=1, instructional=0.85, tentative=0.5). */
+  reliability: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
@@ -311,6 +328,10 @@ export function scoreFact(params: {
   significant?: boolean;
   /** Source chunk's information-gain metric, when known. */
   informationGain?: number;
+  /** Goal-relevance score, when computed externally. */
+  goalRelevance?: number;
+  /** Explicit reliability override; otherwise derived from fact.certainty. */
+  reliability?: number;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -337,6 +358,8 @@ export function scoreFact(params: {
     l3Boost: params.l3Boost ?? 0,
     semantic: 0,
     informationGain: params.informationGain ?? 0,
+    goalRelevance: params.goalRelevance ?? 0,
+    reliability: params.reliability ?? certaintyToReliability(params.fact.certainty),
   };
 }
 
@@ -348,6 +371,21 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.recency * config.weightRecency +
     signals.l3Boost * config.weightL3Boost +
     signals.semantic * config.weightSemantic +
-    signals.informationGain * config.weightInformationGain
+    signals.informationGain * config.weightInformationGain +
+    signals.goalRelevance * config.weightGoalRelevance +
+    signals.reliability * config.weightReliability
   );
+}
+
+/** Map fact certainty to a reliability score. */
+function certaintyToReliability(certainty: import("./types.js").FactCertainty | undefined): number {
+  switch (certainty) {
+    case "tentative":
+      return 0.5;
+    case "instructional":
+      return 0.85;
+    case "confirmed":
+    default:
+      return 1.0;
+  }
 }

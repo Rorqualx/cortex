@@ -140,6 +140,8 @@ describe("scoreFact + composite", () => {
       useFsrs: false,
       weightSemantic: 0,
       weightInformationGain: 0,
+      weightGoalRelevance: 0,
+      weightReliability: 0,
     };
     const score = composite(
       {
@@ -150,6 +152,8 @@ describe("scoreFact + composite", () => {
         l3Boost: 1,
         semantic: 0,
         informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0,
       },
       config,
     );
@@ -163,6 +167,8 @@ describe("scoreFact + composite", () => {
         l3Boost: 0.5,
         semantic: 0,
         informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0,
       },
       config,
     );
@@ -183,6 +189,8 @@ describe("scoreFact + composite", () => {
       useFsrs: false,
       weightSemantic: 0,
       weightInformationGain: 0,
+      weightGoalRelevance: 0,
+      weightReliability: 0,
     };
     const signals = {
       lexical: 0,
@@ -192,6 +200,8 @@ describe("scoreFact + composite", () => {
       l3Boost: 0,
       semantic: 0,
       informationGain: 0.8,
+      goalRelevance: 0,
+      reliability: 0,
     };
     expect(composite(signals, config)).toBe(0);
     expect(composite(signals, { ...config, weightInformationGain: 0.5 })).toBeCloseTo(0.4, 6);
@@ -211,6 +221,8 @@ describe("scoreFact + composite", () => {
       useFsrs: false,
       weightSemantic: 0,
       weightInformationGain: 0,
+      weightGoalRelevance: 0,
+      weightReliability: 0,
     };
     const score = composite(
       {
@@ -221,6 +233,8 @@ describe("scoreFact + composite", () => {
         l3Boost: 0.4,
         semantic: 0,
         informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0,
       },
       config,
     );
@@ -328,5 +342,87 @@ describe("buildCorpusStats + BM25", () => {
       corpusStats: stats,
     });
     expect(signals.bm25).toBeGreaterThan(0);
+  });
+
+  it("reliability defaults from fact certainty", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const now = Date.now();
+    const base = { id: "f1", text: "anything", importance: 0.5, createdAt: now, dedupKey: "k:1" };
+    const confirmed = scoreFact({
+      queryTokens: new Set(),
+      fact: { ...base, certainty: "confirmed" },
+      now,
+      config,
+    });
+    const instructional = scoreFact({
+      queryTokens: new Set(),
+      fact: { ...base, certainty: "instructional" },
+      now,
+      config,
+    });
+    const tentative = scoreFact({
+      queryTokens: new Set(),
+      fact: { ...base, certainty: "tentative" },
+      now,
+      config,
+    });
+    const absent = scoreFact({ queryTokens: new Set(), fact: base, now, config });
+    expect(confirmed.reliability).toBe(1.0);
+    expect(instructional.reliability).toBe(0.85);
+    expect(tentative.reliability).toBe(0.5);
+    expect(absent.reliability).toBe(1.0);
+  });
+
+  it("goalRelevance and reliability can be overridden", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const fact = {
+      id: "f1",
+      text: "anything",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+      certainty: "tentative",
+    };
+    const signals = scoreFact({
+      queryTokens: new Set(),
+      fact,
+      now: Date.now(),
+      config,
+      goalRelevance: 0.9,
+      reliability: 0.95,
+    });
+    expect(signals.goalRelevance).toBe(0.9);
+    expect(signals.reliability).toBe(0.95);
+  });
+
+  it("composite includes goalRelevance and reliability", () => {
+    const config = {
+      weightLexical: 0,
+      weightBm25: 0,
+      weightImportance: 0,
+      weightRecency: 0,
+      weightL3Boost: 0,
+      weightLongTermTierBoost: 0,
+      weightMemoryCoreTierMultiplier: 0.7,
+      weightTypedFactTierBoost: 0,
+      recencyHalfLifeDays: 7,
+      useFsrs: false,
+      weightSemantic: 0,
+      weightInformationGain: 0,
+      weightGoalRelevance: 0.2,
+      weightReliability: 0.3,
+    };
+    const signals = {
+      lexical: 0,
+      bm25: 0,
+      importance: 0,
+      recency: 0,
+      l3Boost: 0,
+      semantic: 0,
+      informationGain: 0,
+      goalRelevance: 0.5,
+      reliability: 0.8,
+    };
+    expect(composite(signals, config)).toBeCloseTo(0.5 * 0.2 + 0.8 * 0.3, 6);
   });
 });
