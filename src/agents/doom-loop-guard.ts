@@ -40,6 +40,8 @@ export type DoomLoopGuardSnapshot = {
   lastFailureAt?: number;
   lastFailureType?: string;
   isArmed: boolean;
+  /** Timestamp of the last successful turn (last `reset()`). Used for Revise boundary. */
+  lastSuccessAt?: number;
 };
 
 /**
@@ -66,6 +68,7 @@ type GuardState = {
   lastFailureAt?: number;
   lastFailureType?: string;
   isArmed: boolean;
+  lastSuccessAt?: number;
 };
 
 /**
@@ -80,6 +83,19 @@ export type DoomLoopGuard = {
   reset: () => void;
   /** Current state for diagnostics */
   snapshot: () => DoomLoopGuardSnapshot;
+  /**
+   * Returns the timestamp of the last successful checkpoint (the last time
+   * `reset()` was called), or undefined if no success has been recorded.
+   * Used by the agent runner to implement a "Revise" operation: restore
+   * context to the pre-failure boundary and inject a strategy-switch prompt.
+   */
+  getFailureBoundary: () => number | undefined;
+  /**
+   * Generate a Revise steering prompt for injection into the agent turn
+   * when doom-loop recovery is triggered. The prompt advises the agent to
+   * try a different strategy rather than repeating the failed approach.
+   */
+  createRevisePrompt: () => string;
 };
 
 function asPositiveInt(value: number | undefined, fallback: number): number {
@@ -112,6 +128,7 @@ export function createDoomLoopGuard(
     ),
     consecutiveFailures: 0,
     isArmed: false,
+    lastSuccessAt: undefined,
   };
 
   const arm = (): void => {
@@ -125,6 +142,7 @@ export function createDoomLoopGuard(
     state.consecutiveFailures = 0;
     state.lastFailureAt = undefined;
     state.lastFailureType = undefined;
+    state.lastSuccessAt = Date.now();
   };
 
   const recordFailure = (errorType: string, timestamp: number): DoomLoopVerdict => {
@@ -181,9 +199,25 @@ export function createDoomLoopGuard(
     lastFailureAt: state.lastFailureAt,
     lastFailureType: state.lastFailureType,
     isArmed: state.isArmed,
+    lastSuccessAt: state.lastSuccessAt,
   });
 
-  return { arm, recordFailure, reset, snapshot };
+  const getFailureBoundary = (): number | undefined => state.lastSuccessAt;
+
+  const createRevisePrompt = (): string => {
+    const boundary = state.lastSuccessAt;
+    const boundaryText = boundary
+      ? ` (last successful checkpoint: ${new Date(boundary).toISOString()})`
+      : "";
+    return [
+      `[OpenClaw runtime] Doom-loop recovery triggered.${boundaryText}`,
+      "The previous approach failed repeatedly. Do NOT retry the same strategy.",
+      "Instead: try a different strategy, use a different tool, or ask the user for clarification.",
+      "If you were using a particular method (e.g., a specific script, API call, or reasoning path), switch to an alternative.",
+    ].join("\n");
+  };
+
+  return { arm, recordFailure, reset, snapshot, getFailureBoundary, createRevisePrompt };
 }
 
 /**
