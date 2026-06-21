@@ -82,10 +82,20 @@ export const es: TranslationMap = {
     logout: "Cerrar sesión",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Estado del canal",
       subtitle: "Instantáneas del estado del canal desde el Gateway.",
       noSnapshotYet: "Aún no hay instantáneas.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Estado y configuración del canal.",
@@ -393,6 +403,7 @@ export const es: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Control",
     agent: "Agente",
     settings: "Ajustes",
@@ -407,13 +418,15 @@ export const es: TranslationMap = {
     workboard: "Panel de trabajo",
     channels: "Canales",
     instances: "Instancias",
+    conversations: "Conversations",
     sessions: "Sesiones",
     usage: "Uso",
     cron: "Tareas Cron",
     skills: "Skills",
-    skillWorkshop: "Taller de Skills",
+    skillForge: "Skill Forge",
     nodes: "Nodos",
     chat: "Chat",
+    vault: "Vault",
     config: "Configuración",
     communications: "Comunicaciones",
     appearance: "Apariencia",
@@ -432,14 +445,16 @@ export const es: TranslationMap = {
     workboard: "Cola de trabajo del agente y traspaso de sesión.",
     channels: "Gestionar canales y ajustes.",
     instances: "Balizas de presencia de clientes y nodos conectados.",
+    conversations: "All chat transcripts.",
     sessions: "Inspeccionar sesiones activas y ajustar valores predeterminados por sesión.",
     usage: "Monitorear uso de API y costes.",
     cron: "Programar despertares y ejecuciones recurrentes de agentes.",
     skills: "Gestionar disponibilidad de habilidades e inyección de claves API.",
-    skillWorkshop:
+    skillForge:
       "Revisa, perfecciona y aplica propuestas antes de que se conviertan en Skills activas.",
     nodes: "Dispositivos emparejados, capacidades y exposición de comandos.",
     chat: "Sesión de chat directa con la puerta de enlace para intervenciones rápidas.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Editar ~/.openclaw/openclaw.json de forma segura.",
     communications: "Canales, mensajes y configuración de audio.",
     appearance: "Configuración del tema, la UI y el asistente de configuración.",
@@ -450,14 +465,6 @@ export const es: TranslationMap = {
     debug: "Instantáneas de la puerta de enlace, eventos y llamadas RPC manuales.",
     logs: "Seguimiento en vivo de los registros de la puerta de enlace.",
     dreams: "Consolidación de la memoria durante el sueño.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Usar el chat actual",
-      useCurrentChatAria: "Usar el chat actual para las solicitudes de revisión",
-      useCurrentChatTooltip:
-        "Enviar las solicitudes de revisión a la sesión de chat actual en lugar de la sesión de workshop de la propuesta.",
-    },
   },
   activity: {
     title: "Actividad",
@@ -578,6 +585,7 @@ export const es: TranslationMap = {
     viewRecentlyDone: "Completadas recientemente",
     viewPresetCount: "{count} tarjetas",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -715,6 +723,10 @@ export const es: TranslationMap = {
     eventArchived: "Archivado",
     eventUnarchived: "Desarchivado",
     eventStale: "Sesión obsoleta",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -894,7 +906,9 @@ export const es: TranslationMap = {
     status: {
       active: "Sueño activo",
       idle: "Sueño inactivo",
-      promotedSuffix: "promovido",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "próximo barrido",
     },
     scene: {
@@ -986,6 +1000,9 @@ export const es: TranslationMap = {
       simmeringIdeas: "dejando hervir a fuego lento ideas a medio formar…",
       whisperingVectorStore: "susurrándole al vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

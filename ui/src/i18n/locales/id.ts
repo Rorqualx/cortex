@@ -82,10 +82,20 @@ export const id: TranslationMap = {
     logout: "Keluar",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Kesehatan saluran",
       subtitle: "Snapshot status saluran dari gateway.",
       noSnapshotYet: "Belum ada snapshot.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Status dan konfigurasi saluran.",
@@ -393,6 +403,7 @@ export const id: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Kontrol",
     agent: "Agen",
     settings: "Pengaturan",
@@ -407,13 +418,15 @@ export const id: TranslationMap = {
     workboard: "Workboard",
     channels: "Saluran",
     instances: "Instans",
+    conversations: "Conversations",
     sessions: "Sesi",
     usage: "Penggunaan",
     cron: "Tugas Cron",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "Node",
     chat: "Chat",
+    vault: "Vault",
     config: "Konfigurasi",
     communications: "Komunikasi",
     appearance: "Tampilan",
@@ -432,13 +445,15 @@ export const id: TranslationMap = {
     workboard: "Antrean kerja agen dan serah terima sesi.",
     channels: "Saluran dan pengaturan.",
     instances: "Klien dan node yang terhubung.",
+    conversations: "All chat transcripts.",
     sessions: "Sesi aktif dan default.",
     usage: "Penggunaan API dan biaya.",
     cron: "Bangun dan proses berulang.",
     skills: "Skills dan kunci API.",
-    skillWorkshop: "Tinjau, sempurnakan, dan terapkan proposal sebelum menjadi Skills aktif.",
+    skillForge: "Tinjau, sempurnakan, dan terapkan proposal sebelum menjadi Skills aktif.",
     nodes: "Perangkat yang dipasangkan dan perintah.",
     chat: "Chat Gateway untuk intervensi cepat.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Edit openclaw.json.",
     communications: "Saluran, pesan, dan pengaturan audio.",
     appearance: "Tema, UI, dan pengaturan wizard penyiapan.",
@@ -449,14 +464,6 @@ export const id: TranslationMap = {
     debug: "Snapshot, peristiwa, RPC.",
     logs: "Log Gateway langsung.",
     dreams: "Konsolidasi memori saat tidur.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Gunakan obrolan saat ini",
-      useCurrentChatAria: "Gunakan obrolan saat ini untuk permintaan revisi",
-      useCurrentChatTooltip:
-        "Kirim permintaan revisi ke sesi obrolan saat ini alih-alih sesi workshop proposal.",
-    },
   },
   activity: {
     title: "Aktivitas",
@@ -577,6 +584,7 @@ export const id: TranslationMap = {
     viewRecentlyDone: "Baru selesai",
     viewPresetCount: "{count} kartu",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -713,6 +721,10 @@ export const id: TranslationMap = {
     eventArchived: "Diarsipkan",
     eventUnarchived: "Dibatalkan pengarsipannya",
     eventStale: "Sesi kedaluwarsa",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -892,7 +904,9 @@ export const id: TranslationMap = {
     status: {
       active: "Dreaming Aktif",
       idle: "Dreaming Idle",
-      promotedSuffix: "dipromosikan",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "penyapuan berikutnya",
     },
     scene: {
@@ -982,6 +996,9 @@ export const id: TranslationMap = {
       simmeringIdeas: "mematangkan ide-ide yang belum sepenuhnya terbentuk…",
       whisperingVectorStore: "berbisik kepada vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

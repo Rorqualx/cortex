@@ -82,10 +82,20 @@ export const pt_BR: TranslationMap = {
     logout: "Sair",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Saúde do canal",
       subtitle: "Instantâneos do status do canal do gateway.",
       noSnapshotYet: "Ainda não há instantâneo.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Status e configuração do canal.",
@@ -393,6 +403,7 @@ export const pt_BR: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Controle",
     agent: "Agente",
     settings: "Configurações",
@@ -407,13 +418,15 @@ export const pt_BR: TranslationMap = {
     workboard: "Quadro de trabalho",
     channels: "Canais",
     instances: "Instâncias",
+    conversations: "Conversations",
     sessions: "Sessões",
     usage: "Uso",
     cron: "Tarefas Cron",
     skills: "Skills",
-    skillWorkshop: "Oficina de Skills",
+    skillForge: "Skill Forge",
     nodes: "Nós",
     chat: "Chat",
+    vault: "Vault",
     config: "Configuração",
     communications: "Comunicações",
     appearance: "Aparência e Configuração",
@@ -432,13 +445,15 @@ export const pt_BR: TranslationMap = {
     workboard: "Fila de trabalho do agente e transferência de sessão.",
     channels: "Canais e configurações.",
     instances: "Clientes e nós conectados.",
+    conversations: "All chat transcripts.",
     sessions: "Sessões ativas e padrões.",
     usage: "Uso e custos da API.",
     cron: "Despertares e execuções.",
     skills: "Habilidades e chaves API.",
-    skillWorkshop: "Revise, refine e aplique propostas antes que elas se tornem skills ativas.",
+    skillForge: "Revise, refine e aplique propostas antes que elas se tornem skills ativas.",
     nodes: "Dispositivos e comandos.",
     chat: "Chat do gateway para intervenções rápidas.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Editar openclaw.json.",
     communications: "Configurações de canais, mensagens e áudio.",
     appearance: "Configurações de tema, UI e assistente de configuração.",
@@ -449,14 +464,6 @@ export const pt_BR: TranslationMap = {
     debug: "Snapshots, eventos, RPC.",
     logs: "Logs ao vivo do gateway.",
     dreams: "Consolidação de memória durante o sono.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Usar conversa atual",
-      useCurrentChatAria: "Usar conversa atual para solicitações de revisão",
-      useCurrentChatTooltip:
-        "Enviar solicitações de revisão para a sessão de conversa atual em vez da sessão de workshop da proposta.",
-    },
   },
   activity: {
     title: "Atividade",
@@ -577,6 +584,7 @@ export const pt_BR: TranslationMap = {
     viewRecentlyDone: "Concluído recentemente",
     viewPresetCount: "{count} cards",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -714,6 +722,10 @@ export const pt_BR: TranslationMap = {
     eventArchived: "Arquivado",
     eventUnarchived: "Desarquivado",
     eventStale: "Sessão obsoleta",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -893,7 +905,9 @@ export const pt_BR: TranslationMap = {
     status: {
       active: "Dreaming ativo",
       idle: "Dreaming inativo",
-      promotedSuffix: "promovido",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "próxima varredura",
     },
     scene: {
@@ -983,6 +997,9 @@ export const pt_BR: TranslationMap = {
       simmeringIdeas: "amadurecendo ideias ainda vagas…",
       whisperingVectorStore: "sussurrando para o vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

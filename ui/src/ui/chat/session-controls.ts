@@ -1815,6 +1815,30 @@ export function resolveChatAgentFilterOptions(state: AppViewState): ChatAgentFil
   return options;
 }
 
+/**
+ * Dreaming is per-agent memory consolidation, so its picker must list only the
+ * real configured agents. Unlike the chat filter it never folds in channel
+ * sessions or ad-hoc session rows, which are not agents and have no dream state.
+ */
+export function resolveDreamingAgentOptions(state: AppViewState): ChatAgentFilterOption[] {
+  const seen = new Set<string>();
+  const options: ChatAgentFilterOption[] = [];
+  const add = (agentIdRaw: string) => {
+    const normalized = normalizeAgentId(agentIdRaw);
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    options.push({ id: normalized, label: resolveAgentGroupLabel(state, normalized) });
+  };
+
+  add(state.agentsList?.defaultId ?? "main");
+  for (const agent of state.agentsList?.agents ?? []) {
+    add(agent.id);
+  }
+  return options;
+}
+
 export function resolveSessionOptionGroups(
   state: AppViewState,
   sessionKey: string,

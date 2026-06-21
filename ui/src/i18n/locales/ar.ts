@@ -82,10 +82,20 @@ export const ar: TranslationMap = {
     logout: "تسجيل الخروج",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "صحة القنوات",
       subtitle: "لقطات حالة القنوات من Gateway.",
       noSnapshotYet: "لا توجد لقطة بعد.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "حالة القناة وإعداداتها.",
@@ -392,6 +402,7 @@ export const ar: TranslationMap = {
   },
   nav: {
     chat: "الدردشة",
+    channels: "Channels",
     control: "التحكم",
     agent: "الوكيل",
     settings: "الإعدادات",
@@ -406,13 +417,15 @@ export const ar: TranslationMap = {
     workboard: "لوحة العمل",
     channels: "القنوات",
     instances: "المثيلات",
+    conversations: "Conversations",
     sessions: "الجلسات",
     usage: "الاستخدام",
     cron: "مهام Cron",
     skills: "Skills",
-    skillWorkshop: "ورشة Skills",
+    skillForge: "Skill Forge",
     nodes: "العقد",
     chat: "الدردشة",
+    vault: "Vault",
     config: "الإعدادات",
     communications: "الاتصالات",
     appearance: "المظهر",
@@ -431,13 +444,15 @@ export const ar: TranslationMap = {
     workboard: "قائمة عمل الوكيل وتسليم الجلسات.",
     channels: "القنوات والإعدادات.",
     instances: "العملاء والعقد المتصلة.",
+    conversations: "All chat transcripts.",
     sessions: "الجلسات النشطة والافتراضيات.",
     usage: "استخدام API والتكاليف.",
     cron: "الإيقاظات والتشغيلات المتكررة.",
     skills: "Skills ومفاتيح API.",
-    skillWorkshop: "راجع المقترحات وحسّنها وطبّقها قبل أن تصبح مهارات نشطة.",
+    skillForge: "راجع المقترحات وحسّنها وطبّقها قبل أن تصبح مهارات نشطة.",
     nodes: "الأجهزة المقترنة والأوامر.",
     chat: "دردشة Gateway للتدخلات السريعة.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "تعديل openclaw.json.",
     communications: "القنوات، والرسائل، وإعدادات الصوت.",
     appearance: "السمة، وواجهة المستخدم، وإعدادات معالج الإعداد.",
@@ -448,14 +463,6 @@ export const ar: TranslationMap = {
     debug: "اللقطات، والأحداث، وRPC.",
     logs: "سجلات Gateway المباشرة.",
     dreams: "حلم الذاكرة، والدمج، والتأمل.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "استخدام المحادثة الحالية",
-      useCurrentChatAria: "استخدام المحادثة الحالية لطلبات المراجعة",
-      useCurrentChatTooltip:
-        "إرسال طلبات المراجعة إلى جلسة المحادثة الحالية بدلاً من جلسة workshop الخاصة بالمقترح.",
-    },
   },
   activity: {
     title: "النشاط",
@@ -575,6 +582,7 @@ export const ar: TranslationMap = {
     viewRecentlyDone: "أُنجز مؤخراً",
     viewPresetCount: "{count} بطاقة",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -711,6 +719,10 @@ export const ar: TranslationMap = {
     eventArchived: "مؤرشف",
     eventUnarchived: "غير مؤرشف",
     eventStale: "جلسة قديمة",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -885,7 +897,9 @@ export const ar: TranslationMap = {
     status: {
       active: "الحلم نشط",
       idle: "الحلم خامل",
-      promotedSuffix: "تمت ترقيته",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "الفحص التالي",
     },
     scene: {
@@ -974,6 +988,9 @@ export const ar: TranslationMap = {
       simmeringIdeas: "جارٍ إنضاج الأفكار نصف المتشكّلة…",
       whisperingVectorStore: "جارٍ الهمس إلى مخزن المتجهات…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

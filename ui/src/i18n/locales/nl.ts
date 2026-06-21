@@ -82,10 +82,20 @@ export const nl: TranslationMap = {
     logout: "Uitloggen",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Kanaalstatus",
       subtitle: "Momentopnamen van kanaalstatus vanuit de Gateway.",
       noSnapshotYet: "Nog geen momentopname.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Kanaalstatus en -configuratie.",
@@ -395,6 +405,7 @@ export const nl: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Control",
     agent: "Agent",
     settings: "Instellingen",
@@ -409,13 +420,15 @@ export const nl: TranslationMap = {
     workboard: "Werkbord",
     channels: "Kanalen",
     instances: "Instanties",
+    conversations: "Conversations",
     sessions: "Sessies",
     usage: "Gebruik",
     cron: "Cronjobs",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "Nodes",
     chat: "Chat",
+    vault: "Vault",
     config: "Config",
     communications: "Communicatie",
     appearance: "Weergave",
@@ -434,13 +447,15 @@ export const nl: TranslationMap = {
     workboard: "Werkwachtrij voor agents en sessieoverdracht.",
     channels: "Kanalen en instellingen.",
     instances: "Verbonden clients en nodes.",
+    conversations: "All chat transcripts.",
     sessions: "Actieve sessies en standaarden.",
     usage: "API-gebruik en kosten.",
     cron: "Wakeups en terugkerende runs.",
     skills: "Skills en API-sleutels.",
-    skillWorkshop: "Bekijk, verfijn en pas voorstellen toe voordat ze live Skills worden.",
+    skillForge: "Bekijk, verfijn en pas voorstellen toe voordat ze live Skills worden.",
     nodes: "Gekoppelde apparaten en commando's.",
     chat: "Gateway-chat voor snelle interventies.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Bewerk openclaw.json.",
     communications: "Kanalen, berichten en audio-instellingen.",
     appearance: "Thema, UI en instellingen voor de installatiewizard.",
@@ -451,14 +466,6 @@ export const nl: TranslationMap = {
     debug: "Momentopnamen, gebeurtenissen, RPC.",
     logs: "Live Gateway-logs.",
     dreams: "Geheugendromen, consolidatie en reflectie.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Huidige chat gebruiken",
-      useCurrentChatAria: "Huidige chat gebruiken voor revisieverzoeken",
-      useCurrentChatTooltip:
-        "Stuur revisieverzoeken naar de huidige chatsessie in plaats van de workshopsessie van het voorstel.",
-    },
   },
   activity: {
     title: "Activiteit",
@@ -579,6 +586,7 @@ export const nl: TranslationMap = {
     viewRecentlyDone: "Recent voltooid",
     viewPresetCount: "{count} kaarten",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -716,6 +724,10 @@ export const nl: TranslationMap = {
     eventArchived: "Gearchiveerd",
     eventUnarchived: "Uit archief gehaald",
     eventStale: "Verlopen sessie",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -896,7 +908,9 @@ export const nl: TranslationMap = {
     status: {
       active: "Dromen actief",
       idle: "Dromen inactief",
-      promotedSuffix: "gepromoveerd",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "volgende sweep",
     },
     scene: {
@@ -986,6 +1000,9 @@ export const nl: TranslationMap = {
       simmeringIdeas: "halfgevormde ideeën laten sudderen…",
       whisperingVectorStore: "fluisteren tegen de vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

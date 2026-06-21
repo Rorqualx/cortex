@@ -82,10 +82,20 @@ export const vi: TranslationMap = {
     logout: "Đăng xuất",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Tình trạng kênh",
       subtitle: "Ảnh chụp trạng thái kênh từ gateway.",
       noSnapshotYet: "Chưa có ảnh chụp.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Trạng thái và cấu hình kênh.",
@@ -393,6 +403,7 @@ export const vi: TranslationMap = {
   },
   nav: {
     chat: "Trò chuyện",
+    channels: "Channels",
     control: "Điều khiển",
     agent: "Agent",
     settings: "Cài đặt",
@@ -407,13 +418,15 @@ export const vi: TranslationMap = {
     workboard: "Bảng công việc",
     channels: "Kênh",
     instances: "Phiên bản",
+    conversations: "Conversations",
     sessions: "Phiên",
     usage: "Mức sử dụng",
     cron: "Tác vụ Cron",
     skills: "Skills",
-    skillWorkshop: "Xưởng kỹ năng",
+    skillForge: "Skill Forge",
     nodes: "Nút",
     chat: "Trò chuyện",
+    vault: "Vault",
     config: "Cấu hình",
     communications: "Liên lạc",
     appearance: "Giao diện",
@@ -432,14 +445,16 @@ export const vi: TranslationMap = {
     workboard: "Hàng đợi công việc của tác nhân và bàn giao phiên.",
     channels: "Kênh và cài đặt.",
     instances: "Máy khách và nút đã kết nối.",
+    conversations: "All chat transcripts.",
     sessions: "Phiên đang hoạt động và mặc định.",
     usage: "Mức sử dụng API và chi phí.",
     cron: "Đánh thức và chạy định kỳ.",
     skills: "Skills và khóa API.",
-    skillWorkshop:
+    skillForge:
       "Xem xét, tinh chỉnh và áp dụng các đề xuất trước khi chúng trở thành kỹ năng đang hoạt động.",
     nodes: "Thiết bị đã ghép nối và lệnh.",
     chat: "Trò chuyện Gateway để can thiệp nhanh.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Chỉnh sửa openclaw.json.",
     communications: "Kênh, tin nhắn và cài đặt âm thanh.",
     appearance: "Giao diện, UI và cài đặt trình hướng dẫn thiết lập.",
@@ -450,14 +465,6 @@ export const vi: TranslationMap = {
     debug: "Ảnh chụp, sự kiện, RPC.",
     logs: "Nhật ký gateway trực tiếp.",
     dreams: "Mơ bộ nhớ, hợp nhất và phản chiếu.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Dùng cuộc trò chuyện hiện tại",
-      useCurrentChatAria: "Dùng cuộc trò chuyện hiện tại cho yêu cầu chỉnh sửa",
-      useCurrentChatTooltip:
-        "Gửi yêu cầu chỉnh sửa đến phiên trò chuyện hiện tại thay vì phiên workshop của đề xuất.",
-    },
   },
   activity: {
     title: "Hoạt động",
@@ -577,6 +584,7 @@ export const vi: TranslationMap = {
     viewRecentlyDone: "Hoàn thành gần đây",
     viewPresetCount: "{count} thẻ",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -713,6 +721,10 @@ export const vi: TranslationMap = {
     eventArchived: "Đã lưu trữ",
     eventUnarchived: "Đã bỏ lưu trữ",
     eventStale: "Phiên đã cũ",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -890,7 +902,9 @@ export const vi: TranslationMap = {
     status: {
       active: "Dreaming đang hoạt động",
       idle: "Dreaming đang chờ",
-      promotedSuffix: "đã thăng hạng",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "lần quét tiếp theo",
     },
     scene: {
@@ -980,6 +994,9 @@ export const vi: TranslationMap = {
       simmeringIdeas: "đang ủ những ý tưởng còn dang dở…",
       whisperingVectorStore: "đang thì thầm với vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

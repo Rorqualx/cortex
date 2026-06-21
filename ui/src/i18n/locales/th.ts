@@ -82,10 +82,20 @@ export const th: TranslationMap = {
     logout: "ออกจากระบบ",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "สถานะช่องทาง",
       subtitle: "ภาพรวมสถานะของช่องทางจากเกตเวย์",
       noSnapshotYet: "ยังไม่มีภาพรวมสถานะ",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "สถานะและการกำหนดค่าของช่องทาง",
@@ -391,6 +401,7 @@ export const th: TranslationMap = {
   },
   nav: {
     chat: "แชต",
+    channels: "Channels",
     control: "ควบคุม",
     agent: "เอเจนต์",
     settings: "การตั้งค่า",
@@ -405,13 +416,15 @@ export const th: TranslationMap = {
     workboard: "กระดานงาน",
     channels: "ช่องทาง",
     instances: "อินสแตนซ์",
+    conversations: "Conversations",
     sessions: "เซสชัน",
     usage: "การใช้งาน",
     cron: "งาน Cron",
     skills: "ทักษะ",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "โหนด",
     chat: "แชต",
+    vault: "Vault",
     config: "Config",
     communications: "การสื่อสาร",
     appearance: "ลักษณะที่ปรากฏ",
@@ -430,13 +443,15 @@ export const th: TranslationMap = {
     workboard: "คิวงานของ Agent และการส่งต่อเซสชัน",
     channels: "ช่องทางและการตั้งค่า",
     instances: "ไคลเอนต์และโหนดที่เชื่อมต่อ",
+    conversations: "All chat transcripts.",
     sessions: "เซสชันที่ใช้งานอยู่และค่าเริ่มต้น",
     usage: "การใช้งาน API และค่าใช้จ่าย",
     cron: "การปลุกและการทำงานตามรอบ",
     skills: "ทักษะและคีย์ API",
-    skillWorkshop: "ตรวจสอบ ปรับแต่ง และนำข้อเสนอไปใช้ก่อนที่จะกลายเป็น Skills ที่ใช้งานจริง",
+    skillForge: "ตรวจสอบ ปรับแต่ง และนำข้อเสนอไปใช้ก่อนที่จะกลายเป็น Skills ที่ใช้งานจริง",
     nodes: "อุปกรณ์ที่จับคู่และคำสั่ง",
     chat: "แชตเกตเวย์สำหรับการดำเนินการอย่างรวดเร็ว",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "แก้ไข openclaw.json",
     communications: "ช่องทาง ข้อความ และการตั้งค่าเสียง",
     appearance: "ธีม UI และการตั้งค่าตัวช่วยเริ่มต้น",
@@ -447,13 +462,6 @@ export const th: TranslationMap = {
     debug: "สแนปช็อต เหตุการณ์ และ RPC",
     logs: "บันทึกเกตเวย์แบบสด",
     dreams: "การฝันของหน่วยความจำ การรวมข้อมูล และการสะท้อนคิด",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "ใช้แชทปัจจุบัน",
-      useCurrentChatAria: "ใช้แชทปัจจุบันสำหรับคำขอแก้ไข",
-      useCurrentChatTooltip: "ส่งคำขอแก้ไขไปยังเซสชันแชทปัจจุบันแทนเซสชัน workshop ของข้อเสนอ",
-    },
   },
   activity: {
     title: "กิจกรรม",
@@ -573,6 +581,7 @@ export const th: TranslationMap = {
     viewRecentlyDone: "เพิ่งเสร็จ",
     viewPresetCount: "{count} การ์ด",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -709,6 +718,10 @@ export const th: TranslationMap = {
     eventArchived: "เก็บถาวรแล้ว",
     eventUnarchived: "ยกเลิกการเก็บถาวรแล้ว",
     eventStale: "เซสชันหมดอายุ",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -882,7 +895,9 @@ export const th: TranslationMap = {
     status: {
       active: "การฝันกำลังทำงาน",
       idle: "การฝันไม่ได้ทำงาน",
-      promotedSuffix: "เลื่อนระดับแล้ว",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "กวาดครั้งถัดไป",
     },
     scene: {
@@ -970,6 +985,9 @@ export const th: TranslationMap = {
       simmeringIdeas: "กำลังเคี่ยวความคิดที่ยังไม่เป็นรูปเป็นร่าง…",
       whisperingVectorStore: "กำลังกระซิบกับ vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

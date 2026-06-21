@@ -106,6 +106,9 @@ export type DreamingProps = {
   groundedSignalCount: number;
   totalSignalCount: number;
   promotedCount: number;
+  promotedTotal: number;
+  lastPromotedCount: number;
+  lastPromotedAt: string | null;
   phases?: {
     light: DreamingPhaseInfo;
     deep: DreamingPhaseInfo;
@@ -332,30 +335,37 @@ export function renderDreaming(props: DreamingProps) {
           </button>
         </nav>
         ${props.agentOptions.length > 1
-          ? html`<label class="field dreams__agent-select">
-              <span class="sr-only">${t("dreaming.agentSelect.label")}</span>
-              <select
-                data-dreaming-agent-select="true"
-                aria-label=${t("dreaming.agentSelect.ariaLabel")}
-                .value=${props.selectedAgentId}
-                @change=${(e: Event) => {
-                  const nextAgentId = (e.target as HTMLSelectElement).value;
-                  if (nextAgentId === props.selectedAgentId) {
-                    return;
-                  }
-                  props.onSelectAgent(nextAgentId);
-                }}
-              >
+          ? html`<div
+              class="dreams__agent-select"
+              role="group"
+              data-dreaming-agent-select="true"
+              aria-label=${t("dreaming.agentSelect.ariaLabel")}
+            >
+              <span class="dreams__agent-label">${t("dreaming.agentSelect.label")}</span>
+              <div class="dreams__agent-buttons">
                 ${repeat(
                   props.agentOptions,
                   (entry) => entry.id,
-                  (entry) =>
-                    html`<option value=${entry.id} ?selected=${entry.id === props.selectedAgentId}>
+                  (entry) => {
+                    const selected = entry.id === props.selectedAgentId;
+                    return html`<button
+                      type="button"
+                      class=${`dreams__agent-button${selected ? " dreams__agent-button--active" : ""}`}
+                      data-dreaming-agent-button=${entry.id}
+                      aria-pressed=${selected ? "true" : "false"}
+                      @click=${() => {
+                        if (entry.id === props.selectedAgentId) {
+                          return;
+                        }
+                        props.onSelectAgent(entry.id);
+                      }}
+                    >
                       ${entry.label}
-                    </option>`,
+                    </button>`;
+                  },
                 )}
-              </select>
-            </label>`
+              </div>
+            </div>`
           : nothing}
       </div>
 
@@ -457,7 +467,11 @@ function renderScene(props: DreamingProps, idle: boolean, dreamText: string) {
         <div class="dreams__status-detail">
           <div class="dreams__status-dot"></div>
           <span>
-            ${props.promotedCount} ${t("dreaming.status.promotedSuffix")}
+            ${props.promotedTotal} ${t("dreaming.status.promotedTotalSuffix")}
+            ${props.lastPromotedAt
+              ? html`· ${t("dreaming.status.lastPromotedPrefix")} ${props.lastPromotedCount}
+                (${formatCompactDateTime(props.lastPromotedAt)})`
+              : html`· ${t("dreaming.status.lastPromotedNever")}`}
             ${props.nextCycle
               ? html`· ${t("dreaming.status.nextSweepPrefix")} ${props.nextCycle}`
               : nothing}

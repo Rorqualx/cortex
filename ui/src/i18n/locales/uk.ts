@@ -82,10 +82,20 @@ export const uk: TranslationMap = {
     logout: "Вийти",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Стан каналу",
       subtitle: "Знімки стану каналу з Gateway.",
       noSnapshotYet: "Ще немає знімка.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Стан каналу та конфігурація.",
@@ -394,6 +404,7 @@ export const uk: TranslationMap = {
   },
   nav: {
     chat: "Чат",
+    channels: "Channels",
     control: "Керування",
     agent: "Агент",
     settings: "Налаштування",
@@ -408,13 +419,15 @@ export const uk: TranslationMap = {
     workboard: "Робоча дошка",
     channels: "Канали",
     instances: "Екземпляри",
+    conversations: "Conversations",
     sessions: "Сеанси",
     usage: "Використання",
     cron: "Завдання Cron",
     skills: "Навички",
-    skillWorkshop: "Майстерня Skills",
+    skillForge: "Skill Forge",
     nodes: "Вузли",
     chat: "Чат",
+    vault: "Vault",
     config: "Конфігурація",
     communications: "Комунікації",
     appearance: "Зовнішній вигляд",
@@ -433,14 +446,16 @@ export const uk: TranslationMap = {
     workboard: "Черга завдань агента та передавання сеансів.",
     channels: "Канали та налаштування.",
     instances: "Підключені клієнти та вузли.",
+    conversations: "All chat transcripts.",
     sessions: "Активні сеанси та типові значення.",
     usage: "Використання API та витрати.",
     cron: "Пробудження та повторювані запуски.",
     skills: "Навички та API-ключі.",
-    skillWorkshop:
+    skillForge:
       "Переглядайте, уточнюйте й застосовуйте пропозиції, перш ніж вони стануть активними Skills.",
     nodes: "Спарені пристрої та команди.",
     chat: "Чат шлюзу для швидких втручань.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Редагування openclaw.json.",
     communications: "Канали, повідомлення та налаштування аудіо.",
     appearance: "Тема, інтерфейс і налаштування майстра налаштування.",
@@ -451,14 +466,6 @@ export const uk: TranslationMap = {
     debug: "Знімки, події, RPC.",
     logs: "Журнали шлюзу в реальному часі.",
     dreams: "Консолідація пам’яті під час сну.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Використовувати поточний чат",
-      useCurrentChatAria: "Використовувати поточний чат для запитів на перегляд",
-      useCurrentChatTooltip:
-        "Надсилати запити на перегляд до поточної сесії чату замість сесії воркшопу пропозиції.",
-    },
   },
   activity: {
     title: "Активність",
@@ -579,6 +586,7 @@ export const uk: TranslationMap = {
     viewRecentlyDone: "Нещодавно завершені",
     viewPresetCount: "{count} карток",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -715,6 +723,10 @@ export const uk: TranslationMap = {
     eventArchived: "Заархівовано",
     eventUnarchived: "Розархівовано",
     eventStale: "Застарілий сеанс",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -896,7 +908,9 @@ export const uk: TranslationMap = {
     status: {
       active: "Сновидіння активне",
       idle: "Сновидіння неактивне",
-      promotedSuffix: "підвищено",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "наступний цикл",
     },
     scene: {
@@ -987,6 +1001,9 @@ export const uk: TranslationMap = {
       simmeringIdeas: "томління напівсформованих ідей…",
       whisperingVectorStore: "шепіт до vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

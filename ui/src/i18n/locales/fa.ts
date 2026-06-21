@@ -82,10 +82,20 @@ export const fa: TranslationMap = {
     logout: "خروج",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "سلامت کانال",
       subtitle: "نماهای لحظه‌ای وضعیت کانال از Gateway.",
       noSnapshotYet: "هنوز نمای لحظه‌ای وجود ندارد.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "وضعیت و پیکربندی کانال.",
@@ -394,6 +404,7 @@ export const fa: TranslationMap = {
   },
   nav: {
     chat: "چت",
+    channels: "Channels",
     control: "کنترل",
     agent: "عامل",
     settings: "تنظیمات",
@@ -408,13 +419,15 @@ export const fa: TranslationMap = {
     workboard: "تابلوی کار",
     channels: "کانال‌ها",
     instances: "نمونه‌ها",
+    conversations: "Conversations",
     sessions: "نشست‌ها",
     usage: "مصرف",
     cron: "کارهای Cron",
     skills: "Skills",
-    skillWorkshop: "کارگاه Skill",
+    skillForge: "Skill Forge",
     nodes: "گره‌ها",
     chat: "چت",
+    vault: "Vault",
     config: "Config",
     communications: "ارتباطات",
     appearance: "ظاهر",
@@ -433,13 +446,15 @@ export const fa: TranslationMap = {
     workboard: "صف کار عامل و واگذاری جلسه.",
     channels: "کانال‌ها و تنظیمات.",
     instances: "کلاینت‌ها و گره‌های متصل.",
+    conversations: "All chat transcripts.",
     sessions: "نشست‌های فعال و پیش‌فرض‌ها.",
     usage: "مصرف و هزینه‌های API.",
     cron: "بیدارباش‌ها و اجراهای تکرارشونده.",
     skills: "Skills و کلیدهای API.",
-    skillWorkshop: "پیشنهادها را پیش از تبدیل‌شدن به مهارت‌های فعال، بررسی، اصلاح و اعمال کنید.",
+    skillForge: "پیشنهادها را پیش از تبدیل‌شدن به مهارت‌های فعال، بررسی، اصلاح و اعمال کنید.",
     nodes: "دستگاه‌های جفت‌شده و فرمان‌ها.",
     chat: "چت Gateway برای مداخله‌های سریع.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "ویرایش openclaw.json.",
     communications: "کانال‌ها، پیام‌ها و تنظیمات صوتی.",
     appearance: "تنظیمات پوسته، UI و جادوگر راه‌اندازی.",
@@ -450,14 +465,6 @@ export const fa: TranslationMap = {
     debug: "نماهای لحظه‌ای، رویدادها، RPC.",
     logs: "گزارش‌های زنده Gateway.",
     dreams: "رؤیاپردازی حافظه، یکپارچه‌سازی و بازتاب.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "استفاده از گفتگوی فعلی",
-      useCurrentChatAria: "استفاده از گفتگوی فعلی برای درخواست‌های بازبینی",
-      useCurrentChatTooltip:
-        "درخواست‌های بازبینی را به جای جلسه کارگاهی پیشنهاد، به جلسه گفتگوی فعلی ارسال کنید.",
-    },
   },
   activity: {
     title: "فعالیت",
@@ -578,6 +585,7 @@ export const fa: TranslationMap = {
     viewRecentlyDone: "اخیراً انجام‌شده",
     viewPresetCount: "{count} کارت",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -714,6 +722,10 @@ export const fa: TranslationMap = {
     eventArchived: "بایگانی شد",
     eventUnarchived: "از بایگانی خارج شد",
     eventStale: "نشست منقضی‌شده",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -893,7 +905,9 @@ export const fa: TranslationMap = {
     status: {
       active: "رؤیاپردازی فعال",
       idle: "رؤیاپردازی بیکار",
-      promotedSuffix: "ارتقایافته",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "پویش بعدی",
     },
     scene: {
@@ -982,6 +996,9 @@ export const fa: TranslationMap = {
       simmeringIdeas: "در حال جا افتادن ایده‌های نیمه‌شکل‌گرفته…",
       whisperingVectorStore: "در حال نجوا با vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

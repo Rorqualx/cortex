@@ -899,7 +899,9 @@ export const en: TranslationMap = {
     status: {
       active: "Dreaming Active",
       idle: "Dreaming Idle",
-      promotedSuffix: "promoted",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "next sweep",
     },
     scene: {

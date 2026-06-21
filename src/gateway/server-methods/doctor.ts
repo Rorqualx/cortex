@@ -98,6 +98,7 @@ type DoctorMemoryDreamingPayload = {
   remPhaseHitCount: number;
   promotedTotal: number;
   promotedToday: number;
+  lastPromotedCount: number;
   storePath?: string;
   phaseSignalPath?: string;
   lastPromotedAt?: string;
@@ -271,6 +272,7 @@ function resolveDreamingConfig(
   | "remPhaseHitCount"
   | "promotedTotal"
   | "promotedToday"
+  | "lastPromotedCount"
   | "storePath"
   | "phaseSignalPath"
   | "lastPromotedAt"
@@ -345,6 +347,7 @@ type DreamingStoreStats = Pick<
   | "remPhaseHitCount"
   | "promotedTotal"
   | "promotedToday"
+  | "lastPromotedCount"
   | "storePath"
   | "phaseSignalPath"
   | "lastPromotedAt"
@@ -446,6 +449,7 @@ async function loadDreamingStoreStats(
       remPhaseHitCount: 0,
       promotedTotal: 0,
       promotedToday: 0,
+      lastPromotedCount: 0,
       shortTermEntries: [],
       signalEntries: [],
       promotedEntries: [],
@@ -467,6 +471,9 @@ function mergeDreamingStoreStats(stats: DreamingStoreStats[]): DreamingStoreStat
   let promotedToday = 0;
   let latestPromotedAtMs = Number.NEGATIVE_INFINITY;
   let lastPromotedAt: string | undefined;
+  // Tracks the latest run's count from whichever agent promoted most recently,
+  // so merged (all-agents) status reports that run rather than a cross-sum.
+  let lastPromotedCount = 0;
   const storePaths = new Set<string>();
   const phaseSignalPaths = new Set<string>();
   const storeErrors: string[] = [];
@@ -505,6 +512,7 @@ function mergeDreamingStoreStats(stats: DreamingStoreStats[]): DreamingStoreStat
     if (Number.isFinite(promotedAtMs) && promotedAtMs > latestPromotedAtMs) {
       latestPromotedAtMs = promotedAtMs;
       lastPromotedAt = stat.lastPromotedAt;
+      lastPromotedCount = stat.lastPromotedCount;
     }
   }
 
@@ -519,6 +527,7 @@ function mergeDreamingStoreStats(stats: DreamingStoreStats[]): DreamingStoreStat
     remPhaseHitCount,
     promotedTotal,
     promotedToday,
+    lastPromotedCount,
     shortTermEntries: trimDreamingEntries(shortTermEntries, compareDreamingEntryByRecency),
     signalEntries: trimDreamingEntries(signalEntries, compareDreamingEntryBySignals),
     promotedEntries: trimDreamingEntries(promotedEntries, compareDreamingEntryByPromotion),
@@ -748,6 +757,7 @@ export const doctorHandlers: GatewayRequestHandlers = {
               remPhaseHitCount: 0,
               promotedTotal: 0,
               promotedToday: 0,
+              lastPromotedCount: 0,
             };
       const cronStatuses = await resolveAllManagedDreamingCronStatuses(context);
       const payload: DoctorMemoryStatusPayload = {

@@ -82,10 +82,20 @@ export const tr: TranslationMap = {
     logout: "Çıkış yap",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Kanal durumu",
       subtitle: "Gateway'den alınan kanal durumu anlık görüntüleri.",
       noSnapshotYet: "Henüz anlık görüntü yok.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Kanal durumu ve yapılandırması.",
@@ -395,6 +405,7 @@ export const tr: TranslationMap = {
   },
   nav: {
     chat: "Sohbet",
+    channels: "Channels",
     control: "Kontrol",
     agent: "Aracı",
     settings: "Ayarlar",
@@ -409,13 +420,15 @@ export const tr: TranslationMap = {
     workboard: "Çalışma panosu",
     channels: "Kanallar",
     instances: "Örnekler",
+    conversations: "Conversations",
     sessions: "Oturumlar",
     usage: "Kullanım",
     cron: "Cron İşleri",
     skills: "Skills",
-    skillWorkshop: "Skill Atölyesi",
+    skillForge: "Skill Forge",
     nodes: "Düğümler",
     chat: "Sohbet",
+    vault: "Vault",
     config: "Yapılandırma",
     communications: "İletişim",
     appearance: "Görünüm",
@@ -434,14 +447,16 @@ export const tr: TranslationMap = {
     workboard: "Ajan iş kuyruğu ve oturum devri.",
     channels: "Kanallar ve ayarlar.",
     instances: "Bağlı istemciler ve düğümler.",
+    conversations: "All chat transcripts.",
     sessions: "Etkin oturumlar ve varsayılanlar.",
     usage: "API kullanımı ve maliyetler.",
     cron: "Uyandırmalar ve yinelenen çalıştırmalar.",
     skills: "Skills ve API anahtarları.",
-    skillWorkshop:
+    skillForge:
       "Teklifleri canlı becerilere dönüşmeden önce gözden geçirin, iyileştirin ve uygulayın.",
     nodes: "Eşleştirilmiş cihazlar ve komutlar.",
     chat: "Hızlı müdahaleler için Gateway sohbeti.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "openclaw.json dosyasını düzenleyin.",
     communications: "Kanallar, mesajlar ve ses ayarları.",
     appearance: "Tema, UI ve kurulum sihirbazı ayarları.",
@@ -452,14 +467,6 @@ export const tr: TranslationMap = {
     debug: "Anlık görüntüler, olaylar, RPC.",
     logs: "Canlı Gateway günlükleri.",
     dreams: "Uyku sırasında bellek birleştirme.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Mevcut sohbeti kullan",
-      useCurrentChatAria: "Revizyon istekleri için mevcut sohbeti kullan",
-      useCurrentChatTooltip:
-        "Revizyon isteklerini önerinin çalışma alanı oturumu yerine mevcut sohbet oturumuna gönder.",
-    },
   },
   activity: {
     title: "Etkinlik",
@@ -579,6 +586,7 @@ export const tr: TranslationMap = {
     viewRecentlyDone: "Son tamamlananlar",
     viewPresetCount: "{count} kart",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -715,6 +723,10 @@ export const tr: TranslationMap = {
     eventArchived: "Arşivlendi",
     eventUnarchived: "Arşivden çıkarıldı",
     eventStale: "Eski oturum",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -897,7 +909,9 @@ export const tr: TranslationMap = {
     status: {
       active: "Dreaming Etkin",
       idle: "Dreaming Boşta",
-      promotedSuffix: "yükseltildi",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "sonraki tarama",
     },
     scene: {
@@ -986,6 +1000,9 @@ export const tr: TranslationMap = {
       simmeringIdeas: "yarı şekillenmiş fikirler demleniyor…",
       whisperingVectorStore: "vector store'a fısıldanıyor…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

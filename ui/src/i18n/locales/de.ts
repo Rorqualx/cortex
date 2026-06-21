@@ -82,10 +82,20 @@ export const de: TranslationMap = {
     logout: "Abmelden",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Channel-Zustand",
       subtitle: "Statusaufnahmen der Channels vom Gateway.",
       noSnapshotYet: "Noch keine Aufnahme.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Channel-Status und -Konfiguration.",
@@ -396,6 +406,7 @@ export const de: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Steuerung",
     agent: "Agent",
     settings: "Einstellungen",
@@ -410,13 +421,15 @@ export const de: TranslationMap = {
     workboard: "Arbeitsbereich",
     channels: "Kanäle",
     instances: "Instanzen",
+    conversations: "Conversations",
     sessions: "Sitzungen",
     usage: "Nutzung",
     cron: "Cron-Aufgaben",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "Geräte",
     chat: "Chat",
+    vault: "Vault",
     config: "Konfiguration",
     communications: "Kommunikation",
     appearance: "Darstellung",
@@ -435,14 +448,15 @@ export const de: TranslationMap = {
     workboard: "Agenten-Arbeitswarteschlange und Sitzungsübergabe.",
     channels: "Kanäle und Einstellungen verwalten.",
     instances: "Präsenzsignale von verbundenen Clients und Geräten.",
+    conversations: "All chat transcripts.",
     sessions: "Aktive Sitzungen inspizieren und Standardeinstellungen pro Sitzung anpassen.",
     usage: "API-Nutzung und Kosten überwachen.",
     cron: "Aufweckzeiten und wiederkehrende Agent-Läufe planen.",
     skills: "Skill-Verfügbarkeit und API-Schlüsselinjektion verwalten.",
-    skillWorkshop:
-      "Vorschläge prüfen, verfeinern und anwenden, bevor sie zu aktiven Skills werden.",
+    skillForge: "Vorschläge prüfen, verfeinern und anwenden, bevor sie zu aktiven Skills werden.",
     nodes: "Gekoppelte Geräte, Fähigkeiten und Befehlsfreigabe.",
     chat: "Direkte Gateway-Chat-Sitzung für schnelle Eingriffe.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "~/.openclaw/openclaw.json sicher bearbeiten.",
     communications: "Kanäle, Nachrichten und Audioeinstellungen.",
     appearance: "Design-, UI- und Einrichtungsassistent-Einstellungen.",
@@ -453,14 +467,6 @@ export const de: TranslationMap = {
     debug: "Gateway-Snapshots, Ereignisse und manuelle RPC-Aufrufe.",
     logs: "Live-Verfolgung der Gateway-Protokolldateien.",
     dreams: "Speicherkonsolidierung im Schlaf.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Aktuellen Chat verwenden",
-      useCurrentChatAria: "Aktuellen Chat für Überarbeitungsanfragen verwenden",
-      useCurrentChatTooltip:
-        "Überarbeitungsanfragen an die aktuelle Chat-Sitzung statt an die Workshop-Sitzung des Vorschlags senden.",
-    },
   },
   activity: {
     title: "Aktivität",
@@ -581,6 +587,7 @@ export const de: TranslationMap = {
     viewRecentlyDone: "Kürzlich erledigt",
     viewPresetCount: "{count} Karten",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -718,6 +725,10 @@ export const de: TranslationMap = {
     eventArchived: "Archiviert",
     eventUnarchived: "Aus Archiv wiederhergestellt",
     eventStale: "Veraltete Sitzung",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -900,7 +911,9 @@ export const de: TranslationMap = {
     status: {
       active: "Träumen aktiv",
       idle: "Träumen im Leerlauf",
-      promotedSuffix: "hochgestuft",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "nächster Durchlauf",
     },
     scene: {
@@ -990,6 +1003,9 @@ export const de: TranslationMap = {
       simmeringIdeas: "halb geformte Ideen köcheln vor sich hin…",
       whisperingVectorStore: "dem Vector Store wird etwas zugeflüstert…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

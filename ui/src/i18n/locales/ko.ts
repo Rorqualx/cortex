@@ -82,10 +82,20 @@ export const ko: TranslationMap = {
     logout: "로그아웃",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "채널 상태",
       subtitle: "Gateway의 채널 상태 스냅샷입니다.",
       noSnapshotYet: "아직 스냅샷이 없습니다.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "채널 상태 및 구성.",
@@ -392,6 +402,7 @@ export const ko: TranslationMap = {
   },
   nav: {
     chat: "채팅",
+    channels: "Channels",
     control: "Control",
     agent: "에이전트",
     settings: "설정",
@@ -406,13 +417,15 @@ export const ko: TranslationMap = {
     workboard: "워크보드",
     channels: "채널",
     instances: "인스턴스",
+    conversations: "Conversations",
     sessions: "세션",
     usage: "사용량",
     cron: "Cron 작업",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "노드",
     chat: "채팅",
+    vault: "Vault",
     config: "구성",
     communications: "커뮤니케이션",
     appearance: "모양",
@@ -431,13 +444,15 @@ export const ko: TranslationMap = {
     workboard: "에이전트 작업 대기열 및 세션 인계.",
     channels: "채널 및 설정.",
     instances: "연결된 클라이언트와 노드.",
+    conversations: "All chat transcripts.",
     sessions: "활성 세션 및 기본값.",
     usage: "API 사용량 및 비용.",
     cron: "웨이크업 및 반복 실행.",
     skills: "Skills 및 API 키.",
-    skillWorkshop: "제안이 실제 Skills가 되기 전에 검토하고, 다듬고, 적용하세요.",
+    skillForge: "제안이 실제 Skills가 되기 전에 검토하고, 다듬고, 적용하세요.",
     nodes: "페어링된 디바이스 및 명령.",
     chat: "빠른 개입을 위한 Gateway 채팅.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "openclaw.json 편집.",
     communications: "채널, 메시지, 오디오 설정.",
     appearance: "테마, UI, 설정 마법사 설정.",
@@ -448,13 +463,6 @@ export const ko: TranslationMap = {
     debug: "스냅샷, 이벤트, RPC.",
     logs: "실시간 Gateway 로그.",
     dreams: "수면 중 메모리 통합.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "현재 채팅 사용",
-      useCurrentChatAria: "수정 요청에 현재 채팅 사용",
-      useCurrentChatTooltip: "수정 요청을 제안의 워크숍 세션 대신 현재 채팅 세션으로 보냅니다.",
-    },
   },
   activity: {
     title: "활동",
@@ -574,6 +582,7 @@ export const ko: TranslationMap = {
     viewRecentlyDone: "최근 완료됨",
     viewPresetCount: "카드 {count}개",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -710,6 +719,10 @@ export const ko: TranslationMap = {
     eventArchived: "보관됨",
     eventUnarchived: "보관 해제됨",
     eventStale: "오래된 세션",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -889,7 +902,9 @@ export const ko: TranslationMap = {
     status: {
       active: "드리밍 활성",
       idle: "드리밍 유휴",
-      promotedSuffix: "승격됨",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "다음 스윕",
     },
     scene: {
@@ -978,6 +993,9 @@ export const ko: TranslationMap = {
       simmeringIdeas: "덜 다듬어진 아이디어를 천천히 익히는 중…",
       whisperingVectorStore: "벡터 저장소에 속삭이는 중…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

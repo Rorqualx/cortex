@@ -82,10 +82,20 @@ export const zh_TW: TranslationMap = {
     logout: "登出",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "頻道健康狀態",
       subtitle: "來自 Gateway 的頻道狀態快照。",
       noSnapshotYet: "尚無快照。",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "頻道狀態與設定。",
@@ -390,6 +400,7 @@ export const zh_TW: TranslationMap = {
   },
   nav: {
     chat: "聊天",
+    channels: "Channels",
     control: "控制",
     agent: "代理",
     settings: "設置",
@@ -404,13 +415,15 @@ export const zh_TW: TranslationMap = {
     workboard: "工作板",
     channels: "頻道",
     instances: "實例",
+    conversations: "Conversations",
     sessions: "工作階段",
     usage: "使用情況",
     cron: "定時任務",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "節點",
     chat: "聊天",
+    vault: "Vault",
     config: "配置",
     communications: "通訊",
     appearance: "外觀與設置",
@@ -429,13 +442,15 @@ export const zh_TW: TranslationMap = {
     workboard: "代理工作佇列與工作階段交接。",
     channels: "頻道和設置。",
     instances: "已連接客戶端和節點。",
+    conversations: "All chat transcripts.",
     sessions: "活動會話和默認設置。",
     usage: "API 使用情況和成本。",
     cron: "喚醒和重複運行。",
     skills: "技能和 API 密鑰。",
-    skillWorkshop: "在提案成為上線技能之前，先進行審閱、調整並套用。",
+    skillForge: "在提案成為上線技能之前，先進行審閱、調整並套用。",
     nodes: "配對設備和命令。",
     chat: "網關聊天，快速干預。",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "編輯 openclaw.json。",
     communications: "頻道、消息和音頻設置。",
     appearance: "主題、界面和設置向導設置。",
@@ -446,13 +461,6 @@ export const zh_TW: TranslationMap = {
     debug: "快照、事件、RPC。",
     logs: "實時網關日誌。",
     dreams: "睡眠期間的記憶整合。",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "使用目前的對話",
-      useCurrentChatAria: "使用目前的對話進行修訂請求",
-      useCurrentChatTooltip: "將修訂請求傳送至目前的對話工作階段，而非提案的工作坊工作階段。",
-    },
   },
   activity: {
     title: "活動",
@@ -572,6 +580,7 @@ export const zh_TW: TranslationMap = {
     viewRecentlyDone: "近期完成",
     viewPresetCount: "{count} 張卡片",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -708,6 +717,10 @@ export const zh_TW: TranslationMap = {
     eventArchived: "已封存",
     eventUnarchived: "已取消封存",
     eventStale: "過期工作階段",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -881,7 +894,9 @@ export const zh_TW: TranslationMap = {
     status: {
       active: "Dreaming 進行中",
       idle: "Dreaming 閒置中",
-      promotedSuffix: "已提升",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "下次清掃",
     },
     scene: {
@@ -969,6 +984,9 @@ export const zh_TW: TranslationMap = {
       simmeringIdeas: "正在醞釀尚未成形的想法…",
       whisperingVectorStore: "正在向向量儲存低語…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

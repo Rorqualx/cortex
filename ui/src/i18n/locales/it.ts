@@ -82,10 +82,20 @@ export const it: TranslationMap = {
     logout: "Esci",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Integrità canali",
       subtitle: "Snapshot dello stato dei canali dal gateway.",
       noSnapshotYet: "Ancora nessuno snapshot.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Stato e configurazione del canale.",
@@ -395,6 +405,7 @@ export const it: TranslationMap = {
   },
   nav: {
     chat: "Chat",
+    channels: "Channels",
     control: "Controllo",
     agent: "Agente",
     settings: "Impostazioni",
@@ -409,13 +420,15 @@ export const it: TranslationMap = {
     workboard: "Bacheca di lavoro",
     channels: "Canali",
     instances: "Istanze",
+    conversations: "Conversations",
     sessions: "Sessioni",
     usage: "Utilizzo",
     cron: "Processi cron",
     skills: "Skills",
-    skillWorkshop: "Workshop delle Skill",
+    skillForge: "Skill Forge",
     nodes: "Nodi",
     chat: "Chat",
+    vault: "Vault",
     config: "Config",
     communications: "Comunicazioni",
     appearance: "Aspetto",
@@ -434,13 +447,15 @@ export const it: TranslationMap = {
     workboard: "Coda di lavoro degli agenti e passaggio di sessione.",
     channels: "Canali e impostazioni.",
     instances: "Client e nodi connessi.",
+    conversations: "All chat transcripts.",
     sessions: "Sessioni attive e valori predefiniti.",
     usage: "Utilizzo API e costi.",
     cron: "Risvegli ed esecuzioni ricorrenti.",
     skills: "Skills e chiavi API.",
-    skillWorkshop: "Esamina, perfeziona e applica le proposte prima che diventino skill attive.",
+    skillForge: "Esamina, perfeziona e applica le proposte prima che diventino skill attive.",
     nodes: "Dispositivi associati e comandi.",
     chat: "Chat Gateway per interventi rapidi.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Modifica openclaw.json.",
     communications: "Canali, messaggi e impostazioni audio.",
     appearance: "Tema, UI e impostazioni della procedura guidata di configurazione.",
@@ -451,14 +466,6 @@ export const it: TranslationMap = {
     debug: "Snapshot, eventi, RPC.",
     logs: "Log gateway live.",
     dreams: "Sogni della memoria, consolidamento e riflessione.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Usa la chat corrente",
-      useCurrentChatAria: "Usa la chat corrente per le richieste di revisione",
-      useCurrentChatTooltip:
-        "Invia le richieste di revisione alla sessione di chat corrente invece che alla sessione di workshop della proposta.",
-    },
   },
   activity: {
     title: "Attività",
@@ -579,6 +586,7 @@ export const it: TranslationMap = {
     viewRecentlyDone: "Completate di recente",
     viewPresetCount: "{count} schede",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -715,6 +723,10 @@ export const it: TranslationMap = {
     eventArchived: "Archiviato",
     eventUnarchived: "Non archiviato",
     eventStale: "Sessione obsoleta",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -894,7 +906,9 @@ export const it: TranslationMap = {
     status: {
       active: "Dreaming attivo",
       idle: "Dreaming inattivo",
-      promotedSuffix: "promosso",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "prossima scansione",
     },
     scene: {
@@ -984,6 +998,9 @@ export const it: TranslationMap = {
       simmeringIdeas: "cottura lenta di idee abbozzate…",
       whisperingVectorStore: "sussurri al vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

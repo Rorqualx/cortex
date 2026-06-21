@@ -127,6 +127,7 @@ export type ShortTermDreamingStats = {
   remPhaseHitCount: number;
   promotedTotal: number;
   promotedToday: number;
+  lastPromotedCount: number;
   storePath: string;
   phaseSignalPath: string;
   phaseSignalError?: string;

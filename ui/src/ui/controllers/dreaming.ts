@@ -68,6 +68,8 @@ export type DreamingStatus = {
   remPhaseHitCount: number;
   promotedTotal: number;
   promotedToday: number;
+  lastPromotedCount: number;
+  lastPromotedAt?: string;
   storePath?: string;
   phaseSignalPath?: string;
   storeError?: string;
@@ -788,6 +790,10 @@ function normalizeDreamingStatus(raw: unknown): DreamingStatus | null {
     remPhaseHitCount: normalizeFiniteInt(record.remPhaseHitCount, 0),
     promotedTotal: normalizeFiniteInt(record.promotedTotal, 0),
     promotedToday: normalizeFiniteInt(record.promotedToday, 0),
+    lastPromotedCount: normalizeFiniteInt(record.lastPromotedCount, 0),
+    ...(normalizeTrimmedString(record.lastPromotedAt)
+      ? { lastPromotedAt: normalizeTrimmedString(record.lastPromotedAt) }
+      : {}),
     ...(storePath ? { storePath } : {}),
     ...(phaseSignalPath ? { phaseSignalPath } : {}),
     ...(storeError ? { storeError } : {}),

@@ -46,6 +46,62 @@
   background: color-mix(in oklab, var(--panel) 80%, transparent);
 }
 
+.dreams__agent-select {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 8px 12px;
+  flex-shrink: 0;
+}
+
+.dreams__agent-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dreams__agent-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.dreams__agent-button {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--panel) 40%, transparent);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.dreams__agent-button:hover {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+  background: color-mix(in oklab, var(--panel) 70%, transparent);
+}
+
+.dreams__agent-button--active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
 .dreams {
   position: relative;
   display: flex;

@@ -82,10 +82,20 @@ export const pl: TranslationMap = {
     logout: "Wyloguj",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "Stan kanału",
       subtitle: "Migawki stanu kanału z Gateway.",
       noSnapshotYet: "Brak migawki.",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "Stan kanału i konfiguracja.",
@@ -394,6 +404,7 @@ export const pl: TranslationMap = {
   },
   nav: {
     chat: "Czat",
+    channels: "Channels",
     control: "Sterowanie",
     agent: "Agent",
     settings: "Ustawienia",
@@ -408,13 +419,15 @@ export const pl: TranslationMap = {
     workboard: "Tablica pracy",
     channels: "Kanały",
     instances: "Instancje",
+    conversations: "Conversations",
     sessions: "Sesje",
     usage: "Użycie",
     cron: "Zadania Cron",
     skills: "Skills",
-    skillWorkshop: "Warsztat Skills",
+    skillForge: "Skill Forge",
     nodes: "Węzły",
     chat: "Czat",
+    vault: "Vault",
     config: "Konfiguracja",
     communications: "Komunikacja",
     appearance: "Wygląd",
@@ -433,13 +446,15 @@ export const pl: TranslationMap = {
     workboard: "Kolejka zadań agenta i przekazywanie sesji.",
     channels: "Kanały i ustawienia.",
     instances: "Połączone klienty i węzły.",
+    conversations: "All chat transcripts.",
     sessions: "Aktywne sesje i ustawienia domyślne.",
     usage: "Zużycie API i koszty.",
     cron: "Wybudzenia i cykliczne uruchomienia.",
     skills: "Skills i klucze API.",
-    skillWorkshop: "Przeglądaj, dopracowuj i stosuj propozycje, zanim staną się aktywnymi skills.",
+    skillForge: "Przeglądaj, dopracowuj i stosuj propozycje, zanim staną się aktywnymi skills.",
     nodes: "Sparowane urządzenia i polecenia.",
     chat: "Czat Gateway do szybkich interwencji.",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "Edytuj openclaw.json.",
     communications: "Kanały, wiadomości i ustawienia audio.",
     appearance: "Motyw, UI i ustawienia kreatora konfiguracji.",
@@ -450,14 +465,6 @@ export const pl: TranslationMap = {
     debug: "Migawki, zdarzenia, RPC.",
     logs: "Logi Gateway na żywo.",
     dreams: "Konsolidacja pamięci podczas snu.",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "Użyj bieżącego czatu",
-      useCurrentChatAria: "Użyj bieżącego czatu do próśb o poprawki",
-      useCurrentChatTooltip:
-        "Wysyłaj prośby o poprawki do bieżącej sesji czatu zamiast do sesji warsztatu propozycji.",
-    },
   },
   activity: {
     title: "Aktywność",
@@ -578,6 +585,7 @@ export const pl: TranslationMap = {
     viewRecentlyDone: "Ostatnio ukończone",
     viewPresetCount: "{count} kart",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -714,6 +722,10 @@ export const pl: TranslationMap = {
     eventArchived: "Zarchiwizowano",
     eventUnarchived: "Przywrócono z archiwum",
     eventStale: "Nieaktualna sesja",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -894,7 +906,9 @@ export const pl: TranslationMap = {
     status: {
       active: "Dreaming aktywne",
       idle: "Dreaming bezczynne",
-      promotedSuffix: "promowany",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "następne przetwarzanie",
     },
     scene: {
@@ -985,6 +999,9 @@ export const pl: TranslationMap = {
       simmeringIdeas: "dojrzewanie nie do końca uformowanych pomysłów…",
       whisperingVectorStore: "szeptanie do vector store…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

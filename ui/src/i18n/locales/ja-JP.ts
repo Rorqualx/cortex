@@ -82,10 +82,20 @@ export const ja_JP: TranslationMap = {
     logout: "ログアウト",
   },
   channels: {
+    status: {
+      stopped: "Stopped",
+      notConfigured: "Not configured",
+    },
     health: {
       title: "チャネルの状態",
       subtitle: "Gateway からのチャネル状態スナップショット。",
       noSnapshotYet: "まだスナップショットがありません。",
+    },
+    configure: {
+      title: "Configure a channel",
+      subtitle: "Connect any messaging channel. Pick one to edit its settings.",
+      loading: "Loading channels…",
+      unavailable: "Channel configuration unavailable.",
     },
     generic: {
       subtitle: "チャネルの状態と設定。",
@@ -396,6 +406,7 @@ export const ja_JP: TranslationMap = {
   },
   nav: {
     chat: "チャット",
+    channels: "Channels",
     control: "コントロール",
     agent: "エージェント",
     settings: "設定",
@@ -410,13 +421,15 @@ export const ja_JP: TranslationMap = {
     workboard: "ワークボード",
     channels: "チャンネル",
     instances: "インスタンス",
+    conversations: "Conversations",
     sessions: "セッション",
     usage: "使用状況",
     cron: "Cron ジョブ",
     skills: "Skills",
-    skillWorkshop: "Skill Workshop",
+    skillForge: "Skill Forge",
     nodes: "ノード",
     chat: "チャット",
+    vault: "Vault",
     config: "設定",
     communications: "通信",
     appearance: "表示",
@@ -435,13 +448,15 @@ export const ja_JP: TranslationMap = {
     workboard: "エージェントの作業キューとセッションの引き継ぎ。",
     channels: "チャンネルと設定。",
     instances: "接続されたクライアントとノード。",
+    conversations: "All chat transcripts.",
     sessions: "アクティブなセッションとデフォルト。",
     usage: "API 使用量とコスト。",
     cron: "ウェイクアップと定期実行。",
     skills: "Skills と API キー。",
-    skillWorkshop: "提案がライブスキルになる前に、確認、調整、適用します。",
+    skillForge: "提案がライブスキルになる前に、確認、調整、適用します。",
     nodes: "ペアリング済みデバイスとコマンド。",
     chat: "すばやく介入するための Gateway チャット。",
+    vault: "Saved API credentials the agent uses without seeing them.",
     config: "openclaw.json を編集。",
     communications: "チャンネル、メッセージ、音声設定。",
     appearance: "テーマ、UI、セットアップウィザードの設定。",
@@ -452,14 +467,6 @@ export const ja_JP: TranslationMap = {
     debug: "スナップショット、イベント、RPC。",
     logs: "ライブ Gateway ログ。",
     dreams: "スリープ中のメモリ統合。",
-  },
-  skillWorkshop: {
-    header: {
-      useCurrentChat: "現在のチャットを使用",
-      useCurrentChatAria: "修正リクエストに現在のチャットを使用",
-      useCurrentChatTooltip:
-        "修正リクエストを提案のワークショップセッションではなく現在のチャットセッションに送信します。",
-    },
   },
   activity: {
     title: "アクティビティ",
@@ -580,6 +587,7 @@ export const ja_JP: TranslationMap = {
     viewRecentlyDone: "最近完了",
     viewPresetCount: "{count} 件のカード",
     agentLinked: "Linked to {agent}",
+    agentLinkedWithDescription: "Linked to {agent} — {description}",
     agentDefaultLinked: "Using default agent {agent}",
     engineOpenAI: "OpenAI",
     engineClaude: "Claude",
@@ -717,6 +725,10 @@ export const ja_JP: TranslationMap = {
     eventArchived: "アーカイブ済み",
     eventUnarchived: "アーカイブ解除済み",
     eventStale: "古いセッション",
+    projectName: "Project name",
+    projectIcon: "Icon",
+    addProject: "Add project",
+    editProject: "Edit project",
   },
   overview: {
     access: {
@@ -897,7 +909,9 @@ export const ja_JP: TranslationMap = {
     status: {
       active: "Dreaming 有効",
       idle: "Dreaming 待機中",
-      promotedSuffix: "昇格済み",
+      promotedTotalSuffix: "promoted all-time",
+      lastPromotedPrefix: "last promoted",
+      lastPromotedNever: "never promoted",
       nextSweepPrefix: "次のスイープ",
     },
     scene: {
@@ -985,6 +999,9 @@ export const ja_JP: TranslationMap = {
       simmeringIdeas: "まだ形になっていないアイデアを温め中…",
       whisperingVectorStore: "ベクトルストアにささやきかけ中…",
     },
+  },
+  vault: {
+    addCredential: "Add credential",
   },
   usage: {
     common: {

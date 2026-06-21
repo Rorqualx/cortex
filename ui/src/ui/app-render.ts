@@ -14,6 +14,7 @@ import {
 import { DEFAULT_CRON_FORM } from "./app-defaults.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
+  collectChannelChatNavCandidates,
   renderChatControls,
   renderTab,
   resolveAssistantAttachmentAuthToken,
@@ -34,7 +35,7 @@ import {
   renderSidebarAgentSelect,
   renderSidebarModelSelect,
   resolveChatAgentFilterId,
-  resolveChatAgentFilterOptions,
+  resolveDreamingAgentOptions,
   resolvePreferredSessionForAgent,
   resolvePreferredSessionForAgentSurface,
   switchChatModel,
@@ -314,6 +315,10 @@ const AGENT_CHANNEL_SURFACE_META: Record<string, { label: string; icon: unknown 
   "kimi-claw": { label: "Kimi", icon: icons.brain },
 };
 
+// Cap conversations shown under the CHANNELS nav group; the full list lives in
+// the Conversations view. Newest chats win so the nav stays scannable.
+const MAX_CHANNEL_CHAT_NAV_ITEMS = 12;
+
 function resolveChannelsNavItems(
   state: AppViewState,
 ): Array<{ key: string; label: string; icon: unknown }> {
@@ -370,7 +375,47 @@ function resolveChannelsNavItems(
     }
   }
 
-  // Collect every channel id that should appear
+  // Channel ids the gateway knows about, EXCLUDING agent surfaces (those keep
+  // their own pinned row), used to recognize which cached sessions are real
+  // channel conversations.
+  const knownChannelIds = new Set<string>();
+  for (const id of channelOrder) {
+    knownChannelIds.add(id.toLowerCase());
+  }
+  for (const id of channelMeta.keys()) {
+    knownChannelIds.add(id);
+  }
+  for (const id of Object.keys(configuredChannels)) {
+    knownChannelIds.add(id.toLowerCase());
+  }
+  for (const surface of agentSurfaceAgents.keys()) {
+    knownChannelIds.delete(surface);
+  }
+
+  // Nothing configured -> nothing to show (the nav renders "No channels
+  // connected"); don't surface stray sessions for cataloged-but-unconfigured channels.
+  if (Object.keys(configuredChannels).length === 0 && agentSurfaceAgents.size === 0) {
+    return [];
+  }
+
+  // Per-chat candidates, newest first. The cap is global, so only the survivors
+  // count as "represented by a chat row"; a configured channel whose chats all
+  // fall past the cap still gets its channel-type row below, never vanishing.
+  const candidates = collectChannelChatNavCandidates(allCachedSessions, knownChannelIds);
+  const survivingChats = candidates.slice(0, MAX_CHANNEL_CHAT_NAV_ITEMS);
+  const channelsWithSurvivingChat = new Set(survivingChats.map((candidate) => candidate.channelId));
+  // Newest known chat per channel, reused as the click target for a channel-type
+  // row whose chats all fall past the cap.
+  const newestChatKeyByChannel = new Map<string, string>();
+  for (const candidate of candidates) {
+    if (!newestChatKeyByChannel.has(candidate.channelId)) {
+      newestChatKeyByChannel.set(candidate.channelId, candidate.key);
+    }
+  }
+
+  // Channel-type / agent-surface rows, in server order. A channel-type row is the
+  // fallback for a configured channel with no surviving chat row, so every
+  // configured channel stays reachable.
   const ids = new Set<string>();
   for (const id of Object.keys(configuredChannels)) {
     ids.add(id.toLowerCase());
@@ -378,11 +423,6 @@ function resolveChannelsNavItems(
   for (const surface of agentSurfaceAgents.keys()) {
     ids.add(surface);
   }
-  if (ids.size === 0) {
-    return [];
-  }
-
-  // Preserve server-provided order, then append any remaining ids
   const ordered: string[] = [];
   const seen = new Set<string>();
   for (const id of channelOrder) {
@@ -399,14 +439,14 @@ function resolveChannelsNavItems(
     }
   }
 
-  const result: Array<{ key: string; label: string; icon: unknown }> = [];
+  const typeItems: Array<{ key: string; label: string; icon: unknown }> = [];
   for (const channelId of ordered) {
     const id = channelId.toLowerCase();
     const agentId = agentSurfaceAgents.get(id);
     const surfaceMeta = AGENT_CHANNEL_SURFACE_META[id];
 
     if (agentId && surfaceMeta) {
-      result.push({
+      typeItems.push({
         key: resolvePreferredSessionForAgentSurface(state, agentId, id),
         label: surfaceMeta.label,
         icon: surfaceMeta.icon,
@@ -414,24 +454,29 @@ function resolveChannelsNavItems(
       continue;
     }
 
+    if (channelsWithSurvivingChat.has(id)) {
+      continue;
+    }
+
     const label = channelMeta.get(id)?.label ?? channelLabels[id] ?? channelId;
-    const icon = icons.messageSquare;
-
-    const channelSession = allCachedSessions.find((row) => {
-      const lower = row.key.toLowerCase();
-      return lower.includes(`:${id}:`) || lower.startsWith(`${id}:`) || lower === id;
-    });
-
-    result.push({
+    typeItems.push({
       key:
-        channelSession?.key ??
+        newestChatKeyByChannel.get(id) ??
         buildAgentMainSessionKey({ agentId: resolveSidebarDefaultAgentId(state) }),
       label,
-      icon,
+      icon: icons.messageSquare,
     });
   }
 
-  return result.filter((r) => r.key);
+  // Idle/capped channel-type + agent-surface rows first (stable ordering), then
+  // the newest conversations. Labels are resolved only for surviving chats.
+  const chatItems = survivingChats.map((candidate) => ({
+    key: candidate.key,
+    label: resolveSessionDisplayName(candidate.key, candidate.row),
+    icon: icons.messageSquare,
+  }));
+
+  return [...typeItems, ...chatItems].filter((r) => r.key);
 }
 
 function renderChannelsNavItems(state: AppViewState, collapsed: boolean) {
@@ -1457,8 +1502,15 @@ export function renderApp(state: AppViewState) {
   const configuredDreaming = resolveConfiguredDreaming(configValue);
   const dreamingOn = state.dreamingStatus?.enabled ?? configuredDreaming.enabled;
   const dreamingNextCycle = resolveDreamingNextCycle(state.dreamingStatus);
-  const dreamingAgentOptions = resolveChatAgentFilterOptions(state);
-  const dreamingSelectedAgentId = resolveChatAgentFilterId(state, state.sessionKey);
+  const dreamingAgentOptions = resolveDreamingAgentOptions(state);
+  const rawDreamingSelectedAgentId = resolveChatAgentFilterId(state, state.sessionKey);
+  // Channel/ad-hoc sessions resolve to non-agent ids absent from the dreaming
+  // picker; fall back to the first real agent so a button always reflects state.
+  const dreamingSelectedAgentId = dreamingAgentOptions.some(
+    (option) => option.id === rawDreamingSelectedAgentId,
+  )
+    ? rawDreamingSelectedAgentId
+    : (dreamingAgentOptions[0]?.id ?? rawDreamingSelectedAgentId);
   const syncDreamingSelectedAgent = () => {
     state.selectedAgentId = dreamingSelectedAgentId;
   };
@@ -4381,6 +4433,9 @@ export function renderApp(state: AppViewState) {
               groundedSignalCount: state.dreamingStatus?.groundedSignalCount ?? 0,
               totalSignalCount: state.dreamingStatus?.totalSignalCount ?? 0,
               promotedCount: state.dreamingStatus?.promotedToday ?? 0,
+              promotedTotal: state.dreamingStatus?.promotedTotal ?? 0,
+              lastPromotedCount: state.dreamingStatus?.lastPromotedCount ?? 0,
+              lastPromotedAt: state.dreamingStatus?.lastPromotedAt ?? null,
               phases: state.dreamingStatus?.phases ?? undefined,
               shortTermEntries: state.dreamingStatus?.shortTermEntries ?? [],
               promotedEntries: state.dreamingStatus?.promotedEntries ?? [],

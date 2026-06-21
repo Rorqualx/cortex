@@ -315,6 +315,9 @@ export type ShortTermDreamingStats = {
   remPhaseHitCount: number;
   promotedTotal: number;
   promotedToday: number;
+  // Memories promoted in the most recent promotion run (same dreaming-day as
+  // lastPromotedAt). 0 when nothing has ever been promoted.
+  lastPromotedCount: number;
   storePath: string;
   phaseSignalPath: string;
   phaseSignalError?: string;
@@ -1291,6 +1294,21 @@ export async function loadShortTermPromotionDreamingStats(params: {
     }
   }
 
+  // Count entries promoted in the latest run so the UI can show "last promoted
+  // N on <date>" separately from the all-time total and the today-only count.
+  let lastPromotedCount = 0;
+  if (Number.isFinite(latestPromotedAtMs)) {
+    for (const detail of promotedEntries) {
+      const promotedMs = detail.promotedAt ? Date.parse(detail.promotedAt) : Number.NaN;
+      if (
+        Number.isFinite(promotedMs) &&
+        isSameMemoryDreamingDay(promotedMs, latestPromotedAtMs, params.timezone)
+      ) {
+        lastPromotedCount += 1;
+      }
+    }
+  }
+
   return {
     shortTermCount,
     recallSignalCount,
@@ -1302,6 +1320,7 @@ export async function loadShortTermPromotionDreamingStats(params: {
     remPhaseHitCount,
     promotedTotal,
     promotedToday,
+    lastPromotedCount,
     storePath: resolveStorePath(workspaceDir),
     phaseSignalPath: resolvePhaseSignalPath(workspaceDir),
     shortTermEntries: trimDreamingStatsEntries(
