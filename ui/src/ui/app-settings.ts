@@ -38,6 +38,7 @@ import {
 import { loadDebug, type DebugState } from "./controllers/debug.ts";
 import { loadDevices, type DevicesState } from "./controllers/devices.ts";
 import {
+  ALL_AGENTS_ID,
   loadDreamDiary,
   loadDreamingStatus,
   loadWikiImportInsights,
@@ -69,7 +70,6 @@ import {
   tabFromPath,
   type Tab,
 } from "./navigation.ts";
-import { normalizeAgentId, parseAgentSessionKey } from "./session-key.ts";
 import {
   normalizeTextScale,
   saveLocalUserIdentity,
@@ -132,12 +132,6 @@ type LocalUserIdentityHost = {
   userName?: string | null;
   userAvatar?: string | null;
 };
-
-function resolveDreamingAgentIdForSession(host: SettingsHost): string {
-  return normalizeAgentId(
-    parseAgentSessionKey(host.sessionKey)?.agentId ?? host.agentsList?.defaultId ?? "main",
-  );
-}
 
 type SettingsAppHost = SettingsHost &
   AgentFilesState &
@@ -526,7 +520,9 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         await Promise.allSettled([loadDevices(app), loadConfig(app), loadExecApprovals(app)]);
         break;
       case "dreams":
-        host.selectedAgentId = resolveDreamingAgentIdForSession(host);
+        // Default the Dreaming viewer to the cross-agent "All" aggregate on each
+        // entry; an explicit in-tab agent pick overrides it until you leave.
+        host.selectedAgentId = ALL_AGENTS_ID;
         await loadConfig(app);
         await Promise.all([
           loadDreamingStatus(app),

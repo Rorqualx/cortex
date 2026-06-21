@@ -2138,8 +2138,12 @@ export function renderSidebarAgentSelect(state: AppViewState) {
   if (options.length <= 1) {
     return "";
   }
-  const selectedId = resolveSidebarNewSessionAgentId(state);
-  const selectedLabel = options.find((entry) => entry.id === selectedId)?.label ?? selectedId;
+  const allActive = state.chatAgentFilterAll === true;
+  const allLabel = t("chat.selectors.allAgents");
+  const selectedId = allActive ? CHAT_AGENT_FILTER_ALL_ID : resolveSidebarNewSessionAgentId(state);
+  const selectedLabel = allActive
+    ? allLabel
+    : (options.find((entry) => entry.id === selectedId)?.label ?? selectedId);
   return html`
     <label class="field chat-controls__session chat-controls__agent">
       <select
@@ -2149,18 +2153,25 @@ export function renderSidebarAgentSelect(state: AppViewState) {
         .value=${selectedId}
         ?disabled=${!state.connected}
         @change=${(event: Event) => {
-          // Only retarget the next new session. The model dropdown follows via
-          // its per-agent keying and falls back to this agent's preferred model.
-          state.sidebarNewSessionAgentId = normalizeAgentId(
-            (event.target as HTMLSelectElement).value,
-          );
+          const rawValue = (event.target as HTMLSelectElement).value;
+          // "All" lists every agent's chats in the session picker below; it is
+          // not a real new-session target, so the picked agent is left as-is.
+          if (rawValue === CHAT_AGENT_FILTER_ALL_ID) {
+            setChatAgentFilterAll(state, true);
+            return;
+          }
+          // A real agent both scopes the session picker and retargets the next
+          // new session. The model dropdown follows via its per-agent keying.
+          setChatAgentFilterAll(state, false);
+          state.sidebarNewSessionAgentId = normalizeAgentId(rawValue);
         }}
       >
+        <option value=${CHAT_AGENT_FILTER_ALL_ID} ?selected=${allActive}>${allLabel}</option>
         ${repeat(
           options,
           (entry) => entry.id,
           (entry) =>
-            html`<option value=${entry.id} ?selected=${entry.id === selectedId}>
+            html`<option value=${entry.id} ?selected=${!allActive && entry.id === selectedId}>
               ${entry.label}
             </option>`,
         )}
