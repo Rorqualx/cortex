@@ -517,8 +517,74 @@ const hasMissingRequiredRuntimePostBuildOutput = (deps) =>
     (filePath) => statMtime(filePath, deps.fs) == null,
   );
 
+// Single source for the managed-gateway-service marker contract, used by the
+// detector below, the env-strip helper, and (via import) the watch-regression
+// probe and the unit tests. Conceptually mirrors hasOpenClawGatewayServiceMarker()
+// in src/infra/supervisor-markers.ts; duplicated because run-node.mjs runs BEFORE
+// any build and cannot import the compiled helper.
+export const GATEWAY_SERVICE_MARKER_ENV_KEYS = ["OPENCLAW_SERVICE_MARKER", "OPENCLAW_SERVICE_KIND"];
+
+export const isManagedGatewayServiceEnv = (env) =>
+  env.OPENCLAW_SERVICE_MARKER?.trim() === "openclaw" &&
+  env.OPENCLAW_SERVICE_KIND?.trim() === "gateway";
+
+/** Returns a copy of env with the gateway markers removed (probe the REAL build requirement). */
+export const stripGatewayServiceMarkers = (env) => {
+  const stripped = { ...env };
+  for (const key of GATEWAY_SERVICE_MARKER_ENV_KEYS) {
+    delete stripped[key];
+  }
+  return stripped;
+};
+
+// Reasons that mean "artifacts exist but are STALE" — the only triggers that
+// rebuild/resync over a working dist. Inside the managed gateway these are the
+// build-suicide path: regenerating rewrites the LIVE gateway's own dist (or the
+// watched runtime-postbuild stamp) mid-flight and the launchd rebuild-restart
+// watcher then bounces the gateway, killing the in-flight cron job ("interrupted
+// by gateway restart", no deploy). They are safe to suppress there. MISSING-
+// artifact reasons are deliberately excluded so a fresh/partial worktree still
+// self-heals instead of crashing at runtime. Keep these in lockstep with the
+// reason-label maps — `run-node.reason-classification.test.ts` guards that.
+export const STALE_REBUILD_REASONS = new Set([
+  "config_newer",
+  "build_stamp_missing_head",
+  "git_head_changed",
+  "dirty_watched_tree",
+  "source_mtime_newer",
+]);
+
+export const STALE_RUNTIME_POSTBUILD_REASONS = new Set([
+  "build_stamp_newer",
+  "runtime_postbuild_stamp_missing_head",
+  "git_head_changed",
+  "dirty_runtime_postbuild_inputs",
+  "runtime_postbuild_input_mtime_newer",
+]);
+
+// Shared suppression: inside the managed gateway, flip a STALE-reason requirement
+// to suppressed. The two resolvers differ only in the active field name and the
+// stale set, so routing both through one helper keeps the branch from drifting.
+const suppressStaleInService = (requirement, { activeKey, staleReasons, env }) => {
+  if (
+    requirement[activeKey] &&
+    staleReasons.has(requirement.reason) &&
+    isManagedGatewayServiceEnv(env)
+  ) {
+    return { [activeKey]: false, reason: "auto_build_suppressed_in_service" };
+  }
+  return requirement;
+};
+
 /** Decides whether source changes require a new dev build. */
-export const resolveBuildRequirement = (deps) => {
+export const resolveBuildRequirement = (deps) =>
+  suppressStaleInService(computeBuildRequirement(deps), {
+    activeKey: "shouldBuild",
+    staleReasons: STALE_REBUILD_REASONS,
+    env: deps.env,
+  });
+
+const computeBuildRequirement = (deps) => {
   if (deps.env.OPENCLAW_FORCE_BUILD === "1") {
     return { shouldBuild: true, reason: "force_build" };
   }
@@ -576,7 +642,20 @@ export const resolveBuildRequirement = (deps) => {
 };
 
 /** Decides whether runtime postbuild artifacts need to be regenerated. */
-export const resolveRuntimePostBuildRequirement = (deps) => {
+// NOTE: a MISSING runtime-postbuild output (missing_runtime_postbuild_output) is
+// deliberately NOT suppressed even inside the gateway — it still syncs and so
+// rewrites the watched stamp. That is the lesser evil: skipping it would run the
+// gateway against an absent runtime artifact (hard failure), whereas the rare
+// stamp-rewrite-bounce only happens if a live, running gateway's own output goes
+// missing mid-flight. Self-heal wins; only STALE resyncs are suppressed.
+export const resolveRuntimePostBuildRequirement = (deps) =>
+  suppressStaleInService(computeRuntimePostBuildRequirement(deps), {
+    activeKey: "shouldSync",
+    staleReasons: STALE_RUNTIME_POSTBUILD_REASONS,
+    env: deps.env,
+  });
+
+const computeRuntimePostBuildRequirement = (deps) => {
   if (deps.env.OPENCLAW_FORCE_RUNTIME_POSTBUILD === "1") {
     return { shouldSync: true, reason: "force_runtime_postbuild" };
   }
@@ -625,7 +704,10 @@ export const resolveRuntimePostBuildRequirement = (deps) => {
   return { shouldSync: false, reason: "clean" };
 };
 
-const BUILD_REASON_LABELS = {
+// Shared so the two reason maps below stay in lockstep for this reason code.
+const AUTO_BUILD_SUPPRESSED_LABEL = "auto-build suppressed inside gateway service";
+
+export const BUILD_REASON_LABELS = {
   force_build: "forced by OPENCLAW_FORCE_BUILD",
   missing_build_stamp: "build stamp missing",
   missing_dist_entry: "dist entry missing",
@@ -636,11 +718,13 @@ const BUILD_REASON_LABELS = {
   missing_bundled_plugin_dist_entry: "bundled plugin dist entry missing",
   source_mtime_newer: "source mtime newer than build stamp",
   missing_private_qa_dist: "private QA dist entry missing",
+  auto_build_suppressed_in_service: AUTO_BUILD_SUPPRESSED_LABEL,
   clean: "clean",
 };
 
-const RUNTIME_POSTBUILD_REASON_LABELS = {
+export const RUNTIME_POSTBUILD_REASON_LABELS = {
   force_runtime_postbuild: "forced by OPENCLAW_FORCE_RUNTIME_POSTBUILD",
+  auto_build_suppressed_in_service: AUTO_BUILD_SUPPRESSED_LABEL,
   missing_runtime_postbuild_output: "required runtime postbuild output missing",
   missing_runtime_postbuild_stamp: "runtime postbuild stamp missing",
   missing_build_stamp: "build stamp missing",
@@ -1433,6 +1517,19 @@ export async function runNodeMain(params = {}) {
       return await closeRunNodeOutputTee(deps, exitCode);
     }
     const buildRequirement = resolveBuildRequirement(deps);
+    const buildSuppressed = buildRequirement.reason === "auto_build_suppressed_in_service";
+    // Symmetric with the build path: a clean build can still have a STALE
+    // runtime-postbuild sync suppressed, which would otherwise skip silently.
+    const runtimeSyncSuppressed =
+      !buildRequirement.shouldBuild &&
+      !buildSuppressed &&
+      resolveRuntimePostBuildRequirement(deps).reason === "auto_build_suppressed_in_service";
+    if (buildSuppressed || runtimeSyncSuppressed) {
+      logRunner(
+        "dist may be stale but auto-build is suppressed inside the gateway service; run `pnpm build` to deploy.",
+        deps,
+      );
+    }
     const useQaParityReportSource = shouldRunQaParityReportFromSource(deps, buildRequirement);
     const useQaCoverageReportSource = shouldRunQaCoverageReportFromSource(deps, buildRequirement);
     if (useQaParityReportSource) {

@@ -14,7 +14,7 @@ import {
   writeBuildStamp,
   writeRuntimePostBuildStamp,
 } from "./lib/local-build-metadata.mjs";
-import { resolveBuildRequirement } from "./run-node.mjs";
+import { resolveBuildRequirement, stripGatewayServiceMarkers } from "./run-node.mjs";
 
 const DEFAULTS = {
   outputDir: path.join(process.cwd(), ".local", "gateway-watch-regression"),
@@ -556,7 +556,10 @@ export async function runTimedWatch(options, outputDir, deps = {}) {
     );
     const child = spawnCommand(command, args, {
       cwd: process.cwd(),
-      env: { ...process.env, ...env },
+      // Strip gateway markers: the measured gateway:watch child must rebuild as a
+      // real unmanaged run would, else run-node suppresses its stale rebuilds and
+      // the harness reports a false green for the regression it exists to catch.
+      env: stripGatewayServiceMarkers({ ...process.env, ...env }),
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -870,7 +873,11 @@ async function main() {
     writeBuildAndRuntimePostBuildStamps();
   }
 
-  let preflightBuildRequirement = resolveBuildRequirement(buildRunNodeDeps(process.env));
+  // This harness must see the REAL build requirement: run-node suppresses stale
+  // rebuilds when the gateway service markers are present, which would mask the
+  // dirty-tree refusal below. Strip those markers so the probe is unmasked.
+  const probeEnv = stripGatewayServiceMarkers(process.env);
+  let preflightBuildRequirement = resolveBuildRequirement(buildRunNodeDeps(probeEnv));
   if (
     shouldRefreshBuildStampForRestoredArtifacts({
       skipBuild: options.skipBuild,
@@ -881,7 +888,7 @@ async function main() {
     // Refresh the stamps so checkout mtimes for package/config files do not
     // force a duplicate build during the bounded gateway:watch window.
     writeBuildAndRuntimePostBuildStamps();
-    preflightBuildRequirement = resolveBuildRequirement(buildRunNodeDeps(process.env));
+    preflightBuildRequirement = resolveBuildRequirement(buildRunNodeDeps(probeEnv));
   }
   if (
     preflightBuildRequirement.shouldBuild &&

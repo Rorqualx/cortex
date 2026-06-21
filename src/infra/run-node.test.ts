@@ -19,6 +19,7 @@ import {
   resolveBuildRequirement,
   resolveRuntimePostBuildRequirement,
   runNodeMain,
+  stripGatewayServiceMarkers,
 } from "../../scripts/run-node.mjs";
 import { withTempDir } from "../test-helpers/temp-dir.js";
 
@@ -271,10 +272,13 @@ function createBuildRequirementDeps(
     gitHead: options.gitHead,
     gitStatus: options.gitStatus,
   });
+  // Strip ambient gateway-service markers so suppression is opt-in per test and
+  // outcomes never depend on whether the suite runs inside a managed gateway.
+  const baseEnv = stripGatewayServiceMarkers(process.env);
   return {
     cwd: tmp,
     env: {
-      ...process.env,
+      ...baseEnv,
       ...options.env,
     },
     fs: fsSync,
@@ -1817,6 +1821,113 @@ describe("run-node script", () => {
       expect(requirement).toEqual({
         shouldBuild: true,
         reason: "dirty_watched_tree",
+      });
+    });
+  });
+
+  const GATEWAY_SERVICE_ENV = {
+    OPENCLAW_SERVICE_MARKER: "openclaw",
+    OPENCLAW_SERVICE_KIND: "gateway",
+  } as const;
+
+  // Inside the managed gateway, a STALE rebuild over an existing dist is the
+  // build-suicide path and must be suppressed; FORCE_BUILD still wins.
+  for (const testCase of [
+    {
+      name: "suppresses a dirty-tree rebuild inside the managed gateway service",
+      env: GATEWAY_SERVICE_ENV,
+      gitStatus: ` M ${ROOT_SRC}\n`,
+      expected: { shouldBuild: false, reason: "auto_build_suppressed_in_service" },
+    },
+    {
+      name: "lets OPENCLAW_FORCE_BUILD override the managed-service suppression",
+      env: { ...GATEWAY_SERVICE_ENV, OPENCLAW_FORCE_BUILD: "1" },
+      gitStatus: ` M ${ROOT_SRC}\n`,
+      expected: { shouldBuild: true, reason: "force_build" },
+    },
+  ]) {
+    it(testCase.name, async () => {
+      await withTempDir({ prefix: "openclaw-run-node-" }, async (tmp) => {
+        await setupTrackedProject(tmp, {
+          files: { [ROOT_SRC]: "export const value = 1;\n" },
+          buildPaths: [ROOT_SRC, ROOT_TSCONFIG, ROOT_PACKAGE, DIST_ENTRY, BUILD_STAMP],
+        });
+
+        const requirement = resolveBuildRequirement(
+          createBuildRequirementDeps(tmp, {
+            gitHead: "abc123\n",
+            gitStatus: testCase.gitStatus,
+            env: testCase.env,
+          }),
+        );
+
+        expect(requirement).toEqual(testCase.expected);
+      });
+    });
+  }
+
+  it("still builds a MISSING dist entry inside the managed gateway service", async () => {
+    await withTempDir({ prefix: "openclaw-run-node-" }, async (tmp) => {
+      await setupTrackedProject(tmp, {
+        files: { [ROOT_SRC]: "export const value = 1;\n" },
+        buildPaths: [ROOT_SRC, ROOT_TSCONFIG, ROOT_PACKAGE, DIST_ENTRY, BUILD_STAMP],
+      });
+      // Dist is genuinely absent, not merely stale; suppression must not apply
+      // here or a fresh/partial worktree would never self-heal.
+      await fs.rm(resolvePath(tmp, DIST_ENTRY));
+
+      const requirement = resolveBuildRequirement(
+        createBuildRequirementDeps(tmp, {
+          gitHead: "abc123\n",
+          gitStatus: "",
+          env: GATEWAY_SERVICE_ENV,
+        }),
+      );
+
+      expect(requirement).toEqual({
+        shouldBuild: true,
+        reason: "missing_dist_entry",
+      });
+    });
+  });
+
+  it("suppresses a stale runtime-postbuild sync inside the managed gateway service", async () => {
+    await withTempDir({ prefix: "openclaw-run-node-" }, async (tmp) => {
+      // Dirty runtime-postbuild input (the manifest) yields the STALE reason
+      // dirty_runtime_postbuild_inputs, which is the suicide path inside the
+      // gateway; the build requirement itself stays clean.
+      await setupTrackedProject(tmp, {
+        files: {
+          [ROOT_SRC]: "export const value = 1;\n",
+          [EXTENSION_INDEX]: "export default {};\n",
+          [EXTENSION_MANIFEST]: '{"id":"demo","configSchema":{"type":"object"}}\n',
+          [RUNTIME_POSTBUILD_STAMP]: '{"head":"abc123"}\n',
+          [DIST_EXTENSION_INDEX]: "export default {};\n",
+        },
+        buildPaths: [
+          ROOT_SRC,
+          EXTENSION_INDEX,
+          EXTENSION_MANIFEST,
+          DIST_EXTENSION_INDEX,
+          ROOT_TSCONFIG,
+          ROOT_PACKAGE,
+          DIST_ENTRY,
+          BUILD_STAMP,
+          RUNTIME_POSTBUILD_STAMP,
+        ],
+      });
+
+      const requirement = resolveRuntimePostBuildRequirement(
+        createBuildRequirementDeps(tmp, {
+          gitHead: "abc123\n",
+          gitStatus: ` M ${EXTENSION_MANIFEST}\n`,
+          env: GATEWAY_SERVICE_ENV,
+        }),
+      );
+
+      expect(requirement).toEqual({
+        shouldSync: false,
+        reason: "auto_build_suppressed_in_service",
       });
     });
   });
