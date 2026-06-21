@@ -22,6 +22,9 @@ function buildProps(overrides?: Partial<DreamingProps>): DreamingProps {
     groundedSignalCount: 9,
     totalSignalCount: 182,
     promotedCount: 12,
+    promotedTotal: 24,
+    lastPromotedCount: 2,
+    lastPromotedAt: "2026-04-05T11:00:00Z",
     phases: {
       light: { enabled: true, cron: "0 * * * *", nextRunAtMs: Date.parse("2026-04-05T11:30:00Z") },
       deep: { enabled: true, cron: "30 * * * *", nextRunAtMs: Date.parse("2026-04-05T12:00:00Z") },
@@ -195,6 +198,8 @@ function buildProps(overrides?: Partial<DreamingProps>): DreamingProps {
     onRefreshMemoryPalace: () => {},
     onOpenConfig: () => {},
     onOpenWikiPage: async () => null,
+    onLoadL3LayerList: async () => [],
+    onLoadL3LayerContent: async () => null,
     onBackfillDiary: () => {},
     onCopyDreamingArchivePath: () => {},
     onDedupeDreamDiary: () => {},
@@ -274,7 +279,7 @@ describe("dreaming view", () => {
     const buttons = [...container.querySelectorAll("button")].map((node) =>
       node.textContent?.trim(),
     );
-    expect(buttons).toEqual(["Scene", "Diary", "Advanced"]);
+    expect(buttons).toEqual(["Scene", "Diary", "Advanced", "Layers", "main", "ceo"]);
     expectElement(container, ".dreams__bubble");
     const text = container.querySelector(".dreams__bubble-text");
     expect(text?.textContent).toBe("reindexing old chats\u2026");
@@ -282,10 +287,15 @@ describe("dreaming view", () => {
     expect(label?.textContent).toBe("Dreaming Active");
     const detail = container.querySelector(".dreams__status-detail span");
     expect(detail?.textContent?.trim().replace(/\s+/g, " ")).toBe(
-      "12 promoted · next sweep 4:00 AM · America/Los_Angeles",
+      "24 promoted all-time · last promoted 2 (Apr 5, 5:00 AM) · next sweep 4:00 AM · America/Los_Angeles",
     );
     const tabs = container.querySelectorAll(".dreams__tab");
-    expect([...tabs].map((tab) => tab.textContent?.trim())).toEqual(["Scene", "Diary", "Advanced"]);
+    expect([...tabs].map((tab) => tab.textContent?.trim())).toEqual([
+      "Scene",
+      "Diary",
+      "Advanced",
+      "Layers",
+    ]);
   });
 
   it("renders idle and unavailable scene states", () => {

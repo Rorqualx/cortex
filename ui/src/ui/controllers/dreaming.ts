@@ -853,6 +853,50 @@ export async function loadDreamingStatus(state: DreamingState): Promise<void> {
   }
 }
 
+/** One ZenBrain memory layer descriptor (from the doctor.memory.l3Layers RPC). */
+export type DreamingL3Layer = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+/** Load the list of memory layers for the Dreaming "Layers" viewer. */
+export async function loadL3LayerList(state: DreamingState): Promise<DreamingL3Layer[]> {
+  if (!state.client || !state.connected) {
+    return [];
+  }
+  const agentId = resolveSelectedAgentId(state);
+  try {
+    const payload = await state.client.request<{ layers?: DreamingL3Layer[] }>(
+      "doctor.memory.l3Layers",
+      buildSelectedAgentPayloadForAgentId(agentId),
+    );
+    return Array.isArray(payload?.layers) ? payload.layers : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Load one memory layer's rendered markdown for the Dreaming "Layers" viewer. */
+export async function loadL3LayerContent(
+  state: DreamingState,
+  layerId: string,
+): Promise<string | null> {
+  if (!state.client || !state.connected) {
+    return null;
+  }
+  const agentId = resolveSelectedAgentId(state);
+  try {
+    const payload = await state.client.request<{ markdown?: string }>("doctor.memory.l3Layers", {
+      ...buildSelectedAgentPayloadForAgentId(agentId),
+      layer: layerId,
+    });
+    return typeof payload?.markdown === "string" ? payload.markdown : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadDreamDiary(state: DreamingState): Promise<void> {
   if (!state.client || !state.connected) {
     return;

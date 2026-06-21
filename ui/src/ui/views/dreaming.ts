@@ -9,6 +9,12 @@ import type {
   WikiMemoryPalace,
 } from "../controllers/dreaming.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
+import {
+  type DreamingL3Layer,
+  ensureDreamingLayers,
+  renderDreamingLayersSection,
+  resetDreamingLayers,
+} from "./dreaming-layers.ts";
 
 // ── Diary entry parser ─────────────────────────────────────────────────
 
@@ -150,6 +156,8 @@ export type DreamingProps = {
     truncated?: boolean;
     updatedAt?: string;
   } | null>;
+  onLoadL3LayerList: () => Promise<DreamingL3Layer[]>;
+  onLoadL3LayerContent: (layerId: string) => Promise<string | null>;
   onBackfillDiary: () => void;
   onCopyDreamingArchivePath: () => void;
   onDedupeDreamDiary: () => void;
@@ -191,7 +199,7 @@ const DREAM_SWAP_MS = 6_000;
 
 // ── Sub-tab state ─────────────────────────────────────────────────────
 
-type DreamSubTab = "scene" | "diary" | "advanced";
+type DreamSubTab = "scene" | "diary" | "advanced" | "layers";
 let activeSubTab: DreamSubTab = "scene";
 type DreamDiarySubTab = "dreams" | "insights" | "palace";
 let activeDiarySubTab: DreamDiarySubTab = "dreams";
@@ -333,6 +341,16 @@ export function renderDreaming(props: DreamingProps) {
           >
             ${t("dreaming.tabs.advanced")}
           </button>
+          <button
+            class="dreams__tab ${activeSubTab === "layers" ? "dreams__tab--active" : ""}"
+            @click=${() => {
+              activeSubTab = "layers";
+              void ensureDreamingLayers(props);
+              props.onRequestUpdate?.();
+            }}
+          >
+            ${t("dreaming.tabs.layers")}
+          </button>
         </nav>
         ${props.agentOptions.length > 1
           ? html`<div
@@ -357,7 +375,11 @@ export function renderDreaming(props: DreamingProps) {
                         if (entry.id === props.selectedAgentId) {
                           return;
                         }
+                        resetDreamingLayers();
                         props.onSelectAgent(entry.id);
+                        if (activeSubTab === "layers") {
+                          void ensureDreamingLayers(props);
+                        }
                       }}
                     >
                       ${entry.label}
@@ -373,7 +395,9 @@ export function renderDreaming(props: DreamingProps) {
         ? renderScene(props, idle, dreamText)
         : activeSubTab === "diary"
           ? renderDiarySection(props)
-          : renderAdvancedSection(props)}
+          : activeSubTab === "advanced"
+            ? renderAdvancedSection(props)
+            : renderDreamingLayersSection(props)}
     </div>
   `;
 }

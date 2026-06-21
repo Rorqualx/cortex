@@ -886,6 +886,15 @@ export const fa: TranslationMap = {
       scene: "صحنه",
       diary: "دفترچه",
       advanced: "پیشرفته",
+      layers: "Layers",
+    },
+    layers: {
+      explainer:
+        "Browse the agent's ZenBrain memory layers, from raw conversation through consolidated long-term facts.",
+      tablistAria: "Memory layers",
+      loading: "Loading layer…",
+      empty: "Nothing recorded in this layer yet.",
+      error: "Failed to load this memory layer.",
     },
     header: {
       refresh: "تازه‌سازی",

@@ -1218,3 +1218,99 @@
     flex-direction: column;
   }
 }
+
+/* ── Memory layer viewer (Layers sub-tab) ─────────────────────────────── */
+.dreams-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dreams-layers__explainer {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dreams-layers__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dreams-layers__tab {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.dreams-layers__tab:hover {
+  border-color: var(--accent);
+}
+
+.dreams-layers__tab--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.dreams-layers__pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.dreams-layers__pane-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dreams-layers__pane-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dreams-layers__pane-desc {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dreams-layers__markdown {
+  padding: 14px;
+  overflow-y: auto;
+  max-height: 60vh;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.dreams-layers__markdown pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dreams-layers__status {
+  padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dreams-layers__status--error {
+  color: var(--danger, #c0392b);
+}

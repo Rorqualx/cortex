@@ -116,6 +116,8 @@ import {
   dedupeDreamDiary,
   loadDreamDiary,
   loadDreamingStatus,
+  loadL3LayerContent,
+  loadL3LayerList,
   loadWikiImportInsights,
   loadWikiMemoryPalace,
   repairDreamingArtifacts,
@@ -4488,6 +4490,8 @@ export function renderApp(state: AppViewState) {
               },
               onOpenConfig: () => void openConfigFile(state),
               onOpenWikiPage: (lookup: string) => openWikiPage(lookup),
+              onLoadL3LayerList: () => loadL3LayerList(state),
+              onLoadL3LayerContent: (layerId: string) => loadL3LayerContent(state, layerId),
               onBackfillDiary: () => {
                 syncDreamingSelectedAgent();
                 void backfillDreamDiary(state);

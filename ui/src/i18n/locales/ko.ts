@@ -883,6 +883,15 @@ export const ko: TranslationMap = {
       scene: "장면",
       diary: "일지",
       advanced: "고급",
+      layers: "Layers",
+    },
+    layers: {
+      explainer:
+        "Browse the agent's ZenBrain memory layers, from raw conversation through consolidated long-term facts.",
+      tablistAria: "Memory layers",
+      loading: "Loading layer…",
+      empty: "Nothing recorded in this layer yet.",
+      error: "Failed to load this memory layer.",
     },
     header: {
       refresh: "새로고침",
