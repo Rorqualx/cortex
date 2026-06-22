@@ -38,4 +38,8 @@ nohup bash "$ROOT/scripts/cron-deploy-healthcheck.sh" >/dev/null 2>&1 &
 echo "==> Building (this crashes the gateway; launchd relaunches on the fresh dist = deploy complete)..."
 rm -f "$HOME/.openclaw/update-check.json"
 cd "$ROOT"
-exec pnpm build
+# Build the bundle directly instead of `pnpm build` so pnpm 11's verify-deps
+# pre-run install does not fire: it can wedge for minutes and re-runs native
+# postinstalls (e.g. node-llama-cpp) that fail under x64/Rosetta node. `pnpm build`
+# is itself just `node scripts/build-all.mjs`; the gate already proved deps resolve.
+exec env npm_config_verify_deps_before_run=false node scripts/build-all.mjs

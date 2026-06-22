@@ -134,7 +134,12 @@ allowBuilds:
   "@discordjs/opus": false
   esbuild: true
   koffi: false
-  node-llama-cpp: true
+  # llama.cpp's native build refuses to run under x64/Rosetta node (the gateway
+  # host), so its postinstall hard-fails any `pnpm install` (e.g. the deploy build
+  # gate's --frozen-lockfile step). Disable the build script like the other native
+  # deps above; node-llama-cpp builds lazily at runtime if/when the llama-cpp
+  # extension is actually used. Flip back to true only on a native arm64 node host.
+  node-llama-cpp: false
   protobufjs: true
   tree-sitter-bash: false
   openclaw: true
