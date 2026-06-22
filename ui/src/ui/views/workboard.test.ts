@@ -77,7 +77,9 @@ describe("renderWorkboard", () => {
     expect(container.textContent).toContain("Wire dashboard tab");
     expect(container.textContent).toContain("Running");
     expect(container.textContent).toContain("Dashboard session");
-    expect(container.querySelectorAll(".workboard-column")).toHaveLength(36);
+    // One section's columns show at a time (9 statuses); card-1 has no section
+    // so it lands in the default "ideas" section (the default active tab).
+    expect(container.querySelectorAll(".workboard-column")).toHaveLength(9);
     expect(container.querySelector(".workboard-card__priority")?.textContent).toContain("high");
   });
 
@@ -2031,26 +2033,39 @@ describe("renderWorkboard", () => {
       container,
     );
 
-    const sections = container.querySelectorAll(".workboard-section");
-    expect(sections.length).toBe(4);
-
-    const sectionTitles = [...container.querySelectorAll(".workboard-section__title")].map((el) =>
+    // Four section tabs, one set of columns shown at a time.
+    const tabLabels = [...container.querySelectorAll(".workboard-section-tab")].map((el) =>
       el.textContent?.replace(/\s+/g, " ").trim(),
     );
-    expect(sectionTitles.some((t) => t?.includes("🎯 Goals"))).toBe(true);
-    expect(sectionTitles.some((t) => t?.includes("🔧 Implementations"))).toBe(true);
-    expect(sectionTitles.some((t) => t?.includes("✅ Tasks"))).toBe(true);
-    expect(sectionTitles.some((t) => t?.includes("💡 Ideas"))).toBe(true);
+    expect(tabLabels.some((t) => t?.includes("🎯 Goals"))).toBe(true);
+    expect(tabLabels.some((t) => t?.includes("🔧 Implementations"))).toBe(true);
+    expect(tabLabels.some((t) => t?.includes("✅ Tasks"))).toBe(true);
+    expect(tabLabels.some((t) => t?.includes("💡 Ideas"))).toBe(true);
 
-    // Card should be in the right section
-    const goalsSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
-      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Goals"),
+    // Default active section is "ideas": only the idea card renders.
+    expect(container.textContent).toContain("Idea card");
+    expect(container.textContent).not.toContain("Goal card");
+    expect(container.textContent).not.toContain("Task card");
+
+    // Switching the active section swaps the visible board to that section's cards.
+    state.activeSection = "goals";
+    render(
+      renderWorkboard({
+        host,
+        client: null,
+        connected: true,
+        pluginEnabled: true,
+        agentsList: null,
+        sessions: [],
+        onOpenSession: () => undefined,
+      }),
+      container,
     );
-    expect(goalsSection?.textContent).toContain("Goal card");
-    expect(goalsSection?.textContent).not.toContain("Idea card");
+    expect(container.textContent).toContain("Goal card");
+    expect(container.textContent).not.toContain("Idea card");
   });
 
-  it("defaults cards without a section to the tasks section", () => {
+  it("defaults cards without a section to the default landing section", () => {
     const host = {};
     const state = getWorkboardState(host);
     state.loaded = true;
@@ -2081,10 +2096,8 @@ describe("renderWorkboard", () => {
       container,
     );
 
-    const tasksSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
-      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Tasks"),
-    );
-    expect(tasksSection?.textContent).toContain("No section card");
+    // A card with no section lands in the default landing section and renders.
+    expect(container.textContent).toContain("No section card");
   });
 
   it("shows card counts per section", () => {
@@ -2141,58 +2154,15 @@ describe("renderWorkboard", () => {
       container,
     );
 
-    const goalsSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
-      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Goals"),
-    );
-    const tasksSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
-      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Tasks"),
-    );
-    const ideasSection = [...container.querySelectorAll<HTMLElement>(".workboard-section")].find(
-      (s) => s.querySelector(".workboard-section__title")?.textContent?.includes("Ideas"),
-    );
+    // Counts live on the section tabs (always visible regardless of active tab).
+    const tabCount = (label: string) =>
+      [...container.querySelectorAll<HTMLElement>(".workboard-section-tab")]
+        .find((tab) => tab.textContent?.includes(label))
+        ?.querySelector(".workboard-section-tab__count")?.textContent;
 
-    expect(goalsSection?.querySelector(".workboard-section__count")?.textContent).toBe("2");
-    expect(tasksSection?.querySelector(".workboard-section__count")?.textContent).toBe("1");
-    expect(ideasSection?.querySelector(".workboard-section__count")?.textContent).toBe("0");
-  });
-
-  it("opens sections that contain cards and collapses empty ones", () => {
-    const host = {};
-    const state = getWorkboardState(host);
-    state.loaded = true;
-    state.cards = [
-      {
-        id: "card-1",
-        title: "Only task",
-        status: "todo",
-        section: "tasks",
-        priority: "normal",
-        labels: [],
-        position: 1000,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-    ];
-    const container = document.createElement("div");
-
-    render(
-      renderWorkboard({
-        host,
-        client: null,
-        connected: true,
-        pluginEnabled: true,
-        agentsList: null,
-        sessions: [],
-        onOpenSession: () => undefined,
-      }),
-      container,
-    );
-
-    const sections = container.querySelectorAll<HTMLDetailsElement>(".workboard-section");
-    for (const section of sections) {
-      const hasCards = section.querySelector(".workboard-card") !== null;
-      expect(section.open).toBe(hasCards);
-    }
+    expect(tabCount("Goals")).toBe("2");
+    expect(tabCount("Tasks")).toBe("1");
+    expect(tabCount("Ideas")).toBe("0");
   });
 
   it("shows a section dropdown in the create modal defaulting to tasks", () => {
@@ -2225,13 +2195,15 @@ describe("renderWorkboard", () => {
     expect(sectionSelect?.value).toBe("tasks");
 
     const options = [...(sectionSelect?.querySelectorAll("option") ?? [])].map((o) => o.value);
-    expect(options).toEqual(["goals", "implementations", "tasks", "ideas"]);
+    expect(options).toEqual(["ideas", "goals", "implementations", "tasks"]);
   });
 
   it("shows the correct section value when editing a card", () => {
     const host = {};
     const state = getWorkboardState(host);
     state.loaded = true;
+    // Show the "ideas" section so the card (and its Edit button) renders.
+    state.activeSection = "ideas";
     state.cards = [
       {
         id: "card-1",

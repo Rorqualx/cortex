@@ -335,13 +335,9 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
     try {
       const response = await writable.page.goto(`${server.baseUrl}workboard`);
       expect(response?.status()).toBe(200);
-      // With sectioned layout, empty sections are collapsed; wait for sections then open them.
-      await writable.page.locator(".workboard-section").first().waitFor({ state: "attached" });
-      await writable.page.evaluate(() => {
-        document.querySelectorAll("details.workboard-section").forEach((details) => {
-          (details as HTMLDetailsElement).open = true;
-        });
-      });
+      // Single-section layout: the active section's columns render directly under
+      // the section tabs (no accordion to expand).
+      await writable.page.locator(".workboard-section-tabs").first().waitFor({ state: "attached" });
       await statusColumn(writable.page, "Todo").waitFor({ state: "visible" });
       await captureScreenshot(writable.page, artifacts, "01-empty-board");
 

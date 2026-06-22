@@ -356,6 +356,9 @@ export type WorkboardUiState = {
   agentFilter: string;
   showArchived: boolean;
   layout: "comfortable" | "compact";
+  // Section navigation: a single section's columns show at a time; the top tabs
+  // switch which one. No stacked/all view.
+  activeSection: "goals" | "implementations" | "tasks" | "ideas";
   draftOpen: boolean;
   editingCardId: string | null;
   draftTitle: string;
@@ -409,6 +412,7 @@ function createDefaultState(): WorkboardUiState {
     agentFilter: "all",
     showArchived: false,
     layout: "compact",
+    activeSection: "ideas",
     draftOpen: false,
     editingCardId: null,
     draftTitle: "",
@@ -1157,7 +1161,13 @@ export async function loadWorkboard(params: {
     try {
       const payload = await client.request("workboard.cards.list", {});
       const normalized = normalizeCardsPayload(payload);
-      state.cards = normalized.cards;
+      // The list RPC returns every board's cards (a "default" board id is treated
+      // as "no filter" server-side), so scope the Workboard to its own default
+      // board — cards on other boards (e.g. the Improvement Lab) live elsewhere.
+      state.cards = normalized.cards.filter((card) => {
+        const boardId = card.metadata?.automation?.boardId;
+        return !boardId || boardId === "default";
+      });
       state.statuses = normalized.statuses;
       state.tasksByCardId = new Map();
       if (state.cards.length > 0) {

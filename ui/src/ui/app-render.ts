@@ -241,6 +241,7 @@ import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.t
 import { renderLoginGate } from "./views/login-gate.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
+import { renderPixelAgentsStrip } from "./views/pixel-office.ts";
 import { renderRsil } from "./views/rsil.ts";
 
 let pendingUpdate: (() => void) | undefined;
@@ -2686,6 +2687,30 @@ export function renderApp(state: AppViewState) {
                 <div class="page-title">${titleForTab(state.tab)}</div>
                 <div class="page-sub">${subtitleForTab(state.tab)}</div>
               </div>
+              ${state.tab === "workboard"
+                ? html`<div class="workboard-header-agents">
+                    ${renderPixelAgentsStrip(state.sessionsResult?.sessions ?? [], {
+                      agentsList: state.agentsList,
+                      client: state.client,
+                      connected: state.connected,
+                      canCreate: hasOperatorWriteAccess(
+                        (state.hello as { auth?: { role?: string; scopes?: string[] } } | null)
+                          ?.auth ?? null,
+                      ),
+                      defaultWorkspace: (
+                        state.configSnapshot?.config as
+                          | { agents?: { defaults?: { workspace?: string } } }
+                          | undefined
+                      )?.agents?.defaults?.workspace,
+                      requestUpdate: () => state.requestUpdate?.(),
+                      onAgentsChanged: () => void loadAgents(state),
+                      onOpenAgent: (id: string) => {
+                        state.selectedAgentId = id;
+                        state.setTab("agents");
+                      },
+                    })}
+                  </div>`
+                : nothing}
               <div class="page-meta">
                 ${state.tab === "dreams"
                   ? html`

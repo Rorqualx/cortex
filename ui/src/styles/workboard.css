@@ -386,10 +386,16 @@
   flex: 1;
   min-height: 0;
   padding: 10px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-content: start;
   overflow-y: auto;
+}
+
+/* Cards keep their natural height and the column scrolls instead of squishing
+   them when a section (e.g. Goals backlog) holds many cards. */
+.workboard-column__cards > * {
+  flex-shrink: 0;
 }
 
 .workboard-card {
@@ -1103,6 +1109,56 @@
 }
 
 /* Workboard Sections */
+.workboard-section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+}
+
+.workboard-section-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 70%, var(--bg) 30%);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.workboard-section-tab:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border-strong));
+}
+
+.workboard-section-tab--active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--text);
+}
+
+.workboard-section-tab__count {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--border-strong) 56%, transparent);
+  border-radius: 9999px;
+  padding: 0.05rem 0.45rem;
+  line-height: 1.5;
+}
+
+.workboard-section-tab--active .workboard-section-tab__count {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 .workboard-sections {
   display: flex;
   flex-direction: column;
@@ -1112,59 +1168,13 @@
   overflow-y: auto;
 }
 
-.workboard-section {
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 96%, var(--bg) 4%);
+/* Single-section view: the board fills the available height (no accordion). */
+.workboard-sections--single {
+  overflow-y: hidden;
 }
 
-.workboard-section__header {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem 1rem;
-  background: color-mix(in srgb, var(--bg-elevated) 72%, var(--bg) 28%);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 8px 8px 0 0;
-  cursor: pointer;
-  list-style: none;
-}
-
-.workboard-section__header::-webkit-details-marker {
-  display: none;
-}
-
-.workboard-section__header::before {
-  content: "▸";
-  margin-right: 0.5rem;
-  transition: transform 0.15s;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.workboard-section[open] > .workboard-section__header::before {
-  transform: rotate(90deg);
-}
-
-.workboard-section__title {
-  margin: 0;
-  font-size: 0.875rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--text);
-}
-
-.workboard-section__count {
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--border-strong) 56%, transparent);
-  border-radius: 9999px;
-  padding: 0.1rem 0.5rem;
-  line-height: 1.5;
-}
-
-.workboard-section .workboard-board {
-  padding: 0.75rem;
+.workboard-sections--single .workboard-board {
+  flex: 1;
+  min-height: 0;
+  padding: 0.25rem 0 0.5rem;
 }

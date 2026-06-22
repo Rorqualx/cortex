@@ -1883,7 +1883,7 @@ function renderColumn(props: WorkboardProps, status: WorkboardStatus, cards: Wor
   `;
 }
 
-const WORKBOARD_SECTIONS_UI = ["goals", "implementations", "tasks", "ideas"] as const;
+const WORKBOARD_SECTIONS_UI = ["ideas", "goals", "implementations", "tasks"] as const;
 type WorkboardSectionUI = (typeof WORKBOARD_SECTIONS_UI)[number];
 
 const WORKBOARD_SECTION_LABELS: Record<WorkboardSectionUI, string> = {
@@ -1892,6 +1892,38 @@ const WORKBOARD_SECTION_LABELS: Record<WorkboardSectionUI, string> = {
   tasks: "✅ Tasks",
   ideas: "💡 Ideas",
 };
+
+/** Section selector tabs (All + each section with a live count). */
+function renderSectionTabs(
+  props: WorkboardProps,
+  sectioned: ReadonlyMap<WorkboardSectionUI, WorkboardCard[]>,
+) {
+  const state = getWorkboardState(props.host);
+  const tab = (key: WorkboardUiState["activeSection"], label: string, count: number) => html`
+    <button
+      type="button"
+      role="tab"
+      aria-selected=${state.activeSection === key ? "true" : "false"}
+      class="workboard-section-tab ${state.activeSection === key
+        ? "workboard-section-tab--active"
+        : ""}"
+      @click=${() => {
+        state.activeSection = key;
+        props.onRequestUpdate?.();
+      }}
+    >
+      <span>${label}</span>
+      <span class="workboard-section-tab__count">${count}</span>
+    </button>
+  `;
+  return html`
+    <div class="workboard-section-tabs" role="tablist">
+      ${WORKBOARD_SECTIONS_UI.map((section) =>
+        tab(section, WORKBOARD_SECTION_LABELS[section], (sectioned.get(section) ?? []).length),
+      )}
+    </div>
+  `;
+}
 
 function renderSectionedBoard(
   props: WorkboardProps,
@@ -1904,35 +1936,33 @@ function renderSectionedBoard(
     sectioned.set(section, []);
   }
   for (const card of filtered) {
-    const section: WorkboardSectionUI = (card.section as WorkboardSectionUI) ?? "tasks";
-    const bucket = sectioned.get(section) ?? sectioned.get("tasks")!;
+    // Cards without an explicit section fall into the default landing tab (ideas)
+    // so nothing is hidden on first load. Real cards always carry a section.
+    const section: WorkboardSectionUI = (card.section as WorkboardSectionUI) ?? "ideas";
+    const bucket = sectioned.get(section) ?? sectioned.get("ideas")!;
     bucket.push(card);
   }
+
+  const renderBoardFor = (section: WorkboardSectionUI) => {
+    const sectionCards = sectioned.get(section) ?? [];
+    const byStatus = new Map<WorkboardStatus, WorkboardCard[]>();
+    for (const status of statuses) {
+      byStatus.set(status, []);
+    }
+    for (const card of sectionCards) {
+      byStatus.get(card.status)?.push(card);
+    }
+    return html`
+      <div class="workboard-board workboard-board--${state.layout}">
+        ${statuses.map((status) => renderColumn(props, status, byStatus.get(status) ?? []))}
+      </div>
+    `;
+  };
+
   return html`
-    <div class="workboard-sections">
-      ${WORKBOARD_SECTIONS_UI.map((section) => {
-        const sectionCards = sectioned.get(section) ?? [];
-        const byStatus = new Map<WorkboardStatus, WorkboardCard[]>();
-        for (const status of statuses) {
-          byStatus.set(status, []);
-        }
-        for (const card of sectionCards) {
-          byStatus.get(card.status)?.push(card);
-        }
-        return html`
-          <details class="workboard-section" ?open=${sectionCards.length > 0}>
-            <summary class="workboard-section__header">
-              <h3 class="workboard-section__title">
-                ${WORKBOARD_SECTION_LABELS[section]}
-                <span class="workboard-section__count">${sectionCards.length}</span>
-              </h3>
-            </summary>
-            <div class="workboard-board workboard-board--${state.layout}">
-              ${statuses.map((status) => renderColumn(props, status, byStatus.get(status) ?? []))}
-            </div>
-          </details>
-        `;
-      })}
+    ${renderSectionTabs(props, sectioned)}
+    <div class="workboard-sections workboard-sections--single">
+      ${renderBoardFor(state.activeSection)}
     </div>
   `;
 }

@@ -39,6 +39,47 @@
   z-index: 1;
 }
 
+/* Compact agent strip in the page header — horizontal scroll for many agents. */
+.mo-strip {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.9rem;
+  width: 100%;
+  height: 84px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 2px;
+}
+
+.mo-strip .mo-buddy {
+  flex: 0 0 auto;
+  transform: scale(0.95);
+  transform-origin: bottom center;
+  /* Slight pull so the larger buddies stay tight without overlapping. */
+  margin: 0 -0.15rem;
+}
+
+.mo-strip::-webkit-scrollbar {
+  height: 8px;
+}
+
+.mo-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mo-strip::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted) 50%, transparent);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.mo-strip::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
+}
+
 .mo-buddy {
   display: flex;
   flex-direction: column;
@@ -223,4 +264,336 @@
 .mo-cell__empty {
   font-size: 0.5rem;
   color: #333;
+}
+
+/* "Projects" header inside the 2D office container. */
+.mo__title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted, #888);
+  margin-bottom: 0.6rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* Gear / trash buttons: transparent background instead of the default grey. */
+.mo-cell__action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #888;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.mo-cell__action-btn:hover {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: var(--text);
+}
+
+.mo-cell__action-btn--danger:hover {
+  background: color-mix(in srgb, var(--destructive, #ef4444) 22%, transparent);
+  color: #fff;
+}
+
+.mo-cell__action-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Add-project: a transparent card with a grey plus sign (replaces the grey button). */
+.mo-cell--add {
+  flex: 0 0 auto;
+  min-width: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--border) 70%, #333);
+  border-radius: 6px;
+  color: #888;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+
+.mo-cell--add:hover {
+  border-color: color-mix(in srgb, var(--accent, #5a8a6e) 50%, #444);
+  color: var(--text);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+}
+
+.mo-cell--add svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Header agent strip: fills the space next to the Workboard title, left-aligned. */
+.workboard-header-agents {
+  flex: 1;
+  min-width: 0;
+  margin-left: 1.25rem;
+  display: flex;
+  align-items: flex-end;
+}
+
+/* Clickable agent buddy (opens profile). */
+.mo-buddy-btn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.mo-buddy-btn:hover {
+  transform: translateY(-3px);
+}
+
+/* "+" create-agent card before the avatars. */
+.mo-strip__add {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--border) 70%, #333);
+  border-radius: 8px;
+  color: #888;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+
+.mo-strip__add:hover {
+  border-color: color-mix(in srgb, var(--accent, #5a8a6e) 50%, #444);
+  color: var(--text);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+}
+
+.mo-strip__add svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Strip modals (create agent / agent profile). */
+.mo-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: color-mix(in srgb, #000 60%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.mo-modal__panel {
+  width: min(440px, calc(100vw - 44px));
+  max-height: calc(100vh - 56px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 12px;
+  background: var(--panel, var(--card));
+  box-shadow: var(--shadow-xl, 0 18px 50px rgba(0, 0, 0, 0.5));
+}
+
+.mo-modal__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mo-modal__head h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-strong, var(--text));
+}
+
+.mo-modal__close {
+  display: inline-flex;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mo-modal__close:hover {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: var(--text);
+}
+
+.mo-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.mo-field input {
+  background: var(--input, var(--bg-accent));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.mo-modal__error {
+  font-size: 12px;
+  color: var(--destructive, #ef4444);
+  background: color-mix(in srgb, var(--destructive, #ef4444) 10%, transparent);
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+
+.mo-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.mo-btn {
+  background: var(--bg-accent, var(--card));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mo-btn:hover {
+  background: var(--bg-hover, var(--bg-accent));
+}
+
+.mo-btn--primary {
+  background: var(--accent, #ff5c5c);
+  color: #fff;
+  border-color: transparent;
+}
+
+.mo-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mo-profile {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mo-profile > div {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.mo-profile dt {
+  flex: 0 0 96px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.mo-profile dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.mo-field textarea {
+  background: var(--input, var(--bg-accent));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+/* Agent-prompt (SOUL.md) composer section. */
+.mo-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.mo-prompt__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.mo-prompt__text {
+  width: 100%;
+  background: var(--input, var(--bg-accent));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.mo-prompt__status {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+.mo-prompt__save {
+  align-self: flex-start;
+}
+
+.mo-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--accent, #ff5c5c);
+}
+
+.mo-btn--ghost:hover {
+  background: color-mix(in srgb, var(--accent, #ff5c5c) 12%, transparent);
+}
+
+.mo-btn--ghost:disabled {
+  color: var(--muted);
+  opacity: 0.6;
+  cursor: default;
 }
