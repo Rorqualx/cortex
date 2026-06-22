@@ -1,0 +1,585 @@
+/* ===========================================
+   Recursive Self-Improvement Laboratory tab
+   =========================================== */
+
+/* Full-bleed flex container for the Lab tab. The default `.content` uses
+   `display:block; overflow-x:hidden` which clips the horizontal board scroll;
+   this modifier (mirroring `.content--workboard`) lets the inner columns own the
+   scroll instead of being cut off. */
+.content--rsil {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.content--rsil > * + * {
+  margin-top: 0;
+}
+
+.rsil-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Icon SVGs are stroke-only (lucide-style); the repo strokes them per-component,
+   so the Lab's icons (close X, brain, loaders) need their own stroke rule or
+   they render invisibly. */
+.rsil-page svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rsil__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px 8px;
+  flex-shrink: 0;
+}
+
+.rsil__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-strong, var(--text));
+}
+
+.rsil__tagline {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.rsil__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rsil__autowork {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ok, #22c55e);
+  background: color-mix(in oklab, var(--ok, #22c55e) 12%, transparent);
+  padding: 4px 10px;
+  border-radius: var(--radius-full, 9999px);
+}
+
+.rsil__autowork svg {
+  width: 14px;
+  height: 14px;
+}
+
+.rsil__refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel, var(--card));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.rsil__refresh svg {
+  width: 14px;
+  height: 14px;
+}
+
+.rsil__refresh:hover {
+  background: var(--bg-hover, var(--bg-accent));
+}
+
+.rsil__error {
+  margin: 0 20px 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--destructive, #ef4444);
+  background: color-mix(in oklab, var(--destructive, #ef4444) 10%, transparent);
+  border-radius: var(--radius-md, 8px);
+}
+
+.rsil__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.rsil__tab {
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rsil__tab--active {
+  color: var(--text-strong, var(--text));
+  border-bottom-color: var(--accent, #ff5c5c);
+}
+
+.rsil__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.rsil__board {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* Leave a gap below the columns so the horizontal scrollbar clears the
+     window edge and stays visible/grabbable. */
+  padding-bottom: 12px;
+}
+
+/* Filters */
+.rsil__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 20px;
+  flex-shrink: 0;
+}
+
+.rsil__filter {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.rsil__filter select,
+.rsil__filter input {
+  background: var(--input, var(--card));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.rsil__filter--search {
+  flex: 1;
+  min-width: 160px;
+}
+
+.rsil__count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  align-self: center;
+}
+
+/* Columns */
+.rsil__columns {
+  display: flex;
+  gap: 12px;
+  padding: 4px 20px 6px;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  flex: 1;
+  min-height: 0;
+  /* Always-visible horizontal scrollbar so the right-side columns are reachable
+     by dragging the bar. Intentionally NOT using the standard `scrollbar-width`/
+     `scrollbar-color` props: when present, Chromium ignores the `::-webkit-
+     scrollbar` styling below and falls back to the macOS auto-hiding overlay bar
+     (which was the "no bar" symptom). `overflow-x: scroll` keeps it pinned. */
+}
+
+.rsil__columns::-webkit-scrollbar {
+  height: 14px;
+}
+
+.rsil__columns::-webkit-scrollbar-track {
+  background: color-mix(in oklab, var(--border) 45%, transparent);
+  border-radius: 9999px;
+  margin: 0 20px;
+}
+
+.rsil__columns::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted) 55%, transparent);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  min-width: 48px;
+  transition: background 160ms ease;
+}
+
+.rsil__columns::-webkit-scrollbar-thumb:hover,
+.rsil__columns::-webkit-scrollbar-thumb:active {
+  background: var(--muted);
+  background-clip: padding-box;
+}
+
+.rsil__col {
+  display: flex;
+  flex-direction: column;
+  min-width: 280px;
+  max-width: 320px;
+  background: color-mix(in oklab, var(--panel, var(--card)) 50%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+}
+
+.rsil__col-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.rsil__col-count {
+  background: var(--bg-accent, var(--card));
+  border-radius: var(--radius-full, 9999px);
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.rsil__col-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Card */
+.rsil-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 10px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.rsil-card:hover {
+  background: var(--bg-hover, var(--bg-accent));
+}
+
+.rsil-card--active {
+  border-color: var(--accent, #ff5c5c);
+}
+
+.rsil-card__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-strong, var(--text));
+  line-height: 1.35;
+}
+
+.rsil-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.rsil-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rsil-card__control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.rsil-card__control select {
+  background: var(--input, var(--bg-accent));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 3px 6px;
+  font-size: 11px;
+  max-width: 130px;
+}
+
+/* Status / facet badges */
+.badge.rsil-badge--ready {
+  background: color-mix(in oklab, #3b82f6 18%, transparent);
+  color: #93c5fd;
+}
+.badge.rsil-badge--running {
+  background: color-mix(in oklab, #f59e0b 18%, transparent);
+  color: #fcd34d;
+}
+.badge.rsil-badge--done,
+.badge.rsil-badge--implemented {
+  background: color-mix(in oklab, var(--ok, #22c55e) 18%, transparent);
+  color: #86efac;
+}
+.badge.rsil-badge--blocked,
+.badge.rsil-badge--failed {
+  background: color-mix(in oklab, var(--destructive, #ef4444) 18%, transparent);
+  color: #fca5a5;
+}
+.badge.rsil-badge--skipped {
+  background: color-mix(in oklab, var(--muted) 22%, transparent);
+  color: var(--muted);
+}
+.badge.rsil-badge--risk-high {
+  background: color-mix(in oklab, var(--destructive, #ef4444) 16%, transparent);
+  color: #fca5a5;
+}
+.badge.rsil-badge--risk-medium {
+  background: color-mix(in oklab, #f59e0b 16%, transparent);
+  color: #fcd34d;
+}
+.badge.rsil-badge--risk-low {
+  background: color-mix(in oklab, var(--ok, #22c55e) 14%, transparent);
+  color: #86efac;
+}
+
+/* Detail drawer */
+.rsil-detail {
+  width: 380px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel, var(--card));
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rsil-detail__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  /* Keep the close button reachable while the drawer body scrolls. */
+  position: sticky;
+  top: -16px;
+  margin: -16px -16px 0;
+  padding: 12px 16px;
+  background: var(--panel, var(--card));
+  border-bottom: 1px solid var(--border);
+  z-index: 2;
+}
+
+.rsil-detail__head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong, var(--text));
+}
+
+.rsil-detail__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-accent, var(--card));
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.rsil-detail__close:hover {
+  background: var(--destructive, #ef4444);
+  color: #fff;
+  border-color: transparent;
+}
+
+.rsil-detail__close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.rsil-detail__meta,
+.rsil-detail__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rsil-detail__section h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.rsil-detail__steps {
+  width: 100%;
+  background: var(--input, var(--bg-accent));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.rsil-detail__save,
+.rsil-detail__report {
+  align-self: flex-start;
+  margin-top: 8px;
+  background: var(--accent, #ff5c5c);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rsil-detail__report {
+  background: var(--bg-accent, var(--card));
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.rsil-detail__save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rsil-detail__notes {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.rsil-detail__notes h3,
+.rsil-detail__notes h4 {
+  font-size: 13px;
+  margin: 12px 0 4px;
+  color: var(--text-strong, var(--text));
+}
+
+/* Reports browser */
+.rsil-reports {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rsil-reports__list {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.rsil-reports__group {
+  margin-bottom: 10px;
+}
+
+.rsil-reports__date {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 4px 6px;
+}
+
+.rsil-reports__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+}
+
+.rsil-reports__item:hover {
+  background: var(--bg-hover, var(--bg-accent));
+}
+
+.rsil-reports__item--active {
+  background: var(--bg-accent, var(--card));
+  color: var(--text-strong, var(--text));
+}
+
+.rsil-reports__content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 24px;
+}
+
+.rsil-reports__md {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  max-width: 820px;
+}
+
+.rsil__status,
+.rsil__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rsil__status svg {
+  width: 18px;
+  height: 18px;
+  animation: rsil-spin 1s linear infinite;
+}
+
+@keyframes rsil-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

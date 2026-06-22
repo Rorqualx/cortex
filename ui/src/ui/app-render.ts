@@ -241,6 +241,7 @@ import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.t
 import { renderLoginGate } from "./views/login-gate.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
+import { renderRsil } from "./views/rsil.ts";
 
 let pendingUpdate: (() => void) | undefined;
 let thinkingTickInterval: ReturnType<typeof setInterval> | undefined;
@@ -2636,10 +2637,9 @@ export function renderApp(state: AppViewState) {
       <main
         class="content ${isChat ? "content--chat" : ""} ${state.tab === "logs"
           ? "content--logs"
-          : ""} ${state.tab === "workboard" ? "content--workboard" : ""} ${state.tab ===
-        "skillForge"
-          ? `content--skill-forge`
-          : ""}"
+          : ""} ${state.tab === "workboard" ? "content--workboard" : ""} ${state.tab === "rsil"
+          ? "content--rsil"
+          : ""} ${state.tab === "skillForge" ? `content--skill-forge` : ""}"
       >
         ${state.updateStatusBanner
           ? html`<div class="callout ${state.updateStatusBanner.tone}" role="alert">
@@ -4435,6 +4435,7 @@ export function renderApp(state: AppViewState) {
               ),
             )
           : nothing}
+        ${state.tab === "rsil" ? renderRsil(state) : nothing}
         ${state.tab === "dreams"
           ? renderDreaming({
               active: dreamingOn,

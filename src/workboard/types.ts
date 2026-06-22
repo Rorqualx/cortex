@@ -286,6 +286,42 @@ export type WorkboardNotificationSubscription = {
   updatedAt: number;
 };
 
+export const WORKBOARD_RESEARCH_CATEGORIES = [
+  "quick-win",
+  "architecture",
+  "long-horizon",
+  "queue-guidance",
+  "contradictory",
+  "finding",
+  "watch",
+] as const;
+export type WorkboardResearchCategory = (typeof WORKBOARD_RESEARCH_CATEGORIES)[number];
+export const WORKBOARD_RESEARCH_OUTCOMES = ["implemented", "skipped", "failed"] as const;
+export type WorkboardResearchOutcome = (typeof WORKBOARD_RESEARCH_OUTCOMES)[number];
+
+/**
+ * Provenance + tracking for a card ingested from the daily-research pipeline
+ * reports (`memory/reports/*.md`). Steady-state runtime only reads this; the
+ * ingest writer in `research-ingest.ts` owns it. `userTouched` is set whenever
+ * an operator edits the card so re-sync never clobbers manual triage.
+ */
+export type WorkboardResearchMeta = {
+  /** Report cycle date the item came from, `YYYY-MM-DD`. */
+  cycleDate: string;
+  /** Per-day item id, e.g. `QW-1`, `ARCH-2`, `F-3`, `WATCH-1`. */
+  itemId: string;
+  category: WorkboardResearchCategory;
+  complexity?: string;
+  risk?: string;
+  sourcePaper?: string;
+  sourceFindingRef?: string;
+  nextSteps?: string[];
+  outcome?: WorkboardResearchOutcome;
+  commit?: string;
+  /** Operator edited this card; re-sync must preserve status/assignee/nextSteps. */
+  userTouched?: boolean;
+};
+
 export type WorkboardMetadata = {
   attempts?: WorkboardRunAttempt[];
   comments?: WorkboardComment[];
@@ -304,6 +340,7 @@ export type WorkboardMetadata = {
   stale?: WorkboardStaleState;
   lifecycleStatusSourceUpdatedAt?: number;
   failureCount?: number;
+  research?: WorkboardResearchMeta;
 };
 
 export type WorkboardCard = {

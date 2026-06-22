@@ -24,6 +24,8 @@ import {
   WORKBOARD_NOTIFICATION_KINDS,
   WORKBOARD_PRIORITIES,
   WORKBOARD_PROOF_STATUSES,
+  WORKBOARD_RESEARCH_CATEGORIES,
+  WORKBOARD_RESEARCH_OUTCOMES,
   WORKBOARD_SECTIONS,
   WORKBOARD_STATUSES,
   WORKBOARD_TEMPLATE_IDS,
@@ -48,6 +50,8 @@ import {
   type WorkboardLink,
   type WorkboardLinkType,
   type WorkboardMetadata,
+  type WorkboardResearchMeta,
+  type WorkboardResearchOutcome,
   type WorkboardNotification,
   type WorkboardNotificationKind,
   type WorkboardNotificationSubscription,
@@ -1216,6 +1220,64 @@ function normalizeProofInput(input: WorkboardProofInput, now: number): Workboard
   };
 }
 
+const MAX_RESEARCH_NEXT_STEPS = 12;
+
+function normalizeResearchMeta(
+  value: unknown,
+  fallback: WorkboardResearchMeta | undefined,
+): WorkboardResearchMeta | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return fallback;
+  }
+  const record = value as Record<string, unknown>;
+  const cycleDate =
+    normalizeBoundedString(record.cycleDate, fallback?.cycleDate, 10, "research cycleDate") ?? "";
+  const itemId =
+    normalizeBoundedString(record.itemId, fallback?.itemId, 40, "research itemId") ?? "";
+  if (!cycleDate || !itemId) {
+    // Research provenance is meaningless without its keys; drop the block.
+    return fallback;
+  }
+  const category = WORKBOARD_RESEARCH_CATEGORIES.includes(
+    record.category as WorkboardResearchMeta["category"],
+  )
+    ? (record.category as WorkboardResearchMeta["category"])
+    : (fallback?.category ?? "finding");
+  const outcome = WORKBOARD_RESEARCH_OUTCOMES.includes(record.outcome as WorkboardResearchOutcome)
+    ? (record.outcome as WorkboardResearchOutcome)
+    : fallback?.outcome;
+  const nextSteps = Object.hasOwn(record, "nextSteps")
+    ? normalizeStringList(record.nextSteps, "research nextSteps", 600).slice(
+        0,
+        MAX_RESEARCH_NEXT_STEPS,
+      )
+    : fallback?.nextSteps;
+  return {
+    cycleDate,
+    itemId,
+    category,
+    complexity: normalizeBoundedString(record.complexity, fallback?.complexity, 24, "complexity"),
+    risk: normalizeBoundedString(record.risk, fallback?.risk, 24, "risk"),
+    sourcePaper: normalizeBoundedString(
+      record.sourcePaper,
+      fallback?.sourcePaper,
+      240,
+      "sourcePaper",
+    ),
+    sourceFindingRef: normalizeBoundedString(
+      record.sourceFindingRef,
+      fallback?.sourceFindingRef,
+      40,
+      "sourceFindingRef",
+    ),
+    nextSteps: nextSteps && nextSteps.length > 0 ? nextSteps : undefined,
+    outcome,
+    commit: normalizeBoundedString(record.commit, fallback?.commit, 40, "commit"),
+    userTouched:
+      typeof record.userTouched === "boolean" ? record.userTouched : fallback?.userTouched,
+  };
+}
+
 function normalizeMetadata(
   value: unknown,
   fallback: WorkboardMetadata = {},
@@ -1335,6 +1397,9 @@ function normalizeMetadata(
       typeof record.failureCount === "number" && Number.isFinite(record.failureCount)
         ? Math.max(0, Math.trunc(record.failureCount))
         : fallback.failureCount,
+    research: Object.hasOwn(record, "research")
+      ? normalizeResearchMeta(record.research, fallback.research)
+      : fallback.research,
   });
 }
 
@@ -1441,6 +1506,7 @@ function removeUndefinedMetadataFields(metadata: WorkboardMetadata): WorkboardMe
     "stale",
     "lifecycleStatusSourceUpdatedAt",
     "failureCount",
+    "research",
   ] as const) {
     const value = next[key];
     if (

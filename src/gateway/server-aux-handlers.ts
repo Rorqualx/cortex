@@ -302,6 +302,8 @@ export function createGatewayAuxHandlers(params: {
     "workboard.boards.create",
     "workboard.boards.archive",
     "workboard.boards.delete",
+    "workboard.research.sync",
+    "workboard.research.reports",
   ];
   for (const m of WB_METHODS) {
     wbHandlers[m] = loadWorkboardHandler(m) as GatewayRequestHandler;

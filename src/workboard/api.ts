@@ -1,3 +1,6 @@
+import type { Dirent } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { GatewayMethodHandler } from "../gateway/methods/descriptor.js";
 /**
  * Workboard API — bridge from store to core gateway method registry.
@@ -5,9 +8,52 @@ import type { GatewayMethodHandler } from "../gateway/methods/descriptor.js";
  * Called by the core gateway server startup to register workboard RPC methods
  * alongside other core methods. Replaces the plugin's registerGatewayMethod path.
  */
+import { resolveResearchReportsDir, runResearchIngest } from "./research-ingest.js";
 import { WorkboardStore } from "./store.js";
 
 export { WorkboardStore } from "./store.js";
+
+const REPORT_FILE_NAME = /^[a-zA-Z0-9._-]+\.md$/;
+const REPORT_NAME_PARTS = /^([a-z-]+?)-(\d{4}-\d{2}-\d{2})\.md$/;
+
+/** List the markdown reports in the research reports dir for the Reports browser. */
+async function listResearchReports(reportsDir: string) {
+  let dirents: Dirent[];
+  try {
+    dirents = await fs.readdir(reportsDir, { withFileTypes: true });
+  } catch {
+    return { reportsDir, reports: [] as Array<Record<string, unknown>> };
+  }
+  const reports = await Promise.all(
+    dirents
+      .filter((e) => e.isFile() && e.name.endsWith(".md"))
+      .map(async (e) => {
+        const stat = await fs.stat(path.join(reportsDir, e.name)).catch(() => null);
+        const parts = e.name.match(REPORT_NAME_PARTS);
+        return {
+          name: e.name,
+          kind: parts?.[1] ?? "other",
+          date: parts?.[2] ?? null,
+          size: stat?.size ?? 0,
+        };
+      }),
+  );
+  // Newest first; the browser groups by date/kind.
+  reports.sort((a, b) => b.name.localeCompare(a.name));
+  return { reportsDir, reports };
+}
+
+/** Read one report's raw markdown, guarding against path traversal. */
+async function readResearchReport(reportsDir: string, name: string) {
+  if (!REPORT_FILE_NAME.test(name)) {
+    throw Object.assign(new Error("invalid report name"), { code: "workboard_error" });
+  }
+  const content = await fs.readFile(path.join(reportsDir, name), "utf-8").catch(() => null);
+  if (content === null) {
+    throw Object.assign(new Error("report not found"), { code: "workboard_error" });
+  }
+  return { name, content };
+}
 
 function readId(p: Record<string, unknown>) {
   const v = p.id;
@@ -175,6 +221,29 @@ export function createWorkboardGatewayHandlers(
 
     "workboard.boards.delete": async (p: Record<string, unknown>) => {
       return s.deleteBoard(readId(p));
+    },
+
+    // Research lab: ingest the daily-research reports into the dedicated board.
+    "workboard.research.sync": async (p: Record<string, unknown>) => {
+      const reportsDir =
+        typeof p.reportsDir === "string" && p.reportsDir.trim()
+          ? p.reportsDir.trim()
+          : resolveResearchReportsDir();
+      const defaultAssignee =
+        typeof p.defaultAssignee === "string" && p.defaultAssignee.trim()
+          ? p.defaultAssignee.trim()
+          : undefined;
+      return runResearchIngest({ store: s, reportsDir, defaultAssignee });
+    },
+
+    // Research lab: list + read the raw report markdown for the Reports browser.
+    "workboard.research.reports": async (p: Record<string, unknown>) => {
+      const reportsDir =
+        typeof p.reportsDir === "string" && p.reportsDir.trim()
+          ? p.reportsDir.trim()
+          : resolveResearchReportsDir();
+      const name = typeof p.name === "string" && p.name.trim() ? p.name.trim() : undefined;
+      return name ? readResearchReport(reportsDir, name) : listResearchReports(reportsDir);
     },
   };
 }

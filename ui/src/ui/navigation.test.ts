@@ -32,8 +32,10 @@ describe("iconForTab", () => {
       overview: "barChart",
       activity: "activity",
       workboard: "folder",
+      rsil: "brain",
       channels: "link",
       instances: "radio",
+      conversations: "messageSquare",
       sessions: "fileText",
       usage: "barChart",
       cron: "loader",
@@ -42,6 +44,7 @@ describe("iconForTab", () => {
       skillForge: "wrench",
       nodes: "monitor",
       dreams: "moon",
+      vault: "key",
       config: "settings",
       communications: "send",
       appearance: "spark",
@@ -68,8 +71,10 @@ describe("titleForTab", () => {
       overview: "Overview",
       activity: "Activity",
       workboard: "Workboard",
+      rsil: "Improvement Lab",
       channels: "Channels",
       instances: "Instances",
+      conversations: "Conversations",
       sessions: "Sessions",
       usage: "Usage",
       cron: "Cron Jobs",
@@ -78,6 +83,7 @@ describe("titleForTab", () => {
       skillForge: "Skill Forge",
       nodes: "Nodes",
       dreams: "Dreaming",
+      vault: "Vault",
       config: "Settings",
       communications: "Communications",
       appearance: "Appearance",
@@ -98,8 +104,10 @@ describe("subtitleForTab", () => {
       overview: "Status, entry points, health.",
       activity: "Browser-local tool activity summaries.",
       workboard: "Agent work queue and session handoff.",
+      rsil: "Recursive Self-Improvement Laboratory — research findings, triage, and execution.",
       channels: "Channels and settings.",
       instances: "Connected clients and nodes.",
+      conversations: "All chat transcripts.",
       sessions: "Active sessions and defaults.",
       usage: "API usage and costs.",
       cron: "Wakeups and recurring runs.",
@@ -108,6 +116,7 @@ describe("subtitleForTab", () => {
       skillForge: "Review, refine, and apply proposals before they become live skills.",
       nodes: "Paired devices and commands.",
       dreams: "Memory dreaming, consolidation, and reflection.",
+      vault: "Saved API credentials the agent uses without seeing them.",
       config: "Edit openclaw.json.",
       communications: "Channels, messages, and audio settings.",
       appearance: "Theme, UI, and setup wizard settings.",
@@ -225,7 +234,13 @@ describe("inferBasePathFromPathname", () => {
 
 describe("TAB_GROUPS", () => {
   it("contains all expected groups", () => {
-    expect(TAB_GROUPS.map((g) => g.label)).toEqual(["chat", "control", "agent", "settings"]);
+    expect(TAB_GROUPS.map((g) => g.label)).toEqual([
+      "chat",
+      "channels",
+      "control",
+      "agent",
+      "settings",
+    ]);
   });
 
   it("all tabs are unique", () => {
@@ -244,6 +259,7 @@ describe("TAB_GROUPS", () => {
       "appearance",
       "automation",
       "mcp",
+      "vault",
       "infrastructure",
       "aiAgents",
       "debug",

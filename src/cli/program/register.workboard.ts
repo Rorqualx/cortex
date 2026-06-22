@@ -64,6 +64,42 @@ export function registerWorkboardCli(program: Command) {
       }
     });
 
+  wb.command("research-sync")
+    .description(
+      "Ingest the daily-research reports into the Recursive Self-Improvement Laboratory board",
+    )
+    .option("--reports-dir <dir>", "Override the reports directory")
+    .option("--assignee <agentId>", "Default assignee for newly created cards")
+    .option("--json", "Output JSON")
+    .action(async (opts) => {
+      try {
+        const { runResearchIngest, resolveResearchReportsDir } =
+          await import("../../workboard/research-ingest.js");
+        const store = await resolveStore();
+        const reportsDir =
+          (opts.reportsDir as string | undefined)?.trim() || resolveResearchReportsDir();
+        const result = await runResearchIngest({
+          store,
+          reportsDir,
+          defaultAssignee: opts.assignee as string | undefined,
+        });
+        if (opts.json) {
+          process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+        } else {
+          process.stdout.write(
+            `Research sync → board ${result.boardId}\n` +
+              `  cycles: ${result.cyclesProcessed.join(", ") || "none"}\n` +
+              `  created ${result.created}, updated ${result.updated}, ` +
+              `preserved ${result.skippedUserTouched}, archived ${result.archived}\n` +
+              (result.warnings.length > 0 ? `  warnings: ${result.warnings.length}\n` : ""),
+          );
+        }
+      } catch (error) {
+        process.stderr.write(`Error: ${formatErrorMessage(error)}\n`);
+        process.exitCode = 1;
+      }
+    });
+
   wb.command("show <id>")
     .description("Show card details")
     .action(async (id: string) => {
