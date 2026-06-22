@@ -151,6 +151,28 @@ if [[ "${SKIP_ACTIVE_CHECK:-0}" -ne 1 && "${FORCE:-0}" -ne 1 ]]; then
   fi
 fi
 
+# ── Check for in-flight cron runs ──────────────────────────────────────
+# Killing the gateway also kills every running cron job (research scans,
+# skill-forge, the nightly upstream-merge). Refuse to restart while any cron
+# job is in-flight unless forced. Reads the persisted runningAtMs marker, so it
+# works here in the detached restart process (cross-process, no gateway needed).
+if [[ "${SKIP_ACTIVE_CHECK:-0}" -ne 1 && "${FORCE:-0}" -ne 1 ]]; then
+  if bash "${ROOT_DIR}/scripts/cron-restart-safe-wait.sh" --once; then
+    :
+  else
+    rc=$?
+    if [[ "$rc" -eq 3 ]]; then
+      log_yellow "⚠️  Cron job(s) currently running (see above)."
+      log_yellow "Use --force to override, or wait for the run(s) to finish."
+      if [[ "${CI:-}" != "true" ]]; then
+        exit 1
+      fi
+      log_yellow "CI detected — continuing anyway."
+    fi
+    # rc=2 (no db / no sqlite3) is a soft skip — nothing to block on.
+  fi
+fi
+
 # ── Kill old gateway ───────────────────────────────────────────────────
 # This runs INSIDE the daemonized process (or directly if called outside).
 # We are already orphaned from the old gateway, so killing it won't kill us.
