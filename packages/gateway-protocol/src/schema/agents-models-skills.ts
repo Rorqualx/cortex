@@ -107,6 +107,7 @@ export const AgentsCreateParamsSchema = Type.Object(
     model: Type.Optional(NonEmptyString),
     emoji: Type.Optional(Type.String()),
     avatar: Type.Optional(Type.String()),
+    description: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -732,6 +733,24 @@ export const ToolsInvokeResultSchema = Type.Object(
       ]),
     ),
     error: Type.Optional(ToolsInvokeErrorSchema),
+  },
+  { additionalProperties: false },
+);
+
+/** Compose a draft agent prompt (SOUL.md) from a brief description via the default model. */
+export const AgentsComposePromptParamsSchema = Type.Object(
+  {
+    brief: NonEmptyString,
+    agentId: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
+/** Result of composing an agent prompt. */
+export const AgentsComposePromptResultSchema = Type.Object(
+  {
+    ok: Type.Literal(true),
+    prompt: Type.String(),
   },
   { additionalProperties: false },
 );

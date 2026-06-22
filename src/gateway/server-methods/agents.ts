@@ -8,6 +8,7 @@ import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
+  validateAgentsComposePromptParams,
   validateAgentsCreateParams,
   validateAgentsDeleteParams,
   validateAgentsFilesGetParams,
@@ -21,9 +22,14 @@ import {
   listAgentIds,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
+  resolveDefaultAgentId,
 } from "../../agents/agent-scope.js";
 import { mergeIdentityMarkdownContent } from "../../agents/identity-file.js";
 import { resolveAgentIdentity } from "../../agents/identity.js";
+import {
+  completeWithPreparedSimpleCompletionModel,
+  prepareSimpleCompletionModelForAgent,
+} from "../../agents/simple-completion-runtime.js";
 import {
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_BOOTSTRAP_FILENAME,
@@ -531,6 +537,41 @@ async function buildIdentityMarkdownOrRespondUnsafe(params: {
   }
 }
 
+// Standards/template the composer must follow when turning a brief into a full
+// agent prompt. Mirrors docs/reference/templates/SOUL.md so generated prompts
+// drop straight into the agent's SOUL.md (which is loaded into its context).
+const AGENT_PROMPT_COMPOSER_SYSTEM =
+  `You write SOUL.md files for OpenClaw agents — the persona/behavior prompt loaded into the agent's context.
+Given a brief description of an agent, produce a complete, well-structured SOUL.md in markdown.
+
+Output ONLY the markdown body (no code fences, no YAML frontmatter). Address the agent as "you". Use these sections:
+- "# <Agent name or role>" title line.
+- "## Core Truths" — 3-5 bullet points on who the agent is and what it's for.
+- "## Boundaries" — what it must not do; safety/ownership limits.
+- "## Vibe" — tone and working style.
+- "## Continuity" — how it should carry context and follow up.
+Keep it concise (under 1500 characters), concrete, and free of secrets or absolute filesystem paths.`.trim();
+
+/** Flatten an LLM completion's content blocks into plain text. */
+function collectComposedPromptText(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block && typeof block === "object" && "text" in block) {
+      const text = (block as { text?: unknown }).text;
+      if (typeof text === "string" && text.length > 0) {
+        parts.push(text);
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
 export const agentsHandlers: GatewayRequestHandlers = {
   "agents.list": async ({ params, respond, context }) => {
     if (!validateAgentsListParams(params)) {
@@ -576,6 +617,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     const safeName = sanitizeIdentityLine(rawName);
     const model = resolveOptionalStringParam(params.model);
+    const description = resolveOptionalStringParam(params.description);
     const identity = createAgentIdentityConfig({
       safeName,
       emoji: params.emoji,
@@ -589,6 +631,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       name: safeName,
       workspace: workspaceDir,
       model,
+      description,
       identity,
     });
     const agentDir = resolveAgentDir(nextConfig, agentId);
@@ -643,6 +686,93 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
 
     respond(true, { ok: true, agentId, name: safeName, workspace: workspaceDir, model }, undefined);
+  },
+  "agents.composePrompt": async ({ params, respond, context }) => {
+    if (!validateAgentsComposePromptParams(params)) {
+      respondInvalidMethodParams(
+        respond,
+        "agents.composePrompt",
+        validateAgentsComposePromptParams.errors,
+      );
+      return;
+    }
+    const cfg = context.getRuntimeConfig();
+    const briefRaw = (params as { brief?: unknown }).brief;
+    const brief = typeof briefRaw === "string" ? briefRaw.trim() : "";
+    if (!brief) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "brief is required"));
+      return;
+    }
+    const rawAgentId = (params as { agentId?: unknown }).agentId;
+    const agentId =
+      typeof rawAgentId === "string" && rawAgentId.trim()
+        ? normalizeAgentId(rawAgentId.trim())
+        : resolveDefaultAgentId(cfg);
+
+    let prepared;
+    try {
+      prepared = await prepareSimpleCompletionModelForAgent({
+        cfg,
+        agentId,
+        allowMissingApiKeyModes: ["aws-sdk"],
+        skipAgentDiscovery: true,
+      });
+    } catch (error) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `model preparation failed: ${error instanceof Error ? error.message : "unknown"}`,
+        ),
+      );
+      return;
+    }
+    if ("error" in prepared) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, prepared.error));
+      return;
+    }
+
+    let result;
+    try {
+      result = await completeWithPreparedSimpleCompletionModel({
+        model: prepared.model,
+        auth: prepared.auth,
+        cfg,
+        context: {
+          systemPrompt: AGENT_PROMPT_COMPOSER_SYSTEM,
+          messages: [{ role: "user", content: brief, timestamp: Date.now() }],
+        },
+        options: {
+          maxTokens:
+            typeof prepared.model.maxTokens === "number" &&
+            Number.isFinite(prepared.model.maxTokens)
+              ? Math.min(prepared.model.maxTokens, 2000)
+              : 2000,
+        },
+      });
+    } catch (error) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.UNAVAILABLE,
+          `prompt composition failed: ${error instanceof Error ? error.message : "unknown"}`,
+        ),
+      );
+      return;
+    }
+
+    const prompt = collectComposedPromptText(result.content).trim();
+    if (!prompt) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.UNAVAILABLE, "model returned no text for prompt composition"),
+      );
+      return;
+    }
+    respond(true, { ok: true, prompt }, undefined);
   },
   "agents.update": async ({ params, respond, context }) => {
     if (!validateAgentsUpdateParams(params)) {

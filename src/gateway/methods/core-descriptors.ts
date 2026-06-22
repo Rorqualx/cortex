@@ -101,6 +101,7 @@ export const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "environments.status", scope: "operator.read" },
   { name: "agents.list", scope: "operator.read" },
   { name: "agents.create", scope: "operator.admin" },
+  { name: "agents.composePrompt", scope: "operator.admin" },
   { name: "agents.update", scope: "operator.admin" },
   { name: "agents.delete", scope: "operator.admin" },
   { name: "agents.files.list", scope: "operator.read" },

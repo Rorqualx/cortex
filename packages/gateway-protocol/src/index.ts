@@ -17,6 +17,7 @@ import {
   AgentsFileEntrySchema,
   type AgentsCreateParams,
   AgentsCreateParamsSchema,
+  AgentsComposePromptParamsSchema,
   type AgentsCreateResult,
   AgentsCreateResultSchema,
   type AgentsUpdateParams,
@@ -602,6 +603,7 @@ export const validateWakeParams = lazyCompile<WakeParams>(WakeParamsSchema);
 export const validateAgentsListParams = lazyCompile<AgentsListParams>(AgentsListParamsSchema);
 export const validateAgentsCreateParams = lazyCompile<AgentsCreateParams>(AgentsCreateParamsSchema);
 export const validateAgentsUpdateParams = lazyCompile<AgentsUpdateParams>(AgentsUpdateParamsSchema);
+export const validateAgentsComposePromptParams = lazyCompile(AgentsComposePromptParamsSchema);
 export const validateAgentsDeleteParams = lazyCompile<AgentsDeleteParams>(AgentsDeleteParamsSchema);
 export const validateAgentsFilesListParams = lazyCompile<AgentsFilesListParams>(
   AgentsFilesListParamsSchema,

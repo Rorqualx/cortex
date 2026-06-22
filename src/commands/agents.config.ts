@@ -119,6 +119,7 @@ export function applyAgentConfig(
     workspace?: string;
     agentDir?: string;
     model?: string;
+    description?: string;
     identity?: IdentityConfig;
   },
 ): OpenClawConfig {
@@ -134,6 +135,7 @@ export function applyAgentConfig(
     ...(params.workspace ? { workspace: params.workspace } : {}),
     ...(params.agentDir ? { agentDir: params.agentDir } : {}),
     ...(params.model ? { model: params.model } : {}),
+    ...(params.description !== undefined ? { description: params.description } : {}),
     ...(mergedIdentity ? { identity: mergedIdentity } : {}),
   };
   const nextList = [...list];

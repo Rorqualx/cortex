@@ -11,6 +11,15 @@ const mocks = vi.hoisted(() => ({
   listAgentEntries: vi.fn((_cfg?: unknown) => [] as Array<Record<string, unknown>>),
   findAgentEntryIndex: vi.fn((_list?: unknown, _agentId?: string) => -1),
   applyAgentConfig: vi.fn((_cfg: unknown, _opts: unknown) => ({})),
+  resolveDefaultAgentId: vi.fn((_cfg?: unknown) => "main"),
+  prepareSimpleCompletionModelForAgent: vi.fn(async () => ({
+    model: { maxTokens: 1000 },
+    auth: { apiKey: "test" },
+    selection: { provider: "test", modelId: "test-model" },
+  })),
+  completeWithPreparedSimpleCompletionModel: vi.fn(async () => ({
+    content: "# Composed\n\n## Core Truths\n- you help",
+  })),
   pruneAgentConfig: vi.fn(() => ({ config: {}, removedBindings: 0 })),
   writeConfigFile: vi.fn(async (_nextConfig?: unknown) => {}),
   ensureAgentWorkspace: vi.fn(
@@ -113,6 +122,12 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentConfig: (cfg: unknown, agentId: string) =>
     getAgentList(cfg).find((entry) => entry.id === agentId),
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
+  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
+}));
+
+vi.mock("../../agents/simple-completion-runtime.js", () => ({
+  prepareSimpleCompletionModelForAgent: mocks.prepareSimpleCompletionModelForAgent,
+  completeWithPreparedSimpleCompletionModel: mocks.completeWithPreparedSimpleCompletionModel,
 }));
 
 vi.mock("../../agents/workspace.js", async () => {
@@ -534,6 +549,31 @@ describe("agents.create", () => {
     });
     expect(mocks.ensureAgentWorkspace).toHaveBeenCalled();
     expect(mocks.writeConfigFile).toHaveBeenCalled();
+  });
+
+  it("passes description into the agent config on create", async () => {
+    const { promise } = makeCall("agents.create", {
+      name: "Described Agent",
+      workspace: "/home/user/agents/described",
+      description: "Handles fast lookups.",
+    });
+    await promise;
+
+    const createCall = mocks.applyAgentConfig.mock.calls.find(
+      (call) => (call[1] as { description?: string }).description === "Handles fast lookups.",
+    );
+    expect(createCall).toBeDefined();
+  });
+
+  it("composes an agent prompt from a brief via the default model", async () => {
+    const { respond, promise } = makeCall("agents.composePrompt", {
+      brief: "An agent that triages incoming bug reports.",
+    });
+    await promise;
+
+    expect(mocks.prepareSimpleCompletionModelForAgent).toHaveBeenCalled();
+    expect(mocks.completeWithPreparedSimpleCompletionModel).toHaveBeenCalled();
+    expectRespondOk(respond, { ok: true, prompt: "# Composed\n\n## Core Truths\n- you help" });
   });
 
   it("ensures workspace is set up before writing config", async () => {
