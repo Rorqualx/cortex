@@ -5,6 +5,7 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { logWarn } from "../logger.js";
 import { setPluginToolMeta, type PluginToolMcpMeta } from "../plugins/tools.js";
+import { sanitizeExternalContentText, wrapExternalContent } from "../security/external-content.js";
 import {
   buildSafeToolName,
   normalizeReservedToolNames,
@@ -21,6 +22,49 @@ import type { AgentToolResult } from "./runtime/index.js";
 import type { AnyAgentTool } from "./tools/common.js";
 
 type ToolResultContentBlock = AgentToolResult<unknown>["content"][number];
+
+// MCP servers are third-party/untrusted; fence their model-facing text through the
+// shared external-content sanitizer so tool-call delimiters, special tokens, or
+// spoofed boundary markers in server output cannot forge tool calls or corrupt
+// downstream structured-output merging. includeWarning is off so the verbose banner
+// is not repeated on every tool result — the boundary markers + sanitization are the
+// load-bearing parts (matches web_fetch). sender carries server provenance.
+function fenceUntrustedMcpText(text: string, serverName: string): string {
+  return wrapExternalContent(text, { source: "mcp", sender: serverName, includeWarning: false });
+}
+
+function fenceUntrustedMcpBlock(
+  block: ToolResultContentBlock,
+  serverName: string,
+): ToolResultContentBlock {
+  return block.type === "text"
+    ? { type: "text", text: fenceUntrustedMcpText(block.text, serverName) }
+    : block;
+}
+
+// structuredContent is exposed to code-mode workers as raw JS values (code-mode returns
+// a tool result's `details` to model-authored code), so the rendered text block's
+// whole-string fence is not enough — this channel needs its own sanitization. Neutralize
+// injection delimiters in every string leaf AND object key (a malicious property name can
+// carry a delimiter too) so details.structuredContent is safe to enumerate. Input is
+// always JSON-deserialized, so plain objects/arrays/primitives are the only shapes.
+function sanitizeMcpStructuredValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return sanitizeExternalContentText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeMcpStructuredValue);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        sanitizeExternalContentText(key),
+        sanitizeMcpStructuredValue(entry),
+      ]),
+    );
+  }
+  return value;
+}
 
 // AgentToolResult only carries text/image, but an MCP CallToolResult can also
 // return resource_link, resource, and audio blocks (MCP SDK ContentBlock union).
@@ -56,47 +100,65 @@ function mcpContentBlockToToolResult(block: ContentBlock): ToolResultContentBloc
   }
 }
 
+// Fences each untrusted MCP content block; falls back to a small trusted status block
+// when the server returned no content and no structuredContent.
+function fencedMcpContentBlocks(params: {
+  serverName: string;
+  toolName: string;
+  result: CallToolResult;
+}): AgentToolResult<unknown>["content"] {
+  const content = Array.isArray(params.result.content)
+    ? params.result.content.map((block) =>
+        fenceUntrustedMcpBlock(mcpContentBlockToToolResult(block), params.serverName),
+      )
+    : [];
+  if (content.length > 0) {
+    return content;
+  }
+  return [
+    {
+      type: "text",
+      text: JSON.stringify(
+        {
+          status: params.result.isError === true ? "error" : "ok",
+          server: params.serverName,
+          tool: params.toolName,
+        },
+        null,
+        2,
+      ),
+    },
+  ];
+}
+
 function toAgentToolResult(params: {
   serverName: string;
   toolName: string;
   result: CallToolResult;
 }): AgentToolResult<unknown> {
-  const content: AgentToolResult<unknown>["content"] = Array.isArray(params.result.content)
-    ? params.result.content.map(mcpContentBlockToToolResult)
-    : [];
-  const structuredContentBlock =
-    params.result.structuredContent !== undefined
-      ? ({
+  const hasStructured = params.result.structuredContent !== undefined;
+  // Structured MCP results are the canonical model payload here; when present they
+  // replace mirrored content, so the content array is only built/fenced when absent.
+  // The rendered block fences the whole stringified JSON in one pass (neutralizing every
+  // leaf and key), so it can stringify the raw value; the per-leaf walk is reserved for
+  // the details channel, which is not re-fenced.
+  const normalizedContent: AgentToolResult<unknown>["content"] = hasStructured
+    ? [
+        {
           type: "text",
-          text: `structuredContent:\n${JSON.stringify(params.result.structuredContent, null, 2)}`,
-        } as const)
-      : null;
-  // Structured MCP results are the canonical model payload here; replacing
-  // mirrored content avoids duplicating large tool output in the prompt.
-  const normalizedContent: AgentToolResult<unknown>["content"] = structuredContentBlock
-    ? [structuredContentBlock]
-    : content.length > 0
-      ? content
-      : ([
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                status: params.result.isError === true ? "error" : "ok",
-                server: params.serverName,
-                tool: params.toolName,
-              },
-              null,
-              2,
-            ),
-          },
-        ] as AgentToolResult<unknown>["content"]);
+          text: fenceUntrustedMcpText(
+            `structuredContent:\n${JSON.stringify(params.result.structuredContent, null, 2)}`,
+            params.serverName,
+          ),
+        },
+      ]
+    : fencedMcpContentBlocks(params);
   const details: Record<string, unknown> = {
     mcpServer: params.serverName,
     mcpTool: params.toolName,
   };
-  if (params.result.structuredContent !== undefined) {
-    details.structuredContent = params.result.structuredContent;
+  if (hasStructured) {
+    details.structuredContent = sanitizeMcpStructuredValue(params.result.structuredContent);
   }
   if (params.result.isError === true) {
     details.status = "error";
@@ -116,13 +178,12 @@ function toJsonAgentToolResult(params: {
     content: [
       {
         type: "text",
-        text: JSON.stringify(params.value, null, 2),
+        text: fenceUntrustedMcpText(JSON.stringify(params.value, null, 2), params.serverName),
       },
     ],
     details: {
       mcpServer: params.serverName,
       mcpOperation: params.operation,
-      untrustedMcpOutput: true,
     },
   };
 }

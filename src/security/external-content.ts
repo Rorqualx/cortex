@@ -100,6 +100,7 @@ export type ExternalContentSource =
   | "channel_metadata"
   | "web_search"
   | "web_fetch"
+  | "mcp"
   | "unknown";
 
 const EXTERNAL_SOURCE_LABELS: Record<ExternalContentSource, string> = {
@@ -110,6 +111,7 @@ const EXTERNAL_SOURCE_LABELS: Record<ExternalContentSource, string> = {
   channel_metadata: "Channel metadata",
   web_search: "Web Search",
   web_fetch: "Web Fetch",
+  mcp: "MCP tool",
   unknown: "External",
 };
 
@@ -131,6 +133,7 @@ const LLM_SPECIAL_TOKEN_LITERALS = [
   // Mistral / Mixtral
   "[INST]",
   "[/INST]",
+  "[TOOL_CALLS]",
   "<<SYS>>",
   "<</SYS>>",
   // Phi and other sentencepiece-style templates
@@ -150,6 +153,27 @@ const LLM_SPECIAL_TOKEN_PATTERNS = [
   // Many Hugging Face chat templates reserve token spellings in this form. Exact known
   // literals above handle the common cases; this catches future reserved-token variants.
   /<\|reserved_special_token_\d+\|>/g,
+] as const;
+
+const TOOL_CALL_DELIMITER_REPLACEMENT = "[REMOVED_TOOL_DELIMITER]";
+
+// XML-style agentic tool-call delimiters that some harnesses parse out of model
+// output. If untrusted content carries these (e.g. a fetched page containing
+// "</parameter>"), it can forge/close a real tool call or corrupt structured-output
+// merging downstream. These are NOT model special tokens, so the literal lists above
+// miss them; neutralize them as a distinct family on the homoglyph-folded view (see
+// replaceFoldedSpans) so fullwidth/CJK angle brackets cannot smuggle one past the
+// regex. The (?=[\s/>]) lookahead keeps benign custom elements like <invoke-button>
+// or <parameter-list> intact. Scope is XML-tag grammars only; JSON tool-call
+// envelopes (e.g. the OpenAI wire format) are not — and need not be — text-matched.
+const TOOL_CALL_DELIMITER_PATTERNS = [
+  // Anthropic-style XML harness grammar, including antml:-namespaced spellings.
+  /<\/?\s*(?:antml:)?function_calls\s*>/gi,
+  /<\/?\s*(?:antml:)?invoke(?=[\s/>])[^>]*>/gi,
+  /<\/?\s*(?:antml:)?parameter(?=[\s/>])[^>]*>/gi,
+  // Generic <tool_call>/<tool_response> XML envelopes used by some chat templates.
+  /<\/?\s*tool_call\s*>/gi,
+  /<\/?\s*tool_response\s*>/gi,
 ] as const;
 
 const FULLWIDTH_ASCII_OFFSET = 0xfee0;
@@ -238,31 +262,51 @@ function foldMarkerTextWithIndexMap(input: string): FoldedMarkerMatch {
   return { folded, originalStartByFoldedIndex, originalEndByFoldedIndex };
 }
 
-function replaceMarkers(content: string): string {
+// Spoofed boundary markers. Catch whitespace-delimited spoof variants (space, tab,
+// newline) in addition to the legacy underscore form because LLMs may still parse
+// them as trusted boundary markers. Distinct replacements keep a forged start marker
+// tellable from a forged end marker.
+const MARKER_SPAN_PATTERNS: ReadonlyArray<{ regex: RegExp; value: string }> = [
+  {
+    regex: /<<<\s*EXTERNAL[\s_]+UNTRUSTED[\s_]+CONTENT(?:\s+id="[^"]{1,128}")?\s*>>>/gi,
+    value: "[[MARKER_SANITIZED]]",
+  },
+  {
+    regex: /<<<\s*END[\s_]+EXTERNAL[\s_]+UNTRUSTED[\s_]+CONTENT(?:\s+id="[^"]{1,128}")?\s*>>>/gi,
+    value: "[[END_MARKER_SANITIZED]]",
+  },
+];
+
+// Spoofed markers and tool-call delimiters are both neutralized on the homoglyph-folded
+// view, so they share one folded pass.
+const FOLDED_SPAN_PATTERNS: ReadonlyArray<{ regex: RegExp; value: string }> = [
+  ...MARKER_SPAN_PATTERNS,
+  ...TOOL_CALL_DELIMITER_PATTERNS.map((regex) => ({
+    regex,
+    value: TOOL_CALL_DELIMITER_REPLACEMENT,
+  })),
+];
+
+// Folds homoglyphs/zero-width chars first (so e.g. fullwidth "＜/parameter＞" or
+// "<​parameter>" still matches), runs every pattern over the folded view, then
+// splices replacements back onto the original bytes — preserving non-marker zero-width
+// and unicode characters. Shared by every folded-span family above.
+function replaceFoldedSpans(
+  content: string,
+  patterns: ReadonlyArray<{ regex: RegExp; value: string }>,
+): string {
   const { folded, originalStartByFoldedIndex, originalEndByFoldedIndex } =
     foldMarkerTextWithIndexMap(content);
-  // Intentionally catch whitespace-delimited spoof variants (space, tab, newline) in addition
-  // to the legacy underscore form because LLMs may still parse them as trusted boundary markers.
-  if (!/external[\s_]+untrusted[\s_]+content/i.test(folded)) {
+  // Every pattern (markers and tool-call delimiters) needs a literal '<' after folding;
+  // bail before the per-pattern scan when none survives — the common clean-content case.
+  if (!folded.includes("<")) {
     return content;
   }
   const replacements: Array<{ start: number; end: number; value: string }> = [];
-  // Match markers with or without id attribute (handles both legacy and spoofed markers)
-  const patterns: Array<{ regex: RegExp; value: string }> = [
-    {
-      regex: /<<<\s*EXTERNAL[\s_]+UNTRUSTED[\s_]+CONTENT(?:\s+id="[^"]{1,128}")?\s*>>>/gi,
-      value: "[[MARKER_SANITIZED]]",
-    },
-    {
-      regex: /<<<\s*END[\s_]+EXTERNAL[\s_]+UNTRUSTED[\s_]+CONTENT(?:\s+id="[^"]{1,128}")?\s*>>>/gi,
-      value: "[[END_MARKER_SANITIZED]]",
-    },
-  ];
-
-  for (const pattern of patterns) {
-    pattern.regex.lastIndex = 0;
+  for (const { regex, value } of patterns) {
+    regex.lastIndex = 0;
     let match: RegExpExecArray | null;
-    while ((match = pattern.regex.exec(folded)) !== null) {
+    while ((match = regex.exec(folded)) !== null) {
       const foldedStart = match.index;
       const foldedEnd = match.index + match[0].length;
       replacements.push({
@@ -271,19 +315,18 @@ function replaceMarkers(content: string): string {
           originalEndByFoldedIndex[foldedEnd - 1] ??
           originalStartByFoldedIndex[foldedEnd] ??
           foldedEnd,
-        value: pattern.value,
+        value,
       });
     }
   }
-
   if (replacements.length === 0) {
     return content;
   }
   replacements.sort((a, b) => a.start - b.start);
-
   let cursor = 0;
   let output = "";
   for (const replacement of replacements) {
+    // Drop overlapping matches (e.g. a marker and a tool-call pattern); first one wins.
     if (replacement.start < cursor) {
       continue;
     }
@@ -306,8 +349,17 @@ function replaceLlmSpecialTokenLiterals(content: string): string {
   return output;
 }
 
-function sanitizeExternalContentText(content: string): string {
-  return replaceLlmSpecialTokenLiterals(replaceMarkers(content));
+/**
+ * Neutralizes the injection families that can ride in on untrusted external content
+ * before it reaches a model: exact LLM special-token literals, spoofed boundary markers,
+ * and agentic tool-call delimiters (the latter two share one homoglyph-folded pass).
+ *
+ * Known limitation: special-token literals are matched verbatim, so a homoglyph-spelled
+ * variant (e.g. a fullwidth-pipe `<｜im_end｜>`) is not caught here. Extending the folded
+ * pass to that family is a separate, scoped hardening follow-up.
+ */
+export function sanitizeExternalContentText(content: string): string {
+  return replaceFoldedSpans(replaceLlmSpecialTokenLiterals(content), FOLDED_SPAN_PATTERNS);
 }
 
 export type WrapExternalContentOptions = {

@@ -1493,8 +1493,10 @@ process.on("SIGINT", shutdown);`,
     if (contentA?.type !== "text" || contentB?.type !== "text") {
       throw new Error("Expected configured bundle MCP probe calls to return text content");
     }
-    expect(contentA.text).toBe("FROM-CONFIG-A");
-    expect(contentB.text).toBe("FROM-CONFIG-B");
+    // Tool output is fenced through the external-content sanitizer; the per-config
+    // probe value still survives inside the boundary, proving runtime isolation.
+    expect(contentA.text).toContain("FROM-CONFIG-A");
+    expect(contentB.text).toContain("FROM-CONFIG-B");
   });
 
   it("disposes catalog startup in-flight without leaving cached runtimes", async () => {
