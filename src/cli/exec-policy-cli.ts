@@ -25,6 +25,7 @@ import {
   type ExecTarget,
 } from "../infra/exec-approvals.js";
 import { defaultRuntime } from "../runtime.js";
+import auditTactics from "../sandbox/audit-tactics.json";
 
 type ExecPolicyPresetName = "yolo" | "cautious" | "deny-all";
 
@@ -364,6 +365,83 @@ async function applyLocalExecPolicy(policy: ExecPolicyResolved): Promise<ExecPol
   return await buildLocalExecPolicyShowPayload();
 }
 
+type AuditFinding = {
+  id: string;
+  severity: "info" | "warning" | "error";
+  name: string;
+  message: string;
+  mitigation?: string;
+};
+
+async function auditExecPolicy(): Promise<AuditFinding[]> {
+  const { readFileSync } = await import("node:fs");
+  const { resolve } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const __filename = fileURLToPath(import.meta.url);
+  const auditTactics = JSON.parse(
+    readFileSync(resolve(__filename, "../../sandbox/audit-tactics.json"), "utf-8"),
+  );
+  const configSnapshot = await readConfigFileSnapshot();
+  const approvalsSnapshot = readExecApprovalsSnapshot();
+  const cfg = configSnapshot.config ?? {};
+  const execCfg = (cfg as Record<string, unknown>).tools?.exec ?? {};
+  const host = (execCfg as Record<string, unknown>).host ?? "auto";
+  const security = (execCfg as Record<string, unknown>).security ?? "full";
+  const ask = (execCfg as Record<string, unknown>).ask ?? "off";
+  const askFallback = approvalsSnapshot.file?.defaults?.askFallback ?? "full";
+  const sandboxCfg = (cfg as Record<string, unknown>).sandbox ?? {};
+  const sandboxEnabled = (sandboxCfg as Record<string, unknown>).enabled ?? false;
+  const sandboxType = (sandboxCfg as Record<string, unknown>).type ?? "none";
+  const sandboxNetwork = (sandboxCfg as Record<string, unknown>).network ?? "allow";
+  const findings: AuditFinding[] = [];
+
+  for (const tactic of auditTactics.tactics) {
+    let triggered = false;
+    switch (tactic.id) {
+      case "TA001-initial-access":
+        triggered = host === "gateway" && security === "full" && !sandboxEnabled;
+        break;
+      case "TA002-execution":
+        triggered = security === "full";
+        break;
+      case "TA003-defense-evasion":
+        triggered = host === "node" && sandboxEnabled;
+        break;
+      case "TA004-defense-evasion":
+        triggered = ask === "off";
+        break;
+      case "TA005-exfiltration":
+        triggered = sandboxNetwork === "allow";
+        break;
+      case "TA007-execution":
+        triggered = security !== "deny" && security !== "allowlist";
+        break;
+      case "TA008-initial-access":
+        triggered = ask === "off" && security === "full";
+        break;
+      case "TA014-defense-evasion":
+        triggered = askFallback === "full" || askFallback === "allowlist";
+        break;
+      case "TA015-initial-access":
+        triggered = process.platform === "darwin" && !sandboxEnabled && sandboxType === "none";
+        break;
+      default:
+        break;
+    }
+    if (triggered) {
+      findings.push({
+        id: tactic.id,
+        severity: tactic.severity as "info" | "warning" | "error",
+        name: tactic.name,
+        message: tactic.description,
+        mitigation: tactic.mitigation,
+      });
+    }
+  }
+
+  return findings;
+}
+
 export function registerExecPolicyCli(program: Command) {
   const execPolicy = program
     .command("exec-policy")
@@ -442,4 +520,37 @@ export function registerExecPolicyCli(program: Command) {
         });
       },
     );
+
+  execPolicy
+    .command("audit")
+    .description("Audit current exec policy against MITRE-style tactic checklist")
+    .option("--json", "Output as JSON", false)
+    .action(async (opts: { json?: boolean }) => {
+      await runExecPolicyAction(async () => {
+        const findings = await auditExecPolicy();
+        if (opts.json) {
+          defaultRuntime.writeJson({ version: auditTactics.version, findings }, 0);
+          return;
+        }
+        const rich = isRich();
+        const heading = (text: string) => (rich ? theme.heading(text) : text);
+        const muted = (text: string) => (rich ? theme.muted(text) : text);
+        defaultRuntime.log(heading("Exec Policy Audit"));
+        defaultRuntime.log(muted());
+        defaultRuntime.log("");
+        if (findings.length === 0) {
+          defaultRuntime.log("No issues found. Policy passes all checks.");
+        } else {
+          for (const f of findings) {
+            const sev = f.severity.toUpperCase();
+            defaultRuntime.log();
+            defaultRuntime.log();
+            if (f.mitigation) {
+              defaultRuntime.log();
+            }
+            defaultRuntime.log("");
+          }
+        }
+      });
+    });
 }

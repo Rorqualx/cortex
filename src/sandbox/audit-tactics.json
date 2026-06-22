@@ -1,0 +1,141 @@
+{
+  "version": "1.0.0",
+  "description": "MITRE ATT&CK-inspired tactic checklist for local exec policy auditing. Maps common agent-execution attack patterns to sandbox/policy mitigations.",
+  "tactics": [
+    {
+      "id": "TA001-initial-access",
+      "mitreTactic": "Initial Access",
+      "name": "Unrestricted Host Exec",
+      "description": "Agent can execute arbitrary commands on the host without sandboxing or approval.",
+      "mitigation": "Enable OS sandbox (seatbelt/bubblewrap) and set security=allowlist or deny.",
+      "check": "tools.exec.host == 'gateway' && tools.exec.security == 'full' && sandbox.enabled != true",
+      "severity": "error"
+    },
+    {
+      "id": "TA002-execution",
+      "mitreTactic": "Execution",
+      "name": "Unvetted Command Execution",
+      "description": "Agent executes shell commands without an explicit allowlist or denylist.",
+      "mitigation": "Set exec security to 'allowlist' and maintain a curated command allowlist.",
+      "check": "tools.exec.security == 'full'",
+      "severity": "warning"
+    },
+    {
+      "id": "TA003-defense-evasion",
+      "mitreTactic": "Defense Evasion",
+      "name": "Sandbox Bypass via Node Target",
+      "description": "Agent routes exec through 'node' target to bypass local sandbox policies.",
+      "mitigation": "Restrict exec host to 'gateway' or 'sandbox' when local sandbox is required.",
+      "check": "tools.exec.host == 'node' && sandbox.enabled == true",
+      "severity": "warning"
+    },
+    {
+      "id": "TA004-defense-evasion",
+      "mitreTactic": "Defense Evasion",
+      "name": "Missing Exec Approval Gate",
+      "description": "Exec approvals are disabled (ask=off) with no fallback audit trail.",
+      "mitigation": "Set ask to 'on-miss' or 'always' to ensure human review of novel commands.",
+      "check": "tools.exec.ask == 'off'",
+      "severity": "warning"
+    },
+    {
+      "id": "TA005-exfiltration",
+      "mitreTactic": "Exfiltration",
+      "name": "Unrestricted Network Egress in Sandbox",
+      "description": "OS sandbox allows unrestricted outbound network connections.",
+      "mitigation": "Set sandbox network policy to 'deny' or 'allow-loopback' for sensitive workloads.",
+      "check": "sandbox.network == 'allow'",
+      "severity": "warning"
+    },
+    {
+      "id": "TA006-discovery",
+      "mitreTactic": "Discovery",
+      "name": "Environment Enumeration",
+      "description": "Agent can freely enumerate environment variables, files, and system state.",
+      "mitigation": "Use seatbelt protectedMetadata to hide sensitive paths and env vars.",
+      "check": "tools.exec.security == 'full' && sandbox.type == 'seatbelt' && sandbox.protectedMetadata.length < 5",
+      "severity": "info"
+    },
+    {
+      "id": "TA007-execution",
+      "mitreTactic": "Execution",
+      "name": "Privileged Command Execution",
+      "description": "Agent can execute commands with elevated privileges (sudo, doas, etc).",
+      "mitigation": "Add 'sudo', 'doas', 'su' to exec denylist and require explicit approval.",
+      "check": "tools.exec.security in ['full', 'allowlist'] && 'sudo' not in exec.denylist",
+      "severity": "error"
+    },
+    {
+      "id": "TA008-initial-access",
+      "mitreTactic": "Initial Access",
+      "name": "Shell Injection via Unsanitized Input",
+      "description": "Exec commands may contain unsanitized user input leading to shell injection.",
+      "mitigation": "Enable ask=always for exec commands that interpolate user-provided strings.",
+      "check": "tools.exec.ask == 'off' && tools.exec.security == 'full'",
+      "severity": "warning"
+    },
+    {
+      "id": "TA009-exfiltration",
+      "mitreTactic": "Exfiltration",
+      "name": "Writable Paths Include Sensitive Directories",
+      "description": "Sandbox writable roots include directories that may contain secrets or credentials.",
+      "mitigation": "Minimize writableRoots; never add ~/.ssh, ~/.aws, ~/.config without explicit need.",
+      "check": "sandbox.writableRoots contains any of ['.ssh', '.aws', '.config', '.kube']",
+      "severity": "warning"
+    },
+    {
+      "id": "TA010-defense-evasion",
+      "mitreTactic": "Defense Evasion",
+      "name": "No Audit Log Retention",
+      "description": "Exec decisions are not persisted for later review or incident response.",
+      "mitigation": "Ensure exec approvals are saved to a persistent approvals file.",
+      "check": "approvalsFile.exists != true",
+      "severity": "info"
+    },
+    {
+      "id": "TA011-discovery",
+      "mitreTactic": "Discovery",
+      "name": "File System Reconnaissance",
+      "description": "Agent has broad read access to the filesystem outside the workspace.",
+      "mitigation": "Restrict exec to 'sandbox' host and limit readable paths via seatbelt config.",
+      "check": "tools.exec.host == 'gateway' && tools.exec.security == 'full'",
+      "severity": "info"
+    },
+    {
+      "id": "TA012-execution",
+      "mitreTactic": "Execution",
+      "name": "Arbitrary Code Execution via Scripting Tools",
+      "description": "Agent can invoke interpreters (python, node, ruby) without restriction.",
+      "mitigation": "Add scripting interpreters to allowlist/denylist or require approval.",
+      "check": "tools.exec.security == 'full' && 'python' not in exec.allowlist && 'node' not in exec.allowlist",
+      "severity": "info"
+    },
+    {
+      "id": "TA013-exfiltration",
+      "mitreTactic": "Exfiltration",
+      "name": "Clipboard or Pipe Exfiltration",
+      "description": "Agent can pipe sensitive data to clipboard tools (pbcopy, xclip) or external processes.",
+      "mitigation": "Denlist clipboard utilities and restrict outbound pipes in sandbox policy.",
+      "check": "tools.exec.security in ['full', 'allowlist'] && ('pbcopy' not in exec.denylist || 'xclip' not in exec.denylist)",
+      "severity": "info"
+    },
+    {
+      "id": "TA014-defense-evasion",
+      "mitreTactic": "Defense Evasion",
+      "name": "Weak Ask Fallback Policy",
+      "description": "When the approvals file is missing, the fallback policy allows full execution.",
+      "mitigation": "Set askFallback to 'deny' so missing approvals default-safe.",
+      "check": "askFallback == 'full' || askFallback == 'allowlist'",
+      "severity": "warning"
+    },
+    {
+      "id": "TA015-initial-access",
+      "mitreTactic": "Initial Access",
+      "name": "No OS Sandbox on Supported Platform",
+      "description": "Running on macOS or Linux but OS sandbox is not enabled.",
+      "mitigation": "Enable seatbelt (macOS) or bubblewrap (Linux) sandbox in config.",
+      "check": "platform in ['darwin', 'linux'] && sandbox.enabled != true && sandbox.type == 'none'",
+      "severity": "info"
+    }
+  ]
+}

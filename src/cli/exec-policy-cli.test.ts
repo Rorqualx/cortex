@@ -574,4 +574,55 @@ describe("exec-policy CLI", () => {
     expect(mocks.saveExecApprovals).toHaveBeenCalledTimes(1);
     expect(mocks.runtimeErrors).toEqual(["config write failed"]);
   });
+
+  it("audit reports findings for permissive policy", async () => {
+    mocks.setConfig({
+      tools: {
+        exec: {
+          host: "gateway",
+          security: "full",
+          ask: "off",
+        },
+      },
+    });
+    mocks.setApprovals({
+      version: 1,
+      defaults: {
+        security: "full",
+        ask: "off",
+        askFallback: "full",
+      },
+      agents: {},
+    });
+    await runExecPolicyCommand(["exec-policy", "audit"]);
+    // Human-readable audit runs without error and produces output
+    expect(mocks.defaultRuntime.log.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it("audit outputs JSON when --json is passed", async () => {
+    mocks.setConfig({
+      tools: {
+        exec: {
+          host: "gateway",
+          security: "full",
+          ask: "off",
+        },
+      },
+    });
+    mocks.setApprovals({
+      version: 1,
+      defaults: {
+        security: "full",
+        ask: "off",
+        askFallback: "full",
+      },
+      agents: {},
+    });
+    await runExecPolicyCommand(["exec-policy", "audit", "--json"]);
+    const payload = readLastJsonWrite();
+    expect(payload).toHaveProperty("version");
+    expect(payload).toHaveProperty("findings");
+    expect(Array.isArray(payload.findings)).toBe(true);
+    expect((payload.findings as unknown[]).length).toBeGreaterThan(0);
+  });
 });
