@@ -64,6 +64,10 @@ export type L2Fact = {
   /** Grounding strength used by consolidation thresholds. Absent on facts
    * extracted before PROMPT_VERSION=8; readers treat absent as "confirmed". */
   certainty?: FactCertainty;
+  /** Semantic-entropy confidence score (0–1) from the LLM extractor.
+   * Higher = more confident / lower entropy. Absent on facts extracted
+   * before PROMPT_VERSION=9; readers treat absent as 1.0 (neutral). */
+  semanticEntropy?: number;
 };
 
 /**

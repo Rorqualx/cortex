@@ -142,6 +142,7 @@ describe("scoreFact + composite", () => {
       weightInformationGain: 0,
       weightGoalRelevance: 0,
       weightReliability: 0,
+      weightSemanticEntropy: 0,
     };
     const score = composite(
       {
@@ -154,6 +155,7 @@ describe("scoreFact + composite", () => {
         informationGain: 0,
         goalRelevance: 0,
         reliability: 0,
+        semanticEntropy: 1.0,
       },
       config,
     );
@@ -169,6 +171,7 @@ describe("scoreFact + composite", () => {
         informationGain: 0,
         goalRelevance: 0,
         reliability: 0,
+        semanticEntropy: 1.0,
       },
       config,
     );
@@ -191,6 +194,7 @@ describe("scoreFact + composite", () => {
       weightInformationGain: 0,
       weightGoalRelevance: 0,
       weightReliability: 0,
+      weightSemanticEntropy: 0,
     };
     const signals = {
       lexical: 0,
@@ -202,6 +206,7 @@ describe("scoreFact + composite", () => {
       informationGain: 0.8,
       goalRelevance: 0,
       reliability: 0,
+      semanticEntropy: 1.0,
     };
     expect(composite(signals, config)).toBe(0);
     expect(composite(signals, { ...config, weightInformationGain: 0.5 })).toBeCloseTo(0.4, 6);
@@ -223,6 +228,7 @@ describe("scoreFact + composite", () => {
       weightInformationGain: 0,
       weightGoalRelevance: 0,
       weightReliability: 0,
+      weightSemanticEntropy: 0,
     };
     const score = composite(
       {
@@ -235,6 +241,7 @@ describe("scoreFact + composite", () => {
         informationGain: 0,
         goalRelevance: 0,
         reliability: 0,
+        semanticEntropy: 1.0,
       },
       config,
     );
@@ -411,6 +418,7 @@ describe("buildCorpusStats + BM25", () => {
       weightInformationGain: 0,
       weightGoalRelevance: 0.2,
       weightReliability: 0.3,
+      weightSemanticEntropy: 0,
     };
     const signals = {
       lexical: 0,
@@ -422,6 +430,7 @@ describe("buildCorpusStats + BM25", () => {
       informationGain: 0,
       goalRelevance: 0.5,
       reliability: 0.8,
+      semanticEntropy: 1.0,
     };
     expect(composite(signals, config)).toBeCloseTo(0.5 * 0.2 + 0.8 * 0.3, 6);
   });

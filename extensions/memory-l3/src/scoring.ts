@@ -69,6 +69,12 @@ export type ScoringConfig = {
    * (confirmed > instructional > tentative) score higher. Default 0.1.
    */
   weightReliability: number;
+  /**
+   * Weight for semantic-entropy confidence signal. Facts with higher
+   * semantic-entropy scores (more confident / lower entropy) get a slight
+   * boost. Default 0.1. Set to 0 to disable.
+   */
+  weightSemanticEntropy: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -89,6 +95,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightInformationGain: 0.05,
   weightGoalRelevance: 0.1,
   weightReliability: 0.1,
+  weightSemanticEntropy: 0.1,
 };
 
 // ---------------------------------------------------------------------------
@@ -193,6 +200,8 @@ export type Signals = {
   goalRelevance: number;
   /** Source reliability derived from fact certainty (confirmed=1, instructional=0.85, tentative=0.5). */
   reliability: number;
+  /** Semantic-entropy confidence score (0–1). Higher = more confident / lower entropy. */
+  semanticEntropy: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
@@ -332,6 +341,8 @@ export function scoreFact(params: {
   goalRelevance?: number;
   /** Explicit reliability override; otherwise derived from fact.certainty. */
   reliability?: number;
+  /** Semantic-entropy confidence score (0–1). Higher = more confident. Defaults to fact.semanticEntropy or 1.0. */
+  semanticEntropy?: number;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -360,6 +371,7 @@ export function scoreFact(params: {
     informationGain: params.informationGain ?? 0,
     goalRelevance: params.goalRelevance ?? 0,
     reliability: params.reliability ?? certaintyToReliability(params.fact.certainty),
+    semanticEntropy: params.semanticEntropy ?? params.fact.semanticEntropy ?? 1.0,
   };
 }
 
@@ -373,7 +385,8 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.semantic * config.weightSemantic +
     signals.informationGain * config.weightInformationGain +
     signals.goalRelevance * config.weightGoalRelevance +
-    signals.reliability * config.weightReliability
+    signals.reliability * config.weightReliability +
+    signals.semanticEntropy * config.weightSemanticEntropy
   );
 }
 

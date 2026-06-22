@@ -43,5 +43,6 @@ export function liftToL2Fact(fact: ExtractedFact, createdAt: number): L2Fact {
     reasoning: fact.reasoning,
     significant: fact.significant,
     certainty: fact.certainty,
+    semanticEntropy: fact.semanticEntropy,
   };
 }

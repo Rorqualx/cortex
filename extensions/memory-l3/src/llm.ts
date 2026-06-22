@@ -51,8 +51,8 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
   };
 }
 
-// PROMPT_VERSION = 8 — adds CERTAINTY tagging on prose facts so consolidation
-// can hold tentative observations to higher promotion bars.
+// PROMPT_VERSION = 9 — adds SEMANTIC_ENTROPY confidence scoring on prose facts.
+// v8 added CERTAINTY tagging so consolidation can hold tentative observations to higher promotion bars.
 // v7 added DECISIONS and ACTIONS co-emission. v6 added SIGNIFICANT.
 // v5 added REASONING. v4 co-emitted prose + typed.
 const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract three complementary kinds of information:
@@ -67,6 +67,7 @@ Rules (PROMPT_VERSION=8):
 - REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions.
 - SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
 - CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
+- SEMANTIC_ENTROPY: optional float 0.0–1.0 measuring the extractor's confidence that this fact is semantically coherent and well-supported by the source text. Higher = more confident (lower entropy). Default 1.0 when omitted.
 - TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
 - DECISIONS: emit when a clear decision, conclusion, or agreement was reached (including implicit ones like "let's go with X"). Each must have:
   - text: what was decided.
@@ -86,7 +87,7 @@ Emit strict JSON only, with no surrounding prose.
 Schema:
 {
   "facts": [
-    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional" }
+    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional", "semantic_entropy": 1.0 }
   ],
   "typedFacts": [
     { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
@@ -107,12 +108,13 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
 3. DECISIONS & ACTIONS — structured decisions reached and action items identified.
 
-Rules (PROMPT_VERSION=8-NATIVE):
+Rules (PROMPT_VERSION=9-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional compressed sentence explaining WHY this fact is worth remembering across sessions.
 - SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
 - CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
+- SEMANTIC_ENTROPY: optional float 0.0–1.0 measuring the extractor's confidence that this fact is semantically coherent and well-supported by the source text. Higher = more confident (lower entropy). Default 1.0 when omitted.
 - TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
 - DECISIONS: emit when a clear decision, conclusion, or agreement was reached. Each must have:
   - text: compressed description of what was decided.
@@ -132,7 +134,7 @@ Emit strict JSON only, with no surrounding prose.
 Schema:
 {
   "facts": [
-    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional" }
+    { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional", "semantic_entropy": 1.0 }
   ],
   "typedFacts": [
     { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
@@ -157,6 +159,8 @@ export type ExtractedFact = {
   significant?: boolean;
   /** Grounding strength; absent when the model omits it (treated as confirmed downstream). */
   certainty?: FactCertainty;
+  /** Semantic-entropy confidence score (0–1). Higher = more confident / lower entropy. */
+  semanticEntropy?: number;
 };
 
 export type ExtractedTypedFact = {
@@ -310,6 +314,7 @@ function normalizeFacts(facts: ReadonlyArray<unknown>): ExtractedFact[] {
           : undefined,
       significant: o.significant === true ? true : undefined,
       certainty: normalizeCertainty(o.certainty),
+      semanticEntropy: normalizeSemanticEntropy(o.semantic_entropy ?? o.semanticEntropy),
     });
   }
   return out;
@@ -319,6 +324,12 @@ function normalizeCertainty(value: unknown): FactCertainty | undefined {
   return value === "tentative" || value === "confirmed" || value === "instructional"
     ? value
     : undefined;
+}
+
+function normalizeSemanticEntropy(value: unknown): number | undefined {
+  if (typeof value !== "number") return undefined;
+  const clamped = Math.max(0, Math.min(1, value));
+  return clamped;
 }
 
 function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[] {
