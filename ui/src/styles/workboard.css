@@ -271,10 +271,38 @@
   gap: 10px;
   flex: 1;
   min-height: 0;
-  overflow-x: auto;
+  /* Always-visible custom horizontal scrollbar (matches the Improvement Lab).
+     Uses `overflow-x: scroll` + `::-webkit-scrollbar` styling and avoids the
+     standard `scrollbar-width`/`scrollbar-color` props, which would make
+     Chromium fall back to the macOS auto-hiding overlay bar. */
+  overflow-x: scroll;
   overflow-y: hidden;
   padding-bottom: 8px;
   scroll-snap-type: x proximity;
+}
+
+.workboard-board::-webkit-scrollbar {
+  height: 14px;
+}
+
+.workboard-board::-webkit-scrollbar-track {
+  background: color-mix(in oklab, var(--border) 45%, transparent);
+  border-radius: 9999px;
+}
+
+.workboard-board::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted) 55%, transparent);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  min-width: 48px;
+  transition: background 160ms ease;
+}
+
+.workboard-board::-webkit-scrollbar-thumb:hover,
+.workboard-board::-webkit-scrollbar-thumb:active {
+  background: var(--muted);
+  background-clip: padding-box;
 }
 
 .workboard-board--compact {
