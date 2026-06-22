@@ -234,7 +234,7 @@ if [[ "${NO_BUILD:-0}" -eq 1 ]]; then
 elif [[ "${UI_ONLY:-0}" -eq 1 ]]; then
   step "Building UI only..."
   cd "${ROOT_DIR}"
-  if pnpm ui:build; then
+  if CI=1 npm_config_verify_deps_before_run=false pnpm ui:build; then
     log_green "UI build completed successfully"
   else
     log_red "UI build failed!"
@@ -243,7 +243,11 @@ elif [[ "${UI_ONLY:-0}" -eq 1 ]]; then
 else
   step "Rebuilding project..."
   cd "${ROOT_DIR}"
-  if pnpm build; then
+  # Build the bundle directly (what `pnpm build` wraps) so pnpm 11's verify-deps
+  # pre-run install does not fire: under this x64/Rosetta host it aborts on the
+  # non-interactive modules-purge prompt and would leave the gateway down (we
+  # already killed it above). CI=1 keeps any nested tooling non-interactive.
+  if CI=1 npm_config_verify_deps_before_run=false node scripts/build-all.mjs; then
     log_green "Build completed successfully"
   else
     log_red "Build failed!"
@@ -255,7 +259,7 @@ fi
 if [[ ! -f "${ROOT_DIR}/dist/control-ui/index.html" ]]; then
   step "Control UI assets missing after build; running pnpm ui:build..."
   cd "${ROOT_DIR}"
-  if pnpm ui:build; then
+  if CI=1 npm_config_verify_deps_before_run=false pnpm ui:build; then
     log_green "Control UI build completed successfully"
   else
     log_red "Control UI build failed!"
