@@ -43,11 +43,13 @@ const VERDICT_TOKENS: ReadonlyArray<LlmJudgeVerdict> = [
 ];
 
 function buildJudgePrompt(params: { candidate: Candidate; draftedBody: string }): string {
+  const scLabel = params.candidate.scMechanism ?? "none";
   return [
     "Candidate workflow:",
     "",
     `Lane: ${params.candidate.lane}`,
     `Candidate ID: ${params.candidate.candidateId}`,
+    `Self-correction mechanism: ${scLabel}`,
     `Tool sequence: ${params.candidate.toolSequence.join(" -> ") || "(none)"}`,
     "",
     "Drafted SKILL.md body:",
