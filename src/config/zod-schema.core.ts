@@ -609,6 +609,9 @@ export const IdentitySchema = z
     theme: z.string().optional(),
     emoji: z.string().optional(),
     avatar: z.string().optional(),
+    // Display-only role label (e.g. "Commander"); surfaced in the UI agent
+    // profile, never written into IDENTITY.md.
+    role: z.string().optional(),
   })
   .strict()
   .optional();

@@ -5497,19 +5497,25 @@ public struct AgentsCreateParams: Codable, Sendable {
     public let model: String?
     public let emoji: String?
     public let avatar: String?
+    public let description: String?
+    public let role: String?
 
     public init(
         name: String,
         workspace: String,
         model: String?,
         emoji: String?,
-        avatar: String?)
+        avatar: String?,
+        description: String?,
+        role: String?)
     {
         self.name = name
         self.workspace = workspace
         self.model = model
         self.emoji = emoji
         self.avatar = avatar
+        self.description = description
+        self.role = role
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -5518,6 +5524,8 @@ public struct AgentsCreateParams: Codable, Sendable {
         case model
         case emoji
         case avatar
+        case description
+        case role
     }
 }
 
@@ -5558,6 +5566,8 @@ public struct AgentsUpdateParams: Codable, Sendable {
     public let model: String?
     public let emoji: String?
     public let avatar: String?
+    public let description: String?
+    public let role: String?
 
     public init(
         agentid: String,
@@ -5565,7 +5575,9 @@ public struct AgentsUpdateParams: Codable, Sendable {
         workspace: String?,
         model: String?,
         emoji: String?,
-        avatar: String?)
+        avatar: String?,
+        description: String?,
+        role: String?)
     {
         self.agentid = agentid
         self.name = name
@@ -5573,6 +5585,8 @@ public struct AgentsUpdateParams: Codable, Sendable {
         self.model = model
         self.emoji = emoji
         self.avatar = avatar
+        self.description = description
+        self.role = role
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -5582,6 +5596,8 @@ public struct AgentsUpdateParams: Codable, Sendable {
         case model
         case emoji
         case avatar
+        case description
+        case role
     }
 }
 

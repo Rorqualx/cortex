@@ -39,6 +39,8 @@ import {
   DEFAULT_SOUL_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_USER_FILENAME,
+  SOULS_DIRNAME,
+  agentSoulRelativePath,
   ensureAgentWorkspace,
   isWorkspaceSetupCompleted,
   resolveWorkspaceAttestationPaths,
@@ -147,6 +149,18 @@ type FileMeta = {
 
 type WorkspaceRoot = Awaited<ReturnType<typeof root>>;
 
+// Soul editor binding. The default agent's soul IS the workspace root SOUL.md
+// (also the shared template + the runtime fallback for everyone else). Every
+// other agent reads/writes only its own souls/<id>.md and never the root file
+// here, so the editor always shows that agent's individual soul — empty until
+// authored — instead of the shared template. Other workspace files pass through.
+function resolveSoulRelPath(agentId: string, name: string, isDefaultAgent: boolean): string {
+  if (name !== DEFAULT_SOUL_FILENAME || isDefaultAgent) {
+    return name;
+  }
+  return agentSoulRelativePath(agentId) ?? DEFAULT_SOUL_FILENAME;
+}
+
 function isRegularWorkspaceFileStat(stat: {
   isFile: boolean | (() => boolean);
   isSymbolicLink: boolean | (() => boolean);
@@ -211,6 +225,7 @@ type AgentFileEntry = {
   missing: boolean;
   size?: number;
   updatedAtMs?: number;
+  isDirectory?: boolean;
 };
 
 /**
@@ -242,6 +257,34 @@ function listDirectoryFiles(dirPath: string): AgentFileEntry[] {
       }
     }
     return files.toSorted((a, b) => a.name.localeCompare(b.name)).slice(0, 100);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Lists subdirectories of an arbitrary directory for the project folder picker.
+ * Separate from listDirectoryFiles so the active-dir file rail is unaffected.
+ * Returns up to 200 directories, sorted alphabetically, hidden dirs excluded.
+ */
+function listDirectorySubdirs(dirPath: string): AgentFileEntry[] {
+  try {
+    const entries = fsSync.readdirSync(dirPath, { withFileTypes: true });
+    const dirs: AgentFileEntry[] = [];
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        dirs.push({
+          name: entry.name,
+          path: path.join(dirPath, entry.name),
+          missing: false,
+          isDirectory: true,
+        });
+      }
+    }
+    return dirs.toSorted((a, b) => a.name.localeCompare(b.name)).slice(0, 200);
   } catch {
     return [];
   }
@@ -444,15 +487,18 @@ function createAgentIdentityConfig(params: {
   safeName?: string;
   emoji?: unknown;
   avatar?: unknown;
+  role?: unknown;
 }): IdentityConfig | undefined {
   const emoji = resolveOptionalStringParam(params.emoji);
   const avatar = resolveOptionalStringParam(params.avatar);
+  const role = resolveOptionalStringParam(params.role);
   const identity = {
     ...(params.safeName ? { name: params.safeName } : {}),
+    ...(role ? { role: sanitizeIdentityLine(role) } : {}),
     ...(emoji ? { emoji: sanitizeIdentityLine(emoji) } : {}),
     ...(avatar ? { avatar: sanitizeIdentityLine(avatar) } : {}),
   } satisfies IdentityConfig;
-  return identity.name || identity.emoji || identity.avatar ? identity : undefined;
+  return identity.name || identity.role || identity.emoji || identity.avatar ? identity : undefined;
 }
 
 function buildAgentConfigUpdate(params: {
@@ -460,6 +506,7 @@ function buildAgentConfigUpdate(params: {
   safeName?: string;
   workspaceDir?: string;
   model?: string;
+  description?: string;
   identity?: IdentityConfig;
 }): Parameters<typeof updateAgentConfigEntry>[0] {
   return {
@@ -467,6 +514,7 @@ function buildAgentConfigUpdate(params: {
     ...(params.safeName ? { name: params.safeName } : {}),
     ...(params.workspaceDir ? { workspace: params.workspaceDir } : {}),
     ...(params.model ? { model: params.model } : {}),
+    ...(params.description !== undefined ? { description: params.description } : {}),
     ...(params.identity ? { identity: params.identity } : {}),
   };
 }
@@ -620,6 +668,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     const description = resolveOptionalStringParam(params.description);
     const identity = createAgentIdentityConfig({
       safeName,
+      role: params.role,
       emoji: params.emoji,
       avatar: params.avatar,
     }) ?? { name: safeName };
@@ -674,6 +723,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
         name: safeName,
         workspace: workspaceDir,
         model,
+        description,
         identity,
         agentDir,
       });
@@ -793,6 +843,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
         : undefined;
 
     const model = resolveOptionalStringParam(params.model);
+    const description = resolveOptionalStringParam(params.description);
 
     const safeName =
       typeof params.name === "string" && params.name.trim()
@@ -803,6 +854,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       safeName,
       emoji: params.emoji,
       avatar: params.avatar,
+      role: params.role,
     });
     const hasIdentityFields = Boolean(identity);
 
@@ -811,6 +863,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       safeName,
       workspaceDir,
       model,
+      description,
       identity,
     });
     const nextConfig = applyAgentConfig(cfg, agentConfigUpdate);
@@ -957,21 +1010,28 @@ export const agentsHandlers: GatewayRequestHandlers = {
       // Fall back to showing BOOTSTRAP if workspace state cannot be read.
     }
     const files = await listAgentFiles(workspaceDir, { hideBootstrap });
-    // If an alternate path is requested, list files from that directory too
+    // If an alternate path is requested, list files + subdirectories from it.
+    // activeDirSubdirs powers the project folder picker; ~ expands to home.
     let activeDirFiles: AgentFileEntry[] | undefined;
+    let activeDirSubdirs: AgentFileEntry[] | undefined;
     if (typeof params.path === "string" && params.path.trim()) {
-      const requestedPath = path.resolve(params.path.trim());
+      const requestedPath = resolveUserPath(params.path.trim());
       // Only allow listing if the path exists and is a directory
       try {
         const stat = fsSync.statSync(requestedPath);
         if (stat.isDirectory()) {
-          activeDirFiles = await listDirectoryFiles(requestedPath);
+          activeDirFiles = listDirectoryFiles(requestedPath);
+          activeDirSubdirs = listDirectorySubdirs(requestedPath);
         }
       } catch {
         // Path doesn't exist or isn't readable — skip
       }
     }
-    respond(true, { agentId, workspace: workspaceDir, files, activeDirFiles }, undefined);
+    respond(
+      true,
+      { agentId, workspace: workspaceDir, files, activeDirFiles, activeDirSubdirs },
+      undefined,
+    );
   },
   "agents.files.get": async ({ params, respond, context }) => {
     if (!validateAgentsFilesGetParams(params)) {
@@ -1024,17 +1084,35 @@ export const agentsHandlers: GatewayRequestHandlers = {
     if (!resolved) {
       return;
     }
-    const { agentId, workspaceDir, name } = resolved;
-    const filePath = path.join(workspaceDir, name);
+    const { cfg, agentId, workspaceDir, name } = resolved;
+    const isDefaultAgent = resolveDefaultAgentId(cfg) === agentId;
+    const readRelPath = resolveSoulRelPath(agentId, name, isDefaultAgent);
+    const filePath = path.join(workspaceDir, readRelPath);
     let safeRead: ReadResult;
     try {
       const workspaceRoot = await agentsHandlerDeps.root(workspaceDir);
-      safeRead = await workspaceRoot.read(name, {
+      safeRead = await workspaceRoot.read(readRelPath, {
         hardlinks: "reject",
         nonBlockingRead: true,
       });
     } catch (err) {
       if (err instanceof FsSafeError && err.code === "not-found") {
+        if (name === DEFAULT_SOUL_FILENAME && !isDefaultAgent) {
+          // Non-default agent with no souls/<id>.md yet: show an empty editor,
+          // not the shared root SOUL.md, so the field reflects this agent. It
+          // still inherits the shared soul at runtime until one is saved here.
+          // The default agent keeps the plain missing-file response below.
+          respond(
+            true,
+            {
+              agentId,
+              workspace: workspaceDir,
+              file: { name, path: filePath, missing: true, content: "" },
+            },
+            undefined,
+          );
+          return;
+        }
         respondWorkspaceFileMissing({ respond, agentId, workspaceDir, name, filePath });
         return;
       }
@@ -1074,14 +1152,20 @@ export const agentsHandlers: GatewayRequestHandlers = {
     if (!resolved) {
       return;
     }
-    const { agentId, workspaceDir, name } = resolved;
+    const { cfg, agentId, workspaceDir, name } = resolved;
+    const isDefaultAgent = resolveDefaultAgentId(cfg) === agentId;
+    const writeRelPath = resolveSoulRelPath(agentId, name, isDefaultAgent);
     await fs.mkdir(workspaceDir, { recursive: true });
-    const filePath = path.join(workspaceDir, name);
+    if (writeRelPath !== name) {
+      // Ensure souls/ exists before the guarded write targets souls/<id>.md.
+      await fs.mkdir(path.join(workspaceDir, SOULS_DIRNAME), { recursive: true });
+    }
+    const filePath = path.join(workspaceDir, writeRelPath);
     const content = params.content;
     let workspaceRoot: WorkspaceRoot;
     try {
       workspaceRoot = await agentsHandlerDeps.root(workspaceDir);
-      await workspaceRoot.write(name, content, { encoding: "utf8" });
+      await workspaceRoot.write(writeRelPath, content, { encoding: "utf8" });
     } catch (err) {
       if (!(err instanceof FsSafeError)) {
         throw err;
@@ -1089,7 +1173,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       respondWorkspaceFileUnsafe(respond, name);
       return;
     }
-    const meta = await statWorkspaceFileSafely(workspaceRoot, workspaceDir, name);
+    const meta = await statWorkspaceFileSafely(workspaceRoot, workspaceDir, writeRelPath);
     respond(
       true,
       {

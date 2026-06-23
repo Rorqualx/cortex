@@ -30,6 +30,31 @@ export {
 } from "./workspace-default.js";
 export const DEFAULT_AGENTS_FILENAME = "AGENTS.md";
 export const DEFAULT_SOUL_FILENAME = "SOUL.md";
+// Per-agent personas live under <workspace>/souls/<agentId>.md so agents can
+// share one workspace (memory/skills/projects) while keeping distinct souls.
+// The shared SOUL.md at the workspace root is the base/template + fallback used
+// for any agent without its own file.
+export const SOULS_DIRNAME = "souls";
+
+/**
+ * Relative path (within a workspace) of an agent's individual SOUL.md, or null
+ * when the id is unsafe as a path segment. Used by both runtime bootstrap
+ * loading and the editor RPCs so they resolve the same per-agent file.
+ */
+export function agentSoulRelativePath(agentId: string): string | null {
+  const id = agentId.trim();
+  if (
+    !id ||
+    id === "." ||
+    id === ".." ||
+    id.includes("/") ||
+    id.includes("\\") ||
+    id.includes("\0")
+  ) {
+    return null;
+  }
+  return `${SOULS_DIRNAME}/${id}.md`;
+}
 export const DEFAULT_TOOLS_FILENAME = "TOOLS.md";
 export const DEFAULT_IDENTITY_FILENAME = "IDENTITY.md";
 export const DEFAULT_USER_FILENAME = "USER.md";
@@ -1044,8 +1069,40 @@ export async function ensureAgentWorkspace(params?: {
   };
 }
 
-export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
+// Picks souls/<id>.md when it exists as a regular file, else the shared
+// SOUL.md. The read in loadWorkspaceBootstrapFiles is still symlink/hardlink
+// guarded; this only decides which path to read.
+async function resolveAgentSoulFilePath(
+  resolvedDir: string,
+  agentId: string | undefined,
+): Promise<string> {
+  const sharedPath = path.join(resolvedDir, DEFAULT_SOUL_FILENAME);
+  const rel = agentId ? agentSoulRelativePath(agentId) : null;
+  if (!rel) {
+    return sharedPath;
+  }
+  const perAgentPath = path.join(resolvedDir, ...rel.split("/"));
+  try {
+    const stat = await fs.lstat(perAgentPath);
+    if (stat.isFile()) {
+      return perAgentPath;
+    }
+  } catch {
+    // Missing per-agent soul: fall back to the shared SOUL.md.
+  }
+  return sharedPath;
+}
+
+export async function loadWorkspaceBootstrapFiles(
+  dir: string,
+  opts?: { agentId?: string },
+): Promise<WorkspaceBootstrapFile[]> {
   const resolvedDir = resolveUserPath(dir);
+
+  // Resolve the agent's individual persona (souls/<id>.md) when present, else the
+  // shared SOUL.md at the workspace root. The entry keeps name "SOUL.md" so the
+  // rest of the bootstrap pipeline and prompt treat it identically.
+  const soulFilePath = await resolveAgentSoulFilePath(resolvedDir, opts?.agentId);
 
   const entries: Array<{
     name: WorkspaceBootstrapFileName;
@@ -1057,7 +1114,7 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     },
     {
       name: DEFAULT_SOUL_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_SOUL_FILENAME),
+      filePath: soulFilePath,
     },
     {
       name: DEFAULT_TOOLS_FILENAME,

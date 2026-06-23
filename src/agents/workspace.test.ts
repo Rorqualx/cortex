@@ -11,6 +11,7 @@ import {
   type OpenClawTestState,
 } from "../test-utils/openclaw-test-state.js";
 import {
+  agentSoulRelativePath,
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_BOOTSTRAP_FILENAME,
   DEFAULT_HEARTBEAT_FILENAME,
@@ -821,6 +822,50 @@ describe("loadWorkspaceBootstrapFiles", () => {
     } finally {
       await fs.rm(rootDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("per-agent SOUL.md resolution", () => {
+  const getSoul = (files: Awaited<ReturnType<typeof loadWorkspaceBootstrapFiles>>) =>
+    files.find((file) => file.name === DEFAULT_SOUL_FILENAME);
+
+  it("uses the shared SOUL.md when no agent id is given", async () => {
+    const dir = await makeTempWorkspace("openclaw-workspace-");
+    await writeWorkspaceFile({ dir, name: DEFAULT_SOUL_FILENAME, content: "shared soul" });
+
+    const soul = getSoul(await loadWorkspaceBootstrapFiles(dir));
+    expect(soul?.missing).toBe(false);
+    expect(soul?.content).toBe("shared soul");
+  });
+
+  it("falls back to the shared SOUL.md when the agent has no souls/<id>.md", async () => {
+    const dir = await makeTempWorkspace("openclaw-workspace-");
+    await writeWorkspaceFile({ dir, name: DEFAULT_SOUL_FILENAME, content: "shared soul" });
+
+    const soul = getSoul(await loadWorkspaceBootstrapFiles(dir, { agentId: "varys" }));
+    expect(soul?.content).toBe("shared soul");
+  });
+
+  it("prefers souls/<id>.md over the shared SOUL.md for that agent", async () => {
+    const dir = await makeTempWorkspace("openclaw-workspace-");
+    await writeWorkspaceFile({ dir, name: DEFAULT_SOUL_FILENAME, content: "shared soul" });
+    await fs.mkdir(path.join(dir, "souls"), { recursive: true });
+    await fs.writeFile(path.join(dir, "souls", "varys.md"), "varys soul", "utf-8");
+
+    const varys = getSoul(await loadWorkspaceBootstrapFiles(dir, { agentId: "varys" }));
+    expect(varys?.content).toBe("varys soul");
+    expect(varys?.path).toContain(path.join("souls", "varys.md"));
+
+    // A sibling agent without its own file still reads the shared soul.
+    const gendry = getSoul(await loadWorkspaceBootstrapFiles(dir, { agentId: "gendry" }));
+    expect(gendry?.content).toBe("shared soul");
+  });
+
+  it("rejects unsafe agent ids as path segments", () => {
+    expect(agentSoulRelativePath("varys")).toBe("souls/varys.md");
+    expect(agentSoulRelativePath("../etc/passwd")).toBeNull();
+    expect(agentSoulRelativePath("a/b")).toBeNull();
+    expect(agentSoulRelativePath("")).toBeNull();
   });
 });
 

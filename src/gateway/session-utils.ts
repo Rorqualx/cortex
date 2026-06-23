@@ -1316,6 +1316,7 @@ export function listAgentsForGateway(
     const identity = entry.identity
       ? {
           name: normalizeOptionalString(entry.identity.name),
+          role: normalizeOptionalString(entry.identity.role),
           theme: normalizeOptionalString(entry.identity.theme),
           emoji: normalizeOptionalString(entry.identity.emoji),
           avatar: normalizeOptionalString(entry.identity.avatar),

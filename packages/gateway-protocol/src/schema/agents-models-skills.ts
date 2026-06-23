@@ -33,6 +33,7 @@ export const AgentSummarySchema = Type.Object(
       Type.Object(
         {
           name: Type.Optional(NonEmptyString),
+          role: Type.Optional(NonEmptyString),
           theme: Type.Optional(NonEmptyString),
           emoji: Type.Optional(NonEmptyString),
           avatar: Type.Optional(NonEmptyString),
@@ -108,6 +109,7 @@ export const AgentsCreateParamsSchema = Type.Object(
     emoji: Type.Optional(Type.String()),
     avatar: Type.Optional(Type.String()),
     description: Type.Optional(Type.String()),
+    role: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -133,6 +135,8 @@ export const AgentsUpdateParamsSchema = Type.Object(
     model: Type.Optional(NonEmptyString),
     emoji: Type.Optional(Type.String()),
     avatar: Type.Optional(Type.String()),
+    description: Type.Optional(Type.String()),
+    role: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

@@ -45,6 +45,7 @@ export async function createAgentConfigEntry(params: {
   name: string;
   workspace: string;
   model?: string;
+  description?: string;
   identity?: IdentityConfig;
   agentDir: string;
 }): Promise<void> {
@@ -59,6 +60,7 @@ export async function createAgentConfigEntry(params: {
         name: params.name,
         workspace: params.workspace,
         model: params.model,
+        ...(params.description !== undefined ? { description: params.description } : {}),
         identity: params.identity,
         agentDir: params.agentDir,
       });
@@ -73,6 +75,7 @@ export async function updateAgentConfigEntry(params: {
   name?: string;
   workspace?: string;
   model?: string;
+  description?: string;
   identity?: IdentityConfig;
 }): Promise<void> {
   await mutateConfigFileWithRetry({
@@ -86,6 +89,7 @@ export async function updateAgentConfigEntry(params: {
         ...(params.name ? { name: params.name } : {}),
         ...(params.workspace ? { workspace: params.workspace } : {}),
         ...(params.model ? { model: params.model } : {}),
+        ...(params.description !== undefined ? { description: params.description } : {}),
         ...(params.identity ? { identity: params.identity } : {}),
       });
       Object.assign(draft, latestNextConfig);

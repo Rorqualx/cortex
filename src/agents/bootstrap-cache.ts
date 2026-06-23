@@ -47,12 +47,15 @@ function pruneOldestBootstrapSnapshots(): void {
 export async function getOrLoadBootstrapFiles(params: {
   workspaceDir: string;
   sessionKey: string;
+  agentId?: string;
 }): Promise<WorkspaceBootstrapFile[]> {
   pruneOldestBootstrapSnapshots();
   const existing = cache.get(params.sessionKey);
+  // A session belongs to one agent, so sessionKey alone keys the snapshot; the
+  // agentId only selects which souls/<id>.md persona the loader resolves.
   // Refresh per turn so long-lived sessions pick up edits; loadWorkspaceBootstrapFiles
   // handles unchanged file content through its guarded inode/mtime cache.
-  const files = await loadWorkspaceBootstrapFiles(params.workspaceDir);
+  const files = await loadWorkspaceBootstrapFiles(params.workspaceDir, { agentId: params.agentId });
   if (
     existing &&
     existing.workspaceDir === params.workspaceDir &&

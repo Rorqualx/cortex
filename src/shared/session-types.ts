@@ -1,6 +1,7 @@
 /** Agent identity fields returned by gateway session listing APIs. */
 export type GatewayAgentIdentity = {
   name?: string;
+  role?: string;
   theme?: string;
   emoji?: string;
   avatar?: string;

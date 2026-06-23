@@ -382,6 +382,8 @@ export type AgentElevatedAllowFromConfig = Partial<Record<string, Array<string |
 
 export type IdentityConfig = {
   name?: string;
+  /** Display-only role label for the agent; not written into IDENTITY.md. */
+  role?: string;
   theme?: string;
   emoji?: string;
   /** Avatar image: workspace-relative path, http(s) URL, or data URI. */
