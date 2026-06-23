@@ -8,6 +8,7 @@
  * `metadata.research.userTouched` so the daily ingest cron preserves manual
  * triage. Raw reports come from `workboard.research.reports`.
  */
+import { getSafeLocalStorage } from "../../local-storage.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { AgentsListResult } from "../types.ts";
 
@@ -23,6 +24,41 @@ export const RSIL_CATEGORY_ORDER = [
   "watch",
 ] as const;
 export type RsilCategory = (typeof RSIL_CATEGORY_ORDER)[number];
+
+// Operator-chosen column order, persisted client-side (a pure display
+// preference). Stored categories are validated against RSIL_CATEGORY_ORDER and
+// any categories missing from the stored value (e.g. newly added ones) are
+// appended in default order so the board never drops a column.
+const RSIL_COLUMN_ORDER_KEY = "openclaw.rsil.columnOrder";
+
+function normalizeColumnOrder(value: unknown): RsilCategory[] {
+  const known = new Set<RsilCategory>(RSIL_CATEGORY_ORDER);
+  const ordered = Array.isArray(value)
+    ? value.filter((c): c is RsilCategory => known.has(c as RsilCategory))
+    : [];
+  const seen = new Set(ordered);
+  return [...ordered, ...RSIL_CATEGORY_ORDER.filter((c) => !seen.has(c))];
+}
+
+function loadColumnOrder(): RsilCategory[] {
+  const raw = getSafeLocalStorage()?.getItem(RSIL_COLUMN_ORDER_KEY);
+  if (!raw) {
+    return [...RSIL_CATEGORY_ORDER];
+  }
+  try {
+    return normalizeColumnOrder(JSON.parse(raw));
+  } catch {
+    return [...RSIL_CATEGORY_ORDER];
+  }
+}
+
+function saveColumnOrder(order: RsilCategory[]): void {
+  try {
+    getSafeLocalStorage()?.setItem(RSIL_COLUMN_ORDER_KEY, JSON.stringify(order));
+  } catch {
+    // Best-effort: quota/security errors must not block the in-memory reorder.
+  }
+}
 
 export const RSIL_STATUSES = [
   "triage",
@@ -87,6 +123,7 @@ type RsilState = {
   status: string;
   assignee: string;
   search: string;
+  columnOrder: RsilCategory[];
   selectedCardId: string | null;
   busyCardId: string | null;
   reportsLoaded: boolean;
@@ -109,6 +146,7 @@ const state: RsilState = {
   status: "",
   assignee: "",
   search: "",
+  columnOrder: loadColumnOrder(),
   selectedCardId: null,
   busyCardId: null,
   reportsLoaded: false,
@@ -374,12 +412,38 @@ const RSIL_DONE_STATUS: RsilStatus = "done";
 
 export function cardsByCategory(): Array<{ category: RsilCategory; cards: RsilCard[] }> {
   const filtered = filteredCards().filter((c) => c.status !== RSIL_DONE_STATUS);
-  return RSIL_CATEGORY_ORDER.map((category) => ({
-    category,
-    cards: filtered
-      .filter((c) => (c.research?.category ?? "finding") === category)
-      .sort((a, b) => a.position - b.position),
-  })).filter((group) => group.cards.length > 0);
+  return state.columnOrder
+    .map((category) => ({
+      category,
+      cards: filtered
+        .filter((c) => (c.research?.category ?? "finding") === category)
+        .sort((a, b) => a.position - b.position),
+    }))
+    .filter((group) => group.cards.length > 0);
+}
+
+/**
+ * Move column `dragged` to where `target` sits in the persisted order. Dragging
+ * rightward drops after the target, leftward drops before it, matching the
+ * direction the operator dragged.
+ */
+export function reorderColumn(host: RsilHost, dragged: RsilCategory, target: RsilCategory): void {
+  if (dragged === target) {
+    return;
+  }
+  const order = [...state.columnOrder];
+  const from = order.indexOf(dragged);
+  const targetIndex = order.indexOf(target);
+  if (from === -1 || targetIndex === -1) {
+    return;
+  }
+  const dropAfter = from < targetIndex;
+  order.splice(from, 1);
+  const insertAt = order.indexOf(target) + (dropAfter ? 1 : 0);
+  order.splice(insertAt, 0, dragged);
+  state.columnOrder = order;
+  saveColumnOrder(order);
+  host.requestUpdate?.();
 }
 
 /** Done cards across all categories, for the full-width bottom container. */

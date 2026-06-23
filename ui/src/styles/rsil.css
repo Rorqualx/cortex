@@ -267,6 +267,25 @@
   font-size: 11px;
 }
 
+/* Column reordering: drag a column by its header to reposition it. */
+.rsil__col-head--draggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.rsil__col-head--draggable:active {
+  cursor: grabbing;
+}
+
+.rsil__col--dragging {
+  opacity: 0.45;
+}
+
+.rsil__col--drag-over {
+  outline: 2px dashed var(--accent, var(--muted));
+  outline-offset: -2px;
+}
+
 .rsil__col-cards {
   display: flex;
   flex-direction: column;

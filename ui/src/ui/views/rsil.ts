@@ -22,9 +22,11 @@ import {
   moveCard,
   openCard,
   openReport,
+  reorderColumn,
   RSIL_STATUSES,
   reloadRsil,
   type RsilCard,
+  type RsilCategory,
   type RsilHost,
   type RsilReportInfo,
   type RsilStatus,
@@ -46,6 +48,58 @@ function categoryLabel(category: string): string {
 
 function stopClick(event: Event): void {
   event.stopPropagation();
+}
+
+// Transient drag state for column reordering (cleared on drop/dragend).
+let draggedColumn: RsilCategory | null = null;
+
+function clearColumnDragClasses(): void {
+  document
+    .querySelectorAll(".rsil__col--dragging, .rsil__col--drag-over")
+    .forEach((el) => el.classList.remove("rsil__col--dragging", "rsil__col--drag-over"));
+}
+
+function onColHeadDragStart(event: DragEvent, category: RsilCategory): void {
+  draggedColumn = category;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", category);
+  }
+  (event.currentTarget as HTMLElement).closest(".rsil__col")?.classList.add("rsil__col--dragging");
+}
+
+function onColHeadDragEnd(): void {
+  draggedColumn = null;
+  clearColumnDragClasses();
+}
+
+function onColDragOver(event: DragEvent): void {
+  if (!draggedColumn) {
+    return;
+  }
+  // Only preventDefault for a column drag so the column becomes a valid drop
+  // target; other drags (text, files) keep their native behavior.
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+  (event.currentTarget as HTMLElement).classList.add("rsil__col--drag-over");
+}
+
+function onColDragLeave(event: DragEvent): void {
+  (event.currentTarget as HTMLElement).classList.remove("rsil__col--drag-over");
+}
+
+function onColDrop(host: RsilHost, event: DragEvent, target: RsilCategory): void {
+  if (!draggedColumn) {
+    return;
+  }
+  event.preventDefault();
+  (event.currentTarget as HTMLElement).classList.remove("rsil__col--drag-over");
+  const dragged = draggedColumn;
+  draggedColumn = null;
+  clearColumnDragClasses();
+  reorderColumn(host, dragged, target);
 }
 
 function renderBadges(card: RsilCard): TemplateResult {
@@ -215,8 +269,18 @@ function renderBoard(host: RsilHost): TemplateResult {
             groups,
             (g) => g.category,
             (g) => html`
-              <section class="rsil__col">
-                <header class="rsil__col-head">
+              <section
+                class="rsil__col"
+                @dragover=${onColDragOver}
+                @dragleave=${onColDragLeave}
+                @drop=${(e: DragEvent) => onColDrop(host, e, g.category)}
+              >
+                <header
+                  class="rsil__col-head rsil__col-head--draggable"
+                  draggable="true"
+                  @dragstart=${(e: DragEvent) => onColHeadDragStart(e, g.category)}
+                  @dragend=${onColHeadDragEnd}
+                >
                   <span>${categoryLabel(g.category)}</span>
                   <span class="rsil__col-count">${g.cards.length}</span>
                 </header>
