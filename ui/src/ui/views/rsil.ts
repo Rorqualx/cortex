@@ -15,6 +15,7 @@ import {
   assigneeOptions,
   cardsByCategory,
   cycleDates,
+  doneCards,
   ensureRsil,
   filteredCards,
   getRsilState,
@@ -177,37 +178,61 @@ function renderFilters(host: RsilHost): TemplateResult {
   `;
 }
 
+function renderDoneContainer(host: RsilHost, cards: RsilCard[]): TemplateResult {
+  // Full-width strip across the bottom of the board collecting completed cards
+  // from every category. Reuses the column header/card styling.
+  return html`
+    <section class="rsil__done">
+      <header class="rsil__col-head">
+        <span>${statusLabel("done")}</span>
+        <span class="rsil__col-count">${cards.length}</span>
+      </header>
+      <div class="rsil__done-cards">
+        ${repeat(
+          cards,
+          (c) => c.id,
+          (c) => renderCard(host, c),
+        )}
+      </div>
+    </section>
+  `;
+}
+
 function renderBoard(host: RsilHost): TemplateResult {
   const s = getRsilState();
   if (s.loading && !s.loaded) {
     return html`<div class="rsil__status">${icons.loader}</div>`;
   }
   const groups = cardsByCategory();
-  if (groups.length === 0) {
+  const done = doneCards();
+  if (groups.length === 0 && done.length === 0) {
     return html`<div class="rsil__empty">${t("rsil.empty")}</div>`;
   }
   return html`
-    <div class="rsil__columns">
-      ${repeat(
-        groups,
-        (g) => g.category,
-        (g) => html`
-          <section class="rsil__col">
-            <header class="rsil__col-head">
-              <span>${categoryLabel(g.category)}</span>
-              <span class="rsil__col-count">${g.cards.length}</span>
-            </header>
-            <div class="rsil__col-cards">
-              ${repeat(
-                g.cards,
-                (c) => c.id,
-                (c) => renderCard(host, c),
-              )}
-            </div>
-          </section>
-        `,
-      )}
-    </div>
+    ${groups.length > 0
+      ? html`<div class="rsil__columns">
+          ${repeat(
+            groups,
+            (g) => g.category,
+            (g) => html`
+              <section class="rsil__col">
+                <header class="rsil__col-head">
+                  <span>${categoryLabel(g.category)}</span>
+                  <span class="rsil__col-count">${g.cards.length}</span>
+                </header>
+                <div class="rsil__col-cards">
+                  ${repeat(
+                    g.cards,
+                    (c) => c.id,
+                    (c) => renderCard(host, c),
+                  )}
+                </div>
+              </section>
+            `,
+          )}
+        </div>`
+      : nothing}
+    ${done.length > 0 ? renderDoneContainer(host, done) : nothing}
   `;
 }
 

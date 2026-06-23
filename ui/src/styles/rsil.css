@@ -276,6 +276,34 @@
   flex: 1;
 }
 
+/* Done container: full-width strip across the bottom holding completed cards
+   from every category. Bounded height with its own scroll so it never crowds
+   out the active columns above it. */
+.rsil__done {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  margin: 8px 20px 0;
+  max-height: 30vh;
+  background: color-mix(in oklab, var(--panel, var(--card)) 50%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+}
+
+.rsil__done-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.rsil__done-cards .rsil-card {
+  flex: 0 0 280px;
+  width: 280px;
+}
+
 /* Card */
 .rsil-card {
   background: var(--card);

@@ -368,14 +368,25 @@ export function filteredCards(): RsilCard[] {
   });
 }
 
+// Completed cards collect into the dedicated bottom container, not their
+// category column, so the active columns stay focused on in-flight work.
+const RSIL_DONE_STATUS: RsilStatus = "done";
+
 export function cardsByCategory(): Array<{ category: RsilCategory; cards: RsilCard[] }> {
-  const filtered = filteredCards();
+  const filtered = filteredCards().filter((c) => c.status !== RSIL_DONE_STATUS);
   return RSIL_CATEGORY_ORDER.map((category) => ({
     category,
     cards: filtered
       .filter((c) => (c.research?.category ?? "finding") === category)
       .sort((a, b) => a.position - b.position),
   })).filter((group) => group.cards.length > 0);
+}
+
+/** Done cards across all categories, for the full-width bottom container. */
+export function doneCards(): RsilCard[] {
+  return filteredCards()
+    .filter((c) => c.status === RSIL_DONE_STATUS)
+    .sort((a, b) => a.position - b.position);
 }
 
 export function selectedCard(): RsilCard | null {
