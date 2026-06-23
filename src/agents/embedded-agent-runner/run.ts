@@ -27,6 +27,7 @@ import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { resolveProviderAuthProfileId } from "../../plugins/provider-runtime.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
 import type { CommandQueueEnqueueOptions } from "../../process/command-queue.types.js";
+import { isTransientProviderOperationError } from "../../provider-runtime/operation-retry.js";
 import { runWithSessionContext } from "../../session-awareness/index.js";
 import { createAgentHarnessTaskRuntimeScope } from "../../tasks/agent-harness-task-runtime-scope.js";
 import { resolveUserPath } from "../../utils.js";
@@ -159,11 +160,14 @@ import {
   resolveMaxRunRetryIterations,
   resolveReportedModelRef,
   MAX_SAME_MODEL_RATE_LIMIT_RETRIES,
+  MAX_SAME_MODEL_TRANSIENT_RETRIES,
+  isTransientRetryFailoverReason,
   resolveOverloadFailoverBackoffMs,
   resolveOverloadProfileRotationLimit,
   resolveRateLimitProfileRotationLimit,
   resolveNextSameModelRateLimitRetryCount,
   resolveSameModelRateLimitRetryDelayMs,
+  resolveSameModelTransientRetryDelayMs,
   type RuntimeAuthState,
   scrubAnthropicRefusalMagic,
 } from "./run/helpers.js";
@@ -1282,6 +1286,7 @@ export async function runEmbeddedAgent(
       });
       let rateLimitProfileRotations = 0;
       let consecutiveSameModelRateLimitRetries = 0;
+      let consecutiveSameModelTransientRetries = 0;
       let timeoutCompactionAttempts = 0;
       let codexAppServerRecoveryRetries = 0;
       // Silent-error retry: non-strict-agentic models (e.g. ollama/glm-5.1) can
@@ -1377,15 +1382,13 @@ export async function runEmbeddedAgent(
           providerStarted: opts?.providerStarted,
           policy: params.authProfileFailurePolicy,
         });
-      const maybeBackoffBeforeOverloadFailover = async (reason: FailoverReason | null) => {
-        if (reason !== "overloaded" || overloadFailoverBackoffMs <= 0) {
-          return;
-        }
-        log.warn(
-          `overload backoff before failover for ${provider}/${modelId}: delayMs=${overloadFailoverBackoffMs}`,
-        );
+      // Sleep for a backoff delay, surfacing an external abort as a named
+      // AbortError so the outer run loop treats cancellation as a cancellation
+      // rather than a backoff failure. Shared by the overload-backoff and the
+      // same-model rate-limit/transient retry paths.
+      const sleepForRetryBackoff = async (delayMs: number): Promise<void> => {
         try {
-          await sleepWithAbort(overloadFailoverBackoffMs, params.abortSignal);
+          await sleepWithAbort(delayMs, params.abortSignal);
         } catch (err) {
           if (params.abortSignal?.aborted) {
             const abortErr = new Error("Operation aborted", { cause: err });
@@ -1394,6 +1397,15 @@ export async function runEmbeddedAgent(
           }
           throw err;
         }
+      };
+      const maybeBackoffBeforeOverloadFailover = async (reason: FailoverReason | null) => {
+        if (reason !== "overloaded" || overloadFailoverBackoffMs <= 0) {
+          return;
+        }
+        log.warn(
+          `overload backoff before failover for ${provider}/${modelId}: delayMs=${overloadFailoverBackoffMs}`,
+        );
+        await sleepForRetryBackoff(overloadFailoverBackoffMs);
       };
       const maybeRetrySameModelRateLimit = async (retry?: {
         retryAfterSeconds?: number;
@@ -1408,20 +1420,23 @@ export async function runEmbeddedAgent(
         log.warn(
           `rate-limit same-model retry ${consecutiveSameModelRateLimitRetries + 1}/${MAX_SAME_MODEL_RATE_LIMIT_RETRIES} for ${sanitizeForLog(provider)}/${sanitizeForLog(modelId)}: delayMs=${delayMs}`,
         );
-        try {
-          await sleepWithAbort(delayMs, params.abortSignal);
-        } catch (err) {
-          if (params.abortSignal?.aborted) {
-            const abortErr = new Error("Operation aborted", { cause: err });
-            abortErr.name = "AbortError";
-            throw abortErr;
-          }
-          throw err;
-        }
+        await sleepForRetryBackoff(delayMs);
         consecutiveSameModelRateLimitRetries = resolveNextSameModelRateLimitRetryCount({
           retriesSoFar: consecutiveSameModelRateLimitRetries,
           retriedSameModelRateLimit: true,
         });
+        return true;
+      };
+      const maybeRetrySameModelTransient = async (): Promise<boolean> => {
+        if (consecutiveSameModelTransientRetries >= MAX_SAME_MODEL_TRANSIENT_RETRIES) {
+          return false;
+        }
+        const delayMs = resolveSameModelTransientRetryDelayMs(consecutiveSameModelTransientRetries);
+        log.warn(
+          `transient same-model retry ${consecutiveSameModelTransientRetries + 1}/${MAX_SAME_MODEL_TRANSIENT_RETRIES} for ${sanitizeForLog(provider)}/${sanitizeForLog(modelId)}: delayMs=${delayMs}`,
+        );
+        await sleepForRetryBackoff(delayMs);
+        consecutiveSameModelTransientRetries += 1;
         return true;
       };
       // Resolve the context engine once and reuse across retries to avoid
@@ -2840,6 +2855,19 @@ export async function runEmbeddedAgent(
               provider: assistantForFailover?.provider,
             },
           );
+          // A current-provider failure whose reason and raw error both look
+          // transient (5xx / dropped connection / mid-stream) gets a bounded
+          // same-model retry before profile rotation/fallback. Watchdog timeouts
+          // are excluded here; they own the idle-timeout retry and full-timeout
+          // surfacing paths.
+          const transientAssistantFailure =
+            failoverFailure &&
+            !aborted &&
+            !externalAbort &&
+            !timedOut &&
+            !idleTimedOut &&
+            isTransientRetryFailoverReason(assistantFailoverReason) &&
+            isTransientProviderOperationError(undefined, assistantForFailover?.errorMessage ?? "");
           const assistantProviderStarted =
             Boolean(currentAttemptAssistant?.provider) ||
             idleTimedOut ||
@@ -2938,6 +2966,7 @@ export async function runEmbeddedAgent(
               canRestartForLiveSwitch &&
               sameModelIdleTimeoutRetries < MAX_SAME_MODEL_IDLE_TIMEOUT_RETRIES,
             allowSameModelRateLimitRetry: rateLimitProfileRotations < rateLimitProfileRotationLimit,
+            transientFailure: transientAssistantFailure,
             assistantProfileFailureReason,
             lastProfileId,
             modelId,
@@ -2959,6 +2988,7 @@ export async function runEmbeddedAgent(
             maybeMarkAuthProfileFailure,
             maybeEscalateRateLimitProfileFallback,
             maybeRetrySameModelRateLimit,
+            maybeRetrySameModelTransient,
             maybeBackoffBeforeOverloadFailover,
             advanceAuthProfile: advanceAttemptAuthProfile,
           });
@@ -2968,10 +2998,12 @@ export async function runEmbeddedAgent(
               provider: activeErrorContext.provider,
               model: activeErrorContext.model,
               result:
-                assistantFailoverOutcome.retryKind === "same_model_idle_timeout" ||
-                assistantFailoverReason === "timeout"
-                  ? "timeout"
-                  : "rotate_profile",
+                assistantFailoverOutcome.retryKind === "same_model_transient"
+                  ? "same_model_transient"
+                  : assistantFailoverOutcome.retryKind === "same_model_idle_timeout" ||
+                      assistantFailoverReason === "timeout"
+                    ? "timeout"
+                    : "rotate_profile",
               ...(assistantFailoverReason ? { reason: assistantFailoverReason } : {}),
               stage: "assistant",
             });

@@ -27,7 +27,7 @@ type AssistantFailoverOutcome =
       action: "retry";
       overloadProfileRotations: number;
       lastRetryFailoverReason: FailoverReason | null;
-      retryKind?: "same_model_idle_timeout" | "same_model_rate_limit";
+      retryKind?: "same_model_idle_timeout" | "same_model_rate_limit" | "same_model_transient";
     }
   | {
       action: "throw";
@@ -132,6 +132,14 @@ export async function handleAssistantFailover(params: {
   timedOutDuringToolExecution: boolean;
   allowSameModelIdleTimeoutRetry: boolean;
   allowSameModelRateLimitRetry: boolean;
+  /**
+   * Eligible for a bounded same-model retry of a transient provider failure
+   * (5xx / dropped connection / mid-stream error). Computed by the caller from
+   * the failover reason plus the raw error text; excludes rate-limit, overload,
+   * terminal auth/billing, and watchdog timeouts, which own their own paths.
+   * The retry budget itself is owned by maybeRetrySameModelTransient.
+   */
+  transientFailure: boolean;
   assistantProfileFailureReason: AuthProfileFailureReason | null;
   lastProfileId?: string;
   modelId: string;
@@ -166,6 +174,8 @@ export async function handleAssistantFailover(params: {
     logFallbackDecision: (decision: "fallback_model", extra?: { status?: number }) => void;
   }) => void;
   maybeRetrySameModelRateLimit: (retry?: ShortWindowRateLimitRetry) => Promise<boolean>;
+  /** Sleeps the transient backoff and bumps its retry counter; false once the budget is spent. */
+  maybeRetrySameModelTransient: () => Promise<boolean>;
   maybeBackoffBeforeOverloadFailover: (reason: FailoverReason | null) => Promise<void>;
   advanceAuthProfile: () => Promise<boolean>;
 }): Promise<AssistantFailoverOutcome> {
@@ -196,6 +206,32 @@ export async function handleAssistantFailover(params: {
       timedOut: params.timedOut || params.idleTimedOut,
     }),
   });
+  const sameModelTransientRetry = (): AssistantFailoverOutcome => ({
+    action: "retry",
+    overloadProfileRotations,
+    retryKind: "same_model_transient",
+    lastRetryFailoverReason: mergeRetryFailoverReason({
+      previous: params.previousRetryFailoverReason,
+      failoverReason: params.failoverReason,
+      timedOut: params.timedOut || params.idleTimedOut,
+    }),
+  });
+
+  // Transient provider blips (5xx / dropped connection / mid-stream error) are
+  // usually momentary, so re-issue the same request before spending a profile
+  // rotation or model fallback. Runs ahead of the rotate/surface branches so a
+  // single transient failure on a single-profile, no-fallback agent retries
+  // instead of surfacing "LLM request failed". Eligibility (transient reason +
+  // transient raw error, not a watchdog timeout) is decided by the caller;
+  // maybeRetrySameModelTransient owns the bounded backoff/counter.
+  if (
+    !params.aborted &&
+    !params.externalAbort &&
+    params.transientFailure &&
+    (await params.maybeRetrySameModelTransient())
+  ) {
+    return sameModelTransientRetry();
+  }
 
   if (decision.action === "rotate_profile") {
     const failedProfileId = params.lastProfileId;

@@ -25,6 +25,7 @@ function makeParams(overrides: Partial<Params> = {}): Params {
     timedOutDuringToolExecution: false,
     allowSameModelIdleTimeoutRetry: false,
     allowSameModelRateLimitRetry: true,
+    transientFailure: false,
     assistantProfileFailureReason: null,
     lastProfileId: undefined,
     modelId: model,
@@ -46,6 +47,7 @@ function makeParams(overrides: Partial<Params> = {}): Params {
     maybeMarkAuthProfileFailure: vi.fn(async () => {}),
     maybeEscalateRateLimitProfileFallback: vi.fn(),
     maybeRetrySameModelRateLimit: vi.fn(async () => false),
+    maybeRetrySameModelTransient: vi.fn(async () => false),
     maybeBackoffBeforeOverloadFailover: vi.fn(async () => {}),
     advanceAuthProfile: vi.fn(async () => false),
   };
@@ -664,6 +666,81 @@ describe("handleAssistantFailover", () => {
         return;
       }
       expect(outcome.retryKind).toBe("same_model_idle_timeout");
+    });
+  });
+
+  describe("same-model transient retry", () => {
+    it("retries the same model on a transient failure before rotating or surfacing", async () => {
+      // Single-profile, no-fallback agent: a server_error must retry the same
+      // model instead of immediately surfacing "LLM request failed".
+      const maybeRetrySameModelTransient = vi.fn(async () => true);
+      const advanceAuthProfile = vi.fn(async () => false);
+      const logDecision = vi.fn();
+
+      const outcome = await handleAssistantFailover(
+        makeParams({
+          initialDecision: { action: "surface_error", reason: "server_error" },
+          failoverReason: "server_error",
+          billingFailure: false,
+          transientFailure: true,
+          lastAssistant: {
+            errorMessage: "HTTP 503 Service Unavailable",
+          } as Params["lastAssistant"],
+          maybeRetrySameModelTransient,
+          advanceAuthProfile,
+          logAssistantFailoverDecision: logDecision,
+        }),
+      );
+
+      expect(outcome.action).toBe("retry");
+      if (outcome.action !== "retry") {
+        return;
+      }
+      expect(outcome.retryKind).toBe("same_model_transient");
+      expect(maybeRetrySameModelTransient).toHaveBeenCalledTimes(1);
+      // Same-model retry must not spend a profile rotation or emit a failover decision.
+      expect(advanceAuthProfile).not.toHaveBeenCalled();
+      expect(logDecision).not.toHaveBeenCalled();
+    });
+
+    it("surfaces the error once the transient budget is exhausted", async () => {
+      // maybeRetrySameModelTransient owns the budget: when it returns false
+      // (retries spent) the transient failure falls through to surface_error.
+      const maybeRetrySameModelTransient = vi.fn(async () => false);
+
+      const outcome = await handleAssistantFailover(
+        makeParams({
+          initialDecision: { action: "surface_error", reason: "server_error" },
+          failoverReason: "server_error",
+          billingFailure: false,
+          transientFailure: true,
+          lastAssistant: {
+            errorMessage: "HTTP 503 Service Unavailable",
+          } as Params["lastAssistant"],
+          maybeRetrySameModelTransient,
+        }),
+      );
+
+      expect(outcome.action).toBe("throw");
+      expect(maybeRetrySameModelTransient).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores non-transient failures even when the budget is available", async () => {
+      const maybeRetrySameModelTransient = vi.fn(async () => true);
+
+      const outcome = await handleAssistantFailover(
+        makeParams({
+          initialDecision: { action: "surface_error", reason: "billing" },
+          failoverReason: "billing",
+          billingFailure: true,
+          // Caller classified this as non-transient.
+          transientFailure: false,
+          maybeRetrySameModelTransient,
+        }),
+      );
+
+      expect(outcome.action).toBe("throw");
+      expect(maybeRetrySameModelTransient).not.toHaveBeenCalled();
     });
   });
 

@@ -6,6 +6,7 @@ import { generateSecureToken } from "../../../infra/secure-random.js";
 import type { AssistantMessage } from "../../../llm/types.js";
 import { extractAssistantTextForPhase } from "../../../shared/chat-message-content.js";
 import { resolveAgentConfig } from "../../agent-scope-config.js";
+import type { FailoverReason } from "../../embedded-agent-helpers.js";
 import { extractAssistantVisibleText } from "../../embedded-agent-utils.js";
 import { derivePromptTokens, normalizeUsage } from "../../usage.js";
 import type { EmbeddedAgentMeta } from "../types.js";
@@ -86,6 +87,39 @@ export function resolveNextSameModelRateLimitRetryCount(params: {
   retriedSameModelRateLimit: boolean;
 }): number {
   return params.retriedSameModelRateLimit ? Math.max(0, params.retriesSoFar) + 1 : 0;
+}
+
+// Same-model transient retry: provider 5xx, dropped connections, and mid-stream
+// errors are frequently momentary. Re-issue the same request a couple of times
+// with short exponential backoff before spending a profile rotation or model
+// fallback, so a single transient provider blip does not surface
+// "LLM request failed" to the user. Bounded so a hard-down provider still fails
+// fast instead of stalling the turn.
+export const MAX_SAME_MODEL_TRANSIENT_RETRIES = 2;
+const SAME_MODEL_TRANSIENT_BACKOFF_BASE_MS = 500;
+const SAME_MODEL_TRANSIENT_BACKOFF_MAX_MS = 4_000;
+
+// Failover reasons that represent a transient provider/transport blip without a
+// dedicated same-model retry path: rate_limit/overloaded own their escalation,
+// auth/billing/format/model_not_found are terminal, and watchdog timeouts are
+// gated by the caller. Pair this with isTransientProviderOperationError so the
+// vague "unknown"-class reasons only retry when the raw error text actually
+// looks transient (5xx/network), never on deterministic 4xx failures.
+const TRANSIENT_RETRY_FAILOVER_REASONS: ReadonlySet<FailoverReason> = new Set([
+  "server_error",
+  "timeout",
+  "unclassified",
+  "no_error_details",
+]);
+
+export function isTransientRetryFailoverReason(reason: FailoverReason | null): boolean {
+  return reason !== null && TRANSIENT_RETRY_FAILOVER_REASONS.has(reason);
+}
+
+// Exponential backoff for same-model transient retries: 500ms, 1s (capped 4s).
+export function resolveSameModelTransientRetryDelayMs(retriesSoFar: number): number {
+  const delay = SAME_MODEL_TRANSIENT_BACKOFF_BASE_MS * 2 ** Math.max(0, retriesSoFar);
+  return Math.min(SAME_MODEL_TRANSIENT_BACKOFF_MAX_MS, delay);
 }
 
 const ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL = "ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL";
