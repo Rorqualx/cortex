@@ -45,6 +45,40 @@ function isRecoverableToolFailure(result: unknown): boolean {
   const status = readToolResultStatus(result);
   return status !== undefined && RECOVERABLE_FAILURE_STATUSES.has(status);
 }
+
+/**
+ * A command that ran to completion but merely exited non-zero (grep no-match, a
+ * failing test, a ping to a down host). Upstream isToolResultError flags these
+ * isError=true, but they are NOT recovery-worthy: re-running a deterministic
+ * non-zero exit just repeats it. Identified by a non-zero exitCode with no
+ * structured-failure signal (no details.error / ok=false / failure status) — a
+ * genuine throw or structured failure keeps those fields and still recovers.
+ */
+function isCompletedNonZeroExit(result: unknown): boolean {
+  const details = readToolResultDetails(result);
+  if (!details) {
+    return false;
+  }
+  const exitCode = details.exitCode;
+  const nonZeroExit = typeof exitCode === "number" && Number.isFinite(exitCode) && exitCode !== 0;
+  if (!nonZeroExit) {
+    return false;
+  }
+  // A watchdog timeout is recovery-worthy (isToolResultError treats timedOut as a
+  // failure signal, and "timeout"/"timed_out" are recoverable statuses), so a
+  // timed-out non-zero exit is NOT a benign completed exit — let recovery fire.
+  if (details.timedOut === true) {
+    return false;
+  }
+  if (details.ok === false || details.success === false) {
+    return false;
+  }
+  if (typeof details.error === "string" && details.error.length > 0) {
+    return false;
+  }
+  const status = readToolResultStatus(result);
+  return status === undefined || !RECOVERABLE_FAILURE_STATUSES.has(status);
+}
 // Cap inlined prose so an oversized SKILL.md cannot blow up the tool-result payload.
 const MAX_INLINE_BODY_CHARS = 4000;
 
@@ -100,14 +134,18 @@ export function installForgeRecoveryHook(params: {
     signal?: AbortSignal,
   ): Promise<AfterToolCallResult | undefined> => {
     const hookResult = await previousAfterToolCall?.(context, signal);
-    // context.isError reflects only whether the tool THREW. OpenClaw tools
-    // surface most failures as a structured error RESULT (details.status
-    // "error", details.error) without throwing — agent-core then reports
-    // isError=false — so also consult the result and any upstream hook's
-    // authoritative isError flag. Without this, recovery never fires for the
-    // common (non-throwing) failure case.
+    // OpenClaw tools surface most failures as a structured error RESULT
+    // (details.status "error", details.error) without throwing, so isError can
+    // read false there — isRecoverableToolFailure catches those. The broad
+    // isError flag (context or upstream hook) also fires for a command that ran
+    // to completion but merely exited non-zero (isToolResultError treats any
+    // non-zero exit as error); recovery must NOT fire for those, since
+    // re-running a deterministic non-zero exit just repeats it. So honor the
+    // broad signal only when the result is not a completed non-zero exit.
+    const broadIsError = context.isError || hookResult?.isError === true;
     const failed =
-      context.isError || hookResult?.isError === true || isRecoverableToolFailure(context.result);
+      isRecoverableToolFailure(context.result) ||
+      (broadIsError && !isCompletedNonZeroExit(context.result));
     if (!failed) {
       return hookResult;
     }

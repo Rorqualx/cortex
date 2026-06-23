@@ -102,6 +102,74 @@ describe("installForgeRecoveryHook", () => {
     expect(recordUsage).not.toHaveBeenCalled();
   });
 
+  it("does NOT fire when a non-zero exit is also flagged isError=true", async () => {
+    // Production shape: a probe (ssh-wrapped ping to a down host) runs to
+    // completion, exits non-zero, and agent-core flags isError=true via
+    // isToolResultError. The broad isError signal must not override the
+    // non-zero-exit exclusion, or every failing probe injects a "just retry"
+    // recovery skill and tells the agent to re-run a deterministic failure.
+    const skills = await snapshotWith("forge-recover-exec-via-exec", "Recovery body.");
+    const recordUsage = vi.fn();
+    const { agent, getHook } = fakeAgent();
+    installForgeRecoveryHook({ agent, skillsSnapshot: skills, recordUsage });
+
+    const context = {
+      toolCall: { name: "exec" },
+      isError: true,
+      result: {
+        content: [{ type: "text", text: "100% packet loss" }],
+        details: { status: "completed", exitCode: 1 },
+      },
+    } as unknown as AfterToolCallContext;
+    const result = await getHook()!(context);
+    expect(result).toBeUndefined();
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("still fires for a non-zero exit that carries a structured error", async () => {
+    // A genuine failure (details.error / failure status) must recover even with
+    // a non-zero exit — the exclusion is only for bare completed non-zero exits.
+    const skills = await snapshotWith("forge-recover-exec-via-exec", "Recovery body.");
+    const recordUsage = vi.fn();
+    const { agent, getHook } = fakeAgent();
+    installForgeRecoveryHook({ agent, skillsSnapshot: skills, recordUsage });
+
+    const context = {
+      toolCall: { name: "exec" },
+      isError: true,
+      result: {
+        content: [{ type: "text", text: "boom" }],
+        details: { status: "error", exitCode: 1, error: "spawn failed" },
+      },
+    } as unknown as AfterToolCallContext;
+    const result = await getHook()!(context);
+    const text = result?.content?.map((c) => (c.type === "text" ? c.text : "")).join("") ?? "";
+    expect(text).toContain("forge-recover-exec-via-exec");
+    expect(recordUsage).toHaveBeenCalledOnce();
+  });
+
+  it("still fires for a non-zero exit that timed out", async () => {
+    // A watchdog-killed command (timedOut=true, exitCode 137, status completed)
+    // is recovery-worthy — the non-zero-exit exclusion must not swallow it.
+    const skills = await snapshotWith("forge-recover-exec-via-exec", "Recovery body.");
+    const recordUsage = vi.fn();
+    const { agent, getHook } = fakeAgent();
+    installForgeRecoveryHook({ agent, skillsSnapshot: skills, recordUsage });
+
+    const context = {
+      toolCall: { name: "exec" },
+      isError: true,
+      result: {
+        content: [{ type: "text", text: "killed" }],
+        details: { status: "completed", exitCode: 137, timedOut: true },
+      },
+    } as unknown as AfterToolCallContext;
+    const result = await getHook()!(context);
+    const text = result?.content?.map((c) => (c.type === "text" ? c.text : "")).join("") ?? "";
+    expect(text).toContain("forge-recover-exec-via-exec");
+    expect(recordUsage).toHaveBeenCalledOnce();
+  });
+
   it("fires at most once per attempt for the same skill", async () => {
     const skills = await snapshotWith("forge-recover-exec-via-exec", "Recovery body.");
     const recordUsage = vi.fn();
