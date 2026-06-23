@@ -119,6 +119,13 @@ export function createWorkboardGatewayHandlers(
       return { card: redactToken(card as unknown as Record<string, unknown>) };
     },
 
+    // Drag/column move: set status + position. Delegates to store.move, which
+    // reuses update so reordering serializes through the same mutation queue.
+    "workboard.cards.move": async (p: Record<string, unknown>) => {
+      const card = await s.move(readId(p), p.status, p.position);
+      return { card: redactToken(card as unknown as Record<string, unknown>) };
+    },
+
     "workboard.cards.delete": async (p: Record<string, unknown>) => {
       await s.delete(readId(p));
       return true;

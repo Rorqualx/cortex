@@ -255,6 +255,7 @@ export const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "workboard.boards.delete", scope: "operator.write" },
   // Appended (not inserted) to preserve the legacy advertised method order.
   { name: "doctor.memory.l3Layers", scope: "operator.read" },
+  { name: "workboard.cards.move", scope: "operator.write" },
 ] as const;
 
 const CORE_GATEWAY_METHOD_SPEC_BY_NAME: ReadonlyMap<string, CoreGatewayMethodSpec> = new Map(

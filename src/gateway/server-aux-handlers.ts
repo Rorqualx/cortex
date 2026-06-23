@@ -283,6 +283,7 @@ export function createGatewayAuxHandlers(params: {
     "workboard.cards.create",
     "workboard.cards.read",
     "workboard.cards.update",
+    "workboard.cards.move",
     "workboard.cards.delete",
     "workboard.cards.specify",
     "workboard.cards.decompose",
