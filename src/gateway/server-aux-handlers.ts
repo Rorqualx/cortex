@@ -344,13 +344,16 @@ export function createGatewayAuxHandlers(params: {
 // ── Workboard loaders ──────────────────────────────────────────────
 
 /** Bridge: direct-return handler → respond-callback GatewayRequestHandler. */
-function bridgeWorkboardHandler(
+export function bridgeWorkboardHandler(
   fn: (params: Record<string, unknown>) => unknown,
 ): GatewayRequestHandler {
   return async (opts) => {
     try {
-      const params =
-        ((opts.context as Record<string, unknown>).params as Record<string, unknown>) ?? {};
+      // Request params live on opts.params (GatewayRequestHandlerOptions), not on
+      // opts.context — reading the latter handed every workboard handler {} so
+      // readId-gated mutations (update/assign/move/delete) failed with
+      // "missing parameter: id" while list-style reads silently ignored it.
+      const params = opts.params ?? {};
       const result = await fn(params);
       opts.respond(true, result);
     } catch (error) {
