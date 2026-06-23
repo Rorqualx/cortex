@@ -347,7 +347,7 @@ describe("compactSession", () => {
     });
     expect(caller).toHaveBeenCalledTimes(1);
     const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0][0].systemPrompt;
-    expect(systemPrompt).toContain("PROMPT_VERSION=8-NATIVE");
+    expect(systemPrompt).toContain("PROMPT_VERSION=9-NATIVE");
   });
 
   it("writes the L1 archive with the original messages", async () => {

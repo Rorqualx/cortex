@@ -92,6 +92,11 @@ export type TypedFact = {
   confidence: number;
   /** ms timestamp. */
   createdAt: number;
+  /** Temporal stability classification: "static" for invariant attributes
+   *  (birthdays, hardware specs), "drifting" for slowly-changing preferences
+   *  (favorite tools, aesthetic tastes), "routine" for recurring patterns
+   *  (daily habits, workflow rhythms). Default "static" for backward compat. */
+  temporalStability?: "static" | "drifting" | "routine";
 };
 
 /**
@@ -253,6 +258,8 @@ export type LongTermTypedFact = {
   /** When true, fact is hidden from retrieval but kept on disk for forensics. */
   archived: boolean;
   archivedAt: number | null;
+  /** Temporal stability classification propagated from extraction. */
+  temporalStability?: "static" | "drifting" | "routine";
 };
 
 export type LongTermTypedFrontmatter = {

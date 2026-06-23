@@ -20,8 +20,18 @@ export type LongTermTypedConfig = {
    * After this many ms without re-confirmation, an active canonical entry
    * is archived. Archived entries are kept on disk for forensics but
    * excluded from active retrieval.
+   *
+   * Can be a single number (backward-compatible, applies to all) or a
+   * per-stability mapping: static facts age out slowly, drifting facts
+   * faster, routine facts fastest.
    */
-  maxAgeWithoutConfirmMs: number;
+  maxAgeWithoutConfirmMs:
+    | number
+    | {
+        static: number;
+        drifting: number;
+        routine: number;
+      };
   /**
    * Minimum recall (distinct chunks) before a slot becomes canonical.
    * Default 1 — even single-occurrence typed facts get a canonical entry,
@@ -31,7 +41,11 @@ export type LongTermTypedConfig = {
 };
 
 export const DEFAULT_LONG_TERM_TYPED_CONFIG: LongTermTypedConfig = {
-  maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
+  maxAgeWithoutConfirmMs: {
+    static: 120 * MS_PER_DAY,
+    drifting: 30 * MS_PER_DAY,
+    routine: 14 * MS_PER_DAY,
+  },
   minRecallCount: 1,
 };
 
@@ -114,7 +128,8 @@ export async function consolidateLongTermTyped(params: {
     if (candidates.has(slot)) {
       continue;
     }
-    if (params.now - fact.lastConfirmedAt < config.maxAgeWithoutConfirmMs) {
+    const maxAge = resolveMaxAgeForStability(config.maxAgeWithoutConfirmMs, fact.temporalStability);
+    if (params.now - fact.lastConfirmedAt < maxAge) {
       continue;
     }
     merged.set(slot, archive(fact, params.now));
@@ -198,6 +213,7 @@ function promote(c: TypedCandidate): LongTermTypedFact {
     history,
     archived: false,
     archivedAt: null,
+    temporalStability: c.latest.temporalStability,
   };
 }
 
@@ -212,6 +228,7 @@ function reaffirm(prior: LongTermTypedFact, c: TypedCandidate): LongTermTypedFac
     sourceChunkIds: merged,
     archived: false,
     archivedAt: null,
+    temporalStability: c.latest.temporalStability ?? prior.temporalStability,
   };
 }
 
@@ -230,11 +247,28 @@ function supersede(prior: LongTermTypedFact, c: TypedCandidate, now: number): Lo
     history: [...prior.history, { value: prior.value, supersededAt: now }],
     archived: false,
     archivedAt: null,
+    temporalStability: c.latest.temporalStability ?? prior.temporalStability,
   };
 }
 
 function archive(fact: LongTermTypedFact, now: number): LongTermTypedFact {
   return { ...fact, archived: true, archivedAt: now };
+}
+
+function resolveMaxAgeForStability(
+  config: LongTermTypedConfig["maxAgeWithoutConfirmMs"],
+  stability: "static" | "drifting" | "routine" | undefined,
+): number {
+  if (typeof config === "number") {
+    return config;
+  }
+  if (stability === "drifting") {
+    return config.drifting;
+  }
+  if (stability === "routine") {
+    return config.routine;
+  }
+  return config.static;
 }
 
 function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<string>): string[] {
