@@ -22,8 +22,25 @@ export async function promoteStagedSkill(params: {
   env?: NodeJS.ProcessEnv;
   now?: Date;
   successScore?: number;
+  scMechanism?:
+    | "constraint_verification"
+    | "strategy_comparison"
+    | "reasoning_revisitation"
+    | "none";
 }): Promise<PromotionResult> {
   const env = params.env ?? process.env;
+  // Skills with no intrinsic self-correction mechanism need a higher bar:
+  // they must come from a fully clean session (successScore >= 1).
+  if (params.scMechanism === "none" && (params.successScore ?? 0) < 1) {
+    return {
+      status: "rejected",
+      name: params.name,
+      verdict: {
+        status: "fail",
+        reasons: ["scMechanism:none requires a clean session (successScore >= 1)"],
+      },
+    };
+  }
   const stagedDir = resolveSkillForgeStagedSkillDir({ name: params.name, env });
   const verdict = await evaluateGate({
     skillDir: stagedDir,
