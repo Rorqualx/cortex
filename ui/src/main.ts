@@ -2,6 +2,14 @@
 import "./styles.css";
 import "./ui/app.ts";
 import { inferControlUiPublicAssetPath } from "./ui/public-assets.ts";
+import { reloadForStaleChunk } from "./ui/stale-chunk-reload.ts";
+
+// Vite fires this when any dynamically-imported chunk fails to load — e.g. its
+// hashed filename changed in a redeploy and the old SPA requests a deleted file.
+// Reload once (guarded) to recover with the current bundle.
+globalThis.addEventListener?.("vite:preloadError", () => {
+  reloadForStaleChunk();
+});
 
 type ViteImportMeta = ImportMeta & {
   readonly env?: {

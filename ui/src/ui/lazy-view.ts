@@ -1,6 +1,7 @@
 // Control UI module implements lazy view behavior.
 import { html } from "lit";
 import { t } from "../i18n/index.ts";
+import { isStaleChunkError, reloadForStaleChunk } from "./stale-chunk-reload.ts";
 
 type LazyState<T> = {
   mod: T | null;
@@ -32,6 +33,11 @@ export function createLazyView<T>(loader: () => Promise<T>, onChange?: () => voi
           state.error = error;
           state.hasError = true;
           state.promise = null;
+          // A stale lazy chunk (its hash changed in a redeploy) 404s; reload once
+          // to fetch the current bundle instead of showing the recovery panel.
+          if (isStaleChunkError(error)) {
+            reloadForStaleChunk();
+          }
         },
       )
       .finally(() => {
