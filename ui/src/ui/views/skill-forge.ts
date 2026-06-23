@@ -9,6 +9,7 @@ import type {
   ForgeActionNotice,
 } from "../controllers/skill-forge.ts";
 import { filteredSkills, countSkillForge, allCandidates } from "../controllers/skill-forge.ts";
+import { icons } from "../icons.ts";
 
 export type SkillForgeProps = SkillForgeState & {
   onRunPipeline: () => void;
@@ -143,7 +144,7 @@ function renderToolbar(props: SkillForgeProps, counts: Record<string, number>) {
             @click=${() => props.onModeChange("grid")}
             title="Queue + detail view"
           >
-            ☰ List
+            ${icons.menu} List
           </button>
         </div>
         <input
@@ -166,7 +167,7 @@ function renderToolbar(props: SkillForgeProps, counts: Record<string, number>) {
           @click=${() => props.onDecaySweep()}
           title="Retire stale skills (>30d unused)"
         >
-          🧹 Decay
+          ${icons.trash} Decay
         </button>
       </div>
     </div>
@@ -244,14 +245,14 @@ function renderStagedSection(props: SkillForgeProps, staged: ForgeSkill[]) {
                   ?disabled=${props.skillForgeActionBusy === skill.name}
                   @click=${() => props.onPromote(skill.name)}
                 >
-                  ${props.skillForgeActionBusy === skill.name ? "…" : "✓ Promote"}
+                  ${props.skillForgeActionBusy === skill.name ? "…" : html`${icons.check} Promote`}
                 </button>
                 <button
                   class="sf-btn sf-btn--retire sf-btn--sm"
                   ?disabled=${props.skillForgeActionBusy === skill.name}
                   @click=${() => props.onRetire(skill.name)}
                 >
-                  ✗ Retire
+                  ${icons.x} Retire
                 </button>
               </div>
             </div>
@@ -280,14 +281,14 @@ function renderPromotedSection(props: SkillForgeProps, promoted: ForgeSkill[]) {
                 <span class="sf-staged-card__name"
                   >${skill.name.replace(/^forge-recover-/, "").replace(/-[a-f0-9]{6}$/, "")}</span
                 >
-                <span class="sf-queue__badge sf-badge--promoted">✓ Live</span>
+                <span class="sf-queue__badge sf-badge--promoted">${icons.check} Live</span>
               </div>
               ${skill.description
                 ? html`<p class="sf-staged-card__desc">${skill.description}</p>`
                 : nothing}
               <div class="sf-staged-card__meta">
                 ${skill.usageCount > 0
-                  ? html`<span>Used ${skill.usageCount}×</span>`
+                  ? html`<span class="sf-meta-used">Used ${skill.usageCount}×</span>`
                   : html`<span class="sf-meta-unused">Unused</span>`}
                 ${skill.lastUsedAt
                   ? html`<span>Last ${relativeTime(skill.lastUsedAt)}</span>`
@@ -406,14 +407,14 @@ function renderDetail(props: SkillForgeProps, skill: ForgeSkill) {
                 ?disabled=${isBusy}
                 @click=${() => props.onPromote(skill.name)}
               >
-                ${isBusy ? "Promoting…" : "✓ Promote"}
+                ${isBusy ? "Promoting…" : html`${icons.check} Promote`}
               </button>
               <button
                 class="sf-btn sf-btn--retire ${isBusy ? "is-busy" : ""}"
                 ?disabled=${isBusy}
                 @click=${() => props.onRetire(skill.name)}
               >
-                ✗ Retire
+                ${icons.x} Retire
               </button>
             `
           : skill.status === "promoted"
@@ -423,7 +424,7 @@ function renderDetail(props: SkillForgeProps, skill: ForgeSkill) {
                   ?disabled=${isBusy}
                   @click=${() => props.onRetire(skill.name)}
                 >
-                  ✗ Retire
+                  ${icons.x} Retire
                 </button>
               `
             : nothing}
@@ -442,7 +443,7 @@ function renderEmpty(props: SkillForgeProps) {
   const hasFilter = props.skillForgeFilter !== "all" || props.skillForgeQuery.trim();
   return html`
     <div class="sf-empty">
-      <div class="sf-empty__icon">${hasFilter ? "🔍" : "⚒️"}</div>
+      <div class="sf-empty__icon">${hasFilter ? icons.search : icons.wrench}</div>
       <p class="sf-empty__title">${hasFilter ? "No matching skills" : "Skill Forge"}</p>
       <p class="sf-empty__body">
         ${hasFilter

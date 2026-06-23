@@ -2,6 +2,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { t } from "../../i18n/index.ts";
+import { agentAvatarUrl } from "../avatar/agent-avatar.ts";
 import {
   addWorkboardCardComment,
   archiveWorkboardCard,
@@ -34,9 +35,15 @@ import {
 import { formatDateMs } from "../format.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import { icons } from "../icons.ts";
-import type { AgentsListResult, GatewaySessionRow } from "../types.ts";
+import type { AgentsFilesListResult, AgentsListResult, GatewaySessionRow } from "../types.ts";
 import { renderPixelOffice } from "./pixel-office.ts";
 import type { ProjectOffice } from "./pixel-office.ts";
+import {
+  encodeProjectLabel,
+  parseProjectLabel,
+  projectIconName,
+  projectIdFromName,
+} from "./project-label.ts";
 
 type WorkboardAgentRow = AgentsListResult["agents"][number];
 
@@ -591,7 +598,12 @@ function renderAgentChip(props: WorkboardProps, card: WorkboardCard) {
       ? t("workboard.agentLinkedWithDescription", { agent: label, description })
       : t("workboard.agentLinked", { agent: label })
     : t("workboard.agentDefaultLinked", { agent: label });
-  return html`<span class="workboard-agent-chip" title=${title}>${label}</span>`;
+  const agentId = cardAgentId(card, props.agentsList);
+  const avatar = agentId ? agentAvatarUrl(agentId, agent?.identity) : null;
+  return html`<span class="workboard-agent-chip" title=${title}>
+    ${avatar ? html`<img class="workboard-agent-chip__img" src=${avatar} alt="" />` : nothing}
+    ${label}
+  </span>`;
 }
 
 function renderEngineMark(engine: WorkboardExecutionEngine) {
@@ -894,7 +906,7 @@ function renderCardModal(props: WorkboardProps) {
                     value=${section}
                     ?selected=${(state.draftSection ?? "tasks") === section}
                   >
-                    ${WORKBOARD_SECTION_LABELS[section]}
+                    ${WORKBOARD_SECTION_META[section].label}
                   </option>`,
               )}
             </select>
@@ -1886,11 +1898,15 @@ function renderColumn(props: WorkboardProps, status: WorkboardStatus, cards: Wor
 const WORKBOARD_SECTIONS_UI = ["ideas", "goals", "implementations", "tasks"] as const;
 type WorkboardSectionUI = (typeof WORKBOARD_SECTIONS_UI)[number];
 
-const WORKBOARD_SECTION_LABELS: Record<WorkboardSectionUI, string> = {
-  goals: "🎯 Goals",
-  implementations: "🔧 Implementations",
-  tasks: "✅ Tasks",
-  ideas: "💡 Ideas",
+// Each section pairs an SVG icon name with its display label (no emoji).
+const WORKBOARD_SECTION_META: Record<
+  WorkboardSectionUI,
+  { icon: keyof typeof icons; label: string }
+> = {
+  goals: { icon: "target", label: "Goals" },
+  implementations: { icon: "wrench", label: "Implementations" },
+  tasks: { icon: "check", label: "Tasks" },
+  ideas: { icon: "lightbulb", label: "Ideas" },
 };
 
 /** Section selector tabs (All + each section with a live count). */
@@ -1899,7 +1915,11 @@ function renderSectionTabs(
   sectioned: ReadonlyMap<WorkboardSectionUI, WorkboardCard[]>,
 ) {
   const state = getWorkboardState(props.host);
-  const tab = (key: WorkboardUiState["activeSection"], label: string, count: number) => html`
+  const tab = (
+    key: WorkboardUiState["activeSection"],
+    meta: (typeof WORKBOARD_SECTION_META)[WorkboardSectionUI],
+    count: number,
+  ) => html`
     <button
       type="button"
       role="tab"
@@ -1912,14 +1932,15 @@ function renderSectionTabs(
         props.onRequestUpdate?.();
       }}
     >
-      <span>${label}</span>
+      <span class="workboard-section-tab__icon" aria-hidden="true">${icons[meta.icon]}</span>
+      <span>${meta.label}</span>
       <span class="workboard-section-tab__count">${count}</span>
     </button>
   `;
   return html`
     <div class="workboard-section-tabs" role="tablist">
       ${WORKBOARD_SECTIONS_UI.map((section) =>
-        tab(section, WORKBOARD_SECTION_LABELS[section], (sectioned.get(section) ?? []).length),
+        tab(section, WORKBOARD_SECTION_META[section], (sectioned.get(section) ?? []).length),
       )}
     </div>
   `;
@@ -1971,30 +1992,65 @@ function openProjectModal(state: WorkboardUiState, project: ProjectOffice | null
   state.projectModalOpen = true;
   state.editingProjectId = project?.id ?? null;
   state.draftProjectName = project?.name ?? "";
-  state.draftProjectIcon = project?.icon ?? "📁";
+  // Normalize legacy emoji labels to an icon name so the picker highlights correctly.
+  state.draftProjectIcon = project ? projectIconName(project.icon) : "folder";
+  state.draftProjectDir = project?.dir ?? "";
+  state.projectDirBrowserOpen = false;
+  state.projectDirBrowsePath = "";
+  state.projectDirSubdirs = [];
+  state.projectIconDropdownOpen = false;
 }
 
 function closeProjectModal(state: WorkboardUiState) {
   state.projectModalOpen = false;
   state.editingProjectId = null;
   state.draftProjectName = "";
-  state.draftProjectIcon = "📁";
+  state.draftProjectIcon = "folder";
+  state.draftProjectDir = "";
+  state.projectDirBrowserOpen = false;
+  state.projectDirBrowsePath = "";
+  state.projectDirSubdirs = [];
+  state.projectIconDropdownOpen = false;
 }
 
-function projectLabelFromName(name: string, icon: string): string {
-  const trimmedIcon = icon.trim() || "📁";
-  return `project:${name.trim()}:${trimmedIcon}`;
+function projectLabelFromName(name: string, icon: string, dir?: string): string {
+  return encodeProjectLabel(name, icon, dir);
+}
+
+/** Parent directory of a path, for the folder-browser "Up" control. */
+function parentDir(p: string): string {
+  return p.replace(/\/+[^/]+\/?$/, "") || "/";
+}
+
+/** Load the directory browser at `targetPath` via the shared agent file-list RPC. */
+async function loadProjectDirBrowser(props: WorkboardProps, targetPath: string): Promise<void> {
+  const state = getWorkboardState(props.host);
+  const client = props.client;
+  state.projectDirBrowsePath = targetPath;
+  if (!client) {
+    return;
+  }
+  const agentId = props.agentsList?.agents?.[0]?.id ?? props.agentsList?.defaultId ?? "main";
+  try {
+    const res = await client.request<AgentsFilesListResult>("agents.files.list", {
+      agentId,
+      path: targetPath || "~",
+    });
+    state.projectDirSubdirs = (res?.activeDirSubdirs ?? []).map((e) => ({
+      name: e.name,
+      path: e.path,
+    }));
+  } catch {
+    state.projectDirSubdirs = [];
+  } finally {
+    props.onRequestUpdate?.();
+  }
 }
 
 function findProjectLabel(card: WorkboardCard, projectId: string): string | undefined {
   return card.labels.find((label) => {
-    const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
-    if (!match) {
-      return false;
-    }
-    const name = match[1]?.trim();
-    const id = name?.toLowerCase().replace(/\s+/g, "-");
-    return id === projectId;
+    const parsed = parseProjectLabel(label);
+    return parsed ? projectIdFromName(parsed.name) === projectId : false;
   });
 }
 
@@ -2009,13 +2065,40 @@ async function saveProjectModal(props: WorkboardProps) {
 
   const editingId = state.editingProjectId;
   const newName = state.draftProjectName.trim();
-  const newIcon = state.draftProjectIcon.trim() || "📁";
-  const newLabel = projectLabelFromName(newName, newIcon);
+  const newLabel = projectLabelFromName(newName, state.draftProjectIcon, state.draftProjectDir);
 
-  // Adding a new project: projects are created via card labels, so just close.
+  // Adding a new project: projects are emergent from card labels, so persist an
+  // anchor card carrying the project label — otherwise the new project has
+  // nothing to load from and never appears.
   if (!editingId) {
-    closeProjectModal(state);
+    state.loading = true;
+    state.error = null;
     props.onRequestUpdate?.();
+    try {
+      await client.request("workboard.cards.create", {
+        title: newName,
+        notes: "",
+        status: "backlog",
+        section: "tasks",
+        priority: "normal",
+        labels: [newLabel],
+      });
+      closeProjectModal(state);
+      await loadWorkboard({
+        host: props.host,
+        client,
+        requestUpdate: props.onRequestUpdate,
+        force: true,
+      });
+    } catch (error) {
+      state.error =
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : "Project create failed.";
+    } finally {
+      state.loading = false;
+      props.onRequestUpdate?.();
+    }
     return;
   }
 
@@ -2085,13 +2168,8 @@ async function deleteProjectFromCards(params: {
   try {
     for (const card of cardsToUpdate) {
       const newLabels = card.labels.filter((label) => {
-        const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
-        if (!match) {
-          return true;
-        }
-        const name = match[1]?.trim();
-        const id = name?.toLowerCase().replace(/\s+/g, "-");
-        return id !== projectId;
+        const parsed = parseProjectLabel(label);
+        return parsed ? projectIdFromName(parsed.name) !== projectId : true;
       });
       await client.request("workboard.cards.update", {
         id: card.id,
@@ -2113,6 +2191,89 @@ async function deleteProjectFromCards(params: {
     state.loading = false;
     requestUpdate?.();
   }
+}
+
+// Curated project-icon palette for the Add/Edit project picker. Each entry is an
+// icon NAME (keyof typeof icons); the grid renders the SVG and stores the name.
+const PROJECT_ICON_CHOICES = [
+  "folder",
+  "folderOpen",
+  "folders",
+  "package",
+  "rocket",
+  "settings",
+  "wrench",
+  "monitor",
+  "puzzle",
+  "brain",
+  "microscope",
+  "flask",
+  "barChart",
+  "trendingUp",
+  "book",
+  "penLine",
+  "target",
+  "telescope",
+  "satellite",
+  "globe",
+  "plug",
+  "database",
+  "tag",
+  "star",
+  "flame",
+  "lightbulb",
+  "bot",
+  "bird",
+] as const satisfies ReadonlyArray<keyof typeof icons>;
+
+function renderProjectIconPicker(state: WorkboardUiState, props: WorkboardProps) {
+  const current = projectIconName(state.draftProjectIcon);
+  return html`
+    <div class="project-icon-dropdown">
+      <button
+        type="button"
+        class="project-icon-dropdown__trigger"
+        aria-haspopup="listbox"
+        aria-expanded=${state.projectIconDropdownOpen}
+        @click=${() => {
+          state.projectIconDropdownOpen = !state.projectIconDropdownOpen;
+          props.onRequestUpdate?.();
+        }}
+      >
+        <span class="project-icon-dropdown__current">${icons[current]}</span>
+        <span class="project-icon-dropdown__label">${current}</span>
+        ${icons.chevronDown}
+      </button>
+      ${state.projectIconDropdownOpen
+        ? html`<div
+            class="project-icon-grid"
+            role="listbox"
+            aria-label=${t("workboard.projectIcon")}
+          >
+            ${PROJECT_ICON_CHOICES.map(
+              (name) => html`
+                <button
+                  type="button"
+                  class="project-icon-grid__cell ${name === current
+                    ? "project-icon-grid__cell--active"
+                    : ""}"
+                  role="option"
+                  aria-selected=${name === current}
+                  title=${name}
+                  @click=${() => {
+                    state.draftProjectIcon = name;
+                    state.projectIconDropdownOpen = false;
+                    props.onRequestUpdate?.();
+                  }}
+                >
+                  ${icons[name]}
+                </button>
+              `,
+            )}
+          </div>`
+        : nothing}
+    </div>
+  `;
 }
 
 function renderProjectModal(props: WorkboardProps) {
@@ -2170,18 +2331,68 @@ function renderProjectModal(props: WorkboardProps) {
             />
           </label>
           <label class="field">
-            <span class="field__label">${t("workboard.projectIcon")}</span>
-            <input
-              class="field__input"
-              type="text"
-              .value=${state.draftProjectIcon}
-              @input=${(e: Event) => {
-                state.draftProjectIcon = (e.target as HTMLInputElement).value;
-                props.onRequestUpdate?.();
-              }}
-              placeholder="📁"
-            />
+            <span class="field__label">Directory</span>
+            <div class="project-dir-field">
+              <input
+                class="field__input"
+                type="text"
+                .value=${state.draftProjectDir}
+                placeholder="No folder linked"
+                readonly
+              />
+              <button
+                class="btn"
+                type="button"
+                @click=${() => {
+                  const opening = !state.projectDirBrowserOpen;
+                  state.projectDirBrowserOpen = opening;
+                  if (opening) {
+                    void loadProjectDirBrowser(props, state.draftProjectDir || "~");
+                  }
+                  props.onRequestUpdate?.();
+                }}
+              >
+                ${icons.folderOpen} Browse
+              </button>
+            </div>
+            ${state.projectDirBrowserOpen
+              ? html`<div class="project-dir-browser">
+                  <div class="project-dir-browser__path">${state.projectDirBrowsePath || "~"}</div>
+                  <button
+                    class="project-dir-browser__row"
+                    type="button"
+                    @click=${() =>
+                      void loadProjectDirBrowser(props, parentDir(state.projectDirBrowsePath))}
+                  >
+                    ${icons.cornerDownRight} Up
+                  </button>
+                  ${state.projectDirSubdirs.map(
+                    (entry) => html`<button
+                      class="project-dir-browser__row"
+                      type="button"
+                      @click=${() => void loadProjectDirBrowser(props, entry.path)}
+                    >
+                      ${icons.folder} ${entry.name}
+                    </button>`,
+                  )}
+                  <button
+                    class="btn primary project-dir-browser__use"
+                    type="button"
+                    @click=${() => {
+                      state.draftProjectDir = state.projectDirBrowsePath;
+                      state.projectDirBrowserOpen = false;
+                      props.onRequestUpdate?.();
+                    }}
+                  >
+                    ${icons.check} Use this folder
+                  </button>
+                </div>`
+              : nothing}
           </label>
+          <div class="field">
+            <span class="field__label">${t("workboard.projectIcon")}</span>
+            ${renderProjectIconPicker(state, props)}
+          </div>
         </div>
         <div class="workboard-modal__footer">
           <button

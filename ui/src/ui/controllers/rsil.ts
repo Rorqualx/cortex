@@ -60,10 +60,13 @@ function saveColumnOrder(order: RsilCategory[]): void {
   }
 }
 
+// RSIL's status set. The core workboard keeps a redundant `todo` alongside
+// `backlog` — both are passive parking with identical automation — so the lab
+// collapses them: an incoming `todo` normalizes to `backlog` (normalizeCard,
+// via the includes() guard) and the board never offers `todo` as its own state.
 export const RSIL_STATUSES = [
   "triage",
   "backlog",
-  "todo",
   "scheduled",
   "ready",
   "running",
@@ -72,6 +75,19 @@ export const RSIL_STATUSES = [
   "done",
 ] as const;
 export type RsilStatus = (typeof RSIL_STATUSES)[number];
+
+// Statuses an operator sets by hand. The rest (scheduled, running, review) are
+// driven by the dispatcher/store, so the move dropdown only offers them when the
+// card already sits there (moveTargets) — keeping the common case to a short,
+// decision-focused list instead of all nine workboard states.
+export const RSIL_OPERATOR_STATUSES = [
+  "triage",
+  "backlog",
+  "ready",
+  "blocked",
+  "done",
+] as const satisfies readonly RsilStatus[];
+const RSIL_OPERATOR_STATUS_SET = new Set<RsilStatus>(RSIL_OPERATOR_STATUSES);
 
 export type RsilResearchMeta = {
   cycleDate: string;
@@ -444,6 +460,27 @@ export function reorderColumn(host: RsilHost, dragged: RsilCategory, target: Rsi
   state.columnOrder = order;
   saveColumnOrder(order);
   host.requestUpdate?.();
+}
+
+// Move-dropdown targets: operator states plus the card's current state, so an
+// auto-managed status (scheduled/running/review) stays visible and reversible
+// without cluttering the dropdown for cards that never entered those states.
+export function moveTargets(card: RsilCard): RsilStatus[] {
+  return RSIL_STATUSES.filter((s) => RSIL_OPERATOR_STATUS_SET.has(s) || s === card.status);
+}
+
+// Status-filter options limited to statuses actually present on the board, so
+// empty states drop out of the filter dropdown (auto-hide). Derived from all
+// non-archived cards, not the post-status-filter set, so picking a status never
+// removes the other options.
+export function filterStatuses(): RsilStatus[] {
+  const present = new Set<RsilStatus>();
+  for (const card of state.cards) {
+    if (!card.archived) {
+      present.add(card.status);
+    }
+  }
+  return RSIL_STATUSES.filter((s) => present.has(s));
 }
 
 /** Done cards across all categories, for the full-width bottom container. */

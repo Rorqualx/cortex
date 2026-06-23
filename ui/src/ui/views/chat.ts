@@ -31,6 +31,7 @@ import {
 import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "../chat/input-history.ts";
 import { PinnedMessages } from "../chat/pinned-messages.ts";
 import { getPinnedMessageSummary } from "../chat/pinned-summary.ts";
+import type { RealtimeTalkCatalogProvider } from "../chat/realtime-talk-catalog.ts";
 import type { RealtimeTalkConversationEntry } from "../chat/realtime-talk-conversation.ts";
 import type { RealtimeTalkStatus } from "../chat/realtime-talk.ts";
 import { renderChatRunControls } from "../chat/run-controls.ts";
@@ -67,7 +68,6 @@ import type {
   SessionGoal,
   SessionsListResult,
 } from "../types.ts";
-import type { RealtimeTalkCatalogProvider } from "../chat/realtime-talk-catalog.ts";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import { resolveLocalUserName } from "../user-identity.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
@@ -1608,6 +1608,9 @@ export function renderChat(props: ChatProps) {
   const assistantIdentity = {
     name: props.assistantName,
     avatar: resolveAssistantDisplayAvatar(props),
+    // currentAgentId is the resolved per-chat agent (fullMessageAgentId is
+    // undefined for dashboard sessions), so the avatar matches the shown name.
+    agentId: props.currentAgentId,
   };
   const draftMirror = getComposerDraftMirror(props);
   const visibleDraft = draftMirror.value;
@@ -1773,7 +1776,7 @@ export function renderChat(props: ChatProps) {
               </div>
             `
           : nothing}
-        ${isEmpty && !vs.searchOpen ? renderWelcomeState(props) : nothing}
+        ${isEmpty && !vs.searchOpen ? renderWelcomeState(props, props.currentAgentId) : nothing}
         ${isEmpty && vs.searchOpen
           ? html` <div class="agent-chat__empty">No matching messages</div> `
           : nothing}
@@ -1941,7 +1944,7 @@ export function renderChat(props: ChatProps) {
                   return renderMessageGroup(item, {
                     onOpenSidebar: props.onOpenSidebar,
                     sessionKey: props.sessionKey,
-                    agentId: props.fullMessageAgentId,
+                    agentId: props.currentAgentId,
                     showReasoning,
                     showToolCalls: props.showToolCalls,
                     autoExpandToolCalls: Boolean(props.autoExpandToolCalls),

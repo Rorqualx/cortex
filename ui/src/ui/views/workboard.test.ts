@@ -2037,10 +2037,10 @@ describe("renderWorkboard", () => {
     const tabLabels = [...container.querySelectorAll(".workboard-section-tab")].map((el) =>
       el.textContent?.replace(/\s+/g, " ").trim(),
     );
-    expect(tabLabels.some((t) => t?.includes("🎯 Goals"))).toBe(true);
-    expect(tabLabels.some((t) => t?.includes("🔧 Implementations"))).toBe(true);
-    expect(tabLabels.some((t) => t?.includes("✅ Tasks"))).toBe(true);
-    expect(tabLabels.some((t) => t?.includes("💡 Ideas"))).toBe(true);
+    expect(tabLabels.some((t) => t?.includes("Goals"))).toBe(true);
+    expect(tabLabels.some((t) => t?.includes("Implementations"))).toBe(true);
+    expect(tabLabels.some((t) => t?.includes("Tasks"))).toBe(true);
+    expect(tabLabels.some((t) => t?.includes("Ideas"))).toBe(true);
 
     // Default active section is "ideas": only the idea card renders.
     expect(container.textContent).toContain("Idea card");

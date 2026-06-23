@@ -2,7 +2,7 @@
 import { coerceIdentityValue } from "../../../src/shared/assistant-identity-values.js";
 
 const MAX_ASSISTANT_NAME = 50;
-// Short text/emoji avatars (e.g. "A", "PS", "🦞"). Anything longer that is not
+// Short text avatars / initials (e.g. "A", "PS"). Anything longer that is not
 // a renderable image URL is dropped during normalization.
 const MAX_ASSISTANT_TEXT_AVATAR = 64;
 // Image-bearing avatars (data: URLs, same-origin Control UI routes). Sized to

@@ -1791,3 +1791,12 @@
   font-size: 12px;
   color: var(--muted);
 }
+
+/* Agent avatar (procedural invader) leading each conversation row. */
+.conversation-row__avatar {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  object-fit: contain;
+  image-rendering: pixelated;
+}

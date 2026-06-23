@@ -552,6 +552,7 @@ export function renderMessageGroup(
           {
             name: assistantName,
             avatar: opts.assistantAvatar ?? null,
+            agentId: opts.agentId ?? null,
           },
           {
             name: opts.userName ?? null,

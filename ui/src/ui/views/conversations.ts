@@ -1,6 +1,7 @@
 // Control UI view renders conversations screen content.
 import { html, nothing } from "lit";
 import { t } from "../../i18n/index.ts";
+import { agentAvatarUrl } from "../avatar/agent-avatar.ts";
 import { formatRelativeTimestamp, parseSessionKeyParts } from "../format.ts";
 import { icons } from "../icons.ts";
 import { pathForTab } from "../navigation.ts";
@@ -217,6 +218,12 @@ export function renderConversations(props: ConversationsProps) {
                 onNavigateToChat(row.key);
               }}
             >
+              <img
+                class="conversation-row__avatar"
+                src=${agentAvatarUrl(agentId, { avatar: agentIdentityById[agentId]?.avatar })}
+                alt=""
+                aria-hidden="true"
+              />
               <span class="conversation-row__dot" aria-hidden="true"></span>
               <span class="conversation-row__body">
                 <span class="conversation-row__name">${title}</span>

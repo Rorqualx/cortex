@@ -9,29 +9,45 @@
  */
 
 import { html, nothing } from "lit";
+import { agentAvatarUrl, isHonoredAvatarUrl } from "../avatar/agent-avatar.ts";
+import {
+  generateInvader,
+  invaderBoxShadow,
+  invaderColor,
+  invaderDataUri,
+} from "../avatar/invader.ts";
+import { loadModels } from "../controllers/models.ts";
 import type { WorkboardCard } from "../controllers/workboard.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
-import type { AgentsListResult, GatewayAgentRow, GatewaySessionRow } from "../types.ts";
+import { icons } from "../icons.ts";
+import type {
+  AgentsListResult,
+  GatewayAgentRow,
+  GatewaySessionRow,
+  ModelCatalogEntry,
+} from "../types.ts";
+import { parseProjectLabel, projectIconName } from "./project-label.ts";
 
 // ── Crew (from CREW.md) ────────────────────────────────────────────
 
 interface CrewAgent {
   id: string;
   name: string;
-  emoji: string;
   role: string;
-  neon: string; // neon body color
-  shape?: number; // sprite shape override (generated agents); CREW uses SHAPE_MAP
+  neon: string; // neon body color, reused for the initials avatar badge + sprite
+  // Persisted/assigned avatar (data: or same-origin URL). When set, the office
+  // renders this image instead of the auto-generated box-shadow invader.
+  avatarUrl?: string;
 }
 
 const CREW: CrewAgent[] = [
-  { id: "main", name: "Davos", emoji: "🧅", role: "Commander", neon: "#5a8a6e" },
-  { id: "varys", name: "Varys", emoji: "🕸️", role: "Research & Intel", neon: "#8b6aae" },
-  { id: "gendry", name: "Gendry", emoji: "🔨", role: "Code & Engineering", neon: "#4a8aaa" },
-  { id: "yoren", name: "Yoren", emoji: "🪓", role: "Scout & Explorer", neon: "#5e9460" },
-  { id: "samwell", name: "Samwell", emoji: "📚", role: "Scribe & Analysis", neon: "#a8834a" },
-  { id: "stannis", name: "Stannis", emoji: "⚔️", role: "Review & QA", neon: "#aa5a52" },
-  { id: "podrick", name: "Podrick", emoji: "🛡️", role: "Quartermaster", neon: "#5a9aaa" },
+  { id: "main", name: "Davos", role: "Commander", neon: "#5a8a6e" },
+  { id: "varys", name: "Varys", role: "Research & Intel", neon: "#8b6aae" },
+  { id: "gendry", name: "Gendry", role: "Code & Engineering", neon: "#4a8aaa" },
+  { id: "yoren", name: "Yoren", role: "Scout & Explorer", neon: "#5e9460" },
+  { id: "samwell", name: "Samwell", role: "Scribe & Analysis", neon: "#a8834a" },
+  { id: "stannis", name: "Stannis", role: "Review & QA", neon: "#aa5a52" },
+  { id: "podrick", name: "Podrick", role: "Quartermaster", neon: "#5a9aaa" },
 ];
 
 // ── Project offices ────────────────────────────────────────────────
@@ -41,23 +57,34 @@ export interface ProjectOffice {
   name: string;
   icon: string;
   agents: string[];
+  // Linked filesystem folder (3rd label segment: project:<name>:<icon>:<dir>).
+  dir?: string;
+}
+
+/**
+ * Agent avatar badge: the agent's assigned image if set, otherwise the
+ * deterministic procedural invader. Tinted with the crew's neon color.
+ */
+function renderAgentAvatar(agent: CrewAgent, extraClass = "") {
+  const cls = extraClass ? `mo-avatar ${extraClass}` : "mo-avatar";
+  const src = agentAvatarUrl(agent.id, { avatarUrl: agent.avatarUrl });
+  return html`<span class=${cls} style="--mo-avatar-color:${agent.neon};">
+    <img class="mo-avatar__img" src=${src} alt=${agent.name} />
+  </span>`;
 }
 
 /** Derive projects dynamically from card labels like "project:OpenClaw" */
 function deriveProjectsFromCards(cards: readonly WorkboardCard[]): ProjectOffice[] {
-  const projectMap = new Map<string, { icon: string; agents: Set<string> }>();
+  const projectMap = new Map<string, { icon: string; dir?: string; agents: Set<string> }>();
 
   for (const card of cards) {
     for (const label of card.labels) {
-      const match = label.match(/^project:([^:]+)(?::(.+))?$/i);
-      if (!match) {
+      const parsed = parseProjectLabel(label);
+      if (!parsed) {
         continue;
       }
-      const name = match[1]?.trim();
-      const icon = match[2]?.trim() ?? "📁";
-      if (!name) {
-        continue;
-      }
+      // Icon stays a stored name (legacy emoji resolves at render time via projectIconName).
+      const { name, icon, dir } = parsed;
 
       const existing = projectMap.get(name);
       if (existing) {
@@ -69,17 +96,17 @@ function deriveProjectsFromCards(cards: readonly WorkboardCard[]): ProjectOffice
         if (card.agentId) {
           agents.add(card.agentId);
         }
-        projectMap.set(name, { icon, agents });
+        projectMap.set(name, { icon, dir, agents });
       }
     }
   }
 
   // Also include hardcoded defaults if no cards define them yet
   const defaults: ProjectOffice[] = [
-    { id: "openclaw", name: "OpenClaw", icon: "🏰", agents: ["main", "gendry", "yoren"] },
-    { id: "kaizoku", name: "Kaizoku", icon: "🏴‍☠️", agents: ["gendry", "varys"] },
-    { id: "agentmcp", name: "AgentMCP", icon: "🤖", agents: ["gendry", "stannis"] },
-    { id: "freezctl", name: "Freezctl", icon: "🌱", agents: ["podrick"] },
+    { id: "openclaw", name: "OpenClaw", icon: "folder", agents: ["main", "gendry", "yoren"] },
+    { id: "kaizoku", name: "Kaizoku", icon: "bookmark", agents: ["gendry", "varys"] },
+    { id: "agentmcp", name: "AgentMCP", icon: "bot", agents: ["gendry", "stannis"] },
+    { id: "freezctl", name: "Freezctl", icon: "spark", agents: ["podrick"] },
   ];
 
   const derived: ProjectOffice[] = [];
@@ -88,6 +115,7 @@ function deriveProjectsFromCards(cards: readonly WorkboardCard[]): ProjectOffice
       id: name.toLowerCase().replace(/\s+/g, "-"),
       name,
       icon: meta.icon,
+      dir: meta.dir,
       agents: [...meta.agents],
     });
   }
@@ -106,256 +134,12 @@ function deriveProjectsFromCards(cards: readonly WorkboardCard[]): ProjectOffice
 
 const PX = 6;
 
-function px(pixels: [number, number, string][]): string {
-  return pixels.map(([x, y, c]) => `${x * PX}px ${y * PX}px 0 ${c}`).join(",");
-}
-
-// Each monster has a unique shape variant
-// 0 = standard blob, 1 = tall & thin, 2 = wide & short, 3 = spiky, 4 = round, 5 = angular, 6 = tiny
-const SHAPE_MAP: Record<string, number> = {
-  main: 0,
-  varys: 1,
-  gendry: 2,
-  yoren: 3,
-  samwell: 4,
-  stannis: 5,
-  podrick: 6,
-};
-
-// Neon monster — varies shape per agent
+// Procedural invader sprite, unique + deterministic per agent id. `frame` (0|1)
+// drives the existing two-frame leg flap; `active` brightens the body slightly.
 function buildMonster(agent: CrewAgent, active: boolean, frame: number): string {
-  const n = agent.neon;
-  const dark = "#0a0a0a";
-  const eye = "#ffffff";
-  const pupil = active ? n : "#333";
-  const shape = agent.shape ?? SHAPE_MAP[agent.id] ?? 0;
-
-  let pixels: [number, number, string][];
-
-  switch (shape) {
-    case 1: // Varys — tall thin spider-like
-      pixels = [
-        [3, 0, n],
-        [2, 1, n],
-        [3, 1, n],
-        [4, 1, n],
-        [2, 2, n],
-        [3, 2, eye],
-        [4, 2, n],
-        [2, 3, n],
-        [3, 3, dark],
-        [4, 3, n],
-        [3, 4, n],
-        [2, 5, n],
-        [3, 5, n],
-        [4, 5, n],
-        [1, 6, n],
-        [2, 6, n],
-        [4, 6, n],
-        [5, 6, n],
-        [0, 7, n],
-        [2, 7, n],
-        [4, 7, n],
-        [6, 7, n],
-      ];
-      break;
-    case 2: // Gendry — wide stocky blacksmith
-      pixels = [
-        [2, 0, n],
-        [4, 0, n],
-        [1, 1, n],
-        [2, 1, n],
-        [3, 1, n],
-        [4, 1, n],
-        [5, 1, n],
-        [0, 2, n],
-        [1, 2, eye],
-        [2, 2, n],
-        [3, 2, n],
-        [4, 2, n],
-        [5, 2, eye],
-        [6, 2, n],
-        [0, 3, n],
-        [1, 3, n],
-        [2, 3, dark],
-        [3, 3, n],
-        [4, 3, dark],
-        [5, 3, n],
-        [6, 3, n],
-        [0, 4, n],
-        [1, 4, n],
-        [2, 4, n],
-        [3, 4, n],
-        [4, 4, n],
-        [5, 4, n],
-        [6, 4, n],
-        [1, 5, n],
-        [5, 5, n],
-      ];
-      break;
-    case 3: // Yoren — spiky wanderer
-      pixels = [
-        [1, 0, n],
-        [3, 0, n],
-        [5, 0, n],
-        [2, 1, n],
-        [3, 1, n],
-        [4, 1, n],
-        [1, 2, n],
-        [2, 2, eye],
-        [4, 2, eye],
-        [5, 2, n],
-        [0, 3, n],
-        [1, 3, n],
-        [2, 3, dark],
-        [3, 3, n],
-        [4, 3, dark],
-        [5, 3, n],
-        [6, 3, n],
-        [1, 4, n],
-        [2, 4, n],
-        [3, 4, n],
-        [4, 4, n],
-        [5, 4, n],
-        [1, 5, n],
-        [3, 5, n],
-        [5, 5, n],
-        [0, 6, n],
-        [6, 6, n],
-      ];
-      break;
-    case 4: // Samwell — round bookish
-      pixels = [
-        [2, 0, n],
-        [3, 0, n],
-        [4, 0, n],
-        [1, 1, n],
-        [2, 1, n],
-        [3, 1, n],
-        [4, 1, n],
-        [5, 1, n],
-        [1, 2, n],
-        [2, 2, eye],
-        [3, 2, n],
-        [4, 2, eye],
-        [5, 2, n],
-        [1, 3, n],
-        [2, 3, n],
-        [3, 3, dark],
-        [4, 3, n],
-        [5, 3, n],
-        [0, 4, n],
-        [1, 4, n],
-        [2, 4, n],
-        [3, 4, n],
-        [4, 4, n],
-        [5, 4, n],
-        [6, 4, n],
-        [0, 5, n],
-        [1, 5, n],
-        [2, 5, n],
-        [3, 5, n],
-        [4, 5, n],
-        [5, 5, n],
-        [6, 5, n],
-        [2, 6, n],
-        [4, 6, n],
-      ];
-      break;
-    case 5: // Stannis — angular stern
-      pixels = [
-        [0, 0, n],
-        [6, 0, n],
-        [1, 1, n],
-        [5, 1, n],
-        [1, 2, n],
-        [2, 2, eye],
-        [4, 2, eye],
-        [5, 2, n],
-        [1, 3, n],
-        [2, 3, n],
-        [3, 3, dark],
-        [4, 3, n],
-        [5, 3, n],
-        [0, 4, n],
-        [1, 4, n],
-        [2, 4, n],
-        [3, 4, n],
-        [4, 4, n],
-        [5, 4, n],
-        [6, 4, n],
-        [0, 5, n],
-        [2, 5, n],
-        [4, 5, n],
-        [6, 5, n],
-        [0, 6, n],
-        [6, 6, n],
-      ];
-      break;
-    case 6: // Podrick — tiny squire
-      pixels = [
-        [2, 0, n],
-        [4, 0, n],
-        [2, 1, n],
-        [3, 1, n],
-        [4, 1, n],
-        [2, 2, eye],
-        [4, 2, eye],
-        [2, 3, n],
-        [3, 3, dark],
-        [4, 3, n],
-        [1, 4, n],
-        [2, 4, n],
-        [3, 4, n],
-        [4, 4, n],
-        [5, 4, n],
-        [1, 5, n],
-        [5, 5, n],
-      ];
-      break;
-    default: // Davos — standard blob
-      pixels = [
-        [2, 0, n],
-        [4, 0, n],
-        [1, 1, n],
-        [2, 1, n],
-        [3, 1, n],
-        [4, 1, n],
-        [5, 1, n],
-        [1, 2, n],
-        [2, 2, eye],
-        [3, 2, pupil],
-        [4, 2, eye],
-        [5, 2, n],
-        [0, 3, n],
-        [1, 3, n],
-        [2, 3, dark],
-        [3, 3, n],
-        [4, 3, dark],
-        [5, 3, n],
-        [6, 3, n],
-        [0, 4, n],
-        [1, 4, n],
-        [2, 4, n],
-        [3, 4, n],
-        [4, 4, n],
-        [5, 4, n],
-        [6, 4, n],
-        [1, 5, n],
-        [2, 5, n],
-        [4, 5, n],
-        [5, 5, n],
-      ];
-  }
-
-  // Arms — always animate, active = fast flap, idle = slow wave
-  if (frame === 0) {
-    pixels.push([0, 2, n], [6, 2, n]); // arms up
-  } else {
-    pixels.push([0, 5, n], [6, 5, n]); // arms down
-  }
-
-  return px(pixels);
+  const sprite = generateInvader(agent.id);
+  const color = active ? `color-mix(in srgb, ${agent.neon} 72%, #ffffff)` : agent.neon;
+  return invaderBoxShadow(sprite, color, frame, PX);
 }
 
 // ── Session state ──────────────────────────────────────────────────
@@ -371,7 +155,7 @@ function resolveAgentStates(sessions: GatewaySessionRow[]): AgentState[] {
       agent.id === "main"
         ? sessions.some((s) => s.kind === "direct" && s.hasActiveRun)
         : sessions.some((s) => s.hasActiveRun && s.key?.includes(agent.id));
-    return { agent, active: Boolean(isActive) };
+    return { agent, active: isActive };
   });
 }
 
@@ -381,28 +165,34 @@ function renderMonsterBuddy(state: AgentState) {
   return html`
     <div class="mo-buddy" data-agent=${state.agent.id} data-active=${state.active}>
       <div class="mo-buddy__name">
-        <span class="mo-buddy__emoji">${state.agent.emoji}</span>
+        ${renderAgentAvatar(state.agent, "mo-avatar--sm")}
         <span>${state.agent.name}</span>
       </div>
       <div class="mo-buddy__sprite-wrap">
-        <div
-          class="mo-sprite mo-sprite--base"
-          style="width:${PX}px;height:${PX}px;box-shadow:${buildMonster(
-            state.agent,
-            state.active,
-            0,
-          )};"
-        ></div>
-        <div
-          class="mo-sprite mo-sprite--overlay ${state.active
-            ? "mo-sprite--fast"
-            : "mo-sprite--slow"}"
-          style="width:${PX}px;height:${PX}px;box-shadow:${buildMonster(
-            state.agent,
-            state.active,
-            1,
-          )};"
-        ></div>
+        ${state.agent.avatarUrl
+          ? html`<img
+              class="mo-sprite-img ${state.active ? "mo-sprite-img--active" : ""}"
+              src=${state.agent.avatarUrl}
+              alt=${state.agent.name}
+            />`
+          : html`<div
+                class="mo-sprite mo-sprite--base"
+                style="width:${PX}px;height:${PX}px;box-shadow:${buildMonster(
+                  state.agent,
+                  state.active,
+                  0,
+                )};"
+              ></div>
+              <div
+                class="mo-sprite mo-sprite--overlay ${state.active
+                  ? "mo-sprite--fast"
+                  : "mo-sprite--slow"}"
+                style="width:${PX}px;height:${PX}px;box-shadow:${buildMonster(
+                  state.agent,
+                  state.active,
+                  1,
+                )};"
+              ></div>`}
       </div>
     </div>
   `;
@@ -489,7 +279,9 @@ function renderProjectCell(
     <div class="mo-cell ${anyActive ? "mo-cell--active" : ""}">
       <div class="mo-cell__door">
         <div class="mo-cell__header">
-          <span class="mo-cell__icon">${project.icon}</span>
+          <span class="mo-cell__icon" aria-hidden="true"
+            >${icons[projectIconName(project.icon)]}</span
+          >
           <span class="mo-cell__name">${project.name}</span>
           ${options.editable
             ? html`
@@ -528,7 +320,7 @@ function renderProjectCell(
                     class="mo-cell__avatar ${a.active ? "mo-cell__avatar--active" : ""}"
                     title="${a.agent.name}${a.active ? " (working)" : ""}"
                   >
-                    ${a.agent.emoji}
+                    ${renderAgentAvatar(a.agent, "mo-avatar--sm")}
                   </span>
                 `,
               )
@@ -592,44 +384,26 @@ export function renderPixelOffice(
  */
 // ── Header agent strip: real agents + create / profile modals ──────
 
-/** Palette for generated (non-CREW) agent buddies; stable per agent id. */
-const NEON_PALETTE = [
-  "#5a8a6e",
-  "#8b6aae",
-  "#4a8aaa",
-  "#5e9460",
-  "#a8834a",
-  "#aa5a52",
-  "#5a9aaa",
-  "#7a6acc",
-  "#cc7a4a",
-  "#4accaa",
-  "#cc4a8a",
-  "#8acc4a",
-];
-
-function hashId(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) {
-    h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  }
-  return h;
+/** Persisted/assigned avatar URL from an agent row, if safe to render directly. */
+function rowAvatarUrl(row: GatewayAgentRow): string | undefined {
+  const candidate = row.identity?.avatarUrl ?? row.identity?.avatar;
+  // Only honor a genuinely assigned photo; generated-invader SVGs and logo
+  // placeholders are re-derived from the id so the office matches every surface.
+  return candidate && isHonoredAvatarUrl(candidate) ? candidate : undefined;
 }
 
-/** Build a pixel buddy for a real agent: reuse CREW art by id, else generate. */
+/** Build a pixel buddy for a real agent: CREW name/role by id, else the row. */
 function buddyForAgent(row: GatewayAgentRow): CrewAgent {
+  const avatarUrl = rowAvatarUrl(row);
   const crew = CREW.find((c) => c.id === row.id);
-  if (crew) {
-    return crew;
-  }
-  const h = hashId(row.id);
+  // Color is always invaderColor(id) so the office sprite matches the agent's
+  // avatar everywhere else (chat, conversations, workboard) — one source of truth.
   return {
     id: row.id,
-    name: row.name || row.id,
-    emoji: row.identity?.emoji ?? "🤖",
-    role: row.description ?? "",
-    neon: NEON_PALETTE[h % NEON_PALETTE.length],
-    shape: h % 7,
+    name: crew?.name ?? row.name ?? row.id,
+    role: crew?.role ?? row.description ?? "",
+    neon: invaderColor(row.id),
+    avatarUrl,
   };
 }
 
@@ -666,8 +440,11 @@ type StripModalState = {
   draftName: string;
   draftWorkspace: string;
   draftModel: string;
+  draftRole: string;
   draftEmoji: string;
   draftDescription: string;
+  // Assigned avatar data-URI for the create modal ("" = auto/id-derived sprite).
+  draftAvatar: string;
   promptDraft: string;
   promptLoading: boolean;
   composing: boolean;
@@ -675,6 +452,20 @@ type StripModalState = {
   promptError: string | null;
   saving: boolean;
   error: string | null;
+  // Inline profile-edit drafts (Role/Description/Model), separate from the
+  // create-modal drafts so an open profile never clobbers a half-typed create.
+  profileRole: string;
+  profileDescription: string;
+  profileModel: string;
+  // Assigned avatar data-URI for the open profile ("" = auto/id-derived sprite).
+  profileAvatar: string;
+  // Only persist avatar on save when the operator actually regenerated/reset it,
+  // so an untouched file-path avatar is never clobbered into an inline data-URI.
+  profileAvatarDirty: boolean;
+  savingProfile: boolean;
+  profileSaveError: string | null;
+  // Model catalog for the inline Model picker; loaded lazily on profile open.
+  models: ModelCatalogEntry[];
 };
 
 // Module-level singleton (mirrors dreaming-layers): the strip plugs into the
@@ -685,8 +476,10 @@ const stripState: StripModalState = {
   draftName: "",
   draftWorkspace: "",
   draftModel: "",
+  draftRole: "",
   draftEmoji: "",
   draftDescription: "",
+  draftAvatar: "",
   promptDraft: "",
   promptLoading: false,
   composing: false,
@@ -694,6 +487,14 @@ const stripState: StripModalState = {
   promptError: null,
   saving: false,
   error: null,
+  profileRole: "",
+  profileDescription: "",
+  profileModel: "",
+  profileAvatar: "",
+  profileAvatarDirty: false,
+  savingProfile: false,
+  profileSaveError: null,
+  models: [],
 };
 
 function resetPromptState(): void {
@@ -718,21 +519,81 @@ function openCreateAgent(opts: PixelAgentsStripOptions): void {
   stripState.draftName = "";
   stripState.draftWorkspace = opts.defaultWorkspace ?? "";
   stripState.draftModel = "";
+  stripState.draftRole = "";
   stripState.draftEmoji = "";
   stripState.draftDescription = "";
+  stripState.draftAvatar = ""; // default: new agent gets the auto id-derived sprite
   stripState.error = null;
   stripState.saving = false;
   resetPromptState();
   opts.requestUpdate?.();
+  void loadProfileModels(opts);
 }
 
 function openProfile(opts: PixelAgentsStripOptions, id: string): void {
   stripState.mode = "profile";
   stripState.profileAgentId = id;
   resetPromptState();
+  // Seed the inline-edit drafts from the live row so the fields open populated.
+  // Role falls back to the cosmetic crew label when no persisted identity.role
+  // exists yet, so the operator edits the value they actually see.
+  const row = (opts.agentsList?.agents ?? []).find((a) => a.id === id);
+  const buddy = row ? buddyForAgent(row) : CREW.find((c) => c.id === id);
+  stripState.profileRole = row?.identity?.role ?? buddy?.role ?? "";
+  stripState.profileDescription = row?.description ?? "";
+  stripState.profileModel = row?.model?.primary ?? "";
+  stripState.profileAvatar = row?.identity?.avatarUrl ?? "";
+  stripState.profileAvatarDirty = false;
+  stripState.savingProfile = false;
+  stripState.profileSaveError = null;
   opts.requestUpdate?.();
   // Lazy-load the agent's SOUL.md prompt into the editor.
   void loadProfilePrompt(opts, id);
+  void loadProfileModels(opts);
+}
+
+async function loadProfileModels(opts: PixelAgentsStripOptions): Promise<void> {
+  if (!opts.client || !opts.connected || stripState.models.length > 0) {
+    return;
+  }
+  try {
+    const models = await loadModels(opts.client);
+    // Both the profile and create modals use the picker.
+    if (stripState.mode !== "none") {
+      stripState.models = models;
+      opts.requestUpdate?.();
+    }
+  } catch {
+    // Non-fatal: the Model field falls back to the current value as the sole option.
+  }
+}
+
+async function saveAgentProfile(opts: PixelAgentsStripOptions, id: string): Promise<void> {
+  if (!opts.client || !opts.connected) {
+    return;
+  }
+  stripState.savingProfile = true;
+  stripState.profileSaveError = null;
+  opts.requestUpdate?.();
+  try {
+    // Send only fields with a value; agents.update treats each as optional and
+    // role persists as identity metadata, description on the agent entry.
+    await opts.client.request("agents.update", {
+      agentId: id,
+      ...(stripState.profileModel.trim() ? { model: stripState.profileModel.trim() } : {}),
+      ...(stripState.profileDescription.trim()
+        ? { description: stripState.profileDescription.trim() }
+        : {}),
+      ...(stripState.profileRole.trim() ? { role: stripState.profileRole.trim() } : {}),
+      ...(stripState.profileAvatarDirty ? { avatar: stripState.profileAvatar } : {}),
+    });
+    opts.onAgentsChanged?.();
+  } catch (error) {
+    stripState.profileSaveError = error instanceof Error ? error.message : String(error);
+  } finally {
+    stripState.savingProfile = false;
+    opts.requestUpdate?.();
+  }
 }
 
 async function loadProfilePrompt(opts: PixelAgentsStripOptions, id: string): Promise<void> {
@@ -829,10 +690,11 @@ async function submitCreateAgent(opts: PixelAgentsStripOptions): Promise<void> {
       name,
       workspace,
       ...(stripState.draftModel.trim() ? { model: stripState.draftModel.trim() } : {}),
-      ...(stripState.draftEmoji.trim() ? { emoji: stripState.draftEmoji.trim() } : {}),
       ...(stripState.draftDescription.trim()
         ? { description: stripState.draftDescription.trim() }
         : {}),
+      ...(stripState.draftRole.trim() ? { role: stripState.draftRole.trim() } : {}),
+      ...(stripState.draftAvatar ? { avatar: stripState.draftAvatar } : {}),
     });
     // Seed the composed prompt into the new agent's SOUL.md if one was written.
     const newId = typeof res.agentId === "string" ? res.agentId : undefined;
@@ -894,6 +756,42 @@ function renderTextArea(
   `;
 }
 
+/** Model picker for the profile editor, sourced from the gateway model catalog. */
+// Shared model dropdown, sourced from the gateway model catalog. Keeps the
+// current value as an option even if it isn't in the catalog (custom ref).
+function renderModelSelect(current: string, onSelect: (value: string) => void, className = "") {
+  const options = stripState.models;
+  const currentInCatalog = options.some((m) => m.id === current);
+  return html`
+    <select
+      class=${className}
+      .value=${current}
+      @change=${(e: Event) => onSelect((e.target as HTMLSelectElement).value)}
+    >
+      <option value="" ?selected=${!current}>(default)</option>
+      ${current && !currentInCatalog
+        ? html`<option value=${current} selected>${current}</option>`
+        : nothing}
+      ${options.map(
+        (m) =>
+          html`<option value=${m.id} ?selected=${m.id === current}>
+            ${m.name}${m.provider ? ` · ${m.provider}` : ""}
+          </option>`,
+      )}
+    </select>
+  `;
+}
+
+function renderProfileModelSelect() {
+  return renderModelSelect(
+    stripState.profileModel,
+    (v) => {
+      stripState.profileModel = v;
+    },
+    "mo-profile__edit",
+  );
+}
+
 /** Shared agent-prompt (SOUL.md) composer: Generate button + editable textarea. */
 function renderPromptComposer(
   opts: PixelAgentsStripOptions,
@@ -913,7 +811,9 @@ function renderPromptComposer(
           ?disabled=${!canCompose}
           @click=${() => void composeAgentPrompt(opts, params.brief, params.agentId)}
         >
-          ${stripState.composing ? "Generating…" : "✨ Generate from description"}
+          ${stripState.composing
+            ? "Generating…"
+            : html`${icons.spark}<span>Generate from description</span>`}
         </button>
       </div>
       ${stripState.promptLoading
@@ -934,12 +834,51 @@ function renderPromptComposer(
         ? html`<button
             class="mo-btn mo-btn--primary mo-prompt__save"
             type="button"
-            ?disabled=${stripState.savingPrompt}
+            ?disabled=${stripState.savingPrompt || !stripState.promptDraft.trim()}
             @click=${() => void saveAgentPrompt(opts, params.agentId as string)}
           >
             ${stripState.savingPrompt ? "Saving…" : "Save prompt"}
           </button>`
         : nothing}
+    </div>
+  `;
+}
+
+// Generate a fresh assigned avatar: new random shape, given color, animated SVG.
+function regenerateAvatar(color: string): string {
+  const seed = `${Math.random()}`;
+  return invaderDataUri(generateInvader(seed), color, { animate: true });
+}
+
+/**
+ * Avatar preview + Regenerate/Reset controls. `onChange(value)` assigns; Reset
+ * restores `autoValue` (the deterministic id-derived sprite for an existing
+ * agent, or "" at create time so a new agent simply gets its auto sprite).
+ */
+function renderAvatarPicker(
+  current: string,
+  color: string,
+  onChange: (value: string) => void,
+  autoValue = "",
+) {
+  const isAuto = current === autoValue;
+  return html`
+    <div class="mo-avatar-picker">
+      <span class="mo-avatar-picker__preview" style="--mo-avatar-color:${color};">
+        ${current
+          ? html`<img src=${current} alt="avatar preview" />`
+          : html`<span class="mo-avatar-picker__auto">Auto</span>`}
+      </span>
+      <div class="mo-avatar-picker__actions">
+        <button class="mo-btn" type="button" @click=${() => onChange(regenerateAvatar(color))}>
+          Regenerate
+        </button>
+        ${isAuto
+          ? nothing
+          : html`<button class="mo-btn" type="button" @click=${() => onChange(autoValue)}>
+              Reset to auto
+            </button>`}
+      </div>
     </div>
   `;
 }
@@ -966,6 +905,20 @@ function renderCreateAgentModal(opts: PixelAgentsStripOptions) {
         ${renderTextField("Name", stripState.draftName, "e.g. Tyrion", (v) => {
           stripState.draftName = v;
         })}
+        ${renderTextField("Role", stripState.draftRole, "e.g. Commander", (v) => {
+          stripState.draftRole = v;
+        })}
+        <label class="mo-field">
+          <span>Avatar</span>
+          ${renderAvatarPicker(
+            stripState.draftAvatar,
+            invaderColor(stripState.draftName || "new"),
+            (v) => {
+              stripState.draftAvatar = v;
+              opts.requestUpdate?.();
+            },
+          )}
+        </label>
         ${renderTextArea(
           "Description",
           stripState.draftDescription,
@@ -978,12 +931,12 @@ function renderCreateAgentModal(opts: PixelAgentsStripOptions) {
         ${renderTextField("Workspace", stripState.draftWorkspace, "/path/to/workspace", (v) => {
           stripState.draftWorkspace = v;
         })}
-        ${renderTextField("Model (optional)", stripState.draftModel, "provider/model", (v) => {
-          stripState.draftModel = v;
-        })}
-        ${renderTextField("Emoji (optional)", stripState.draftEmoji, "🤖", (v) => {
-          stripState.draftEmoji = v;
-        })}
+        <label class="mo-field">
+          <span>Model</span>
+          ${renderModelSelect(stripState.draftModel, (v) => {
+            stripState.draftModel = v;
+          })}
+        </label>
         ${renderPromptComposer(opts, { brief: stripState.draftDescription, showSave: false })}
         ${stripState.error ? html`<div class="mo-modal__error">${stripState.error}</div>` : nothing}
         <div class="mo-modal__actions">
@@ -1021,7 +974,10 @@ function renderAgentProfileModal(opts: PixelAgentsStripOptions, sessions: Gatewa
         @click=${(e: Event) => e.stopPropagation()}
       >
         <div class="mo-modal__head">
-          <h3>${buddy?.emoji ?? "🤖"} ${name}</h3>
+          <h3>
+            ${buddy ? renderAgentAvatar(buddy, "mo-avatar--sm") : icons.bot}
+            <span>${name}</span>
+          </h3>
           <button class="mo-modal__close" type="button" @click=${() => closeStripModal(opts)}>
             ${CLOSE_ICON}
           </button>
@@ -1035,31 +991,74 @@ function renderAgentProfileModal(opts: PixelAgentsStripOptions, sessions: Gatewa
             <dt>Agent id</dt>
             <dd>${id}</dd>
           </div>
-          ${buddy?.role
-            ? html`<div>
-                <dt>Role</dt>
-                <dd>${buddy.role}</dd>
-              </div>`
-            : nothing}
-          ${row?.description
-            ? html`<div>
-                <dt>Description</dt>
-                <dd>${row.description}</dd>
-              </div>`
-            : nothing}
+          <div>
+            <dt>Role</dt>
+            <dd>
+              <input
+                class="mo-profile__edit"
+                .value=${stripState.profileRole}
+                placeholder="e.g. Commander"
+                @input=${(e: Event) => {
+                  stripState.profileRole = (e.target as HTMLInputElement).value;
+                }}
+              />
+            </dd>
+          </div>
+          <div>
+            <dt>Description</dt>
+            <dd>
+              <textarea
+                class="mo-profile__edit"
+                rows="2"
+                .value=${stripState.profileDescription}
+                placeholder="What this agent is for"
+                @input=${(e: Event) => {
+                  stripState.profileDescription = (e.target as HTMLTextAreaElement).value;
+                }}
+              ></textarea>
+            </dd>
+          </div>
+          <div>
+            <dt>Avatar</dt>
+            <dd>
+              ${renderAvatarPicker(
+                stripState.profileAvatar,
+                buddy?.neon ?? invaderColor(id),
+                (v) => {
+                  stripState.profileAvatar = v;
+                  stripState.profileAvatarDirty = true;
+                  opts.requestUpdate?.();
+                },
+                invaderDataUri(generateInvader(id), buddy?.neon ?? invaderColor(id), {
+                  animate: true,
+                }),
+              )}
+            </dd>
+          </div>
           ${row?.workspace
             ? html`<div>
                 <dt>Workspace</dt>
                 <dd>${row.workspace}</dd>
               </div>`
             : nothing}
-          ${row?.model?.primary
-            ? html`<div>
-                <dt>Model</dt>
-                <dd>${row.model.primary}</dd>
-              </div>`
-            : nothing}
+          <div>
+            <dt>Model</dt>
+            <dd>${renderProfileModelSelect()}</dd>
+          </div>
         </dl>
+        <div class="mo-profile__save-row">
+          <button
+            class="mo-btn mo-btn--primary"
+            type="button"
+            ?disabled=${stripState.savingProfile}
+            @click=${() => void saveAgentProfile(opts, id)}
+          >
+            ${stripState.savingProfile ? "Saving…" : "Save changes"}
+          </button>
+          ${stripState.profileSaveError
+            ? html`<span class="mo-modal__error">${stripState.profileSaveError}</span>`
+            : nothing}
+        </div>
         ${renderPromptComposer(opts, {
           brief: row?.description ?? buddy?.role ?? "",
           agentId: id,

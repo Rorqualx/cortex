@@ -27,6 +27,7 @@ import {
 } from "./app-render.helpers.ts";
 import { hasOperatorAdminAccess, hasOperatorWriteAccess, warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
+import { agentAvatarUrl } from "./avatar/agent-avatar.ts";
 import { resolveChatModelSelectState } from "./chat-model-select-state.ts";
 import { renderChatTabBar, savePersistedTabs } from "./chat/chat-tab-bar.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
@@ -1453,10 +1454,6 @@ export function renderApp(state: AppViewState) {
     chatAssistantAvatarStatus === "none" && chatAssistantAvatarReason === "missing";
   const effectiveAssistantAvatar =
     localAssistantAvatarOverride ?? (chatAssistantAvatarMissing ? null : state.assistantAvatar);
-  const chatAvatarUrl =
-    localAssistantAvatarOverride ??
-    state.chatAvatarUrl ??
-    (chatAssistantAvatarMissing ? null : (assistantAvatarUrl ?? null));
   const configAssistantAvatarStatus = localAssistantAvatarOverride
     ? "data"
     : (state.assistantAvatarStatus ?? state.chatAvatarStatus ?? null);
@@ -1659,6 +1656,18 @@ export function renderApp(state: AppViewState) {
     normalizedChatSessionKey === "global"
       ? (scopedChatAgentId ?? chatFallbackAgentId)
       : (activeSessionAgentId ?? scopedChatAgentId ?? chatFallbackAgentId);
+  // Resolve the chat avatar per-agent from the agent's own identity, exactly
+  // like the office/workboard: a persisted avatar wins, else the generated
+  // invader — so chat matches every other surface for the same agent.
+  const chatAgentRow = state.agentsList?.agents.find((a) => a.id === chatAgentId);
+  // Legacy single-assistant avatar only applies to the default agent; for others
+  // it is the shared/global value and must not leak across agents.
+  const isDefaultChatAgent = chatAgentId === (state.agentsList?.defaultId ?? "main");
+  const chatAgentAvatar = agentAvatarUrl(chatAgentId, {
+    avatar:
+      chatAgentRow?.identity?.avatar ?? (isDefaultChatAgent ? effectiveAssistantAvatar : undefined),
+    avatarUrl: chatAgentRow?.identity?.avatarUrl,
+  });
   const toolsPanelUsesActiveSession = Boolean(resolvedAgentId && resolvedAgentId === chatAgentId);
   const chatWorkspaceFiles = getChatWorkspaceFilesState(state, chatAgentId);
   const currentChatWorkspaceFilesState = () =>
@@ -4166,7 +4175,7 @@ export function renderApp(state: AppViewState) {
                     compactionStatus: state.compactionStatus,
                     fallbackStatus: state.fallbackStatus,
                     liveUsage: state.chatLiveUsage,
-                    assistantAvatarUrl: chatAvatarUrl,
+                    assistantAvatarUrl: chatAgentAvatar,
                     messages: state.chatMessages,
                     sideResult: state.chatSideResult,
                     toolMessages: state.chatToolMessages,
@@ -4314,7 +4323,7 @@ export function renderApp(state: AppViewState) {
                     onCloseSidebar: () => state.handleCloseSidebar(),
                     onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
                     assistantName: state.assistantName,
-                    assistantAvatar: effectiveAssistantAvatar,
+                    assistantAvatar: chatAgentAvatar,
                     userName: state.userName ?? null,
                     userAvatar: state.userAvatar ?? null,
                     localMediaPreviewRoots: state.localMediaPreviewRoots,

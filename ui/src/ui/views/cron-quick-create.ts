@@ -56,37 +56,37 @@ const SCHEDULE_PRESETS: SchedulePreset[] = [
   {
     id: "every-morning",
     labelKey: "cron.quickCreate.schedules.everyMorning.label",
-    icon: "🌅",
+    icon: "sun",
     descriptionKey: "cron.quickCreate.schedules.everyMorning.description",
   },
   {
     id: "every-evening",
     labelKey: "cron.quickCreate.schedules.everyEvening.label",
-    icon: "🌙",
+    icon: "moon",
     descriptionKey: "cron.quickCreate.schedules.everyEvening.description",
   },
   {
     id: "hourly",
     labelKey: "cron.quickCreate.schedules.hourly.label",
-    icon: "🔄",
+    icon: "refresh",
     descriptionKey: "cron.quickCreate.schedules.hourly.description",
   },
   {
     id: "weekdays",
     labelKey: "cron.quickCreate.schedules.weekdays.label",
-    icon: "📅",
+    icon: "activity",
     descriptionKey: "cron.quickCreate.schedules.weekdays.description",
   },
   {
     id: "weekly",
     labelKey: "cron.quickCreate.schedules.weekly.label",
-    icon: "📆",
+    icon: "activity",
     descriptionKey: "cron.quickCreate.schedules.weekly.description",
   },
   {
     id: "once",
     labelKey: "cron.quickCreate.schedules.once.label",
-    icon: "⚡",
+    icon: "zap",
     descriptionKey: "cron.quickCreate.schedules.once.description",
   },
 ];
@@ -220,7 +220,7 @@ function renderStepIndicator(current: CronQuickCreateStep) {
         const state = idx < currentIdx ? "done" : idx === currentIdx ? "active" : "pending";
         return html`
           <div class="cqc-step cqc-step--${state}">
-            <span class="cqc-step__dot">${state === "done" ? "✓" : idx + 1}</span>
+            <span class="cqc-step__dot">${state === "done" ? icons.check : idx + 1}</span>
             <span class="cqc-step__label">${t(STEP_LABELS[step])}</span>
           </div>
           ${idx < STEPS.length - 1
@@ -300,7 +300,9 @@ function renderWhenStep(props: CronQuickCreateProps) {
                 : ""}"
               @click=${() => props.onDraftChange({ schedulePreset: preset.id })}
             >
-              <span class="cqc-preset-card__icon">${preset.icon}</span>
+              <span class="cqc-preset-card__icon"
+                >${icons[preset.icon as keyof typeof icons] ?? icons.activity}</span
+              >
               <span class="cqc-preset-card__label">${t(preset.labelKey)}</span>
               <span class="cqc-preset-card__desc muted">${t(preset.descriptionKey)}</span>
             </button>

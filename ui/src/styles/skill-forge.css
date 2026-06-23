@@ -703,6 +703,11 @@
 
 .sf-meta-unused {
   font-style: italic;
+  color: var(--warn);
+}
+
+.sf-meta-used {
+  color: var(--ok);
 }
 
 .sf-btn--sm {

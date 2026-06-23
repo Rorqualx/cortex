@@ -12,9 +12,9 @@ describe("normalizeAssistantIdentity", () => {
     expect(normalizeAssistantIdentity({ avatar: "/avatar/main" }).avatar).toBe("/avatar/main");
   });
 
-  it("keeps short text avatars", () => {
+  it("keeps short text avatars / initials", () => {
     expect(normalizeAssistantIdentity({ avatar: "PS" }).avatar).toBe("PS");
-    expect(normalizeAssistantIdentity({ avatar: "🦞" }).avatar).toBe("🦞");
+    expect(normalizeAssistantIdentity({ avatar: "LB" }).avatar).toBe("LB");
   });
 
   it("drops sentence-like text that exceeds the text-avatar limit", () => {

@@ -528,6 +528,159 @@ export const icons = {
       <line x1="3" x2="10" y1="21" y2="14" />
     </svg>
   `,
+
+  // Project / domain icons (emoji replacements)
+  folderOpen: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
+      />
+    </svg>
+  `,
+  folders: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M20 17a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.9a2 2 0 0 1-1.69-.9l-.81-1.2a2 2 0 0 0-1.67-.9H8a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2Z"
+      />
+      <path d="M2 8v11a2 2 0 0 0 2 2h14" />
+    </svg>
+  `,
+  package: html`
+    <svg viewBox="0 0 24 24">
+      <path d="m7.5 4.27 9 5.15" />
+      <path
+        d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"
+      />
+      <path d="m3.3 7 8.7 5 8.7-5" />
+      <path d="M12 22V12" />
+    </svg>
+  `,
+  rocket: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"
+      />
+      <path
+        d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"
+      />
+      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+    </svg>
+  `,
+  microscope: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M6 18h8" />
+      <path d="M3 22h18" />
+      <path d="M14 22a7 7 0 1 0 0-14h-1" />
+      <path d="M9 14h2" />
+      <path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z" />
+      <path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3" />
+    </svg>
+  `,
+  flask: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"
+      />
+      <path d="M8.5 2h7" />
+      <path d="M7 16h10" />
+    </svg>
+  `,
+  trendingUp: html`
+    <svg viewBox="0 0 24 24">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+      <polyline points="16 7 22 7 22 13" />
+    </svg>
+  `,
+  target: html`
+    <svg viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  `,
+  telescope: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="m10.065 12.493-6.18 1.318a.934.934 0 0 1-1.108-.702l-.537-2.15a1.07 1.07 0 0 1 .691-1.265l13.504-4.44"
+      />
+      <path d="m13.56 11.747 4.332-.924" />
+      <path d="m16 21-3.105-6.21" />
+      <path
+        d="M16.485 5.94a2 2 0 0 1 1.455-2.425l1.09-.272a1 1 0 0 1 1.212.727l1.515 6.06a1 1 0 0 1-.727 1.213l-1.09.272a2 2 0 0 1-2.425-1.455z"
+      />
+      <path d="m6.158 8.633 1.114 4.456" />
+      <path d="m8 21 3.105-6.21" />
+      <circle cx="12" cy="13" r="2" />
+    </svg>
+  `,
+  satellite: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M13 7 9 3 5 7l4 4" />
+      <path d="m17 11 4 4-4 4-4-4" />
+      <path d="m8 12 4 4 6-6-4-4Z" />
+      <path d="m16 8 3-3" />
+      <path d="M9 21a6 6 0 0 0-6-6" />
+    </svg>
+  `,
+  database: html`
+    <svg viewBox="0 0 24 24">
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+      <path d="M3 12A9 3 0 0 0 21 12" />
+    </svg>
+  `,
+  tag: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"
+      />
+      <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
+    </svg>
+  `,
+  star: html`
+    <svg viewBox="0 0 24 24">
+      <polygon
+        points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+      />
+    </svg>
+  `,
+  flame: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
+      />
+    </svg>
+  `,
+  lightbulb: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"
+      />
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+    </svg>
+  `,
+  bot: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M12 8V4H8" />
+      <rect width="16" height="12" x="4" y="8" rx="2" />
+      <path d="M2 14h2" />
+      <path d="M20 14h2" />
+      <path d="M15 13v2" />
+      <path d="M9 13v2" />
+    </svg>
+  `,
+  bird: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M16 7h.01" />
+      <path d="M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20" />
+      <path d="m20 7 2 .5-2 .5" />
+      <path d="M10 18v3" />
+      <path d="M14 17.75V21" />
+      <path d="M7 18a6 6 0 0 0 3.84-10.61" />
+    </svg>
+  `,
 } as const;
 
 export type IconName = keyof typeof icons;

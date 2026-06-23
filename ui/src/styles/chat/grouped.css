@@ -305,8 +305,9 @@
 /* Image avatar support */
 img.chat-avatar {
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
+  image-rendering: pixelated;
 }
 
 img.chat-avatar--expandable {

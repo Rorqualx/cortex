@@ -99,9 +99,47 @@
   letter-spacing: 0.03em;
 }
 
-.mo-buddy__emoji {
-  font-size: 0.8rem;
+/* Circular initials badge — replaces the per-agent emoji avatar.
+   --mo-avatar-color is the crew's neon color, set inline per agent. */
+.mo-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--mo-avatar-color, #5a8a6e) 48%, #0a0a0f);
+  border: 1px solid color-mix(in srgb, var(--mo-avatar-color, #5a8a6e) 80%, white);
+  /* Brighten the initials past the muted crew neon so they pop on the badge. */
+  color: color-mix(in srgb, var(--mo-avatar-color, #5a8a6e) 45%, white);
+  overflow: hidden;
+}
+
+/* Compact badge used inside the agent strip and project cells. */
+.mo-avatar--sm {
+  width: 16px;
+  height: 16px;
+}
+
+.mo-initials {
+  font-size: 0.62rem;
+  font-weight: 700;
   line-height: 1;
+  letter-spacing: 0;
+}
+
+.mo-avatar--sm .mo-initials {
+  font-size: 0.5rem;
+}
+
+/* SVG fallback icon (no initials) fits the badge. */
+.mo-avatar svg {
+  width: 60%;
+  height: 60%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .mo-buddy[data-active="true"] .mo-buddy__name {
@@ -216,14 +254,31 @@
 }
 
 .mo-cell__icon {
-  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
   line-height: 1;
+  color: var(--text, #fff);
+}
+
+.mo-cell--active .mo-cell__icon {
+  color: var(--accent, #5a8a6e);
+}
+
+.mo-cell__icon svg {
+  width: 15px;
+  height: 15px;
+  /* Lucide icons are outline-only; without this they render as a black fill. */
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .mo-cell__name {
   font-size: 0.7rem;
   font-weight: 700;
-  color: #444;
+  color: var(--text, #fff);
   letter-spacing: 0.04em;
 }
 
@@ -240,9 +295,8 @@
 }
 
 .mo-cell__avatar {
-  font-size: 0.8rem;
-  opacity: 0.35;
-  filter: grayscale(0.8);
+  display: inline-flex;
+  opacity: 0.85;
 }
 
 .mo-cell__avatar--active {
@@ -428,9 +482,17 @@
 }
 
 .mo-modal__head h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 15px;
   color: var(--text-strong, var(--text));
+}
+
+.mo-modal__head h3 > svg {
+  width: 18px;
+  height: 18px;
 }
 
 .mo-modal__close {
@@ -456,7 +518,8 @@
   color: var(--muted);
 }
 
-.mo-field input {
+.mo-field input,
+.mo-field select {
   background: var(--input, var(--bg-accent));
   color: var(--text);
   border: 1px solid var(--border);
@@ -525,9 +588,36 @@
 }
 
 .mo-profile dd {
+  flex: 1;
   margin: 0;
   color: var(--text);
   word-break: break-word;
+}
+
+/* Inline-editable Role/Description/Model controls in the agent profile modal. */
+.mo-profile__edit {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--input, var(--bg-accent));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.mo-profile__edit:focus {
+  outline: none;
+  border-color: var(--accent, var(--text));
+}
+
+.mo-profile__save-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .mo-field textarea {
@@ -583,9 +673,17 @@
 }
 
 .mo-btn--ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--accent, #ff5c5c);
+}
+
+.mo-btn--ghost svg {
+  width: 14px;
+  height: 14px;
 }
 
 .mo-btn--ghost:hover {
@@ -596,4 +694,60 @@
   color: var(--muted);
   opacity: 0.6;
   cursor: default;
+}
+
+/* ── Assigned avatar (persisted invader SVG) ───────────────── */
+
+/* Replaces the box-shadow sprite when an agent has an assigned avatar. */
+.mo-sprite-img {
+  width: 44px;
+  height: 50px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* Avatar generator control (create + profile modals): preview + actions. */
+.mo-avatar-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.mo-avatar-picker__preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--mo-avatar-color, #5a8a6e) 16%, #0a0a0f);
+  border: 1px solid color-mix(in srgb, var(--mo-avatar-color, #5a8a6e) 50%, #1a1a2e);
+}
+
+.mo-avatar-picker__preview img {
+  width: 82%;
+  height: 82%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.mo-avatar-picker__auto {
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mo-avatar-color, #5a8a6e) 55%, #ffffff);
+}
+
+.mo-avatar-picker__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Agent avatar badge now holds the procedural invader image. */
+.mo-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
 }

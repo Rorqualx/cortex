@@ -1,6 +1,7 @@
 // Control UI chat module implements chat welcome behavior.
 import { html } from "lit";
 import { t } from "../../i18n/index.ts";
+import { agentAvatarUrl } from "../avatar/agent-avatar.ts";
 import {
   agentLogoUrl,
   assistantAvatarFallbackUrl,
@@ -41,29 +42,29 @@ export function resolveAssistantDisplayAvatar(
   return resolveAssistantAvatarUrl(props) ?? resolveAssistantTextAvatar(props.assistantAvatar);
 }
 
-export function renderWelcomeState(props: ChatWelcomeProps) {
+export function renderWelcomeState(props: ChatWelcomeProps, agentId?: string | null) {
   const name = props.assistantName || "Assistant";
-  const avatar = resolveAssistantAvatarUrl(props);
-  const avatarText = avatar ? null : resolveAssistantTextAvatar(props.assistantAvatar);
+  // assistantAvatar/Url is resolved per-agent upstream (assigned image or the
+  // agent's generated invader), so honor it; fall back to the id invader.
+  const resolvedAgentId = agentId?.trim();
+  const avatar =
+    resolveAssistantAvatarUrl(props) ?? (resolvedAgentId ? agentAvatarUrl(resolvedAgentId) : null);
   const fallbackAvatarUrl = assistantAvatarFallbackUrl(props.basePath ?? "");
   const logoUrl = agentLogoUrl(props.basePath ?? "");
+  // Square frame to fit the pixel-invader; photos crop to fill, invaders contain.
+  const isInvader = Boolean(avatar?.startsWith("data:image/svg+xml"));
+  const avatarStyle = isInvader
+    ? "width:56px; height:56px; border-radius:12px; object-fit:contain; image-rendering:pixelated;"
+    : "width:56px; height:56px; border-radius:12px; object-fit:cover;";
 
   return html`
     <div class="agent-chat__welcome" style="--agent-color: var(--accent)">
       <div class="agent-chat__welcome-glow"></div>
       ${avatar
-        ? html`<img
-            src=${avatar}
-            alt=${name}
-            style="width:56px; height:56px; border-radius:50%; object-fit:cover;"
-          />`
-        : avatarText
-          ? html`<div class="agent-chat__avatar agent-chat__avatar--text" aria-label=${name}>
-              ${avatarText}
-            </div>`
-          : html`<div class="agent-chat__avatar agent-chat__avatar--logo">
-              <img src=${fallbackAvatarUrl} alt=${name} />
-            </div>`}
+        ? html`<img src=${avatar} alt=${name} style=${avatarStyle} />`
+        : html`<div class="agent-chat__avatar agent-chat__avatar--logo">
+            <img src=${fallbackAvatarUrl} alt=${name} />
+          </div>`}
       <h2>${name}</h2>
       <div class="agent-chat__badges">
         <span class="agent-chat__badge"

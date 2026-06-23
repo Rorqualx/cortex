@@ -2,6 +2,7 @@
 import { html } from "lit";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import { openAvatarLightbox } from "../avatar-lightbox.ts";
+import { agentAvatarUrl, isDefaultAvatarAsset } from "../avatar/agent-avatar.ts";
 import {
   resolveLocalUserAvatarText,
   resolveLocalUserAvatarUrl,
@@ -16,7 +17,7 @@ import { normalizeRoleForGrouping } from "./role-normalizer.ts";
 
 export function renderChatAvatar(
   role: string,
-  assistant?: Pick<AssistantIdentity, "name" | "avatar">,
+  assistant?: Pick<AssistantIdentity, "name" | "avatar" | "agentId">,
   user?: { name?: string | null; avatar?: string | null },
   basePath?: string,
   authToken?: string | null,
@@ -90,8 +91,11 @@ export function renderChatAvatar(
     </div>`;
   }
 
-  if (assistantAvatar && normalized === "assistant") {
-    if (isAvatarUrl(assistantAvatar)) {
+  if (normalized === "assistant") {
+    // assistantAvatar is now resolved per-agent upstream (assigned image or the
+    // agent's generated invader), so honor it directly — except the default
+    // OpenClaw logo placeholder, which falls through to the agent invader.
+    if (assistantAvatar && isAvatarUrl(assistantAvatar) && !isDefaultAvatarAsset(assistantAvatar)) {
       if (authToken?.trim() && assistantAvatar.startsWith("/")) {
         return html`<img
           class="chat-avatar ${className} chat-avatar--logo"
@@ -106,19 +110,21 @@ export function renderChatAvatar(
         @click=${() => openAvatarLightbox(assistantAvatar, assistantName, { target: "assistant" })}
       />`;
     }
-    if (assistantAvatarText) {
+    // Fallback: the agent's procedural invader (deterministic per id).
+    const agentId = assistant?.agentId?.trim();
+    if (agentId) {
+      return html`<img
+        class="chat-avatar ${className} chat-avatar--logo"
+        src="${agentAvatarUrl(agentId)}"
+        alt="${assistantName}"
+      />`;
+    }
+    // No agent context either: legacy text/fallback.
+    if (assistantAvatar && assistantAvatarText) {
       return html`<div class="chat-avatar ${className}" aria-label="${assistantName}">
         ${assistantAvatarText}
       </div>`;
     }
-    return html`<img
-      class="chat-avatar ${className} chat-avatar--logo"
-      src="${assistantFallbackAvatar}"
-      alt="${assistantName}"
-    />`;
-  }
-
-  if (normalized === "assistant") {
     return html`<img
       class="chat-avatar ${className} chat-avatar--logo"
       src="${assistantFallbackAvatar}"

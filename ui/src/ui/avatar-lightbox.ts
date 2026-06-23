@@ -3,6 +3,7 @@
 
 import { html, LitElement, css, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
+import { icons } from "./icons.ts";
 import {
   loadLocalUserIdentity,
   saveLocalAssistantIdentity,
@@ -172,10 +173,18 @@ export class AvatarLightbox extends LitElement {
     }
 
     .saved-msg {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       color: #10b981;
       font-size: 0.85rem;
       font-weight: 600;
       animation: al-pop 0.3s ease;
+    }
+
+    .saved-msg svg {
+      width: 16px;
+      height: 16px;
     }
 
     @keyframes al-pop {
@@ -245,7 +254,11 @@ export class AvatarLightbox extends LitElement {
       <div class="image-area" @click=${this.close}>
         <img src=${this.src} alt=${this.alt} />
       </div>
-      ${this.saved ? html`<span class="saved-msg">✓ Avatar updated — refreshing…</span>` : nothing}
+      ${this.saved
+        ? html`<span class="saved-msg"
+            >${icons.check}<span>Avatar updated — refreshing…</span></span
+          >`
+        : nothing}
       ${this.editable && !this.saved
         ? html`
             <div class="toolbar">

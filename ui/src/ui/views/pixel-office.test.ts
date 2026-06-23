@@ -24,6 +24,16 @@ describe("renderPixelAgentsStrip", () => {
     expect(container.querySelectorAll(".mo-buddy-btn")).toHaveLength(3);
   });
 
+  it("renders agent avatars as generated invader images, not emoji", () => {
+    const container = renderStrip({ agentsList: agentsList(["main", "varys"]) });
+    const imgs = [...container.querySelectorAll<HTMLImageElement>(".mo-avatar .mo-avatar__img")];
+    // Every agent badge resolves to an avatar image (assigned or generated invader).
+    expect(imgs.length).toBeGreaterThanOrEqual(2);
+    for (const img of imgs) {
+      expect(img.getAttribute("src") ?? "").toMatch(/^data:image\/svg\+xml/);
+    }
+  });
+
   it("shows the + create card only when canCreate", () => {
     expect(
       renderStrip({ agentsList: agentsList(["main"]), canCreate: true }).querySelector(
@@ -46,8 +56,8 @@ describe("renderPixelAgentsStrip", () => {
     render(renderPixelAgentsStrip([], opts), container);
     const modal = container.querySelector(".mo-modal");
     expect(modal?.textContent).toContain("New agent");
-    // Name, Description, Workspace, Model, Emoji.
-    expect(container.querySelectorAll(".mo-field")).toHaveLength(5);
+    // Name, Role, Avatar, Description, Workspace, Model.
+    expect(container.querySelectorAll(".mo-field")).toHaveLength(6);
   });
 
   it("composes a prompt from the description via agents.composePrompt", async () => {
@@ -124,8 +134,13 @@ describe("renderPixelAgentsStrip", () => {
     container.querySelector<HTMLButtonElement>(".mo-strip__add")?.click();
     render(renderPixelAgentsStrip([], opts), container);
 
-    const [nameInput, workspaceInput] =
-      container.querySelectorAll<HTMLInputElement>(".mo-field input");
+    // Fields (Name, Role, Workspace) all use .mo-field input, so target by placeholder.
+    const inputs = [...container.querySelectorAll<HTMLInputElement>(".mo-field input")];
+    const nameInput = inputs[0];
+    const workspaceInput = inputs.find((i) => i.placeholder.includes("/path/to/workspace"));
+    if (!workspaceInput) {
+      throw new Error("workspace input not found");
+    }
     nameInput.value = "Tyrion";
     nameInput.dispatchEvent(new Event("input"));
     workspaceInput.value = "/tmp/tyrion";

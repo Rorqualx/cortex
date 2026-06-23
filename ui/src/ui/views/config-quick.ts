@@ -8,6 +8,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../i18n/index.ts";
 import { openAvatarLightbox } from "../avatar-lightbox.ts";
+import { agentAvatarUrl, isHonoredAvatarUrl } from "../avatar/agent-avatar.ts";
 import { openChannelsModal } from "../channels-modal.ts";
 import { icons } from "../icons.ts";
 import type { BorderRadiusStop, TextScaleStop } from "../storage.ts";
@@ -797,10 +798,10 @@ function renderAppearanceCard(props: QuickSettingsProps) {
   `;
 }
 
-function renderAgentCardAvatar(props: QuickSettingsProps, agent: QuickSettingsAgentCard) {
+function renderAgentCardAvatar(_props: QuickSettingsProps, agent: QuickSettingsAgentCard) {
   const name = normalizeOptionalString(agent.name) ?? agent.id;
   const imageUrl = normalizeOptionalString(agent.avatarUrl);
-  if (imageUrl) {
+  if (imageUrl && isHonoredAvatarUrl(imageUrl)) {
     // Only the default agent's image opens the lightbox: its crop/save path
     // targets the legacy single-assistant store, which is the default agent.
     // Non-default agents edit via the explicit file input below instead.
@@ -813,17 +814,8 @@ function renderAgentCardAvatar(props: QuickSettingsProps, agent: QuickSettingsAg
         />`
       : html`<img class="qs-assistant-avatar" src=${imageUrl} alt=${name} />`;
   }
-  const text = resolveAssistantTextAvatar(agent.emoji);
-  if (text) {
-    return html`<div class="qs-assistant-avatar qs-assistant-avatar--text" aria-label=${name}>
-      ${text}
-    </div>`;
-  }
-  return html`<img
-    class="qs-assistant-avatar qs-assistant-avatar--fallback"
-    src=${assistantAvatarFallbackUrl(props.basePath ?? "")}
-    alt=${name}
-  />`;
+  // No assigned image: show the agent's deterministic procedural invader.
+  return html`<img class="qs-assistant-avatar" src=${agentAvatarUrl(agent.id)} alt=${name} />`;
 }
 
 function renderAgentIdentityCard(props: QuickSettingsProps, agent: QuickSettingsAgentCard) {
@@ -1000,7 +992,7 @@ function renderPersonalCard(props: QuickSettingsProps) {
                     type="text"
                     maxlength="16"
                     .value=${avatarText}
-                    placeholder="JD or 🦞"
+                    placeholder="JD or LB"
                     @input=${(e: Event) => {
                       const value = (e.target as HTMLInputElement).value;
                       props.onUserAvatarChange?.(value.trim() ? value : null);
@@ -1143,7 +1135,9 @@ function renderPresetsCard(props: QuickSettingsProps) {
                 >
                   <div class="qs-preset__head">
                     <div class="qs-preset__identity">
-                      <span class="qs-preset__icon">${preset.icon}</span>
+                      <span class="qs-preset__icon"
+                        >${icons[preset.icon as keyof typeof icons] ?? icons.settings}</span
+                      >
                       <div class="qs-preset__identity-copy">
                         <span class="qs-preset__label">${preset.label}</span>
                         <span class="qs-preset__desc muted">${preset.description}</span>

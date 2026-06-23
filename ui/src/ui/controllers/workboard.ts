@@ -382,6 +382,13 @@ export type WorkboardUiState = {
   editingProjectId: string | null;
   draftProjectName: string;
   draftProjectIcon: string;
+  // Icon dropdown open state (the picker collapses into a dropdown).
+  projectIconDropdownOpen: boolean;
+  // Linked project folder + the inline directory-browser popover state.
+  draftProjectDir: string;
+  projectDirBrowserOpen: boolean;
+  projectDirBrowsePath: string;
+  projectDirSubdirs: Array<{ name: string; path: string }>;
 };
 
 export type WorkboardHost = object;
@@ -434,7 +441,13 @@ function createDefaultState(): WorkboardUiState {
     projectModalOpen: false,
     editingProjectId: null,
     draftProjectName: "",
-    draftProjectIcon: "📁",
+    // Project icon is stored as an icon NAME (keyof typeof icons), not an emoji.
+    draftProjectIcon: "folder",
+    projectIconDropdownOpen: false,
+    draftProjectDir: "",
+    projectDirBrowserOpen: false,
+    projectDirBrowsePath: "",
+    projectDirSubdirs: [],
   };
 }
 

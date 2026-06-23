@@ -10,6 +10,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { t } from "../../i18n/index.ts";
+import { agentAvatarUrl } from "../avatar/agent-avatar.ts";
 import {
   assignCard,
   assigneeOptions,
@@ -18,12 +19,13 @@ import {
   doneCards,
   ensureRsil,
   filteredCards,
+  filterStatuses,
   getRsilState,
   moveCard,
+  moveTargets,
   openCard,
   openReport,
   reorderColumn,
-  RSIL_STATUSES,
   reloadRsil,
   type RsilCard,
   type RsilCategory,
@@ -133,7 +135,7 @@ function renderStatusSelect(host: RsilHost, card: RsilCard): TemplateResult {
         @change=${(e: Event) =>
           moveCard(host, card, (e.target as HTMLSelectElement).value as RsilStatus)}
       >
-        ${RSIL_STATUSES.map(
+        ${moveTargets(card).map(
           (s) => html`<option value=${s} ?selected=${s === card.status}>${statusLabel(s)}</option>`,
         )}
       </select>
@@ -144,8 +146,18 @@ function renderStatusSelect(host: RsilHost, card: RsilCard): TemplateResult {
 function renderAssigneeSelect(host: RsilHost, card: RsilCard): TemplateResult {
   const busy = getRsilState().busyCardId === card.id;
   const options = assigneeOptions(host);
+  const assignee = card.agentId?.trim();
+  // Honor the agent's assigned avatar (else generated invader), like the office.
+  const assigneeIdentity = host.agentsList?.agents.find((a) => a.id === assignee)?.identity;
   return html`
-    <label class="rsil-card__control" @click=${stopClick}>
+    <label class="rsil-card__control rsil-assignee" @click=${stopClick}>
+      ${assignee
+        ? html`<img
+            class="rsil-assignee__img"
+            src=${agentAvatarUrl(assignee, assigneeIdentity)}
+            alt=""
+          />`
+        : nothing}
       <span>${t("rsil.assignTo")}</span>
       <select
         ?disabled=${busy}
@@ -197,7 +209,7 @@ function renderFilters(host: RsilHost): TemplateResult {
           @change=${(e: Event) => setFilter(host, "status", (e.target as HTMLSelectElement).value)}
         >
           <option value="" ?selected=${s.status === ""}>${t("rsil.allStatuses")}</option>
-          ${RSIL_STATUSES.map(
+          ${filterStatuses().map(
             (st) =>
               html`<option value=${st} ?selected=${st === s.status}>${statusLabel(st)}</option>`,
           )}

@@ -32,7 +32,7 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
     description: "Balanced default for daily use.",
     detail: "Good fit for chat, docs, and light edits without a large coding budget.",
     impact: "Injects bootstrap context every turn with a moderate prompt budget.",
-    icon: "✨",
+    icon: "spark",
     patch: {
       agents: {
         defaults: {
@@ -49,7 +49,7 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
     description: "Highest context budget for repo work.",
     detail: "Best for multi-file changes, long bootstrap docs, and code-heavy sessions.",
     impact: "Uses the largest prompt budget and reinjects context every turn.",
-    icon: "🛠️",
+    icon: "wrench",
     patch: {
       agents: {
         defaults: {
@@ -67,7 +67,7 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
     detail:
       "Best for multi-channel workflows where continuity matters more than large bootstrap payloads.",
     impact: "Keeps follow-up turns smaller by skipping safe continuation reinjection.",
-    icon: "👥",
+    icon: "bot",
     patch: {
       agents: {
         defaults: {
@@ -84,7 +84,7 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
     description: "Smallest context budget and lowest cost.",
     detail: "Best for quick utility turns, automations, and cost-sensitive workflows.",
     impact: "Uses the smallest bootstrap budget and the leanest follow-up behavior.",
-    icon: "⚡",
+    icon: "zap",
     patch: {
       agents: {
         defaults: {

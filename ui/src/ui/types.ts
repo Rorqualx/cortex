@@ -343,6 +343,7 @@ export type AgentFileEntry = {
   size?: number;
   updatedAtMs?: number;
   content?: string;
+  isDirectory?: boolean;
 };
 
 export type AgentsFilesListResult = {
@@ -350,6 +351,7 @@ export type AgentsFilesListResult = {
   workspace: string;
   files: AgentFileEntry[];
   activeDirFiles?: AgentFileEntry[];
+  activeDirSubdirs?: AgentFileEntry[];
 };
 
 export type AgentsFilesGetResult = {

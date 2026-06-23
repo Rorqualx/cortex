@@ -2,6 +2,7 @@
 import { html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { styleMap } from "lit/directives/style-map.js";
+import { icons } from "../icons.ts";
 import "../components/file-preview-modal.ts";
 
 export type SkillForgeProposalStatus = "pending" | "applied" | "rejected" | "quarantined" | "stale";
@@ -432,7 +433,7 @@ function renderDetail(props: SkillForgeProps, proposal: SkillForgeProposal) {
                         class="sw-file"
                         @click=${() => props.onPreviewFile(proposal.key, file.path)}
                       >
-                        <span>📄</span>
+                        <span>${icons.fileText}</span>
                         <span class="sw-file__name">${file.path}</span>
                         <span class="sw-file__size"
                           >${file.size} <span class="sw-file__hint">· click to preview</span></span
@@ -801,7 +802,7 @@ function renderToday(
                         props.onModeChange("board");
                       }}
                     >
-                      <span class="sw-today__check">✓</span>
+                      <span class="sw-today__check">${icons.check}</span>
                       <span class="sw-today__applied-name">
                         <strong>${p.slug}</strong> — ${p.oneLine}
                       </span>

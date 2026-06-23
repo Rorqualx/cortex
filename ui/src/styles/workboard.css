@@ -1140,6 +1140,22 @@
   border-color: color-mix(in srgb, var(--accent) 36%, var(--border-strong));
 }
 
+.workboard-section-tab__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workboard-section-tab__icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
 .workboard-section-tab--active {
   background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
   border-color: color-mix(in srgb, var(--accent) 50%, transparent);
@@ -1177,4 +1193,202 @@
   flex: 1;
   min-height: 0;
   padding: 0.25rem 0 0.5rem;
+}
+
+/* Add/Edit project icon quick-pick grid. */
+.project-icon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.project-icon-grid__cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  line-height: 1;
+  color: var(--text);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated, var(--bg-accent));
+}
+
+.project-icon-grid__cell svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.project-icon-grid__cell:hover {
+  border-color: var(--accent, var(--text));
+}
+
+.project-icon-grid__cell--active {
+  border-color: var(--accent, var(--text));
+  box-shadow: 0 0 0 1px var(--accent, var(--text)) inset;
+}
+
+/* Project → folder link: directory field + navigable browser popover. */
+.project-dir-field {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.project-dir-field .field__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-dir-field .btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.project-dir-field .btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.project-dir-browser {
+  margin-top: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated, var(--panel));
+}
+
+.project-dir-browser__path {
+  font-size: 0.72rem;
+  color: var(--muted);
+  padding: 2px 6px 6px;
+  word-break: break-all;
+}
+
+.project-dir-browser__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.project-dir-browser__row:hover {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.project-dir-browser__row svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.project-dir-browser__use {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.project-dir-browser__use svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Project icon picker collapsed into a dropdown (trigger + popover grid). */
+.project-icon-dropdown {
+  position: relative;
+}
+
+.project-icon-dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--workboard-control-border, var(--border));
+  border-radius: var(--workboard-control-radius, 7px);
+  background: var(--workboard-control-bg, var(--bg-elevated));
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.project-icon-dropdown__trigger:hover {
+  border-color: var(--workboard-control-border-hover, var(--accent));
+}
+
+.project-icon-dropdown__current {
+  display: inline-flex;
+}
+
+.project-icon-dropdown__current svg {
+  width: 16px;
+  height: 16px;
+}
+
+.project-icon-dropdown__label {
+  flex: 1;
+  text-align: left;
+}
+
+.project-icon-dropdown__trigger > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.project-icon-dropdown .project-icon-grid {
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated, var(--panel));
+  max-height: 240px;
+  overflow-y: auto;
+  /* Fixed columns so the open dropdown wraps into rows (expands vertically)
+     instead of stretching the icons across one full-width line. */
+  display: grid;
+  grid-template-columns: repeat(7, 34px);
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+}
+
+/* Agent avatar inside the card agent chip (procedural invader or assigned image). */
+.workboard-agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.workboard-agent-chip__img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  image-rendering: pixelated;
 }

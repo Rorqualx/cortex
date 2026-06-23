@@ -465,7 +465,9 @@
   color: var(--text);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 140ms ease, color 140ms ease;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
 }
 
 .rsil-detail__close:hover {
@@ -629,4 +631,18 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Assigned-agent avatar (procedural invader) next to the assignee picker. */
+.rsil-assignee {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.rsil-assignee__img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  flex: none;
 }
