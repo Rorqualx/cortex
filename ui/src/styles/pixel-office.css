@@ -215,6 +215,7 @@
 
 .mo__projects {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.65rem;
   justify-content: center;
   position: relative;

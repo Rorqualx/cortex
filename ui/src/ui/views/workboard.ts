@@ -1950,6 +1950,7 @@ function renderSectionedBoard(
   props: WorkboardProps,
   filtered: WorkboardCard[],
   statuses: readonly WorkboardStatus[],
+  toolbar: unknown,
 ) {
   const state = getWorkboardState(props.host);
   const sectioned = new Map<WorkboardSectionUI, WorkboardCard[]>();
@@ -1981,7 +1982,7 @@ function renderSectionedBoard(
   };
 
   return html`
-    ${renderSectionTabs(props, sectioned)}
+    ${renderSectionTabs(props, sectioned)} ${toolbar}
     <div class="workboard-sections workboard-sections--single">
       ${renderBoardFor(state.activeSection)}
     </div>
@@ -2458,150 +2459,6 @@ export function renderWorkboard(props: WorkboardProps) {
   return html`
     <section class="workboard">
       <div class="workboard-main" ?inert=${dialogOpen} aria-hidden=${dialogOpen ? "true" : nothing}>
-        <div class="workboard-toolbar">
-          <div class="workboard-toolbar__filters">
-            <input
-              class="input"
-              type="search"
-              title=${t("workboard.searchPlaceholder")}
-              placeholder=${t("workboard.searchPlaceholder")}
-              .value=${state.query}
-              @input=${(event: InputEvent) => {
-                state.query = (event.currentTarget as HTMLInputElement).value;
-                props.onRequestUpdate?.();
-              }}
-            />
-            <select
-              class="input"
-              title=${t("workboard.allPriorities")}
-              .value=${state.priorityFilter}
-              @change=${(event: Event) => {
-                state.priorityFilter = (event.currentTarget as HTMLSelectElement)
-                  .value as WorkboardUiState["priorityFilter"];
-                props.onRequestUpdate?.();
-              }}
-            >
-              <option value="all">${t("workboard.allPriorities")}</option>
-              ${WORKBOARD_PRIORITIES.map(
-                (priority) => html`<option value=${priority}>${priority}</option>`,
-              )}
-            </select>
-            <select
-              class="input"
-              title=${t("workboard.agentFilter")}
-              .value=${state.agentFilter}
-              @change=${(event: Event) => {
-                state.agentFilter = (event.currentTarget as HTMLSelectElement).value;
-                props.onRequestUpdate?.();
-              }}
-            >
-              ${agentOptions.map(
-                (agent) => html`<option value=${agent.id}>${agent.label}</option>`,
-              )}
-            </select>
-            <button
-              class="btn workboard-archive-toggle ${state.showArchived ? "active" : ""}"
-              type="button"
-              title=${state.showArchived
-                ? t("workboard.hideArchived")
-                : t("workboard.showArchived")}
-              aria-pressed=${state.showArchived}
-              @click=${() => {
-                state.showArchived = !state.showArchived;
-                props.onRequestUpdate?.();
-              }}
-            >
-              ${state.showArchived ? icons.eye : icons.eyeOff}
-              ${state.showArchived
-                ? t("workboard.hideArchivedShort")
-                : t("workboard.showArchivedShort")}
-            </button>
-            <div class="workboard-layout-toggle" role="group" aria-label=${t("workboard.layout")}>
-              <button
-                class="btn btn--icon ${state.layout === "compact" ? "active" : ""}"
-                type="button"
-                title=${t("workboard.layoutCompact")}
-                aria-label=${t("workboard.layoutCompact")}
-                aria-pressed=${state.layout === "compact"}
-                @click=${() => {
-                  state.layout = "compact";
-                  props.onRequestUpdate?.();
-                }}
-              >
-                ${icons.layoutCompact}
-              </button>
-              <button
-                class="btn btn--icon ${state.layout === "comfortable" ? "active" : ""}"
-                type="button"
-                title=${t("workboard.layoutComfortable")}
-                aria-label=${t("workboard.layoutComfortable")}
-                aria-pressed=${state.layout === "comfortable"}
-                @click=${() => {
-                  state.layout = "comfortable";
-                  props.onRequestUpdate?.();
-                }}
-              >
-                ${icons.layoutComfortable}
-              </button>
-            </div>
-          </div>
-          <div class="workboard-toolbar__actions">
-            <button
-              class="btn"
-              type="button"
-              title=${t("common.refresh")}
-              ?disabled=${state.loading}
-              @click=${() =>
-                loadWorkboard({
-                  host: props.host,
-                  client: props.client,
-                  requestUpdate: props.onRequestUpdate,
-                  force: true,
-                })}
-            >
-              ${state.loading ? t("common.refreshing") : t("common.refresh")}
-            </button>
-            ${writable
-              ? html`
-                  <button
-                    class="btn"
-                    type="button"
-                    title=${t("workboard.dispatch")}
-                    ?disabled=${state.loading}
-                    @click=${() =>
-                      dispatchWorkboard({
-                        host: props.host,
-                        client: props.client,
-                        requestUpdate: props.onRequestUpdate,
-                      })}
-                  >
-                    ${icons.zap} ${t("workboard.dispatch")}
-                  </button>
-                `
-              : nothing}
-            ${writable
-              ? html`
-                  <button
-                    class="btn primary"
-                    type="button"
-                    title=${t("workboard.newCard")}
-                    aria-haspopup="dialog"
-                    aria-expanded=${state.draftOpen ? "true" : "false"}
-                    aria-controls=${workboardCardModalId}
-                    @click=${(event: MouseEvent) => {
-                      rememberWorkboardReturnFocus(event.currentTarget);
-                      openCreateModal(state);
-                      props.onRequestUpdate?.();
-                    }}
-                  >
-                    ${icons.plus} ${t("workboard.newCard")}
-                  </button>
-                `
-              : nothing}
-          </div>
-        </div>
-        ${state.error ? html`<div class="callout danger">${state.error}</div>` : nothing}
-        ${renderDispatchSummary(state)}
         ${renderPixelOffice(props.agentsList, props.sessions, state.cards, {
           onAddProject: writable
             ? () => {
@@ -2626,7 +2483,162 @@ export function renderWorkboard(props: WorkboardProps) {
               }
             : undefined,
         })}
-        ${renderSectionedBoard(props, filtered, state.statuses)} ${renderProjectModal(props)}
+        ${state.error ? html`<div class="callout danger">${state.error}</div>` : nothing}
+        ${renderDispatchSummary(state)}
+        ${renderSectionedBoard(
+          props,
+          filtered,
+          state.statuses,
+          html`
+            <div class="workboard-toolbar">
+              <div class="workboard-toolbar__filters">
+                <input
+                  class="input"
+                  type="search"
+                  title=${t("workboard.searchPlaceholder")}
+                  placeholder=${t("workboard.searchPlaceholder")}
+                  .value=${state.query}
+                  @input=${(event: InputEvent) => {
+                    state.query = (event.currentTarget as HTMLInputElement).value;
+                    props.onRequestUpdate?.();
+                  }}
+                />
+                <select
+                  class="input"
+                  title=${t("workboard.allPriorities")}
+                  .value=${state.priorityFilter}
+                  @change=${(event: Event) => {
+                    state.priorityFilter = (event.currentTarget as HTMLSelectElement)
+                      .value as WorkboardUiState["priorityFilter"];
+                    props.onRequestUpdate?.();
+                  }}
+                >
+                  <option value="all">${t("workboard.allPriorities")}</option>
+                  ${WORKBOARD_PRIORITIES.map(
+                    (priority) => html`<option value=${priority}>${priority}</option>`,
+                  )}
+                </select>
+                <select
+                  class="input"
+                  title=${t("workboard.agentFilter")}
+                  .value=${state.agentFilter}
+                  @change=${(event: Event) => {
+                    state.agentFilter = (event.currentTarget as HTMLSelectElement).value;
+                    props.onRequestUpdate?.();
+                  }}
+                >
+                  ${agentOptions.map(
+                    (agent) => html`<option value=${agent.id}>${agent.label}</option>`,
+                  )}
+                </select>
+                <button
+                  class="btn workboard-archive-toggle ${state.showArchived ? "active" : ""}"
+                  type="button"
+                  title=${state.showArchived
+                    ? t("workboard.hideArchived")
+                    : t("workboard.showArchived")}
+                  aria-pressed=${state.showArchived}
+                  @click=${() => {
+                    state.showArchived = !state.showArchived;
+                    props.onRequestUpdate?.();
+                  }}
+                >
+                  ${state.showArchived ? icons.eye : icons.eyeOff}
+                  ${state.showArchived
+                    ? t("workboard.hideArchivedShort")
+                    : t("workboard.showArchivedShort")}
+                </button>
+                <div
+                  class="workboard-layout-toggle"
+                  role="group"
+                  aria-label=${t("workboard.layout")}
+                >
+                  <button
+                    class="btn btn--icon ${state.layout === "compact" ? "active" : ""}"
+                    type="button"
+                    title=${t("workboard.layoutCompact")}
+                    aria-label=${t("workboard.layoutCompact")}
+                    aria-pressed=${state.layout === "compact"}
+                    @click=${() => {
+                      state.layout = "compact";
+                      props.onRequestUpdate?.();
+                    }}
+                  >
+                    ${icons.layoutCompact}
+                  </button>
+                  <button
+                    class="btn btn--icon ${state.layout === "comfortable" ? "active" : ""}"
+                    type="button"
+                    title=${t("workboard.layoutComfortable")}
+                    aria-label=${t("workboard.layoutComfortable")}
+                    aria-pressed=${state.layout === "comfortable"}
+                    @click=${() => {
+                      state.layout = "comfortable";
+                      props.onRequestUpdate?.();
+                    }}
+                  >
+                    ${icons.layoutComfortable}
+                  </button>
+                </div>
+              </div>
+              <div class="workboard-toolbar__actions">
+                <button
+                  class="btn"
+                  type="button"
+                  title=${t("common.refresh")}
+                  ?disabled=${state.loading}
+                  @click=${() =>
+                    loadWorkboard({
+                      host: props.host,
+                      client: props.client,
+                      requestUpdate: props.onRequestUpdate,
+                      force: true,
+                    })}
+                >
+                  ${state.loading ? t("common.refreshing") : t("common.refresh")}
+                </button>
+                ${writable
+                  ? html`
+                      <button
+                        class="btn"
+                        type="button"
+                        title=${t("workboard.dispatch")}
+                        ?disabled=${state.loading}
+                        @click=${() =>
+                          dispatchWorkboard({
+                            host: props.host,
+                            client: props.client,
+                            requestUpdate: props.onRequestUpdate,
+                          })}
+                      >
+                        ${icons.zap} ${t("workboard.dispatch")}
+                      </button>
+                    `
+                  : nothing}
+                ${writable
+                  ? html`
+                      <button
+                        class="btn primary"
+                        type="button"
+                        title=${t("workboard.newCard")}
+                        aria-haspopup="dialog"
+                        aria-expanded=${state.draftOpen ? "true" : "false"}
+                        aria-controls=${workboardCardModalId}
+                        @click=${(event: MouseEvent) => {
+                          rememberWorkboardReturnFocus(event.currentTarget);
+                          openCreateModal(state);
+                          props.onRequestUpdate?.();
+                        }}
+                      >
+                        ${icons.plus} ${t("workboard.newCard")}
+                      </button>
+                    `
+                  : nothing}
+              </div>
+            </div>
+          `,
+        )}
+        ${renderProjectModal(props)}
       </div>
       ${renderCardModal(props)} ${renderCardDetailsPanel(props)}
     </section>
