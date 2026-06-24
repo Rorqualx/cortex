@@ -93,6 +93,11 @@ export type ChannelChatNavCandidate = {
   updatedAt: number;
 };
 
+// Internal origin surface for Control-UI/dashboard chats. Such sessions render
+// under the "Chat" tab and must never be listed as channel conversations, even
+// if their session key carries a real channel segment.
+const WEBCHAT_SURFACE = "webchat";
+
 /**
  * One candidate per inbound channel conversation (telegram/discord/…), newest
  * first. `knownChannelIds` gates which sessions count as channel chats so
@@ -113,9 +118,18 @@ export function collectChannelChatNavCandidates(
     if (row.spawnedBy || isSubagentSessionKey(row.key) || isCronSessionKey(row.key)) {
       continue;
     }
-    // The session key is the authoritative channel source; row.channel/origin are
-    // fallbacks for keys that aren't channel-shaped. Take the first candidate the
-    // gateway actually knows, so a stale row.channel can't drop a real chat.
+    // Webchat/dashboard chats belong to the "Chat" tab, never under "Channels" —
+    // even when their session key carries a channel segment (a drifted or
+    // mis-keyed session, e.g. agent:main:telegram:...). The origin surface is
+    // authoritative for internal surfaces, so classify by it rather than letting
+    // the key's channel segment win.
+    if (row.origin?.surface?.toLowerCase() === WEBCHAT_SURFACE) {
+      continue;
+    }
+    // For real channel chats the session key is the authoritative channel
+    // source; row.channel/origin are fallbacks for keys that aren't
+    // channel-shaped. Take the first candidate the gateway actually knows, so a
+    // stale row.channel can't drop a real chat.
     const fromKey = parseAgentSessionKey(row.key)?.rest.split(":")[0]?.toLowerCase();
     const channelId = [
       fromKey,
