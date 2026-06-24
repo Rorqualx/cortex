@@ -2436,6 +2436,15 @@ describe("deriveSessionTitle", () => {
     expect(deriveSessionTitle(entry, "Hello, how are you?")).toBe("Hello, how are you?");
   });
 
+  test("surfaces the cron job name as the title, not the [cron:...] wrapper", () => {
+    const entry = {
+      sessionId: "cron-1",
+      updatedAt: Date.now(),
+    } as SessionEntry;
+    const firstMessage = "[cron:9d1cec60-4db3-4c7c-a0da-447b7bcf26ce LLM Research] ## do the scan";
+    expect(deriveSessionTitle(entry, firstMessage)).toBe("LLM Research");
+  });
+
   test("truncates long first user message to 60 chars with ellipsis", () => {
     const entry = {
       sessionId: "abc123",

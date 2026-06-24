@@ -41,6 +41,7 @@ import { CommandLane } from "../../process/lanes.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveCronSkillsSnapshot } from "../../skills/runtime/cron-snapshot.js";
 import type { SkillSnapshot } from "../../skills/types.js";
+import { buildCronMessagePrefix } from "../cron-message-prefix.js";
 import {
   hasExplicitCronDeliveryTarget,
   resolveCronDeliveryPlan,
@@ -801,7 +802,7 @@ async function prepareCronRunContext(params: {
 
   const { formattedTime, timeLine } = resolveCronStyleNow(input.cfg, now);
   const message = resolveCronAgentTurnMessage(input);
-  const base = `[cron:${input.job.id} ${input.job.name}] ${message}`.trim();
+  const base = `${buildCronMessagePrefix(input.job)} ${message}`.trim();
   const isExternalHook =
     hookExternalContentSource !== undefined || isExternalHookSession(baseSessionKey);
   const allowUnsafeExternalContent =

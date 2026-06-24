@@ -72,6 +72,7 @@ import {
   type SessionScope,
 } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { parseCronMessagePrefix } from "../cron/cron-message-prefix.js";
 import { openRootFileSync } from "../infra/boundary-file-read.js";
 import { projectPluginSessionExtensionsSync } from "../plugins/host-hook-state.js";
 import {
@@ -231,7 +232,11 @@ const FIRST_MESSAGE_PREVIEW_MAX_LEN = 140;
 
 /** Normalize the first user message into a row preview, independent of title overrides. */
 function normalizeFirstMessagePreview(firstUserMessage: string | null): string | undefined {
-  const normalized = firstUserMessage?.replace(/\s+/g, " ").trim();
+  // Drop the cron `[cron:<id> <name>]` scheduling wrapper so previews show the
+  // real prompt rather than the system artifact.
+  const cron = firstUserMessage ? parseCronMessagePrefix(firstUserMessage) : null;
+  const source = cron ? cron.body : firstUserMessage;
+  const normalized = source?.replace(/\s+/g, " ").trim();
   if (!normalized) {
     return undefined;
   }
@@ -260,8 +265,15 @@ export function deriveSessionTitle(
   }
 
   if (firstUserMessage?.trim()) {
-    const normalized = firstUserMessage.replace(/\s+/g, " ").trim();
-    return truncateTitle(normalized, DERIVED_TITLE_MAX_LEN);
+    // Cron runs prepend a `[cron:<id> <name>]` wrapper (see
+    // src/cron/cron-message-prefix.ts); surface the human job name as the title
+    // instead of the raw scheduling artifact.
+    const cron = parseCronMessagePrefix(firstUserMessage);
+    const titleSource = cron?.name || cron?.body || firstUserMessage;
+    const normalized = titleSource.replace(/\s+/g, " ").trim();
+    if (normalized) {
+      return truncateTitle(normalized, DERIVED_TITLE_MAX_LEN);
+    }
   }
 
   if (entry.sessionId) {
