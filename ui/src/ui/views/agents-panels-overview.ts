@@ -1,6 +1,7 @@
 // Control UI view renders agents panels overview screen content.
 import { html, nothing } from "lit";
 import { t } from "../../i18n/index.ts";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import type {
   AgentIdentityResult,
   AgentsFilesListResult,
@@ -9,10 +10,12 @@ import type {
 } from "../types.ts";
 import {
   buildModelOptions,
+  collectConfiguredModelOptions,
+  type ConfiguredModelOption,
   normalizeModelValue,
-  parseFallbackList,
   resolveAgentConfig,
   resolveAgentRuntimeLabel,
+  resolveEffectiveModelFallbacks,
   resolveModelFallbacks,
   resolveModelLabel,
   resolveModelPrimary,
@@ -32,14 +35,11 @@ export function renderAgentOverview(params: {
   configSaving: boolean;
   configDirty: boolean;
   modelCatalog: ModelCatalogEntry[];
-  crewMd: string;
   onConfigReload: () => void;
   onConfigSave: () => void;
   onModelChange: (agentId: string, modelId: string | null) => void;
   onModelFallbacksChange: (agentId: string, fallbacks: string[]) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
-  onCrewMdChange: (next: string) => void;
-  agentsList: AgentsListResult | null;
 }) {
   const {
     agent,
@@ -80,8 +80,7 @@ export function renderAgentOverview(params: {
   const effectivePrimary = entryPrimary ?? defaultPrimary ?? null;
   const selectedPrimary = isDefault ? effectivePrimary : entryPrimary;
   const modelFallbacks =
-    resolveModelFallbacks(config.entry?.model) ??
-    resolveModelFallbacks(config.defaults?.model) ??
+    resolveEffectiveModelFallbacks(config.entry?.model, config.defaults?.model) ??
     (configForm ? null : resolveModelFallbacks(agentModel));
   const fallbackChips = modelFallbacks ?? [];
   const skillFilter = Array.isArray(config.entry?.skills) ? config.entry?.skills : null;
@@ -94,17 +93,41 @@ export function renderAgentOverview(params: {
     onModelFallbacksChange(agent.id, next);
   };
 
-  const handleChipKeydown = (e: KeyboardEvent) => {
-    const input = e.target as HTMLInputElement;
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      const parsed = parseFallbackList(input.value);
-      if (parsed.length > 0) {
-        onModelFallbacksChange(agent.id, [...fallbackChips, ...parsed]);
-        input.value = "";
-      }
+  // Fallbacks are an ordered priority list; reordering swaps adjacent entries so
+  // the numbered order the user sees is exactly what runtime tries in sequence.
+  const moveChip = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= fallbackChips.length) {
+      return;
     }
+    const next = [...fallbackChips];
+    [next[index], next[target]] = [next[target], next[index]];
+    onModelFallbacksChange(agent.id, next);
   };
+
+  const addFallback = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+    const key = normalizeLowercaseStringOrEmpty(trimmed);
+    if (fallbackChips.some((chip) => normalizeLowercaseStringOrEmpty(chip) === key)) {
+      return;
+    }
+    onModelFallbacksChange(agent.id, [...fallbackChips, trimmed]);
+  };
+
+  // Offer every configured model except the ones already chosen and the primary
+  // itself (a model never falls back to itself).
+  const takenFallbackKeys = new Set(
+    [...fallbackChips, effectivePrimary ?? ""]
+      .map((value) => normalizeLowercaseStringOrEmpty(value))
+      .filter(Boolean),
+  );
+  const fallbackAddOptions: ConfiguredModelOption[] = collectConfiguredModelOptions(
+    configForm,
+    params.modelCatalog,
+  ).filter((option) => !takenFallbackKeys.has(normalizeLowercaseStringOrEmpty(option.value)));
 
   return html`
     <section class="card">
@@ -179,45 +202,67 @@ export function renderAgentOverview(params: {
           </label>
           <div class="field">
             <span>Fallbacks</span>
-            <div
-              class="agent-chip-input"
-              @click=${(e: Event) => {
-                const container = e.currentTarget as HTMLElement;
-                const input = container.querySelector("input");
-                if (input) {
-                  input.focus();
-                }
+            <div class="agent-fallback-list">
+              ${fallbackChips.length === 0
+                ? html`<div class="agent-fallback-empty">No fallbacks. Add one below.</div>`
+                : fallbackChips.map(
+                    (chip, i) => html`
+                      <div class="agent-fallback-row">
+                        <span class="agent-fallback-index">${i + 1}</span>
+                        <span class="agent-fallback-name mono">${chip}</span>
+                        <div class="agent-fallback-actions">
+                          <button
+                            type="button"
+                            class="agent-fallback-move"
+                            title="Move up"
+                            aria-label="Move fallback up"
+                            ?disabled=${disabled || i === 0}
+                            @click=${() => moveChip(i, -1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            class="agent-fallback-move"
+                            title="Move down"
+                            aria-label="Move fallback down"
+                            ?disabled=${disabled || i === fallbackChips.length - 1}
+                            @click=${() => moveChip(i, 1)}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            class="chip-remove"
+                            title="Remove fallback"
+                            aria-label="Remove fallback"
+                            ?disabled=${disabled}
+                            @click=${() => removeChip(i)}
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      </div>
+                    `,
+                  )}
+            </div>
+            <select
+              class="agent-fallback-add"
+              ?disabled=${disabled || fallbackAddOptions.length === 0}
+              .value=${""}
+              @change=${(e: Event) => {
+                const select = e.target as HTMLSelectElement;
+                addFallback(select.value);
+                select.value = "";
               }}
             >
-              ${fallbackChips.map(
-                (chip, i) => html`
-                  <span class="chip">
-                    ${chip}
-                    <button
-                      type="button"
-                      class="chip-remove"
-                      ?disabled=${disabled}
-                      @click=${() => removeChip(i)}
-                    >
-                      &times;
-                    </button>
-                  </span>
-                `,
+              <option value="" selected>
+                ${fallbackAddOptions.length === 0 ? "No more configured models" : "Add fallback…"}
+              </option>
+              ${fallbackAddOptions.map(
+                (option) => html`<option value=${option.value}>${option.label}</option>`,
               )}
-              <input
-                ?disabled=${disabled}
-                placeholder=${fallbackChips.length === 0 ? "provider/model" : ""}
-                @keydown=${handleChipKeydown}
-                @blur=${(e: Event) => {
-                  const input = e.target as HTMLInputElement;
-                  const parsed = parseFallbackList(input.value);
-                  if (parsed.length > 0) {
-                    onModelFallbacksChange(agent.id, [...fallbackChips, ...parsed]);
-                    input.value = "";
-                  }
-                }}
-              />
-            </div>
+            </select>
           </div>
         </div>
         <div class="agent-model-actions">
@@ -239,130 +284,6 @@ export function renderAgentOverview(params: {
           </button>
         </div>
       </div>
-
-      ${renderCrewSection(params)}
     </section>
-  `;
-}
-
-function renderCrewSection(params: {
-  crewMd: string;
-  onCrewMdChange: (next: string) => void;
-  agentsList: AgentsListResult | null;
-  modelCatalog: ModelCatalogEntry[];
-  onModelChange: (agentId: string, modelId: string | null) => void;
-  configForm: Record<string, unknown> | null;
-}) {
-  const { crewMd, onCrewMdChange, agentsList, modelCatalog, onModelChange, configForm } = params;
-  const allAgents = agentsList?.agents ?? [];
-  const crewIds = crewMd
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const crewMembers = crewIds
-    .map((id) => {
-      const agent = allAgents.find((a) => a.id === id);
-      return agent
-        ? { id: agent.id, name: agent.identity?.name || agent.name || agent.id, model: agent.model }
-        : null;
-    })
-    .filter(Boolean) as Array<{
-    id: string;
-    name: string;
-    model?: { primary?: string; fallbacks?: string[] };
-  }>;
-
-  const availableAgents = allAgents.filter((a) => !crewIds.includes(a.id));
-  const disabled = !configForm;
-
-  return html`
-    <div class="agent-model-select" style="margin-top: 24px;">
-      <div
-        style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;"
-      >
-        <div class="label">Crew.md</div>
-        <button
-          type="button"
-          class="btn btn--sm"
-          @click=${() => {
-            const el = document.getElementById("crew-md-editor");
-            if (el) {
-              el.style.display = el.style.display === "none" ? "block" : "none";
-            }
-          }}
-        >
-          Edit
-        </button>
-      </div>
-
-      <div id="crew-md-editor" style="display:none;margin-bottom:16px;">
-        <textarea
-          class="mono"
-          style="width:100%;min-height:120px;padding:10px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--bg-elevated);color:var(--text);font-size:13px;resize:vertical;"
-          .value=${crewMd}
-          @input=${(e: Event) => onCrewMdChange((e.target as HTMLTextAreaElement).value)}
-          placeholder="Enter agent IDs, one per line"
-        ></textarea>
-      </div>
-
-      ${crewMembers.length === 0
-        ? html`<div class="nav-item nav-item--muted" style="padding:8px 0;">
-            No crew members defined.
-          </div>`
-        : html`
-            <div class="agents-overview-grid">
-              ${crewMembers.map(
-                (member) => html`
-                  <div class="agent-kv">
-                    <div class="label">${member.name}</div>
-                    <div>
-                      <select
-                        style="width:100%;"
-                        .value=${member.model?.primary ?? ""}
-                        ?disabled=${disabled}
-                        @change=${(e: Event) =>
-                          onModelChange(member.id, (e.target as HTMLSelectElement).value || null)}
-                      >
-                        <option value="">Inherit default</option>
-                        ${buildModelOptions(
-                          configForm,
-                          member.model?.primary ?? undefined,
-                          modelCatalog,
-                          member.model?.primary ?? null,
-                        )}
-                      </select>
-                    </div>
-                  </div>
-                `,
-              )}
-            </div>
-          `}
-      ${availableAgents.length > 0
-        ? html`
-            <div style="margin-top:16px;">
-              <label class="field">
-                <span>Add to crew</span>
-                <select
-                  ?disabled=${disabled}
-                  @change=${(e: Event) => {
-                    const id = (e.target as HTMLSelectElement).value;
-                    if (id) {
-                      const next = crewMd ? `${crewMd}\n${id}` : id;
-                      onCrewMdChange(next);
-                      (e.target as HTMLSelectElement).value = "";
-                    }
-                  }}
-                >
-                  <option value="">Select agent…</option>
-                  ${availableAgents.map(
-                    (a) =>
-                      html`<option value=${a.id}>${a.identity?.name || a.name || a.id}</option>`,
-                  )}
-                </select>
-              </label>
-            </div>
-          `
-        : nothing}
-    </div>
   `;
 }

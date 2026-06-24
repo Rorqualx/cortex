@@ -3316,7 +3316,6 @@ export function renderApp(state: AppViewState) {
                 runtimeSessionKey: state.sessionKey,
                 runtimeSessionMatchesSelectedAgent: toolsPanelUsesActiveSession,
                 modelCatalog: state.chatModelCatalog ?? [],
-                crewMd: state.crewMd,
                 onRefresh: runUiTask(async () => {
                   await loadAgents(state);
                   const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
@@ -3564,10 +3563,6 @@ export function renderApp(state: AppViewState) {
                     return;
                   }
                   updateConfigFormValue(state, basePathResult, { primary, fallbacks: normalized });
-                },
-                onCrewMdChange: (next) => {
-                  state.crewMd = next;
-                  state.applySettings({ ...state.settings, crewMd: next });
                 },
                 onSetDefault: (agentId) => {
                   stageDefaultAgentConfigEntry(state, agentId);

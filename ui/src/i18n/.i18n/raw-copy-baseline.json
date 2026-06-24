@@ -830,9 +830,37 @@
     {
       "count": 1,
       "kind": "html-attribute",
-      "name": "placeholder",
+      "name": "aria-label",
       "path": "ui/src/ui/views/agents-panels-overview.ts",
-      "text": "Enter agent IDs, one per line"
+      "text": "Move fallback down"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/views/agents-panels-overview.ts",
+      "text": "Move fallback up"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/views/agents-panels-overview.ts",
+      "text": "Remove fallback"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/agents-panels-overview.ts",
+      "text": "Move down"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/agents-panels-overview.ts",
+      "text": "Move up"
     },
     {
       "count": 1,
@@ -840,6 +868,13 @@
       "name": "title",
       "path": "ui/src/ui/views/agents-panels-overview.ts",
       "text": "Open Files tab"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/agents-panels-overview.ts",
+      "text": "Remove fallback"
     },
     {
       "count": 1,
@@ -853,35 +888,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/agents-panels-overview.ts",
-      "text": "Add to crew"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/agents-panels-overview.ts",
-      "text": "Crew.md"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/agents-panels-overview.ts",
-      "text": "Edit"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/agents-panels-overview.ts",
       "text": "Fallbacks"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/agents-panels-overview.ts",
-      "text": "Inherit default"
     },
     {
       "count": 1,
@@ -895,7 +902,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/agents-panels-overview.ts",
-      "text": "No crew members defined."
+      "text": "No fallbacks. Add one below."
     },
     {
       "count": 1,
@@ -924,13 +931,6 @@
       "name": "text",
       "path": "ui/src/ui/views/agents-panels-overview.ts",
       "text": "Runtime"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/agents-panels-overview.ts",
-      "text": "Select agent…"
     },
     {
       "count": 1,

@@ -459,11 +459,37 @@ export function resolveModelFallbacks(model?: unknown): string[] | null {
   return null;
 }
 
+// Mirror runtime resolveSelectedModelFallbacksOverride (src/agents/agent-scope.ts):
+// an agent entry that sets its own primary shadows the global default fallbacks,
+// even when it omits a fallbacks list (a bare string model counts). Only an entry
+// with no model of its own inherits the defaults. Without this the UI shows phantom
+// inherited fallbacks the run never applies, so the chip looks unremovable.
+function resolveModelFallbacksOverride(model?: unknown): string[] | undefined {
+  if (!model) {
+    return undefined;
+  }
+  if (typeof model === "string") {
+    return normalizeOptionalString(model) ? [] : undefined;
+  }
+  if (typeof model !== "object") {
+    return undefined;
+  }
+  const record = model as Record<string, unknown>;
+  if (!Object.hasOwn(record, "fallbacks") && !Object.hasOwn(record, "fallback")) {
+    return resolveModelPrimary(model) ? [] : undefined;
+  }
+  return resolveModelFallbacks(model) ?? [];
+}
+
 export function resolveEffectiveModelFallbacks(
   entryModel?: unknown,
   defaultModel?: unknown,
 ): string[] | null {
-  return resolveModelFallbacks(entryModel) ?? resolveModelFallbacks(defaultModel);
+  const override = resolveModelFallbacksOverride(entryModel);
+  if (override !== undefined) {
+    return override;
+  }
+  return resolveModelFallbacks(defaultModel);
 }
 
 function addModelId(target: Set<string>, value: unknown) {
@@ -574,14 +600,7 @@ export function resolveConfiguredCronModelSuggestions(
   return sortLocaleStrings(out);
 }
 
-export function parseFallbackList(value: string): string[] {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-type ConfiguredModelOption = {
+export type ConfiguredModelOption = {
   value: string;
   label: string;
 };
@@ -612,15 +631,15 @@ function resolveConfiguredModels(
   return options;
 }
 
-export function buildModelOptions(
+// Deduped union of the agent's configured model aliases and the live model
+// catalog. Shared by the primary-model picker and the fallbacks picker so both
+// offer the same "all configured models" set.
+export function collectConfiguredModelOptions(
   configForm: Record<string, unknown> | null,
-  current?: string | null,
   catalog?: ModelCatalogEntry[],
-  selected?: string | null,
-) {
+): ConfiguredModelOption[] {
   const seen = new Set<string>();
   const options: ConfiguredModelOption[] = [];
-  const selectedKey = selected ? normalizeLowercaseStringOrEmpty(selected) : null;
   const addOption = (value: string, label: string) => {
     const key = normalizeLowercaseStringOrEmpty(value);
     if (seen.has(key)) {
@@ -643,7 +662,24 @@ export function buildModelOptions(
     }
   }
 
-  if (current && !seen.has(normalizeLowercaseStringOrEmpty(current))) {
+  return options;
+}
+
+export function buildModelOptions(
+  configForm: Record<string, unknown> | null,
+  current?: string | null,
+  catalog?: ModelCatalogEntry[],
+  selected?: string | null,
+) {
+  const options = collectConfiguredModelOptions(configForm, catalog);
+  const selectedKey = selected ? normalizeLowercaseStringOrEmpty(selected) : null;
+  const currentKey = current ? normalizeLowercaseStringOrEmpty(current) : null;
+
+  if (
+    current &&
+    currentKey &&
+    !options.some((opt) => normalizeLowercaseStringOrEmpty(opt.value) === currentKey)
+  ) {
     options.unshift({ value: current, label: `Current (${current})` });
   }
 

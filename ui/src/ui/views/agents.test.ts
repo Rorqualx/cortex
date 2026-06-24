@@ -138,9 +138,7 @@ function createProps(overrides: Partial<AgentsProps> = {}): AgentsProps {
     onAgentSkillToggle: () => undefined,
     onAgentSkillsClear: () => undefined,
     onAgentSkillsDisableAll: () => undefined,
-    crewMd: "",
     onSetDefault: () => undefined,
-    onCrewMdChange: () => undefined,
     ...overrides,
   };
 }
@@ -390,6 +388,97 @@ describe("renderAgents", () => {
       await i18n.setLocale("en");
       vi.unstubAllGlobals();
     }
+  });
+
+  it("renders ordered numbered fallbacks, reorders, removes, and offers configured models to add", async () => {
+    const container = document.createElement("div");
+    const fallbackChanges: string[][] = [];
+    const configForm = {
+      agents: {
+        defaults: {
+          models: {
+            "openai/gpt-5.4": {},
+            "anthropic/claude-sonnet-4-6": {},
+            "google/gemini-2.0-flash": {},
+            "deepseek/deepseek-v4-pro": {},
+          },
+        },
+        list: [
+          {
+            id: "beta",
+            model: {
+              primary: "openai/gpt-5.4",
+              fallbacks: ["anthropic/claude-sonnet-4-6", "google/gemini-2.0-flash"],
+            },
+          },
+        ],
+      },
+    };
+
+    render(
+      renderAgents(
+        createProps({
+          selectedAgentId: "beta",
+          config: { form: configForm, loading: false, saving: false, dirty: false },
+          onModelFallbacksChange: (_agentId, next) => fallbackChanges.push(next),
+        }),
+      ),
+      container,
+    );
+
+    const rows = await vi.waitFor(() => {
+      const found = container.querySelectorAll(".agent-fallback-row");
+      expect(found.length).toBe(2);
+      return found;
+    });
+
+    // Numbered in priority order.
+    expect(rows[0]?.querySelector(".agent-fallback-index")?.textContent?.trim()).toBe("1");
+    expect(rows[1]?.querySelector(".agent-fallback-index")?.textContent?.trim()).toBe("2");
+    expect(rows[0]?.querySelector(".agent-fallback-name")?.textContent?.trim()).toBe(
+      "anthropic/claude-sonnet-4-6",
+    );
+    expect(rows[1]?.querySelector(".agent-fallback-name")?.textContent?.trim()).toBe(
+      "google/gemini-2.0-flash",
+    );
+
+    // Add picker offers the unused configured model but not the primary or chosen fallbacks.
+    const addSelect = container.querySelector<HTMLSelectElement>(".agent-fallback-add");
+    const optionValues = Array.from(addSelect?.options ?? [])
+      .map((option) => option.value)
+      .filter(Boolean);
+    expect(optionValues).toContain("deepseek/deepseek-v4-pro");
+    expect(optionValues).not.toContain("openai/gpt-5.4");
+    expect(optionValues).not.toContain("anthropic/claude-sonnet-4-6");
+    expect(optionValues).not.toContain("google/gemini-2.0-flash");
+
+    // First row cannot move up; moving it down swaps the order.
+    const firstUp = rows[0]?.querySelector<HTMLButtonElement>(
+      ".agent-fallback-move[aria-label='Move fallback up']",
+    );
+    expect(firstUp?.disabled).toBe(true);
+    rows[0]
+      ?.querySelector<HTMLButtonElement>(".agent-fallback-move[aria-label='Move fallback down']")
+      ?.click();
+    expect(fallbackChanges.at(-1)).toEqual([
+      "google/gemini-2.0-flash",
+      "anthropic/claude-sonnet-4-6",
+    ]);
+
+    // Removing a row drops that fallback.
+    rows[0]?.querySelector<HTMLButtonElement>(".chip-remove")?.click();
+    expect(fallbackChanges.at(-1)).toEqual(["google/gemini-2.0-flash"]);
+
+    // Selecting from the add picker appends it to the end.
+    if (addSelect) {
+      addSelect.value = "deepseek/deepseek-v4-pro";
+      addSelect.dispatchEvent(new Event("change"));
+    }
+    expect(fallbackChanges.at(-1)).toEqual([
+      "anthropic/claude-sonnet-4-6",
+      "google/gemini-2.0-flash",
+      "deepseek/deepseek-v4-pro",
+    ]);
   });
 });
 

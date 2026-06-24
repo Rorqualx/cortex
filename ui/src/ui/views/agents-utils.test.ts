@@ -50,6 +50,27 @@ describe("resolveEffectiveModelFallbacks", () => {
 
     expect(resolveEffectiveModelFallbacks(entryModel, defaultModel)).toStrictEqual([]);
   });
+
+  it("shadows defaults when the entry is a bare string model", () => {
+    // A string entry sets its own primary and therefore disables global fallbacks,
+    // mirroring runtime resolveSelectedModelFallbacksOverride.
+    const defaultModel = {
+      primary: "kimi/kimi-for-coding",
+      fallbacks: ["deepseek/deepseek-v4-pro"],
+    };
+
+    expect(resolveEffectiveModelFallbacks("zai/glm-5.2", defaultModel)).toStrictEqual([]);
+  });
+
+  it("shadows defaults when the entry sets a primary but omits fallbacks", () => {
+    const entryModel = { primary: "moonshot/kimi-k2.6" };
+    const defaultModel = {
+      primary: "kimi/kimi-for-coding",
+      fallbacks: ["deepseek/deepseek-v4-pro"],
+    };
+
+    expect(resolveEffectiveModelFallbacks(entryModel, defaultModel)).toStrictEqual([]);
+  });
 });
 
 describe("resolveConfiguredCronModelSuggestions", () => {
