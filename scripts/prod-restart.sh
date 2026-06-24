@@ -205,6 +205,45 @@ fi
 launchctl bootout gui/"$UID"/ai.openclaw.gateway 2>/dev/null || true
 rm -f ~/Library/LaunchAgents/ai.openclaw.gateway.plist 2>/dev/null || true
 
+# From here the launchd service is GONE (plist removed, KeepAlive can no longer
+# respawn). If we exit before reinstalling it — an uncaught error under `set -e`,
+# or the daemon getting killed mid-flight — the gateway would stay down with no
+# service, the exact prod-down hit on 2026-06-24. Guard every exit: if the
+# service is not loaded when we leave AND the build produced a usable dist,
+# reinstall+start so KeepAlive is restored. If we exit before the build
+# succeeded, leave the gateway DOWN instead of launching stale/half-built dist —
+# a loud, logged failure beats KeepAlive respawning broken code. BUILD_OK flips
+# to 1 once the build (or --no-build) has produced a runnable dist.
+BUILD_OK=0
+STARTED_INLINE=0
+restore_gateway_service_on_exit() {
+  local rc=$?
+  if launchctl print gui/"$UID"/ai.openclaw.gateway &>/dev/null; then
+    return
+  fi
+  if [[ "${BUILD_OK:-0}" -ne 1 ]]; then
+    log_red "Deploy failed before a usable dist (rc=${rc}); leaving gateway DOWN rather than starting stale/broken code. Fix the failure and re-run."
+    return
+  fi
+  if [[ "${STARTED_INLINE:-0}" -eq 1 ]]; then
+    # The explicit start below already ran and failed (its real error is logged
+    # above). Don't retry the identical command and mask the cause.
+    log_red "Gateway start failed (rc=${rc}); see the error above. Not retrying to avoid masking the cause."
+    return
+  fi
+  log_red "Gateway service not loaded at exit (rc=${rc}); reinstalling so it recovers..."
+  CI=1 npm_config_verify_deps_before_run=false pnpm openclaw gateway install || true
+  CI=1 npm_config_verify_deps_before_run=false pnpm openclaw gateway start || true
+  # Report the recovery outcome; `|| true` above swallows errors, so re-check
+  # load state rather than leaving the operator with no result line.
+  if launchctl print gui/"$UID"/ai.openclaw.gateway &>/dev/null; then
+    log_green "Recovery reinstall succeeded; gateway service is loaded."
+  else
+    log_red "Recovery reinstall FAILED; gateway is still DOWN — manual intervention needed."
+  fi
+}
+trap restore_gateway_service_on_exit EXIT
+
 # Wait for processes to die
 sleep 2
 
@@ -267,31 +306,39 @@ if [[ ! -f "${ROOT_DIR}/dist/control-ui/index.html" ]]; then
   fi
 fi
 
+# The gateway entrypoint must exist before we (re)install the service. The
+# --no-build / --ui-only paths never verify it, and starting a missing/stale
+# dist under KeepAlive would crash-loop. Refuse loudly; the EXIT trap then
+# leaves the gateway down (BUILD_OK stays 0) instead of launching broken code.
+if [[ ! -f "${ROOT_DIR}/dist/index.js" ]]; then
+  log_red "dist/index.js missing — refusing to start on an unbuilt/stale dist. Run a full build first (without --no-build/--ui-only)."
+  exit 1
+fi
+# Build (and required Control UI assets) are in place — a failed start from here
+# is recoverable by reinstalling the existing dist under KeepAlive.
+BUILD_OK=1
+
 # ── Start gateway ──────────────────────────────────────────────────────
+# The plist was removed above, so always install a fresh service then start it.
+# STARTED_INLINE tells the EXIT trap the start was attempted here, so it won't
+# re-run the identical command and mask this branch's error.
 step "Starting production gateway..."
 cd "${ROOT_DIR}"
-
-# Prefer launchd if the plist is loaded — cleaner than raw process management
-if launchctl print gui/"$UID"/ai.openclaw.gateway &>/dev/null; then
-  step "Launching via launchd (kickstart -k)..."
-  launchctl kickstart -k gui/"$UID"/ai.openclaw.gateway
-  sleep 3
-  if launchctl print gui/"$UID"/ai.openclaw.gateway &>/dev/null; then
-    log_green "Gateway started via launchd"
-  else
-    log_red "launchd kickstart failed, falling back to direct start"
-    pnpm openclaw gateway start
-  fi
-else
-  # No launchd plist loaded — install fresh service and start it
-  step "Installing gateway service..."
-  if pnpm openclaw gateway install && pnpm openclaw gateway start; then
-    log_green "Gateway started successfully"
-  else
-    log_red "Failed to start gateway!"
-    exit 1
-  fi
+STARTED_INLINE=1
+step "Installing gateway service..."
+# CI=1 + verify-deps off: bare `pnpm openclaw` can abort on pnpm 11's
+# non-interactive modules-purge prompt on this x64/Rosetta host, which would
+# leave the freshly-removed service uninstalled. Install and start are checked
+# separately so a failure names the step that actually failed.
+if ! CI=1 npm_config_verify_deps_before_run=false pnpm openclaw gateway install; then
+  log_red "Failed to install gateway service!"
+  exit 1
 fi
+if ! CI=1 npm_config_verify_deps_before_run=false pnpm openclaw gateway start; then
+  log_red "Failed to start gateway!"
+  exit 1
+fi
+log_green "Gateway started successfully"
 
 # Wait for gateway to initialize
 sleep 3
