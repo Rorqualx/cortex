@@ -205,6 +205,26 @@ describe("WorkboardStore", () => {
     expect(Object.hasOwn(entry?.card ?? {}, "metadata")).toBe(false);
   });
 
+  it("allows long structured project labels but caps plain tags", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+
+    // Emergent-project anchor label encodes a folder path and exceeds the 40-char
+    // tag cap; it must be accepted (regression: "labels must be 40 characters…").
+    const projectLabel =
+      "project:" +
+      encodeURIComponent("Claudy OpenClaw") +
+      ":folder:" +
+      encodeURIComponent("/Users/joederas/Documents/Cline/code/claudy/openclaw");
+    expect(projectLabel.length).toBeGreaterThan(40);
+    const card = await store.create({ title: "Claudy OpenClaw", labels: [projectLabel] });
+    expect(card.labels).toContain(projectLabel);
+
+    // Plain (non-structured) tags still cap at 40.
+    await expect(store.create({ title: "x", labels: ["x".repeat(41)] })).rejects.toThrow(
+      /labels must be 40 characters or fewer/,
+    );
+  });
+
   it("preserves explicit zero positions", async () => {
     const store = new WorkboardStore(createMemoryStore());
 

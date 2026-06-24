@@ -86,6 +86,11 @@ const MAX_CARD_ARTIFACTS = 40;
 const MAX_CARD_ATTACHMENTS = 20;
 const MAX_ATTACHMENT_ENTRIES = MAX_CARDS * (MAX_CARD_ATTACHMENTS + 1);
 const MAX_CARD_WORKER_LOGS = 40;
+// Human tag labels stay short. Structured "project:<name>:<icon>:<dir>" labels
+// (the emergent-project anchor; see ui project-label.ts) URL-encode a folder
+// path and legitimately run longer, so they get a higher bound.
+const MAX_LABEL_LENGTH = 40;
+const MAX_STRUCTURED_LABEL_LENGTH = 512;
 const MAX_ATTACHMENT_BYTES = 256 * 1024;
 const MAX_CARD_DIAGNOSTICS = 12;
 const MAX_CARD_NOTIFICATIONS = 20;
@@ -542,8 +547,14 @@ function normalizeLabels(value: unknown, fallback: string[] = []): string[] {
     if (!label || labels.includes(label)) {
       continue;
     }
-    if (label.length > 40) {
-      throw new Error("labels must be 40 characters or fewer.");
+    const isStructuredLabel = label.startsWith("project:");
+    const maxLabelLength = isStructuredLabel ? MAX_STRUCTURED_LABEL_LENGTH : MAX_LABEL_LENGTH;
+    if (label.length > maxLabelLength) {
+      throw new Error(
+        isStructuredLabel
+          ? `project labels must be ${MAX_STRUCTURED_LABEL_LENGTH} characters or fewer.`
+          : `labels must be ${MAX_LABEL_LENGTH} characters or fewer.`,
+      );
     }
     labels.push(label);
     if (labels.length >= 12) {
