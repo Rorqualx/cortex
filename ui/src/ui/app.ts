@@ -648,6 +648,13 @@ export class OpenClawApp extends LitElement {
   @state() paletteActiveIndex = 0;
   @state() overviewShowGatewayToken = false;
   @state() overviewShowGatewayPassword = false;
+  // In-flight guard for the "Generate token" action: persisting gateway.auth.token
+  // can bounce the gateway, so the button stays disabled until the write settles.
+  @state() overviewGeneratingToken = false;
+  // Configured gateway token surfaced in the overview Gateway Token section
+  // (auto-loaded for admin sessions); masked until the operator reveals it.
+  @state() overviewGatewayToken: import("./controllers/config.ts").GatewayTokenView | null = null;
+  @state() overviewShowGatewayTokenValue = false;
   @state() overviewLogLines: string[] = [];
   @state() overviewLogCursor = 0;
 

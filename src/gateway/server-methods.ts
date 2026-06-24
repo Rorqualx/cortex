@@ -505,6 +505,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: [
       "gateway.identity.get",
+      "gateway.auth.token.get",
       "last-heartbeat",
       "set-heartbeats",
       "system-presence",

@@ -1,5 +1,6 @@
 // Control UI controller manages config gateway state.
 import { applyMergePatch } from "../../../../src/config/merge-patch.ts";
+import { generateGatewayToken } from "../gateway-token.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ConfigSchemaResponse, ConfigSnapshot, ConfigUiHints } from "../types.ts";
 import type { JsonSchema } from "../views/config-form.shared.ts";
@@ -12,9 +13,19 @@ import {
   setPathValue,
 } from "./config/form-utils.ts";
 
+/** Configured gateway token shown in the overview Gateway Token section. */
+export type GatewayTokenView = {
+  loading: boolean;
+  token: string | null;
+  source: string | null;
+  secretRefConfigured: boolean;
+  error: string | null;
+};
+
 export type ConfigState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
+  overviewGatewayToken: GatewayTokenView | null;
   applySessionKey: string;
   configLoading: boolean;
   configRaw: string;
@@ -40,6 +51,7 @@ export type ConfigState = {
   pendingUpdateExpectedVersion: string | null;
   pendingUpdateHandoff: boolean;
   updateStatusBanner: { tone: "danger" | "warn" | "info"; text: string } | null;
+  overviewGeneratingToken: boolean;
   lastError: string | null;
   chatError?: string | null;
 };
@@ -65,6 +77,98 @@ export async function loadConfig(state: ConfigState, options: LoadConfigOptions 
     state.lastError = String(err);
   } finally {
     state.configLoading = false;
+  }
+}
+
+/**
+ * Generate a gateway token and persist it to gateway.auth.{mode,token}.
+ *
+ * Uses config.patch (a deep merge-patch) so only the auth keys change; the
+ * gateway validates, writes, and live-rotates its shared secret, keeping the
+ * current (device-authenticated) session connected. Returns the plaintext token
+ * on success so the caller can reveal it in the field — the gateway never sends
+ * a token back, so generating it client-side is the only way to display it.
+ */
+export async function generateAndSaveGatewayToken(state: ConfigState): Promise<string | null> {
+  if (!state.client || !state.connected) {
+    state.lastError = "Connect to the gateway before generating a token.";
+    return null;
+  }
+  if (state.overviewGeneratingToken) {
+    return null;
+  }
+  state.overviewGeneratingToken = true;
+  state.lastError = null;
+  try {
+    // config.patch is an optimistic write guarded by the on-disk config hash, so
+    // read a fresh snapshot immediately before patching to avoid a stale-hash reject.
+    const snapshot = await state.client.request<ConfigSnapshot>("config.get", {});
+    const baseHash = snapshot.hash;
+    if (!baseHash) {
+      state.lastError = "Config hash unavailable; reload and retry.";
+      return null;
+    }
+    const token = generateGatewayToken();
+    const raw = JSON.stringify({ gateway: { auth: { mode: "token", token } } });
+    await state.client.request("config.patch", { raw, baseHash });
+    state.updateStatusBanner = {
+      tone: "info",
+      text: "Gateway token generated and saved. Other clients using a token must reconnect with the new one.",
+    };
+    return token;
+  } catch (err) {
+    state.lastError = `Failed to save gateway token: ${String(err)}`;
+    return null;
+  } finally {
+    state.overviewGeneratingToken = false;
+  }
+}
+
+/**
+ * Fetch the configured gateway token for display (reveal-on-demand).
+ *
+ * The gateway redacts the token from every other RPC; this admin-scoped call is
+ * the one deliberate egress. Returns the token to fill the field, or null with a
+ * banner when it's externally managed (SecretRef) or simply not configured.
+ */
+/**
+ * Load the configured gateway token into state for the overview section.
+ * Admin-gated server-side (gateway.auth.token.get); callers should only invoke
+ * this for admin sessions. SecretRef-managed tokens come back with token=null.
+ */
+export async function loadGatewayTokenInfo(state: ConfigState): Promise<void> {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  const prev = state.overviewGatewayToken;
+  state.overviewGatewayToken = {
+    loading: true,
+    token: prev?.token ?? null,
+    source: prev?.source ?? null,
+    secretRefConfigured: prev?.secretRefConfigured ?? false,
+    error: null,
+  };
+  try {
+    const res = await state.client.request<{
+      token?: string | null;
+      source?: string | null;
+      secretRefConfigured?: boolean;
+    }>("gateway.auth.token.get", {});
+    state.overviewGatewayToken = {
+      loading: false,
+      token: res.token ?? null,
+      source: res.source ?? null,
+      secretRefConfigured: Boolean(res.secretRefConfigured),
+      error: null,
+    };
+  } catch (err) {
+    state.overviewGatewayToken = {
+      loading: false,
+      token: null,
+      source: null,
+      secretRefConfigured: false,
+      error: String(err),
+    };
   }
 }
 

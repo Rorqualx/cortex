@@ -5,6 +5,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { t } from "../../i18n/index.ts";
 import { resolveCronJobLastRunStatus } from "../cron-status.ts";
 import { formatCost, formatTokens, formatRelativeTimestamp } from "../format.ts";
+import { icons } from "../icons.ts";
 import { isMonitoredAuthProvider } from "../model-auth-helpers.ts";
 import { formatNextRun } from "../presenter.ts";
 import {
@@ -41,20 +42,36 @@ function blurDigits(value: string): TemplateResult {
   return html`${unsafeHTML(blurred)}`;
 }
 
+type StatMetric = { label: string; value: string };
+
 type StatCard = {
   kind: string;
   tab: string;
   label: string;
   value: string | TemplateResult;
   hint: string | TemplateResult;
+  // Optional secondary metrics rendered as compact chips under the hint, so a
+  // single card can carry a breakdown (e.g. token in/out/cache) without a click.
+  breakdown?: StatMetric[];
 };
 
 function renderStatCard(card: StatCard, onNavigate: (tab: string) => void) {
   return html`
     <button class="ov-card" data-kind=${card.kind} @click=${() => onNavigate(card.tab)}>
+      <span class="ov-card__nav" aria-hidden="true">${icons.chevronRight}</span>
       <span class="ov-card__label">${card.label}</span>
       <span class="ov-card__value">${card.value}</span>
       <span class="ov-card__hint">${card.hint}</span>
+      ${card.breakdown && card.breakdown.length > 0
+        ? html`<span class="ov-card__breakdown">
+            ${card.breakdown.map(
+              (m) => html`<span class="ov-card__metric"
+                ><span class="ov-card__metric-k">${m.label}</span
+                ><span class="ov-card__metric-v">${m.value}</span></span
+              >`,
+            )}
+          </span>`
+        : nothing}
     </button>
   `;
 }
@@ -93,14 +110,14 @@ function renderProviderQuotaCard(windows: QuotaWindowSummary[]): StatCard | null
 }
 
 function renderSkeletonCards() {
-  // Render 4 skeletons — matching the always-present cards (cost, sessions,
-  // skills, cron). The Model Auth card is conditional on OAuth providers
-  // existing, so rendering it in the skeleton would cause a layout shift
-  // when real data arrives for a setup without OAuth. Accept a brief empty
+  // Render 5 skeletons — matching the always-present cards (cost, tokens,
+  // sessions, skills, cron). The Model Auth card is conditional on OAuth
+  // providers existing, so rendering it in the skeleton would cause a layout
+  // shift when real data arrives for a setup without OAuth. Accept a brief empty
   // slot instead for setups that DO have OAuth.
   return html`
     <section class="ov-cards">
-      ${[0, 1, 2, 3].map(
+      ${[0, 1, 2, 3, 4].map(
         (i) => html`
           <div class="ov-card" style="cursor:default;animation-delay:${i * 50}ms">
             <span class="skeleton skeleton-line" style="width:60px;height:10px"></span>
@@ -125,6 +142,17 @@ export function renderOverviewCards(props: OverviewCardsProps) {
   const totalTokens = formatTokens(totals?.totalTokens);
   const totalMessages = totals ? String(props.usageResult?.aggregates?.messages?.total ?? 0) : "0";
   const sessionCount = props.sessionsResult?.count ?? null;
+
+  // Token split for the dedicated Tokens card. Cache = read + write; the
+  // cache-hit ratio (cacheRead over all prompt-side tokens) is the cheap signal
+  // operators care about, so it leads the hint when there's any prompt traffic.
+  const inputTokens = totals?.input ?? 0;
+  const outputTokens = totals?.output ?? 0;
+  const cacheTokens = (totals?.cacheRead ?? 0) + (totals?.cacheWrite ?? 0);
+  const promptTokens = inputTokens + (totals?.cacheRead ?? 0);
+  const cacheHitPct =
+    promptTokens > 0 ? Math.round(((totals?.cacheRead ?? 0) / promptTokens) * 100) : null;
+  const cacheCost = (totals?.cacheReadCost ?? 0) + (totals?.cacheWriteCost ?? 0);
 
   const skills = props.skillsReport?.skills ?? [];
   const enabledSkills = skills.filter((s) => !s.disabled).length;
@@ -162,7 +190,24 @@ export function renderOverviewCards(props: OverviewCardsProps) {
       tab: "usage",
       label: t("overview.cards.cost"),
       value: totalCost,
-      hint: `${totalTokens} tokens · ${totalMessages} msgs`,
+      hint: `${totalMessages} msgs`,
+      breakdown: [
+        { label: "in", value: formatCost(totals?.inputCost) },
+        { label: "out", value: formatCost(totals?.outputCost) },
+        { label: "cache", value: formatCost(cacheCost) },
+      ],
+    },
+    {
+      kind: "tokens",
+      tab: "usage",
+      label: t("overview.cards.tokens"),
+      value: totalTokens,
+      hint: cacheHitPct == null ? `${totalMessages} msgs` : `${cacheHitPct}% cached`,
+      breakdown: [
+        { label: "in", value: formatTokens(inputTokens) },
+        { label: "out", value: formatTokens(outputTokens) },
+        { label: "cache", value: formatTokens(cacheTokens) },
+      ],
     },
     {
       kind: "sessions",

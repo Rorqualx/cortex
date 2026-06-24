@@ -2,6 +2,7 @@
 import { html, nothing } from "lit";
 import { t, i18n, SUPPORTED_LOCALES, type Locale, isSupportedLocale } from "../../i18n/index.ts";
 import type { EventLogEntry } from "../app-events.ts";
+import type { GatewayTokenView } from "../controllers/config.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../external-link.ts";
 import { formatRelativeTimestamp, formatDurationHuman } from "../format.ts";
 import type { GatewayHelloOk } from "../gateway.ts";
@@ -54,6 +55,9 @@ export type OverviewProps = {
   overviewLogLines: string[];
   showGatewayToken: boolean;
   showGatewayPassword: boolean;
+  generatingToken: boolean;
+  gatewayToken: GatewayTokenView | null;
+  showGatewayTokenValue: boolean;
   onSettingsChange: (next: UiSettings) => void;
   onPasswordChange: (next: string) => void;
   onSessionKeyChange: (next: string) => void;
@@ -61,6 +65,9 @@ export type OverviewProps = {
   onToggleGatewayPasswordVisibility: () => void;
   onConnect: () => void;
   onRefresh: () => void;
+  onGenerateGatewayToken: () => void;
+  onToggleGatewayTokenValue: () => void;
+  onCopyGatewayToken: (token: string) => void;
   onNavigate: (tab: string) => void;
   onRefreshLogs: () => void;
 };
@@ -89,6 +96,55 @@ const PAIRING_HINT_COPY: Record<
     summaryKey: "overview.pairing.metadataUpgradeSummary",
   },
 };
+
+function renderGatewayTokenBody(props: OverviewProps) {
+  if (!props.connected) {
+    return html`<div class="muted">${t("overview.token.connectFirst")}</div>`;
+  }
+  const info = props.gatewayToken;
+  if (!info || info.loading) {
+    return html`<div class="muted">${t("common.loading")}</div>`;
+  }
+  if (info.error) {
+    const forbidden = /missing scope|operator\.admin/i.test(info.error);
+    return html`<div class="muted">${forbidden ? t("overview.token.adminOnly") : info.error}</div>`;
+  }
+  if (info.secretRefConfigured) {
+    return html`<div class="muted">${t("overview.token.external")}</div>`;
+  }
+  if (!info.token) {
+    return html`<div class="muted">${t("overview.token.none")}</div>`;
+  }
+  const token = info.token;
+  const shown = props.showGatewayTokenValue;
+  const sourceLabel = info.source ? t("overview.token.source", { source: info.source }) : "";
+  return html`
+    <div class="ov-token__row">
+      <code class="ov-token__value">${shown ? token : "•".repeat(Math.min(token.length, 48))}</code>
+      <button
+        class="btn btn--small"
+        @click=${() => props.onToggleGatewayTokenValue()}
+        title=${shown ? t("overview.access.hideToken") : t("overview.access.showToken")}
+      >
+        ${shown ? t("overview.token.hide") : t("overview.token.show")}
+      </button>
+      <button class="btn btn--small" @click=${() => props.onCopyGatewayToken(token)}>
+        ${t("overview.token.copy")}
+      </button>
+    </div>
+    ${sourceLabel ? html`<div class="ov-token__source muted">${sourceLabel}</div>` : nothing}
+  `;
+}
+
+function renderGatewayTokenSection(props: OverviewProps) {
+  return html`
+    <div class="card">
+      <div class="card-title">${t("overview.token.title")}</div>
+      <div class="card-sub">${t("overview.token.subtitle")}</div>
+      <div class="ov-token" style="margin-top: 16px;">${renderGatewayTokenBody(props)}</div>
+    </div>
+  `;
+}
 
 export function renderOverview(props: OverviewProps) {
   const snapshot = props.hello?.snapshot as
@@ -373,6 +429,18 @@ export function renderOverview(props: OverviewProps) {
         <div class="row" style="margin-top: 14px;">
           <button class="btn" @click=${() => props.onConnect()}>${t("common.connect")}</button>
           <button class="btn" @click=${() => props.onRefresh()}>${t("common.refresh")}</button>
+          ${isTrustedProxy
+            ? ""
+            : html`<button
+                class="btn"
+                ?disabled=${props.generatingToken}
+                title=${t("overview.access.generateTokenHint")}
+                @click=${() => props.onGenerateGatewayToken()}
+              >
+                ${props.generatingToken
+                  ? t("overview.access.generatingToken")
+                  : t("overview.access.generateToken")}
+              </button>`}
           <span class="muted"
             >${isTrustedProxy
               ? t("overview.access.trustedProxy")
@@ -412,6 +480,8 @@ export function renderOverview(props: OverviewProps) {
             `
           : nothing}
       </div>
+
+      ${renderGatewayTokenSection(props)}
 
       <div class="card">
         <div class="card-title">${t("overview.snapshot.title")}</div>

@@ -28,7 +28,12 @@ import {
 import { loadAgentSkills, type AgentSkillsState } from "./controllers/agent-skills.ts";
 import { loadAgents, type AgentsState } from "./controllers/agents.ts";
 import { loadChannels, type ChannelsState } from "./controllers/channels.ts";
-import { loadConfig, loadConfigSchema, type ConfigState } from "./controllers/config.ts";
+import {
+  loadConfig,
+  loadConfigSchema,
+  loadGatewayTokenInfo,
+  type ConfigState,
+} from "./controllers/config.ts";
 import {
   loadCronJobsPage,
   loadCronRuns,
@@ -812,6 +817,12 @@ export async function loadOverview(host: SettingsHost, opts?: { refresh?: boolea
   ]);
   if (isCurrentOverviewRefresh()) {
     buildAttentionItems(app);
+  }
+
+  // Auto-populate the Gateway Token section for admin sessions; the reveal RPC
+  // is admin-gated server-side, so skip it for lower-scoped connections.
+  if ((app.hello?.auth?.scopes ?? []).includes("operator.admin")) {
+    void loadGatewayTokenInfo(app);
   }
 
   const secondaryStartedAtMs = controlUiNowMs();

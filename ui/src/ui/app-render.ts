@@ -73,6 +73,7 @@ import {
   applyConfig,
   ensureAgentConfigEntry,
   findAgentConfigEntryIndex,
+  generateAndSaveGatewayToken,
   loadConfig,
   openConfigFile,
   resetConfigPendingChanges,
@@ -2776,6 +2777,9 @@ export function renderApp(state: AppViewState) {
               overviewLogLines: state.overviewLogLines,
               showGatewayToken: state.overviewShowGatewayToken,
               showGatewayPassword: state.overviewShowGatewayPassword,
+              generatingToken: state.overviewGeneratingToken,
+              gatewayToken: state.overviewGatewayToken,
+              showGatewayTokenValue: state.overviewShowGatewayTokenValue,
               onSettingsChange: (next) => state.applySettings(next),
               onPasswordChange: (next) => (state.password = next),
               onSessionKeyChange: (next) => {
@@ -2789,6 +2793,26 @@ export function renderApp(state: AppViewState) {
               },
               onConnect: () => state.connect(),
               onRefresh: () => void state.loadOverview({ refresh: true }),
+              onToggleGatewayTokenValue: () => {
+                state.overviewShowGatewayTokenValue = !state.overviewShowGatewayTokenValue;
+              },
+              onCopyGatewayToken: (token) => {
+                void globalThis.navigator?.clipboard?.writeText(token);
+                state.updateStatusBanner = {
+                  tone: "info",
+                  text: "Gateway token copied to clipboard.",
+                };
+              },
+              onGenerateGatewayToken: () => {
+                void generateAndSaveGatewayToken(state).then((token) => {
+                  if (token) {
+                    // Reveal the fresh token in the field so the operator can copy it;
+                    // the gateway never echoes a token back, so this is the only chance.
+                    state.applySettings({ ...state.settings, token });
+                    state.overviewShowGatewayToken = true;
+                  }
+                });
+              },
               onNavigate: (tab) => state.setTab(tab as import("./navigation.ts").Tab),
               onRefreshLogs: () => void state.loadOverview({ refresh: true }),
             })

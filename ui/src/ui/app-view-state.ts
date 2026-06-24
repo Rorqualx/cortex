@@ -502,6 +502,9 @@ export type AppViewState = ScrollHost &
     paletteActiveIndex: number;
     overviewShowGatewayToken: boolean;
     overviewShowGatewayPassword: boolean;
+    overviewGeneratingToken: boolean;
+    overviewGatewayToken: import("./controllers/config.ts").GatewayTokenView | null;
+    overviewShowGatewayTokenValue: boolean;
     overviewLogLines: string[];
     overviewLogCursor: number;
     client: GatewayBrowserClient | null;

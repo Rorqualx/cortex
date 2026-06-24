@@ -787,6 +787,10 @@ export const en: TranslationMap = {
       sessionKey: "Default Session Key",
       language: "Language",
       connectHint: "Click Connect to apply connection changes.",
+      generateToken: "Generate token",
+      generatingToken: "Generating…",
+      generateTokenHint:
+        "Generate a new gateway token and save it to the gateway config. Other clients using a token must reconnect with the new one.",
       trustedProxy: "Authenticated via trusted proxy.",
       showToken: "Show token",
       hideToken: "Hide token",
@@ -794,6 +798,18 @@ export const en: TranslationMap = {
       showPassword: "Show password",
       hidePassword: "Hide password",
       togglePasswordVisibility: "Toggle password visibility",
+    },
+    token: {
+      title: "Gateway Token",
+      subtitle: "The token this gateway requires for connections.",
+      connectFirst: "Connect to view the gateway token.",
+      adminOnly: "Admin access is required to view the gateway token.",
+      external: "Managed by an external secret reference; not shown here.",
+      none: "No gateway token is configured.",
+      source: "from {source}",
+      show: "Show",
+      hide: "Hide",
+      copy: "Copy",
     },
     snapshot: {
       title: "Snapshot",
@@ -866,6 +882,7 @@ export const en: TranslationMap = {
     },
     cards: {
       cost: "Cost",
+      tokens: "Tokens",
       skills: "Skills",
       recentSessions: "Recent Sessions",
       modelAuth: "Model Auth",

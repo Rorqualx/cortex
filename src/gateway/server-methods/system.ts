@@ -15,6 +15,8 @@ import { getLastHeartbeatEvent } from "../../infra/heartbeat-events.js";
 import { setHeartbeatsEnabled } from "../../infra/heartbeat-runner.js";
 import { enqueueSystemEvent, isSystemEventContextChanged } from "../../infra/system-events.js";
 import { listSystemPresence, updateSystemPresence } from "../../infra/system-presence.js";
+import { resolveGatewayAuthToken } from "../auth-token-resolution.js";
+import { ADMIN_SCOPE } from "../method-scopes.js";
 import { broadcastPresenceSnapshot } from "../server/presence-events.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -27,6 +29,36 @@ export const systemHandlers: GatewayRequestHandlers = {
       {
         deviceId: identity.deviceId,
         publicKey: publicKeyRawBase64UrlFromPem(identity.publicKeyPem),
+      },
+      undefined,
+    );
+  },
+  // Reveal the configured gateway token to an admin Control UI on explicit
+  // request. The token is otherwise redacted from every RPC, so this is the one
+  // deliberate egress — gated to operator.admin (descriptor + this check) and
+  // never returning an externally-managed SecretRef value (mirrors dashboard.ts).
+  "gateway.auth.token.get": async ({ respond, client, context }) => {
+    const scopes = Array.isArray(client?.connect?.scopes) ? client.connect.scopes : [];
+    if (!scopes.includes(ADMIN_SCOPE)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, `missing scope: ${ADMIN_SCOPE}`),
+      );
+      return;
+    }
+    const resolved = await resolveGatewayAuthToken({
+      cfg: context.getRuntimeConfig(),
+      env: process.env,
+      envFallback: "always",
+    });
+    const reveal = Boolean(resolved.token) && !resolved.secretRefConfigured;
+    respond(
+      true,
+      {
+        token: reveal ? resolved.token : null,
+        source: resolved.source ?? null,
+        secretRefConfigured: resolved.secretRefConfigured,
       },
       undefined,
     );
