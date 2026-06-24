@@ -279,6 +279,91 @@ describe("main-session-restart-recovery", () => {
     expect(store["agent:main:main"]?.runtimeMs).toBeUndefined();
   });
 
+  it("resets drifted webchat routing in place before resume (key unchanged)", async () => {
+    // A webchat chat whose delivery routing drifted to a real channel must heal
+    // back to webchat delivery so the [System] continuation routes to the
+    // dashboard, not the channel. The captured recovery/pending delivery
+    // contexts (resolved BEFORE the session fields) must be cleared too, or the
+    // resume would still target the drifted channel. The session key is left
+    // unchanged so the open conversation is not orphaned in the Control UI.
+    const sessionsDir = await makeSessionsDir();
+    const sessionId = "webchat-session";
+    const sessionKey = "agent:main:telegram:newssparrow:direct:7814261895";
+    await writeStore(sessionsDir, {
+      [sessionKey]: {
+        sessionId,
+        updatedAt: Date.now() - 10_000,
+        status: "running",
+        abortedLastRun: true,
+        sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
+        origin: { surface: "webchat", provider: "webchat" },
+        route: { channel: "telegram" },
+        deliveryContext: { channel: "telegram", to: "7814261895" },
+        lastChannel: "telegram",
+        lastTo: "7814261895",
+        restartRecoveryDeliveryContext: { channel: "telegram", to: "7814261895" },
+        pendingFinalDeliveryContext: { channel: "telegram", to: "7814261895" },
+      },
+    });
+    await writeTranscript(sessionsDir, sessionId, [{ role: "user", content: "still in nav" }]);
+
+    const result = await recoverRestartAbortedMainSessions({ stateDir: tmpDir });
+
+    expect(result.recovered).toBe(1);
+    const store = loadSessionStore(path.join(sessionsDir, "sessions.json"));
+    const healed = store[sessionKey];
+    // Key preserved; delivery routing + captured contexts reset to webchat.
+    expect(Object.keys(store)).toEqual([sessionKey]);
+    expect(healed?.lastChannel).toBe("webchat");
+    expect(healed?.route?.channel).toBe("webchat");
+    expect(healed?.deliveryContext?.channel).toBe("webchat");
+    expect(healed?.restartRecoveryDeliveryContext).toBeUndefined();
+    expect(healed?.pendingFinalDeliveryContext).toBeUndefined();
+    // No telegram target remnant on the entry (the peer id survives only inside
+    // the unchanged session key, never as a delivery target).
+    expect(healed?.lastTo).toBeUndefined();
+    expect(healed?.deliveryContext?.to).toBeUndefined();
+    // The resume must not deliver the [System] continuation to any external
+    // channel — with the captured contexts cleared, delivery resolves to none.
+    const resumeParams = firstGatewayParams();
+    expect(resumeParams.sessionKey).toBe(sessionKey);
+    expect(resumeParams.deliver).toBe(false);
+    expect(resumeParams.channel).toBeUndefined();
+    expect(resumeParams.to).toBeUndefined();
+  });
+
+  it("does not reset a genuine channel session (origin is the channel, not webchat)", async () => {
+    // Guards against over-firing: a real telegram chat keeps its channel
+    // routing so its restart continuation still delivers to telegram.
+    const sessionsDir = await makeSessionsDir();
+    const sessionId = "telegram-session";
+    const sessionKey = "agent:main:telegram:direct:555";
+    await writeStore(sessionsDir, {
+      [sessionKey]: {
+        sessionId,
+        updatedAt: Date.now() - 10_000,
+        status: "running",
+        abortedLastRun: true,
+        sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
+        origin: { surface: "telegram", provider: "telegram" },
+        route: { channel: "telegram" },
+        deliveryContext: { channel: "telegram", to: "555" },
+        lastChannel: "telegram",
+        lastTo: "555",
+      },
+    });
+    await writeTranscript(sessionsDir, sessionId, [{ role: "user", content: "hi" }]);
+
+    await recoverRestartAbortedMainSessions({ stateDir: tmpDir });
+
+    const store = loadSessionStore(path.join(sessionsDir, "sessions.json"));
+    const entry = store[sessionKey];
+    // Channel routing preserved — the heal did not fire.
+    expect(entry?.lastChannel).toBe("telegram");
+    expect(entry?.route?.channel).toBe("telegram");
+    expect(JSON.stringify(entry)).toContain("555");
+  });
+
   it("marks queued registered runs before lifecycle start without explicit candidates", async () => {
     const sessionsDir = await makeSessionsDir();
     await writeStore(sessionsDir, {

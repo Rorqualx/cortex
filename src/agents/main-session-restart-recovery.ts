@@ -39,6 +39,7 @@ import {
   normalizeDeliveryContext,
   type DeliveryContext,
 } from "../utils/delivery-context.shared.js";
+import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel-constants.js";
 import { isDeliverableMessageChannel } from "../utils/message-channel.js";
 import {
   listActiveEmbeddedRunSessionIds,
@@ -436,6 +437,49 @@ function buildResumeMessage(pendingFinalDeliveryText?: string | null): string {
   return base;
 }
 
+/**
+ * True when a webchat chat's delivery routing has drifted to a real channel
+ * (origin is webchat but lastChannel points at e.g. telegram). Any non-webchat
+ * lastChannel on a webchat-origin session is treated as drift — we deliberately
+ * do not gate on isDeliverableMessageChannel, which depends on plugin
+ * registration order at recovery time and would miss not-yet-registered
+ * third-party channels.
+ */
+function isDriftedWebchatRouting(entry: SessionEntry): boolean {
+  if (entry.origin?.surface !== INTERNAL_MESSAGE_CHANNEL) {
+    return false;
+  }
+  const routedChannel = entry.lastChannel ? String(entry.lastChannel) : undefined;
+  return routedChannel !== undefined && routedChannel !== INTERNAL_MESSAGE_CHANNEL;
+}
+
+/**
+ * Resets a drifted webchat chat back to webchat delivery in place. Without this
+ * a restart-resume would deliver the [System] continuation to the drifted
+ * channel instead of the dashboard. The session key is intentionally left
+ * unchanged so the Control UI keeps its localStorage pointer (re-keying would
+ * orphan the open conversation); the Channels-vs-Chat nav classification is
+ * handled in the UI from the webchat origin.
+ */
+function applyWebchatRoutingReset(entry: SessionEntry): void {
+  // Reset the session delivery fields to webchat and clear the legacy last*
+  // mirrors (the store re-derives route/deliveryContext from them on save, so a
+  // leftover lastTo would resurrect the old channel target).
+  entry.route = { channel: INTERNAL_MESSAGE_CHANNEL };
+  entry.deliveryContext = { channel: INTERNAL_MESSAGE_CHANNEL };
+  entry.lastChannel = INTERNAL_MESSAGE_CHANNEL;
+  entry.lastTo = undefined;
+  entry.lastAccountId = undefined;
+  entry.lastThreadId = undefined;
+  // Neutralize the captured external delivery targets too: resume resolves
+  // these BEFORE the session fields (resolveRestartRecoveryDeliveryContext), so
+  // leaving them would still route the [System] continuation / pending final to
+  // the drifted channel. Mirrors markSessionFailed's neutralize.
+  entry.pendingFinalDeliveryContext = undefined;
+  entry.restartRecoveryDeliveryContext = undefined;
+  entry.restartRecoveryDeliveryRunId = undefined;
+}
+
 async function markSessionFailed(params: {
   storePath: string;
   sessionKey: string;
@@ -777,6 +821,31 @@ async function recoverStore(params: {
       result.skipped++;
       continue;
     }
+    // Self-heal: a webchat chat whose delivery routing drifted to a real
+    // channel would resume to that channel. Reset it to webchat delivery in
+    // place (key unchanged) before resuming so the [System] continuation and
+    // replies route to the dashboard. The key stays put so the Control UI keeps
+    // its localStorage pointer and the open conversation is never orphaned.
+    if (isDriftedWebchatRouting(entry)) {
+      // Reset the in-memory copy first; it is what resumeMainSession reads for
+      // delivery just below.
+      applyWebchatRoutingReset(entry);
+      await applyRestartRecoveryLifecycle({
+        storePath: params.storePath,
+        update: (entries) => {
+          // Reset the freshly-cloned locked entry (not the unlocked snapshot)
+          // so a concurrent writer's other-field changes are not clobbered.
+          const current = entries.find((e) => e.sessionKey === sessionKey)?.entry;
+          if (!current) {
+            return { result: undefined };
+          }
+          applyWebchatRoutingReset(current);
+          return { result: undefined, replacements: [{ sessionKey, entry: current }] };
+        },
+      });
+      log.warn(`reset drifted webchat routing for restart recovery: ${sessionKey}`);
+    }
+
     const resumeDedupeKey = sessionKey;
     if (params.resumedSessionKeys.has(resumeDedupeKey)) {
       result.skipped++;
