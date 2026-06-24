@@ -68,6 +68,16 @@ export type L2Fact = {
    * Higher = more confident / lower entropy. Absent on facts extracted
    * before PROMPT_VERSION=9; readers treat absent as 1.0 (neutral). */
   semanticEntropy?: number;
+  /** UTC ms timestamp of the source event (the conversation turn that
+   * produced this fact). Distinct from createdAt (compaction time).
+   * When absent, callers fall back to createdAt for temporal scoring. */
+  eventTime?: number;
+  /** Session ID that produced this fact. */
+  sessionId?: string;
+  /** Participant roles involved in the source conversation. */
+  participants?: string[];
+  /** UTC ms timestamp of when this fact was mentioned/updated in a session. */
+  mentionTime?: number;
 };
 
 /**
@@ -90,8 +100,18 @@ export type TypedFact = {
   unit: string | null;
   /** Extractor confidence 0..1. */
   confidence: number;
-  /** ms timestamp. */
+  /** ms timestamp of compaction/extraction time. */
   createdAt: number;
+  /** UTC ms timestamp of the source event (the conversation turn that
+   * produced this fact). Distinct from createdAt (compaction time).
+   * When absent, callers fall back to createdAt for temporal scoring. */
+  eventTime?: number;
+  /** Session ID that generated this typed fact. */
+  sessionId?: string;
+  /** Participant roles involved in the source conversation. */
+  participants?: string[];
+  /** UTC ms timestamp of when this fact was mentioned/updated in a session. */
+  mentionTime?: number;
 };
 
 /**

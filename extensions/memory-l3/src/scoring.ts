@@ -350,7 +350,19 @@ export function scoreFact(params: {
     params.corpusStats && params.config.weightBm25 > 0
       ? bm25Score(params.queryTokens, params.fact.text, params.corpusStats)
       : 0;
-  const importance = params.fact.importance;
+  let importance = params.fact.importance;
+  // Event-time temporal modulation: when a fact carries an eventTime that
+  // differs from its compaction createdAt, blend in a decay factor so facts
+  // about old events are weighted less than facts about recent events. This
+  // prevents stale data (e.g. a phone number from 3 years ago) from
+  // outranking fresh data (a phone number from last week) at equal lexical
+  // match. At most a 30% reduction for very old events; no change when
+  // eventTime is absent (backward compat).
+  if (params.fact.eventTime != null && params.fact.eventTime > 0) {
+    const eventAgeMs = params.now - params.fact.eventTime;
+    const eventRecency = recencyScore(eventAgeMs, params.config.recencyHalfLifeDays);
+    importance *= 0.7 + 0.3 * eventRecency;
+  }
   const ageMs = params.now - params.fact.createdAt;
   const recency =
     params.config.useFsrs && (params.recallCount ?? 0) > 0

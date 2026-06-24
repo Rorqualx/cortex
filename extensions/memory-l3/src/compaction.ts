@@ -100,9 +100,20 @@ export async function compactSession(params: {
   const groundedTyped = groundAndDedupTypedFacts(extracted.typedFacts, transcript);
 
   const now = params.now ?? Date.now();
+  const eventTime = (messages[0] as { timestamp?: number })?.timestamp ?? now;
+  const participants = [
+    ...new Set(messages.map((m) => (m as { role?: string }).role).filter(Boolean)),
+  ];
   const chunkId = nextChunkId(params.state);
   const facts: L2Fact[] = deduped.map((f) => liftToL2Fact(f, now));
-  const typedFacts: TypedFact[] = groundedTyped.map((t) => liftToTypedFact(t, now));
+  const typedFacts: TypedFact[] = groundedTyped.map((t) =>
+    liftToTypedFact(t, now, {
+      eventTime,
+      sessionId: params.sessionId,
+      participants,
+      mentionTime: now,
+    }),
+  );
 
   // One chunk embedding serves both the information-gain metric (persisted
   // on the chunk frontmatter) and cross-session topic linking below.
@@ -266,7 +277,16 @@ export async function compactSession(params: {
   };
 }
 
-function liftToTypedFact(extracted: ExtractedTypedFact, createdAt: number): TypedFact {
+function liftToTypedFact(
+  extracted: ExtractedTypedFact,
+  createdAt: number,
+  episodic?: {
+    eventTime?: number;
+    sessionId?: string;
+    participants?: string[];
+    mentionTime?: number;
+  },
+): TypedFact {
   return {
     id: `tf-${randomUUID().slice(0, 8)}`,
     slot: extracted.slot,
@@ -275,6 +295,10 @@ function liftToTypedFact(extracted: ExtractedTypedFact, createdAt: number): Type
     unit: extracted.unit,
     confidence: extracted.confidence,
     createdAt,
+    eventTime: episodic?.eventTime,
+    sessionId: episodic?.sessionId,
+    participants: episodic?.participants,
+    mentionTime: episodic?.mentionTime,
   };
 }
 

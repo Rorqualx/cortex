@@ -578,6 +578,10 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     importance: typed.confidence,
     createdAt: typed.createdAt,
     dedupKey: typed.slot,
+    eventTime: typed.eventTime,
+    sessionId: typed.sessionId,
+    participants: typed.participants,
+    mentionTime: typed.mentionTime,
   };
 }
 
