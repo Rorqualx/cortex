@@ -242,8 +242,19 @@ const FRUSTRATION_MARKERS =
  * user frustration phrases; 0.5 otherwise. Error-recovery captures contain a
  * tool error by definition, so that lane always scores 0.5 — its skills keep
  * the stricter promotion gate.
+ *
+ * Domain-expertise signals (Anthropic research: prompt specificity,
+ * verification frequency, direction precision) contribute 15% of the final
+ * score, blending with the base 85% from completion rate and error count.
  */
 function computeSuccessScore(events: TrajectoryEvent[]): number {
+  const baseScore = computeBaseSuccessScore(events);
+  const expertise = computeDomainExpertiseScore(events);
+  // 85% base (completion + errors) + 15% domain expertise
+  return 0.85 * baseScore + 0.15 * expertise;
+}
+
+function computeBaseSuccessScore(events: TrajectoryEvent[]): number {
   if (events.some(isToolErrorResult)) {
     return 0.5;
   }
@@ -253,6 +264,86 @@ function computeSuccessScore(events: TrajectoryEvent[]): number {
     }
   }
   return 1;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Domain-expertise signals (Anthropic research: prompt specificity,
+// verification frequency, direction precision)
+// ───────────────────────────────────────────────────────────────
+
+/** Words that indicate constraint density in user prompts. */
+const CONSTRAINT_KEYWORDS =
+  /\b(must|should|never|always|require|need|only|exactly|specific|correct|precise|mandatory|essential|crucial)\b/giu;
+
+/** Tool names that indicate verification behavior. */
+const VERIFICATION_TOOLS =
+  /\b(read|grep|ast[_-]?grep|rg|find|test|verify|check|lint|typecheck|validate|inspect|audit)\b/iu;
+
+/**
+ * Prompt specificity: ratio of constraint keywords to total word count in the
+ * first user message. Higher = more domain expertise / precision intent.
+ * Returns 0 when there are no user messages.
+ */
+function computePromptSpecificity(userTexts: string[]): number {
+  if (userTexts.length === 0) {
+    return 0;
+  }
+  const first = userTexts[0];
+  const words = first.split(/\s+/u).filter((w) => w.length > 0);
+  if (words.length === 0) {
+    return 0;
+  }
+  const constraintMatches = [...first.matchAll(CONSTRAINT_KEYWORDS)];
+  // Clamp: at most 0.1 constraint density maps to ~1.0 (10 constraint words
+  // in a 100-word prompt). Most coding prompts are 0.02–0.05.
+  return Math.min(1, (constraintMatches.length / words.length) * 10);
+}
+
+/**
+ * Verification frequency: ratio of tool calls whose name matches verification
+ * patterns to total tool calls. Higher = more self-checking behavior.
+ * Returns 0 when there are no tool calls.
+ */
+function computeVerificationFrequency(events: TrajectoryEvent[]): number {
+  const toolCalls = events.filter((e) => e.type === "tool.call");
+  if (toolCalls.length === 0) {
+    return 0;
+  }
+  let verifyCount = 0;
+  for (const call of toolCalls) {
+    const name = call.data?.name;
+    if (typeof name === "string" && VERIFICATION_TOOLS.test(name)) {
+      verifyCount += 1;
+    }
+  }
+  // Clamp: >50% verification tools = 1.0
+  return Math.min(1, (verifyCount / toolCalls.length) * 2);
+}
+
+/**
+ * Direction precision: ratio of user messages to total error events.
+ * Sessions where the human drives and the agent makes few errors score
+ * higher. Returns 0.5 (neutral) when there are no error events.
+ */
+function computeDirectionPrecision(events: TrajectoryEvent[]): number {
+  const userCount = events.filter((e) => e.type === "user.message").length;
+  const errorCount = events.filter(isToolErrorResult).length;
+  if (errorCount === 0) {
+    return 0.5; // Neutral — no errors to measure against
+  }
+  // Fewer errors per user message = higher precision. Cap: 5× user messages
+  // per error = 1.0; 0.5× = 0.0.
+  const ratio = userCount / Math.max(1, errorCount);
+  return Math.min(1, Math.max(0, (ratio - 0.5) / 4.5));
+}
+
+function computeDomainExpertiseScore(events: TrajectoryEvent[]): number {
+  const userTexts = extractUserMessageTexts(events);
+  const specificity = computePromptSpecificity(userTexts);
+  const verification = computeVerificationFrequency(events);
+  const direction = computeDirectionPrecision(events);
+  // Equal weighting across the three signals
+  return (specificity + verification + direction) / 3;
 }
 
 export type DetectorInput = {

@@ -242,12 +242,16 @@ describe("runDetector", () => {
         .filter((c): c is Extract<Candidate, { lane: "explicit" }> => c.lane === "explicit")
         .map((c) => [c.captureDir, c.successScore]),
     );
-    expect(explicitByDir.get(cleanDir)).toBe(1);
-    expect(explicitByDir.get(frustratedDir)).toBe(0.5);
-    expect(explicitByDir.get(erroringDir)).toBe(0.5);
+    // Score is blended: 85% base (completion + errors) + 15% domain expertise.
+    // Test captures have no constraint keywords, no verification tools, and no
+    // errors → direction precision is neutral (0.5), giving expertise of 0.167.
+    expect(explicitByDir.get(cleanDir)).toBeCloseTo(0.875, 3);
+    expect(explicitByDir.get(frustratedDir)).toBeCloseTo(0.45, 2);
+    // Error case has 1 user message, 1 tool error → direction precision = 0.111.
+    expect(explicitByDir.get(erroringDir)).toBeCloseTo(0.4306, 3);
     // Error-recovery captures contain a tool error by definition.
     const recovery = candidates.find((c) => c.lane === "error-recovery");
-    expect(recovery?.successScore).toBe(0.5);
+    expect(recovery?.successScore).toBeCloseTo(0.4306, 3);
   });
 
   it("ordinary coding language does not taint the success score", async () => {
@@ -259,7 +263,9 @@ describe("runDetector", () => {
     ]);
     const candidates = await runDetector({ captureDirs: [dir] });
     const explicit = candidates.find((c) => c.lane === "explicit");
-    expect(explicit?.successScore).toBe(1);
+    // Blended: 0.85 × 1.0 + 0.15 × (0+0+0.5)/3 ≈ 0.875 for clean captures
+    // without domain-expertise signals in the test data.
+    expect(explicit?.successScore).toBeCloseTo(0.875, 3);
   });
 
   it("one tainted member pins the whole tool-shape cluster at 0.5", async () => {
