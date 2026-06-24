@@ -48,10 +48,80 @@ export function formatEventPayload(payload: unknown): string {
 
 export function formatCronState(job: CronJob) {
   const state = job.state ?? {};
-  const next = state.nextRunAtMs ? formatMs(state.nextRunAtMs) : t("common.na");
-  const last = state.lastRunAtMs ? formatMs(state.lastRunAtMs) : t("common.na");
   const status = resolveCronJobLastRunStatus(job);
-  return `${status} · next ${next} · last ${last}`;
+  const parts = [status];
+  if (state.nextRunAtMs) {
+    parts.push(`next ${formatNextRun(state.nextRunAtMs)}`);
+  }
+  if (state.lastRunAtMs) {
+    parts.push(`last ${formatNextRun(state.lastRunAtMs)}`);
+  }
+  return parts.join(" · ");
+}
+
+const CRON_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function formatClock(hour: number, minute: number): string {
+  const period = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) {
+    return `${n}th`;
+  }
+  const suffix = { 1: "st", 2: "nd", 3: "rd" }[n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+// Translate the common standard 5-field cron shapes (minute hour day-of-month
+// month day-of-week) into plain English. Returns null for anything with ranges,
+// steps on hour/day, or multi-field combinations we don't render cleanly, so the
+// caller can fall back to the raw expression instead of lying about the schedule.
+export function describeCronExpr(expr: string): string | null {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    return null;
+  }
+  const [min, hour, dom, mon, dow] = parts;
+  const wildcardRest = hour === "*" && dom === "*" && mon === "*" && dow === "*";
+
+  const everyMinutes = /^\*\/(\d+)$/.exec(min);
+  if (everyMinutes && wildcardRest) {
+    const step = Number(everyMinutes[1]);
+    return step === 1 ? "Every minute" : `Every ${step} minutes`;
+  }
+  if (/^\d+$/.test(min) && wildcardRest) {
+    const minute = Number(min);
+    return minute === 0 ? "Hourly" : `Hourly at :${String(minute).padStart(2, "0")}`;
+  }
+
+  if (!/^\d+$/.test(min) || !/^\d+$/.test(hour) || mon !== "*") {
+    return null;
+  }
+  const minute = Number(min);
+  const hourValue = Number(hour);
+  if (minute > 59 || hourValue > 23) {
+    return null;
+  }
+  const at = formatClock(hourValue, minute);
+
+  if (dom === "*" && dow === "*") {
+    return `Daily at ${at}`;
+  }
+  if (dom === "*" && dow !== "*") {
+    const days = dow.split(",").map((raw) => {
+      const day = Number(raw);
+      return /^\d+$/.test(raw) && day >= 0 && day <= 7 ? CRON_WEEKDAYS[day % 7] : null;
+    });
+    return days.every(Boolean) ? `Weekly on ${days.join(", ")} at ${at}` : null;
+  }
+  if (/^\d+$/.test(dom) && dow === "*") {
+    return `Monthly on the ${ordinal(Number(dom))} at ${at}`;
+  }
+  return null;
 }
 
 export function formatCronSchedule(job: CronJob) {
@@ -63,7 +133,8 @@ export function formatCronSchedule(job: CronJob) {
   if (s.kind === "every") {
     return `Every ${formatDurationHuman(s.everyMs)}`;
   }
-  return `Cron ${s.expr}${s.tz ? ` (${s.tz})` : ""}`;
+  const human = describeCronExpr(s.expr);
+  return `${human ?? `Cron ${s.expr}`}${s.tz ? ` (${s.tz})` : ""}`;
 }
 
 export function formatCronPayload(job: CronJob) {

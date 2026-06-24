@@ -217,6 +217,99 @@ function summarizeChannelAccounts(accounts: ChannelAccountSnapshot[]) {
   };
 }
 
+type ChannelAccountFact = { label: string; value: string };
+
+function relativeOrNull(ms?: number | null): string | null {
+  return typeof ms === "number" && Number.isFinite(ms) ? formatRelativeTimestamp(ms) : null;
+}
+
+function accountIsConnected(account: ChannelAccountSnapshot): boolean {
+  const probeOk =
+    account.probe && typeof account.probe === "object" && "ok" in account.probe
+      ? Boolean((account.probe as { ok?: unknown }).ok)
+      : false;
+  return account.connected === true || account.running === true || probeOk;
+}
+
+function resolveAccountStatus(account: ChannelAccountSnapshot): {
+  label: string;
+  tone: "ok" | "warn" | "off";
+} {
+  if (account.enabled === false) {
+    return { label: t("common.disabled"), tone: "off" };
+  }
+  if (!account.configured) {
+    return { label: t("agents.channels.notConfigured"), tone: "off" };
+  }
+  if (accountIsConnected(account)) {
+    return { label: t("agents.channels.statusConnected"), tone: "ok" };
+  }
+  return { label: t("agents.channels.statusDisconnected"), tone: "warn" };
+}
+
+// Surface the per-account snapshot facts that are populated, skipping empty
+// fields so each channel auto-fills with only the details it actually reports.
+function resolveAccountFacts(account: ChannelAccountSnapshot): ChannelAccountFact[] {
+  const facts: ChannelAccountFact[] = [];
+  const push = (label: string, value: string | null | undefined) => {
+    const trimmed = typeof value === "string" ? value.trim() : value;
+    if (trimmed) {
+      facts.push({ label, value: trimmed });
+    }
+  };
+  push(t("agents.channels.fieldMode"), account.mode);
+  push(
+    t("agents.channels.fieldCredentials"),
+    account.credentialSource ??
+      account.botTokenSource ??
+      account.tokenSource ??
+      account.appTokenSource,
+  );
+  push(t("agents.channels.fieldDmPolicy"), account.dmPolicy);
+  push(t("agents.channels.fieldAudience"), account.audience ?? account.audienceType);
+  push(t("agents.channels.fieldWebhook"), account.webhookUrl ?? account.webhookPath);
+  push(t("agents.channels.fieldLastInbound"), relativeOrNull(account.lastInboundAt));
+  push(t("agents.channels.fieldLastOutbound"), relativeOrNull(account.lastOutboundAt));
+  push(t("agents.channels.fieldLastConnected"), relativeOrNull(account.lastConnectedAt));
+  if (typeof account.reconnectAttempts === "number" && account.reconnectAttempts > 0) {
+    push(t("agents.channels.fieldReconnects"), String(account.reconnectAttempts));
+  }
+  return facts;
+}
+
+function renderChannelAccount(account: ChannelAccountSnapshot, isDefault: boolean) {
+  const status = resolveAccountStatus(account);
+  const facts = resolveAccountFacts(account);
+  const name = account.name?.trim() || account.accountId;
+  const statusClass = status.tone === "ok" ? "chip-ok" : status.tone === "warn" ? "chip-warn" : "";
+  return html`
+    <div class="channel-account">
+      <div class="channel-account-head">
+        <span class="channel-account-name">${name}</span>
+        ${isDefault
+          ? html`<span class="chip">${t("agents.channels.defaultBadge")}</span>`
+          : nothing}
+        <span class="chip ${statusClass}">${status.label}</span>
+      </div>
+      ${facts.length > 0
+        ? html`<div class="channel-account-facts">
+            ${facts.map(
+              (fact) => html`<div class="channel-account-fact">
+                <span class="channel-account-fact-label">${fact.label}</span>
+                <span class="channel-account-fact-value mono">${fact.value}</span>
+              </div>`,
+            )}
+          </div>`
+        : nothing}
+      ${account.lastError
+        ? html`<div class="channel-account-error">
+            ${t("agents.channels.fieldLastError")}: ${account.lastError}
+          </div>`
+        : nothing}
+    </div>
+  `;
+}
+
 export function renderAgentChannels(params: {
   context: AgentContext;
   configForm: Record<string, unknown> | null;
@@ -284,11 +377,23 @@ export function renderAgentChannels(params: {
                     channelId: entry.id,
                     fields: CHANNEL_EXTRA_FIELDS,
                   });
+                  const defaultAccountId =
+                    params.snapshot?.channelDefaultAccountId?.[entry.id] ?? null;
                   return html`
                     <div class="list-item">
                       <div class="list-main">
                         <div class="list-title">${entry.label}</div>
                         <div class="list-sub mono">${entry.id}</div>
+                        ${entry.accounts.length > 0
+                          ? html`<div class="channel-accounts">
+                              ${entry.accounts.map((account) =>
+                                renderChannelAccount(
+                                  account,
+                                  account.accountId === defaultAccountId,
+                                ),
+                              )}
+                            </div>`
+                          : nothing}
                       </div>
                       <div class="list-meta">
                         <div>${status}</div>
@@ -382,8 +487,9 @@ export function renderAgentCron(params: {
         ? html` <div class="muted" style="margin-top: 16px">${t("agents.cronPanel.noJobs")}</div>`
         : html`
             <div class="list" style="margin-top: 16px;">
-              ${jobs.map(
-                (job) => html`
+              ${jobs.map((job) => {
+                const payload = formatCronPayload(job).replace(/\s+/g, " ").trim();
+                return html`
                   <div class="list-item">
                     <div class="list-main">
                       <div class="list-title">${job.name}</div>
@@ -397,10 +503,12 @@ export function renderAgentCron(params: {
                         </span>
                         <span class="chip">${job.sessionTarget}</span>
                       </div>
+                      ${payload
+                        ? html`<div class="cron-payload-preview" title=${payload}>${payload}</div>`
+                        : nothing}
                     </div>
                     <div class="list-meta">
-                      <div class="mono">${formatCronState(job)}</div>
-                      <div class="muted">${formatCronPayload(job)}</div>
+                      <div class="mono cron-state">${formatCronState(job)}</div>
                       <button
                         class="btn btn--sm"
                         style="margin-top: 6px;"
@@ -411,8 +519,8 @@ export function renderAgentCron(params: {
                       </button>
                     </div>
                   </div>
-                `,
-              )}
+                `;
+              })}
             </div>
           `}
     </section>
