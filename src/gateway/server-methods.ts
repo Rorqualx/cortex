@@ -65,6 +65,10 @@ const loadAgentsHandlers = lazyHandlerModule(
   () => import("./server-methods/agents.js"),
   (module) => module.agentsHandlers,
 );
+const loadActivityHandlers = lazyHandlerModule(
+  () => import("./server-methods/activity.js"),
+  (module) => module.activityHandlers,
+);
 const loadArtifactsHandlers = lazyHandlerModule(
   () => import("./server-methods/artifacts.js"),
   (module) => module.artifactsHandlers,
@@ -501,6 +505,10 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "sessions.compact",
     ],
     loadHandlers: loadSessionsHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["activity.list", "activity.subscribe", "activity.unsubscribe"],
+    loadHandlers: loadActivityHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: [

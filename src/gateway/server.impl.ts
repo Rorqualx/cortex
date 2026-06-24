@@ -58,6 +58,7 @@ import {
 } from "../secrets/runtime-state.js";
 import { createAuthRateLimiter, type AuthRateLimiter } from "./auth-rate-limit.js";
 import { resolveGatewayAuth } from "./auth.js";
+import type { RestartRecoveryCandidate } from "./chat-abort.js";
 import { ADMIN_SCOPE } from "./method-scopes.js";
 import {
   STARTUP_UNAVAILABLE_GATEWAY_METHODS,
@@ -93,7 +94,6 @@ import { GATEWAY_EVENTS } from "./server-methods-list.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "./server-methods/types.js";
 import { setFallbackGatewayContextResolver } from "./server-plugins.js";
 import type { GatewayPluginReloadResult } from "./server-reload-handlers.js";
-import type { RestartRecoveryCandidate } from "./chat-abort.js";
 import { createGatewayRuntimeState } from "./server-runtime-state.js";
 import {
   enforceSharedGatewaySessionGenerationForConfigWrite,
@@ -940,6 +940,7 @@ export async function startGatewayServer(
     nodePresenceTimers,
     sessionEventSubscribers,
     sessionMessageSubscribers,
+    activitySubscribers,
     nodeSendToSession,
     nodeSendToAllSubscribed,
     nodeSubscribe,
@@ -1054,6 +1055,7 @@ export async function startGatewayServer(
       heartbeatUnsub: runtimeState.heartbeatUnsub,
       transcriptUnsub: runtimeState.transcriptUnsub,
       lifecycleUnsub: runtimeState.lifecycleUnsub,
+      activityRecorderUnsub: runtimeState.activityRecorderUnsub,
       chatRunState,
       chatAbortControllers,
       removeChatRun,
@@ -1152,6 +1154,13 @@ export async function startGatewayServer(
       }),
     );
     Object.assign(runtimeState, runtimeSubscriptions);
+
+    const { startGatewayActivityRecorder } = await import("./server-activity-recorder.js");
+    const activityRecorder = startGatewayActivityRecorder({
+      broadcastToConnIds,
+      getSubscriberConnIds: activitySubscribers.getAll,
+    });
+    Object.assign(runtimeState, activityRecorder);
 
     const runtimeServices = await startupTrace.measure("runtime.services", () =>
       startGatewayRuntimeServices({
@@ -1432,11 +1441,14 @@ export async function startGatewayServer(
           removeChatRun,
           subscribeSessionEvents: sessionEventSubscribers.subscribe,
           unsubscribeSessionEvents: sessionEventSubscribers.unsubscribe,
+          subscribeActivityEvents: activitySubscribers.subscribe,
+          unsubscribeActivityEvents: activitySubscribers.unsubscribe,
           subscribeSessionMessageEvents: sessionMessageSubscribers.subscribe,
           unsubscribeSessionMessageEvents: sessionMessageSubscribers.unsubscribe,
           unsubscribeAllSessionEvents: (connId: string) => {
             sessionEventSubscribers.unsubscribe(connId);
             sessionMessageSubscribers.unsubscribeAll(connId);
+            activitySubscribers.unsubscribe(connId);
           },
           getSessionEventSubscriberConnIds: sessionEventSubscribers.getAll,
           registerToolEventRecipient: toolEventRecipients.add,

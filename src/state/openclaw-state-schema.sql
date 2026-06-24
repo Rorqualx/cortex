@@ -1305,3 +1305,33 @@ CREATE TABLE IF NOT EXISTS vault_secret_grant (
   granted_at INTEGER NOT NULL,
   PRIMARY KEY (name, host)
 );
+
+-- Cross-agent activity feed for the Control UI. A curated, retention-capped
+-- projection of agent events (lifecycle/tool/approval/plan/patch/usage and
+-- subagent + media completions) so the Activity view survives reload/restart
+-- and spans every agent rather than the live, single-session tool stream.
+-- This is steady-state runtime state (not a transcript), so it lives in the
+-- shared state DB, not a JSON sidecar. The recorder prunes old rows on write.
+CREATE TABLE IF NOT EXISTS activity_events (
+  event_id TEXT NOT NULL PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  agent_id TEXT,
+  session_key TEXT,
+  run_id TEXT,
+  -- group_key collapses steps under one run card in the UI (usually the run id).
+  group_key TEXT,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,
+  title TEXT NOT NULL,
+  -- detail_json / metrics_json hold the redacted step detail and token/cost
+  -- rollup; both are optional JSON blobs the UI renders on expand.
+  detail_json TEXT,
+  metrics_json TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_events_ts
+  ON activity_events(ts DESC, event_id);
+
+CREATE INDEX IF NOT EXISTS idx_activity_events_agent_ts
+  ON activity_events(agent_id, ts DESC, event_id);

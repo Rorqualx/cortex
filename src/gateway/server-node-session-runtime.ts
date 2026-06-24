@@ -19,6 +19,8 @@ export function createGatewayNodeSessionRuntime(params: {
   const nodeSubscriptions = createNodeSubscriptionManager();
   const sessionEventSubscribers = createSessionEventSubscriberRegistry();
   const sessionMessageSubscribers = createSessionMessageSubscriberRegistry();
+  // Connection-scoped subscribers of the cross-agent activity feed broadcast.
+  const activitySubscribers = createSessionEventSubscriberRegistry();
   const nodeSendEvent = (opts: {
     nodeId: string;
     event: string;
@@ -42,6 +44,7 @@ export function createGatewayNodeSessionRuntime(params: {
     nodePresenceTimers,
     sessionEventSubscribers,
     sessionMessageSubscribers,
+    activitySubscribers,
     nodeSendToSession,
     nodeSendToAllSubscribed,
     nodeSubscribe: nodeSubscriptions.subscribe,

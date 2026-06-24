@@ -652,6 +652,7 @@ export function createGatewayCloseHandler(
     heartbeatUnsub: (() => void) | null;
     transcriptUnsub: (() => void) | null;
     lifecycleUnsub: (() => void) | null;
+    activityRecorderUnsub: (() => void) | null;
     getPendingReplyCount?: () => number;
     clients: Set<{ socket: { close: (code: number, reason: string) => void } }>;
     configReloader: { stop: () => Promise<void> };
@@ -855,6 +856,13 @@ export function createGatewayCloseHandler(
       }
       if (params.agentUnsub) {
         await shutdownStep("agent-unsub", () => params.agentUnsub!(), warnings);
+      }
+      if (params.activityRecorderUnsub) {
+        await shutdownStep(
+          "activity-recorder-unsub",
+          () => params.activityRecorderUnsub!(),
+          warnings,
+        );
       }
       if (params.heartbeatUnsub) {
         await shutdownStep("heartbeat-unsub", () => params.heartbeatUnsub!(), warnings);

@@ -120,6 +120,7 @@ function createGatewayCloseTestDeps(
     heartbeatUnsub: null,
     transcriptUnsub: null,
     lifecycleUnsub: null,
+    activityRecorderUnsub: null,
     chatRunState: createTestChatRunState(),
     chatAbortControllers: new Map(),
     restartRecoveryCandidates: new Map(),

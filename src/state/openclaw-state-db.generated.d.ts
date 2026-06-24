@@ -45,6 +45,21 @@ export interface AcpSessions {
   updated_at: number;
 }
 
+export interface ActivityEvents {
+  agent_id: string | null;
+  created_at: number;
+  detail_json: string | null;
+  event_id: string;
+  group_key: string | null;
+  kind: string;
+  metrics_json: string | null;
+  run_id: string | null;
+  session_key: string | null;
+  status: string;
+  title: string;
+  ts: number;
+}
+
 export interface AgentDatabases {
   agent_id: string;
   last_seen_at: number;
@@ -1011,6 +1026,7 @@ export interface DB {
   acp_replay_events: AcpReplayEvents;
   acp_replay_sessions: AcpReplaySessions;
   acp_sessions: AcpSessions;
+  activity_events: ActivityEvents;
   agent_databases: AgentDatabases;
   agent_model_catalogs: AgentModelCatalogs;
   android_notification_recent_packages: AndroidNotificationRecentPackages;

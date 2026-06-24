@@ -7,6 +7,17 @@
  */
 import type { TSchema } from "typebox";
 import {
+  ActivityCursorSchema,
+  ActivityEventDetailSchema,
+  ActivityEventMetricsSchema,
+  ActivityEventSchema,
+  ActivityListParamsSchema,
+  ActivityListResultSchema,
+  ActivitySubscribeParamsSchema,
+  ActivitySubscribeResultSchema,
+  ActivityUnsubscribeParamsSchema,
+} from "./activity.js";
+import {
   AgentEventSchema,
   AgentIdentityParamsSchema,
   AgentIdentityResultSchema,
@@ -331,6 +342,16 @@ import {
 
 /** Public schema registry keyed by stable protocol schema name. */
 export const ProtocolSchemas = {
+  // Cross-agent Control UI activity feed (history + live broadcast).
+  ActivityCursor: ActivityCursorSchema,
+  ActivityEventDetail: ActivityEventDetailSchema,
+  ActivityEventMetrics: ActivityEventMetricsSchema,
+  ActivityEvent: ActivityEventSchema,
+  ActivityListParams: ActivityListParamsSchema,
+  ActivityListResult: ActivityListResultSchema,
+  ActivitySubscribeParams: ActivitySubscribeParamsSchema,
+  ActivitySubscribeResult: ActivitySubscribeResultSchema,
+  ActivityUnsubscribeParams: ActivityUnsubscribeParamsSchema,
   // Handshake, transport frames, state snapshots, and shared error envelopes.
   ConnectParams: ConnectParamsSchema,
   HelloOk: HelloOkSchema,

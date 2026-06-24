@@ -2,6 +2,24 @@
 // so clients can import wire types, JSON schemas, and validators from one place.
 import { Compile, type Validator as TypeBoxValidator } from "typebox/compile";
 import {
+  type ActivityCursor,
+  ActivityCursorSchema,
+  type ActivityEvent,
+  ActivityEventSchema,
+  type ActivityEventDetail,
+  ActivityEventDetailSchema,
+  type ActivityEventMetrics,
+  ActivityEventMetricsSchema,
+  type ActivityListParams,
+  ActivityListParamsSchema,
+  type ActivityListResult,
+  ActivityListResultSchema,
+  type ActivitySubscribeParams,
+  ActivitySubscribeParamsSchema,
+  type ActivitySubscribeResult,
+  ActivitySubscribeResultSchema,
+  type ActivityUnsubscribeParams,
+  ActivityUnsubscribeParamsSchema,
   type AgentEvent,
   AgentEventSchema,
   type AgentIdentityParams,
@@ -737,6 +755,13 @@ export const validateSessionsCompactionRestoreParams = lazyCompile<SessionsCompa
 );
 export const validateSessionsUsageParams =
   lazyCompile<SessionsUsageParams>(SessionsUsageParamsSchema);
+export const validateActivityListParams = lazyCompile<ActivityListParams>(ActivityListParamsSchema);
+export const validateActivitySubscribeParams = lazyCompile<ActivitySubscribeParams>(
+  ActivitySubscribeParamsSchema,
+);
+export const validateActivityUnsubscribeParams = lazyCompile<ActivityUnsubscribeParams>(
+  ActivityUnsubscribeParamsSchema,
+);
 export const validateTasksListParams = lazyCompile<TasksListParams>(TasksListParamsSchema);
 export const validateTasksGetParams = lazyCompile<TasksGetParams>(TasksGetParamsSchema);
 export const validateTasksCancelParams = lazyCompile<TasksCancelParams>(TasksCancelParamsSchema);
@@ -1005,6 +1030,15 @@ export function formatValidationErrors(errors: ValidationError[] | null | undefi
 // Schema exports stay explicit to make additions/removals reviewable as public
 // protocol surface changes.
 export {
+  ActivityCursorSchema,
+  ActivityEventSchema,
+  ActivityEventDetailSchema,
+  ActivityEventMetricsSchema,
+  ActivityListParamsSchema,
+  ActivityListResultSchema,
+  ActivitySubscribeParamsSchema,
+  ActivitySubscribeResultSchema,
+  ActivityUnsubscribeParamsSchema,
   ConnectParamsSchema,
   HelloOkSchema,
   RequestFrameSchema,
@@ -1240,6 +1274,15 @@ export {
 
 // Type exports mirror the schema exports for downstream TypeScript consumers.
 export type {
+  ActivityCursor,
+  ActivityEvent,
+  ActivityEventDetail,
+  ActivityEventMetrics,
+  ActivityListParams,
+  ActivityListResult,
+  ActivitySubscribeParams,
+  ActivitySubscribeResult,
+  ActivityUnsubscribeParams,
   GatewayFrame,
   ConnectParams,
   HelloOk,

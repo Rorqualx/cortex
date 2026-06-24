@@ -1849,6 +1849,7 @@ describe("startGatewayPostAttachRuntime", () => {
       heartbeatUnsub: null,
       transcriptUnsub: null,
       lifecycleUnsub: null,
+      activityRecorderUnsub: null,
       chatRunState: createChatRunState(),
       chatAbortControllers: new Map(),
       removeChatRun: vi.fn(),

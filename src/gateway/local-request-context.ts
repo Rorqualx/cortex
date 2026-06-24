@@ -124,6 +124,8 @@ export function createLocalGatewayRequestContext(
     unsubscribeSessionEvents: (connId) => {
       sessionEvents.delete(connId);
     },
+    subscribeActivityEvents: () => {},
+    unsubscribeActivityEvents: () => {},
     subscribeSessionMessageEvents: () => {},
     unsubscribeSessionMessageEvents: () => {},
     unsubscribeAllSessionEvents: (connId) => {

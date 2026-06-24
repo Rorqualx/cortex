@@ -50,6 +50,8 @@ export type GatewayRequestContextParams = {
   removeChatRun: GatewayRequestContext["removeChatRun"];
   subscribeSessionEvents: GatewayRequestContext["subscribeSessionEvents"];
   unsubscribeSessionEvents: GatewayRequestContext["unsubscribeSessionEvents"];
+  subscribeActivityEvents: GatewayRequestContext["subscribeActivityEvents"];
+  unsubscribeActivityEvents: GatewayRequestContext["unsubscribeActivityEvents"];
   subscribeSessionMessageEvents: GatewayRequestContext["subscribeSessionMessageEvents"];
   unsubscribeSessionMessageEvents: GatewayRequestContext["unsubscribeSessionMessageEvents"];
   unsubscribeAllSessionEvents: GatewayRequestContext["unsubscribeAllSessionEvents"];
@@ -191,6 +193,8 @@ export function createGatewayRequestContext(
     removeChatRun: params.removeChatRun,
     subscribeSessionEvents: params.subscribeSessionEvents,
     unsubscribeSessionEvents: params.unsubscribeSessionEvents,
+    subscribeActivityEvents: params.subscribeActivityEvents,
+    unsubscribeActivityEvents: params.unsubscribeActivityEvents,
     subscribeSessionMessageEvents: params.subscribeSessionMessageEvents,
     unsubscribeSessionMessageEvents: params.unsubscribeSessionMessageEvents,
     unsubscribeAllSessionEvents: params.unsubscribeAllSessionEvents,

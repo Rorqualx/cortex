@@ -56,6 +56,8 @@ function makeContextParams(
     removeChatRun: vi.fn(),
     subscribeSessionEvents: vi.fn(),
     unsubscribeSessionEvents: vi.fn(),
+    subscribeActivityEvents: vi.fn(),
+    unsubscribeActivityEvents: vi.fn(),
     subscribeSessionMessageEvents: vi.fn(),
     unsubscribeSessionMessageEvents: vi.fn(),
     unsubscribeAllSessionEvents: vi.fn(),

@@ -32,6 +32,17 @@ export type EnvironmentsListResult = SchemaType<"EnvironmentsListResult">;
 export type EnvironmentsStatusParams = SchemaType<"EnvironmentsStatusParams">;
 export type EnvironmentsStatusResult = SchemaType<"EnvironmentsStatusResult">;
 
+/** Cross-agent Control UI activity feed payloads. */
+export type ActivityEvent = SchemaType<"ActivityEvent">;
+export type ActivityEventDetail = SchemaType<"ActivityEventDetail">;
+export type ActivityEventMetrics = SchemaType<"ActivityEventMetrics">;
+export type ActivityCursor = SchemaType<"ActivityCursor">;
+export type ActivityListParams = SchemaType<"ActivityListParams">;
+export type ActivityListResult = SchemaType<"ActivityListResult">;
+export type ActivitySubscribeParams = SchemaType<"ActivitySubscribeParams">;
+export type ActivitySubscribeResult = SchemaType<"ActivitySubscribeResult">;
+export type ActivityUnsubscribeParams = SchemaType<"ActivityUnsubscribeParams">;
+
 /** Agent activity, identity, send, poll, wait, and wake protocol payloads. */
 export type AgentEvent = SchemaType<"AgentEvent">;
 export type AgentIdentityParams = SchemaType<"AgentIdentityParams">;
