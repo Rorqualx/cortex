@@ -1,46 +1,57 @@
-// Control UI view renders activity screen content.
+// Control UI view renders the cross-agent activity feed: a live "Now" strip,
+// a filter toolbar, and run-grouped cards (agent avatar, model, token/cost,
+// duration) with expandable steps. Data comes from the gateway (history +
+// live broadcast) via the activity controller; this view is presentation only.
 import { html, nothing } from "lit";
 import { t } from "../../i18n/index.ts";
-import type { ActivityEntry, ActivityStatus } from "../activity-model.ts";
+import {
+  type ActivityEvent,
+  type ActivityRunGroup,
+  type ActivityStatusKey,
+  eventMatchesSearch,
+  groupActivityRuns,
+  statusKey,
+} from "../activity-model.ts";
+import { agentAvatarUrl } from "../avatar/agent-avatar.ts";
 import { formatTimeMs } from "../format.ts";
 import { icons } from "../icons.ts";
 import { normalizeLowercaseStringOrEmpty, sortUniqueStrings } from "../string-coerce.ts";
 
-const STATUS_ORDER: ActivityStatus[] = ["running", "done", "error"];
+const STATUS_CHIPS: ActivityStatusKey[] = ["running", "ok", "error", "blocked"];
+const NOW_STRIP_LIMIT = 10;
 
 export type ActivityProps = {
-  entries: ActivityEntry[];
+  events: ActivityEvent[];
+  loading: boolean;
+  error: string | null;
+  hasMore: boolean;
   filterText: string;
-  statusFilters: Record<ActivityStatus, boolean>;
-  toolFilter: string;
+  statusFilters: Record<ActivityStatusKey, boolean>;
+  kindFilter: string;
+  agentFilter: string;
   expandedIds: Set<string>;
   autoFollow: boolean;
   onFilterTextChange: (next: string) => void;
-  onToolFilterChange: (next: string) => void;
-  onStatusToggle: (status: ActivityStatus, enabled: boolean) => void;
+  onKindFilterChange: (next: string) => void;
+  onAgentFilterChange: (next: string) => void;
+  onStatusToggle: (status: ActivityStatusKey, enabled: boolean) => void;
   onToggleAutoFollow: (next: boolean) => void;
   onClear: () => void;
-  onExpandAll: () => void;
+  onRefresh: () => void;
+  onLoadMore: () => void;
+  onExpandAll: (ids: string[]) => void;
   onCollapseAll: () => void;
   onEntryToggle: (id: string, open: boolean) => void;
   onScroll: (event: Event) => void;
 };
 
 function formatTime(value: number): string {
-  return formatTimeMs(
-    value,
-    {
-      hour: "numeric",
-      minute: "2-digit",
-      second: "2-digit",
-    },
-    "",
-  );
+  return formatTimeMs(value, { hour: "numeric", minute: "2-digit", second: "2-digit" }, "");
 }
 
-function formatDuration(value: number): string {
-  if (!Number.isFinite(value) || value < 0) {
-    return t("common.na");
+function formatDuration(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
+    return "";
   }
   if (value < 1_000) {
     return t("activity.duration.ms", { count: String(Math.round(value)) });
@@ -49,143 +60,189 @@ function formatDuration(value: number): string {
     return t("activity.duration.seconds", { count: (value / 1_000).toFixed(1) });
   }
   const roundedSeconds = Math.round(value / 1_000);
-  const minutes = Math.floor(roundedSeconds / 60);
-  const seconds = roundedSeconds % 60;
   return t("activity.duration.minutes", {
-    minutes: String(minutes),
-    seconds: String(seconds),
+    minutes: String(Math.floor(roundedSeconds / 60)),
+    seconds: String(roundedSeconds % 60),
   });
 }
 
-function statusLabel(status: ActivityStatus): string {
+function statusLabel(status: ActivityStatusKey): string {
   return t(`activity.status.${status}`);
 }
 
-function hiddenArgumentsLabel(count: number): string {
-  if (count === 1) {
-    return t("activity.argumentHiddenOne");
+function kindLabel(kind: string): string {
+  const known = t(`activity.kind.${kind}`);
+  return known.startsWith("activity.kind.") ? kind : known;
+}
+
+function totalTokens(metrics: ActivityEvent["metrics"]): number {
+  if (!metrics) {
+    return 0;
   }
-  return t("activity.argumentsHidden", { count: String(count) });
+  return (metrics.inputTokens ?? 0) + (metrics.outputTokens ?? 0);
 }
 
-function buildEntrySummary(entry: ActivityEntry): string {
-  return t("activity.entrySummary", {
-    argumentSummary: hiddenArgumentsLabel(entry.hiddenArgumentCount),
-    status: statusLabel(entry.status),
-    tool: entry.toolName,
-  });
-}
-
-function matchesEntry(entry: ActivityEntry, needle: string): boolean {
-  if (!needle) {
-    return true;
+function formatTokens(metrics: ActivityEvent["metrics"]): string {
+  const total = totalTokens(metrics);
+  if (total <= 0) {
+    return "";
   }
-  const haystack = normalizeLowercaseStringOrEmpty(
-    [
-      entry.toolName,
-      entry.status,
-      entry.summary,
-      buildEntrySummary(entry),
-      entry.outputPreview,
-      entry.runId,
-      entry.toolCallId,
-      entry.sessionKey,
-    ]
-      .filter(Boolean)
-      .join(" "),
-  );
-  return haystack.includes(needle);
+  const label = total >= 1_000 ? `${(total / 1_000).toFixed(1)}k` : String(total);
+  return t("activity.tokens", { count: label });
 }
 
-function resolveToolNames(entries: ActivityEntry[]): string[] {
-  return sortUniqueStrings(entries.map((entry) => entry.toolName));
+function agentName(agentId: string | undefined): string {
+  return agentId ?? "—";
 }
 
-function filterEntries(props: ActivityProps): ActivityEntry[] {
-  const needle = normalizeLowercaseStringOrEmpty(props.filterText);
-  return props.entries.filter((entry) => {
-    if (!props.statusFilters[entry.status]) {
-      return false;
-    }
-    if (props.toolFilter && entry.toolName !== props.toolFilter) {
-      return false;
-    }
-    return matchesEntry(entry, needle);
-  });
+function renderAvatar(agentId: string | undefined) {
+  if (!agentId) {
+    return html`<span class="activity-avatar activity-avatar--none" aria-hidden="true"
+      >${icons.bot}</span
+    >`;
+  }
+  return html`<img
+    class="activity-avatar"
+    src=${agentAvatarUrl(agentId)}
+    alt=${agentName(agentId)}
+    loading="lazy"
+  />`;
 }
 
-function renderStatusChip(props: ActivityProps, status: ActivityStatus) {
+function passesFilters(props: ActivityProps, event: ActivityEvent, needle: string): boolean {
+  const key = statusKey(event.status);
+  // `info` rows (run boundary, thinking, plan) are context, not filterable noise.
+  if (key !== "info" && !props.statusFilters[key]) {
+    return false;
+  }
+  if (props.agentFilter && event.agentId !== props.agentFilter) {
+    return false;
+  }
+  if (props.kindFilter && event.kind !== props.kindFilter) {
+    return false;
+  }
+  return eventMatchesSearch(event, needle);
+}
+
+function renderNowStrip(events: ActivityEvent[]) {
+  const running = events
+    .filter((event) => statusKey(event.status) === "running")
+    .slice(0, NOW_STRIP_LIMIT);
   return html`
-    <label class="activity-status-filter activity-status-filter--${status}">
-      <input
-        type="checkbox"
-        .checked=${props.statusFilters[status]}
-        @change=${(event: Event) =>
-          props.onStatusToggle(status, (event.target as HTMLInputElement).checked)}
-      />
-      <span>${statusLabel(status)}</span>
-    </label>
+    <div class="activity-now" aria-label=${t("activity.nowLabel")}>
+      <span class="activity-now__label">${icons.activity} ${t("activity.nowLabel")}</span>
+      ${running.length === 0
+        ? html`<span class="activity-now__empty">${t("activity.nowEmpty")}</span>`
+        : running.map(
+            (event) => html`
+              <span class="activity-now__chip" title=${event.title}>
+                ${renderAvatar(event.agentId)}
+                <span class="activity-now__spinner" aria-hidden="true"></span>
+                <span class="activity-now__text">${event.title}</span>
+              </span>
+            `,
+          )}
+    </div>
   `;
 }
 
-function renderEntry(props: ActivityProps, entry: ActivityEntry) {
-  const open = props.expandedIds.has(entry.id);
+function renderStep(props: ActivityProps, event: ActivityEvent) {
+  const key = statusKey(event.status);
+  const duration = formatDuration(event.metrics?.durationMs);
+  const summary = event.detail?.summary;
+  const preview = event.detail?.preview;
+  const error = event.detail?.error;
+  return html`
+    <li class="activity-step activity-step--${key}">
+      <span class="activity-dot activity-dot--${key}" aria-hidden="true"></span>
+      <span class="activity-step__kind">${kindLabel(event.kind)}</span>
+      <span class="activity-step__body">
+        <span class="activity-step__title">${event.title}</span>
+        ${summary && summary !== event.title
+          ? html`<span class="activity-step__summary mono">${summary}</span>`
+          : nothing}
+        ${error ? html`<span class="activity-step__error">${error}</span>` : nothing}
+        ${preview
+          ? html`<details class="activity-step__preview">
+              <summary>${t("activity.output")}</summary>
+              <pre>${preview}</pre>
+              ${event.detail?.truncated
+                ? html`<div class="activity-step__note">${t("activity.outputTruncated")}</div>`
+                : nothing}
+            </details>`
+          : nothing}
+      </span>
+      <span class="activity-step__meta">
+        ${duration ? html`<span>${duration}</span>` : nothing}
+        <span>${formatTime(event.ts)}</span>
+      </span>
+    </li>
+  `;
+}
+
+function renderRun(props: ActivityProps, group: ActivityRunGroup) {
+  const open = props.expandedIds.has(group.key);
+  const tokens = formatTokens(group.metrics ?? group.header?.metrics);
+  const duration = formatDuration(group.metrics?.durationMs ?? group.header?.metrics?.durationMs);
+  const stepCount = group.steps.length;
   return html`
     <details
-      class="activity-entry activity-entry--${entry.status}"
+      class="activity-run activity-run--${group.status}"
       role="listitem"
       .open=${open}
       @toggle=${(event: Event) =>
-        props.onEntryToggle(entry.id, (event.currentTarget as HTMLDetailsElement).open)}
+        props.onEntryToggle(group.key, (event.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary class="activity-entry__summary">
-        <span class="activity-entry__chevron" aria-hidden="true">${icons.chevronRight}</span>
-        <span class="activity-entry__main">
-          <span class="activity-entry__title">
-            <span class="activity-status activity-status--${entry.status}">
-              ${statusLabel(entry.status)}
+      <summary class="activity-run__summary">
+        <span class="activity-run__chevron" aria-hidden="true">${icons.chevronRight}</span>
+        ${renderAvatar(group.agentId)}
+        <span class="activity-run__main">
+          <span class="activity-run__line1">
+            <span class="activity-run__agent">${agentName(group.agentId)}</span>
+            <span class="activity-status activity-status--${group.status}">
+              ${statusLabel(group.status)}
             </span>
-            <span class="activity-entry__tool mono">${entry.toolName}</span>
+            ${group.model
+              ? html`<span class="activity-run__model mono">${group.model}</span>`
+              : nothing}
           </span>
-          <span class="activity-entry__text">${buildEntrySummary(entry)}</span>
+          <span class="activity-run__line2">
+            <span
+              >${stepCount === 1
+                ? t("activity.stepOne")
+                : t("activity.steps", { count: String(stepCount) })}</span
+            >
+            ${tokens ? html`<span>${tokens}</span>` : nothing}
+            ${duration ? html`<span>${duration}</span>` : nothing}
+            ${group.sessionKey
+              ? html`<span class="activity-run__session mono">${group.sessionKey}</span>`
+              : nothing}
+          </span>
         </span>
-        <span class="activity-entry__meta">
-          <span>${formatTime(entry.updatedAt)}</span>
-          <span>${formatDuration(entry.durationMs)}</span>
-        </span>
+        <span class="activity-run__time">${formatTime(group.latestTs)}</span>
       </summary>
-      <div class="activity-entry__body">
-        <div class="activity-entry__facts">
-          <span>${hiddenArgumentsLabel(entry.hiddenArgumentCount)}</span>
-          <span class="mono">${t("activity.toolCallId")}: ${entry.toolCallId}</span>
-          <span class="mono">${t("activity.runId")}: ${entry.runId}</span>
-          ${entry.sessionKey
-            ? html`<span class="mono">${t("activity.session")}: ${entry.sessionKey}</span>`
-            : nothing}
-        </div>
-        ${entry.outputPreview
-          ? html`
-              <pre class="activity-entry__preview">${entry.outputPreview}</pre>
-              ${entry.outputTruncated
-                ? html`<div class="activity-entry__note">${t("activity.outputTruncated")}</div>`
-                : nothing}
-            `
-          : html`<div class="activity-entry__note">${t("activity.noOutputPreview")}</div>`}
-      </div>
+      <ul class="activity-run__steps" role="list">
+        ${group.steps.length === 0
+          ? html`<li class="activity-step__note">${t("activity.noOutputPreview")}</li>`
+          : group.steps.map((step) => renderStep(props, step))}
+      </ul>
     </details>
   `;
 }
 
 export function renderActivity(props: ActivityProps) {
-  const toolNames = resolveToolNames(props.entries);
-  const filtered = filterEntries(props);
-  const hasAnyFilters =
-    props.filterText.trim() ||
-    props.toolFilter ||
-    STATUS_ORDER.some((status) => !props.statusFilters[status]);
+  const needle = normalizeLowercaseStringOrEmpty(props.filterText);
+  const filtered = props.events.filter((event) => passesFilters(props, event, needle));
+  const groups = groupActivityRuns(filtered);
+  const kindOptions = sortUniqueStrings(props.events.map((event) => event.kind));
+  const agentOptions = sortUniqueStrings(
+    props.events.map((event) => event.agentId).filter((id): id is string => Boolean(id)),
+  );
 
   return html`
     <section class="activity-page" aria-label=${t("activity.title")}>
+      ${renderNowStrip(props.events)}
+
       <div class="activity-toolbar" aria-label=${t("activity.filtersLabel")}>
         <label class="activity-field activity-field--search">
           <span>${t("activity.search")}</span>
@@ -198,18 +255,41 @@ export function renderActivity(props: ActivityProps) {
           />
         </label>
         <label class="activity-field">
-          <span>${t("activity.toolFilter")}</span>
+          <span>${t("activity.agentFilter")}</span>
           <select
-            .value=${props.toolFilter}
+            .value=${props.agentFilter}
             @change=${(event: Event) =>
-              props.onToolFilterChange((event.target as HTMLSelectElement).value)}
+              props.onAgentFilterChange((event.target as HTMLSelectElement).value)}
           >
-            <option value="">${t("activity.allTools")}</option>
-            ${toolNames.map((name) => html`<option value=${name}>${name}</option>`)}
+            <option value="">${t("activity.allAgents")}</option>
+            ${agentOptions.map((id) => html`<option value=${id}>${id}</option>`)}
+          </select>
+        </label>
+        <label class="activity-field">
+          <span>${t("activity.kindFilter")}</span>
+          <select
+            .value=${props.kindFilter}
+            @change=${(event: Event) =>
+              props.onKindFilterChange((event.target as HTMLSelectElement).value)}
+          >
+            <option value="">${t("activity.allKinds")}</option>
+            ${kindOptions.map((kind) => html`<option value=${kind}>${kindLabel(kind)}</option>`)}
           </select>
         </label>
         <div class="activity-status-filters" role="group" aria-label=${t("activity.statusFilters")}>
-          ${STATUS_ORDER.map((status) => renderStatusChip(props, status))}
+          ${STATUS_CHIPS.map(
+            (status) => html`
+              <label class="activity-status-filter activity-status-filter--${status}">
+                <input
+                  type="checkbox"
+                  .checked=${props.statusFilters[status]}
+                  @change=${(event: Event) =>
+                    props.onStatusToggle(status, (event.target as HTMLInputElement).checked)}
+                />
+                <span>${statusLabel(status)}</span>
+              </label>
+            `,
+          )}
         </div>
         <label class="activity-autofollow">
           <input
@@ -221,11 +301,14 @@ export function renderActivity(props: ActivityProps) {
           <span>${t("activity.autoFollow")}</span>
         </label>
         <div class="activity-actions">
+          <button type="button" class="btn btn--sm" @click=${props.onRefresh}>
+            ${icons.refresh} ${t("activity.refresh")}
+          </button>
           <button
             type="button"
             class="btn btn--sm"
-            ?disabled=${filtered.length === 0}
-            @click=${props.onExpandAll}
+            ?disabled=${groups.length === 0}
+            @click=${() => props.onExpandAll(groups.map((group) => group.key))}
           >
             ${t("activity.expandAll")}
           </button>
@@ -240,7 +323,7 @@ export function renderActivity(props: ActivityProps) {
           <button
             type="button"
             class="btn btn--sm danger"
-            ?disabled=${props.entries.length === 0}
+            ?disabled=${props.events.length === 0}
             @click=${props.onClear}
           >
             ${t("activity.clear")}
@@ -248,11 +331,13 @@ export function renderActivity(props: ActivityProps) {
         </div>
         <div class="activity-toolbar__count" aria-live="polite">
           ${t("activity.visibleCount", {
-            visible: String(filtered.length),
-            total: String(props.entries.length),
+            visible: String(groups.length),
+            total: String(props.events.length),
           })}
         </div>
       </div>
+
+      ${props.error ? html`<div class="activity-error">${props.error}</div>` : nothing}
 
       <div
         class="activity-stream"
@@ -260,15 +345,27 @@ export function renderActivity(props: ActivityProps) {
         aria-label=${t("activity.streamLabel")}
         @scroll=${props.onScroll}
       >
-        ${filtered.length === 0
-          ? html`
-              <div class="activity-empty">
-                ${props.entries.length === 0 || !hasAnyFilters
+        ${groups.length === 0
+          ? html`<div class="activity-empty">
+              ${props.loading
+                ? t("activity.loading")
+                : props.events.length === 0
                   ? t("activity.empty")
                   : t("activity.emptyFiltered")}
-              </div>
-            `
-          : filtered.map((entry) => renderEntry(props, entry))}
+            </div>`
+          : groups.map((group) => renderRun(props, group))}
+        ${props.hasMore
+          ? html`<div class="activity-more">
+              <button
+                type="button"
+                class="btn btn--sm"
+                ?disabled=${props.loading}
+                @click=${props.onLoadMore}
+              >
+                ${props.loading ? t("activity.loading") : t("activity.loadMore")}
+              </button>
+            </div>`
+          : nothing}
       </div>
     </section>
   `;

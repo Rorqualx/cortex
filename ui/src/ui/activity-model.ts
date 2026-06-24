@@ -1,217 +1,152 @@
-// Control UI module implements activity model behavior.
-import { formatUnknownText, truncateText } from "./format.ts";
+// Control UI activity model: client-side merge + run-grouping for the
+// persistent, cross-agent activity feed served by the gateway. Events arrive
+// from `activity.list` (history backfill) and the `activity.event` broadcast
+// (live). This module owns the dedupe/merge and the run-card grouping the view
+// renders; it no longer derives activity from the local tool stream.
+import type { ActivityEvent } from "./types.ts";
 
-export const ACTIVITY_ENTRY_LIMIT = 100;
-export const ACTIVITY_OUTPUT_PREVIEW_LIMIT = 2_000;
+export type { ActivityEvent } from "./types.ts";
 
-export type ActivityStatus = "running" | "done" | "error";
+/** Cap merged events so a long-lived tab cannot grow unbounded. */
+export const ACTIVITY_EVENT_LIMIT = 1_500;
 
-export type ActivityEntry = {
-  id: string;
-  toolCallId: string;
-  runId: string;
-  sessionKey?: string;
-  toolName: string;
-  status: ActivityStatus;
-  startedAt: number;
-  updatedAt: number;
-  durationMs: number;
-  outputPreview?: string;
-  outputTruncated: boolean;
-  summary: string;
-  hiddenArgumentCount: number;
-};
+/** Coarse status buckets the filter chips and styling key off. */
+export type ActivityStatusKey = "running" | "ok" | "error" | "blocked" | "info";
 
-const ACTIVITY_STATUS_SUMMARY_LABELS: Record<ActivityStatus, string> = {
+const KNOWN_STATUS: Record<string, ActivityStatusKey> = {
   running: "running",
-  done: "completed",
-  error: "failed",
+  ok: "ok",
+  error: "error",
+  blocked: "blocked",
+  info: "info",
 };
 
-type ActivityHost = {
-  activityEntries?: ActivityEntry[];
-};
+export function statusKey(status: string): ActivityStatusKey {
+  return KNOWN_STATUS[status] ?? "info";
+}
 
-type ToolEventPayload = {
-  runId: string;
-  ts: number;
+function compareEvents(a: ActivityEvent, b: ActivityEvent): number {
+  if (b.ts !== a.ts) {
+    return b.ts - a.ts;
+  }
+  return a.eventId < b.eventId ? 1 : a.eventId > b.eventId ? -1 : 0;
+}
+
+/** Upsert incoming events by id, keep newest-first, and cap the total. */
+export function mergeActivityEvents(
+  existing: readonly ActivityEvent[],
+  incoming: readonly ActivityEvent[],
+): ActivityEvent[] {
+  if (incoming.length === 0) {
+    return existing.slice(0, ACTIVITY_EVENT_LIMIT);
+  }
+  const byId = new Map<string, ActivityEvent>();
+  for (const event of existing) {
+    byId.set(event.eventId, event);
+  }
+  for (const event of incoming) {
+    byId.set(event.eventId, event);
+  }
+  return [...byId.values()].toSorted(compareEvents).slice(0, ACTIVITY_EVENT_LIMIT);
+}
+
+/** One run's worth of activity: a header (run lifecycle) plus its steps. */
+export type ActivityRunGroup = {
+  key: string;
+  runId?: string;
+  agentId?: string;
   sessionKey?: string;
-  data: Record<string, unknown>;
+  header?: ActivityEvent;
+  steps: ActivityEvent[];
+  latestTs: number;
+  status: ActivityStatusKey;
+  model?: string;
+  metrics?: ActivityEvent["metrics"];
 };
 
-const SECRET_PATTERNS: Array<[RegExp, string]> = [
-  [/\b(Authorization|Cookie|Set-Cookie)\s*:\s*[^\n\r]+/gi, "$1: [redacted]"],
-  [/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi, "$1[redacted]"],
-  [
-    /\b(api[_-]?key|token|secret|password|passwd|authorization)\b(\s*[:=]\s*)["']?[^"',\s}]+/gi,
-    "$1$2[redacted]",
-  ],
-  [
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-    "[redacted private key]",
-  ],
-  [
-    /(^|[\s"'`=])(?:\/Users\/|\/home\/|\/var\/folders\/|[A-Za-z]:\\)[^\s"'`,;]+/g,
-    "$1[redacted path]",
-  ],
-];
-
-function toTrimmedString(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
+function groupStatus(header: ActivityEvent | undefined, steps: ActivityEvent[]): ActivityStatusKey {
+  if (header) {
+    return statusKey(header.status);
   }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
-function readRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
-}
-
-function extractText(value: unknown): string | null {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  const record = readRecord(value);
-  if (!record) {
-    return null;
-  }
-  if (typeof record.text === "string") {
-    return record.text;
-  }
-  const content = record.content;
-  if (!Array.isArray(content)) {
-    return null;
-  }
-  const parts = content
-    .map((item) => {
-      const entry = readRecord(item);
-      return entry?.type === "text" && typeof entry.text === "string" ? entry.text : null;
-    })
-    .filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join("\n") : null;
-}
-
-function stringifyOutput(value: unknown): string | null {
-  const text = extractText(value);
-  if (text !== null) {
-    return text;
-  }
-  if (value === null || value === undefined) {
-    return null;
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return formatUnknownText(value);
-  }
-}
-
-function redactSensitiveText(value: string): string {
-  return SECRET_PATTERNS.reduce(
-    (text, [pattern, replacement]) => text.replace(pattern, replacement),
-    value,
-  );
-}
-
-function buildOutputPreview(value: unknown): { text?: string; truncated: boolean } {
-  const raw = stringifyOutput(value);
-  if (!raw) {
-    return { truncated: false };
-  }
-  const redacted = redactSensitiveText(raw);
-  const truncated = truncateText(redacted, ACTIVITY_OUTPUT_PREVIEW_LIMIT);
-  return { text: truncated.text, truncated: truncated.truncated };
-}
-
-function countArgumentFields(value: unknown): number {
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  if (Array.isArray(value)) {
-    return value.length;
-  }
-  const record = readRecord(value);
-  if (record) {
-    return Object.keys(record).length;
-  }
-  return 1;
-}
-
-function hasExplicitErrorFlag(value: Record<string, unknown> | null): boolean {
-  return value?.isError === true || value?.is_error === true;
-}
-
-function resolveStatus(data: Record<string, unknown>): ActivityStatus {
-  const phase = toTrimmedString(data.phase);
-  if (phase !== "result") {
+  const keys = new Set(steps.map((step) => statusKey(step.status)));
+  if (keys.has("running")) {
     return "running";
   }
-  const result = readRecord(data.result);
-  if (hasExplicitErrorFlag(data) || hasExplicitErrorFlag(result)) {
+  if (keys.has("error")) {
     return "error";
   }
-  const status = toTrimmedString(data.status) ?? toTrimmedString(result?.status);
-  if (status && /error|fail|failed|failure/i.test(status)) {
-    return "error";
+  if (keys.has("blocked")) {
+    return "blocked";
   }
-  const exitCode = Number(result?.exitCode ?? data.exitCode);
-  if (Number.isFinite(exitCode) && exitCode !== 0) {
-    return "error";
+  if (keys.has("ok")) {
+    return "ok";
   }
-  return "done";
+  return "info";
 }
 
-function statusLabel(status: ActivityStatus): string {
-  return ACTIVITY_STATUS_SUMMARY_LABELS[status];
+/**
+ * Collapse a flat, newest-first event list into run cards. The `:run` lifecycle
+ * event becomes the card header (carrying model + token/cost rollup); every
+ * other event in the same group is a step. Groups are ordered by most-recent
+ * activity so live runs float to the top.
+ */
+export function groupActivityRuns(events: readonly ActivityEvent[]): ActivityRunGroup[] {
+  const groups = new Map<string, ActivityRunGroup>();
+  for (const event of events) {
+    const key = event.groupKey ?? event.runId ?? event.eventId;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        ...(event.runId ? { runId: event.runId } : {}),
+        ...(event.agentId ? { agentId: event.agentId } : {}),
+        ...(event.sessionKey ? { sessionKey: event.sessionKey } : {}),
+        steps: [],
+        latestTs: 0,
+        status: "info",
+      };
+      groups.set(key, group);
+    }
+    group.agentId ??= event.agentId;
+    group.sessionKey ??= event.sessionKey;
+    group.latestTs = Math.max(group.latestTs, event.ts);
+    if (event.kind === "lifecycle") {
+      group.header = event;
+      group.model ??= event.detail?.model;
+      if (event.metrics) {
+        group.metrics = event.metrics;
+      }
+    } else {
+      group.steps.push(event);
+      group.model ??= event.detail?.model;
+    }
+  }
+  const list = [...groups.values()];
+  for (const group of list) {
+    group.steps = group.steps.toSorted(compareEvents);
+    group.status = groupStatus(group.header, group.steps);
+  }
+  return list.toSorted((a, b) => b.latestTs - a.latestTs);
 }
 
-function buildSummary(toolName: string, status: ActivityStatus, hiddenArgCount: number): string {
-  const argText = `${hiddenArgCount} argument${hiddenArgCount === 1 ? "" : "s"} hidden`;
-  return `${toolName} ${statusLabel(status)}; ${argText}`;
-}
-
-export function updateActivityFromToolEvent(host: ActivityHost, payload: ToolEventPayload) {
-  if (!Array.isArray(host.activityEntries)) {
-    return;
+/** True when a single event matches the case-insensitive search needle. */
+export function eventMatchesSearch(event: ActivityEvent, needle: string): boolean {
+  if (!needle) {
+    return true;
   }
-  const data = payload.data ?? {};
-  const toolCallId = toTrimmedString(data.toolCallId);
-  if (!toolCallId) {
-    return;
-  }
-  const toolName = toTrimmedString(data.name) ?? "tool";
-  const id = `${payload.runId}:${toolCallId}`;
-  const now = Date.now();
-  const startedAt = typeof payload.ts === "number" ? payload.ts : now;
-  const status = resolveStatus(data);
-  const outputValue =
-    data.phase === "update" ? data.partialResult : data.phase === "result" ? data.result : null;
-  const preview = buildOutputPreview(outputValue);
-  const existing = host.activityEntries.find((entry) => entry.id === id);
-  const hiddenArgCount =
-    data.args !== undefined ? countArgumentFields(data.args) : (existing?.hiddenArgumentCount ?? 0);
-  const outputPreview = preview.text ?? existing?.outputPreview;
-  const nextEntry: ActivityEntry = {
-    id,
-    toolCallId,
-    runId: payload.runId,
-    ...(payload.sessionKey ? { sessionKey: payload.sessionKey } : {}),
-    toolName,
-    status,
-    startedAt: existing?.startedAt ?? startedAt,
-    updatedAt: now,
-    durationMs: Math.max(0, now - (existing?.startedAt ?? startedAt)),
-    outputTruncated: preview.truncated || existing?.outputTruncated === true,
-    summary: buildSummary(toolName, status, hiddenArgCount),
-    hiddenArgumentCount: hiddenArgCount,
-    ...(outputPreview ? { outputPreview } : {}),
-  };
-  const next = existing
-    ? host.activityEntries.map((entry) => (entry.id === id ? nextEntry : entry))
-    : [...host.activityEntries, nextEntry];
-  host.activityEntries = next.slice(-ACTIVITY_ENTRY_LIMIT);
+  const haystack = [
+    event.title,
+    event.kind,
+    event.status,
+    event.agentId,
+    event.sessionKey,
+    event.detail?.summary,
+    event.detail?.preview,
+    event.detail?.model,
+    event.detail?.error,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(needle);
 }

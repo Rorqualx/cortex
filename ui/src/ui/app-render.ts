@@ -46,6 +46,8 @@ import {
   recordControlUiRenderTiming,
   roundedControlUiDurationMs,
 } from "./control-ui-performance.ts";
+import { loadActivity, loadMoreActivity } from "./controllers/activity.ts";
+import type { ActivityControllerHost } from "./controllers/activity.ts";
 import { refreshAgentAvatarCards } from "./controllers/agent-avatars.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
@@ -2820,14 +2822,19 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "activity"
           ? renderLazyView(lazyActivity, (m) =>
               m.renderActivity({
-                entries: state.activityEntries,
+                events: state.activityEvents,
+                loading: state.activityLoading,
+                error: state.activityError,
+                hasMore: state.activityHasMore,
                 filterText: state.activityFilterText,
                 statusFilters: state.activityStatusFilters,
-                toolFilter: state.activityToolFilter,
+                kindFilter: state.activityKindFilter,
+                agentFilter: state.activityAgentFilter,
                 expandedIds: state.activityExpandedIds,
                 autoFollow: state.activityAutoFollow,
                 onFilterTextChange: (next) => (state.activityFilterText = next),
-                onToolFilterChange: (next) => (state.activityToolFilter = next),
+                onKindFilterChange: (next) => (state.activityKindFilter = next),
+                onAgentFilterChange: (next) => (state.activityAgentFilter = next),
                 onStatusToggle: (status, enabled) => {
                   state.activityStatusFilters = {
                     ...state.activityStatusFilters,
@@ -2841,14 +2848,18 @@ export function renderApp(state: AppViewState) {
                   }
                 },
                 onClear: () => {
-                  state.activityEntries = [];
+                  state.activityEvents = [];
                   state.activityExpandedIds = new Set();
                   state.activityAtBottom = true;
                 },
-                onExpandAll: () => {
-                  state.activityExpandedIds = new Set(
-                    state.activityEntries.map((entry) => entry.id),
-                  );
+                onRefresh: () => {
+                  void loadActivity(state as unknown as ActivityControllerHost);
+                },
+                onLoadMore: () => {
+                  void loadMoreActivity(state as unknown as ActivityControllerHost);
+                },
+                onExpandAll: (ids) => {
+                  state.activityExpandedIds = new Set(ids);
                 },
                 onCollapseAll: () => {
                   state.activityExpandedIds = new Set();
@@ -2885,9 +2896,13 @@ export function renderApp(state: AppViewState) {
                 error: state.sessionsError,
                 basePath: state.basePath,
                 searchQuery: state.conversationsSearchQuery,
+                sourceFilter: state.conversationsSourceFilter,
                 agentIdentityById: state.agentIdentityById,
                 onSearchChange: (query) => {
                   state.conversationsSearchQuery = query;
+                },
+                onSourceFilterChange: (filter) => {
+                  state.conversationsSourceFilter = filter;
                 },
                 onRefresh: () =>
                   void loadSessions(state, {

@@ -48,6 +48,13 @@ import {
   recordControlUiConnectTiming,
   recordControlUiRpcTiming,
 } from "./control-ui-performance.ts";
+import {
+  ensureActivitySubscription,
+  handleActivityBroadcast,
+  loadActivity,
+  resetActivitySubscription,
+} from "./controllers/activity.ts";
+import type { ActivityControllerHost } from "./controllers/activity.ts";
 import { refreshAgentAvatarCards } from "./controllers/agent-avatars.ts";
 import { loadAgents, type AgentsState } from "./controllers/agents.ts";
 import {
@@ -739,6 +746,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
   host.chatError = null;
   host.hello = null;
   host.connected = false;
+  resetActivitySubscription(host as unknown as ActivityControllerHost);
   if (reconnectReason === "seq-gap") {
     host.execApprovalQueue = pruneExecApprovalQueue(host.execApprovalQueue);
     clearPendingQueueItemsForRun(host, host.chatRunId ?? undefined);
@@ -772,6 +780,22 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
       host.chatError = null;
       host.hello = hello;
       applySnapshot(host, hello);
+      // Re-subscribe to the cross-agent activity feed on (re)connect; backfill
+      // history immediately when the Activity tab is already open.
+      resetActivitySubscription(host as unknown as ActivityControllerHost);
+      // Defer the activity (re)subscribe to a microtask so it never reorders
+      // ahead of the post-hello chat/abort reconciliation requests issued later
+      // in this handler (which rely on precise gateway request ordering).
+      queueMicrotask(() => {
+        if (host.client !== client) {
+          return;
+        }
+        if (host.tab === "activity") {
+          void loadActivity(host as unknown as ActivityControllerHost);
+        } else {
+          void ensureActivitySubscription(host as unknown as ActivityControllerHost);
+        }
+      });
       prepareHelloScopedComposerRestore(host);
       restoreChatComposerState(host, {
         preserveCurrent: true,
@@ -855,6 +879,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
         return;
       }
       host.connected = false;
+      resetActivitySubscription(host as unknown as ActivityControllerHost);
       markQueuedChatSendsWaitingForReconnect(host);
       clearSessionsChangedReloadTimer(host);
       // Code 1012 = Service Restart (expected during config saves, don't show as error)
@@ -1248,6 +1273,11 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     const sideResultHost = host as GatewayHostWithSideResults;
     sideResultHost.chatSideResult = sideResult;
     sideResultHost.chatSideResultTerminalRuns?.add(sideResult.runId);
+    return;
+  }
+
+  if (evt.event === "activity.event") {
+    handleActivityBroadcast(host as unknown as ActivityControllerHost, evt.payload);
     return;
   }
 

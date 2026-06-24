@@ -1,7 +1,7 @@
 import { LitElement } from "lit";
 import { state } from "lit/decorators.js";
 import { i18n, I18nController, isSupportedLocale, t } from "../i18n/index.ts";
-import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
+import type { ActivityEvent, ActivityStatusKey } from "./activity-model.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
@@ -134,6 +134,7 @@ import type {
 } from "./sidebar-content.ts";
 import { loadLocalUserIdentity, loadSettings, type UiSettings } from "./storage.ts";
 import { VALID_THEME_NAMES, type ResolvedTheme, type ThemeMode, type ThemeName } from "./theme.ts";
+import type { ActivityCursor } from "./types.ts";
 import type {
   AgentsListResult,
   AgentsFilesListResult,
@@ -274,17 +275,25 @@ export class OpenClawApp extends LitElement {
   @state() chatMessage = "";
   @state() chatMessages: unknown[] = [];
   @state() chatToolMessages: Record<string, unknown>[] = [];
-  @state() activityEntries: ActivityEntry[] = [];
+  @state() activityEvents: ActivityEvent[] = [];
   @state() activityFilterText = "";
-  @state() activityStatusFilters: Record<ActivityStatus, boolean> = {
+  @state() activityStatusFilters: Record<ActivityStatusKey, boolean> = {
     running: true,
-    done: true,
+    ok: true,
     error: true,
+    blocked: true,
+    info: true,
   };
-  @state() activityToolFilter = "";
+  @state() activityKindFilter = "";
+  @state() activityAgentFilter = "";
   @state() activityExpandedIds = new Set<string>();
   @state() activityAutoFollow = true;
   @state() activityAtBottom = true;
+  @state() activityLoading = false;
+  @state() activityError: string | null = null;
+  @state() activityHasMore = false;
+  @state() activityCursor: ActivityCursor | null = null;
+  @state() activitySubscribed = false;
   @state() chatStreamSegments: Array<{ text: string; ts: number }> = [];
   @state() chatStream: string | null = null;
   @state() chatStreamStartedAt: number | null = null;
@@ -537,6 +546,7 @@ export class OpenClawApp extends LitElement {
   @state() sessionsCheckpointErrorByKey: Record<string, string> = {};
 
   @state() conversationsSearchQuery = "";
+  @state() conversationsSourceFilter: import("./views/conversations.ts").ConversationFilter = "all";
 
   @state() usageLoading = false;
   @state() usageResult: import("./types.js").SessionsUsageResult | null = null;

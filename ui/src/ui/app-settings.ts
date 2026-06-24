@@ -1,4 +1,3 @@
-// Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
 import { refreshChat } from "./app-chat.ts";
@@ -19,6 +18,9 @@ import {
   roundedControlUiDurationMs,
   scheduleControlUiTabVisibleTiming,
 } from "./control-ui-performance.ts";
+// Control UI module implements app settings behavior.
+import { loadActivity } from "./controllers/activity.ts";
+import type { ActivityControllerHost } from "./controllers/activity.ts";
 import { loadAgentFiles, type AgentFilesState } from "./controllers/agent-files.ts";
 import {
   loadAgentIdentities,
@@ -470,6 +472,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         await loadOverview(host);
         break;
       case "activity":
+        await loadActivity(host as unknown as ActivityControllerHost);
         break;
       case "workboard":
         await Promise.all([

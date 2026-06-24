@@ -205,9 +205,13 @@ function resetChatStateForSessionSwitch(state: AppViewState, sessionKey: string)
   host.chatHistoryHasMore = false;
   host.chatHistoryNextCursor = null;
   state.chatToolMessages = [];
-  state.activityEntries = [];
+  state.activityEvents = [];
   state.activityExpandedIds = new Set();
   state.activityAtBottom = true;
+  state.activityCursor = null;
+  state.activityHasMore = false;
+  state.activityError = null;
+  state.activitySubscribed = false;
   state.chatStreamSegments = [];
   state.chatThinkingLevel = null;
   state.chatStream = null;

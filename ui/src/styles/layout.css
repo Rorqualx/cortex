@@ -1662,7 +1662,7 @@
 
 .conversation-row {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 12px;
   min-height: 52px;
@@ -1683,17 +1683,6 @@
   border-color: color-mix(in srgb, var(--border) 70%, transparent);
   color: var(--text);
   text-decoration: none;
-}
-
-.conversation-row__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--muted) 46%, transparent);
-}
-
-.conversation-row:hover .conversation-row__dot {
-  background: var(--accent);
 }
 
 .conversation-row__body {
@@ -1799,4 +1788,80 @@
   flex: none;
   object-fit: contain;
   image-rendering: pixelated;
+}
+
+/* Source filter chips below the search row. */
+.conversations-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.conversations-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--secondary);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.conversations-filter:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--text));
+}
+
+.conversations-filter--active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.conversations-filter__count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  color: var(--text);
+  font-size: 11px;
+  text-align: center;
+}
+
+.conversations-filter--active .conversations-filter__count {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Per-row source badge (channel name, or "cron"). */
+.conversation-row__badge {
+  align-self: center;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.conversation-row__badge--cron {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  color: color-mix(in srgb, var(--accent) 75%, var(--text));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.conversation-row:hover .conversation-row__badge {
+  color: var(--text);
 }

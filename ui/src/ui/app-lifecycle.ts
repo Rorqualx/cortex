@@ -62,7 +62,7 @@ type LifecycleHost = ControlUiPerformanceHost &
     resetRealtimeTalkConversation?: () => void;
     logsAutoFollow: boolean;
     logsEntries: unknown[];
-    activityEntries: unknown[];
+    activityEvents: unknown[];
     controlUiResponsivenessObserver?: { disconnect: () => void } | null;
     popStateHandler: () => void;
   };
@@ -244,7 +244,7 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
   }
   if (
     host.tab === "activity" &&
-    (changed.has("activityEntries") || changed.has("activityAutoFollow") || changed.has("tab"))
+    (changed.has("activityEvents") || changed.has("activityAutoFollow") || changed.has("tab"))
   ) {
     if (host.activityAutoFollow && host.activityAtBottom) {
       scheduleActivityScroll(host, changed.has("tab") || changed.has("activityAutoFollow"));

@@ -1,4 +1,4 @@
-import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
+import type { ActivityEvent, ActivityStatusKey } from "./activity-model.ts";
 import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
 import type { ScrollHost } from "./app-scroll.ts";
@@ -31,6 +31,7 @@ import type { SidebarContent } from "./sidebar-content.ts";
 import type { UiSettings } from "./storage.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ResolvedTheme, ThemeMode, ThemeName } from "./theme.ts";
+import type { ActivityCursor } from "./types.ts";
 import type {
   AgentsListResult,
   AgentsFilesListResult,
@@ -121,13 +122,19 @@ export type AppViewState = ScrollHost &
     chatAttachments: ChatAttachment[];
     chatMessages: unknown[];
     chatToolMessages: unknown[];
-    activityEntries: ActivityEntry[];
+    activityEvents: ActivityEvent[];
     activityFilterText: string;
-    activityStatusFilters: Record<ActivityStatus, boolean>;
-    activityToolFilter: string;
+    activityStatusFilters: Record<ActivityStatusKey, boolean>;
+    activityKindFilter: string;
+    activityAgentFilter: string;
     activityExpandedIds: Set<string>;
     activityAutoFollow: boolean;
     activityAtBottom: boolean;
+    activityLoading: boolean;
+    activityError: string | null;
+    activityHasMore: boolean;
+    activityCursor: ActivityCursor | null;
+    activitySubscribed: boolean;
     chatStreamSegments: Array<{ text: string; ts: number }>;
     chatHistoryHasMore: boolean;
     chatHistoryNextCursor: string | null;
@@ -359,6 +366,7 @@ export type AppViewState = ScrollHost &
     sessionsCheckpointBusyKey: string | null;
     sessionsCheckpointErrorByKey: Record<string, string>;
     conversationsSearchQuery: string;
+    conversationsSourceFilter: import("./views/conversations.ts").ConversationFilter;
     usageLoading: boolean;
     usageResult: SessionsUsageResult | null;
     usageCostSummary: CostUsageSummary | null;

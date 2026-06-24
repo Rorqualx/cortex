@@ -3,46 +3,51 @@
 import { render } from "lit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n/index.ts";
-import type { ActivityEntry, ActivityStatus } from "../activity-model.ts";
+import type { ActivityEvent, ActivityStatusKey } from "../activity-model.ts";
 import { renderActivity, type ActivityProps } from "./activity.ts";
 
-function createEntry(overrides: Partial<ActivityEntry> = {}): ActivityEntry {
+function event(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
   return {
-    id: "run-1:tool-1",
-    toolCallId: "tool-1",
-    runId: "run-1",
+    eventId: "run-1:tool:tool-1",
+    ts: 120_900,
+    agentId: "davos",
     sessionKey: "main",
-    toolName: "exec",
+    runId: "run-1",
+    groupKey: "run-1",
+    kind: "tool",
     status: "running",
-    startedAt: 1_000,
-    updatedAt: 120_900,
-    durationMs: 119_900,
-    outputPreview: "ok",
-    outputTruncated: false,
-    summary: "exec running; 0 arguments hidden",
-    hiddenArgumentCount: 0,
+    title: "Read src/foo.ts",
     ...overrides,
   };
 }
 
 function createProps(overrides: Partial<ActivityProps> = {}): ActivityProps {
-  const statusFilters: Record<ActivityStatus, boolean> = {
+  const statusFilters: Record<ActivityStatusKey, boolean> = {
     running: true,
-    done: true,
+    ok: true,
     error: true,
+    blocked: true,
+    info: true,
   };
   return {
-    entries: [createEntry()],
+    events: [event()],
+    loading: false,
+    error: null,
+    hasMore: false,
     filterText: "",
     statusFilters,
-    toolFilter: "",
+    kindFilter: "",
+    agentFilter: "",
     expandedIds: new Set<string>(),
     autoFollow: true,
     onFilterTextChange: vi.fn(),
-    onToolFilterChange: vi.fn(),
+    onKindFilterChange: vi.fn(),
+    onAgentFilterChange: vi.fn(),
     onStatusToggle: vi.fn(),
     onToggleAutoFollow: vi.fn(),
     onClear: vi.fn(),
+    onRefresh: vi.fn(),
+    onLoadMore: vi.fn(),
     onExpandAll: vi.fn(),
     onCollapseAll: vi.fn(),
     onEntryToggle: vi.fn(),
@@ -52,24 +57,36 @@ function createProps(overrides: Partial<ActivityProps> = {}): ActivityProps {
 }
 
 describe("renderActivity", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     document.body.innerHTML = "";
+    await i18n.setLocale("en");
   });
 
-  it("renders the summary from localized labels", async () => {
-    await i18n.setLocale("de");
+  it("groups events into a run card and titles steps with the action", () => {
     const container = document.createElement("div");
     document.body.append(container);
 
     render(renderActivity(createProps()), container);
 
-    expect(container.querySelector(".activity-entry__text")?.textContent?.trim()).toBe(
-      "0 Argumente ausgeblendet",
+    const run = container.querySelector(".activity-run");
+    expect(run?.getAttribute("role")).toBe("listitem");
+    expect(container.querySelector(".activity-run__agent")?.textContent?.trim()).toBe("davos");
+    expect(container.querySelector(".activity-step__title")?.textContent?.trim()).toBe(
+      "Read src/foo.ts",
     );
   });
 
-  it("exposes the activity stream as a named list", async () => {
-    await i18n.setLocale("en");
+  it("surfaces running work in the Now strip", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+
+    render(renderActivity(createProps()), container);
+
+    const now = container.querySelector(".activity-now");
+    expect(now?.querySelector(".activity-now__chip")?.textContent).toContain("Read src/foo.ts");
+  });
+
+  it("exposes the stream as a named list and counts run groups", () => {
     const container = document.createElement("div");
     document.body.append(container);
 
@@ -77,32 +94,26 @@ describe("renderActivity", () => {
 
     const stream = container.querySelector(".activity-stream");
     expect(stream?.getAttribute("role")).toBe("list");
-    expect(stream?.getAttribute("aria-label")).toBe("Tool activity entries");
-    expect(container.querySelector(".activity-entry")?.getAttribute("role")).toBe("listitem");
-  });
-
-  it("lets the route shell own the page heading", async () => {
-    await i18n.setLocale("en");
-    const container = document.createElement("div");
-    document.body.append(container);
-
-    render(renderActivity(createProps()), container);
-
-    expect(container.querySelector(".activity-page__title")).toBeNull();
-    expect(container.querySelector(".activity-page__subtitle")).toBeNull();
+    expect(stream?.getAttribute("aria-label")).toBe("Activity feed");
     expect(container.querySelector(".activity-toolbar__count")?.textContent?.trim()).toBe("1 of 1");
   });
 
-  it("normalizes rounded minute durations that would otherwise show 60 seconds", async () => {
-    await i18n.setLocale("en");
+  it("hides events whose status filter is off", () => {
     const container = document.createElement("div");
     document.body.append(container);
 
-    render(renderActivity(createProps()), container);
-
-    const meta = Array.from(container.querySelectorAll(".activity-entry__meta span")).map(
-      (element) => element.textContent?.trim(),
+    render(
+      renderActivity(
+        createProps({
+          statusFilters: { running: false, ok: true, error: true, blocked: true, info: true },
+        }),
+      ),
+      container,
     );
-    expect(meta).toContain("2m 0s");
+
+    expect(container.querySelector(".activity-run")).toBeNull();
+    expect(container.querySelector(".activity-empty")?.textContent?.trim()).toBe(
+      "No activity matches these filters.",
+    );
   });
 });

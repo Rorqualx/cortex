@@ -132,14 +132,14 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/avatar-lightbox.ts",
-      "text": "✓ Avatar updated — refreshing…"
+      "text": "Apply as Avatar"
     },
     {
       "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/avatar-lightbox.ts",
-      "text": "Apply as Avatar"
+      "text": "Avatar updated — refreshing…"
     },
     {
       "count": 1,
@@ -3009,7 +3009,7 @@
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/config-quick.ts",
-      "text": "JD or 🦞"
+      "text": "JD or LB"
     },
     {
       "count": 1,
@@ -4029,41 +4029,6 @@
     {
       "count": 1,
       "kind": "html-attribute",
-      "name": "aria-label",
-      "path": "ui/src/ui/views/conversations.ts",
-      "text": "Active run"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "aria-label",
-      "path": "ui/src/ui/views/conversations.ts",
-      "text": "Search conversations"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/views/conversations.ts",
-      "text": "Search conversations…"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "title",
-      "path": "ui/src/ui/views/conversations.ts",
-      "text": "Delete conversation"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/conversations.ts",
-      "text": "No conversations found"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/cron.ts",
       "text": "+1555... or chat id"
@@ -5035,6 +5000,27 @@
       "text": "Use default"
     },
     {
+      "count": 2,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/overview-cards.ts",
+      "text": "cache"
+    },
+    {
+      "count": 2,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/overview-cards.ts",
+      "text": "in"
+    },
+    {
+      "count": 2,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/overview-cards.ts",
+      "text": "out"
+    },
+    {
       "count": 1,
       "kind": "html-attribute",
       "name": "placeholder",
@@ -5121,6 +5107,41 @@
     {
       "count": 1,
       "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Add project"
+    },
+    {
+      "count": 2,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "New agent"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "e.g. Commander"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "What this agent is for"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Write the agent's SOUL.md prompt, or generate one from the description."
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
       "name": "title",
       "path": "ui/src/ui/views/pixel-office.ts",
       "text": "Add project"
@@ -5137,6 +5158,20 @@
       "kind": "html-attribute",
       "name": "title",
       "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Generate a prompt from the description using the default model"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "New agent"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/pixel-office.ts",
       "text": "Remove project"
     },
     {
@@ -5144,7 +5179,133 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/pixel-office.ts",
-      "text": "Add"
+      "text": "(default)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Agent id"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Agent prompt (SOUL.md)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Auto"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Avatar"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Cancel"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Close"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Description"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Generate from description"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Loading prompt…"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Manage in Agents tab"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Model"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "New agent"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Projects"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Regenerate"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Reset to auto"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Role"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Status"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/pixel-office.ts",
+      "text": "Workspace"
     },
     {
       "count": 1,
@@ -5208,34 +5369,6 @@
       "name": "text",
       "path": "ui/src/ui/views/skill-forge.ts",
       "text": "▶ Run Pipeline"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/skill-forge.ts",
-      "text": "✓ Live"
-    },
-    {
-      "count": 3,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/skill-forge.ts",
-      "text": "✗ Retire"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/skill-forge.ts",
-      "text": "☰ List"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/skill-forge.ts",
-      "text": "🧹 Decay"
     },
     {
       "count": 1,
@@ -6068,6 +6201,13 @@
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/workboard.ts",
+      "text": "No folder linked"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/workboard.ts",
       "text": "OpenClaw"
     },
     {
@@ -6075,7 +6215,42 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/workboard.ts",
+      "text": "Directory"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/workboard.ts",
       "text": "Section"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/workboard.ts",
+      "text": "Goals"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/workboard.ts",
+      "text": "Ideas"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/workboard.ts",
+      "text": "Implementations"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/workboard.ts",
+      "text": "Tasks"
     },
     {
       "count": 1,
