@@ -22,52 +22,12 @@ export function renderTelegramCard(params: {
   const hasMultipleAccounts = telegramAccounts.length > 1;
   const configured = resolveChannelConfigured("telegram", props);
 
-  const renderAccountCard = (account: ChannelAccountSnapshot) => {
-    const probe = account.probe as { bot?: { username?: string } } | undefined;
-    const botUsername = probe?.bot?.username;
-    const label = account.name || account.accountId;
-    return html`
-      <div class="account-card">
-        <div class="account-card-header">
-          <div class="account-card-title">${botUsername ? `@${botUsername}` : label}</div>
-          <div class="account-card-id">${account.accountId}</div>
-        </div>
-        <div class="status-list account-card-status">
-          <div>
-            <span class="label">${t("common.running")}</span>
-            <span>${account.running ? t("common.yes") : t("common.no")}</span>
-          </div>
-          <div>
-            <span class="label">${t("common.configured")}</span>
-            <span>${account.configured ? t("common.yes") : t("common.no")}</span>
-          </div>
-          <div>
-            <span class="label">${t("common.lastInbound")}</span>
-            <span
-              >${account.lastInboundAt
-                ? formatRelativeTimestamp(account.lastInboundAt)
-                : t("common.na")}</span
-            >
-          </div>
-          ${account.lastError
-            ? html` <div class="account-card-error">${account.lastError}</div> `
-            : nothing}
-        </div>
-      </div>
-    `;
-  };
-
   if (hasMultipleAccounts) {
     return html`
-      <div class="card">
+      <div class="card channels-grid__wide">
         <div class="card-title">Telegram</div>
         <div class="card-sub">Bot status and channel configuration.</div>
         ${accountCountLabel}
-
-        <div class="account-card-list">
-          ${telegramAccounts.map((account) => renderAccountCard(account))}
-        </div>
-
         ${telegram?.lastError
           ? html`<div class="callout danger" style="margin-top: 12px;">${telegram.lastError}</div>`
           : nothing}

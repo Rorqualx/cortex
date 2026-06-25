@@ -65,7 +65,34 @@ export function renderChannels(props: ChannelsProps) {
   const configAnalysis = analyzeConfigSchema(props.configSchema);
 
   return html`
-    <section class="channels-grid">
+    <details class="card channels-configure">
+      <summary class="channels-configure__summary">
+        <div>
+          <div class="card-title">${t("channels.configure.title")}</div>
+          <div class="card-sub">${t("channels.configure.subtitle")}</div>
+        </div>
+        <span class="channels-configure__chevron" aria-hidden="true"></span>
+      </summary>
+      <div style="margin-top: 14px;">
+        ${props.configSchemaLoading
+          ? html`<div class="muted">${t("channels.configure.loading")}</div>`
+          : configAnalysis.schema
+            ? renderConfigForm({
+                schema: configAnalysis.schema,
+                uiHints: props.configUiHints,
+                value: props.configForm,
+                rawAvailable: true,
+                disabled: props.configSaving || !props.configForm,
+                unsupportedPaths: configAnalysis.unsupportedPaths,
+                onPatch: props.onConfigPatch,
+                activeSection: "channels",
+                onOpenChannelModal: props.onOpenChannelModal,
+              })
+            : html`<div class="muted">${t("channels.configure.unavailable")}</div>`}
+      </div>
+    </details>
+
+    <section class="channels-grid" style="margin-top: 18px;">
       ${orderedChannels.map((channel) =>
         renderChannel(channel.key, props, {
           whatsapp,
@@ -79,26 +106,6 @@ export function renderChannels(props: ChannelsProps) {
           channelAccounts: props.snapshot?.channelAccounts ?? null,
         }),
       )}
-    </section>
-
-    <section class="card" style="margin-top: 18px;">
-      <div class="card-title">${t("channels.configure.title")}</div>
-      <div class="card-sub" style="margin-bottom: 14px;">${t("channels.configure.subtitle")}</div>
-      ${props.configSchemaLoading
-        ? html`<div class="muted">${t("channels.configure.loading")}</div>`
-        : configAnalysis.schema
-          ? renderConfigForm({
-              schema: configAnalysis.schema,
-              uiHints: props.configUiHints,
-              value: props.configForm,
-              rawAvailable: true,
-              disabled: props.configSaving || !props.configForm,
-              unsupportedPaths: configAnalysis.unsupportedPaths,
-              onPatch: props.onConfigPatch,
-              activeSection: "channels",
-              onOpenChannelModal: props.onOpenChannelModal,
-            })
-          : html`<div class="muted">${t("channels.configure.unavailable")}</div>`}
     </section>
 
     ${renderChannelConfigModal({

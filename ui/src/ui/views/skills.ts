@@ -496,24 +496,12 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
   const verdict = verdictForSkill(skill, props.clawhubVerdicts);
 
   return html`
-    <div class="list-item list-item-clickable" @click=${() => props.onDetailOpen(skill.skillKey)}>
-      <div class="list-main">
-        <div class="list-title" style="display: flex; align-items: center; gap: 8px;">
-          <span class="statusDot ${dotClass}"></span>
-          ${skill.emoji ? html`<span>${skill.emoji}</span>` : nothing}
-          <span>${skill.name}</span>
-        </div>
-        <div class="list-sub">${clampText(skill.description, 140)}</div>
-      </div>
-      <div
-        class="list-meta"
-        style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;"
-      >
-        ${skill.clawhub?.status === "linked"
-          ? html`<span class="chip ${verdictChipClass(verdict)}">${verdictLabel(verdict)}</span>`
-          : skill.clawhub?.status === "invalid"
-            ? html`<span class="chip chip-warn">ClawHub link invalid</span>`
-            : nothing}
+    <div
+      class="skill-card ${skill.disabled ? "is-disabled" : ""}"
+      @click=${() => props.onDetailOpen(skill.skillKey)}
+    >
+      <div class="skill-card__top">
+        <span class="skill-card__emoji">${skill.emoji || "🧩"}</span>
         <label class="skill-toggle-wrap" @click=${(e: Event) => e.stopPropagation()}>
           <input
             type="checkbox"
@@ -526,6 +514,18 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
             }}
           />
         </label>
+      </div>
+      <div class="skill-card__title">
+        <span class="statusDot ${dotClass}"></span>
+        <span class="skill-card__name">${skill.name}</span>
+      </div>
+      <div class="skill-card__desc">${clampText(skill.description, 120)}</div>
+      <div class="skill-card__foot">
+        ${skill.clawhub?.status === "linked"
+          ? html`<span class="chip ${verdictChipClass(verdict)}">${verdictLabel(verdict)}</span>`
+          : skill.clawhub?.status === "invalid"
+            ? html`<span class="chip chip-warn">ClawHub link invalid</span>`
+            : nothing}
       </div>
     </div>
   `;

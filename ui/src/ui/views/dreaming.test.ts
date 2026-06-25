@@ -2,8 +2,10 @@
 
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
+import { ALL_AGENTS_ID } from "../controllers/dreaming.ts";
 import {
   renderDreaming,
+  setDiaryDateView,
   setDreamAdvancedWaitingSort,
   setDreamDiarySubTab,
   setDreamSubTab,
@@ -237,7 +239,8 @@ describe("dreaming view", () => {
   it("renders the active dream scene chrome and status", () => {
     const container = renderInto(buildProps({ dreamingOf: "reindexing old chats\u2026" }));
 
-    expectElement(container, ".dreams__lobster svg");
+    // A specific agent is selected, so that agent's avatar dreams in the scene.
+    expectElement(container, ".dreams__dreamer-avatar");
 
     expect(textItems(container, ".dreams__z")).toEqual(["z", "z", "Z"]);
 
@@ -296,6 +299,16 @@ describe("dreaming view", () => {
       "Advanced",
       "Layers",
     ]);
+  });
+
+  it("dreams the selected agent avatar but keeps the crab for all-agents", () => {
+    const agentContainer = renderInto(buildProps({ selectedAgentId: "ceo" }));
+    expectElement(agentContainer, ".dreams__dreamer-avatar");
+    expect(agentContainer.querySelector(".dreams__lobster svg")).toBeNull();
+
+    const allContainer = renderInto(buildProps({ selectedAgentId: ALL_AGENTS_ID }));
+    expectElement(allContainer, ".dreams__lobster svg");
+    expect(allContainer.querySelector(".dreams__dreamer-avatar")).toBeNull();
   });
 
   it("renders idle and unavailable scene states", () => {
@@ -700,6 +713,57 @@ describe("dreaming view", () => {
     setDreamSubTab("scene");
   });
 
+  it("switches the diary date navigation between badges, timeline, and dropdown", () => {
+    setDreamSubTab("diary");
+    setDreamDiarySubTab("dreams");
+    const content = [
+      "<!-- openclaw:dreaming:diary:start -->",
+      "",
+      "*January 1, 2026*",
+      "",
+      "1. First durable fact.",
+      "",
+      "---",
+      "",
+      "*January 2, 2026*",
+      "",
+      "1. Second durable fact.",
+      "",
+      "<!-- openclaw:dreaming:diary:end -->",
+    ].join("\n");
+
+    const badges = renderInto(buildProps({ dreamDiaryContent: content }));
+    expect(
+      [...badges.querySelectorAll(".dreams-diary__dateview-btn")].map((b) => b.textContent?.trim()),
+    ).toEqual(["Badges", "Timeline", "Dropdown"]);
+    expect(badges.querySelector(".dreams-diary__dateview-btn--active")?.textContent?.trim()).toBe(
+      "Badges",
+    );
+    expect(badges.querySelectorAll(".dreams-diary__day-chip").length).toBe(2);
+    expect(badges.querySelectorAll(".dreams-diary__entry")).toHaveLength(1);
+
+    // Timeline shows every entry as a feed, newest first, with no date picker.
+    setDiaryDateView("timeline");
+    const timeline = renderInto(buildProps({ dreamDiaryContent: content }));
+    expect(timeline.querySelectorAll(".dreams-diary__entry")).toHaveLength(2);
+    expect(timeline.querySelector(".dreams-diary__day-chip")).toBeNull();
+    expect(
+      [...timeline.querySelectorAll(".dreams-diary__date")].map((n) => n.textContent?.trim()),
+    ).toEqual(["January 2, 2026", "January 1, 2026"]);
+
+    // Dropdown names the date, so the single entry hides its duplicate header.
+    setDiaryDateView("dropdown");
+    const dropdown = renderInto(buildProps({ dreamDiaryContent: content }));
+    const select = dropdown.querySelector<HTMLSelectElement>(".dreams-diary__dateselect select");
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    expect(select!.options).toHaveLength(2);
+    expect(dropdown.querySelectorAll(".dreams-diary__entry")).toHaveLength(1);
+    expect(dropdown.querySelector(".dreams-diary__date")).toBeNull();
+
+    setDiaryDateView("badges");
+    setDreamSubTab("scene");
+  });
+
   it("renders diary empty, error, and removed-navigation states", () => {
     setDreamSubTab("diary");
     setDreamDiarySubTab("dreams");
@@ -750,9 +814,16 @@ describe("dreaming view", () => {
       "Waiting for Promotion",
       "Recent Promotions",
     ]);
-    expect(compactText(container.querySelector(".dreams-advanced__summary"))).toBe(
-      "1 from daily log · 47 waiting · 12 promoted today",
-    );
+    expect(
+      [...container.querySelectorAll(".dreams-advanced__stat-value")].map((n) =>
+        n.textContent?.trim(),
+      ),
+    ).toEqual(["1", "47", "12"]);
+    expect(
+      [...container.querySelectorAll(".dreams-advanced__stat-label")].map((n) =>
+        n.textContent?.trim(),
+      ),
+    ).toEqual(["from daily log", "waiting", "promoted today"]);
     expect(
       container.querySelector(".dreams-advanced__item .dreams-advanced__snippet")?.textContent,
     ).toBe("Emma prefers shorter, lower-pressure check-ins.");

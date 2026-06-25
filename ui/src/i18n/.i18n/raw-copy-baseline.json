@@ -1665,6 +1665,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/channels.config.ts",
+      "text": "Channel defaults"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/channels.config.ts",
       "text": "Loading config schema…"
     },
     {
@@ -1673,6 +1680,34 @@
       "name": "text",
       "path": "ui/src/ui/views/channels.config.ts",
       "text": "Schema unavailable. Use Raw."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/channels.config.ts",
+      "text": "shared"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/channels.config.ts",
+      "text": "Advanced"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/channels.config.ts",
+      "text": "Security & access"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/channels.config.ts",
+      "text": "Setup"
     },
     {
       "count": 1,
@@ -4161,6 +4196,13 @@
     },
     {
       "count": 1,
+      "kind": "html-attribute",
+      "name": "aria-label",
+      "path": "ui/src/ui/views/dreaming.ts",
+      "text": "Date view"
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/dreaming.ts",
@@ -4448,6 +4490,27 @@
     },
     {
       "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/dreaming.ts",
+      "text": "Badges"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/dreaming.ts",
+      "text": "Dropdown"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/dreaming.ts",
+      "text": "Timeline"
+    },
+    {
+      "count": 1,
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/login-gate.ts",
@@ -4650,14 +4713,7 @@
       "text": "Allowlist"
     },
     {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/nodes-exec-approvals.ts",
-      "text": "Allowlist and approval policy for"
-    },
-    {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/nodes-exec-approvals.ts",
@@ -4697,13 +4753,6 @@
       "name": "text",
       "path": "ui/src/ui/views/nodes-exec-approvals.ts",
       "text": "Enabled"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/nodes-exec-approvals.ts",
-      "text": "Exec approvals"
     },
     {
       "count": 1,
@@ -4797,7 +4846,7 @@
       "text": "Scope"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/nodes-exec-approvals.ts",
@@ -4809,6 +4858,13 @@
       "name": "text",
       "path": "ui/src/ui/views/nodes-exec-approvals.ts",
       "text": "Select node"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/nodes-exec-approvals.ts",
+      "text": "sets deny / allowlist / full;"
     },
     {
       "count": 1,
@@ -4868,6 +4924,76 @@
     },
     {
       "count": 1,
+      "kind": "object-property",
+      "name": "title",
+      "path": "ui/src/ui/views/nodes-exec-approvals.ts",
+      "text": "Exec approvals"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes-shared.ts",
+      "text": "Android"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes-shared.ts",
+      "text": "CLI"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes-shared.ts",
+      "text": "iPad"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes-shared.ts",
+      "text": "iPhone"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes-shared.ts",
+      "text": "Linux"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes-shared.ts",
+      "text": "Mac"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes-shared.ts",
+      "text": "Unknown"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes-shared.ts",
+      "text": "Windows"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Remove every paired device except the one you're using"
+    },
+    {
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
@@ -4892,13 +5018,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
-      "text": "Devices"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/nodes.ts",
       "text": "No agents found."
     },
     {
@@ -4906,7 +5025,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
-      "text": "No nodes found."
+      "text": "No nodes connected"
     },
     {
       "count": 1,
@@ -4927,7 +5046,21 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
-      "text": "Nodes"
+      "text": "Nodes &amp; devices"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "or"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Pair a device or start a node to let agents run commands on another machine."
     },
     {
       "count": 1,
@@ -4935,20 +5068,6 @@
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
       "text": "Paired"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/nodes.ts",
-      "text": "Paired devices and live links."
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/nodes.ts",
-      "text": "Pairing requests + role tokens."
     },
     {
       "count": 1,
@@ -4969,6 +5088,27 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
+      "text": "Remove"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Remove others"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "revoke"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/nodes.ts",
       "text": "Revoke"
     },
     {
@@ -4976,7 +5116,21 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
+      "text": "rotate"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/nodes.ts",
       "text": "Rotate"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "The machines and devices your gateway can reach — what's online, what's trusted, where agents run commands, and what those commands are allowed to do."
     },
     {
       "count": 1,
@@ -4998,6 +5152,48 @@
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
       "text": "Use default"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Default exec policy"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Nodes online"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Paired devices"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Pending approval"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "title",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Connected nodes"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "title",
+      "path": "ui/src/ui/views/nodes.ts",
+      "text": "Devices"
     },
     {
       "count": 2,

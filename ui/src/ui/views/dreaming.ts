@@ -3,6 +3,8 @@ import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { t } from "../../i18n/index.ts";
+import { agentAvatarUrl } from "../avatar/agent-avatar.ts";
+import { ALL_AGENTS_ID } from "../controllers/dreaming.ts";
 import type {
   DreamingEntry,
   WikiImportInsights,
@@ -80,7 +82,10 @@ function parseDiaryTimestamp(date: string): number | null {
 }
 
 function formatDiaryChipLabel(date: string): string {
-  const parsed = parseDiaryTimestamp(date);
+  // Diary dates like "June 24, 2026 at 3:00 AM MDT" fail Date.parse, so fall back
+  // to the leading date portion before the time; keeps chips compact (6/24)
+  // instead of dumping the whole raw string into a pill.
+  const parsed = parseDiaryTimestamp(date) ?? parseDiaryTimestamp(date.split(/\s+at\s+/i)[0] ?? "");
   if (parsed === null) {
     return date;
   }
@@ -102,7 +107,34 @@ type DreamingPhaseInfo = {
 type DreamingAgentOption = {
   id: string;
   label: string;
+  avatar?: string | null;
+  avatarUrl?: string | null;
 };
+
+// Stacked-circle glyph standing in for the aggregate "all agents" option, which
+// has no single agent identity to draw an avatar from.
+const allAgentsGlyph = html`
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="9" cy="10" r="5" fill="currentColor" opacity="0.45" />
+    <circle cx="15" cy="10" r="5" fill="currentColor" opacity="0.45" />
+    <circle cx="12" cy="14" r="5" fill="currentColor" opacity="0.75" />
+  </svg>
+`;
+
+function renderDreamingAgentAvatar(entry: DreamingAgentOption) {
+  if (entry.id === ALL_AGENTS_ID) {
+    return html`<span class="dreams__agent-avatar dreams__agent-avatar--all" aria-hidden="true">
+      ${allAgentsGlyph}
+    </span>`;
+  }
+  return html`<img
+    class="dreams__agent-avatar"
+    src=${agentAvatarUrl(entry.id, { avatar: entry.avatar, avatarUrl: entry.avatarUrl })}
+    alt=""
+    aria-hidden="true"
+    loading="lazy"
+  />`;
+}
 
 export type DreamingProps = {
   active: boolean;
@@ -203,6 +235,8 @@ type DreamSubTab = "scene" | "diary" | "advanced" | "layers";
 let activeSubTab: DreamSubTab = "scene";
 type DreamDiarySubTab = "dreams" | "insights" | "palace";
 let activeDiarySubTab: DreamDiarySubTab = "dreams";
+type DiaryDateView = "badges" | "timeline" | "dropdown";
+let diaryDateView: DiaryDateView = "badges";
 type AdvancedWaitingSort = "recent" | "signals";
 let advancedWaitingSort: AdvancedWaitingSort = "recent";
 const expandedInsightCards = new Set<string>();
@@ -227,6 +261,10 @@ export function setDreamAdvancedWaitingSort(sort: AdvancedWaitingSort): void {
 
 export function setDreamDiarySubTab(tab: DreamDiarySubTab): void {
   activeDiarySubTab = tab;
+}
+
+export function setDiaryDateView(view: DiaryDateView): void {
+  diaryDateView = view;
 }
 
 // ── Diary pagination state ─────────────────────────────────────────────
@@ -382,7 +420,8 @@ export function renderDreaming(props: DreamingProps) {
                         }
                       }}
                     >
-                      ${entry.label}
+                      ${renderDreamingAgentAvatar(entry)}
+                      <span class="dreams__agent-name">${entry.label}</span>
                     </button>`;
                   },
                 )}
@@ -441,7 +480,38 @@ function formatPhaseNextRun(nextRunAtMs?: number): string {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+function resolveDreamerAvatar(props: DreamingProps): string | null {
+  const selected = props.agentOptions.find((option) => option.id === props.selectedAgentId);
+  if (!selected || selected.id === ALL_AGENTS_ID) {
+    return null;
+  }
+  return agentAvatarUrl(selected.id, { avatar: selected.avatar, avatarUrl: selected.avatarUrl });
+}
+
+// Breathing avatar shown beside the diary so it reads as the agent whose dreams
+// are on screen; the generic crab stands in for the aggregate "all agents" view.
+function renderDiaryCompanion(props: DreamingProps) {
+  const dreamer = resolveDreamerAvatar(props);
+  const selected = props.agentOptions.find((option) => option.id === props.selectedAgentId);
+  const figure = dreamer
+    ? html`<img class="dreams-diary__avatar" src=${dreamer} alt="" aria-hidden="true" />`
+    : html`<div class="dreams-diary__avatar dreams-diary__avatar--crab" aria-hidden="true">
+        ${sleepingLobster}
+      </div>`;
+  return html`
+    <aside class="dreams-diary__companion" aria-hidden="true">
+      <div class="dreams-diary__companion-figure">${figure}</div>
+      ${selected?.label
+        ? html`<div class="dreams-diary__companion-name">${selected.label}</div>`
+        : nothing}
+    </aside>
+  `;
+}
+
 function renderScene(props: DreamingProps, idle: boolean, dreamText: string) {
+  // When a single agent is selected, that agent dreams in the scene; the generic
+  // OpenClaw crab stands in for the aggregate "all agents" view.
+  const dreamerAvatar = resolveDreamerAvatar(props);
   return html`
     <section class="dreams ${idle ? "dreams--idle" : ""}">
       ${STARS.map(
@@ -479,7 +549,16 @@ function renderScene(props: DreamingProps, idle: boolean, dreamText: string) {
         : nothing}
 
       <div class="dreams__glow"></div>
-      <div class="dreams__lobster">${sleepingLobster}</div>
+      <div class="dreams__lobster">
+        ${dreamerAvatar
+          ? html`<img
+              class="dreams__dreamer-avatar"
+              src=${dreamerAvatar}
+              alt=""
+              aria-hidden="true"
+            />`
+          : sleepingLobster}
+      </div>
       <span class="dreams__z">z</span>
       <span class="dreams__z">z</span>
       <span class="dreams__z">Z</span>
@@ -833,48 +912,53 @@ function renderAdvancedEntryList(params: {
   controls?: ReturnType<typeof html>;
 }) {
   return html`
-    <section class="dreams-advanced__section">
-      <div class="dreams-advanced__section-header">
-        <div class="dreams-advanced__section-copy">
-          <span class="dreams-advanced__section-title">${t(params.titleKey)}</span>
+    <details class="dreams-advanced__section" open>
+      <summary class="dreams-advanced__section-header">
+        <span class="dreams-advanced__section-title">${t(params.titleKey)}</span>
+        <span class="dreams-advanced__section-count">${params.entries.length}</span>
+        <span class="dreams-advanced__section-chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="dreams-advanced__section-body">
+        <div class="dreams-advanced__section-bar">
           <p class="dreams-advanced__section-description">${t(params.descriptionKey)}</p>
+          ${params.controls
+            ? html`<div class="dreams-advanced__section-toolbar">${params.controls}</div>`
+            : nothing}
         </div>
-        <div class="dreams-advanced__section-toolbar">
-          ${params.controls ?? nothing}
-          <span class="dreams-advanced__section-count">${params.entries.length}</span>
-        </div>
+        ${params.entries.length === 0
+          ? html`<div class="dreams-advanced__empty">${t(params.emptyKey)}</div>`
+          : html`
+              <div class="dreams-advanced__list">
+                ${params.entries.map(
+                  (entry) => html`
+                    <article class="dreams-advanced__item" data-entry-key=${entry.key}>
+                      <div class="dreams-advanced__snippet">${entry.snippet}</div>
+                      <div class="dreams-advanced__chips">
+                        ${params.badge
+                          ? (() => {
+                              const label = params.badge?.(entry);
+                              return label
+                                ? html`<span class="dreams-advanced__badge">${label}</span>`
+                                : nothing;
+                            })()
+                          : nothing}
+                        <span class="dreams-advanced__source">
+                          ${formatRange(entry.path, entry.startLine, entry.endLine)}
+                        </span>
+                        ${params
+                          .meta(entry)
+                          .filter((part) => part.length > 0)
+                          .map(
+                            (part) => html`<span class="dreams-advanced__meta-chip">${part}</span>`,
+                          )}
+                      </div>
+                    </article>
+                  `,
+                )}
+              </div>
+            `}
       </div>
-      ${params.entries.length === 0
-        ? html`<div class="dreams-advanced__empty">${t(params.emptyKey)}</div>`
-        : html`
-            <div class="dreams-advanced__list">
-              ${params.entries.map(
-                (entry) => html`
-                  <article class="dreams-advanced__item" data-entry-key=${entry.key}>
-                    ${params.badge
-                      ? (() => {
-                          const label = params.badge?.(entry);
-                          return label
-                            ? html`<span class="dreams-advanced__badge">${label}</span>`
-                            : nothing;
-                        })()
-                      : nothing}
-                    <div class="dreams-advanced__snippet">${entry.snippet}</div>
-                    <div class="dreams-advanced__source">
-                      ${formatRange(entry.path, entry.startLine, entry.endLine)}
-                    </div>
-                    <div class="dreams-advanced__meta">
-                      ${params
-                        .meta(entry)
-                        .filter((part) => part.length > 0)
-                        .join(" · ")}
-                    </div>
-                  </article>
-                `,
-              )}
-            </div>
-          `}
-    </section>
+    </details>
   `;
 }
 
@@ -882,11 +966,11 @@ function renderAdvancedSection(props: DreamingProps) {
   const groundedEntries = props.shortTermEntries.filter((entry) => entry.groundedCount > 0);
   const waitingEntries = sortWaitingEntries(props.shortTermEntries, advancedWaitingSort);
   const description = t("dreaming.advanced.description");
-  const summary = [
-    `${groundedEntries.length} ${t("dreaming.advanced.summaryFromDailyLog")}`,
-    `${props.shortTermCount} ${t("dreaming.advanced.summaryWaiting")}`,
-    `${props.promotedCount} ${t("dreaming.advanced.summaryPromotedToday")}`,
-  ].join(" · ");
+  const stats = [
+    { value: groundedEntries.length, label: t("dreaming.advanced.summaryFromDailyLog") },
+    { value: props.shortTermCount, label: t("dreaming.advanced.summaryWaiting") },
+    { value: props.promotedCount, label: t("dreaming.advanced.summaryPromotedToday") },
+  ];
 
   return html`
     <section class="dreams-advanced">
@@ -897,7 +981,6 @@ function renderAdvancedSection(props: DreamingProps) {
           ${description
             ? html`<p class="dreams-advanced__description">${description}</p>`
             : nothing}
-          <div class="dreams-advanced__summary">${summary}</div>
         </div>
         <div class="dreams-advanced__actions">
           <button
@@ -938,6 +1021,16 @@ function renderAdvancedSection(props: DreamingProps) {
             ${t("dreaming.scene.clearGrounded")}
           </button>
         </div>
+      </div>
+      <div class="dreams-advanced__stats">
+        ${stats.map(
+          (stat) => html`
+            <div class="dreams-advanced__stat">
+              <span class="dreams-advanced__stat-value">${stat.value}</span>
+              <span class="dreams-advanced__stat-label">${stat.label}</span>
+            </div>
+          `,
+        )}
       </div>
       ${props.dreamDiaryActionMessage
         ? html`
@@ -1416,6 +1509,117 @@ function renderMemoryPalaceSection(props: DreamingProps) {
   `;
 }
 
+const DIARY_DATE_VIEWS: { id: DiaryDateView; label: string }[] = [
+  { id: "badges", label: "Badges" },
+  { id: "timeline", label: "Timeline" },
+  { id: "dropdown", label: "Dropdown" },
+];
+
+// Date navigation for the dream diary with three interchangeable presentations:
+// the scrolling badge row, a vertical timeline, or a compact dropdown. All three
+// drive the same diary page so switching views never loses the reader's place.
+function renderDiaryDateNav(entries: DiaryEntryNav[], page: number, props: DreamingProps) {
+  const select = (target: number) => {
+    setDiaryPage(target);
+    props.onRequestUpdate?.();
+  };
+  return html`
+    <div class="dreams-diary__datenav">
+      <div class="dreams-diary__dateview" role="group" aria-label="Date view">
+        ${DIARY_DATE_VIEWS.map(
+          (view) => html`
+            <button
+              class="dreams-diary__dateview-btn ${diaryDateView === view.id
+                ? "dreams-diary__dateview-btn--active"
+                : ""}"
+              aria-pressed=${diaryDateView === view.id ? "true" : "false"}
+              @click=${() => {
+                setDiaryDateView(view.id);
+                props.onRequestUpdate?.();
+              }}
+            >
+              ${view.label}
+            </button>
+          `,
+        )}
+      </div>
+      ${diaryDateView === "badges"
+        ? renderDiaryDateBadges(entries, page, select)
+        : diaryDateView === "dropdown"
+          ? renderDiaryDateDropdown(entries, page, select)
+          : nothing}
+    </div>
+  `;
+}
+
+function renderDiaryDateBadges(
+  entries: DiaryEntryNav[],
+  page: number,
+  select: (page: number) => void,
+) {
+  return html`
+    <div class="dreams-diary__daychips">
+      ${entries.map(
+        (entry) => html`
+          <button
+            class="dreams-diary__day-chip ${entry.page === page
+              ? "dreams-diary__day-chip--active"
+              : ""}"
+            title=${entry.date}
+            @click=${() => select(entry.page)}
+          >
+            ${formatDiaryChipLabel(entry.date)}
+          </button>
+        `,
+      )}
+    </div>
+  `;
+}
+
+function renderDiaryDateDropdown(
+  entries: DiaryEntryNav[],
+  page: number,
+  select: (page: number) => void,
+) {
+  return html`
+    <label class="dreams-diary__dateselect">
+      <select
+        .value=${String(page)}
+        @change=${(event: Event) => select(Number((event.target as HTMLSelectElement).value))}
+      >
+        ${entries.map(
+          (entry) => html`
+            <option value=${entry.page} ?selected=${entry.page === page}>
+              ${entry.date || formatDiaryChipLabel(entry.date)}
+            </option>
+          `,
+        )}
+      </select>
+    </label>
+  `;
+}
+
+// One diary entry's date header + prose. The dropdown view already names the
+// selected date, so it suppresses the header to avoid printing the date twice.
+function renderDiaryEntryArticle(entry: DiaryEntryNav, showDate = true) {
+  return html`
+    <article class="dreams-diary__entry" key="${entry.page}">
+      <div class="dreams-diary__accent"></div>
+      ${showDate && entry.date
+        ? html`<time class="dreams-diary__date">${entry.date}</time>`
+        : nothing}
+      <div class="dreams-diary__prose">
+        ${flattenDiaryBody(entry.body).map(
+          (para, i) =>
+            html`<p class="dreams-diary__para" style="animation-delay: ${0.3 + i * 0.15}s;">
+              ${unsafeHTML(toSanitizedMarkdownHtml(para))}
+            </p>`,
+        )}
+      </div>
+    </article>
+  `;
+}
+
 function renderDreamDiaryEntries(props: DreamingProps) {
   if (typeof props.dreamDiaryContent !== "string") {
     return html`
@@ -1448,36 +1652,19 @@ function renderDreamDiaryEntries(props: DreamingProps) {
   const page = Math.max(0, Math.min(diaryPage, reversed.length - 1));
   const entry = reversed[page];
 
+  // Timeline shows every entry as a feed; badges/dropdown show one. The dropdown
+  // already names the selected date, so its single entry hides its date header.
+  const body =
+    diaryDateView === "timeline"
+      ? reversed.map((item) => renderDiaryEntryArticle(item))
+      : renderDiaryEntryArticle(entry, diaryDateView !== "dropdown");
+
   return html`
-    <div class="dreams-diary__daychips">
-      ${reversed.map(
-        (e) => html`
-          <button
-            class="dreams-diary__day-chip ${e.page === page
-              ? "dreams-diary__day-chip--active"
-              : ""}"
-            @click=${() => {
-              setDiaryPage(e.page);
-              props.onRequestUpdate?.();
-            }}
-          >
-            ${formatDiaryChipLabel(e.date)}
-          </button>
-        `,
-      )}
+    ${renderDiaryDateNav(reversed, page, props)}
+    <div class="dreams-diary__layout">
+      <div class="dreams-diary__entries">${body}</div>
+      ${renderDiaryCompanion(props)}
     </div>
-    <article class="dreams-diary__entry" key="${page}">
-      <div class="dreams-diary__accent"></div>
-      ${entry.date ? html`<time class="dreams-diary__date">${entry.date}</time>` : nothing}
-      <div class="dreams-diary__prose">
-        ${flattenDiaryBody(entry.body).map(
-          (para, i) =>
-            html`<p class="dreams-diary__para" style="animation-delay: ${0.3 + i * 0.15}s;">
-              ${unsafeHTML(toSanitizedMarkdownHtml(para))}
-            </p>`,
-        )}
-      </div>
-    </article>
   `;
 }
 

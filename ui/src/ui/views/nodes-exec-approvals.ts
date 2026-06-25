@@ -7,6 +7,8 @@ import type {
 } from "../controllers/exec-approvals.ts";
 import { clampText, formatRelativeTimestamp } from "../format.ts";
 import {
+  nodeInfoNote,
+  nodeSectionHead,
   resolveConfigAgents as resolveSharedConfigAgents,
   resolveNodeTargets,
   type NodeTargetOption,
@@ -196,22 +198,26 @@ export function renderExecApprovals(state: ExecApprovalsState) {
   const targetReady = state.target !== "node" || Boolean(state.targetNodeId);
   return html`
     <section class="card">
-      <div class="row" style="justify-content: space-between; align-items: center;">
-        <div>
-          <div class="card-title">Exec approvals</div>
-          <div class="card-sub">
-            Allowlist and approval policy for <span class="mono">exec host=gateway/node</span>.
-          </div>
-        </div>
-        <button
-          class="btn"
-          ?disabled=${state.disabled || !state.dirty || !targetReady}
-          @click=${state.onSave}
-        >
-          ${state.saving ? "Saving…" : "Save"}
-        </button>
-      </div>
-
+      ${nodeSectionHead({
+        icon: "🛡️",
+        title: "Exec approvals",
+        sub: html`Allowlist and approval policy for
+          <span class="mono">exec host=gateway/node</span>.`,
+        action: html`
+          <button
+            class="btn"
+            ?disabled=${state.disabled || !state.dirty || !targetReady}
+            @click=${state.onSave}
+          >
+            ${state.saving ? "Saving…" : "Save"}
+          </button>
+        `,
+      })}
+      ${nodeInfoNote(
+        html`Controls whether agents can run shell commands and whether you're asked first.
+          <strong>Security</strong> sets deny / allowlist / full; <strong>Ask</strong> decides when
+          a prompt appears. Tune the defaults, then override per agent below.`,
+      )}
       ${renderExecApprovalsTarget(state)}
       ${!ready
         ? html`<div class="row" style="margin-top: 12px; gap: 12px;">

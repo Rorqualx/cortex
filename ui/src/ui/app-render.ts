@@ -111,6 +111,8 @@ import {
   approveDevicePairing,
   loadDevices,
   rejectDevicePairing,
+  removeOtherPairedDevices,
+  removePairedDeviceEntry,
   revokeDeviceToken,
   rotateDeviceToken,
 } from "./controllers/devices.ts";
@@ -1507,9 +1509,21 @@ export function renderApp(state: AppViewState) {
   const configuredDreaming = resolveConfiguredDreaming(configValue);
   const dreamingOn = state.dreamingStatus?.enabled ?? configuredDreaming.enabled;
   const dreamingNextCycle = resolveDreamingNextCycle(state.dreamingStatus);
+  // Map each agent's assigned avatar source by normalized id so the dreaming
+  // picker honors uploaded avatars; agents without one fall back to the
+  // deterministic invader inside agentAvatarUrl().
+  const dreamingAvatarSourceById = new Map(
+    (state.agentsList?.agents ?? []).map((agent) => [
+      normalizeAgentId(agent.id),
+      { avatar: agent.identity?.avatar ?? null, avatarUrl: agent.identity?.avatarUrl ?? null },
+    ]),
+  );
   const dreamingAgentOptions = [
     { id: ALL_AGENTS_ID, label: t("dreaming.agentSelect.allAgents") },
-    ...resolveDreamingAgentOptions(state),
+    ...resolveDreamingAgentOptions(state).map((option) => ({
+      ...option,
+      ...(dreamingAvatarSourceById.get(option.id) ?? {}),
+    })),
   ];
   const rawDreamingSelectedAgentId =
     // Default to the aggregate "All" view until the user explicitly picks an
@@ -3708,6 +3722,8 @@ export function renderApp(state: AppViewState) {
                   void rotateDeviceToken(state, { deviceId, role, scopes }),
                 onDeviceRevoke: (deviceId, role) =>
                   void revokeDeviceToken(state, { deviceId, role }),
+                onDeviceRemove: (deviceId) => void removePairedDeviceEntry(state, deviceId),
+                onRemoveOtherDevices: () => void removeOtherPairedDevices(state),
                 onLoadConfig: () => void loadConfig(state, { discardPendingChanges: true }),
                 onLoadExecApprovals: () => {
                   const target =

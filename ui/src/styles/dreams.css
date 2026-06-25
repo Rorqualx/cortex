@@ -71,8 +71,9 @@
 .dreams__agent-button {
   display: flex;
   align-items: center;
+  gap: 10px;
   min-height: 40px;
-  padding: 8px 16px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: color-mix(in oklab, var(--panel) 40%, transparent);
@@ -102,6 +103,42 @@
   background: color-mix(in oklab, var(--accent) 18%, transparent);
 }
 
+.dreams__agent-avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 3px;
+  border-radius: 7px;
+  /* contain so the full invader/avatar shows inside the frame instead of being
+     cropped to fill it. */
+  object-fit: contain;
+  background: color-mix(in oklab, var(--panel) 80%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+}
+
+.dreams__agent-avatar--all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.dreams__agent-avatar--all svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dreams__agent-button--active .dreams__agent-avatar {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+
+.dreams__agent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dreams {
   position: relative;
   display: flex;
@@ -124,6 +161,18 @@
 .dreams__lobster svg {
   width: 160px;
   height: 160px;
+}
+
+/* Selected-agent avatar standing in for the sleeping crab; inherits the
+   container's breathe animation and glow. */
+.dreams__dreamer-avatar {
+  display: block;
+  width: 160px;
+  height: 160px;
+  padding: 16px;
+  border-radius: 28px;
+  /* contain + padding keeps the whole avatar visible (no clipped antennae). */
+  object-fit: contain;
 }
 
 @keyframes dreams-breathe {
@@ -565,10 +614,32 @@
   flex-wrap: wrap;
 }
 
-.dreams-advanced__summary {
-  margin-top: 12px;
+/* Scannable pipeline totals: from-daily-log / waiting / promoted-today. */
+.dreams-advanced__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.dreams-advanced__stat {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  background: color-mix(in oklab, var(--panel) 86%, transparent);
+}
+
+.dreams-advanced__stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.dreams-advanced__stat-label {
   font-size: 12px;
-  line-height: 1.5;
   color: var(--muted);
 }
 
@@ -579,8 +650,6 @@
 }
 
 .dreams-advanced__section {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
   border-radius: 16px;
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
@@ -588,19 +657,23 @@
   overflow: hidden;
 }
 
+/* Collapsible header so long pipelines can be folded away while navigating. */
 .dreams-advanced__section-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 62%, transparent);
-  flex-wrap: wrap;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
 }
 
-.dreams-advanced__section-copy {
-  min-width: 0;
-  max-width: 56ch;
+.dreams-advanced__section-header::-webkit-details-marker {
+  display: none;
+}
+
+.dreams-advanced__section[open] .dreams-advanced__section-header {
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 62%, transparent);
 }
 
 .dreams-advanced__section-title {
@@ -611,8 +684,37 @@
   color: var(--muted);
 }
 
+.dreams-advanced__section-chevron {
+  margin-left: auto;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--muted);
+  transition: transform 140ms ease;
+}
+
+.dreams-advanced__section[open] .dreams-advanced__section-chevron {
+  transform: rotate(180deg);
+}
+
+.dreams-advanced__section-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.dreams-advanced__section-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px 0;
+}
+
 .dreams-advanced__section-description {
-  margin: 6px 0 0;
+  margin: 0;
+  max-width: 56ch;
   font-size: 12px;
   line-height: 1.5;
   color: var(--muted);
@@ -673,32 +775,22 @@
   color: var(--accent);
 }
 
+/* Entries as a responsive card grid so many can be scanned at once. */
 .dreams-advanced__list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+  padding: 14px 16px;
 }
 
 .dreams-advanced__item {
-  padding: 14px 16px;
-  border-top: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
-}
-
-.dreams-advanced__badge {
-  display: inline-flex;
-  align-items: center;
-  margin-bottom: 10px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--accent-subtle) 72%, transparent);
-  color: var(--accent);
-  font-size: 12px; /* was 10px */
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.dreams-advanced__item:first-child {
-  border-top: none;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
 }
 
 .dreams-advanced__snippet {
@@ -707,21 +799,49 @@
   color: var(--text);
 }
 
-.dreams-advanced__source,
-.dreams-advanced__meta,
-.dreams-advanced__empty {
-  font-size: 12px; /* was 11px */
-  line-height: 1.45;
-  color: var(--muted);
-  margin-top: 8px;
+/* Metadata as wrapping chips instead of one run-on muted line. */
+.dreams-advanced__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.dreams-advanced__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent-subtle) 72%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .dreams-advanced__source {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--panel) 80%, transparent);
   font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dreams-advanced__meta-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .dreams-advanced__empty {
   padding: 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
 }
 
 /* ===========================================
@@ -812,6 +932,79 @@
 
 /* ---- Diary entry ---- */
 
+/* Diary entry + the breathing agent companion sit side by side; the companion
+   fills the empty right rail and stays in view while scrolling the entry. */
+.dreams-diary__layout {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+  /* Breathing room below the date switcher/dropdown so it never crowds the
+     entry's date header. */
+  margin-top: 18px;
+}
+
+/* Holds a single entry (badges/dropdown) or the full feed (timeline). */
+.dreams-diary__entries {
+  flex: 0 1 auto;
+  width: min(100%, 920px);
+  min-width: 0;
+  display: grid;
+  gap: 40px;
+}
+
+.dreams-diary__companion {
+  /* Grow into the empty right rail and sit toward its top-right, rather than
+     hugging the diary text. */
+  flex: 1 1 196px;
+  min-width: 196px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+  position: sticky;
+  top: -52px;
+  padding-right: 220px;
+}
+
+.dreams-diary__companion-figure {
+  animation: dreams-breathe 4s ease-in-out infinite;
+  filter: drop-shadow(0 0 30px rgba(255, 77, 77, 0.2));
+}
+
+.dreams-diary__avatar {
+  display: block;
+  width: 150px;
+  height: 150px;
+  padding: 14px;
+  border-radius: 26px;
+  object-fit: contain;
+}
+
+.dreams-diary__avatar--crab svg {
+  width: 132px;
+  height: 132px;
+}
+
+.dreams-diary__companion-name {
+  max-width: 184px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 1180px) {
+  .dreams-diary__layout {
+    flex-direction: column;
+  }
+
+  .dreams-diary__companion {
+    position: static;
+    flex-basis: auto;
+    padding-top: 0;
+  }
+}
+
 .dreams-diary__entry {
   position: relative;
   z-index: 1;
@@ -874,27 +1067,82 @@
   margin-bottom: 16px;
 }
 
+/* Date navigation: a view switcher above one of three date presentations. */
+.dreams-diary__datenav {
+  display: grid;
+  gap: 10px;
+  width: min(100%, 920px);
+  margin: 0;
+}
+
+.dreams-diary__dateview {
+  display: inline-flex;
+  gap: 6px;
+  justify-self: start;
+  padding: 2px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--panel) 82%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+}
+
+.dreams-diary__dateview-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease;
+}
+
+.dreams-diary__dateview-btn:hover {
+  color: var(--text);
+}
+
+.dreams-diary__dateview-btn--active {
+  color: var(--text);
+  background: color-mix(in oklab, var(--accent-subtle) 88%, transparent);
+}
+
+/* Dropdown view: a compact native select of dates. */
+.dreams-diary__dateselect {
+  justify-self: start;
+}
+
+.dreams-diary__dateselect select {
+  min-width: 240px;
+  max-width: 100%;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  background: color-mix(in oklab, var(--panel) 84%, transparent);
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
 .dreams-diary__daychips {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 0;
   width: min(100%, 920px);
   max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  max-height: 104px;
+  overflow-y: auto;
   position: relative;
   z-index: 1;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  padding-bottom: 2px;
-}
-
-.dreams-diary__daychips::-webkit-scrollbar {
-  display: none;
+  scrollbar-width: thin;
+  padding: 0 2px 2px 0;
 }
 
 .dreams-diary__day-chip {
+  flex: 0 0 auto;
+  min-width: 48px;
   padding: 4px 12px;
   border-radius: 999px;
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);

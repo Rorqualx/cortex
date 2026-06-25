@@ -32,6 +32,8 @@ function baseProps(overrides: Partial<NodesProps> = {}): NodesProps {
     onDeviceReject: () => undefined,
     onDeviceRotate: () => undefined,
     onDeviceRevoke: () => undefined,
+    onDeviceRemove: () => undefined,
+    onRemoveOtherDevices: () => undefined,
     onLoadConfig: () => undefined,
     onLoadExecApprovals: () => undefined,
     onBindDefault: () => undefined,
@@ -188,5 +190,82 @@ describe("nodes devices pending rendering", () => {
     const details = getPendingDeviceDetails(container);
 
     expect(details[1]).toBe("requested: roles: node, operator \u00b7 scopes: operator.read");
+  });
+});
+
+function findButtons(scope: Element, label: string): HTMLButtonElement[] {
+  return Array.from(scope.querySelectorAll("button")).filter(
+    (button): button is HTMLButtonElement => button.textContent?.trim() === label,
+  );
+}
+
+describe("nodes paired device type chips + cleanup", () => {
+  it("renders device-type chips and removes a single paired device", () => {
+    let removed: string | null = null;
+    const container = renderNodesContainer({
+      devicesList: {
+        pending: [],
+        paired: [
+          {
+            deviceId: "aabbccddeeff0011",
+            platform: "iPhone",
+            clientId: "openclaw-control-ui",
+            roles: ["operator"],
+          },
+          {
+            deviceId: "1122334455667788",
+            platform: "darwin",
+            clientId: "cli",
+            roles: ["operator"],
+          },
+        ],
+      },
+      onDeviceRemove: (id) => {
+        removed = id;
+      },
+    });
+    const card = getDevicesCard(container);
+    const chips = Array.from(card.querySelectorAll(".device-type-chip")).map((chip) =>
+      chip.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(chips).toContain("\ud83d\udcf1 iPhone");
+    expect(chips).toContain("\ud83d\udcbb Mac");
+
+    const removeButtons = findButtons(card, "Remove");
+    expect(removeButtons).toHaveLength(2);
+    removeButtons[0].click();
+    expect(removed).toBe("aabbccddeeff0011");
+  });
+
+  it("offers bulk remove-others only with more than one paired device", () => {
+    const single = getDevicesCard(
+      renderNodesContainer({
+        devicesList: {
+          pending: [],
+          paired: [{ deviceId: "aabbccddeeff0011", roles: ["operator"] }],
+        },
+      }),
+    );
+    expect(findButtons(single, "Remove others")).toHaveLength(0);
+
+    let bulk = 0;
+    const many = getDevicesCard(
+      renderNodesContainer({
+        devicesList: {
+          pending: [],
+          paired: [
+            { deviceId: "a1", roles: ["operator"] },
+            { deviceId: "b2", roles: ["operator"] },
+          ],
+        },
+        onRemoveOtherDevices: () => {
+          bulk += 1;
+        },
+      }),
+    );
+    const others = findButtons(many, "Remove others");
+    expect(others).toHaveLength(1);
+    others[0].click();
+    expect(bulk).toBe(1);
   });
 });

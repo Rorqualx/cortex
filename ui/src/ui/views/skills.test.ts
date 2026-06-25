@@ -213,7 +213,7 @@ describe("renderSkills", () => {
     render(renderSkills(createProps({ report, statusFilter: "ready" })), container);
     await Promise.resolve();
 
-    expect(container.querySelectorAll(".list-item")).toHaveLength(0);
+    expect(container.querySelectorAll(".skill-card")).toHaveLength(0);
     expect(normalizeText(container)).toContain("Ready0");
     expect(normalizeText(container)).toContain("Needs Setup1");
 
@@ -223,7 +223,9 @@ describe("renderSkills", () => {
     );
     await Promise.resolve();
 
-    expect(container.querySelector(".list-item .statusDot")?.classList.contains("warn")).toBe(true);
+    expect(container.querySelector(".skill-card .statusDot")?.classList.contains("warn")).toBe(
+      true,
+    );
     expect(normalizeText(container)).toContain("Reason: blocked by agent filter");
     expect(
       Array.from(container.querySelectorAll(".chip")).map((chip) => normalizeText(chip)),

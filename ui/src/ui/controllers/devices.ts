@@ -12,7 +12,17 @@ export type DeviceTokenSummary = {
   lastUsedAtMs?: number;
 };
 
-export type PendingDevice = {
+// Device-type metadata the gateway forwards from the pairing handshake
+// (redactPairedDevice spreads these through). platform/clientId are reliably
+// populated; deviceFamily is often absent depending on the paired client.
+export type DeviceTypeMeta = {
+  platform?: string;
+  deviceFamily?: string;
+  clientId?: string;
+  clientMode?: string;
+};
+
+export type PendingDevice = DeviceTypeMeta & {
   requestId: string;
   deviceId: string;
   publicKey?: string;
@@ -25,7 +35,7 @@ export type PendingDevice = {
   ts?: number;
 };
 
-export type PairedDevice = {
+export type PairedDevice = DeviceTypeMeta & {
   deviceId: string;
   publicKey?: string;
   displayName?: string;
@@ -104,6 +114,59 @@ export async function rejectDevicePairing(state: DevicesState, requestId: string
     await loadDevices(state);
   } catch (err) {
     state.devicesError = String(err);
+  }
+}
+
+export async function removePairedDeviceEntry(state: DevicesState, deviceId: string) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  const identity = await loadOrCreateDeviceIdentity();
+  const isSelf = deviceId === identity.deviceId;
+  const message = isSelf
+    ? "This is the device you're using now. Removing it will sign you out. Continue?"
+    : `Remove paired device ${deviceId.slice(0, 8)}? It must pair again to reconnect.`;
+  if (!window.confirm(message)) {
+    return;
+  }
+  try {
+    await state.client.request("device.pair.remove", { deviceId });
+    await loadDevices(state);
+  } catch (err) {
+    state.devicesError = String(err);
+  }
+}
+
+// Bulk cleanup: drop every paired device except the one in use, so a long tail
+// of stale browser/CLI pairings can be cleared without signing out the operator.
+export async function removeOtherPairedDevices(state: DevicesState) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  const paired = state.devicesList?.paired ?? [];
+  const identity = await loadOrCreateDeviceIdentity();
+  const targets = paired.filter((device) => device.deviceId !== identity.deviceId);
+  if (targets.length === 0) {
+    window.alert("No other paired devices to remove.");
+    return;
+  }
+  const plural = targets.length === 1 ? "" : "s";
+  const confirmed = window.confirm(
+    `Remove ${targets.length} other paired device${plural}? They must pair again to reconnect. This device stays signed in.`,
+  );
+  if (!confirmed) {
+    return;
+  }
+  try {
+    for (const device of targets) {
+      await state.client.request("device.pair.remove", { deviceId: device.deviceId });
+    }
+    await loadDevices(state);
+  } catch (err) {
+    state.devicesError = String(err);
+    // Some targets may have been removed before the failure; refresh quietly so
+    // the list reflects the real server state without clearing the error.
+    await loadDevices(state, { quiet: true });
   }
 }
 

@@ -395,8 +395,46 @@
 .channels-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 360px));
-  justify-content: start;
+  /* Columns grow to 1fr (instead of a 360px cap) so a full-span card
+     (.channels-grid__wide) reaches the page edge instead of stopping at the
+     last packed track. */
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+}
+
+/* Multi-account runtime cards span the full row so their accounts can tile
+   side by side instead of being squeezed into one 360px column. */
+.channels-grid__wide {
+  grid-column: 1 / -1;
+}
+
+/* Collapsible "Configure a channel" picker: header alone when folded, expands
+   to the full channel tile grid. */
+.channels-configure__summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.channels-configure__summary::-webkit-details-marker {
+  display: none;
+}
+
+.channels-configure__chevron {
+  flex: 0 0 auto;
+  margin-top: 6px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 7px solid var(--muted);
+  transition: transform var(--duration-fast) ease;
+}
+
+.channels-configure[open] .channels-configure__chevron {
+  transform: rotate(180deg);
 }
 
 .channel-card__head {
@@ -531,6 +569,7 @@
 .account-card-list {
   margin-top: 16px;
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 12px;
 }
 
@@ -563,13 +602,36 @@
   color: var(--muted);
 }
 
+/* Status fields as a row of compact stat tiles (label over value) instead of a
+   narrow vertical label/value list, so the card reads at a glance and fills the
+   horizontal space. */
 .account-card-status {
-  margin-top: 10px;
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
   font-size: 13px;
 }
 
-.account-card-status div {
-  padding: 4px 0;
+.account-card-status > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 10px;
+  border-bottom: none;
+  border-radius: 8px;
+  background: var(--secondary);
+}
+
+.account-card-status > div > span:last-child {
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+/* Errors can appear inside the status grid; let them span the full row. */
+.account-card-status .account-card-error {
+  grid-column: 1 / -1;
 }
 
 .account-card-error {
@@ -6850,13 +6912,290 @@ td.data-table-key-col {
 }
 
 .skills-grid {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
 }
 
-@container (min-width: 900px) {
-  .skills-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* Square-ish skill tiles: emoji + toggle on top, title, clamped blurb that
+   fills the middle, status chip pinned to the bottom so every card lines up. */
+.skill-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 8px;
+  aspect-ratio: 1 / 1;
+  min-height: 168px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease;
+}
+
+.skill-card:hover {
+  border-color: var(--border-strong);
+}
+
+.skill-card.is-disabled {
+  opacity: 0.62;
+}
+
+.skill-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.skill-card__emoji {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.skill-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.skill-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-card__desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.skill-card__foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 0;
+}
+
+@media (max-width: 560px) {
+  .skill-card {
+    aspect-ratio: auto;
+    min-height: 0;
   }
+}
+
+/* ===========================================
+   Nodes page
+   =========================================== */
+
+/* Hero summary: icon + intro on the left, a row of accent stat tiles on the
+   right that collapse below the copy on narrow widths. */
+.node-hero {
+  display: grid;
+  gap: 18px;
+}
+
+.node-hero__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.node-hero__icon {
+  font-size: 28px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.node-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.node-stat {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--secondary);
+}
+
+.node-stat.is-alert {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: var(--warn-subtle);
+}
+
+.node-stat__value {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-strong);
+}
+
+.node-stat.is-alert .node-stat__value {
+  color: var(--warn);
+}
+
+.node-stat__label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Shared section header used by every Nodes-page card. */
+.node-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.node-head__lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.node-head__icon {
+  font-size: 20px;
+  line-height: 1.2;
+  flex: 0 0 auto;
+}
+
+.node-head__text {
+  min-width: 0;
+}
+
+.node-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.node-note {
+  margin-top: 12px;
+}
+
+/* Live-node tiles: a status-tinted accent bar down the left edge, then the
+   node identity and labeled capability/command chip groups. */
+.node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.node-card {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.node-card__bar {
+  flex: 0 0 4px;
+  background: var(--border-strong);
+}
+
+.node-card.is-online .node-card__bar {
+  background: var(--ok);
+}
+
+.node-card.is-offline .node-card__bar {
+  background: var(--warn);
+}
+
+.node-card__body {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  min-width: 0;
+  flex: 1;
+}
+
+.node-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.node-card__title {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-card__meta {
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.node-card__group {
+  display: grid;
+  gap: 6px;
+}
+
+.node-card__group-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/* Friendly empty state when no nodes have connected yet. */
+.node-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+  padding: 32px 16px;
+  margin-top: 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+.node-empty__icon {
+  font-size: 26px;
+}
+
+.node-empty__title {
+  font-weight: 600;
+}
+
+.node-empty__sub {
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 360px;
+}
+
+/* Device title row: name plus device-type / client badges that wrap on narrow
+   widths instead of pushing the hash off-screen. */
+.device-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.device-type-chip {
+  color: var(--text-strong);
+  border-color: var(--border-strong);
 }
 
 @media (max-width: 980px) {

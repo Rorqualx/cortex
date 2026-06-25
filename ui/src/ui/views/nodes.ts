@@ -10,30 +10,109 @@ import type { DeviceTokenSummary, PairedDevice, PendingDevice } from "../control
 import { formatRelativeTimestamp, formatList } from "../format.ts";
 import { normalizeOptionalString } from "../string-coerce.ts";
 import { renderExecApprovals, resolveExecApprovalsState } from "./nodes-exec-approvals.ts";
-import { resolveConfigAgents, resolveNodeTargets, type NodeTargetOption } from "./nodes-shared.ts";
+import {
+  describeDeviceClient,
+  describeDeviceType,
+  nodeInfoNote,
+  nodeSectionHead,
+  resolveConfigAgents,
+  resolveNodeTargets,
+  type NodeTargetOption,
+} from "./nodes-shared.ts";
 export type { NodesProps } from "./nodes.types.ts";
 import type { NodesProps } from "./nodes.types.ts";
+
+type NodesSummary = {
+  total: number;
+  online: number;
+  paired: number;
+  pending: number;
+  execMode: string;
+};
+
+function resolveNodesSummary(props: NodesProps, approvalsReady: boolean, execMode: string) {
+  const list = props.devicesList ?? { pending: [], paired: [] };
+  const summary: NodesSummary = {
+    total: props.nodes.length,
+    online: props.nodes.filter((n) => Boolean(n.connected)).length,
+    paired: Array.isArray(list.paired) ? list.paired.length : 0,
+    pending: Array.isArray(list.pending) ? list.pending.length : 0,
+    execMode: approvalsReady ? execMode : "not loaded",
+  };
+  return summary;
+}
+
+function renderHero(summary: NodesSummary) {
+  const stats: Array<{ value: string; label: string; alert?: boolean }> = [
+    { value: `${summary.online}/${summary.total}`, label: "Nodes online" },
+    { value: String(summary.paired), label: "Paired devices" },
+    { value: String(summary.pending), label: "Pending approval", alert: summary.pending > 0 },
+    { value: summary.execMode, label: "Default exec policy" },
+  ];
+  return html`
+    <section class="card node-hero">
+      <div class="node-hero__main">
+        <span class="node-hero__icon" aria-hidden="true">🛰️</span>
+        <div>
+          <div class="card-title">Nodes &amp; devices</div>
+          <div class="card-sub">
+            The machines and devices your gateway can reach — what's online, what's trusted, where
+            agents run commands, and what those commands are allowed to do.
+          </div>
+        </div>
+      </div>
+      <div class="node-stats">
+        ${stats.map(
+          (stat) => html`
+            <div class="node-stat ${stat.alert ? "is-alert" : ""}">
+              <span class="node-stat__value">${stat.value}</span>
+              <span class="node-stat__label">${stat.label}</span>
+            </div>
+          `,
+        )}
+      </div>
+    </section>
+  `;
+}
 
 export function renderNodes(props: NodesProps) {
   const bindingState = resolveBindingsState(props);
   const approvalsState = resolveExecApprovalsState(props);
+  const summary = resolveNodesSummary(
+    props,
+    approvalsState.ready,
+    approvalsState.defaults.security,
+  );
   return html`
-    ${renderExecApprovals(approvalsState)} ${renderBindings(bindingState)} ${renderDevices(props)}
+    ${renderHero(summary)} ${renderNodesInventory(props)} ${renderDevices(props)}
+    ${renderBindings(bindingState)} ${renderExecApprovals(approvalsState)}
+  `;
+}
+
+function renderNodesInventory(props: NodesProps) {
+  return html`
     <section class="card">
-      <div class="row" style="justify-content: space-between;">
-        <div>
-          <div class="card-title">Nodes</div>
-          <div class="card-sub">Paired devices and live links.</div>
-        </div>
-        <button class="btn" ?disabled=${props.loading} @click=${props.onRefresh}>
-          ${props.loading ? t("common.loading") : t("common.refresh")}
-        </button>
-      </div>
-      <div class="list" style="margin-top: 16px;">
-        ${props.nodes.length === 0
-          ? html` <div class="muted">No nodes found.</div> `
-          : props.nodes.map((n) => renderNode(n))}
-      </div>
+      ${nodeSectionHead({
+        icon: "🖥️",
+        title: "Connected nodes",
+        sub: "Live links advertising the capabilities and commands agents can call.",
+        action: html`
+          <button class="btn" ?disabled=${props.loading} @click=${props.onRefresh}>
+            ${props.loading ? t("common.loading") : t("common.refresh")}
+          </button>
+        `,
+      })}
+      ${props.nodes.length === 0
+        ? html`
+            <div class="node-empty">
+              <span class="node-empty__icon" aria-hidden="true">🔌</span>
+              <div class="node-empty__title">No nodes connected</div>
+              <div class="node-empty__sub">
+                Pair a device or start a node to let agents run commands on another machine.
+              </div>
+            </div>
+          `
+        : html` <div class="node-grid">${props.nodes.map((n) => renderNode(n))}</div> `}
     </section>
   `;
 }
@@ -49,15 +128,35 @@ function renderDevices(props: NodesProps) {
   );
   return html`
     <section class="card">
-      <div class="row" style="justify-content: space-between;">
-        <div>
-          <div class="card-title">Devices</div>
-          <div class="card-sub">Pairing requests + role tokens.</div>
-        </div>
-        <button class="btn" ?disabled=${props.devicesLoading} @click=${props.onDevicesRefresh}>
-          ${props.devicesLoading ? t("common.loading") : t("common.refresh")}
-        </button>
-      </div>
+      ${nodeSectionHead({
+        icon: "🔐",
+        title: "Devices",
+        sub: "Pairing requests and the role tokens that let a device act as a node.",
+        action: html`
+          <div class="node-head__actions">
+            ${pending.length > 0
+              ? html`<span class="chip chip-warn">${pending.length} pending</span>`
+              : nothing}
+            ${paired.length > 1
+              ? html`<button
+                  class="btn btn--sm danger"
+                  ?disabled=${props.devicesLoading}
+                  @click=${props.onRemoveOtherDevices}
+                  title="Remove every paired device except the one you're using"
+                >
+                  Remove others
+                </button>`
+              : nothing}
+            <button class="btn" ?disabled=${props.devicesLoading} @click=${props.onDevicesRefresh}>
+              ${props.devicesLoading ? t("common.loading") : t("common.refresh")}
+            </button>
+          </div>
+        `,
+      })}
+      ${nodeInfoNote(
+        html`Approve a request to trust a device, then <strong>rotate</strong> or
+          <strong>revoke</strong> its tokens to manage access over time.`,
+      )}
       ${props.devicesError
         ? html`<div class="callout danger" style="margin-top: 12px;">${props.devicesError}</div>`
         : nothing}
@@ -127,6 +226,17 @@ function renderPendingApprovalNote(kind: PendingDeviceApprovalKind) {
   throw new Error("unsupported pending approval kind");
 }
 
+// Device-type + client badges derived from pairing metadata, shown beside the
+// device title so operators can tell a phone from the CLI from a browser.
+function renderDeviceTypeChips(device: PairedDevice | PendingDevice) {
+  const type = describeDeviceType(device);
+  const client = describeDeviceClient(device.clientId);
+  return html`
+    <span class="chip device-type-chip">${type.icon} ${type.label}</span>
+    ${client ? html`<span class="chip">${client}</span>` : nothing}
+  `;
+}
+
 function renderPendingDevice(req: PendingDevice, props: NodesProps, paired?: PairedDevice) {
   const name = normalizeOptionalString(req.displayName) || req.deviceId;
   const age = typeof req.ts === "number" ? formatRelativeTimestamp(req.ts) : t("common.na");
@@ -136,8 +246,11 @@ function renderPendingDevice(req: PendingDevice, props: NodesProps, paired?: Pai
   return html`
     <div class="list-item">
       <div class="list-main">
-        <div class="list-title">${name}</div>
-        <div class="list-sub">${req.deviceId}${ip}</div>
+        <div class="list-title device-title">
+          <span>${name}</span>
+          ${renderDeviceTypeChips(req)}
+        </div>
+        <div class="list-sub mono">${req.deviceId}${ip}</div>
         <div class="muted" style="margin-top: 6px;">
           ${renderPendingApprovalNote(approval.kind)} · requested ${age}${repair}
         </div>
@@ -167,7 +280,10 @@ function renderPendingDevice(req: PendingDevice, props: NodesProps, paired?: Pai
 }
 
 function renderPairedDevice(device: PairedDevice, props: NodesProps) {
-  const name = normalizeOptionalString(device.displayName) || device.deviceId;
+  // Fall back to a short device-id label instead of repeating the full hash as
+  // both title and subtitle when the client never sent a displayName.
+  const name =
+    normalizeOptionalString(device.displayName) || `Device ${device.deviceId.slice(0, 8)}`;
   const ip = device.remoteIp ? ` · ${device.remoteIp}` : "";
   const roles = `roles: ${formatList(device.roles)}`;
   const scopes = `scopes: ${formatList(device.scopes)}`;
@@ -175,8 +291,11 @@ function renderPairedDevice(device: PairedDevice, props: NodesProps) {
   return html`
     <div class="list-item">
       <div class="list-main">
-        <div class="list-title">${name}</div>
-        <div class="list-sub">${device.deviceId}${ip}</div>
+        <div class="list-title device-title">
+          <span>${name}</span>
+          ${renderDeviceTypeChips(device)}
+        </div>
+        <div class="list-sub mono">${device.deviceId}${ip}</div>
         <div class="muted" style="margin-top: 6px;">${roles} · ${scopes}</div>
         ${tokens.length === 0
           ? html` <div class="muted" style="margin-top: 6px">Tokens: none</div> `
@@ -186,6 +305,13 @@ function renderPairedDevice(device: PairedDevice, props: NodesProps) {
                 ${tokens.map((token) => renderTokenRow(device.deviceId, token, props))}
               </div>
             `}
+      </div>
+      <div class="list-meta">
+        <div class="row" style="justify-content: flex-end;">
+          <button class="btn btn--sm danger" @click=${() => props.onDeviceRemove(device.deviceId)}>
+            Remove
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -276,20 +402,25 @@ function renderBindings(state: BindingState) {
   const defaultValue = state.defaultBinding ?? "";
   return html`
     <section class="card">
-      <div class="row" style="justify-content: space-between; align-items: center;">
-        <div>
-          <div class="card-title">${t("nodes.binding.execNodeBinding")}</div>
-          <div class="card-sub">${t("nodes.binding.execNodeBindingSubtitle")}</div>
-        </div>
-        <button
-          class="btn"
-          ?disabled=${state.disabled || !state.configDirty}
-          @click=${state.onSave}
-        >
-          ${state.configSaving ? t("common.saving") : t("common.save")}
-        </button>
-      </div>
-
+      ${nodeSectionHead({
+        icon: "🧭",
+        title: t("nodes.binding.execNodeBinding"),
+        sub: t("nodes.binding.execNodeBindingSubtitle"),
+        action: html`
+          <button
+            class="btn"
+            ?disabled=${state.disabled || !state.configDirty}
+            @click=${state.onSave}
+          >
+            ${state.configSaving ? t("common.saving") : t("common.save")}
+          </button>
+        `,
+      })}
+      ${nodeInfoNote(
+        html`Pick which node an agent's shell commands run on. Leave it on
+          <strong>Any node</strong> to let the gateway choose, or pin an agent to a specific
+          machine.`,
+      )}
       ${state.formMode === "raw"
         ? html`
             <div class="callout warn" style="margin-top: 12px">
@@ -437,6 +568,23 @@ function resolveAgentBindings(config: Record<string, unknown> | null): {
   return { defaultBinding, agents };
 }
 
+function renderNodeChipGroup(label: string, values: unknown[], limit: number) {
+  if (values.length === 0) {
+    return nothing;
+  }
+  const shown = values.slice(0, limit);
+  const overflow = values.length - shown.length;
+  return html`
+    <div class="node-card__group">
+      <span class="node-card__group-label">${label}</span>
+      <div class="chip-row">
+        ${shown.map((c) => html`<span class="chip">${String(c)}</span>`)}
+        ${overflow > 0 ? html`<span class="chip">+${overflow}</span>` : nothing}
+      </div>
+    </div>
+  `;
+}
+
 function renderNode(node: Record<string, unknown>) {
   const connected = Boolean(node.connected);
   const paired = Boolean(node.paired);
@@ -445,23 +593,28 @@ function renderNode(node: Record<string, unknown>) {
     (typeof node.nodeId === "string" ? node.nodeId : "unknown");
   const caps = Array.isArray(node.caps) ? (node.caps as unknown[]) : [];
   const commands = Array.isArray(node.commands) ? (node.commands as unknown[]) : [];
+  const meta = [
+    typeof node.nodeId === "string" ? node.nodeId : "",
+    typeof node.remoteIp === "string" ? node.remoteIp : "",
+    typeof node.version === "string" ? node.version : "",
+  ].filter(Boolean);
   return html`
-    <div class="list-item">
-      <div class="list-main">
-        <div class="list-title">${title}</div>
-        <div class="list-sub">
-          ${typeof node.nodeId === "string" ? node.nodeId : ""}
-          ${typeof node.remoteIp === "string" ? ` · ${node.remoteIp}` : ""}
-          ${typeof node.version === "string" ? ` · ${node.version}` : ""}
-        </div>
-        <div class="chip-row" style="margin-top: 6px;">
-          <span class="chip">${paired ? "paired" : "unpaired"}</span>
+    <div class="node-card ${connected ? "is-online" : "is-offline"}">
+      <span class="node-card__bar" aria-hidden="true"></span>
+      <div class="node-card__body">
+        <div class="node-card__head">
+          <span class="statusDot ${connected ? "ok" : "warn"}"></span>
+          <span class="node-card__title">${title}</span>
           <span class="chip ${connected ? "chip-ok" : "chip-warn"}">
             ${connected ? "connected" : "offline"}
           </span>
-          ${caps.slice(0, 12).map((c) => html`<span class="chip">${String(c)}</span>`)}
-          ${commands.slice(0, 8).map((c) => html`<span class="chip">${String(c)}</span>`)}
+          <span class="chip">${paired ? "paired" : "unpaired"}</span>
         </div>
+        ${meta.length > 0
+          ? html`<div class="node-card__meta mono">${meta.join(" · ")}</div>`
+          : nothing}
+        ${renderNodeChipGroup("Capabilities", caps, 12)}
+        ${renderNodeChipGroup("Commands", commands, 8)}
       </div>
     </div>
   `;
