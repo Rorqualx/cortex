@@ -924,10 +924,12 @@ export interface UpdateCheckState {
 
 export interface VaultSecret {
   approval_policy: Generated<string>;
+  auth_config_json: Generated<string>;
+  auth_kind: Generated<string>;
   created_at: number;
   credential_type: string | null;
   description: string | null;
-  header_template: string;
+  header_template: Generated<string>;
   host_allowlist_json: string;
   name: string;
   updated_at: number;
@@ -941,6 +943,16 @@ export interface VaultSecretGrant {
   granted_at: number;
   host: string;
   name: string;
+}
+
+export interface VaultSession {
+  created_at: number;
+  expires_at: number;
+  host: string;
+  name: string;
+  token_cipher: string;
+  token_iv: string;
+  token_tag: string;
 }
 
 export interface VoicewakeRoutingConfig {
@@ -1085,6 +1097,7 @@ export interface DB {
   update_check_state: UpdateCheckState;
   vault_secret: VaultSecret;
   vault_secret_grant: VaultSecretGrant;
+  vault_session: VaultSession;
   voicewake_routing_config: VoicewakeRoutingConfig;
   voicewake_routing_routes: VoicewakeRoutingRoutes;
   voicewake_triggers: VoicewakeTriggers;

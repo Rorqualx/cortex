@@ -1,19 +1,23 @@
 // Control UI view: manage egress vault credentials.
 //
-// Self-contained element: holds its own list/form state and talks to the gateway
-// directly via vault.list / vault.save / vault.delete. The plaintext value only
-// leaves the masked input on save; the list never receives or shows values.
+// Self-contained element: holds its own list state and talks to the gateway via
+// vault.list / vault.delete. Adding is delegated to the shared credential form
+// (secret material leaves the masked inputs only on save; the list never
+// receives or shows values).
 import { LitElement, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { GatewayBrowserClient } from "../gateway.ts";
+import "../components/vault-credential-form.ts";
 
 type VaultApprovalPolicy = "auto" | "ask";
+type VaultAuthKind = "bearer" | "basic" | "header" | "login";
 
 type VaultEntry = {
   name: string;
   hostAllowlist: string[];
-  headerTemplate: string;
   approvalPolicy: VaultApprovalPolicy;
+  authKind: VaultAuthKind;
+  description?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -23,12 +27,7 @@ export class OpenClawVaultView extends LitElement {
 
   @state() private entries: VaultEntry[] = [];
   @state() private loading = false;
-  @state() private saving = false;
   @state() private error = "";
-  @state() private formName = "";
-  @state() private formValue = "";
-  @state() private formHosts = "";
-  @state() private formPolicy: VaultApprovalPolicy = "ask";
 
   static override styles = css`
     :host {
@@ -81,44 +80,14 @@ export class OpenClawVaultView extends LitElement {
       border: 1px solid var(--border, #444);
       opacity: 0.85;
     }
-    label {
-      display: block;
-      font-size: 12px;
-      opacity: 0.8;
-      margin: 10px 0 4px;
-    }
-    input,
-    select {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 8px;
-      border-radius: 6px;
-      border: 1px solid var(--border, #444);
-      background: var(--input-bg, #111);
-      color: inherit;
-      font: inherit;
-    }
-    button {
+    button.danger {
       padding: 7px 14px;
       border-radius: 6px;
-      border: 1px solid var(--border, #444);
+      border: 1px solid var(--danger, #b14);
       background: var(--surface, rgba(255, 255, 255, 0.05));
-      color: inherit;
+      color: var(--danger, #ff8a8a);
       cursor: pointer;
       font: inherit;
-    }
-    button.primary {
-      background: var(--accent, #3b82f6);
-      border-color: var(--accent, #3b82f6);
-      color: #fff;
-    }
-    button.danger {
-      border-color: var(--danger, #b14);
-      color: var(--danger, #ff8a8a);
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
     }
     h3 {
       margin: 0 0 8px;
@@ -147,40 +116,6 @@ export class OpenClawVaultView extends LitElement {
     }
   }
 
-  private async save(): Promise<void> {
-    if (!this.client) {
-      return;
-    }
-    const name = this.formName.trim();
-    const hostAllowlist = this.formHosts
-      .split(",")
-      .map((host) => host.trim())
-      .filter(Boolean);
-    if (!name || !this.formValue || hostAllowlist.length === 0) {
-      this.error = "Name, value, and at least one host are required.";
-      return;
-    }
-    this.saving = true;
-    this.error = "";
-    try {
-      await this.client.request("vault.save", {
-        name,
-        value: this.formValue,
-        hostAllowlist,
-        approvalPolicy: this.formPolicy,
-      });
-      this.formName = "";
-      this.formValue = "";
-      this.formHosts = "";
-      this.formPolicy = "ask";
-      await this.load();
-    } catch (err) {
-      this.error = `Failed to save: ${String(err)}`;
-    } finally {
-      this.saving = false;
-    }
-  }
-
   private async deleteEntry(name: string): Promise<void> {
     if (!this.client) {
       return;
@@ -205,9 +140,12 @@ export class OpenClawVaultView extends LitElement {
         <div class="row">
           <div>
             <div class="name">${entry.name}</div>
-            <div class="meta">${entry.hostAllowlist.join(", ")}</div>
+            <div class="meta">
+              ${entry.hostAllowlist.join(", ")}${entry.description ? ` — ${entry.description}` : ""}
+            </div>
           </div>
           <div style="display:flex; align-items:center; gap:10px;">
+            <span class="badge">${entry.authKind}</span>
             <span class="badge">${entry.approvalPolicy}</span>
             <button class="danger" @click=${() => void this.deleteEntry(entry.name)}>Delete</button>
           </div>
@@ -232,51 +170,10 @@ export class OpenClawVaultView extends LitElement {
 
       <div class="card">
         <h3>Add a credential</h3>
-        <label for="vault-name">Name</label>
-        <input
-          id="vault-name"
-          .value=${this.formName}
-          @input=${(e: Event) => {
-            this.formName = (e.target as HTMLInputElement).value;
-          }}
-          placeholder="stripe"
-        />
-        <label for="vault-value">Secret value</label>
-        <input
-          id="vault-value"
-          type="password"
-          autocomplete="off"
-          .value=${this.formValue}
-          @input=${(e: Event) => {
-            this.formValue = (e.target as HTMLInputElement).value;
-          }}
-          placeholder="sk_live_…"
-        />
-        <label for="vault-hosts">Allowed hosts (comma-separated)</label>
-        <input
-          id="vault-hosts"
-          .value=${this.formHosts}
-          @input=${(e: Event) => {
-            this.formHosts = (e.target as HTMLInputElement).value;
-          }}
-          placeholder="api.stripe.com"
-        />
-        <label for="vault-policy">Injection policy</label>
-        <select
-          id="vault-policy"
-          .value=${this.formPolicy}
-          @change=${(e: Event) => {
-            this.formPolicy = (e.target as HTMLSelectElement).value as VaultApprovalPolicy;
-          }}
-        >
-          <option value="ask">Ask before use</option>
-          <option value="auto">Inject automatically</option>
-        </select>
-        <div style="margin-top:14px;">
-          <button class="primary" ?disabled=${this.saving} @click=${() => void this.save()}>
-            ${this.saving ? "Saving…" : "Save credential"}
-          </button>
-        </div>
+        <openclaw-vault-credential-form
+          .client=${this.client}
+          @vault-saved=${() => void this.load()}
+        ></openclaw-vault-credential-form>
       </div>
     `;
   }

@@ -1287,14 +1287,23 @@ CREATE INDEX IF NOT EXISTS idx_model_catalog_discovered_provider_status
 CREATE TABLE IF NOT EXISTS vault_secret (
   name TEXT NOT NULL PRIMARY KEY,
   host_allowlist_json TEXT NOT NULL,
-  header_template TEXT NOT NULL,
+  -- Retired: header_template/credential_type predate auth_kind. Kept NOT NULL
+  -- DEFAULT '' so pre-migration DBs (where header_template is NOT NULL) still
+  -- accept inserts; canonical readers ignore them. backfillVaultAuthKinds and
+  -- doctor own normalization.
+  header_template TEXT NOT NULL DEFAULT '',
+  -- value_* is the AES-256-GCM-encrypted JSON secret material (token / user+pass
+  -- / header values); the key never lives here.
   value_iv TEXT NOT NULL,
   value_cipher TEXT NOT NULL,
   value_tag TEXT NOT NULL,
   approval_policy TEXT NOT NULL DEFAULT 'ask',
-  -- Human/model-facing metadata. credential_type is a UI label (bearer, api_key,
-  -- basic, custom) that drives header_template; description is free-text shown to
-  -- the operator and surfaced (without the value) so the model knows what it is.
+  -- auth_kind drives injection: bearer | basic | header | login. auth_config_json
+  -- holds the non-secret config (ordered header names; for login the endpoint,
+  -- token extract, and placement). description is free-text shown to the operator
+  -- and surfaced (without the value) so the model knows what it is.
+  auth_kind TEXT NOT NULL DEFAULT 'bearer',
+  auth_config_json TEXT NOT NULL DEFAULT '{}',
   credential_type TEXT,
   description TEXT,
   created_at INTEGER NOT NULL,
@@ -1308,6 +1317,22 @@ CREATE TABLE IF NOT EXISTS vault_secret_grant (
   host TEXT NOT NULL,
   decision TEXT NOT NULL,
   granted_at INTEGER NOT NULL,
+  PRIMARY KEY (name, host)
+);
+
+-- Cached session tokens for the stateful 'login' auth kind. The gateway logs in
+-- once, encrypts the captured token here (token_*, same AES-256-GCM scheme as
+-- value_*), and replays it until expires_at. Pure cache: a missing/cleared row
+-- just triggers a re-login, so it carries no migration and is dropped with its
+-- vault_secret on delete.
+CREATE TABLE IF NOT EXISTS vault_session (
+  name TEXT NOT NULL,
+  host TEXT NOT NULL,
+  token_iv TEXT NOT NULL,
+  token_cipher TEXT NOT NULL,
+  token_tag TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
   PRIMARY KEY (name, host)
 );
 

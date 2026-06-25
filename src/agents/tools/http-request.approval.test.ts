@@ -22,7 +22,7 @@ describe("resolveSecretInjectionDecision (ask policy approval)", () => {
 
   function saveAsk(name = "stripe", hosts = ["api.stripe.com"]) {
     saveVaultSecret(
-      { name, value: "sk_live_x", hostAllowlist: hosts, approvalPolicy: "ask" },
+      { name, authKind: "bearer", token: "sk_live_x", hostAllowlist: hosts, approvalPolicy: "ask" },
       { env },
     );
   }
@@ -30,8 +30,9 @@ describe("resolveSecretInjectionDecision (ask policy approval)", () => {
   const entry = (name = "stripe", hosts = ["api.stripe.com"]) => ({
     name,
     hostAllowlist: hosts,
-    headerTemplate: "Authorization: Bearer {{value}}",
     approvalPolicy: "ask" as const,
+    authKind: "bearer" as const,
+    authConfig: { kind: "bearer" as const },
     createdAt: 0,
     updatedAt: 0,
   });

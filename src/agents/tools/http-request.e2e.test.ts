@@ -34,7 +34,13 @@ describe.skipIf(!process.env.OPENCLAW_LIVE_TEST)("http_request vault egress (liv
 
   it("injects the bound credential and scrubs the echoed value from the result", async () => {
     saveVaultSecret(
-      { name: "httpbin", value: SECRET, hostAllowlist: ["httpbin.org"], approvalPolicy: "auto" },
+      {
+        name: "httpbin",
+        authKind: "bearer",
+        token: SECRET,
+        hostAllowlist: ["httpbin.org"],
+        approvalPolicy: "auto",
+      },
       { env },
     );
     const tool = createHttpRequestTool({ env });
@@ -52,7 +58,8 @@ describe.skipIf(!process.env.OPENCLAW_LIVE_TEST)("http_request vault egress (liv
     saveVaultSecret(
       {
         name: "elsewhere",
-        value: SECRET,
+        authKind: "bearer",
+        token: SECRET,
         hostAllowlist: ["api.example.com"],
         approvalPolicy: "auto",
       },

@@ -43,10 +43,11 @@ describe("vault gateway handlers", () => {
     fs.rmSync(stateDir, { recursive: true, force: true });
   });
 
-  it("saves, then lists metadata only (no value)", () => {
+  it("saves a bearer credential, then lists metadata only (no value)", () => {
     const save = invoke("vault.save", {
       name: "stripe",
-      value: "sk_live_handler_secret_123",
+      authKind: "bearer",
+      token: "sk_live_handler_secret_123",
       hostAllowlist: ["api.stripe.com"],
       approvalPolicy: "auto",
     });
@@ -60,11 +61,43 @@ describe("vault gateway handlers", () => {
     expect(serialized).not.toContain("sk_live_handler_secret_123");
   });
 
+  it("saves a login credential keeping the password out of list metadata", () => {
+    const save = invoke("vault.save", {
+      name: "router",
+      authKind: "login",
+      username: "admin",
+      password: "router-pass-secret",
+      hostAllowlist: ["192.168.50.1"],
+      login: {
+        loginUrl: "http://192.168.50.1/login.cgi",
+        bodyTemplate: "login_authorization={{basic}}",
+        extract: { from: "set-cookie", cookieName: "asus_token" },
+        place: { as: "cookie", cookieName: "asus_token" },
+      },
+    });
+    expect(save.ok).toBe(true);
+    const list = invoke("vault.list", {});
+    const serialized = JSON.stringify(list.result);
+    expect(serialized).toContain("login.cgi");
+    expect(serialized).not.toContain("router-pass-secret");
+  });
+
   it("rejects a save with no hosts", () => {
     const save = invoke("vault.save", {
       name: "bad",
-      value: "whatever-secret-value",
+      authKind: "bearer",
+      token: "whatever-secret-value",
       hostAllowlist: [],
+    });
+    expect(save.ok).toBe(false);
+  });
+
+  it("rejects a save with an unknown auth kind", () => {
+    const save = invoke("vault.save", {
+      name: "bad",
+      authKind: "magic",
+      token: "x",
+      hostAllowlist: ["api.example.com"],
     });
     expect(save.ok).toBe(false);
   });
@@ -72,7 +105,8 @@ describe("vault gateway handlers", () => {
   it("deletes an entry", () => {
     invoke("vault.save", {
       name: "temp",
-      value: "temp-secret-value-123",
+      authKind: "bearer",
+      token: "temp-secret-value-123",
       hostAllowlist: ["api.temp.com"],
     });
     const del = invoke("vault.delete", { name: "temp" });

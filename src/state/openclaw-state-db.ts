@@ -16,6 +16,7 @@ import {
   type SqliteWalMaintenance,
 } from "../infra/sqlite-wal.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { decryptSecret, encryptSecret, loadOrCreateVaultKey } from "../secrets/vault/crypto.js";
 import type { DB as OpenClawStateKyselyDatabase } from "./openclaw-state-db.generated.js";
 import {
   resolveOpenClawStateSqliteDir,
@@ -672,6 +673,107 @@ function backfillDeliveryQueueEntriesFromEntryJson(db: DatabaseSync): void {
   }
 }
 
+const DEFAULT_LEGACY_VAULT_HEADER_TEMPLATE = "Authorization: Bearer {{value}}";
+
+/**
+ * Map a pre-auth_kind vault row (raw secret string + "Header: tmpl" string) to
+ * canonical material + clear config. Lossless: the default bearer template
+ * becomes a bearer token; any other template becomes a single fixed header
+ * carrying the exact value that was injected before.
+ */
+function legacyVaultMaterial(
+  headerTemplate: string,
+  value: string,
+): { authKind: string; material: Record<string, unknown>; config: Record<string, unknown> } {
+  const template = headerTemplate.trim() || DEFAULT_LEGACY_VAULT_HEADER_TEMPLATE;
+  if (template === DEFAULT_LEGACY_VAULT_HEADER_TEMPLATE) {
+    return {
+      authKind: "bearer",
+      material: { kind: "bearer", token: value },
+      config: { kind: "bearer" },
+    };
+  }
+  const colon = template.indexOf(":");
+  const name = colon === -1 ? "Authorization" : template.slice(0, colon).trim() || "Authorization";
+  const valueTemplate = colon === -1 ? template : template.slice(colon + 1).trim();
+  const rendered = valueTemplate.split("{{value}}").join(value);
+  return {
+    authKind: "header",
+    material: { kind: "header", values: { [name]: rendered } },
+    config: { kind: "header", headers: [name] },
+  };
+}
+
+/**
+ * Re-encrypt legacy vault rows (raw value blob + header_template) into the
+ * canonical auth_kind/auth_config_json + JSON material shape so runtime never
+ * reads the old shape. Idempotent: rows are selected only while their
+ * auth_config_json is still the column default ('{}'), so re-running is a no-op.
+ * Runs at boot (not just doctor) so an existing saved credential keeps working
+ * across the upgrade without a manual repair step.
+ */
+function backfillVaultAuthKinds(db: DatabaseSync, env: NodeJS.ProcessEnv): void {
+  if (
+    !tableExists(db, "vault_secret") ||
+    !tableHasColumn(db, "vault_secret", "auth_config_json") ||
+    !tableHasColumn(db, "vault_secret", "header_template")
+  ) {
+    return;
+  }
+  const rows = db
+    .prepare(
+      `SELECT name, header_template, value_iv, value_cipher, value_tag
+         FROM vault_secret
+        WHERE auth_config_json = '{}'`,
+    )
+    .all() as Array<{
+    name: string;
+    header_template: string | null;
+    value_iv: string;
+    value_cipher: string;
+    value_tag: string;
+  }>;
+  if (rows.length === 0) {
+    return;
+  }
+  let key: Buffer;
+  try {
+    key = loadOrCreateVaultKey(env);
+  } catch {
+    // Key unavailable (e.g. permissions) — leave rows for a later run/doctor.
+    return;
+  }
+  const update = db.prepare(
+    `UPDATE vault_secret
+        SET auth_kind = ?, auth_config_json = ?, value_iv = ?, value_cipher = ?, value_tag = ?
+      WHERE name = ?`,
+  );
+  for (const row of rows) {
+    let plaintext: string;
+    try {
+      plaintext = decryptSecret(
+        { iv: row.value_iv, ciphertext: row.value_cipher, tag: row.value_tag },
+        key,
+      );
+    } catch {
+      continue; // tampered / wrong key — skip rather than corrupt the row.
+    }
+    // No "already JSON" guard: the WHERE auth_config_json = '{}' filter already
+    // selects only unmigrated rows (migrated rows carry a non-'{}' config), so a
+    // legacy raw value that happens to be JSON is still migrated correctly.
+    const migrated = legacyVaultMaterial(row.header_template ?? "", plaintext);
+    const encrypted = encryptSecret(JSON.stringify(migrated.material), key);
+    update.run(
+      migrated.authKind,
+      JSON.stringify(migrated.config),
+      encrypted.iv,
+      encrypted.ciphertext,
+      encrypted.tag,
+      row.name,
+    );
+  }
+}
+
 function ensureAdditiveStateColumns(db: DatabaseSync): void {
   ensureColumn(db, "node_pairing_pending", "client_id TEXT");
   ensureColumn(db, "node_pairing_pending", "client_mode TEXT");
@@ -833,14 +935,18 @@ function ensureAdditiveStateColumns(db: DatabaseSync): void {
   ensureColumn(db, "subagent_runs", "task_name TEXT");
   ensureColumn(db, "vault_secret", "credential_type TEXT");
   ensureColumn(db, "vault_secret", "description TEXT");
+  ensureColumn(db, "vault_secret", "auth_kind TEXT NOT NULL DEFAULT 'bearer'");
+  ensureColumn(db, "vault_secret", "auth_config_json TEXT NOT NULL DEFAULT '{}'");
 }
 
-function ensureSchema(db: DatabaseSync, pathname: string): void {
+function ensureSchema(db: DatabaseSync, pathname: string, env: NodeJS.ProcessEnv): void {
   assertSupportedSchemaVersion(db, pathname);
   ensureAdditiveStateColumns(db);
   assertCanonicalStateSchemaShape(db, pathname);
   db.exec(OPENCLAW_STATE_SCHEMA_SQL);
   ensureAdditiveStateColumns(db);
+  // Once, after columns exist (ensureAdditiveStateColumns runs twice for ordering).
+  backfillVaultAuthKinds(db, env);
   db.exec(`PRAGMA user_version = ${OPENCLAW_STATE_SCHEMA_VERSION};`);
   const now = Date.now();
   const kysely = getNodeSqliteKysely<OpenClawStateMetadataDatabase>(db);
@@ -903,7 +1009,7 @@ export function openOpenClawStateDatabase(
         foreignKeys: true,
         synchronous: "NORMAL",
       });
-      ensureSchema(db, pathname);
+      ensureSchema(db, pathname, env);
       return maintenance;
     } catch (err) {
       maintenance?.close();

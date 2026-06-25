@@ -17,7 +17,7 @@ import {
 } from "../../infra/net/ssrf.js";
 import { readPositiveIntegerParam } from "./common.js";
 
-const WEB_TOOLS_SELF_HOSTED_NETWORK_SSRF_POLICY: SsrFPolicy = {
+export const WEB_TOOLS_SELF_HOSTED_NETWORK_SSRF_POLICY: SsrFPolicy = {
   dangerouslyAllowPrivateNetwork: true,
   allowRfc2544BenchmarkRange: true,
   allowIpv6UniqueLocalRange: true,

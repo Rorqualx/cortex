@@ -4,12 +4,12 @@ import { danger } from "../globals.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { defaultRuntime } from "../runtime.js";
 import {
-  DEFAULT_VAULT_HEADER_TEMPLATE,
   deleteVaultSecret,
   listVaultSecrets,
   saveVaultSecret,
   setVaultSecretHosts,
   type VaultApprovalPolicy,
+  type VaultSecretInput,
 } from "../secrets/vault/store.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
 
@@ -21,7 +21,8 @@ const clackPromptsLoader = createLazyImportLoader<ClackPromptsModule>(
 
 type VaultAddOptions = {
   hosts: string;
-  header?: string;
+  username?: string;
+  headerName?: string;
   policy?: string;
   value?: string;
 };
@@ -73,6 +74,24 @@ async function resolveSecretValue(explicit: string | undefined): Promise<string>
   return entered;
 }
 
+/** Build the store input from the chosen flags. Login kinds are UI-driven. */
+function buildAddInput(
+  name: string,
+  hostAllowlist: string[],
+  approvalPolicy: VaultApprovalPolicy,
+  secret: string,
+  opts: VaultAddOptions,
+): VaultSecretInput {
+  const common = { name, hostAllowlist, approvalPolicy };
+  if (opts.username) {
+    return { ...common, authKind: "basic", username: opts.username, password: secret };
+  }
+  if (opts.headerName) {
+    return { ...common, authKind: "header", headers: [{ name: opts.headerName, value: secret }] };
+  }
+  return { ...common, authKind: "bearer", token: secret };
+}
+
 export function registerVaultCli(program: Command): void {
   const vault = program
     .command("vault")
@@ -82,10 +101,8 @@ export function registerVaultCli(program: Command): void {
     .command("add <name>")
     .description("Save a credential bound to one or more hosts (value read from stdin or prompt)")
     .requiredOption("--hosts <hosts>", "Comma-separated host allowlist, e.g. api.stripe.com")
-    .option(
-      "--header <template>",
-      `Header template with {{value}} (default: "${DEFAULT_VAULT_HEADER_TEMPLATE}")`,
-    )
+    .option("--username <username>", "Username for HTTP Basic auth (value becomes the password)")
+    .option("--header-name <name>", "Inject the value into this custom header, e.g. X-API-Key")
     .option("--policy <policy>", 'Injection policy: "auto" (silent) or "ask" (prompt)', "ask")
     .option("--value <value>", "Secret value (discouraged; prefer stdin to avoid shell history)")
     .action(async (name: string, opts: VaultAddOptions) => {
@@ -95,16 +112,11 @@ export function registerVaultCli(program: Command): void {
           throw new Error("At least one --hosts entry is required.");
         }
         const approvalPolicy = normalizePolicy(opts.policy);
-        const value = await resolveSecretValue(opts.value);
-        saveVaultSecret({
-          name,
-          value,
-          hostAllowlist,
-          ...(opts.header ? { headerTemplate: opts.header } : {}),
-          approvalPolicy,
-        });
+        const secret = await resolveSecretValue(opts.value);
+        const input = buildAddInput(name, hostAllowlist, approvalPolicy, secret, opts);
+        saveVaultSecret(input);
         defaultRuntime.log(
-          `Saved vault secret "${name}" for ${hostAllowlist.join(", ")} (policy: ${approvalPolicy}).`,
+          `Saved vault secret "${name}" (${input.authKind}) for ${hostAllowlist.join(", ")} (policy: ${approvalPolicy}).`,
         );
       } catch (err) {
         defaultRuntime.error(danger(formatErrorMessage(err)));
@@ -128,7 +140,7 @@ export function registerVaultCli(program: Command): void {
       }
       for (const entry of entries) {
         defaultRuntime.log(
-          `${entry.name}  [${entry.approvalPolicy}]  ${entry.hostAllowlist.join(", ")}`,
+          `${entry.name}  [${entry.approvalPolicy}/${entry.authKind}]  ${entry.hostAllowlist.join(", ")}`,
         );
       }
     });

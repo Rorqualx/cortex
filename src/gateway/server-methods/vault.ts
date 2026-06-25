@@ -1,16 +1,70 @@
 // Gateway methods for the egress secret vault: list, save, delete.
 //
-// Save accepts the plaintext value once (UI -> gateway) and encrypts it in the
+// Save accepts the secret material once (UI -> gateway) and encrypts it in the
 // store immediately. List returns metadata only — values never leave the host.
 import {
   ErrorCodes,
   errorShape,
   validateVaultDeleteParams,
   validateVaultSaveParams,
+  type VaultSaveParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { registerDynamicSecret } from "../../logging/redact.js";
-import { deleteVaultSecret, listVaultSecrets, saveVaultSecret } from "../../secrets/vault/store.js";
+import {
+  deleteVaultSecret,
+  listVaultSecrets,
+  saveVaultSecret,
+  type VaultLoginConfig,
+  type VaultSecretInput,
+} from "../../secrets/vault/store.js";
 import type { GatewayRequestHandlers } from "./types.js";
+
+/** Register every secret field so an incidental later log line is scrubbed. */
+function registerSaveSecrets(params: VaultSaveParams): void {
+  switch (params.authKind) {
+    case "bearer":
+      registerDynamicSecret(params.token);
+      return;
+    case "basic":
+    case "login":
+      registerDynamicSecret(params.password);
+      return;
+    case "header":
+      for (const header of params.headers) {
+        registerDynamicSecret(header.value);
+      }
+  }
+}
+
+/** Map the validated protocol params to the store's input union. */
+function toVaultSecretInput(params: VaultSaveParams): VaultSecretInput {
+  const common = {
+    name: params.name,
+    hostAllowlist: params.hostAllowlist,
+    ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
+    ...(params.description ? { description: params.description } : {}),
+  };
+  switch (params.authKind) {
+    case "bearer":
+      return { ...common, authKind: "bearer", token: params.token };
+    case "basic":
+      return { ...common, authKind: "basic", username: params.username, password: params.password };
+    case "header":
+      return { ...common, authKind: "header", headers: params.headers };
+    case "login":
+      return {
+        ...common,
+        authKind: "login",
+        username: params.username,
+        password: params.password,
+        login: params.login as VaultLoginConfig,
+      };
+    default: {
+      const exhaustive: never = params;
+      return exhaustive;
+    }
+  }
+}
 
 export const vaultHandlers: GatewayRequestHandlers = {
   "vault.list": async ({ respond }) => {
@@ -25,18 +79,8 @@ export const vaultHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    // The plaintext only transits this handler; register it so any later log
-    // line that incidentally captures it is scrubbed before it is written.
-    registerDynamicSecret(params.value);
-    saveVaultSecret({
-      name: params.name,
-      value: params.value,
-      hostAllowlist: params.hostAllowlist,
-      ...(params.headerTemplate ? { headerTemplate: params.headerTemplate } : {}),
-      ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
-      ...(params.credentialType ? { credentialType: params.credentialType } : {}),
-      ...(params.description ? { description: params.description } : {}),
-    });
+    registerSaveSecrets(params);
+    saveVaultSecret(toVaultSecretInput(params));
     respond(true, { ok: true });
   },
   "vault.delete": async ({ params, respond }) => {
