@@ -60,6 +60,35 @@ describe("grounding metrics store", () => {
     const summary = summarizeGroundingMetrics({ fromDay: "2099-01-01", dir });
     expect(summary.checked).toBe(0);
     expect(summary.byAgent).toEqual([]);
+    expect(summary.avgPreConfidence).toBeUndefined();
+    expect(summary.avgPostConfidence).toBeUndefined();
+  });
+
+  it("stores and averages confidence values", () => {
+    recordGroundingCheck({
+      agentId: "main",
+      outcome: "grounded",
+      revised: false,
+      preConfidence: 0.8,
+      postConfidence: 0.9,
+      now: T,
+      dir,
+    });
+    recordGroundingCheck({
+      agentId: "main",
+      outcome: "grounded",
+      revised: false,
+      preConfidence: 0.6,
+      postConfidence: 0.7,
+      now: T,
+      dir,
+    });
+    recordGroundingCheck({ agentId: "main", outcome: "skipped", revised: false, now: T, dir });
+
+    const summary = summarizeGroundingMetrics({ fromDay: localDay(T), dir });
+    expect(summary.checked).toBe(3);
+    expect(summary.avgPreConfidence).toBeCloseTo((0.8 + 0.6) / 3, 6);
+    expect(summary.avgPostConfidence).toBeCloseTo((0.9 + 0.7) / 3, 6);
   });
 
   it("localDay formats the local calendar day", () => {

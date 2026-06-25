@@ -149,7 +149,13 @@ function recordCheck(
   record: typeof recordGroundingCheck = recordGroundingCheck,
 ): void {
   try {
-    record({ agentId, outcome: verdict.status, revised });
+    record({
+      agentId,
+      outcome: verdict.status,
+      revised,
+      preConfidence: verdict.preConfidence,
+      postConfidence: verdict.postConfidence,
+    });
   } catch (err) {
     logDebug(`grounding: metrics record failed: ${String(err)}`);
   }

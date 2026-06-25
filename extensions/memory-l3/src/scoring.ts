@@ -343,6 +343,12 @@ export function scoreFact(params: {
   reliability?: number;
   /** Semantic-entropy confidence score (0–1). Higher = more confident. Defaults to fact.semanticEntropy or 1.0. */
   semanticEntropy?: number;
+  /**
+   * Grounding confidence from the CALIBER dual-confidence verifier (0–1).
+   * When present, scales the reliability signal to reflect model uncertainty
+   * about the turn from which this fact was extracted.
+   */
+  groundingConfidence?: number;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -361,7 +367,7 @@ export function scoreFact(params: {
           significant: params.significant,
         })
       : recencyScore(ageMs, params.config.recencyHalfLifeDays);
-  return {
+  const signals: Signals = {
     lexical,
     bm25,
     importance,
@@ -373,6 +379,10 @@ export function scoreFact(params: {
     reliability: params.reliability ?? certaintyToReliability(params.fact.certainty),
     semanticEntropy: params.semanticEntropy ?? params.fact.semanticEntropy ?? 1.0,
   };
+  if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
+    signals.reliability = signals.reliability * params.groundingConfidence;
+  }
+  return signals;
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {

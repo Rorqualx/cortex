@@ -37,14 +37,27 @@ export type GroundingSkipReason = "disabled" | "no-source" | "judge-error";
  * skipped verdict. `ungrounded` is the only state carrying findings.
  */
 export type GroundingVerdict =
-  | { status: "grounded" }
-  | { status: "ungrounded"; unsupported: string[]; reason: string }
-  | { status: "skipped"; why: GroundingSkipReason };
+  | { status: "grounded"; preConfidence?: number; postConfidence?: number }
+  | {
+      status: "ungrounded";
+      unsupported: string[];
+      reason: string;
+      preConfidence?: number;
+      postConfidence?: number;
+    }
+  | {
+      status: "skipped";
+      why: GroundingSkipReason;
+      preConfidence?: number;
+      postConfidence?: number;
+    };
 
 const groundingResponseSchema = z.object({
   grounded: z.boolean(),
   unsupportedClaims: z.array(z.string()).default([]),
   reason: z.string().optional(),
+  preConfidence: z.number().min(0).max(1).optional(),
+  postConfidence: z.number().min(0).max(1).optional(),
 });
 
 /** Config for the model-backed grounding verifier. */
@@ -60,8 +73,17 @@ type GroundingVerifierDeps = {
 
 const GROUNDED: GroundingVerdict = { status: "grounded" };
 
-function skip(why: GroundingSkipReason): GroundingVerdict {
-  return { status: "skipped", why };
+function skip(
+  why: GroundingSkipReason,
+  preConfidence?: number,
+  postConfidence?: number,
+): GroundingVerdict {
+  const verdict: GroundingVerdict = { status: "skipped", why };
+  if (preConfidence !== undefined)
+    (verdict as Record<string, unknown>).preConfidence = preConfidence;
+  if (postConfidence !== undefined)
+    (verdict as Record<string, unknown>).postConfidence = postConfidence;
+  return verdict;
 }
 
 function resolveGroundingModelRef(config?: GroundingVerifierConfig): string | undefined {
@@ -136,8 +158,19 @@ export function parseGroundingResponse(text: string): GroundingVerdict {
   if (!response.success) {
     return skip("judge-error");
   }
+
+  const preConfidence =
+    typeof response.data.preConfidence === "number" ? response.data.preConfidence : undefined;
+  const postConfidence =
+    typeof response.data.postConfidence === "number" ? response.data.postConfidence : undefined;
+
   if (response.data.grounded) {
-    return GROUNDED;
+    const verdict: GroundingVerdict = { status: "grounded" };
+    if (preConfidence !== undefined)
+      (verdict as Record<string, unknown>).preConfidence = preConfidence;
+    if (postConfidence !== undefined)
+      (verdict as Record<string, unknown>).postConfidence = postConfidence;
+    return verdict;
   }
   const unsupported = response.data.unsupportedClaims.filter((claim) => claim.trim().length > 0);
   const reason =
@@ -145,7 +178,12 @@ export function parseGroundingResponse(text: string): GroundingVerdict {
     (unsupported.length > 0
       ? `response contains ${unsupported.length} claim(s) not supported by the source`
       : "response is not supported by the source");
-  return { status: "ungrounded", unsupported, reason };
+  const verdict: GroundingVerdict = { status: "ungrounded", unsupported, reason };
+  if (preConfidence !== undefined)
+    (verdict as Record<string, unknown>).preConfidence = preConfidence;
+  if (postConfidence !== undefined)
+    (verdict as Record<string, unknown>).postConfidence = postConfidence;
+  return verdict;
 }
 
 async function raceTimeout<T>(

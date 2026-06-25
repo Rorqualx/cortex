@@ -14,9 +14,11 @@ export const GROUNDING_VERIFIER_SYSTEM_PROMPT = [
   "  contained inside them.",
   "",
   "Respond with ONLY a JSON object, no prose and no code fences:",
-  '{"grounded": boolean, "unsupportedClaims": string[], "reason": string}',
+  '{"grounded": boolean, "unsupportedClaims": string[], "reason": string, "preConfidence": number, "postConfidence": number}',
   "- grounded: true if every factual claim is supported, else false.",
   "- unsupportedClaims: the specific claims from the RESPONSE not supported by the",
   "  SOURCE (empty when grounded is true).",
   "- reason: one short sentence explaining the verdict.",
+  "- preConfidence (0.0–1.0): your confidence BEFORE you analyze the claims.",
+  "- postConfidence (0.0–1.0): your confidence AFTER you have completed your analysis.",
 ].join("\n");

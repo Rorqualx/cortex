@@ -112,11 +112,44 @@ describe("runGroundingFinalizeGate", () => {
       finalAnswer: longAnswer,
       messages,
       deps: {
-        verifyGrounding: verifyReturning({ status: "ungrounded", unsupported: ["x"], reason: "r" }),
+        verifyGrounding: verifyReturning({
+          status: "ungrounded",
+          unsupported: ["x"],
+          reason: "r",
+          preConfidence: 0.7,
+          postConfidence: 0.3,
+        }),
         recordGroundingCheck: record,
       },
     });
-    expect(record).toHaveBeenCalledWith({ agentId: "varys", outcome: "ungrounded", revised: true });
+    expect(record).toHaveBeenCalledWith({
+      agentId: "varys",
+      outcome: "ungrounded",
+      revised: true,
+      preConfidence: 0.7,
+      postConfidence: 0.3,
+    });
+  });
+
+  it("records confidence as undefined when verdict lacks it", async () => {
+    const record = vi.fn();
+    await runGroundingFinalizeGate({
+      cfg,
+      agentId: "main",
+      finalAnswer: longAnswer,
+      messages,
+      deps: {
+        verifyGrounding: verifyReturning({ status: "grounded" }),
+        recordGroundingCheck: record,
+      },
+    });
+    expect(record).toHaveBeenCalledWith({
+      agentId: "main",
+      outcome: "grounded",
+      revised: false,
+      preConfidence: undefined,
+      postConfidence: undefined,
+    });
   });
 
   it("does not record when the judge never runs (short answer)", async () => {

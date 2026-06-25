@@ -402,6 +402,45 @@ describe("buildCorpusStats + BM25", () => {
     expect(signals.reliability).toBe(0.95);
   });
 
+  it("groundingConfidence scales reliability signal", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const fact = {
+      id: "f1",
+      text: "anything",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+      certainty: "confirmed",
+    };
+    const signals = scoreFact({
+      queryTokens: new Set(),
+      fact,
+      now: Date.now(),
+      config,
+      groundingConfidence: 0.5,
+    });
+    expect(signals.reliability).toBe(0.5); // confirmed=1.0 * 0.5
+  });
+
+  it("groundingConfidence is ignored when absent", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const fact = {
+      id: "f1",
+      text: "anything",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+      certainty: "confirmed",
+    };
+    const signals = scoreFact({
+      queryTokens: new Set(),
+      fact,
+      now: Date.now(),
+      config,
+    });
+    expect(signals.reliability).toBe(1.0);
+  });
+
   it("composite includes goalRelevance and reliability", () => {
     const config = {
       weightLexical: 0,

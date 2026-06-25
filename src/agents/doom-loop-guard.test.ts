@@ -78,6 +78,36 @@ describe("createDoomLoopGuard", () => {
     expect(err.detector).toBe("doom_loop");
   });
 
+  it("recordConfidenceSignal treats low confidence as a countable failure", () => {
+    const guard = createDoomLoopGuard({ maxConsecutiveFailures: 3 });
+    guard.arm();
+    const r1 = guard.recordConfidenceSignal(0.3);
+    expect(r1.shouldAbort).toBe(false);
+    expect(r1.consecutiveFailures).toBe(1);
+    const r2 = guard.recordConfidenceSignal(0.4);
+    expect(r2.consecutiveFailures).toBe(2);
+    const r3 = guard.recordConfidenceSignal(0.2);
+    expect(r3.shouldAbort).toBe(true);
+  });
+
+  it("recordConfidenceSignal ignores high confidence", () => {
+    const guard = createDoomLoopGuard({ maxConsecutiveFailures: 3 });
+    guard.arm();
+    guard.recordFailure("tool_error", Date.now());
+    const r = guard.recordConfidenceSignal(0.9);
+    expect(r.shouldAbort).toBe(false);
+    expect(r.consecutiveFailures).toBe(1); // unchanged from the tool_error
+  });
+
+  it("recordConfidenceSignal uses custom threshold", () => {
+    const guard = createDoomLoopGuard({ maxConsecutiveFailures: 2 });
+    guard.arm();
+    const r1 = guard.recordConfidenceSignal(0.6, 0.7);
+    expect(r1.consecutiveFailures).toBe(1);
+    const r2 = guard.recordConfidenceSignal(0.6, 0.7);
+    expect(r2.shouldAbort).toBe(true);
+  });
+
   it("failure window expiration resets counter", () => {
     const now = 1_000_000;
     const guard = createDoomLoopGuard({

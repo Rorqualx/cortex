@@ -23,6 +23,10 @@ export type GroundingMetricsSummary = {
   ungrounded: number;
   revised: number;
   skipped: number;
+  /** Average pre-confidence across all checks (0–1), undefined when no confidence data. */
+  avgPreConfidence?: number;
+  /** Average post-confidence across all checks (0–1), undefined when no confidence data. */
+  avgPostConfidence?: number;
   byAgent: Array<{
     agentId: string;
     checked: number;
@@ -42,6 +46,8 @@ CREATE TABLE IF NOT EXISTS grounding_daily (
   ungrounded INTEGER NOT NULL DEFAULT 0,
   revised INTEGER NOT NULL DEFAULT 0,
   skipped INTEGER NOT NULL DEFAULT 0,
+  pre_confidence REAL,
+  post_confidence REAL,
   PRIMARY KEY (day, agent_id)
 );`;
 
@@ -66,6 +72,13 @@ function openDb(dir?: string): DatabaseSync {
   db.exec("PRAGMA synchronous = NORMAL;");
   db.exec(`PRAGMA busy_timeout = ${OPENCLAW_SQLITE_BUSY_TIMEOUT_MS};`);
   db.exec(SCHEMA_SQL);
+  // Migration: add pre/post confidence columns if they don't exist (pre-2026-06-25 dbs).
+  try {
+    db.prepare("SELECT pre_confidence FROM grounding_daily LIMIT 1").get();
+  } catch {
+    db.exec("ALTER TABLE grounding_daily ADD COLUMN pre_confidence REAL;");
+    db.exec("ALTER TABLE grounding_daily ADD COLUMN post_confidence REAL;");
+  }
   cachedDatabases.set(pathname, db);
   return db;
 }
@@ -83,6 +96,10 @@ export function recordGroundingCheck(params: {
   agentId: string;
   outcome: GroundingCheckOutcome;
   revised: boolean;
+  /** Optional pre-reasoning confidence (0–1). */
+  preConfidence?: number;
+  /** Optional post-reasoning confidence (0–1). */
+  postConfidence?: number;
   now?: number;
   dir?: string;
 }): void {
@@ -92,17 +109,21 @@ export function recordGroundingCheck(params: {
   const ungrounded = params.outcome === "ungrounded" ? 1 : 0;
   const skipped = params.outcome === "skipped" ? 1 : 0;
   const revised = params.revised ? 1 : 0;
+  const preConfidence = params.preConfidence ?? null;
+  const postConfidence = params.postConfidence ?? null;
   // Counter upsert isn't cleanly expressible in Kysely; a fully-parameterized
   // prepared statement is the narrow SQLite primitive justified here.
   const stmt = db.prepare(
-    `INSERT INTO grounding_daily (day, agent_id, checked, grounded, ungrounded, revised, skipped)
-     VALUES (?, ?, 1, ?, ?, ?, ?)
+    `INSERT INTO grounding_daily (day, agent_id, checked, grounded, ungrounded, revised, skipped, pre_confidence, post_confidence)
+     VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(day, agent_id) DO UPDATE SET
        checked = checked + 1,
        grounded = grounded + ?,
        ungrounded = ungrounded + ?,
        revised = revised + ?,
-       skipped = skipped + ?`,
+       skipped = skipped + ?,
+       pre_confidence = pre_confidence + COALESCE(excluded.pre_confidence, 0),
+       post_confidence = post_confidence + COALESCE(excluded.post_confidence, 0)`,
   );
   stmt.run(
     day,
@@ -111,6 +132,8 @@ export function recordGroundingCheck(params: {
     ungrounded,
     revised,
     skipped,
+    preConfidence,
+    postConfidence,
     grounded,
     ungrounded,
     revised,
@@ -125,6 +148,8 @@ type SummaryRow = {
   ungrounded: number | bigint;
   revised: number | bigint;
   skipped: number | bigint;
+  pre_confidence_sum: number | bigint | null;
+  post_confidence_sum: number | bigint | null;
 };
 
 function toNumber(value: number | bigint): number {
@@ -144,7 +169,9 @@ export function summarizeGroundingMetrics(params: {
               SUM(grounded) AS grounded,
               SUM(ungrounded) AS ungrounded,
               SUM(revised) AS revised,
-              SUM(skipped) AS skipped
+              SUM(skipped) AS skipped,
+              SUM(pre_confidence) AS pre_confidence_sum,
+              SUM(post_confidence) AS post_confidence_sum
        FROM grounding_daily WHERE day >= ? GROUP BY agent_id ORDER BY agent_id`,
     )
     .all(params.fromDay) as SummaryRow[];
@@ -158,6 +185,8 @@ export function summarizeGroundingMetrics(params: {
     skipped: 0,
     byAgent: [],
   };
+  let preConfidenceSum = 0;
+  let postConfidenceSum = 0;
   for (const row of rows) {
     const checked = toNumber(row.checked);
     const grounded = toNumber(row.grounded);
@@ -170,6 +199,12 @@ export function summarizeGroundingMetrics(params: {
     summary.revised += revised;
     summary.skipped += skipped;
     summary.byAgent.push({ agentId: row.agent_id, checked, ungrounded, revised });
+    preConfidenceSum += toNumber(row.pre_confidence_sum ?? 0);
+    postConfidenceSum += toNumber(row.post_confidence_sum ?? 0);
+  }
+  if (summary.checked > 0) {
+    summary.avgPreConfidence = preConfidenceSum / summary.checked;
+    summary.avgPostConfidence = postConfidenceSum / summary.checked;
   }
   return summary;
 }

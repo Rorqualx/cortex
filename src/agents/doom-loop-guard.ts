@@ -96,6 +96,12 @@ export type DoomLoopGuard = {
    * try a different strategy rather than repeating the failed approach.
    */
   createRevisePrompt: () => string;
+  /**
+   * Record a grounding confidence signal. If confidence is below threshold,
+   * it is treated as a countable failure that accelerates doom-loop detection.
+   * Default threshold is 0.5.
+   */
+  recordConfidenceSignal: (confidence: number, threshold?: number) => DoomLoopVerdict;
 };
 
 function asPositiveInt(value: number | undefined, fallback: number): number {
@@ -124,7 +130,13 @@ export function createDoomLoopGuard(
     ),
     failureWindowMs: asPositiveInt(config?.failureWindowMs, DEFAULT_FAILURE_WINDOW_MS),
     countableFailures: new Set(
-      config?.countableFailures ?? ["llm_error", "tool_error", "network_error", "timeout"],
+      config?.countableFailures ?? [
+        "llm_error",
+        "tool_error",
+        "network_error",
+        "timeout",
+        "grounding_low_confidence",
+      ],
     ),
     consecutiveFailures: 0,
     isArmed: false,
@@ -217,7 +229,23 @@ export function createDoomLoopGuard(
     ].join("\n");
   };
 
-  return { arm, recordFailure, reset, snapshot, getFailureBoundary, createRevisePrompt };
+  const recordConfidenceSignal = (confidence: number, threshold?: number): DoomLoopVerdict => {
+    const effectiveThreshold = threshold ?? 0.5;
+    if (confidence < effectiveThreshold) {
+      return recordFailure("grounding_low_confidence", Date.now());
+    }
+    return { shouldAbort: false, consecutiveFailures: state.consecutiveFailures };
+  };
+
+  return {
+    arm,
+    recordFailure,
+    reset,
+    snapshot,
+    getFailureBoundary,
+    createRevisePrompt,
+    recordConfidenceSignal,
+  };
 }
 
 /**

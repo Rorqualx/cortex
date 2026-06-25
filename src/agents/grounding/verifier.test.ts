@@ -142,6 +142,45 @@ describe("parseGroundingResponse", () => {
     });
   });
 
+  it("parses preConfidence and postConfidence when present", () => {
+    const verdict = parseGroundingResponse(
+      JSON.stringify({
+        grounded: true,
+        unsupportedClaims: [],
+        preConfidence: 0.8,
+        postConfidence: 0.9,
+      }),
+    );
+    expect(verdict).toMatchObject({ status: "grounded", preConfidence: 0.8, postConfidence: 0.9 });
+  });
+
+  it("parses preConfidence and postConfidence on ungrounded", () => {
+    const verdict = parseGroundingResponse(
+      JSON.stringify({
+        grounded: false,
+        unsupportedClaims: ["x"],
+        reason: "r",
+        preConfidence: 0.7,
+        postConfidence: 0.4,
+      }),
+    );
+    expect(verdict).toMatchObject({
+      status: "ungrounded",
+      unsupported: ["x"],
+      preConfidence: 0.7,
+      postConfidence: 0.4,
+    });
+  });
+
+  it("omits confidence fields when not present in judge response", () => {
+    const verdict = parseGroundingResponse(
+      JSON.stringify({ grounded: true, unsupportedClaims: [] }),
+    );
+    expect(verdict).toEqual({ status: "grounded" });
+    expect("preConfidence" in verdict).toBe(false);
+    expect("postConfidence" in verdict).toBe(false);
+  });
+
   it("fails open on shape mismatch", () => {
     expect(parseGroundingResponse('{"grounded": "yes"}')).toEqual({
       status: "skipped",
