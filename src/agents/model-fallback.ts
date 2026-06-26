@@ -161,6 +161,9 @@ export function isFallbackSummaryError(err: unknown): err is FallbackSummaryErro
 
 export type ModelFallbackRunOptions = {
   allowTransientCooldownProbe?: boolean;
+  // Set by callers (e.g. cron run-executor) on the last candidate so the fallback
+  // loop can let a stream stall surface instead of holding the final attempt open.
+  isFinalFallbackAttempt?: boolean;
 };
 
 type ModelFallbackRuntimeContext = {

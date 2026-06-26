@@ -39,7 +39,9 @@ export {
   createToolEventRecipientRegistry,
 } from "./server-chat-state.js";
 export type {
+  ChatAbortMarker,
   ChatRunEntry,
+  ChatRunRegistration,
   ChatRunRegistry,
   ChatRunState,
   SessionEventSubscriberRegistry,

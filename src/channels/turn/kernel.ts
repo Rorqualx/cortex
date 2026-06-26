@@ -8,7 +8,6 @@ import {
   createDiagnosticTraceContextFromActiveScope,
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
-import { noteStaleDistCandidateError } from "../../infra/stale-dist-restart.js";
 import { toHistoryMediaEntries } from "../inbound-event/media.js";
 import { createChannelReplyPipeline } from "../message/reply-pipeline.js";
 import type { CreateChannelReplyPipelineParams } from "../message/reply-pipeline.js";
@@ -26,7 +25,6 @@ export {
 export type { BuildChannelInboundEventContextParams } from "../inbound-event/context.js";
 export {
   clearChannelBotPairLoopGuardForTests,
-  listTrackedChannelBotPairsForTests,
   recordChannelBotPairLoopAndCheckSuppression,
 } from "./bot-loop-protection.js";
 export { createChannelHistoryWindow } from "./history-window.js";
@@ -373,6 +371,7 @@ export async function dispatchAssembledChannelTurn(
       storePath: params.storePath,
       ctxPayload: params.ctxPayload,
       recordInboundSession: params.recordInboundSession,
+      afterRecord: params.afterRecord,
       record: params.record,
       history: params.history,
       admission: params.admission,
@@ -513,6 +512,7 @@ async function runPreparedChannelTurnCoreInTrace<
         admission: admission.kind,
       },
     });
+    await params.afterRecord?.();
   } catch (err) {
     emit({
       ...params,
@@ -724,9 +724,6 @@ export async function runChannelTurn<
     );
     result = dispatchResult.dispatched ? { ...dispatchResult, admission } : dispatchResult;
   } catch (err) {
-    // Inbound dispatch lazily imports reply/runtime chunks; this catch is where
-    // a dist rotation under a live gateway surfaces as silent message drops.
-    noteStaleDistCandidateError(err);
     const failedResult: ChannelTurnResult<TDispatchResult> = {
       admission,
       dispatched: false,

@@ -131,17 +131,6 @@ async function runSkillsAction(
   }
 }
 
-function resolveActiveWorkspaceDir(options?: ResolveSkillsWorkspaceOptions): string {
-  return resolveSkillsWorkspace(options).workspaceDir;
-}
-
-function resolveSkillsWorkspaceForCommand(
-  command: Command | null | undefined,
-  opts?: { agent?: string },
-): ReturnType<typeof resolveSkillsWorkspace> {
-  return resolveSkillsWorkspace({ agentId: resolveAgentOption(command ?? undefined, opts) });
-}
-
 function resolveClawHubTargetWorkspaceDir(
   command: Command | undefined,
   opts: { agent?: string; global?: boolean },

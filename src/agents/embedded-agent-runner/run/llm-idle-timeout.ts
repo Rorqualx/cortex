@@ -8,6 +8,7 @@ import {
 } from "@openclaw/normalization-core/number-coercion";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { toErrorObject } from "../../../infra/errors.js";
+import type { EmbeddedRunTrigger } from "./params.js";
 import { onLlmRequestActivity } from "../../../shared/llm-request-activity.js";
 import type { StreamFn } from "../../runtime/index.js";
 import type { MutableAssistantMessageEventStream } from "../../stream-compat.js";
@@ -205,6 +206,7 @@ export function resolveLlmIdleTimeoutMs(params?: {
   runTimeoutMs?: number;
   modelRequestTimeoutMs?: number;
   model?: { baseUrl?: string; id?: string; provider?: string };
+  trigger?: EmbeddedRunTrigger;
 }): number {
   const clampTimeoutMs = (valueMs: number) => clampTimerTimeoutMs(valueMs) ?? 1;
   const clampImplicitTimeoutMs = (valueMs: number) =>

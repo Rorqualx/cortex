@@ -8,7 +8,6 @@ export {
   resolveSandboxBrowserConfig,
   resolveSandboxConfigForAgent,
   resolveSandboxDockerConfig,
-  resolveSandboxOsSandboxConfig,
   resolveSandboxPruneConfig,
   resolveSandboxScope,
 } from "./sandbox/config.js";
@@ -24,7 +23,6 @@ export {
   getSandboxBackendWorkdirResolver,
   registerSandboxBackend,
   requireSandboxBackendFactory,
-  type SandboxBackendWorkdirResolver,
 } from "./sandbox/backend.js";
 
 export { buildSandboxCreateArgs, isDockerDaemonUnavailable } from "./sandbox/docker.js";
@@ -45,6 +43,7 @@ export { isToolAllowed, resolveSandboxToolPolicyForAgent } from "./sandbox/tool-
 export type { SandboxFsBridge, SandboxFsStat, SandboxResolvedPath } from "./sandbox/fs-bridge.js";
 export {
   buildExecRemoteCommand,
+  buildRemoteWorkdirValidationCommand,
   buildRemoteCommand,
   buildSshSandboxArgv,
   buildValidatedExecRemoteCommand,
@@ -54,6 +53,7 @@ export {
   runSshSandboxCommand,
   shellEscape,
   uploadDirectoryToSshTarget,
+  VALIDATE_REMOTE_WORKDIR_SCRIPT,
 } from "./sandbox/ssh.js";
 export { sanitizeEnvVars } from "./sandbox/sanitize-env-vars.js";
 export { createRemoteShellSandboxFsBridge } from "./sandbox/remote-fs-bridge.js";
@@ -70,8 +70,12 @@ export type {
   SandboxBackendHandle,
   SandboxBackendId,
   SandboxBackendManager,
+  SandboxBackendPreparedWorkdirDiscarder,
   SandboxBackendRegistration,
   SandboxBackendRuntimeInfo,
+  SandboxBackendWorkdirValidation,
+  SandboxBackendWorkdirResolver,
+  SandboxBackendWorkdirValidator,
 } from "./sandbox/backend.js";
 export type { RemoteShellSandboxHandle } from "./sandbox/remote-fs-bridge.js";
 export type {
@@ -86,7 +90,6 @@ export type {
   SandboxConfig,
   SandboxContext,
   SandboxDockerConfig,
-  SandboxOsSandboxConfig,
   SandboxPruneConfig,
   SandboxScope,
   SandboxSshConfig,
