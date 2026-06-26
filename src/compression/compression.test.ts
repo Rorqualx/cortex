@@ -16,6 +16,7 @@
  *  - CCR integration with pipeline
  */
 import { describe, it, expect, afterEach } from "vitest";
+import type { AgentMessage } from "../agents/runtime/index.js";
 import { routeAndCompress } from "./content-router.js";
 import { compressDiffOutput } from "./diff-compressor.js";
 import {
@@ -28,7 +29,6 @@ import { scoreItem, buildFieldStats, findConstantFields } from "./scoring.js";
 import { compressSearchResults } from "./search-compressor.js";
 import { crushJsonArray } from "./smart-crusher.js";
 import { enforceTokenBudget, estimateTokens } from "./token-budget-enforcer.js";
-import type { AgentMessage } from "../agents/runtime/index.js";
 import type { CompressionConfig } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -488,7 +488,10 @@ describe("compressAssembledContext", () => {
 
   it("does not compress user or system messages", async () => {
     const messages: AgentMessage[] = [
-      { role: "system" as const, content: "System prompt that is quite long but not JSON" } as unknown as AgentMessage,
+      {
+        role: "system" as const,
+        content: "System prompt that is quite long but not JSON",
+      } as unknown as AgentMessage,
       {
         role: "user" as const,
         content:
@@ -498,7 +501,9 @@ describe("compressAssembledContext", () => {
 
     const result = await compressAssembledContext(messages, config);
     expect(result.stats.messagesCompressed).toBe(0);
-    expect((result.messages[0] as { content: string }).content).toBe("System prompt that is quite long but not JSON");
+    expect((result.messages[0] as { content: string }).content).toBe(
+      "System prompt that is quite long but not JSON",
+    );
     expect((result.messages[1] as { content: string }).content).toBe(
       "Please help me with this really long request that has lots of text but is not a tool result",
     );
@@ -934,7 +939,10 @@ describe("compressAssembledContext with CCR", () => {
       },
     ];
 
-    const noCcrConfig = makeConfig({ minContentChars: 100, ccr: { enabled: false, maxEntries: 1000, ttlSeconds: 3600 } });
+    const noCcrConfig = makeConfig({
+      minContentChars: 100,
+      ccr: { enabled: false, maxEntries: 1000, ttlSeconds: 3600 },
+    });
     const result = await compressAssembledContext(messages, noCcrConfig);
 
     expect(result.stats.messagesCompressed).toBe(1);
@@ -969,7 +977,10 @@ describe("TokenBudgetEnforcer forward references", () => {
         isError: false,
         timestamp: Date.now(),
       } as unknown as AgentMessage,
-      { role: "assistant" as const, content: "I found errors in the code." } as unknown as AgentMessage,
+      {
+        role: "assistant" as const,
+        content: "I found errors in the code.",
+      } as unknown as AgentMessage,
       { role: "user" as const, content: "what about this?" } as unknown as AgentMessage,
     ];
     // Small budget should prefer to keep the pair

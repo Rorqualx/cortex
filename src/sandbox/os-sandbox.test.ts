@@ -57,7 +57,12 @@ describe("shouldApplyOsSandbox", () => {
   });
 
   it("returns false when explicitly disabled", () => {
-    const disabled: ResolvedOsSandbox = { enabled: false, extraWritableRoots: [], extraProtectedMetadata: [], network: "allow" };
+    const disabled: ResolvedOsSandbox = {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "allow",
+    };
     expect(shouldApplyOsSandbox(disabled, false)).toBe(false);
   });
 
@@ -69,7 +74,12 @@ describe("shouldApplyOsSandbox", () => {
 
   it("respects explicit enable", () => {
     if (process.platform === "darwin") {
-      const enabled: ResolvedOsSandbox = { enabled: true, extraWritableRoots: [], extraProtectedMetadata: [], network: "allow" };
+      const enabled: ResolvedOsSandbox = {
+        enabled: true,
+        extraWritableRoots: [],
+        extraProtectedMetadata: [],
+        network: "allow",
+      };
       expect(shouldApplyOsSandbox(enabled, false)).toBe(true);
     }
   });

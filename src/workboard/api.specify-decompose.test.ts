@@ -27,7 +27,9 @@ describe("workboard specify/decompose RPC", () => {
       const result = (await handlers["workboard.cards.specify"]!({
         id: card.id,
         summary: "Clarified: build X",
-      } as never)) as { card: { status: string; metadata?: { comments?: Array<{ body: string }> } } };
+      } as never)) as {
+        card: { status: string; metadata?: { comments?: Array<{ body: string }> } };
+      };
       expect(result.card.status).toBe("todo");
       expect(result.card.metadata?.comments?.at(-1)?.body).toBe("Clarified: build X");
     } finally {
@@ -70,7 +72,11 @@ describe("workboard specify/decompose RPC", () => {
       const { token } = await store.claim(card.id, { ownerId: "orch-1", ttlSeconds: 600 });
       // A wrong token is rejected by assertCanMutateClaimedCard...
       await expect(
-        handlers["workboard.cards.specify"]!({ id: card.id, summary: "x", claimToken: "wrong" } as never),
+        handlers["workboard.cards.specify"]!({
+          id: card.id,
+          summary: "x",
+          claimToken: "wrong",
+        } as never),
       ).rejects.toThrow(/claimed by/);
       // ...the real token authorizes the mutation.
       const ok = (await handlers["workboard.cards.specify"]!({

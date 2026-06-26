@@ -11,13 +11,13 @@ import { getRuntimeConfig } from "../config/io.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import type { SessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import type { SessionTranscriptUpdate } from "../sessions/transcript-events.js";
+import type { ChatAbortControllerEntry } from "./chat-abort.js";
 import { projectChatDisplayMessage } from "./chat-display-projection.js";
 import type { GatewayBroadcastToConnIdsFn } from "./server-broadcast-types.js";
 import type {
   SessionEventSubscriberRegistry,
   SessionMessageSubscriberRegistry,
 } from "./server-chat.js";
-import type { ChatAbortControllerEntry } from "./chat-abort.js";
 import { resolveSessionKeyForTranscriptFile } from "./session-transcript-key.js";
 import {
   attachOpenClawTranscriptMeta,

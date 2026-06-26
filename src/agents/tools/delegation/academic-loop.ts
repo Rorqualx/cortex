@@ -742,9 +742,7 @@ function mergeFunders(a?: string[], b?: string[]): string[] | undefined {
 
 // ------- Stage 2.6: Unpaywall OA URL resolution (DOI → OA fulltext URL) -------
 
-async function enrichWithOAUrls(
-  papers: Paper[],
-): Promise<{
+async function enrichWithOAUrls(papers: Paper[]): Promise<{
   tried: number;
   resolved: number;
   viaUnpaywall: number;

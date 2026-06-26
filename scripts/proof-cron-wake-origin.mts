@@ -11,9 +11,9 @@
 // All identifiers in this script are synthetic. Real Telegram chat ids /
 // session keys are not used.
 
-import { cronHandlers } from "../src/gateway/server-methods/cron.js";
-import { wake as cronServiceWake } from "../src/cron/service/wake.js";
 import type { CronServiceState } from "../src/cron/service/state.js";
+import { wake as cronServiceWake } from "../src/cron/service/wake.js";
+import { cronHandlers } from "../src/gateway/server-methods/cron.js";
 
 type EnqueueArgs = [string, { sessionKey?: string; agentId?: string } | undefined];
 type HeartbeatArgs = [
@@ -60,14 +60,12 @@ async function drive(label: string, params: unknown): Promise<ScenarioResult> {
   };
   const context = {
     cron: {
-      wake: (
-        opts: {
-          mode: "now" | "next-heartbeat";
-          text: string;
-          sessionKey?: string;
-          agentId?: string;
-        },
-      ) => cronServiceWake(state, opts),
+      wake: (opts: {
+        mode: "now" | "next-heartbeat";
+        text: string;
+        sessionKey?: string;
+        agentId?: string;
+      }) => cronServiceWake(state, opts),
     },
   } as unknown as Parameters<typeof cronHandlers.wake>[0]["context"];
 

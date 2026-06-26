@@ -235,8 +235,13 @@ describe("extractFacts", () => {
 
 describe("createGlmCaller", () => {
   it("posts to the default Z.ai endpoint with the model and bearer token", async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "hello" } }] }) }) as Response
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({ choices: [{ message: { content: "hello" } }] }),
+        }) as Response,
     );
     const caller = createGlmCaller({
       apiKey: "test-key",

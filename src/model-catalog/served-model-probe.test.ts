@@ -8,7 +8,9 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 
 describe("probeServedModel", () => {
   it("returns the served model id from the response", async () => {
-    const fetchFn = vi.fn<typeof fetch>(async () => jsonResponse({ model: "glm-5.2", choices: [] }));
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ model: "glm-5.2", choices: [] }),
+    );
     const served = await probeServedModel({
       baseUrl: "https://api.z.ai/api/coding/paas/v4",
       apiKey: "k",

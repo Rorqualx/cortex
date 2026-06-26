@@ -100,7 +100,12 @@ function buildPruneConfig(): SandboxConfig {
       idleHours: 1,
       maxAgeDays: 0,
     },
-    osSandbox: { enabled: false, extraWritableRoots: [], extraProtectedMetadata: [], network: "deny" },
+    osSandbox: {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "deny",
+    },
   };
 }
 

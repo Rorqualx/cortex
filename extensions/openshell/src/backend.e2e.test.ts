@@ -396,7 +396,12 @@ describe("openshell sandbox backend e2e", () => {
         browser: createSandboxBrowserConfig(),
         tools: { allow: [], deny: [] },
         prune: createSandboxPruneConfig(),
-        osSandbox: { enabled: false, extraWritableRoots: [], extraProtectedMetadata: [], network: "allow" as const },
+        osSandbox: {
+          enabled: false,
+          extraWritableRoots: [],
+          extraProtectedMetadata: [],
+          network: "allow" as const,
+        },
       };
 
       const pluginConfig = resolveOpenShellPluginConfig({

@@ -1157,11 +1157,7 @@ function assignOtelSecurityAttributes(
       );
     }
     if (evt.policy.decision) {
-      assignOtelLogAttribute(
-        attributes,
-        "openclaw.security.policy.decision",
-        evt.policy.decision,
-      );
+      assignOtelLogAttribute(attributes, "openclaw.security.policy.decision", evt.policy.decision);
     }
     if (evt.policy.reason) {
       assignOtelLogAttribute(
@@ -1180,11 +1176,7 @@ function assignOtelSecurityAttributes(
       );
     }
     if (evt.control.family) {
-      assignOtelLogAttribute(
-        attributes,
-        "openclaw.security.control.family",
-        evt.control.family,
-      );
+      assignOtelLogAttribute(attributes, "openclaw.security.control.family", evt.control.family);
     }
   }
   assignOtelSecurityEventAttributes(attributes, evt.attributes);

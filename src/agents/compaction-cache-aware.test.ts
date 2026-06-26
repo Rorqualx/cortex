@@ -16,7 +16,13 @@ import { describe, it, expect } from "vitest";
 import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./system-prompt-cache-boundary.js";
 
 // Stub types and functions so the skipped block type-checks cleanly.
-type AgentMessage = { role: string; content: unknown; timestamp: number; usage?: unknown; stopReason?: unknown };
+type AgentMessage = {
+  role: string;
+  content: unknown;
+  timestamp: number;
+  usage?: unknown;
+  stopReason?: unknown;
+};
 type CacheAwareChunkingOptions = {
   maxTokens?: number;
   preserveCacheCarryover?: boolean;
@@ -24,7 +30,12 @@ type CacheAwareChunkingOptions = {
 };
 type CacheBoundaryResult = {
   hasBoundary: boolean;
-  positions: Array<{ messageIndex: number; isCacheStart?: boolean; isCacheEnd?: boolean; charOffset?: number }>;
+  positions: Array<{
+    messageIndex: number;
+    isCacheStart?: boolean;
+    isCacheEnd?: boolean;
+    charOffset?: number;
+  }>;
   firstDynamicIndex?: number;
   cachedTokens?: number;
   dynamicTokens?: number;
@@ -38,12 +49,18 @@ const detectCacheBoundaries = (_messages: AgentMessage[]): CacheBoundaryResult =
   hasBoundary: false,
   positions: [],
 });
-const buildCacheAwareChunkPlan = (_messages: AgentMessage[], _options?: CacheAwareChunkingOptions): CacheAwareChunkPlan => ({
+const buildCacheAwareChunkPlan = (
+  _messages: AgentMessage[],
+  _options?: CacheAwareChunkingOptions,
+): CacheAwareChunkPlan => ({
   cachePreserved: false,
   chunks: [],
   detection: { hasBoundary: false, positions: [] },
 });
-const isCacheAwareChunkingBeneficial = (_messages: AgentMessage[], _contextWindow: number): boolean => false;
+const isCacheAwareChunkingBeneficial = (
+  _messages: AgentMessage[],
+  _contextWindow: number,
+): boolean => false;
 
 /**
  * Helper to create a simple user message with text content.
@@ -67,7 +84,14 @@ function makeAssistantMessage(id: number, text: string): AgentMessage {
     role: "assistant",
     content: [{ type: "text", text }],
     timestamp: id,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
     stopReason: "stop",
   };
 }

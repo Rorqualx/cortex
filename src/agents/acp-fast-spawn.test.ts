@@ -129,7 +129,12 @@ describe.skip("acp-spawn-fast-safety", () => {
   }
 
   function expectAcceptedSpawn(result: unknown) {
-    const r = result as { status: string; runId?: string; childSessionKey?: string; inlineResult?: { status: string; endedAt?: number; error?: string } };
+    const r = result as {
+      status: string;
+      runId?: string;
+      childSessionKey?: string;
+      inlineResult?: { status: string; endedAt?: number; error?: string };
+    };
     expect(r.status).toBe("accepted");
     return r;
   }
@@ -153,7 +158,9 @@ describe.skip("acp-spawn-fast-safety", () => {
       });
 
       // spawnAcpFast not in production; cast to unknown to suppress type errors in skipped block
-      const { spawnAcpFast } = await import("./acp-spawn.js") as unknown as { spawnAcpFast: (...args: unknown[]) => Promise<unknown> };
+      const { spawnAcpFast } = (await import("./acp-spawn.js")) as unknown as {
+        spawnAcpFast: (...args: unknown[]) => Promise<unknown>;
+      };
 
       const raw = await spawnAcpFast(createFastSpawnRequest(), createRequesterContext());
 
@@ -170,7 +177,9 @@ describe.skip("acp-spawn-fast-safety", () => {
       countActiveRunsForSessionMock.mockReturnValue(0);
 
       // spawnAcpFast not in production; cast to unknown to suppress type errors in skipped block
-      const { spawnAcpFast } = await import("./acp-spawn.js") as unknown as { spawnAcpFast: (...args: unknown[]) => Promise<unknown> };
+      const { spawnAcpFast } = (await import("./acp-spawn.js")) as unknown as {
+        spawnAcpFast: (...args: unknown[]) => Promise<unknown>;
+      };
 
       // Debug: check what getRuntimeConfig returns
       const { getRuntimeConfig } = await import("../config/config.js");
@@ -209,7 +218,9 @@ describe.skip("acp-spawn-fast-safety", () => {
       });
 
       // spawnAcpFast not in production; cast to unknown to suppress type errors in skipped block
-      const { spawnAcpFast } = await import("./acp-spawn.js") as unknown as { spawnAcpFast: (...args: unknown[]) => Promise<unknown> };
+      const { spawnAcpFast } = (await import("./acp-spawn.js")) as unknown as {
+        spawnAcpFast: (...args: unknown[]) => Promise<unknown>;
+      };
 
       const raw = await spawnAcpFast(createFastSpawnRequest(), createRequesterContext());
 
@@ -224,7 +235,9 @@ describe.skip("acp-spawn-fast-safety", () => {
       countActiveRunsForSessionMock.mockReturnValue(10);
 
       // spawnAcpFast not in production; cast to unknown to suppress type errors in skipped block
-      const { spawnAcpFast } = await import("./acp-spawn.js") as unknown as { spawnAcpFast: (...args: unknown[]) => Promise<unknown> };
+      const { spawnAcpFast } = (await import("./acp-spawn.js")) as unknown as {
+        spawnAcpFast: (...args: unknown[]) => Promise<unknown>;
+      };
 
       const result = await spawnAcpFast(createFastSpawnRequest(), createRequesterContext());
 
@@ -259,7 +272,9 @@ describe.skip("acp-spawn-fast-safety", () => {
       });
 
       // spawnAcpFast not in production; cast to unknown to suppress type errors in skipped block
-      const { spawnAcpFast } = await import("./acp-spawn.js") as unknown as { spawnAcpFast: (...args: unknown[]) => Promise<unknown> };
+      const { spawnAcpFast } = (await import("./acp-spawn.js")) as unknown as {
+        spawnAcpFast: (...args: unknown[]) => Promise<unknown>;
+      };
 
       const raw = await spawnAcpFast(createFastSpawnRequest(), createRequesterContext());
 
@@ -293,7 +308,9 @@ describe.skip("acp-spawn-fast-safety", () => {
       });
 
       // spawnAcpFast not in production; cast to unknown to suppress type errors in skipped block
-      const { spawnAcpFast } = await import("./acp-spawn.js") as unknown as { spawnAcpFast: (...args: unknown[]) => Promise<unknown> };
+      const { spawnAcpFast } = (await import("./acp-spawn.js")) as unknown as {
+        spawnAcpFast: (...args: unknown[]) => Promise<unknown>;
+      };
 
       // Set a shorter overall timeout for this test to catch hangs faster
       const result = await Promise.race([
@@ -333,7 +350,9 @@ describe.skip("acp-spawn-fast-safety", () => {
       });
 
       // spawnAcpFast not in production; cast to unknown to suppress type errors in skipped block
-      const { spawnAcpFast } = await import("./acp-spawn.js") as unknown as { spawnAcpFast: (...args: unknown[]) => Promise<unknown> };
+      const { spawnAcpFast } = (await import("./acp-spawn.js")) as unknown as {
+        spawnAcpFast: (...args: unknown[]) => Promise<unknown>;
+      };
 
       await spawnAcpFast(createFastSpawnRequest(), createRequesterContext());
 
@@ -363,7 +382,9 @@ describe.skip("acp-spawn-fast-safety", () => {
       });
 
       // spawnAcpFast not in production; cast to unknown to suppress type errors in skipped block
-      const { spawnAcpFast } = await import("./acp-spawn.js") as unknown as { spawnAcpFast: (...args: unknown[]) => Promise<unknown> };
+      const { spawnAcpFast } = (await import("./acp-spawn.js")) as unknown as {
+        spawnAcpFast: (...args: unknown[]) => Promise<unknown>;
+      };
 
       await spawnAcpFast(createFastSpawnRequest(), createRequesterContext());
 

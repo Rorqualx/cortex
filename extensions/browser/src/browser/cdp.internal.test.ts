@@ -1008,5 +1008,4 @@ describe("cdp internal", () => {
       expect(buf.toString("utf8")).toBe("S");
     });
   });
-
 });

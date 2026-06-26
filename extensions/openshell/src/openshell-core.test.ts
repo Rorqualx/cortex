@@ -326,7 +326,12 @@ function createOpenShellBackendSandboxConfig(): CreateSandboxBackendParams["cfg"
       binds: [],
       env: {},
     },
-    osSandbox: { enabled: false, extraWritableRoots: [], extraProtectedMetadata: [], network: "allow" as const },
+    osSandbox: {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "allow" as const,
+    },
     ssh: createSandboxSshConfig("/tmp/openclaw-sandboxes"),
     browser: createSandboxBrowserConfig(),
     tools: { allow: ["*"], deny: [] },

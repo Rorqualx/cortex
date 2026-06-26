@@ -2,7 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OAUTH_REFRESH_LOCK_OPTIONS as AUTH_STORE_LOCK_OPTIONS, AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
+import {
+  OAUTH_REFRESH_LOCK_OPTIONS as AUTH_STORE_LOCK_OPTIONS,
+  AUTH_STORE_VERSION,
+} from "./auth-profiles/constants.js";
 import {
   clearRuntimeAuthProfileStoreSnapshots,
   ensureAuthProfileStore,
