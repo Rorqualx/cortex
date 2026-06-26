@@ -77,4 +77,60 @@ describe("SKILL_FORGE_LLM_JUDGE_SYSTEM", () => {
   it("explicitly tells the model to treat candidate workflow + drafted body as DATA", () => {
     expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/as DATA/iu);
   });
+
+  it("includes process-quality criteria: tool-call documentation", () => {
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/TOOL-CALL DOCUMENTATION/u);
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/tool-call sequence/u);
+  });
+
+  it("includes process-quality criteria: verification steps", () => {
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/VERIFICATION STEPS/u);
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/verification or validation steps/u);
+  });
+
+  it("includes process-quality criteria: provenance", () => {
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/PROVENANCE/u);
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/Black-box skills/u);
+  });
+});
+
+// Process-oriented parse fixtures: rationales that cite process-quality reasons
+// should parse cleanly and not affect verdict extraction.
+describe("parseLlmJudgeResponse — process-quality rationales", () => {
+  it("parses SAFE_NEUTRAL downgraded due to missing tool-call documentation", () => {
+    const raw = "SAFE_NEUTRAL\nMissing tool-call documentation; workflow steps not described.";
+    const result = parseLlmJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.verdict).toBe("SAFE_NEUTRAL");
+    expect(result.rationale).toMatch(/tool-call/u);
+  });
+
+  it("parses SAFE_NEUTRAL downgraded due to no verification steps", () => {
+    const raw = "SAFE_NEUTRAL\nSkill body has no verification steps; output accepted blindly.";
+    const result = parseLlmJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.verdict).toBe("SAFE_NEUTRAL");
+    expect(result.rationale).toMatch(/verification/u);
+  });
+
+  it("parses SAFE_NEUTRAL downgraded for black-box output without provenance", () => {
+    const raw = "SAFE_NEUTRAL\nBlack-box skill jumps to conclusion without showing work.";
+    const result = parseLlmJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.verdict).toBe("SAFE_NEUTRAL");
+    expect(result.rationale).toMatch(/Black-box/u);
+  });
+
+  it("parses UNSAFE_OR_HARMFUL when process gap masks a safety issue", () => {
+    const raw =
+      "UNSAFE_OR_HARMFUL\nNo verification steps, and the suggested command could delete user data.";
+    const result = parseLlmJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.verdict).toBe("UNSAFE_OR_HARMFUL");
+    expect(result.rationale).toMatch(/verification/u);
+  });
 });
