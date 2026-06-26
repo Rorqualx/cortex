@@ -9,6 +9,7 @@ import {
 } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
+import { agentAvatarUrl } from "./avatar/agent-avatar.ts";
 import { savePersistedTabs } from "./chat/chat-tab-bar.ts";
 import { persistChatComposerState, restoreChatComposerState } from "./chat/composer-persistence.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
@@ -157,7 +158,7 @@ export function resolveAssistantAttachmentAuthToken(
 
 export function resolveDashboardHeaderContext(
   state: Pick<AppViewState, "agentsList" | "sessionKey">,
-): { agentLabel: string } {
+): { agentLabel: string; agentId: string; agentAvatarUrl: string } {
   const agentId = resolveAgentIdFromSessionKey(state.sessionKey);
   const agent = state.agentsList?.agents.find(
     (entry) => normalizeLowercaseStringOrEmpty(entry.id) === agentId,
@@ -166,7 +167,16 @@ export function resolveDashboardHeaderContext(
     normalizeOptionalString(agent?.identity?.name) ??
     normalizeOptionalString(agent?.name) ??
     agentId;
-  return { agentLabel };
+  // Same canonical avatar (assigned image, else generated invader) used by the
+  // office/workboard grid, so the brand mirrors the agent shown in the breadcrumb.
+  return {
+    agentLabel,
+    agentId,
+    agentAvatarUrl: agentAvatarUrl(agentId, {
+      avatar: agent?.identity?.avatar,
+      avatarUrl: agent?.identity?.avatarUrl,
+    }),
+  };
 }
 
 function resolveSidebarChatSessionKey(state: AppViewState): string {

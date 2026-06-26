@@ -341,7 +341,7 @@ describe("config view", () => {
       container,
     );
 
-    const tabs = Array.from(container.querySelectorAll(".config-top-tabs__tab")).map((tab) =>
+    const tabs = Array.from(container.querySelectorAll(".config-sidebar-nav__item")).map((tab) =>
       tab.textContent?.trim(),
     );
     expect(tabs).toEqual(["Settings", "Agents", "Gateway", "Theme"]);
@@ -375,7 +375,7 @@ describe("config view", () => {
       },
     });
 
-    const tabs = Array.from(container.querySelectorAll(".config-top-tabs__tab")).map((tab) =>
+    const tabs = Array.from(container.querySelectorAll(".config-sidebar-nav__item")).map((tab) =>
       tab.textContent?.trim(),
     );
     expect(tabs).toContain("Notifications");
@@ -488,7 +488,7 @@ describe("config view", () => {
       },
     });
 
-    const tabs = Array.from(container.querySelectorAll(".config-top-tabs__tab")).map((tab) =>
+    const tabs = Array.from(container.querySelectorAll(".config-sidebar-nav__item")).map((tab) =>
       tab.textContent?.trim(),
     );
     expect(tabs).toEqual(["Channels", "Messages"]);

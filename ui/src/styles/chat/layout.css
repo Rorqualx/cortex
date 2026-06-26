@@ -19,7 +19,7 @@
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   padding: 0 2px;
@@ -237,6 +237,41 @@
   stroke-width: 2;
   stroke-linecap: round;
   fill: none;
+}
+
+/* =============================================
+   COLLAPSED SINGLE-TAB CHIP — rendered inline in the breadcrumb
+   header when only one chat session is open.
+   ============================================= */
+
+.chat-tab-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chat-tab-crumb__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.chat-tab-crumb__label {
+  min-width: 0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Smaller than the row's new-tab button so it sits on the header baseline. */
+.chat-tab-crumb__new {
+  width: 24px;
+  height: 24px;
+  margin: 0;
 }
 
 /* =============================================

@@ -118,6 +118,23 @@ function resolveAgentLabel(state: AppViewState, agentId: string): string {
   return name && name !== agentId ? name : agentId;
 }
 
+/** Tab list with the current session guaranteed present (it may not yet be persisted). */
+function getEffectiveTabs(state: AppViewState): string[] {
+  const tabs = state.chatOpenSessionTabs;
+  const currentKey = state.sessionKey;
+  return tabs.includes(currentKey) ? tabs : [currentKey, ...tabs.filter((k) => k !== currentKey)];
+}
+
+function isNewSessionDisabled(state: AppViewState): boolean {
+  return (
+    !state.connected ||
+    state.chatSending ||
+    Boolean(state.chatRunId) ||
+    state.chatLoading ||
+    !state.client
+  );
+}
+
 // ── Tab status indicator ─────────────────────────────────────────────
 
 function resolveTabRunState(
@@ -239,23 +256,19 @@ export function renderChatTabBar(
     onCloseTab: (sessionKey: string) => void;
     onReorderTabs?: (reordered: string[]) => void;
   },
-): TemplateResult {
+): TemplateResult | typeof nothing {
   const { onSwitchSession, onNewSession, onCloseTab, onReorderTabs } = options;
   const currentKey = state.sessionKey;
-  const tabs = state.chatOpenSessionTabs;
   const sessions = state.sessionsResult;
+  const effectiveTabs = getEffectiveTabs(state);
 
-  // Ensure current session is always in the tab list
-  const effectiveTabs = tabs.includes(currentKey)
-    ? tabs
-    : [currentKey, ...tabs.filter((k) => k !== currentKey)];
+  // Single tab collapses into the breadcrumb header (renderCollapsedChatTab);
+  // only render the dedicated row once there are multiple tabs to switch between.
+  if (effectiveTabs.length <= 1) {
+    return nothing;
+  }
 
-  const newDisabled =
-    !state.connected ||
-    state.chatSending ||
-    Boolean(state.chatRunId) ||
-    state.chatLoading ||
-    !state.client;
+  const newDisabled = isNewSessionDisabled(state);
 
   // Auto-scroll the active tab into view after render.
   const scheduleActiveTabScroll = () => {
@@ -486,5 +499,50 @@ export function renderChatTabBar(
         ${icons.plus}
       </button>
     </div>
+  `;
+}
+
+// ── Collapsed (single-tab) breadcrumb variant ────────────────────────
+// When only one session is open the dedicated tab row is hidden; the
+// active session and the new-session button render inline after the
+// "Chat" breadcrumb segment instead. Returns nothing once a second tab
+// opens — renderChatTabBar takes over the row at that point.
+export function renderCollapsedChatTab(
+  state: AppViewState,
+  options: { onNewSession: () => void },
+): TemplateResult | typeof nothing {
+  const effectiveTabs = getEffectiveTabs(state);
+  if (effectiveTabs.length !== 1) {
+    return nothing;
+  }
+  const key = effectiveTabs[0];
+  if (!key) {
+    return nothing;
+  }
+
+  const sessions = state.sessionsResult;
+  const label = resolveChatTabLabel(state, key, sessions);
+  const row = sessions?.sessions.find((s) => s.key === key);
+  const runState = resolveTabRunState(state, key, row, true);
+  const newDisabled = isNewSessionDisabled(state);
+
+  return html`
+    <span class="chat-tab-crumb">
+      <span class="dashboard-header__breadcrumb-sep">›</span>
+      <span class="chat-tab-crumb__chip" title=${label}>
+        ${renderTabStatusDot(runState)}
+        <span class="chat-tab-crumb__label">${label}</span>
+      </span>
+      <button
+        class="chat-tab-bar__new chat-tab-crumb__new"
+        type="button"
+        title=${t("chat.runControls.newSession")}
+        aria-label=${t("chat.runControls.newSession")}
+        ?disabled=${newDisabled}
+        @click=${options.onNewSession}
+      >
+        ${icons.plus}
+      </button>
+    </span>
   `;
 }

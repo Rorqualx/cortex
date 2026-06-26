@@ -287,76 +287,172 @@
   line-height: 1.35;
 }
 
-.config-top-tabs {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 24px 12px;
-  background: var(--bg-accent);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+/* ===========================================
+   Sidebar layout (scoped settings: Automation, Communication, etc.)
+   Action bar pinned across the top; a left rail of sections sits beside a
+   focused, independently scrolling content pane.
+   =========================================== */
+
+.config-layout--sidebar .config-main {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "actions actions"
+    "nav body";
 }
 
-:root[data-theme-mode="light"] .config-top-tabs {
+/* Single-section scopes (e.g. MCP) drop the rail and let the form fill width. */
+.config-layout--sidebar.config-layout--norail .config-main {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "actions"
+    "body";
+}
+
+.config-layout--sidebar .config-actions {
+  grid-area: actions;
+}
+
+.config-sidebar-nav {
+  grid-area: nav;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-accent);
+}
+
+:root[data-theme-mode="light"] .config-sidebar-nav {
   background: var(--bg-hover);
 }
 
-.config-search--top {
-  padding: 0;
-  border-bottom: none;
-  min-width: 200px;
-  max-width: 320px;
-  flex: 0 1 320px;
+.config-search--rail {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-accent);
 }
 
-.config-top-tabs__scroller {
+:root[data-theme-mode="light"] .config-search--rail {
+  background: var(--bg-hover);
+}
+
+.config-sidebar-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.config-sidebar-nav__item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.config-top-tabs__scroller::-webkit-scrollbar {
-  display: none;
-}
-
-.config-top-tabs__tab {
-  flex: 0 0 auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  min-height: 36px;
-  padding: 8px 14px;
-  background: var(--bg-elevated);
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
   color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 550;
+  text-align: left;
   cursor: pointer;
   transition:
-    border-color var(--duration-fast) ease,
     background var(--duration-fast) ease,
     color var(--duration-fast) ease,
-    box-shadow var(--duration-fast) ease;
+    border-color var(--duration-fast) ease;
 }
 
-:root[data-theme-mode="light"] .config-top-tabs__tab {
-  background: white;
-}
-
-.config-top-tabs__tab:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
+.config-sidebar-nav__item:hover {
   background: var(--bg-hover);
+  color: var(--text);
 }
 
-.config-top-tabs__tab.active {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+.config-sidebar-nav__item.active {
   background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.config-sidebar-nav__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.config-sidebar-nav__item.active .config-sidebar-nav__icon {
+  opacity: 1;
+}
+
+.config-sidebar-nav__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.config-sidebar-nav__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Content pane: wraps validity/diff/hero and the scrolling form. Shared by the
+   sidebar grid (grid-area body) and the accordion flex column. */
+.config-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.config-layout--sidebar .config-body {
+  grid-area: body;
+}
+
+/* Narrow widths: collapse the rail to a horizontal section scroller. */
+@media (max-width: 720px) {
+  .config-layout--sidebar .config-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "actions"
+      "nav"
+      "body";
+  }
+
+  .config-sidebar-nav {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .config-sidebar-nav__list {
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .config-sidebar-nav__list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .config-sidebar-nav__item {
+    width: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .config-search--rail {
+    position: static;
+  }
 }
 
 /* Diff Panel */

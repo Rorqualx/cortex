@@ -1,5 +1,5 @@
 // Control UI component implements the dashboard header element.
-import { LitElement, html, nothing } from "lit";
+import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
 import { pathForTab, titleForTab, type Tab } from "../navigation.js";
 
@@ -11,6 +11,9 @@ export class DashboardHeader extends LitElement {
   @property() tab: Tab = "overview";
   @property() basePath = "";
   @property() agentLabel = "";
+  // Inline content rendered after the current breadcrumb segment (e.g. the
+  // collapsed single-tab chat chip). Not an attribute — it carries a template.
+  @property({ attribute: false }) breadcrumbSuffix: TemplateResult | typeof nothing = nothing;
 
   private readonly handleOverviewClick = (event: MouseEvent) => {
     if (
@@ -55,6 +58,7 @@ export class DashboardHeader extends LitElement {
             : nothing}
           <span class="dashboard-header__breadcrumb-sep">›</span>
           <span class="dashboard-header__breadcrumb-current">${label}</span>
+          ${this.breadcrumbSuffix}
         </div>
         <div class="dashboard-header__actions">
           <slot></slot>

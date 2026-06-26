@@ -104,11 +104,15 @@ type DreamingPhaseInfo = {
   nextRunAtMs?: number;
 };
 
-type DreamingAgentOption = {
+export type DreamingAgentOption = {
   id: string;
   label: string;
   avatar?: string | null;
   avatarUrl?: string | null;
+  // Set on the merged default chip: `id` is the aggregate ALL_AGENTS_ID, while
+  // `toggleAgentId` is the default agent (e.g. Davos). The chip stays selected
+  // for either id and clicking it toggles between the aggregate and that agent.
+  toggleAgentId?: string;
 };
 
 // Stacked-circle glyph standing in for the aggregate "all agents" option, which
@@ -122,14 +126,18 @@ const allAgentsGlyph = html`
 `;
 
 function renderDreamingAgentAvatar(entry: DreamingAgentOption) {
-  if (entry.id === ALL_AGENTS_ID) {
+  // The merged default chip is Davos-branded, so it always shows that agent's
+  // avatar (both in the aggregate and toggled states). The stacked "all" glyph
+  // only stands in for a genuinely identity-less aggregate (no default agent).
+  if (entry.id === ALL_AGENTS_ID && entry.toggleAgentId == null) {
     return html`<span class="dreams__agent-avatar dreams__agent-avatar--all" aria-hidden="true">
       ${allAgentsGlyph}
     </span>`;
   }
+  const avatarId = entry.id === ALL_AGENTS_ID ? (entry.toggleAgentId ?? entry.id) : entry.id;
   return html`<img
     class="dreams__agent-avatar"
-    src=${agentAvatarUrl(entry.id, { avatar: entry.avatar, avatarUrl: entry.avatarUrl })}
+    src=${agentAvatarUrl(avatarId, { avatar: entry.avatar, avatarUrl: entry.avatarUrl })}
     alt=""
     aria-hidden="true"
     loading="lazy"
@@ -403,18 +411,27 @@ export function renderDreaming(props: DreamingProps) {
                   props.agentOptions,
                   (entry) => entry.id,
                   (entry) => {
-                    const selected = entry.id === props.selectedAgentId;
+                    const merged = entry.toggleAgentId != null;
+                    const selected =
+                      entry.id === props.selectedAgentId ||
+                      (merged && entry.toggleAgentId === props.selectedAgentId);
+                    // Merged chip toggles aggregate↔default agent; from any other
+                    // agent it defaults back to the aggregate view.
+                    const nextAgentId =
+                      merged && props.selectedAgentId === entry.id
+                        ? entry.toggleAgentId!
+                        : entry.id;
                     return html`<button
                       type="button"
                       class=${`dreams__agent-button${selected ? " dreams__agent-button--active" : ""}`}
                       data-dreaming-agent-button=${entry.id}
                       aria-pressed=${selected ? "true" : "false"}
                       @click=${() => {
-                        if (entry.id === props.selectedAgentId) {
+                        if (nextAgentId === props.selectedAgentId) {
                           return;
                         }
                         resetDreamingLayers();
-                        props.onSelectAgent(entry.id);
+                        props.onSelectAgent(nextAgentId);
                         if (activeSubTab === "layers") {
                           void ensureDreamingLayers(props);
                         }
@@ -482,8 +499,20 @@ function formatPhaseNextRun(nextRunAtMs?: number): string {
 
 function resolveDreamerAvatar(props: DreamingProps): string | null {
   const selected = props.agentOptions.find((option) => option.id === props.selectedAgentId);
-  if (!selected || selected.id === ALL_AGENTS_ID) {
+  if (!selected) {
     return null;
+  }
+  // The aggregate "all" chip is merged into the default agent (Davos), so the
+  // scene dreams as that agent's avatar rather than the generic mascot. Only a
+  // genuinely identity-less aggregate (no default agent) falls back to null.
+  if (selected.id === ALL_AGENTS_ID) {
+    if (selected.toggleAgentId == null) {
+      return null;
+    }
+    return agentAvatarUrl(selected.toggleAgentId, {
+      avatar: selected.avatar,
+      avatarUrl: selected.avatarUrl,
+    });
   }
   return agentAvatarUrl(selected.id, { avatar: selected.avatar, avatarUrl: selected.avatarUrl });
 }

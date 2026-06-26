@@ -29,7 +29,11 @@ import { hasOperatorAdminAccess, hasOperatorWriteAccess, warnQueryToken } from "
 import type { AppViewState } from "./app-view-state.ts";
 import { agentAvatarUrl } from "./avatar/agent-avatar.ts";
 import { resolveChatModelSelectState } from "./chat-model-select-state.ts";
-import { renderChatTabBar, savePersistedTabs } from "./chat/chat-tab-bar.ts";
+import {
+  renderChatTabBar,
+  renderCollapsedChatTab,
+  savePersistedTabs,
+} from "./chat/chat-tab-bar.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
 import {
   renderChatSessionSelect,
@@ -218,7 +222,6 @@ import type {
   GatewaySessionRow,
 } from "./types.ts";
 import { isRenderableControlUiAvatarUrl } from "./views/agents-utils.ts";
-import { agentLogoUrl } from "./views/agents-utils.ts";
 import {
   resolveAgentConfig,
   resolveConfiguredCronModelSuggestions,
@@ -241,7 +244,7 @@ import {
   draftToCronFormPatch,
 } from "./views/cron-quick-create.ts";
 import { renderDreamingRestartConfirmation } from "./views/dreaming-restart-confirmation.ts";
-import { renderDreaming } from "./views/dreaming.ts";
+import { renderDreaming, type DreamingAgentOption } from "./views/dreaming.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
@@ -1518,12 +1521,31 @@ export function renderApp(state: AppViewState) {
       { avatar: agent.identity?.avatar ?? null, avatarUrl: agent.identity?.avatarUrl ?? null },
     ]),
   );
-  const dreamingAgentOptions = [
-    { id: ALL_AGENTS_ID, label: t("dreaming.agentSelect.allAgents") },
-    ...resolveDreamingAgentOptions(state).map((option) => ({
-      ...option,
-      ...(dreamingAvatarSourceById.get(option.id) ?? {}),
-    })),
+  // The aggregate "all agents" view is folded into the default agent (Davos):
+  // a single merged chip that defaults to the aggregate and toggles to the
+  // default-agent-only view on click. The default agent is therefore dropped
+  // from the per-agent list so it is not shown twice.
+  const dreamingDefaultAgentId = normalizeAgentId(state.agentsList?.defaultId ?? "main");
+  const dreamingDefaultAgent = (state.agentsList?.agents ?? []).find(
+    (agent) => normalizeAgentId(agent.id) === dreamingDefaultAgentId,
+  );
+  const dreamingDefaultAgentName =
+    normalizeOptionalString(dreamingDefaultAgent?.identity?.name) ??
+    normalizeOptionalString(dreamingDefaultAgent?.name) ??
+    dreamingDefaultAgentId;
+  const dreamingAgentOptions: DreamingAgentOption[] = [
+    {
+      id: ALL_AGENTS_ID,
+      label: dreamingDefaultAgentName,
+      toggleAgentId: dreamingDefaultAgentId,
+      ...(dreamingAvatarSourceById.get(dreamingDefaultAgentId) ?? {}),
+    },
+    ...resolveDreamingAgentOptions(state)
+      .filter((option) => normalizeAgentId(option.id) !== dreamingDefaultAgentId)
+      .map((option) => ({
+        ...option,
+        ...(dreamingAvatarSourceById.get(option.id) ?? {}),
+      })),
   ];
   const rawDreamingSelectedAgentId =
     // Default to the aggregate "All" view until the user explicitly picks an
@@ -1534,7 +1556,9 @@ export function renderApp(state: AppViewState) {
   // Channel/ad-hoc sessions resolve to non-agent ids absent from the dreaming
   // picker; fall back to the first real agent so a button always reflects state.
   const dreamingSelectedAgentId = dreamingAgentOptions.some(
-    (option) => option.id === rawDreamingSelectedAgentId,
+    (option) =>
+      option.id === rawDreamingSelectedAgentId ||
+      option.toggleAgentId === rawDreamingSelectedAgentId,
   )
     ? rawDreamingSelectedAgentId
     : (dreamingAgentOptions[0]?.id ?? rawDreamingSelectedAgentId);
@@ -1643,7 +1667,6 @@ export function renderApp(state: AppViewState) {
       }
     })();
   };
-  const basePath = normalizeBasePath(state.basePath ?? "");
   const resolveSelectedAgentId = () =>
     state.agentsSelectedId ??
     state.agentsList?.defaultId ??
@@ -2522,6 +2545,11 @@ export function renderApp(state: AppViewState) {
               .tab=${state.tab}
               .basePath=${state.basePath}
               .agentLabel=${dashboardHeaderContext.agentLabel}
+              .breadcrumbSuffix=${state.tab === "chat"
+                ? renderCollapsedChatTab(state, {
+                    onNewSession: () => void createChatSession(state),
+                  })
+                : nothing}
               @navigate=${(event: CustomEvent<Tab>) => {
                 state.setTab(event.detail);
               }}
@@ -2553,12 +2581,14 @@ export function renderApp(state: AppViewState) {
                   : html`
                       <img
                         class="sidebar-brand__logo"
-                        src="${agentLogoUrl(basePath)}"
-                        alt="OpenClaw"
+                        src="${dashboardHeaderContext.agentAvatarUrl}"
+                        alt="${dashboardHeaderContext.agentLabel}"
                       />
                       <span class="sidebar-brand__copy">
                         <span class="sidebar-brand__eyebrow">${t("nav.control")}</span>
-                        <span class="sidebar-brand__title">OpenClaw</span>
+                        <span class="sidebar-brand__title"
+                          >${dashboardHeaderContext.agentLabel}</span
+                        >
                       </span>
                     `}
               </div>
