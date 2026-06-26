@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { RunEmbeddedAgentParams } from "../agents/embedded-agent-runner/run/params.js";
 import { forkSessionEntryFromParent } from "../auto-reply/reply/session-fork.js";
+import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import { parseSessionThreadInfoFast } from "../config/sessions/thread-info.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -269,6 +270,9 @@ export async function consultRealtimeVoiceAgent(params: {
   const result = await params.agentRuntime.runEmbeddedAgent({
     sessionId,
     sessionKey: params.sessionKey,
+    // The fork's embedded runner keys bootstrap/lock/takeover on a concrete session file;
+    // derive it from the consult session even on the sessionTarget path.
+    sessionFile: resolveSessionFilePath(sessionId, sessionEntry, { agentId }),
     sessionTarget: {
       agentId,
       sessionId,

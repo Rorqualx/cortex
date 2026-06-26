@@ -20,6 +20,8 @@ import {
   resolveSubagentRunOrphanReason,
   type SubagentRunOrphanReason,
 } from "./subagent-session-reconciliation.js";
+// Re-exported for subagent-registry.ts, which adopted upstream's orphan-reason wiring.
+export { resolveSubagentRunOrphanReason } from "./subagent-session-reconciliation.js";
 import {
   getSubagentSessionRuntimeMs,
   getSubagentSessionStartedAt,
