@@ -26,6 +26,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { shortHash } from "../utils/hash.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
+import { stripSystemPromptCacheBoundary } from "../../agents/system-prompt-cache-boundary.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { buildBaseOptions } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
@@ -302,7 +303,7 @@ function buildChatPayload(
   if (context.systemPrompt) {
     payload.messages.unshift({
       role: "system",
-      content: sanitizeSurrogates(context.systemPrompt),
+      content: sanitizeSurrogates(stripSystemPromptCacheBoundary(context.systemPrompt)),
     });
   }
 

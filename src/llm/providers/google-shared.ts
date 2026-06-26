@@ -30,6 +30,7 @@ import type {
   StreamOptions,
 } from "../types.js";
 import type { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { stripSystemPromptCacheBoundary } from "../../agents/system-prompt-cache-boundary.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transform-messages.js";
 
@@ -488,7 +489,9 @@ export function buildGoogleGenerateContentParams<T extends GoogleApiType>(
 
   const config: GenerateContentConfig = {
     ...(Object.keys(generationConfig).length > 0 && generationConfig),
-    ...(context.systemPrompt && { systemInstruction: sanitizeSurrogates(context.systemPrompt) }),
+    ...(context.systemPrompt && {
+      systemInstruction: sanitizeSurrogates(stripSystemPromptCacheBoundary(context.systemPrompt)),
+    }),
     ...(context.tools && context.tools.length > 0 && { tools: convertTools(context.tools) }),
   };
 
