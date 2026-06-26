@@ -23,7 +23,6 @@ import {
   DEFAULT_BOOTSTRAP_FILENAME,
   filterBootstrapFilesForSession,
   isWorkspaceSetupCompleted,
-  isWorkspaceBootstrapPending,
   loadWorkspaceBootstrapFiles,
   type WorkspaceBootstrapFile,
 } from "./workspace.js";
@@ -372,5 +371,3 @@ export function buildBootstrapContextForFiles(
   });
   return contextFiles;
 }
-
-export { isWorkspaceBootstrapPending };

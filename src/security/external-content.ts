@@ -338,7 +338,10 @@ function replaceFoldedSpans(
   return output;
 }
 
-function replaceLlmSpecialTokenLiterals(content: string): string {
+// Exported as the model-special-token sanitizer (upstream public name) so callers
+// like session-memory transcript scrubbing reuse the exact literal/pattern stripping
+// without the folded-span boundary pass that sanitizeExternalContentText layers on top.
+export function sanitizeModelSpecialTokens(content: string): string {
   let output = content;
   for (const literal of LLM_SPECIAL_TOKEN_LITERALS) {
     output = output.split(literal).join(SPECIAL_TOKEN_REPLACEMENT);
@@ -359,7 +362,7 @@ function replaceLlmSpecialTokenLiterals(content: string): string {
  * pass to that family is a separate, scoped hardening follow-up.
  */
 export function sanitizeExternalContentText(content: string): string {
-  return replaceFoldedSpans(replaceLlmSpecialTokenLiterals(content), FOLDED_SPAN_PATTERNS);
+  return replaceFoldedSpans(sanitizeModelSpecialTokens(content), FOLDED_SPAN_PATTERNS);
 }
 
 export type WrapExternalContentOptions = {

@@ -13,7 +13,7 @@ export const SESSION_BUSY_WITH_ACTIVE_RUN_TEXT =
   "⏳ Still finishing your previous message — I can't start this one until the current turn wraps up. Send it again in a moment and I'll pick it up.";
 
 /** True when text is exactly the generic external run failure copy. */
-export function isGenericExternalRunFailureText(text: string | undefined): boolean {
+function isGenericExternalRunFailureText(text: string | undefined): boolean {
   return text?.trim() === GENERIC_EXTERNAL_RUN_FAILURE_TEXT;
 }
 

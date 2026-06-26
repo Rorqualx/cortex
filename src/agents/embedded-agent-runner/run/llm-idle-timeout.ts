@@ -7,6 +7,7 @@ import {
   MAX_TIMER_TIMEOUT_MS,
 } from "@openclaw/normalization-core/number-coercion";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import { toErrorObject } from "../../../infra/errors.js";
 import { onLlmRequestActivity } from "../../../shared/llm-request-activity.js";
 import type { StreamFn } from "../../runtime/index.js";
 import type { MutableAssistantMessageEventStream } from "../../stream-compat.js";
@@ -16,6 +17,16 @@ import { createStreamIteratorWrapper } from "../../stream-iterator-wrapper.js";
  * Default idle timeout for LLM streaming responses in milliseconds.
  */
 const DEFAULT_LLM_IDLE_TIMEOUT_MS = 120_000;
+// Cron has its own outer watchdog; stream stalls must fail early enough for
+// the existing model fallback chain to try the next configured candidate.
+const CRON_LLM_IDLE_TIMEOUT_MS = 60_000;
+const LOCAL_PROVIDER_AUTH_MARKERS = new Set(["custom-local", "ollama-local"]);
+const SELF_HOSTED_PROVIDER_ID_PREFIXES = ["ollama", "lmstudio", "vllm", "sglang", "llama-cpp"];
+
+type IdleTimeoutProviderConfig = {
+  apiKey?: unknown;
+  localService?: unknown;
+};
 
 /**
  * Detects loopback / private-network / `.local` base URLs. Local providers
@@ -35,11 +46,9 @@ const DEFAULT_LLM_IDLE_TIMEOUT_MS = 120_000;
  *    matched, mirroring the SSRF-policy helper in
  *    `src/cron/isolated-agent/model-preflight.runtime.ts`.
  *  - DNS-resolved local aliases (e.g. an `/etc/hosts` entry mapping a custom
- *    hostname to a private IP) are not detected: classification keys on
- *    `URL.hostname` so resolution would have to happen here, and adding
- *    sync/async DNS to the watchdog hot path is disproportionate. Affected
- *    users can use the IP directly or set
- *    `models.providers.<id>.timeoutSeconds` explicitly.
+ *    hostname to a private IP) are not detected for the implicit watchdog opt-out:
+ *    classification keys on `URL.hostname` so resolution would have to happen
+ *    here, and adding sync/async DNS to the watchdog hot path is disproportionate.
  */
 function isLocalProviderBaseUrl(baseUrl: string): boolean {
   let host: string;
@@ -93,6 +102,82 @@ function isLocalProviderBaseUrl(baseUrl: string): boolean {
   );
 }
 
+function isExplicitLocalHostnameBaseUrl(baseUrl: string): boolean {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  if (
+    host === "docker.orb.internal" ||
+    host === "host.docker.internal" ||
+    host === "host.orb.internal"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isBareProviderHostnameBaseUrl(baseUrl: string): boolean {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  if (host.includes(".") || host.includes(":")) {
+    return false;
+  }
+  return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(host);
+}
+
+function isSelfHostedProviderId(provider: string | undefined): boolean {
+  const normalized = provider?.trim().toLowerCase();
+  if (!normalized || normalized === "ollama-cloud") {
+    return false;
+  }
+  return SELF_HOSTED_PROVIDER_ID_PREFIXES.some(
+    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}-`),
+  );
+}
+
+function findConfiguredProviderConfig(
+  cfg: OpenClawConfig | undefined,
+  provider: string | undefined,
+): IdleTimeoutProviderConfig | undefined {
+  const normalizedProvider = provider?.trim().toLowerCase();
+  if (!normalizedProvider) {
+    return undefined;
+  }
+  const providers = cfg?.models?.providers as
+    | Record<string, IdleTimeoutProviderConfig | undefined>
+    | undefined;
+  const exact = providers?.[normalizedProvider];
+  if (exact) {
+    return exact;
+  }
+  return Object.entries(providers ?? {}).find(
+    ([key]) => key.trim().toLowerCase() === normalizedProvider,
+  )?.[1];
+}
+
+function hasLocalProviderAuthMarker(apiKey: unknown): boolean {
+  return typeof apiKey === "string" && LOCAL_PROVIDER_AUTH_MARKERS.has(apiKey.trim().toLowerCase());
+}
+
+function hasConfiguredLocalProviderSignal(params: {
+  cfg: OpenClawConfig | undefined;
+  provider: string | undefined;
+}): boolean {
+  const providerConfig = findConfiguredProviderConfig(params.cfg, params.provider);
+  return Boolean(
+    providerConfig?.localService || hasLocalProviderAuthMarker(providerConfig?.apiKey),
+  );
+}
+
 function isOllamaCloudModel(model: { id?: string; provider?: string } | undefined): boolean {
   const rawModelId = model?.id;
   if (typeof rawModelId !== "string") {
@@ -131,6 +216,22 @@ export function resolveLlmIdleTimeoutMs(params?: {
   const hasExplicitRunTimeout =
     typeof runTimeoutMs === "number" && Number.isFinite(runTimeoutMs) && runTimeoutMs > 0;
   const runTimeoutIsNoTimeout = hasExplicitRunTimeout && runTimeoutMs >= MAX_TIMER_TIMEOUT_MS;
+  const baseUrl = params?.model?.baseUrl;
+  const isLocalProvider =
+    typeof baseUrl === "string" && baseUrl.length > 0 && isLocalProviderBaseUrl(baseUrl);
+  const isLocalRuntimeModel = isLocalProvider && !isOllamaCloudModel(params?.model);
+  const isExplicitLocalHostnameRuntimeModel =
+    typeof baseUrl === "string" &&
+    baseUrl.length > 0 &&
+    isExplicitLocalHostnameBaseUrl(baseUrl) &&
+    !isOllamaCloudModel(params?.model);
+  const isSelfHostedHostnameRuntimeModel =
+    typeof baseUrl === "string" &&
+    baseUrl.length > 0 &&
+    isBareProviderHostnameBaseUrl(baseUrl) &&
+    (isSelfHostedProviderId(params?.model?.provider) ||
+      hasConfiguredLocalProviderSignal({ cfg: params?.cfg, provider: params?.model?.provider })) &&
+    !isOllamaCloudModel(params?.model);
   const timeoutBounds = [
     runTimeoutIsNoTimeout ? undefined : runTimeoutMs,
     hasExplicitRunTimeout ? undefined : agentTimeoutMs,
@@ -170,11 +271,21 @@ export function resolveLlmIdleTimeoutMs(params?: {
     if (runTimeoutMs >= MAX_TIMER_TIMEOUT_MS) {
       return 0;
     }
-    // A run timeout is a job budget, not a silence allowance: unattended runs
-    // (cron) must clamp to the implicit watchdog too, so a silent provider
-    // call fails over to the next auth profile/model instead of burning the
-    // whole budget. Slow-but-silent providers opt out explicitly via
-    // `models.providers.<id>.timeoutSeconds` above.
+    // A run timeout is a job budget, not a silence allowance. Unattended cron runs
+    // clamp to the implicit watchdog so a silent provider fails over instead of
+    // burning the whole budget — except local/self-hosted models, which can stream
+    // nothing for minutes during eval and so keep the full run budget. Slow-but-silent
+    // cloud providers opt out explicitly via `models.providers.<id>.timeoutSeconds` above.
+    if (params?.trigger === "cron") {
+      if (
+        isLocalRuntimeModel ||
+        isExplicitLocalHostnameRuntimeModel ||
+        isSelfHostedHostnameRuntimeModel
+      ) {
+        return clampTimeoutMs(runTimeoutMs);
+      }
+      return clampTimeoutMs(Math.min(runTimeoutMs, CRON_LLM_IDLE_TIMEOUT_MS));
+    }
     return clampImplicitTimeoutMs(runTimeoutMs);
   }
 
@@ -189,10 +300,7 @@ export function resolveLlmIdleTimeoutMs(params?: {
   // baseUrl pointing at loopback / private-network / `.local`. Ollama cloud
   // models are still hosted remotely even when proxied through local Ollama, so
   // keep the cloud watchdog for `*:cloud` model ids.
-  const baseUrl = params?.model?.baseUrl;
-  const isLocalProvider =
-    typeof baseUrl === "string" && baseUrl.length > 0 && isLocalProviderBaseUrl(baseUrl);
-  if (isLocalProvider && !isOllamaCloudModel(params?.model)) {
+  if (isLocalRuntimeModel) {
     return 0;
   }
 
@@ -328,7 +436,7 @@ export function streamWithIdleTimeout(
               cleanupIterator();
               return (
                 streamIterator.throw?.(error) ??
-                Promise.reject(toLintErrorObject(error, "Non-Error rejection"))
+                Promise.reject(toErrorObject(error, "Non-Error rejection"))
               );
             },
           });
@@ -367,18 +475,4 @@ export function streamWithIdleTimeout(
     }
     return wrapStream(maybeStream);
   };
-}
-
-function toLintErrorObject(value: unknown, fallbackMessage: string): Error {
-  if (value instanceof Error) {
-    return value;
-  }
-  if (typeof value === "string") {
-    return new Error(value);
-  }
-  const error = new Error(fallbackMessage, { cause: value });
-  if ((typeof value === "object" && value !== null) || typeof value === "function") {
-    Object.assign(error, value);
-  }
-  return error;
 }

@@ -63,7 +63,6 @@ export const fa: TranslationMap = {
     docs: "مستندات",
     theme: "پوسته",
     colorMode: "حالت رنگ",
-    colorModeOption: "حالت رنگ: {mode}",
     resources: "منابع",
     search: "جستجو",
     save: "ذخیره",
@@ -212,6 +211,7 @@ export const fa: TranslationMap = {
     inherit: "ارث‌بری",
     defaultOption: "پیش‌فرض ({value})",
     offExplicit: "خاموش (صریح)",
+    auto: "auto",
     on: "روشن",
     off: "خاموش",
     full: "کامل",
@@ -1772,6 +1772,7 @@ export const fa: TranslationMap = {
       nextHeartbeat: "ضربان بعدی",
       wakeModeHelp: "اکنون بلافاصله فعال می‌کند. ضربان بعدی تا چرخه بعدی منتظر می‌ماند.",
       payloadKind: "چه چیزی باید اجرا شود؟",
+      command: "Command",
       systemEvent: "ارسال پیام به خط زمانی اصلی",
       agentTurn: "اجرای وظیفه دستیار (ایزوله)",
       systemEventHelp:

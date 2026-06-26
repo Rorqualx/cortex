@@ -26,7 +26,7 @@ import {
   loadWorkspaceBootstrapFiles,
   resolveWorkspaceBootstrapStatus,
   resolveDefaultAgentWorkspaceDir,
-  resolveWorkspaceAttestationPath,
+  resolveWorkspaceAttestationPaths,
   WORKSPACE_VANISHED_ERROR_CODE,
   type WorkspaceBootstrapFile,
 } from "./workspace.js";
@@ -68,6 +68,14 @@ describe("resolveDefaultAgentWorkspaceDir", () => {
 
 const WORKSPACE_STATE_PATH_SEGMENTS = ["openclaw-workspace-state.json"] as const;
 const LEGACY_WORKSPACE_STATE_PATH_SEGMENTS = [".openclaw", "workspace-state.json"] as const;
+
+function resolveCurrentWorkspaceAttestationPath(dir: string): string {
+  const [attestationPath] = resolveWorkspaceAttestationPaths(dir);
+  if (!attestationPath) {
+    throw new Error("expected current workspace attestation path");
+  }
+  return attestationPath;
+}
 
 async function readWorkspaceState(dir: string): Promise<{
   version: number;
@@ -171,7 +179,9 @@ describe("ensureAgentWorkspace", () => {
   it("refuses to re-seed a recently attested workspace after the directory disappears", async () => {
     const tempDir = await makeTempWorkspace("openclaw-workspace-");
     await ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true });
-    await expect(fs.access(resolveWorkspaceAttestationPath(tempDir))).resolves.toBeUndefined();
+    await expect(
+      fs.access(resolveCurrentWorkspaceAttestationPath(tempDir)),
+    ).resolves.toBeUndefined();
 
     await fs.rm(tempDir, { recursive: true, force: true });
 
@@ -229,7 +239,7 @@ describe("ensureAgentWorkspace", () => {
     const tempDir = await makeTempWorkspace("openclaw-workspace-");
     const oldGeneratedAgents = "old generated agents\n";
     await fs.writeFile(path.join(tempDir, DEFAULT_AGENTS_FILENAME), oldGeneratedAgents);
-    const attestationPath = resolveWorkspaceAttestationPath(tempDir);
+    const attestationPath = resolveCurrentWorkspaceAttestationPath(tempDir);
     await fs.mkdir(path.dirname(attestationPath), { recursive: true });
     await fs.writeFile(
       attestationPath,
@@ -365,7 +375,7 @@ describe("ensureAgentWorkspace", () => {
     await ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true });
     await fs.rm(tempDir, { recursive: true, force: true });
     const staleDate = new Date(Date.now() - 25 * 60 * 60 * 1000);
-    await fs.utimes(resolveWorkspaceAttestationPath(tempDir), staleDate, staleDate);
+    await fs.utimes(resolveCurrentWorkspaceAttestationPath(tempDir), staleDate, staleDate);
 
     await ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true });
 
@@ -400,7 +410,7 @@ describe("ensureAgentWorkspace", () => {
     "refuses to re-seed when a recent owned marker becomes unreadable",
     async () => {
       const tempDir = await makeTempWorkspace("openclaw-workspace-");
-      const attestationPath = resolveWorkspaceAttestationPath(tempDir);
+      const attestationPath = resolveCurrentWorkspaceAttestationPath(tempDir);
       await ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true });
       await fs.chmod(attestationPath, 0o000);
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -419,7 +429,7 @@ describe("ensureAgentWorkspace", () => {
     "refuses to re-seed when the state marker directory is unreadable",
     async () => {
       const tempDir = await makeTempWorkspace("openclaw-workspace-");
-      const attestationDir = path.dirname(resolveWorkspaceAttestationPath(tempDir));
+      const attestationDir = path.dirname(resolveCurrentWorkspaceAttestationPath(tempDir));
       await ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true });
       await fs.chmod(attestationDir, 0o000);
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -438,7 +448,7 @@ describe("ensureAgentWorkspace", () => {
     "ignores symlinked attestation markers without overwriting the target",
     async () => {
       const tempDir = await makeTempWorkspace("openclaw-workspace-");
-      const attestationPath = resolveWorkspaceAttestationPath(tempDir);
+      const attestationPath = resolveCurrentWorkspaceAttestationPath(tempDir);
       const symlinkTargetPath = `${attestationPath}-target`;
       const targetContent = "outside-marker\n";
       await fs.mkdir(path.dirname(attestationPath), { recursive: true });

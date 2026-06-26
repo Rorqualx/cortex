@@ -63,7 +63,6 @@ export const id: TranslationMap = {
     docs: "Dokumen",
     theme: "Tema",
     colorMode: "Mode warna",
-    colorModeOption: "Mode warna: {mode}",
     resources: "Sumber daya",
     search: "Cari",
     save: "Simpan",
@@ -211,6 +210,7 @@ export const id: TranslationMap = {
     inherit: "warisi",
     defaultOption: "Default ({value})",
     offExplicit: "nonaktif (eksplisit)",
+    auto: "auto",
     on: "aktif",
     off: "nonaktif",
     full: "penuh",
@@ -1770,6 +1770,7 @@ export const id: TranslationMap = {
       nextHeartbeat: "Heartbeat berikutnya",
       wakeModeHelp: "Now memicu segera. Next heartbeat menunggu siklus berikutnya.",
       payloadKind: "Apa yang harus dijalankan?",
+      command: "Command",
       systemEvent: "Posting pesan ke linimasa utama",
       agentTurn: "Jalankan tugas asisten (terisolasi)",
       systemEventHelp:

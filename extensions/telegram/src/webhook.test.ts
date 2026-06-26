@@ -1062,7 +1062,7 @@ describe("startTelegramWebhook", () => {
     );
   });
 
-  it("de-registers webhook when shutting down", async () => {
+  it("does not de-register webhook when shutting down", async () => {
     deleteWebhookSpy.mockClear();
     const abort = new AbortController();
     await startTelegramWebhook({
@@ -1074,7 +1074,6 @@ describe("startTelegramWebhook", () => {
     });
 
     abort.abort();
-    expect(deleteWebhookSpy).toHaveBeenCalledTimes(1);
-    expect(deleteWebhookSpy).toHaveBeenCalledWith({ drop_pending_updates: false });
+    expect(deleteWebhookSpy).toHaveBeenCalledTimes(0);
   });
 });

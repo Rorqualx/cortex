@@ -184,7 +184,7 @@ metadata: { "openclaw": { "requires": { "bins": ["gemini"] }, "primaryEnv": "GEM
     metadata:
 
     ```bash
-    openclaw skills install clawhub-publish
+    openclaw skills install @openclaw/clawhub-publish
     ```
 
   </Step>
