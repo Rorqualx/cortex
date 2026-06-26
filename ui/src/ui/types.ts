@@ -8,6 +8,8 @@ import type {
   SessionsPatchResultBase,
 } from "../../../src/shared/session-types.js";
 export type { ConfigUiHint, ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
+import type { FastMode } from "@openclaw/normalization-core/string-coerce";
+export type { FastMode };
 export type { SessionGoal } from "../../../packages/gateway-protocol/src/index.js";
 export type {
   ActivityEvent,
@@ -433,7 +435,7 @@ export type SessionsPatchResult = SessionsPatchResultBase<{
   sessionId: string;
   updatedAt?: number;
   thinkingLevel?: string;
-  fastMode?: boolean;
+  fastMode?: FastMode;
   verboseLevel?: string;
   reasoningLevel?: string;
   elevatedLevel?: string;

@@ -125,8 +125,11 @@ export type RunEmbeddedAgentParams = {
   forceHeartbeatTool?: boolean;
   /** Allow runtime plugins for this run to late-bind the gateway subagent. */
   allowGatewaySubagentBinding?: boolean;
-  /** @deprecated Use sessionTarget plus sessionId/sessionKey/agentId for runtime identity. */
-  sessionFile?: string;
+  // Upstream is migrating runtime identity to sessionTarget and deprecating sessionFile,
+  // but the fork's embedded runner still requires a concrete session file (bootstrap,
+  // session-lock, and takeover paths key on it). Keep it required until the sessionTarget
+  // migration lands here; sessionTarget above is the additive forward path.
+  sessionFile: string;
   workspaceDir: string;
   /** Task working directory for tool/runtime execution. Defaults to workspaceDir. */
   cwd?: string;

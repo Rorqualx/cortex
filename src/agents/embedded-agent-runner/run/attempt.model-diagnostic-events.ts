@@ -8,6 +8,7 @@ import {
   diagnosticErrorFailureKind,
   diagnosticProviderRequestIdHash,
 } from "../../../infra/diagnostic-error-metadata.js";
+export { diagnosticErrorCategory };
 import {
   areDiagnosticsEnabledForProcess,
   emitTrustedDiagnosticEvent,

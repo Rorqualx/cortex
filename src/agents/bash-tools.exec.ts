@@ -74,10 +74,9 @@ import {
   clampWithDefault,
   coerceEnv,
   readEnvInt,
-  resolveSandboxWorkdir,
-  resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
+import { resolveExecWorkdir } from "./bash-tools.exec-workdir.js";
 import { createModelExecAutoReviewer } from "./exec-auto-reviewer.js";
 import type { AgentToolResult } from "./runtime/index.js";
 import { resolveSandboxConfigForAgent } from "./sandbox/config.js";
@@ -1649,29 +1648,30 @@ export function createExecTool(
       const defaultWorkdir = normalizeOptionalString(defaults?.cwd);
       let workdir: string | undefined;
       let containerWorkdir = sandbox?.containerWorkdir;
-      if (sandbox) {
-        const sandboxWorkdir = explicitWorkdir ?? defaultWorkdir ?? process.cwd();
-        const resolved = await resolveSandboxWorkdir({
-          workdir: sandboxWorkdir,
-          sandbox,
-          warnings,
-        });
-        workdir = resolved.hostWorkdir;
-        containerWorkdir = resolved.containerWorkdir;
-      } else if (host === "node") {
-        // For remote node execution, only forward a cwd that was explicitly
-        // requested on the tool call. The gateway's workspace root is wired in as a
-        // local default, but it is not meaningful on the remote node and would
-        // recreate the cross-platform approval failure this path is fixing.
-        // When no explicit cwd was given, the gateway's own
-        // process.cwd() is meaningless on the remote node (especially cross-platform,
-        // e.g. Linux gateway + Windows node) and would cause
-        // "SYSTEM_RUN_DENIED: approval requires an existing canonical cwd".
-        // Passing undefined lets the node use its own default working directory.
-        workdir = explicitWorkdir;
-      } else {
-        const rawWorkdir = explicitWorkdir ?? defaultWorkdir ?? process.cwd();
-        workdir = resolveWorkdir(rawWorkdir, warnings);
+      // Unified workdir resolution (upstream #94441): one helper resolves host/sandbox/node
+      // cwd and fails invalid explicit workdirs before run. For node, it forwards only an
+      // explicitly-requested cwd (the gateway's local default is meaningless on a remote,
+      // possibly cross-platform, node and would recreate the canonical-cwd approval failure).
+      const workdirResolution = await resolveExecWorkdir({
+        host,
+        ...(explicitWorkdir !== undefined ? { workdir: explicitWorkdir } : {}),
+        ...(defaultWorkdir !== undefined ? { defaultCwd: defaultWorkdir } : {}),
+        ...(sandbox ? { sandbox } : {}),
+      });
+      switch (workdirResolution.kind) {
+        case "sandbox":
+          workdir = workdirResolution.hostCwd;
+          containerWorkdir = workdirResolution.containerCwd;
+          break;
+        case "node":
+          workdir = workdirResolution.remoteCwd;
+          break;
+        case "local":
+          workdir = workdirResolution.hostCwd;
+          break;
+        case "unavailable":
+          workdir = workdirResolution.requestedCwd;
+          break;
       }
       rejectUnsafeControlShellCommand(params.command);
       // Discipline guard: steer the model off low-value/high-backtrack shell

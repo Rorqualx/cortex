@@ -224,7 +224,17 @@ const gatewaySessionRowOptionalFields = {
   thinkingLevels: Type.Optional(Type.Array(GatewayThinkingLevelOptionSchema)),
   thinkingOptions: Type.Optional(Type.Array(Type.String())),
   thinkingDefault: Type.Optional(Type.String()),
-  fastMode: Type.Optional(Type.Boolean()),
+  fastMode: Type.Optional(Type.Union([Type.Boolean(), Type.Literal("auto")])),
+  effectiveFastMode: Type.Optional(Type.Union([Type.Boolean(), Type.Literal("auto")])),
+  effectiveFastModeSource: Type.Optional(
+    Type.Union([
+      Type.Literal("session"),
+      Type.Literal("agent"),
+      Type.Literal("config"),
+      Type.Literal("default"),
+    ]),
+  ),
+  fastAutoOnSeconds: Type.Optional(Type.Integer({ minimum: 1 })),
   verboseLevel: Type.Optional(Type.String()),
   traceLevel: Type.Optional(Type.String()),
   reasoningLevel: Type.Optional(Type.String()),
@@ -247,6 +257,14 @@ const gatewaySessionRowOptionalFields = {
   parentSessionKey: Type.Optional(Type.String()),
   childSessions: Type.Optional(Type.Array(Type.String())),
   responseUsage: Type.Optional(
+    Type.Union([
+      Type.Literal("on"),
+      Type.Literal("off"),
+      Type.Literal("tokens"),
+      Type.Literal("full"),
+    ]),
+  ),
+  effectiveResponseUsage: Type.Optional(
     Type.Union([
       Type.Literal("on"),
       Type.Literal("off"),
