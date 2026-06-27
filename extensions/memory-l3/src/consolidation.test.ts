@@ -9,8 +9,9 @@ import {
   passesPromotionThresholds,
   selectPromotable,
 } from "./consolidation.js";
+import { consolidateLongTermTyped } from "./longterm-typed.js";
 import { Storage } from "./storage.js";
-import type { L2Fact } from "./types.js";
+import type { L2Fact, TypedFact } from "./types.js";
 
 const NOW = Date.UTC(2026, 4, 6, 12, 0, 0);
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -274,5 +275,518 @@ describe("selectPromotable", () => {
     const result = await selectPromotable(storage);
     const keys = result.map((r) => r.dedupKey).toSorted();
     expect(keys).toEqual(["user:identity", "user_pref:tabs"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ConvMemory v3 safety invariants (QW-2)
+// Formal contracts that pin consolidation behavior. These are pure assertions —
+// no production code changes required. They backstop QW-1 (bi-temporal fields),
+// AR-1 (cross-address erase), and all future consolidation algorithm changes.
+// ---------------------------------------------------------------------------
+
+const typedTmp = () => ({
+  root: mkdtempSync(path.join(os.tmpdir(), "memory-l3-cons-inv-")),
+  storage: null as Storage | null,
+});
+
+const typedSetup = () => {
+  const t = typedTmp();
+  t.storage = new Storage(path.join(t.root, ".openclaw", "l3"));
+  return t;
+};
+
+const typedTeardown = (t: ReturnType<typeof typedTmp>) => {
+  rmSync(t.root, { recursive: true, force: true });
+};
+
+const writeTypedChunk = async (
+  s: Storage,
+  chunkId: string,
+  typedFacts: TypedFact[],
+  createdAt: number,
+): Promise<void> => {
+  await s.writeL2Chunk(
+    {
+      id: chunkId,
+      agentId: "j-rorqual",
+      startTurnIndex: 0,
+      endTurnIndex: 1,
+      createdAt,
+      facts: [],
+      typedFacts,
+      dedupKeys: [],
+    },
+    "",
+  );
+};
+
+describe("ConvMemory v3 safety invariants", () => {
+  // ── C1: Supersession monotonicity ──
+  // Within a single LongTermTypedFact, history entries must have
+  // non-decreasing supersededAt timestamps — the older value was
+  // always superseded before (or at the same time as) a newer one.
+  describe("C1: supersession monotonicity", () => {
+    it("history entries have non-decreasing supersededAt timestamps", async () => {
+      const t = typedSetup();
+      try {
+        // Chunk 1: balance = 100
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-1",
+          [
+            {
+              id: "t1",
+              slot: "fin:balance",
+              value: "100",
+              sourceSpan: "x",
+              unit: "USD",
+              confidence: 0.9,
+              createdAt: NOW - 10 * MS_PER_DAY,
+            },
+          ],
+          NOW - 10 * MS_PER_DAY,
+        );
+        await consolidateLongTermTyped({
+          storage: t.storage!,
+          agentId: "test",
+          now: NOW - 10 * MS_PER_DAY,
+        });
+
+        // Chunk 2: balance = 200
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-2",
+          [
+            {
+              id: "t2",
+              slot: "fin:balance",
+              value: "200",
+              sourceSpan: "x",
+              unit: "USD",
+              confidence: 0.9,
+              createdAt: NOW - 5 * MS_PER_DAY,
+            },
+          ],
+          NOW - 5 * MS_PER_DAY,
+        );
+        await consolidateLongTermTyped({
+          storage: t.storage!,
+          agentId: "test",
+          now: NOW - 5 * MS_PER_DAY,
+        });
+
+        // Chunk 3: balance = 300
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-3",
+          [
+            {
+              id: "t3",
+              slot: "fin:balance",
+              value: "300",
+              sourceSpan: "x",
+              unit: "USD",
+              confidence: 0.9,
+              createdAt: NOW,
+            },
+          ],
+          NOW,
+        );
+        await consolidateLongTermTyped({ storage: t.storage!, agentId: "test", now: NOW });
+
+        const ltt = await t.storage!.readLongTermTyped();
+        const fact = ltt.facts.find((f) => f.slot === "fin:balance")!;
+        expect(fact).toBeDefined();
+        expect(fact.value).toBe("300");
+        expect(fact.history.length).toBeGreaterThanOrEqual(2);
+
+        // Invariant: supersededAt timestamps are non-decreasing
+        for (let i = 1; i < fact.history.length; i++) {
+          expect(fact.history[i].supersededAt).toBeGreaterThanOrEqual(
+            fact.history[i - 1].supersededAt,
+          );
+        }
+      } finally {
+        typedTeardown(t);
+      }
+    });
+  });
+
+  // ── C2: No orphan supersession ──
+  // Every value in history[] was the canonical value before it was
+  // superseded. No value appears in history without having lived as
+  // the active value at some point.
+  describe("C2: no orphan supersession", () => {
+    it("every history value was once canonical", async () => {
+      const t = typedSetup();
+      try {
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-1",
+          [
+            {
+              id: "t1",
+              slot: "user:status",
+              value: "active",
+              sourceSpan: "x",
+              unit: null,
+              confidence: 0.9,
+              createdAt: NOW - 10 * MS_PER_DAY,
+            },
+          ],
+          NOW - 10 * MS_PER_DAY,
+        );
+        await consolidateLongTermTyped({
+          storage: t.storage!,
+          agentId: "test",
+          now: NOW - 10 * MS_PER_DAY,
+        });
+
+        // Current canonical value at this point is "active"
+        const afterFirst = await t.storage!.readLongTermTyped();
+        expect(afterFirst.facts[0].value).toBe("active");
+        expect(afterFirst.facts[0].history).toEqual([]);
+
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-2",
+          [
+            {
+              id: "t2",
+              slot: "user:status",
+              value: "inactive",
+              sourceSpan: "x",
+              unit: null,
+              confidence: 0.9,
+              createdAt: NOW,
+            },
+          ],
+          NOW,
+        );
+        await consolidateLongTermTyped({ storage: t.storage!, agentId: "test", now: NOW });
+
+        const afterSecond = await t.storage!.readLongTermTyped();
+        const fact = afterSecond.facts.find((f) => f.slot === "user:status")!;
+        expect(fact.value).toBe("inactive");
+
+        // C2 invariant: every history value was once the canonical value
+        // The only history entry should be "active" — which was indeed the
+        // canonical value after the first pass.
+        expect(fact.history.length).toBe(1);
+        expect(fact.history[0].value).toBe("active");
+      } finally {
+        typedTeardown(t);
+      }
+    });
+
+    it("history value never equals current canonical value", async () => {
+      const t = typedSetup();
+      try {
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-1",
+          [
+            {
+              id: "t1",
+              slot: "cfg:theme",
+              value: "dark",
+              sourceSpan: "x",
+              unit: null,
+              confidence: 0.9,
+              createdAt: NOW - 5 * MS_PER_DAY,
+            },
+          ],
+          NOW - 5 * MS_PER_DAY,
+        );
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-2",
+          [
+            {
+              id: "t2",
+              slot: "cfg:theme",
+              value: "light",
+              sourceSpan: "x",
+              unit: null,
+              confidence: 0.9,
+              createdAt: NOW,
+            },
+          ],
+          NOW,
+        );
+        await consolidateLongTermTyped({ storage: t.storage!, agentId: "test", now: NOW });
+
+        const ltt = await t.storage!.readLongTermTyped();
+        const fact = ltt.facts[0];
+
+        // Invariant: no history entry holds the same value as the current canonical
+        for (const h of fact.history) {
+          expect(h.value).not.toBe(fact.value);
+        }
+      } finally {
+        typedTeardown(t);
+      }
+    });
+  });
+
+  // ── C3: Archive exclusivity ──
+  // Archived facts must never appear in active retrieval results.
+  describe("C3: archive exclusivity", () => {
+    it("archived facts are excluded from active count", async () => {
+      const t = typedSetup();
+      try {
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-stale",
+          [
+            {
+              id: "t1",
+              slot: "old:data",
+              value: "stale",
+              sourceSpan: "x",
+              unit: null,
+              confidence: 0.5,
+              createdAt: NOW - 90 * MS_PER_DAY,
+            },
+          ],
+          NOW - 90 * MS_PER_DAY,
+        );
+        await consolidateLongTermTyped({
+          storage: t.storage!,
+          agentId: "test",
+          now: NOW - 90 * MS_PER_DAY,
+        });
+
+        // Clear all L2 chunks so the fact has no confirming source
+        for (const token of await t.storage!.listL2ChunkPaths()) {
+          await t.storage!.deleteL2Chunk(token);
+        }
+
+        const out = await consolidateLongTermTyped({
+          storage: t.storage!,
+          agentId: "test",
+          now: NOW,
+          config: { maxAgeWithoutConfirmMs: 60 * MS_PER_DAY, minRecallCount: 1 },
+        });
+        expect(out.archivedCount).toBe(1);
+
+        const ltt = await t.storage!.readLongTermTyped();
+        const archived = ltt.facts.filter((f) => f.archived);
+        const active = ltt.facts.filter((f) => !f.archived);
+
+        // C3 invariant: archived count matches output
+        expect(archived.length).toBe(out.archivedCount);
+        // C3 invariant: active count excludes all archived facts
+        expect(active.length).toBe(out.activeCount);
+        expect(active.length + archived.length).toBe(ltt.facts.length);
+        // C3 invariant: no fact is both archived and in active retrieval
+        // (archived facts carry archived=true; active retrieval skips them)
+        for (const a of archived) {
+          expect(a.archived).toBe(true);
+          expect(a.archivedAt).not.toBeNull();
+        }
+      } finally {
+        typedTeardown(t);
+      }
+    });
+  });
+
+  // ── C4: Promotion floor ──
+  // No fact with importance strictly below minImportance should ever
+  // pass promotion thresholds, regardless of recall count or dayspan.
+  describe("C4: promotion floor", () => {
+    it("rejects facts below minImportance even with max recall and dayspan", () => {
+      const veryLow = {
+        dedupKey: "k:low",
+        text: "barely there",
+        importance: DEFAULT_CONSOLIDATION_CONFIG.minImportance - 0.01,
+        recallCount: 100,
+        firstSeenAt: NOW - 365 * MS_PER_DAY,
+        lastConfirmedAt: NOW,
+        sourceChunkIds: Array.from({ length: 100 }, (_, i) => `chunk-${i}`),
+        certainty: "confirmed" as const,
+      };
+      expect(passesPromotionThresholds(veryLow)).toBe(false);
+    });
+
+    it("rejects facts at exactly zero importance", () => {
+      const zero = {
+        dedupKey: "k:zero",
+        text: "zero importance",
+        importance: 0,
+        recallCount: 10,
+        firstSeenAt: NOW - 100 * MS_PER_DAY,
+        lastConfirmedAt: NOW,
+        sourceChunkIds: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+        certainty: "confirmed" as const,
+      };
+      expect(passesPromotionThresholds(zero)).toBe(false);
+    });
+
+    it("accepts facts at exactly minImportance with sufficient recall+dayspan", () => {
+      const atFloor = {
+        dedupKey: "k:floor",
+        text: "at floor",
+        importance: DEFAULT_CONSOLIDATION_CONFIG.minImportance,
+        recallCount: DEFAULT_CONSOLIDATION_CONFIG.minRecallCount,
+        firstSeenAt: NOW - DEFAULT_CONSOLIDATION_CONFIG.minDayspanMs - 1,
+        lastConfirmedAt: NOW,
+        sourceChunkIds: ["a", "b"],
+        certainty: "confirmed" as const,
+      };
+      expect(passesPromotionThresholds(atFloor)).toBe(true);
+    });
+  });
+
+  // ── C5: Tentative isolation ──
+  // Tentative-only facts must never use the high-importance passthrough
+  // shortcut. A tentative fact, even at importance 0.99, must earn
+  // promotion through recall + dayspan.
+  describe("C5: tentative isolation", () => {
+    it("tentative facts never take high-importance passthrough at any importance", () => {
+      // Even at 0.99 importance (above the 0.85 shortcut threshold),
+      // a tentative single-occurrence fact must be denied.
+      for (const importance of [0.85, 0.9, 0.95, 0.99]) {
+        expect(
+          passesPromotionThresholds({
+            dedupKey: "k:t",
+            text: "speculative",
+            importance,
+            recallCount: 1,
+            firstSeenAt: NOW,
+            lastConfirmedAt: NOW,
+            sourceChunkIds: ["chunk-1"],
+            certainty: "tentative",
+          }),
+        ).toBe(false);
+      }
+    });
+
+    it("instructional facts do take the shortcut (strongest certainty)", () => {
+      expect(
+        passesPromotionThresholds({
+          dedupKey: "k:i",
+          text: "instruction",
+          importance: 0.9,
+          recallCount: 1,
+          firstSeenAt: NOW,
+          lastConfirmedAt: NOW,
+          sourceChunkIds: ["chunk-1"],
+          certainty: "instructional",
+        }),
+      ).toBe(true);
+    });
+  });
+
+  // ── C6: Idempotent epoch ──
+  // Running consolidation twice on the same input must yield the same
+  // canonical state: identical slots, values, confidence, recall counts,
+  // and history lengths.
+  describe("C6: idempotent epoch", () => {
+    it("double consolidation on same L2 state yields identical typed facts", async () => {
+      const t = typedSetup();
+      try {
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-a",
+          [
+            {
+              id: "t1",
+              slot: "user:name",
+              value: "Alice",
+              sourceSpan: "x",
+              unit: null,
+              confidence: 0.9,
+              createdAt: NOW - 5 * MS_PER_DAY,
+            },
+            {
+              id: "t2",
+              slot: "user:age",
+              value: "30",
+              sourceSpan: "x",
+              unit: "years",
+              confidence: 0.8,
+              createdAt: NOW - 5 * MS_PER_DAY,
+            },
+          ],
+          NOW - 5 * MS_PER_DAY,
+        );
+        await writeTypedChunk(
+          t.storage!,
+          "chunk-b",
+          [
+            {
+              id: "t3",
+              slot: "user:name",
+              value: "Alice",
+              sourceSpan: "x",
+              unit: null,
+              confidence: 0.95,
+              createdAt: NOW - 2 * MS_PER_DAY,
+            },
+            {
+              id: "t4",
+              slot: "user:email",
+              value: "alice@example.com",
+              sourceSpan: "x",
+              unit: null,
+              confidence: 0.9,
+              createdAt: NOW - 2 * MS_PER_DAY,
+            },
+          ],
+          NOW - 2 * MS_PER_DAY,
+        );
+
+        // First pass
+        await consolidateLongTermTyped({ storage: t.storage!, agentId: "test", now: NOW });
+        const ltt1 = await t.storage!.readLongTermTyped();
+
+        // Second pass — same L2 chunks, no changes
+        await consolidateLongTermTyped({ storage: t.storage!, agentId: "test", now: NOW });
+        const ltt2 = await t.storage!.readLongTermTyped();
+
+        // C6 invariant: same number of facts
+        expect(ltt2.facts.length).toBe(ltt1.facts.length);
+
+        // C6 invariant: same set of slots in the same order
+        expect(ltt2.facts.map((f) => f.slot)).toEqual(ltt1.facts.map((f) => f.slot));
+
+        // C6 invariant: each fact's value, confidence, recall, and history are identical
+        // (pass metadata like promoted/reaffirmed counts naturally differ — what
+        // matters is the stored canonical state)
+        for (let i = 0; i < ltt1.facts.length; i++) {
+          const a = ltt1.facts[i];
+          const b = ltt2.facts[i];
+          expect(b.slot).toBe(a.slot);
+          expect(b.value).toBe(a.value);
+          expect(b.confidence).toBe(a.confidence);
+          expect(b.recallCount).toBe(a.recallCount);
+          expect(b.history).toEqual(a.history);
+          expect(b.archived).toBe(a.archived);
+        }
+      } finally {
+        typedTeardown(t);
+      }
+    });
+
+    it("double aggregation on same L2 state yields identical candidates", async () => {
+      await writeChunk(
+        "chunk-000000-a",
+        [fact("f1", "evergreen fact", 0.8, NOW - 5 * MS_PER_DAY, "topic:evergreen")],
+        NOW - 5 * MS_PER_DAY,
+      );
+      await writeChunk(
+        "chunk-000001-b",
+        [fact("f2", "evergreen again", 0.7, NOW, "topic:evergreen")],
+        NOW,
+      );
+
+      const first = await aggregateCandidates(storage);
+      const second = await aggregateCandidates(storage);
+
+      // C6 invariant: aggregation is deterministic
+      expect(second).toEqual(first);
+    });
   });
 });
