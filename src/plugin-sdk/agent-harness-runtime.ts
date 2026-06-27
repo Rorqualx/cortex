@@ -126,6 +126,7 @@ export { isMessagingTool, isMessagingToolSendAction } from "../agents/embedded-a
 export {
   extractMessagingToolSend,
   extractMessagingToolSendResult,
+  extractToolErrorMessage,
   extractToolResultMediaArtifact,
   filterToolResultMediaUrls,
   isToolResultError,
@@ -334,6 +335,16 @@ export {
   runAgentHarnessLlmInputHook,
   runAgentHarnessLlmOutputHook,
 } from "../agents/harness/lifecycle-hook-helpers.js";
+export {
+  awaitAgentEndSideEffects,
+  runAgentEndSideEffects,
+} from "../agents/harness/agent-end-side-effects.js";
+export {
+  buildAgentHarnessUserInputAnswers,
+  deliverAgentHarnessUserInputPrompt,
+} from "../agents/harness/user-input-bridge.js";
+export type { AgentHarnessUserInputQuestion } from "../agents/harness/user-input-bridge.js";
+export { getModelProviderRequestTransport } from "../agents/provider-request-config.js";
 export {
   buildNativeHookRelayCommand,
   hasNativeHookRelayInvocation,

@@ -51,6 +51,7 @@ export type OllamaEmbeddingClient = {
   headers: Record<string, string>;
   ssrfPolicy?: SsrFPolicy;
   model: string;
+  outputDimensionality?: number;
   embedBatch: (texts: string[]) => Promise<number[][]>;
 };
 
@@ -322,6 +323,7 @@ function resolveOllamaEmbeddingClient(
       allowPrivateNetwork: true,
     },
     model,
+    outputDimensionality: options.outputDimensionality,
   };
 }
 
