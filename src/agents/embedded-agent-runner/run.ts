@@ -29,6 +29,11 @@ import { enqueueCommandInLane } from "../../process/command-queue.js";
 import type { CommandQueueEnqueueOptions } from "../../process/command-queue.types.js";
 import { isTransientProviderOperationError } from "../../provider-runtime/operation-retry.js";
 import { runWithSessionContext } from "../../session-awareness/index.js";
+import {
+  DEFAULT_FAST_MODE_AUTO_ON_SECONDS,
+  type FastModeAutoProgressState,
+  resolveFastModeForElapsed,
+} from "../../shared/fast-mode.js";
 import { createAgentHarnessTaskRuntimeScope } from "../../tasks/agent-harness-task-runtime-scope.js";
 import { resolveUserPath } from "../../utils.js";
 import { isMarkdownCapableMessageChannel } from "../../utils/message-channel.js";
@@ -598,6 +603,25 @@ export async function runEmbeddedAgent(
     return enqueueGlobal(async () => {
       throwIfAborted();
       const started = Date.now();
+      // Auto fast mode is time-windowed: enabled until the on-window elapses, then
+      // off. Pass a thunk (not a snapshot) so transport wrappers and the codex
+      // service-tier re-evaluate it each turn and step fast mode down after the
+      // window, instead of pinning it on for the whole run.
+      const fastModeStarted = params.fastModeStartedAtMs ?? started;
+      const fastModeAutoOnSeconds =
+        params.fastModeAutoOnSeconds ?? DEFAULT_FAST_MODE_AUTO_ON_SECONDS;
+      const fastModeAutoProgressState: FastModeAutoProgressState =
+        params.fastModeAutoProgressState ?? { offAnnounced: false, resetAnnounced: false };
+      const resolveAttemptFastMode = (): boolean | undefined => {
+        const resolved = resolveFastModeForElapsed({
+          mode: params.fastMode,
+          startedAtMs: fastModeStarted,
+          fastAutoOnSeconds: fastModeAutoOnSeconds,
+        });
+        return resolved.mode === undefined ? undefined : resolved.enabled;
+      };
+      const attemptFastMode =
+        params.fastMode === "auto" ? resolveAttemptFastMode : resolveAttemptFastMode();
       const startupStages = createEmbeddedRunStageTracker();
       let startupStagesEmitted = false;
       const notifyExecutionPhase = (
@@ -1739,10 +1763,11 @@ export async function runEmbeddedAgent(
             thinkLevel,
             onToolOutcome: observePostCompactionToolOutcome,
             onRunProgress: notifyRunProgress,
-            // Resolve "auto" to its at-start effective value (enabled); harnesses
-            // that render auto-progress re-derive the live state from fastModeAuto.
-            fastMode: params.fastMode === "auto" ? true : params.fastMode,
+            fastMode: attemptFastMode,
             fastModeAuto: params.fastMode === "auto",
+            fastModeStartedAtMs: fastModeStarted,
+            fastModeAutoOnSeconds,
+            fastModeAutoProgressState,
             verboseLevel: params.verboseLevel,
             reasoningLevel: params.reasoningLevel,
             toolResultFormat: resolvedToolResultFormat,

@@ -63,6 +63,7 @@ import {
 import { resolveMaintenanceConfig } from "./store-maintenance-runtime.js";
 import {
   capEntryCount,
+  DEFAULT_QUOTA_SUSPENSION_TTL_MS,
   getActiveSessionMaintenanceWarning,
   pruneStaleEntries,
   resolveQuotaSuspensionEntryMaintenance,
@@ -1079,6 +1080,13 @@ export async function runQuotaSuspensionMaintenance(params: {
         if (maintenance.resumed) {
           resumed.push({ sessionKey, laneId: maintenance.resumed.laneId });
         }
+      }
+      if ((resumed.length > 0 || cleared > 0) && params.log !== false) {
+        log.info("processed quota-suspension TTLs", {
+          resumed: resumed.length,
+          cleared,
+          ttlMs: params.ttlMs ?? DEFAULT_QUOTA_SUSPENSION_TTL_MS,
+        });
       }
       return { resumed, cleared };
     },
