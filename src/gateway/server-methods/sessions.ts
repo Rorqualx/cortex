@@ -57,6 +57,7 @@ import {
   updateSessionStore,
 } from "../../config/sessions.js";
 import { resolveAgentMainSessionKey } from "../../config/sessions/main-session.js";
+import { hasSessionAutoModelFallbackProvenance } from "../../config/sessions/model-override-provenance.js";
 import {
   applySessionPatchProjection,
   createSessionEntryWithTranscript,
@@ -167,24 +168,44 @@ function filterSessionStoreToConfiguredAgents(
   );
 }
 
-function inheritSessionRuntimeSelection(
+export function inheritSessionRuntimeSelection(
   parentEntry: SessionEntry | undefined,
 ): Partial<SessionEntry> {
   if (!parentEntry) {
     return {};
   }
+  // Only a deliberate USER model pick carries to a new session. Auto-fallback
+  // overrides (e.g. a quota fallback that pins kimi) and the runtime effective
+  // model are execution artifacts with no user intent — inheriting them would
+  // override the agent's configured default. When the parent has no user
+  // override, omit the model fields so the new session resolves to the agent
+  // default. See model-override-provenance + resolveSessionModelRef.
+  const isUserModelOverride =
+    Boolean(
+      normalizeOptionalString(parentEntry.providerOverride) &&
+      normalizeOptionalString(parentEntry.modelOverride),
+    ) &&
+    parentEntry.modelOverrideSource !== "auto" &&
+    !(
+      parentEntry.modelOverrideSource === undefined &&
+      hasSessionAutoModelFallbackProvenance(parentEntry)
+    );
   return {
-    ...(parentEntry.providerOverride ? { providerOverride: parentEntry.providerOverride } : {}),
-    ...(parentEntry.modelOverride ? { modelOverride: parentEntry.modelOverride } : {}),
-    ...(parentEntry.modelOverrideSource
-      ? { modelOverrideSource: parentEntry.modelOverrideSource }
+    ...(isUserModelOverride
+      ? {
+          ...(parentEntry.providerOverride
+            ? { providerOverride: parentEntry.providerOverride }
+            : {}),
+          ...(parentEntry.modelOverride ? { modelOverride: parentEntry.modelOverride } : {}),
+          ...(parentEntry.modelOverrideSource
+            ? { modelOverrideSource: parentEntry.modelOverrideSource }
+            : {}),
+        }
       : {}),
     ...(parentEntry.agentRuntimeOverride
       ? { agentRuntimeOverride: parentEntry.agentRuntimeOverride }
       : {}),
-    ...(parentEntry.modelProvider ? { modelProvider: parentEntry.modelProvider } : {}),
-    ...(parentEntry.model ? { model: parentEntry.model } : {}),
-    ...(typeof parentEntry.contextTokens === "number"
+    ...(isUserModelOverride && typeof parentEntry.contextTokens === "number"
       ? { contextTokens: parentEntry.contextTokens }
       : {}),
     ...(parentEntry.thinkingLevel ? { thinkingLevel: parentEntry.thinkingLevel } : {}),
