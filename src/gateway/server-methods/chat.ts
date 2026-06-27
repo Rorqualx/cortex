@@ -2601,7 +2601,14 @@ async function handleChatHistoryRequest({
     ...(activeRunAgentId ? { agentId: activeRunAgentId } : {}),
     defaultAgentId,
   });
-  const defaults = getSessionDefaults(cfg, modelCatalog, { allowPluginNormalization: false });
+  // Agent-aware so the chat.history defaults snapshot matches sessions.list and
+  // does not clobber the per-agent "Default (…)" label with the global default.
+  const defaults = getSessionDefaults(
+    cfg,
+    modelCatalog,
+    { allowPluginNormalization: false },
+    selectedAgent.agentId ?? defaultAgentId,
+  );
   const thinkingLevel = sessionInfo.thinkingLevel ?? sessionInfo.thinkingDefault;
   const verboseLevel = entry?.verboseLevel ?? cfg.agents?.defaults?.verboseDefault;
   sessionInfo.verboseLevel = verboseLevel;

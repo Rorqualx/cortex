@@ -317,6 +317,29 @@ describe("gateway session utils", () => {
     expect(defaults.thinkingOptions).toContain("maximum");
   });
 
+  test("session defaults surface the scope agent's primary, not the global default", () => {
+    const cfg = {
+      agents: {
+        list: [{ id: "main", model: { primary: "zai/glm-5.2" }, contextTokens: 200000 }],
+        defaults: { model: { primary: "kimi/kimi-for-coding" }, contextTokens: 123456 },
+      },
+    } as unknown as OpenClawConfig;
+
+    // No agent scope -> global agents.defaults primary + cap.
+    expectFields(getSessionDefaults(cfg), {
+      modelProvider: "kimi",
+      model: "kimi-for-coding",
+      contextTokens: 123456,
+    });
+    // Agent scope -> that agent's configured primary + its own context cap, even
+    // when both diverge from agents.defaults.
+    expectFields(getSessionDefaults(cfg, undefined, undefined, "main"), {
+      modelProvider: "zai",
+      model: "glm-5.2",
+      contextTokens: 200000,
+    });
+  });
+
   test("session defaults and rows use catalog reasoning metadata for provider thinking options", () => {
     const registry = createEmptyPluginRegistry();
     registry.providers.push({

@@ -1680,15 +1680,29 @@ export function getSessionDefaults(
   cfg: OpenClawConfig,
   modelCatalog?: ModelCatalogEntry[],
   options?: { allowPluginNormalization?: boolean },
+  agentId?: string,
 ): GatewaySessionsDefaults {
-  const resolved = resolveConfiguredModelRef({
-    cfg,
-    defaultProvider: DEFAULT_PROVIDER,
-    defaultModel: DEFAULT_MODEL,
-    allowPluginNormalization: options?.allowPluginNormalization,
-  });
+  // Agent-aware default: when a scope agent is known, surface that agent's
+  // configured primary (agents.list[<id>].model.primary) instead of the global
+  // agents.defaults.model.primary. Otherwise the dashboard "Default (…)" label
+  // drifts to the global default whenever it diverges from the active agent —
+  // e.g. a quota fallback that left agents.defaults pinned to a different model.
+  const resolved = agentId
+    ? resolveDefaultModelForAgent({
+        cfg,
+        agentId,
+        allowPluginNormalization: options?.allowPluginNormalization,
+      })
+    : resolveConfiguredModelRef({
+        cfg,
+        defaultProvider: DEFAULT_PROVIDER,
+        defaultModel: DEFAULT_MODEL,
+        allowPluginNormalization: options?.allowPluginNormalization,
+      });
   const contextTokens =
-    cfg.agents?.defaults?.contextTokens ??
+    (agentId
+      ? resolveAgentConfig(cfg, agentId)?.contextTokens
+      : cfg.agents?.defaults?.contextTokens) ??
     lookupContextTokens(resolved.model, { allowAsyncLoad: false }) ??
     DEFAULT_CONTEXT_TOKENS;
   const thinkingLevels = listThinkingLevelOptions(resolved.provider, resolved.model, modelCatalog);
@@ -2821,7 +2835,12 @@ export function listSessionsFromStore(params: {
     offset: offset > 0 ? offset : undefined,
     nextOffset,
     hasMore,
-    defaults: getSessionDefaults(cfg, params.modelCatalog, { allowPluginNormalization: false }),
+    defaults: getSessionDefaults(
+      cfg,
+      params.modelCatalog,
+      { allowPluginNormalization: false },
+      resolveDefaultAgentId(cfg),
+    ),
     sessions,
   };
 }
@@ -2946,7 +2965,12 @@ export async function listSessionsFromStoreAsync(params: {
     offset: offset > 0 ? offset : undefined,
     nextOffset,
     hasMore,
-    defaults: getSessionDefaults(cfg, params.modelCatalog, { allowPluginNormalization: false }),
+    defaults: getSessionDefaults(
+      cfg,
+      params.modelCatalog,
+      { allowPluginNormalization: false },
+      resolveDefaultAgentId(cfg),
+    ),
     sessions,
   };
 }
