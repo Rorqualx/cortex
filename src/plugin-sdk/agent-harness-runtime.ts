@@ -342,9 +342,16 @@ export {
 export {
   buildAgentHarnessUserInputAnswers,
   deliverAgentHarnessUserInputPrompt,
+  emptyAgentHarnessUserInputAnswers,
 } from "../agents/harness/user-input-bridge.js";
-export type { AgentHarnessUserInputQuestion } from "../agents/harness/user-input-bridge.js";
+export type {
+  AgentHarnessUserInputOption,
+  AgentHarnessUserInputQuestion,
+} from "../agents/harness/user-input-bridge.js";
 export { getModelProviderRequestTransport } from "../agents/provider-request-config.js";
+export { FAST_MODE_AUTO_PROGRESS_KIND } from "../auto-reply/reply-payload.js";
+export { formatFastModeAutoProgressText, resolveFastModeForElapsed } from "../shared/fast-mode.js";
+export type { FastModeAutoProgressState } from "../shared/fast-mode.js";
 export {
   buildNativeHookRelayCommand,
   hasNativeHookRelayInvocation,

@@ -1739,7 +1739,10 @@ export async function runEmbeddedAgent(
             thinkLevel,
             onToolOutcome: observePostCompactionToolOutcome,
             onRunProgress: notifyRunProgress,
-            fastMode: params.fastMode,
+            // Resolve "auto" to its at-start effective value (enabled); harnesses
+            // that render auto-progress re-derive the live state from fastModeAuto.
+            fastMode: params.fastMode === "auto" ? true : params.fastMode,
+            fastModeAuto: params.fastMode === "auto",
             verboseLevel: params.verboseLevel,
             reasoningLevel: params.reasoningLevel,
             toolResultFormat: resolvedToolResultFormat,
