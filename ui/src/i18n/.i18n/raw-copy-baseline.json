@@ -17,13 +17,6 @@
     },
     {
       "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/app-render.ts",
-      "text": "OpenClaw"
-    },
-    {
-      "count": 1,
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/app-render.ts",
@@ -489,13 +482,6 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/chat/session-controls.ts",
-      "text": "Auto"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/chat/session-controls.ts",
       "text": "Default"
     },
     {
@@ -661,76 +647,6 @@
     },
     {
       "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "api.stripe.com"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "sk_live_…"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "stripe"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Stripe live secret key for charges"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "X-API-Key"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Allowed hosts (comma-separated)"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Ask me each new host"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Cancel"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Credential type"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Description (optional)"
-    },
-    {
-      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/components/vault-add-modal.ts",
@@ -738,66 +654,262 @@
     },
     {
       "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "api.stripe.com"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
       "text": "Header name"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "http://192.168.50.1/login.cgi"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "login_authorization={{basic}}"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "sk_live_…"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "stripe"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Value"
     },
     {
       "count": 1,
       "kind": "html-text",
       "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "(base64 user:pass)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "(user:pass)."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "+ add header"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Allowed hosts (comma-separated)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "API token"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Ask me each new host"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Cookie"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Cookie / header / path"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Credential type"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Description (optional)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Header template"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "JSON body field"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Login body template"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Login URL"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
       "text": "Name"
     },
     {
       "count": 1,
       "kind": "html-text",
       "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Secret value (key or password)"
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Password"
     },
     {
       "count": 1,
       "kind": "html-text",
       "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Placeholders:"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "remove"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Response cookie"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Response header"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Send token as"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Session lifetime (seconds)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Token from"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
       "text": "Use automatically"
     },
     {
       "count": 1,
       "kind": "html-text",
       "name": "text",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Username"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
       "text": "When the agent uses it"
     },
     {
       "count": 1,
       "kind": "object-property",
       "name": "label",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "API key (custom header)"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
       "text": "API token (Bearer)"
     },
     {
       "count": 1,
       "kind": "object-property",
       "name": "label",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Basic auth (base64 user:pass)"
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Custom header(s)"
     },
     {
       "count": 1,
       "kind": "object-property",
       "name": "label",
-      "path": "ui/src/ui/components/vault-add-modal.ts",
-      "text": "Custom header"
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Login form → session token"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/components/vault-credential-form.ts",
+      "text": "Username + password (Basic)"
     },
     {
       "count": 1,
@@ -6282,27 +6394,6 @@
     },
     {
       "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/views/vault-view.ts",
-      "text": "api.stripe.com"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/views/vault-view.ts",
-      "text": "sk_live_…"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/views/vault-view.ts",
-      "text": "stripe"
-    },
-    {
-      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/vault-view.ts",
@@ -6313,21 +6404,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/vault-view.ts",
-      "text": "Allowed hosts (comma-separated)"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/vault-view.ts",
       "text": "and never sees the value."
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/vault-view.ts",
-      "text": "Ask before use"
     },
     {
       "count": 1,
@@ -6348,28 +6425,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/vault-view.ts",
-      "text": "Inject automatically"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/vault-view.ts",
-      "text": "Injection policy"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/vault-view.ts",
       "text": "Loading…"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/vault-view.ts",
-      "text": "Name"
     },
     {
       "count": 1,
@@ -6391,13 +6447,6 @@
       "name": "text",
       "path": "ui/src/ui/views/vault-view.ts",
       "text": "Saved credentials"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/vault-view.ts",
-      "text": "Secret value"
     },
     {
       "count": 1,
