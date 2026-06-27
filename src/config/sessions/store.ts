@@ -66,6 +66,7 @@ import {
   DEFAULT_QUOTA_SUSPENSION_TTL_MS,
   getActiveSessionMaintenanceWarning,
   pruneStaleEntries,
+  pruneStaleModelRunEntries,
   resolveQuotaSuspensionEntryMaintenance,
   type ResolvedSessionMaintenanceConfig,
   type ResolvedSessionMaintenanceConfigInput,
@@ -183,6 +184,7 @@ export {
   getActiveSessionMaintenanceWarning,
   getSessionStoreCacheVersion,
   pruneStaleEntries,
+  pruneStaleModelRunEntries,
   resolveMaintenanceConfig,
 };
 export type { SessionMaintenanceApplyReport } from "./store-maintenance-operations.js";
