@@ -35,6 +35,57 @@ const EMPTY_USAGE = {
 
 const EventStreamConstructor: typeof SourceEventStream = LlmEventStream;
 
+type AssistantMessageUpdateEvent = Extract<
+  AssistantMessageEvent,
+  {
+    type:
+      | "text_start"
+      | "text_delta"
+      | "text_end"
+      | "thinking_start"
+      | "thinking_delta"
+      | "thinking_end"
+      | "toolcall_start"
+      | "toolcall_delta"
+      | "toolcall_end";
+  }
+>;
+
+function appendTextDeltaToAssistantMessage(
+  message: AssistantMessage,
+  contentIndex: number,
+  delta: string,
+): AssistantMessage {
+  const content = [...message.content];
+  const currentContent = content[contentIndex];
+  content[contentIndex] =
+    currentContent?.type === "text"
+      ? { ...currentContent, text: currentContent.text + delta }
+      : { type: "text", text: delta };
+  return { ...message, content };
+}
+
+function resolveAssistantMessageUpdate(
+  event: AssistantMessageUpdateEvent,
+  currentMessage: AssistantMessage,
+): AssistantMessage {
+  if ("partial" in event && event.partial) {
+    return event.partial;
+  }
+  if (event.type === "text_delta") {
+    return appendTextDeltaToAssistantMessage(currentMessage, event.contentIndex, event.delta);
+  }
+  return currentMessage;
+}
+
+function removeNonExecutableToolCalls(message: AssistantMessage): AssistantMessage {
+  if (message.stopReason === "toolUse") {
+    return message;
+  }
+  const content = message.content.filter((item) => item.type !== "toolCall");
+  return content.length === message.content.length ? message : { ...message, content };
+}
+
 /**
  * Start an agent loop with a new prompt message.
  * The prompt is added to the context and events are emitted for it.
@@ -297,12 +348,12 @@ async function runLoop(
         return;
       }
 
-      // Check for tool calls
+      // Only completed toolUse turns dispatch; length/stop can carry partial stream blocks.
       const toolCalls = message.content.filter((c) => c.type === "toolCall");
 
       const toolResults: ToolResultMessage[] = [];
       hasMoreToolCalls = false;
-      if (toolCalls.length > 0) {
+      if (message.stopReason === "toolUse" && toolCalls.length > 0) {
         // A fresh per-batch signal that fires when a queued steering message
         // should cut in-flight preemptable tools. undefined when preemption off.
         const preemptSignal = config.beginToolBatchPreempt?.();
@@ -464,7 +515,7 @@ async function streamAssistantResponse(
 
       case "done":
       case "error": {
-        const finalMessage = await response.result();
+        const finalMessage = removeNonExecutableToolCalls(await response.result());
         if (addedPartial) {
           context.messages[context.messages.length - 1] = finalMessage;
         } else {
@@ -479,7 +530,7 @@ async function streamAssistantResponse(
     }
   }
 
-  const finalMessage = await response.result();
+  const finalMessage = removeNonExecutableToolCalls(await response.result());
   if (addedPartial) {
     context.messages[context.messages.length - 1] = finalMessage;
   } else {

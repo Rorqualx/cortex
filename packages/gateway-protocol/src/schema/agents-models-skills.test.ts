@@ -1,7 +1,11 @@
 // Gateway Protocol tests cover agents models skills behavior.
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import { AgentsListResultSchema, ToolsEffectiveResultSchema } from "./agents-models-skills.js";
+import {
+  AgentsListResultSchema,
+  SkillsDetailResultSchema,
+  ToolsEffectiveResultSchema,
+} from "./agents-models-skills.js";
 
 /**
  * Schema regression tests for agent metadata, skills, and effective
@@ -89,5 +93,36 @@ describe("ToolsEffectiveResultSchema", () => {
     };
 
     expect(Value.Check(ToolsEffectiveResultSchema, result)).toBe(false);
+  });
+});
+
+describe("SkillsDetailResultSchema", () => {
+  it("accepts official ClawHub skill publisher metadata", () => {
+    const result = {
+      skill: {
+        slug: "tao-setup-nvidia-gpu-host",
+        displayName: "TAO Setup NVIDIA GPU Host",
+        summary: "Prepare an NVIDIA GPU host for TAO workflows.",
+        tags: { gpu: "GPU" },
+        channel: "official",
+        isOfficial: true,
+        createdAt: 1_700_000_000,
+        updatedAt: 1_700_010_000,
+      },
+      latestVersion: {
+        version: "1.0.0",
+        createdAt: 1_700_010_000,
+      },
+      owner: {
+        handle: "nvidia",
+        displayName: "NVIDIA",
+        image: "https://example.test/nvidia.png",
+        official: true,
+        channel: "official",
+        isOfficial: true,
+      },
+    };
+
+    expect(Value.Check(SkillsDetailResultSchema, result)).toBe(true);
   });
 });
