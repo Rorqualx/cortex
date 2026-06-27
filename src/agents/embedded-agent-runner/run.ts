@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { sanitizeForLog } from "../../../packages/terminal-core/src/ansi.js";
-import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
+import { FAST_MODE_AUTO_PROGRESS_KIND, type ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { resolveStorePath, updateSessionStoreEntry } from "../../config/sessions.js";
@@ -14,7 +14,11 @@ import {
   resolveContextEngine,
   resolveContextEngineOwnerPluginId,
 } from "../../context-engine/registry.js";
-import { emitAgentPlanEvent, registerAgentRunContext } from "../../infra/agent-events.js";
+import {
+  emitAgentItemEvent,
+  emitAgentPlanEvent,
+  registerAgentRunContext,
+} from "../../infra/agent-events.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { freezeDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -32,6 +36,7 @@ import { runWithSessionContext } from "../../session-awareness/index.js";
 import {
   DEFAULT_FAST_MODE_AUTO_ON_SECONDS,
   type FastModeAutoProgressState,
+  formatFastModeAutoProgressText,
   resolveFastModeForElapsed,
 } from "../../shared/fast-mode.js";
 import { createAgentHarnessTaskRuntimeScope } from "../../tasks/agent-harness-task-runtime-scope.js";
@@ -622,6 +627,95 @@ export async function runEmbeddedAgent(
       };
       const attemptFastMode =
         params.fastMode === "auto" ? resolveAttemptFastMode : resolveAttemptFastMode();
+      // Emit the "auto fast-mode flipped off/on" progress notice on the three
+      // sinks the UI/transcript and tool-result channel observe. Deduped via the
+      // shared fastModeAutoProgressState so a multi-attempt run announces once.
+      const emitFastModeAutoProgress = async (payload: {
+        enabled: boolean;
+        elapsedSeconds: number;
+        fastAutoOnSeconds?: number;
+      }) => {
+        const summary = formatFastModeAutoProgressText(payload);
+        try {
+          emitAgentItemEvent({
+            runId: params.runId,
+            ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+            data: {
+              itemId: `fast-mode-auto:${payload.enabled ? "on" : "off"}`,
+              kind: "status",
+              title: "Fast",
+              phase: "update",
+              status: "running",
+              summary,
+            },
+          });
+        } catch (error) {
+          log.debug(
+            `embedded run fast mode auto global event failed: ${formatErrorMessage(error)}`,
+          );
+        }
+        try {
+          await params.onAgentEvent?.({
+            stream: "item",
+            data: { kind: "status", title: "Fast", phase: "update", summary },
+            ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+          });
+        } catch (error) {
+          log.debug(`embedded run fast mode auto event failed: ${formatErrorMessage(error)}`);
+        }
+        try {
+          await params.onToolResult?.({
+            text: summary,
+            channelData: { openclawProgressKind: FAST_MODE_AUTO_PROGRESS_KIND },
+          });
+        } catch (error) {
+          log.debug(`embedded run fast mode auto progress failed: ${formatErrorMessage(error)}`);
+        }
+      };
+      // Announce the auto-off transition once, at the first tool-stream boundary
+      // past the on-window. Tool boundaries are the natural seam: mid-stream
+      // would interleave with model output.
+      const maybeAnnounceFastModeAutoOff = async () => {
+        if (params.fastMode !== "auto" || fastModeAutoProgressState.offAnnounced) {
+          return;
+        }
+        const next = resolveFastModeForElapsed({
+          mode: "auto",
+          startedAtMs: fastModeStarted,
+          fastAutoOnSeconds: fastModeAutoOnSeconds,
+        });
+        if (next.enabled) {
+          return;
+        }
+        fastModeAutoProgressState.offAnnounced = true;
+        await emitFastModeAutoProgress(next);
+      };
+      // After the run finishes, restore the "auto-on" state for the next run so a
+      // user who already saw an auto-off notice is told fast mode is live again.
+      const maybeEmitFastModeAutoReset = async () => {
+        if (
+          params.fastMode !== "auto" ||
+          !fastModeAutoProgressState.offAnnounced ||
+          fastModeAutoProgressState.resetAnnounced
+        ) {
+          return;
+        }
+        fastModeAutoProgressState.resetAnnounced = true;
+        await emitFastModeAutoProgress({
+          enabled: true,
+          elapsedSeconds: 0,
+          fastAutoOnSeconds: fastModeAutoOnSeconds,
+        });
+      };
+      const maybeEmitFastModeAutoResetBestEffort = async () => {
+        try {
+          await maybeEmitFastModeAutoReset();
+        } catch (error) {
+          log.warn(
+            `embedded run fast mode auto reset progress failed: ${formatErrorMessage(error)}`,
+          );
+        }
+      };
       const startupStages = createEmbeddedRunStageTracker();
       let startupStagesEmitted = false;
       const notifyExecutionPhase = (
@@ -1791,6 +1885,7 @@ export async function runEmbeddedAgent(
             onReasoningEnd: params.onReasoningEnd,
             onToolResult: params.onToolResult,
             onAgentEvent: params.onAgentEvent,
+            onToolStreamBoundary: maybeAnnounceFastModeAutoOff,
             onExecutionPhase: params.onExecutionPhase,
             extraSystemPrompt: params.extraSystemPrompt,
             sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
@@ -3824,6 +3919,11 @@ export async function runEmbeddedAgent(
           };
         }
       } finally {
+        // Only the final fallback attempt restores the auto-on notice, so retries
+        // mid-run do not prematurely announce reset before the run truly ends.
+        if (params.isFinalFallbackAttempt !== false) {
+          await maybeEmitFastModeAutoResetBestEffort();
+        }
         forgetPromptBuildDrainCacheForRun(params.runId);
         stopRuntimeAuthRefreshTimer();
         await runAgentCleanupStep({
