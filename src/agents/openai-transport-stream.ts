@@ -96,7 +96,6 @@ import type { StreamFn } from "./runtime/index.js";
 import { stripSystemPromptCacheBoundary } from "./system-prompt-cache-boundary.js";
 import { transformTransportMessages } from "./transport-message-transform.js";
 import {
-  assignTransportErrorDetails,
   createEmptyTransportUsage,
   createWritableTransportEventStream,
   failTransportStream,

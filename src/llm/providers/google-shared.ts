@@ -12,6 +12,7 @@ import {
   type Part,
   type ThinkingConfig,
 } from "@google/genai";
+import { stripSystemPromptCacheBoundary } from "../../agents/system-prompt-cache-boundary.js";
 import { calculateCost, clampThinkingLevel } from "../model-utils.js";
 import type {
   Api,
@@ -30,7 +31,6 @@ import type {
   StreamOptions,
 } from "../types.js";
 import type { AssistantMessageEventStream } from "../utils/event-stream.js";
-import { stripSystemPromptCacheBoundary } from "../../agents/system-prompt-cache-boundary.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transform-messages.js";
 
@@ -860,7 +860,12 @@ export async function consumeGoogleGenerateContentStream<T extends GoogleApiType
 
     if (candidate?.finishReason) {
       params.output.stopReason = mapStopReason(candidate.finishReason);
-      if (params.output.content.some((block) => block.type === "toolCall")) {
+      // Only promote to a tool-use turn on a clean stop; a MAX_TOKENS-truncated
+      // partial tool call must not be mis-promoted to an executable turn.
+      if (
+        params.output.stopReason === "stop" &&
+        params.output.content.some((block) => block.type === "toolCall")
+      ) {
         params.output.stopReason = "toolUse";
       }
     }

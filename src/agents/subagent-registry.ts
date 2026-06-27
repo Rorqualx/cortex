@@ -625,7 +625,9 @@ function resumeSubagentRun(runId: string) {
   if (typeof entry.endedAt === "number" && isDeliverySuspended(entry)) {
     return;
   }
-  if (entry.pauseReason === "sessions_yield") {
+  // Yielded runs stay paused, except orchestrators that wake on descendant
+  // settle — their settle-retry must reach the wake path below.
+  if (entry.pauseReason === "sessions_yield" && entry.wakeOnDescendantSettle !== true) {
     return;
   }
   // Skip entries that have exhausted their retry budget or expired (#18264).

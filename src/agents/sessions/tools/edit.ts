@@ -20,12 +20,15 @@ import {
   detectLineEnding,
   type Edit,
   type EditDiffError,
+  EditNoChangeError,
   type EditDiffResult,
   generateDiffString,
   generateUnifiedPatch,
   normalizeToLF,
   restoreLineEndings,
+  splitNoOpEdits,
   stripBom,
+  validateNoOpEditTargets,
 } from "./edit-diff.js";
 import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveToCwd } from "./path-utils.js";
@@ -379,7 +382,7 @@ export function createEditToolDefinition(
       void toolCallId;
       void onUpdate;
       void ctx;
-      const { path, edits } = validateEditInput(input);
+      const { path, edits: originalEdits } = validateEditInput(input);
       const absolutePath = resolveToCwd(path, cwd);
 
       return withFileMutationQueue(
@@ -388,6 +391,8 @@ export function createEditToolDefinition(
           if (signal?.aborted) {
             throw new Error("Operation aborted");
           }
+
+          let realEdits: Edit[] = [];
 
           try {
             await ops.access(absolutePath);
@@ -411,9 +416,25 @@ export function createEditToolDefinition(
             const { bom, text: content } = stripBom(rawContent);
             const originalEnding = detectLineEnding(content);
             const normalizedContent = normalizeToLF(content);
+            const editSets = splitNoOpEdits(normalizedContent, originalEdits, path);
+            const noOpEdits = editSets.noOpEdits;
+            realEdits = editSets.realEdits;
+            validateNoOpEditTargets(normalizedContent, noOpEdits, realEdits, path);
+            if (realEdits.length === 0) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `No changes made to ${path}. The replacement text is identical to the original.`,
+                  },
+                ],
+                details: { diff: "", patch: "" },
+                terminate: true,
+              };
+            }
             const { baseContent, newContent } = applyEditsToNormalizedContent(
               normalizedContent,
-              edits,
+              realEdits,
               path,
             );
             const finalContent = bom + restoreLineEndings(newContent, originalEnding);
@@ -428,7 +449,7 @@ export function createEditToolDefinition(
               content: [
                 {
                   type: "text",
-                  text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
+                  text: `Successfully replaced ${realEdits.length} block(s) in ${path}.`,
                 },
               ],
               details: {
@@ -443,15 +464,30 @@ export function createEditToolDefinition(
               .readFile(absolutePath)
               .then((current) => current.toString("utf-8"))
               .catch(() => rawContent);
-            if (didEditLikelyApply({ originalContent: rawContent, currentContent, edits })) {
+            if (
+              didEditLikelyApply({ originalContent: rawContent, currentContent, edits: realEdits })
+            ) {
               return {
                 content: [
                   {
                     type: "text",
-                    text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
+                    text: `Successfully replaced ${realEdits.length} block(s) in ${path}.`,
                   },
                 ],
                 details: { diff: "", patch: "" },
+              };
+            }
+            // Terminal no-op: the edit matched but produced identical content.
+            if (normalizedError instanceof EditNoChangeError) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `No changes made to ${path}. The replacement produced identical content.`,
+                  },
+                ],
+                details: { diff: "", patch: "" },
+                terminate: true,
               };
             }
             if (normalizedError.message.includes(EDIT_MISMATCH_MESSAGE)) {

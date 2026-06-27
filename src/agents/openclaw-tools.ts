@@ -44,6 +44,7 @@ import type { AnyAgentTool } from "./tools/common.js";
 import { createCronTool, type CronCreatorToolAllowlistEntry } from "./tools/cron-tool.js";
 import { createDelegationTools } from "./tools/delegation/tools.js";
 import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
+import { wrapToolWithGatewayCallerIdentity } from "./tools/gateway-caller-context.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import {
   createCreateGoalTool,
@@ -604,10 +605,20 @@ export function createOpenClawTools(
     options?.recordToolPrepStage?.("openclaw-tools:plugin-tools");
   }
 
-  if (options?.wrapBeforeToolCallHook === false) {
-    return allTools;
-  }
   const hookAgentId = options?.requesterAgentIdOverride ?? sessionAgentId;
+  // Establish the ambient gateway-caller identity so model-mediated gateway
+  // tool calls (e.g. cron) scope to the calling agent. Consumer side already
+  // reads this via gateway-caller-context; this is the producer.
+  const gatewayCallerIdentity =
+    hookAgentId && options?.agentSessionKey?.trim()
+      ? { agentId: hookAgentId, sessionKey: options.agentSessionKey.trim() }
+      : undefined;
+  const wrapGatewayCallerIdentity = (tool: AnyAgentTool) =>
+    wrapToolWithGatewayCallerIdentity(tool, gatewayCallerIdentity);
+
+  if (options?.wrapBeforeToolCallHook === false) {
+    return allTools.map(wrapGatewayCallerIdentity);
+  }
   const defaultHookContext: HookContext = {
     ...(hookAgentId ? { agentId: hookAgentId } : {}),
     ...(resolvedConfig ? { config: resolvedConfig } : {}),
@@ -621,11 +632,13 @@ export function createOpenClawTools(
     ...options?.beforeToolCallHookContext,
   };
   options?.recordToolPrepStage?.("openclaw-tools:tool-hooks");
-  return allTools.map((tool) =>
-    isToolWrappedWithBeforeToolCallHook(tool)
-      ? tool
-      : wrapToolWithBeforeToolCallHook(tool, hookContext),
-  );
+  return allTools
+    .map((tool) =>
+      isToolWrappedWithBeforeToolCallHook(tool)
+        ? tool
+        : wrapToolWithBeforeToolCallHook(tool, hookContext),
+    )
+    .map(wrapGatewayCallerIdentity);
 }
 
 export const testing = {

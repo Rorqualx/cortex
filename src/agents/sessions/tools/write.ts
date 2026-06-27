@@ -395,10 +395,23 @@ export function createWriteToolDefinition(
         absolutePath,
         async () => {
           const precheck = await readOriginalWriteState(absolutePath, content, ops);
+          if (signal?.aborted) {
+            throw new Error("Operation aborted");
+          }
+          // Terminal no-op: file already has byte-identical content.
+          if (precheck.state === "same") {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `No changes made to ${path}. The file already has identical content.`,
+                },
+              ],
+              details: undefined,
+              terminate: true,
+            };
+          }
           try {
-            if (signal?.aborted) {
-              throw new Error("Operation aborted");
-            }
             await ops.mkdir(dir);
             if (signal?.aborted) {
               throw new Error("Operation aborted");
