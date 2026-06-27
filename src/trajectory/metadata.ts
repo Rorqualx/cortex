@@ -1,4 +1,5 @@
 // Trajectory metadata helpers capture environment metadata for trajectory files.
+import type { FastMode } from "@openclaw/normalization-core/string-coerce";
 import { resolveStateDir } from "../config/paths.js";
 import { redactConfigObject } from "../config/redact-snapshot.js";
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
@@ -31,7 +32,7 @@ type BuildTrajectoryRunMetadataParams = {
   modelId?: string;
   modelApi?: string | null;
   timeoutMs: number;
-  fastMode?: boolean;
+  fastMode?: FastMode;
   thinkLevel?: string;
   reasoningLevel?: string;
   toolResultFormat?: string;

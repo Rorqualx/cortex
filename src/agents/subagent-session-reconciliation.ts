@@ -5,13 +5,13 @@
  */
 import { asFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { getRuntimeConfig } from "../config/config.js";
-import { loadSessionEntry } from "../config/sessions/session-accessor.js";
 import {
   loadSessionStore,
   resolveAgentIdFromSessionKey,
   resolveStorePath,
   type SessionEntry,
 } from "../config/sessions.js";
+import { loadSessionEntry } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { SubagentRunOutcome } from "./subagent-announce-output.js";
 import {
@@ -127,16 +127,25 @@ export function resolveSubagentRunOrphanReason(params: {
   includeStaleUnended?: boolean;
   now?: number;
   cfg?: OpenClawConfig;
+  storeCache?: SubagentSessionStoreCache;
 }): SubagentRunOrphanReason | null {
   const childSessionKey = params.entry.childSessionKey?.trim();
   if (!childSessionKey) {
     return "missing-session-entry";
   }
   try {
-    const sessionEntry = loadSubagentSessionEntryForAccessor({
-      childSessionKey,
-      cfg: params.cfg,
-    });
+    // The sweep loop shares one store load across every stale run it inspects;
+    // honor that cache so a single sweep does not reload the same store per run.
+    const sessionEntry = params.storeCache
+      ? loadSubagentSessionEntry({
+          childSessionKey,
+          cfg: params.cfg,
+          storeCache: params.storeCache,
+        })
+      : loadSubagentSessionEntryForAccessor({
+          childSessionKey,
+          cfg: params.cfg,
+        });
     if (!sessionEntry) {
       return "missing-session-entry";
     }

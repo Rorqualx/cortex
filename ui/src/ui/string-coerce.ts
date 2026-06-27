@@ -5,6 +5,7 @@ export {
   normalizeOptionalString,
   normalizeStringifiedOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
+export type { FastMode } from "@openclaw/normalization-core/string-coerce";
 export {
   normalizeStringEntries,
   sortUniqueStrings,

@@ -1595,6 +1595,10 @@ export async function runAgentTurnWithFallback(params: {
   resolvedVerboseLevel: VerboseLevel;
   toolProgressDetail?: "explain" | "raw";
   replyMediaContext?: ReplyMediaContext;
+  // When a restart abort lands while recovery is armed, post-restart main-session
+  // recovery resumes the interrupted turn, so suppress the visible "restarting"
+  // notice here to avoid a false terminal that invites a duplicate manual retry.
+  isRestartRecoveryArmed?: () => boolean;
 }): Promise<AgentRunLoopResult> {
   const TRANSIENT_HTTP_RETRY_DELAY_MS = 2_500;
   let didLogHeartbeatStrip = false;
@@ -2891,6 +2895,14 @@ export async function runAgentTurnWithFallback(params: {
       const isTransientHttp = isTransientHttpError(message);
 
       if (isReplyOperationRestartAbort(params.replyOperation)) {
+        if (params.isRestartRecoveryArmed?.() === true) {
+          return {
+            kind: "final",
+            payload: {
+              text: SILENT_REPLY_TOKEN,
+            },
+          };
+        }
         return {
           kind: "final",
           payload: markAgentRunFailureReplyPayload({

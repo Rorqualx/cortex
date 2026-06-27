@@ -58,7 +58,6 @@ import {
 } from "./store-load.js";
 import {
   applyFileBackedSessionStoreMaintenance,
-  applyQuotaSuspensionTtlMaintenance,
   type SessionMaintenanceApplyReport,
 } from "./store-maintenance-operations.js";
 import { resolveMaintenanceConfig } from "./store-maintenance-runtime.js";
@@ -66,8 +65,9 @@ import {
   capEntryCount,
   getActiveSessionMaintenanceWarning,
   pruneStaleEntries,
-  type QuotaSuspensionMaintenanceResult,
+  resolveQuotaSuspensionEntryMaintenance,
   type ResolvedSessionMaintenanceConfig,
+  type ResolvedSessionMaintenanceConfigInput,
   type SessionMaintenanceWarning,
 } from "./store-maintenance.js";
 import { runExclusiveSessionStoreWrite } from "./store-writer.js";
@@ -84,7 +84,6 @@ export {
   drainSessionStoreWriterQueuesForTest,
   getSessionStoreWriterQueueSizeForTest,
 } from "./store-writer-state.js";
-export { withSessionStoreWriterForTest } from "./store-writer.js";
 export {
   loadSessionStore,
   readSessionEntries,
@@ -186,7 +185,11 @@ export {
   resolveMaintenanceConfig,
 };
 export type { SessionMaintenanceApplyReport } from "./store-maintenance-operations.js";
-export type { ResolvedSessionMaintenanceConfig, SessionMaintenanceWarning };
+export type {
+  ResolvedSessionMaintenanceConfig,
+  ResolvedSessionMaintenanceConfigInput,
+  SessionMaintenanceWarning,
+};
 
 type SaveSessionStoreOptions = {
   /** Skip pruning, capping, and rotation (e.g. during one-time migrations). */
@@ -212,6 +215,8 @@ type SaveSessionStoreOptions = {
 };
 
 type UpdateSessionStoreOptions<T> = SaveSessionStoreOptions & {
+  /** Allow a nested mutation only when the caller already owns this store writer lane. */
+  reentrant?: boolean;
   /**
    * Specialized callers can prove their mutator made no changes through its result.
    * When true, the writer-owned object cache is restored and sessions.json is untouched.
@@ -240,6 +245,8 @@ type SessionEntryWorkflowOptions = {
 export type SessionLifecycleArtifactCleanupParams = {
   /** Session store to clean. */
   storePath: string;
+  /** Archive exact transcripts referenced by removed entries before the orphan marker scan. */
+  archiveRemovedEntryTranscripts?: boolean;
   /** Matches the persisted session-key segment after `agent:<id>:`. */
   sessionKeySegmentPrefix: string;
   /** Marker that identifies transcript artifacts owned by this lifecycle. */
@@ -1016,43 +1023,65 @@ export async function updateSessionStore<T>(
   mutator: (store: Record<string, SessionEntry>) => Promise<T> | T,
   opts?: UpdateSessionStoreOptions<T>,
 ): Promise<T> {
-  return await runExclusiveSessionStoreWrite(storePath, async () => {
-    const store = loadMutableSessionStoreForWriter(storePath);
-    const result = await mutator(store);
-    if (opts?.skipSaveWhenResult?.(result)) {
-      restoreUnchangedSessionStoreCache(storePath, store);
+  return await runExclusiveSessionStoreWrite(
+    storePath,
+    async () => {
+      const store = loadMutableSessionStoreForWriter(storePath);
+      const result = await mutator(store);
+      if (opts?.skipSaveWhenResult?.(result)) {
+        restoreUnchangedSessionStoreCache(storePath, store);
+        return result;
+      }
+      await saveSessionStoreUnlocked(storePath, store, {
+        ...opts,
+        singleEntryPersistence: opts?.resolveSingleEntryPersistence?.(result) ?? undefined,
+      });
       return result;
-    }
-    await saveSessionStoreUnlocked(storePath, store, {
-      ...opts,
-      singleEntryPersistence: opts?.resolveSingleEntryPersistence?.(result) ?? undefined,
-    });
-    return result;
-  });
+    },
+    { reentrant: opts?.reentrant },
+  );
 }
 
-// Fork: embedded-agent attempt loop drives quota-suspension TTL maintenance
-// directly before reading the entry's resume state. Upstream folded this into
-// per-entry maintenance, but the fork's attempt runner still calls this entry
-// point, so keep it as a thin wrapper over the relocated TTL helper.
+// Fork: embedded-agent attempt loop drives quota-suspension TTL maintenance over
+// the whole store before reading the current entry's resume state. Upstream
+// relocated the TTL transition to the per-entry helper, so iterate entries here
+// and apply that helper to preserve the fork attempt-runner entry point.
 export async function runQuotaSuspensionMaintenance(params: {
   storePath: string;
   now?: number;
   ttlMs?: number;
   log?: boolean;
-}): Promise<QuotaSuspensionMaintenanceResult> {
+}): Promise<{ resumed: Array<{ sessionKey: string; laneId?: string }>; cleared: number }> {
   if (!fs.existsSync(params.storePath)) {
     return { resumed: [], cleared: 0 };
   }
+  const now = params.now ?? Date.now();
   return await updateSessionStore(
     params.storePath,
-    (store) =>
-      applyQuotaSuspensionTtlMaintenance({
-        store,
-        now: params.now ?? Date.now(),
-        ttlMs: params.ttlMs,
-        log: params.log,
-      }),
+    (store) => {
+      const resumed: Array<{ sessionKey: string; laneId?: string }> = [];
+      let cleared = 0;
+      for (const [sessionKey, entry] of Object.entries(store)) {
+        const maintenance = resolveQuotaSuspensionEntryMaintenance({
+          entry,
+          now,
+          ttlMs: params.ttlMs,
+        });
+        if (!maintenance.patch) {
+          continue;
+        }
+        if (maintenance.cleared) {
+          delete entry.quotaSuspension;
+          cleared += 1;
+        } else if (maintenance.patch.quotaSuspension) {
+          entry.quotaSuspension = maintenance.patch.quotaSuspension;
+        }
+        if (maintenance.resumed) {
+          resumed.push({ sessionKey, laneId: maintenance.resumed.laneId });
+        }
+      }
+      return { resumed, cleared };
+    },
     { skipMaintenance: true },
   );
 }
@@ -1574,6 +1603,7 @@ export async function cleanupSessionLifecycleArtifacts(
   const sessionsDir = path.dirname(storePath);
   const removedSessionFiles = new Map<string, string | undefined>();
   const removedTranscriptPaths: Array<{ sessionId: string; transcriptPath: string }> = [];
+  const archiveRemovedEntryTranscripts = params.archiveRemovedEntryTranscripts !== false;
   let removedEntries = 0;
   let archivedTranscriptArtifacts = 0;
 
@@ -1592,9 +1622,11 @@ export async function cleanupSessionLifecycleArtifacts(
           orphanTranscriptMinAgeMs: params.orphanTranscriptMinAgeMs,
         })
       ) {
-        rememberRemovedSessionFile(removedSessionFiles, entry);
-        if (entry.sessionId && transcriptPath && fs.existsSync(transcriptPath)) {
-          removedTranscriptPaths.push({ sessionId: entry.sessionId, transcriptPath });
+        if (archiveRemovedEntryTranscripts) {
+          rememberRemovedSessionFile(removedSessionFiles, entry);
+          if (entry.sessionId && transcriptPath && fs.existsSync(transcriptPath)) {
+            removedTranscriptPaths.push({ sessionId: entry.sessionId, transcriptPath });
+          }
         }
         delete store[sessionKey];
         removedEntries += 1;
@@ -1820,18 +1852,29 @@ export async function applySessionStoreEntryPatch(params: {
   });
 }
 
+type SessionEntryPatchParams = SessionEntryWorkflowOptions & {
+  sessionKey: string;
+  fallbackEntry?: SessionEntry;
+  preserveActivity?: boolean;
+  requireWriteSuccess?: boolean;
+  replaceEntry?: boolean;
+  skipMaintenance?: boolean;
+  takeCacheOwnership?: boolean;
+  update: (
+    entry: SessionEntry,
+    context: { existingEntry?: SessionEntry },
+  ) => Promise<Partial<SessionEntry> | null> | Partial<SessionEntry> | null;
+};
+
 export async function patchSessionEntry(
-  params: SessionEntryWorkflowOptions & {
-    sessionKey: string;
-    fallbackEntry?: SessionEntry;
-    preserveActivity?: boolean;
-    replaceEntry?: boolean;
-    update: (
-      entry: SessionEntry,
-      context: { existingEntry?: SessionEntry },
-    ) => Promise<Partial<SessionEntry> | null> | Partial<SessionEntry> | null;
-  },
+  params: SessionEntryPatchParams,
 ): Promise<SessionEntry | null> {
+  return (await patchSessionEntryWithKey(params))?.entry ?? null;
+}
+
+export async function patchSessionEntryWithKey(
+  params: SessionEntryPatchParams,
+): Promise<{ sessionKey: string; entry: SessionEntry } | null> {
   const storePath = resolveSessionWorkflowStorePath(params);
   return await runExclusiveSessionStoreWrite(storePath, async () => {
     const store = loadMutableSessionStoreForWriter(storePath);
@@ -1844,22 +1887,27 @@ export async function patchSessionEntry(
       existingEntry: resolved.existing ? cloneSessionEntry(resolved.existing) : undefined,
     });
     if (!patch) {
-      return existing;
+      return { sessionKey: resolved.normalizedKey, entry: existing };
     }
     const next = params.replaceEntry
       ? cloneSessionEntry(patch as SessionEntry)
       : params.preserveActivity
         ? mergeSessionEntryPreserveActivity(existing, patch)
         : mergeSessionEntry(existing, patch);
-    return await persistResolvedSessionEntry({
-      storePath,
-      store,
-      resolved,
-      next,
-      maintenanceConfig: params.maintenanceConfig,
-      takeCacheOwnership: true,
-      returnDetached: true,
-    });
+    return {
+      sessionKey: resolved.normalizedKey,
+      entry: await persistResolvedSessionEntry({
+        storePath,
+        store,
+        resolved,
+        next,
+        maintenanceConfig: params.maintenanceConfig,
+        requireWriteSuccess: params.requireWriteSuccess,
+        skipMaintenance: params.skipMaintenance,
+        takeCacheOwnership: params.takeCacheOwnership ?? true,
+        returnDetached: params.takeCacheOwnership !== true,
+      }),
+    };
   });
 }
 

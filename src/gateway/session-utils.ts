@@ -1044,6 +1044,7 @@ export function loadSessionEntry(sessionKey: string, opts?: { agentId?: string; 
     store,
     entry: freshestMatch?.entry,
     canonicalKey: target.canonicalKey,
+    storeKeys: target.storeKeys,
     legacyKey,
   };
 }

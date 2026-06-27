@@ -36,7 +36,11 @@ import {
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../session-key.ts";
-import { normalizeLowercaseStringOrEmpty, normalizeOptionalString } from "../string-coerce.ts";
+import {
+  type FastMode,
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "../string-coerce.ts";
 import {
   formatInheritedThinkingLabel,
   formatThinkingOverrideLabel,
@@ -1502,7 +1506,7 @@ function renderChatModelReasoningSelect(params: {
 function patchSessionFastMode(
   state: AppViewState,
   sessionKey: string,
-  fastMode: boolean | undefined,
+  fastMode: FastMode | undefined,
 ) {
   const current = state.sessionsResult;
   if (!current) {

@@ -1790,6 +1790,7 @@ export async function commitReplySessionInitialization(params: {
     agentId: params.agentId,
     onArchiveError: params.onArchiveError,
     previousEntry: params.previousEntry,
+    sessionKey: params.sessionKey,
     storePath: params.storePath,
   });
   return {
