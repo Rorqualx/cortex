@@ -250,6 +250,12 @@ export type LongTermTypedFact = {
   sourceChunkIds: string[];
   /** Older values that have been superseded, oldest first. */
   history: Array<{ value: string; supersededAt: number }>;
+  /** When this value became canonical (ms). Backfills `firstSeenAt` for existing facts. */
+  validFrom: number;
+  /** When this value was superseded (ms). `null` = currently active / canonical. */
+  validUntil: number | null;
+  /** The value that replaced this one, if superseded. `null` = currently active. */
+  supersededBy: string | null;
   /** When true, fact is hidden from retrieval but kept on disk for forensics. */
   archived: boolean;
   archivedAt: number | null;

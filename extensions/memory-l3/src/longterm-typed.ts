@@ -196,6 +196,9 @@ function promote(c: TypedCandidate): LongTermTypedFact {
     recallCount: c.recallCount,
     sourceChunkIds: [...c.sourceChunkIds],
     history,
+    validFrom: c.firstSeenAt,
+    validUntil: null,
+    supersededBy: null,
     archived: false,
     archivedAt: null,
   };
@@ -210,6 +213,9 @@ function reaffirm(prior: LongTermTypedFact, c: TypedCandidate): LongTermTypedFac
     lastConfirmedAt: Math.max(prior.lastConfirmedAt, c.latest.createdAt),
     recallCount: merged.length,
     sourceChunkIds: merged,
+    validFrom: prior.validFrom,
+    validUntil: null,
+    supersededBy: null,
     archived: false,
     archivedAt: null,
   };
@@ -228,13 +234,16 @@ function supersede(prior: LongTermTypedFact, c: TypedCandidate, now: number): Lo
     recallCount: merged.length,
     sourceChunkIds: merged,
     history: [...prior.history, { value: prior.value, supersededAt: now }],
+    validFrom: c.latest.createdAt,
+    validUntil: null,
+    supersededBy: null,
     archived: false,
     archivedAt: null,
   };
 }
 
 function archive(fact: LongTermTypedFact, now: number): LongTermTypedFact {
-  return { ...fact, archived: true, archivedAt: now };
+  return { ...fact, archived: true, archivedAt: now, validUntil: now, supersededBy: null };
 }
 
 function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<string>): string[] {
