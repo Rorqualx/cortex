@@ -92,7 +92,7 @@ Root/extensions rule: plugins import only `openclaw/plugin-sdk/*` and local barr
 
 - `scoring.ts` `DEFAULT_FSRS_PARAMS.w2` — global forgetting-rate multiplier, now wired into `fsrsRetrievability` (`R(t)=e^(-(w2·t)/S)`); `1.0` = neutral (preserves prior calibrated behavior), >1 forgets faster.
 - `scoring.ts` `DEFAULT_SCORING_CONFIG.weightInformationGain` — now `0.05` (was inert at 0); a small novelty lift for fresh L2 facts. Only L2 facts carry `informationGain`; other tiers score it 0.
-- A/B flags via env: `OPENCLAW_MEMORY_L3_NATIVE_COMPACTION` (BabelTele-style dense extraction prompt), `OPENCLAW_MEMORY_L3_SEGMENTED_COMPACTION` (per-topic extraction), `OPENCLAW_MEMORY_L3_DEBUG`.
+- A/B flags via env: `OPENCLAW_MEMORY_L3_NATIVE_COMPACTION` (BabelTele-style dense extraction prompt), `OPENCLAW_MEMORY_L3_SEGMENTED_COMPACTION` (per-topic extraction), `OPENCLAW_MEMORY_L3_REFLECTION` (G1 generative reflection: synthesize provenance-grounded higher-order insights at the epoch boundary into the relevance-gated `insight` retrieval tier; one extra LLM call/epoch; default off pending LongMemEval delta), `OPENCLAW_MEMORY_L3_DEBUG`.
 
 ## Relationship to dreaming
 

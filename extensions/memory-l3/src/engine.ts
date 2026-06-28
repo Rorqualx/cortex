@@ -20,6 +20,7 @@ import { createGlmCaller, type LlmCaller } from "./llm.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
 import { consolidateLongTerm } from "./longterm.js";
 import { reconcileCrossBrain, reconcileProseInterference } from "./reconciliation.js";
+import { DEFAULT_REFLECTION_CONFIG, reflectAndStore } from "./reflection.js";
 
 /**
  * Embedding provider for pre-computing vectors at promotion time.
@@ -47,6 +48,11 @@ const ASSEMBLE_TOP_K = 5;
 const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
+// G1 generative reflection at the epoch boundary. Off by default — opt-in A/B
+// flag (one extra LLM call per epoch) consistent with the other
+// OPENCLAW_MEMORY_L3_* experimental switches. Promote to a default once the
+// LongMemEval delta is measured.
+const REFLECTION_ENABLED = process.env.OPENCLAW_MEMORY_L3_REFLECTION === "1";
 
 function l3debug(msg: string): void {
   if (DEBUG_ENABLED) {
@@ -431,6 +437,26 @@ export class HierarchicalL3Engine implements ContextEngine {
           console.error(
             `[memory-l3] prose interference detection failed: ${(piErr as Error).message}`,
           );
+        }
+        // G1 generative reflection: synthesize higher-order insights from the
+        // top facts into the relevance-gated insight retrieval tier. One extra
+        // LLM call per epoch, so gated behind OPENCLAW_MEMORY_L3_REFLECTION.
+        // Non-fatal — facts are already persisted.
+        if (REFLECTION_ENABLED) {
+          try {
+            const refl = await reflectAndStore({
+              storage: this.storage,
+              caller,
+              agentId: this.state.agentId,
+              now,
+              config: { ...DEFAULT_REFLECTION_CONFIG, enabled: true },
+            });
+            if (refl.added > 0) {
+              l3debug(`afterTurn(): reflection added=${refl.added} total=${refl.total}`);
+            }
+          } catch (reflErr) {
+            console.error(`[memory-l3] reflection failed: ${(reflErr as Error).message}`);
+          }
         }
       }
       await this.storage.writeState(this.state);
