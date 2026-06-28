@@ -421,3 +421,38 @@ export type MissingFact = {
   /** Suggested follow-up queries to retrieve the missing information. */
   suggestedQueries: string[];
 };
+
+// -----------------------------------------------------------------
+// G1 reflection: higher-order synthesized insights
+// -----------------------------------------------------------------
+
+/**
+ * A higher-order insight synthesized by the reflection pass from several facts
+ * (Generative Agents-style reflection). Unlike an observed fact, an insight is
+ * *generated*, so it carries provenance — `sources`, the dedupKeys it was
+ * abstracted from — so retrieval/operators can trace it and a later reflection
+ * can build on it. Stored in its own tier, never mixed into the observed-fact
+ * tiers whose consolidation/dedup assume verbatim provenance.
+ */
+export type Insight = {
+  id: string;
+  text: string;
+  /** dedupKeys of the facts this insight was synthesized from (provenance). */
+  sources: string[];
+  importance: number;
+  createdAt: number;
+};
+
+export type InsightFrontmatter = {
+  version: 1;
+  agentId: string | null;
+  lastReflectedAt: number;
+  insights: Insight[];
+};
+
+export const INITIAL_INSIGHT_FRONTMATTER: InsightFrontmatter = {
+  version: 1,
+  agentId: null,
+  lastReflectedAt: 0,
+  insights: [],
+};

@@ -28,6 +28,7 @@ import {
 } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type {
+  Insight,
   L2Fact,
   L3EpochFrontmatter,
   LongTermFact,
@@ -43,7 +44,8 @@ export type RetrievalTier =
   | "memory-core"
   | "typed"
   | "shared"
-  | "procedural";
+  | "procedural"
+  | "insight";
 
 /**
  * Minimal shape of memory-core's QMD search results that retrieval cares
@@ -261,6 +263,20 @@ export async function retrieveTopK(params: {
       l3Boost: 0,
       tierBoost: config.weightLongTermTierBoost,
       embedding: lt.embedding,
+    });
+  }
+
+  // G1 reflection tier: synthesized insights participate in unified ranking like
+  // any other fact (relevance-gated — an off-topic insight won't surface). Empty
+  // until the reflection pass has run, so this is a no-op when reflection is off.
+  const insightFm = await params.storage.readInsights();
+  for (const ins of insightFm.insights) {
+    items.push({
+      fact: insightAsL2Fact(ins),
+      chunkId: "insight",
+      tier: "insight",
+      l3Boost: 0,
+      tierBoost: config.weightLongTermTierBoost,
     });
   }
 
@@ -562,6 +578,16 @@ function longTermAsL2Fact(lt: LongTermFact): L2Fact {
   };
 }
 
+function insightAsL2Fact(ins: Insight): L2Fact {
+  return {
+    id: ins.id,
+    text: ins.text,
+    importance: ins.importance,
+    createdAt: ins.createdAt,
+    dedupKey: `insight:${ins.id}`,
+  };
+}
+
 /**
  * Render a typed fact as L2Fact-shaped so it flows through the existing
  * composite-score pipeline. Text combines slot + value (+ unit) so lexical
@@ -831,6 +857,8 @@ function tierMarker(tier: RetrievalTier): string {
       return "◇";
     case "procedural":
       return "⬡";
+    case "insight":
+      return "✦";
     case "l2":
       return "·";
   }

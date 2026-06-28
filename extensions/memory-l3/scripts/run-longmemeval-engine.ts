@@ -47,6 +47,7 @@ import {
   type LongTermConfig,
 } from "../src/longterm.js";
 import { reconcileCrossBrain, reconcileProseInterference } from "../src/reconciliation.js";
+import { DEFAULT_REFLECTION_CONFIG, reflectAndStore } from "../src/reflection.js";
 import {
   DEFAULT_RETRIEVAL_CONFIG,
   formatMemorySection,
@@ -106,6 +107,7 @@ type Ablation = {
   retrieval: RetrievalConfig;
   longTerm: LongTermConfig;
   interferenceCosineThreshold: number | null;
+  reflection: boolean;
   useQueryEmbedding: boolean;
   label: string;
 };
@@ -116,6 +118,7 @@ function resolveAblation(): Ablation {
   const retrieval: RetrievalConfig = { ...DEFAULT_RETRIEVAL_CONFIG };
   const longTerm: LongTermConfig = { ...DEFAULT_LONG_TERM_CONFIG };
   let interferenceCosineThreshold: number | null = null;
+  let reflection = false;
   const on = (k: string) => process.env[k] === "1";
   const flags: string[] = [];
 
@@ -171,6 +174,12 @@ function resolveAblation(): Ablation {
     longTerm.retrievalStabilityEnabled = true;
     flags.push("recall-stability");
   }
+  // G1: generative reflection — synthesize higher-order insights at the epoch
+  // boundary and inject them via the insight retrieval tier. Off by default.
+  if (on("ZENBRAIN_REFLECTION")) {
+    reflection = true;
+    flags.push("reflection");
+  }
 
   return {
     scoring,
@@ -178,6 +187,7 @@ function resolveAblation(): Ablation {
     retrieval,
     longTerm,
     interferenceCosineThreshold,
+    reflection,
     useQueryEmbedding,
     label: flags.length > 0 ? flags.join("+") : "full",
   };
@@ -317,6 +327,15 @@ async function runQuestion(
         now,
         interferenceCosineThreshold: deps.ablation.interferenceCosineThreshold,
       });
+      if (deps.ablation.reflection) {
+        await reflectAndStore({
+          storage,
+          caller: deps.caller,
+          agentId: state.agentId,
+          now,
+          config: { ...DEFAULT_REFLECTION_CONFIG, enabled: true },
+        });
+      }
       state.lastConsolidatedAt = now;
     };
 

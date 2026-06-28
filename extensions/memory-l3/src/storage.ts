@@ -13,9 +13,11 @@ import {
 import { runSqliteImmediateTransactionSync } from "openclaw/plugin-sdk/sqlite-runtime";
 import {
   type FrontmatterDocument,
+  INITIAL_INSIGHT_FRONTMATTER,
   INITIAL_L3_STATE,
   INITIAL_LONG_TERM_FRONTMATTER,
   INITIAL_LONG_TERM_TYPED_FRONTMATTER,
+  type InsightFrontmatter,
   type L2ChunkFrontmatter,
   type L3EpochFrontmatter,
   type L3State,
@@ -37,6 +39,7 @@ const LONG_TERM_TYPED_FILENAME = "longterm-typed.md";
 const KV_STATE = "state";
 const KV_LONG_TERM = "longterm";
 const KV_LONG_TERM_TYPED = "longterm_typed";
+const KV_INSIGHTS = "insights";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS l3_kv (
@@ -331,6 +334,21 @@ export class Storage {
     const exportPath = path.join(this.root, LONG_TERM_TYPED_FILENAME);
     await this.exportFrontmatterDocument(exportPath, frontmatter, body);
     return exportPath;
+  }
+
+  /** Read the G1 reflection insight tier. Returns INITIAL when absent. */
+  async readInsights(): Promise<InsightFrontmatter> {
+    const raw = this.readKv(KV_INSIGHTS);
+    if (raw === null) {
+      return { ...INITIAL_INSIGHT_FRONTMATTER };
+    }
+    return JSON.parse(raw) as InsightFrontmatter;
+  }
+
+  /** Persist the insight tier. Canonical state is the KV blob; no markdown
+   * export (insights are synthesized, not an operator grep artifact). */
+  async writeInsights(frontmatter: InsightFrontmatter): Promise<void> {
+    this.writeKv(KV_INSIGHTS, JSON.stringify(frontmatter));
   }
 
   // -----------------------------------------------------------------
