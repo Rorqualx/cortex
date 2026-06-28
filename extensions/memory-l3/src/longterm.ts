@@ -8,7 +8,7 @@ import {
   selectPromotable,
 } from "./consolidation.js";
 import { adjustImportance } from "./entities.js";
-import { cosineSimilarity, jaccard, tokenize } from "./scoring.js";
+import { nearDuplicateSimilarity, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type { LongTermFact, LongTermFrontmatter } from "./types.js";
 
@@ -37,26 +37,29 @@ export type LongTermConfig = {
    */
   epochGraceMultiplier: number;
   /**
-   * Jaccard similarity threshold for semantic dedup during consolidation.
-   * When a new promotion candidate's jaccard similarity with an existing
-   * active fact exceeds this threshold, the older (lower-importance) fact
-   * is archived as semantically redundant. Inspired by FSFM's
-   * redundancy-based forgetting (cosine > 0.95 → demote).
-   *
-   * We use jaccard (0-1) instead of cosine similarity because L3 prose
-   * facts are short enough that lexical overlap is a strong signal,
-   * and it avoids the cost of embedding computation.
-   *
-   * Set to 1.0 to disable semantic dedup.
-   * Default: 0.75.
+   * Jaccard (lexical) threshold for redundancy dedup, used as the FALLBACK
+   * when a fact pair lacks comparable embeddings. Short prose facts make
+   * lexical overlap a strong signal. Set both thresholds to 1.0 to disable
+   * semantic dedup. Default: 0.85.
    */
   semanticDedupThreshold: number;
+  /**
+   * Cosine threshold for redundancy dedup when both facts carry embeddings —
+   * the common path now that promotion computes vectors. Kept SEPARATE from
+   * the jaccard threshold because the two are different scales; one shared
+   * value mis-fires on whichever metric it was not calibrated for. Inspired
+   * by FSFM's redundancy-based forgetting (cosine > ~0.95 → demote). Default
+   * 0.85 preserves prior behavior pending harness calibration (likely raise
+   * toward 0.92 to avoid over-merging distinct facts).
+   */
+  semanticDedupCosineThreshold: number;
 };
 
 export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
   maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
   epochGraceMultiplier: 1.5,
   semanticDedupThreshold: 0.85,
+  semanticDedupCosineThreshold: 0.85,
 };
 
 export type ConsolidationOutput = {
@@ -259,17 +262,21 @@ export async function consolidateLongTerm(params: {
   // duplicate facts from accumulating (e.g., "fork is on memory-fork" and
   // "the branch is memory-fork" have different dedupKeys but are
   // semantically identical).
-  if (longTermConfig.semanticDedupThreshold < 1) {
+  if (
+    longTermConfig.semanticDedupThreshold < 1 ||
+    longTermConfig.semanticDedupCosineThreshold < 1
+  ) {
     const activeFacts = [...merged.values()].filter((f) => !f.archived);
     if (activeFacts.length >= 2) {
-      // Pre-compute jaccard tokens for fallback
+      // Pre-compute jaccard tokens for the fallback metric.
       const factTokens = new Map<string, Set<string>>();
       for (const f of activeFacts) {
         factTokens.set(f.dedupKey, tokenize(f.text));
       }
 
-      // For each pair, check if they're semantically redundant.
-      // Prefer cosine similarity on embeddings when both facts have them.
+      // For each pair, check if they're semantically redundant. The shared
+      // helper prefers embedding cosine and tells us which metric it used, so
+      // we apply the matching (separately-calibrated) threshold.
       const toArchive = new Set<string>();
       for (let i = 0; i < activeFacts.length; i++) {
         for (let j = i + 1; j < activeFacts.length; j++) {
@@ -279,20 +286,15 @@ export async function consolidateLongTerm(params: {
             continue;
           }
 
-          // Use cosine similarity on embeddings when both facts have them,
-          // otherwise fall back to jaccard.
-          let sim: number;
-          if (
-            a.embedding &&
-            b.embedding &&
-            a.embedding.length > 0 &&
-            a.embedding.length === b.embedding.length
-          ) {
-            sim = cosineSimilarity(a.embedding, b.embedding);
-          } else {
-            sim = jaccard(factTokens.get(a.dedupKey)!, factTokens.get(b.dedupKey)!);
-          }
-          if (sim < longTermConfig.semanticDedupThreshold) {
+          const { metric, sim } = nearDuplicateSimilarity(
+            { embedding: a.embedding, tokens: factTokens.get(a.dedupKey)! },
+            { embedding: b.embedding, tokens: factTokens.get(b.dedupKey)! },
+          );
+          const threshold =
+            metric === "cosine"
+              ? longTermConfig.semanticDedupCosineThreshold
+              : longTermConfig.semanticDedupThreshold;
+          if (sim < threshold) {
             continue;
           }
 

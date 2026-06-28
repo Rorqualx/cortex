@@ -41,7 +41,12 @@ import { DEFAULT_HEBBIAN_CONFIG, type HebbianConfig } from "../src/hebbian.js";
 import { IngestBuffer } from "../src/ingest.js";
 import { createGlmCaller } from "../src/llm.js";
 import { consolidateLongTermTyped } from "../src/longterm-typed.js";
-import { consolidateLongTerm } from "../src/longterm.js";
+import {
+  consolidateLongTerm,
+  DEFAULT_LONG_TERM_CONFIG,
+  type LongTermConfig,
+} from "../src/longterm.js";
+import { reconcileCrossBrain, reconcileProseInterference } from "../src/reconciliation.js";
 import {
   DEFAULT_RETRIEVAL_CONFIG,
   formatMemorySection,
@@ -99,6 +104,8 @@ type Ablation = {
   scoring: ScoringConfig;
   hebbian: HebbianConfig;
   retrieval: RetrievalConfig;
+  longTerm: LongTermConfig;
+  interferenceCosineThreshold: number | null;
   useQueryEmbedding: boolean;
   label: string;
 };
@@ -107,6 +114,8 @@ function resolveAblation(): Ablation {
   const scoring: ScoringConfig = { ...DEFAULT_SCORING_CONFIG };
   const hebbian: HebbianConfig = { ...DEFAULT_HEBBIAN_CONFIG };
   const retrieval: RetrievalConfig = { ...DEFAULT_RETRIEVAL_CONFIG };
+  const longTerm: LongTermConfig = { ...DEFAULT_LONG_TERM_CONFIG };
+  let interferenceCosineThreshold: number | null = null;
   const on = (k: string) => process.env[k] === "1";
   const flags: string[] = [];
 
@@ -144,11 +153,25 @@ function resolveAblation(): Ablation {
     Object.assign(scoring, JSON.parse(process.env.ZENBRAIN_SCORING_JSON));
     flags.push("scoring-json");
   }
+  // G2: embedding-cosine dedup (long-term redundancy) + interference. Recalibrates
+  // the long-term cosine threshold off its inherited jaccard value and turns on
+  // the cosine path in prose interference (off by default = today's behavior).
+  if (on("ZENBRAIN_DEDUP_COSINE")) {
+    longTerm.semanticDedupCosineThreshold = Number(
+      process.env.ZENBRAIN_DEDUP_COSINE_THRESHOLD ?? "0.92",
+    );
+    interferenceCosineThreshold = Number(process.env.ZENBRAIN_INTERFERENCE_COSINE ?? "0.7");
+    flags.push(
+      `dedup-cosine(d=${longTerm.semanticDedupCosineThreshold},i=${interferenceCosineThreshold})`,
+    );
+  }
 
   return {
     scoring,
     hebbian,
     retrieval,
+    longTerm,
+    interferenceCosineThreshold,
     useQueryEmbedding,
     label: flags.length > 0 ? flags.join("+") : "full",
   };
@@ -273,8 +296,21 @@ async function runQuestion(
         now,
         workspaceDir: root,
         embeddingProvider: deps.embeddingProvider,
+        longTermConfig: deps.ablation.longTerm,
       });
-      await consolidateLongTermTyped({ storage, agentId: state.agentId, now });
+      const ltt = await consolidateLongTermTyped({ storage, agentId: state.agentId, now });
+      // Mirror the engine's epoch handler so the harness exercises the same
+      // consolidation surface: cross-brain (prose↔typed) only on typed activity
+      // to avoid a wasted LLM round-trip; prose interference always.
+      if (ltt.promotedCount + ltt.supersededCount > 0) {
+        await reconcileCrossBrain({ storage, caller: deps.caller, agentId: state.agentId, now });
+      }
+      await reconcileProseInterference({
+        storage,
+        agentId: state.agentId,
+        now,
+        interferenceCosineThreshold: deps.ablation.interferenceCosineThreshold,
+      });
       state.lastConsolidatedAt = now;
     };
 
@@ -461,6 +497,8 @@ async function main(): Promise<void> {
         scoring: ablation.scoring,
         hebbian: ablation.hebbian,
         retrieval: ablation.retrieval,
+        longTerm: ablation.longTerm,
+        interferenceCosineThreshold: ablation.interferenceCosineThreshold,
         topK: TOP_K,
         selected: selected.length,
         byType,

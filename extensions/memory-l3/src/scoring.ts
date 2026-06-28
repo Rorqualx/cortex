@@ -264,6 +264,32 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
+/**
+ * Near-duplicate similarity for two short prose facts. Prefers embedding
+ * cosine (semantic — catches paraphrase like "balance ~$500" vs "account
+ * holds 500 dollars") when both facts carry comparable vectors; falls back to
+ * lexical jaccard otherwise.
+ *
+ * Returns the chosen `metric` alongside the score so callers apply the
+ * metric-appropriate threshold: cosine and jaccard are different scales, and a
+ * single shared threshold mis-fires on whichever metric it was not calibrated
+ * for. Shared by long-term dedup and prose-interference so the two stay in sync.
+ */
+export function nearDuplicateSimilarity(
+  a: { embedding?: number[]; tokens: Set<string> },
+  b: { embedding?: number[]; tokens: Set<string> },
+): { metric: "cosine" | "jaccard"; sim: number } {
+  if (
+    a.embedding &&
+    b.embedding &&
+    a.embedding.length > 0 &&
+    a.embedding.length === b.embedding.length
+  ) {
+    return { metric: "cosine", sim: cosineSimilarity(a.embedding, b.embedding) };
+  }
+  return { metric: "jaccard", sim: jaccard(a.tokens, b.tokens) };
+}
+
 export type CorpusStats = {
   /** Per-term document frequency: how many facts contain each token. */
   df: Map<string, number>;

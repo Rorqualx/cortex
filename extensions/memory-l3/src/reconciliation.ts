@@ -13,7 +13,7 @@
 
 import { parseJsonResponse, type LlmCaller } from "./llm.js";
 import { formatLongTermBody } from "./longterm.js";
-import { jaccard, tokenize } from "./scoring.js";
+import { jaccard, nearDuplicateSimilarity, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type { LongTermFact, LongTermFrontmatter, LongTermTypedFact } from "./types.js";
 
@@ -194,6 +194,14 @@ export async function reconcileProseInterference(params: {
   storage: Storage;
   agentId: string | null;
   now: number;
+  /**
+   * When set, fact pairs that carry comparable embeddings are compared by
+   * cosine against this threshold (catching paraphrased drift that lexical
+   * jaccard misses); pairs without vectors still fall back to the jaccard
+   * threshold. `null`/undefined (default) preserves the historical
+   * jaccard-only behavior so enabling cosine stays a measured, opt-in change.
+   */
+  interferenceCosineThreshold?: number | null;
 }): Promise<ProseInterferenceOutput> {
   const longterm = await params.storage.readLongTerm();
   const active = longterm.facts.filter((f) => !f.archived && !f.supersededBy);
@@ -212,13 +220,29 @@ export async function reconcileProseInterference(params: {
   // and they're from different days.
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
   const supersededByFactId = new Map<string, string>(); // olderId → newerDedupKey
+  const cosineThreshold = params.interferenceCosineThreshold ?? null;
 
   for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i];
       const b = active[j];
-      const sim = jaccard(tokenized.get(a.id)!, tokenized.get(b.id)!);
-      if (sim < INTERFERENCE_JACCARD_THRESHOLD) {
+      // Prefer embedding cosine when enabled and both facts carry vectors;
+      // otherwise lexical jaccard. Each metric uses its own scale-appropriate
+      // threshold (cosine and jaccard are not comparable).
+      let sim: number;
+      let threshold: number;
+      if (cosineThreshold !== null) {
+        const r = nearDuplicateSimilarity(
+          { embedding: a.embedding, tokens: tokenized.get(a.id)! },
+          { embedding: b.embedding, tokens: tokenized.get(b.id)! },
+        );
+        sim = r.sim;
+        threshold = r.metric === "cosine" ? cosineThreshold : INTERFERENCE_JACCARD_THRESHOLD;
+      } else {
+        sim = jaccard(tokenized.get(a.id)!, tokenized.get(b.id)!);
+        threshold = INTERFERENCE_JACCARD_THRESHOLD;
+      }
+      if (sim < threshold) {
         continue;
       }
 

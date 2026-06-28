@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmCaller } from "./llm.js";
-import { reconcileCrossBrain } from "./reconciliation.js";
+import { reconcileCrossBrain, reconcileProseInterference } from "./reconciliation.js";
 import { Storage } from "./storage.js";
 import type { LongTermFact, LongTermTypedFact } from "./types.js";
 
@@ -184,5 +184,65 @@ describe("reconcileCrossBrain", () => {
     const out = await reconcileCrossBrain({ storage, caller, agentId: "j-rorqual", now: NOW });
     expect(out.newlyMarkedStale).toBe(0);
     expect(out.unmarkedNowAgreed).toBe(0);
+  });
+});
+
+describe("reconcileProseInterference — G2 embedding cosine", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  // A paraphrase pair with ~zero lexical overlap (jaccard ≈ 0) but near-identical
+  // meaning. Embeddings are hand-built unit-ish vectors with cosine ≈ 0.99.
+  const olderPara = (): LongTermFact =>
+    proseFact({
+      id: "lt-old",
+      dedupKey: "balance:old",
+      text: "Customer checking sits near five hundred.",
+      embedding: [1, 0, 0],
+      lastConfirmedAt: NOW - 3 * DAY,
+      firstSeenAt: NOW - 3 * DAY,
+    });
+  const newerPara = (): LongTermFact =>
+    proseFact({
+      id: "lt-new",
+      dedupKey: "balance:new",
+      text: "Account currently holds about 500 dollars.",
+      embedding: [0.9, 0.1, 0],
+      lastConfirmedAt: NOW,
+      firstSeenAt: NOW,
+    });
+
+  it("jaccard-only (default) does NOT supersede a low-lexical paraphrase", async () => {
+    await writeFixture([olderPara(), newerPara()], []);
+    const out = await reconcileProseInterference({ storage, agentId: "j-rorqual", now: NOW });
+    expect(out.newlySuperseded).toBe(0);
+    const after = await storage.readLongTerm();
+    expect(after.facts.find((f) => f.id === "lt-old")?.supersededBy ?? null).toBeNull();
+  });
+
+  it("embedding cosine supersedes the older paraphrase that jaccard misses", async () => {
+    await writeFixture([olderPara(), newerPara()], []);
+    const out = await reconcileProseInterference({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      interferenceCosineThreshold: 0.7,
+    });
+    expect(out.newlySuperseded).toBe(1);
+    const after = await storage.readLongTerm();
+    expect(after.facts.find((f) => f.id === "lt-old")?.supersededBy).toBe("prose:balance:new");
+    // The newer fact stays active.
+    expect(after.facts.find((f) => f.id === "lt-new")?.supersededBy ?? null).toBeNull();
+  });
+
+  it("cosine mode falls back to jaccard when a fact lacks an embedding", async () => {
+    // Newer has no embedding → no comparable vectors → jaccard fallback → the
+    // low-overlap pair stays distinct even with cosine mode on.
+    await writeFixture([olderPara(), { ...newerPara(), embedding: undefined }], []);
+    const out = await reconcileProseInterference({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      interferenceCosineThreshold: 0.7,
+    });
+    expect(out.newlySuperseded).toBe(0);
   });
 });
