@@ -80,6 +80,8 @@ const TYPE = argVal("type") ?? "single-session-user";
 const STRATIFIED = argVal("stratified") ? Number.parseInt(argVal("stratified")!, 10) : null;
 const CONCURRENCY = Number.parseInt(argVal("concurrency") ?? "1", 10);
 const ORACLE_PATH = argVal("oracle") ?? "/tmp/longmemeval/oracle.json";
+// G5: point retrieval at a skill-forge dir so the procedural tier participates.
+const SKILLFORGE = argVal("skillforge") ?? undefined;
 const TOP_K = Number.parseInt(process.env.ZENBRAIN_TOPK ?? "20", 10);
 
 const ANSWER_SYSTEM_PROMPT = `You answer a question about a user using only the provided memory facts.
@@ -139,6 +141,11 @@ function resolveAblation(): Ablation {
   if (process.env.ZENBRAIN_HEBBIAN_2HOP) {
     hebbian.twoHopDecay = Number(process.env.ZENBRAIN_HEBBIAN_2HOP);
     flags.push(`2hop=${hebbian.twoHopDecay}`);
+  }
+  // G4 pattern completion: pull neighbors of the top-N hits into results.
+  if (process.env.ZENBRAIN_HEBBIAN_EXPAND) {
+    hebbian.expandTopN = Number(process.env.ZENBRAIN_HEBBIAN_EXPAND);
+    flags.push(`expand=${hebbian.expandTopN}`);
   }
   if (on("ZENBRAIN_ABLATE_TYPED")) {
     scoring.weightTypedFactTierBoost = 0;
@@ -383,6 +390,7 @@ async function runQuestion(
       retrievalConfig: deps.ablation.retrieval,
       hebbianConfig: deps.ablation.hebbian,
       queryEmbedding,
+      skillForgeDir: SKILLFORGE,
     });
     const memorySection = formatMemorySection(top.facts, { now: questionTime });
     const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n</memory>\n\nQuestion: ${q.question}`;

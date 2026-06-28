@@ -459,12 +459,15 @@ export async function retrieveTopK(params: {
   // Hebbian neighbor boosting — facts that co-occur frequently across chunks
   // get a small additive boost when their neighbors score high.
   const hConfig = params.hebbianConfig ?? DEFAULT_HEBBIAN_CONFIG;
+  // Hoisted so both the boost (re-rank) and the post-slice expansion
+  // (pattern completion) can reuse it without a second edge-map read.
+  let edgeLookup: Map<string, HebbianEdge[]> | null = null;
   if (hConfig.enabled && scored.length > 0) {
     try {
       const edgeRaw = await params.storage.readEdgeMap();
       const edges = Array.isArray(edgeRaw) ? (edgeRaw as HebbianEdge[]) : [];
       if (edges.length > 0) {
-        const edgeLookup = buildEdgeLookup(edges);
+        edgeLookup = buildEdgeLookup(edges);
         const baseScores = new Map<string, number>();
         for (const item of scored) {
           baseScores.set(item.fact.dedupKey, item.score);
@@ -536,6 +539,54 @@ export async function retrieveTopK(params: {
   }
 
   const finalFacts = result.slice(0, topK);
+
+  // G4 pattern completion: append edge-neighbors of the strongest results as
+  // bonus "completions" — even if they ranked below top-K or didn't match the
+  // query — so a partial cue surfaces the rest of an associated memory
+  // (CA3-style). Off when expandTopN=0. Neighbors come from the already-
+  // collected candidate set (no extra storage reads); each gets a real signal
+  // set but an association-derived score so a downstream sort keeps it below
+  // genuine matches.
+  if (hConfig.expandTopN > 0 && edgeLookup && finalFacts.length > 0) {
+    const present = new Set(finalFacts.map((r) => r.fact.dedupKey));
+    const candidateByKey = new Map<string, ScorableItem>();
+    for (const it of items) {
+      if (!candidateByKey.has(it.fact.dedupKey)) {
+        candidateByKey.set(it.fact.dedupKey, it);
+      }
+    }
+    for (const hit of finalFacts.slice(0, hConfig.expandTopN)) {
+      for (const edge of edgeLookup.get(hit.fact.dedupKey) ?? []) {
+        const neighborKey = edge.a === hit.fact.dedupKey ? edge.b : edge.a;
+        if (present.has(neighborKey)) {
+          continue;
+        }
+        const cand = candidateByKey.get(neighborKey);
+        if (!cand) {
+          continue;
+        }
+        present.add(neighborKey);
+        const weightNorm = Math.min(edge.weight, hConfig.maxEdgeWeight) / hConfig.maxEdgeWeight;
+        const signals = scoreFact({
+          queryTokens,
+          fact: cand.fact,
+          now,
+          config,
+          l3Boost: cand.l3Boost,
+          corpusStats,
+          significant: cand.fact.significant,
+          informationGain: cand.informationGain,
+        });
+        finalFacts.push({
+          fact: cand.fact,
+          score: hit.score * weightNorm * hConfig.expansionFactor,
+          signals,
+          chunkId: cand.chunkId,
+          tier: cand.tier,
+        });
+      }
+    }
+  }
 
   // -----------------------------------------------------------------
   // Retrieval-time Hebbian edge strengthening (AtomMem-style)

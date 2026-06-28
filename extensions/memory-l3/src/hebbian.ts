@@ -35,6 +35,19 @@ export type HebbianConfig = {
    * nodes already reachable in 1 hop never double-count through hop 2.
    */
   twoHopDecay: number;
+  /**
+   * G4 pattern completion: number of top hits whose edge-neighbors are pulled
+   * into the result set even if they didn't match the query — so a partial cue
+   * can retrieve the rest of an associated memory (CA3-style completion). 0
+   * (default) = pure re-ranking, no expansion.
+   */
+  expandTopN: number;
+  /**
+   * Score multiplier for a pulled neighbor relative to the hit it came from
+   * (scaled further by the edge's normalized weight). Keeps completions ranked
+   * below genuine matches while still able to enter top-K. Default 0.5.
+   */
+  expansionFactor: number;
 };
 
 export const DEFAULT_HEBBIAN_CONFIG: HebbianConfig = {
@@ -42,6 +55,8 @@ export const DEFAULT_HEBBIAN_CONFIG: HebbianConfig = {
   maxEdgeWeight: 10,
   enabled: true,
   twoHopDecay: 0,
+  expandTopN: 0,
+  expansionFactor: 0.5,
 };
 
 /**
