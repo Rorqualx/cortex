@@ -24,15 +24,27 @@
 //   ZENBRAIN_ABLATE_EPOCH_FIRST=1 retrieval.useEpochFirst=false (full scan)
 //   ZENBRAIN_TOPK=<n>            retrieval depth (default 20; prod assemble uses 5)
 //   ZENBRAIN_SCORING_JSON='{...}' deep-merge override onto ScoringConfig (sweeps)
+//   ZENBRAIN_DEDUP_COSINE=1      G2 embedding-cosine dedup + interference
+//   ZENBRAIN_RECALL_STABILITY=1  G3 retrieval reaffirms archival durability
+//   ZENBRAIN_REFLECTION=1        G1 generative reflection (insight tier)
+//   ZENBRAIN_HEBBIAN_EXPAND=<n>  G4 pattern completion (pull neighbors of top-n hits)
 //
 // Usage:
 //   node --import tsx extensions/memory-l3/scripts/run-longmemeval-engine.ts \
-//     [--limit=N] [--type=TYPE] [--stratified=PER_TYPE] [--concurrency=N] [--oracle=PATH]
+//     [--limit=N] [--type=TYPE] [--stratified=PER_TYPE] [--concurrency=N] \
+//     [--oracle=PATH] [--skillforge=DIR] [--cache=DIR]
+//
+// --cache=DIR ingests each question's haystack ONCE (L2 only) into <DIR>/<qid>,
+// then every ablation arm/seed copies that store and runs only the cheap
+// consolidate+retrieve+answer phase — the key to an affordable ablation matrix
+// (ingestion is ~30 LLM calls/question; the per-arm phase is ~3). Delete <DIR>
+// to rebuild. Ingestion is arm-independent: consolidation (G1/G2/G3) runs in the
+// per-arm phase, so one cache serves all arms.
 //
 // Requires: oracle JSON (default /tmp/longmemeval/oracle.json), an Ollama
-// embedder (unless --ablate-semantic), and a zai key (env or auth-profiles).
+// embedder (unless ZENBRAIN_ABLATE_SEMANTIC), and a zai key (env or auth-profiles).
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { compactSession } from "../src/compaction.js";
@@ -56,6 +68,7 @@ import {
 } from "../src/retrieval.js";
 import { DEFAULT_SCORING_CONFIG, type ScoringConfig } from "../src/scoring.js";
 import { Storage } from "../src/storage.js";
+import type { L3State } from "../src/types.js";
 
 const HOME = os.homedir();
 const BATCH_TOKENS = 4000; // mirrors AFTER_TURN_COMPACTION_THRESHOLD_TOKENS
@@ -82,6 +95,11 @@ const CONCURRENCY = Number.parseInt(argVal("concurrency") ?? "1", 10);
 const ORACLE_PATH = argVal("oracle") ?? "/tmp/longmemeval/oracle.json";
 // G5: point retrieval at a skill-forge dir so the procedural tier participates.
 const SKILLFORGE = argVal("skillforge") ?? undefined;
+// Ingested-store cache dir. When set, each question's haystack is ingested once
+// (L2 only — arm-independent) into <cache>/<qid>; every ablation arm then copies
+// that store and runs the cheap consolidate+retrieve+answer phase, turning the
+// ~30-LLM-call/question ingestion into a one-time cost across arms and seeds.
+const CACHE_DIR = argVal("cache") ?? undefined;
 const TOP_K = Number.parseInt(process.env.ZENBRAIN_TOPK ?? "20", 10);
 
 const ANSWER_SYSTEM_PROMPT = `You answer a question about a user using only the provided memory facts.
@@ -292,6 +310,44 @@ type QResult = {
   error?: string;
 };
 
+// Ingestion phase (arm-independent → cacheable): compactSession over every
+// session, NO consolidation. Consolidation is arm-dependent (G1/G2/G3) so it
+// runs in the per-arm phase, not here.
+async function ingestSessions(
+  storage: Storage,
+  state: L3State,
+  q: LmeQuestion,
+  sessionDates: number[],
+  deps: {
+    caller: ReturnType<typeof createGlmCaller>;
+    embeddingProvider: EmbeddingProvider | undefined;
+  },
+): Promise<void> {
+  const buffer = new IngestBuffer();
+  for (let s = 0; s < q.haystack_sessions.length; s += 1) {
+    const sessionId = `s${s}`;
+    const ts = sessionDates[s] ?? Date.now();
+    const flush = async (): Promise<void> => {
+      await compactSession({
+        sessionId,
+        buffer,
+        storage,
+        caller: deps.caller,
+        state,
+        now: ts,
+        embeddingProvider: deps.embeddingProvider,
+      });
+    };
+    for (const turn of q.haystack_sessions[s]) {
+      buffer.push(sessionId, toAgentMessage(turn, ts) as never);
+      if (buffer.tokens(sessionId) >= BATCH_TOKENS) {
+        await flush();
+      }
+    }
+    await flush();
+  }
+}
+
 async function runQuestion(
   q: LmeQuestion,
   deps: {
@@ -301,80 +357,84 @@ async function runQuestion(
     ablation: Ablation;
   },
 ): Promise<QResult> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "lme-eng-"));
+  const work = await mkdtemp(path.join(os.tmpdir(), "lme-eng-"));
   try {
-    const storage = Storage.fromWorkspace(root);
+    const sessionDates = q.haystack_sessions.map((_, i) =>
+      parseHaystackDate(q.haystack_dates?.[i]),
+    );
+    const lastTs =
+      sessionDates.length > 0 ? Math.max(...sessionDates) : parseHaystackDate(q.question_date);
+
+    // --- ingestion phase (cached when --cache is set) ---
+    if (CACHE_DIR) {
+      const cacheQ = path.join(CACHE_DIR, q.question_id.replace(/[^a-zA-Z0-9_-]/g, "_"));
+      const marker = path.join(cacheQ, ".ingested");
+      const cached = await readFile(marker, "utf8").then(
+        () => true,
+        () => false,
+      );
+      if (!cached) {
+        const cs = Storage.fromWorkspace(cacheQ);
+        await cs.ensureLayout();
+        const cstate = await cs.readState();
+        cstate.agentId = "eval";
+        await ingestSessions(cs, cstate, q, sessionDates, deps);
+        await cs.writeState(cstate);
+        cs.close();
+        await writeFile(marker, String(lastTs));
+      }
+      await cp(path.join(cacheQ, ".openclaw"), path.join(work, ".openclaw"), { recursive: true });
+    } else {
+      const is = Storage.fromWorkspace(work);
+      await is.ensureLayout();
+      const istate = await is.readState();
+      istate.agentId = "eval";
+      await ingestSessions(is, istate, q, sessionDates, deps);
+      await is.writeState(istate);
+      is.close();
+    }
+
+    // --- per-arm phase: consolidate (arm config) + retrieve + answer ---
+    const storage = Storage.fromWorkspace(work);
     await storage.ensureLayout();
     const state = await storage.readState();
-    state.agentId = "eval";
-
-    const buffer = new IngestBuffer();
-    const sessionDates = (q.haystack_dates ?? []).map(parseHaystackDate);
-    let lastTs = Date.now();
-
-    const consolidate = async (now: number): Promise<void> => {
-      await consolidateLongTerm({
-        storage,
-        agentId: state.agentId,
-        now,
-        workspaceDir: root,
-        embeddingProvider: deps.embeddingProvider,
-        longTermConfig: deps.ablation.longTerm,
-      });
-      const ltt = await consolidateLongTermTyped({ storage, agentId: state.agentId, now });
-      // Mirror the engine's epoch handler so the harness exercises the same
-      // consolidation surface: cross-brain (prose↔typed) only on typed activity
-      // to avoid a wasted LLM round-trip; prose interference always.
-      if (ltt.promotedCount + ltt.supersededCount > 0) {
-        await reconcileCrossBrain({ storage, caller: deps.caller, agentId: state.agentId, now });
-      }
-      await reconcileProseInterference({
-        storage,
-        agentId: state.agentId,
-        now,
-        interferenceCosineThreshold: deps.ablation.interferenceCosineThreshold,
-      });
-      if (deps.ablation.reflection) {
-        await reflectAndStore({
-          storage,
-          caller: deps.caller,
-          agentId: state.agentId,
-          now,
-          config: { ...DEFAULT_REFLECTION_CONFIG, enabled: true },
-        });
-      }
-      state.lastConsolidatedAt = now;
-    };
-
-    for (let s = 0; s < q.haystack_sessions.length; s += 1) {
-      const sessionId = `s${s}`;
-      const ts = sessionDates[s] ?? Date.now();
-      lastTs = ts;
-      const flush = async (): Promise<void> => {
-        const r = await compactSession({
-          sessionId,
-          buffer,
-          storage,
-          caller: deps.caller,
-          state,
-          now: ts,
-          embeddingProvider: deps.embeddingProvider,
-        });
-        if (r.chunkId !== null && r.epochId !== null) {
-          await consolidate(ts);
-        }
-      };
-      for (const turn of q.haystack_sessions[s]) {
-        buffer.push(sessionId, toAgentMessage(turn, ts) as never);
-        if (buffer.tokens(sessionId) >= BATCH_TOKENS) {
-          await flush();
-        }
-      }
-      await flush();
+    if (state.agentId === null) {
+      state.agentId = "eval";
     }
-    // Tail consolidation so facts that never hit an epoch boundary still get a
-    // promotion opportunity (mirrors ingest-claude-code-transcripts.ts).
-    await consolidate(lastTs);
+
+    await consolidateLongTerm({
+      storage,
+      agentId: state.agentId,
+      now: lastTs,
+      workspaceDir: work,
+      embeddingProvider: deps.embeddingProvider,
+      longTermConfig: deps.ablation.longTerm,
+    });
+    const ltt = await consolidateLongTermTyped({ storage, agentId: state.agentId, now: lastTs });
+    // Cross-brain only on typed activity (mirrors the engine); prose interference always.
+    if (ltt.promotedCount + ltt.supersededCount > 0) {
+      await reconcileCrossBrain({
+        storage,
+        caller: deps.caller,
+        agentId: state.agentId,
+        now: lastTs,
+      });
+    }
+    await reconcileProseInterference({
+      storage,
+      agentId: state.agentId,
+      now: lastTs,
+      interferenceCosineThreshold: deps.ablation.interferenceCosineThreshold,
+    });
+    if (deps.ablation.reflection) {
+      await reflectAndStore({
+        storage,
+        caller: deps.caller,
+        agentId: state.agentId,
+        now: lastTs,
+        config: { ...DEFAULT_REFLECTION_CONFIG, enabled: true },
+      });
+    }
 
     const questionTime = parseHaystackDate(q.question_date);
     const queryEmbedding =
@@ -400,6 +460,7 @@ async function runQuestion(
       thinking: false,
     });
     const hypothesis = parseAnswer(rawAnswer.replace(/^```[\s\S]*?\n|```$/g, "").trim());
+    storage.close();
 
     return {
       question_id: q.question_id,
@@ -411,7 +472,7 @@ async function runQuestion(
       memory_chars: memorySection.length,
     };
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(work, { recursive: true, force: true });
   }
 }
 
