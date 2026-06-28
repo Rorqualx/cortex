@@ -8,9 +8,9 @@ import {
   selectPromotable,
 } from "./consolidation.js";
 import { adjustImportance } from "./entities.js";
-import { nearDuplicateSimilarity, tokenize } from "./scoring.js";
+import { DEFAULT_FSRS_PARAMS, nearDuplicateSimilarity, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
-import type { LongTermFact, LongTermFrontmatter } from "./types.js";
+import type { LongTermFact, LongTermFrontmatter, RetrievalSignal } from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
@@ -53,6 +53,18 @@ export type LongTermConfig = {
    * toward 0.92 to avoid over-merging distinct facts).
    */
   semanticDedupCosineThreshold: number;
+  /**
+   * G3 (testing effect): when true, retrieval counts as reaffirmation for the
+   * purpose of forgetting. A fact's archival clock runs from
+   * max(lastConfirmedAt, lastRecalledAt) and its survival window grows with how
+   * often it has been retrieved (FSRS-style stability: maxAge × w1^retrievals),
+   * so a fact you keep *using* resists archival even if it is never restated in
+   * conversation. Default false — enabling is a measured change (proof-gated).
+   */
+  retrievalStabilityEnabled: boolean;
+  /** Cap on retrieval recallCount fed into stability growth, so a hot fact can't
+   * grow an unbounded half-life. Mirrors the Hebbian maxEdgeWeight cap. Default 10. */
+  retrievalStabilityMaxRecall: number;
 };
 
 export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
@@ -60,6 +72,8 @@ export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
   epochGraceMultiplier: 1.5,
   semanticDedupThreshold: 0.85,
   semanticDedupCosineThreshold: 0.85,
+  retrievalStabilityEnabled: false,
+  retrievalStabilityMaxRecall: 10,
 };
 
 export type ConsolidationOutput = {
@@ -174,6 +188,17 @@ export async function consolidateLongTerm(params: {
   let epochGraceCount = 0;
   let semanticDedupCount = 0;
 
+  // Load retrieval signals once. Reused by the archival pass (G3 — retrieval
+  // reaffirms durability, when retrievalStabilityEnabled) and the Phase-3
+  // dynamic-importance pass below. Non-fatal on failure (empty map).
+  let signalMap = new Map<string, RetrievalSignal>();
+  try {
+    const signals = await params.storage.readRetrievalSignals();
+    signalMap = new Map(signals.map((s) => [s.factId, s]));
+  } catch (signalErr) {
+    l3debug(`retrieval signals unavailable: ${(signalErr as Error).message}`);
+  }
+
   // Build a SNAPSHOT of epoch densities BEFORE any archival decisions.
   // Facts that first appeared on the same day likely came from the same
   // consolidation epoch. Dropping the last one means the entire topic
@@ -196,6 +221,7 @@ export async function consolidateLongTerm(params: {
     key: string;
     fact: LongTermFact;
     age: number;
+    effectiveMaxAge: number;
     epochKey: string;
   }> = [];
   for (const [key, fact] of merged) {
@@ -205,11 +231,31 @@ export async function consolidateLongTerm(params: {
     if (promotableByKey.has(key)) {
       continue;
     }
-    const age = params.now - fact.lastConfirmedAt;
-    if (age < longTermConfig.maxAgeWithoutConfirmMs) {
+    // G3: retrieval reaffirms durability. When enabled, the forgetting clock
+    // runs from the later of last confirmation and last retrieval, and the
+    // survival window grows FSRS-style with retrieval count (capped). When
+    // disabled, signal is undefined → identical to the prior lastConfirmedAt
+    // behavior.
+    const signal = longTermConfig.retrievalStabilityEnabled ? signalMap.get(fact.id) : undefined;
+    const lastActive = signal
+      ? Math.max(fact.lastConfirmedAt, signal.lastRecalledAt)
+      : fact.lastConfirmedAt;
+    const stabilityFactor = signal
+      ? DEFAULT_FSRS_PARAMS.w1 **
+        Math.min(signal.recallCount, longTermConfig.retrievalStabilityMaxRecall)
+      : 1;
+    const age = params.now - lastActive;
+    const effectiveMaxAge = longTermConfig.maxAgeWithoutConfirmMs * stabilityFactor;
+    if (age < effectiveMaxAge) {
       continue;
     }
-    archivalCandidates.push({ key, fact, age, epochKey: formatDateString(fact.firstSeenAt) });
+    archivalCandidates.push({
+      key,
+      fact,
+      age,
+      effectiveMaxAge,
+      epochKey: formatDateString(fact.firstSeenAt),
+    });
   }
 
   // Sort by importance ascending so lower-importance facts archive first.
@@ -218,7 +264,7 @@ export async function consolidateLongTerm(params: {
 
   // Track remaining epoch pop as we commit archivals.
   const remainingEpochPop = new Map(epochPopSnapshot);
-  for (const { key, fact, age, epochKey } of archivalCandidates) {
+  for (const { key, fact, age, effectiveMaxAge, epochKey } of archivalCandidates) {
     // Use the FROZEN snapshot for the grace decision, not the running count.
     // This prevents sequential archivals from incorrectly granting grace
     // to a fact that was part of a multi-fact epoch cluster.
@@ -236,8 +282,7 @@ export async function consolidateLongTerm(params: {
     const isSolitary = originalPop === 1;
     const isLastOfCluster = originalPop >= 3 && pop <= 1;
     if ((isSolitary || isLastOfCluster) && longTermConfig.epochGraceMultiplier > 1) {
-      const graceThreshold =
-        longTermConfig.maxAgeWithoutConfirmMs * longTermConfig.epochGraceMultiplier;
+      const graceThreshold = effectiveMaxAge * longTermConfig.epochGraceMultiplier;
       if (age < graceThreshold) {
         epochGraceCount += 1;
         continue;
@@ -327,9 +372,7 @@ export async function consolidateLongTerm(params: {
   // Facts that are frequently recalled get boosted; idle facts decay.
   let adjustedFacts = orderedFacts;
   try {
-    const signals = await params.storage.readRetrievalSignals();
-    if (signals.length > 0) {
-      const signalMap = new Map(signals.map((s) => [s.factId, s]));
+    if (signalMap.size > 0) {
       adjustedFacts = adjustImportance({
         facts: orderedFacts,
         signals: signalMap,

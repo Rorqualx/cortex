@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { consolidateLongTerm, DEFAULT_LONG_TERM_CONFIG, type LongTermConfig } from "./longterm.js";
 import { Storage } from "./storage.js";
-import type { L2Fact, LongTermFact } from "./types.js";
+import type { L2Fact, LongTermFact, RetrievalSignal } from "./types.js";
 
 const NOW = Date.UTC(2026, 4, 6, 12, 0, 0);
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -492,5 +492,73 @@ describe("consolidateLongTerm QMD mirror", () => {
       .then(() => true)
       .catch(() => false);
     expect(todayExists).toBe(false);
+  });
+});
+
+describe("consolidateLongTerm — G3 retrieval reaffirms durability", () => {
+  // Promote a high-importance fact 100 days ago, then drop its L2 chunk so it
+  // is unconfirmed and past the 60-day archival window. Whether it survives now
+  // depends on retrieval signals.
+  const seedStaleFact = async (): Promise<string> => {
+    await writeChunk(
+      "chunk-x",
+      [fact("f1", "old fact", 0.9, NOW - 100 * MS_PER_DAY, "old:thing")],
+      NOW - 100 * MS_PER_DAY,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    return (await storage.readLongTerm()).facts[0].id;
+  };
+
+  const signal = (factId: string, overrides: Partial<RetrievalSignal>): RetrievalSignal => ({
+    factId,
+    recallCount: 5,
+    lastRecalledAt: NOW - MS_PER_DAY,
+    firstRecalledAt: NOW - 30 * MS_PER_DAY,
+    ...overrides,
+  });
+
+  it("default (disabled): a recently-recalled but unconfirmed fact still archives", async () => {
+    const id = await seedStaleFact();
+    await storage.writeRetrievalSignals([signal(id, {})]);
+    const r = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    expect(r.archivedCount).toBe(1);
+  });
+
+  it("enabled: a recently-recalled fact resists archival (testing effect)", async () => {
+    const id = await seedStaleFact();
+    await storage.writeRetrievalSignals([signal(id, {})]);
+    const cfg: LongTermConfig = { ...DEFAULT_LONG_TERM_CONFIG, retrievalStabilityEnabled: true };
+    const r = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: cfg,
+    });
+    expect(r.archivedCount).toBe(0);
+    expect(r.activeCount).toBe(1);
+    expect((await storage.readLongTerm()).facts[0].archived).toBe(false);
+  });
+
+  it("enabled but stale/low recall: still archives (stability is not blanket immunity)", async () => {
+    const id = await seedStaleFact();
+    // Recalled once, long ago → small stability boost (×1.3) and no recency
+    // reset. epochGraceMultiplier=1 isolates stability from the solitary-grace
+    // path so the assertion is about retrieval stability alone.
+    await storage.writeRetrievalSignals([
+      signal(id, { recallCount: 1, lastRecalledAt: NOW - 100 * MS_PER_DAY }),
+    ]);
+    const cfg: LongTermConfig = {
+      ...DEFAULT_LONG_TERM_CONFIG,
+      retrievalStabilityEnabled: true,
+      epochGraceMultiplier: 1,
+    };
+    const r = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: cfg,
+    });
+    expect(r.archivedCount).toBe(1);
   });
 });

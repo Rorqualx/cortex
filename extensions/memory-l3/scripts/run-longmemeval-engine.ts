@@ -165,6 +165,12 @@ function resolveAblation(): Ablation {
       `dedup-cosine(d=${longTerm.semanticDedupCosineThreshold},i=${interferenceCosineThreshold})`,
     );
   }
+  // G3 (testing effect): retrieval reaffirms durability — recalled facts resist
+  // archival via lastRecalledAt + FSRS stability growth. Off by default.
+  if (on("ZENBRAIN_RECALL_STABILITY")) {
+    longTerm.retrievalStabilityEnabled = true;
+    flags.push("recall-stability");
+  }
 
   return {
     scoring,
