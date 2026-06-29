@@ -91,7 +91,9 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
       ],
       temperature: 0.3,
     };
-    if (thinking !== undefined) {
+    // `thinking` is a Z.ai-specific param; other OpenAI-compatible providers
+    // (DeepSeek, Moonshot/kimi) reject it with 400. Only send it to z.ai.
+    if (thinking !== undefined && baseUrl.includes("z.ai")) {
       body.thinking = { type: thinking ? "enabled" : "disabled" };
     }
     for (let attempt = 0; ; attempt++) {
@@ -112,6 +114,86 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
       const text = await response.text();
       if (attempt >= maxRetries || !RETRYABLE_STATUSES.has(response.status)) {
         throw new Error(`GLM call failed: ${response.status} ${text}`);
+      }
+      await sleep(
+        backoffMs(
+          attempt,
+          retryBaseMs,
+          maxBackoffMs,
+          response.headers?.get?.("retry-after") ?? null,
+        ),
+      );
+    }
+  };
+}
+
+export type AnthropicCallerConfig = {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  // kimi-for-coding is a reasoning model that REQUIRES thinking=enabled; we send
+  // a fixed budget and parse only the text block out of the response.
+  maxTokens?: number;
+  thinkingBudgetTokens?: number;
+  fetchImpl?: typeof fetch;
+  maxRetries?: number;
+  retryBaseMs?: number;
+  maxBackoffMs?: number;
+  minIntervalMs?: number;
+  sleepImpl?: (ms: number) => Promise<void>;
+};
+
+// Anthropic /v1/messages caller (e.g. kimi-for-coding via api.kimi.com/coding).
+// Mirrors createGlmCaller's retry/backoff/throttle but speaks the Anthropic
+// message schema: system is a top-level field, the answer is the first text
+// content block, and thinking is forced on (the model rejects type!=enabled).
+export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller {
+  const fetchImpl = config.fetchImpl ?? fetch;
+  const sleep = config.sleepImpl ?? defaultSleep;
+  const maxRetries = config.maxRetries ?? 5;
+  const retryBaseMs = config.retryBaseMs ?? 1000;
+  const maxBackoffMs = config.maxBackoffMs ?? 30_000;
+  const minIntervalMs = config.minIntervalMs ?? 0;
+  const maxTokens = config.maxTokens ?? 4096;
+  const thinkingBudget = config.thinkingBudgetTokens ?? 2048;
+  const url = `${config.baseUrl.replace(/\/$/, "")}/v1/messages`;
+  let nextAllowedAt = 0;
+  return async ({ systemPrompt, userPrompt }) => {
+    if (minIntervalMs > 0) {
+      const now = Date.now();
+      const wait = Math.max(0, nextAllowedAt - now);
+      nextAllowedAt = Math.max(nextAllowedAt, now) + minIntervalMs;
+      if (wait > 0) {
+        await sleep(wait);
+      }
+    }
+    const body = {
+      model: config.model,
+      max_tokens: maxTokens,
+      thinking: { type: "enabled", budget_tokens: thinkingBudget },
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    };
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetchImpl(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": config.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        const json = (await response.json()) as {
+          content?: Array<{ type: string; text?: string }>;
+        };
+        const textBlock = json.content?.find((b) => b.type === "text");
+        return textBlock?.text ?? "";
+      }
+      const text = await response.text();
+      if (attempt >= maxRetries || !RETRYABLE_STATUSES.has(response.status)) {
+        throw new Error(`Anthropic call failed: ${response.status} ${text}`);
       }
       await sleep(
         backoffMs(

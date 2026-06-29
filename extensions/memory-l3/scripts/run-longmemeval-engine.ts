@@ -51,7 +51,7 @@ import { compactSession } from "../src/compaction.js";
 import type { EmbeddingProvider } from "../src/engine.js";
 import { DEFAULT_HEBBIAN_CONFIG, type HebbianConfig } from "../src/hebbian.js";
 import { IngestBuffer } from "../src/ingest.js";
-import { createGlmCaller } from "../src/llm.js";
+import { createAnthropicCaller, createGlmCaller } from "../src/llm.js";
 import { consolidateLongTermTyped } from "../src/longterm-typed.js";
 import {
   consolidateLongTerm,
@@ -520,15 +520,36 @@ async function main(): Promise<void> {
 
   const apiKey = await resolveZaiKey();
   // Eval shares the Z.ai key with the live gateway. Two defenses: a proactive
-  // ~1s min-gap so the batch never bursts into the shared per-minute limit, plus
-  // an aggressive retry budget (~10 attempts, up to 60s spacing) to ride out any
+  // min-gap so the batch never bursts into the shared per-minute limit, plus an
+  // aggressive retry budget (~10 attempts, up to 60s spacing) to ride out any
   // residual contention. The throttle prevents 429s; the retry survives them.
-  const caller = createGlmCaller({
-    apiKey,
-    minIntervalMs: 1000,
-    maxRetries: 10,
-    maxBackoffMs: 60_000,
-  });
+  // Set ZENBRAIN_MIN_INTERVAL_MS=0 to disable pacing when the key is dedicated
+  // (e.g. the gateway is paused) so the run isn't throttle-bound to ~1 call/sec.
+  const minIntervalMs = Number(process.env.ZENBRAIN_MIN_INTERVAL_MS ?? 1000);
+  // Optional non-GLM answer model (e.g. kimi via Moonshot) for cross-model
+  // robustness: EVAL_LLM_BASE_URL + EVAL_LLM_MODEL + EVAL_LLM_API_KEY. Defaults
+  // to the Z.ai/GLM caller. The base URL drives the z.ai-only `thinking` gate.
+  const evalKey = process.env.EVAL_LLM_API_KEY;
+  // EVAL_LLM_API=anthropic-messages routes to the Anthropic caller (e.g.
+  // kimi-for-coding via api.kimi.com/coding); otherwise the OpenAI/GLM caller.
+  const caller =
+    process.env.EVAL_LLM_API === "anthropic-messages"
+      ? createAnthropicCaller({
+          apiKey: evalKey ?? apiKey,
+          baseUrl: process.env.EVAL_LLM_BASE_URL ?? "",
+          model: process.env.EVAL_LLM_MODEL ?? "",
+          minIntervalMs,
+          maxRetries: 10,
+          maxBackoffMs: 60_000,
+        })
+      : createGlmCaller({
+          apiKey: evalKey ?? apiKey,
+          baseUrl: process.env.EVAL_LLM_BASE_URL,
+          model: process.env.EVAL_LLM_MODEL,
+          minIntervalMs,
+          maxRetries: 10,
+          maxBackoffMs: 60_000,
+        });
   const embeddingProvider = await resolveEmbeddingProvider(ablation.useQueryEmbedding);
 
   const t0 = Date.now();
