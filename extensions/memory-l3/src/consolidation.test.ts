@@ -7,6 +7,7 @@ import {
   type ConsolidationConfig,
   DEFAULT_CONSOLIDATION_CONFIG,
   passesPromotionThresholds,
+  runVerificationGate,
   selectPromotable,
 } from "./consolidation.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
@@ -787,6 +788,50 @@ describe("ConvMemory v3 safety invariants", () => {
 
       // C6 invariant: aggregation is deterministic
       expect(second).toEqual(first);
+    });
+  });
+
+  describe("runVerificationGate", () => {
+    it("passes all candidates when verification is disabled", async () => {
+      await writeChunk("chunk-000000-a", [fact("f1", "test fact", 0.9, NOW, "topic:test")], NOW);
+      const candidates = await selectPromotable(storage, {
+        ...DEFAULT_CONSOLIDATION_CONFIG,
+        minRecallCount: 1,
+        minDayspanMs: 0,
+      });
+      const result = await runVerificationGate({
+        candidates,
+        storage,
+        priorFacts: new Map(),
+        llm: null,
+        config: {
+          enabled: false,
+          thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7 },
+        },
+      });
+      expect(result.passed.length).toBe(1);
+      expect(result.blockedCount).toBe(0);
+    });
+
+    it("passes all candidates when LLM is unavailable", async () => {
+      await writeChunk("chunk-000000-a", [fact("f1", "test fact", 0.9, NOW, "topic:test")], NOW);
+      const candidates = await selectPromotable(storage, {
+        ...DEFAULT_CONSOLIDATION_CONFIG,
+        minRecallCount: 1,
+        minDayspanMs: 0,
+      });
+      const result = await runVerificationGate({
+        candidates,
+        storage,
+        priorFacts: new Map(),
+        llm: null,
+        config: {
+          enabled: true,
+          thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7 },
+        },
+      });
+      expect(result.passed.length).toBe(1);
+      expect(result.blockedCount).toBe(0);
     });
   });
 });

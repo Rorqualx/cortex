@@ -1,7 +1,24 @@
+import type { LlmCaller } from "./llm.js";
 import type { Storage } from "./storage.js";
-import type { FactCertainty, L2Fact } from "./types.js";
+import type { FactCertainty, L2Fact, LongTermFact } from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export type VerificationConfig = {
+  /** When true, run the TRUSTMEM 3-axis verification gate on candidates. */
+  enabled: boolean;
+  /** Minimum score (0–1) on each axis. If any axis falls below, promotion is blocked. */
+  thresholds: {
+    coverage: number;
+    preservation: number;
+    faithfulness: number;
+  };
+};
+
+export const DEFAULT_VERIFICATION_CONFIG: VerificationConfig = {
+  enabled: false,
+  thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7 },
+};
 
 export type ConsolidationConfig = {
   /** Minimum distinct L2 chunks that must emit a dedupKey before it can promote. */
@@ -21,6 +38,12 @@ export type ConsolidationConfig = {
   tentativeMinRecallCount: number;
   /** Dayspan bar for tentative-only candidates. */
   tentativeMinDayspanMs: number;
+  /**
+   * Optional TRUSTMEM 3-axis verification gate. When enabled, each candidate
+   * that passes promotion thresholds is additionally verified by an LLM for
+   * coverage, preservation, and faithfulness before L3 write.
+   */
+  verification?: VerificationConfig;
 };
 
 export const DEFAULT_CONSOLIDATION_CONFIG: ConsolidationConfig = {
@@ -147,6 +170,187 @@ export function passesPromotionThresholds(
     return false;
   }
   return true;
+}
+
+/**
+ * Result of the TRUSTMEM 3-axis verification gate.
+ */
+export type VerificationResult = {
+  /** Candidates that passed all three axis thresholds. */
+  passed: ConsolidationCandidate[];
+  /** Candidates that were blocked by the gate. */
+  blocked: ConsolidationCandidate[];
+  /** Number of candidates blocked. */
+  blockedCount: number;
+};
+
+/**
+ * Run the TRUSTMEM 3-axis verification gate on promotable candidates.
+ * Checks coverage (all source info captured), preservation (nothing lost
+ * from prior L3), and faithfulness (no hallucination) per candidate.
+ *
+ * When the LLM caller is unavailable or verification is disabled,
+ * all candidates pass through unchanged.
+ */
+export async function runVerificationGate(params: {
+  candidates: ConsolidationCandidate[];
+  storage: Storage;
+  /** Prior L3 facts keyed by dedupKey, for preservation checks. */
+  priorFacts: ReadonlyMap<string, LongTermFact>;
+  llm: LlmCaller | null;
+  config: VerificationConfig;
+}): Promise<VerificationResult> {
+  if (!params.config.enabled || !params.llm || params.candidates.length === 0) {
+    return { passed: params.candidates, blocked: [], blockedCount: 0 };
+  }
+
+  // Gather source material per candidate
+  const candidateInputs: Array<{
+    candidate: ConsolidationCandidate;
+    sourceFacts: string[];
+    priorText: string | null;
+  }> = [];
+  for (const candidate of params.candidates) {
+    const sourceFacts: string[] = [];
+    for (const chunkId of candidate.sourceChunkIds) {
+      // Find the chunk path by scanning (inefficient but bounded —
+      // sourceChunkIds is small)
+      const paths = await params.storage.listL2ChunkPaths();
+      for (const p of paths) {
+        const doc = await params.storage.readL2ChunkAtPath(p);
+        if (doc && doc.frontmatter.id === chunkId) {
+          for (const f of doc.frontmatter.facts) {
+            if (f.dedupKey === candidate.dedupKey) {
+              sourceFacts.push(f.text);
+            }
+          }
+          break;
+        }
+      }
+    }
+    const prior = params.priorFacts.get(candidate.dedupKey);
+    candidateInputs.push({
+      candidate,
+      sourceFacts,
+      priorText: prior ? prior.text : null,
+    });
+  }
+
+  const userPrompt = buildVerificationPrompt(candidateInputs);
+  let raw: string;
+  try {
+    raw = await params.llm({
+      systemPrompt: VERIFICATION_SYSTEM_PROMPT,
+      userPrompt,
+      thinking: false,
+    });
+  } catch {
+    // LLM failure must not block consolidation — fall through to pass-all.
+    return { passed: params.candidates, blocked: [], blockedCount: 0 };
+  }
+
+  const scores = parseVerificationResponse(raw, params.candidates.length);
+  const passed: ConsolidationCandidate[] = [];
+  const blocked: ConsolidationCandidate[] = [];
+  for (let i = 0; i < params.candidates.length; i++) {
+    const s = scores[i];
+    const candidate = params.candidates[i];
+    if (
+      s.coverage >= params.config.thresholds.coverage &&
+      s.preservation >= params.config.thresholds.preservation &&
+      s.faithfulness >= params.config.thresholds.faithfulness
+    ) {
+      passed.push(candidate);
+    } else {
+      blocked.push(candidate);
+    }
+  }
+  return { passed, blocked, blockedCount: blocked.length };
+}
+
+function buildVerificationPrompt(
+  inputs: Array<{
+    candidate: ConsolidationCandidate;
+    sourceFacts: string[];
+    priorText: string | null;
+  }>,
+): string {
+  const lines: string[] = [
+    "Verify each consolidation candidate below on three axes:",
+    "1. Coverage (0-1): did the consolidated text capture ALL relevant information from the source facts?",
+    "2. Preservation (0-1): if a prior long-term fact exists, was nothing lost compared to it? (1.0 if no prior)",
+    "3. Faithfulness (0-1): are there any hallucinations or unsupported claims in the consolidated text?",
+    "",
+    "Respond with a JSON object: { results: [{ coverage: number, preservation: number, faithfulness: number }] }",
+    "The results array must match the candidate order below.",
+    "",
+  ];
+  for (let i = 0; i < inputs.length; i++) {
+    const { candidate, sourceFacts, priorText } = inputs[i];
+    lines.push(`--- Candidate ${i + 1} ---`);
+    lines.push(`dedupKey: ${candidate.dedupKey}`);
+    lines.push(`consolidated text: ${candidate.text}`);
+    lines.push("source facts:");
+    for (const sf of sourceFacts) {
+      lines.push(`  - ${sf}`);
+    }
+    if (priorText) {
+      lines.push(`prior long-term fact: ${priorText}`);
+    } else {
+      lines.push("prior long-term fact: (none — new promotion)");
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+const VERIFICATION_SYSTEM_PROMPT =
+  "You are a memory-quality verifier. Score each consolidation candidate on three axes (coverage, preservation, faithfulness) from 0 to 1. Be strict: any hallucination or missing information should score below 0.7. Output valid JSON only.";
+
+function parseVerificationResponse(
+  raw: string,
+  expectedCount: number,
+): Array<{
+  coverage: number;
+  preservation: number;
+  faithfulness: number;
+}> {
+  try {
+    const parsed = JSON.parse(raw.trim().replace(/^```json\s*|\s*```$/g, "")) as unknown;
+    if (!parsed || typeof parsed !== "object") return fillDefaults(expectedCount);
+    const obj = parsed as { results?: unknown };
+    if (!Array.isArray(obj.results)) return fillDefaults(expectedCount);
+    const out: Array<{ coverage: number; preservation: number; faithfulness: number }> = [];
+    for (const item of obj.results) {
+      if (!item || typeof item !== "object") {
+        out.push({ coverage: 1, preservation: 1, faithfulness: 1 });
+        continue;
+      }
+      const i = item as Record<string, unknown>;
+      out.push({
+        coverage: typeof i.coverage === "number" ? clamp01(i.coverage) : 1,
+        preservation: typeof i.preservation === "number" ? clamp01(i.preservation) : 1,
+        faithfulness: typeof i.faithfulness === "number" ? clamp01(i.faithfulness) : 1,
+      });
+    }
+    // Pad if too short
+    while (out.length < expectedCount) {
+      out.push({ coverage: 1, preservation: 1, faithfulness: 1 });
+    }
+    return out.slice(0, expectedCount);
+  } catch {
+    return fillDefaults(expectedCount);
+  }
+}
+
+function fillDefaults(
+  n: number,
+): Array<{ coverage: number; preservation: number; faithfulness: number }> {
+  return Array.from({ length: n }, () => ({ coverage: 1, preservation: 1, faithfulness: 1 }));
+}
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
 }
 
 /**
