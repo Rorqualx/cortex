@@ -260,16 +260,97 @@ describe("createGlmCaller", () => {
     expect(body.messages[0]).toEqual({ role: "system", content: "sys" });
   });
 
-  it("throws when the response is not ok", async () => {
+  it("throws immediately on a non-retryable status (no retry)", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: false,
       status: 401,
       text: async () => "unauthorized",
+      headers: { get: () => null },
     }));
     const caller = createGlmCaller({
       apiKey: "bad",
       fetchImpl: fetchImpl as never,
     });
     await expect(caller({ systemPrompt: "s", userPrompt: "u" })).rejects.toThrow(/401/);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("retries a transient 429 then succeeds", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      if (calls < 3) {
+        return {
+          ok: false,
+          status: 429,
+          text: async () => "overloaded",
+          headers: { get: () => null },
+        } as never;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "recovered" } }] }),
+      } as never;
+    });
+    const caller = createGlmCaller({
+      apiKey: "k",
+      fetchImpl: fetchImpl as never,
+      retryBaseMs: 1,
+      sleepImpl: async () => {},
+    });
+    const result = await caller({ systemPrompt: "s", userPrompt: "u" });
+    expect(result).toBe("recovered");
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up after maxRetries on persistent 429", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 429,
+      text: async () => "overloaded",
+      headers: { get: () => null },
+    }));
+    const caller = createGlmCaller({
+      apiKey: "k",
+      fetchImpl: fetchImpl as never,
+      maxRetries: 2,
+      retryBaseMs: 1,
+      sleepImpl: async () => {},
+    });
+    await expect(caller({ systemPrompt: "s", userPrompt: "u" })).rejects.toThrow(/429/);
+    // first try + 2 retries
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("honors a numeric Retry-After header for the backoff delay", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          ok: false,
+          status: 429,
+          text: async () => "overloaded",
+          headers: { get: (h: string) => (h.toLowerCase() === "retry-after" ? "2" : null) },
+        } as never;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+      } as never;
+    });
+    const slept: number[] = [];
+    const caller = createGlmCaller({
+      apiKey: "k",
+      fetchImpl: fetchImpl as never,
+      sleepImpl: async (ms) => {
+        slept.push(ms);
+      },
+    });
+    const result = await caller({ systemPrompt: "s", userPrompt: "u" });
+    expect(result).toBe("ok");
+    expect(slept).toEqual([2000]);
   });
 });

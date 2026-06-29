@@ -524,8 +524,12 @@ async function main(): Promise<void> {
 
   const t0 = Date.now();
   const results = await runWithConcurrency(selected, CONCURRENCY, (q) =>
-    runQuestion(q, { apiKey, caller, embeddingProvider, ablation }).catch(
-      (e: unknown): QResult => ({
+    runQuestion(q, { apiKey, caller, embeddingProvider, ablation }).catch((e: unknown): QResult => {
+      // Surface swallowed per-question failures; a silent "" answer otherwise
+      // masks code crashes (e.g. a broken ablation path) as judged misses.
+      const err = e instanceof Error ? e : new Error(String(e));
+      console.error(`\n  [error] ${q.question_id}: ${err.stack ?? err.message}`);
+      return {
         question_id: q.question_id,
         question_type: q.question_type,
         hypothesis: "",
@@ -533,9 +537,9 @@ async function main(): Promise<void> {
         exact_hit: false,
         retrieved: 0,
         memory_chars: 0,
-        error: (e as Error).message,
-      }),
-    ),
+        error: err.message,
+      };
+    }),
   );
   const elapsedMin = ((Date.now() - t0) / 60000).toFixed(1);
 

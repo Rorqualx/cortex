@@ -64,6 +64,11 @@ async function resolveZaiKey() {
   return key;
 }
 
+// 429 = overload/rate limit; 5xx = transient. Without retry a single Z.ai burst
+// turns judge verdicts into errors and corrupts the whole arm's accuracy.
+const RETRYABLE_JUDGE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function callJudge({ apiKey, prompt }) {
   const isOpenAI = JUDGE_MODEL.startsWith("gpt-");
   const url = isOpenAI
@@ -77,17 +82,28 @@ async function callJudge({ apiKey, prompt }) {
   if (!isOpenAI) {
     body.thinking = { type: "disabled" };
   }
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body),
-  });
-  const text = await resp.text();
-  if (!resp.ok) {
-    throw new Error(`HTTP ${resp.status}: ${text.slice(0, 300)}`);
+  const maxRetries = 5;
+  for (let attempt = 0; ; attempt++) {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+    });
+    const text = await resp.text();
+    if (resp.ok) {
+      const json = JSON.parse(text);
+      return json.choices?.[0]?.message?.content ?? "";
+    }
+    if (attempt >= maxRetries || !RETRYABLE_JUDGE_STATUSES.has(resp.status)) {
+      throw new Error(`HTTP ${resp.status}: ${text.slice(0, 300)}`);
+    }
+    const retryAfter = Number(resp.headers.get("retry-after"));
+    const delay =
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 60_000)
+        : Math.round(Math.min(1000 * 2 ** attempt, 30_000) * (0.5 + Math.random() * 0.5));
+    await sleep(delay);
   }
-  const json = JSON.parse(text);
-  return json.choices?.[0]?.message?.content ?? "";
 }
 
 function parseVerdict(raw) {

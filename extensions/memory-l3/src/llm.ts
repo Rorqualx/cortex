@@ -12,13 +12,49 @@ export type GlmCallerConfig = {
   baseUrl?: string;
   model?: string;
   fetchImpl?: typeof fetch;
+  // Bounded retry for transient overload (429) / 5xx. Z.ai returns 429 code
+  // 1305 "service temporarily overloaded" under burst; without retry a single
+  // blip fails the whole consolidation/answer call. maxRetries = extra attempts
+  // after the first (total tries = maxRetries + 1).
+  maxRetries?: number;
+  retryBaseMs?: number;
+  sleepImpl?: (ms: number) => Promise<void>;
 };
 
 export const DEFAULT_GLM_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
 export const DEFAULT_GLM_MODEL = "glm-5.1";
 
+// 429 = rate limit/overload; 5xx = transient server error. 4xx (auth, bad
+// request) are caller faults and must fail fast, not retry.
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+// Honor Retry-After (delta-seconds or HTTP-date) when present; else exponential
+// backoff with full jitter, capped so a long outage does not stall unboundedly.
+function backoffMs(attempt: number, baseMs: number, retryAfter: string | null): number {
+  if (retryAfter) {
+    const secs = Number(retryAfter);
+    if (Number.isFinite(secs)) {
+      return Math.min(secs * 1000, 60_000);
+    }
+    const dateMs = Date.parse(retryAfter);
+    if (Number.isFinite(dateMs)) {
+      return Math.min(Math.max(dateMs - Date.now(), 0), 60_000);
+    }
+  }
+  const exp = Math.min(baseMs * 2 ** attempt, 30_000);
+  return Math.round(exp * (0.5 + Math.random() * 0.5));
+}
+
 export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
   const fetchImpl = config.fetchImpl ?? fetch;
+  const sleep = config.sleepImpl ?? defaultSleep;
+  const maxRetries = config.maxRetries ?? 5;
+  const retryBaseMs = config.retryBaseMs ?? 1000;
   return async ({ systemPrompt, userPrompt, thinking }) => {
     const baseUrl = config.baseUrl ?? DEFAULT_GLM_BASE_URL;
     const body: Record<string, unknown> = {
@@ -32,22 +68,27 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
     if (thinking !== undefined) {
       body.thinking = { type: thinking ? "enabled" : "disabled" };
     }
-    const response = await fetchImpl(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetchImpl(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        const json = (await response.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        return json.choices?.[0]?.message?.content ?? "";
+      }
       const text = await response.text();
-      throw new Error(`GLM call failed: ${response.status} ${text}`);
+      if (attempt >= maxRetries || !RETRYABLE_STATUSES.has(response.status)) {
+        throw new Error(`GLM call failed: ${response.status} ${text}`);
+      }
+      await sleep(backoffMs(attempt, retryBaseMs, response.headers?.get?.("retry-after") ?? null));
     }
-    const json = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    return json.choices?.[0]?.message?.content ?? "";
   };
 }
 
@@ -327,7 +368,9 @@ function normalizeCertainty(value: unknown): FactCertainty | undefined {
 }
 
 function normalizeSemanticEntropy(value: unknown): number | undefined {
-  if (typeof value !== "number") return undefined;
+  if (typeof value !== "number") {
+    return undefined;
+  }
   const clamped = Math.max(0, Math.min(1, value));
   return clamped;
 }
