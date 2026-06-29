@@ -51,6 +51,7 @@ const typedFact = (overrides: Partial<LongTermTypedFact>): LongTermTypedFact => 
   supersededBy: null,
   archived: false,
   archivedAt: null,
+  lastAccessedAt: NOW,
   ...overrides,
 });
 

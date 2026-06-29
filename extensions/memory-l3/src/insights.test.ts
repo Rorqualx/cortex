@@ -42,6 +42,7 @@ function typedFact(overrides: Partial<LongTermTypedFact> & { id: string }): Long
     supersededBy: null,
     archived: false,
     archivedAt: null,
+    lastAccessedAt: NOW - DAY_MS,
     ...overrides,
   };
 }

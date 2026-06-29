@@ -259,6 +259,10 @@ export type LongTermTypedFact = {
   /** When true, fact is hidden from retrieval but kept on disk for forensics. */
   archived: boolean;
   archivedAt: number | null;
+  /** ms timestamp of the most recent retrieval that included this fact.
+   * Used for access-time decay: facts that haven't been retrieved recently
+   * lose confidence over time. Defaults to lastConfirmedAt on creation. */
+  lastAccessedAt: number;
 };
 
 export type LongTermTypedFrontmatter = {

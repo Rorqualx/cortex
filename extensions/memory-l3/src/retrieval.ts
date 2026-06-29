@@ -9,6 +9,7 @@ import {
   type HebbianEdge,
   DEFAULT_HEBBIAN_CONFIG,
 } from "./hebbian.js";
+import { formatBody } from "./longterm-typed.js";
 import {
   readPromotedSkills,
   proceduralFactAsL2Fact,
@@ -237,7 +238,7 @@ export async function retrieveTopK(params: {
       continue;
     }
     items.push({
-      fact: longTermTypedAsL2Fact(ltt),
+      fact: longTermTypedAsL2Fact(ltt, now),
       chunkId: "longterm-typed",
       tier: "longterm-typed",
       l3Boost: 0,
@@ -522,6 +523,33 @@ export async function retrieveTopK(params: {
   const finalFacts = result.slice(0, topK);
 
   // -----------------------------------------------------------------
+  // Access-time tracking for typed facts (SaliMory-style decay)
+  // -----------------------------------------------------------------
+  // Update lastAccessedAt on retrieved typed facts so the access-time
+  // decay accurately reflects recent retrieval. Non-fatal — failure must
+  // not block retrieval.
+  try {
+    const retrievedTypedSlots = finalFacts
+      .filter((r) => r.tier === "longterm-typed")
+      .map((r) => r.fact.dedupKey);
+    if (retrievedTypedSlots.length > 0) {
+      const lttFrontmatter = await params.storage.readLongTermTyped();
+      let mutated = false;
+      for (const fact of lttFrontmatter.facts) {
+        if (!fact.archived && retrievedTypedSlots.includes(fact.slot)) {
+          fact.lastAccessedAt = now;
+          mutated = true;
+        }
+      }
+      if (mutated) {
+        await params.storage.writeLongTermTyped(lttFrontmatter, formatBody(lttFrontmatter.facts));
+      }
+    }
+  } catch {
+    // Access-time update is non-critical — skip silently.
+  }
+
+  // -----------------------------------------------------------------
   // Retrieval-time Hebbian edge strengthening (AtomMem-style)
   // -----------------------------------------------------------------
   // Facts that surface together in the same retrieval result strengthen
@@ -581,15 +609,32 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
   };
 }
 
-function longTermTypedAsL2Fact(ltt: LongTermTypedFact): L2Fact {
+function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
   const text = ltt.unit ? `${ltt.slot} = ${ltt.value} ${ltt.unit}` : `${ltt.slot} = ${ltt.value}`;
+  const decayedConfidence = typedFactAccessDecay(ltt.confidence, ltt.lastAccessedAt, now);
   return {
     id: ltt.id,
     text,
-    importance: ltt.confidence,
+    importance: decayedConfidence,
     createdAt: ltt.lastConfirmedAt,
     dedupKey: ltt.slot,
   };
+}
+
+/** Default half-life for typed-fact access-time decay, in days.
+ *  Typed facts are canonical and more stable than L2 facts, so they
+ *  decay more slowly (30 days vs 7 days for L2 recency). */
+const TYPED_FACT_ACCESS_HALF_LIFE_DAYS = 30;
+
+/**
+ * Apply access-time decay to a typed fact's confidence.
+ * Facts that haven't been retrieved recently lose confidence over time.
+ * Formula: confidence * exp(-ageDays / halfLife)
+ */
+function typedFactAccessDecay(confidence: number, lastAccessedAt: number, now: number): number {
+  const ageMs = Math.max(0, now - lastAccessedAt);
+  const ageDays = ageMs / MS_PER_DAY;
+  return confidence * Math.exp(-ageDays / TYPED_FACT_ACCESS_HALF_LIFE_DAYS);
 }
 
 /**
