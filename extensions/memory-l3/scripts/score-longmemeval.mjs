@@ -72,7 +72,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Proactive ~1s min-gap, shared across concurrent judge workers, so the judge
 // coexists with the live gateway under the shared rate limit (matches the
 // runner's throttle). Each call reserves the next slot before firing.
-const JUDGE_MIN_INTERVAL_MS = 1000;
+const JUDGE_MIN_INTERVAL_MS = Number(process.env.ZENBRAIN_MIN_INTERVAL_MS ?? 1000);
 let judgeNextAllowedAt = 0;
 async function throttleJudge() {
   const now = Date.now();
@@ -83,18 +83,26 @@ async function throttleJudge() {
   }
 }
 
+// Optional generic OpenAI-compatible judge endpoint (e.g. DeepSeek) so the judge
+// can bypass a congested Z.ai. Set JUDGE_BASE_URL + JUDGE_API_KEY + JUDGE_MODEL.
+const JUDGE_BASE_URL = process.env.JUDGE_BASE_URL ?? null;
+
 async function callJudge({ apiKey, prompt }) {
   await throttleJudge();
   const isOpenAI = JUDGE_MODEL.startsWith("gpt-");
-  const url = isOpenAI
-    ? "https://api.openai.com/v1/chat/completions"
-    : "https://api.z.ai/api/coding/paas/v4/chat/completions";
+  const isZai = !isOpenAI && !JUDGE_BASE_URL;
+  const url = JUDGE_BASE_URL
+    ? `${JUDGE_BASE_URL.replace(/\/$/, "")}/chat/completions`
+    : isOpenAI
+      ? "https://api.openai.com/v1/chat/completions"
+      : "https://api.z.ai/api/coding/paas/v4/chat/completions";
   const body = {
     model: JUDGE_MODEL,
     messages: [{ role: "user", content: prompt }],
     temperature: 0,
   };
-  if (!isOpenAI) {
+  // `thinking` is a Z.ai-specific param; other providers reject it.
+  if (isZai) {
     body.thinking = { type: "disabled" };
   }
   // Aggressive budget: judge shares the Z.ai key with the live gateway, so it
@@ -188,12 +196,14 @@ async function main() {
     .filter(Boolean);
   console.log(`Matched ${tasks.length} hypothesis-oracle pairs`);
 
-  const apiKey = JUDGE_MODEL.startsWith("gpt-")
-    ? (process.env.OPENAI_API_KEY ??
-      (() => {
-        throw new Error("OPENAI_API_KEY not set");
-      })())
-    : await resolveZaiKey();
+  const apiKey = process.env.JUDGE_API_KEY
+    ? process.env.JUDGE_API_KEY
+    : JUDGE_MODEL.startsWith("gpt-")
+      ? (process.env.OPENAI_API_KEY ??
+        (() => {
+          throw new Error("OPENAI_API_KEY not set");
+        })())
+      : await resolveZaiKey();
 
   const t0 = Date.now();
   const verdicts = await runWithConcurrency(tasks, CONCURRENCY, async (t) => {
