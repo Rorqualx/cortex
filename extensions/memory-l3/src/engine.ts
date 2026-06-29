@@ -344,10 +344,11 @@ export class HierarchicalL3Engine implements ContextEngine {
             now,
             workspaceDir: this.workspaceDir,
             embeddingProvider: await this.resolveEmbeddingProvider(),
+            llm: await this.resolveCaller(),
           });
           this.state.lastConsolidatedAt = now;
           l3debug(
-            `afterTurn(): consolidation promoted=${lt.promotedCount} reaffirmed=${lt.reaffirmedCount} archived=${lt.archivedCount} unarchived=${lt.unarchivedCount} active=${lt.activeCount}`,
+            `afterTurn(): consolidation promoted=${lt.promotedCount} reaffirmed=${lt.reaffirmedCount} archived=${lt.archivedCount} unarchived=${lt.unarchivedCount} blocked=${lt.blockedCount} active=${lt.activeCount}`,
           );
           // Cross-context publish: share promoted facts with other agents/sessions.
           try {

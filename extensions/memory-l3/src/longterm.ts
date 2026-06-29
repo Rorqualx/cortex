@@ -5,9 +5,12 @@ import {
   type ConsolidationCandidate,
   type ConsolidationConfig,
   DEFAULT_CONSOLIDATION_CONFIG,
+  type VerificationResult,
+  runVerificationGate,
   selectPromotable,
 } from "./consolidation.js";
 import { adjustImportance } from "./entities.js";
+import type { LlmCaller } from "./llm.js";
 import { cosineSimilarity, jaccard, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type { LongTermFact, LongTermFrontmatter } from "./types.js";
@@ -72,6 +75,8 @@ export type ConsolidationOutput = {
   unarchivedCount: number;
   /** Facts archived as semantically redundant of a higher-importance fact (FSFM). */
   semanticDedupCount: number;
+  /** Candidates blocked by the TRUSTMEM verification gate. */
+  blockedCount: number;
   /** Total active facts after the pass (excludes archived). */
   activeCount: number;
 };
@@ -95,6 +100,12 @@ export async function consolidateLongTerm(params: {
    */
   workspaceDir?: string;
   /**
+   * Optional LLM caller for the TRUSTMEM 3-axis verification gate.
+   * When provided and verification is enabled in consolidationConfig,
+   * candidates are verified before promotion.
+   */
+  llm?: LlmCaller;
+  /**
    * Optional embedding provider for pre-computing vectors at promotion time.
    * When provided, promoted/reaffirmed facts get an `embedding` field
    * enabling cosine-similarity semantic dedup and retrieval signals.
@@ -105,14 +116,29 @@ export async function consolidateLongTerm(params: {
   const consolidationConfig = params.consolidationConfig ?? DEFAULT_CONSOLIDATION_CONFIG;
   const longTermConfig = params.longTermConfig ?? DEFAULT_LONG_TERM_CONFIG;
 
-  const promotable = await selectPromotable(params.storage, consolidationConfig);
-  const promotableByKey = new Map(promotable.map((c) => [c.dedupKey, c]));
-
   const existing = await params.storage.readLongTerm();
   const merged = new Map<string, LongTermFact>();
   for (const fact of existing.facts) {
     merged.set(fact.dedupKey, fact);
   }
+
+  const promotable = await selectPromotable(params.storage, consolidationConfig);
+
+  // TRUSTMEM 3-axis verification gate (optional — disabled by default)
+  const verificationResult = await runVerificationGate({
+    candidates: promotable,
+    storage: params.storage,
+    priorFacts: merged,
+    llm: params.llm ?? null,
+    config: consolidationConfig.verification ?? {
+      enabled: false,
+      thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7 },
+    },
+  });
+  const verifiedPromotable = verificationResult.passed;
+  const blockedCount = verificationResult.blockedCount;
+
+  const promotableByKey = new Map(verifiedPromotable.map((c) => [c.dedupKey, c]));
 
   let promotedCount = 0;
   let reaffirmedCount = 0;
@@ -122,7 +148,7 @@ export async function consolidateLongTerm(params: {
   const factsNeedingEmbedding: Array<{ dedupKey: string; text: string }> = [];
   const pendingFacts = new Map<string, LongTermFact>();
 
-  for (const candidate of promotable) {
+  for (const candidate of verifiedPromotable) {
     const prior = merged.get(candidate.dedupKey);
     if (!prior) {
       const fact = promote(candidate);
@@ -369,6 +395,7 @@ export async function consolidateLongTerm(params: {
     epochGraceCount,
     unarchivedCount,
     semanticDedupCount,
+    blockedCount,
     activeCount: adjustedFacts.filter((f) => !f.archived).length,
   };
 }
