@@ -82,7 +82,9 @@ async function callJudge({ apiKey, prompt }) {
   if (!isOpenAI) {
     body.thinking = { type: "disabled" };
   }
-  const maxRetries = 5;
+  // Aggressive budget: judge shares the Z.ai key with the live gateway, so it
+  // must ride out sustained contention. ~10 attempts at up to 60s spacing.
+  const maxRetries = 10;
   for (let attempt = 0; ; attempt++) {
     const resp = await fetch(url, {
       method: "POST",
@@ -101,7 +103,7 @@ async function callJudge({ apiKey, prompt }) {
     const delay =
       Number.isFinite(retryAfter) && retryAfter > 0
         ? Math.min(retryAfter * 1000, 60_000)
-        : Math.round(Math.min(1000 * 2 ** attempt, 30_000) * (0.5 + Math.random() * 0.5));
+        : Math.round(Math.min(1000 * 2 ** attempt, 60_000) * (0.5 + Math.random() * 0.5));
     await sleep(delay);
   }
 }

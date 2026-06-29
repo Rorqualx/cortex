@@ -519,7 +519,10 @@ async function main(): Promise<void> {
   );
 
   const apiKey = await resolveZaiKey();
-  const caller = createGlmCaller({ apiKey });
+  // Aggressive retry budget: the eval shares the Z.ai key with the live gateway,
+  // so calls must ride out sustained production contention (not just brief blips).
+  // ~10 attempts at up to 60s spacing ≈ several minutes of ride-through per call.
+  const caller = createGlmCaller({ apiKey, maxRetries: 10, maxBackoffMs: 60_000 });
   const embeddingProvider = await resolveEmbeddingProvider(ablation.useQueryEmbedding);
 
   const t0 = Date.now();

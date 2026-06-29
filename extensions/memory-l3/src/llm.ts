@@ -18,6 +18,9 @@ export type GlmCallerConfig = {
   // after the first (total tries = maxRetries + 1).
   maxRetries?: number;
   retryBaseMs?: number;
+  // Per-attempt backoff ceiling. Default 30s; raise (e.g. 60s) when riding out
+  // sustained contention so retries space out instead of hammering the limiter.
+  maxBackoffMs?: number;
   sleepImpl?: (ms: number) => Promise<void>;
 };
 
@@ -35,18 +38,23 @@ const defaultSleep = (ms: number): Promise<void> =>
 
 // Honor Retry-After (delta-seconds or HTTP-date) when present; else exponential
 // backoff with full jitter, capped so a long outage does not stall unboundedly.
-function backoffMs(attempt: number, baseMs: number, retryAfter: string | null): number {
+function backoffMs(
+  attempt: number,
+  baseMs: number,
+  capMs: number,
+  retryAfter: string | null,
+): number {
   if (retryAfter) {
     const secs = Number(retryAfter);
     if (Number.isFinite(secs)) {
-      return Math.min(secs * 1000, 60_000);
+      return Math.min(secs * 1000, capMs);
     }
     const dateMs = Date.parse(retryAfter);
     if (Number.isFinite(dateMs)) {
-      return Math.min(Math.max(dateMs - Date.now(), 0), 60_000);
+      return Math.min(Math.max(dateMs - Date.now(), 0), capMs);
     }
   }
-  const exp = Math.min(baseMs * 2 ** attempt, 30_000);
+  const exp = Math.min(baseMs * 2 ** attempt, capMs);
   return Math.round(exp * (0.5 + Math.random() * 0.5));
 }
 
@@ -55,6 +63,7 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
   const sleep = config.sleepImpl ?? defaultSleep;
   const maxRetries = config.maxRetries ?? 5;
   const retryBaseMs = config.retryBaseMs ?? 1000;
+  const maxBackoffMs = config.maxBackoffMs ?? 30_000;
   return async ({ systemPrompt, userPrompt, thinking }) => {
     const baseUrl = config.baseUrl ?? DEFAULT_GLM_BASE_URL;
     const body: Record<string, unknown> = {
@@ -87,7 +96,14 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
       if (attempt >= maxRetries || !RETRYABLE_STATUSES.has(response.status)) {
         throw new Error(`GLM call failed: ${response.status} ${text}`);
       }
-      await sleep(backoffMs(attempt, retryBaseMs, response.headers?.get?.("retry-after") ?? null));
+      await sleep(
+        backoffMs(
+          attempt,
+          retryBaseMs,
+          maxBackoffMs,
+          response.headers?.get?.("retry-after") ?? null,
+        ),
+      );
     }
   };
 }
