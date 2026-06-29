@@ -29,7 +29,7 @@ const INTERNAL_CHANNEL_TRACE_LINE_RE =
  * closing tag, or to end-of-string if the stream was truncated mid-tag.
  */
 const TOOL_CALL_QUICK_RE =
-  /<\s*\/?\s*(?:tool_call|tool_result|function_calls?|function_response|function|tool_calls)\b/i;
+  /<\s*\/?\s*(?:antml:)?(?:tool_call|tool_result|function_calls?|function_response|function|tool_calls|invoke|parameter)\b/i;
 const TOOL_CALL_TAG_NAMES = new Set([
   "tool_call",
   "tool_result",
@@ -38,11 +38,13 @@ const TOOL_CALL_TAG_NAMES = new Set([
   "function_response",
   "function",
   "tool_calls",
+  "antml:invoke",
+  "antml:parameter",
 ]);
 const TOOL_CALL_JSON_PAYLOAD_START_RE =
   /^(?:\s+[A-Za-z_:][-A-Za-z0-9_:.]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))*\s*(?:\r?\n\s*)?[[{]/;
 const TOOL_CALL_XML_PAYLOAD_START_RE =
-  /^\s*(?:\r?\n\s*)?<(?:function_call|tool_call|function|invoke|parameters?|arguments?)\b/i;
+  /^\s*(?:\r?\n\s*)?<(?:antml:)?(?:function_call|tool_call|function|invoke|parameters?|arguments?)\b/i;
 const NESTED_JSON_TOOL_CALL_PAYLOAD_START_RE = /^\s*(?:\r?\n\s*)?<(?:function_call|tool_call)\b/i;
 
 type ToolCallPayloadKind = "json" | "xml" | null;
@@ -295,7 +297,7 @@ function parseToolCallTagAt(text: string, start: number): ParsedToolCallTag | nu
   }
 
   const nameStart = cursor;
-  while (cursor < text.length && /[A-Za-z_]/.test(text[cursor])) {
+  while (cursor < text.length && /[A-Za-z_:]/.test(text[cursor])) {
     cursor += 1;
   }
 
@@ -403,6 +405,7 @@ export function stripToolCallXmlTags(
       const shouldDetectXmlPayload =
         tag.tagName === "tool_call" ||
         tag.tagName === "function" ||
+        tag.tagName === "antml:invoke" ||
         ((options.stripFunctionCallsXmlPayloads === true ||
           shouldStripPluralWrapperBeforeResponse) &&
           isPluralToolCallWrapper);
