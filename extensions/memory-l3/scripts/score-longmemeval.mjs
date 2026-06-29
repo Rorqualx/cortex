@@ -21,7 +21,7 @@ const hypArg =
   args.find((a) => !a.startsWith("--")) ?? "/tmp/longmemeval/hypothesis-stratified30.jsonl";
 const concArg = args.find((a) => a.startsWith("--concurrency="));
 const CONCURRENCY = concArg ? Number.parseInt(concArg.split("=")[1], 10) : 5;
-const JUDGE_MODEL = process.env.JUDGE_MODEL ?? "glm-5.1";
+const JUDGE_MODEL = process.env.JUDGE_MODEL ?? "glm-5.2";
 
 // Verbatim prompt templates from LongMemEval's evaluate_qa.py.
 const TEMPLATES = {
@@ -69,7 +69,22 @@ async function resolveZaiKey() {
 const RETRYABLE_JUDGE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Proactive ~1s min-gap, shared across concurrent judge workers, so the judge
+// coexists with the live gateway under the shared rate limit (matches the
+// runner's throttle). Each call reserves the next slot before firing.
+const JUDGE_MIN_INTERVAL_MS = 1000;
+let judgeNextAllowedAt = 0;
+async function throttleJudge() {
+  const now = Date.now();
+  const wait = Math.max(0, judgeNextAllowedAt - now);
+  judgeNextAllowedAt = Math.max(judgeNextAllowedAt, now) + JUDGE_MIN_INTERVAL_MS;
+  if (wait > 0) {
+    await sleep(wait);
+  }
+}
+
 async function callJudge({ apiKey, prompt }) {
+  await throttleJudge();
   const isOpenAI = JUDGE_MODEL.startsWith("gpt-");
   const url = isOpenAI
     ? "https://api.openai.com/v1/chat/completions"

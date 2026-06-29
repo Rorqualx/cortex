@@ -21,11 +21,16 @@ export type GlmCallerConfig = {
   // Per-attempt backoff ceiling. Default 30s; raise (e.g. 60s) when riding out
   // sustained contention so retries space out instead of hammering the limiter.
   maxBackoffMs?: number;
+  // Proactive throttle: minimum gap between successive requests from this caller.
+  // Default 0 (no spacing). Set (e.g. 1000) so a batch eval coexists with the
+  // live gateway under a shared per-minute rate limit instead of bursting into
+  // 429s. Reactive backoff alone only kicks in after a failure; this prevents it.
+  minIntervalMs?: number;
   sleepImpl?: (ms: number) => Promise<void>;
 };
 
 export const DEFAULT_GLM_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
-export const DEFAULT_GLM_MODEL = "glm-5.1";
+export const DEFAULT_GLM_MODEL = "glm-5.2";
 
 // 429 = rate limit/overload; 5xx = transient server error. 4xx (auth, bad
 // request) are caller faults and must fail fast, not retry.
@@ -64,7 +69,19 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
   const maxRetries = config.maxRetries ?? 5;
   const retryBaseMs = config.retryBaseMs ?? 1000;
   const maxBackoffMs = config.maxBackoffMs ?? 30_000;
+  const minIntervalMs = config.minIntervalMs ?? 0;
+  // Shared across concurrent calls so the gap is global, not per-invocation:
+  // each call reserves the next slot before issuing its request.
+  let nextAllowedAt = 0;
   return async ({ systemPrompt, userPrompt, thinking }) => {
+    if (minIntervalMs > 0) {
+      const now = Date.now();
+      const wait = Math.max(0, nextAllowedAt - now);
+      nextAllowedAt = Math.max(nextAllowedAt, now) + minIntervalMs;
+      if (wait > 0) {
+        await sleep(wait);
+      }
+    }
     const baseUrl = config.baseUrl ?? DEFAULT_GLM_BASE_URL;
     const body: Record<string, unknown> = {
       model: config.model ?? DEFAULT_GLM_MODEL,

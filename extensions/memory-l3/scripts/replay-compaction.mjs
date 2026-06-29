@@ -189,7 +189,7 @@ async function callGlm({ apiKey, systemPrompt, userPrompt }) {
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "glm-5.1",
+      model: "glm-5.2",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

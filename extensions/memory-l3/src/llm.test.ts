@@ -323,6 +323,27 @@ describe("createGlmCaller", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("throttles successive calls by minIntervalMs", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: "x" } }] }),
+    }));
+    const waits: number[] = [];
+    const caller = createGlmCaller({
+      apiKey: "k",
+      fetchImpl: fetchImpl as never,
+      minIntervalMs: 1000,
+      sleepImpl: async (ms) => {
+        waits.push(ms);
+      },
+    });
+    await caller({ systemPrompt: "s", userPrompt: "u" });
+    await caller({ systemPrompt: "s", userPrompt: "u" });
+    // First call fires immediately; the second waits ~minIntervalMs for its slot.
+    expect(waits.some((w) => w >= 900)).toBe(true);
+  });
+
   it("honors a numeric Retry-After header for the backoff delay", async () => {
     let calls = 0;
     const fetchImpl = vi.fn(async () => {

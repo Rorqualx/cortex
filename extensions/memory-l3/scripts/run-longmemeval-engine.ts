@@ -519,10 +519,16 @@ async function main(): Promise<void> {
   );
 
   const apiKey = await resolveZaiKey();
-  // Aggressive retry budget: the eval shares the Z.ai key with the live gateway,
-  // so calls must ride out sustained production contention (not just brief blips).
-  // ~10 attempts at up to 60s spacing ≈ several minutes of ride-through per call.
-  const caller = createGlmCaller({ apiKey, maxRetries: 10, maxBackoffMs: 60_000 });
+  // Eval shares the Z.ai key with the live gateway. Two defenses: a proactive
+  // ~1s min-gap so the batch never bursts into the shared per-minute limit, plus
+  // an aggressive retry budget (~10 attempts, up to 60s spacing) to ride out any
+  // residual contention. The throttle prevents 429s; the retry survives them.
+  const caller = createGlmCaller({
+    apiKey,
+    minIntervalMs: 1000,
+    maxRetries: 10,
+    maxBackoffMs: 60_000,
+  });
   const embeddingProvider = await resolveEmbeddingProvider(ablation.useQueryEmbedding);
 
   const t0 = Date.now();

@@ -238,7 +238,7 @@ async function callGlm({ apiKey, systemPrompt, userPrompt }) {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: "glm-5.1",
+      model: "glm-5.2",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
