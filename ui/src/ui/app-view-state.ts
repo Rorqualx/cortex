@@ -57,6 +57,7 @@ import type {
   StatusSummary,
   ToolsCatalogResult,
 } from "./types.ts";
+import type { SessionBranchPoint } from "./types/chat-types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 import type { SessionLogEntry } from "./views/usage.ts";
@@ -112,7 +113,9 @@ export type AppViewState = ScrollHost &
     chatSending: boolean;
     // Branch points for the active thread, populated by the chat controller and
     // read by the message-editor branch-navigation handlers.
-    branchPoints?: unknown[];
+    branchPoints?: SessionBranchPoint[];
+    // Active branch path (root→leaf entry IDs) used to anchor branch dividers.
+    branchActivePath?: string[];
     // LitElement re-render trigger; present because the runtime state is the app
     // component. Optional so non-element state shapes (tests) stay assignable.
     requestUpdate?: () => void;

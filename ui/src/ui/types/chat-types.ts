@@ -2,6 +2,26 @@
  * Chat message types for the UI layer.
  */
 
+/**
+ * A branch point from the chat.branches RPC — one transcript entry with more
+ * than one child conversation. Mirrors SessionBranchPoint in
+ * src/gateway/server-methods/chat-branch.ts; both must stay in sync.
+ */
+export interface SessionBranchPoint {
+  entryId: string;
+  parentId: string | null;
+  childCount: number;
+  /** Child entry IDs in transcript order — the order the navigator cycles. */
+  childIds: string[];
+  /** The child on the active branch path, or null when off it. */
+  activeChildId: string | null;
+  isActive: boolean;
+  isLeaf: boolean;
+  label?: string;
+  timestamp: string;
+  type: string;
+}
+
 /** Union type for items in the chat thread */
 export type ChatItem =
   | { kind: "message"; key: string; message: unknown; duplicateCount?: number }

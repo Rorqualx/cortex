@@ -232,6 +232,8 @@ export type ChatProps = {
   };
   /** Branch points for visual branch navigation indicators. */
   branchPoints?: unknown[];
+  /** Active branch path (root→leaf entry IDs) — anchors branch-point dividers. */
+  branchActivePath?: unknown[];
   /** Branch navigate handler: (entryId, direction) => void. */
   onBranchNavigate?: (entryId: string, direction: "prev" | "next") => void;
   /** Branch-from-message handler: triggered when user clicks edit/branch on any message. */
@@ -1696,6 +1698,7 @@ export function renderChat(props: ChatProps) {
     searchOpen: vs.searchOpen,
     searchQuery: vs.searchQuery,
     branchPoints: props.branchPoints as BuildChatItemsProps["branchPoints"],
+    branchActivePath: props.branchActivePath as BuildChatItemsProps["branchActivePath"],
     runStatus: props.runStatus as BuildChatItemsProps["runStatus"],
     historyRenderLimit: props.historyRenderLimit,
   });

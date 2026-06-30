@@ -1,7 +1,6 @@
 // Control UI tests cover build chat items behavior.
 import { describe, expect, it } from "vitest";
-import type { MessageGroup } from "../types/chat-types.ts";
-import type { SessionBranchPoint } from "./branch-service.ts";
+import type { MessageGroup, SessionBranchPoint } from "../types/chat-types.ts";
 import { buildChatItems, type BuildChatItemsProps } from "./build-chat-items.ts";
 
 const SENDER_METADATA_BLOCK =
@@ -282,6 +281,47 @@ describe("buildChatItems", () => {
       { text: "After tool." },
       { text: "Final sentence." },
     ]);
+  });
+
+  it("drops a lingering segment that matches an earlier (non-final) turn message", () => {
+    // A multi-step turn: the pre-tool burst persists in the FIRST assistant
+    // message, the post-tool reply in the second. The committed segment for the
+    // pre-tool burst must not survive as a near-duplicate of the first message
+    // just because it isn't a prefix of the last one.
+    const items = buildChatItems(
+      createProps({
+        messages: [
+          { role: "user", content: "do it", timestamp: 1 },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "Got it. Let me build it." }],
+            timestamp: 2,
+          },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "Cron job created. Done." }],
+            timestamp: 4,
+          },
+        ],
+        streamSegments: [{ text: "Got it. Let me build it.", ts: 3 }],
+      }),
+    );
+
+    expect(items.some((item) => item.kind === "stream")).toBe(false);
+  });
+
+  it("keeps a stream segment that no turn message contains yet", () => {
+    // Mid-run: the burst is streamed but not yet persisted, so it must remain.
+    const items = buildChatItems(
+      createProps({
+        messages: [{ role: "user", content: "do it", timestamp: 1 }],
+        streamSegments: [{ text: "Working on it.", ts: 2 }],
+      }),
+    );
+
+    expect(items.some((item) => item.kind === "stream" && item.text === "Working on it.")).toBe(
+      true,
+    );
   });
 
   it("suppresses metadata-only history messages before grouping", () => {
@@ -875,8 +915,9 @@ describe("buildChatItems", () => {
       entryId: "e1",
       parentId: null,
       childCount: 2,
-      childIds: ["a", "b"],
-      isActive: false,
+      childIds: ["orig", "marker"],
+      activeChildId: "marker",
+      isActive: true,
       isLeaf: false,
       timestamp: "2026-01-01T00:00:00.000Z",
       type: "message",
@@ -884,43 +925,85 @@ describe("buildChatItems", () => {
     };
   }
 
-  it("places a matching branch divider next to its anchor, not at the bottom", () => {
+  function withEntryId(message: Record<string, unknown>, id: string): Record<string, unknown> {
+    return { ...message, __openclaw: { id } };
+  }
+
+  it("anchors an edit branch before the active child's first visible message", () => {
+    // Non-root edit: branch point at parent P, active child is the (non-visible)
+    // branch marker, and the first visible message after it is the edited turn.
     const items = buildChatItems(
       createProps({
         messages: [
-          { role: "user", id: "m1", content: "first", timestamp: 1000 },
-          {
-            role: "assistant",
-            id: "m2",
-            content: [{ type: "text", text: "reply" }],
-            timestamp: 1001,
-          },
+          withEntryId({ role: "user", content: "parent", timestamp: 1000 }, "P"),
+          withEntryId({ role: "user", content: "edited", timestamp: 1001 }, "C"),
         ],
-        branchPoints: [branchPoint({ entryId: "e1", messageId: "m1" })],
+        branchPoints: [
+          branchPoint({ entryId: "P", childIds: ["orig", "marker"], activeChildId: "marker" }),
+        ],
+        branchActivePath: ["P", "marker", "C"],
       }),
     );
 
     const branchIndex = items.findIndex((item) => item.kind === "branch-point");
-    expect(branchIndex).toBe(1); // between the user group and the assistant group
+    expect(branchIndex).toBe(1); // between the parent group and the edited message
     expect(items[branchIndex]).toMatchObject({
       kind: "branch-point",
-      entryId: "e1",
+      entryId: "P",
       childCount: 2,
+      activeChildIndex: 1, // "marker" is the second child → counter shows 2 / 2
     });
     expect(items.at(-1)?.kind).not.toBe("branch-point");
   });
 
-  it("surfaces an orphaned branch point (first-message edit) at the top", () => {
+  it("anchors a first-message edit above the first visible message, not detached", () => {
+    // Root edit: parent is the root, so the divider lands above the first
+    // visible (edited) message in-context rather than orphaned at the top.
     const items = buildChatItems(
       createProps({
-        // The abandoned original isn't on the displayed path, so its branch
-        // point can't anchor to a visible message.
-        messages: [{ role: "user", id: "edited", content: "edited first", timestamp: 2000 }],
-        branchPoints: [branchPoint({ entryId: "orig", messageId: "abandoned-original" })],
+        messages: [withEntryId({ role: "user", content: "edited first", timestamp: 2000 }, "C")],
+        branchPoints: [
+          branchPoint({
+            entryId: "__root__",
+            childIds: ["abandoned", "marker"],
+            activeChildId: "marker",
+          }),
+        ],
+        branchActivePath: ["marker", "C"],
       }),
     );
 
-    expect(items[0]).toMatchObject({ kind: "branch-point", entryId: "orig", childCount: 2 });
+    expect(items[0]).toMatchObject({ kind: "branch-point", entryId: "__root__", childCount: 2 });
+    expect(items[1]?.kind).toBe("group"); // the edited message renders right below
+  });
+
+  it("drops an early fork whose parent is scrolled out, never anchoring it to a later message", () => {
+    // The fork's parent (P0) and active child sit above the loaded window, so
+    // the divider must not attach to the only loaded message (C).
+    const items = buildChatItems(
+      createProps({
+        messages: [withEntryId({ role: "user", content: "recent", timestamp: 5000 }, "C")],
+        branchPoints: [
+          branchPoint({ entryId: "P0", childIds: ["orig", "marker"], activeChildId: "marker" }),
+        ],
+        branchActivePath: ["P0", "marker", "P1", "P2", "C"],
+      }),
+    );
+
+    expect(items.some((item) => item.kind === "branch-point")).toBe(false);
+  });
+
+  it("drops a branch point whose active child is off the loaded path", () => {
+    const items = buildChatItems(
+      createProps({
+        messages: [withEntryId({ role: "user", content: "only", timestamp: 1000 }, "P")],
+        // activeChildId resolves to nothing in activePath, so there is no anchor.
+        branchPoints: [branchPoint({ entryId: "P", activeChildId: "ghost" })],
+        branchActivePath: ["P"],
+      }),
+    );
+
+    expect(items.some((item) => item.kind === "branch-point")).toBe(false);
   });
 });
 

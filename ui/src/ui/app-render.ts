@@ -4412,6 +4412,7 @@ export function renderApp(state: AppViewState) {
                     allowExternalEmbedUrls: state.allowExternalEmbedUrls,
                     assistantAttachmentAuthToken: resolveAssistantAttachmentAuthToken(state),
                     branchPoints: state.branchPoints,
+                    branchActivePath: state.branchActivePath,
                     onBranchNavigate: (entryId, direction) => {
                       void handleBranchNavigate(state, entryId, direction);
                     },

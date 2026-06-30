@@ -15,6 +15,13 @@ import {
   type FileRestoreReport,
 } from "../../agents/turn-file-snapshots.js";
 import { appendJsonlEntrySync } from "../../config/sessions/transcript-jsonl.js";
+import {
+  isSessionTranscriptLeafControl,
+  scanSessionTranscriptTree,
+  selectSessionTranscriptTreePathNodes,
+  type SessionTranscriptTree,
+  type SessionTranscriptTreeNode,
+} from "../../config/sessions/transcript-tree.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { loadSessionEntry } from "../session-utils.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./types.js";
@@ -31,8 +38,11 @@ export interface ChatBranchParams {
    * "at" (default) rewinds so the next send follows the target entry.
    * "before" rewinds to the target's parent so the target itself moves to the
    * abandoned branch — used by message editing to replace, not duplicate.
+   * "select" resumes an existing sibling branch: it rewinds to that subtree's
+   * deepest (most recent) leaf so the whole branch becomes visible again —
+   * used by the branch navigator's prev/next arrows.
    */
-  mode?: "at" | "before";
+  mode?: "at" | "before" | "select";
   /**
    * Also restore journaled file pre-images captured at/after the target
    * message, rolling back code changes made by the abandoned turns.
@@ -54,9 +64,16 @@ export interface SessionBranchPoint {
   parentId: string | null;
   /** Number of child branches. */
   childCount: number;
-  /** Child entry IDs. */
+  /** Child entry IDs, in transcript (file) order — the order the navigator cycles. */
   childIds: string[];
-  /** Whether this entry is on the currently active branch (leaf path). */
+  /**
+   * The child entry on the currently active branch path, or null when this
+   * branch point sits entirely inside an abandoned branch. The UI anchors the
+   * divider before this child's first visible message and derives the counter
+   * position from its index in childIds.
+   */
+  activeChildId: string | null;
+  /** Whether this branch point is on the currently active branch (leaf path). */
   isActive: boolean;
   /** Whether this is the current branch leaf. */
   isLeaf: boolean;
@@ -66,8 +83,6 @@ export interface SessionBranchPoint {
   timestamp: string;
   /** The entry type (message, custom, etc.). */
   type: string;
-  /** The embedded message.id for matching branch points to displayed messages. */
-  messageId?: string;
 }
 
 export interface ChatBranchResult {
@@ -108,7 +123,7 @@ function validateChatBranchParams(params: unknown): params is ChatBranchParams {
   if (p.agentId !== undefined && typeof p.agentId !== "string") {
     return false;
   }
-  if (p.mode !== undefined && p.mode !== "at" && p.mode !== "before") {
+  if (p.mode !== undefined && p.mode !== "at" && p.mode !== "before" && p.mode !== "select") {
     return false;
   }
   if (p.restoreFiles !== undefined && typeof p.restoreFiles !== "boolean") {
@@ -133,82 +148,112 @@ function validateChatBranchesParams(params: unknown): params is ChatBranchesPara
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Find the active branch path (root → current leaf) by walking parent
- * pointers from the last entry.
- */
-function resolveActivePath(entries: SessionEntry[]): string[] {
-  const byId = new Map<string, SessionEntry>();
-  let leafId: string | null = null;
+const ROOT_PARENT_KEY = "__root__";
 
-  for (const entry of entries) {
-    byId.set(entry.id, entry);
-    leafId = entry.id; // last entry wins
-  }
+type BranchTreeNode = SessionTranscriptTreeNode<SessionEntry>;
 
-  const path: string[] = [];
-  let current = leafId ? byId.get(leafId) : undefined;
-  while (current) {
-    path.unshift(current.id);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-
-  return path;
+function entryFieldString(node: BranchTreeNode | undefined, field: string): string | undefined {
+  const value = (node?.entry as Record<string, unknown> | undefined)?.[field];
+  return typeof value === "string" ? value : undefined;
 }
 
 /**
- * Walk the session entries and find all branch points (entries with >1 child).
+ * Group canonical entries by their normalized parent id, the same ancestry
+ * chat.history renders. Leaf controls are navigation markers, not real branch
+ * children, so they never count toward a branch point's fan-out.
+ */
+function groupCanonicalChildren(
+  tree: SessionTranscriptTree<SessionEntry>,
+): Map<string, BranchTreeNode[]> {
+  const children = new Map<string, BranchTreeNode[]>();
+  for (const node of tree.nodes) {
+    if (isSessionTranscriptLeafControl(node.entry)) {
+      continue;
+    }
+    const key = node.parentId ?? ROOT_PARENT_KEY;
+    const siblings = children.get(key);
+    if (siblings) {
+      siblings.push(node);
+    } else {
+      children.set(key, [node]);
+    }
+  }
+  return children;
+}
+
+/**
+ * Resolve the most recently appended entry in a subtree — the tip to resume
+ * when re-selecting an existing sibling branch. Falls back to the entry itself
+ * when it has no descendants. Marker-based navigation/edit appends are linear,
+ * so the highest-index descendant is that sibling's live tip; a leaf control
+ * nested inside the subtree (rare) is not honored here, only on the file-level
+ * active path in resolveBranchPoints.
+ */
+function resolveDeepestLeafId(entries: SessionEntry[], entryId: string): string {
+  const tree = scanSessionTranscriptTree<SessionEntry>(entries);
+  const children = groupCanonicalChildren(tree);
+  let bestId = entryId;
+  let bestIndex = tree.byId.get(entryId)?.index ?? -1;
+  const stack: string[] = [entryId];
+  const seen = new Set<string>();
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined || seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+    const node = tree.byId.get(current);
+    if (node && node.index > bestIndex) {
+      bestIndex = node.index;
+      bestId = current;
+    }
+    for (const child of children.get(current) ?? []) {
+      stack.push(child.id);
+    }
+  }
+  return bestId;
+}
+
+/**
+ * Find every branch point (a node with >1 canonical child) using the same
+ * leaf-controlled tree chat.history renders, so branch metadata and displayed
+ * messages always agree on which entries are active.
  */
 function resolveBranchPoints(entries: SessionEntry[]): {
   branches: SessionBranchPoint[];
   activePath: string[];
   activeLeafId: string | null;
 } {
-  const byId = new Map<string, SessionEntry>();
-  const children = new Map<string, SessionEntry[]>();
-  let leafId: string | null = null;
-
-  for (const entry of entries) {
-    byId.set(entry.id, entry);
-    leafId = entry.id;
-
-    const parentKey = entry.parentId ?? "__root__";
-    const siblings = children.get(parentKey) ?? [];
-    siblings.push(entry);
-    children.set(parentKey, siblings);
-  }
-
-  const activePath = new Set(resolveActivePath(entries));
+  const tree = scanSessionTranscriptTree<SessionEntry>(entries);
+  const activePath = selectSessionTranscriptTreePathNodes(tree, tree.leafId).map((node) => node.id);
+  const activePathSet = new Set(activePath);
+  const children = groupCanonicalChildren(tree);
 
   const branches: SessionBranchPoint[] = [];
-  for (const [parentKey, childEntries] of children) {
-    if (childEntries.length <= 1) {
+  for (const [parentKey, childNodes] of children) {
+    if (childNodes.length <= 1) {
       continue;
     }
-    // parentKey === "__root__" means root entries (parentId === null)
-    const isRoot = parentKey === "__root__";
-    const branchFromId = isRoot ? childEntries[0].id : parentKey;
-    const branchEntry = isRoot ? null : byId.get(parentKey);
-
-    // Extract messageId from the entry identified by branchFromId
-    let messageId: string | undefined;
-    const branchFromEntry = byId.get(branchFromId);
-    if (branchFromEntry?.type === "message") {
-      const msg = (branchFromEntry as { message?: { id?: string } }).message;
-      messageId = msg?.id;
-    }
+    const isRoot = parentKey === ROOT_PARENT_KEY;
+    const parentNode = isRoot ? undefined : tree.byId.get(parentKey);
+    const ordered = [...childNodes].sort((a, b) => a.index - b.index);
+    const childIds = ordered.map((node) => node.id);
+    const activeChildId = childIds.find((id) => activePathSet.has(id)) ?? null;
 
     branches.push({
-      entryId: branchFromId,
-      parentId: branchEntry?.parentId ?? null,
-      childCount: childEntries.length,
-      childIds: childEntries.map((c) => c.id),
-      isActive: activePath.has(branchFromId),
-      isLeaf: branchFromId === leafId,
+      entryId: isRoot ? ROOT_PARENT_KEY : parentKey,
+      parentId: parentNode?.parentId ?? null,
+      childCount: childIds.length,
+      childIds,
+      activeChildId,
+      isActive: activeChildId !== null,
+      isLeaf: !isRoot && parentKey === tree.leafId,
       label: undefined, // labels are loaded separately via SessionManager
-      timestamp: branchEntry?.timestamp ?? childEntries[0].timestamp,
-      type: branchEntry?.type ?? "message",
-      messageId,
+      timestamp:
+        entryFieldString(parentNode, "timestamp") ??
+        entryFieldString(ordered[0], "timestamp") ??
+        new Date(0).toISOString(),
+      type: entryFieldString(parentNode, "type") ?? "message",
     });
   }
 
@@ -217,8 +262,8 @@ function resolveBranchPoints(entries: SessionEntry[]): {
 
   return {
     branches,
-    activePath: [...activePath],
-    activeLeafId: leafId,
+    activePath,
+    activeLeafId: tree.leafId,
   };
 }
 
@@ -313,8 +358,15 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
   }
 
   // "before" parents the marker on the target's parent, so the target entry
-  // (and everything after it) moves to the abandoned branch.
-  const branchBaseId = mode === "before" ? (targetEntry.parentId ?? null) : resolvedEntryId;
+  // (and everything after it) moves to the abandoned branch. "select" resumes
+  // an existing sibling by parenting onto that subtree's deepest leaf, so the
+  // navigator surfaces the whole branch instead of starting an empty one.
+  const branchBaseId =
+    mode === "before"
+      ? (targetEntry.parentId ?? null)
+      : mode === "select"
+        ? resolveDeepestLeafId(entries, resolvedEntryId)
+        : resolvedEntryId;
 
   // Create a branch marker entry that becomes the new leaf.
   // When the next chat.send runs, the SessionManager will load from the file,

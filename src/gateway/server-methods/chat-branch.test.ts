@@ -48,6 +48,48 @@ async function callChatBranch(params: Record<string, unknown>): Promise<RespondC
   return result;
 }
 
+async function callChatBranches(params: Record<string, unknown>): Promise<RespondCall> {
+  let result: RespondCall | undefined;
+  await chatBranchHandlers["chat.branches"]({
+    params,
+    respond: (ok: boolean, payload?: unknown, error?: unknown) => {
+      result = { ok, payload, error };
+    },
+    context: {} as never,
+  } as never);
+  if (!result) {
+    throw new Error("chat.branches did not respond");
+  }
+  return result;
+}
+
+type BranchesPayload = {
+  activeLeafId: string | null;
+  activePath: string[];
+  branches: Array<{
+    entryId: string;
+    childCount: number;
+    childIds: string[];
+    activeChildId: string | null;
+    isActive: boolean;
+  }>;
+};
+
+function message(
+  id: string,
+  parentId: string | null,
+  role: string,
+  content: string,
+): Record<string, unknown> {
+  return {
+    type: "message",
+    id,
+    parentId,
+    timestamp: `2026-06-10T00:00:0${id.length}.000Z`,
+    message: { id: `m-${id}`, role, content },
+  };
+}
+
 const BASE_ENTRIES = [
   { type: "session", version: 3, id: "test-session", timestamp: "2026-06-10T00:00:00.000Z" },
   {
@@ -135,5 +177,85 @@ describe("chat.branch", () => {
     });
 
     expect(result.ok).toBe(false);
+  });
+
+  it("mode 'select' resumes a sibling's deepest leaf", async () => {
+    // e1 forks into the active branch (e2) and an abandoned sibling (eA → eB).
+    sessionFileForTest = writeSessionFile([
+      { type: "session", version: 3, id: "test-session", timestamp: "2026-06-10T00:00:00.000Z" },
+      message("e1", null, "user", "first"),
+      message("e2", "e1", "assistant", "active reply"),
+      message("eA", "e1", "assistant", "sibling reply"),
+      message("eB", "eA", "user", "sibling follow-up"),
+    ]);
+
+    const result = await callChatBranch({
+      sessionKey: "agent:main:test",
+      entryId: "eA",
+      mode: "select",
+    });
+
+    expect(result.ok).toBe(true);
+    // The marker parents on eB, the sibling's tip, so its whole branch reappears.
+    expect((result.payload as { branchFromId?: string }).branchFromId).toBe("eB");
+    const marker = transcriptEntries(sessionFileForTest).at(-1);
+    expect(marker?.customType).toBe("branch_marker");
+    expect(marker?.parentId).toBe("eB");
+  });
+});
+
+describe("chat.branches", () => {
+  it("derives branch points and the active path from the canonical leaf tree", async () => {
+    // Edit-of-first-message shape: the abandoned original (e1/e2) sits off the
+    // active leaf; the marker M is the active root child leading to the edit.
+    sessionFileForTest = writeSessionFile([
+      { type: "session", version: 3, id: "test-session", timestamp: "2026-06-10T00:00:00.000Z" },
+      message("e1", null, "user", "first"),
+      message("e2", "e1", "assistant", "reply"),
+      { type: "custom", customType: "branch_marker", id: "M", parentId: null, branchFromId: null },
+      message("e4", "M", "user", "edited first"),
+      message("e5", "e4", "assistant", "edited reply"),
+    ]);
+
+    const result = await callChatBranches({ sessionKey: "agent:main:test" });
+
+    expect(result.ok).toBe(true);
+    const payload = result.payload as BranchesPayload;
+    expect(payload.activeLeafId).toBe("e5");
+    // Abandoned e1/e2 are excluded; the active path runs through the marker.
+    expect(payload.activePath).toEqual(["M", "e4", "e5"]);
+    expect(payload.branches).toHaveLength(1);
+    expect(payload.branches[0]).toMatchObject({
+      childCount: 2,
+      childIds: ["e1", "M"],
+      activeChildId: "M",
+      isActive: true,
+    });
+  });
+
+  it("follows a trailing leaf control instead of the last physical entry", async () => {
+    // A leaf control redirects the active leaf back to e1, the way the naive
+    // last-entry-wins walk never would.
+    sessionFileForTest = writeSessionFile([
+      { type: "session", version: 3, id: "test-session", timestamp: "2026-06-10T00:00:00.000Z" },
+      message("e1", null, "user", "first"),
+      message("e2", "e1", "assistant", "reply"),
+      { type: "custom", customType: "branch_marker", id: "M", parentId: null, branchFromId: null },
+      message("e4", "M", "user", "edited first"),
+      message("e5", "e4", "assistant", "edited reply"),
+      { type: "leaf", id: "L", parentId: "e5", targetId: "e1" },
+    ]);
+
+    const result = await callChatBranches({ sessionKey: "agent:main:test" });
+
+    expect(result.ok).toBe(true);
+    const payload = result.payload as BranchesPayload;
+    expect(payload.activeLeafId).toBe("e1");
+    expect(payload.activePath).toEqual(["e1"]);
+    // The active child flips to e1 now that the leaf control selects it.
+    expect(payload.branches[0]).toMatchObject({
+      childIds: ["e1", "M"],
+      activeChildId: "e1",
+    });
   });
 });

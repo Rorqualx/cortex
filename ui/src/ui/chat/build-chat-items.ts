@@ -1,6 +1,11 @@
-import type { ChatItem, MessageGroup, NormalizedMessage, ToolCard } from "../types/chat-types.ts";
+import type {
+  ChatItem,
+  MessageGroup,
+  NormalizedMessage,
+  SessionBranchPoint,
+  ToolCard,
+} from "../types/chat-types.ts";
 import type { ChatQueueItem } from "../ui-types.ts";
-import type { SessionBranchPoint } from "./branch-service.ts";
 import {
   isAssistantHeartbeatAckForDisplay,
   stripHeartbeatTokenForDisplay,
@@ -35,6 +40,8 @@ export type BuildChatItemsProps = {
   searchQuery?: string;
   /** Branch points from chat.branches API — injected as branch-point dividers. */
   branchPoints?: SessionBranchPoint[];
+  /** Active branch path (root→leaf entry IDs) from chat.branches — anchors dividers. */
+  branchActivePath?: string[];
   /** Override the default CHAT_HISTORY_RENDER_LIMIT for scroll-back expansion. */
   historyRenderLimit?: number;
 };
@@ -307,32 +314,48 @@ function collapseSequentialDuplicateMessages(items: ChatItem[]): ChatItem[] {
  * duplicate collapse logic won't catch them.
  */
 function deduplicateStreamSegmentsAgainstFinal(items: ChatItem[]): ChatItem[] {
-  // Find the last assistant message's text content.
-  const lastAssistantText = (() => {
-    for (let i = items.length - 1; i >= 0; i--) {
-      const item = items[i];
-      if (item.kind !== "message") {
-        continue;
-      }
-      const normalized = safeNormalizeMessage(item.message);
-      if (normalized && normalized.role.toLowerCase() === "assistant") {
-        const raw = extractTextCached(item.message);
-        if (raw) {
-          return sanitizeStreamText(raw);
-        }
-        break;
-      }
+  // Collect the visible text of every assistant message in the current turn
+  // (after the last user message). A multi-step turn commits each pre-tool text
+  // burst as its own stream segment, and those bursts land in DIFFERENT persisted
+  // messages — not just the final one — so matching a segment only against the
+  // last assistant message (and only as a prefix) leaves earlier segments
+  // rendering as near-duplicate blocks once the turn's messages persist.
+  let lastUserIndex = -1;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.kind !== "message") {
+      continue;
     }
-    return null;
-  })();
+    const normalized = safeNormalizeMessage(item.message);
+    if (normalized && normalized.role.toLowerCase() === "user") {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  const assistantTexts: string[] = [];
+  for (let i = lastUserIndex + 1; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind !== "message") {
+      continue;
+    }
+    const normalized = safeNormalizeMessage(item.message);
+    if (!normalized || normalized.role.toLowerCase() !== "assistant") {
+      continue;
+    }
+    const raw = extractTextCached(item.message);
+    if (raw) {
+      assistantTexts.push(sanitizeStreamText(raw));
+    }
+  }
 
-  if (!lastAssistantText) {
+  if (assistantTexts.length === 0) {
     return items;
   }
 
-  // Filter out stream segments whose text is a prefix of (or equal to)
-  // the final assistant message. Segments committed before tool calls
-  // will be partial prefixes of the full response.
+  // Drop a stream segment once its text is contained in a persisted message of
+  // this turn (prefix, middle, or suffix — committed segments can be any slice).
+  // Only drop when a message actually contains it, so a segment still renders
+  // mid-run before its message exists; nothing is lost.
   return items.filter((item) => {
     if (item.kind !== "stream") {
       return true;
@@ -341,9 +364,7 @@ function deduplicateStreamSegmentsAgainstFinal(items: ChatItem[]): ChatItem[] {
     if (segText.length === 0) {
       return true;
     }
-    // Remove the segment if the final assistant message starts with it
-    // (segment was committed before the full response arrived).
-    return !lastAssistantText.startsWith(segText);
+    return !assistantTexts.some((text) => text.includes(segText));
   });
 }
 
@@ -404,9 +425,9 @@ function chatItemTimestamp(item: ChatItem): number | null {
     case "divider":
       return item.timestamp;
     case "branch-point":
-      // Sort the divider to its anchor message's time (or top of thread for an
-      // orphaned branch). Without a case here it returns null and the visible-
-      // time sort would dump every branch divider at the bottom of the thread.
+      // Carries its anchor message's time so it sorts just above it. Without a
+      // case here it returns null and the visible-time sort would dump every
+      // branch divider at the bottom of the thread.
       return item.timestamp;
     case "stream":
       return item.startedAt;
@@ -579,76 +600,106 @@ function resolveHistoryStartIndex(
 }
 
 /**
- * Inject branch-point dividers into chat items based on branch point messageIds.
- * Branch points are placed AFTER the message whose id matches the branch
- * point's messageId.
+ * Read the transcript entry id a history message carries. chat.history sets
+ * __openclaw.id to the SessionEntry id — the same id space as branch points'
+ * entryId / childIds / activePath, so dividers anchor by entry id rather than
+ * the fragile embedded message id.
+ */
+function messageEntryId(message: unknown): string | null {
+  const marker = asRecord(message)?.["__openclaw"] as Record<string, unknown> | undefined;
+  const id = marker?.id;
+  return typeof id === "string" ? id : null;
+}
+
+// Mirrors ROOT_PARENT_KEY in src/gateway/server-methods/chat-branch.ts: the
+// entryId chat.branches reports for a fork at the transcript root (no parent).
+const ROOT_BRANCH_ENTRY_ID = "__root__";
+
+/**
+ * Inject branch-point dividers anchored to the active branch path.
+ *
+ * A divider is keyed to the active-path index of its branch-from (parent) entry
+ * and only emitted once that exact parent message has just been rendered — so
+ * an edited-message branch renders inline at the edit (a first-message edit, the
+ * root fork, lands above the first message). When the real divergence point is
+ * scrolled out of the loaded window or filtered away, its parent is never
+ * emitted, so the divider is dropped rather than hoisted onto an unrelated
+ * message.
  */
 function injectBranchPointDividers(
   items: ChatItem[],
   branchPoints: SessionBranchPoint[],
+  activePath: string[],
 ): ChatItem[] {
-  const result: ChatItem[] = [];
-  const branchByMessageId = new Map<string, SessionBranchPoint[]>();
-
-  // Build map: messageId -> branch points
+  const activePathIndex = new Map(activePath.map((id, index) => [id, index]));
+  // Group branch points by the active-path index of their branch-from entry.
+  // A root fork has no parent entry, so it keys on -1 — the sentinel matched
+  // before the first active-path message is emitted.
+  const byParentIndex = new Map<number, SessionBranchPoint[]>();
   for (const bp of branchPoints) {
-    if (bp.messageId) {
-      const existing = branchByMessageId.get(bp.messageId) ?? [];
-      existing.push(bp);
-      branchByMessageId.set(bp.messageId, existing);
-    }
-  }
-
-  const matched = new Set<SessionBranchPoint>();
-  for (const item of items) {
-    result.push(item);
-    if (item.kind !== "message") {
+    if (bp.childCount <= 1 || bp.activeChildId === null || !activePathIndex.has(bp.activeChildId)) {
       continue;
     }
-
-    const record = asRecord(item.message);
-    const messageId = typeof record?.id === "string" ? record.id : null;
-
-    if (messageId) {
-      const points = branchByMessageId.get(messageId);
-      if (points) {
-        const itemTs = chatItemTimestamp(item);
-        for (const bp of points) {
-          matched.add(bp);
-          result.push(
-            branchPointDivider(bp, `branch:${bp.entryId}:${item.key}`, itemTs ?? Date.now()),
-          );
-        }
-      }
+    const parentIndex = activePathIndex.has(bp.entryId)
+      ? (activePathIndex.get(bp.entryId) as number)
+      : bp.entryId === ROOT_BRANCH_ENTRY_ID
+        ? -1
+        : null;
+    if (parentIndex === null) {
+      continue;
+    }
+    const group = byParentIndex.get(parentIndex);
+    if (group) {
+      group.push(bp);
+    } else {
+      byParentIndex.set(parentIndex, [bp]);
     }
   }
 
-  // A branch point whose anchor message isn't on the displayed (active) path —
-  // e.g. editing the first message, where the abandoned original sits off the
-  // active leaf — would otherwise vanish, leaving no way back to that
-  // conversation. Surface those at the top of the thread.
-  const orphaned = branchPoints.filter((bp) => bp.childCount > 1 && !matched.has(bp));
-  if (orphaned.length === 0) {
-    return result;
+  if (byParentIndex.size === 0) {
+    return items;
   }
-  const topDividers = orphaned.map((bp, index) =>
-    // NEGATIVE_INFINITY keeps these at the very top of the thread after the
-    // visible-time sort, where the "back to the original conversation" control belongs.
-    branchPointDivider(bp, `branch-top:${bp.entryId}:${index}`, Number.NEGATIVE_INFINITY),
-  );
-  return [...topDividers, ...result];
+
+  const result: ChatItem[] = [];
+  // -1 matches a root fork's parent; updated to each active-path message as it
+  // is emitted so a divider lands between its parent and the parent's next message.
+  let prevInPathIndex = -1;
+  let prevInPathTs: number | null = null;
+  for (const item of items) {
+    if (item.kind === "message") {
+      const entryId = messageEntryId(item.message);
+      const messageIndex = entryId !== null ? activePathIndex.get(entryId) : undefined;
+      if (messageIndex !== undefined) {
+        const dividers = byParentIndex.get(prevInPathIndex);
+        if (dividers) {
+          // Inherit the upcoming message's time so the visible-time sort keeps
+          // the divider just above it (never floated to the bottom).
+          const itemTs = chatItemTimestamp(item) ?? prevInPathTs ?? 0;
+          for (const bp of dividers) {
+            result.push(branchPointDivider(bp, `branch:${bp.entryId}:${item.key}`, itemTs));
+          }
+          byParentIndex.delete(prevInPathIndex);
+        }
+        prevInPathIndex = messageIndex;
+        prevInPathTs = chatItemTimestamp(item) ?? prevInPathTs;
+      }
+    }
+    result.push(item);
+  }
+  // Any branch points left here have a parent that never rendered (scrolled out
+  // or filtered) — skip them rather than detach the divider from its context.
+  return result;
 }
 
 function branchPointDivider(bp: SessionBranchPoint, key: string, timestamp: number): ChatItem {
+  const activeChildIndex = bp.activeChildId ? bp.childIds.indexOf(bp.activeChildId) : -1;
   return {
     kind: "branch-point",
     key,
     entryId: bp.entryId,
     childCount: bp.childCount,
-    // activeChildIndex isn't derivable from the branches payload yet (it lacks
-    // the active child id), so the counter shows position 1; the nav arrows
-    // still switch branches via onBranchNavigate.
-    activeChildIndex: 0,
+    // Counter reflects the active child's slot; clamp to 0 if it isn't listed.
+    activeChildIndex: activeChildIndex >= 0 ? activeChildIndex : 0,
     label: bp.label,
     timestamp,
   };
@@ -870,9 +921,9 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
   // kind:"message", collapseSequentialDuplicateMessages won't catch them.
   items = deduplicateStreamSegmentsAgainstFinal(items);
 
-  // Inject branch-point dividers at positions matching branch timestamps.
+  // Inject branch-point dividers anchored to the active branch path.
   if (props.branchPoints && props.branchPoints.length > 0) {
-    items = injectBranchPointDividers(items, props.branchPoints);
+    items = injectBranchPointDividers(items, props.branchPoints, props.branchActivePath ?? []);
   }
 
   return groupMessages(collapseSequentialDuplicateMessages(sortChatItemsByVisibleTime(items)));

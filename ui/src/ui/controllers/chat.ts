@@ -40,6 +40,7 @@ import {
 } from "../session-key.ts";
 import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import type { AgentsListResult, GatewaySessionRow, GatewaySessionsDefaults } from "../types.ts";
+import type { SessionBranchPoint } from "../types/chat-types.ts";
 import type { ChatAttachment } from "../ui-types.ts";
 import { generateUUID } from "../uuid.ts";
 import {
@@ -431,7 +432,9 @@ export type ChatState = {
   agentsSelectedId?: string | null;
   hello?: GatewayHelloOk | null;
   /** Branch points from chat.branches for visual navigation. */
-  branchPoints?: unknown[];
+  branchPoints?: SessionBranchPoint[];
+  /** Active branch path (root→leaf entry IDs) from chat.branches. */
+  branchActivePath?: string[];
   /** Currently active branch entry ID (for branch navigation). */
   branchFromId?: string | null;
   // Written by run-lifecycle terminal reconcile; delta handling reads it to keep a
@@ -612,6 +615,11 @@ type LoadChatHistoryOptions = {
 
 const inFlightChatHistoryRequests = new WeakMap<ChatState, InFlightChatHistoryRequest>();
 
+// Serialize branch navigation per session: chat.branch only clears branchPoints
+// after its await, so without this a second rapid prev/next click would recompute
+// the target from the same stale activeChildId and land on the wrong sibling.
+const branchNavigateInFlight = new WeakSet<ChatState>();
+
 function recordChatHistoryTiming(
   state: ChatState,
   phase: "start" | "applied" | "stream-reset" | "stale" | "error",
@@ -783,7 +791,7 @@ export async function loadBranches(state: ChatState): Promise<void> {
   try {
     const res = await state.client.request<{
       ok?: boolean;
-      branches?: unknown[];
+      branches?: SessionBranchPoint[];
       activeLeafId?: string | null;
       activePath?: string[];
       error?: string;
@@ -792,22 +800,41 @@ export async function loadBranches(state: ChatState): Promise<void> {
     });
     if (res.ok && res.branches) {
       state.branchPoints = res.branches;
+      state.branchActivePath = res.activePath ?? [];
     } else {
       state.branchPoints = [];
+      state.branchActivePath = [];
     }
   } catch {
     state.branchPoints = [];
+    state.branchActivePath = [];
   }
 }
 
 export async function handleBranchNavigate(
   state: ChatState,
   entryId: string,
-  _direction: "prev" | "next",
+  direction: "prev" | "next",
 ): Promise<void> {
-  if (!state.client || !state.connected) {
+  if (!state.client || !state.connected || branchNavigateInFlight.has(state)) {
     return;
   }
+  // Resolve the sibling to switch to from the branch point's child order. The
+  // counter cycles childIds; "select" resumes that sibling's existing branch
+  // (its deepest leaf) instead of starting an empty one.
+  const branchPoint = (state.branchPoints ?? []).find((bp) => bp.entryId === entryId);
+  if (!branchPoint || branchPoint.activeChildId === null) {
+    return;
+  }
+  const currentIndex = branchPoint.childIds.indexOf(branchPoint.activeChildId);
+  if (currentIndex === -1) {
+    return;
+  }
+  const count = branchPoint.childIds.length;
+  const targetIndex =
+    direction === "next" ? (currentIndex + 1) % count : (currentIndex - 1 + count) % count;
+  const targetChildId = branchPoint.childIds[targetIndex];
+  branchNavigateInFlight.add(state);
   try {
     const res = await state.client.request<{
       ok?: boolean;
@@ -815,15 +842,19 @@ export async function handleBranchNavigate(
       error?: string;
     }>("chat.branch", {
       sessionKey: state.sessionKey,
-      entryId,
+      entryId: targetChildId,
+      mode: "select",
     });
     if (res.ok) {
-      state.branchFromId = entryId;
+      state.branchFromId = targetChildId;
       state.branchPoints = [];
+      state.branchActivePath = [];
       await Promise.all([loadChatHistory(state, { startup: false }), loadBranches(state)]);
     }
   } catch {
     // Silently fail — branch not supported on older gateways
+  } finally {
+    branchNavigateInFlight.delete(state);
   }
 }
 
