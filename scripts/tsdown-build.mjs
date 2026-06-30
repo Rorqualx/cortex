@@ -6,6 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { assertBuildSafe } from "./lib/assert-build-safe.mjs";
 import { BUNDLED_PLUGIN_PATH_PREFIX } from "./lib/bundled-plugin-paths.mjs";
 import { TSDOWN_PACKAGE_OUTPUT_ROOTS } from "./lib/tsdown-output-roots.mjs";
 import { resolvePnpmRunner } from "./pnpm-runner.mjs";
@@ -701,6 +702,12 @@ if (isMainModule()) {
     console.log(tsdownBuildUsage());
     process.exit(0);
   }
+  // Refuse a self-inflicted build-suicide before any dist mutation: the cleanup
+  // and tsdown steps below rewrite dist/ and crash the live gateway, killing
+  // in-flight cron runs. No-op for deploy/CI/worktree/foreign-root builds. Covers
+  // direct callers (build:docker, build:strict-smoke) that skip build-all.mjs.
+  // See scripts/lib/assert-build-safe.mjs.
+  assertBuildSafe();
   pruneSourceCheckoutBundledPluginNodeModules();
   pruneUntrackedGeneratedSourceDeclarations();
   pruneStaleRuntimeSymlinks();

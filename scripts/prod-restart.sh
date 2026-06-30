@@ -154,23 +154,22 @@ fi
 # ── Check for in-flight cron runs ──────────────────────────────────────
 # Killing the gateway also kills every running cron job (research scans,
 # skill-forge, the nightly upstream-merge). Refuse to restart while any cron
-# job is in-flight unless forced. Reads the persisted runningAtMs marker, so it
-# works here in the detached restart process (cross-process, no gateway needed).
-if [[ "${SKIP_ACTIVE_CHECK:-0}" -ne 1 && "${FORCE:-0}" -ne 1 ]]; then
-  if bash "${ROOT_DIR}/scripts/cron-restart-safe-wait.sh" --once; then
-    :
-  else
-    rc=$?
-    if [[ "$rc" -eq 3 ]]; then
-      log_yellow "⚠️  Cron job(s) currently running (see above)."
-      log_yellow "Use --force to override, or wait for the run(s) to finish."
-      if [[ "${CI:-}" != "true" ]]; then
-        exit 1
-      fi
-      log_yellow "CI detected — continuing anyway."
+# job is in-flight unless forced. assert_cron_idle reads the persisted
+# runningAtMs marker, so it works here in the detached restart process.
+# Source defensively: a missing guard lib must not brick this recovery tool.
+CRON_QUIESCE_GUARD="${ROOT_DIR}/scripts/lib/cron-quiesce-guard.sh"
+if [[ -f "${CRON_QUIESCE_GUARD}" ]]; then
+  source "${CRON_QUIESCE_GUARD}"
+  if ! assert_cron_idle "${ROOT_DIR}"; then
+    log_yellow "⚠️  Cron job(s) currently running (see above)."
+    log_yellow "Use --force to override, or wait for the run(s) to finish."
+    if [[ "${CI:-}" != "true" ]]; then
+      exit 1
     fi
-    # rc=2 (no db / no sqlite3) is a soft skip — nothing to block on.
+    log_yellow "CI detected — continuing anyway."
   fi
+else
+  log_yellow "⚠️  cron-quiesce-guard.sh not found; skipping cron-idle check."
 fi
 
 # ── Kill old gateway ───────────────────────────────────────────────────
@@ -286,7 +285,10 @@ else
   # pre-run install does not fire: under this x64/Rosetta host it aborts on the
   # non-interactive modules-purge prompt and would leave the gateway down (we
   # already killed it above). CI=1 keeps any nested tooling non-interactive.
-  if CI=1 npm_config_verify_deps_before_run=false node scripts/build-all.mjs; then
+  # OPENCLAW_DEPLOY_BUILD=1 stands down the build-suicide guard: we already passed
+  # the cron-idle gate (or --force) above, so this sanctioned rebuild must not be
+  # refused by a straggler-gateway + stale-marker race.
+  if CI=1 OPENCLAW_DEPLOY_BUILD=1 npm_config_verify_deps_before_run=false node scripts/build-all.mjs; then
     log_green "Build completed successfully"
   else
     log_red "Build failed!"

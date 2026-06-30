@@ -19,6 +19,7 @@ WAIT_FOR_LOCK=0
 LOG_PATH="${OPENCLAW_RESTART_LOG:-${TMPDIR:-/tmp}/openclaw-restart-${LOCK_KEY}.log}"
 NO_SIGN=0
 SIGN=0
+FORCE="${FORCE:-0}"
 AUTO_DETECT_SIGNING=1
 GATEWAY_WAIT_SECONDS="${OPENCLAW_GATEWAY_WAIT_SECONDS:-0}"
 LAUNCHAGENT_DISABLE_MARKER="${HOME}/.openclaw/disable-launchagent"
@@ -104,9 +105,11 @@ for arg in "$@"; do
     --sign) SIGN=1; AUTO_DETECT_SIGNING=0 ;;
     --attach-only) ATTACH_ONLY=1 ;;
     --no-attach-only) ATTACH_ONLY=0 ;;
+    --force|-f) FORCE=1 ;;
     --help|-h)
-      log "Usage: $(basename "$0") [--wait] [--no-sign] [--sign] [--attach-only|--no-attach-only]"
+      log "Usage: $(basename "$0") [--wait] [--force] [--no-sign] [--sign] [--attach-only|--no-attach-only]"
       log "  --wait    Wait for other restart to complete instead of exiting"
+      log "  --force   Restart even while cron jobs are running (kills in-flight runs)"
       log "  --no-sign Force no code signing (fastest for development)"
       log "  --sign    Force code signing (will fail if no signing key available)"
       log "  --attach-only    Launch app with --attach-only (skip launchd install)"
@@ -197,6 +200,20 @@ process_pids_matching() {
 stop_launch_agent() {
   launchctl bootout gui/"$UID"/ai.openclaw.mac 2>/dev/null || true
 }
+
+# Killing the gateway also kills every in-flight cron run. Refuse to restart while
+# any cron job is running unless forced (FORCE=1 / --force / SKIP_ACTIVE_CHECK=1).
+# Source defensively: a missing guard lib must not brick this recovery tool.
+CRON_QUIESCE_GUARD="${ROOT_DIR}/scripts/lib/cron-quiesce-guard.sh"
+if [[ -f "${CRON_QUIESCE_GUARD}" ]]; then
+  source "${CRON_QUIESCE_GUARD}"
+  if ! assert_cron_idle "${ROOT_DIR}"; then
+    log "⚠️  Cron job(s) currently running (see above)."
+    fail "Refusing to restart mid-run; wait for the run(s) to finish or pass --force."
+  fi
+else
+  log "⚠️  cron-quiesce-guard.sh not found; skipping cron-idle check."
+fi
 
 # 1) Stop launchd supervision, then kill all running instances.
 stop_launch_agent

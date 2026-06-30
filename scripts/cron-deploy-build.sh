@@ -42,4 +42,8 @@ cd "$ROOT"
 # pre-run install does not fire: it can wedge for minutes and re-runs native
 # postinstalls (e.g. node-llama-cpp) that fail under x64/Rosetta node. `pnpm build`
 # is itself just `node scripts/build-all.mjs`; the gate already proved deps resolve.
-exec env npm_config_verify_deps_before_run=false node scripts/build-all.mjs
+# OPENCLAW_DEPLOY_BUILD=1 marks this as the one sanctioned in-place build so the
+# build-suicide guard (scripts/lib/assert-build-safe.mjs) stands down: this path
+# already waited for quiesce above, and the deploy job's own running marker would
+# otherwise trip the guard's --once check.
+exec env OPENCLAW_DEPLOY_BUILD=1 npm_config_verify_deps_before_run=false node scripts/build-all.mjs

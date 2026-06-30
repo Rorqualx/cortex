@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
+import { assertBuildSafe } from "./lib/assert-build-safe.mjs";
 import { publicPluginSdkEntrypoints } from "./lib/plugin-sdk-entries.mjs";
 import { resolvePnpmRunner } from "./pnpm-runner.mjs";
 
@@ -634,6 +635,14 @@ if (isMainModule()) {
   if (args?.help) {
     console.log(buildAllUsage());
   } else {
+    // Refuse a self-inflicted build-suicide before any dist work: rewriting dist/
+    // here crashes the live gateway and kills in-flight cron runs. Gated only on
+    // the real build path (not --help / arg errors). No-op for deploy/CI/worktree/
+    // foreign-root builds. See scripts/lib/assert-build-safe.mjs.
+    assertBuildSafe();
+    // Mark the check done so the tsdown child step inherits it and does not repeat
+    // the subprocess-heavy probe; direct tsdown callers still gate themselves.
+    process.env.OPENCLAW_BUILD_SAFE_CHECKED = "1";
     const timings = [];
     let exitCode = 0;
     for (const step of resolveBuildAllSteps(args.profile)) {
