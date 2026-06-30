@@ -1,0 +1,48 @@
+{
+  "id": "claude-connect",
+  "name": "Claude Connect",
+  "description": "Open interactive Claude Code sessions and delegate tasks or research (no Agent SDK).",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "defaultCwd": {
+        "type": "string",
+        "description": "Default working directory for Claude Code sessions when a tool call omits cwd."
+      },
+      "binaryPath": {
+        "type": "string",
+        "description": "Path to the Claude Code CLI binary. Defaults to `claude` on PATH."
+      },
+      "idleTurnTimeoutMs": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Kill a turn if the CLI produces no output for this long. 0 disables the watchdog. Defaults to 120000."
+      }
+    }
+  },
+  "contracts": {
+    "tools": [
+      "claude_session_open",
+      "claude_session_send",
+      "claude_session_close"
+    ]
+  },
+  "toolMetadata": {
+    "claude_session_open": {
+      "optional": true
+    },
+    "claude_session_send": {
+      "optional": true
+    },
+    "claude_session_close": {
+      "optional": true
+    }
+  },
+  "skills": [
+    "./skills"
+  ]
+}

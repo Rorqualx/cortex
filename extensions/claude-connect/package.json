@@ -1,0 +1,24 @@
+{
+  "name": "@openclaw/claude-connect",
+  "version": "2026.6.10",
+  "private": true,
+  "description": "Open interactive Claude Code sessions and delegate tasks or research (no Agent SDK)",
+  "type": "module",
+  "dependencies": {
+    "typebox": "1.1.39"
+  },
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.6.10"
+    },
+    "build": {
+      "openclawVersion": "2026.6.10"
+    }
+  }
+}
