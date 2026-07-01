@@ -139,17 +139,25 @@ function classifyGrepOperand(p: string, recursive: boolean): GrepOperand {
   if (CODE_EXT.some((e) => p.endsWith(e))) {
     return "file";
   }
-  if (p === ".") {
-    return "broad-dir";
+  // Normalize a leading "./" (a semantic no-op) so "./src" classifies like
+  // "src" instead of looking like a two-segment scoped path, and so the cwd /
+  // parent-tree forms are recognized. Without this, `grep -r foo ./src` and
+  // `grep -r foo ..` slipped through as scoped/file.
+  let normalized = p;
+  while (normalized.startsWith("./")) {
+    normalized = normalized.slice(2);
   }
-  const segments = p.split("/").filter(Boolean);
+  if (normalized === "" || normalized === "." || normalized === "..") {
+    return "broad-dir"; // cwd or the whole parent tree
+  }
+  const segments = normalized.split("/").filter(Boolean);
   if (segments.length > 1) {
     return "scoped"; // deep path → scoped search, allow
   }
-  if (p.endsWith("/") || KNOWN_SOURCE_DIRS.has(p)) {
+  if (normalized.endsWith("/") || KNOWN_SOURCE_DIRS.has(normalized)) {
     return "broad-dir";
   }
-  if (baseCommand(p).includes(".")) {
+  if (baseCommand(normalized).includes(".")) {
     return "file"; // e.g. package.json, config.yaml — a concrete file
   }
   // Bare extensionless single name: a file unless the command recurses.

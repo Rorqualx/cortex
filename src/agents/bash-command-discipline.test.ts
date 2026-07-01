@@ -36,6 +36,16 @@ describe("checkBashCommandDiscipline", () => {
       expect(ruleOf("rg foo packages/core/src")).toBeNull();
       expect(ruleOf("grep -r foo file.ts")).toBeNull();
     });
+    it("blocks broad recursive greps written with relative-path operands", () => {
+      // Regression: `./` inflated the segment count (looked scoped) and `..`'s
+      // dot looked like a file extension, so both slipped past the guard.
+      expect(ruleOf("grep -r foo ./src")).toBe("ast-grep");
+      expect(ruleOf("rg foo ./lib")).toBe("ast-grep");
+      expect(ruleOf("grep -r foo ..")).toBe("ast-grep");
+      // A genuinely scoped relative path stays allowed.
+      expect(ruleOf("grep -r foo ../parent/sub")).toBeNull();
+      expect(ruleOf("grep -n foo ./a.ts")).toBeNull();
+    });
     it("does not treat long flags containing 'r' as recursive", () => {
       // `--color` must not read as `-r`; a single-file grep stays allowed.
       expect(ruleOf("grep --color foo Makefile")).toBeNull();
