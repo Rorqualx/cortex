@@ -46,11 +46,12 @@ import type { ManagedRun } from "../process/supervisor/index.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import type { RunExit, TerminationReason } from "../process/supervisor/types.js";
 import {
-  detectSshTarget,
+  detectSshInjectionTarget,
   injectSshCredential,
+  isSshVaultInjectionAllowed,
   matchSshVaultEntry,
 } from "../secrets/vault/ssh-injection.js";
-import { listVaultSecrets, resolveSshCredential } from "../secrets/vault/store.js";
+import { getVaultGrant, listVaultSecrets, resolveSshCredential } from "../secrets/vault/store.js";
 import {
   normalizeDeliveryContext,
   type DeliveryContext,
@@ -720,13 +721,33 @@ export async function runExecProcess(opts: {
   // ── SSH credential injection ──
   // Detect SSH-family commands targeting vault-allowlisted hosts and rewrite
   // them with injected credentials before spawn. The agent never sees the secret.
+  // Skipped for sandboxed execs: the injected key temp file lives on the host
+  // tmpdir (invisible inside the sandbox) and SSHPASS must not leak into the
+  // sandboxed process env — so a sandboxed SSH command runs with the agent's own
+  // credentials, never the vault's.
   let sshTempFileCleanup: (() => void) | undefined;
-  const sshDetected = detectSshTarget(execCommand);
+  const sshDetected = detectSshInjectionTarget(execCommand, { sandbox: opts.sandbox === true });
   if (sshDetected) {
     const vaultEntries = listVaultSecrets({ env: opts.env });
     const sshEntry = matchSshVaultEntry(sshDetected, vaultEntries);
     if (sshEntry) {
-      const sshCred = resolveSshCredential(sshEntry.name, { env: opts.env });
+      // Honor the operator's approval decision, mirroring the HTTP vault path.
+      // The exec runtime has no interactive approval channel, so this fails
+      // closed for an "ask" policy without a standing allow-always grant.
+      const grant = getVaultGrant(sshEntry.name, sshDetected.host, { env: opts.env });
+      const injectionAllowed = isSshVaultInjectionAllowed({
+        approvalPolicy: sshEntry.approvalPolicy,
+        grant,
+      });
+      const sshCred = injectionAllowed
+        ? resolveSshCredential(sshEntry.name, { env: opts.env })
+        : undefined;
+      if (!injectionAllowed) {
+        opts.warnings.push(
+          `SSH vault entry "${sshEntry.name}" for ${sshDetected.host} requires approval; ` +
+            `not injected in this exec context.`,
+        );
+      }
       if (sshCred) {
         const injection = injectSshCredential({
           command: execCommand,
@@ -734,25 +755,32 @@ export async function runExecProcess(opts: {
           credential: sshCred,
           env: opts.env,
         });
-        execCommand = injection.rewrittenCommand;
-        if (injection.extraEnv) {
-          Object.assign(shellRuntimeEnv, injection.extraEnv);
-        }
-        if (injection.tempFiles && injection.tempFiles.length > 0) {
-          const tempFiles = injection.tempFiles;
-          sshTempFileCleanup = () => {
-            for (const f of tempFiles) {
-              try {
-                fs.unlinkSync(f);
-              } catch {
-                /* best effort */
+        if (injection.skipped) {
+          opts.warnings.push(
+            `SSH credentials for ${sshDetected.host} not injected: sshpass is required for ` +
+              `password/passphrase auth but is not installed.`,
+          );
+        } else {
+          execCommand = injection.rewrittenCommand;
+          if (injection.extraEnv) {
+            Object.assign(shellRuntimeEnv, injection.extraEnv);
+          }
+          if (injection.tempFiles && injection.tempFiles.length > 0) {
+            const tempFiles = injection.tempFiles;
+            sshTempFileCleanup = () => {
+              for (const f of tempFiles) {
+                try {
+                  fs.unlinkSync(f);
+                } catch {
+                  /* best effort */
+                }
               }
-            }
-          };
+            };
+          }
+          opts.warnings.push(
+            `SSH credentials for ${sshDetected.host} injected from vault entry "${sshEntry.name}".`,
+          );
         }
-        opts.warnings.push(
-          `SSH credentials for ${sshDetected.host} injected from vault entry "${sshEntry.name}".`,
-        );
       }
     }
   }

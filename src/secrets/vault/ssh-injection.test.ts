@@ -1,11 +1,25 @@
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
+import { splitShellArgs } from "../../utils/shell-argv.js";
 import {
+  detectSshInjectionTarget,
   detectSshTarget,
+  isSshVaultInjectionAllowed,
   matchSshVaultEntry,
   injectSshCredential,
   type SshCredential,
+  type SshInjectionResult,
 } from "./ssh-injection.js";
 import type { VaultSecretEntry } from "./store.js";
+
+/** Remove any private-key temp files an injection wrote. */
+function cleanupTempFiles(result: SshInjectionResult): void {
+  for (const file of result.tempFiles ?? []) {
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
+    }
+  }
+}
 
 function makeSshEntry(
   name: string,
@@ -291,6 +305,7 @@ describe("injectSshCredential", () => {
       detected: baseDetected,
       credential: cred,
       env: process.env,
+      sshpassAvailable: true,
     });
     expect(result.rewrittenCommand.startsWith("sshpass -e ")).toBe(true);
     expect(result.extraEnv?.SSHPASS).toBe("secretpass");
@@ -309,8 +324,101 @@ describe("injectSshCredential", () => {
       detected: baseDetected,
       credential: cred,
       env: process.env,
+      sshpassAvailable: true,
     });
     expect(result.rewrittenCommand).not.toContain("BatchMode");
+  });
+
+  it("declines password injection when sshpass is unavailable", () => {
+    // Finding: `sshpass -e` was wrapped unconditionally; on a host without
+    // sshpass the command hard-failed with "command not found". Now injection
+    // is declined and the command is left untouched.
+    const result = injectSshCredential({
+      command: "ssh example.com",
+      detected: baseDetected,
+      credential: { password: "secretpass" },
+      env: process.env,
+      sshpassAvailable: false,
+    });
+    expect(result.skipped).toEqual({ reason: "sshpass-missing" });
+    expect(result.rewrittenCommand).toBe("ssh example.com");
+    expect(result.extraEnv).toBeUndefined();
+    expect(result.tempFiles).toBeUndefined();
+  });
+
+  it("uses a stored key passphrase via sshpass and omits BatchMode", () => {
+    // Finding: credential.passphrase was never used and BatchMode=yes forced a
+    // passphrase-protected key to fail. Now the passphrase is fed via sshpass
+    // (prompt-matched with -P) and BatchMode is dropped so the prompt is answerable.
+    const result = injectSshCredential({
+      command: "ssh example.com",
+      detected: baseDetected,
+      credential: { privateKey: "fake-key-content", passphrase: "keypass" },
+      env: process.env,
+      sshpassAvailable: true,
+    });
+    expect(result.rewrittenCommand.startsWith("sshpass -P assphrase -e ")).toBe(true);
+    expect(result.rewrittenCommand).not.toContain("BatchMode");
+    expect(result.rewrittenCommand).toContain("-i ");
+    expect(result.extraEnv?.SSHPASS).toBe("keypass");
+    cleanupTempFiles(result);
+  });
+
+  it("declines passphrase-key injection when sshpass is unavailable", () => {
+    const result = injectSshCredential({
+      command: "ssh example.com",
+      detected: baseDetected,
+      credential: { privateKey: "fake-key-content", passphrase: "keypass" },
+      env: process.env,
+      sshpassAvailable: false,
+    });
+    expect(result.skipped).toEqual({ reason: "sshpass-missing" });
+    expect(result.rewrittenCommand).toBe("ssh example.com");
+    expect(result.tempFiles).toBeUndefined();
+  });
+
+  it("keeps a metacharacter remote command quoted so it cannot execute locally", () => {
+    // Finding: `ssh host "a&&b"` re-emitted `a&&b` unquoted, so the LOCAL shell
+    // split at && and ran `b` on the host machine.
+    const result = injectSshCredential({
+      command: 'ssh example.com "a&&b"',
+      detected: baseDetected,
+      credential: { privateKey: "fake-key-content" },
+      env: process.env,
+    });
+    expect(result.rewrittenCommand).toContain("'a&&b'");
+    cleanupTempFiles(result);
+  });
+
+  it("does not re-quote a single-quoted remote command into local expansion", () => {
+    const result = injectSshCredential({
+      command: "ssh example.com 'echo $HOME'",
+      detected: baseDetected,
+      credential: { privateKey: "fake-key-content" },
+      env: process.env,
+    });
+    expect(result.rewrittenCommand).toContain("'echo $HOME'");
+    expect(result.rewrittenCommand).not.toContain('"echo $HOME"');
+    cleanupTempFiles(result);
+  });
+
+  it("routes rsync ssh options into the -e remote-shell value, not rsync argv", () => {
+    // Finding: `-o StrictHostKeyChecking=…` / BatchMode were injected as bare
+    // rsync argv, which rsync rejects. They must live inside the -e ssh command.
+    const result = injectSshCredential({
+      command: "rsync -avz /local user@example.com:/remote",
+      detected: { tool: "rsync", host: "example.com", username: "user" },
+      credential: { privateKey: "fake-key-content" },
+      env: process.env,
+    });
+    const cmd = result.rewrittenCommand;
+    expect(cmd).toMatch(/-e '[^']*StrictHostKeyChecking=accept-new[^']*'/u);
+    expect(cmd).toMatch(/-e '[^']*-i [^']*'/u);
+    const argv = splitShellArgs(cmd)!;
+    // rsync must not receive ssh-only tokens on its own argv.
+    expect(argv).not.toContain("-o");
+    expect(argv).not.toContain("BatchMode=yes");
+    cleanupTempFiles(result);
   });
 
   it("prefers private key over password when both present", () => {
@@ -422,5 +530,38 @@ describe("injectSshCredential", () => {
       expect(mode).toBe(0o600);
       fs.unlinkSync(result.tempFiles![0]);
     }
+  });
+});
+
+describe("detectSshInjectionTarget", () => {
+  it("detects a target for a host exec", () => {
+    expect(detectSshInjectionTarget("ssh example.com", { sandbox: false })).toEqual({
+      tool: "ssh",
+      host: "example.com",
+    });
+  });
+
+  it("returns null for a sandboxed exec so the vault key/SSHPASS never reach the sandbox", () => {
+    expect(detectSshInjectionTarget("ssh example.com", { sandbox: true })).toBeNull();
+  });
+});
+
+describe("isSshVaultInjectionAllowed", () => {
+  it("injects for an auto policy with no grant", () => {
+    expect(isSshVaultInjectionAllowed({ approvalPolicy: "auto", grant: undefined })).toBe(true);
+  });
+
+  it("declines an ask policy with no standing grant (fail closed)", () => {
+    // Regression: exec injection ignored approvalPolicy entirely and injected a
+    // credential the operator saved with the default `ask` policy.
+    expect(isSshVaultInjectionAllowed({ approvalPolicy: "ask", grant: undefined })).toBe(false);
+  });
+
+  it("injects for an ask policy once allow-always is granted", () => {
+    expect(isSshVaultInjectionAllowed({ approvalPolicy: "ask", grant: "allow-always" })).toBe(true);
+  });
+
+  it("never injects over a deny grant, even for an auto policy", () => {
+    expect(isSshVaultInjectionAllowed({ approvalPolicy: "auto", grant: "deny" })).toBe(false);
   });
 });

@@ -10,7 +10,7 @@ import fs from "node:fs";
  */
 import os from "node:os";
 import path from "node:path";
-import type { VaultSecretEntry } from "./store.js";
+import type { VaultApprovalPolicy, VaultGrantDecision, VaultSecretEntry } from "./store.js";
 import { hostMatchesAllowlist } from "./store.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -36,6 +36,13 @@ export type SshInjectionResult = {
   rewrittenCommand: string;
   extraEnv?: Record<string, string>;
   tempFiles?: string[];
+  /**
+   * Set when injection could not proceed safely (e.g. sshpass is required for
+   * password/passphrase auth but is not installed). The command is returned
+   * unchanged so the caller can surface the reason instead of spawning a
+   * rewritten command that would hang on a prompt or fail cryptically.
+   */
+  skipped?: { reason: "sshpass-missing" };
 };
 
 // ── Detection ──────────────────────────────────────────────────────────────
@@ -536,6 +543,36 @@ export function matchSshVaultEntry(
   );
 }
 
+/**
+ * Detect an SSH target to inject vault credentials for, unless the exec is
+ * sandboxed. Sandboxed execs cannot see the private-key temp file (written to
+ * the host tmpdir) and must not receive SSHPASS in their env, so vault injection
+ * is disabled for them entirely — the command runs with the agent's own creds.
+ */
+export function detectSshInjectionTarget(
+  command: string,
+  opts: { sandbox: boolean },
+): SshDetectedTarget | null {
+  if (opts.sandbox) {
+    return null;
+  }
+  return detectSshTarget(command);
+}
+
+/**
+ * Fail-closed approval gate for SSH vault injection, mirroring the HTTP vault
+ * path. The exec runtime has no interactive approval channel, so a credential is
+ * injected only under an "auto" policy or a persisted allow-always grant, and
+ * never over a "deny" grant — an "ask" policy without a standing grant declines.
+ */
+export function isSshVaultInjectionAllowed(params: {
+  approvalPolicy: VaultApprovalPolicy;
+  grant: VaultGrantDecision | undefined;
+}): boolean {
+  const { approvalPolicy, grant } = params;
+  return grant !== "deny" && (approvalPolicy === "auto" || grant === "allow-always");
+}
+
 // ── Rewriting ──────────────────────────────────────────────────────────────
 
 /** Write a private key to a temp file with 0600 permissions. */
@@ -553,18 +590,23 @@ function writeKeyTempFile(privateKey: string): string {
 }
 
 /**
- * Check if `sshpass` is available in the environment.
- * This is a soft check — if sshpass is needed but missing, the caller should
- * log an error and fall back.
+ * Check if `sshpass` is available. Password auth and passphrase-protected keys
+ * both feed their secret through sshpass, so injectSshCredential probes this
+ * before rewriting and declines injection when it is missing. The result is
+ * process-stable, so cache the first probe.
  */
+let sshpassAvailableCache: boolean | undefined;
 export function isSshpassAvailable(): boolean {
-  try {
-    const { execSync } = require("node:child_process");
-    execSync("sshpass -V", { stdio: "ignore", timeout: 5000 });
-    return true;
-  } catch {
-    return false;
+  if (sshpassAvailableCache === undefined) {
+    try {
+      const { execSync } = require("node:child_process");
+      execSync("sshpass -V", { stdio: "ignore", timeout: 5000 });
+      sshpassAvailableCache = true;
+    } catch {
+      sshpassAvailableCache = false;
+    }
   }
+  return sshpassAvailableCache;
 }
 
 /**
@@ -581,72 +623,101 @@ export function injectSshCredential(params: {
   detected: SshDetectedTarget;
   credential: SshCredential;
   env: NodeJS.ProcessEnv;
+  /** Test seam; defaults to a live `sshpass -V` probe. */
+  sshpassAvailable?: boolean;
 }): SshInjectionResult {
   const { command, detected, credential } = params;
   const usePrivateKey = !!credential.privateKey;
   const usePassword = !usePrivateKey && !!credential.password;
+  const usePassphrase = usePrivateKey && !!credential.passphrase;
+  // Password auth and passphrase-protected keys both hand their secret to
+  // sshpass. Without it, the rewritten command would block on an interactive
+  // prompt (or fail obscurely), so decline injection and report why rather than
+  // ship a broken command.
+  const needsSshpass = usePassword || usePassphrase;
+  const sshpassAvailable = params.sshpassAvailable ?? isSshpassAvailable();
+  if (needsSshpass && !sshpassAvailable) {
+    return { rewrittenCommand: command, skipped: { reason: "sshpass-missing" } };
+  }
 
-  let rewrittenCommand = command;
   const extraEnv: Record<string, string> = {};
   const tempFiles: string[] = [];
 
+  // ssh `-o` options applied to every tool. BatchMode is safe only for a bare
+  // key: with a passphrase, sshpass must answer the prompt that BatchMode would
+  // otherwise suppress; for password auth sshpass provides the password.
+  const options: Array<[string, string]> = [["-o", "StrictHostKeyChecking=accept-new"]];
+  if (usePrivateKey && !usePassphrase) {
+    options.push(["-o", "BatchMode=yes"]);
+  }
+
+  let keyPath: string | undefined;
   if (usePrivateKey && credential.privateKey) {
-    const keyPath = writeKeyTempFile(credential.privateKey);
+    keyPath = writeKeyTempFile(credential.privateKey);
     tempFiles.push(keyPath);
+  }
 
-    if (detected.tool === "ssh" || detected.tool === "sftp") {
-      rewrittenCommand = injectFlag(rewrittenCommand, "-i", keyPath);
-    } else if (detected.tool === "scp") {
-      rewrittenCommand = injectFlag(rewrittenCommand, "-i", keyPath);
-    } else if (detected.tool === "rsync") {
-      // For rsync, set the rsh to include the key
-      rewrittenCommand = injectRsyncRsh(rewrittenCommand, `-i ${keyPath}`);
+  const injectPort = credential.port !== undefined && detected.port === undefined;
+  let rewrittenCommand: string;
+
+  if (detected.tool === "rsync") {
+    // rsync rejects ssh flags (`-i`, `-o`, `-p`, BatchMode) on its own argv —
+    // they belong inside the remote-shell command (`-e`/`--rsh`). Build one rsh
+    // string and merge it into any existing `-e`.
+    const rshArgs: string[] = [];
+    if (keyPath) {
+      rshArgs.push("-i", keyPath);
     }
-  }
-
-  // Inject port if the vault has one and the command doesn't
-  if (credential.port !== undefined && detected.port === undefined) {
-    const portStr = String(credential.port);
-    if (detected.tool === "ssh") {
-      rewrittenCommand = injectFlag(rewrittenCommand, "-p", portStr);
-    } else if (detected.tool === "scp" || detected.tool === "sftp") {
-      rewrittenCommand = injectFlag(rewrittenCommand, "-P", portStr);
-    } else if (detected.tool === "rsync") {
-      rewrittenCommand = injectRsyncRsh(rewrittenCommand, `-p ${portStr}`);
+    if (injectPort) {
+      rshArgs.push("-p", String(credential.port));
     }
-  }
-
-  // Inject username if the vault has one and the command doesn't
-  if (credential.username && !detected.username) {
-    rewrittenCommand = injectUsername(rewrittenCommand, detected, credential.username);
-  }
-
-  // Add anti-hang options
-  const strictHostKey = "-o StrictHostKeyChecking=accept-new";
-  if (usePrivateKey) {
-    // For key auth, add BatchMode to prevent password prompt hangs
-    rewrittenCommand = injectOption(rewrittenCommand, strictHostKey);
-    rewrittenCommand = injectOption(rewrittenCommand, "-o BatchMode=yes");
+    for (const [flag, value] of options) {
+      rshArgs.push(flag, value);
+    }
+    const sshpassPrefix = needsSshpass ? `${sshpassCommand(usePassphrase)} ` : "";
+    rewrittenCommand = injectRsyncRsh(command, rshArgs.join(" "), sshpassPrefix);
+    if (credential.username && !detected.username) {
+      rewrittenCommand = injectUsername(rewrittenCommand, detected, credential.username);
+    }
   } else {
-    // For password auth via sshpass, don't add BatchMode (sshpass needs to provide the password)
-    rewrittenCommand = injectOption(rewrittenCommand, strictHostKey);
+    rewrittenCommand = command;
+    if (keyPath) {
+      rewrittenCommand = injectFlag(rewrittenCommand, "-i", keyPath);
+    }
+    if (injectPort) {
+      // scp/sftp use `-P` for the port; ssh uses `-p`.
+      const portFlag = detected.tool === "ssh" ? "-p" : "-P";
+      rewrittenCommand = injectFlag(rewrittenCommand, portFlag, String(credential.port));
+    }
+    if (credential.username && !detected.username) {
+      rewrittenCommand = injectUsername(rewrittenCommand, detected, credential.username);
+    }
+    for (const [flag, value] of options) {
+      rewrittenCommand = injectOption(rewrittenCommand, flag, value);
+    }
+    if (needsSshpass) {
+      rewrittenCommand = `${sshpassCommand(usePassphrase)} ${rewrittenCommand}`;
+    }
   }
 
-  // Wrap with sshpass for password auth
-  if (usePassword && credential.password) {
-    extraEnv["SSHPASS"] = credential.password;
-    if (detected.tool === "rsync") {
-      // For rsync, we need to set SSHPASS and use rsh with sshpass
-      rewrittenCommand = injectRsyncRsh(rewrittenCommand, "", true);
-    }
-    // Wrap the entire command with sshpass -e
-    rewrittenCommand = `sshpass -e ${rewrittenCommand}`;
+  if (needsSshpass) {
+    // The secret rides in SSHPASS (env), never in argv.
+    extraEnv["SSHPASS"] = usePassword ? credential.password! : credential.passphrase!;
   }
 
   const result: SshInjectionResult = { rewrittenCommand };
   if (Object.keys(extraEnv).length > 0) result.extraEnv = extraEnv;
   if (tempFiles.length > 0) result.tempFiles = tempFiles;
   return result;
+}
+
+/**
+ * The sshpass invocation prefix. `-P assphrase` re-points its prompt match at
+ * the key-passphrase prompt ("Enter passphrase for key …"); the default matches
+ * "assword" for password auth. `-e` reads the secret from the SSHPASS env var.
+ */
+function sshpassCommand(usePassphrase: boolean): string {
+  return usePassphrase ? "sshpass -P assphrase -e" : "sshpass -e";
 }
 
 /** Inject a flag+value pair after the tool binary in a command string. */
@@ -662,20 +733,20 @@ function injectFlag(command: string, flag: string, value: string): string {
   return retokenize(tokens);
 }
 
-/** Inject an -o option value. */
-function injectOption(command: string, option: string): string {
+/** Inject an option flag + value pair (e.g. `-o` `BatchMode=yes`) as two tokens. */
+function injectOption(command: string, flag: string, value: string): string {
   const tokens = tokenizeCommand(command);
   if (tokens.length === 0) return command;
-  // Check if this exact option is already present
-  if (tokens.includes(option)) {
-    return command;
+  // Already present (same flag immediately followed by the same value) → no-op.
+  for (let i = 1; i < tokens.length - 1; i++) {
+    if (tokens[i] === flag && tokens[i + 1] === value) {
+      return command;
+    }
   }
-  // For -o options, insert after the binary but before the host argument.
-  // Find the first non-flag argument (the host) and insert before it.
+  // Insert after the leading flags, before the first non-flag (host) argument.
   let insertAt = 1;
   for (let i = 1; i < tokens.length; i++) {
     if (tokens[i].startsWith("-")) {
-      // Check if this flag takes a value
       const nextToken = tokens[i + 1];
       if (nextToken && !nextToken.startsWith("-") && isFlagWithValue(tokens[i])) {
         i++; // Skip the value too
@@ -687,7 +758,7 @@ function injectOption(command: string, option: string): string {
       break;
     }
   }
-  tokens.splice(insertAt, 0, option);
+  tokens.splice(insertAt, 0, flag, value);
   return retokenize(tokens);
 }
 
@@ -743,74 +814,68 @@ function injectUsername(command: string, detected: SshDetectedTarget, username: 
   return modified ? retokenize(tokens) : command;
 }
 
-/** Inject rsh options for rsync (either -e flag or --rsh). */
-function injectRsyncRsh(command: string, rshArgs: string, useSshpass = false): string {
+/**
+ * Merge injected ssh args into rsync's remote-shell command (`-e`/`--rsh`).
+ *
+ * `rshArgs` are the extra ssh args (e.g. `-i /tmp/k -o StrictHostKeyChecking=…`)
+ * and `sshpassPrefix` is either "" or `sshpass -e ` / `sshpass -P assphrase -e `.
+ * The result is stored as one literal token; `retokenize` shell-quotes it, so we
+ * never build tokens with embedded quote characters (which the old code did and
+ * which then round-tripped incorrectly). rsync splits the `-e` value on spaces
+ * itself, so a single quoted argument is exactly what it expects.
+ */
+function injectRsyncRsh(command: string, rshArgs: string, sshpassPrefix: string): string {
   const tokens = tokenizeCommand(command);
-  let rshFound = false;
+  const buildValue = (existing: string): string => {
+    const base = existing.trim();
+    const withSsh = base.length === 0 ? "ssh" : /^ssh\b/u.test(base) ? base : `ssh ${base}`;
+    return `${sshpassPrefix}${withSsh}${rshArgs ? ` ${rshArgs}` : ""}`;
+  };
   for (let i = 1; i < tokens.length; i++) {
     const token = tokens[i];
-    if (token === "-e" && i + 1 < tokens.length) {
-      // Append to existing -e value
-      const existingRsh = tokens[i + 1].replace(/^["']|["']$/g, "");
-      if (useSshpass) {
-        tokens[i + 1] = `"sshpass -e ssh ${existingRsh}"`;
-      } else {
-        tokens[i + 1] = `"ssh ${existingRsh} ${rshArgs}"`;
-      }
-      rshFound = true;
-      break;
+    // tokenizeCommand already strips the quotes around an -e/--rsh value, so the
+    // value token holds the literal remote-shell command with its spaces intact.
+    if ((token === "-e" || token === "--rsh") && i + 1 < tokens.length) {
+      tokens[i + 1] = buildValue(tokens[i + 1]);
+      return retokenize(tokens);
     }
     if (token.startsWith("-e") && token.length > 2) {
-      const existingRsh = token.slice(2).replace(/^["']|["']$/g, "");
-      if (useSshpass) {
-        tokens[i] = `-e "sshpass -e ssh ${existingRsh}"`;
-      } else {
-        tokens[i] = `-e "ssh ${existingRsh} ${rshArgs}"`;
-      }
-      rshFound = true;
-      break;
+      tokens[i] = "-e";
+      tokens.splice(i + 1, 0, buildValue(token.slice(2)));
+      return retokenize(tokens);
     }
     if (token.startsWith("--rsh=")) {
-      const existingRsh = token.slice("--rsh=".length).replace(/^["']|["']$/g, "");
-      if (useSshpass) {
-        tokens[i] = `--rsh="sshpass -e ssh ${existingRsh}"`;
-      } else {
-        tokens[i] = `--rsh="ssh ${existingRsh} ${rshArgs}"`;
-      }
-      rshFound = true;
-      break;
-    }
-    if (token === "--rsh" && i + 1 < tokens.length) {
-      const existingRsh = tokens[i + 1].replace(/^["']|["']$/g, "");
-      if (useSshpass) {
-        tokens[i + 1] = `"sshpass -e ssh ${existingRsh}"`;
-      } else {
-        tokens[i + 1] = `"ssh ${existingRsh} ${rshArgs}"`;
-      }
-      rshFound = true;
-      break;
+      tokens[i] = "--rsh";
+      tokens.splice(i + 1, 0, buildValue(token.slice("--rsh=".length)));
+      return retokenize(tokens);
     }
   }
-  if (!rshFound) {
-    // Insert -e after the binary (position 1)
-    if (useSshpass) {
-      tokens.splice(1, 0, "-e", `"sshpass -e ssh"`);
-    } else {
-      tokens.splice(1, 0, "-e", `"ssh ${rshArgs}"`);
-    }
-  }
+  // No existing rsh — insert one after the binary.
+  tokens.splice(1, 0, "-e", buildValue(""));
   return retokenize(tokens);
 }
 
-/** Re-assemble tokens into a command string, quoting as needed. */
+// A shell token is safe to emit unquoted only if every character is in this set
+// (the standard shlex-style whitelist). Anything else — spaces, $, `, &, |, ;,
+// (), quotes — must be quoted so the local shell treats it as one literal arg.
+const SHELL_SAFE_TOKEN = /^[A-Za-z0-9_@%+=:,./-]+$/u;
+
+/**
+ * POSIX single-quote a token so it survives the local shell as one literal
+ * argument. tokenizeCommand decoded the original quoting to the literal value,
+ * so re-quoting anything non-trivial keeps the argument byte-identical. The old
+ * retokenize only wrapped space-containing tokens in double quotes, which let
+ * `$VAR` expand locally and split `a&&b` at the local shell — a remote command
+ * would run on the host machine instead.
+ */
+function quoteShellToken(token: string): string {
+  if (token.length > 0 && SHELL_SAFE_TOKEN.test(token)) {
+    return token;
+  }
+  return `'${token.replaceAll("'", "'\\''")}'`;
+}
+
+/** Re-assemble tokens into a command string, shell-quoting each as needed. */
 function retokenize(tokens: string[]): string {
-  return tokens
-    .map((t) => {
-      // Quote tokens that contain spaces
-      if (t.includes(" ") && !t.startsWith('"') && !t.startsWith("'")) {
-        return `"${t}"`;
-      }
-      return t;
-    })
-    .join(" ");
+  return tokens.map(quoteShellToken).join(" ");
 }
