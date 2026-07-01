@@ -39,6 +39,7 @@ export function renderAgentOverview(params: {
   onConfigSave: () => void;
   onModelChange: (agentId: string, modelId: string | null) => void;
   onModelFallbacksChange: (agentId: string, fallbacks: string[]) => void;
+  onThinkingDefaultChange: (agentId: string, level: string | null) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
 }) {
   const {
@@ -52,6 +53,7 @@ export function renderAgentOverview(params: {
     onConfigSave,
     onModelChange,
     onModelFallbacksChange,
+    onThinkingDefaultChange,
     onSelectPanel,
   } = params;
   const isDefault = Boolean(params.defaultId && agent.id === params.defaultId);
@@ -87,6 +89,19 @@ export function renderAgentOverview(params: {
   const skillCount = skillFilter?.length ?? null;
   const disabled = !configForm || configLoading || configSaving;
   const thinkingDefault = agent.thinkingDefault ?? "-";
+  // Options are the model-constrained thinking levels the gateway already
+  // resolved for this agent's model (empty when the model has no thinking
+  // controls), so the dropdown only offers valid levels for the selected model.
+  const thinkingLevelOptions = agent.thinkingLevels ?? [];
+  const readConfiguredThinking = (source: unknown): string | null => {
+    const value = (source as { thinkingDefault?: unknown } | null | undefined)?.thinkingDefault;
+    return typeof value === "string" ? value : null;
+  };
+  const entryThinking = readConfiguredThinking(config.entry);
+  const defaultThinking = readConfiguredThinking(config.defaults);
+  // Mirror the primary-model select: the default agent shows its effective
+  // value, other agents show only their own explicit override (else inherit).
+  const selectedThinking = isDefault ? (entryThinking ?? defaultThinking) : entryThinking;
 
   const removeChip = (index: number) => {
     const next = fallbackChips.filter((_, i) => i !== index);
@@ -197,6 +212,31 @@ export function renderAgentOverview(params: {
                 effectivePrimary ?? undefined,
                 params.modelCatalog,
                 selectedPrimary,
+              )}
+            </select>
+          </label>
+          <label class="field">
+            <span>${t("agents.context.thinkingDefault")}${isDefault ? " (default)" : ""}</span>
+            <select
+              class="agent-thinking-default"
+              .value=${selectedThinking ?? ""}
+              ?disabled=${disabled}
+              @change=${(e: Event) =>
+                onThinkingDefaultChange(agent.id, (e.target as HTMLSelectElement).value || null)}
+            >
+              <option value="" ?selected=${!selectedThinking}>
+                ${isDefault
+                  ? "Not set"
+                  : thinkingDefault !== "-"
+                    ? `Inherit default (${thinkingDefault})`
+                    : "Inherit default"}
+              </option>
+              ${thinkingLevelOptions.map(
+                (level) => html`
+                  <option value=${level.id} ?selected=${selectedThinking === level.id}>
+                    ${level.label}
+                  </option>
+                `,
               )}
             </select>
           </label>

@@ -130,6 +130,7 @@ function createProps(overrides: Partial<AgentsProps> = {}): AgentsProps {
     onConfigSave: () => undefined,
     onModelChange: () => undefined,
     onModelFallbacksChange: () => undefined,
+    onThinkingDefaultChange: () => undefined,
     onChannelsRefresh: () => undefined,
     onCronRefresh: () => undefined,
     onCronRunNow: () => undefined,
@@ -301,6 +302,69 @@ describe("renderAgents", () => {
         entry.querySelector(".label")?.textContent?.trim() === t("agents.context.thinkingDefault"),
     );
     expect(thinkingKv?.textContent).toContain("xhigh");
+  });
+
+  it("offers only the model's thinking levels and stages the choice", async () => {
+    const container = document.createElement("div");
+    const thinkingChanges: Array<string | null> = [];
+    const configForm = {
+      agents: {
+        list: [{ id: "beta", thinkingDefault: "high" }],
+      },
+    };
+
+    render(
+      renderAgents(
+        createProps({
+          agentsList: {
+            defaultId: "alpha",
+            mainKey: "main",
+            scope: "workspace",
+            agents: [
+              { id: "alpha", name: "Alpha" } as never,
+              {
+                id: "beta",
+                name: "Beta",
+                thinkingDefault: "medium",
+                thinkingLevels: [
+                  { id: "low", label: "Low" },
+                  { id: "medium", label: "Medium" },
+                  { id: "high", label: "High" },
+                ],
+              } as never,
+            ],
+          },
+          selectedAgentId: "beta",
+          config: { form: configForm, loading: false, saving: false, dirty: false },
+          onThinkingDefaultChange: (_agentId, level) => thinkingChanges.push(level),
+        }),
+      ),
+      container,
+    );
+
+    const select = await vi.waitFor(() => {
+      const found = container.querySelector<HTMLSelectElement>(".agent-thinking-default");
+      expect(found).toBeTruthy();
+      return found as HTMLSelectElement;
+    });
+
+    // Inherit + only the model-supported levels; the explicit override is selected.
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      "",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(select.value).toBe("high");
+
+    // Picking a level stages it; picking inherit clears it.
+    select.value = "low";
+    select.dispatchEvent(new Event("change"));
+    expect(thinkingChanges.at(-1)).toBe("low");
+
+    select.value = "";
+    select.dispatchEvent(new Event("change"));
+    expect(thinkingChanges.at(-1)).toBeNull();
   });
 
   it("shows the skills count only for the selected agent's report", async () => {
