@@ -457,6 +457,9 @@ type StripModalState = {
   profileRole: string;
   profileDescription: string;
   profileModel: string;
+  // Per-agent default thinking level; seeded from the row's effective level and
+  // written back as an explicit override on save (same set-only semantics as Model).
+  profileThinking: string;
   // Assigned avatar data-URI for the open profile ("" = auto/id-derived sprite).
   profileAvatar: string;
   // Only persist avatar on save when the operator actually regenerated/reset it,
@@ -490,6 +493,7 @@ const stripState: StripModalState = {
   profileRole: "",
   profileDescription: "",
   profileModel: "",
+  profileThinking: "",
   profileAvatar: "",
   profileAvatarDirty: false,
   savingProfile: false,
@@ -542,6 +546,7 @@ function openProfile(opts: PixelAgentsStripOptions, id: string): void {
   stripState.profileRole = row?.identity?.role ?? buddy?.role ?? "";
   stripState.profileDescription = row?.description ?? "";
   stripState.profileModel = row?.model?.primary ?? "";
+  stripState.profileThinking = row?.thinkingDefault ?? "";
   stripState.profileAvatar = row?.identity?.avatarUrl ?? "";
   stripState.profileAvatarDirty = false;
   stripState.savingProfile = false;
@@ -581,6 +586,9 @@ async function saveAgentProfile(opts: PixelAgentsStripOptions, id: string): Prom
     await opts.client.request("agents.update", {
       agentId: id,
       ...(stripState.profileModel.trim() ? { model: stripState.profileModel.trim() } : {}),
+      ...(stripState.profileThinking.trim()
+        ? { thinkingDefault: stripState.profileThinking.trim() }
+        : {}),
       ...(stripState.profileDescription.trim()
         ? { description: stripState.profileDescription.trim() }
         : {}),
@@ -790,6 +798,41 @@ function renderProfileModelSelect() {
     },
     "mo-profile__edit",
   );
+}
+
+// Used only when the row carries no server-provided thinkingLevels (e.g. a
+// custom/uncatalogued model); mirrors the canonical base levels.
+const PROFILE_THINKING_FALLBACK: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "off", label: "Off" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+];
+
+// Thinking-level picker for the profile editor. Options come from the row's
+// provider-aware thinkingLevels; the current effective level is kept selectable
+// even if it falls outside that list.
+function renderProfileThinkingSelect(row: GatewayAgentRow | undefined) {
+  const levels = row?.thinkingLevels?.length ? row.thinkingLevels : PROFILE_THINKING_FALLBACK;
+  const current = stripState.profileThinking;
+  const currentInList = levels.some((level) => level.id === current);
+  return html`
+    <select
+      class="mo-profile__edit"
+      .value=${current}
+      @change=${(e: Event) => {
+        stripState.profileThinking = (e.target as HTMLSelectElement).value;
+      }}
+    >
+      ${current && !currentInList
+        ? html`<option value=${current} selected>${current}</option>`
+        : nothing}
+      ${levels.map(
+        (level) =>
+          html`<option value=${level.id} ?selected=${level.id === current}>${level.label}</option>`,
+      )}
+    </select>
+  `;
 }
 
 /** Shared agent-prompt (SOUL.md) composer: Generate button + editable textarea. */
@@ -1044,6 +1087,10 @@ function renderAgentProfileModal(opts: PixelAgentsStripOptions, sessions: Gatewa
           <div>
             <dt>Model</dt>
             <dd>${renderProfileModelSelect()}</dd>
+          </div>
+          <div>
+            <dt>Thinking</dt>
+            <dd>${renderProfileThinkingSelect(row)}</dd>
           </div>
         </dl>
         <div class="mo-profile__save-row">

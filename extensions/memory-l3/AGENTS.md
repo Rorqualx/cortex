@@ -97,3 +97,62 @@ Root/extensions rule: plugins import only `openclaw/plugin-sdk/*` and local barr
 ## Relationship to dreaming
 
 L3 is **independent** of memory-core's Light/Deep/REM dreaming (upstream). One-directional: L3 writes long-term facts into a path memory-core indexes; dreaming picks them up passively. Dreaming never calls L3; L3 never calls dreaming.
+
+## Paper-validated architecture (arXiv:2606.06448, Omri et al. Stanford/MIT)
+
+OpenClaw Memory-L3 was evaluated against the paper "Agent Memory: Characterization
+and System Implications of Stateful Long-Horizon Workloads" (2026-06-24 analysis,
+full report in `memory/reports/l3-storage-layout-recommendations.md`).
+
+### Taxonomy classification
+
+L3 is a **Paradigm III.b** system (consolidating structure-augmented RAG memory):
+LLM used as fixed extractor at epoch boundaries with ADD/UPDATE/DELETE record
+resolution. Closest paper comparables: Mem0, SimpleMem. Retrieval is
+algorithm-bounded (cosine + BM25 + multi-signal scoring), not LLM-bounded, giving
+tight tail latency (Rec 10).
+
+### Recommendation support matrix
+
+| Rec                              | Supports L3? | Evidence                                                  |
+| -------------------------------- | ------------ | --------------------------------------------------------- |
+| Rec 1: System-Level Selection    | Neutral      | —                                                         |
+| Rec 2: Lifecycle Energy          | ★★★ STRONG   | SQLite indexed writes reduce read-time I/O                |
+| Rec 3: Construction Scheduling   | ★★ SUPPORTS  | WAL + `BEGIN IMMEDIATE` = background-safe writes          |
+| Rec 4: Construction Reuse        | Neutral      | —                                                         |
+| Rec 5: Capability Floor          | Neutral      | —                                                         |
+| Rec 6: Workload-Aware Cost Split | ★★★ STRONG   | High-query/stable-history → construction-heavy is correct |
+| Rec 7: Inter-Session Feasibility | Weak         | Indexed reads tighten feasibility window                  |
+| Rec 8: Construction Cadence      | ★★ SUPPORTS  | SQL enables per-chunk cost monitoring                     |
+| Rec 9: Growth Slope              | ★★★ STRONG   | SQL enables pruning, monitoring, fleet mgmt               |
+| Rec 10: Worst-Case Latency       | Neutral      | —                                                         |
+
+**Net: 5 of 10 strongly support. Zero oppose. The SQLite migration (deviation 1)
+is validated.**
+
+### Deferred items (paper-validated trigger conditions)
+
+| Item                           | Trigger                                                   | Rec           | Timeline |
+| ------------------------------ | --------------------------------------------------------- | ------------- | -------- |
+| sqlite-vec ANN                 | ~10k+ message chunks (in-JS scan > 10ms)                  | Rec 3         | Q3 2026  |
+| Construction admission control | Epoch build interferes with query latency (p95 > 5s)      | Rec 3, Rec 10 | Q3 2026  |
+| Growth-slope monitoring        | DB > 100MB or per-epoch construction > 30s                | Rec 8, Rec 9  | Q4 2026  |
+| Active compaction              | Marginal per-chunk cost compound rate > 2× over 10 epochs | Rec 8, Rec 9  | Q4 2026  |
+
+### Quick wins (recommended for immediate implementation)
+
+- **Temporal validity signals** (QW-1): Flag stale facts in retrieval output by age
+  (>30d → "possibly stale", >90d → "aged — verify"). Additive, doesn't change
+  retrieval order. `retrieval.ts`, `scoring.ts`.
+- **Session summarization** (QW-2): Pre-ingestion summarizer for transcript
+  ingestion. Extracts key decisions/actions/facts before L2 compaction. Reduces
+  noise, improves L3 quality. `claude-code-transcript.ts`, `llm.ts`.
+
+### Longer-term architectural consideration
+
+- **Atomic fact decomposition** (AR-2): Enforce single-claim atomicity during
+  L2→L3 promotion; extend reconciliation supersession to typed facts. Prototype
+  behind feature flag; run against LongMemEval benchmark before committing. Design
+  doc recommended. `consolidation.ts`, `entities.ts`, `dedup.ts`, `scoring.ts`.
+
+Full recommendations: `memory/reports/l3-storage-layout-recommendations.md`
