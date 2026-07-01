@@ -85,6 +85,9 @@ fork-config-baseline.json                                               merge=ou
 scripts/fork-config-snapshot.mjs                                       merge=ours
 scripts/fork-merge-guard.mjs                                            merge=ours
 scripts/fork-merge-verify.mjs                                           merge=ours
+scripts/upstream-divergence-report.mjs                                 merge=ours
+scripts/remote-proof.sh                                                 merge=ours
+AUTO_CHERRY_LEDGER.md                                                   merge=ours
 FORK-MERGE-GUIDE.md                                                     merge=ours
 
 # --- fork: full fork-surface protection sweep (2026-06-11) ---
