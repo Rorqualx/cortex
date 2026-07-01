@@ -142,15 +142,18 @@ function isRecursiveCodeGrep(segment: string): boolean {
     flags.includes("--recursive");
   // The first non-flag arg is the pattern; the rest are path operands.
   const operands = args.slice(1);
-  const targetsDir = operands.some(
-    (p) =>
+  const targetsDir = operands.some((p) => {
+    const segments = p.split("/").filter(Boolean);
+    if (segments.length > 1) return false; // deep path → scoped search, allow
+    return (
       p.endsWith("/") ||
       p === "." ||
       p === "src" ||
       p === "lib" ||
       p === "app" ||
-      (p.includes("/") && !baseCommand(p).includes(".")),
-  );
+      !baseCommand(p).includes(".")
+    );
+  });
   // Explicit text/log target → allow.
   if (operands.some((p) => TEXT_HINT.some((h) => p.includes(h)))) {
     return false;
@@ -163,9 +166,7 @@ function isRecursiveCodeGrep(segment: string): boolean {
   ) {
     return false;
   }
-  return (
-    recursive || targetsDir || (operands.length === 0 && (base === "rg" || base === "ripgrep"))
-  );
+  return targetsDir || (operands.length === 0 && (base === "rg" || base === "ripgrep"));
 }
 
 function checkAstGrep(command: string): string | null {
