@@ -507,6 +507,7 @@ function buildAgentConfigUpdate(params: {
   workspaceDir?: string;
   model?: string;
   description?: string;
+  thinkingDefault?: Parameters<typeof updateAgentConfigEntry>[0]["thinkingDefault"];
   identity?: IdentityConfig;
 }): Parameters<typeof updateAgentConfigEntry>[0] {
   return {
@@ -515,6 +516,7 @@ function buildAgentConfigUpdate(params: {
     ...(params.workspaceDir ? { workspace: params.workspaceDir } : {}),
     ...(params.model ? { model: params.model } : {}),
     ...(params.description !== undefined ? { description: params.description } : {}),
+    ...(params.thinkingDefault ? { thinkingDefault: params.thinkingDefault } : {}),
     ...(params.identity ? { identity: params.identity } : {}),
   };
 }
@@ -844,6 +846,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     const model = resolveOptionalStringParam(params.model);
     const description = resolveOptionalStringParam(params.description);
+    const thinkingDefault = params.thinkingDefault;
 
     const safeName =
       typeof params.name === "string" && params.name.trim()
@@ -864,6 +867,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       workspaceDir,
       model,
       description,
+      thinkingDefault,
       identity,
     });
     const nextConfig = applyAgentConfig(cfg, agentConfigUpdate);

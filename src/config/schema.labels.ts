@@ -626,6 +626,8 @@ export const FIELD_LABELS: Record<string, string> = {
   "models.providers.*.request.tls.serverName": "Model Provider Request TLS Server Name",
   "models.providers.*.request.tls.insecureSkipVerify": "Model Provider Request TLS Skip Verify",
   "models.providers.*.request.allowPrivateNetwork": "Model Provider Request Allow Private Network",
+  "models.providers.*.request.maxConcurrentRequests":
+    "Model Provider Request Max Concurrent Requests",
   "models.providers.*.models": "Model Provider Model List",
   "models.providers.*.models[].agentRuntime": "Model Runtime",
   "models.providers.*.models[].agentRuntime.id": "Model Runtime ID",

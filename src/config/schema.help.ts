@@ -1067,6 +1067,8 @@ export const FIELD_HELP: Record<string, string> = {
     "Skips upstream TLS certificate verification. Use only for controlled development environments.",
   "models.providers.*.request.allowPrivateNetwork":
     "When true, allow model-provider HTTP requests to private, CGNAT, or similar ranges through the provider HTTP fetch guard (fetchWithSsrFGuard). Custom/local provider base URLs already trust the exact configured origin, except metadata/link-local origins; set this to false to opt out of that trust. OpenAI Responses WebSocket reuses request for headers/TLS but does not use that fetch SSRF path. Use true only for operator-controlled self-hosted endpoints that must reach private origins outside the configured baseUrl origin.",
+  "models.providers.*.request.maxConcurrentRequests":
+    "Maximum simultaneous in-flight model requests to this provider. Requests beyond the cap queue until an active request finishes streaming, instead of being dispatched concurrently. Use this to stay under a provider's concurrency ceiling (e.g. subscription/coding-plan limits that return HTTP 429 when too many requests run at once); leave unset for no gating.",
   "models.providers.*.models":
     "Declared model list for a provider including identifiers, metadata, provider-specific params, and optional compatibility/cost hints. Keep IDs exact to provider catalog values so selection and fallback resolve correctly.",
   "models.providers.*.models[].agentRuntime":

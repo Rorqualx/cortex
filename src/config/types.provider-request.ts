@@ -53,4 +53,5 @@ export type ConfiguredProviderRequest = {
 /** Model-provider request overrides plus the private-network opt-in used by model transports. */
 export type ConfiguredModelProviderRequest = ConfiguredProviderRequest & {
   allowPrivateNetwork?: boolean;
+  maxConcurrentRequests?: number;
 };

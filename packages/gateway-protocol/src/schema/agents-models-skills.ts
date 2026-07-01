@@ -126,7 +126,7 @@ export const AgentsCreateResultSchema = Type.Object(
   { additionalProperties: false },
 );
 
-/** Updates mutable agent identity, workspace, and model fields. */
+/** Updates mutable agent identity, workspace, model, and thinking fields. */
 export const AgentsUpdateParamsSchema = Type.Object(
   {
     agentId: NonEmptyString,
@@ -137,6 +137,20 @@ export const AgentsUpdateParamsSchema = Type.Object(
     avatar: Type.Optional(Type.String()),
     description: Type.Optional(Type.String()),
     role: Type.Optional(Type.String()),
+    // Per-agent default thinking level; mirrors the config enum in
+    // src/config/types.agents.ts so the RPC rejects unknown levels at the boundary.
+    thinkingDefault: Type.Optional(
+      Type.Union([
+        Type.Literal("off"),
+        Type.Literal("minimal"),
+        Type.Literal("low"),
+        Type.Literal("medium"),
+        Type.Literal("high"),
+        Type.Literal("xhigh"),
+        Type.Literal("adaptive"),
+        Type.Literal("max"),
+      ]),
+    ),
   },
   { additionalProperties: false },
 );

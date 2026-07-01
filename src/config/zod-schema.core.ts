@@ -321,6 +321,7 @@ const ConfiguredModelProviderRequestSchema = z
   .object({
     ...ConfiguredProviderRequestFields,
     allowPrivateNetwork: z.boolean().optional(),
+    maxConcurrentRequests: z.number().int().positive().optional(),
   })
   .strict()
   .optional();

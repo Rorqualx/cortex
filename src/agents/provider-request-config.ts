@@ -75,6 +75,8 @@ export type ProviderRequestTransportOverrides = {
 /** Model-scoped transport overrides, including private-network policy. */
 export type ModelProviderRequestTransportOverrides = ProviderRequestTransportOverrides & {
   allowPrivateNetwork?: boolean;
+  // Caps simultaneous in-flight requests to this provider (see provider-concurrency-gate).
+  maxConcurrentRequests?: number;
 };
 
 // Resolved request config separates configured vs default state so transports
@@ -155,6 +157,8 @@ type ResolvedProviderRequestPolicyConfig = ResolvedProviderRequestConfig & {
   allowPrivateNetwork: boolean;
   privateNetworkExplicitlyDenied: boolean;
   capabilities: ProviderRequestCapabilities;
+  // Per-provider in-flight request cap; undefined = no gating (see provider-concurrency-gate).
+  maxConcurrentRequests?: number;
 };
 
 const FORBIDDEN_HEADER_KEYS = new Set(["__proto__", "prototype", "constructor"]);
@@ -348,12 +352,20 @@ export function sanitizeConfiguredModelProviderRequest(
   const sanitized = sanitizeConfiguredProviderRequest(request);
   const rawAllow = request?.allowPrivateNetwork;
   const allowPrivateNetwork = rawAllow === true ? true : rawAllow === false ? false : undefined;
-  if (!sanitized && allowPrivateNetwork === undefined) {
+  const rawMaxConcurrent = request?.maxConcurrentRequests;
+  const maxConcurrentRequests =
+    typeof rawMaxConcurrent === "number" &&
+    Number.isInteger(rawMaxConcurrent) &&
+    rawMaxConcurrent > 0
+      ? rawMaxConcurrent
+      : undefined;
+  if (!sanitized && allowPrivateNetwork === undefined && maxConcurrentRequests === undefined) {
     return undefined;
   }
   return {
     ...sanitized,
     ...(allowPrivateNetwork !== undefined ? { allowPrivateNetwork } : {}),
+    ...(maxConcurrentRequests !== undefined ? { maxConcurrentRequests } : {}),
   };
 }
 
@@ -395,6 +407,10 @@ export function mergeModelProviderRequestOverrides(
     if (current?.allowPrivateNetwork !== undefined) {
       merged ??= {};
       merged.allowPrivateNetwork = current.allowPrivateNetwork;
+    }
+    if (current?.maxConcurrentRequests !== undefined) {
+      merged ??= {};
+      merged.maxConcurrentRequests = current.maxConcurrentRequests;
     }
   }
   return merged;
@@ -760,6 +776,7 @@ export function resolveProviderRequestPolicyConfig(
     capabilities,
     allowPrivateNetwork: privateNetworkAccess.allowPrivateNetwork,
     privateNetworkExplicitlyDenied: privateNetworkAccess.explicitlyDenied,
+    maxConcurrentRequests: params.request?.maxConcurrentRequests,
   };
 }
 

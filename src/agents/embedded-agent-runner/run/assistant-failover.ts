@@ -43,7 +43,10 @@ const LONG_WINDOW_RATE_LIMIT_RE =
 const SHORT_RATE_LIMIT_WINDOW_RE =
   /\b(?:requests per minute|tokens per minute|per-minute|rpm|tpm)\b/i;
 const SHORT_WINDOW_RATE_LIMIT_RE =
-  /\b(?:requests per minute|tokens per minute|per-minute|rpm|tpm|model_cooldown)\b|请求过于频繁|调用频率|频率限制/i;
+  // "rate limit reached for requests" is Z.ai's coding-plan concurrency 429 (code
+  // "1302") — a short-window signal, so back off and retry the same model instead
+  // of failing over on a transient concurrency spike.
+  /\b(?:requests per minute|tokens per minute|per-minute|rpm|tpm|model_cooldown|rate limit reached for requests)\b|请求过于频繁|调用频率|频率限制/i;
 const RETRY_AFTER_VALUE_RE = /\bretry[- ]after\b\s*:?\s*(?:in\s*)?([^\r\n;]+)/i;
 const RETRY_AFTER_SECONDS_RE =
   /^(\d+(?:\.\d+)?)(?:\s*(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m))?\b/i;

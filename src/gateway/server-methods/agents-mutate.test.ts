@@ -813,6 +813,31 @@ describe("agents.update", () => {
     expect(mocks.writeConfigFile).toHaveBeenCalled();
   });
 
+  it("forwards a thinking-level override to the agent config", async () => {
+    const { respond, promise } = makeCall("agents.update", {
+      agentId: "test-agent",
+      thinkingDefault: "medium",
+    });
+    await promise;
+
+    expectRespondOk(respond, { ok: true, agentId: "test-agent" });
+    const configOptions = expectRecordFields(mockCallArg(mocks.applyAgentConfig, 0, 1), {
+      thinkingDefault: "medium",
+    });
+    expect(configOptions.thinkingDefault).toBe("medium");
+  });
+
+  it("rejects an unknown thinking level at the RPC boundary", async () => {
+    const { respond, promise } = makeCall("agents.update", {
+      agentId: "test-agent",
+      thinkingDefault: "turbo",
+    });
+    await promise;
+
+    expect(mocks.writeConfigFile).not.toHaveBeenCalled();
+    expect(mocks.applyAgentConfig).not.toHaveBeenCalled();
+  });
+
   it("rejects updating a nonexistent agent", async () => {
     mocks.findAgentEntryIndex.mockReturnValue(-1);
 

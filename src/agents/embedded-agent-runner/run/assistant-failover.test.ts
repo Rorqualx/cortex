@@ -142,6 +142,36 @@ describe("handleAssistantFailover", () => {
       expect(advanceAuthProfile).not.toHaveBeenCalled();
     });
 
+    it('treats Z.ai concurrency 429 ("Rate limit reached for requests") as a short-window retry', async () => {
+      const maybeRetrySameModelRateLimit = vi.fn(async () => true);
+      const maybeEscalateRateLimitProfileFallback = vi.fn();
+      const advanceAuthProfile = vi.fn(async () => true);
+
+      const outcome = await handleAssistantFailover(
+        makeParams({
+          initialDecision: { action: "rotate_profile", reason: "rate_limit" },
+          failoverReason: "rate_limit",
+          billingFailure: false,
+          rateLimitFailure: true,
+          lastAssistant: {
+            errorMessage: "HTTP 429: Rate limit reached for requests",
+          } as Params["lastAssistant"],
+          maybeRetrySameModelRateLimit,
+          maybeEscalateRateLimitProfileFallback,
+          advanceAuthProfile,
+        }),
+      );
+
+      expect(outcome.action).toBe("retry");
+      if (outcome.action !== "retry") {
+        return;
+      }
+      // Concurrency spike must back off on the same model, not fail over to the fallback.
+      expect(outcome.retryKind).toBe("same_model_rate_limit");
+      expect(maybeRetrySameModelRateLimit).toHaveBeenCalledTimes(1);
+      expect(advanceAuthProfile).not.toHaveBeenCalled();
+    });
+
     it("honors disabled rate-limit profile rotations before same-model retry", async () => {
       const maybeRetrySameModelRateLimit = vi.fn(async () => true);
       const maybeEscalateRateLimitProfileFallback = vi.fn();

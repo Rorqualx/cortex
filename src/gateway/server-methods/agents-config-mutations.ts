@@ -12,6 +12,8 @@ import { resolveSessionTranscriptsDirForAgent } from "../../config/sessions.js";
 import type { IdentityConfig } from "../../config/types.base.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
+type AgentEntry = NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[number];
+
 export type AgentDeleteMutationResult = {
   workspaceDir: string;
   agentDir: string;
@@ -76,6 +78,7 @@ export async function updateAgentConfigEntry(params: {
   workspace?: string;
   model?: string;
   description?: string;
+  thinkingDefault?: AgentEntry["thinkingDefault"];
   identity?: IdentityConfig;
 }): Promise<void> {
   await mutateConfigFileWithRetry({
@@ -90,6 +93,7 @@ export async function updateAgentConfigEntry(params: {
         ...(params.workspace ? { workspace: params.workspace } : {}),
         ...(params.model ? { model: params.model } : {}),
         ...(params.description !== undefined ? { description: params.description } : {}),
+        ...(params.thinkingDefault ? { thinkingDefault: params.thinkingDefault } : {}),
         ...(params.identity ? { identity: params.identity } : {}),
       });
       Object.assign(draft, latestNextConfig);
