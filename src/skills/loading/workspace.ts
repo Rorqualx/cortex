@@ -28,6 +28,7 @@ import type {
   SkillEntry,
   SkillSnapshot,
 } from "../types.js";
+import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
 import { resolveBundledAllowlist, shouldIncludeSkill } from "./config.js";
 import { resolveOpenClawMetadata, resolveSkillInvocationPolicy } from "./frontmatter.js";
@@ -1356,6 +1357,10 @@ export function buildWorkspaceSkillSnapshot(
     ...(skillFilter === undefined ? {} : { skillFilter }),
     resolvedSkills,
     version: opts?.snapshotVersion,
+    // Persisted snapshots must carry the format version: the refresh check in
+    // session-snapshot.ts treats a missing/older value as stale, and omitting
+    // it forced a full skills rescan + snapshot re-persist on every turn.
+    promptFormatVersion: WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION,
   };
 }
 

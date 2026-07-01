@@ -494,6 +494,41 @@ describe("session accessor file-backed seam", () => {
     expect(path.basename(committed.sessionEntry.sessionFile ?? "")).toBe("next-rotation.jsonl");
   });
 
+  it("commits when the writer cache and disk hydrate the skills snapshot in different key order", async () => {
+    const sessionKey = "agent:main:main";
+    // >=512 chars so persistence externalizes the prompt to a blob (promptRef on
+    // disk, hydrated prompt kept in the writer cache).
+    const prompt = "workspace skills prompt line\n".repeat(32);
+    // Builder key order: prompt first (src/skills/loading/workspace.ts); disk
+    // hydration re-attaches prompt last (skill-prompt-blobs.ts). Same data,
+    // different JSON.stringify — the revision guard must treat them as equal.
+    await upsertSessionEntry(
+      { sessionKey, storePath },
+      {
+        sessionId: "hydration-session",
+        updatedAt: 10,
+        skillsSnapshot: { prompt, skills: [{ name: "demo" }], version: 3 },
+      },
+    );
+
+    const snapshot = loadReplySessionInitializationSnapshot({ sessionKey, storePath });
+    const committed = await commitReplySessionInitialization({
+      activeSessionKey: sessionKey,
+      agentId: "main",
+      expectedRevision: snapshot.revision,
+      previousEntry: snapshot.currentEntry,
+      sessionEntry: {
+        ...snapshot.currentEntry,
+        sessionId: "hydration-session",
+        updatedAt: 20,
+      },
+      sessionKey,
+      storePath,
+    });
+
+    expect(committed.ok).toBe(true);
+  });
+
   it("rejects stale reply session initialization snapshots without writing", async () => {
     const sessionKey = "agent:main:main";
     await upsertSessionEntry(

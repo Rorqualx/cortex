@@ -1156,8 +1156,32 @@ function cloneSessionEntries(store: Record<string, SessionEntry>): Record<string
   );
 }
 
+function sortJsonValueKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValueKeys);
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(record).toSorted()) {
+      sorted[key] = sortJsonValueKeys(record[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
 function createReplySessionInitializationRevision(entry: SessionEntry | undefined): string {
-  return JSON.stringify(entry ?? null);
+  if (!entry) {
+    return "null";
+  }
+  // The snapshot side parses sessions.json fresh while the commit side reads
+  // the writer cache; both hold the same entry with different skillsSnapshot
+  // hydration shapes (inline prompt vs promptRef, builder vs hydration key
+  // order). Guard only the non-derived fields with key-order-insensitive JSON
+  // so equal entries never read as a concurrent modification.
+  const { skillsSnapshot: _skillsSnapshot, ...guarded } = entry;
+  return JSON.stringify(sortJsonValueKeys(guarded));
 }
 
 function resolveInitializedReplySessionEntry(params: {

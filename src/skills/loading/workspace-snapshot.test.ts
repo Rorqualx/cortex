@@ -11,6 +11,7 @@ import {
   setMockSkillsHomeEnv,
   type SkillsHomeEnvSnapshot,
 } from "../test-support/home-env.test-support.js";
+import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";
 import { buildWorkspaceSkillSnapshot, buildWorkspaceSkillsPrompt } from "./workspace.js";
 
 vi.mock("./plugin-skills.js", () => ({
@@ -107,6 +108,16 @@ describe("buildWorkspaceSkillSnapshot", () => {
 
     expect(snapshot.prompt).toBe("");
     expect(snapshot.skills).toStrictEqual([]);
+  });
+
+  it("stamps the prompt format version so persisted snapshots stay reusable", async () => {
+    const workspaceDir = await fixtureSuite.createCaseDir("workspace");
+
+    const snapshot = buildSnapshot(workspaceDir);
+
+    // The refresh check treats a missing promptFormatVersion as stale; without
+    // this stamp every turn re-scans skills and re-persists the snapshot.
+    expect(snapshot.promptFormatVersion).toBe(WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION);
   });
 
   it("omits disable-model-invocation skills from the prompt", async () => {
