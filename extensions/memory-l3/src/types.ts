@@ -136,6 +136,13 @@ export type L2ChunkFrontmatter = {
    */
   informationGain?: number;
   /**
+   * Number of messages in the buffer that produced this chunk. Enables
+   * RaMem-style contextual reinstatement: retrieval can look up how much
+   * context was present when a fact was noted. Absent on chunks written
+   * before PROMPT_VERSION=11; readers treat absent as `endTurnIndex`.
+   */
+  contextWindow?: number;
+  /**
    * Message ranges used for per-topic extraction when segmented compaction
    * was active (OPENCLAW_MEMORY_L3_SEGMENTED_COMPACTION=1). Absent for
    * monolithic extraction. Indexes are into the compacted message slice.

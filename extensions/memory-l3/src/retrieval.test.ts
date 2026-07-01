@@ -814,3 +814,58 @@ describe("retrieveTopK memory-core tier", () => {
     expect(result.every((r) => r.tier === "l2")).toBe(true);
   });
 });
+
+describe("retrieveTopK contextWindow (RaMem reinstatement)", () => {
+  it("exposes contextWindow on L2 facts when present in chunk frontmatter", async () => {
+    await storage.writeL2Chunk(
+      {
+        id: "chunk-cw",
+        agentId: "j-rorqual",
+        startTurnIndex: 0,
+        endTurnIndex: 5,
+        createdAt: NOW,
+        facts: [
+          { id: "f1", text: "user prefers tabs", importance: 0.8, createdAt: NOW, dedupKey: "k:1" },
+        ],
+        dedupKeys: ["k:1"],
+        contextWindow: 5,
+      },
+      "",
+    );
+    const { facts: result } = await retrieveTopK({ query: "tabs", storage, topK: 5, now: NOW });
+    expect(result).toHaveLength(1);
+    expect(result[0].tier).toBe("l2");
+    expect(result[0].contextWindow).toBe(5);
+  });
+
+  it("omits contextWindow on long-term facts", async () => {
+    await storage.writeL2Chunk(
+      {
+        id: "chunk-cw2",
+        agentId: "j-rorqual",
+        startTurnIndex: 0,
+        endTurnIndex: 3,
+        createdAt: NOW,
+        facts: [
+          { id: "f1", text: "evergreen fact", importance: 0.9, createdAt: NOW, dedupKey: "k:1" },
+        ],
+        dedupKeys: ["k:1"],
+        contextWindow: 3,
+      },
+      "",
+    );
+    // Run consolidation so the fact promotes to long-term
+    const { consolidateLongTerm } = await import("./longterm.js");
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+
+    const { facts: result } = await retrieveTopK({
+      query: "evergreen",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    const lt = result.find((r) => r.tier === "longterm");
+    expect(lt).toBeDefined();
+    expect(lt!.contextWindow).toBeUndefined();
+  });
+});

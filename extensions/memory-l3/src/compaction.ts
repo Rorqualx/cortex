@@ -161,6 +161,7 @@ export async function compactSession(params: {
     decisions: extracted.decisions.length > 0 ? extracted.decisions : undefined,
     actionItems: extracted.actions.length > 0 ? extracted.actions : undefined,
     informationGain,
+    contextWindow: messages.length,
     topicSegments,
   };
 

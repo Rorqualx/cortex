@@ -90,6 +90,9 @@ export type RetrievedFact = {
   signals: Signals;
   chunkId: string;
   tier: RetrievalTier;
+  /** Number of messages in the buffer that produced this fact (L2 tier only).
+   * Enables RaMem-style contextual reinstatement. */
+  contextWindow?: number;
 };
 
 /**
@@ -199,6 +202,8 @@ export async function retrieveTopK(params: {
     embedding?: number[];
     /** Source chunk's session-novelty metric (L2 tier only). */
     informationGain?: number;
+    /** Number of messages in the buffer that produced this fact (L2 tier only). */
+    contextWindow?: number;
   };
   const items: ScorableItem[] = [];
 
@@ -217,6 +222,7 @@ export async function retrieveTopK(params: {
         l3Boost,
         tierBoost: 0,
         informationGain: doc.frontmatter.informationGain,
+        contextWindow: doc.frontmatter.contextWindow,
       });
     }
     for (const typed of doc.frontmatter.typedFacts ?? []) {
@@ -229,6 +235,7 @@ export async function retrieveTopK(params: {
         tier: "typed",
         l3Boost: 0,
         tierBoost: config.weightTypedFactTierBoost,
+        contextWindow: doc.frontmatter.contextWindow,
       });
     }
   }
@@ -308,7 +315,14 @@ export async function retrieveTopK(params: {
     const baseScore = composite(signals, config);
     const score = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
     if (score > 0) {
-      scored.push({ fact: item.fact, score, signals, chunkId: item.chunkId, tier: item.tier });
+      scored.push({
+        fact: item.fact,
+        score,
+        signals,
+        chunkId: item.chunkId,
+        tier: item.tier,
+        contextWindow: item.contextWindow,
+      });
     }
   }
 
