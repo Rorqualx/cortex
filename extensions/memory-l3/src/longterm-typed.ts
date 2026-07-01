@@ -114,7 +114,8 @@ export async function consolidateLongTermTyped(params: {
     if (candidates.has(slot)) {
       continue;
     }
-    if (params.now - fact.lastConfirmedAt < config.maxAgeWithoutConfirmMs) {
+    const lastActive = fact.lastVerifiedAt ?? fact.lastConfirmedAt;
+    if (params.now - lastActive < config.maxAgeWithoutConfirmMs) {
       continue;
     }
     merged.set(slot, archive(fact, params.now));
@@ -201,6 +202,7 @@ function promote(c: TypedCandidate): LongTermTypedFact {
     supersededBy: null,
     archived: false,
     archivedAt: null,
+    lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
   };
 }
 
@@ -211,6 +213,7 @@ function reaffirm(prior: LongTermTypedFact, c: TypedCandidate): LongTermTypedFac
     confidence: Math.max(prior.confidence, c.latest.confidence),
     firstSeenAt: Math.min(prior.firstSeenAt, c.firstSeenAt),
     lastConfirmedAt: Math.max(prior.lastConfirmedAt, c.latest.createdAt),
+    lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
     recallCount: merged.length,
     sourceChunkIds: merged,
     validFrom: prior.validFrom,
@@ -231,6 +234,7 @@ function supersede(prior: LongTermTypedFact, c: TypedCandidate, now: number): Lo
     confidence: c.latest.confidence,
     firstSeenAt: Math.min(prior.firstSeenAt, c.firstSeenAt),
     lastConfirmedAt: c.latest.createdAt,
+    lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
     recallCount: merged.length,
     sourceChunkIds: merged,
     history: [...prior.history, { value: prior.value, supersededAt: now }],

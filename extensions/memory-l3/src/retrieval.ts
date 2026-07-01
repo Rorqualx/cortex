@@ -653,7 +653,7 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     id: typed.id,
     text,
     importance: typed.confidence,
-    createdAt: typed.createdAt,
+    createdAt: typed.lastVerifiedAt ?? typed.createdAt,
     dedupKey: typed.slot,
   };
 }
@@ -664,7 +664,7 @@ function longTermTypedAsL2Fact(ltt: LongTermTypedFact): L2Fact {
     id: ltt.id,
     text,
     importance: ltt.confidence,
-    createdAt: ltt.lastConfirmedAt,
+    createdAt: ltt.lastVerifiedAt ?? ltt.lastConfirmedAt,
     dedupKey: ltt.slot,
   };
 }

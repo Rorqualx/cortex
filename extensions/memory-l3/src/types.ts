@@ -68,6 +68,11 @@ export type L2Fact = {
    * Higher = more confident / lower entropy. Absent on facts extracted
    * before PROMPT_VERSION=9; readers treat absent as 1.0 (neutral). */
   semanticEntropy?: number;
+  /** Epoch ms when this fact was last explicitly verified / reaffirmed.
+   * Used for temporal-currency scoring in retrieval and archival.
+   * Absent on facts extracted before PROMPT_VERSION=10; readers treat
+   * absent as `createdAt`. */
+  lastVerifiedAt?: number;
 };
 
 /**
@@ -259,6 +264,11 @@ export type LongTermTypedFact = {
   /** When true, fact is hidden from retrieval but kept on disk for forensics. */
   archived: boolean;
   archivedAt: number | null;
+  /** Epoch ms when this fact was last explicitly verified / reaffirmed.
+   * Used for temporal-currency scoring in retrieval and archival.
+   * Absent on facts created before PROMPT_VERSION=10; readers treat
+   * absent as `lastConfirmedAt`. */
+  lastVerifiedAt?: number;
 };
 
 export type LongTermTypedFrontmatter = {

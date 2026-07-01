@@ -253,4 +253,86 @@ describe("consolidateLongTermTyped", () => {
     const ltt = await storage.readLongTermTyped();
     expect(ltt.facts[0].archived).toBe(true);
   });
+
+  it("sets lastVerifiedAt on promotion and updates it on reaffirmation", async () => {
+    await writeChunkWithTyped(
+      "chunk-1",
+      [
+        {
+          id: "tf-1",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 3 * DAY,
+        },
+      ],
+      NOW - 3 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 3 * DAY });
+
+    const ltt1 = await storage.readLongTermTyped();
+    expect(ltt1.facts[0].lastVerifiedAt).toBe(NOW - 3 * DAY);
+
+    // Reaffirm with a newer chunk
+    await writeChunkWithTyped(
+      "chunk-2",
+      [
+        {
+          id: "tf-2",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "still 555-1234",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+
+    const ltt2 = await storage.readLongTermTyped();
+    expect(ltt2.facts[0].lastVerifiedAt).toBe(NOW);
+    expect(ltt2.facts[0].recallCount).toBe(2);
+  });
+
+  it("uses lastVerifiedAt to prevent archival when value was recently verified", async () => {
+    // First chunk: old confirmation
+    await writeChunkWithTyped(
+      "chunk-old",
+      [
+        {
+          id: "tf-old",
+          slot: "infra:ip",
+          value: "192.168.50.1",
+          sourceSpan: "ip is 192.168.50.1",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 90 * DAY,
+          lastVerifiedAt: NOW - 10 * DAY,
+        },
+      ],
+      NOW - 90 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 90 * DAY });
+
+    // Delete old L2 chunks so no new confirmations exist
+    for (const token of await storage.listL2ChunkPaths()) {
+      await storage.deleteL2Chunk(token);
+    }
+
+    // Archival threshold is 60 days. lastConfirmedAt is 90 days old, but
+    // lastVerifiedAt is only 10 days old — should survive.
+    const out = await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      config: { maxAgeWithoutConfirmMs: 60 * DAY, minRecallCount: 1 },
+    });
+    expect(out.archivedCount).toBe(0);
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].archived).toBe(false);
+  });
 });

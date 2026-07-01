@@ -295,6 +295,7 @@ function liftToTypedFact(
     unit: extracted.unit,
     confidence: extracted.confidence,
     createdAt,
+    lastVerifiedAt: createdAt,
     eventTime: episodic?.eventTime,
     sessionId: episodic?.sessionId,
     participants: episodic?.participants,
