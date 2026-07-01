@@ -19,7 +19,7 @@ export type VaultApprovalPolicy = "auto" | "ask";
 export type VaultGrantDecision = "allow-once" | "allow-always" | "deny";
 
 /** Closed discriminator for how a saved credential authenticates a request. */
-export type VaultAuthKind = "bearer" | "basic" | "header" | "login";
+export type VaultAuthKind = "bearer" | "basic" | "header" | "login" | "ssh";
 
 /** Default session lifetime for the stateful 'login' kind when none is configured. */
 export const DEFAULT_VAULT_SESSION_TTL_SECONDS = 1800;
@@ -32,7 +32,15 @@ export type VaultSecretMaterial =
   | { kind: "bearer"; token: string }
   | { kind: "basic"; username: string; password: string }
   | { kind: "header"; values: Record<string, string> }
-  | { kind: "login"; username: string; password: string };
+  | { kind: "login"; username: string; password: string }
+  | {
+      kind: "ssh";
+      username?: string;
+      password?: string;
+      privateKey?: string;
+      passphrase?: string;
+      port?: number;
+    };
 
 /** Where the login response carries the session token (non-secret config). */
 export type VaultLoginTokenSource =
@@ -68,7 +76,8 @@ export type VaultAuthConfig =
   | { kind: "bearer" }
   | { kind: "basic" }
   | { kind: "header"; headers: string[] }
-  | { kind: "login"; login: VaultLoginConfig };
+  | { kind: "login"; login: VaultLoginConfig }
+  | { kind: "ssh"; port?: number; username?: string };
 
 /** Vault entry metadata. Never carries secret material. */
 export type VaultSecretEntry = {
@@ -96,6 +105,14 @@ export type VaultSecretInput = VaultSecretInputCommon &
     | { authKind: "basic"; username: string; password: string }
     | { authKind: "header"; headers: { name: string; value: string }[] }
     | { authKind: "login"; username: string; password: string; login: VaultLoginConfig }
+    | {
+        authKind: "ssh";
+        username?: string;
+        password?: string;
+        privateKey?: string;
+        passphrase?: string;
+        port?: number;
+      }
   );
 
 export type VaultStoreOptions = OpenClawStateDatabaseOptions & { now?: number };
@@ -131,7 +148,9 @@ function parseHostAllowlist(json: string): string[] {
 }
 
 function normalizeAuthKind(value: string): VaultAuthKind {
-  return value === "basic" || value === "header" || value === "login" ? value : "bearer";
+  return value === "basic" || value === "header" || value === "login" || value === "ssh"
+    ? value
+    : "bearer";
 }
 
 /**
@@ -158,6 +177,15 @@ function parseAuthConfig(authKind: VaultAuthKind, json: string): VaultAuthConfig
   }
   if (authKind === "login") {
     return { kind: "login", login: record.login as VaultLoginConfig };
+  }
+  if (authKind === "ssh") {
+    const port = typeof record.port === "number" ? record.port : undefined;
+    const username = typeof record.username === "string" ? record.username : undefined;
+    return {
+      kind: "ssh",
+      ...(port !== undefined ? { port } : {}),
+      ...(username ? { username } : {}),
+    };
   }
   return { kind: authKind };
 }
@@ -235,6 +263,8 @@ export function buildAuthHeaders(
     }
     case "login":
       return [];
+    case "ssh":
+      return [];
     default: {
       const exhaustive: never = material;
       return exhaustive;
@@ -276,6 +306,23 @@ function splitInput(input: VaultSecretInput): {
         material: { kind: "login", username: input.username, password: input.password },
         config: { kind: "login", login: input.login },
       };
+    case "ssh": {
+      if (!input.password && !input.privateKey) {
+        throw new Error(
+          `Vault secret "${input.name}" (ssh) requires at least one of password or privateKey.`,
+        );
+      }
+      const sshMaterial: Extract<VaultSecretMaterial, { kind: "ssh" }> = { kind: "ssh" };
+      if (input.username) sshMaterial.username = input.username;
+      if (input.password) sshMaterial.password = input.password;
+      if (input.privateKey) sshMaterial.privateKey = input.privateKey;
+      if (input.passphrase) sshMaterial.passphrase = input.passphrase;
+      if (input.port !== undefined) sshMaterial.port = input.port;
+      const sshConfig: Extract<VaultAuthConfig, { kind: "ssh" }> = { kind: "ssh" };
+      if (input.port !== undefined) sshConfig.port = input.port;
+      if (input.username) sshConfig.username = input.username;
+      return { material: sshMaterial, config: sshConfig };
+    }
     default: {
       const exhaustive: never = input;
       return exhaustive;
@@ -525,11 +572,51 @@ export function describeVaultCatalogForModel(options: VaultStoreOptions = {}): s
   if (entries.length === 0) {
     return "";
   }
-  const lines = entries.map((entry) => {
+  const httpLines: string[] = [];
+  const sshLines: string[] = [];
+  for (const entry of entries) {
     const desc = entry.description ? ` — ${entry.description}` : "";
-    return `- ${entry.name} (${entry.authKind}): ${entry.hostAllowlist.join(", ")}${desc}`;
-  });
-  return `Saved credentials available for http_request (injected automatically by host; you never see the value):\n${lines.join("\n")}`;
+    if (entry.authKind === "ssh") {
+      const cfg = entry.authConfig;
+      const userAtHost =
+        cfg.kind === "ssh" && cfg.username
+          ? `${cfg.username}@${entry.hostAllowlist.join(", ")}`
+          : entry.hostAllowlist.join(", ");
+      const port = cfg.kind === "ssh" && cfg.port ? `:${cfg.port}` : "";
+      sshLines.push(`- ${entry.name} (ssh): ${userAtHost}${port}${desc}`);
+    } else {
+      httpLines.push(
+        `- ${entry.name} (${entry.authKind}): ${entry.hostAllowlist.join(", ")}${desc}`,
+      );
+    }
+  }
+  const parts: string[] = [];
+  if (httpLines.length > 0) {
+    parts.push(
+      `Saved credentials available for http_request (injected automatically by host; you never see the value):\n${httpLines.join("\n")}`,
+    );
+  }
+  if (sshLines.length > 0) {
+    parts.push(
+      `SSH credentials available for:\n${sshLines.join("\n")} (injected automatically into ssh/scp/rsync/sftp commands targeting allowlisted hosts)`,
+    );
+  }
+  return parts.join("\n\n");
+}
+
+/**
+ * Decrypt and return the SSH credential material for an entry. Analogous to
+ * resolveVaultSecretMaterial but typed for SSH. Only the exec runtime calls this.
+ */
+export function resolveSshCredential(
+  name: string,
+  options: VaultStoreOptions = {},
+): Extract<VaultSecretMaterial, { kind: "ssh" }> | undefined {
+  const material = resolveVaultSecretMaterial(name, options);
+  if (!material || material.kind !== "ssh") {
+    return undefined;
+  }
+  return material;
 }
 
 /** Read a persisted grant decision for an (entry, host) pair, if one exists. */

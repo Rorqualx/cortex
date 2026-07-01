@@ -9,7 +9,7 @@ import { property, state } from "lit/decorators.js";
 import type { GatewayBrowserClient } from "../gateway.ts";
 
 type VaultPolicy = "ask" | "auto";
-type AuthKind = "bearer" | "basic" | "header" | "login";
+type AuthKind = "bearer" | "basic" | "header" | "login" | "ssh";
 type HeaderRow = { name: string; value: string };
 
 const AUTH_KINDS: { value: AuthKind; label: string }[] = [
@@ -17,6 +17,7 @@ const AUTH_KINDS: { value: AuthKind; label: string }[] = [
   { value: "basic", label: "Username + password (Basic)" },
   { value: "header", label: "Custom header(s)" },
   { value: "login", label: "Login form → session token" },
+  { value: "ssh", label: "SSH credentials (key or password)" },
 ];
 
 export class OpenClawVaultCredentialForm extends LitElement {
@@ -43,6 +44,11 @@ export class OpenClawVaultCredentialForm extends LitElement {
   @state() private placeAs: "cookie" | "header" = "cookie";
   @state() private placeKey = "asus_token";
   @state() private ttl = "1800";
+  // ssh
+  @state() private sshAuthMode: "key" | "password" = "key";
+  @state() private sshPrivateKey = "";
+  @state() private sshPassphrase = "";
+  @state() private sshPort = "";
 
   @state() private saving = false;
   @state() private error = "";
@@ -148,7 +154,10 @@ export class OpenClawVaultCredentialForm extends LitElement {
       | "bodyTemplate"
       | "extractKey"
       | "placeKey"
-      | "ttl",
+      | "ttl"
+      | "sshPrivateKey"
+      | "sshPassphrase"
+      | "sshPort",
   ) {
     return (e: Event) => {
       this[field] = (e.target as HTMLInputElement).value;
@@ -200,6 +209,29 @@ export class OpenClawVaultCredentialForm extends LitElement {
         return null;
       }
       return { ...common, authKind: "header", headers };
+    }
+    if (this.authKind === "ssh") {
+      const payload: Record<string, unknown> = { ...common, authKind: "ssh" };
+      if (this.username.trim()) payload.username = this.username.trim();
+      if (this.sshAuthMode === "key") {
+        if (!this.sshPrivateKey.trim()) {
+          this.error = "Private key is required.";
+          return null;
+        }
+        payload.privateKey = this.sshPrivateKey;
+        if (this.sshPassphrase.trim()) payload.passphrase = this.sshPassphrase;
+      } else {
+        if (!this.password) {
+          this.error = "Password is required.";
+          return null;
+        }
+        payload.password = this.password;
+      }
+      if (this.sshPort.trim()) {
+        const portNum = Number(this.sshPort);
+        if (!Number.isNaN(portNum) && portNum > 0) payload.port = portNum;
+      }
+      return payload;
     }
     if (!this.username || !this.password) {
       this.error = "Username and password are required.";
@@ -289,6 +321,9 @@ export class OpenClawVaultCredentialForm extends LitElement {
         ${this.authKind === "login" ? this.renderLoginFields() : nothing}
       `;
     }
+    if (this.authKind === "ssh") {
+      return this.renderSshFields();
+    }
     // header
     return html`
       ${this.headerRows.map(
@@ -329,6 +364,87 @@ export class OpenClawVaultCredentialForm extends LitElement {
       >
         + add header
       </button>
+    `;
+  }
+
+  private renderSshFields() {
+    return html`
+      <label>Authentication method</label>
+      <div class="grid2">
+        <button
+          ?disabled=${false}
+          style="${this.sshAuthMode === "key" ? "border-color: var(--accent, #3b82f6);" : ""}"
+          @click=${() => {
+            this.sshAuthMode = "key";
+          }}
+        >
+          Private key
+        </button>
+        <button
+          ?disabled=${false}
+          style="${this.sshAuthMode === "password" ? "border-color: var(--accent, #3b82f6);" : ""}"
+          @click=${() => {
+            this.sshAuthMode = "password";
+          }}
+        >
+          Password
+        </button>
+      </div>
+      ${this.sshAuthMode === "key"
+        ? html`
+            <label for="v-sshkey">Private key (PEM)</label>
+            <textarea
+              id="v-sshkey"
+              rows="6"
+              .value=${this.sshPrivateKey}
+              @input=${this.input("sshPrivateKey")}
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----
+…"
+            ></textarea>
+            <label for="v-passphrase">Passphrase (optional)</label>
+            <input
+              id="v-passphrase"
+              type="password"
+              autocomplete="off"
+              .value=${this.sshPassphrase}
+              @input=${this.input("sshPassphrase")}
+            />
+          `
+        : html`
+            <label for="v-sshpass">Password</label>
+            <input
+              id="v-sshpass"
+              type="password"
+              autocomplete="off"
+              .value=${this.password}
+              @input=${this.input("password")}
+            />
+          `}
+      <div class="grid2">
+        <div>
+          <label for="v-sshuser">Username (optional)</label>
+          <input
+            id="v-sshuser"
+            .value=${this.username}
+            @input=${this.input("username")}
+            placeholder="root"
+          />
+        </div>
+        <div>
+          <label for="v-sshport">Port (optional, default 22)</label>
+          <input
+            id="v-sshport"
+            type="number"
+            .value=${this.sshPort}
+            @input=${this.input("sshPort")}
+            placeholder="22"
+          />
+        </div>
+      </div>
+      <p class="hint">
+        SSH credentials are injected automatically into ssh/scp/rsync/sftp commands targeting
+        allowlisted hosts.
+      </p>
     `;
   }
 

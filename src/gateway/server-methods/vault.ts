@@ -33,6 +33,12 @@ function registerSaveSecrets(params: VaultSaveParams): void {
       for (const header of params.headers) {
         registerDynamicSecret(header.value);
       }
+      return;
+    case "ssh":
+      if (params.password) registerDynamicSecret(params.password);
+      if (params.privateKey) registerDynamicSecret(params.privateKey);
+      if (params.passphrase) registerDynamicSecret(params.passphrase);
+      return;
   }
 }
 
@@ -59,6 +65,21 @@ function toVaultSecretInput(params: VaultSaveParams): VaultSecretInput {
         password: params.password,
         login: params.login as VaultLoginConfig,
       };
+    case "ssh": {
+      const input: Extract<VaultSecretInput, { authKind: "ssh" }> = {
+        ...common,
+        authKind: "ssh",
+      };
+      if (params.username) input.username = params.username;
+      if (params.password) input.password = params.password;
+      if (params.privateKey) input.privateKey = params.privateKey;
+      if (params.passphrase) input.passphrase = params.passphrase;
+      if (params.port !== undefined) input.port = params.port;
+      if (!input.password && !input.privateKey) {
+        throw new Error("SSH vault entry requires at least one of password or privateKey.");
+      }
+      return input;
+    }
     default: {
       const exhaustive: never = params;
       return exhaustive;

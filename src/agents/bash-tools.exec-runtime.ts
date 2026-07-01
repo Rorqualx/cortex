@@ -40,10 +40,17 @@ export {
   normalizeExecSecurity,
   normalizeExecTarget,
 } from "../infra/exec-approvals.js";
+import fs from "node:fs";
 import { logWarn } from "../logger.js";
 import type { ManagedRun } from "../process/supervisor/index.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import type { RunExit, TerminationReason } from "../process/supervisor/types.js";
+import {
+  detectSshTarget,
+  injectSshCredential,
+  matchSshVaultEntry,
+} from "../secrets/vault/ssh-injection.js";
+import { listVaultSecrets, resolveSshCredential } from "../secrets/vault/store.js";
 import {
   normalizeDeliveryContext,
   type DeliveryContext,
@@ -701,7 +708,7 @@ export async function runExecProcess(opts: {
 }): Promise<ExecProcessHandle> {
   const startedAt = Date.now();
   const sessionId = createSessionSlug();
-  const execCommand = opts.execCommand ?? opts.command;
+  let execCommand = opts.execCommand ?? opts.command;
   const diagnosticTarget = opts.sandbox ? "sandbox" : "host";
   const supervisor = getProcessSupervisor();
   const shellRuntimeEnv: Record<string, string> = {
@@ -709,6 +716,46 @@ export async function runExecProcess(opts: {
     AI_AGENT: "openclaw",
     OPENCLAW_SHELL: "exec",
   };
+
+  // ── SSH credential injection ──
+  // Detect SSH-family commands targeting vault-allowlisted hosts and rewrite
+  // them with injected credentials before spawn. The agent never sees the secret.
+  let sshTempFileCleanup: (() => void) | undefined;
+  const sshDetected = detectSshTarget(execCommand);
+  if (sshDetected) {
+    const vaultEntries = listVaultSecrets({ env: opts.env });
+    const sshEntry = matchSshVaultEntry(sshDetected, vaultEntries);
+    if (sshEntry) {
+      const sshCred = resolveSshCredential(sshEntry.name, { env: opts.env });
+      if (sshCred) {
+        const injection = injectSshCredential({
+          command: execCommand,
+          detected: sshDetected,
+          credential: sshCred,
+          env: opts.env,
+        });
+        execCommand = injection.rewrittenCommand;
+        if (injection.extraEnv) {
+          Object.assign(shellRuntimeEnv, injection.extraEnv);
+        }
+        if (injection.tempFiles && injection.tempFiles.length > 0) {
+          const tempFiles = injection.tempFiles;
+          sshTempFileCleanup = () => {
+            for (const f of tempFiles) {
+              try {
+                fs.unlinkSync(f);
+              } catch {
+                /* best effort */
+              }
+            }
+          };
+        }
+        opts.warnings.push(
+          `SSH credentials for ${sshDetected.host} injected from vault entry "${sshEntry.name}".`,
+        );
+      }
+    }
+  }
 
   const session: ProcessSession = {
     id: sessionId,
@@ -1062,12 +1109,14 @@ export async function runExecProcess(opts: {
         sessionKey: opts.sessionKey,
         target: diagnosticTarget,
       });
+      sshTempFileCleanup?.();
       return outcome;
     })
     .catch((err: unknown): ExecProcessOutcome => {
       updatesDisabled = true;
       markExited(session, null, null, "failed");
       maybeNotifyOnExit(session, "failed");
+      sshTempFileCleanup?.();
       const outcome = buildExecRuntimeErrorOutcome({
         error: err,
         aggregated: session.aggregated.trim(),

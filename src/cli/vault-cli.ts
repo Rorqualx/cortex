@@ -25,6 +25,10 @@ type VaultAddOptions = {
   headerName?: string;
   policy?: string;
   value?: string;
+  ssh?: boolean;
+  keyFile?: string;
+  port?: string;
+  passphrase?: string;
 };
 
 type VaultListOptions = { json?: boolean };
@@ -83,6 +87,24 @@ function buildAddInput(
   opts: VaultAddOptions,
 ): VaultSecretInput {
   const common = { name, hostAllowlist, approvalPolicy };
+  if (opts.ssh) {
+    const input: Extract<VaultSecretInput, { authKind: "ssh" }> = { ...common, authKind: "ssh" };
+    if (opts.username) input.username = opts.username;
+    // The secret value can be a password or the private key content (when read from stdin)
+    if (opts.keyFile) {
+      // Key was read from file; `secret` is the password (if any)
+      if (secret) input.password = secret;
+    } else {
+      // No key file — secret from stdin/value is the password (or could be key via --key-file)
+      if (secret) input.password = secret;
+    }
+    if (opts.passphrase) input.passphrase = opts.passphrase;
+    if (opts.port) {
+      const portNum = parseInt(opts.port, 10);
+      if (!Number.isNaN(portNum)) input.port = portNum;
+    }
+    return input;
+  }
   if (opts.username) {
     return { ...common, authKind: "basic", username: opts.username, password: secret };
   }
@@ -101,10 +123,17 @@ export function registerVaultCli(program: Command): void {
     .command("add <name>")
     .description("Save a credential bound to one or more hosts (value read from stdin or prompt)")
     .requiredOption("--hosts <hosts>", "Comma-separated host allowlist, e.g. api.stripe.com")
-    .option("--username <username>", "Username for HTTP Basic auth (value becomes the password)")
+    .option(
+      "--username <username>",
+      "Username for HTTP Basic auth or SSH (value becomes the password)",
+    )
     .option("--header-name <name>", "Inject the value into this custom header, e.g. X-API-Key")
     .option("--policy <policy>", 'Injection policy: "auto" (silent) or "ask" (prompt)', "ask")
     .option("--value <value>", "Secret value (discouraged; prefer stdin to avoid shell history)")
+    .option("--ssh", "Save SSH credentials (private key or password) for ssh/scp/rsync/sftp")
+    .option("--key-file <path>", "Read SSH private key from file (PEM format)")
+    .option("--port <port>", "SSH port (default: 22)")
+    .option("--passphrase <passphrase>", "Passphrase for encrypted SSH private key")
     .action(async (name: string, opts: VaultAddOptions) => {
       try {
         const hostAllowlist = parseHosts(opts.hosts);
@@ -112,8 +141,38 @@ export function registerVaultCli(program: Command): void {
           throw new Error("At least one --hosts entry is required.");
         }
         const approvalPolicy = normalizePolicy(opts.policy);
+
+        // For SSH with key file, read the key and use password from stdin/value
+        if (opts.ssh && opts.keyFile) {
+          const fs = await import("node:fs/promises");
+          const keyContent = await fs.readFile(opts.keyFile, "utf8");
+          const input = buildAddInput(name, hostAllowlist, approvalPolicy, "", opts);
+          // Attach the key content
+          (input as Extract<VaultSecretInput, { authKind: "ssh" }>).privateKey = keyContent.trim();
+          // Validate: must have at least password or privateKey
+          if (
+            !(input as Extract<VaultSecretInput, { authKind: "ssh" }>).password &&
+            !(input as Extract<VaultSecretInput, { authKind: "ssh" }>).privateKey
+          ) {
+            throw new Error("SSH entry requires at least one of password or private key.");
+          }
+          saveVaultSecret(input);
+          defaultRuntime.log(
+            `Saved vault secret "${name}" (ssh) for ${hostAllowlist.join(", ")} (policy: ${approvalPolicy}).`,
+          );
+          return;
+        }
+
         const secret = await resolveSecretValue(opts.value);
         const input = buildAddInput(name, hostAllowlist, approvalPolicy, secret, opts);
+        if (opts.ssh) {
+          const sshInput = input as Extract<VaultSecretInput, { authKind: "ssh" }>;
+          if (!sshInput.password && !sshInput.privateKey) {
+            throw new Error(
+              "SSH entry requires at least one of --value/--key-file (password) or --key-file (private key).",
+            );
+          }
+        }
         saveVaultSecret(input);
         defaultRuntime.log(
           `Saved vault secret "${name}" (${input.authKind}) for ${hostAllowlist.join(", ")} (policy: ${approvalPolicy}).`,

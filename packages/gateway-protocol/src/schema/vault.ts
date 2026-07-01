@@ -16,6 +16,7 @@ export const VaultAuthKindSchema = Type.Union([
   Type.Literal("basic"),
   Type.Literal("header"),
   Type.Literal("login"),
+  Type.Literal("ssh"),
 ]);
 
 /** Where the login response carries the session token (non-secret). */
@@ -71,6 +72,14 @@ export const VaultAuthConfigSchema = Type.Union([
   ),
   Type.Object(
     { kind: Type.Literal("login"), login: VaultLoginConfigSchema },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("ssh"),
+      port: Type.Optional(Type.Number()),
+      username: Type.Optional(Type.String()),
+    },
     { additionalProperties: false },
   ),
 ]);
@@ -144,6 +153,18 @@ export const VaultSaveParamsSchema = Type.Union([
       username: NonEmptyString,
       password: NonEmptyString,
       login: VaultLoginConfigSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...vaultSaveCommon,
+      authKind: Type.Literal("ssh"),
+      username: Type.Optional(Type.String()),
+      password: Type.Optional(Type.String()),
+      privateKey: Type.Optional(Type.String()),
+      passphrase: Type.Optional(Type.String()),
+      port: Type.Optional(Type.Number()),
     },
     { additionalProperties: false },
   ),
