@@ -726,7 +726,7 @@ export async function runExecProcess(opts: {
   // sandboxed process env — so a sandboxed SSH command runs with the agent's own
   // credentials, never the vault's.
   let sshTempFileCleanup: (() => void) | undefined;
-  const sshDetected = detectSshInjectionTarget(execCommand, { sandbox: opts.sandbox === true });
+  const sshDetected = detectSshInjectionTarget(execCommand, { sandbox: opts.sandbox });
   if (sshDetected) {
     const vaultEntries = listVaultSecrets({ env: opts.env });
     const sshEntry = matchSshVaultEntry(sshDetected, vaultEntries);

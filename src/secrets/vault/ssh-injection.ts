@@ -486,9 +486,10 @@ function detectSftp(args: string[]): SshDetectedTarget | null {
       i++;
       continue;
     }
-    if (arg === "-p" && i + 1 < args.length) {
-      port = parseInt(args[i + 1], 10);
-      i++;
+    // For sftp, `-p` means preserve times (a valueless flag); only `-P` is the
+    // port. Consuming the next token as its value used to swallow the host and
+    // drop detection entirely.
+    if (arg === "-p") {
       continue;
     }
     if (arg === "-i" && i + 1 < args.length) {
@@ -551,7 +552,11 @@ export function matchSshVaultEntry(
  */
 export function detectSshInjectionTarget(
   command: string,
-  opts: { sandbox: boolean },
+  // `sandbox` is the caller's resolved sandbox config (a truthy object) or
+  // undefined for a host exec. Typed as `unknown` and coerced here so a caller
+  // cannot accidentally pass a mis-narrowed value (e.g. `config === true`, which
+  // is always false for an object) and silently defeat the guard.
+  opts: { sandbox?: unknown },
 ): SshDetectedTarget | null {
   if (opts.sandbox) {
     return null;
@@ -827,9 +832,13 @@ function injectUsername(command: string, detected: SshDetectedTarget, username: 
 function injectRsyncRsh(command: string, rshArgs: string, sshpassPrefix: string): string {
   const tokens = tokenizeCommand(command);
   const buildValue = (existing: string): string => {
+    // Preserve whatever remote-shell the user specified (`ssh`, a full path like
+    // /usr/bin/ssh, or an sshpass wrapper) and append our args to it; only
+    // synthesize `ssh` when there is no existing -e/--rsh value. Blindly
+    // prepending `ssh ` corrupted custom rsh commands.
     const base = existing.trim();
-    const withSsh = base.length === 0 ? "ssh" : /^ssh\b/u.test(base) ? base : `ssh ${base}`;
-    return `${sshpassPrefix}${withSsh}${rshArgs ? ` ${rshArgs}` : ""}`;
+    const remoteShell = base.length === 0 ? "ssh" : base;
+    return `${sshpassPrefix}${remoteShell}${rshArgs ? ` ${rshArgs}` : ""}`;
   };
   for (let i = 1; i < tokens.length; i++) {
     const token = tokens[i];
@@ -855,21 +864,28 @@ function injectRsyncRsh(command: string, rshArgs: string, sshpassPrefix: string)
   return retokenize(tokens);
 }
 
-// A shell token is safe to emit unquoted only if every character is in this set
-// (the standard shlex-style whitelist). Anything else — spaces, $, `, &, |, ;,
-// (), quotes — must be quoted so the local shell treats it as one literal arg.
-const SHELL_SAFE_TOKEN = /^[A-Za-z0-9_@%+=:,./-]+$/u;
+// Characters that make the local shell execute a command, substitute, redirect,
+// or split a word: whitespace, quotes/backslash, $, backtick, and the control
+// operators & | ; < > ( ) ! #. A token containing any of these must be
+// single-quoted so the shell hands it to the child as one literal argument —
+// this is what stops `ssh host "a&&b"` from splitting at && and running `b`
+// locally. Glob/brace/tilde chars (* ? [ ] { } ~) are deliberately NOT here:
+// they only expand filenames/paths locally, which is the pre-existing behavior
+// scp/rsync source arguments rely on, and they cannot execute a command.
+const SHELL_UNSAFE_CHAR = /[\s'"\\$`&|;<>()!#]/u;
 
 /**
  * POSIX single-quote a token so it survives the local shell as one literal
- * argument. tokenizeCommand decoded the original quoting to the literal value,
- * so re-quoting anything non-trivial keeps the argument byte-identical. The old
- * retokenize only wrapped space-containing tokens in double quotes, which let
- * `$VAR` expand locally and split `a&&b` at the local shell — a remote command
- * would run on the host machine instead.
+ * argument when it contains a command/word metacharacter. tokenizeCommand
+ * decoded the original quoting to the literal value, so re-quoting keeps the
+ * argument byte-identical. Tokens with only expansion characters (globs, tilde)
+ * are left as-is so local filename expansion still works.
  */
 function quoteShellToken(token: string): string {
-  if (token.length > 0 && SHELL_SAFE_TOKEN.test(token)) {
+  if (token.length === 0) {
+    return "''";
+  }
+  if (!SHELL_UNSAFE_CHAR.test(token)) {
     return token;
   }
   return `'${token.replaceAll("'", "'\\''")}'`;

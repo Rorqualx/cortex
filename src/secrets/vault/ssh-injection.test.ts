@@ -139,6 +139,13 @@ describe("detectSshTarget", () => {
     expect(result).toEqual({ tool: "sftp", host: "example.com", username: "user", port: 2222 });
   });
 
+  it("detects sftp when -p (preserve) precedes the host", () => {
+    // Regression: for sftp `-p` is preserve-times, not the port. Consuming its
+    // "value" swallowed the host and dropped detection (so no injection).
+    const result = detectSshTarget("sftp -p user@example.com");
+    expect(result).toEqual({ tool: "sftp", host: "example.com", username: "user" });
+  });
+
   it("returns null for non-SSH commands", () => {
     expect(detectSshTarget("ls -la")).toBeNull();
     expect(detectSshTarget("curl https://example.com")).toBeNull();
@@ -421,6 +428,35 @@ describe("injectSshCredential", () => {
     cleanupTempFiles(result);
   });
 
+  it("preserves a custom rsync remote-shell binary instead of prepending ssh", () => {
+    // Regression: an existing `-e <value>` not literally starting with `ssh` was
+    // corrupted to `ssh <value>` (e.g. `ssh /usr/bin/ssh`), breaking the command.
+    const result = injectSshCredential({
+      command: "rsync -avz -e /usr/bin/ssh /local user@example.com:/remote",
+      detected: { tool: "rsync", host: "example.com", username: "user" },
+      credential: { privateKey: "fake-key-content" },
+      env: process.env,
+    });
+    expect(result.rewrittenCommand).toMatch(/-e '\/usr\/bin\/ssh /u);
+    expect(result.rewrittenCommand).not.toContain("ssh /usr/bin/ssh");
+    cleanupTempFiles(result);
+  });
+
+  it("leaves local glob tokens unquoted so scp source expansion still works", () => {
+    // Regression: the whitelist re-quoted `*.txt` into a literal '*.txt', so the
+    // local shell could no longer glob the upload set. Glob chars are expansion,
+    // not execution, and must survive unquoted.
+    const result = injectSshCredential({
+      command: "scp *.txt user@example.com:/tmp/",
+      detected: { tool: "scp", host: "example.com", username: "user" },
+      credential: { privateKey: "fake-key-content" },
+      env: process.env,
+    });
+    expect(result.rewrittenCommand).toContain("*.txt");
+    expect(result.rewrittenCommand).not.toContain("'*.txt'");
+    cleanupTempFiles(result);
+  });
+
   it("prefers private key over password when both present", () => {
     const cred: SshCredential = {
       privateKey: "fake-key-content",
@@ -543,6 +579,23 @@ describe("detectSshInjectionTarget", () => {
 
   it("returns null for a sandboxed exec so the vault key/SSHPASS never reach the sandbox", () => {
     expect(detectSshInjectionTarget("ssh example.com", { sandbox: true })).toBeNull();
+  });
+
+  it("treats a truthy sandbox config object as sandboxed (not just boolean true)", () => {
+    // Regression: the caller passes the BashSandboxConfig object, not a boolean.
+    // A `sandbox === true` narrowing was always false for an object and silently
+    // let vault creds inject into sandboxed execs.
+    expect(detectSshInjectionTarget("ssh example.com", { sandbox: {} })).toBeNull();
+    expect(
+      detectSshInjectionTarget("ssh example.com", { sandbox: { containerName: "c" } }),
+    ).toBeNull();
+  });
+
+  it("detects normally when no sandbox config is present (host exec)", () => {
+    expect(detectSshInjectionTarget("ssh example.com", { sandbox: undefined })).toEqual({
+      tool: "ssh",
+      host: "example.com",
+    });
   });
 });
 
