@@ -360,6 +360,13 @@ function deduplicateStreamSegmentsAgainstFinal(items: ChatItem[]): ChatItem[] {
     if (item.kind !== "stream") {
       return true;
     }
+    // The live in-progress segment has no persisted message of its own yet, so
+    // never dedupe it: a short or repeated burst (e.g. "Done.") whose text
+    // happens to appear inside an EARLIER persisted message would otherwise be
+    // hidden mid-run, stalling the stream to a blank until its message persists.
+    if (item.isStreaming) {
+      return true;
+    }
     const segText = sanitizeStreamText(item.text);
     if (segText.length === 0) {
       return true;
@@ -660,6 +667,22 @@ function injectBranchPointDividers(
     return items;
   }
 
+  // Active-path indices that actually render as a message. A branch-from entry
+  // that is not in this set is either a non-rendering branch_marker (re-edit) or
+  // a message scrolled out of the loaded window — the flush rule below tells
+  // them apart.
+  const renderedIndices = new Set<number>();
+  for (const item of items) {
+    if (item.kind !== "message") {
+      continue;
+    }
+    const entryId = messageEntryId(item.message);
+    const idx = entryId !== null ? activePathIndex.get(entryId) : undefined;
+    if (idx !== undefined) {
+      renderedIndices.add(idx);
+    }
+  }
+
   const result: ChatItem[] = [];
   // -1 matches a root fork's parent; updated to each active-path message as it
   // is emitted so a divider lands between its parent and the parent's next message.
@@ -670,15 +693,32 @@ function injectBranchPointDividers(
       const entryId = messageEntryId(item.message);
       const messageIndex = entryId !== null ? activePathIndex.get(entryId) : undefined;
       if (messageIndex !== undefined) {
-        const dividers = byParentIndex.get(prevInPathIndex);
-        if (dividers) {
-          // Inherit the upcoming message's time so the visible-time sort keeps
-          // the divider just above it (never floated to the bottom).
-          const itemTs = chatItemTimestamp(item) ?? prevInPathTs ?? 0;
-          for (const bp of dividers) {
+        // Inherit the upcoming message's time so the visible-time sort keeps the
+        // divider just above it (never floated to the bottom).
+        const itemTs = chatItemTimestamp(item) ?? prevInPathTs ?? 0;
+        // Flush every pending branch point that belongs just above this message:
+        //  - a rendered-message (or root -1) parent flushes when it was the last
+        //    message rendered (exact index match); but
+        //  - a non-rendering branch_marker parent (re-editing an edited message
+        //    parents the new turn onto the first edit's marker) flushes when a
+        //    real message was rendered before it and it sits in the gap ahead of
+        //    this message — so its divider still anchors here instead of being
+        //    dropped. A branch point whose own message scrolled out has nothing
+        //    rendered before it (prevInPathIndex < 0), so it stays dropped rather
+        //    than hoisted onto an unrelated later message.
+        const readyParents = [...byParentIndex.keys()]
+          .filter((k) => {
+            const parentIsRendered = k === -1 || renderedIndices.has(k);
+            return parentIsRendered
+              ? prevInPathIndex === k
+              : prevInPathIndex >= 0 && k > prevInPathIndex && k < messageIndex;
+          })
+          .sort((a, b) => a - b);
+        for (const k of readyParents) {
+          for (const bp of byParentIndex.get(k)!) {
             result.push(branchPointDivider(bp, `branch:${bp.entryId}:${item.key}`, itemTs));
           }
-          byParentIndex.delete(prevInPathIndex);
+          byParentIndex.delete(k);
         }
         prevInPathIndex = messageIndex;
         prevInPathTs = chatItemTimestamp(item) ?? prevInPathTs;

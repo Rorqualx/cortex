@@ -559,6 +559,28 @@ describe("buildChatItems", () => {
     });
   });
 
+  it("keeps the live stream segment even when its text matches an earlier persisted message", () => {
+    // Regression: a live burst whose text is a substring of an earlier persisted
+    // assistant message of the same turn used to be deduped away, stalling the
+    // stream to blank until the burst's own message persisted.
+    const items = buildChatItems(
+      createProps({
+        messages: [
+          { role: "user", content: "go", timestamp: 1_000 },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "Step one. Done." }],
+            timestamp: 1_001,
+          },
+        ],
+        stream: "Done.",
+        streamStartedAt: 1_002,
+      }),
+    );
+
+    expect(items.some((item) => item.kind === "stream" && item.text === "Done.")).toBe(true);
+  });
+
   it("renders submitted queued sends as user turns before chat.send ACK", () => {
     const groups = messageGroups({
       messages: [{ role: "assistant", content: "Ready.", timestamp: 1 }],
@@ -953,6 +975,35 @@ describe("buildChatItems", () => {
       childCount: 2,
       activeChildIndex: 1, // "marker" is the second child → counter shows 2 / 2
     });
+    expect(items.at(-1)?.kind).not.toBe("branch-point");
+  });
+
+  it("emits a divider for a branch point whose parent is a non-rendering marker", () => {
+    // Regression: re-editing an already-edited message parents the new turn onto
+    // the first edit's branch marker, so the branch point keys onto the marker —
+    // an entry that renders no message. The divider must still anchor above the
+    // next visible active-path message instead of being silently dropped.
+    const items = buildChatItems(
+      createProps({
+        messages: [
+          withEntryId({ role: "user", content: "parent", timestamp: 1000 }, "P"),
+          withEntryId({ role: "user", content: "re-edited", timestamp: 1002 }, "C"),
+        ],
+        branchPoints: [
+          branchPoint({ entryId: "marker", childIds: ["origEdit", "C"], activeChildId: "C" }),
+        ],
+        branchActivePath: ["P", "marker", "C"],
+      }),
+    );
+
+    const branchIndex = items.findIndex((item) => item.kind === "branch-point");
+    expect(branchIndex).toBeGreaterThanOrEqual(0);
+    expect(items[branchIndex]).toMatchObject({
+      kind: "branch-point",
+      entryId: "marker",
+      childCount: 2,
+    });
+    // Anchored inline above the re-edited message, never left dangling at the end.
     expect(items.at(-1)?.kind).not.toBe("branch-point");
   });
 
