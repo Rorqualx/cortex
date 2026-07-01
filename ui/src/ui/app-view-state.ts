@@ -12,6 +12,7 @@ import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "./chat
 import type { RealtimeTalkConversationEntry } from "./chat/realtime-talk-conversation.ts";
 import type { RealtimeTalkStatus } from "./chat/realtime-talk.ts";
 import type { ChatRunUiStatus } from "./chat/run-lifecycle.ts";
+import type { SessionChatRuntime } from "./chat/session-runtime.ts";
 import type { ChatSideResult } from "./chat/side-result.ts";
 import type { CronModelSuggestionsState, CronState } from "./controllers/cron.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
@@ -186,6 +187,9 @@ export type AppViewState = ScrollHost &
     announceSessionSwitch?: (sessionKey: string, label: string) => void;
     chatQueue: ChatQueueItem[];
     chatQueueBySession: Record<string, ChatQueueItem[]>;
+    // Saved run/transcript state for backgrounded sessions, so a session's live
+    // run survives switching to another tab (restored on switch-back).
+    chatRuntimeBySession: Record<string, SessionChatRuntime>;
     chatLocalInputHistoryBySession: Record<string, Array<{ text: string; ts: number }>>;
     chatInputHistorySessionKey: string | null;
     chatInputHistoryItems: string[] | null;

@@ -22,9 +22,15 @@ import {
   resolveSidebarNewSessionModel,
   switchChatModel,
 } from "./chat/session-controls.ts";
+import {
+  applyChatRuntime,
+  captureChatRuntime,
+  shouldRetainChatRuntime,
+  type ChatRuntimeHost,
+} from "./chat/session-runtime.ts";
 import { refreshSlashCommands } from "./chat/slash-commands.ts";
 import { resolveControlUiAuthToken } from "./control-ui-auth.ts";
-import { loadChatHistory } from "./controllers/chat.ts";
+import { loadBranches, loadChatHistory } from "./controllers/chat.ts";
 import type { ChatState } from "./controllers/chat.ts";
 import { loadSessions, syncSelectedSessionMessageSubscription } from "./controllers/sessions.ts";
 import { icons } from "./icons.ts";
@@ -211,24 +217,34 @@ function restoreChatQueueForSession(state: AppViewState, sessionKey: string): Ch
   return [...(state.chatQueueBySession?.[sessionKey] ?? [])];
 }
 
-function resetChatStateForSessionSwitch(state: AppViewState, sessionKey: string) {
+/** Save the outgoing session's live runtime so a background run survives the
+ *  switch; drop idle/finished runtimes (cheaply rebuilt from history on return). */
+function saveChatRuntimeForSession(state: AppViewState, sessionKey: string) {
+  const store = (state.chatRuntimeBySession ??= {});
+  const runtime = captureChatRuntime(state as unknown as ChatRuntimeHost);
+  if (shouldRetainChatRuntime(runtime)) {
+    store[sessionKey] = runtime;
+  } else {
+    delete store[sessionKey];
+  }
+}
+
+function resetChatStateForSessionSwitch(
+  state: AppViewState,
+  sessionKey: string,
+): { restored: boolean } {
   const host = state as unknown as SessionSwitchHost;
   const previousSessionKey = state.sessionKey;
   persistChatComposerState(state, previousSessionKey);
   saveChatQueueForSession(state, previousSessionKey);
+  saveChatRuntimeForSession(state, previousSessionKey);
   state.sessionKey = sessionKey;
   if (previousSessionKey !== sessionKey) {
     resetChatSessionPickerState(state);
   }
-  (state as unknown as { currentSessionId?: string | null }).currentSessionId = null;
+  // Composer, activity, error and avatar are not part of the per-session runtime.
   state.chatMessage = "";
   state.chatAttachments = [];
-  state.chatMessages = [];
-  // Pagination belongs to the previous transcript: a scroll-to-top before the
-  // new session's history applies must not fetch with the old session's cursor.
-  host.chatHistoryHasMore = false;
-  host.chatHistoryNextCursor = null;
-  state.chatToolMessages = [];
   state.activityEvents = [];
   state.activityExpandedIds = new Set();
   state.activityAtBottom = true;
@@ -236,11 +252,6 @@ function resetChatStateForSessionSwitch(state: AppViewState, sessionKey: string)
   state.activityHasMore = false;
   state.activityError = null;
   state.activitySubscribed = false;
-  state.chatStreamSegments = [];
-  state.chatThinkingLevel = null;
-  state.chatStream = null;
-  state.chatSideResult = null;
-  state.chatLiveUsage = null;
   state.lastError = null;
   state.chatError = null;
   state.chatAvatarUrl = null;
@@ -252,34 +263,56 @@ function resetChatStateForSessionSwitch(state: AppViewState, sessionKey: string)
   state.chatQueue = restoreChatQueueForSession(state, sessionKey);
   restoreChatComposerState(state);
   host.resetChatInputHistoryNavigation();
-  host.chatStreamStartedAt = null;
-  reconcileChatRunLifecycle(state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
-    clearLocalRun: true,
-    clearChatStream: true,
-    clearToolStream: true,
-    clearSideResultTerminalRuns: true,
-    clearRunStatus: true,
-  });
+
+  // Run/transcript state: restore a backgrounded session's saved runtime (so its
+  // live run and transcript reappear), else clear to a fresh session.
+  const runtimeStore = (state.chatRuntimeBySession ??= {});
+  const savedRuntime = runtimeStore[sessionKey];
+  let restored = false;
+  if (savedRuntime) {
+    delete runtimeStore[sessionKey];
+    applyChatRuntime(state as unknown as ChatRuntimeHost, savedRuntime);
+    // Compaction/fallback banners are foreground-global (not part of the saved
+    // runtime); clear the outgoing session's so they don't leak onto this one.
+    reconcileChatRunLifecycle(
+      state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],
+      {},
+    );
+    restored = true;
+  } else {
+    (state as unknown as { currentSessionId?: string | null }).currentSessionId = null;
+    state.chatMessages = [];
+    // Pagination belongs to the previous transcript: a scroll-to-top before the
+    // new session's history applies must not fetch with the old session's cursor.
+    host.chatHistoryHasMore = false;
+    host.chatHistoryNextCursor = null;
+    state.chatToolMessages = [];
+    state.chatStreamSegments = [];
+    state.chatThinkingLevel = null;
+    state.chatStream = null;
+    state.chatSideResult = null;
+    state.chatLiveUsage = null;
+    // Branch state is per-session too; clearing it here also fixes it leaking
+    // (stale dividers) into a freshly switched session.
+    state.branchPoints = [];
+    state.branchActivePath = [];
+    host.chatStreamStartedAt = null;
+    reconcileChatRunLifecycle(state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
+      clearLocalRun: true,
+      clearChatStream: true,
+      clearToolStream: true,
+      clearSideResultTerminalRuns: true,
+      clearRunStatus: true,
+    });
+  }
   host.resetChatScroll();
   state.applySettings({
     ...state.settings,
     sessionKey,
     lastActiveSessionKey: sessionKey,
   });
+  return { restored };
 }
-
-function canSwitchToNewChatSession(state: AppViewState): boolean {
-  return (
-    !state.chatLoading &&
-    !state.chatSending &&
-    !state.chatRunId &&
-    state.chatStream === null &&
-    state.chatQueue.length === 0
-  );
-}
-
-const NEW_CHAT_ACTIVE_RUN_MESSAGE =
-  "Start a new session after the active run or queued messages finish.";
 
 export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: boolean }) {
   const href = pathForTab(tab, state.basePath);
@@ -690,9 +723,16 @@ export function renderChatMobileToggle(state: AppViewState) {
 function switchChatSessionInternal(
   state: AppViewState,
   nextSessionKey: string,
-  opts?: { awaitInitialLoad?: boolean },
+  opts?: { awaitInitialLoad?: boolean; isNewDraft?: boolean },
 ): Promise<void> | undefined {
   const previousSessionKey = state.sessionKey;
+  // Never switch away mid-send: chatSending is true only during the chat.send RPC
+  // round-trip (cleared in sendChatMessage's finally), and its ack continuation
+  // writes the run binding to the *foreground* state. Switching in that window
+  // would route the outgoing session's run onto the newly-foreground one.
+  if (state.chatSending && previousSessionKey !== nextSessionKey) {
+    return undefined;
+  }
   const nextSessionRow =
     state.sessionsResult?.sessions.find((row) => row.key === nextSessionKey) ??
     state.chatSessionPickerResult?.sessions.find((row) => row.key === nextSessionKey);
@@ -720,7 +760,16 @@ function switchChatSessionInternal(
   const subscriptionSync = syncSelectedSessionMessageSubscription(
     state as unknown as AppViewState & { chatSessionMessageSubscriptionKey?: string | null },
   );
-  const historyLoad = loadChatHistory(state as unknown as ChatState);
+  // A brand-new draft has no server transcript to fetch; skipping the load keeps
+  // it out of the grey loading skeleton and lets the composer render at once.
+  const historyLoad = opts?.isNewDraft
+    ? Promise.resolve(undefined)
+    : loadChatHistory(state as unknown as ChatState);
+  // Branch state is per-session and was cleared/replaced on switch, so refetch it
+  // for the target (skipped for drafts, which have no branches yet).
+  if (!opts?.isNewDraft) {
+    void loadBranches(state as unknown as ChatState);
+  }
   const sessionsRefresh = refreshSessionOptions(state);
   if (opts?.awaitInitialLoad) {
     void sessionsRefresh;
@@ -768,8 +817,15 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
   if (!state.client || !state.connected) {
     return false;
   }
-  if (!canSwitchToNewChatSession(state)) {
-    state.lastError = NEW_CHAT_ACTIVE_RUN_MESSAGE;
+  // An active run is fine — it keeps running in the background via the runtime
+  // store. But a send RPC in flight (chatSending) must finish first: its ack
+  // continuation writes to the foreground session, so switching now would
+  // misroute it. Queued follow-ups only flush for the foreground session, so
+  // they'd be stranded too. Both windows are brief; require them cleared.
+  if (state.chatSending || state.chatQueue.length > 0) {
+    state.lastError = state.chatSending
+      ? "Wait for the current message to send before starting a new session."
+      : "Send or clear the queued messages before starting a new session.";
     state.chatError = state.lastError;
     return false;
   }
@@ -781,11 +837,16 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
   // never registers in session history.
   // The sidebar combo decides the target agent: an explicit sidebar pick wins,
   // else the new session stays on the active session's agent.
+  // An in-progress run in the current session is preserved by the per-session
+  // runtime store on switch, so a new session can start while it keeps running.
   const agentId = resolveSidebarNewSessionAgentId(state);
   const nextSessionKey = `agent:${agentId}:dashboard:${crypto.randomUUID()}`;
   const preservedDraft = state.chatMessage;
   const preservedAttachments = state.chatAttachments;
-  switchChatSession(state, nextSessionKey);
+  // isNewDraft: the key has no server transcript yet, so skip the history load
+  // (which would otherwise show the grey loading skeleton while the gateway is
+  // busy with another session's run) and render the composer immediately.
+  void switchChatSessionInternal(state, nextSessionKey, { isNewDraft: true });
   state.chatMessage = preservedDraft;
   state.chatAttachments = preservedAttachments;
   const newSessionModel = resolveSidebarNewSessionModel(state);

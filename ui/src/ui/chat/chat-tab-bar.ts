@@ -126,13 +126,10 @@ function getEffectiveTabs(state: AppViewState): string[] {
 }
 
 function isNewSessionDisabled(state: AppViewState): boolean {
-  return (
-    !state.connected ||
-    state.chatSending ||
-    Boolean(state.chatRunId) ||
-    state.chatLoading ||
-    !state.client
-  );
+  // New sessions can start during an active run — switching preserves the
+  // running session's runtime so it continues in the background. Only the brief
+  // send-RPC window (chatSending) blocks, since its ack writes to the foreground.
+  return !state.connected || !state.client || state.chatSending;
 }
 
 // ── Tab status indicator ─────────────────────────────────────────────
@@ -146,7 +143,10 @@ function resolveTabRunState(
   const rowActive = row ? isSessionRunActive(row) : false;
   const isCurrent = sessionKey === state.sessionKey;
   const hasLocalRun = isCurrent && Boolean(state.chatRunId);
-  const isRunning = rowActive || hasLocalRun;
+  // A backgrounded session keeps its live run in the per-session runtime store,
+  // so show its running dot immediately without waiting for the sessions poll.
+  const backgroundRun = !isCurrent && Boolean(state.chatRuntimeBySession?.[sessionKey]?.chatRunId);
+  const isRunning = rowActive || hasLocalRun || backgroundRun;
 
   // User sent a new message — clear the done dot
   if (state.chatRunId && state.chatRunId !== lastChatRunId) {

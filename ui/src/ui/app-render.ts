@@ -520,16 +520,6 @@ function renderChannelsNavItems(state: AppViewState, collapsed: boolean) {
   );
 }
 
-function isSidebarSessionBusy(state: AppViewState) {
-  return (
-    state.chatLoading ||
-    state.chatSending ||
-    Boolean(state.chatRunId) ||
-    state.chatStream !== null ||
-    state.chatQueue.length > 0
-  );
-}
-
 function resolveSidebarDefaultAgentId(state: AppViewState): string {
   const snapshot = state.hello?.snapshot as
     | { sessionDefaults?: { defaultAgentId?: string } }
@@ -594,12 +584,14 @@ function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] 
 
 function renderSidebarSessions(state: AppViewState) {
   const collapsed = state.settings.navCollapsed;
-  const busy = isSidebarSessionBusy(state);
-  const newSessionDisabled = !state.connected || busy || !state.client;
+  // A new session no longer waits on the active run: switching preserves the
+  // running session's runtime, so it keeps going in the background. Only the
+  // brief send-RPC window (chatSending) blocks, since its ack writes foreground.
+  const newSessionDisabled = !state.connected || !state.client || state.chatSending;
   const newSessionTitle = !state.connected
     ? "Connect to create a new session"
-    : busy
-      ? "Finish the active run before creating a new session"
+    : state.chatSending
+      ? "Sending…"
       : "New session";
 
   return html`
@@ -4224,6 +4216,12 @@ export function renderApp(state: AppViewState) {
                     if (remaining.length > 0) {
                       switchChatSession(state, remaining[remaining.length - 1]);
                     }
+                  }
+                  // Drop the closed session's saved runtime (after any switch, which
+                  // would otherwise re-save it) so reopening it later loads fresh
+                  // instead of restoring a stale/finished run's phantom state.
+                  if (state.chatRuntimeBySession) {
+                    delete state.chatRuntimeBySession[key];
                   }
                   savePersistedTabs(state.chatOpenSessionTabs, state.sessionKey);
                 },

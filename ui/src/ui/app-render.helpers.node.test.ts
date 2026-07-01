@@ -59,6 +59,7 @@ vi.mock("./chat/slash-commands.ts", () => ({
 
 vi.mock("./controllers/chat.ts", () => ({
   loadChatHistory: loadChatHistoryMock,
+  loadBranches: vi.fn(),
 }));
 
 vi.mock("./controllers/sessions.ts", () => ({
@@ -822,25 +823,64 @@ describe("createChatSession", () => {
     expect(state.sessionKey).toMatch(/^agent:work:dashboard:/);
   });
 
-  it("does not create or switch while a run is active", async () => {
+  it("creates a new session during an active run, preserving the running one", async () => {
+    const state = createChatSessionState({ chatRunId: "run-1" });
+    const previousKey = state.sessionKey;
+
+    const created = await createChatSession(state);
+
+    // Per-session runtime isolation: the new session opens immediately and the
+    // running session's runtime is saved so it keeps going in the background.
+    expect(created).toBe(true);
+    expect(createSessionAndRefreshMock).not.toHaveBeenCalled();
+    expect(state.sessionKey).not.toBe(previousKey);
+    expect(state.sessionKey).toMatch(/^agent:ops:dashboard:[0-9a-f-]{36}$/);
+    expect(state.chatRuntimeBySession[previousKey]?.chatRunId).toBe("run-1");
+    expect(state.chatMessage).toBe("draft prompt");
+    expect(state.lastError).toBeNull();
+  });
+
+  it("blocks a new session while the current one has queued messages", async () => {
     const state = createChatSessionState({
-      chatRunId: "run-1",
       chatQueue: [{ id: "queued-1", text: "follow up", createdAt: 1 }],
     });
 
-    await createChatSession(state);
+    const created = await createChatSession(state);
 
-    expect(createSessionAndRefreshMock).not.toHaveBeenCalled();
+    expect(created).toBe(false);
     expect(state.sessionKey).toBe("agent:ops:main");
-    expect(state.chatMessage).toBe("draft prompt");
     expect(state.chatQueue).toEqual([{ id: "queued-1", text: "follow up", createdAt: 1 }]);
     expect(state.lastError).toBe(
-      "Start a new session after the active run or queued messages finish.",
+      "Send or clear the queued messages before starting a new session.",
+    );
+  });
+
+  it("blocks a new session during the in-flight send window", async () => {
+    // chatSending is only true during the chat.send RPC, whose ack writes to the
+    // foreground session — switching then would misroute the run.
+    const state = createChatSessionState({ chatSending: true });
+
+    const created = await createChatSession(state);
+
+    expect(created).toBe(false);
+    expect(state.sessionKey).toBe("agent:ops:main");
+    expect(state.lastError).toBe(
+      "Wait for the current message to send before starting a new session.",
     );
   });
 });
 
 describe("switchChatSession", () => {
+  it("does not switch away while a send RPC is in flight", () => {
+    const state = createChatSessionState({ chatSending: true });
+
+    switchChatSession(state, "agent:ops:review");
+
+    // The send ack writes to the foreground session, so a mid-send switch is
+    // blocked to avoid routing the run onto the wrong session.
+    expect(state.sessionKey).toBe("agent:ops:main");
+  });
+
   it("clears stale history pagination state when switching sessions", () => {
     const settings = createSettings();
     const state = {

@@ -11,6 +11,7 @@ import {
 import { extractText } from "../chat/message-extract.ts";
 import type { LocalTerminalReconcile } from "../chat/run-lifecycle.ts";
 import { reconcileChatRunLifecycle } from "../chat/run-lifecycle.ts";
+import type { SessionChatRuntime } from "../chat/session-runtime.ts";
 import {
   appendTerminalAssistantMessage,
   clearToolStreamSegments,
@@ -788,6 +789,7 @@ export async function loadBranches(state: ChatState): Promise<void> {
   if (!state.client || !state.connected) {
     return;
   }
+  const requestedSessionKey = state.sessionKey;
   try {
     const res = await state.client.request<{
       ok?: boolean;
@@ -796,8 +798,13 @@ export async function loadBranches(state: ChatState): Promise<void> {
       activePath?: string[];
       error?: string;
     }>("chat.branches", {
-      sessionKey: state.sessionKey,
+      sessionKey: requestedSessionKey,
     });
+    // Drop a response that resolved after the user switched away, so one
+    // session's branch dividers never render on another's transcript.
+    if (state.sessionKey !== requestedSessionKey) {
+      return;
+    }
     if (res.ok && res.branches) {
       state.branchPoints = res.branches;
       state.branchActivePath = res.activePath ?? [];
@@ -806,6 +813,9 @@ export async function loadBranches(state: ChatState): Promise<void> {
       state.branchActivePath = [];
     }
   } catch {
+    if (state.sessionKey !== requestedSessionKey) {
+      return;
+    }
     state.branchPoints = [];
     state.branchActivePath = [];
   }
@@ -1461,6 +1471,43 @@ export async function abortChatRun(state: ChatState): Promise<boolean> {
   }
 }
 
+/**
+ * Update a backgrounded session's saved runtime from an event that doesn't
+ * belong to the foreground session. Matched by runId (robust to session-key
+ * canonicalization). We only need to clear the run flags on a terminal event so
+ * the tab's running indicator stops; the full transcript is reloaded from
+ * history when the user switches back, so streaming deltas are not replayed here.
+ */
+function peekBackgroundRunEvent(state: ChatState, payload: ChatEventPayload): void {
+  if (typeof payload.runId !== "string") {
+    return;
+  }
+  const runtimes = (state as { chatRuntimeBySession?: Record<string, SessionChatRuntime> })
+    .chatRuntimeBySession;
+  if (!runtimes) {
+    return;
+  }
+  const terminal =
+    payload.state === "final" || payload.state === "aborted" || payload.state === "error";
+  if (!terminal) {
+    return;
+  }
+  for (const runtime of Object.values(runtimes)) {
+    if (runtime.chatRunId === payload.runId) {
+      // The background run finished: clear its run flags so the tab's running
+      // dot stops, but keep the saved transcript so switching back paints it
+      // instantly (then history reload reconciles the final message). Growth is
+      // bounded because closing a tab deletes its runtime (onCloseTab) and
+      // switching back removes it from the store on restore.
+      runtime.chatRunId = null;
+      runtime.chatSending = false;
+      runtime.chatStream = null;
+      (state as { requestUpdate?: () => void }).requestUpdate?.();
+      return;
+    }
+  }
+}
+
 export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   if (!payload) {
     return null;
@@ -1472,6 +1519,10 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     typeof payload.runId === "string" &&
     payload.runId === state.chatRunId;
   if (!sessionMatches && !activeRunMatches) {
+    // Event for a backgrounded session (its runtime is saved, not foreground):
+    // keep its running indicator honest so it clears when the run ends and a
+    // switch-back reloads a completed transcript.
+    peekBackgroundRunEvent(state, payload);
     return null;
   }
   if (!state.chatRunId && sessionMatches && typeof payload.runId === "string") {
