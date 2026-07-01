@@ -726,11 +726,13 @@ function switchChatSessionInternal(
   opts?: { awaitInitialLoad?: boolean; isNewDraft?: boolean },
 ): Promise<void> | undefined {
   const previousSessionKey = state.sessionKey;
-  // Never switch away mid-send: chatSending is true only during the chat.send RPC
-  // round-trip (cleared in sendChatMessage's finally), and its ack continuation
-  // writes the run binding to the *foreground* state. Switching in that window
-  // would route the outgoing session's run onto the newly-foreground one.
-  if (state.chatSending && previousSessionKey !== nextSessionKey) {
+  // Never switch away while a chat.send RPC is in flight: its ack continuation
+  // writes the run binding to the *foreground* state, so switching in that window
+  // would route the outgoing session's run onto the newly-foreground one. Gate on
+  // chatSendsInFlight, NOT chatSending — chatSending stays true for the whole run
+  // (thinking indicator), and an active run's runtime is snapshotted per session
+  // on switch-away, so switching mid-run is safe.
+  if ((state.chatSendsInFlight ?? 0) > 0 && previousSessionKey !== nextSessionKey) {
     return undefined;
   }
   const nextSessionRow =
@@ -818,12 +820,13 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
     return false;
   }
   // An active run is fine — it keeps running in the background via the runtime
-  // store. But a send RPC in flight (chatSending) must finish first: its ack
-  // continuation writes to the foreground session, so switching now would
-  // misroute it. Queued follow-ups only flush for the foreground session, so
-  // they'd be stranded too. Both windows are brief; require them cleared.
-  if (state.chatSending || state.chatQueue.length > 0) {
-    state.lastError = state.chatSending
+  // store. But a send RPC in flight must finish first: its ack continuation
+  // writes to the foreground session, so switching now would misroute it. Queued
+  // follow-ups only flush for the foreground session, so they'd be stranded too.
+  // Gate on chatSendsInFlight, not chatSending (which stays true the whole run).
+  const sendRpcInFlight = (state.chatSendsInFlight ?? 0) > 0;
+  if (sendRpcInFlight || state.chatQueue.length > 0) {
+    state.lastError = sendRpcInFlight
       ? "Wait for the current message to send before starting a new session."
       : "Send or clear the queued messages before starting a new session.";
     state.chatError = state.lastError;

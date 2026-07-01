@@ -856,9 +856,9 @@ describe("createChatSession", () => {
   });
 
   it("blocks a new session during the in-flight send window", async () => {
-    // chatSending is only true during the chat.send RPC, whose ack writes to the
-    // foreground session — switching then would misroute the run.
-    const state = createChatSessionState({ chatSending: true });
+    // A send RPC in flight (chatSendsInFlight > 0) writes its ack to the
+    // foreground session — creating one then would misroute the run.
+    const state = createChatSessionState({ chatSendsInFlight: 1 });
 
     const created = await createChatSession(state);
 
@@ -868,17 +868,40 @@ describe("createChatSession", () => {
       "Wait for the current message to send before starting a new session.",
     );
   });
+
+  it("allows a new session while a run is active but no send RPC is in flight", async () => {
+    // Regression: chatSending stays true for the whole run; an active run alone
+    // must not block a new session (its runtime is snapshotted per session).
+    const state = createChatSessionState({ chatSending: true, chatRunId: "run-1" });
+
+    const created = await createChatSession(state);
+
+    expect(created).toBe(true);
+    expect(state.lastError).toBeNull();
+  });
 });
 
 describe("switchChatSession", () => {
   it("does not switch away while a send RPC is in flight", () => {
-    const state = createChatSessionState({ chatSending: true });
+    const state = createChatSessionState({ chatSendsInFlight: 1 });
 
     switchChatSession(state, "agent:ops:review");
 
     // The send ack writes to the foreground session, so a mid-send switch is
     // blocked to avoid routing the run onto the wrong session.
     expect(state.sessionKey).toBe("agent:ops:main");
+  });
+
+  it("switches away while a run is active but no send RPC is in flight", () => {
+    // Regression (reported bug): chatSending stays true for the whole run, so
+    // gating on it blocked all tab navigation during a run. Gating on
+    // chatSendsInFlight lets the user switch — the run continues in the
+    // background via the per-session runtime snapshot.
+    const state = createChatSessionState({ chatSending: true, chatRunId: "run-1" });
+
+    switchChatSession(state, "agent:ops:review");
+
+    expect(state.sessionKey).toBe("agent:ops:review");
   });
 
   it("clears stale history pagination state when switching sessions", () => {

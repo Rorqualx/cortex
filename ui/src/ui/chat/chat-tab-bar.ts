@@ -128,8 +128,9 @@ function getEffectiveTabs(state: AppViewState): string[] {
 function isNewSessionDisabled(state: AppViewState): boolean {
   // New sessions can start during an active run — switching preserves the
   // running session's runtime so it continues in the background. Only the brief
-  // send-RPC window (chatSending) blocks, since its ack writes to the foreground.
-  return !state.connected || !state.client || state.chatSending;
+  // send-RPC window blocks (its ack writes to the foreground). Gate on
+  // chatSendsInFlight, not chatSending, which stays true for the whole run.
+  return !state.connected || !state.client || (state.chatSendsInFlight ?? 0) > 0;
 }
 
 // ── Tab status indicator ─────────────────────────────────────────────

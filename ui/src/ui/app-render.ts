@@ -586,11 +586,13 @@ function renderSidebarSessions(state: AppViewState) {
   const collapsed = state.settings.navCollapsed;
   // A new session no longer waits on the active run: switching preserves the
   // running session's runtime, so it keeps going in the background. Only the
-  // brief send-RPC window (chatSending) blocks, since its ack writes foreground.
-  const newSessionDisabled = !state.connected || !state.client || state.chatSending;
+  // brief send-RPC window blocks (its ack writes foreground). Gate on
+  // chatSendsInFlight, not chatSending, which stays true for the whole run.
+  const sendRpcInFlight = (state.chatSendsInFlight ?? 0) > 0;
+  const newSessionDisabled = !state.connected || !state.client || sendRpcInFlight;
   const newSessionTitle = !state.connected
     ? "Connect to create a new session"
-    : state.chatSending
+    : sendRpcInFlight
       ? "Sending…"
       : "New session";
 

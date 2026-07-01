@@ -111,7 +111,12 @@ export type AppViewState = ScrollHost &
     chatSessionMessageSubscriptionKey?: string | null;
     chatSessionMessageSubscriptionRequestedKey?: string | null;
     chatLoading: boolean;
+    // chatSending stays true for the whole active run (it drives the thinking
+    // indicator). chatSendsInFlight counts only in-flight chat.send RPCs, so it
+    // is the correct signal for "mid-send window" navigation guards — an active
+    // run alone must not block switching/creating sessions.
     chatSending: boolean;
+    chatSendsInFlight?: number;
     // Branch points for the active thread, populated by the chat controller and
     // read by the message-editor branch-navigation handlers.
     branchPoints?: SessionBranchPoint[];
