@@ -18,6 +18,28 @@ describe("checkBashCommandDiscipline", () => {
       expect(ruleOf("grep foo /var/log/syslog")).toBeNull();
       expect(ruleOf("grep error package.json")).toBeNull();
     });
+    it("allows non-recursive greps of extensionless single files", () => {
+      // Regression: a bare extensionless operand used to be classified as a
+      // directory, blocking legitimate single-file text searches.
+      expect(ruleOf("grep -n PHONY Makefile")).toBeNull();
+      expect(ruleOf("grep FROM Dockerfile")).toBeNull();
+      expect(ruleOf("grep MIT LICENSE")).toBeNull();
+    });
+    it("blocks bare recursive greps with no path operand", () => {
+      // Regression: `grep -r`/`-R` with no operand walks the cwd recursively and
+      // must be redirected, not slip through because it lacks a directory arg.
+      expect(ruleOf("grep -r someFunc")).toBe("ast-grep");
+      expect(ruleOf("grep -R TODO")).toBe("ast-grep");
+    });
+    it("keeps scoped subdirectory searches allowed", () => {
+      expect(ruleOf("grep -rn foo src/components/")).toBeNull();
+      expect(ruleOf("rg foo packages/core/src")).toBeNull();
+      expect(ruleOf("grep -r foo file.ts")).toBeNull();
+    });
+    it("does not treat long flags containing 'r' as recursive", () => {
+      // `--color` must not read as `-r`; a single-file grep stays allowed.
+      expect(ruleOf("grep --color foo Makefile")).toBeNull();
+    });
   });
 
   describe("background", () => {

@@ -122,6 +122,40 @@ function splitSegments(command: string): string[] {
   return command.split(/\|\||&&|[|;]/u);
 }
 
+// Bare single-segment names that read as source roots (a whole tree), not files.
+const KNOWN_SOURCE_DIRS = new Set(["src", "lib", "app"]);
+
+type GrepOperand = "text" | "file" | "scoped" | "broad-dir";
+
+/**
+ * Classify a grep path operand. `recursive` is the tiebreaker for a bare
+ * extensionless single name (`Makefile` vs a real directory `components`):
+ * without `-r` it is a concrete file (allow), with `-r` it is a tree (block).
+ */
+function classifyGrepOperand(p: string, recursive: boolean): GrepOperand {
+  if (TEXT_HINT.some((h) => p.includes(h))) {
+    return "text";
+  }
+  if (CODE_EXT.some((e) => p.endsWith(e))) {
+    return "file";
+  }
+  if (p === ".") {
+    return "broad-dir";
+  }
+  const segments = p.split("/").filter(Boolean);
+  if (segments.length > 1) {
+    return "scoped"; // deep path → scoped search, allow
+  }
+  if (p.endsWith("/") || KNOWN_SOURCE_DIRS.has(p)) {
+    return "broad-dir";
+  }
+  if (baseCommand(p).includes(".")) {
+    return "file"; // e.g. package.json, config.yaml — a concrete file
+  }
+  // Bare extensionless single name: a file unless the command recurses.
+  return recursive ? "broad-dir" : "file";
+}
+
 function isRecursiveCodeGrep(segment: string): boolean {
   const toks = tokenize(segment) ?? segment.trim().split(/\s+/u).filter(Boolean);
   if (toks.length === 0) {
@@ -133,40 +167,34 @@ function isRecursiveCodeGrep(segment: string): boolean {
   }
   const flags = toks.slice(1).filter((t) => t.startsWith("-"));
   const args = toks.slice(1).filter((t) => !t.startsWith("-"));
-  const joined = flags.join(" ").replaceAll("--", "");
+  // Recursion signal: rg/ripgrep recurse by default; for grep look only at
+  // short-flag clusters (`-rn`) and `--recursive`, never at any long flag that
+  // merely contains an "r" (e.g. `--color` must not read as recursive).
+  const shortFlagChars = flags
+    .filter((f) => f.startsWith("-") && !f.startsWith("--"))
+    .map((f) => f.slice(1))
+    .join("");
   const recursive =
     base === "rg" ||
     base === "ripgrep" ||
-    joined.includes("r") ||
-    flags.includes("-R") ||
+    shortFlagChars.includes("r") ||
+    shortFlagChars.includes("R") ||
     flags.includes("--recursive");
   // The first non-flag arg is the pattern; the rest are path operands.
   const operands = args.slice(1);
-  const targetsDir = operands.some((p) => {
-    const segments = p.split("/").filter(Boolean);
-    if (segments.length > 1) return false; // deep path → scoped search, allow
-    return (
-      p.endsWith("/") ||
-      p === "." ||
-      p === "src" ||
-      p === "lib" ||
-      p === "app" ||
-      !baseCommand(p).includes(".")
-    );
-  });
-  // Explicit text/log target → allow.
-  if (operands.some((p) => TEXT_HINT.some((h) => p.includes(h)))) {
+  const classes = operands.map((p) => classifyGrepOperand(p, recursive));
+  // An explicit text/log target anywhere → allow (reading logs/config, not code).
+  if (classes.includes("text")) {
     return false;
   }
-  // Single concrete code file (non-recursive) → allow a legit local search.
-  if (
-    operands.length > 0 &&
-    operands.every((p) => CODE_EXT.some((e) => p.endsWith(e))) &&
-    !recursive
-  ) {
-    return false;
+  // No path operand: rg and `grep -r` both walk the cwd recursively → redirect.
+  if (operands.length === 0) {
+    return recursive || base === "rg" || base === "ripgrep";
   }
-  return targetsDir || (operands.length === 0 && (base === "rg" || base === "ripgrep"));
+  // A broad directory target (cwd, top-level source root, trailing slash) is the
+  // codebase-wide search the rule exists to redirect. Concrete files and scoped
+  // deep paths stay allowed.
+  return classes.includes("broad-dir");
 }
 
 function checkAstGrep(command: string): string | null {
