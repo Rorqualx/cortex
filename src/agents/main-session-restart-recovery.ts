@@ -627,6 +627,14 @@ async function resumeMainSession(params: {
       idempotencyKey: crypto.randomUUID(),
       deliver: Boolean(deliveryContext),
       lane: CommandLane.Main,
+      // The "[System]" continuation is a recovery instruction for the model, not
+      // a user turn: persisting it renders a bogus "You" bubble in the dashboard
+      // (the Control UI classifies bubbles purely by role). Suppress persistence
+      // so the model still sees it this run (emptyTranscriptMode "model-prompt")
+      // while the transcript records only the resumed assistant reply. Unlike the
+      // sibling subagent-orphan-recovery we deliberately do NOT set
+      // sessionEffects:"internal" — the main session must stay visible to deliver.
+      suppressPromptPersistence: true,
     };
     if (deliveryContext) {
       agentParams.channel = deliveryContext.channel;
