@@ -1,0 +1,3 @@
+extensions/memory-l3/src/scoring.test.ts
+extensions/memory-l3/src/compaction.test.ts
+extensions/memory-l3/src/longterm-typed.test.ts
