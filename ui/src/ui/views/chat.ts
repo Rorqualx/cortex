@@ -911,6 +911,10 @@ const RESULT_ROLES = new Set(["toolresult", "tool_result"]);
 export type ActiveFileResult = {
   dir: string;
   fileName: string;
+  /** The raw tool-arg path (trailing slashes stripped). Carried verbatim
+   * because (dir, fileName) alone cannot be reassembled unambiguously — e.g.
+   * "/utils/utils" and "/utils" both split to dir="/utils", fileName="utils". */
+  path: string;
   toolName?: string;
 } | null;
 
@@ -931,7 +935,7 @@ function extractActiveFileFromToolCall(
   if (name === "bash" && typeof a.workdir === "string" && a.workdir.trim()) {
     const dir = a.workdir.replace(/\/+$/, "");
     if (dir) {
-      return { dir, fileName: "", toolName: name };
+      return { dir, fileName: "", path: dir, toolName: name };
     }
   }
   // file tools: extract directory + basename from the path argument
@@ -939,10 +943,10 @@ function extractActiveFileFromToolCall(
   if (typeof filePath === "string" && filePath.trim()) {
     const trimmed = filePath.replace(/\/+$/, "");
     const lastSlash = trimmed.lastIndexOf("/");
-    const dir = lastSlash > 0 ? trimmed.substring(0, lastSlash) : trimmed;
-    const fileName = lastSlash >= 0 ? trimmed.substring(lastSlash + 1) : trimmed;
+    const dir = lastSlash > 0 ? trimmed.slice(0, lastSlash) : trimmed;
+    const fileName = lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed;
     if (dir) {
-      return { dir, fileName, toolName: name };
+      return { dir, fileName, path: trimmed, toolName: name };
     }
   }
   return null;

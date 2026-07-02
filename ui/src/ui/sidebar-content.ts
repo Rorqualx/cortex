@@ -50,11 +50,13 @@ export type PendingEdit = {
 export type CodeSidebarContent = {
   kind: "code";
   fileName: string;
-  /** Server-canonical absolute path of the displayed content. Same-file checks
-   * key on it (fileName alone collides across directories), and when absolute
-   * it is also the exact refetch recipe — `path.resolve()` of an absolute path
-   * is itself, so a refetch is cwd-independent. Absent for write auto-opens
-   * whose only key was a relative tool arg (no reliable server path). */
+  /** Absolute path of the displayed content: the server-canonical path for
+   * fetched reads, or the tool arg resolved against the agent's workspace root
+   * for write auto-opens (the agent's tool cwd is that root). Same-file checks
+   * key on it (fileName alone collides across directories), and it is also the
+   * exact refetch recipe — `path.resolve()` of an absolute path is itself, so a
+   * refetch is cwd-independent. Absent only when no workspace root is known yet
+   * to resolve a relative arg (pre files-list window). */
   path?: string;
   /** Agent the content belongs to — a refetch during an edit hold must query
    * it even if the user switched chats, since reads resolve against the

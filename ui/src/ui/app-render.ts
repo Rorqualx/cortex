@@ -197,6 +197,7 @@ import {
   titleForTab,
   type Tab,
 } from "./navigation.ts";
+import { resolveAgentArgPath } from "./path-arg.ts";
 import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
 import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
 import {
@@ -830,13 +831,13 @@ function codeViewerState(state: AppViewState): CodeViewerState {
 /** Spread to end an edit hold — one clear shape for every resolver branch. */
 const overlayCleared = { pendingEdit: null, editing: false, reading: false } as const;
 
-/** Deliberately generous "/"-bounded basename match for the edit scan. Tool
- * args arrive in unresolvable forms (absolute, relative, ./, ~), so a stricter
- * rule would MISS a real edit and strand stale content forever. The cost of an
- * over-match — an edit to a same-named file in another directory — is a 3s
- * phantom diff on the shown sibling (content self-heals via the absolute-path
- * refetch) plus that edit consuming its one-shot flag so it won't re-animate
- * when its own file is later opened. Both cosmetic; stranded content is not. */
+/** Fallback "/"-bounded basename match for the edit scan when no workspace root
+ * is known to resolve the tool arg (resolveAgentArgPath returned null). A miss
+ * strands stale content forever, so this stays deliberately generous; the cost
+ * of an over-match — a phantom diff on a same-named sibling — is cosmetic and
+ * self-heals via the absolute-path refetch. With a root known the caller uses
+ * exact samePathConfident matching instead, so this only covers the pre-list
+ * window. */
 function entryPathMatchesOpenFile(entryPath: string, fileName: string): boolean {
   return entryPath === fileName || entryPath.endsWith(`/${fileName}`);
 }
@@ -3956,6 +3957,12 @@ export function renderApp(state: AppViewState) {
             ? [...state.chatMessages, ...state.chatToolMessages]
             : [];
           const workspace = chatWorkspaceFiles.list?.workspace;
+          // The agent's tool cwd is its workspace root, so relative tool-arg
+          // paths resolve against it. Prefer the loaded files-list workspace;
+          // fall back to the agents.list row so the edit scan can resolve paths
+          // even before the files list has loaded.
+          const workspaceRoot =
+            workspace ?? state.agentsList?.agents.find((a) => a.id === chatAgentId)?.workspace;
 
           // When the active directory changes, fetch its file listing
           const activeFile = workspace
@@ -3987,14 +3994,17 @@ export function renderApp(state: AppViewState) {
             state.client &&
             state.connected
           ) {
-            const key = `${activeFile.dir}/${activeFile.fileName}`;
+            const rawKey = activeFile.path;
             const lastAutoPreviewed = autoPreviewedFile.get(state);
-            if (lastAutoPreviewed !== key) {
-              autoPreviewedFile.set(state, key);
-              // Fetch by the tool-arg key (server resolves it); the open then
-              // stores the server-canonical absolute path for exact refetch.
+            if (lastAutoPreviewed !== rawKey) {
+              autoPreviewedFile.set(state, rawKey);
+              // Resolve a relative arg against the workspace root before fetching
+              // so agents.files.get receives an absolute path — the PATH branch
+              // resolves it to itself, independent of the gateway process cwd
+              // (a bare relative key would resolve against the wrong directory).
+              const fetchPath = resolveAgentArgPath(rawKey, workspaceRoot) ?? rawKey;
               // Defer to avoid mutating state during render.
-              queueMicrotask(() => openChatWorkspaceFile(activeFile.fileName, key));
+              queueMicrotask(() => openChatWorkspaceFile(activeFile.fileName, fetchPath));
             }
           }
 
@@ -4004,17 +4014,18 @@ export function renderApp(state: AppViewState) {
           // hides a genuinely different same-named file, while guessing
           // "different" merely re-opens the shown file with its write content.
           if (activeFile?.fileName && activeFile.toolName === "write") {
-            const rawKey = `${activeFile.dir}/${activeFile.fileName}`;
-            const isAbsolute = rawKey.startsWith("/");
+            const rawKey = activeFile.path;
+            // Resolve against the workspace root so the stored path is absolute
+            // and the edit-hold resolver can refetch it exactly.
+            const resolvedPath = resolveAgentArgPath(rawKey, workspaceRoot);
             const shown = state.sidebarContent;
-            // Same-file suppression: confident path match for absolute args;
-            // bare fileName equality otherwise — a relative arg cannot be
-            // resolved client-side, and fabricating a path risks later
-            // refetches showing a different file entirely.
+            // Same-file suppression: confident absolute-path match when both
+            // sides resolve (a relative write to the shown file now suppresses);
+            // bare fileName equality only when no root is known to resolve.
             const shownSameFile =
               shown?.kind === "code" &&
-              (isAbsolute && shown.path
-                ? samePathConfident(rawKey, shown.path)
+              (resolvedPath && shown.path
+                ? samePathConfident(resolvedPath, shown.path)
                 : shown.fileName === activeFile.fileName);
             const lastAutoPreviewed = autoPreviewedFile.get(state);
             if (!shownSameFile && lastAutoPreviewed !== rawKey) {
@@ -4045,10 +4056,11 @@ export function renderApp(state: AppViewState) {
                 state.handleOpenSidebar({
                   kind: "code",
                   fileName: activeFile.fileName,
-                  // Store the path only when absolute — a relative tool-arg key
-                  // is not a reliable server refetch recipe (it resolves
-                  // against the gateway cwd). The written args are the content.
-                  path: isAbsolute ? rawKey : undefined,
+                  // Absolute path resolved from the workspace root — a reliable
+                  // server refetch recipe (path.resolve of an absolute path is
+                  // itself), so the edit-hold resolver refetches fresh content
+                  // instead of stranding the written snapshot.
+                  path: resolvedPath ?? undefined,
                   agentId: chatAgentId,
                   content: writeContent,
                   language: ext,
@@ -4218,7 +4230,17 @@ export function renderApp(state: AppViewState) {
                 }
                 const args = entry.args as Record<string, unknown> | undefined;
                 const entryPath = String(args?.path ?? args?.file_path ?? args?.filePath ?? "");
-                if (!entryPathMatchesOpenFile(entryPath, sc.fileName)) {
+                // Prefer exact absolute-path identity so an edit to a same-named
+                // file in another directory does not paint a phantom diff on the
+                // shown sibling; fall back to the generous basename match only
+                // when the arg can't be resolved (no root yet) or the open file
+                // has no known path.
+                const resolvedEntryPath = resolveAgentArgPath(entryPath, workspaceRoot);
+                const matches =
+                  resolvedEntryPath && sc.path
+                    ? samePathConfident(resolvedEntryPath, sc.path)
+                    : entryPathMatchesOpenFile(entryPath, sc.fileName);
+                if (!matches) {
                   continue;
                 }
                 // Each call animates at most once, even though this scan re-runs
