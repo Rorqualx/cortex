@@ -203,6 +203,7 @@ function promote(c: TypedCandidate): LongTermTypedFact {
     archived: false,
     archivedAt: null,
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
+    lastAccessedAt: c.latest.createdAt,
   };
 }
 
@@ -243,6 +244,7 @@ function supersede(prior: LongTermTypedFact, c: TypedCandidate, now: number): Lo
     supersededBy: null,
     archived: false,
     archivedAt: null,
+    lastAccessedAt: prior.lastAccessedAt,
   };
 }
 
@@ -273,7 +275,7 @@ function bySlot(a: LongTermTypedFact, b: LongTermTypedFact): number {
   return a.slot.localeCompare(b.slot);
 }
 
-function formatBody(facts: ReadonlyArray<LongTermTypedFact>): string {
+export function formatBody(facts: ReadonlyArray<LongTermTypedFact>): string {
   const active = facts.filter((f) => !f.archived);
   const archived = facts.filter((f) => f.archived);
   const lines: string[] = ["## Typed facts (canonical)", ""];

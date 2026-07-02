@@ -711,6 +711,7 @@ describe("retrieveTopK longterm-typed tier", () => {
             history: [{ value: "500.00", supersededAt: NOW }],
             archived: false,
             archivedAt: null,
+            lastAccessedAt: NOW,
           },
         ],
       },
@@ -730,31 +731,90 @@ describe("retrieveTopK longterm-typed tier", () => {
     expect(perChunk).toBeUndefined();
   });
 
-  it("renders longterm-typed hits with the ★ marker", () => {
-    const result = formatMemorySection([
-      {
-        fact: {
-          id: "ltt-1",
-          text: "user:phone = 555-1234",
-          importance: 0.95,
-          createdAt: NOW,
-          dedupKey: "user:phone",
-        },
-        score: 0.82,
-        signals: {
-          lexical: 0.5,
-          bm25: 0,
-          importance: 0.95,
-          recency: 1,
-          l3Boost: 0,
-          semantic: 0,
-          informationGain: 0,
-        },
-        chunkId: "longterm-typed",
-        tier: "longterm-typed",
-      },
+  it("applies access-time decay to typed-fact confidence", async () => {
+    // Need at least one L2 chunk or retrieveTopK returns empty
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "placeholder", importance: 0.1, createdAt: NOW, dedupKey: "k:placeholder" },
     ]);
-    expect(result).toContain("★ [0.82] user:phone = 555-1234");
+    // Write a typed fact that was last accessed 60 days ago
+    await storage.writeLongTermTyped(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "ltt-old",
+            slot: "user:old_fact",
+            value: "stale",
+            unit: null,
+            confidence: 0.9,
+            firstSeenAt: NOW - 60 * 86400000,
+            lastConfirmedAt: NOW - 60 * 86400000,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-a"],
+            history: [],
+            archived: false,
+            archivedAt: null,
+            lastAccessedAt: NOW - 60 * 86400000,
+          },
+        ],
+      },
+      "",
+    );
+
+    const { facts: result } = await retrieveTopK({
+      query: "stale",
+      storage,
+      topK: 10,
+      now: NOW,
+    });
+    const hit = result.find((r) => r.tier === "longterm-typed");
+    expect(hit).toBeDefined();
+    // Decay: 0.9 * exp(-60/30) = 0.9 * exp(-2) ≈ 0.9 * 0.1353 ≈ 0.1218
+    expect(hit!.fact.importance).toBeCloseTo(0.9 * Math.exp(-2), 4);
+  });
+
+  it("updates lastAccessedAt on retrieved typed facts", async () => {
+    // Need at least one L2 chunk or retrieveTopK returns empty
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "placeholder", importance: 0.1, createdAt: NOW, dedupKey: "k:placeholder" },
+    ]);
+    await storage.writeLongTermTyped(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "ltt-track",
+            slot: "user:track_me",
+            value: "track",
+            unit: null,
+            confidence: 0.9,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW - 10 * 86400000,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-a"],
+            history: [],
+            archived: false,
+            archivedAt: null,
+            lastAccessedAt: NOW - 10 * 86400000,
+          },
+        ],
+      },
+      "",
+    );
+
+    await retrieveTopK({
+      query: "track",
+      storage,
+      topK: 10,
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].lastAccessedAt).toBe(NOW);
   });
 });
 

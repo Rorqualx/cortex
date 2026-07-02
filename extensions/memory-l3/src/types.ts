@@ -276,6 +276,10 @@ export type LongTermTypedFact = {
    * Absent on facts created before PROMPT_VERSION=10; readers treat
    * absent as `lastConfirmedAt`. */
   lastVerifiedAt?: number;
+  /** ms timestamp of the most recent retrieval that included this fact.
+   * Used for access-time decay: facts that haven't been retrieved recently
+   * lose confidence over time. Defaults to lastConfirmedAt on creation. */
+  lastAccessedAt?: number;
 };
 
 export type LongTermTypedFrontmatter = {
