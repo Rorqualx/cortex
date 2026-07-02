@@ -42,11 +42,24 @@ export type PendingEdit = {
   added: string[];
   /** 0-based line index where oldText was found in file content (for inline placement) */
   matchLineIndex?: number;
+  /** Unique tool call id — keys the one-shot scroll sweep; content-derived
+   * keys collide when two calls apply identical diff text. */
+  callId: string;
 };
 
 export type CodeSidebarContent = {
   kind: "code";
   fileName: string;
+  /** Server-canonical absolute path of the displayed content. Same-file checks
+   * key on it (fileName alone collides across directories), and when absolute
+   * it is also the exact refetch recipe — `path.resolve()` of an absolute path
+   * is itself, so a refetch is cwd-independent. Absent for write auto-opens
+   * whose only key was a relative tool arg (no reliable server path). */
+  path?: string;
+  /** Agent the content belongs to — a refetch during an edit hold must query
+   * it even if the user switched chats, since reads resolve against the
+   * owning agent's workspace. */
+  agentId: string;
   content: string;
   language: string;
   rawText?: string | null;

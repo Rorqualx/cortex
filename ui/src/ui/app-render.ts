@@ -199,7 +199,6 @@ import {
 } from "./navigation.ts";
 import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
 import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
-import "./components/dashboard-header.ts";
 import {
   buildAgentMainSessionKey,
   isSessionKeyTiedToAgent,
@@ -208,6 +207,8 @@ import {
   parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
 } from "./session-key.ts";
+import "./components/dashboard-header.ts";
+import type { PendingEdit } from "./sidebar-content.ts";
 import {
   getLocalAgentAvatarOverride,
   loadLocalAssistantIdentity,
@@ -779,16 +780,103 @@ const chatWorkspaceFileOpenRequests = new WeakMap<
 >();
 /** Tracks the last file auto-previewed so we don't re-open the same file. */
 const autoPreviewedFile = new WeakMap<AppViewState, string>();
-/** Timestamp when the current code sidebar opened — used for reading animation. */
-const codeViewerOpenTime = new WeakMap<AppViewState, number>();
-/** Timer for flipping reading state to false. */
-const codeViewerReadingTimer = new WeakMap<AppViewState, ReturnType<typeof setTimeout>>();
-/** Last edit entry ID processed for the code viewer diff. */
-const codeViewerLastEditId = new WeakMap<AppViewState, string>();
-/** Timestamp when the current edit diff was shown. */
-const codeViewerEditTime = new WeakMap<AppViewState, number>();
-/** Timer for resolving the current edit diff (refresh file + clear pendingEdit). */
-const codeViewerEditTimer = new WeakMap<AppViewState, ReturnType<typeof setTimeout>>();
+/** Code-viewer runtime for one view — a single object (not parallel WeakMaps)
+ * so every writer updates one place and the invariants stay co-located. */
+type CodeViewerState = {
+  /** When the file was opened — the scan animates only edits at/after this.
+   * Resolver refetches do NOT bump it: an edit completing during another
+   * edit's hold must still animate after that hold resolves. */
+  openTime: number;
+  /** Server-read freshness stamp of the displayed content: every async read
+   * (open fetch, resolver refetch) applies only if its read started after
+   * this, updating it on apply — a staler read never stomps fresher content. */
+  contentTime: number;
+  /** When the content was displayed — starts the 2.5s reading window. Distinct
+   * from openTime (fetch start), which would deduct fetch latency from it. */
+  readingStart: number;
+  /** Timer for flipping reading state to false. */
+  readingTimer: ReturnType<typeof setTimeout> | null;
+  /** When the current edit overlay was shown (start of the 3s hold). */
+  editTime: number;
+  /** Nudges a render tick just past the hold — the render-tick resolver in the
+   * edit-detection block does the actual refresh, so there is exactly one
+   * resolution path no matter which writer showed the overlay. */
+  editTimer: ReturnType<typeof setTimeout> | null;
+  /** Latch: a resolver refetch is in flight (one per hold, not per tick). */
+  editResolving: boolean;
+  /** Unreadable-content retries for the current hold (capped). */
+  editRetries: number;
+};
+const codeViewerStates = new WeakMap<AppViewState, CodeViewerState>();
+
+function codeViewerState(state: AppViewState): CodeViewerState {
+  let cv = codeViewerStates.get(state);
+  if (!cv) {
+    cv = {
+      openTime: 0,
+      contentTime: 0,
+      readingStart: 0,
+      readingTimer: null,
+      editTime: 0,
+      editTimer: null,
+      editResolving: false,
+      editRetries: 0,
+    };
+    codeViewerStates.set(state, cv);
+  }
+  return cv;
+}
+
+/** Spread to end an edit hold — one clear shape for every resolver branch. */
+const overlayCleared = { pendingEdit: null, editing: false, reading: false } as const;
+
+/** Deliberately generous "/"-bounded basename match for the edit scan. Tool
+ * args arrive in unresolvable forms (absolute, relative, ./, ~), so a stricter
+ * rule would MISS a real edit and strand stale content forever. The cost of an
+ * over-match — an edit to a same-named file in another directory — is a 3s
+ * phantom diff on the shown sibling (content self-heals via the absolute-path
+ * refetch) plus that edit consuming its one-shot flag so it won't re-animate
+ * when its own file is later opened. Both cosmetic; stranded content is not. */
+function entryPathMatchesOpenFile(entryPath: string, fileName: string): boolean {
+  return entryPath === fileName || entryPath.endsWith(`/${fileName}`);
+}
+
+/** Confident same-path check where guessing "same" shows the wrong file
+ * (auto-open suppression, keep-view): equal modulo the macOS /private
+ * realpath divergence; broader suffix rules judge nested distinct files equal. */
+function samePathConfident(a: string, b: string): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (!a.startsWith("/") || !b.startsWith("/")) {
+    return false;
+  }
+  const strip = (p: string) => (p.startsWith("/private/") ? p.slice("/private".length) : p);
+  return strip(a) === strip(b);
+}
+
+/** Restart the 2.5s reading window. Clearing the previous timer keeps an
+ * earlier file's pending flip from truncating the new file's window. */
+function restartReadingWindow(cv: CodeViewerState) {
+  if (cv.readingTimer) {
+    clearTimeout(cv.readingTimer);
+  }
+  cv.readingTimer = null;
+  cv.readingStart = Date.now();
+}
+
+/** (Re)start the 3s edit hold and schedule a render tick just past it so the
+ * render-tick resolver runs even on an otherwise idle UI. */
+function armEditHold(cv: CodeViewerState, requestHostUpdate: (() => void) | undefined) {
+  cv.editTime = Date.now();
+  if (cv.editTimer) {
+    clearTimeout(cv.editTimer);
+  }
+  cv.editTimer = setTimeout(() => {
+    cv.editTimer = null;
+    requestHostUpdate?.();
+  }, 3050);
+}
 
 function getChatWorkspaceFilesState(state: AppViewState, agentId: string): ChatWorkspaceFilesState {
   const current = chatWorkspaceFilesStates.get(state);
@@ -2424,11 +2512,44 @@ export function renderApp(state: AppViewState) {
         currentFiles?.activeName === name
       );
     };
+    const isMarkdownName = /\.(?:md|markdown|mdx)$/i.test(name);
+    // Canonical identity key: explicit path, or workspace-prefixed for root
+    // name-opens so identity checks compare like forms. Not a fetch param.
+    const workspaceRoot = chatWorkspaceFiles.list?.workspace;
+    const displayPath = filePath ?? (workspaceRoot ? `${workspaceRoot}/${name}` : undefined);
+    // Keep-view identity must be CONFIDENT (a wrong "same" shows the wrong
+    // file): both keys known and equal, or both unknown name-opens.
+    const currentSameFile = () => {
+      const prev = state.sidebarContent;
+      if (prev?.kind !== "code" || prev.fileName !== name) {
+        return null;
+      }
+      const same =
+        prev.path && displayPath
+          ? samePathConfident(prev.path, displayPath)
+          : !prev.path && !displayPath;
+      return same ? prev : null;
+    };
+    // Re-clicking the file already shown under a live overlay: keep the view
+    // (the hold resolver refreshes it) and skip the fetch, but still re-open
+    // the panel in case the click raced a close. Markdown always fetches (to
+    // switch a code view of it to the rendered view).
+    const prevEarly = isMarkdownName ? null : currentSameFile();
+    if (prevEarly && (prevEarly.pendingEdit || prevEarly.editing)) {
+      chatWorkspaceFiles.error = null;
+      state.handleOpenSidebar(prevEarly);
+      requestHostUpdate?.();
+      return;
+    }
     void (async () => {
       if (!state.client || !state.connected) {
         return;
       }
       chatWorkspaceFiles.error = null;
+      // Freshness stamp is taken at fetch start: the fetched content reflects
+      // the server no later than this, so edits completing mid-fetch count as
+      // newer than it (they animate and their resolution refetch heals it).
+      const openedAt = Date.now();
       try {
         const reqParams: Record<string, string> = { agentId: chatAgentId, name };
         if (filePath) {
@@ -2449,23 +2570,40 @@ export function renderApp(state: AppViewState) {
         if (!isCurrentOpenRequest()) {
           return;
         }
-        state.handleOpenSidebar(
-          /\.(?:md|markdown|mdx)$/i.test(name)
-            ? {
-                kind: "markdown",
-                content,
-                rawText: content,
-              }
-            : {
-                kind: "code",
-                fileName: name,
-                content,
-                language: name.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "",
-                rawText: content,
-                reading: true,
-              },
-        );
-        codeViewerOpenTime.set(state, Date.now());
+        if (isMarkdownName) {
+          state.handleOpenSidebar({ kind: "markdown", content, rawText: content });
+          return;
+        }
+        const cv = codeViewerState(state);
+        const prevSameFile = currentSameFile();
+        // Drop this read if a fresher resolver refetch already applied, or if
+        // an overlay appeared mid-fetch (its match index is against the shown
+        // content; the resolver refreshes it). Still re-open the panel.
+        if (
+          prevSameFile &&
+          (cv.contentTime > openedAt || prevSameFile.pendingEdit || prevSameFile.editing)
+        ) {
+          state.handleOpenSidebar(prevSameFile);
+          return;
+        }
+        state.handleOpenSidebar({
+          kind: "code",
+          fileName: name,
+          // The server-canonical path (rail file.path comes from the same
+          // source) is both the identity key and the refetch recipe: it is
+          // absolute, so a refetch path.resolve()s to itself — exact and
+          // independent of the gateway cwd, unlike replaying a relative or
+          // name-only request that resolves against the workspace root.
+          path: res?.file?.path || displayPath,
+          agentId: chatAgentId,
+          content,
+          language: name.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "",
+          rawText: content,
+          reading: true,
+        });
+        cv.openTime = openedAt;
+        cv.contentTime = openedAt;
+        restartReadingWindow(cv);
       } catch (err) {
         if (isCurrentOpenRequest()) {
           chatWorkspaceFiles.error = String(err);
@@ -3853,49 +3991,77 @@ export function renderApp(state: AppViewState) {
             const lastAutoPreviewed = autoPreviewedFile.get(state);
             if (lastAutoPreviewed !== key) {
               autoPreviewedFile.set(state, key);
-              // Defer to avoid mutating state during render
+              // Fetch by the tool-arg key (server resolves it); the open then
+              // stores the server-canonical absolute path for exact refetch.
+              // Defer to avoid mutating state during render.
               queueMicrotask(() => openChatWorkspaceFile(activeFile.fileName, key));
             }
           }
 
           // Auto-open: when agent writes a file not currently shown in sidebar,
-          // open it directly from the write tool args (no fetch needed)
-          if (
-            activeFile?.fileName &&
-            activeFile.toolName === "write" &&
-            (state.sidebarContent?.kind !== "code" ||
-              (state.sidebarContent?.kind === "code" &&
-                state.sidebarContent.fileName !== activeFile.fileName))
-          ) {
-            const key = `${activeFile.dir}/${activeFile.fileName}`;
+          // open it directly from the write tool args (no fetch needed).
+          // Suppress only on a CONFIDENT same-path match: guessing "same" here
+          // hides a genuinely different same-named file, while guessing
+          // "different" merely re-opens the shown file with its write content.
+          if (activeFile?.fileName && activeFile.toolName === "write") {
+            const rawKey = `${activeFile.dir}/${activeFile.fileName}`;
+            const isAbsolute = rawKey.startsWith("/");
+            const shown = state.sidebarContent;
+            // Same-file suppression: confident path match for absolute args;
+            // bare fileName equality otherwise — a relative arg cannot be
+            // resolved client-side, and fabricating a path risks later
+            // refetches showing a different file entirely.
+            const shownSameFile =
+              shown?.kind === "code" &&
+              (isAbsolute && shown.path
+                ? samePathConfident(rawKey, shown.path)
+                : shown.fileName === activeFile.fileName);
             const lastAutoPreviewed = autoPreviewedFile.get(state);
-            if (lastAutoPreviewed !== key) {
-              autoPreviewedFile.set(state, key);
-              // Find the write tool entry to get content from args
+            if (!shownSameFile && lastAutoPreviewed !== rawKey) {
+              // The write's full content is in its call args (only the result
+              // streams later), so match on args alone — no output wait, so no
+              // unbounded "pending" rescan every render tick.
               let writeContent: string | undefined;
+              let writeCompletedAt = 0;
               for (const entry of state.toolStreamById.values()) {
-                if (entry.name !== "write" || !entry.output) {
+                if (entry.name !== "write") {
                   continue;
                 }
                 const a = entry.args as Record<string, unknown> | undefined;
                 const fp = String(a?.path ?? a?.file_path ?? a?.filePath ?? "");
-                if (fp === key && typeof a?.content === "string") {
-                  writeContent = a.content;
-                  break;
+                if (fp !== rawKey || typeof a?.content !== "string") {
+                  continue;
                 }
+                writeContent = a.content;
+                writeCompletedAt = entry.updatedAt;
+                break;
               }
+              // Burn the key either way: found → open once; not found (entry
+              // evicted or history-only) → stop rescanning the whole stream.
+              autoPreviewedFile.set(state, rawKey);
               if (writeContent != null) {
                 const ext =
                   activeFile.fileName.match(/\.([a-z0-9_-]+)$/i)?.[1]?.toLowerCase() ?? "";
                 state.handleOpenSidebar({
                   kind: "code",
                   fileName: activeFile.fileName,
+                  // Store the path only when absolute — a relative tool-arg key
+                  // is not a reliable server refetch recipe (it resolves
+                  // against the gateway cwd). The written args are the content.
+                  path: isAbsolute ? rawKey : undefined,
+                  agentId: chatAgentId,
                   content: writeContent,
                   language: ext,
                   rawText: writeContent,
                   reading: true,
                 });
-                codeViewerOpenTime.set(state, Date.now());
+                // The args snapshot reflects the file as of the write's
+                // completion, not display time — an edit landing between the
+                // two must still count as newer so it animates and refreshes.
+                const cv = codeViewerState(state);
+                cv.openTime = writeCompletedAt;
+                cv.contentTime = writeCompletedAt;
+                restartReadingWindow(cv);
                 requestHostUpdate?.();
               }
             }
@@ -3907,20 +4073,19 @@ export function renderApp(state: AppViewState) {
           if (state.sidebarContent?.kind === "code") {
             const sc = state.sidebarContent;
             if (sc.reading) {
-              const openedAt = codeViewerOpenTime.get(state) ?? 0;
-              const elapsed = Date.now() - openedAt;
+              const cv = codeViewerState(state);
+              const elapsed = Date.now() - cv.readingStart;
               if (elapsed > 2500) {
                 state.sidebarContent = { ...sc, reading: false };
-              } else if (!codeViewerReadingTimer.get(state)) {
+              } else if (!cv.readingTimer) {
                 // Schedule the flip to non-reading state
-                const timer = setTimeout(() => {
-                  codeViewerReadingTimer.delete(state);
+                cv.readingTimer = setTimeout(() => {
+                  cv.readingTimer = null;
                   if (state.sidebarContent?.kind === "code" && state.sidebarContent.reading) {
                     state.sidebarContent = { ...state.sidebarContent, reading: false };
                     requestHostUpdate?.();
                   }
                 }, 2500 - elapsed);
-                codeViewerReadingTimer.set(state, timer);
               }
             }
           }
@@ -3929,60 +4094,113 @@ export function renderApp(state: AppViewState) {
           // (they complete too fast to catch in-progress)
           if (state.sidebarContent?.kind === "code") {
             const sc = state.sidebarContent;
+            const cv = codeViewerState(state);
             const now = Date.now();
             // If we're already showing a pending edit, check if it's time to resolve
             if (sc.pendingEdit || sc.editing) {
-              const editAge = codeViewerEditTime.get(state) ?? 0;
-              if (now - editAge > 3000) {
-                // Hold period over — cancel timer and refresh file content
-                clearTimeout(codeViewerEditTimer.get(state));
-                codeViewerEditTimer.delete(state);
+              if (now - cv.editTime > 3000 && !cv.editResolving) {
+                // Hold period over — refetch fresh content and clear the
+                // overlay. The latch keeps this to one fetch per hold even
+                // though the check re-runs every render tick.
+                cv.editResolving = true;
+                if (cv.editTimer) {
+                  clearTimeout(cv.editTimer);
+                  cv.editTimer = null;
+                }
+                const resolvingCallId = sc.pendingEdit?.callId ?? null;
+                const fileName = sc.fileName;
+                const filePathAtSchedule = sc.path;
+                // Refetch by the canonical absolute path against the owning
+                // agent (sc.agentId — the current chat may have moved on by
+                // resolve time). No absolute path means the view came from a
+                // relative-path write's args with no server-resolvable path:
+                // refetching by name would read the wrong workspace-root file,
+                // so keep the written content (correct for the write; a later
+                // edit to this rare path-less view will not reflect on hold).
+                const refetchPath = sc.path && sc.path.startsWith("/") ? sc.path : undefined;
+                const fetchStart = now;
+                // Apply only while this edit still owns the overlay: a newer
+                // edit restarts the hold and its own resolution refreshes.
+                // Same view = our own constructors wrote it: strict equality.
+                const currentIfStillOwned = () => {
+                  const cur = state.sidebarContent;
+                  if (
+                    cur?.kind !== "code" ||
+                    cur.fileName !== fileName ||
+                    cur.path !== filePathAtSchedule
+                  ) {
+                    return null;
+                  }
+                  return (cur.pendingEdit?.callId ?? null) === resolvingCallId ? cur : null;
+                };
+                const resolvingAgentId = sc.agentId;
                 queueMicrotask(async () => {
                   try {
-                    // Re-read sidebarContent in case it changed since scheduling
-                    const scNow = state.sidebarContent;
-                    if (scNow?.kind !== "code") {
+                    if (!refetchPath) {
+                      const cur = currentIfStillOwned();
+                      if (cur) {
+                        state.sidebarContent = { ...cur, ...overlayCleared };
+                      }
                       return;
                     }
-                    const key = `${activeFile?.dir}/${scNow.fileName}`;
-                    const result = await state.client?.request<{
-                      file?: { content?: string };
-                    } | null>("agents.files.get", {
-                      agentId: chatAgentId,
-                      name: scNow.fileName,
-                      path: key,
-                    });
-                    if (result?.file?.content != null) {
-                      state.sidebarContent = {
-                        ...scNow,
-                        content: result.file.content,
-                        pendingEdit: null,
-                        editing: false,
-                        reading: false,
-                      };
-                      requestHostUpdate?.();
+                    let fresh: string | undefined;
+                    try {
+                      const result = await state.client?.request<{
+                        file?: { content?: string };
+                      } | null>("agents.files.get", {
+                        agentId: resolvingAgentId,
+                        name: fileName,
+                        path: refetchPath,
+                      });
+                      fresh = result?.file?.content;
+                    } catch {
+                      // Treated as unreadable: same retry budget below.
                     }
-                  } catch {
-                    // best effort — clear if still code
-                    const scNow = state.sidebarContent;
-                    if (scNow?.kind === "code") {
-                      state.sidebarContent = {
-                        ...scNow,
-                        pendingEdit: null,
-                        editing: false,
-                        reading: false,
-                      };
-                      requestHostUpdate?.();
+                    const cur = currentIfStillOwned();
+                    if (!cur) {
+                      return;
                     }
+                    if (fresh == null && cv.editRetries < 2) {
+                      // Unreadable/RPC blip: retry a few paced holds. The hold
+                      // re-arm keeps finally()'s tick from re-entering at once.
+                      cv.editRetries += 1;
+                      armEditHold(cv, requestHostUpdate);
+                      return;
+                    }
+                    // Retries exhausted (a >500KB file the path branch caps, a
+                    // transient blip): keep the last-known content and just end
+                    // the hold. No error banner — every error surface here
+                    // replaces the whole viewer, and a slightly-stale file
+                    // beats hiding it; a manual reopen re-reads uncapped.
+                    if (fresh != null) {
+                      cv.contentTime = fetchStart;
+                      state.sidebarContent = { ...cur, ...overlayCleared, content: fresh };
+                    } else {
+                      state.sidebarContent = { ...cur, ...overlayCleared };
+                    }
+                  } finally {
+                    // Always release + re-render: another overlay's hold may
+                    // have been skipped while this latch was held.
+                    cv.editResolving = false;
+                    requestHostUpdate?.();
                   }
                 });
               }
             } else {
               // No active edit — clear any orphaned edit timer
-              if (codeViewerEditTimer.has(state)) {
-                clearTimeout(codeViewerEditTimer.get(state));
-                codeViewerEditTimer.delete(state);
+              if (cv.editTimer) {
+                clearTimeout(cv.editTimer);
+                cv.editTimer = null;
               }
+              // One committer for the edit/write overlay so the content shape
+              // and the reading-timer kill stay paired.
+              const showEditOverlay = (pendingEdit: PendingEdit) => {
+                state.sidebarContent = { ...sc, editing: true, reading: false, pendingEdit };
+                if (cv.readingTimer) {
+                  clearTimeout(cv.readingTimer);
+                  cv.readingTimer = null;
+                }
+              };
               // Scan for recently-completed edits/writes on this file
               for (const entry of state.toolStreamById.values()) {
                 if (
@@ -3995,30 +4213,25 @@ export function renderApp(state: AppViewState) {
                 if (!entry.output) {
                   continue;
                 }
+                if (entry.codeViewerAnimated) {
+                  continue;
+                }
                 const args = entry.args as Record<string, unknown> | undefined;
-                const filePath = String(args?.path ?? args?.file_path ?? args?.filePath ?? "");
-                if (!filePath.endsWith(sc.fileName)) {
+                const entryPath = String(args?.path ?? args?.file_path ?? args?.filePath ?? "");
+                if (!entryPathMatchesOpenFile(entryPath, sc.fileName)) {
                   continue;
                 }
-                // Use args content as dedup key since entry.id is often undefined
-                let editKey: string;
-                if (entry.name === "write") {
-                  editKey = "write:" + filePath + ":" + String(args?.content ?? "").length;
-                } else {
-                  const editsArr = Array.isArray(args?.edits) ? args.edits : [];
-                  editKey =
-                    filePath + ":" + editsArr.map((e: any) => String(e?.oldText ?? "")).join("|");
-                }
-                const lastEditKey = codeViewerLastEditId.get(state) ?? "";
-                if (editKey === lastEditKey) {
+                // Each call animates at most once, even though this scan re-runs
+                // every render tick and revisits completed entries.
+                entry.codeViewerAnimated = true;
+                // Edits that finished before this file was opened are already in
+                // the displayed content; animating them would replay stale
+                // diffs. Equal stamps animate (same-ms tool batches) — a
+                // redundant animation heals itself; a skipped one is lost.
+                if (entry.updatedAt < cv.openTime) {
                   continue;
                 }
-                // New edit detected — cancel any previous edit timer first
-                clearTimeout(codeViewerEditTimer.get(state));
-                codeViewerEditTimer.delete(state);
-                // Extract diff
-                codeViewerLastEditId.set(state, editKey);
-                codeViewerEditTime.set(state, now);
+                let overlaid = false;
                 if (entry.name === "edit") {
                   const edits = Array.isArray(args?.edits) ? args.edits : [];
                   const removed: string[] = [];
@@ -4084,53 +4297,14 @@ export function renderApp(state: AppViewState) {
                         }
                       }
                     }
-                    state.sidebarContent = {
-                      ...sc,
-                      editing: true,
-                      reading: false,
-                      pendingEdit: { type: "edit", removed, added, matchLineIndex },
-                    };
-                    // Kill any active reading timer
-                    clearTimeout(codeViewerReadingTimer.get(state));
-                    codeViewerReadingTimer.delete(state);
-                    // Self-resolving timer: after 3s, refresh file and clear edit state
-                    codeViewerEditTime.set(state, Date.now());
-                    const editTimer = setTimeout(() => {
-                      codeViewerEditTimer.delete(state);
-                      if (state.sidebarContent?.kind === "code" && state.sidebarContent.editing) {
-                        const sc2 = state.sidebarContent;
-                        const filePath = `${activeFile?.dir}/${sc2.fileName}`;
-                        void (async () => {
-                          try {
-                            const result = await state.client?.request<{
-                              file?: { content?: string };
-                            } | null>("agents.files.get", {
-                              agentId: chatAgentId,
-                              name: sc2.fileName,
-                              path: filePath,
-                            });
-                            const newContent = result?.file?.content ?? sc2.content;
-                            state.sidebarContent = {
-                              ...sc2,
-                              content: newContent,
-                              pendingEdit: null,
-                              editing: false,
-                              reading: false,
-                            };
-                            requestHostUpdate?.();
-                          } catch {
-                            state.sidebarContent = {
-                              ...sc2,
-                              pendingEdit: null,
-                              editing: false,
-                              reading: false,
-                            };
-                            requestHostUpdate?.();
-                          }
-                        })();
-                      }
-                    }, 3000);
-                    codeViewerEditTimer.set(state, editTimer);
+                    showEditOverlay({
+                      type: "edit",
+                      removed,
+                      added,
+                      matchLineIndex,
+                      callId: entry.toolCallId,
+                    });
+                    overlaid = true;
                   }
                 } else if (entry.name === "write") {
                   // Write: diff old sidebar content against new write content
@@ -4159,57 +4333,33 @@ export function renderApp(state: AppViewState) {
                   const removed = oldLines.slice(firstDiff, oldEnd + 1);
                   const added = newLines.slice(firstDiff, newEnd + 1);
                   if (removed.length || added.length) {
-                    state.sidebarContent = {
-                      ...sc,
-                      editing: true,
-                      reading: false,
-                      pendingEdit: { type: "edit", removed, added, matchLineIndex: firstDiff },
-                    };
-                    clearTimeout(codeViewerReadingTimer.get(state));
-                    codeViewerReadingTimer.delete(state);
-                    codeViewerEditTime.set(state, Date.now());
-                    const writeTimer = setTimeout(() => {
-                      codeViewerEditTimer.delete(state);
-                      if (state.sidebarContent?.kind === "code" && state.sidebarContent.editing) {
-                        const sc2 = state.sidebarContent;
-                        const fp = `${activeFile?.dir}/${sc2.fileName}`;
-                        void (async () => {
-                          try {
-                            const result = await state.client?.request<{
-                              file?: { content?: string };
-                            } | null>("agents.files.get", {
-                              agentId: chatAgentId,
-                              name: sc2.fileName,
-                              path: fp,
-                            });
-                            state.sidebarContent = {
-                              ...sc2,
-                              content: result?.file?.content ?? sc2.content,
-                              pendingEdit: null,
-                              editing: false,
-                              reading: false,
-                            };
-                            requestHostUpdate?.();
-                          } catch {
-                            state.sidebarContent = {
-                              ...sc2,
-                              pendingEdit: null,
-                              editing: false,
-                              reading: false,
-                            };
-                            requestHostUpdate?.();
-                          }
-                        })();
-                      }
-                    }, 3000);
-                    codeViewerEditTimer.set(state, writeTimer);
+                    showEditOverlay({
+                      type: "edit",
+                      removed,
+                      added,
+                      matchLineIndex: firstDiff,
+                      callId: entry.toolCallId,
+                    });
+                    overlaid = true;
                   }
                 } else {
-                  state.sidebarContent = {
-                    ...sc,
-                    pendingEdit: { type: "apply_patch", removed: [], added: [] },
-                  };
+                  showEditOverlay({
+                    type: "apply_patch",
+                    removed: [],
+                    added: [],
+                    callId: entry.toolCallId,
+                  });
+                  overlaid = true;
                 }
+                if (!overlaid) {
+                  // Empty diff (e.g. rewrite with identical content) — nothing
+                  // to show; keep scanning so it can't burn a real edit's hold.
+                  continue;
+                }
+                // Overlay shown — the resolver branch above refreshes after
+                // the hold; a fresh overlay gets a fresh retry budget.
+                cv.editRetries = 0;
+                armEditHold(cv, requestHostUpdate);
                 break;
               }
             }

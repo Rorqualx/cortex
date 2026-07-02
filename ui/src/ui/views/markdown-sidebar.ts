@@ -5,11 +5,18 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { resolveCanvasIframeUrl } from "../canvas-url.ts";
 import { resolveEmbedSandbox, type EmbedSandboxMode } from "../embed-sandbox.ts";
 import { icons } from "../icons.ts";
-import { highlightCode, normalizeHighlightLanguage, toSanitizedMarkdownHtml } from "../markdown.ts";
+import {
+  escapeHtml,
+  highlightCode,
+  normalizeHighlightLanguage,
+  toSanitizedMarkdownHtml,
+} from "../markdown.ts";
 import type { SidebarContent } from "../sidebar-content.ts";
 
 let lastReadingScrollFile = "";
 let readingAnimFrameId: number | null = null;
+// Single slot suffices: the app-render scan animates each tool call at most
+// once (keyed by toolCallId), so pendingEdit never alternates between edits.
 let lastEditScanKey = "";
 
 function cancelReadingScroll() {
@@ -116,14 +123,6 @@ export type MarkdownSidebarProps = {
   allowExternalEmbedUrls?: boolean;
 };
 
-function escapeHtmlAttr(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 function renderCodeViewer(content: import("../sidebar-content.ts").CodeSidebarContent) {
   const lang = normalizeHighlightLanguage(content.language);
   const highlighted = highlightCode(content.content, lang);
@@ -146,9 +145,9 @@ function renderCodeViewer(content: import("../sidebar-content.ts").CodeSidebarCo
     triggerReadingScroll(content.fileName);
   }
   if (content.editing && content.pendingEdit) {
-    triggerEditScan(
-      content.pendingEdit.removed.join("|") + "->" + content.pendingEdit.added.join("|"),
-    );
+    // Key by the unique call id: identical diff text from two distinct calls
+    // must still sweep, and a content-derived key cannot tell them apart.
+    triggerEditScan(content.pendingEdit.callId);
   }
 
   // Resolve inline diff position
@@ -212,11 +211,11 @@ function renderCodeViewer(content: import("../sidebar-content.ts").CodeSidebarCo
     if (hasInlineDiff && i === diffStart) {
       // Removed lines: red background, struck through
       for (const rm of pe!.removed) {
-        codeHtml += `<div class="code-viewer__code-line code-viewer__code-line--removed"><span class="code-viewer__diff-marker">-</span>${rm || " "}</div>`;
+        codeHtml += `<div class="code-viewer__code-line code-viewer__code-line--removed"><span class="code-viewer__diff-marker">-</span>${escapeHtml(rm) || " "}</div>`;
       }
       // Added lines: green background
       for (const add of pe!.added) {
-        codeHtml += `<div class="code-viewer__code-line code-viewer__code-line--added"><span class="code-viewer__diff-marker">+</span>${escapeHtmlAttr(add) || " "}</div>`;
+        codeHtml += `<div class="code-viewer__code-line code-viewer__code-line--added"><span class="code-viewer__diff-marker">+</span>${escapeHtml(add) || " "}</div>`;
       }
       // Skip the original lines that were "removed" (they're shown in red above)
       // Don't skip — keep original lines too for context, but mark them as replaced

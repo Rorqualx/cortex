@@ -42,6 +42,11 @@ export type ToolStreamEntry = {
   startedAt: number;
   updatedAt: number;
   message: Record<string, unknown>;
+  /** Set once the code viewer animated this edit/write diff. Lives on the
+   * entry so its lifetime exactly matches the per-session tool stream (bounded
+   * by the stream cap, swapped in/out with retained sessions) — a separate id
+   * set gets falsely evicted while the entry can still re-enter the scan. */
+  codeViewerAnimated?: boolean;
 };
 
 export type ToolStreamHost = {

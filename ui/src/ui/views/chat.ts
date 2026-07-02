@@ -1108,6 +1108,9 @@ function renderWorkspaceFileRail(
                         @click=${() =>
                           workspaceFiles.onOpenFile(
                             file.name,
+                            // Root files must open by name: the server's
+                            // name-based branch owns per-agent soul mapping,
+                            // link-rejecting reads, and uncapped sizes.
                             showActiveDir ? file.path : undefined,
                           )}
                       >
