@@ -299,12 +299,27 @@ function parseAnswer(raw: string): string {
   return lines[lines.length - 1] ?? "";
 }
 
+// Diagnostic: does the gold answer appear as a contiguous span in the packed context?
+// Normalises case and strips surrounding whitespace.  Numbers are matched both as-is
+// and with comma / space normalisation so "1,234" and "1234" are equivalent.
+function checkAnswerInContext(answer: string | number, context: string): boolean {
+  const normCtx = context.toLowerCase();
+  const raw = String(answer).trim().toLowerCase();
+  if (normCtx.includes(raw)) return true;
+  // Normalise "1,234" -> "1234" for numeric answers.
+  const stripped = raw.replace(/[,\s]/g, "");
+  if (normCtx.includes(stripped)) return true;
+  return false;
+}
+
 type QResult = {
   question_id: string;
   question_type: string;
   hypothesis: string;
   ground_truth: string;
   exact_hit: boolean;
+  /** Whether the gold answer appears verbatim in the packed retrieved context (diagnostic). */
+  answer_in_context: boolean;
   retrieved: number;
   memory_chars: number;
   error?: string;
@@ -468,6 +483,7 @@ async function runQuestion(
       hypothesis,
       ground_truth: String(q.answer),
       exact_hit: hypothesis.toLowerCase().includes(String(q.answer).toLowerCase()),
+      answer_in_context: checkAnswerInContext(q.answer, memorySection),
       retrieved: top.facts.length,
       memory_chars: memorySection.length,
     };
@@ -565,6 +581,7 @@ async function main(): Promise<void> {
         hypothesis: "",
         ground_truth: String(q.answer),
         exact_hit: false,
+        answer_in_context: false,
         retrieved: 0,
         memory_chars: 0,
         error: err.message,
@@ -573,12 +590,15 @@ async function main(): Promise<void> {
   );
   const elapsedMin = ((Date.now() - t0) / 60000).toFixed(1);
 
-  const byType: Record<string, { total: number; hits: number; errors: number }> = {};
+  const byType: Record<string, { total: number; hits: number; aic: number; errors: number }> = {};
   for (const r of results) {
-    const b = (byType[r.question_type] ??= { total: 0, hits: 0, errors: 0 });
+    const b = (byType[r.question_type] ??= { total: 0, hits: 0, aic: 0, errors: 0 });
     b.total += 1;
     if (r.exact_hit) {
       b.hits += 1;
+    }
+    if (r.answer_in_context) {
+      b.aic += 1;
     }
     if (r.error) {
       b.errors += 1;
@@ -590,16 +610,18 @@ async function main(): Promise<void> {
     const b = byType[t];
     if (b) {
       const pct = b.total > 0 ? Math.round((b.hits / b.total) * 100) : 0;
+      const aicPct = b.total > 0 ? Math.round((b.aic / b.total) * 100) : 0;
       console.log(
-        `  ${t.padEnd(28)} ${b.hits}/${b.total} (${pct}%)${b.errors ? ` [${b.errors} err]` : ""}`,
+        `  ${t.padEnd(28)} ${b.hits}/${b.total} (${pct}%)  AIC:${b.aic}/${b.total} (${aicPct}%)${b.errors ? ` [${b.errors} err]` : ""}`,
       );
     }
   }
   const hits = results.filter((r) => r.exact_hit).length;
+  const aicHits = results.filter((r) => r.answer_in_context).length;
   const avgRetrieved = (results.reduce((s, r) => s + r.retrieved, 0) / results.length).toFixed(1);
   const avgMemChars = Math.round(results.reduce((s, r) => s + r.memory_chars, 0) / results.length);
   console.log(
-    `  ${"OVERALL".padEnd(28)} ${hits}/${results.length} (${Math.round((hits / results.length) * 100)}%)`,
+    `  ${"OVERALL".padEnd(28)} ${hits}/${results.length} (${Math.round((hits / results.length) * 100)}%)  AIC:${aicHits}/${results.length} (${Math.round((aicHits / results.length) * 100)}%)`,
   );
   console.log(
     `  wall-clock ${elapsedMin}min · avg facts/q ${avgRetrieved} · avg memory ~${avgMemChars} chars (≈context budget — match across ablations)`,
@@ -630,7 +652,7 @@ async function main(): Promise<void> {
         topK: TOP_K,
         selected: selected.length,
         byType,
-        overall: { hits, total: results.length },
+        overall: { hits, aic: aicHits, total: results.length },
         avgRetrieved: Number(avgRetrieved),
         avgMemChars,
         wallClockMin: Number(elapsedMin),
