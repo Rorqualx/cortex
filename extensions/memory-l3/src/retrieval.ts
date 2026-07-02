@@ -77,11 +77,30 @@ export type RetrievalConfig = {
    * Default 3.
    */
   epochExpandTopN: number;
+  /**
+   * When true, replace greedy top-K sort+slice with a budgeted submodular
+   * selector that optimises for relevance + diversity + query-token coverage.
+   * Default false (gated for ablation evaluation).
+   */
+  useSubmodularSelect: boolean;
+  /** Weight of diversity term in submodular objective (0–1). Default 0.3. */
+  submodularDiversityWeight: number;
+  /** Weight of coverage term in submodular objective (0–1). Default 0.3. */
+  submodularCoverageWeight: number;
+  /**
+   * Token budget for submodular packing. When null, falls back to raw topK
+   * count (legacy budget mode). Default null.
+   */
+  submodularTokenBudget: number | null;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   useEpochFirst: true,
   epochExpandTopN: 3,
+  useSubmodularSelect: false,
+  submodularDiversityWeight: 0.3,
+  submodularCoverageWeight: 0.3,
+  submodularTokenBudget: null,
 };
 
 export type RetrievedFact = {
@@ -501,12 +520,33 @@ export async function retrieveTopK(params: {
   scored.sort((a, b) => b.score - a.score);
 
   // -----------------------------------------------------------------
+  // Submodular fact packing (arXiv:2607.00725 — budgeted monotone
+  // submodular maximisation for RAG context packing)
+  // -----------------------------------------------------------------
+  // When enabled, replace greedy top-K slice with a greedy submodular
+  // selector that optimises relevance + diversity + query-token coverage
+  // under a token budget.  Gated behind useSubmodularSelect so it can be
+  // ablated against the legacy sort+slice baseline.
+  let result: RetrievedFact[];
+  if (retConfig.useSubmodularSelect) {
+    result = submodularSelect(
+      scored,
+      queryTokens,
+      topK,
+      retConfig.submodularDiversityWeight,
+      retConfig.submodularCoverageWeight,
+      retConfig.submodularTokenBudget,
+    );
+  } else {
+    result = scored.slice(0, topK);
+  }
+
+  // -----------------------------------------------------------------
   // Message-chunk fallback (Phase 3)
   // -----------------------------------------------------------------
   // When top-K is sparse (< topK/2 results from fact tiers), expand
   // search into raw message-level chunks. This catches relevant
   // conversation context that wasn't captured as structured facts.
-  const result = scored.slice(0, topK);
   if (params.queryEmbedding && result.length < Math.ceil(topK / 2)) {
     try {
       const msgChunkIds = await params.storage.listMessageChunkIds();
@@ -856,6 +896,103 @@ async function selectEpochPaths(
 function chunkSeq(chunkId: string): number | null {
   const m = /^chunk-(\d+)/.exec(chunkId);
   return m ? Number.parseInt(m[1], 10) : null;
+}
+
+// Greedy submodular fact selector (arXiv:2607.00725).
+// Optimises a budgeted monotone submodular objective:
+//   f(S) = Σ relevance(i) + λ_div * diversity(S) + λ_cov * coverage(S)
+// where diversity penalises redundancy (Jaccard on tokenised text) and
+// coverage rewards query tokens present in the selected set.
+//
+// Budget may be expressed as a token count (approx 4 chars/token) or,
+// when null, falls back to a raw item-count cap.
+export function submodularSelect(
+  scored: RetrievedFact[],
+  queryTokens: Set<string>,
+  topK: number,
+  diversityWeight: number,
+  coverageWeight: number,
+  tokenBudget: number | null,
+): RetrievedFact[] {
+  const selected: RetrievedFact[] = [];
+  const selectedKeys = new Set<string>();
+  const coveredTokens = new Set<string>();
+  let usedTokens = 0;
+  const budget = tokenBudget ?? topK * 20; // ~20 tokens per fact as rough default
+
+  // Work on a copy so we can mutate safely
+  const pool = scored.slice();
+
+  while (pool.length > 0) {
+    let bestIdx = -1;
+    let bestGain = -Infinity;
+
+    for (let i = 0; i < pool.length; i += 1) {
+      const item = pool[i];
+      if (selectedKeys.has(item.fact.dedupKey)) {
+        continue;
+      }
+
+      // Token cost of this fact (cheap heuristic: chars/4)
+      const itemTokens = Math.ceil(item.fact.text.length / 4);
+
+      // Budget check: when tokenBudget is explicit, enforce it strictly.
+      // When null, only the topK count cap limits selection.
+      if (tokenBudget !== null && usedTokens + itemTokens > budget) {
+        continue;
+      }
+
+      // Relevance term (normalised 0–1)
+      const relevance = item.score;
+
+      // Diversity term: penalise max Jaccard with any already-selected item
+      let maxSim = 0;
+      const itemTokensSet = tokenize(item.fact.text);
+      for (const sel of selected) {
+        const sim = jaccard(itemTokensSet, tokenize(sel.fact.text));
+        if (sim > maxSim) {
+          maxSim = sim;
+        }
+      }
+      const diversity = 1 - maxSim; // 1 = completely novel, 0 = duplicate
+
+      // Coverage term: how many *new* query tokens does this item cover?
+      const newTokens = [...queryTokens].filter(
+        (t) => itemTokensSet.has(t) && !coveredTokens.has(t),
+      );
+      const coverage = queryTokens.size > 0 ? newTokens.length / queryTokens.size : 0;
+
+      const gain = relevance + diversityWeight * diversity + coverageWeight * coverage;
+
+      if (gain > bestGain) {
+        bestGain = gain;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx === -1) {
+      break; // No beneficial item remains
+    }
+
+    const chosen = pool[bestIdx];
+    selected.push(chosen);
+    selectedKeys.add(chosen.fact.dedupKey);
+    const chosenTokens = tokenize(chosen.fact.text);
+    for (const t of queryTokens) {
+      if (chosenTokens.has(t)) {
+        coveredTokens.add(t);
+      }
+    }
+    usedTokens += Math.ceil(chosen.fact.text.length / 4);
+    pool.splice(bestIdx, 1);
+
+    // Hard stop at topK if we're already at count budget
+    if (selected.length >= topK) {
+      break;
+    }
+  }
+
+  return selected;
 }
 
 export function formatMemorySection(
