@@ -67,6 +67,13 @@ export async function compactSession(params: {
    */
   nativeCompaction?: boolean;
 }): Promise<CompactionResult> {
+  // NOTE: Eviction policy analysis (2026-07-04):
+  // L2 compaction is epoch-based, triggered at EPOCH_CHUNK_THRESHOLD boundaries.
+  // Within an epoch, all chunks are compacted together — there is no per-chunk
+  // eviction policy, so SOLAR's LRU-vs-FIFO findings are not directly applicable
+  // to the current L2 design. This is appropriate because L2 manages consolidation,
+  // not cache pressure. When implementing ANN milestone for retrieval buffer management
+  // (likely at ~10k chunks), use SOLAR Bayesian approach instead of LRU.
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
   if (messages.length === 0) {
