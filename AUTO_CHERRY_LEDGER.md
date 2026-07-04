@@ -44,7 +44,7 @@ Notes: Worktree resync/auto-cherry-2026-07-01 created, 36 picks applied cleanly,
 
 ## 2026-07-02
 
-- Divergence: 814 commits (fix=518, test=73, chore=65, feat=34, docs=26, other=63, refactor=13, ci=13, improve=3, perf=2, doctor=3, style=1)
+- Divergence: 814 commits (fix=518, test=73, chore=65, feat=34, docs=26, other=63, refactor:13, ci:13, improve:3, perf:2, doctor:3, style:1)
 - Cherry-picked: 37/40 (oldest non-borderline fixes)
   - b8e3de11608d fix(telegram): recover stalled ingress spool claims
   - 6c5a9fde9f1c fix(msteams): truncate reflection prompt on UTF-16 boundary
@@ -89,6 +89,27 @@ Notes: Worktree resync/auto-cherry-2026-07-01 created, 36 picks applied cleanly,
   - 71347ef999ed fix(msteams): handle message card submit values
 - Remaining cherry candidates: 287 non-borderline + 125 borderline (for next night)
 - Remote proof: PASS (BUILD_EXIT=0, all 7 TSGO lanes matched, test:fast green)
-- Guard: clean (no conflict markers, no protected files touched, fork dirs intact, merge=ours count stable)
+- Guard: clean (no conflict markers, no protected files untouched, fork dirs intact, merge=ours count stable)
 - Review: clean (all fixes, no correctness/security concerns)
 - Status: LANDED, deploy pending (cron-deploy-build.sh quiescing, will auto-resume after this cron ends)
+
+## 2026-07-04 — LANDED
+
+N=1526 (fix=676, test=97, chore=493, other=98, feat=50, docs=30, refactor=44, ci=15, improve=9, perf=8, doctor=3, style=1, android=1)
+Cherry candidates: 594 (borderline=154) · Deferred: 932
+Pick list: 40 SHAs (all non-borderline fixes not already in main)
+Cherry-picked: 35 applied cleanly, 5 deferred due to conflicts
+
+- 199700de264a fix(telegram): replay retained preview gaps
+- 07b934901a32 fix: scanned PDF pages reach chat vision models (#97354)
+- 71347ef999ed fix(msteams): handle message card submit values (#97546)
+- e9ee58c43419 fix: detect chained test modifiers
+- 1d4e7899a47f fix: preserve status model alias display
+  Landed: 35 fixes (91 files, 4524 insertions, 260 deletions)
+  Deferred: 937 total (932 original + 5 new conflicts)
+  Proof: build ✓ · tsgo all 7 lanes ✓ (zero regressions: core 16=16, extensions 20=20, core:test 1=1, extensions:test 29=29, test:src 1=1, test:ui 7=7, test:packages 0=0) · test:fast ✓ (no new failures)
+  Guard: clean (no conflict markers, no protected files touched, fork dirs intact, merge=ours count stable at 300)
+  Review: clean (all fixes, no correctness/security concerns)
+  Rollback: main-backup-pre-autocherry @ 664a1f6c86 / tag autocherry-2026-07-04-pre
+  Deploy: deferred (cron-deploy-build.sh quiesced on upstream-merge-nightly still running; will auto-resume after this cron ends)
+  Notes: Divergence grew from 814 (Jul 2) to 1526. 36 of the first 40 oldest non-borderline fixes were already in main from Jul 2 run. Next batch: 400 non-borderline + 154 borderline candidates remain. Needs maintainer `$openclaw-upstream-resync` for the large merge-shaped backlog.
