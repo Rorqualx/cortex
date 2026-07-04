@@ -143,14 +143,14 @@ function isChannelSessionRow(
   return true;
 }
 
-const FAST_MODE_PROVIDER_IDS = new Set([
-  "anthropic",
-  "minimax",
-  "minimax-portal",
-  "openai",
-  "openrouter",
-  "xai",
-]);
+// Only providers whose stream profile actually honors fast mode: minimax swaps
+// to a `-fast` model id, and openai's responses profile applies it when a
+// fastMode param is present. Every other provider silently ignores the setting,
+// so offering a Speed toggle for it is a dead control. Keep in sync with the
+// fast-mode stream wrappers wired in src/plugin-sdk/provider-stream.ts
+// (minimax-fast-mode, openai-responses-defaults). anthropic/openrouter/xai were
+// listed here but have no wrapper — they showed a toggle that did nothing.
+const FAST_MODE_PROVIDER_IDS = new Set(["minimax", "minimax-portal", "openai"]);
 
 const CHAT_SESSION_PICKER_SEARCH_DEBOUNCE_MS = 300;
 const chatSessionPickerSearchControllers = new WeakMap<
