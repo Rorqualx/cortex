@@ -309,7 +309,7 @@ describe("deepseek provider plugin", () => {
   it("advertises max thinking levels for DeepSeek V4 models only", async () => {
     const provider = await registerSingleProviderPlugin(deepseekPlugin);
     const resolveThinkingProfile = requireThinkingProfileResolver(provider);
-    const expectedV4Levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+    const expectedV4Levels = ["off", "low", "medium", "high", "xhigh", "max"];
 
     expect(
       resolveThinkingProfile({
@@ -385,8 +385,26 @@ describe("deepseek provider plugin", () => {
       {},
     );
 
+    // xhigh now passes through instead of collapsing to max (verified enum).
     expect(readThinking(capturedPayload)?.type).toBe("enabled");
-    expect(capturedPayload?.reasoning_effort).toBe("max");
+    expect(capturedPayload?.reasoning_effort).toBe("xhigh");
+
+    const wrapThinkingLow = requireThinkingWrapper(
+      createDeepSeekV4ThinkingWrapper(baseStreamFn as never, "low"),
+      "low",
+    );
+    await wrapThinkingLow(
+      {
+        provider: "deepseek",
+        id: "deepseek-v4-pro",
+        api: "openai-completions",
+      } as never,
+      { messages: [] } as never,
+      {},
+    );
+
+    // low no longer promoted to high.
+    expect(capturedPayload?.reasoning_effort).toBe("low");
   });
 
   it("preserves replayed reasoning_content when DeepSeek V4 thinking is enabled", async () => {

@@ -128,31 +128,44 @@ function isDisabledThinkingLevel(thinkingLevel: ProviderWrapStreamFnContext["thi
   return thinkingLevel === "off";
 }
 
-function isGlm52ModelId(modelId?: string | null): boolean {
-  return normalizeLowercaseStringOrEmpty(modelId).startsWith("glm-5.2");
+// Ordered reasoning_effort ladder the modern GLM API accepts (verified live via
+// the 400 enum: none|minimal|low|medium|high|xhigh|max). "none"/"off" are sent as
+// thinking.disabled, so the selectable ladder starts at minimal. Single source for
+// both the passthrough guard and the offered thinking levels — no drift.
+const ZAI_REASONING_EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+const ZAI_REASONING_EFFORTS: ReadonlySet<string> = new Set(ZAI_REASONING_EFFORT_LEVELS);
+
+// reasoning_effort is a GLM-family param accepted across every SKU shape tested
+// live — base, turbo, and vision (glm-4.6v) — of the glm-4.6/4.7/5 generation, so
+// vision/turbo variants like glm-5v-turbo are covered. Gated to that generation;
+// "flash"/"flashx" were unreachable to confirm (coding-plan 429/timeout) and
+// glm-4.5* predates it, so both stay on the binary toggle rather than risk a 400
+// from an unconfirmed SKU.
+function supportsZaiReasoningEffort(modelId?: string | null): boolean {
+  const lower = normalizeLowercaseStringOrEmpty(modelId);
+  const modernFamily =
+    lower.startsWith("glm-5") || lower.startsWith("glm-4.7") || lower.startsWith("glm-4.6");
+  return modernFamily && !lower.includes("flash");
 }
 
+// GLM levels map 1:1 onto reasoning_effort, so pass through instead of collapsing
+// low/medium/high (which silently discarded the chosen depth). "adaptive" has no
+// GLM analog → balanced "high"; "off"/unknown → undefined (thinking.disabled).
 function mapThinkingLevelToZaiReasoningEffort(
   thinkingLevel: ProviderWrapStreamFnContext["thinkingLevel"],
-): "high" | "max" | undefined {
-  switch (thinkingLevel) {
-    case "low":
-    case "medium":
-    case "high":
-    case "adaptive":
-      return "high";
-    case "xhigh":
-    case "max":
-      return "max";
-    default:
-      return undefined;
+): string | undefined {
+  if (thinkingLevel === "adaptive") {
+    return "high";
   }
+  return typeof thinkingLevel === "string" && ZAI_REASONING_EFFORTS.has(thinkingLevel)
+    ? thinkingLevel
+    : undefined;
 }
 
 function wrapZaiStreamFn(ctx: ProviderWrapStreamFnContext) {
   let streamFn = createToolStreamWrapper(ctx.streamFn, ctx.extraParams?.tool_stream !== false);
   const preserveThinking = shouldPreserveZaiThinking(ctx.extraParams);
-  const reasoningEffort = isGlm52ModelId(ctx.modelId)
+  const reasoningEffort = supportsZaiReasoningEffort(ctx.modelId)
     ? mapThinkingLevelToZaiReasoningEffort(ctx.thinkingLevel)
     : undefined;
 
@@ -395,13 +408,14 @@ export default definePluginEntry({
       prepareExtraParams: (ctx) => defaultToolStreamExtraParams(ctx.extraParams),
       wrapStreamFn: (ctx) => wrapZaiStreamFn(ctx),
       resolveThinkingProfile: (ctx) =>
-        isGlm52ModelId(ctx.modelId)
+        supportsZaiReasoningEffort(ctx.modelId)
           ? {
+              // Derived from the single effort ladder above so the offered rungs
+              // can't drift from what the mapper actually forwards. "off" covers
+              // reasoning_effort:none via thinking.disabled.
               levels: [
                 { id: "off", label: "off" },
-                { id: "low", label: "low" },
-                { id: "high", label: "high" },
-                { id: "max", label: "max" },
+                ...ZAI_REASONING_EFFORT_LEVELS.map((id) => ({ id, label: id })),
               ],
               defaultLevel: "off",
             }

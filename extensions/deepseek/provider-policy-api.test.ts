@@ -5,7 +5,7 @@ import { normalizeConfig, resolveThinkingProfile } from "./provider-policy-api.j
 
 describe("deepseek provider-policy-api", () => {
   it("advertises max thinking levels for DeepSeek V4 models", () => {
-    const expectedV4Levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+    const expectedV4Levels = ["off", "low", "medium", "high", "xhigh", "max"];
 
     expect(
       resolveThinkingProfile({

@@ -2,7 +2,10 @@
 import type { ProviderThinkingProfile } from "openclaw/plugin-sdk/plugin-entry";
 import { isDeepSeekV4ModelId } from "./models.js";
 
-const V4_THINKING_LEVEL_IDS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+// DeepSeek V4 accepts reasoning_effort {low, medium, high, xhigh, max} (verified
+// live; "minimal"/"none" 400). "off" maps to thinking.disabled, so the offered
+// ladder is off + the five real efforts — no "minimal" rung the API would reject.
+const V4_THINKING_LEVEL_IDS = ["off", "low", "medium", "high", "xhigh", "max"] as const;
 
 function buildDeepSeekV4ThinkingLevel(id: (typeof V4_THINKING_LEVEL_IDS)[number]) {
   return { id };

@@ -101,10 +101,17 @@ export default definePluginEntry({
         const normalizedId = normalizeKimiCodingModelId(model.id);
         return normalizedId === model.id ? undefined : { ...model, id: normalizedId };
       },
+      // Kimi Code (anthropic-messages) supports graded extended-thinking budgets,
+      // not just on/off: low/medium/high map to 1024/4096/8192 budget_tokens via
+      // KIMI_ANTHROPIC_THINKING_BUDGETS in stream.ts. Surface those distinct tiers
+      // so callers get real depth control. minimal/xhigh/max collapse onto the same
+      // budgets, so they're intentionally not offered (would be indistinguishable).
       resolveThinkingProfile: () => ({
         levels: [
           { id: "off", label: "off" },
-          { id: "low", label: "on" },
+          { id: "low", label: "low" },
+          { id: "medium", label: "medium" },
+          { id: "high", label: "high" },
         ],
         defaultLevel: "off",
       }),

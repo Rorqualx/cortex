@@ -26,9 +26,11 @@ describe("kimi provider plugin", () => {
     });
   });
 
-  it("uses binary thinking with thinking off by default", async () => {
+  it("exposes graded thinking budgets (off/low/medium/high) with thinking off by default", async () => {
     const provider = await registerSingleProviderPlugin(plugin);
 
+    // Distinct budget tiers from KIMI_ANTHROPIC_THINKING_BUDGETS (1024/4096/8192);
+    // minimal/xhigh/max collapse onto these so they're not surfaced.
     expect(
       provider.resolveThinkingProfile?.({
         provider: "kimi",
@@ -38,7 +40,9 @@ describe("kimi provider plugin", () => {
     ).toEqual({
       levels: [
         { id: "off", label: "off" },
-        { id: "low", label: "on" },
+        { id: "low", label: "low" },
+        { id: "medium", label: "medium" },
+        { id: "high", label: "high" },
       ],
       defaultLevel: "off",
     });

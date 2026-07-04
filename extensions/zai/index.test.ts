@@ -280,38 +280,52 @@ describe("zai provider plugin", () => {
     expect(capturedPayload).not.toHaveProperty("tool_stream");
   });
 
-  it("exposes full GLM-5.2 thinking levels while keeping older GLM models binary", async () => {
+  it("exposes the full reasoning-effort ladder for the modern GLM family and keeps legacy GLM binary", async () => {
     const provider = await registerSingleProviderPlugin(plugin);
 
-    expect(
-      provider.resolveThinkingProfile?.({
-        provider: "zai",
-        modelId: "glm-5.2",
-        reasoning: true,
-      } as never),
-    ).toEqual({
+    // Verified live: glm-4.6/4.7/5/5.1/5.2 all accept the reasoning_effort enum,
+    // so they all expose the full ladder — not just glm-5.2.
+    const fullLadder = {
       levels: [
         { id: "off", label: "off" },
+        { id: "minimal", label: "minimal" },
         { id: "low", label: "low" },
+        { id: "medium", label: "medium" },
         { id: "high", label: "high" },
+        { id: "xhigh", label: "xhigh" },
         { id: "max", label: "max" },
       ],
       defaultLevel: "off",
-    });
+    };
+    // Includes vision/turbo variants (glm-4.6v, glm-5v-turbo): reasoning_effort
+    // is family-wide, verified across base/turbo/vision SKUs.
+    for (const modelId of [
+      "glm-5.2",
+      "glm-5.1",
+      "glm-4.7",
+      "glm-4.6",
+      "glm-4.6v",
+      "glm-5v-turbo",
+    ]) {
+      expect(
+        provider.resolveThinkingProfile?.({ provider: "zai", modelId, reasoning: true } as never),
+      ).toEqual(fullLadder);
+    }
 
-    expect(
-      provider.resolveThinkingProfile?.({
-        provider: "zai",
-        modelId: "glm-5.1",
-        reasoning: true,
-      } as never),
-    ).toEqual({
+    // Untested-against-the-enum SKUs stay on the binary on/off toggle: legacy
+    // glm-4.5*, and the unreachable flash/flashx variants of the modern family.
+    const binaryProfile = {
       levels: [
         { id: "off", label: "off" },
         { id: "low", label: "on" },
       ],
       defaultLevel: "off",
-    });
+    };
+    for (const modelId of ["glm-4.5", "glm-4.7-flash", "glm-4.7-flashx"]) {
+      expect(
+        provider.resolveThinkingProfile?.({ provider: "zai", modelId, reasoning: true } as never),
+      ).toEqual(binaryProfile);
+    }
   });
 
   it("maps thinking off to Z.AI thinking disabled", async () => {
@@ -346,7 +360,7 @@ describe("zai provider plugin", () => {
     expect(capturedPayload?.thinking).toEqual({ type: "disabled" });
   });
 
-  it("keeps minimal thinking enabled for binary GLM models", async () => {
+  it("keeps thinking enabled by default for binary GLM models", async () => {
     const provider = await registerSingleProviderPlugin(plugin);
     let capturedPayload: Record<string, unknown> | undefined;
     const baseStreamFn: StreamFn = (model, _context, options) => {
@@ -356,9 +370,11 @@ describe("zai provider plugin", () => {
       return {} as ReturnType<StreamFn>;
     };
 
+    // glm-4.5 is on the binary path: a non-off level neither disables thinking
+    // nor sends reasoning_effort, so the payload is left untouched.
     const wrapped = provider.wrapStreamFn?.({
       provider: "zai",
-      modelId: "glm-5.1",
+      modelId: "glm-4.5",
       extraParams: {},
       thinkingLevel: "minimal",
       streamFn: baseStreamFn,
@@ -368,16 +384,17 @@ describe("zai provider plugin", () => {
       {
         api: "openai-completions",
         provider: "zai",
-        id: "glm-5.1",
+        id: "glm-4.5",
       } as Model<"openai-completions">,
       { messages: [] } as Context,
       {},
     );
 
     expect(capturedPayload).not.toHaveProperty("thinking");
+    expect(capturedPayload).not.toHaveProperty("reasoning_effort");
   });
 
-  it("maps GLM-5.2 thinking levels to Z.AI reasoning effort", async () => {
+  it("passes GLM thinking levels straight through to Z.AI reasoning effort", async () => {
     const provider = await registerSingleProviderPlugin(plugin);
     const baseStreamFn: StreamFn = (model, _context, options) => {
       const payload: Record<string, unknown> = {};
@@ -385,32 +402,40 @@ describe("zai provider plugin", () => {
       return { payload } as never;
     };
 
-    for (const [thinkingLevel, expectedEffort] of [
-      ["low", "high"],
-      ["high", "high"],
-      ["max", "max"],
-    ] as const) {
-      const wrapped = provider.wrapStreamFn?.({
-        provider: "zai",
-        modelId: "glm-5.2",
-        extraParams: {},
-        thinkingLevel,
-        streamFn: baseStreamFn,
-      } as never);
-
-      const result = wrapped?.(
-        {
-          api: "openai-completions",
+    // Verified live: the levels map 1:1 onto reasoning_effort (no collapsing),
+    // and it holds for glm-5.1 too, not only glm-5.2.
+    for (const modelId of ["glm-5.2", "glm-5.1"]) {
+      for (const [thinkingLevel, expectedEffort] of [
+        ["minimal", "minimal"],
+        ["low", "low"],
+        ["medium", "medium"],
+        ["high", "high"],
+        ["xhigh", "xhigh"],
+        ["max", "max"],
+        ["adaptive", "high"],
+      ] as const) {
+        const wrapped = provider.wrapStreamFn?.({
           provider: "zai",
-          id: "glm-5.2",
-        } as Model<"openai-completions">,
-        { messages: [] } as Context,
-        {},
-      ) as unknown as { payload: Record<string, unknown> };
+          modelId,
+          extraParams: {},
+          thinkingLevel,
+          streamFn: baseStreamFn,
+        } as never);
 
-      expect(result.payload.reasoning_effort).toBe(expectedEffort);
-      expect(result.payload).not.toHaveProperty("thinking");
-      expect(result.payload.tool_stream).toBe(true);
+        const result = wrapped?.(
+          {
+            api: "openai-completions",
+            provider: "zai",
+            id: modelId,
+          } as Model<"openai-completions">,
+          { messages: [] } as Context,
+          {},
+        ) as unknown as { payload: Record<string, unknown> };
+
+        expect(result.payload.reasoning_effort).toBe(expectedEffort);
+        expect(result.payload).not.toHaveProperty("thinking");
+        expect(result.payload.tool_stream).toBe(true);
+      }
     }
   });
 

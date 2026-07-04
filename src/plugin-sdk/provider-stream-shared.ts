@@ -478,6 +478,10 @@ function isDisabledDeepSeekV4ThinkingLevel(thinkingLevel: DeepSeekV4ThinkingLeve
   return normalized === "off" || normalized === "none";
 }
 
+// Conservative shared default: collapse to high/max. Consumers on a verified
+// backend (the deepseek plugin against api.deepseek.com) pass their own
+// resolveReasoningEffort to map the full enum through; others (e.g. opencode-go
+// proxying to an unverified backend) keep this safe two-value behavior.
 function resolveDeepSeekV4ReasoningEffort(
   thinkingLevel: DeepSeekV4ThinkingLevel,
 ): DeepSeekV4ReasoningEffort {
