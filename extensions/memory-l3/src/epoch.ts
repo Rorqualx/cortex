@@ -14,6 +14,11 @@ export const REPRESENTATIVE_FACT_COUNT = 8;
  * epoch's representative set. Retrieval (stage 8 polish) blends these with
  * a small ε weight so older-but-important facts still surface for queries
  * that match the epoch theme.
+ * 
+ * NOTE: Eviction policy analysis (2026-07-04):
+ * Epoch-based consolidation avoids per-chunk eviction policies entirely. This is
+ * appropriate for L2 tier which manages consolidation, not cache eviction. For
+ * future retrieval buffer management at ANN milestone, use SOLAR Bayesian approach.
  */
 export async function maybeWriteEpoch(params: {
   storage: Storage;
