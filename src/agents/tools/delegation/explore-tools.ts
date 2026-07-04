@@ -48,9 +48,16 @@ const WEB_FETCH_DEFAULT_BYTES = 200_000;
 const WEB_FETCH_MAX_BYTES = 1_048_576;
 const WEB_FETCH_TIMEOUT_MS = 30_000;
 
-// web_search: timeout. Z.ai's web_search_prime is the backend.
-const WEB_SEARCH_TIMEOUT_MS = 30_000;
-const WEB_SEARCH_ENDPOINT = "https://api.z.ai/api/mcp/web_search_prime/mcp";
+// Z.ai hosted MCP tools (web_search_prime, web_reader, zread) all live under one
+// host, one sub-path per tool. Verified endpoints:
+//   {host}/web_search_prime/mcp  {host}/web_reader/mcp  {host}/zread/mcp
+// CN/coding keys still resolve against the global host here — the same limitation
+// web_search has always had; revisit if a CN MCP host is ever required.
+const ZAI_MCP_TIMEOUT_MS = 30_000;
+const ZAI_MCP_HOST = "https://api.z.ai/api/mcp";
+function zaiMcpEndpoint(tool: string): string {
+  return `${ZAI_MCP_HOST}/${tool}/mcp`;
+}
 
 // Accepted Content-Types for web_fetch. Reject binary/PDF/octet-stream.
 const ACCEPTED_CONTENT_TYPE_PATTERNS: RegExp[] = [
@@ -846,29 +853,33 @@ function parseMcpResponse(text: string): { json: unknown } | { error: string } {
   }
 }
 
-export async function webSearch(args: WebSearchArgs): Promise<string> {
-  if (typeof args.query !== "string" || args.query.trim() === "") {
-    return `error: 'query' must be a non-empty string`;
-  }
+// Shared initialize + tools/call handshake for any Z.ai hosted MCP tool. Returns
+// the tool's joined text content, or an "error: ..." string. Re-handshakes every
+// call (stateless tool semantics; adds ~150-300ms). `endpointTool` is the host
+// sub-path; `toolName` is the MCP tool id (they differ, e.g. web_reader/webReader).
+// All Z.ai MCP tools share the ~1k/month Pro pool and reuse ZAI_API_KEY auth.
+async function zaiMcpToolCall(
+  label: string,
+  endpointTool: string,
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+): Promise<{ text: string } | { error: string }> {
   const apiKey = process.env["ZAI_API_KEY"];
   if (!apiKey) {
-    return `error: ZAI_API_KEY not set — web_search proxies to Z.ai's web_search_prime endpoint and needs the same auth as the chat completions API`;
+    return {
+      error: `error: ZAI_API_KEY not set — ${label} proxies to Z.ai's ${endpointTool} MCP endpoint and needs the same auth as the chat completions API`,
+    };
   }
-
-  // The MCP HTTP transport requires an initialize handshake before tools/call.
-  // The server responds with an Mcp-Session-Id header that must accompany
-  // subsequent calls. We re-handshake every call (stateless tool semantics) —
-  // adds ~150-300ms but keeps the impl simple. Cache per-process if this
-  // overhead matters.
+  const endpoint = zaiMcpEndpoint(endpointTool);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), WEB_SEARCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), ZAI_MCP_TIMEOUT_MS);
   const baseHeaders = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
   };
   try {
-    const initRes = await fetch(WEB_SEARCH_ENDPOINT, {
+    const initRes = await fetch(endpoint, {
       method: "POST",
       signal: controller.signal,
       headers: baseHeaders,
@@ -885,16 +896,18 @@ export async function webSearch(args: WebSearchArgs): Promise<string> {
     });
     if (!initRes.ok) {
       const body = (await initRes.text()).slice(0, 500);
-      return `error: web_search initialize HTTP ${initRes.status}: ${body}`;
+      return { error: `error: ${label} initialize HTTP ${initRes.status}: ${body}` };
     }
     const sessionId = initRes.headers.get("mcp-session-id");
     if (!sessionId) {
-      return `error: web_search initialize succeeded but server returned no Mcp-Session-Id header`;
+      return {
+        error: `error: ${label} initialize succeeded but server returned no Mcp-Session-Id header`,
+      };
     }
     // Drain the init body so the connection can close cleanly.
     await initRes.text();
 
-    const callRes = await fetch(WEB_SEARCH_ENDPOINT, {
+    const callRes = await fetch(endpoint, {
       method: "POST",
       signal: controller.signal,
       headers: { ...baseHeaders, "Mcp-Session-Id": sessionId },
@@ -902,73 +915,169 @@ export async function webSearch(args: WebSearchArgs): Promise<string> {
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
-        params: { name: "web_search_prime", arguments: { search_query: args.query } },
+        params: { name: toolName, arguments: toolArgs },
       }),
     });
     if (!callRes.ok) {
       const body = (await callRes.text()).slice(0, 500);
-      return `error: web_search HTTP ${callRes.status}: ${body}`;
+      return { error: `error: ${label} HTTP ${callRes.status}: ${body}` };
     }
     const parsed = parseMcpResponse(await callRes.text());
-    if ("error" in parsed) return `error: web_search response ${parsed.error}`;
+    if ("error" in parsed) return { error: `error: ${label} response ${parsed.error}` };
 
     type MCPResp = {
       error?: { code?: number; message?: string };
       result?: { content?: Array<{ type?: string; text?: string }>; isError?: boolean };
     };
     const r = parsed.json as MCPResp;
-    if (r?.error)
-      return `error: web_search returned MCP error ${r.error.code ?? ""}: ${r.error.message ?? JSON.stringify(r.error)}`;
+    if (r?.error) {
+      return {
+        error: `error: ${label} returned MCP error ${r.error.code ?? ""}: ${r.error.message ?? JSON.stringify(r.error)}`,
+      };
+    }
     if (r?.result?.isError) {
       const errText = r.result.content?.[0]?.text ?? JSON.stringify(r.result);
-      return `error: web_search tool returned error: ${errText.slice(0, 300)}`;
+      return { error: `error: ${label} tool returned error: ${errText.slice(0, 300)}` };
     }
     const contentArr = r?.result?.content;
     if (!Array.isArray(contentArr) || contentArr.length === 0) {
-      return `# web_search '${args.query}'\n[no results]`;
+      return { text: "" };
     }
-
-    // The Z.ai server returns a single text block whose body is itself a
-    // JSON-encoded string of an array of {title, link, content, refer}. Try
-    // to parse and pretty-format. If the inner shape doesn't match, fall
-    // through to the raw text so we don't lose data.
-    const rawText = contentArr
-      .map((c) => c?.text ?? "")
-      .filter(Boolean)
-      .join("\n\n");
-    let formatted = rawText;
-    try {
-      const inner = JSON.parse(rawText) as unknown;
-      if (typeof inner === "string") {
-        const parsed = JSON.parse(inner) as Array<{
-          title?: string;
-          link?: string;
-          content?: string;
-          refer?: string;
-        }>;
-        if (Array.isArray(parsed)) {
-          formatted = parsed
-            .map((r, i) => {
-              const ref = r.refer ?? `ref_${i + 1}`;
-              return `[${ref}] ${r.title ?? "(untitled)"}\n  ${r.link ?? ""}\n  ${(r.content ?? "").replace(/\s+/g, " ").trim()}`;
-            })
-            .join("\n\n");
-        }
-      }
-    } catch {
-      // not the expected shape; keep rawText as the body
-    }
-    return truncate(
-      `# web_search '${args.query}' (${formatted.split("\n\n").length} results)\n${formatted}`,
-    );
+    return {
+      text: contentArr
+        .map((c) => c?.text ?? "")
+        .filter(Boolean)
+        .join("\n\n"),
+    };
   } catch (err) {
     if ((err as Error).name === "AbortError") {
-      return `error: web_search timed out after ${WEB_SEARCH_TIMEOUT_MS}ms`;
+      return { error: `error: ${label} timed out after ${ZAI_MCP_TIMEOUT_MS}ms` };
     }
-    return `error: web_search failed: ${(err as Error).message}`;
+    return { error: `error: ${label} failed: ${(err as Error).message}` };
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function webSearch(args: WebSearchArgs): Promise<string> {
+  if (typeof args.query !== "string" || args.query.trim() === "") {
+    return `error: 'query' must be a non-empty string`;
+  }
+  const res = await zaiMcpToolCall("web_search", "web_search_prime", "web_search_prime", {
+    search_query: args.query,
+  });
+  if ("error" in res) {
+    return res.error;
+  }
+  if (!res.text) {
+    return `# web_search '${args.query}'\n[no results]`;
+  }
+
+  // The Z.ai server returns a single text block whose body is itself a
+  // JSON-encoded string of an array of {title, link, content, refer}. Try
+  // to parse and pretty-format. If the inner shape doesn't match, fall
+  // through to the raw text so we don't lose data.
+  let formatted = res.text;
+  try {
+    const inner = JSON.parse(res.text) as unknown;
+    if (typeof inner === "string") {
+      const parsed = JSON.parse(inner) as Array<{
+        title?: string;
+        link?: string;
+        content?: string;
+        refer?: string;
+      }>;
+      if (Array.isArray(parsed)) {
+        formatted = parsed
+          .map((r, i) => {
+            const ref = r.refer ?? `ref_${i + 1}`;
+            return `[${ref}] ${r.title ?? "(untitled)"}\n  ${r.link ?? ""}\n  ${(r.content ?? "").replace(/\s+/g, " ").trim()}`;
+          })
+          .join("\n\n");
+      }
+    }
+  } catch {
+    // not the expected shape; keep the raw text as the body
+  }
+  return truncate(
+    `# web_search '${args.query}' (${formatted.split("\n\n").length} results)\n${formatted}`,
+  );
+}
+
+// web_reader — proxies to Z.ai's web_reader MCP (tool id `webReader`). Fetches a
+// URL and returns clean, LLM-friendly markdown. Idempotent → read-only. Shares
+// the same monthly MCP pool as web_search.
+export type WebReaderArgs = { url: string };
+
+export async function webReader(args: WebReaderArgs): Promise<string> {
+  if (typeof args.url !== "string" || args.url.trim() === "") {
+    return `error: 'url' must be a non-empty string`;
+  }
+  const res = await zaiMcpToolCall("web_reader", "web_reader", "webReader", { url: args.url });
+  if ("error" in res) {
+    return res.error;
+  }
+  if (!res.text) {
+    return `# web_reader '${args.url}'\n[empty]`;
+  }
+  return truncate(`# web_reader '${args.url}'\n${res.text}`);
+}
+
+// zread — proxies to Z.ai's zread MCP: read a GitHub repo's docs/issues/commits,
+// files, and structure. One tool, three operations (search_doc / read_file /
+// get_repo_structure). Idempotent → read-only. Shares the monthly MCP pool.
+export type ZreadArgs = {
+  operation: string;
+  repo_name: string;
+  query?: string;
+  file_path?: string;
+  dir_path?: string;
+  language?: string;
+};
+
+export async function zread(args: ZreadArgs): Promise<string> {
+  const repo = typeof args.repo_name === "string" ? args.repo_name.trim() : "";
+  if (!repo) {
+    return `error: 'repo_name' must be a non-empty "owner/repo" string`;
+  }
+
+  let toolName: string;
+  let toolArgs: Record<string, unknown>;
+  switch (args.operation) {
+    case "search_doc":
+      if (typeof args.query !== "string" || args.query.trim() === "") {
+        return `error: 'query' is required for operation 'search_doc'`;
+      }
+      toolName = "search_doc";
+      toolArgs = {
+        repo_name: repo,
+        query: args.query,
+        ...(args.language && { language: args.language }),
+      };
+      break;
+    case "read_file":
+      if (typeof args.file_path !== "string" || args.file_path.trim() === "") {
+        return `error: 'file_path' is required for operation 'read_file'`;
+      }
+      toolName = "read_file";
+      toolArgs = { repo_name: repo, file_path: args.file_path };
+      break;
+    case "get_repo_structure":
+      toolName = "get_repo_structure";
+      toolArgs = { repo_name: repo, ...(args.dir_path && { dir_path: args.dir_path }) };
+      break;
+    default:
+      return `error: 'operation' must be one of: search_doc, read_file, get_repo_structure`;
+  }
+
+  const res = await zaiMcpToolCall("zread", "zread", toolName, toolArgs);
+  if ("error" in res) {
+    return res.error;
+  }
+  if (!res.text) {
+    return `# zread ${args.operation} ${repo}\n[empty]`;
+  }
+  return truncate(`# zread ${args.operation} ${repo}\n${res.text}`);
 }
 
 // =============================================================================
@@ -1332,13 +1441,67 @@ export const EXPLORE_TOOL_DEFS = [
     function: {
       name: "web_search",
       description:
-        "Search the web via Z.ai's web_search_prime endpoint. Idempotent — runs in parallel. Reuses ZAI_API_KEY auth. Result count is server-side (typically ~5-10). NOTE: counts against your shared MCP-tool monthly quota on the Coding Plan (~1,000 calls/month on Pro tier, pooled across web-search/web-reader/zread/vision). Use sparingly for queries that genuinely need fresh web info. 30s timeout. Keep query under 70 chars for best results.",
+        "Search the web via Z.ai's web_search_prime endpoint. Idempotent — runs in parallel. Reuses ZAI_API_KEY auth. Result count is server-side (typically ~5-10). NOTE: counts against your shared MCP-tool monthly quota on the Coding Plan (~1,000 calls/month on Pro tier, pooled across web_search/web_reader/zread). Use sparingly for queries that genuinely need fresh web info. 30s timeout. Keep query under 70 chars for best results.",
       parameters: {
         type: "object",
         properties: {
           query: { type: "string", description: "Search query (recommended <70 chars)." },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "web_reader",
+      description:
+        "Fetch a URL and return clean, LLM-friendly markdown via Z.ai's web_reader endpoint. Idempotent — runs in parallel. Reuses ZAI_API_KEY auth. Prefer this over web_fetch for content-heavy pages (docs, articles) where you want readable markdown instead of raw HTML/text. NOTE: shares the same ~1,000/month MCP-tool pool as web_search/zread. 30s timeout.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Absolute http:// or https:// URL to read." },
+        },
+        required: ["url"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "zread",
+      description:
+        "Explore a GitHub repository via Z.ai's zread endpoint. Idempotent — runs in parallel. Reuses ZAI_API_KEY auth. Operations: 'search_doc' (search docs/issues/commits — needs query), 'read_file' (full file content — needs file_path), 'get_repo_structure' (directory tree — optional dir_path). Use for understanding third-party GitHub repos cited in a task. NOTE: shares the same ~1,000/month MCP-tool pool as web_search/web_reader. 30s timeout.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: {
+            type: "string",
+            enum: ["search_doc", "read_file", "get_repo_structure"],
+            description: "Which zread operation to run.",
+          },
+          repo_name: {
+            type: "string",
+            description: 'GitHub repository as "owner/repo" (e.g. "vitejs/vite"). Required.',
+          },
+          query: {
+            type: "string",
+            description: "Search keywords/question. Required for 'search_doc'.",
+          },
+          file_path: {
+            type: "string",
+            description: "Relative file path (e.g. \"src/index.ts\"). Required for 'read_file'.",
+          },
+          dir_path: {
+            type: "string",
+            description: "Directory to inspect (default root). Optional for 'get_repo_structure'.",
+          },
+          language: {
+            type: "string",
+            description: "'zh' or 'en'. Optional for 'search_doc'.",
+          },
+        },
+        required: ["operation", "repo_name"],
       },
     },
   },
@@ -1411,6 +1574,8 @@ export const EXPLORE_TOOL_NAMES = [
   "grep",
   "web_fetch",
   "web_search",
+  "web_reader",
+  "zread",
   "write_file",
   "write_files",
   "notebook_edit",
@@ -1420,10 +1585,11 @@ export type ExploreToolName = (typeof EXPLORE_TOOL_NAMES)[number];
 
 // Read-only tool annotation (mirrors native Claude Code's `readOnlyHint`).
 // Read-only tools can run concurrently within a turn; mutating tools must
-// run sequentially to avoid clobbering each other. web_fetch and web_search
-// are read-only by virtue of being idempotent (HTTP GET / search) — they
-// parallelize with the fs reads. write_file, write_files, and bash are
-// excluded — any batch containing them falls back to sequential dispatch.
+// run sequentially to avoid clobbering each other. web_fetch, web_search,
+// web_reader, and zread are read-only by virtue of being idempotent (HTTP GET /
+// search / read) — they parallelize with the fs reads. write_file, write_files,
+// and bash are excluded — any batch containing them falls back to sequential
+// dispatch.
 export const READONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "list_dir",
   "read_file",
@@ -1431,6 +1597,8 @@ export const READONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "grep",
   "web_fetch",
   "web_search",
+  "web_reader",
+  "zread",
 ]);
 
 export function isReadOnlyTool(name: string): boolean {
@@ -1462,6 +1630,10 @@ export async function executeExploreTool(name: string, rawArgs: unknown): Promis
         return await webFetch(args as WebFetchArgs);
       case "web_search":
         return await webSearch(args as WebSearchArgs);
+      case "web_reader":
+        return await webReader(args as WebReaderArgs);
+      case "zread":
+        return await zread(args as ZreadArgs);
       case "notebook_edit":
         return await notebookEdit(args as NotebookEditArgs);
       default:
