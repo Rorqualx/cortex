@@ -2,6 +2,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import type { Candidate } from "./detector.js";
 import { distillProseBodyWithLlm, type DistillerLlmResult } from "./distiller-llm.js";
+import { formatProcessVsOutcome } from "./evaluator.js";
 import { resolveSkillForgeStagedSkillDir } from "./paths.js";
 
 const MAX_SKILL_NAME_LENGTH = 64;
@@ -102,6 +103,9 @@ function bodyForCandidate(candidate: Candidate, toolSequence: string[]): string 
       ? toolSequence.map((tool, index) => `${index + 1}. \`${tool}\``).join("\n")
       : "_no tool calls captured_";
   const laneSpecific = laneSpecificSection(candidate);
+  const processVsOutcomeSection = candidate.processVsOutcome
+    ? formatProcessVsOutcome(candidate.processVsOutcome)
+    : "";
   return [
     `# ${candidate.lane === "tool-shape" ? "Repeated Workflow" : candidate.lane === "error-recovery" ? "Recovery Workflow" : "User-Tagged Workflow"}`,
     "",
@@ -118,6 +122,8 @@ function bodyForCandidate(candidate: Candidate, toolSequence: string[]): string 
     "",
     laneSpecific,
     "",
+    processVsOutcomeSection,
+    "",
     "## Provenance",
     "",
     `- Lane: \`${candidate.lane}\``,
@@ -132,6 +138,8 @@ function llmBodyWithProvenance(
 ): string {
   return [
     result.body.trim(),
+    "",
+    processVsOutcomeSection,
     "",
     "## Provenance",
     "",
