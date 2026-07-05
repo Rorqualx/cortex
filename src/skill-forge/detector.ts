@@ -28,6 +28,7 @@ export type RepetitionCandidate = {
   captureDirs: string[];
   occurrences: number;
   successScore: number;
+  processVsOutcome?: ProcessVsOutcomeRubric;
 };
 
 export type ErrorRecoveryCandidate = {
@@ -39,6 +40,7 @@ export type ErrorRecoveryCandidate = {
   recoveringTool: string;
   rationale: string;
   successScore: number;
+  processVsOutcome?: ProcessVsOutcomeRubric;
 };
 
 export type ExplicitCandidate = {
@@ -50,6 +52,7 @@ export type ExplicitCandidate = {
   promptExcerpt: string;
   rationale: string;
   successScore: number;
+  processVsOutcome?: ProcessVsOutcomeRubric;
 };
 
 export type Candidate = RepetitionCandidate | ErrorRecoveryCandidate | ExplicitCandidate;
@@ -326,6 +329,16 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
       const deduped: ErrorRecoveryCandidate = {
         ...raw,
         candidateId: shortHash(`error-recovery:${raw.failingTool}:${raw.recoveringTool}`),
+        processVsOutcome: evaluateProcessVsOutcome({
+          lane: "error-recovery",
+          candidateId: raw.candidateId,
+          captureDir: raw.captureDir,
+          toolSequence: raw.toolSequence,
+          failingTool: raw.failingTool,
+          recoveringTool: raw.recoveringTool,
+          rationale: raw.rationale,
+          successScore: raw.successScore,
+        }),
       };
       seenErrorRecovery.set(key, deduped);
       candidates.push(deduped);
@@ -334,8 +347,20 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
       if (seenExplicit.has(key)) {
         continue;
       }
-      seenExplicit.set(key, raw);
-      candidates.push(raw);
+      seenExplicit.set(key, {
+        ...raw,
+        processVsOutcome: evaluateProcessVsOutcome({
+          lane: "explicit",
+          candidateId: raw.candidateId,
+          captureDir: raw.captureDir,
+          toolSequence: raw.toolSequence,
+          matchedPhrase: raw.matchedPhrase,
+          promptExcerpt: raw.promptExcerpt,
+          rationale: raw.rationale,
+          successScore: raw.successScore,
+        }),
+      });
+      candidates.push(seenExplicit.get(key)!);
     }
   }
 
@@ -361,6 +386,15 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         captureDirs: members.map((member) => member.captureDir),
         occurrences: members.length,
         successScore: allClean ? 1 : 0.5,
+        processVsOutcome: evaluateProcessVsOutcome({
+          lane: "tool-shape",
+          candidateId: hash,
+          toolShapeHash: hash,
+          toolSequence: members[0].toolSequence,
+          captureDirs: members.map((member) => member.captureDir),
+          occurrences: members.length,
+          successScore: allClean ? 1 : 0.5,
+        }),
       });
     }
   }
