@@ -25,9 +25,69 @@ Rollback: main-backup-pre-autocherry @ <sha> / tag <name>
 Notes:    <conflicts skipped, transport, anomalies>
 ```
 
----
+## 2026-07-05 — LANDED
 
-<!-- runs appended below -->
+N=1803 (2 merges) — fix:826 · chore:515 · test:118 · other:107 · feat:81 · refactor:60 · docs:47 · ci:17 · improve:11 · perf:9 · policy:7 · doctor:3 · style:1 · android:1
+Cherry candidates: 714 (borderline=184) · Deferred: 1089
+Pick list: 40 SHAs (non-borderline fixes; first 40 oldest were already in main from prior runs)
+
+Cherry-picked: 40 applied cleanly, 3 deferred (conflicts), 82 empty (already present in main from prior merges)
+
+- 46434f0c71c6 fix(telegram): reject surrogate/out-of-range numeric HTML entities
+- b28fcfe84344 fix(telegram): fall back to plain text when rich message entity validation fails (#96642)
+- 1841c4caf515 fix(feishu): truncate comment prompt text on UTF-16 boundary
+- 352f47f888de fix(imessage): coalesce merged text on UTF-16 code-point boundary
+- 4109755592bb fix(discord): truncate model picker button labels on UTF-16 boundary
+- 6d658c70ea15 fix(terminal-core): tighten docs link URL detection
+- 15fc8812815e fix(cli): clarify safe restart bounded-then-force behavior in help and docs
+- 63fe5c74021d fix(ui): scroll to cron run history
+- 1f0c6a66a6bc fix(plugins): plugin loggers drop writes after the log level is raised at runtime (#97617)
+- 2001b15f5b92 fix(google-meet): bound Drive document export reads to prevent OOM (#97620)
+- 59d8462b1d25 fix(macos): open dashboard when Dock or Finder relaunches app (#97637)
+- 615558f6fb3f fix(provider-usage): bound Anthropic usage error response reads to prevent OOM (#97614)
+- d5aca1d6d2d7 fix(xai): bound OAuth response reads to prevent OOM (#97615)
+- 6299b679c05f fix(tlon): truncate approval message preview on UTF-16 boundary (#97599)
+- 5f86c3a90f69 fix(qa-matrix): bound homeserver response reads
+- dd6143f60c24 fix(signal): bound container REST response reads
+- 561c713bb1f3 fix(cli): bound and redact generated video downloads
+- 89b5a879090a fix: bound APNs relay response body so an oversized relay reply can't exhaust gateway memory
+- 63b089383adf fix(runway): bound video create/poll response reads
+- f0e2f7b4f5ae fix(openai): bound video create-submit response reads
+- ca1bc5875913 fix(together, pixverse): bound video response reads
+- ce1217a49ca6 fix(fal): bound music/video generation response reads
+- 74a9beb83f51 fix(vydra): bound control response reads
+- ff820d3942cc fix(openai-completions): bound SSE response reads via buildGuardedModelFetch
+- 238398e33147 fix(video-generation): bound DashScope JSON response reads
+- 5723222bbb3c fix(chutes-oauth-plugin): bound plugin JSON response reads
+- bf66b4e1ea7e fix(comfy): bound JSON response reads via readProviderJsonResponse
+- 0392ff724297 fix(test): remove duplicate provider HTTP mock export
+- a6aaba76ac66 fix(google): bound OAuth response body reads
+- 748bea343416 fix(github-copilot): bound login JSON response reads
+- 46e119074ef0 fix(xai): bound video response body reads
+- db2786bde105 fix(provider-usage): bound usage response body reads
+- e7d6566b8fd1 fix(feishu): publish transport health status (#90966)
+- 1052652a7168 fix(session-memory): skip transcript-only assistant messages in getRecentSessionContent (#94401)
+- 597a0ba43ca3 fix(discord): bound PluralKit and voice-message JSON reads
+- 84cd3aa7f59a fix(cli): call process.exit(1) in root help and version fast path error handlers (#97793) (#97807)
+- eb5fb2aa69f4 fix(microsoft-foundry): bound connection test error reads (#97812)
+- 09167523bf40 fix(nextcloud-talk): bound bot preflight error reads (#97811)
+- aa5ec51af008 fix(line): preserve uploaded file names for media detection (#96403)
+- 38ab207591e4 fix(google-meet): fall back to manual OAuth paste when callback port is occupied (#96492)
+
+Deferred: 92 total (3 conflicts + 82 empty + 7 original deferred from prior backlog)
+
+- 199700de264a fix(telegram): replay retained preview gaps — conflict
+- 07b934901a32 fix: scanned PDF pages reach chat vision models — conflict
+- 2ec670898018 fix: detect chained test modifiers — conflict
+- 82 empty commits already present in main from prior merge work
+
+Landed: 40 fixes (97 files, 3726 insertions, 567 deletions)
+Proof: build ✓ · tsgo all 7 lanes ✓ (zero regressions: core 16=16, extensions 20=20, core:test 1=1, extensions:test 29=29, test:src 1=1, test:ui 7=7, test:packages 0=0) · test:fast ✓ (no new failures)
+Guard: clean (no conflict markers, no protected files touched, fork dirs intact, merge=ours count stable; pre-existing .gitattributes/package.json baseline drift from prior upstream work, not caused by this cherry set)
+Review: clean (all fixes, no correctness/security concerns)
+Rollback: main-backup-pre-autocherry @ ec0ec5f5a8 / tag autocherry-2026-07-05-pre
+Deploy: deferred (cron-deploy-build.sh quiesced on upstream-merge-nightly still running; deploy should be manually triggered or will auto-resume after cron ends)
+Notes: Divergence grew from 1526 (Jul 4) to 1803. The 40 oldest non-borderline candidates were already in main (from prior runs). Scanned 122 candidates to find 40 applicable. Remaining: 530 non-borderline + 184 borderline candidates. Needs maintainer `$openclaw-upstream-resync` for the large merge-shaped backlog.
 
 ## 2026-07-01 — DEFERRED (proof FAIL)
 
