@@ -402,7 +402,7 @@ export function scoreFact(params: {
     semantic: 0,
     informationGain: params.informationGain ?? 0,
     goalRelevance: params.goalRelevance ?? 0,
-    reliability: params.reliability ?? certaintyToReliability(params.fact.certainty),
+    reliability: params.reliability ?? certaintyToReliability(params.fact),
     semanticEntropy: params.semanticEntropy ?? params.fact.semanticEntropy ?? 1.0,
   };
   if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
@@ -427,14 +427,26 @@ export function composite(signals: Signals, config: ScoringConfig): number {
 }
 
 /** Map fact certainty to a reliability score. */
-function certaintyToReliability(certainty: import("./types.js").FactCertainty | undefined): number {
-  switch (certainty) {
-    case "tentative":
-      return 0.5;
-    case "instructional":
-      return 0.85;
-    case "confirmed":
-    default:
-      return 1.0;
+function certaintyToReliability(fact: {
+  certainty?: import("./types.js").FactCertainty;
+  certaintyProvenance?: "hedged" | "asserted" | "corroborated";
+}): number {
+  const baseReliability = (() => {
+    switch (fact.certainty) {
+      case "tentative":
+        return 0.5;
+      case "instructional":
+        return 0.85;
+      case "confirmed":
+      default:
+        return 1.0;
+    }
+  })();
+
+  // Apply penalty multiplier for facts that were originally hedged
+  if (fact.certaintyProvenance === "hedged") {
+    return baseReliability * 0.7;
   }
+
+  return baseReliability;
 }

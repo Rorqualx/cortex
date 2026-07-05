@@ -63,6 +63,27 @@ const CERTAINTY_RANK: Record<FactCertainty, number> = {
 };
 
 /**
+ * Detect hedge markers in fact text that indicate tentative language.
+ * Returns "hedged" if hedge markers are found, "asserted" otherwise.
+ */
+function detectHedgeProvenance(text: string): "hedged" | "asserted" {
+  const hedgePatterns = [
+    /maybe/i,
+    /perhaps/i,
+    /I think/i,
+    /might/i,
+    /could be/i,
+    /allegedly/i,
+    /possibly/i,
+    /potentially/i,
+  ];
+
+  // Check if any hedge pattern matches the fact text
+  const hasHedge = hedgePatterns.some((pattern) => pattern.test(text));
+  return hasHedge ? "hedged" : "asserted";
+}
+
+/**
  * The aggregated view of a single dedupKey across every L2 chunk that has
  * emitted it. This is the input to promotion decisions in `longterm.ts`.
  */
@@ -82,6 +103,12 @@ export type ConsolidationCandidate = {
    * before PROMPT_VERSION=8 carry no tag and count as confirmed.
    */
   certainty: FactCertainty;
+  /**
+   * Provenance of the certainty determination. Tracks whether the fact was
+   * originally hedged (tentative language), asserted directly, or corroborated
+   * by multiple sources. Used for scoring reliability adjustments.
+   */
+  certaintyProvenance?: "hedged" | "asserted" | "corroborated";
 };
 
 /**
@@ -120,6 +147,7 @@ function mergeFact(
       lastConfirmedAt: fact.createdAt,
       sourceChunkIds: [chunkId],
       certainty: fact.certainty ?? "confirmed",
+      certaintyProvenance: detectHedgeProvenance(fact.text),
     });
     return;
   }
@@ -142,6 +170,8 @@ function mergeFact(
   const factCertainty = fact.certainty ?? "confirmed";
   if (CERTAINTY_RANK[factCertainty] > CERTAINTY_RANK[existing.certainty]) {
     existing.certainty = factCertainty;
+    // If we're upgrading certainty, check if the new fact has hedge markers
+    existing.certaintyProvenance = detectHedgeProvenance(fact.text);
   }
 }
 

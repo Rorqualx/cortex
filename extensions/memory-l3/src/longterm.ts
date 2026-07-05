@@ -1,594 +1,452 @@
-import { randomUUID } from "node:crypto";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import {
-  type ConsolidationCandidate,
-  type ConsolidationConfig,
-  DEFAULT_CONSOLIDATION_CONFIG,
-  selectPromotable,
-} from "./consolidation.js";
-import { adjustImportance } from "./entities.js";
-import { DEFAULT_FSRS_PARAMS, nearDuplicateSimilarity, tokenize } from "./scoring.js";
-import type { Storage } from "./storage.js";
-import type { LongTermFact, LongTermFrontmatter, RetrievalSignal } from "./types.js";
+import type { L2Fact } from "./types.js";
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
-function l3debug(msg: string): void {
-  if (DEBUG_ENABLED) {
-    console.error(`[memory-l3/longterm] ${msg}`);
-  }
-}
-
-export type LongTermConfig = {
+export type ScoringConfig = {
+  weightLexical: number;
+  /** BM25 lexical signal. Augments Jaccard with term-frequency/document-rarity
+   * weighting so rare exact matches (IPs, paths, project names) score higher
+   * than common-word overlaps. Default 0 — set to 0.2-0.4 to opt in. */
+  weightBm25: number;
+  weightImportance: number;
   /**
-   * After this many ms without re-confirmation, an active long-term fact is
-   * archived. Archived facts are kept on disk for forensics but excluded
-   * from active retrieval.
+   * Recency/forgetting signal weight. When `useFsrs` is true, this weight
+   * applies to the FSRS retrievability score instead of simple exponential
+   * decay. Default 0.1.
    */
-  maxAgeWithoutConfirmMs: number;
+  weightRecency: number;
+  /** ε-weighted L3-epoch boost. Soft additive prior; default 0.1. */
+  weightL3Boost: number;
   /**
-   * Multiplier applied to `maxAgeWithoutConfirmMs` when archiving would drop
-   * the last active fact from its epoch cluster (facts that first appeared on
-   * the same day). Prevents "Region Wipe-out" where an entire topic
-   * disappears at once because all its facts age out in the same pass.
-   * Set to 1.0 to disable epoch-aware grace.
-   * Default: 1.5 (50% extension).
+   * Flat additive bonus applied to any long-term tier hit that has a
+   * positive lexical match. Lets evergreen facts edge out fresh L2 facts
+   * at similar scoring without dominating unrelated queries. Default 0.15.
    */
-  epochGraceMultiplier: number;
+  weightLongTermTierBoost: number;
   /**
-   * Jaccard (lexical) threshold for redundancy dedup, used as the FALLBACK
-   * when a fact pair lacks comparable embeddings. Short prose facts make
-   * lexical overlap a strong signal. Set both thresholds to 1.0 to disable
-   * semantic dedup. Default: 0.85.
+   * Multiplier applied to memory-core QMD result scores to bring them into
+   * the same 0-0.7 range as our composite, so the cross-store tier
+   * participates in unified top-K ranking instead of competing on a
+   * different scale. Default 0.7.
    */
-  semanticDedupThreshold: number;
+  weightMemoryCoreTierMultiplier: number;
   /**
-   * Cosine threshold for redundancy dedup when both facts carry embeddings —
-   * the common path now that promotion computes vectors. Kept SEPARATE from
-   * the jaccard threshold because the two are different scales; one shared
-   * value mis-fires on whichever metric it was not calibrated for. Inspired
-   * by FSFM's redundancy-based forgetting (cosine > ~0.95 → demote). Default
-   * 0.85 preserves prior behavior pending harness calibration (likely raise
-   * toward 0.92 to avoid over-merging distinct facts).
+   * Flat additive bonus applied to typed-fact hits (left brain) that have a
+   * positive lexical match. Smaller than the long-term boost because typed
+   * facts already get a strong signal from confidence + the slot:value text
+   * matching the query directly. Default 0.1.
    */
-  semanticDedupCosineThreshold: number;
+  weightTypedFactTierBoost: number;
+  /** Base half-life in days for FSRS recency scoring. Default 7. */
+  recencyHalfLifeDays: number;
   /**
-   * G3 (testing effect): when true, retrieval counts as reaffirmation for the
-   * purpose of forgetting. A fact's archival clock runs from
-   * max(lastConfirmedAt, lastRecalledAt) and its survival window grows with how
-   * often it has been retrieved (FSRS-style stability: maxAge × w1^retrievals),
-   * so a fact you keep *using* resists archival even if it is never restated in
-   * conversation. Default false — enabling is a measured change (proof-gated).
+   * When true, use FSRS-based per-fact forgetting instead of simple
+   * exponential decay. Facts with higher recallCount get longer half-lives.
+   * Default true.
    */
-  retrievalStabilityEnabled: boolean;
-  /** Cap on retrieval recallCount fed into stability growth, so a hot fact can't
-   * grow an unbounded half-life. Mirrors the Hebbian maxEdgeWeight cap. Default 10. */
-  retrievalStabilityMaxRecall: number;
+  useFsrs: boolean;
+  /**
+   * Weight for embedding-based semantic similarity signal. Only applies when
+   * both the query and the fact have pre-computed embeddings. When 0 or when
+   * embeddings are unavailable, this signal is skipped entirely.
+   * Default 0.15.
+   */
+  weightSemantic: number;
+  /**
+   * Weight for the source chunk's information-gain (session novelty) signal.
+   * Small by design: novel L2 facts (high 1−cosine to long-term) get a slight
+   * lift so genuinely new session content surfaces over rehashed evergreen
+   * facts, without letting novelty override lexical/semantic relevance.
+   * Only L2 facts carry an informationGain; other tiers score it as 0.
+   */
+  weightInformationGain: number;
+  /**
+   * Weight for goal-relevance signal. When a query-goal embedding is
+   * available, facts semantically aligned with the current task/goal get
+   * a boost. Default 0.1.
+   */
+  weightGoalRelevance: number;
+  /**
+   * Weight for source-reliability signal. Facts with higher certainty
+   * (confirmed > instructional > tentative) score higher. Default 0.1.
+   */
+  weightReliability: number;
+  /**
+   * Weight for semantic-entropy confidence signal. Facts with higher
+   * semantic-entropy scores (more confident / lower entropy) get a slight
+   * boost. Default 0.1. Set to 0 to disable.
+   */
+  weightSemanticEntropy: number;
 };
 
-export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
-  maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
-  epochGraceMultiplier: 1.5,
-  semanticDedupThreshold: 0.85,
-  semanticDedupCosineThreshold: 0.85,
-  retrievalStabilityEnabled: false,
-  retrievalStabilityMaxRecall: 10,
+export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+  // Phase 1 rebalance: with semantic embeddings now active, reduce lexical
+  // dominance and give BM25 + semantic their proper weight. This moves us
+  // from keyword-matching-over-compressed-summaries to true hybrid retrieval.
+  weightLexical: 0.25,
+  weightBm25: 0.3,
+  weightImportance: 0.15,
+  weightRecency: 0.05,
+  weightL3Boost: 0.1,
+  weightLongTermTierBoost: 0.15,
+  weightMemoryCoreTierMultiplier: 0.7,
+  weightTypedFactTierBoost: 0.1,
+  recencyHalfLifeDays: 7,
+  useFsrs: true,
+  weightSemantic: 0.35,
+  weightInformationGain: 0.05,
+  weightGoalRelevance: 0.1,
+  weightReliability: 0.1,
+  weightSemanticEntropy: 0.1,
 };
 
-export type ConsolidationOutput = {
-  /** Candidates that were not previously in long-term and were added. */
-  promotedCount: number;
-  /** Candidates that already existed; recall/timestamp/source counters bumped. */
-  reaffirmedCount: number;
-  /** Active facts that aged out and were marked archived in this pass. */
-  archivedCount: number;
-  /** Active facts that would have aged out but received an epoch-cluster grace extension. */
-  epochGraceCount: number;
-  /** Archived facts that re-appeared in candidates and were re-activated. */
-  unarchivedCount: number;
-  /** Facts archived as semantically redundant of a higher-importance fact (FSFM). */
-  semanticDedupCount: number;
-  /** Total active facts after the pass (excludes archived). */
-  activeCount: number;
-};
+// ---------------------------------------------------------------------------
+// FSRS-inspired per-fact forgetting (ZenBrain / FSFM research)
+// ---------------------------------------------------------------------------
 
 /**
- * Run a consolidation pass: aggregate L2 candidates, promote new evergreen
- * facts, re-affirm existing ones, archive stale active facts, and persist
- * `<root>/longterm.md`. Idempotent — safe to call repeatedly.
- */
-export async function consolidateLongTerm(params: {
-  storage: Storage;
-  agentId: string | null;
-  now: number;
-  consolidationConfig?: ConsolidationConfig;
-  longTermConfig?: LongTermConfig;
-  /**
-   * When provided, additionally write a QMD-friendly snapshot of active
-   * long-term facts to `<workspaceDir>/memory/.l3/<YYYY-MM-DD>.md` so
-   * memory-core's existing dreaming + retrieval pipeline picks them up
-   * without any modification to memory-core source.
-   */
-  workspaceDir?: string;
-  /**
-   * Optional embedding provider for pre-computing vectors at promotion time.
-   * When provided, promoted/reaffirmed facts get an `embedding` field
-   * enabling cosine-similarity semantic dedup and retrieval signals.
-   * Falls back to jaccard when unavailable.
-   */
-  embeddingProvider?: { embedBatch(texts: string[]): Promise<number[][]> };
-}): Promise<ConsolidationOutput> {
-  const consolidationConfig = params.consolidationConfig ?? DEFAULT_CONSOLIDATION_CONFIG;
-  const longTermConfig = params.longTermConfig ?? DEFAULT_LONG_TERM_CONFIG;
-
-  const promotable = await selectPromotable(params.storage, consolidationConfig);
-  const promotableByKey = new Map(promotable.map((c) => [c.dedupKey, c]));
-
-  const existing = await params.storage.readLongTerm();
-  const merged = new Map<string, LongTermFact>();
-  for (const fact of existing.facts) {
-    merged.set(fact.dedupKey, fact);
-  }
-
-  let promotedCount = 0;
-  let reaffirmedCount = 0;
-  let unarchivedCount = 0;
-
-  // Collect all facts that need embedding computation.
-  const factsNeedingEmbedding: Array<{ dedupKey: string; text: string }> = [];
-  const pendingFacts = new Map<string, LongTermFact>();
-
-  for (const candidate of promotable) {
-    const prior = merged.get(candidate.dedupKey);
-    if (!prior) {
-      const fact = promote(candidate);
-      pendingFacts.set(candidate.dedupKey, fact);
-      factsNeedingEmbedding.push({ dedupKey: candidate.dedupKey, text: candidate.text });
-      promotedCount += 1;
-      continue;
-    }
-    const reaffirmed = reaffirm(prior, candidate);
-    if (prior.archived && !reaffirmed.archived) {
-      unarchivedCount += 1;
-    } else {
-      reaffirmedCount += 1;
-    }
-    pendingFacts.set(candidate.dedupKey, reaffirmed);
-    // Re-compute embedding on reaffirmation (text may have updated)
-    if (!reaffirmed.archived) {
-      factsNeedingEmbedding.push({ dedupKey: candidate.dedupKey, text: reaffirmed.text });
-    }
-  }
-
-  // Batch-compute embeddings for all promoted/reaffirmed facts at once.
-  if (params.embeddingProvider && factsNeedingEmbedding.length > 0) {
-    try {
-      const texts = factsNeedingEmbedding.map((f) => f.text);
-      const vectors = await params.embeddingProvider.embedBatch(texts);
-      for (let i = 0; i < factsNeedingEmbedding.length; i++) {
-        const dedupKey = factsNeedingEmbedding[i].dedupKey;
-        const fact = pendingFacts.get(dedupKey);
-        if (fact && vectors[i]) {
-          pendingFacts.set(dedupKey, { ...fact, embedding: vectors[i] });
-        }
-      }
-    } catch (embedErr) {
-      // Non-fatal: facts without embeddings fall back to jaccard in dedup
-      l3debug(`embedding batch failed, continuing without vectors: ${(embedErr as Error).message}`);
-    }
-  }
-
-  // Merge pending facts into the merged map
-  for (const [key, fact] of pendingFacts) {
-    merged.set(key, fact);
-  }
-
-  let archivedCount = 0;
-  let epochGraceCount = 0;
-  let semanticDedupCount = 0;
-
-  // Load retrieval signals once. Reused by the archival pass (G3 — retrieval
-  // reaffirms durability, when retrievalStabilityEnabled) and the Phase-3
-  // dynamic-importance pass below. Non-fatal on failure (empty map).
-  let signalMap = new Map<string, RetrievalSignal>();
-  try {
-    const signals = await params.storage.readRetrievalSignals();
-    signalMap = new Map(signals.map((s) => [s.factId, s]));
-  } catch (signalErr) {
-    l3debug(`retrieval signals unavailable: ${(signalErr as Error).message}`);
-  }
-
-  // Build a SNAPSHOT of epoch densities BEFORE any archival decisions.
-  // Facts that first appeared on the same day likely came from the same
-  // consolidation epoch. Dropping the last one means the entire topic
-  // disappears at once ("Region Wipe-out" problem). The snapshot must be
-  // frozen before the loop so archiving one fact doesn't shift the count
-  // for another fact in the same epoch — that caused sequential archivals
-  // to incorrectly grant grace to the second-to-last fact.
-  const epochPopSnapshot = new Map<string, number>();
-  for (const fact of merged.values()) {
-    if (fact.archived) {
-      continue;
-    }
-    const epochKey = formatDateString(fact.firstSeenAt);
-    epochPopSnapshot.set(epochKey, (epochPopSnapshot.get(epochKey) ?? 0) + 1);
-  }
-
-  // Collect all archivable facts first, then decide grace/commit in one pass.
-  // This avoids order-dependent grace when multiple facts share an epoch.
-  const archivalCandidates: Array<{
-    key: string;
-    fact: LongTermFact;
-    age: number;
-    effectiveMaxAge: number;
-    epochKey: string;
-  }> = [];
-  for (const [key, fact] of merged) {
-    if (fact.archived) {
-      continue;
-    }
-    if (promotableByKey.has(key)) {
-      continue;
-    }
-    // G3: retrieval reaffirms durability. When enabled, the forgetting clock
-    // runs from the later of last confirmation and last retrieval, and the
-    // survival window grows FSRS-style with retrieval count (capped). When
-    // disabled, signal is undefined → identical to the prior lastConfirmedAt
-    // behavior.
-    const signal = longTermConfig.retrievalStabilityEnabled ? signalMap.get(fact.id) : undefined;
-    const lastActive = signal
-      ? Math.max(fact.lastConfirmedAt, signal.lastRecalledAt)
-      : fact.lastConfirmedAt;
-    const stabilityFactor = signal
-      ? DEFAULT_FSRS_PARAMS.w1 **
-        Math.min(signal.recallCount, longTermConfig.retrievalStabilityMaxRecall)
-      : 1;
-    const age = params.now - lastActive;
-    const effectiveMaxAge = longTermConfig.maxAgeWithoutConfirmMs * stabilityFactor;
-    if (age < effectiveMaxAge) {
-      continue;
-    }
-    archivalCandidates.push({
-      key,
-      fact,
-      age,
-      effectiveMaxAge,
-      epochKey: formatDateString(fact.firstSeenAt),
-    });
-  }
-
-  // Sort by importance ascending so lower-importance facts archive first.
-  // This ensures grace, if granted, protects the most important fact.
-  archivalCandidates.sort((a, b) => a.fact.importance - b.fact.importance);
-
-  // Track remaining epoch pop as we commit archivals.
-  const remainingEpochPop = new Map(epochPopSnapshot);
-  for (const { key, fact, age, effectiveMaxAge, epochKey } of archivalCandidates) {
-    // Use the FROZEN snapshot for the grace decision, not the running count.
-    // This prevents sequential archivals from incorrectly granting grace
-    // to a fact that was part of a multi-fact epoch cluster.
-    const originalPop = epochPopSnapshot.get(epochKey) ?? 0;
-    const pop = remainingEpochPop.get(epochKey) ?? 0;
-    // Grace: protect the LAST survivor of a multi-fact epoch cluster from
-    // Region Wipe-out. Conditions:
-    //   (a) pop == 1 — this is the last fact currently standing
-    //   (b) originalPop >= 3 — the epoch was a genuine cluster, not just a
-    //       pair. Two-fact epochs don't get grace because a pair doesn't
-    //       represent enough topical depth to warrant protection. A single
-    //       original fact (solitary epoch) DOES get grace — it's the only
-    //       representative of its topic.
-    // This means: 2-fact epochs archive both, 3+ epochs protect the last one.
-    const isSolitary = originalPop === 1;
-    const isLastOfCluster = originalPop >= 3 && pop <= 1;
-    if ((isSolitary || isLastOfCluster) && longTermConfig.epochGraceMultiplier > 1) {
-      const graceThreshold = effectiveMaxAge * longTermConfig.epochGraceMultiplier;
-      if (age < graceThreshold) {
-        epochGraceCount += 1;
-        continue;
-      }
-    }
-    merged.set(key, archive(fact, params.now));
-    archivedCount += 1;
-    if (pop > 0) {
-      remainingEpochPop.set(epochKey, pop - 1);
-    }
-  }
-
-  // -----------------------------------------------------------------
-  // Semantic dedup (FSFM-inspired redundancy-based forgetting)
-  // -----------------------------------------------------------------
-  // Runs AFTER archival so it doesn't interfere with epoch-grace logic.
-  // Uses cosine similarity on pre-computed embeddings when available,
-  // falls back to jaccard for facts without embeddings.
-  //
-  // When two active facts exceed the similarity threshold, the lower-
-  // importance one is archived as redundant. This prevents semantically
-  // duplicate facts from accumulating (e.g., "fork is on memory-fork" and
-  // "the branch is memory-fork" have different dedupKeys but are
-  // semantically identical).
-  if (
-    longTermConfig.semanticDedupThreshold < 1 ||
-    longTermConfig.semanticDedupCosineThreshold < 1
-  ) {
-    const activeFacts = [...merged.values()].filter((f) => !f.archived);
-    if (activeFacts.length >= 2) {
-      // Pre-compute jaccard tokens for the fallback metric.
-      const factTokens = new Map<string, Set<string>>();
-      for (const f of activeFacts) {
-        factTokens.set(f.dedupKey, tokenize(f.text));
-      }
-
-      // For each pair, check if they're semantically redundant. The shared
-      // helper prefers embedding cosine and tells us which metric it used, so
-      // we apply the matching (separately-calibrated) threshold.
-      const toArchive = new Set<string>();
-      for (let i = 0; i < activeFacts.length; i++) {
-        for (let j = i + 1; j < activeFacts.length; j++) {
-          const a = activeFacts[i];
-          const b = activeFacts[j];
-          if (toArchive.has(a.dedupKey) || toArchive.has(b.dedupKey)) {
-            continue;
-          }
-
-          const { metric, sim } = nearDuplicateSimilarity(
-            { embedding: a.embedding, tokens: factTokens.get(a.dedupKey)! },
-            { embedding: b.embedding, tokens: factTokens.get(b.dedupKey)! },
-          );
-          const threshold =
-            metric === "cosine"
-              ? longTermConfig.semanticDedupCosineThreshold
-              : longTermConfig.semanticDedupThreshold;
-          if (sim < threshold) {
-            continue;
-          }
-
-          // Archive the lower-importance (or older if tied) fact
-          const victim =
-            a.importance < b.importance ||
-            (a.importance === b.importance && a.firstSeenAt < b.firstSeenAt)
-              ? a
-              : b;
-          toArchive.add(victim.dedupKey);
-        }
-      }
-
-      for (const dedupKey of toArchive) {
-        const fact = merged.get(dedupKey);
-        if (fact && !fact.archived) {
-          merged.set(dedupKey, archive(fact, params.now));
-          semanticDedupCount += 1;
-        }
-      }
-    }
-  }
-
-  const orderedFacts = orderFacts([...merged.values()]);
-
-  // -----------------------------------------------------------------
-  // Dynamic importance scoring (Phase 3)
-  // -----------------------------------------------------------------
-  // Adjust fact importance based on retrieval frequency signals.
-  // Facts that are frequently recalled get boosted; idle facts decay.
-  let adjustedFacts = orderedFacts;
-  try {
-    if (signalMap.size > 0) {
-      adjustedFacts = adjustImportance({
-        facts: orderedFacts,
-        signals: signalMap,
-        now: params.now,
-      });
-      const changed = adjustedFacts.filter(
-        (f, i) => Math.abs(f.importance - orderedFacts[i].importance) >= 0.01,
-      ).length;
-      if (changed > 0) {
-        l3debug(`dynamic importance: adjusted ${changed}/${orderedFacts.length} facts`);
-      }
-    }
-  } catch (importanceErr) {
-    // Non-fatal: proceed with existing importance values
-    l3debug(`dynamic importance failed: ${(importanceErr as Error).message}`);
-  }
-
-  const frontmatter: LongTermFrontmatter = {
-    version: 1,
-    agentId: params.agentId,
-    lastConsolidatedAt: params.now,
-    facts: adjustedFacts,
-  };
-
-  await params.storage.writeLongTerm(frontmatter, formatLongTermBody(adjustedFacts));
-
-  if (params.workspaceDir) {
-    await writeQmdMirror({
-      workspaceDir: params.workspaceDir,
-      facts: adjustedFacts,
-      now: params.now,
-    });
-  }
-
-  return {
-    promotedCount,
-    reaffirmedCount,
-    archivedCount,
-    epochGraceCount,
-    unarchivedCount,
-    semanticDedupCount,
-    activeCount: adjustedFacts.filter((f) => !f.archived).length,
-  };
-}
-
-function promote(candidate: ConsolidationCandidate): LongTermFact {
-  return {
-    id: `lt-${randomUUID().slice(0, 8)}`,
-    text: candidate.text,
-    dedupKey: candidate.dedupKey,
-    importance: candidate.importance,
-    firstSeenAt: candidate.firstSeenAt,
-    lastConfirmedAt: candidate.lastConfirmedAt,
-    recallCount: candidate.recallCount,
-    sourceChunkIds: [...candidate.sourceChunkIds],
-    archived: false,
-    archivedAt: null,
-    supersededBy: null,
-  };
-}
-
-/** Revision trail cap: keeps frontmatter bounded for facts whose text churns. */
-const FACT_HISTORY_LIMIT = 5;
-
-function reaffirm(prior: LongTermFact, candidate: ConsolidationCandidate): LongTermFact {
-  const merged = mergeChunkIds(prior.sourceChunkIds, candidate.sourceChunkIds);
-  // EvoMem-style revision trail: when reaffirmation rewrites the canonical
-  // text, keep the superseded text (mirrors LongTermTypedFact.history) so
-  // drift in prose facts stays inspectable.
-  const history: NonNullable<LongTermFact["history"]> = prior.history ? [...prior.history] : [];
-  if (prior.text !== candidate.text) {
-    history.push({ text: prior.text, supersededAt: candidate.lastConfirmedAt });
-    if (history.length > FACT_HISTORY_LIMIT) {
-      history.shift();
-    }
-  }
-  return {
-    id: prior.id,
-    text: candidate.text,
-    dedupKey: prior.dedupKey,
-    importance: Math.max(prior.importance, candidate.importance),
-    firstSeenAt: Math.min(prior.firstSeenAt, candidate.firstSeenAt),
-    lastConfirmedAt: Math.max(prior.lastConfirmedAt, candidate.lastConfirmedAt),
-    recallCount: merged.length,
-    sourceChunkIds: merged,
-    archived: false,
-    archivedAt: null,
-    // Preserve any cross-brain reconciliation mark — re-affirmation alone
-    // doesn't resolve a stale-vs-typed contradiction; the reconciler must
-    // run again with current data to decide.
-    supersededBy: prior.supersededBy ?? null,
-    ...(history.length > 0 ? { history } : {}),
-  };
-}
-
-function archive(fact: LongTermFact, now: number): LongTermFact {
-  return { ...fact, archived: true, archivedAt: now };
-}
-
-function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<string>): string[] {
-  const seen = new Set<string>(prior);
-  const out: string[] = [...prior];
-  for (const id of incoming) {
-    if (seen.has(id)) {
-      continue;
-    }
-    seen.add(id);
-    out.push(id);
-  }
-  return out;
-}
-
-/** Stable ordering: active facts by importance desc, then archived facts. */
-function orderFacts(facts: LongTermFact[]): LongTermFact[] {
-  const active = facts.filter((f) => !f.archived).toSorted(byImportanceDesc);
-  const archived = facts.filter((f) => f.archived).toSorted(byImportanceDesc);
-  return [...active, ...archived];
-}
-
-function byImportanceDesc(a: LongTermFact, b: LongTermFact): number {
-  if (b.importance !== a.importance) {
-    return b.importance - a.importance;
-  }
-  return a.dedupKey.localeCompare(b.dedupKey);
-}
-
-/**
- * Mirror the active long-term tier into a QMD-indexable markdown file at
- * `<workspaceDir>/memory/.l3/<YYYY-MM-DD>.md`. The path is chosen to match
- * memory-core's SHORT_TERM_PATH_RE (`memory/<...>/YYYY-MM-DD.md`) so the
- * existing memory-core indexer + dreaming pipeline picks the facts up
- * automatically, no patches needed. Each fact gets its own H2 heading so
- * QMD chunks them sensibly.
+ * FSRS (Free Spaced Repetition Scheduler) parameters for per-fact stability.
+ * Unlike the one-size-fits-all recencyScore(), FSRS models each fact's
+ * retrievability based on how often it's been recalled and how stable it is.
  *
- * Format is plain markdown — NO JSON frontmatter — so memory-core's regular
- * parsers don't fight it. The file is purely a derived artifact of
- * consolidation; user edits will be overwritten on the next pass.
+ * Inspired by:
+ * - ZenBrain: FSRS scheduling with Hebbian learning and Ebbinghaus curves
+ * - FSFM: per-fact stability × difficulty × retrievability
+ * - Microsoft "Forgetting Is the Fix": exponential decay with per-fact rates
+ *
+ * The key insight: a fact recalled 20 times (like an IP address) should have
+ * a MUCH longer half-life than a fact recalled once (a one-off conversation).
  */
-async function writeQmdMirror(params: {
-  workspaceDir: string;
-  facts: ReadonlyArray<LongTermFact>;
+
+/** FSRS parameters that control the forgetting curve shape. */
+export type FsrsParams = {
+  /** Difficulty parameter (0..1). Higher = harder to remember. Default 0.3. */
+  w0: number;
+  /** Stability growth on successful recall. Default 1.3. */
+  w1: number;
+  /**
+   * Global decay-rate multiplier on the forgetting curve. 1.0 = neutral
+   * Ebbinghaus (half-life = stability·ln2); >1 forgets faster, <1 slower.
+   * Default 1.0.
+   */
+  w2: number;
+  /** Significance multiplier — "remember this" facts decay 2.7× slower. Default 2.7. */
+  significanceBoost: number;
+};
+
+export const DEFAULT_FSRS_PARAMS: FsrsParams = {
+  w0: 0.3,
+  w1: 1.3,
+  w2: 1.0,
+  significanceBoost: 2.7,
+};
+
+/**
+ * Compute FSRS-based retrievability for a fact.
+ *
+ * R(t) = e^(-(w2 · t) / S)   (w2 = global decay-rate multiplier, default 1.0)
+ *
+ * Where S (stability) grows with recallCount:
+ *   S = baseHalfLifeDays × w1^(recallCount - 1) × (1 + difficulty)
+ *
+ * And for significant facts:
+ *   S *= significanceBoost
+ *
+ * This means:
+ * - First recall (recallCount=1): S = baseHalfLifeDays × (1 + difficulty)
+ * - Each subsequent recall multiplies S by w1 (1.3×)
+ * - "Remember this" facts get 2.7× longer stability
+ * - Result: infrastructure facts (recalled 20×) have ~190 day half-life
+ *   vs one-off facts at ~7 days
+ */
+export function fsrsRetrievability(params: {
+  ageMs: number;
+  recallCount: number;
+  halfLifeDays: number;
+  significant?: boolean;
+  fsrs?: FsrsParams;
+}): number {
+  const fsrs = params.fsrs ?? DEFAULT_FSRS_PARAMS;
+  const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
+  if (params.halfLifeDays <= 0) {
+    return 1;
+  }
+
+  // Compute per-fact stability based on recall history
+  let stability = params.halfLifeDays * fsrs.w1 ** Math.max(0, params.recallCount - 1);
+  stability *= 1 + fsrs.w0; // difficulty adjustment
+
+  // Significance boost (emotional tagging from ZenBrain)
+  if (params.significant) {
+    stability *= fsrs.significanceBoost;
+  }
+
+  // R(t) = e^(-(w2 · t) / S) — Ebbinghaus curve with per-fact stability, where
+  // w2 scales global forgetting speed (1.0 = neutral). Kept separate from
+  // stability so it tunes the curve uniformly without distorting per-fact
+  // recall growth.
+  return Math.exp(-(fsrs.w2 * ageDays) / stability);
+}
+
+export type Signals = {
+  lexical: number;
+  bm25: number;
+  importance: number;
+  recency: number;
+  l3Boost: number;
+  /** Embedding-based cosine similarity. 0 when embeddings unavailable. */
+  semantic: number;
+  /** Source chunk's session-novelty metric. 0 when the chunk predates it. */
+  informationGain: number;
+  /** Goal-relevance score from query-goal embedding alignment. 0 when unavailable. */
+  goalRelevance: number;
+  /** Source reliability derived from fact certainty (confirmed=1, instructional=0.85, tentative=0.5). */
+  reliability: number;
+  /** Semantic-entropy confidence score (0–1). Higher = more confident / lower entropy. */
+  semanticEntropy: number;
+};
+
+// Match alphabetic words, multi-char numeric runs (preserving internal . and ,
+// so "$1,234.56" and "192.168.50.128" survive as single tokens), and single
+// digits. Anything else is treated as a separator.
+const TOKEN_PATTERN = /[a-z]+|\d[\d.,]*\d|\d/g;
+
+export function tokenize(text: string): Set<string> {
+  const matches = text.toLowerCase().match(TOKEN_PATTERN) ?? [];
+  // Drop single-letter alphabetic tokens ("a", "i") as noise; keep single
+  // digits ("port 5", "v3") since they often carry signal.
+  return new Set(matches.filter((t) => t.length > 1 || /^\d$/.test(t)));
+}
+
+export function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) {
+    return 0;
+  }
+  let intersect = 0;
+  for (const t of a) {
+    if (b.has(t)) {
+      intersect += 1;
+    }
+  }
+  const union = a.size + b.size - intersect;
+  return union === 0 ? 0 : intersect / union;
+}
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+export function recencyScore(ageMs: number, halfLifeDays: number): number {
+  if (halfLifeDays <= 0) {
+    return 1;
+  }
+  const ageDays = Math.max(0, ageMs) / MS_PER_DAY;
+  return Math.exp((-Math.LN2 * ageDays) / halfLifeDays);
+}
+
+// ---------------------------------------------------------------------------
+// Cosine similarity for pre-computed embedding vectors
+// ---------------------------------------------------------------------------
+
+/**
+ * Cosine similarity between two embedding vectors.
+ * Returns 0 if either vector is empty or lengths mismatch.
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) {
+    return 0;
+  }
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/**
+ * Near-duplicate similarity for two short prose facts. Prefers embedding
+ * cosine (semantic — catches paraphrase like "balance ~$500" vs "account
+ * holds 500 dollars") when both facts carry comparable vectors; falls back to
+ * lexical jaccard otherwise.
+ *
+ * Returns the chosen `metric` alongside the score so callers apply the
+ * metric-appropriate threshold: cosine and jaccard are different scales, and a
+ * single shared threshold mis-fires on whichever metric it was not calibrated
+ * for. Shared by long-term dedup and prose-interference so the two stay in sync.
+ */
+export function nearDuplicateSimilarity(
+  a: { embedding?: number[]; tokens: Set<string> },
+  b: { embedding?: number[]; tokens: Set<string> },
+): { metric: "cosine" | "jaccard"; sim: number } {
+  if (
+    a.embedding &&
+    b.embedding &&
+    a.embedding.length > 0 &&
+    a.embedding.length === b.embedding.length
+  ) {
+    return { metric: "cosine", sim: cosineSimilarity(a.embedding, b.embedding) };
+  }
+  return { metric: "jaccard", sim: jaccard(a.tokens, b.tokens) };
+}
+
+export type CorpusStats = {
+  /** Per-term document frequency: how many facts contain each token. */
+  df: Map<string, number>;
+  /** Total number of facts in the corpus. */
+  total: number;
+  /** Average fact text length in tokens. */
+  avgLen: number;
+};
+
+export function bm25Score(
+  queryTokens: Set<string>,
+  factText: string,
+  corpusStats: CorpusStats,
+  k1 = 1.2,
+  b = 0.75,
+): number {
+  const factTokens = tokenize(factText);
+  const docLen = factTokens.size;
+  let score = 0;
+  for (const term of queryTokens) {
+    if (!factTokens.has(term)) {
+      continue;
+    }
+    const df = corpusStats.df.get(term) ?? 0;
+    const idf = Math.log(1 + (corpusStats.total - df + 0.5) / (df + 0.5));
+    // Presence-based tf=1: facts are short, so counting occurrences within
+    // a single fact adds noise. The signal comes from IDF — rare terms
+    // that match should dominate.
+    const tf = 1;
+    const norm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * docLen) / (corpusStats.avgLen || 1)));
+    score += idf * norm;
+  }
+  return score;
+}
+
+/** Build corpus-level document frequencies from a collection of fact texts.
+ * One-pass: counts how many facts contain each token and computes average
+ * fact length. */
+export function buildCorpusStats(factTexts: ReadonlyArray<string>): CorpusStats {
+  const df = new Map<string, number>();
+  let totalTokens = 0;
+  for (const text of factTexts) {
+    const tokens = tokenize(text);
+    totalTokens += tokens.size;
+    for (const token of tokens) {
+      df.set(token, (df.get(token) ?? 0) + 1);
+    }
+  }
+  return {
+    df,
+    total: factTexts.length,
+    avgLen: factTexts.length > 0 ? totalTokens / factTexts.length : 0,
+  };
+}
+
+export function scoreFact(params: {
+  queryTokens: Set<string>;
+  fact: L2Fact;
   now: number;
-}): Promise<void> {
-  const active = params.facts.filter((f) => !f.archived);
-  const datePart = formatDateString(params.now);
-  const mirrorDir = path.join(params.workspaceDir, "memory", ".l3");
-  const mirrorPath = path.join(mirrorDir, `${datePart}.md`);
-
-  if (active.length === 0) {
-    // No active facts — leave any prior mirror in place rather than churn it.
-    // It will be overwritten on the next consolidation that has facts.
-    return;
+  config: ScoringConfig;
+  l3Boost?: number;
+  /** Corpus stats for BM25 scoring. When omitted, bm25 signal is 0. */
+  corpusStats?: CorpusStats;
+  /**
+   * Number of times this fact has been recalled across L2 chunks.
+   * When > 1 and useFsrs is true, FSRS-based forgetting is used instead
+   * of simple exponential decay — giving high-recall facts longer half-lives.
+   */
+  recallCount?: number;
+  /** Whether this fact was flagged as significant by the user ("remember this"). */
+  significant?: boolean;
+  /** Source chunk's information-gain metric, when known. */
+  informationGain?: number;
+  /** Goal-relevance score, when computed externally. */
+  goalRelevance?: number;
+  /** Explicit reliability override; otherwise derived from fact.certainty. */
+  reliability?: number;
+  /** Semantic-entropy confidence score (0–1). Higher = more confident. Defaults to fact.semanticEntropy or 1.0. */
+  semanticEntropy?: number;
+  /**
+   * Grounding confidence from the CALIBER dual-confidence verifier (0–1).
+   * When present, scales the reliability signal to reflect model uncertainty
+   * about the turn from which this fact was extracted.
+   */
+  groundingConfidence?: number;
+}): Signals {
+  const factTokens = tokenize(params.fact.text);
+  const lexical = jaccard(params.queryTokens, factTokens);
+  const bm25 =
+    params.corpusStats && params.config.weightBm25 > 0
+      ? bm25Score(params.queryTokens, params.fact.text, params.corpusStats)
+      : 0;
+  const importance = params.fact.importance;
+  const ageMs = params.now - params.fact.createdAt;
+  const recency =
+    params.config.useFsrs && (params.recallCount ?? 0) > 0
+      ? fsrsRetrievability({
+          ageMs,
+          recallCount: params.recallCount ?? 1,
+          halfLifeDays: params.config.recencyHalfLifeDays,
+          significant: params.significant,
+        })
+      : recencyScore(ageMs, params.config.recencyHalfLifeDays);
+  const signals: Signals = {
+    lexical,
+    bm25,
+    importance,
+    recency,
+    l3Boost: params.l3Boost ?? 0,
+    semantic: 0,
+    informationGain: params.informationGain ?? 0,
+    goalRelevance: params.goalRelevance ?? 0,
+    reliability: params.reliability ?? certaintyToReliability(params.fact),
+    semanticEntropy: params.semanticEntropy ?? params.fact.semanticEntropy ?? 1.0,
+  };
+  if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
+    signals.reliability = signals.reliability * params.groundingConfidence;
   }
-
-  await fs.mkdir(mirrorDir, { recursive: true });
-  const body = formatQmdMirror(active);
-  const tmp = `${mirrorPath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
-  await fs.writeFile(tmp, body, "utf8");
-  await fs.rename(tmp, mirrorPath);
+  return signals;
 }
 
-function formatQmdMirror(facts: ReadonlyArray<LongTermFact>): string {
-  const lines: string[] = [
-    "# Long-term memory (memory-l3 derived)",
-    "",
-    "_Auto-generated snapshot of evergreen facts that have promoted into hierarchical-l3's long-term tier. Edits are overwritten on the next consolidation pass._",
-    "",
-  ];
-  for (const fact of facts) {
-    const firstSeen = formatDateString(fact.firstSeenAt);
-    const lastConfirmed = formatDateString(fact.lastConfirmedAt);
-    lines.push(`## ${fact.dedupKey}`);
-    lines.push("");
-    lines.push(fact.text);
-    lines.push("");
-    lines.push(
-      `_recallCount=${fact.recallCount}, importance=${fact.importance.toFixed(2)}, firstSeen=${firstSeen}, lastConfirmed=${lastConfirmed}_`,
-    );
-    lines.push("");
-  }
-  return lines.join("\n");
+export function composite(signals: Signals, config: ScoringConfig): number {
+  return (
+    signals.lexical * config.weightLexical +
+    signals.bm25 * config.weightBm25 +
+    signals.importance * config.weightImportance +
+    signals.recency * config.weightRecency +
+    signals.l3Boost * config.weightL3Boost +
+    signals.semantic * config.weightSemantic +
+    signals.informationGain * config.weightInformationGain +
+    signals.goalRelevance * config.weightGoalRelevance +
+    signals.reliability * config.weightReliability +
+    signals.semanticEntropy * config.weightSemanticEntropy
+  );
 }
 
-function formatDateString(unixMs: number): string {
-  const d = new Date(unixMs);
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-export function formatLongTermBody(facts: ReadonlyArray<LongTermFact>): string {
-  const active = facts.filter((f) => !f.archived);
-  const archived = facts.filter((f) => f.archived);
-  const lines: string[] = ["## Long-term facts", ""];
-  if (active.length === 0) {
-    lines.push("(no active long-term facts)");
-  } else {
-    for (const fact of active) {
-      const supersededMark = fact.supersededBy
-        ? ` _(superseded by typed fact \`${fact.supersededBy}\`)_`
-        : "";
-      lines.push(
-        `- [${fact.importance.toFixed(2)}] \`${fact.dedupKey}\` — ${fact.text}${supersededMark}`,
-      );
+/** Map fact certainty to a reliability score. */
+function certaintyToReliability(fact: {
+  certainty?: import("./types.js").FactCertainty;
+  certaintyProvenance?: "hedged" | "asserted" | "corroborated";
+}): number {
+  const baseReliability = (() => {
+    switch (fact.certainty) {
+      case "tentative":
+        return 0.5;
+      case "instructional":
+        return 0.85;
+      case "confirmed":
+      default:
+        return 1.0;
     }
+  })();
+
+  // Apply penalty multiplier for facts that were originally hedged
+  if (fact.certaintyProvenance === "hedged") {
+    return baseReliability * 0.7;
   }
-  if (archived.length > 0) {
-    lines.push("", "## Archived", "");
-    for (const fact of archived) {
-      const archivedDate =
-        fact.archivedAt !== null ? new Date(fact.archivedAt).toISOString().slice(0, 10) : "?";
-      lines.push(
-        `- [${fact.importance.toFixed(2)}] \`${fact.dedupKey}\` — ${fact.text} _(archived ${archivedDate})_`,
-      );
-    }
-  }
-  return lines.join("\n");
+
+  return baseReliability;
 }

@@ -61,6 +61,17 @@ export type L2Fact = {
    * Significant facts get a 2.7× slower FSRS decay rate. Absent on facts
    * extracted before PROMPT_VERSION=6. */
   significant?: boolean;
+  /**
+   * Grounding strength used by consolidation thresholds. Absent on facts
+   * extracted before PROMPT_VERSION=8; readers treat absent as "confirmed".
+   */
+  certainty?: FactCertainty;
+  /**
+   * Provenance of the certainty determination. Tracks whether the fact was
+   * originally hedged (tentative language), asserted directly, or corroborated
+   * by multiple sources. Used for scoring reliability adjustments.
+   */
+  certaintyProvenance?: "hedged" | "asserted" | "corroborated";
   /** Grounding strength used by consolidation thresholds. Absent on facts
    * extracted before PROMPT_VERSION=8; readers treat absent as "confirmed". */
   certainty?: FactCertainty;
@@ -201,6 +212,17 @@ export type LongTermFact = {
   supersededBy?: string | null;
   /** Emotional significance flag propagated from L2 extraction. */
   significant?: boolean;
+  /**
+   * Grounding strength used by consolidation thresholds. Absent on facts
+   * extracted before PROMPT_VERSION=8; readers treat absent as "confirmed".
+   */
+  certainty?: FactCertainty;
+  /**
+   * Provenance of the certainty determination. Tracks whether the fact was
+   * originally hedged (tentative language), asserted directly, or corroborated
+   * by multiple sources. Used for scoring reliability adjustments.
+   */
+  certaintyProvenance?: "hedged" | "asserted" | "corroborated";
   /**
    * Pre-computed embedding vector for semantic dedup and retrieval.
    * Computed at promotion time (or reaffirmation) via the embedding provider.
