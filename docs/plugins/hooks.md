@@ -372,6 +372,34 @@ type BeforeAgentFinalizeRetry = {
 equivalent finalize decisions, and `maxAttempts` caps how many extra passes the
 host will allow before continuing with the natural final answer.
 
+This is the seam for **rules-based verification**: run a deterministic check
+(linter, type check, tests on the files the turn touched) and, on failure, feed
+the specific failing rule back as the revision reason. Rules-based feedback that
+names what failed and why is a higher-quality, lower-latency verify signal than
+an LLM-as-judge pass. Keep the gate opt-in and bound it with `maxAttempts`, since
+every revision costs an extra model round-trip.
+
+```typescript
+// before_agent_finalize handler
+async ({ event }) => {
+  const result = await runProjectChecks(event.cwd); // your lint/test runner
+  if (result.ok) {
+    return; // continue to finalize
+  }
+  return {
+    action: "revise",
+    reason: `Verification failed before finalizing:\n${result.failureSummary}`,
+    retry: { instruction: "Fix the reported failures, then finish.", maxAttempts: 1 },
+  };
+};
+```
+
+Implement this as a plugin `before_agent_finalize` hook rather than core config:
+the seam is generic and the check command, file scope, and result parsing are
+project-specific. Caveat: the host refuses a revision once the turn has produced
+a deterministic side effect (for example a delivered message), so a verify gate
+can only correct answers whose side effects have not yet been committed.
+
 Non-bundled plugins that need raw conversation hooks (`before_model_resolve`,
 `before_agent_reply`, `llm_input`, `llm_output`, `before_agent_finalize`,
 `agent_end`, or `before_agent_run`) must set:
