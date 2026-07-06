@@ -3,6 +3,7 @@
 import { execFile } from "node:child_process";
 import { X509Certificate } from "node:crypto";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import tls from "node:tls";
 import { promisify } from "node:util";
@@ -26,6 +27,27 @@ export type GatewayTlsRuntime = {
   tlsOptions?: tls.TlsOptions;
   error?: string;
 };
+
+// Modern browsers ignore the certificate CN and require a subjectAltName; a cert
+// without one is rejected outright (ERR_CERT_COMMON_NAME_INVALID), not just warned
+// on. Advertise loopback plus the host's non-internal addresses so a freshly
+// generated cert works over wss:// for both localhost and LAN/phone access.
+function collectGatewaySubjectAltNames(): string[] {
+  const dnsNames = new Set<string>(["localhost"]);
+  const ipAddresses = new Set<string>(["127.0.0.1", "::1"]);
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.internal) {
+        continue;
+      }
+      ipAddresses.add(entry.address);
+    }
+  }
+  return [
+    ...[...dnsNames].map((name) => `DNS:${name}`),
+    ...[...ipAddresses].map((ip) => `IP:${ip}`),
+  ];
+}
 
 async function generateSelfSignedCert(params: {
   certPath: string;
@@ -61,6 +83,8 @@ async function generateSelfSignedCert(params: {
     params.certPath,
     "-subj",
     "/CN=openclaw-gateway",
+    "-addext",
+    `subjectAltName=${collectGatewaySubjectAltNames().join(",")}`,
   ]);
   await fs.chmod(params.keyPath, 0o600).catch(() => {});
   await fs.chmod(params.certPath, 0o600).catch(() => {});
