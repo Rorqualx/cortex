@@ -77,6 +77,26 @@ so local backends with prefix caches can reuse the stable workspace prefix
 across channel turns. Tool descriptions should likewise avoid embedding current
 channel names when the accepted schema already carries that runtime detail.
 
+### Tool schemas and the cache prefix
+
+Tool definitions also sit in the cached prompt prefix, so a large tool surface
+is a real cache cost: every enabled tool schema is billed as prefix tokens on
+the first turn and re-cached whenever the set changes. To measure it, enable
+prompt cache diagnostics (debug logging or `OPENCLAW_CACHE_TRACE`) and read the
+per-turn `[prompt-cache] tool schemas ~N prefix tokens across M tools` line; the
+same estimate appears in the cache trace as `toolPrefixTokenEstimate`.
+
+When that number is large, defer the surface out of the prefix with on-demand
+tool loading instead of exposing every schema up front:
+
+- `tools.codeMode` collapses tools to an `exec` / `wait` code surface backed by a
+  hidden run-scoped catalog (see [Code mode](/reference/code-mode)).
+- `tools.toolSearch` keeps the catalog behind `tool_search` / `tool_describe` /
+  `tool_call` control tools (see [Experimental features](/concepts/experimental-features)).
+
+Both are off by default and opt-in. Enabling either moves the full catalog below
+the cached prefix so only the small control surface is billed as prefix tokens.
+
 The Tooling section also includes runtime guidance for long-running work:
 
 - use cron for future follow-up (`check back later`, reminders, recurring work)

@@ -2,6 +2,7 @@
  * Tracks prompt-cache snapshot changes for observability diagnostics.
  */
 import crypto from "node:crypto";
+import { estimateStringChars, estimateTokensFromChars } from "../../utils/cjk-chars.js";
 import type { NormalizedUsage } from "../usage.js";
 
 type PromptCacheChangeCode =
@@ -153,6 +154,37 @@ export function collectPromptCacheToolNames(tools: readonly { name?: string }[])
     }
   }
   return names;
+}
+
+// Approximate prefix token weight of the tool schemas that reach the provider. Tool
+// definitions sit in the cached prompt prefix by default, so this quantifies the cache
+// tokens tools cost — i.e. the savings available if the surface were deferred behind
+// tools.toolSearch / tools.codeMode. Diagnostic only; never gate runtime behavior on it.
+export function estimatePromptCacheToolTokens(
+  tools: readonly {
+    name?: string;
+    description?: string;
+    parameters?: unknown;
+    inputSchema?: unknown;
+  }[],
+): number {
+  let chars = 0;
+  for (const tool of tools) {
+    try {
+      chars += estimateStringChars(
+        JSON.stringify({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters ?? tool.inputSchema,
+        }) ?? "",
+      );
+    } catch {
+      // Skip tools whose schema cannot be serialized (e.g. circular refs); the estimate
+      // stays a lower bound rather than throwing on the diagnostics path.
+      continue;
+    }
+  }
+  return estimateTokensFromChars(chars);
 }
 
 export function beginPromptCacheObservation(params: {
