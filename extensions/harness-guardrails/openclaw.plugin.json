@@ -1,0 +1,76 @@
+{
+  "id": "harness-guardrails",
+  "activation": {
+    "onStartup": true
+  },
+  "name": "Harness Guardrails",
+  "description": "Opt-in finalize quality gate and plan-first nudge for autonomous agent turns.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "applyTo": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "triggers": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "agents": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "qualityCheck": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": false },
+          "command": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "extraArgs": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "timeoutMs": { "type": "number", "minimum": 1000 },
+          "onlyWhenCodeChanged": { "type": "boolean", "default": true }
+        }
+      },
+      "plan": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": { "type": "string", "enum": ["off", "prompt"], "default": "off" }
+        }
+      }
+    }
+  },
+  "uiHints": {
+    "qualityCheck.enabled": {
+      "label": "Quality Gate",
+      "help": "Run the configured changed-file checks before an autonomous turn finalizes; revise on failure. Off by default."
+    },
+    "qualityCheck.command": {
+      "label": "Quality Command",
+      "help": "Command run in the workspace to check changed files. Defaults to 'pnpm check:changed'.",
+      "advanced": true
+    },
+    "applyTo.triggers": {
+      "label": "Applies To Triggers",
+      "help": "Agent run triggers the guardrails apply to. Defaults to ['cron'] so interactive turns are untouched."
+    },
+    "plan.mode": {
+      "label": "Plan Nudge",
+      "help": "When 'prompt', inject a plan-first / check-before-commit directive into in-scope turns."
+    }
+  }
+}
