@@ -110,6 +110,25 @@ describe("loadGatewayTlsRuntime", () => {
     expect(result.error).toBeUndefined();
   });
 
+  it("auto-generates a cert with a browser-required subjectAltName for loopback", async () => {
+    const dir = await createTempDir();
+    const certPath = path.join(dir, "gateway-cert.pem");
+    const keyPath = path.join(dir, "gateway-key.pem");
+
+    // autoGenerate defaults to true; missing files trigger openssl generation.
+    const result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath });
+
+    expect(result.error).toBeUndefined();
+    expect(result.enabled).toBe(true);
+    expect(result.fingerprintSha256).toBeTruthy();
+    const generated = new X509Certificate(result.tlsOptions?.cert as string);
+    const san = generated.subjectAltName ?? "";
+    // Browsers ignore CN and require SAN; loopback must always be present so the
+    // dashboard loads over wss:// without ERR_CERT_COMMON_NAME_INVALID.
+    expect(san).toContain("localhost");
+    expect(san).toContain("127.0.0.1");
+  });
+
   it("fails closed when cert/key are missing and auto generation is disabled", async () => {
     const dir = await createTempDir();
     const certPath = path.join(dir, "missing-cert.pem");
