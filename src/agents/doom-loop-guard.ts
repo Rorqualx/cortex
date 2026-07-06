@@ -20,6 +20,13 @@ const log = createSubsystemLogger("agents/doom-loop-guard");
 const DEFAULT_MAX_CONSECUTIVE_FAILURES = 5;
 const DEFAULT_FAILURE_WINDOW_MS = 300_000; // 5 minutes
 
+/** Default buffer size for semantic convergence detection. */
+const DEFAULT_CONVERGENCE_BUFFER_SIZE = 5;
+/** Default cosine similarity threshold above which responses are considered "same". */
+const DEFAULT_CONVERGENCE_SIMILARITY_THRESHOLD = 0.92;
+/** Default number of consecutive rounds above threshold before convergence fires. */
+const DEFAULT_CONVERGENCE_CONSECUTIVE_ROUNDS = 3;
+
 /**
  * Doom loop guard configuration
  */
@@ -30,6 +37,19 @@ export type DoomLoopGuardConfig = {
   failureWindowMs?: number;
   /** Failure types to count toward doom loop (default: all types) */
   countableFailures?: Array<"llm_error" | "tool_error" | "network_error" | "timeout">;
+  /**
+   * Semantic convergence detection config. When enabled, the guard tracks
+   * assistant response embeddings and fires recovery when outputs become
+   * nearly identical across consecutive turns (semantic stuck loop).
+   */
+  semanticConvergence?: {
+    /** Number of response embeddings to keep in the rolling buffer (default: 5). */
+    bufferSize?: number;
+    /** Cosine similarity threshold above which responses are considered convergent (default: 0.92). */
+    similarityThreshold?: number;
+    /** Number of consecutive turns above threshold before recovery fires (default: 3). */
+    consecutiveRounds?: number;
+  };
 };
 
 /**
@@ -53,8 +73,45 @@ export type DoomLoopVerdict =
       shouldAbort: true;
       consecutiveFailures: number;
       reason: string;
-      detector: "doom_loop";
+      detector: "doom_loop" | "semantic_convergence";
     };
+
+/**
+ * Cosine similarity between two equal-length embedding vectors.
+ * Returns 0 if either vector is empty or lengths mismatch.
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) {
+    return 0;
+  }
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/**
+ * Compute mean pairwise cosine similarity of an embedding buffer.
+ * For N embeddings, computes all N*(N-1)/2 pairs and returns the mean.
+ */
+export function meanPairwiseCosineSimilarity(buffer: number[][]): number {
+  if (buffer.length < 2) return 0;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    for (let j = i + 1; j < buffer.length; j++) {
+      sum += cosineSimilarity(buffer[i], buffer[j]);
+      count++;
+    }
+  }
+  return count === 0 ? 0 : sum / count;
+}
 
 /**
  * Internal guard state
@@ -69,6 +126,12 @@ type GuardState = {
   lastFailureType?: string;
   isArmed: boolean;
   lastSuccessAt?: number;
+  // Semantic convergence detection state
+  embeddingBuffer: number[][];
+  convergenceBufferSize: number;
+  convergenceSimilarityThreshold: number;
+  convergenceConsecutiveRounds: number;
+  convergenceConsecutiveCount: number;
 };
 
 /**
@@ -102,6 +165,14 @@ export type DoomLoopGuard = {
    * Default threshold is 0.5.
    */
   recordConfidenceSignal: (confidence: number, threshold?: number) => DoomLoopVerdict;
+  /**
+   * Record an assistant response embedding for semantic convergence detection.
+   * The guard maintains a rolling buffer and fires when mean pairwise cosine
+   * similarity exceeds the threshold for enough consecutive turns — detecting
+   * "semantic stuck" loops that produce no counted failures.
+   * Returns undefined when convergence detection is not configured.
+   */
+  recordResponseEmbedding: (embedding: number[]) => DoomLoopVerdict | undefined;
 };
 
 function asPositiveInt(value: number | undefined, fallback: number): number {
@@ -122,6 +193,7 @@ export function createDoomLoopGuard(
   config?: DoomLoopGuardConfig,
   options?: { enabled?: boolean },
 ): DoomLoopGuard {
+  const sc = config?.semanticConvergence;
   const state: GuardState = {
     enabled: options?.enabled ?? true,
     maxConsecutiveFailures: asPositiveInt(
@@ -141,6 +213,12 @@ export function createDoomLoopGuard(
     consecutiveFailures: 0,
     isArmed: false,
     lastSuccessAt: undefined,
+    embeddingBuffer: [],
+    convergenceBufferSize: sc?.bufferSize ?? DEFAULT_CONVERGENCE_BUFFER_SIZE,
+    convergenceSimilarityThreshold:
+      sc?.similarityThreshold ?? DEFAULT_CONVERGENCE_SIMILARITY_THRESHOLD,
+    convergenceConsecutiveRounds: sc?.consecutiveRounds ?? DEFAULT_CONVERGENCE_CONSECUTIVE_ROUNDS,
+    convergenceConsecutiveCount: 0,
   };
 
   const arm = (): void => {
@@ -155,6 +233,8 @@ export function createDoomLoopGuard(
     state.lastFailureAt = undefined;
     state.lastFailureType = undefined;
     state.lastSuccessAt = Date.now();
+    state.embeddingBuffer = [];
+    state.convergenceConsecutiveCount = 0;
   };
 
   const recordFailure = (errorType: string, timestamp: number): DoomLoopVerdict => {
@@ -237,6 +317,52 @@ export function createDoomLoopGuard(
     return { shouldAbort: false, consecutiveFailures: state.consecutiveFailures };
   };
 
+  const recordResponseEmbedding = (embedding: number[]): DoomLoopVerdict | undefined => {
+    // No-op when convergence detection is not configured (bufferSize 0 or no config)
+    if (!config?.semanticConvergence || state.convergenceBufferSize <= 0) {
+      return undefined;
+    }
+
+    if (!state.enabled || !state.isArmed) {
+      return undefined;
+    }
+
+    // Append to rolling buffer
+    state.embeddingBuffer.push(embedding);
+
+    // Trim to buffer size
+    while (state.embeddingBuffer.length > state.convergenceBufferSize) {
+      state.embeddingBuffer.shift();
+    }
+
+    // Need at least 2 embeddings to compute similarity
+    if (state.embeddingBuffer.length < 2) {
+      return undefined;
+    }
+
+    // Compute mean pairwise cosine similarity
+    const sim = meanPairwiseCosineSimilarity(state.embeddingBuffer);
+
+    if (sim >= state.convergenceSimilarityThreshold) {
+      state.convergenceConsecutiveCount++;
+    } else {
+      state.convergenceConsecutiveCount = 0;
+    }
+
+    if (state.convergenceConsecutiveCount >= state.convergenceConsecutiveRounds) {
+      const reason = `Semantic convergence detected: mean pairwise cosine similarity ${sim.toFixed(4)} >= ${state.convergenceSimilarityThreshold} for ${state.convergenceConsecutiveCount} consecutive rounds`;
+      log.error(reason);
+      return {
+        shouldAbort: true,
+        consecutiveFailures: state.consecutiveFailures,
+        reason,
+        detector: "semantic_convergence",
+      };
+    }
+
+    return { shouldAbort: false, consecutiveFailures: state.consecutiveFailures };
+  };
+
   return {
     arm,
     recordFailure,
@@ -245,6 +371,7 @@ export function createDoomLoopGuard(
     getFailureBoundary,
     createRevisePrompt,
     recordConfidenceSignal,
+    recordResponseEmbedding,
   };
 }
 
