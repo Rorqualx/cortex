@@ -70,6 +70,61 @@ export function categorizeFile({ forkChanged, upstreamChanged, conflicted, merge
   return "resolve";
 }
 
+// Coarse file class from path — drives risk tiering of the resolve set.
+export function fileClassOf(file) {
+  if (/\.test\.[cm]?tsx?$/.test(file) || /(^|\/)tests?\//i.test(file) || /\/Tests\//.test(file)) {
+    return "test";
+  }
+  if (file.startsWith("docs/") && file.endsWith(".md")) return "doc";
+  if (file.endsWith(".swift")) return "swift";
+  if (
+    /(^|\/)(package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml|tsconfig[^/]*\.json|\.oxlintrc\.json|taxonomy\.yaml)$/.test(
+      file,
+    )
+  ) {
+    return "config";
+  }
+  return "source";
+}
+
+// Risk of resolving a conflict in this file. Tests/docs and isolated app/tooling
+// dirs are low; config is bounded-medium; runtime source (agents/gateway/ui/pkgs)
+// is high and resolved last.
+export function riskTierOf(area, fileClass) {
+  if (fileClass === "test" || fileClass === "doc") return "low";
+  if (area === "apps/ios" || area === "scripts" || area === ".github") return "low";
+  if (fileClass === "config") return "medium";
+  if (area === "extensions") return "medium";
+  if (area === "src" || area === "ui" || area === "packages") return "high";
+  return "medium";
+}
+
+const TIER_ORDER = { low: 0, medium: 1, high: 2 };
+
+// Group annotated resolve entries into ordered, single-tier batches: all low-risk
+// warm-ups first, then medium, then high. Batches never cross a tier boundary so
+// each can be fully proved before escalating; same-area files stay together.
+export function planBatches(resolveEntries, batchSize = 30) {
+  const byTier = { low: [], medium: [], high: [] };
+  for (const e of resolveEntries) (byTier[e.riskTier] ?? byTier.medium).push(e);
+  const batches = [];
+  for (const tier of Object.keys(TIER_ORDER)) {
+    const entries = byTier[tier].sort(
+      (a, b) => a.area.localeCompare(b.area) || a.file.localeCompare(b.file),
+    );
+    for (let i = 0; i < entries.length; i += batchSize) {
+      const slice = entries.slice(i, i + batchSize);
+      batches.push({
+        n: batches.length + 1,
+        tier,
+        areas: [...new Set(slice.map((e) => e.area))],
+        files: slice.map((e) => e.file),
+      });
+    }
+  }
+  return batches;
+}
+
 // --- Main (skipped when imported) -------------------------------------------
 
 function main() {
@@ -135,6 +190,18 @@ function main() {
     if (e.category === "resolve") resolveByArea[e.area] = (resolveByArea[e.area] ?? 0) + 1;
   }
 
+  // Annotate the hard set with file class + risk tier, then plan warm-up-first batches.
+  const resolveEntries = ledger
+    .filter((e) => e.category === "resolve")
+    .map((e) => {
+      const fileClass = fileClassOf(e.file);
+      return { ...e, fileClass, riskTier: riskTierOf(e.area, fileClass) };
+    })
+    .sort((a, b) => a.area.localeCompare(b.area) || a.file.localeCompare(b.file));
+  const resolveByTier = {};
+  for (const e of resolveEntries) resolveByTier[e.riskTier] = (resolveByTier[e.riskTier] ?? 0) + 1;
+  const batches = planBatches(resolveEntries);
+
   const report = {
     base,
     head,
@@ -148,10 +215,9 @@ function main() {
     byCategory,
     conflictTypes,
     resolveByArea,
-    // The hard set that needs judgment (manual/LLM), sorted by area then path.
-    resolve: ledger
-      .filter((e) => e.category === "resolve")
-      .sort((a, b) => a.area.localeCompare(b.area) || a.file.localeCompare(b.file)),
+    resolveByTier,
+    batches: batches.map((b) => ({ n: b.n, tier: b.tier, areas: b.areas, count: b.files.length })),
+    resolve: resolveEntries,
     ledger,
   };
 
@@ -169,8 +235,17 @@ function main() {
         .map(([k, v]) => `${k}=${v}`)
         .join(", ")}`,
       "",
+      `- resolve by tier: ${Object.entries(resolveByTier)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ")}`,
+      "",
+      "## batch plan (low-risk warm-ups first)",
+      ...batches.map(
+        (b) => `- batch ${b.n} [${b.tier}] ${b.areas.join(", ")} — ${b.files.length} files`,
+      ),
+      "",
       "## resolve (needs judgment)",
-      ...report.resolve.map((e) => `- [${e.area}] ${e.file}`),
+      ...report.resolve.map((e) => `- [${e.riskTier}/${e.area}] ${e.file}`),
       "",
     ].join("\n");
     writeFileSync(resolve(repoRoot, mdPath), md);
@@ -197,6 +272,11 @@ function main() {
             .sort((a, b) => b[1] - a[1])
             .map(([k, v]) => `${k}=${v}`)
             .join(" "),
+        "resolve-set by tier: " +
+          Object.entries(resolveByTier)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(" ") +
+          `  (${batches.length} batches)`,
         "",
       ].join("\n") + "\n",
     );
