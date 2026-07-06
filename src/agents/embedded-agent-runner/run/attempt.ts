@@ -198,13 +198,8 @@ import {
   prependAgentSteeringPrompt,
   releasePendingAgentSteeringItems,
 } from "../../subagent-registry.js";
-import { ensureSystemPromptCacheBoundary } from "../../system-prompt-cache-boundary.js";
 import { buildSystemPromptParams } from "../../system-prompt-params.js";
 import { buildSystemPromptReport } from "../../system-prompt-report.js";
-import {
-  appendModelIdentitySystemPrompt,
-  buildModelIdentityPromptLine,
-} from "../../system-prompt.js";
 import { resolveAgentTimeoutMs } from "../../timeout.js";
 import {
   buildEmptyExplicitToolAllowlistError,
@@ -247,6 +242,7 @@ import {
   collectPromptCacheToolNames,
   beginPromptCacheObservation,
   completePromptCacheObservation,
+  estimatePromptCacheToolTokens,
   type PromptCacheBreak,
   type PromptCacheChange,
 } from "../prompt-cache-observability.js";
@@ -363,6 +359,7 @@ import {
 import {
   buildAfterTurnRuntimeContext,
   buildAfterTurnRuntimeContextFromUsage,
+  composeAttemptSystemPrompt,
   prependSystemPromptAddition,
   resolveAttemptFsWorkspaceOnly,
   resolveAttemptMediaTaskSystemPromptAddition,
@@ -3745,51 +3742,23 @@ export async function runEmbeddedAttempt(
               `hooks: appended context to prompt (${hookResult.appendContext.length} chars)`,
             );
           }
-          const legacySystemPrompt = normalizeOptionalString(hookResult?.systemPrompt) ?? "";
-          if (legacySystemPrompt) {
-            setActiveSessionSystemPrompt(legacySystemPrompt);
-            log.debug(`hooks: applied systemPrompt (${legacySystemPrompt.length} chars)`);
-          }
-          const prependedOrAppendedSystemPrompt = composeSystemPromptWithHookContext({
-            baseSystemPrompt: systemPromptText,
-            prependSystemContext: hookResult?.prependSystemContext,
-            appendSystemContext: hookResult?.appendSystemContext,
-          });
-          if (prependedOrAppendedSystemPrompt) {
-            const prependSystemLen = hookResult?.prependSystemContext?.trim().length ?? 0;
-            const appendSystemLen = hookResult?.appendSystemContext?.trim().length ?? 0;
-            setActiveSessionSystemPrompt(prependedOrAppendedSystemPrompt);
-            log.debug(
-              `hooks: applied prependSystemContext/appendSystemContext (${prependSystemLen}+${appendSystemLen} chars)`,
-            );
-          }
-          const mediaTaskSystemPromptAddition = resolveAttemptMediaTaskSystemPromptAddition({
+        }
+        // System-prompt composition (hook override, prepend/append context, media task
+        // hints, model identity) folds into one helper so the cache-boundary ordering that
+        // keeps the cached prefix byte-stable turn-to-turn lives in one tested place (#85203).
+        const composedSystemPrompt = composeAttemptSystemPrompt({
+          baseSystemPrompt: systemPromptText,
+          hookSystemPromptOverride: hookResult?.systemPrompt,
+          prependSystemContext: hookResult?.prependSystemContext,
+          appendSystemContext: hookResult?.appendSystemContext,
+          mediaTaskAddition: resolveAttemptMediaTaskSystemPromptAddition({
             sessionKey: params.sessionKey,
             trigger: params.trigger,
-          });
-          if (mediaTaskSystemPromptAddition) {
-            setActiveSessionSystemPrompt(
-              prependSystemPromptAddition({
-                systemPrompt: ensureSystemPromptCacheBoundary(systemPromptText),
-                systemPromptAddition: mediaTaskSystemPromptAddition,
-              }),
-            );
-          }
-        }
-        // The model identity line is appended below; for a marker-free hook systemPrompt
-        // override ensure the cache boundary first so the identity lands in the dynamic
-        // suffix, not the cached prefix — otherwise an idle turn's prefix (O + identity)
-        // diverges from an active media turn's prefix (O) and breaks prompt caching. Skip
-        // empty prompts (raw/gateway runs) and turns with no identity line, which need none.
-        const modelAwareSystemPrompt = appendModelIdentitySystemPrompt({
-          systemPrompt:
-            buildModelIdentityPromptLine(runtimeInfo.model) && systemPromptText.trim().length > 0
-              ? ensureSystemPromptCacheBoundary(systemPromptText)
-              : systemPromptText,
+          }),
           model: runtimeInfo.model,
         });
-        if (modelAwareSystemPrompt !== systemPromptText) {
-          setActiveSessionSystemPrompt(modelAwareSystemPrompt);
+        if (composedSystemPrompt !== systemPromptText) {
+          setActiveSessionSystemPrompt(composedSystemPrompt);
         }
 
         if (cacheObservabilityEnabled) {
@@ -3807,10 +3776,18 @@ export async function runEmbeddedAttempt(
             toolNames: promptCacheToolNames,
           });
           promptCacheChangesForTurn = cacheObservation.changes;
+          // Measure-first: quantify how many cached-prefix tokens the tool schemas cost.
+          // When tools.toolSearch / tools.codeMode are off (default) the whole surface sits
+          // in the prefix, so this doubles as the savings available if it were deferred.
+          const toolPrefixTokenEstimate = estimatePromptCacheToolTokens(effectiveTools);
+          log.debug(
+            `[prompt-cache] tool schemas ~${toolPrefixTokenEstimate} prefix tokens across ${effectiveTools.length} tools (deferrable via tools.toolSearch/codeMode)`,
+          );
           cacheTrace?.recordStage("cache:state", {
             options: {
               snapshot: cacheObservation.snapshot,
               previousCacheRead: cacheObservation.previousCacheRead ?? undefined,
+              toolPrefixTokenEstimate,
               changes:
                 cacheObservation.changes?.map((change) => ({
                   code: change.code,

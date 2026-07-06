@@ -4,6 +4,7 @@ import {
   beginPromptCacheObservation,
   collectPromptCacheToolNames,
   completePromptCacheObservation,
+  estimatePromptCacheToolTokens,
   resetPromptCacheObservabilityForTest,
 } from "./prompt-cache-observability.js";
 
@@ -16,6 +17,45 @@ describe("prompt cache observability", () => {
     expect(
       collectPromptCacheToolNames([{ name: " read " }, { name: "" }, {}, { name: "write" }]),
     ).toEqual(["read", "write"]);
+  });
+
+  it("estimates tool-schema prefix tokens and scales with schema size", () => {
+    const empty = estimatePromptCacheToolTokens([]);
+    expect(empty).toBe(0);
+
+    const small = estimatePromptCacheToolTokens([{ name: "read", description: "Read a file." }]);
+    expect(small).toBeGreaterThan(0);
+
+    // A tool carrying a large parameter schema weighs more than a bare one.
+    const large = estimatePromptCacheToolTokens([
+      {
+        name: "read",
+        description: "Read a file.",
+        parameters: { path: "string".repeat(200) },
+      },
+    ]);
+    expect(large).toBeGreaterThan(small);
+
+    // More tools weigh more than fewer.
+    const many = estimatePromptCacheToolTokens([
+      { name: "read", description: "Read a file." },
+      { name: "write", description: "Write a file." },
+    ]);
+    expect(many).toBeGreaterThan(small);
+  });
+
+  it("uses inputSchema when parameters is absent and skips unserializable tools", () => {
+    const viaInputSchema = estimatePromptCacheToolTokens([
+      { name: "read", inputSchema: { path: "string" } },
+    ]);
+    expect(viaInputSchema).toBeGreaterThan(0);
+
+    // A circular schema must not throw on the diagnostics path; it contributes 0.
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(
+      estimatePromptCacheToolTokens([{ name: "loop", parameters: circular }]),
+    ).toBeGreaterThanOrEqual(0);
   });
 
   it("collects prompt-cache tool names without aborting on unreadable descriptors", () => {

@@ -1,6 +1,7 @@
 /**
  * Builds and repairs prompt inputs for embedded-agent attempts.
  */
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type {
   ContextEnginePromptCacheInfo,
@@ -23,13 +24,21 @@ import { resolveHeartbeatPromptForSystemPrompt } from "../../heartbeat-system-pr
 import { wrapPluginSystemContextSection } from "../../hook-system-context-boundary.js";
 import { buildActiveImageGenerationTaskPromptContextForSession } from "../../image-generation-task-status.js";
 import { buildActiveMusicGenerationTaskPromptContextForSession } from "../../music-generation-task-status.js";
-import { prependSystemPromptAdditionAfterCacheBoundary } from "../../system-prompt-cache-boundary.js";
+import {
+  ensureSystemPromptCacheBoundary,
+  prependSystemPromptAdditionAfterCacheBoundary,
+} from "../../system-prompt-cache-boundary.js";
+import {
+  appendModelIdentitySystemPrompt,
+  buildModelIdentityPromptLine,
+} from "../../system-prompt.js";
 import { resolveEffectiveToolFsWorkspaceOnly } from "../../tool-fs-policy.js";
 import { derivePromptTokens, type NormalizedUsage } from "../../usage.js";
 import { buildActiveVideoGenerationTaskPromptContextForSession } from "../../video-generation-task-status.js";
 import { buildEmbeddedCompactionRuntimeContext } from "../compaction-runtime-context.js";
 import { resolveContextEngineCapabilities } from "../context-engine-capabilities.js";
 import { log } from "../logger.js";
+import { composeSystemPromptWithHookContext } from "./attempt.thread-helpers.js";
 import { shouldInjectHeartbeatPromptForTrigger } from "./trigger-policy.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
@@ -542,6 +551,53 @@ export function resolveAttemptMediaTaskSystemPromptAddition(params: {
     buildActiveVideoGenerationTaskPromptContextForSession(params.sessionKey),
     buildActiveMusicGenerationTaskPromptContextForSession(params.sessionKey),
   ]);
+}
+
+// Folds the per-turn system prompt (hook override, prepend/append context, media hints,
+// model identity) in one place. The ensureSystemPromptCacheBoundary wraps are load-bearing:
+// every dynamic addition must land BELOW the boundary so an idle turn's cached prefix stays
+// byte-identical to a media/active turn's, else the prefix shifts and forfeits the provider
+// cache-read discount (#85203). Covered by attempt.system-prompt.cache-stability.test.ts.
+export function composeAttemptSystemPrompt(params: {
+  baseSystemPrompt: string;
+  hookSystemPromptOverride?: string;
+  prependSystemContext?: string;
+  appendSystemContext?: string;
+  mediaTaskAddition?: string;
+  model?: string;
+}): string {
+  let systemPrompt = params.baseSystemPrompt;
+
+  const legacyOverride = normalizeOptionalString(params.hookSystemPromptOverride) ?? "";
+  if (legacyOverride) {
+    systemPrompt = legacyOverride;
+  }
+
+  const composed = composeSystemPromptWithHookContext({
+    baseSystemPrompt: systemPrompt,
+    prependSystemContext: params.prependSystemContext,
+    appendSystemContext: params.appendSystemContext,
+  });
+  if (composed) {
+    systemPrompt = composed;
+  }
+
+  if (params.mediaTaskAddition) {
+    systemPrompt = prependSystemPromptAddition({
+      systemPrompt: ensureSystemPromptCacheBoundary(systemPrompt),
+      systemPromptAddition: params.mediaTaskAddition,
+    });
+  }
+
+  // Route the identity line below the boundary too: wrap only when an identity line exists
+  // and the prompt is non-empty (raw/gateway runs have an empty prompt and need no boundary).
+  return appendModelIdentitySystemPrompt({
+    systemPrompt:
+      buildModelIdentityPromptLine(params.model) && systemPrompt.trim().length > 0
+        ? ensureSystemPromptCacheBoundary(systemPrompt)
+        : systemPrompt,
+    model: params.model,
+  });
 }
 
 type AfterTurnRuntimeContextAttempt = Pick<
