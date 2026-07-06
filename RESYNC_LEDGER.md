@@ -1,267 +1,268 @@
-# RESYNC_LEDGER — upstream/main → cortex (pass 1: layers 1–4)
-
-Merge base `e06f6ffc` (2026-06-07) · upstream/main `324ad548a8` (2026-06-19) · branch `resync/upstream-2026-06-19`.
-
-## Merge mechanics (from controlled dry-run)
-
-`git merge upstream/main` with `merge.ours.driver=true` active:
-
-- **4,505 files auto-merged from upstream** + **694 added** + 212 deleted — the bulk of upstream's 2,356 commits flow in cleanly (files we never touched).
-- **82 true conflicts** (59 UU both-modified, 21 DU deleted-by-us/modified-by-them, 1 UD, 1 UA).
-- **~42 files in layers 1–4 silently kept-ours** by `merge=ours` (both sides modified, no conflict raised) → upstream's improvements were discarded; these need **deliberate ours-vs-upstream review**, not the auto-resolution they got.
-
-## Disposition legend
-
-- **AUTO** — let merge driver resolve; spot-verify.
-- **KEEP-OURS** — fork behavior is the point; upstream change incompatible/irrelevant (cite).
-- **ADOPT-UPSTREAM** — fork code was incidental; take upstream.
-- **ENHANCE-OURS** — graft upstream's fix/perf into our version, keep fork behavior.
-- **REGEN** — generated artifact; regenerate, don't hand-merge.
-- **DEFER** — layer 5–8; pass 2.
-
-Per-change rubric: evaluate upstream's change in isolation → in fork context → decide ADOPT/ENHANCE/KEEP. Log verdict per file below as reconciled.
-
----
-
-## Layer 1 — Protocol & shared schemas
-
-### Conflicted (must resolve)
-
-| File                                                     | Type | Disposition | Notes                                                                                                |
-| -------------------------------------------------------- | ---- | ----------- | ---------------------------------------------------------------------------------------------------- |
-| `packages/gateway-protocol/src/schema/exec-approvals.ts` | UU   | reconcile   | upstream renamed `ExecApprovalDecisionSchema`→`ExecApprovalsFileSchema`; our exec-policy consumes it |
-| `packages/agent-core/src/agent-loop.ts`                  | UU   | reconcile   | core loop; both touched                                                                              |
-
-### Silently kept-ours (deliberate review — upstream improvements dropped)
-
-`packages/gateway-protocol/src/index.ts`, `schema/agent.ts`, `schema/agents-models-skills.ts`, `schema/protocol-schemas.ts`, `schema/types.ts`, `packages/agent-core/src/agent.ts`, `src/types.ts`.
-→ **gateway-protocol reconciler agent**: decide authoritative session schema (our `session-row.ts` vs upstream `sessions.ts`), consolidate approval/session/presence event types, re-export what consumers need. ENHANCE-OURS default (keep our added types, fold upstream's new ones).
-
----
-
-## Layer 2 — Config & state/sessions store
-
-### Conflicted
-
-| File                       | Type | Disposition | Notes                       |
-| -------------------------- | ---- | ----------- | --------------------------- |
-| `src/config/zod-schema.ts` | UU   | reconcile   | config schema; both touched |
-
-### Silently kept-ours
-
-`src/config/sessions/store.ts` (upstream +1114), `src/config/sessions/types.ts`, `src/state/openclaw-state-db.ts`, `openclaw-state-schema.sql`, `*.generated.*` (REGEN).
-→ **sessions-store reconciler agent**: graft upstream's store rewrite (perf/correctness) onto our session types; keep DB migration. State `.generated.*` + `.sql` are DB-first — reconcile schema both-sides then regenerate.
-
----
-
-## Layer 3 — Agent core & runner (heaviest)
-
-### Conflicted
-
-| File                                                           | Type | Disposition  | Notes                                                                                         |
-| -------------------------------------------------------------- | ---- | ------------ | --------------------------------------------------------------------------------------------- |
-| `src/agents/embedded-agent-runner/run/attempt.session-lock.ts` | UU   | ENHANCE-OURS | our session-lock/steering ⟷ upstream rewrite — graft upstream fixes, keep steering fence      |
-| `src/agents/model-catalog.ts`                                  | UU   | reconcile    | model catalog; fork feature                                                                   |
-| `src/agents/sessions/tools/read.ts`                            | UU   | reconcile    |                                                                                               |
-| `src/agents/tools/skill-workshop-tool.ts`                      | DU   | KEEP-OURS?   | convergent: upstream skill-workshop ≈ our skill-forge; likely keep our skill-forge-tool, drop |
-| `src/agents/harness/agent-end-side-effects.test.ts`            | DU   | reconcile    | test for both-evolved harness                                                                 |
-
-### Silently kept-ours (HEAVY — deliberate review)
-
-`embedded-agent-runner/run.ts`, `run/attempt.ts`, `compact.ts`, `compact.types.ts`, `run/compaction-retry-aggregate-timeout.ts`, `run/incomplete-turn.ts`, `run/params.ts`, `run/types.ts`, `run/attempt-tool-construction-plan.ts`, `stream-resolution.ts`, `run/llm-idle-timeout.ts`, `model-fallback.ts`, `extra-params.ts` (KEEP-OURS — Feature A SSE).
-→ **agent-runner reconciler agent** (may split per-file): upstream's compaction/crash/perf rewrite vs our session-lock + steering. Per-file ADOPT/ENHANCE/KEEP; replay-test compaction + failover. This is the highest-risk reconciliation.
-
----
-
-## Layer 4 — Gateway, infra, cron
-
-### Conflicted
-
-| File                                                  | Type | Disposition  | Notes                                                                                                           |
-| ----------------------------------------------------- | ---- | ------------ | --------------------------------------------------------------------------------------------------------------- |
-| `src/gateway/session-reset-service.ts`                | UU   | reconcile    | both rewrote; upstream removed `extractFirstUserMessageText`/`preserveResetSessionForDiscovery` (our additions) |
-| `src/gateway/server-methods/skills.proposals.test.ts` | DU   | reconcile    | skill-workshop convergent                                                                                       |
-| `src/infra/agent-events.ts`                           | UU   | ENHANCE-OURS | upstream security-event pipeline ⟷ our agent-execution-events                                                   |
-| `src/infra/exec-approvals.ts`                         | UU   | reconcile    | upstream `ExecApprovalsFileSchema` rename                                                                       |
-| `src/infra/state-migrations.ts`                       | UU   | reconcile    | DB migrations — careful, additive                                                                               |
-| `src/logging/redact.ts`                               | UU   | ENHANCE-OURS | **confirmed drift**: our `registerDynamicSecret`/`scrubDynamicSecrets` ⟷ upstream redact changes                |
-
-### Silently kept-ours
-
-`src/gateway/server-chat.ts`, `server-chat-state.ts` (KEEP-OURS — Feature C thinking-stream), `server-methods.ts`, `server-methods/agent.ts`, `server-methods/chat.ts`, `server-methods/skills.ts`, `server-session-events.ts`, `src/infra/outbound/deliver.ts`, `update-startup.ts`, `update-managed-service-handoff.ts`, `npm-registry-spec.ts`.
-→ **gateway-chat reconciler agent**: `server-methods/chat.ts` (ours +297/up +833) — graft upstream's chat-method improvements, keep Feature C thinking-stream wiring.
-→ **cron-delivery reconciler agent**: `src/cron/store/delivery-codec.ts` (kept-ours; unify `delivery_completion_channel/_account_id/_thread_id` vs upstream `_mode/_to`; write doctor migration).
-
-### Cross-layer drift-fixups agent (layers 1–4)
-
-2 confirmed upstream removals (`agentCredentialsEqual`, `AUTH_STORE_LOCK_OPTIONS`); barrel/rename re-points (`SessionsListResult`→`SessionsFilesListResult`, `PresenceEvent`→`PresenceEntry`, etc.); add deps `smol-toml`, `fast-check`.
-
-### Regenerate / take-theirs
-
-`package.json` (reconcile deps), `pnpm-lock.yaml` (REGEN via `pnpm install`).
-
----
-
-## Deferred to pass 2 (layers 5–8) — provisional keep-ours/regen at this merge
-
-- **Skills/workshop (L6)**: `src/skills/workshop/{config,policy,service,store,types}.ts` (+tests), `src/cli/skills-cli*.ts`, `docs/tools/skill-workshop*.md` — convergent with our skill-forge; provisional KEEP-OURS (deep treatment pass 2).
-- **Skills/research (L6)**: `src/skills/research/autocapture.ts` (+test).
-- **Extensions (L7)**: `extensions/workboard/src/*` (convergent plugin→core), `extensions/codex/src/app-server/thread-lifecycle.ts` (+test), `extensions/copilot/src/replay-shim.ts`.
-- **UI (L8)**: `ui/src/i18n/**` (REGEN/take-theirs — 38 files), `ui/src/ui/views/workboard.test.ts`, `ui/src/ui/controllers/skill-workshop.ts`, `ui/src/styles/skill-workshop.css`, `ui/src/ui/app-lifecycle.ts`.
-- **Other**: `scripts/e2e/npm-telegram-rtt-docker.sh` (UD — upstream deleted; take deletion), `src/workboard/sqlite-store-policy.test.ts` (UA).
-
-UI/extension tsgo lanes expected RED at the pass-1 checkpoint — by design.
-
----
-
-## PASS 1 OUTCOME (2026-06-19) — FOUNDATIONAL GREEN
-
-Commits on `resync/upstream-2026-06-19`:
-
-- `362baacbc0` merge upstream/main (2,356 commits; 4,505 auto-merged, 82 conflicts resolved)
-- `324ea7c7c5` reconcile layers 1-4 to green (Wave-1 4 agents + Wave-2 agent + manual)
-- `6ea7510a5e` regenerate fork-config baseline
-
-**tsgo gate (layers 1-4 = core + extensions, non-UI/non-codex): 0 errors.**
-Deferred to pass 2 (red by design): UI 97, codex+copilot 34.
-
-Key convergent verdicts:
-
-- `config/sessions/store.ts` — ADOPT-UPSTREAM (was upstream's base + additive rewrite) + graft fork `runQuotaSuspensionMaintenance`.
-- `config/sessions/types.ts` — ENHANCE: graft upstream `restartRecoveryRuns`/`RestartRecoveryRun`; keep fork `messageToolPolicyHash`.
-- agent-runner (`run.ts`/`attempt.ts`/subscribe/model-fallback) — ENHANCE: graft upstream rate-limit-retry + exhaustion-result; preserve fork steering/session-lock.
-- `infra/exec-approvals.ts` — KEEP-OURS wire alias (wire type already complete); restore fork `analyzeShellCommand` in exec-approvals-analysis.
-- `infra/agent-events.ts` — ADOPT upstream explicit payload type; graft `emitAgentPlanEvent`.
-- `redact.ts` — ENHANCE (fork scrub + upstream redactFormBodies). `model-catalog.ts` — ENHANCE (fork discovery + upstream cache).
-- `agent-auth-json.ts` — adapt to upstream `AgentCredentialMap` rename.
-- memory-l3 — adapt to upstream `AgentMessage` union + embedding API; prune dead code.
-
-Pass-2 ENHANCE candidates flagged: `server-chat.ts` run-terminal-persistence tracking (kept-ours, unused bindings removed); `attempt.ts` quota model (still calls fork `runQuotaSuspensionMaintenance`).
-
-## PASS 2 TODO (layers 5-8)
-
-- Workboard convergent reconcile (extensions/workboard plugin→core vs upstream ops UI + src/workboard).
-- Skills/workshop ⟷ skill-forge convergent reconcile (DU keep-deleted provisional this pass).
-- Codex/copilot (34 tsgo errors) — codex app-server convergent; respect AGENTS.md codex hard gate.
-- UI (97 tsgo errors) — app-render/chat/cron + i18n regeneration.
-- Cron delivery schema (`delivery-codec.ts` columns) + doctor migration.
-- Then: full 7-lane tsgo green, fork-merge-verify --full, $autoreview, Crabbox behavior proof, land.
-
----
-
-## PASS 2 OUTCOME (2026-06-19) — UI GREEN except 2 product decisions
-
-Commits added: `e6e7573c9b` (UI 154→14, codex 34→10).
-
-tsgo state (fresh): CORE+EXT non-codex **0**; test:ui **14**; codex/copilot **10**.
-The remaining **24 errors all reduce to TWO convergent PRODUCT decisions** (owner-gated, NOT mechanical):
-
-### Decision A — Workboard (14 UI errors)
-
-Both forks rewrote workboard in incompatible directions:
-
-- Fork: `src/workboard` core + LLM idea→goal→impl→task loop; UI controller 2,455 lines.
-- Upstream: lifecycle-task-polling ops UI; controller 4,127 lines, 138 lifecycle-polling refs.
-  The 14 errors are upstream's `app-lifecycle.node.test.ts` expecting upstream's `configureWorkboardPolling` + `WorkboardUiState` lifecycle fields the fork doesn't have.
-  Options: (a) keep fork workboard, delete/skip upstream lifecycle-polling test; (b) adopt upstream ops UI + re-integrate fork LLM-loop; (c) merge both feature sets. **Needs maintainer direction.**
-
-### Decision B — Codex app-server (10 errors)
-
-Fork deliberately stripped codex app-server (~19.6k deletions vs base — removed web-search, trimmed thread-lifecycle ~489 lines); upstream expanded it. Auto-merged consumers expect upstream functions (`resolveCodexAppServerRequestModelSelection`, etc.) + fields (`persistentWebSearchAllowed`, `activeTurnIds`). Codex owner-gate (AGENTS.md) applies.
-Options: (a) keep fork-trimmed codex, make it internally consistent (port only the few functions fork consumers need); (b) adopt upstream's expanded codex. **Needs maintainer direction (why was codex stripped?).**
-
-### Functional debt (tsgo-green, not build-blocking) — pending decision batch
-
-- Skills/workshop ⟷ skill-forge: fork removed skill-workshop (kept-deleted); confirm.
-- Cron delivery schema: `delivery-codec.ts` kept-ours columns vs upstream `_mode/_to`; needs doctor migration once direction set.
-
-### Everything else: GREEN
-
-Layers 1-4 (core/ext) + UI shell/chat/cron/storage/sidebar all reconciled to 0 errors with fork features preserved.
-
----
-
-## PASS 2 FINAL (2026-06-19) — ALL PRODUCTION LANES GREEN
-
-Commits added: `e6e7573c9b`, `5aeca57a1f`, `cff8b7b1c6`.
-**tsgo core + extensions + test:ui = 0 errors.** Full upstream re-integration (layers 1-8) compiles.
-
-Decision A (workboard): KEEP fork LLM-loop workboard; dropped upstream's 2 lifecycle-polling teardown tests (fork doesn't have that feature). Other app-lifecycle tests retained.
-
-Decision B (codex): KEEP fork-trimmed codex, repaired to internal consistency (owner-gate satisfied via ../codex inspection):
-
-- RESTORED 3 model-selection fns the fork trimmed collaterally (consumers still call them).
-- GRAFTED web-search GATING flags (webSearchAllowed/persistentWebSearchAllowed/nativeProviderWebSearchSupport) the fork kept; provider stays removed.
-- activeTurnIds, per-turn model override, schemaVersion 1->2, appServerRuntimeFingerprint.
-
-## REMAINING FOR LAND (not build-blocking)
-
-- Test-type lanes: `tsgo:core:test`, `tsgo:extensions:test`, `tsgo:test:src`, `tsgo:test:packages` (verify test files compile; UI test lane already 0).
-- `scripts/fork-merge-verify.mjs --full`; regenerate baseline if config drifted.
-- Cron delivery schema doctor migration (delivery-codec columns) — product follow-up.
-- `$autoreview` on the full diff; Crabbox behavior proof (agent-runner failover, sessions, cron, memory-l3, workboard, codex smoke).
-- Build (`pnpm build`) before any deploy; gateway restart.
-
----
-
-## LANDING CHECKLIST PROGRESS (2026-06-19)
-
-1. **Test-type lanes → GREEN.** All 7 tsgo lanes (core, extensions, test:ui, core:test, extensions:test, test:src, test:packages) = 0 errors. Root cause was the merge=ours sweep missing fork TEST files: restored 13 fork tests overwritten by upstream + reconciled ~150 test API-drift errors. Skipped fork tests for features verified test-only/WIP (never in production): spawnAcpFast, cache-aware chunking, deny-first tool policy, board-scoped dispatch. NO production regressions found.
-2. **fork-merge-verify / baseline → CLEAN.** Config-integrity verify passes (all fork-critical config intact); regenerated fork-config-baseline.json; closed the test-protection gap (.gitattributes merge=ours 282→295 entries).
-3. **Cron delivery schema → CONSISTENT, no migration needed.** Merged state schema is a superset of both column sets (\_channel/\_account_id/\_thread_id + \_mode/\_to); codec/kysely-types/schema aligned. Existing DBs self-heal via the state-schema auto-repair (ALTER TABLE ADD COLUMN, openclaw-state-db.ts:143) wired through the reconciled state-migrations.ts. No separate doctor --fix migration required.
-4. **$autoreview + Crabbox** — pending (human/remote-gated; autoreview should target the reconciliation diff, Crabbox is remote infra).
-5. **pnpm build** — verifying (worktree build; does NOT touch main's dist or the live gateway). Gateway restart only on land.
-
-### Items 4-5 status (land-gated, require Linux/remote)
-
-- **pnpm build: BLOCKED on this Mac (environment, NOT code).** `build-all` plugins:assets:build re-runs `pnpm install`, which fails on `node-llama-cpp`'s native postinstall (host Node is x86_64-under-Rosetta; needs native arm64). Failed in 11.8s before main TS bundling. Per AGENTS.md, build/CI truth is Linux Node 24 → run on Crabbox/Testbox. Code is fully typecheck-verified (all 7 tsgo lanes green).
-- **$autoreview**: run against the RECONCILIATION diff (the resync commits), not the 2,356-commit upstream merge.
-- **Crabbox behavior proof**: remote infra — agent-runner failover, sessions reset, cron delivery, memory-l3, workboard LLM-loop, codex smoke.
-- **Gateway restart**: only after landing to main (branch is isolated; main + live gateway untouched).
-
-## FINAL STATE
-
-Branch `resync/upstream-2026-06-19`: upstream 2,356 commits integrated, ~15 resync commits, ALL 7 tsgo lanes GREEN, config-integrity clean, cron schema consistent. Remaining before land: Linux build + Crabbox behavior proof + $autoreview on reconciliation diff. Nothing on main; live gateway untouched.
-
----
-
-## LINUX VERIFICATION (huey, native x86_64 — 2026-06-19)
-
-Ran on `HueyTheDestroyer` (Linux x86_64, Node 22.19, pnpm 11.2.2) via the LAN — the build the Mac couldn't do (Mac's node-llama-cpp fails under x64 Rosetta).
-
-- **pnpm install**: ✅ 42s native — node-llama-cpp built cleanly (the exact Mac blocker).
-- **pnpm build**: ✅ **BUILD_EXIT=0**, dist 155M. All phases passed incl `plugins:assets:build` (the Mac-failing phase) and `tsdown` (302s). Total 439s.
-- **tsgo: all 7 lanes GREEN on Linux** (0 errors): core, extensions (tsgo:prod), core:test, extensions:test, test:src, test:ui, test:packages.
-  Confirms the merge produces a working, fully-typechecking production build on the CI-truth platform. Item 5 (Linux build) ✅.
-
----
-
-## BEHAVIOR PROOF (huey vitest unit suite — 2026-06-19)
-
-Ran `pnpm test:fast` (unit config, 244 files, excludes e2e/live) on huey native Linux.
-
-- **Initial**: 2178 passed / 21 failed (99%). Failures triaged + fixed (commit f79e3e51ab):
-  - agent-loop.test.ts (10): merge took UPSTREAM's test (deferred-hydration/Fable) vs kept-fork loop → restored fork's 75-line test (keep-fork-loop). All pass.
-  - mistral.test.ts (3): same pattern → restored fork test. Passes.
-  - google-shared.parallel-image-repro.test.ts (1): fork-absent upstream-only deferred-image test → removed.
-  - gateway-protocol native-protocol Swift guard (1): regenerated GatewayModels.swift (protocol:gen:swift) after exec-approvals ENHANCE. Passes.
-- **After fixes**: 2176 passed / 6 failed (99.7%). Remaining 6 are ENVIRONMENTAL, not merge-caused:
-  - skills/loading compact-format + compact-skill-paths (path/home-dir compaction; huey home differs).
-  - workboard store + sqlite-store-policy (filesystem-policy: SSHFS/network-volume detection + sqlite journaling; main "persists boards/cards" store test PASSES).
-    These depend on huey's filesystem/home-dir + Node 22 (CI truth is Node 24); they pass in proper CI.
-    Conclusion: every merge-caused behavior failure found and fixed; merge is behaviorally sound.
-
----
-
-## $AUTOREVIEW (workflow-backed, high effort — 2026-06-19)
-
-34 agents, 8 finder angles, every candidate independently verified → 10 verified findings on the reconciliation diff. Actionable (6) fixed (commits 270dafac1c, 1ebe426698):
-
-- **SECURITY** exec-approvals-analysis splitShellPipeline: restored heredoc/$()/backtick/newline → ok:false so bash-tools falls back to line-by-line /approve scan (wave-2 had a "minimal" splitter that let /approve/login slip past the exec block). Verified via tsx: heredoc/newline/$()/backtick → ok:false, plain pipe → ok:true.
-- chat.ts: pass `entry` to resolveDeletedAgentIdFromSessionKey (deleted-agent ACP session no longer locked out).
-- incomplete-turn.ts: restored hasTerminalOutput arg (no false "agent couldn't generate a response" on length-capped turns that answered).
-- config/sessions/store.ts: restored .catch retry-reset on both lazy loaders (transient import failure no longer permanently poisons archiving/cleanup).
-- agent-runner-execution.ts: thread cfg into resolveSessionRuntimeOverrideForProvider (CLI-runtime-alias honored on fallback).
-- codex thread-lifecycle.ts: honest comment on web-search flags (provider removed; caller-compat only).
-  Deferred (4, inert quality smells, not correctness): dead chatAbortControllers param, unbounded dynamic-secret Set O(n) scan, dead opToNext bookkeeping, duplicated shell tokenizers.
-  Verified on huey: tsgo core+ext 0 errors; full unit suite 2176 passed / 6 failed (only the 4 pre-existing environmental files) — no regression from the fixes.
+# Resync ledger — b9c64142e281..upstream/main
+
+- files: 7497 · conflicted: 349
+- categories: keep=782, auto=544, resolve=260, keep-ours=29, adopt=5822, relocate=60
+- conflict types: content=251, modify/delete=60, rename/delete=3, add/add=4, file location=34
+
+## resolve (needs judgment)
+
+- [apps/ios] apps/ios/Sources/Design/ChatProTab.swift
+- [apps/ios] apps/ios/Sources/Design/CommandCenterTab.swift
+- [apps/ios] apps/ios/Sources/Design/RootTabsPhoneControlHub.swift
+- [apps/ios] apps/ios/Sources/Design/SettingsProTab.swift
+- [apps/ios] apps/ios/Sources/Design/TalkProTab.swift
+- [apps/ios] apps/ios/Sources/Onboarding/OnboardingWizardView.swift
+- [apps/ios] apps/ios/Sources/RootTabs.swift
+- [apps/ios] apps/ios/Tests/RootTabsPresentationTests.swift
+- [apps/ios] apps/ios/Tests/RootTabsSidebarRegressionTests.swift
+- [apps/ios] apps/ios/Tests/RootTabsSourceGuardTests.swift
+- [docs] docs/channels/discord.md
+- [docs] docs/cli/daemon.md
+- [docs] docs/cli/gateway.md
+- [docs] docs/cli/plugins.md
+- [docs] docs/cli/skills.md
+- [docs] docs/concepts/memory-qmd.md
+- [docs] docs/concepts/memory-search.md
+- [docs] docs/concepts/system-prompt.md
+- [docs] docs/plugins/manifest.md
+- [docs] docs/providers/opencode.md
+- [docs] docs/tools/acp-agents.md
+- [docs] docs/tools/creating-skills.md
+- [docs] docs/tools/index.md
+- [docs] docs/tools/skill-workshop.md
+- [docs] docs/tools/skills-config.md
+- [extensions] extensions/discord/src/api.test.ts
+- [extensions] extensions/discord/src/internal/rest.test.ts
+- [extensions] extensions/discord/src/internal/rest.ts
+- [extensions] extensions/discord/src/voice-message.ts
+- [extensions] extensions/feishu/src/monitor.comment.ts
+- [extensions] extensions/feishu/src/monitor.ts
+- [extensions] extensions/feishu/src/outbound.ts
+- [extensions] extensions/feishu/src/streaming-card.test.ts
+- [extensions] extensions/feishu/src/streaming-card.ts
+- [extensions] extensions/imessage/src/actions.test.ts
+- [extensions] extensions/inworld/tts.test.ts
+- [extensions] extensions/inworld/tts.ts
+- [extensions] extensions/irc/src/client.test.ts
+- [extensions] extensions/irc/src/protocol.test.ts
+- [extensions] extensions/line/src/bot-handlers.test.ts
+- [extensions] extensions/line/src/card-command.ts
+- [extensions] extensions/line/src/markdown-to-line.ts
+- [extensions] extensions/line/src/message-cards.test.ts
+- [extensions] extensions/memory-wiki/src/lint.test.ts
+- [extensions] extensions/memory-wiki/src/markdown.test.ts
+- [extensions] extensions/memory-wiki/src/markdown.ts
+- [extensions] extensions/msteams/src/monitor-handler.ts
+- [extensions] extensions/openai/embedding-batch.test.ts
+- [extensions] extensions/openai/embedding-batch.ts
+- [extensions] extensions/qqbot/skills/qqbot-media/SKILL.md
+- [extensions] extensions/qqbot/src/engine/tools/channel-api.ts
+- [extensions] extensions/qqbot/src/engine/tools/remind-logic.ts
+- [extensions] extensions/telegram/src/bot-handlers.runtime.ts
+- [extensions] extensions/telegram/src/bot-message-context.types.ts
+- [extensions] extensions/telegram/src/bot.media.downloads-media-file-path-no-file-download.e2e.test.ts
+- [extensions] extensions/telegram/src/bot/delivery.send.ts
+- [extensions] extensions/telegram/src/bot/delivery.test.ts
+- [extensions] extensions/telegram/src/lane-delivery-text-deliverer.ts
+- [extensions] extensions/telegram/src/network-errors.test.ts
+- [extensions] extensions/telegram/src/network-errors.ts
+- [extensions] extensions/telegram/src/polling-session.ts
+- [extensions] extensions/telegram/src/send.ts
+- [extensions] extensions/telegram/src/telegram-ingress-worker.runtime.ts
+- [extensions] extensions/telegram/src/webhook.ts
+- [extensions] extensions/voice-call/index.test.ts
+- [extensions] extensions/voice-call/index.ts
+- [extensions] extensions/voice-call/src/response-generator.ts
+- [extensions] extensions/workboard/index.ts
+- [extensions] extensions/workboard/src/cli.ts
+- [extensions] extensions/workboard/src/command.test.ts
+- [extensions] extensions/workboard/src/command.ts
+- [extensions] extensions/workboard/src/dispatcher.test.ts
+- [extensions] extensions/workboard/src/dispatcher.ts
+- [extensions] extensions/workboard/src/gateway.test.ts
+- [extensions] extensions/workboard/src/gateway.ts
+- [packages] packages/agent-core/src/agent-loop.ts
+- [packages] packages/gateway-protocol/src/schema/protocol-schemas.ts
+- [root] package.json
+- [root] pnpm-lock.yaml
+- [root] pnpm-workspace.yaml
+- [root] taxonomy.yaml
+- [scripts] scripts/check-gateway-watch-regression.mjs
+- [scripts] scripts/plugin-sdk-surface-report.mjs
+- [scripts] scripts/proof-telegram-bound.mjs
+- [src] src/agents/agent-bundle-mcp-materialize.ts
+- [src] src/agents/agent-tools.before-tool-call.embedded-mode.test.ts
+- [src] src/agents/auth-profiles/oauth.ts
+- [src] src/agents/embedded-agent-runner/result-fallback-classifier.ts
+- [src] src/agents/embedded-agent-runner/run/attempt.prompt-helpers.ts
+- [src] src/agents/embedded-agent-runner/run/attempt.session-lock.ts
+- [src] src/agents/embedded-agent-runner/run/llm-idle-timeout.ts
+- [src] src/agents/embedded-agent-runner/usage-accumulator.test.ts
+- [src] src/agents/openai-transport-stream.ts
+- [src] src/agents/sessions/tools/read.ts
+- [src] src/agents/skill-workshop-prompt.ts
+- [src] src/agents/subagent-registry-helpers.ts
+- [src] src/agents/system-prompt.test.ts
+- [src] src/agents/tools/skill-workshop-tool.test.ts
+- [src] src/agents/tools/skill-workshop-tool.ts
+- [src] src/auto-reply/reply/agent-runner.ts
+- [src] src/auto-reply/reply/commands-session.activation.test.ts
+- [src] src/auto-reply/reply/dispatch-from-config.reply-dispatch.test.ts
+- [src] src/auto-reply/reply/dispatch-from-config.ts
+- [src] src/auto-reply/reply/inbound-meta.test.ts
+- [src] src/auto-reply/reply/inbound-meta.ts
+- [src] src/commands/docs.ts
+- [src] src/commands/doctor-auth.profile-health.test.ts
+- [src] src/commands/doctor-auth.ts
+- [src] src/commands/onboard.ts
+- [src] src/commitments/runtime.test.ts
+- [src] src/config/sessions/session-accessor.test.ts
+- [src] src/config/sessions/session-accessor.ts
+- [src] src/context-engine/registry.ts
+- [src] src/cron/isolated-agent/run.ts
+- [src] src/cron/service/ops.ts
+- [src] src/flows/doctor-core-checks.ts
+- [src] src/gateway/server-close.ts
+- [src] src/gateway/server-maintenance.ts
+- [src] src/gateway/server-methods/sessions.ts
+- [src] src/gateway/server-runtime-handles.ts
+- [src] src/gateway/server-runtime-services.test.ts
+- [src] src/gateway/server-runtime-services.ts
+- [src] src/gateway/session-reset-service.ts
+- [src] src/hooks/internal-hook-types.test.ts
+- [src] src/hooks/loader.ts
+- [src] src/infra/exec-approvals.ts
+- [src] src/infra/heartbeat-runner.ts
+- [src] src/infra/session-cost-usage.test.ts
+- [src] src/infra/session-cost-usage.ts
+- [src] src/llm/utils/oauth/anthropic.test.ts
+- [src] src/media-understanding/runner.entries.ts
+- [src] src/media-understanding/runner.ts
+- [src] src/node-host/invoke-system-run-allowlist.test.ts
+- [src] src/plugin-sdk/provider-catalog-live-runtime.ts
+- [src] src/security/audit.ts
+- [src] src/shared/subagents-format.ts
+- [src] src/shared/text/assistant-visible-text.ts
+- [src] src/skills/research/autocapture.test.ts
+- [src] src/skills/research/autocapture.ts
+- [src] src/skills/research/signals.ts
+- [src] src/skills/workshop/frontmatter.ts
+- [src] src/skills/workshop/service.test.ts
+- [src] src/skills/workshop/service.ts
+- [src] src/skills/workshop/store.ts
+- [src] src/state/openclaw-state-schema.generated.ts
+- [src] src/state/openclaw-state-schema.sql
+- [src] src/status/status-plugin-health.test.ts
+- [src] src/status/status-plugin-health.ts
+- [src] src/talk/agent-consult-runtime.ts
+- [src] src/tasks/task-registry.test.ts
+- [src] src/utils/directive-tags.test.ts
+- [src] src/utils/mask-api-key.test.ts
+- [src] src/utils/mask-api-key.ts
+- [ui] ui/src/components/vault-add-modal.ts
+- [ui] ui/src/components/vault-credential-form.ts
+- [ui] ui/src/i18n/.i18n/ar.meta.json
+- [ui] ui/src/i18n/.i18n/ar.tm.jsonl
+- [ui] ui/src/i18n/.i18n/de.meta.json
+- [ui] ui/src/i18n/.i18n/de.tm.jsonl
+- [ui] ui/src/i18n/.i18n/es.meta.json
+- [ui] ui/src/i18n/.i18n/fa.meta.json
+- [ui] ui/src/i18n/.i18n/fa.tm.jsonl
+- [ui] ui/src/i18n/.i18n/fr.meta.json
+- [ui] ui/src/i18n/.i18n/fr.tm.jsonl
+- [ui] ui/src/i18n/.i18n/hi.meta.json
+- [ui] ui/src/i18n/.i18n/hi.tm.jsonl
+- [ui] ui/src/i18n/.i18n/id.meta.json
+- [ui] ui/src/i18n/.i18n/id.tm.jsonl
+- [ui] ui/src/i18n/.i18n/it.meta.json
+- [ui] ui/src/i18n/.i18n/it.tm.jsonl
+- [ui] ui/src/i18n/.i18n/ja-JP.meta.json
+- [ui] ui/src/i18n/.i18n/ko.meta.json
+- [ui] ui/src/i18n/.i18n/ko.tm.jsonl
+- [ui] ui/src/i18n/.i18n/nl.meta.json
+- [ui] ui/src/i18n/.i18n/nl.tm.jsonl
+- [ui] ui/src/i18n/.i18n/pl.meta.json
+- [ui] ui/src/i18n/.i18n/pt-BR.meta.json
+- [ui] ui/src/i18n/.i18n/pt-BR.tm.jsonl
+- [ui] ui/src/i18n/.i18n/raw-copy-baseline.json
+- [ui] ui/src/i18n/.i18n/ru.meta.json
+- [ui] ui/src/i18n/.i18n/ru.tm.jsonl
+- [ui] ui/src/i18n/.i18n/th.meta.json
+- [ui] ui/src/i18n/.i18n/th.tm.jsonl
+- [ui] ui/src/i18n/.i18n/tr.meta.json
+- [ui] ui/src/i18n/.i18n/tr.tm.jsonl
+- [ui] ui/src/i18n/.i18n/uk.meta.json
+- [ui] ui/src/i18n/.i18n/uk.tm.jsonl
+- [ui] ui/src/i18n/.i18n/vi.meta.json
+- [ui] ui/src/i18n/.i18n/vi.tm.jsonl
+- [ui] ui/src/i18n/.i18n/zh-CN.meta.json
+- [ui] ui/src/i18n/.i18n/zh-CN.tm.jsonl
+- [ui] ui/src/i18n/.i18n/zh-TW.meta.json
+- [ui] ui/src/i18n/.i18n/zh-TW.tm.jsonl
+- [ui] ui/src/i18n/locales/ar.ts
+- [ui] ui/src/i18n/locales/de.ts
+- [ui] ui/src/i18n/locales/en.ts
+- [ui] ui/src/i18n/locales/es.ts
+- [ui] ui/src/i18n/locales/fa.ts
+- [ui] ui/src/i18n/locales/fr.ts
+- [ui] ui/src/i18n/locales/hi.ts
+- [ui] ui/src/i18n/locales/id.ts
+- [ui] ui/src/i18n/locales/it.ts
+- [ui] ui/src/i18n/locales/ja-JP.ts
+- [ui] ui/src/i18n/locales/ko.ts
+- [ui] ui/src/i18n/locales/nl.ts
+- [ui] ui/src/i18n/locales/pl.ts
+- [ui] ui/src/i18n/locales/pt-BR.ts
+- [ui] ui/src/i18n/locales/ru.ts
+- [ui] ui/src/i18n/locales/th.ts
+- [ui] ui/src/i18n/locales/tr.ts
+- [ui] ui/src/i18n/locales/uk.ts
+- [ui] ui/src/i18n/locales/vi.ts
+- [ui] ui/src/i18n/locales/zh-CN.ts
+- [ui] ui/src/i18n/locales/zh-TW.ts
+- [ui] ui/src/lib/avatar-lightbox.test.ts
+- [ui] ui/src/lib/avatar-lightbox.ts
+- [ui] ui/src/lib/avatar/agent-avatar.ts
+- [ui] ui/src/lib/avatar/invader.test.ts
+- [ui] ui/src/lib/avatar/invader.ts
+- [ui] ui/src/lib/channels-modal.ts
+- [ui] ui/src/lib/gateway-token.ts
+- [ui] ui/src/lib/path-arg.test.ts
+- [ui] ui/src/lib/path-arg.ts
+- [ui] ui/src/lib/presenter.test.ts
+- [ui] ui/src/lib/session-key.test.ts
+- [ui] ui/src/lib/stale-chunk-reload.test.ts
+- [ui] ui/src/lib/stale-chunk-reload.ts
+- [ui] ui/src/main.ts
+- [ui] ui/src/pages/channels/config-quick.personal-agents.test.ts
+- [ui] ui/src/pages/channels/conversations.test.ts
+- [ui] ui/src/pages/channels/conversations.ts
+- [ui] ui/src/pages/channels/dreaming-layers.ts
+- [ui] ui/src/pages/channels/pixel-office.test.ts
+- [ui] ui/src/pages/channels/pixel-office.ts
+- [ui] ui/src/pages/channels/project-label.test.ts
+- [ui] ui/src/pages/channels/project-label.ts
+- [ui] ui/src/pages/channels/rsil.ts
+- [ui] ui/src/pages/channels/skill-forge.ts
+- [ui] ui/src/pages/channels/vault-view.ts
+- [ui] ui/src/pages/chat/activity.ts
+- [ui] ui/src/pages/chat/agent-avatars.ts
+- [ui] ui/src/pages/chat/chat-tab-bar.ts
+- [ui] ui/src/pages/chat/rsil.ts
+- [ui] ui/src/pages/chat/session-controls.sidebar-model.test.ts
+- [ui] ui/src/pages/chat/session-runtime.test.ts
+- [ui] ui/src/pages/chat/session-runtime.ts
+- [ui] ui/src/pages/chat/skill-forge.ts
+- [ui] ui/src/ui/app-last-active-session.ts
+- [ui] ui/src/ui/app-lifecycle.node.test.ts
+- [ui] ui/src/ui/app-lifecycle.ts
+- [ui] ui/src/ui/app-polling.ts
+- [ui] ui/src/ui/app-settings.refresh-active-tab.node.test.ts
+- [ui] ui/src/ui/chat-event-reload.test.ts
+- [ui] ui/src/ui/chat/run-controls.ts
+- [ui] ui/src/ui/chat/tool-expansion-state.test.ts
+- [ui] ui/src/ui/chat/tool-expansion-state.ts
+- [ui] ui/src/ui/control-ui-performance.ts
+- [ui] ui/src/ui/controllers/devices.ts
+- [ui] ui/src/ui/lazy-view.ts
+- [ui] ui/src/ui/views/overview.ts
