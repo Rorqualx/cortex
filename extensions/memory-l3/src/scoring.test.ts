@@ -3,11 +3,14 @@ import {
   bm25Score,
   buildCorpusStats,
   composite,
+  DEFAULT_FSRS_PARAMS,
   DEFAULT_SCORING_CONFIG,
+  fsrsRetrievability,
   jaccard,
   recencyScore,
   scoreFact,
   tokenize,
+  volatilityMultiplier,
 } from "./scoring.js";
 
 describe("tokenize", () => {
@@ -472,5 +475,104 @@ describe("buildCorpusStats + BM25", () => {
       semanticEntropy: 1.0,
     };
     expect(composite(signals, config)).toBeCloseTo(0.5 * 0.2 + 0.8 * 0.3, 6);
+  });
+});
+
+describe("volatilityMultiplier", () => {
+  it("returns 1.0 for semi-volatile (default)", () => {
+    expect(volatilityMultiplier("semi-volatile")).toBe(1.0);
+  });
+
+  it("returns 0.3 for stable facts", () => {
+    expect(volatilityMultiplier("stable")).toBe(0.3);
+  });
+
+  it("returns 2.5 for volatile facts", () => {
+    expect(volatilityMultiplier("volatile")).toBe(2.5);
+  });
+
+  it("returns 1.0 for null/undefined (backward compat)", () => {
+    expect(volatilityMultiplier(null)).toBe(1.0);
+    expect(volatilityMultiplier(undefined)).toBe(1.0);
+  });
+
+  it("returns 1.0 for unknown class", () => {
+    expect(volatilityMultiplier("unknown-class")).toBe(1.0);
+  });
+
+  it("uses custom FsrsParams multipliers", () => {
+    const custom = {
+      ...DEFAULT_FSRS_PARAMS,
+      volatilityMultipliers: { stable: 0.1, volatile: 5.0, "semi-volatile": 1.5 },
+    };
+    expect(volatilityMultiplier("stable", custom)).toBe(0.1);
+    expect(volatilityMultiplier("volatile", custom)).toBe(5.0);
+    expect(volatilityMultiplier("semi-volatile", custom)).toBe(1.5);
+  });
+});
+
+describe("fsrsRetrievability with volatility class", () => {
+  const halfLifeDays = 7;
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("stable facts decay slower than semi-volatile", () => {
+    const ageMs = halfLifeDays * DAY;
+    const stable = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      volatilityClass: "stable",
+    });
+    const semi = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      volatilityClass: "semi-volatile",
+    });
+    expect(stable).toBeGreaterThan(semi);
+  });
+
+  it("volatile facts decay faster than semi-volatile", () => {
+    const ageMs = halfLifeDays * DAY;
+    const volatileR = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      volatilityClass: "volatile",
+    });
+    const semi = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      volatilityClass: "semi-volatile",
+    });
+    expect(volatileR).toBeLessThan(semi);
+  });
+
+  it("missing volatilityClass defaults to semi-volatile (backward compat)", () => {
+    const ageMs = halfLifeDays * DAY;
+    const without = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+    });
+    const semi = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      volatilityClass: "semi-volatile",
+    });
+    expect(without).toBe(semi);
+  });
+
+  it("volatile facts reach near-zero faster", () => {
+    const ageMs = 30 * DAY;
+    const volatileR = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      volatilityClass: "volatile",
+    });
+    expect(volatileR).toBeLessThan(0.1);
   });
 });

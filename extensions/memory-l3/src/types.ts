@@ -238,6 +238,14 @@ export const INITIAL_LONG_TERM_FRONTMATTER: LongTermFrontmatter = {
 };
 
 /**
+ * Volatility class for L3 typed facts — controls the decay rate in
+ * FSRS forgetting curves. Stable facts (personal preferences, names,
+ * relationships) decay 3× slower; volatile facts (API endpoints, config
+ * values, version strings) decay 2.5× faster.
+ */
+export type VolatilityClass = "stable" | "semi-volatile" | "volatile";
+
+/**
  * The typed-fact analogue of `LongTermFact`: a slot's *canonical* current
  * value, plus a history of superseded values. Where prose long-term facts
  * accumulate evidence (recallCount = how often the same idea recurs), typed
@@ -280,6 +288,14 @@ export type LongTermTypedFact = {
    * Used for access-time decay: facts that haven't been retrieved recently
    * lose confidence over time. Defaults to lastConfirmedAt on creation. */
   lastAccessedAt?: number;
+  /**
+   * Volatility class controlling per-fact decay rate.
+   * stable = personal preferences, names, relationships (0.3× decay)
+   * semi-volatile = default (1.0× decay)
+   * volatile = API endpoints, config values, versions, paths (2.5× decay)
+   * Absent on facts created before this feature; readers treat absent as semi-volatile.
+   */
+  volatilityClass?: VolatilityClass;
 };
 
 export type LongTermTypedFrontmatter = {

@@ -11,9 +11,99 @@
 
 import { randomUUID } from "node:crypto";
 import type { Storage } from "./storage.js";
-import type { LongTermTypedFact, LongTermTypedFrontmatter, TypedFact } from "./types.js";
+import type {
+  LongTermTypedFact,
+  LongTermTypedFrontmatter,
+  TypedFact,
+  VolatilityClass,
+} from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// Volatility-class derivation — keyword heuristics on slot + value
+// ---------------------------------------------------------------------------
+
+/** Tokens in the slot or value that suggest a volatile fact. */
+const VOLATILE_TOKENS = [
+  "api",
+  "config",
+  "version",
+  "path",
+  "port",
+  "endpoint",
+  "url",
+  "host",
+  "ip",
+  "token",
+  "key",
+  "secret",
+  "password",
+  "credential",
+  "binary",
+  "executable",
+  "docker",
+  "container",
+  "pod",
+  "build",
+  "cache",
+  "temp",
+  "tmp",
+  "pid",
+  "runtime",
+  "process",
+  "session",
+];
+
+/** Tokens in the slot that suggest a stable fact. */
+const STABLE_SLOT_TOKENS = [
+  "preference",
+  "name",
+  "relationship",
+  "birthday",
+  "anniversary",
+  "personality",
+  "like",
+  "dislike",
+  "favorite",
+  "habit",
+  "allergy",
+  "pronoun",
+  "gender",
+  "language",
+  "timezone",
+  "location",
+];
+
+/**
+ * Derive a volatility class from the slot name and value using keyword
+ * heuristics. Volatile tokens (api, config, version, path, etc.) → volatile;
+ * stable slot tokens (preference, name, relationship, etc.) → stable;
+ * everything else → semi-volatile.
+ *
+ * Matches on token boundaries (split on : _ -) rather than naive substring
+ * to avoid false positives like "ip" matching "relationship".
+ */
+export function deriveVolatilityClass(slot: string, _value: string): VolatilityClass {
+  const lowerSlot = slot.toLowerCase();
+  const tokens = lowerSlot.split(/[:_-]+/);
+
+  // Check volatile tokens first (more specific)
+  for (const token of VOLATILE_TOKENS) {
+    for (const slotToken of tokens) {
+      if (slotToken === token) return "volatile";
+    }
+  }
+
+  // Check stable slot tokens
+  for (const token of STABLE_SLOT_TOKENS) {
+    for (const slotToken of tokens) {
+      if (slotToken === token) return "stable";
+    }
+  }
+
+  return "semi-volatile";
+}
 
 export type LongTermTypedConfig = {
   /**
@@ -204,6 +294,7 @@ function promote(c: TypedCandidate): LongTermTypedFact {
     archivedAt: null,
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
     lastAccessedAt: c.latest.createdAt,
+    volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
   };
 }
 
@@ -245,6 +336,7 @@ function supersede(prior: LongTermTypedFact, c: TypedCandidate, now: number): Lo
     archived: false,
     archivedAt: null,
     lastAccessedAt: prior.lastAccessedAt,
+    volatilityClass: prior.volatilityClass ?? deriveVolatilityClass(c.slot, c.latest.value),
   };
 }
 
