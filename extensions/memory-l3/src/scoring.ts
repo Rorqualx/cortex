@@ -130,6 +130,12 @@ export type FsrsParams = {
   w2: number;
   /** Significance multiplier — "remember this" facts decay 2.7× slower. Default 2.7. */
   significanceBoost: number;
+  /**
+   * Per-class decay multipliers — stable facts decay slower, volatile faster.
+   * Applied as an additional multiplier in R(t) = e^(-(w2 · vc · t) / S).
+   * Default: stable=0.3, semi-volatile=1.0, volatile=2.5.
+   */
+  volatilityMultipliers: Record<string, number>;
 };
 
 export const DEFAULT_FSRS_PARAMS: FsrsParams = {
@@ -137,12 +143,25 @@ export const DEFAULT_FSRS_PARAMS: FsrsParams = {
   w1: 1.3,
   w2: 1.0,
   significanceBoost: 2.7,
+  volatilityMultipliers: { stable: 0.3, "semi-volatile": 1.0, volatile: 2.5 },
 };
+
+/**
+ * Compute the volatility-class multiplier for a given volatility class.
+ * Falls back to 1.0 (semi-volatile) for unknown/nullish values.
+ */
+export function volatilityMultiplier(
+  volatilityClass: string | null | undefined,
+  fsrs: FsrsParams = DEFAULT_FSRS_PARAMS,
+): number {
+  if (!volatilityClass) return 1.0;
+  return fsrs.volatilityMultipliers[volatilityClass] ?? 1.0;
+}
 
 /**
  * Compute FSRS-based retrievability for a fact.
  *
- * R(t) = e^(-(w2 · t) / S)   (w2 = global decay-rate multiplier, default 1.0)
+ * R(t) = e^(-(w2 · vc · t) / S)   (vc = volatility-class multiplier)
  *
  * Where S (stability) grows with recallCount:
  *   S = baseHalfLifeDays × w1^(recallCount - 1) × (1 + difficulty)
@@ -154,6 +173,7 @@ export const DEFAULT_FSRS_PARAMS: FsrsParams = {
  * - First recall (recallCount=1): S = baseHalfLifeDays × (1 + difficulty)
  * - Each subsequent recall multiplies S by w1 (1.3×)
  * - "Remember this" facts get 2.7× longer stability
+ * - Stable facts (preferences) decay 0.3× as fast; volatile (APIs/configs) 2.5× faster
  * - Result: infrastructure facts (recalled 20×) have ~190 day half-life
  *   vs one-off facts at ~7 days
  */
@@ -162,6 +182,7 @@ export function fsrsRetrievability(params: {
   recallCount: number;
   halfLifeDays: number;
   significant?: boolean;
+  volatilityClass?: string | null;
   fsrs?: FsrsParams;
 }): number {
   const fsrs = params.fsrs ?? DEFAULT_FSRS_PARAMS;
@@ -179,11 +200,15 @@ export function fsrsRetrievability(params: {
     stability *= fsrs.significanceBoost;
   }
 
-  // R(t) = e^(-(w2 · t) / S) — Ebbinghaus curve with per-fact stability, where
-  // w2 scales global forgetting speed (1.0 = neutral). Kept separate from
-  // stability so it tunes the curve uniformly without distorting per-fact
-  // recall growth.
-  return Math.exp(-(fsrs.w2 * ageDays) / stability);
+  // Volatility-class multiplier — modulates the effective decay rate
+  const vc = volatilityMultiplier(params.volatilityClass, fsrs);
+
+  // R(t) = e^(-(w2 · vc · t) / S) — Ebbinghaus curve with per-fact stability,
+  // where vc accelerates/brakes decay per volatility class:
+  //   stable=0.3 (preferences decay 3× slower)
+  //   semi-volatile=1.0 (default)
+  //   volatile=2.5 (APIs/configs decay 2.5× faster)
+  return Math.exp(-(fsrs.w2 * vc * ageDays) / stability);
 }
 
 export type Signals = {

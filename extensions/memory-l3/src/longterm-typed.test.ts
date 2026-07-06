@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { consolidateLongTermTyped } from "./longterm-typed.js";
+import { consolidateLongTermTyped, deriveVolatilityClass } from "./longterm-typed.js";
 import { Storage } from "./storage.js";
 import type { TypedFact } from "./types.js";
 
@@ -19,6 +19,56 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+describe("deriveVolatilityClass", () => {
+  it("returns volatile for API slots", () => {
+    expect(deriveVolatilityClass("infra:api_endpoint", "")).toBe("volatile");
+  });
+
+  it("returns volatile for config slots", () => {
+    expect(deriveVolatilityClass("app:config", "")).toBe("volatile");
+  });
+
+  it("returns volatile for version slots", () => {
+    expect(deriveVolatilityClass("pkg:version", "")).toBe("volatile");
+  });
+
+  it("returns volatile for path slots", () => {
+    expect(deriveVolatilityClass("proj:root_path", "")).toBe("volatile");
+  });
+
+  it("returns volatile for token/password slots", () => {
+    expect(deriveVolatilityClass("auth:api_token", "")).toBe("volatile");
+    expect(deriveVolatilityClass("auth:password", "")).toBe("volatile");
+  });
+
+  it("returns stable for preference slots", () => {
+    expect(deriveVolatilityClass("user:preference_theme", "")).toBe("stable");
+  });
+
+  it("returns stable for name slots", () => {
+    expect(deriveVolatilityClass("user:name", "")).toBe("stable");
+  });
+
+  it("returns stable for relationship slots", () => {
+    expect(deriveVolatilityClass("user:relationship_status", "")).toBe("stable");
+  });
+
+  it("returns stable for favorite/like slots", () => {
+    expect(deriveVolatilityClass("user:favorite_color", "")).toBe("stable");
+    expect(deriveVolatilityClass("user:dislike_food", "")).toBe("stable");
+  });
+
+  it("returns semi-volatile for unrecognized slots", () => {
+    expect(deriveVolatilityClass("misc:note", "")).toBe("semi-volatile");
+    expect(deriveVolatilityClass("unknown:thing", "")).toBe("semi-volatile");
+  });
+
+  it("prefers volatile over stable when both tokens match", () => {
+    // "config" is volatile, "preference" is stable — volatile wins
+    expect(deriveVolatilityClass("app:config_preference", "")).toBe("volatile");
+  });
 });
 
 const writeChunkWithTyped = async (
@@ -296,6 +346,128 @@ describe("consolidateLongTermTyped", () => {
     const ltt2 = await storage.readLongTermTyped();
     expect(ltt2.facts[0].lastVerifiedAt).toBe(NOW);
     expect(ltt2.facts[0].recallCount).toBe(2);
+  });
+
+  it("assigns volatile class for config/API-related slots", async () => {
+    await writeChunkWithTyped(
+      "chunk-api",
+      [
+        {
+          id: "tf-api",
+          slot: "infra:api_endpoint",
+          value: "https://api.example.com/v2",
+          sourceSpan: "api is at https://api.example.com/v2",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].volatilityClass).toBe("volatile");
+  });
+
+  it("assigns stable class for preference/name slots", async () => {
+    await writeChunkWithTyped(
+      "chunk-pref",
+      [
+        {
+          id: "tf-pref",
+          slot: "user:preference_theme",
+          value: "dark",
+          sourceSpan: "prefers dark theme",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].volatilityClass).toBe("stable");
+  });
+
+  it("assigns semi-volatile for unrecognized slots", async () => {
+    await writeChunkWithTyped(
+      "chunk-generic",
+      [
+        {
+          id: "tf-gen",
+          slot: "misc:note",
+          value: "some note",
+          sourceSpan: "just a note",
+          unit: null,
+          confidence: 0.8,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].volatilityClass).toBe("semi-volatile");
+  });
+
+  it("preserves volatilityClass on reaffirmation", async () => {
+    await writeChunkWithTyped(
+      "chunk-1",
+      [
+        {
+          id: "tf-1",
+          slot: "infra:api_host",
+          value: "api.example.com",
+          sourceSpan: "api host is api.example.com",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 3 * DAY,
+        },
+      ],
+      NOW - 3 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 3 * DAY });
+
+    // Reaffirm same value
+    await writeChunkWithTyped(
+      "chunk-2",
+      [
+        {
+          id: "tf-2",
+          slot: "infra:api_host",
+          value: "api.example.com",
+          sourceSpan: "still api.example.com",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].volatilityClass).toBe("volatile");
+    expect(ltt.facts[0].recallCount).toBe(2);
   });
 
   it("uses lastVerifiedAt to prevent archival when value was recently verified", async () => {
