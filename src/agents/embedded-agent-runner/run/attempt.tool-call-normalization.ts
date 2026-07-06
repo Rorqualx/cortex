@@ -21,7 +21,10 @@ import {
   validateGeminiTurns,
 } from "../../embedded-agent-helpers.js";
 import type { AgentMessage, StreamFn } from "../../runtime/index.js";
-import { sanitizeToolUseResultPairing } from "../../session-transcript-repair.js";
+import {
+  isToolUseResultPairingValid,
+  sanitizeToolUseResultPairing,
+} from "../../session-transcript-repair.js";
 import {
   extractToolCallsFromAssistant,
   extractToolResultIds,
@@ -1166,7 +1169,10 @@ export function sanitizeReplayToolCallIdsForStream(params: {
     preserveReplaySafeThinkingToolCallIds: params.preserveReplaySafeThinkingToolCallIds,
     allowedToolNames: params.allowedToolNames,
   });
-  if (!params.repairToolUseResultPairing) {
+  // The pairing repair is an O(N^2) full-transcript pass; agent-core hands us an
+  // already-canonically-paired transcript on nearly every tool-call continuation,
+  // so skip it unless a real pairing defect is present.
+  if (!params.repairToolUseResultPairing || isToolUseResultPairingValid(sanitized)) {
     return sanitized;
   }
   return sanitizeToolUseResultPairing(sanitized);
