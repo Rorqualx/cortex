@@ -507,4 +507,112 @@ describe("consolidateLongTermTyped", () => {
     const ltt = await storage.readLongTermTyped();
     expect(ltt.facts[0].archived).toBe(false);
   });
+
+  it("stamps sourceSessionId on promoted facts when sessionId is provided", async () => {
+    await writeChunkWithTyped(
+      "chunk-sess",
+      [
+        {
+          id: "tf-sess",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      sessionId: "session-abc-123",
+      modelId: "deepseek/deepseek-v4-pro",
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].sourceSessionId).toBe("session-abc-123");
+    expect(ltt.facts[0].sourceModel).toBe("deepseek/deepseek-v4-pro");
+  });
+
+  it("leaves sourceSessionId unset when sessionId is not provided (backward compat)", async () => {
+    await writeChunkWithTyped(
+      "chunk-nosess",
+      [
+        {
+          id: "tf-nosess",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].sourceSessionId).toBeUndefined();
+    expect(ltt.facts[0].sourceModel).toBeNull();
+  });
+
+  it("updates sourceSessionId on reaffirmation when a newer session is provided", async () => {
+    await writeChunkWithTyped(
+      "chunk-old",
+      [
+        {
+          id: "tf-old",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 3 * DAY,
+        },
+      ],
+      NOW - 3 * DAY,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 3 * DAY,
+      sessionId: "session-old",
+    });
+
+    await writeChunkWithTyped(
+      "chunk-new",
+      [
+        {
+          id: "tf-new",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "still 555-1234",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      sessionId: "session-new",
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0].sourceSessionId).toBe("session-new");
+    expect(ltt.facts[0].recallCount).toBe(2);
+  });
 });

@@ -296,6 +296,18 @@ export type LongTermTypedFact = {
    * Absent on facts created before this feature; readers treat absent as semi-volatile.
    */
   volatilityClass?: VolatilityClass;
+  /**
+   * The session ID that contributed the most recent evidence for this fact.
+   * Enables traceability: which conversation produced this fact?
+   * Absent on facts created before this feature.
+   */
+  sourceSessionId?: string;
+  /**
+   * The model/provider that extracted or confirmed this fact (e.g. "deepseek/deepseek-v4-pro").
+   * Enables auditing: which model produced this fact?
+   * Absent on facts created before this feature; null when the model was unknown.
+   */
+  sourceModel?: string | null;
 };
 
 export type LongTermTypedFrontmatter = {

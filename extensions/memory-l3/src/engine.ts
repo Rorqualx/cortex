@@ -388,6 +388,7 @@ export class HierarchicalL3Engine implements ContextEngine {
             storage: this.storage,
             agentId: this.state.agentId,
             now,
+            sessionId: params.sessionId,
           });
           typedActivity = ltt.promotedCount + ltt.supersededCount > 0;
           l3debug(
