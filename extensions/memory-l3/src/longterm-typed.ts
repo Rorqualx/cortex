@@ -160,6 +160,10 @@ export async function consolidateLongTermTyped(params: {
   agentId: string | null;
   now: number;
   config?: LongTermTypedConfig;
+  /** Session ID to stamp on newly promoted facts for provenance. */
+  sessionId?: string;
+  /** Model/provider identifier to stamp on newly promoted facts for provenance. */
+  modelId?: string;
 }): Promise<ConsolidateLongTermTypedOutput> {
   const config = params.config ?? DEFAULT_LONG_TERM_TYPED_CONFIG;
   const candidates = await aggregateTypedCandidates(params.storage);
@@ -178,12 +182,12 @@ export async function consolidateLongTermTyped(params: {
     }
     const prior = merged.get(candidate.slot);
     if (!prior) {
-      merged.set(candidate.slot, promote(candidate));
+      merged.set(candidate.slot, promote(candidate, params.sessionId, params.modelId));
       promotedCount += 1;
       continue;
     }
     if (prior.value === candidate.latest.value) {
-      const reaffirmed = reaffirm(prior, candidate);
+      const reaffirmed = reaffirm(prior, candidate, params.sessionId, params.modelId);
       if (prior.archived && !reaffirmed.archived) {
         unarchivedCount += 1;
       } else {
@@ -191,7 +195,10 @@ export async function consolidateLongTermTyped(params: {
       }
       merged.set(candidate.slot, reaffirmed);
     } else {
-      merged.set(candidate.slot, supersede(prior, candidate, params.now));
+      merged.set(
+        candidate.slot,
+        supersede(prior, candidate, params.now, params.sessionId, params.modelId),
+      );
       supersededCount += 1;
     }
   }
@@ -271,7 +278,7 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
   return out;
 }
 
-function promote(c: TypedCandidate): LongTermTypedFact {
+function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongTermTypedFact {
   const history = c.prior
     .slice()
     .toSorted((a, b) => a.createdAt - b.createdAt)
@@ -295,10 +302,17 @@ function promote(c: TypedCandidate): LongTermTypedFact {
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
     lastAccessedAt: c.latest.createdAt,
     volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
+    sourceSessionId: sessionId,
+    sourceModel: modelId ?? null,
   };
 }
 
-function reaffirm(prior: LongTermTypedFact, c: TypedCandidate): LongTermTypedFact {
+function reaffirm(
+  prior: LongTermTypedFact,
+  c: TypedCandidate,
+  sessionId?: string,
+  modelId?: string,
+): LongTermTypedFact {
   const merged = mergeChunkIds(prior.sourceChunkIds, c.sourceChunkIds);
   return {
     ...prior,
@@ -313,10 +327,18 @@ function reaffirm(prior: LongTermTypedFact, c: TypedCandidate): LongTermTypedFac
     supersededBy: null,
     archived: false,
     archivedAt: null,
+    sourceSessionId: sessionId ?? prior.sourceSessionId,
+    sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
   };
 }
 
-function supersede(prior: LongTermTypedFact, c: TypedCandidate, now: number): LongTermTypedFact {
+function supersede(
+  prior: LongTermTypedFact,
+  c: TypedCandidate,
+  now: number,
+  sessionId?: string,
+  modelId?: string,
+): LongTermTypedFact {
   const merged = mergeChunkIds(prior.sourceChunkIds, c.sourceChunkIds);
   return {
     id: prior.id,
@@ -337,6 +359,8 @@ function supersede(prior: LongTermTypedFact, c: TypedCandidate, now: number): Lo
     archivedAt: null,
     lastAccessedAt: prior.lastAccessedAt,
     volatilityClass: prior.volatilityClass ?? deriveVolatilityClass(c.slot, c.latest.value),
+    sourceSessionId: sessionId ?? prior.sourceSessionId,
+    sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
   };
 }
 
