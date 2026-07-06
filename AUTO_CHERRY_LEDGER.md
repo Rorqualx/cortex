@@ -173,3 +173,72 @@ Cherry-picked: 35 applied cleanly, 5 deferred due to conflicts
   Rollback: main-backup-pre-autocherry @ 664a1f6c86 / tag autocherry-2026-07-04-pre
   Deploy: deferred (cron-deploy-build.sh quiesced on upstream-merge-nightly still running; will auto-resume after this cron ends)
   Notes: Divergence grew from 814 (Jul 2) to 1526. 36 of the first 40 oldest non-borderline fixes were already in main from Jul 2 run. Next batch: 400 non-borderline + 154 borderline candidates remain. Needs maintainer `$openclaw-upstream-resync` for the large merge-shaped backlog.
+
+## 2026-07-06 — LANDED
+
+N=2290 (2 merges) — fix:1110 · chore:538 · test:147 · feat:145 · docs:79 · refactor:76 · perf:26 · improve:21 · ci:20 · policy:8 · doctor:3 · style:1 · android:1
+Cherry candidates: 980 (borderline=257) · Deferred: 1310
+Pick list: 40 SHAs (oldest non-borderline fixes; 113 empty, 9 conflicts skipped)
+
+Cherry-picked: 40 applied cleanly, 9 deferred (conflicts), 113 empty (already present in main from prior merges)
+
+- 615558f6fb3f fix(provider-usage): bound Anthropic usage error response reads to prevent OOM (#97614)
+- db2786bde105 fix(provider-usage): bound usage response body reads
+- 825aafac577a fix(voicecall): redact read-scoped status payloads (#97870)
+- cbdbb22c603e fix(voice): require admin for voice set (#97874)
+- 3047e6c43dfe fix: Ollama Cloud tool calls fail on second turn (#96474)
+- 2cf765f73263 fix(browser): block node routes when sandbox host control is disabled (#97958)
+- 6ead09230284 fix(acp): require owner for runtime controls (#97953)
+- 587eefe5ad91 fix(imessage): require authorization for group actions (#97961)
+- 54b09580f61b fix(ios): reset sidebar navigation stacks (#94991)
+- 85ee71223f0d fix(matrix): use fixed crypto bootstrap command (#97181)
+- 56c2d637d940 fix(qqbot): tighten bundled skill guardrails (#98032)
+- 3d4b7cade9cd fix: gate group activation changes by owner (#97838)
+- 738b2be4b49b fix: gate active memory global toggles (#97841)
+- 6cb82eaab865 fix: require owner for trajectory export (#97840)
+- 169acd1e4ed4 fix(plugin-sdk): guard legacy dedupe JSON parse against malformed files (#98125)
+- a75431c586ce fix(agents): classify Anthropic orphaned tool-use replay errors (#98163)
+- f284ce3b4df7 fix(cli): bound docs search API response reads with committed test (#98188)
+- b2787a1c7a7a fix(text): strip antml:namespaced tool call XML from visible content
+- c896718acb2a fix(memory-wiki): strip fenced code blocks before wikilink extraction (#97954)
+- 984f5a51ca84 fix(discord): expose sender bot status in context (#97824)
+- 37341a703223 fix(googlechat): expose sender bot status in context (#97825)
+- 5c4e478df4ef fix(slack): expose sender bot status in context (#97822)
+- 62fa674a399e fix(feishu): route non-thread p2p DM replies to user:<open_id>
+- f078962d1759 fix(feishu): require explicit reply send target
+- 9aec0f089bbb fix(telegram): hydrate album sibling media context
+- bba63d3fe0e0 fix(telegram): omit skipped album context
+- 7d98ad2a9264 fix(signal): guard containerRestRequest JSON.parse against malformed responses (#98073)
+- 5e0652f284a8 fix: bump ClawHub publish CLI pin (#98233)
+- 765d05c2e4a8 fix(moonshot): bound video description JSON response reads (#96502)
+- 076da567f434 fix(imessage): recognize MiniMax mm: reasoning tags in reflection guard (#93820)
+- 44ec7580e2f0 fix(cli): stop `pairing list` crashing with empty channel enum (#98142)
+- 3811001d2783 fix(exec): bind Windows allowlist execution path (#98260)
+- 6528912e9090 fix(telegram): recover stalled ingress spool claims
+- 2499b64f9be6 fix(parallels): stabilize Windows beta smoke transport
+- 5e572dcf781a fix(slack): prefer current thread session for inherited outbound replies (#97168)
+- 82871fe21b3b fix(doctor): merge colliding model-ref map keys instead of dropping (#96544)
+- 1289abddcb96 fix(memory-wiki): gracefully handle unparsable YAML frontmatter (#96125) (#97177)
+- 44b4a0ac0598 fix(ios): advance onboarding step after QR scan (#98302)
+- b1fae752f81e fix(anthropic-oauth): bound OAuth token endpoint response reads (#96644)
+- fca15641dba5 fix(discord): bound requestDiscord happy-path response reads to prevent OOM (#97693)
+
+Deferred: 9 total (conflicts)
+
+- 199700de264a fix(telegram): replay retained preview gaps — conflict
+- 07b934901a32 fix: scanned PDF pages reach chat vision models — conflict
+- 71347ef999ed fix(msteams): handle message card submit values — conflict
+- e9ee58c43419 fix: detect chained test modifiers — conflict
+- 1d4e7899a47f fix: preserve status model alias display — conflict
+- 238398e33147 fix(video-generation): bound DashScope JSON response reads — conflict
+- 2ec670898018 fix(whatsapp): validate WebSocket URL env (#97697) — conflict
+- 455f813d6ee6 fix(telegram): deliver durable reasoning when enabled — conflict
+- 5a89484eb31d fix: preserve legacy ClawHub plugin family (#98249) — conflict
+
+Landed: 40 fixes (100 files, 3708 insertions, 674 deletions)
+Proof: build ✓ · tsgo all 7 lanes ✓ (zero regressions: core 16=16, extensions 20=20, core:test 1=1, extensions:test 29=29, test:src 1=1, test:ui 7=7, test:packages 0=0) · test:fast ✓ (no new failures)
+Guard: clean (no conflict markers, no protected files touched, fork dirs intact, merge=ours count stable at 300)
+Review: clean (all fixes, no correctness/security concerns)
+Rollback: main-backup-pre-autocherry @ 75390e7ad8 / tag autocherry-2026-07-06-pre
+Deploy: deferred (cron-deploy-build.sh quiesced on upstream-merge-nightly still running; will auto-resume after cron ends or should be manually triggered)
+Notes: Divergence grew from 1803 (Jul 5) to 2290. Scanned 162 candidates to find 40 applicable. Remaining: 683 non-borderline + 257 borderline candidates. Needs maintainer `$openclaw-upstream-resync` for the large merge-shaped backlog.
