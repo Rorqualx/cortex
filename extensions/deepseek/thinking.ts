@@ -13,6 +13,10 @@ function buildDeepSeekV4ThinkingLevel(id: (typeof V4_THINKING_LEVEL_IDS)[number]
 
 const DEEPSEEK_V4_THINKING_PROFILE = {
   levels: V4_THINKING_LEVEL_IDS.map(buildDeepSeekV4ThinkingLevel),
+  // "high" is DeepSeek V4's own vendor default (api-docs.deepseek.com/guides/thinking_mode),
+  // not an over-set: the API exposes only "high" (default) and "max" as real tiers and maps
+  // low/medium -> high and xhigh -> max. Do not "right-size" this to medium — DeepSeek would
+  // silently run it at high anyway, so a lower default would only misreport the effort.
   defaultLevel: "high",
 } satisfies ProviderThinkingProfile;
 
