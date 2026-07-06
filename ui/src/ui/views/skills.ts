@@ -691,6 +691,10 @@ function renderSkillDetail(skill: SkillStatusEntry, props: SkillsProps) {
                     >
                     <input
                       type="password"
+                      autocomplete="off"
+                      data-1p-ignore
+                      data-lpignore="true"
+                      data-bwignore
                       .value=${apiKey}
                       @input=${(e: Event) =>
                         props.onEdit(skill.skillKey, (e.target as HTMLInputElement).value)}

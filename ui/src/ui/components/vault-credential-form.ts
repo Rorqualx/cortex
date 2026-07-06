@@ -294,6 +294,9 @@ export class OpenClawVaultCredentialForm extends LitElement {
           id="v-token"
           type="password"
           autocomplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-bwignore
           .value=${this.token}
           @input=${this.input("token")}
           placeholder="sk_live_…"
@@ -313,6 +316,9 @@ export class OpenClawVaultCredentialForm extends LitElement {
               id="v-pass"
               type="password"
               autocomplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
               .value=${this.password}
               @input=${this.input("password")}
             />
@@ -338,6 +344,9 @@ export class OpenClawVaultCredentialForm extends LitElement {
             <input
               type="password"
               autocomplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
               placeholder="Value"
               .value=${row.value}
               @input=${(e: Event) =>
@@ -406,6 +415,9 @@ export class OpenClawVaultCredentialForm extends LitElement {
               id="v-passphrase"
               type="password"
               autocomplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
               .value=${this.sshPassphrase}
               @input=${this.input("sshPassphrase")}
             />
@@ -416,6 +428,9 @@ export class OpenClawVaultCredentialForm extends LitElement {
               id="v-sshpass"
               type="password"
               autocomplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
               .value=${this.password}
               @input=${this.input("password")}
             />
