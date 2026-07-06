@@ -535,6 +535,81 @@ export function sanitizeToolUseResultPairing(
   return repairToolUseResultPairing(messages, options).messages;
 }
 
+/** True only for a toolName that `normalizeToolResultName` would leave untouched (trimmed, non-empty). */
+function hasCanonicalToolResultName(
+  message: Extract<AgentMessage, { role: "toolResult" }>,
+): boolean {
+  const rawToolName = (message as { toolName?: unknown }).toolName;
+  return (
+    typeof rawToolName === "string" && rawToolName.length > 0 && rawToolName.trim() === rawToolName
+  );
+}
+
+/**
+ * Cheap O(N) detector for transcripts `repairToolUseResultPairing` would leave
+ * content-unchanged, so the hot outbound sanitizer can skip that O(N^2) pass on
+ * the canonical shape agent-core produces every tool-call continuation.
+ *
+ * Conservative by contract: `true` MUST imply the repair changes no content, so
+ * it recognizes only the exact no-op shape — each assistant-with-toolcalls turn
+ * immediately followed by its results in call order, one per call, every result
+ * carrying an id equal to its call id, unseen across the transcript, with a
+ * name `normalizeToolResultName` would not rewrite. Anything else (orphans,
+ * duplicates, displaced/missing/misordered results, errored/aborted tool turns,
+ * results needing legacy-id or name normalization) returns `false` and takes the
+ * real repair. Mirrors the no-op conditions of `normalizeLegacyToolResultId`,
+ * `normalizeToolResultName`, and the span pairing loop in `repairToolUseResultPairing`.
+ */
+export function isToolUseResultPairingValid(messages: AgentMessage[]): boolean {
+  const seenToolResultIds = new Set<string>();
+  for (let index = 0; index < messages.length; index += 1) {
+    const msg = messages[index];
+    if (!msg || typeof msg !== "object") {
+      continue;
+    }
+    const role = (msg as { role?: unknown }).role;
+    if (role === "toolResult") {
+      // A tool result reached here only if it was not consumed by an assistant
+      // span below — i.e. free-floating/displaced, which the repair drops or moves.
+      return false;
+    }
+    if (role !== "assistant") {
+      continue;
+    }
+    const assistant = msg as Extract<AgentMessage, { role: "assistant" }>;
+    const toolCalls = extractToolCallsFromAssistant(assistant);
+    if (toolCalls.length === 0) {
+      continue;
+    }
+    const stopReason = (assistant as { stopReason?: unknown }).stopReason;
+    if (stopReason === "error" || stopReason === "aborted") {
+      // Errored/aborted turns take a dedicated repair branch; never fast-path them.
+      return false;
+    }
+    let cursor = index + 1;
+    for (const call of toolCalls) {
+      const next = messages[cursor];
+      if (!next || typeof next !== "object" || (next as { role?: unknown }).role !== "toolResult") {
+        return false;
+      }
+      const result = next as Extract<AgentMessage, { role: "toolResult" }>;
+      const resultId = extractToolResultId(result);
+      if (!resultId || resultId !== call.id || seenToolResultIds.has(resultId)) {
+        return false;
+      }
+      if (!hasCanonicalToolResultName(result)) {
+        return false;
+      }
+      seenToolResultIds.add(resultId);
+      cursor += 1;
+    }
+    // Consumed exactly the matching results; continue after them. A stray result
+    // immediately following the span is caught as free-floating on the next pass.
+    index = cursor - 1;
+  }
+  return true;
+}
+
 type ToolUseRepairReport = {
   messages: AgentMessage[];
   added: Array<Extract<AgentMessage, { role: "toolResult" }>>;
@@ -591,6 +666,11 @@ export function repairToolUseResultPairing(
   // - moving matching toolResult messages directly after their assistant toolCall turn
   // - inserting synthetic error toolResults for missing ids
   // - dropping duplicate toolResults for the same id (anywhere in the transcript)
+  // KEEP IN SYNC: `isToolUseResultPairingValid` mirrors the exact conditions under which
+  // this returns its input unchanged so the hot outbound sanitizer can skip it. Any new
+  // content-mutating branch here must be reflected there (and covered by the exhaustive
+  // generative case in session-transcript-repair.pairing-validity.test.ts) or valid-looking
+  // but unrepaired transcripts will ship to strict providers.
   const out: AgentMessage[] = [];
   const added: Array<Extract<AgentMessage, { role: "toolResult" }>> = [];
   const seenToolResultIds = new Set<string>();
