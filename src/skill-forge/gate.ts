@@ -55,7 +55,10 @@ const SECURITY_PATTERNS: Array<{
   {
     id: "unpinned-install",
     severity: "warning",
-    regex: /\bcurl\s+(?:[^|]|\S)*\|\s*(?:bash|sh|zsh)\b/giu,
+    // Anchored, single-character-class quantifier — no nested alternation
+    // that could trigger catastrophic backtracking (ReDoS).  Equivalent to
+    // the prior (?:[^|]|\S)* on a single line, but runs in linear time.
+    regex: /\bcurl\s+[^|]*\|\s*(?:bash|sh|zsh)\b/giu,
     message: "Unpinned curl-pipe installation detected",
   },
   {
