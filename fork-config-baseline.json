@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-06-19T20:01:19.680Z",
-  "branch": "resync/upstream-2026-06-19",
-  "headSha": "ac0dd58cb9e8115b360f120d128b360e1aa2127f",
+  "timestamp": "2026-07-07T02:54:52.042Z",
+  "branch": "main",
+  "headSha": "44b830b20dc7e7c0f7ba01b6ad95869a436cae1e",
   "files": {
     ".gitattributes": {
-      "hash": "2848f043e5f8bd29ced53b42eb17a5b8426ae2395163407307d5ffbd1ba686f6",
+      "hash": "4e3e1eab0693058325bb52513f26f69ec674fde263fa7036b1fe7ef7c6fd2233",
       "mergeOursLines": [
         "extensions/memory-l3/**                                              merge=ours",
         "memory/.l3/**                                                        merge=ours",
@@ -44,6 +44,9 @@
         "scripts/fork-config-snapshot.mjs                                       merge=ours",
         "scripts/fork-merge-guard.mjs                                            merge=ours",
         "scripts/fork-merge-verify.mjs                                           merge=ours",
+        "scripts/upstream-divergence-report.mjs                                 merge=ours",
+        "scripts/remote-proof.sh                                                 merge=ours",
+        "AUTO_CHERRY_LEDGER.md                                                   merge=ours",
         "FORK-MERGE-GUIDE.md                                                     merge=ours",
         "extensions/agentmcp/**                                                  merge=ours",
         "src/attestation/**                                                      merge=ours",
@@ -300,7 +303,45 @@
         "src/agents/sandbox/browser.create.test.ts                                merge=ours",
         "src/agents/sandbox/ssh-backend.test.ts                                   merge=ours",
         "src/gateway/server-chat.agent-events.test.ts                             merge=ours",
-        "src/gateway/server.sessions.reset-cleanup.test.ts                        merge=ours"
+        "src/gateway/server.sessions.reset-cleanup.test.ts                        merge=ours",
+        "packages/agent-core/src/agent-loop.test.ts                              merge=ours",
+        "src/llm/providers/mistral.test.ts                                       merge=ours",
+        "packages/ai/src/providers/google-shared.ts merge=ours",
+        "packages/ai/src/providers/mistral.test.ts merge=ours",
+        "packages/ai/src/providers/mistral.ts merge=ours",
+        "ui/src/api/types.ts merge=ours",
+        "ui/src/app-navigation.test.ts merge=ours",
+        "ui/src/app/settings.ts merge=ours",
+        "ui/src/components/icons.ts merge=ours",
+        "ui/src/components/markdown.ts merge=ours",
+        "ui/src/lib/chat/chat-types.ts merge=ours",
+        "ui/src/lib/chat/model-ref.test.ts merge=ours",
+        "ui/src/lib/chat/model-ref.ts merge=ours",
+        "ui/src/lib/workboard/index.ts merge=ours",
+        "ui/src/pages/agents/panels-overview.ts merge=ours",
+        "ui/src/pages/agents/view.ts merge=ours",
+        "ui/src/pages/chat/chat-composer.test.ts merge=ours",
+        "ui/src/pages/chat/chat-gateway.test.ts merge=ours",
+        "ui/src/pages/chat/chat-history.ts merge=ours",
+        "ui/src/pages/chat/chat-send.test.ts merge=ours",
+        "ui/src/pages/chat/chat-thread.test.ts merge=ours",
+        "ui/src/pages/chat/chat-thread.ts merge=ours",
+        "ui/src/pages/chat/components/chat-message.test.ts merge=ours",
+        "ui/src/pages/chat/components/chat-message.ts merge=ours",
+        "ui/src/pages/chat/components/chat-tool-cards.test.ts merge=ours",
+        "ui/src/pages/chat/composer-persistence.test.ts merge=ours",
+        "ui/src/pages/chat/composer-persistence.ts merge=ours",
+        "ui/src/pages/chat/realtime-talk-webrtc.ts merge=ours",
+        "ui/src/pages/chat/run-lifecycle.ts merge=ours",
+        "ui/src/pages/chat/scroll.test.ts merge=ours",
+        "ui/src/pages/chat/scroll.ts merge=ours",
+        "ui/src/pages/chat/tool-stream.node.test.ts merge=ours",
+        "ui/src/pages/chat/tool-stream.ts merge=ours",
+        "ui/src/pages/config/quick.ts merge=ours",
+        "ui/src/pages/skill-workshop/proposals.ts merge=ours",
+        "ui/src/pages/skill-workshop/view.ts merge=ours",
+        "ui/src/pages/workboard/data.test.ts merge=ours",
+        "ui/src/pages/workboard/view.ts merge=ours"
       ]
     },
     ".pre-commit-config.yaml": {
@@ -347,8 +388,8 @@
       ]
     },
     "package.json": {
-      "hash": "62f1e2510e356684f78001a5b42255da1306f8d27734286c03e0d906f87ce843",
-      "pkgSectionsHash": "18ff6f887f5eb4a48ce1eaf329ac154ceeb6e510b7685772112443df07ac1685"
+      "hash": "213ee42a1b7e43a90d9f1be7c8a99ca5337a2b7a9b5e98ba93e82208fd8e8d35",
+      "pkgSectionsHash": "1d7c3a6756393c40306c75b9184126247225347ae2b0402828d6b398cdcffb66"
     },
     "src/config/schema.ts": {
       "hash": "6a445062e415dbd88ba7cf33297b84a63f13e21e1727e20e677c594d6e881bff"
