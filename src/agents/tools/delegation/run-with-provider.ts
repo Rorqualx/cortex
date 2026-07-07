@@ -13,6 +13,7 @@ import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { runWithModelFallback } from "../../model-fallback.js";
 import { resolveDelegationClient, type HostAuthResolver } from "./host-config.js";
 import type { LlmClient } from "./providers/types.js";
+import { recordProviderError, recordProviderLatency } from "./router.js";
 import type { Candidate } from "./router.js";
 
 export type RunDelegationParams<T> = {
@@ -67,11 +68,20 @@ export async function runDelegation<T>(
       );
       if (!client) {
         // Unsupported provider or no key — advance the chain.
+        recordProviderError(providerId);
         throw new Error(
           `delegation: provider '${providerId}' is unavailable (no key or unsupported); advancing fallback`,
         );
       }
-      return params.run(client, model, providerId);
+      const startTime = Date.now();
+      try {
+        const result = await params.run(client, model, providerId);
+        recordProviderLatency(providerId, Date.now() - startTime);
+        return result;
+      } catch (err) {
+        recordProviderError(providerId);
+        throw err;
+      }
     },
   });
 
