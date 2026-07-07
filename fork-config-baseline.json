@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-07-07T02:54:52.042Z",
+  "timestamp": "2026-07-07T03:14:19.250Z",
   "branch": "main",
-  "headSha": "44b830b20dc7e7c0f7ba01b6ad95869a436cae1e",
+  "headSha": "25d821f025ba503f3dbf842037c1b28b0fe2ec1c",
   "files": {
     ".gitattributes": {
-      "hash": "4e3e1eab0693058325bb52513f26f69ec674fde263fa7036b1fe7ef7c6fd2233",
+      "hash": "05ab26487eb7d53067b38b550771a408c79144181824d04d760e49e157c45f4c",
       "mergeOursLines": [
         "extensions/memory-l3/**                                              merge=ours",
         "memory/.l3/**                                                        merge=ours",
@@ -341,7 +341,23 @@
         "ui/src/pages/skill-workshop/proposals.ts merge=ours",
         "ui/src/pages/skill-workshop/view.ts merge=ours",
         "ui/src/pages/workboard/data.test.ts merge=ours",
-        "ui/src/pages/workboard/view.ts merge=ours"
+        "ui/src/pages/workboard/view.ts merge=ours",
+        "# --- fork test surfaces whose impl is merge=ours; keep test in sync on merge ---",
+        "packages/gateway-protocol/src/schema/agents-models-skills.test.ts merge=ours",
+        "src/agents/doom-loop-guard.test.ts merge=ours",
+        "src/agents/embedded-agent-runner/run/attempt-tool-construction-plan.test.ts merge=ours",
+        "src/agents/system-prompt.test.ts merge=ours",
+        "src/agents/tool-catalog.test.ts merge=ours",
+        "src/gateway/session-utils.test.ts merge=ours",
+        "ui/src/ui/avatar-lightbox.test.ts merge=ours",
+        "ui/src/ui/chat/run-lifecycle.test.ts merge=ours",
+        "ui/src/ui/controllers/skill-workshop.test.ts merge=ours",
+        "ui/src/ui/views/agents.test.ts merge=ours",
+        "ui/src/ui/views/chat.test.ts merge=ours",
+        "ui/src/ui/views/config-quick.test.ts merge=ours",
+        "ui/src/ui/views/conversations.test.ts merge=ours",
+        "ui/src/ui/views/pixel-office.test.ts merge=ours",
+        "ui/src/ui/views/workboard.test.ts merge=ours"
       ]
     },
     ".pre-commit-config.yaml": {
