@@ -9,11 +9,63 @@
 //   primary tier : zai (GLM coding plan), kimi (kimi-for-coding subscription)
 //   fallback tier: deepseek, moonshot (Kimi/Moonshot pay-as-you-go)
 //
+// Adaptive latency balancing: when a provider has ≥3 latency samples,
+// fallbacks (not the primary) are reordered so faster/healthier providers
+// float to the front. This avoids waiting on a slow-but-responding provider
+// when a faster alternative is available. No data (tests/fresh start) →
+// original priority order preserved (deterministic).
+//
 // NOTE: `kimi` (kimi-for-coding) speaks the anthropic-messages dialect and is
 // served by a dedicated Anthropic client (providers/kimi-coding.ts); see
 // host-config.resolveDelegationClient for the per-provider client mapping.
 
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+
+// ---------------------------------------------------------------------------
+// Latency tracker — per-provider rolling stats for adaptive fallback ordering
+// ---------------------------------------------------------------------------
+
+const LATENCY_WINDOW_SIZE = 10;
+const LATENCY_MIN_SAMPLES = 3;
+const ERROR_PENALTY_MS = 30_000; // 30s penalty per recent error
+
+const _latencyHistory = new Map<string, number[]>();
+const _errorCounts = new Map<string, number>();
+
+/** Record a successful call latency for a provider. Resets error count. */
+export function recordProviderLatency(provider: string, latencyMs: number): void {
+  const history = _latencyHistory.get(provider) ?? [];
+  history.push(latencyMs);
+  while (history.length > LATENCY_WINDOW_SIZE) history.shift();
+  _latencyHistory.set(provider, history);
+  _errorCounts.set(provider, 0);
+}
+
+/** Record a failed call for a provider. Increments error penalty. */
+export function recordProviderError(provider: string): void {
+  _errorCounts.set(provider, (_errorCounts.get(provider) ?? 0) + 1);
+}
+
+/** Compute an EWMA latency + error penalty for a provider. Returns ms. */
+function providerLatencyPenalty(provider: string): number {
+  const history = _latencyHistory.get(provider);
+  if (!history || history.length < LATENCY_MIN_SAMPLES) return 0;
+
+  // EWMA with alpha=0.3 — recent samples weighted more
+  let ewma = history[0]!;
+  for (let i = 1; i < history.length; i++) {
+    ewma = 0.3 * history[i]! + 0.7 * ewma;
+  }
+
+  const errors = _errorCounts.get(provider) ?? 0;
+  return ewma + errors * ERROR_PENALTY_MS;
+}
+
+/** Clear all latency state (test-only). */
+export function resetLatencyState(): void {
+  _latencyHistory.clear();
+  _errorCounts.clear();
+}
 
 export type DelegationKind =
   | "code"
@@ -166,5 +218,22 @@ export function resolveRoute(req: RouteRequest): Route {
   const chain = [...fast, ...tail];
   // Fallback safety net if nothing was configured at all.
   const primary = chain[0] ?? { provider: "zai", model: PREFERRED.zai.default };
-  return { primary, fallbacks: chain.slice(1) };
+  let fallbacks = chain.slice(1);
+
+  // Adaptive latency balancing: when we have ≥3 latency samples for any
+  // provider in the fallback chain, reorder so faster/healthier providers
+  // float to the front. The primary is never reordered — it always goes
+  // first. No data → original priority order preserved (deterministic).
+  const hasLatencyData = fallbacks.some(
+    (c) =>
+      _latencyHistory.has(c.provider) &&
+      (_latencyHistory.get(c.provider)?.length ?? 0) >= LATENCY_MIN_SAMPLES,
+  );
+  if (hasLatencyData) {
+    fallbacks = [...fallbacks].sort(
+      (a, b) => providerLatencyPenalty(a.provider) - providerLatencyPenalty(b.provider),
+    );
+  }
+
+  return { primary, fallbacks };
 }
