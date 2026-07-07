@@ -201,6 +201,11 @@ export type LongTermFact = {
   supersededBy?: string | null;
   /** Emotional significance flag propagated from L2 extraction. */
   significant?: boolean;
+  /** ms timestamp of the most recent retrieval that included this fact.
+   * Used for access-time decay: recently retrieved facts get a temporal
+   * recency boost in scoring. Absent on facts created before this feature;
+   * readers treat absent as lastConfirmedAt for recency purposes. */
+  lastRecalledAt?: number;
   /**
    * Pre-computed embedding vector for semantic dedup and retrieval.
    * Computed at promotion time (or reaffirmation) via the embedding provider.

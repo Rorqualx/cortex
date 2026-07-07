@@ -61,10 +61,16 @@ CREATE TABLE IF NOT EXISTS l3_shared_longterm (
   source_agent_id TEXT NOT NULL,
   dedup_key TEXT NOT NULL,
   archived INTEGER NOT NULL DEFAULT 0,
+  last_recalled_at INTEGER,
   payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS l3_shared_longterm_dedup ON l3_shared_longterm (dedup_key);
 `;
+
+/** Migration: add last_recalled_at column to existing databases (2026-07-07). */
+const SHARED_SCHEMA_MIGRATIONS = [
+  `ALTER TABLE l3_shared_longterm ADD COLUMN last_recalled_at INTEGER`,
+];
 
 /**
  * Resolve the shared memory directory path.
@@ -102,6 +108,13 @@ function openSharedDb(sharedDir?: string): DatabaseSync {
     // of failing fast under cross-process contention.
     configureMemorySqliteWalMaintenance(db, { busyTimeoutMs: 5000, databasePath: dbPath });
     db.exec(SHARED_SCHEMA_SQL);
+    for (const migration of SHARED_SCHEMA_MIGRATIONS) {
+      try {
+        db.exec(migration);
+      } catch {
+        // Column already exists — skip this migration.
+      }
+    }
     return db;
   } catch (err) {
     try {
@@ -121,13 +134,20 @@ function closeSharedDb(db: DatabaseSync): void {
 
 /** Load every stored fact (active and archived), preserving insertion order. */
 function readAllSync(db: DatabaseSync): SharedLongTermFact[] {
-  const rows = db.prepare("SELECT payload FROM l3_shared_longterm ORDER BY row_id").all() as Array<{
+  const rows = db
+    .prepare("SELECT payload, last_recalled_at FROM l3_shared_longterm ORDER BY row_id")
+    .all() as Array<{
     payload: string;
+    last_recalled_at: number | null;
   }>;
   const facts: SharedLongTermFact[] = [];
   for (const row of rows) {
     try {
-      facts.push(JSON.parse(row.payload) as SharedLongTermFact);
+      const fact = JSON.parse(row.payload) as SharedLongTermFact;
+      if (row.last_recalled_at != null) {
+        fact.lastRecalledAt = row.last_recalled_at;
+      }
+      facts.push(fact);
     } catch {
       // A single corrupt row must not take down cross-context recall.
     }
@@ -142,7 +162,7 @@ function readAllSync(db: DatabaseSync): SharedLongTermFact[] {
 function replaceAllSync(db: DatabaseSync, facts: ReadonlyArray<SharedLongTermFact>): void {
   db.exec("DELETE FROM l3_shared_longterm");
   const insert = db.prepare(
-    "INSERT INTO l3_shared_longterm (fact_id, source_agent_id, dedup_key, archived, payload) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO l3_shared_longterm (fact_id, source_agent_id, dedup_key, archived, last_recalled_at, payload) VALUES (?, ?, ?, ?, ?, ?)",
   );
   for (const fact of facts) {
     insert.run(
@@ -150,6 +170,7 @@ function replaceAllSync(db: DatabaseSync, facts: ReadonlyArray<SharedLongTermFac
       fact.sourceAgentId,
       fact.dedupKey,
       fact.archived ? 1 : 0,
+      fact.lastRecalledAt ?? null,
       JSON.stringify(fact),
     );
   }
@@ -242,6 +263,30 @@ export async function publishToFacts(
       const conflicts = allActive.length - resolved.filter((f) => !f.archived).length;
       return { published: newShared.length, conflicts: Math.max(0, -conflicts) };
     });
+  } finally {
+    closeSharedDb(db);
+  }
+}
+
+/**
+ * Mark shared facts as recalled (update last_recalled_at). Called after
+ * retrieval to feed temporal recency into future scoring passes. Non-fatal
+ * by design — the caller should swallow errors.
+ */
+export async function markSharedFactsRecalled(
+  factIds: string[],
+  now: number,
+  sharedDir?: string,
+): Promise<void> {
+  if (factIds.length === 0) return;
+  const db = openSharedDb(sharedDir);
+  try {
+    const update = db.prepare(
+      "UPDATE l3_shared_longterm SET last_recalled_at = ? WHERE fact_id = ?",
+    );
+    for (const id of factIds) {
+      update.run(now, id);
+    }
   } finally {
     closeSharedDb(db);
   }

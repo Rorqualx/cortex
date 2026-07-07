@@ -1,4 +1,4 @@
-import { readSharedFacts } from "./cross-context.js";
+import { markSharedFactsRecalled, readSharedFacts } from "./cross-context.js";
 import { recordRetrievalSignals } from "./entities.js";
 import {
   buildEdgeLookup,
@@ -434,11 +434,14 @@ export async function retrieveTopK(params: {
         if (sf.archived) {
           continue;
         }
+        // Temporal recency boost: use max of lastConfirmedAt and lastRecalledAt
+        // so recently retrieved facts get a recency lift from access-time tracking.
+        const effectiveCreatedAt = Math.max(sf.lastConfirmedAt, sf.lastRecalledAt ?? 0);
         const fact: L2Fact = {
           id: sf.id,
           text: sf.text,
           importance: sf.importance,
-          createdAt: sf.lastConfirmedAt,
+          createdAt: effectiveCreatedAt,
           dedupKey: sf.dedupKey,
         };
         const signals = scoreFact({
@@ -620,6 +623,23 @@ export async function retrieveTopK(params: {
     }
   } catch {
     // Access-time update is non-critical — skip silently.
+  }
+
+  // -----------------------------------------------------------------
+  // Access-time tracking for shared facts (cross-context tier)
+  // -----------------------------------------------------------------
+  // Update last_recalled_at on retrieved shared facts so future
+  // retrievals get a temporal recency boost. Non-fatal — failure must
+  // not block retrieval.
+  if (params.sharedMemoryDir) {
+    try {
+      const sharedFactIds = finalFacts.filter((r) => r.tier === "shared").map((r) => r.fact.id);
+      if (sharedFactIds.length > 0) {
+        await markSharedFactsRecalled(sharedFactIds, now, params.sharedMemoryDir);
+      }
+    } catch {
+      // Shared-fact recall tracking is non-critical — skip silently.
+    }
   }
 
   // G4 pattern completion: append edge-neighbors of the strongest results as
