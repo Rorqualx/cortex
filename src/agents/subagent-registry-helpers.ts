@@ -7,26 +7,31 @@ import fsSync, { promises as fs } from "node:fs";
 import path from "node:path";
 import { DEFAULT_SUBAGENT_ARCHIVE_AFTER_MINUTES } from "../config/agent-limits.js";
 import { getRuntimeConfig } from "../config/config.js";
-import { patchSessionEntry } from "../config/sessions/session-accessor.js";
 import { resolveAgentIdFromSessionKey, resolveStorePath } from "../config/sessions.js";
+import { patchSessionEntry } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { defaultRuntime } from "../runtime.js";
+import { truncateUtf8Prefix } from "../utils/utf8-truncate.js";
 import { withSubagentOutcomeTiming } from "./subagent-announce-output.js";
 import { getDeliveryAttemptCount, getDeliveryLastError } from "./subagent-delivery-state.js";
-import { SUBAGENT_ENDED_REASON_ERROR } from "./subagent-lifecycle-events.js";
+import {
+  SUBAGENT_ENDED_REASON_ERROR,
+  SUBAGENT_ENDED_REASON_KILLED,
+} from "./subagent-lifecycle-events.js";
 import { shouldUpdateRunOutcome } from "./subagent-registry-completion.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
-import {
-  resolveSubagentRunOrphanReason,
-  type SubagentRunOrphanReason,
-} from "./subagent-session-reconciliation.js";
-// Re-exported for subagent-registry.ts, which adopted upstream's orphan-reason wiring.
-export { resolveSubagentRunOrphanReason } from "./subagent-session-reconciliation.js";
 import {
   getSubagentSessionRuntimeMs,
   getSubagentSessionStartedAt,
   resolveSubagentSessionStatus,
 } from "./subagent-session-metrics.js";
+import {
+  resolveCompletionFromSessionEntry,
+  resolveSubagentRunOrphanReason,
+  type SubagentRunOrphanReason,
+} from "./subagent-session-reconciliation.js";
+// Re-exported for subagent-registry.ts, which imports the orphan-reason resolver from here.
+export { resolveSubagentRunOrphanReason } from "./subagent-session-reconciliation.js";
 
 export {
   getSubagentSessionRuntimeMs,
@@ -34,6 +39,7 @@ export {
   resolveSubagentSessionStatus,
 } from "./subagent-session-metrics.js";
 
+export const PROVISIONAL_KILL_RECONCILIATION_MS = 5 * 60_000;
 export const MIN_ANNOUNCE_RETRY_DELAY_MS = 1_000;
 const MAX_ANNOUNCE_RETRY_DELAY_MS = 8_000;
 export const MAX_ANNOUNCE_RETRY_COUNT = 3;
@@ -57,7 +63,7 @@ export function capFrozenResultText(resultText: string): string {
     0,
     FROZEN_RESULT_TEXT_MAX_BYTES - Buffer.byteLength(notice, "utf8"),
   );
-  const payload = Buffer.from(trimmed, "utf8").subarray(0, maxPayloadBytes).toString("utf8");
+  const payload = truncateUtf8Prefix(trimmed, maxPayloadBytes);
   return `${payload}${notice}`;
 }
 
@@ -91,7 +97,10 @@ export function logAnnounceGiveUp(entry: SubagentRunRecord, reason: "retry-limit
 }
 
 /** Persists child session timing/status derived from the subagent registry row. */
-export async function persistSubagentSessionTiming(entry: SubagentRunRecord) {
+export async function persistSubagentSessionTiming(
+  entry: SubagentRunRecord,
+  options?: { isCurrentGeneration?: () => boolean },
+) {
   const childSessionKey = entry.childSessionKey?.trim();
   if (!childSessionKey) {
     return;
@@ -112,6 +121,27 @@ export async function persistSubagentSessionTiming(entry: SubagentRunRecord) {
   await patchSessionEntry(
     { storePath, sessionKey: childSessionKey },
     (sessionEntry) => {
+      // Recheck under the session-store write lock. A completion may have
+      // waited behind a steer/restart that transferred this session's ownership.
+      if (options?.isCurrentGeneration && !options.isCurrentGeneration()) {
+        return null;
+      }
+      if (status === "killed") {
+        const existingCompletion = resolveCompletionFromSessionEntry(sessionEntry, Date.now(), {
+          notBeforeMs: entry.startedAt ?? entry.createdAt,
+        });
+        if (existingCompletion && existingCompletion.reason !== SUBAGENT_ENDED_REASON_KILLED) {
+          // A provider result already reached durable session state. The kill
+          // marker is provisional and must not erase restart reconciliation evidence
+          // or leave the session looking aborted after that completion won.
+          if (sessionEntry.abortedLastRun !== true) {
+            return null;
+          }
+          const completedEntry = { ...sessionEntry };
+          delete completedEntry.abortedLastRun;
+          return completedEntry;
+        }
+      }
       const next = { ...sessionEntry };
 
       if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
@@ -136,6 +166,9 @@ export async function persistSubagentSessionTiming(entry: SubagentRunRecord) {
         next.status = status;
       } else {
         delete next.status;
+      }
+      if (status && status !== "killed") {
+        delete next.abortedLastRun;
       }
       return next;
     },
@@ -287,6 +320,11 @@ export function reconcileOrphanedRestoredRuns(params: {
   const now = Date.now();
   let changed = false;
   for (const [runId, entry] of params.runs.entries()) {
+    if (entry.killReconciliation) {
+      // Provider completion may still repair this provisional kill. The
+      // sweeper owns its bounded reconciliation even when the session vanished.
+      continue;
+    }
     const orphanReason = resolveSubagentRunOrphanReason({
       entry,
       includeStaleUnended: true,

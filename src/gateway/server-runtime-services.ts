@@ -1,5 +1,6 @@
 // Gateway post-ready runtime services.
 // Starts delayed maintenance, cron, heartbeat, recovery, and pricing refresh work.
+import { getRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isVitestRuntimeEnv } from "../infra/env.js";
 import { startHeartbeatRunner, type HeartbeatRunner } from "../infra/heartbeat-runner.js";
@@ -27,10 +28,12 @@ export type GatewayMaintenanceHandles = NonNullable<
 /** Starts cron without making gateway startup wait for cron initialization. */
 export function startGatewayCronWithLogging(params: {
   cron: { start: () => Promise<void> };
+  afterStart?: () => Promise<void>;
   logCron: { error: (message: string) => void };
 }): void {
   void params.cron
     .start()
+    .then(() => params.afterStart?.())
     .catch((err: unknown) => params.logCron.error(`failed to start: ${String(err)}`));
 }
 
@@ -44,9 +47,11 @@ function clearGatewayMaintenanceHandles(maintenance: GatewayMaintenanceHandles |
   clearInterval(maintenance.healthInterval);
   clearInterval(maintenance.dedupeCleanup);
   clearInterval(maintenance.workboardDispatch);
+  clearInterval(maintenance.worktreeCleanup);
   if (maintenance.mediaCleanup) {
     clearInterval(maintenance.mediaCleanup);
   }
+  maintenance.skillCuratorCleanup();
 }
 
 /** Runs maintenance that is intentionally delayed until after the gateway is ready. */
@@ -236,7 +241,10 @@ export function activateGatewayScheduledServices(params: {
       stopModelCatalogRefresh: () => {},
     };
   }
-  const heartbeatRunner = startHeartbeatRunner({ cfg: params.cfgAtStart });
+  const heartbeatRunner = startHeartbeatRunner({
+    cfg: params.cfgAtStart,
+    readCurrentConfig: getRuntimeConfig,
+  });
   if (params.startCron !== false) {
     startGatewayCronWithLogging({
       cron: params.cron,

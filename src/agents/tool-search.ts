@@ -21,6 +21,7 @@ import {
 } from "./agent-tools.before-tool-call.js";
 import type { AgentMessage, AgentToolResult, AgentToolUpdateCallback } from "./runtime/index.js";
 import type { ToolDefinition } from "./sessions/index.js";
+import { appendBoundedTextTail, SESSION_TOOL_STDERR_TAIL_BYTES } from "./sessions/tools/limits.js";
 import { asToolParamsRecord, jsonResult, ToolInputError } from "./tools/common.js";
 import type { AnyAgentTool } from "./tools/common.js";
 
@@ -186,34 +187,6 @@ function sendAndFlush(message) {
       resolve();
     }
   });
-}
-
-function toJsonSafe(value) {
-  if (value === undefined) {
-    return null;
-  }
-  try {
-    return JSON.parse(JSON.stringify(value));
-  } catch {
-    if (value instanceof Error) {
-      return value.message;
-    }
-    if (value === null) {
-      return null;
-    }
-    switch (typeof value) {
-      case "string":
-        return value;
-      case "number":
-      case "boolean":
-      case "bigint":
-      case "symbol":
-      case "function":
-        return String(value);
-      default:
-        return Object.prototype.toString.call(value);
-    }
-  }
 }
 
 function formatLogItem(value) {
@@ -2093,6 +2066,10 @@ async function runCodeModeBridgeRequest(
   throw new ToolInputError("Unsupported tool_search_code bridge method.");
 }
 
+function appendToolSearchCodeStderrTail(current: string, chunk: string): string {
+  return appendBoundedTextTail(current, chunk, SESSION_TOOL_STDERR_TAIL_BYTES);
+}
+
 function runCodeModeChild(params: {
   code: string;
   config: ToolSearchConfig;
@@ -2106,9 +2083,11 @@ function runCodeModeChild(params: {
     const child = spawn(process.execPath, buildCodeModeChildArgs(), {
       cwd: os.tmpdir(),
       env: {},
-      stdio: ["ignore", "pipe", "pipe", "ipc"],
+      // The worker returns logs/results over IPC and never writes stdout.
+      // Ignore it so an unused pipe cannot fill or surface unhandled errors.
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
     });
-    const stderr: string[] = [];
+    let stderrTail = "";
     let settled = false;
     let timedOut = false;
     let exitRejectionTimer: ReturnType<typeof setTimeout> | undefined;
@@ -2147,7 +2126,10 @@ function runCodeModeChild(params: {
 
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk: string) => {
-      stderr.push(chunk);
+      stderrTail = appendToolSearchCodeStderrTail(stderrTail, chunk);
+    });
+    child.stderr?.on("error", (error) => {
+      settle(() => reject(error));
     });
 
     child.on("error", (error) => {
@@ -2158,8 +2140,8 @@ function runCodeModeChild(params: {
         return;
       }
       const rejectOnExit = () => {
-        const suffix = stderr.join("").trim();
-        const detail = suffix ? `: ${suffix.slice(0, 500)}` : "";
+        const suffix = stderrTail.trim();
+        const detail = suffix ? `: ${suffix.slice(-500)}` : "";
         settle(() =>
           reject(
             new Error(
@@ -2351,5 +2333,7 @@ export const testing = {
   },
   applyToolSearchCatalog,
   addClientToolsToToolSearchCatalog,
+  appendToolSearchCodeStderrTail,
+  runCodeModeChild,
 };
 export { testing as __testing };

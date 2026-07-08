@@ -1,11 +1,11 @@
 // Proxy capture SQLite store persists capture metadata and replayable exchanges.
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { normalizeNullableString as normalizeObservedValue } from "@openclaw/normalization-core/string-coerce";
 import { normalizeUniqueStringEntries } from "@openclaw/normalization-core/string-normalization";
+import { sha256Hex } from "../infra/crypto-digest.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import { applyPrivateModeSync } from "../infra/private-mode.js";
 import { resolveSqliteDatabaseFilePaths } from "../infra/sqlite-files.js";
@@ -280,7 +280,7 @@ class DebugProxyCaptureStoreImpl {
   }
 
   persistPayload(data: Buffer, contentType?: string): CaptureBlobRecord | SharedCaptureBlobRecord {
-    const sha256 = createHash("sha256").update(data).digest("hex");
+    const sha256 = sha256Hex(data);
     const blobId = sha256.slice(0, 24);
     if (this.pathBased) {
       fs.mkdirSync(this.pathBased.blobDir, {

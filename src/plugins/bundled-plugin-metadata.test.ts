@@ -46,7 +46,9 @@ const EXPECTED_BUNDLED_STARTUP_PLUGIN_IDS = [
   "harness-guardrails",
   "llm-task",
   "lobster",
+  "logbook",
   "memory-wiki",
+  "ollama",
   "openshell",
   "phone-control",
   "policy",
@@ -63,6 +65,7 @@ const EXPECTED_EMPTY_CONFIG_GATEWAY_STARTUP_PLUGIN_IDS = [
   "device-pair",
   "file-transfer",
   "memory-core",
+  "ollama",
   "phone-control",
   "talk-voice",
 ] as const;

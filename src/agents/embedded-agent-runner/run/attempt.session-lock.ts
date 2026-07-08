@@ -594,23 +594,28 @@ export type EmbeddedAttemptSessionLockController = {
 
 export async function createEmbeddedAttemptSessionLockController(params: {
   acquireSessionWriteLock: AcquireSessionWriteLock;
+  initialAcquireSignal?: AbortSignal;
   lockOptions: LockOptions;
 }): Promise<EmbeddedAttemptSessionLockController> {
-  const acquireLock = async (): Promise<SessionLock> =>
+  const acquireLock = async (signal?: AbortSignal): Promise<SessionLock> =>
     await params.acquireSessionWriteLock({
       sessionFile: params.lockOptions.sessionFile,
       timeoutMs: params.lockOptions.timeoutMs,
       staleMs: params.lockOptions.staleMs,
       maxHoldMs: params.lockOptions.maxHoldMs,
+      ...(signal ? { signal } : {}),
     });
 
-  let heldLock: SessionLock | undefined = await acquireLock();
+  let heldLock: SessionLock | undefined = await acquireLock(params.initialAcquireSignal);
   const activeWriteLock = new AsyncLocalStorage<ActiveWriteLockState>();
   let fenceFingerprint: SessionFileFingerprint | undefined;
   let fenceSnapshot: SessionFileFenceSnapshot | undefined;
   let fenceGeneration = 0;
   let fenceActive = false;
   let takeoverDetected = false;
+  // An aborted prompt can settle after attempt teardown. Never let its finally
+  // path reacquire a retained lock that no owner remains to release.
+  let disposed = false;
   let retainedLockUseCount = 0;
   const retainedLockIdleWaiters = new Set<() => void>();
   let heldLockDraining = false;
@@ -1004,10 +1009,14 @@ export async function createEmbeddedAttemptSessionLockController(params: {
     },
     async reacquireAfterPrompt(): Promise<void> {
       await waitForHeldLockDrain();
-      if (takeoverDetected || heldLock) {
+      if (disposed || takeoverDetected || heldLock) {
         return;
       }
       const lock = await acquireLock();
+      if (disposed) {
+        await lock.release();
+        return;
+      }
       try {
         heldLock = lock;
         await assertSessionFileFence();
@@ -1095,6 +1104,7 @@ export async function createEmbeddedAttemptSessionLockController(params: {
       return takeoverDetected;
     },
     async dispose(): Promise<void> {
+      disposed = true;
       await disposeHeldLockAfterRetainedIdle();
     },
   };

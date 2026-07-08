@@ -1,6 +1,7 @@
 // Assistant visible text tests cover extracting user-visible assistant output.
 import { describe, expect, it } from "vitest";
 import {
+  sanitizeAssistantFinalAnswerText,
   sanitizeAssistantVisibleText,
   sanitizeAssistantVisibleTextWithProfile,
   stripAssistantInternalScaffolding,
@@ -385,6 +386,51 @@ describe("stripAssistantInternalScaffolding", () => {
       expectVisibleText(
         'prefix\n<function name="spawn">\n<parameter name="key">value</parameter>',
         'prefix\n<function name="spawn">\n<parameter name="key">value</parameter>',
+      );
+    });
+
+    it("unwraps standalone parameter tags while preserving their content (#98557)", () => {
+      expectVisibleText(
+        'Results: <parameter name="assumptions">some content</parameter> after.',
+        "Results: some content after.",
+      );
+      expectVisibleText(
+        ['<parameter name="assumptions">', "line 1", "line 2", "</parameter>"].join("\n"),
+        "line 1\nline 2",
+      );
+      expectVisibleText('<parameter name="data">{"key":"value"}</parameter>', '{"key":"value"}');
+      expectVisibleText('<parameter name="items">[1,2]</parameter>', "[1,2]");
+      expectVisibleText(
+        'Results:<parameter name="x">\nline\n</parameter>after',
+        "Results:\nline\nafter",
+      );
+    });
+
+    it("keeps truncated tool-call parameters fail-closed", () => {
+      expectVisibleText('<tool_call><parameter name="token">secret</parameter>', "");
+    });
+
+    it("preserves parameter tags in code and literal function examples", () => {
+      expectVisibleText(
+        'Use `<parameter name="path">/tmp</parameter>`.',
+        'Use `<parameter name="path">/tmp</parameter>`.',
+      );
+      expectVisibleText(
+        'Use <function name="read"><parameter name="path">/tmp</parameter></function> in docs.',
+        'Use <function name="read"><parameter name="path">/tmp</parameter></function> in docs.',
+      );
+      expectVisibleText(
+        '<schema><parameter name="path">/tmp</parameter></schema>',
+        '<schema><parameter name="path">/tmp</parameter></schema>',
+      );
+      expectVisibleText(
+        '<schema><parameter name="path"/></schema>',
+        '<schema><parameter name="path"/></schema>',
+      );
+      expectVisibleText('<br><parameter name="path">/tmp</parameter>', "<br>/tmp");
+      expectVisibleText(
+        'Use <function> declarations. <parameter name="path">/tmp</parameter>',
+        "Use <function> declarations. /tmp",
       );
     });
 
@@ -890,9 +936,24 @@ describe("sanitizeAssistantVisibleText", () => {
     );
   });
 
-  it("keeps unclosed trailing reasoning hidden when visible text already exists", () => {
+  it("hides mid-answer unclosed reasoning tags on the raw delivery path", () => {
     expect(sanitizeAssistantVisibleText("Visible prefix <think>private reasoning tail")).toBe(
       "Visible prefix",
+    );
+  });
+
+  it("still hides mid-answer closed reasoning tags", () => {
+    const text = "Visible prefix <think>private reasoning</think> visible suffix";
+
+    expect(sanitizeAssistantVisibleText(text)).toBe("Visible prefix  visible suffix");
+  });
+
+  it("keeps unclosed literal reasoning-looking tags in final-answer prose", () => {
+    expect(
+      sanitizeAssistantFinalAnswerText("<think>hidden</think>Use <think> literally here"),
+    ).toBe("Use <think> literally here");
+    expect(sanitizeAssistantFinalAnswerText("Before <think>literal tag text after")).toBe(
+      "Before <think>literal tag text after",
     );
   });
 });

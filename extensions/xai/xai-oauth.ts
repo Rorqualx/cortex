@@ -13,6 +13,8 @@ import {
   type OAuthCredential,
   type ProviderAuthResult,
 } from "openclaw/plugin-sdk/provider-auth";
+import { readResponseWithLimit } from "openclaw/plugin-sdk/response-limit-runtime";
+import { sleep } from "openclaw/plugin-sdk/runtime-env";
 import { applyXaiConfig, XAI_DEFAULT_MODEL_REF } from "./onboard.js";
 import { xaiUserAgent } from "./src/xai-user-agent.js";
 
@@ -297,12 +299,6 @@ function describeXaiOAuthTokenFailure(params: {
       : formatXaiOAuthError({ context, status, body: body.json }),
     retryable: isCloudflareChallenge,
   };
-}
-
-async function sleep(ms: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }
 
 async function exchangeXaiOAuthToken(

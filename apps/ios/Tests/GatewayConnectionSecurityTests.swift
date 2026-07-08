@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import OpenClawKit
+import os
 import Testing
 import os
 @testable import OpenClaw
@@ -37,7 +38,7 @@ import os
         GatewayTLSStore.clearFingerprint(stableID: stableID)
     }
 
-    @Test @MainActor func discoveredTLSParams_prefersStoredPinOverAdvertisedTXT() async {
+    @Test @MainActor func `discovered TLS params prefers stored pin over advertised TXT`() {
         let stableID = "test|\(UUID().uuidString)"
         defer { clearTLSFingerprint(stableID: stableID) }
         self.clearTLSFingerprint(stableID: stableID)
@@ -57,7 +58,7 @@ import os
         #expect(params?.allowTOFU == false)
     }
 
-    @Test @MainActor func discoveredTLSParams_doesNotTrustAdvertisedFingerprint() async {
+    @Test @MainActor func `discovered TLS params does not trust advertised fingerprint`() {
         let stableID = "test|\(UUID().uuidString)"
         defer { clearTLSFingerprint(stableID: stableID) }
         self.clearTLSFingerprint(stableID: stableID)
@@ -75,7 +76,7 @@ import os
         #expect(params?.allowTOFU == false)
     }
 
-    @Test @MainActor func autoconnectRequiresStoredPinForDiscoveredGateways() async {
+    @Test @MainActor func `autoconnect requires stored pin for discovered gateways`() {
         let stableID = "test|\(UUID().uuidString)"
         defer { clearTLSFingerprint(stableID: stableID) }
         self.clearTLSFingerprint(stableID: stableID)
@@ -104,7 +105,7 @@ import os
         #expect(controller._test_didAutoConnect() == false)
     }
 
-    @Test @MainActor func manualConnectionsForceTLSForNonLoopbackHosts() async {
+    @Test @MainActor func `manual connections force TLS for non loopback hosts`() {
         let controller = self.makeController()
 
         #expect(controller._test_resolveManualUseTLS(host: "gateway.example.com", useTLS: false) == true)
@@ -120,7 +121,7 @@ import os
         #expect(controller._test_resolveManualUseTLS(host: "0.0.0.0", useTLS: false) == false)
     }
 
-    @Test @MainActor func manualConnectionsAllowPrivateLanPlaintext() async {
+    @Test @MainActor func `manual connections allow private lan plaintext`() {
         let controller = self.makeController()
 
         #expect(controller._test_resolveManualUseTLS(host: "openclaw.local", useTLS: false) == false)
@@ -131,7 +132,7 @@ import os
         #expect(controller._test_resolveManualUseTLS(host: "fd00::1", useTLS: false) == false)
     }
 
-    @Test @MainActor func manualDefaultPortUses443OnlyForTailnetTLSHosts() async {
+    @Test @MainActor func `manual default port uses 443 only for tailnet TLS hosts`() {
         let controller = self.makeController()
 
         #expect(controller._test_resolveManualPort(host: "gateway.example.com", port: 0, useTLS: true) == 18789)
@@ -278,7 +279,7 @@ import os
         #expect(GatewayTLSStore.loadFingerprint(stableID: stableID2) == nil)
     }
 
-    @Test func trustedPinMismatchCanBeRecoveredByReplacingStoredPin() {
+    @Test func `trusted pin mismatch can be recovered by replacing stored pin`() {
         let stableID = "test|\(UUID().uuidString)"
         defer { GatewayTLSStore.clearFingerprint(stableID: stableID) }
         GatewayTLSStore.saveFingerprint("old", stableID: stableID)
@@ -305,7 +306,7 @@ import os
         #expect(GatewayTLSStore.loadFingerprint(stableID: stableID) == "new")
     }
 
-    @Test func untrustedPinMismatchCannotBeRecoveredInApp() {
+    @Test func `untrusted pin mismatch cannot be recovered in app`() {
         let error = GatewayTLSValidationError(
             failure: GatewayTLSValidationFailure(
                 kind: .pinMismatch,

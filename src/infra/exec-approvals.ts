@@ -1,5 +1,5 @@
 // Manages exec approval policy, allowlist entries, and host targeting.
-import crypto from "node:crypto";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -19,6 +19,7 @@ import type {
   SystemRunApprovalPlan as WireSystemRunApprovalPlan,
 } from "../../packages/gateway-protocol/src/index.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
+import { sha256Hex, sha256HexPrefix } from "./crypto-digest.js";
 import {
   type AllowAlwaysPattern,
   resolveAllowAlwaysPatternEntries,
@@ -260,10 +261,7 @@ const EXEC_APPROVALS_FILE = "exec-approvals.json";
 const EXEC_APPROVALS_SOCKET = "exec-approvals.sock";
 
 function hashExecApprovalsRaw(raw: string | null): string {
-  return crypto
-    .createHash("sha256")
-    .update(raw ?? "")
-    .digest("hex");
+  return sha256Hex(raw ?? "");
 }
 
 function resolveExecApprovalsStateDir(env: NodeJS.ProcessEnv = process.env): {
@@ -754,7 +752,7 @@ export function mergeExecApprovalsSocketDefaults(params: {
 }
 
 function generateToken(): string {
-  return crypto.randomBytes(24).toString("base64url");
+  return randomBytes(24).toString("base64url");
 }
 
 export function readExecApprovalsSnapshot(): ExecApprovalsSnapshot {
@@ -1306,13 +1304,11 @@ export function hasDurableExecApproval(params: {
 // already hold `=command:` entries in this format; changing the input
 // silently orphans every persisted exact-command grant.
 function buildDurableCommandApprovalPattern(commandText: string): string {
-  const digest = crypto.createHash("sha256").update(commandText).digest("hex").slice(0, 16);
-  return `=command:${digest}`;
+  return `=command:${sha256HexPrefix(commandText, 16)}`;
 }
 
 function buildNodeCommandApprovalPattern(commandText: string): string {
-  const digest = crypto.createHash("sha256").update(commandText).digest("hex").slice(0, 16);
-  return `=node-command:${digest}`;
+  return `=node-command:${sha256HexPrefix(commandText, 16)}`;
 }
 
 export function hasNodeCommandAllowAlwaysMarker(params: {

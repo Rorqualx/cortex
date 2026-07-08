@@ -9,6 +9,7 @@ import type {
   Transport,
 } from "../../llm-core/src/index.js";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.js";
+import { TranscriptNotContinuableError } from "./errors.js";
 import { resolveAgentReasoningOption } from "./reasoning.js";
 import { type AgentCoreStreamRuntimeDeps, resolveAgentCoreStreamFn } from "./runtime-deps.js";
 import type {
@@ -426,7 +427,7 @@ export class Agent {
         return;
       }
 
-      throw new Error("Cannot continue from message role: assistant");
+      throw new TranscriptNotContinuableError(lastMessage.role);
     }
 
     await this.runContinuation();

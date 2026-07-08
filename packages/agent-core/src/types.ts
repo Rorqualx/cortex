@@ -477,6 +477,8 @@ export interface AgentTool<
 > extends Tool<TParameters> {
   /** Human-readable label for UI display. */
   label: string;
+  /** Preserve lifecycle telemetry without rendering transient channel progress. */
+  hideFromChannelProgress?: boolean;
   /**
    * Optional compatibility shim for raw tool-call arguments before schema validation.
    * Must return an object that matches `TParameters`.
@@ -541,13 +543,20 @@ export type AgentEvent =
   | { type: "message_update"; message: AgentMessage; assistantMessageEvent: AssistantMessageEvent }
   | { type: "message_end"; message: AgentMessage }
   // Tool execution lifecycle
-  | { type: "tool_execution_start"; toolCallId: string; toolName: string; args: unknown }
+  | {
+      type: "tool_execution_start";
+      toolCallId: string;
+      toolName: string;
+      args: unknown;
+      hideFromChannelProgress?: boolean;
+    }
   | {
       type: "tool_execution_update";
       toolCallId: string;
       toolName: string;
       args: unknown;
       partialResult: unknown;
+      hideFromChannelProgress?: boolean;
     }
   | {
       type: "tool_execution_end";
@@ -557,4 +566,7 @@ export type AgentEvent =
       isError: boolean;
       /** False when resolution, argument preparation, validation, or policy blocked execution. */
       executionStarted?: boolean;
+      /** Typed pre-execution failure provenance for safe downstream diagnostics. */
+      errorKind?: "argument-validation";
+      hideFromChannelProgress?: boolean;
     };

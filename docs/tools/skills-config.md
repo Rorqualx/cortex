@@ -52,13 +52,13 @@ Most skills configuration lives under `skills` in
 ## Loading (`skills.load`)
 
 <ParamField path="skills.load.extraDirs" type="string[]">
-  Additional skill directories to scan, at the lowest precedence (after bundled
-  and plugin skills). Paths are expanded with `~` support.
+  Additional skill directories to scan, at the lowest precedence (below
+  bundled and plugin skills). Paths are expanded with `~` support.
 </ParamField>
 
 <ParamField path="skills.load.allowSymlinkTargets" type="string[]">
-  Trusted real target directories that symlinked skill folders may resolve into,
-  even when the symlink lives outside the configured root. Use this for
+  Trusted real target directories that symlinked skill folders may resolve
+  into, even when the symlink lives outside the configured root. Use this for
   intentional sibling-repo layouts such as
   `<workspace>/skills/manager -> ~/Projects/manager/skills`. Keep this list
   narrow — do not point at broad roots like `~` or `~/Projects`.
@@ -81,9 +81,10 @@ Most skills configuration lives under `skills` in
 
 <ParamField path="skills.install.nodeManager" type='"npm" | "pnpm" | "yarn" | "bun"' default='"npm"'>
   Node package manager preference for skill installs. This only affects skill
-  installs — the Gateway runtime should still use Node (Bun is not recommended
-  for WhatsApp/Telegram). Use `openclaw setup --node-manager` for npm, pnpm,
-  or bun; set `"yarn"` manually for Yarn-backed skill installs.
+  installs — the Gateway runtime should still use Node (Bun is not
+  recommended for WhatsApp/Telegram). `openclaw setup --node-manager` and
+  `openclaw onboard --node-manager` accept `npm`, `pnpm`, or `bun`; set
+  `"yarn"` directly in config for Yarn-backed skill installs.
 </ParamField>
 
 <ParamField path="skills.install.allowUploadedArchives" type="boolean" default="false">
@@ -95,10 +96,10 @@ Most skills configuration lives under `skills` in
 ## Operator Install Policy (`security.installPolicy`)
 
 Use `security.installPolicy` when operators need a trusted local command to
-approve or block skill and plugin installs with host-specific policy. The policy
-runs after OpenClaw has staged source material and before the install or update
-continues. It applies to ClawHub skills, uploaded skills, Git/local skills,
-skill dependency installers, and plugin install/update sources.
+approve or block skill and plugin installs with host-specific policy. The
+policy runs after OpenClaw has staged source material and before the install
+or update continues. It applies to ClawHub skills, uploaded skills, Git/local
+skills, skill dependency installers, and plugin install/update sources.
 
 ```json5
 {
@@ -129,8 +130,8 @@ skill dependency installers, and plugin install/update sources.
 </ParamField>
 
 <ParamField path="security.installPolicy.targets" type='("skill" | "plugin")[]'>
-  Optional target filter. When omitted, policy applies to every supported target
-  so new installs do not unexpectedly fail open.
+  Optional target filter. When omitted, policy applies to every supported
+  target so new installs do not unexpectedly fail open.
 </ParamField>
 
 <ParamField path="security.installPolicy.exec.command" type="string">
@@ -147,7 +148,8 @@ skill dependency installers, and plugin install/update sources.
 </ParamField>
 
 <ParamField path="security.installPolicy.exec.noOutputTimeoutMs" type="number" default="timeoutMs">
-  Maximum time without stdout or stderr output before the policy fails closed.
+  Maximum time without stdout or stderr output before the policy fails
+  closed.
 </ParamField>
 
 <ParamField path="security.installPolicy.exec.maxOutputBytes" type="number" default="1048576">
@@ -159,8 +161,8 @@ skill dependency installers, and plugin install/update sources.
 </ParamField>
 
 <ParamField path="security.installPolicy.exec.passEnv" type="string[]">
-  Environment variable names copied from the OpenClaw process into the policy
-  process. Only named variables are passed.
+  Environment variable names copied from the OpenClaw process into the
+  policy process. Only named variables are passed.
 </ParamField>
 
 <ParamField path="security.installPolicy.exec.trustedDirs" type="string[]">
@@ -168,31 +170,32 @@ skill dependency installers, and plugin install/update sources.
 </ParamField>
 
 <ParamField path="security.installPolicy.exec.allowInsecurePath" type="boolean" default="false">
-  Bypasses command path ownership and permission checks. Use only when the path
-  is protected by another mechanism.
+  Bypasses command path ownership and permission checks. Use only when the
+  path is protected by another mechanism.
 </ParamField>
 
 <ParamField path="security.installPolicy.exec.allowSymlinkCommand" type="boolean" default="false">
-  Allows the configured command path to be a symlink. The resolved target must
-  still satisfy the other path checks. Interpreter script arguments must be
-  direct regular files, not symlinks.
+  Allows the configured command path to be a symlink. The resolved target
+  must still satisfy the other path checks. Interpreter script arguments must
+  be direct regular files, not symlinks.
 </ParamField>
 
 The policy receives one JSON object on stdin with `protocolVersion: 1`,
 `openclawVersion`, `targetType`, `targetName`, `sourcePath`, `sourcePathKind`,
-optional structured `source`, structured `origin`, and `request`. It must write
-one JSON object on stdout: `{ "protocolVersion": 1, "decision": "allow" }` or
-`{ "protocolVersion": 1, "decision": "block", "reason": "..." }`. Non-zero
-exit, timeout, malformed JSON, missing fields, or unsupported protocol versions
-fail closed.
+optional structured `source`, structured `origin`, and `request`. It must
+write one JSON object on stdout: `{ "protocolVersion": 1, "decision": "allow" }`
+or `{ "protocolVersion": 1, "decision": "block", "reason": "..." }`. Non-zero
+exit, timeout, malformed JSON, missing fields, or unsupported protocol
+versions fail closed.
 
-OpenClaw does not execute install policy during normal Gateway startup. Installs
-and updates fail closed when policy is enabled but unavailable. `openclaw doctor`
-performs static validation, and `openclaw doctor --deep` executes a synthetic
-install probe against the configured command.
+OpenClaw does not execute install policy during normal Gateway startup.
+Installs and updates fail closed when policy is enabled but unavailable.
+`openclaw doctor` performs static validation; `openclaw doctor --deep`
+executes a synthetic install probe against the configured command.
 
 Bulk updates apply policy per target: a blocked skill or plugin update fails
-that target without disabling the policy or skipping later targets in the batch.
+that target without disabling the policy or skipping later targets in the
+batch.
 
 Example stdin:
 
@@ -256,9 +259,9 @@ process.stdin.on("end", () => {
 ## Bundled skill allowlist
 
 <ParamField path="skills.allowBundled" type="string[]">
-  Optional allowlist for **bundled** skills only. When set, only bundled skills
-  in the list are eligible. Managed, agent-level, and workspace skills are
-  unaffected.
+  Optional allowlist for **bundled** skills only. When set, only bundled
+  skills in the list are eligible. Managed, agent-level, and workspace
+  skills are unaffected.
 </ParamField>
 
 ## Per-skill entries (`skills.entries`)
@@ -268,9 +271,10 @@ Keys under `entries` match the skill `name` by default. If a skill defines
 (JSON5 allows quoted keys).
 
 <ParamField path="skills.entries.<key>.enabled" type="boolean">
-  `false` disables the skill even when bundled or installed. The `coding-agent`
-  bundled skill is opt-in — set it to `true` and ensure one of `claude`,
-  `codex`, `opencode`, or another supported CLI is installed and authenticated.
+  `false` disables the skill even when bundled or installed. The
+  `coding-agent` bundled skill is opt-in — set it to `true` and ensure one of
+  `claude`, `codex`, `opencode`, or another supported CLI is installed and
+  authenticated.
 </ParamField>
 
 <ParamField path="skills.entries.<key>.apiKey" type='string | { source, provider, id }'>
@@ -308,13 +312,15 @@ different visible skill set per agent.
 ```
 
 <ParamField path="agents.defaults.skills" type="string[]">
-  Shared baseline allowlist inherited by agents that omit `agents.list[].skills`.
-  Omit entirely to leave skills unrestricted by default.
+  Shared baseline allowlist inherited by agents that omit
+  `agents.list[].skills`. Omit entirely to leave skills unrestricted by
+  default.
 </ParamField>
 
 <ParamField path="agents.list[].skills" type="string[]">
-  Explicit final skill set for that agent. Explicit lists **replace** inherited
-  defaults — they do not merge. Set to `[]` to expose no skills for that agent.
+  Explicit final skill set for that agent. Explicit lists **replace**
+  inherited defaults — they do not merge. Set to `[]` to expose no skills for
+  that agent.
 </ParamField>
 
 ## Skill Forge (`skills.forge`)
@@ -324,6 +330,9 @@ different visible skill set per agent.
   promote or retire actions. `auto` allows those actions without approval.
   Legacy `skills.workshop` config is migrated by `openclaw doctor --fix`.
 </ParamField>
+
+See [Skill Workshop](/tools/skill-workshop) for the proposal lifecycle, CLI
+commands, agent tool parameters, and Gateway methods this config controls.
 
 ## Symlinked skill roots
 
@@ -344,21 +353,24 @@ To allow an intentional symlink layout, declare the trusted target:
 }
 ```
 
-With this config, `<workspace>/skills/manager -> ~/Projects/manager/skills` is
-accepted after realpath resolution. `extraDirs` scans the sibling repo directly;
-`allowSymlinkTargets` preserves the symlinked path for existing layouts.
+With this config, `<workspace>/skills/manager -> ~/Projects/manager/skills`
+is accepted after realpath resolution. `extraDirs` scans the sibling repo
+directly; `allowSymlinkTargets` preserves the symlinked path for existing
+layouts.
 
 Managed `~/.openclaw/skills` and personal `~/.agents/skills` directories
-already accept skill-directory symlinks (per-skill `SKILL.md` containment still
-applies).
+already accept skill-directory symlinks unconditionally (per-skill
+`SKILL.md` containment still applies) — `allowSymlinkTargets` is only needed
+for workspace, extra-dir, and project-agent (`<workspace>/.agents/skills`)
+roots.
 
 ## Sandboxed skills and env vars
 
 <Warning>
-  `skills.entries.<skill>.env` and `apiKey` apply to **host** runs only. Inside
-  a sandbox they have no effect — a skill that depends on `GEMINI_API_KEY` will
-  fail with `apiKey not configured` unless the sandbox is given the variable
-  separately.
+  `skills.entries.<skill>.env` and `apiKey` apply to **host** runs only.
+  Inside a sandbox they have no effect — a skill that depends on
+  `GEMINI_API_KEY` will fail with `apiKey not configured` unless the sandbox
+  is given the variable separately.
 </Warning>
 
 Pass secrets into a Docker sandbox with:
@@ -395,7 +407,8 @@ skills.load.extraDirs (lowest)
 ```
 
 Changes to skills and config take effect on the next new session when the
-watcher is enabled, or on the next agent turn when the watcher detects a change.
+watcher is enabled, or on the next agent turn when the watcher detects a
+change.
 
 ## Related
 

@@ -8,11 +8,12 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import type { GatewayConfig } from "../config/types.gateway.js";
 import {
-  loadOrCreateDeviceIdentity,
+  loadOrCreateProcessDeviceIdentity,
   signDevicePayload,
   type DeviceIdentity,
 } from "./device-identity.js";
 import { formatErrorMessage } from "./errors.js";
+import { readResponseWithLimit } from "./http-body.js";
 import { normalizeHostname } from "./net/hostname.js";
 
 type ApnsRelayPushType = "alert" | "background";
@@ -330,7 +331,7 @@ export async function sendApnsRelayPush(params: {
   requestSender?: ApnsRelayRequestSender;
 }): Promise<ApnsRelayPushResponse> {
   const sender = params.requestSender ?? sendApnsRelayRequest;
-  const gatewayIdentity = params.gatewayIdentity ?? loadOrCreateDeviceIdentity();
+  const gatewayIdentity = params.gatewayIdentity ?? loadOrCreateProcessDeviceIdentity();
   const signedAtMs = Date.now();
   const bodyJson = JSON.stringify({
     relayHandle: params.relayHandle,

@@ -56,6 +56,7 @@ import type {
   ImageGenerationOutputFormat,
   ImageGenerationQuality,
 } from "../image-generation/types.js";
+import { readResponseWithLimit } from "../infra/http-body.js";
 import {
   parseStrictFiniteNumber,
   parseStrictPositiveInteger,

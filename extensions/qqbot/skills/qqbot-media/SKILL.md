@@ -9,7 +9,7 @@ metadata: { "openclaw": { "emoji": "📸", "requires": { "config": ["channels.qq
 ## 用法
 
 ```
-<qqmedia>路径或URL</qqmedia>
+<qqmedia>{实际路径或URL}</qqmedia>
 ```
 
 系统根据文件扩展名自动识别类型并路由：
@@ -18,7 +18,8 @@ metadata: { "openclaw": { "emoji": "📸", "requires": { "config": ["channels.qq
 - `.silk/.wav/.mp3/.ogg/.aac/.flac` 等 → 语音
 - `.mp4/.mov/.avi/.mkv/.webm` 等 → 视频
 - 其他扩展名 → 文件
-- 无扩展名的 URL → 默认按图片处理
+- 无扩展名的当前会话本地/host-read 媒体 → 按加载出的实际媒体类型路由
+- 无扩展名的远程 URL → 可能按文件发送；如需图片/语音/视频，请提供能识别类型的 URL/路径或使用明确媒体标签
 
 ## 接收媒体
 
