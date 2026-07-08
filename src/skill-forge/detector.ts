@@ -28,6 +28,12 @@ export type RepetitionCandidate = {
   captureDirs: string[];
   occurrences: number;
   successScore: number;
+  /** Self-correction mechanism this lane supports for intrinsic SC. */
+  scMechanism?:
+    | "constraint_verification"
+    | "strategy_comparison"
+    | "reasoning_revisitation"
+    | "none";
 };
 
 export type ErrorRecoveryCandidate = {
@@ -39,6 +45,11 @@ export type ErrorRecoveryCandidate = {
   recoveringTool: string;
   rationale: string;
   successScore: number;
+  scMechanism?:
+    | "constraint_verification"
+    | "strategy_comparison"
+    | "reasoning_revisitation"
+    | "none";
 };
 
 export type ExplicitCandidate = {
@@ -50,6 +61,11 @@ export type ExplicitCandidate = {
   promptExcerpt: string;
   rationale: string;
   successScore: number;
+  scMechanism?:
+    | "constraint_verification"
+    | "strategy_comparison"
+    | "reasoning_revisitation"
+    | "none";
 };
 
 export type Candidate = RepetitionCandidate | ErrorRecoveryCandidate | ExplicitCandidate;
@@ -292,6 +308,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         recoveringTool: motif.recoveringTool,
         rationale: `Recovered from ${motif.failingTool} failure by calling ${motif.recoveringTool}`,
         successScore,
+        scMechanism: "constraint_verification",
       });
     }
 
@@ -305,6 +322,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         promptExcerpt: match.promptExcerpt,
         rationale: `User explicitly asked: "${match.matchedPhrase}"`,
         successScore,
+        scMechanism: "none",
       });
     }
   }
@@ -361,6 +379,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         captureDirs: members.map((member) => member.captureDir),
         occurrences: members.length,
         successScore: allClean ? 1 : 0.5,
+        scMechanism: "strategy_comparison",
       });
     }
   }

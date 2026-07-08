@@ -248,6 +248,13 @@ describe("runDetector", () => {
     // Error-recovery captures contain a tool error by definition.
     const recovery = candidates.find((c) => c.lane === "error-recovery");
     expect(recovery?.successScore).toBe(0.5);
+    expect(recovery?.scMechanism).toBe("constraint_verification");
+    // Explicit candidates have no intrinsic self-correction.
+    for (const c of candidates) {
+      if (c.lane === "explicit") {
+        expect(c.scMechanism).toBe("none");
+      }
+    }
   });
 
   it("ordinary coding language does not taint the success score", async () => {
@@ -276,6 +283,7 @@ describe("runDetector", () => {
     const candidates = await runDetector({ captureDirs: dirs });
     const repetition = candidates.find((c) => c.lane === "tool-shape");
     expect(repetition?.successScore).toBe(0.5);
+    expect(repetition?.scMechanism).toBe("strategy_comparison");
   });
 });
 
@@ -300,6 +308,7 @@ describe("writeCandidatesToForge", () => {
       matchedPhrase: "/skills create",
       promptExcerpt: "p",
       rationale: "r",
+      scMechanism: "none",
     };
     const files = await writeCandidatesToForge([candidate], {
       OPENCLAW_STATE_DIR: stateDir,

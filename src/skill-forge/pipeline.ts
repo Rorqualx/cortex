@@ -172,6 +172,7 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
       name: draft.name,
       env,
       successScore: candidate.successScore,
+      scMechanism: candidate.scMechanism,
     });
     promotions.push(promotion);
   }
