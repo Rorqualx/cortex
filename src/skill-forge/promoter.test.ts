@@ -75,6 +75,29 @@ describe("promoteStagedSkill", () => {
     expect(promotedExists).toBe(true);
   });
 
+  it("rejects skills with no self-correction mechanism when successScore < 1", async () => {
+    await writeStagedSkill(stateDir, "no-sc-skill", validSkill("no-sc-skill"));
+    const result = await promoteStagedSkill({
+      name: "no-sc-skill",
+      successScore: 0.5,
+      scMechanism: "none",
+      env: env(),
+    });
+    expect(result.status).toBe("rejected");
+    if (result.status !== "rejected") {
+      throw new Error("unreachable");
+    }
+    expect(result.verdict.reasons).toContain(
+      "scMechanism:none requires a clean session (successScore >= 1)",
+    );
+    // Staged dir should still exist (not renamed/cleaned).
+    const stagedStillExists = await fsp
+      .stat(resolveSkillForgeStagedSkillDir({ name: "no-sc-skill", env: env() }))
+      .then(() => true)
+      .catch(() => false);
+    expect(stagedStillExists).toBe(true);
+  });
+
   it("threads the candidate success score into promotion telemetry", async () => {
     await writeStagedSkill(stateDir, "scored-skill", validSkill("scored-skill"));
     const result = await promoteStagedSkill({
