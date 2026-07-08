@@ -254,4 +254,61 @@ Result: 37 already applied (empty), 3 conflicts, 0 new commits landed.
 - Conflicts (same as Jul 6 run): 199700de264a, 07b934901a32, 71347ef999ed
 - All 8 borderline SHAs deferred (ACP/Claude Code unavailable for classification)
 
-Notes: Cherry pipeline exhausted at the bottom — oldest 40 non-borderline candidates are almost entirely already in main from Jul 2/6 runs. Divergence +400 since yesterday. Backlog growing faster than cherry-pick can drain. **Needs maintainer `$openclaw-upstream-resync`** — the deferred merge-shaped backlog (1504) is critical.
+## 2026-07-08 — LANDED
+
+N=2800 (2 merges) — fix:1386 · chore:554 · feat:193 · test:171 · refactor:160 · other:124 · docs:89 · perf:51 · improve:29 · ci:25 · policy:10 · doctor:3 · style:2 · android:1 · retry:1 · revert:1
+Cherry candidates: 1224 (borderline=317) · Deferred: 1576
+Pick list: 40 SHAs attempted (oldest non-borderline fixes)
+Cherry-picked: 28 applied cleanly, 11 deferred (conflicts), 1 empty (already present in main from prior merges)
+
+- eca6e8f7a67 fix(utils): keep reply directive ids unicode-safe (#96938)
+- dfac7c5a88d fix(android): clarify gateway auth recovery states (#98094)
+- a9a385606fa fix: surface node approval guidance from devices CLI (#98115)
+- b45ff2cc80a fix(device-pairing): don't churn requestId on subset re-requests (#98145)
+- e6e4170da09 fix(openrouter): send explicit auth headers (#98187)
+- 97931a2d1b0 fix(tui): correct disconnect copy for device scope upgrades (#98144)
+- 206a7dd83f0 fix(sms): guard Twilio JSON.parse against malformed API response bodies (#97999)
+- 4e6086a4e33 fix(matrix): guard JSON.parse against malformed homeserver response bodies (#97973)
+- 13f3ecd9827 fix(core): propagate caller env PATHEXT through isExecutableFile on Windows (#98093)
+- 578be66b599 fix(auto-reply): stop level directives from eating the next message word (#97929)
+- 31d252c975c fix: prevent skill-creator from bypassing workshop proposals (#98346)
+- 867d46c8966 fix(ios): open app on chat by default (#98353)
+- 12b94927463 fix: retry image describe fallback models (#98347)
+- 45df698af9a fix(ios): avoid transient duplicate final replies (#98117)
+- d0df28cdd7c fix(ios): use Gateway speech providers in Talk (#98376)
+- 4182936ea26 fix(cli): explain how to recover from device approve deadlock (#98146)
+- e10ed66131d fix(ios): classify TLS fingerprint timeouts (#98429)
+- 10357f48f23 fix: Android setup codes accept local mDNS gateway hosts (#98439)
+- b2355ef6a226 fix(ios): improve light and dark appearance contrast (#98443)
+- f8fa7b7dc6d refactor(security): centralize safe-bin config normalization
+- 400a35b119e fix(gateway): surface systemd start-limit exhaustion (#98291)
+- 3160fc1eb04 fix(android): hide status bar in release screenshots
+- cf8fb39714b fix(infra): guard delivery queue inflate against corrupted entry_json (#98354)
+- 113800e3d9e fix(ports): validate lsof PID parsing before assignment (#98371)
+- c45b4c3b464 fix docs-list-mdx-pages (#95230)
+- db3e08df925 fix(minimax): bound OAuth JSON response via shared provider reader (#96322)
+- 23ffb536457 fix(copilot): guard against undefined runtime.state during cli-metadata registration (#95229)
+- 89f34e9dcbb fix(mattermost): bound null-body error response reads (#97851)
+- 09d6d6c89e6 fix(memory-wiki): preserve notes after transient page reads (#98360)
+
+Deferred: 11 total (conflicts)
+
+- 199700de264a fix(telegram): replay retained preview gaps — conflict
+- 07b934901a32 fix: scanned PDF pages reach chat vision models — conflict
+- 71347ef999ed fix(msteams): handle message card submit values — conflict
+- e9ee58c43419 fix: detect chained test modifiers — conflict
+- 1d4e7899a47f fix: preserve status model alias display — conflict
+- 2ec670898018 fix(whatsapp): validate WebSocket URL env — conflict
+- 455f813d6ee6 fix(telegram): deliver durable reasoning when enabled — conflict
+- 5a89484eb31d fix: preserve legacy ClawHub plugin family — conflict
+- 2b77862b929e fix(irc): guard surrogate-range codepoints — conflict
+- f5d0c370d60c fix(security): warn on agent skill MCP boundary drift — conflict
+- b2355ef6a226 fix(ios): improve light and dark appearance contrast — conflict
+
+Landed: 28 fixes (77 files, 4721 insertions, 832 deletions)
+Proof: build ✓ · tsgo all 7 lanes ✓ (zero regressions: core 16=16, extensions 20=20, core:test 1=1, extensions:test 29=29, test:src 1=1, test:ui 7=7, test:packages 0=0) · test:fast ✓ (no new failures)
+Guard: clean (no conflict markers, no protected files touched, fork dirs intact, merge=ours count stable at 352)
+Review: clean (all fixes, no correctness/security concerns)
+Rollback: main-backup-pre-autocherry @ b721db2a613 / tag autocherry-2026-07-08-pre
+Deploy: deferred (cron-deploy-build.sh quiesced on upstream-merge-nightly still running; should be manually triggered)
+Notes: Divergence grew from 2690 (Jul 7) to 2800. Scanned 40 non-borderline candidates; 11 conflicts, 1 empty, 28 applied cleanly. Remaining: 726 non-borderline + 307 borderline candidates. Needs maintainer `$openclaw-upstream-resync` for the large merge-shaped backlog.
