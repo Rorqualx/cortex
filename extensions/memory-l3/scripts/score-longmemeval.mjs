@@ -23,6 +23,28 @@ const concArg = args.find((a) => a.startsWith("--concurrency="));
 const CONCURRENCY = concArg ? Number.parseInt(concArg.split("=")[1], 10) : 5;
 const JUDGE_MODEL = process.env.JUDGE_MODEL ?? "glm-5.2";
 
+// Dimension weights for composite scoring (from PubHealthBench hybrid-retrieval
+// study: judge-human agreement is strongest for faithfulness and completeness).
+// When LONGMEMEVAL_DIMENSION_SCORING=1, the judge is asked to score each
+// dimension (0-10) in addition to the yes/no verdict.
+const DIMENSION_WEIGHTS = {
+  faithfulness: 0.35,
+  completeness: 0.35,
+  factualConsistency: 0.15,
+  clarity: 0.15,
+};
+
+const DIMENSION_SCORING_INSTRUCTIONS = `
+After your yes/no verdict, also score the model response on four dimensions (0-10 each):
+- Faithfulness: Does the response faithfully reflect the retrieved facts without hallucination or fabrication?
+- Completeness: Does the response cover all relevant information from the correct answer?
+- Factual Consistency: Is the response internally consistent and factually correct?
+- Clarity: Is the response clear, well-structured, and unambiguous?
+
+Output one extra line after your verdict with the four scores in this exact format:
+Scores: F=<faithfulness> C=<completeness> FC=<consistency> CL=<clarity>
+Example: Scores: F=8 C=6 FC=9 CL=7`;
+
 // Verbatim prompt templates from LongMemEval's evaluate_qa.py.
 const TEMPLATES = {
   default:
@@ -46,8 +68,48 @@ const QUESTION_TYPES = [
 
 function buildPrompt(qtype, question, answer, response) {
   const tmpl = TEMPLATES[qtype] ?? TEMPLATES.default;
-  return tmpl.replace("{q}", question).replace("{a}", String(answer)).replace("{r}", response);
+  let prompt = tmpl
+    .replace("{q}", question)
+    .replace("{a}", String(answer))
+    .replace("{r}", response);
+  if (process.env.LONGMEMEVAL_DIMENSION_SCORING === "1") {
+    prompt += DIMENSION_SCORING_INSTRUCTIONS;
+  }
+  return prompt;
 }
+
+// ── Dimension scoring helpers ─────────────────────────────────────────────
+
+const DIMENSION_SCORE_PATTERN =
+  /F\s*=\s*(\d+(?:\.\d+)?)\s*C\s*=\s*(\d+(?:\.\d+)?)\s*FC\s*=\s*(\d+(?:\.\d+)?)\s*CL\s*=\s*(\d+(?:\.\d+)?)/i;
+
+const DIMENSION_KEY_ORDER = ["faithfulness", "completeness", "factualConsistency", "clarity"];
+
+export function parseDimensionScores(raw) {
+  const m = DIMENSION_SCORE_PATTERN.exec(raw);
+  if (!m) {
+    return null;
+  }
+  return {
+    faithfulness: Number(m[1]),
+    completeness: Number(m[2]),
+    factualConsistency: Number(m[3]),
+    clarity: Number(m[4]),
+  };
+}
+
+export function computeWeightedComposite(scores) {
+  let total = 0;
+  let weight = 0;
+  for (const dim of DIMENSION_KEY_ORDER) {
+    const w = DIMENSION_WEIGHTS[dim] ?? 0;
+    total += (scores[dim] ?? 0) * w;
+    weight += w;
+  }
+  return weight > 0 ? total / weight : 0;
+}
+
+// ── End dimension scoring helpers ─────────────────────────────────────────
 
 async function resolveZaiKey() {
   const fromEnv = process.env.ZAI_API_KEY ?? process.env.Z_AI_API_KEY;
@@ -205,6 +267,13 @@ async function main() {
         })())
       : await resolveZaiKey();
 
+  const doDimensionScoring = process.env.LONGMEMEVAL_DIMENSION_SCORING === "1";
+  if (doDimensionScoring) {
+    console.log(
+      "Dimension scoring: enabled (faithfulness×0.35 + completeness×0.35 + factualConsistency×0.15 + clarity×0.15)",
+    );
+  }
+
   const t0 = Date.now();
   const verdicts = await runWithConcurrency(tasks, CONCURRENCY, async (t) => {
     const prompt = buildPrompt(
@@ -215,12 +284,20 @@ async function main() {
     );
     const raw = await callJudge({ apiKey, prompt });
     const verdict = parseVerdict(raw);
-    return {
+    const result = {
       question_id: t.hyp.question_id,
       question_type: t.oracle.question_type,
       verdict,
       raw_judge_output: raw.slice(0, 80),
     };
+    if (doDimensionScoring) {
+      const dimScores = parseDimensionScores(raw);
+      if (dimScores) {
+        result.dimension_scores = dimScores;
+        result.dimension_composite = computeWeightedComposite(dimScores);
+      }
+    }
+    return result;
   });
   const elapsedMin = ((Date.now() - t0) / 60000).toFixed(1);
 
@@ -256,6 +333,27 @@ async function main() {
     console.log(`  unparseable verdicts: ${unparseable}`);
   }
   console.log(`  wall-clock: ${elapsedMin} min`);
+
+  if (doDimensionScoring) {
+    const dimVerdicts = verdicts.filter((v) => v.dimension_scores);
+    if (dimVerdicts.length > 0) {
+      const avgDim = {};
+      for (const dim of DIMENSION_KEY_ORDER) {
+        avgDim[dim] =
+          dimVerdicts.reduce((s, v) => s + v.dimension_scores[dim], 0) / dimVerdicts.length;
+      }
+      const avgComposite =
+        dimVerdicts.reduce((s, v) => s + v.dimension_composite, 0) / dimVerdicts.length;
+      console.log(
+        `  dimensions (n=${dimVerdicts.length}): ` +
+          `F=${avgDim.faithfulness.toFixed(1)} ` +
+          `C=${avgDim.completeness.toFixed(1)} ` +
+          `FC=${avgDim.factualConsistency.toFixed(1)} ` +
+          `CL=${avgDim.clarity.toFixed(1)} ` +
+          `weighted=${avgComposite.toFixed(2)}`,
+      );
+    }
+  }
 
   const outPath = `${hypArg}.eval-${JUDGE_MODEL}.jsonl`;
   await writeFile(outPath, verdicts.map((v) => JSON.stringify(v)).join("\n") + "\n");
