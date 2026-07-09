@@ -6,6 +6,10 @@
 import { createHmac, createHash } from "node:crypto";
 import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "@openclaw/ai/internal/shared";
 import {
+  normalizePromptCapabilityIds,
+  normalizeStructuredPromptSection,
+} from "@openclaw/ai/internal/shared";
+import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
@@ -38,10 +42,6 @@ import type {
   EmbeddedFullAccessBlockedReason,
   EmbeddedSandboxInfo,
 } from "./embedded-agent-runner/types.js";
-import {
-  normalizePromptCapabilityIds,
-  normalizeStructuredPromptSection,
-} from "./prompt-cache-stability.js";
 import {
   buildOpenClawToolFallbackText,
   shouldRenderOpenClawToolWorkflowHints,
