@@ -8,7 +8,6 @@ import type {
   FunctionTool,
 } from "@mistralai/mistralai/models/components";
 import { getEnvApiKey } from "../env-api-keys.js";
-import { getAiTransportHost } from "../host.js";
 import { calculateCost, clampThinkingLevel } from "../model-utils.js";
 import type {
   AssistantMessage,
@@ -31,16 +30,11 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { createSseByteGuard } from "../utils/streaming-byte-guard.js";
 import { stripSystemPromptCacheBoundary } from "../utils/system-prompt-cache-boundary.js";
 import { buildBaseOptions } from "./simple-options.js";
-import { describeToolResultMediaPlaceholder, extractToolResultText } from "./tool-result-text.js";
 import { transformMessages } from "./transform-messages.js";
 
 const MISTRAL_TOOL_CALL_ID_LENGTH = 9;
 const MAX_MISTRAL_ERROR_BODY_CHARS = 4000;
 
-// 16 MiB cap on Mistral streaming success bodies, matching the
-// `PROVIDER_TEXT_RESPONSE_MAX_BYTES` / `PROVIDER_JSON_RESPONSE_MAX_BYTES`
-// 16 MiB cap used elsewhere. A hostile or malfunctioning Mistral-compatible
-// endpoint cannot exhaust memory by streaming an unbounded SSE body;
 // `createSseByteGuard` cancels the upstream reader and throws once the
 // accumulated byte count exceeds this cap.
 const MISTRAL_STREAM_BODY_MAX_BYTES = 16 * 1024 * 1024;
@@ -58,10 +52,9 @@ const MISTRAL_STREAM_BODY_MAX_BYTES = 16 * 1024 * 1024;
  */
 export function createBoundedMistralFetcher(
   maxBytes: number = MISTRAL_STREAM_BODY_MAX_BYTES,
-  upstreamFetch: Fetcher = fetch,
 ): Fetcher {
   return async (input, init) => {
-    const response = init == null ? await upstreamFetch(input) : await upstreamFetch(input, init);
+    const response = init == null ? await fetch(input) : await fetch(input, init);
     if (!response.body || typeof response.body.getReader !== "function") {
       return response;
     }
@@ -100,7 +93,7 @@ export function createBoundedMistralFetcher(
  */
 type MistralReasoningEffort = "none" | "high";
 
-interface MistralOptions extends StreamOptions {
+export interface MistralOptions extends StreamOptions {
   toolChoice?:
     | "auto"
     | "none"
@@ -134,19 +127,10 @@ export const streamMistral: StreamFunction<"mistral-conversations", MistralOptio
       const mistral = new Mistral({
         apiKey,
         serverURL: model.baseUrl,
-        // Bound the streamed Mistral response body at 16 MiB so a hostile or
-        // malfunctioning endpoint cannot exhaust memory. The fetcher is
-        // injected via the SDK's `HTTPClient` (see
-        // `@mistralai/mistralai/lib/sdks.ts` `ClientSDK` constructor: when
-        // `httpClient` is passed, `ClientSDK.#httpClient` is set from it and
-        // every `chat.stream` / `complete` call routes through
-        // `HTTPClient.request` → `this.fetcher(req)`).
-        // Mistral accepts HTTPClient.fetcher, so compose guarded egress with the byte cap.
+        // Mistral accepts HTTPClient.fetcher; wrap egress so an oversized SSE
+        // stream body is capped instead of read unbounded into memory.
         httpClient: new HTTPClient({
-          fetcher: createBoundedMistralFetcher(
-            MISTRAL_STREAM_BODY_MAX_BYTES,
-            getAiTransportHost().buildModelFetch(model) ?? fetch,
-          ),
+          fetcher: createBoundedMistralFetcher(MISTRAL_STREAM_BODY_MAX_BYTES),
         }),
       });
 
@@ -161,6 +145,7 @@ export const streamMistral: StreamFunction<"mistral-conversations", MistralOptio
         payload = nextPayload as ChatCompletionStreamRequest;
       }
       const mistralStream = await mistral.chat.stream(payload, buildRequestOptions(model, options));
+      await options?.onResponse?.({ status: 200, headers: {} }, model);
       stream.push({ type: "start", partial: output });
       await consumeChatStream(model, output, stream, mistralStream);
 
@@ -351,14 +336,9 @@ function buildChatPayload(
     stream: true,
     messages: toChatMessages(messages, model.input.includes("image")),
   };
-  let convertedToolNames: Set<string> | undefined;
 
   if (context.tools?.length) {
-    const tools = toFunctionTools(context.tools);
-    convertedToolNames = new Set(tools.map((tool) => tool.function.name));
-    if (tools.length > 0) {
-      payload.tools = tools;
-    }
+    payload.tools = toFunctionTools(context.tools);
   }
   if (options?.temperature !== undefined) {
     payload.temperature = options.temperature;
@@ -370,10 +350,7 @@ function buildChatPayload(
     payload.stop = options.stop;
   }
   if (options?.toolChoice) {
-    const toolChoice = mapToolChoice(options.toolChoice, convertedToolNames);
-    if (toolChoice) {
-      payload.toolChoice = toolChoice;
-    }
+    payload.toolChoice = mapToolChoice(options.toolChoice);
   }
   if (options?.promptMode) {
     payload.promptMode = options.promptMode;
@@ -591,21 +568,15 @@ async function consumeChatStream(
 }
 
 function toFunctionTools(tools: Tool[]): Array<FunctionTool & { type: "function" }> {
-  return tools.flatMap((tool) => {
-    try {
-      return {
-        type: "function",
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: stripSymbolKeys(tool.parameters) as Record<string, unknown>,
-          strict: false,
-        },
-      };
-    } catch {
-      return [];
-    }
-  });
+  return tools.map((tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: stripSymbolKeys(tool.parameters) as Record<string, unknown>,
+      strict: false,
+    },
+  }));
 }
 
 function stripSymbolKeys(value: unknown): unknown {
@@ -700,16 +671,12 @@ function toChatMessages(
     }
 
     const toolContent: ContentChunk[] = [];
-    const textResult = extractToolResultText(msg.content);
-    const mediaPlaceholder = describeToolResultMediaPlaceholder(msg.content);
+    const textResult = msg.content
+      .filter((part) => part.type === "text")
+      .map((part) => (part.type === "text" ? sanitizeSurrogates(part.text) : ""))
+      .join("\n");
     const hasImages = msg.content.some((part) => part.type === "image");
-    const toolText = buildToolResultText(
-      textResult,
-      mediaPlaceholder,
-      hasImages,
-      supportsImages,
-      msg.isError,
-    );
+    const toolText = buildToolResultText(textResult, hasImages, supportsImages, msg.isError);
     toolContent.push({ type: "text", text: toolText });
     for (const part of msg.content) {
       if (!supportsImages) {
@@ -736,7 +703,6 @@ function toChatMessages(
 
 function buildToolResultText(
   text: string,
-  mediaPlaceholder: string | undefined,
   hasImages: boolean,
   supportsImages: boolean,
   isError: boolean,
@@ -750,15 +716,13 @@ function buildToolResultText(
     return `${errorPrefix}${trimmed}${imageSuffix}`;
   }
 
-  if (mediaPlaceholder) {
-    if (!hasImages || supportsImages) {
-      return `${errorPrefix}${mediaPlaceholder}`;
+  if (hasImages) {
+    if (supportsImages) {
+      return isError ? "[tool error] (see attached image)" : "(see attached image)";
     }
-    const omitted =
-      mediaPlaceholder === "(see attached media)"
-        ? "(media omitted: model does not support images)"
-        : "(image omitted: model does not support images)";
-    return `${errorPrefix}${omitted}`;
+    return isError
+      ? "[tool error] (image omitted: model does not support images)"
+      : "(image omitted: model does not support images)";
   }
 
   return isError ? "[tool error] (no tool output)" : "(no tool output)";
@@ -768,7 +732,7 @@ function usesReasoningEffort(model: Model<"mistral-conversations">): boolean {
   return (
     model.id === "mistral-small-2603" ||
     model.id === "mistral-small-latest" ||
-    model.id === "mistral-medium-3-5"
+    model.id === "mistral-medium-3.5"
   );
 }
 
@@ -785,7 +749,6 @@ function mapReasoningEffort(
 
 function mapToolChoice(
   choice: MistralOptions["toolChoice"],
-  convertedToolNames?: ReadonlySet<string>,
 ):
   | "auto"
   | "none"
@@ -796,24 +759,12 @@ function mapToolChoice(
   if (!choice) {
     return undefined;
   }
-  if (convertedToolNames && convertedToolNames.size === 0) {
-    if (choice === "none" || choice === "auto") {
-      return choice === "none" ? "none" : undefined;
-    }
-    throw new Error("Mistral tool_choice requires a tool, but no tools survived schema conversion");
-  }
   if (choice === "auto" || choice === "none" || choice === "any" || choice === "required") {
     return choice;
   }
-  const toolName = choice.function.name;
-  if (convertedToolNames && !convertedToolNames.has(toolName)) {
-    throw new Error(
-      `Mistral tool_choice requested unavailable tool "${toolName}" after schema conversion`,
-    );
-  }
   return {
     type: "function",
-    function: { name: toolName },
+    function: { name: choice.function.name },
   };
 }
 

@@ -6,16 +6,24 @@ const mistralMockState = vi.hoisted(() => ({
   payloads: [] as unknown[],
 }));
 
-vi.mock("@mistralai/mistralai", () => ({
-  Mistral: class MockMistral {
-    chat = {
-      stream: vi.fn(async (payload: unknown) => {
-        mistralMockState.payloads.push(payload);
-        throw new Error("stop before network");
-      }),
-    };
-  },
-}));
+vi.mock("@mistralai/mistralai", async () => {
+  // Preserve real exports (HTTPClient/Fetcher, used by the bounded-stream fetcher
+  // wired into the Mistral client); override only Mistral so the test captures
+  // payloads without real HTTP traffic.
+  const actual =
+    await vi.importActual<typeof import("@mistralai/mistralai")>("@mistralai/mistralai");
+  return {
+    ...actual,
+    Mistral: class MockMistral {
+      chat = {
+        stream: vi.fn(async (payload: unknown) => {
+          mistralMockState.payloads.push(payload);
+          throw new Error("stop before network");
+        }),
+      };
+    },
+  };
+});
 
 import { streamSimpleMistral } from "./mistral.js";
 
