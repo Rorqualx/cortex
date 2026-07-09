@@ -10,6 +10,7 @@ import {
   type AutostartUninstallResult,
 } from "./autostart.js";
 import { captureSessionToForge } from "./capture.js";
+import { runJudgeAudit, type JudgeAuditReport, type JudgeAuditRunOptions } from "./judge-audit.js";
 import { resolveSkillForgeRoot, resolveSkillForgeSessionsDir } from "./paths.js";
 import { runForgePipeline, type PipelineRunResult } from "./pipeline.js";
 import { runDecaySweep, type DecayedSkill } from "./promoter.js";
@@ -236,6 +237,10 @@ export async function actionDecay(params: {
     policy: params.maxUnusedDays ? { maxUnusedDays: params.maxUnusedDays } : undefined,
     env: params.env,
   });
+}
+
+export async function actionAuditJudge(opts: JudgeAuditRunOptions = {}): Promise<JudgeAuditReport> {
+  return runJudgeAudit(opts);
 }
 
 export async function actionReset(env?: NodeJS.ProcessEnv): Promise<{ removed: string }> {
