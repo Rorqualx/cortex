@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import {
+  actionAuditJudge,
   actionAutostartStatus,
   actionCaptureDir,
   actionCaptureSingle,
@@ -190,6 +191,58 @@ function registerDecayCommand(parent: Command): void {
       console.log(`demoted: ${demoted.length}`);
       for (const entry of demoted) {
         console.log(`  ${entry.name} (${entry.reason})`);
+      }
+    });
+}
+
+function registerAuditJudgeCommand(parent: Command): void {
+  parent
+    .command("audit-judge")
+    .description(
+      "Run a defect-injection audit on the LLM skill judge. Sends known-good and known-bad " +
+        "skill drafts through the judge and reports false-pass/false-fail rates.",
+    )
+    .option("--agent <id>", "Agent whose default model is used for the judge.")
+    .option("--threshold <n>", `Maximum acceptable false-pass rate (default ${0.15}, range 0-1).`)
+    .action(async (opts) => {
+      const agentId = typeof opts.agent === "string" && opts.agent ? opts.agent : undefined;
+      const threshold =
+        opts.threshold !== undefined && opts.threshold !== null
+          ? Math.max(0, Math.min(1, Number(opts.threshold)))
+          : undefined;
+      console.log("Running judge defect-injection audit...");
+      const report = await actionAuditJudge({ agentId, threshold });
+      console.log("=== judge audit report ===");
+      console.log(
+        `test cases: ${report.totalTestCases} (${report.goodCases} good, ${report.badCases} bad)`,
+      );
+      console.log(`false-positive rate: ${(report.falsePassRate * 100).toFixed(1)}%`);
+      console.log(`false-negative rate: ${(report.falseFailRate * 100).toFixed(1)}%`);
+      console.log(`threshold: ${(report.threshold * 100).toFixed(0)}%`);
+      console.log(`PASS: ${report.passed}`);
+      if (report.falsePositives.length > 0) {
+        console.log(`false positives (bad cases that passed): ${report.falsePositives.length}`);
+        for (const fp of report.falsePositives) {
+          const verdict = fp.result.status === "ran" ? fp.result.verdict : fp.result.status;
+          console.log(`  [${fp.testCase.id}] ${fp.testCase.description} → ${verdict}`);
+        }
+      }
+      if (report.falseNegatives.length > 0) {
+        console.log(
+          `false negatives (good cases that were blocked): ${report.falseNegatives.length}`,
+        );
+        for (const fn of report.falseNegatives) {
+          console.log(`  [${fn.testCase.id}] ${fn.testCase.description}`);
+        }
+      }
+      if (report.warnings.length > 0) {
+        console.log("warnings:");
+        for (const warning of report.warnings) {
+          console.log(`  ⚠ ${warning}`);
+        }
+      }
+      if (!report.passed) {
+        process.exitCode = 1;
       }
     });
 }
@@ -460,6 +513,7 @@ export function registerSkillForgeCli(program: Command): void {
   registerPipelineCommand(root);
   registerLsCommand(root);
   registerDecayCommand(root);
+  registerAuditJudgeCommand(root);
   registerResetCommand(root);
   registerVerifyDiscoveryCommand(root);
   registerDaemonCommand(root);
