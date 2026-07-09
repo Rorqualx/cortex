@@ -148,7 +148,10 @@ import {
   rotateTranscriptAfterCompaction,
   shouldRotateCompactionTranscript,
 } from "./compaction-successor-transcript.js";
-import { applyFinalEffectiveToolPolicy } from "./effective-tool-policy.js";
+import {
+  applyFinalEffectiveToolPolicy,
+  resolveConversationCapabilityProfile,
+} from "./effective-tool-policy.js";
 import { buildEmbeddedExtensionFactories } from "./extensions.js";
 import { applyExtraParamsToAgent } from "./extra-params.js";
 import { getHistoryLimitFromSessionKey, limitHistoryTurns } from "./history.js";
@@ -882,10 +885,10 @@ async function compactEmbeddedAgentSessionDirectOnce(
           ],
         })
       : undefined;
-    const filteredBundledTools = applyFinalEffectiveToolPolicy({
-      bundledTools: [...(bundleMcpRuntime?.tools ?? []), ...(bundleLspRuntime?.tools ?? [])],
+    // Resolve the conversation capability profile from the same policy inputs the
+    // old flat args carried; applyFinalEffectiveToolPolicy reads only profile.policy.*.
+    const runtimeCapabilityProfile = resolveConversationCapabilityProfile({
       config: params.config,
-      sandboxToolPolicy: sandbox?.tools,
       sessionKey: sandboxSessionKey,
       // Intentionally omit explicit agentId: the core tools just built with
       // createOpenClawCodingTools(...) also omit it, so both paths resolve
@@ -893,10 +896,10 @@ async function compactEmbeddedAgentSessionDirectOnce(
       // Passing effectiveSkillAgentId here would diverge from the core-tool
       // policy for legacy/non-agent session keys where the two sources fall
       // back to different ids.
+      agentAccountId: params.agentAccountId,
+      messageProvider: resolvedMessageProvider,
       modelProvider: model.provider,
       modelId,
-      messageProvider: resolvedMessageProvider,
-      agentAccountId: params.agentAccountId,
       groupId: params.groupId,
       groupChannel: params.groupChannel,
       groupSpace: params.groupSpace,
@@ -905,6 +908,12 @@ async function compactEmbeddedAgentSessionDirectOnce(
       senderName: params.senderName,
       senderUsername: params.senderUsername,
       senderE164: params.senderE164,
+      sandboxToolPolicy: sandbox?.tools,
+    });
+    const filteredBundledTools = applyFinalEffectiveToolPolicy({
+      bundledTools: [...(bundleMcpRuntime?.tools ?? []), ...(bundleLspRuntime?.tools ?? [])],
+      config: params.config,
+      conversationCapabilityProfile: runtimeCapabilityProfile,
       warn: (message) => log.warn(message),
     });
     const normalizableBundledToolProjection = filterProviderNormalizableTools(filteredBundledTools);

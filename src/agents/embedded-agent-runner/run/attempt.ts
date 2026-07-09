@@ -226,7 +226,10 @@ import { isRunnerAbortError } from "../abort.js";
 import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "../cache-ttl.js";
 import { resolveCompactionTimeoutMs } from "../compaction-safety-timeout.js";
 import { runContextEngineMaintenance } from "../context-engine-maintenance.js";
-import { applyFinalEffectiveToolPolicy } from "../effective-tool-policy.js";
+import {
+  applyFinalEffectiveToolPolicy,
+  resolveConversationCapabilityProfile,
+} from "../effective-tool-policy.js";
 import { buildEmbeddedExtensionFactories } from "../extensions.js";
 import {
   applyExtraParamsToAgent,
@@ -1502,16 +1505,16 @@ export async function runEmbeddedAttempt(
       },
     );
     const allowedBundledTools = [...allowedBundleMcpTools, ...allowedBundleLspTools];
-    const filteredBundledTools = applyFinalEffectiveToolPolicy({
-      bundledTools: allowedBundledTools,
+    // Resolve the conversation capability profile from the same policy inputs the
+    // old flat args carried; applyFinalEffectiveToolPolicy reads only profile.policy.*.
+    const runtimeCapabilityProfile = resolveConversationCapabilityProfile({
       config: params.config,
-      sandboxToolPolicy: sandbox?.tools,
       sessionKey: sandboxSessionKey,
       agentId: sessionAgentId,
+      agentAccountId: params.agentAccountId,
+      messageProvider: resolveAttemptToolPolicyMessageProvider(params),
       modelProvider: params.provider,
       modelId: params.modelId,
-      messageProvider: resolveAttemptToolPolicyMessageProvider(params),
-      agentAccountId: params.agentAccountId,
       groupId: params.groupId,
       groupChannel: params.groupChannel,
       groupSpace: params.groupSpace,
@@ -1520,6 +1523,12 @@ export async function runEmbeddedAttempt(
       senderName: params.senderName,
       senderUsername: params.senderUsername,
       senderE164: params.senderE164,
+      sandboxToolPolicy: sandbox?.tools,
+    });
+    const filteredBundledTools = applyFinalEffectiveToolPolicy({
+      bundledTools: allowedBundledTools,
+      config: params.config,
+      conversationCapabilityProfile: runtimeCapabilityProfile,
       warn: (message) => log.warn(message),
     });
     const normalizedBundledTools =
