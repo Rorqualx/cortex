@@ -9,8 +9,8 @@ import type { MsgContext } from "../../auto-reply/templating.js";
 import { resolveStoredSessionOwnerAgentId } from "../../gateway/session-store-key.js";
 import { writeTextAtomic } from "../../infra/json-files.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
+import { createLazyRuntimeModule } from "../../shared/lazy-runtime.js";
 import {
   deliveryContextFromChannelRoute,
   deliveryContextFromSession,
@@ -20,7 +20,6 @@ import {
 } from "../../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import { getFileStatSnapshot } from "../cache-utils.js";
-import { getRuntimeConfig } from "../io.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
 import { formatSessionArchiveTimestamp } from "./artifacts.js";
 import {
@@ -28,7 +27,8 @@ import {
   type SessionUnreferencedArtifactSweepResult,
 } from "./disk-budget.js";
 import { deriveSessionMetaPatch } from "./metadata.js";
-import { resolveSessionFilePath, resolveStorePath } from "./paths.js";
+import { resolveSessionFilePath } from "./paths.js";
+import { resolveSessionStorePathForScope } from "./session-store-path.js";
 import {
   ensureSessionStorePromptBlobsForPersistence,
   isSessionSkillPromptBlobReadable,
@@ -55,6 +55,7 @@ import {
   normalizeSessionStore,
   readSessionEntries,
   readSessionEntry,
+  stripPersistedSkillsCache,
 } from "./store-load.js";
 import {
   applyFileBackedSessionStoreMaintenance,
@@ -119,40 +120,18 @@ export type SessionEntryPatchProjectionResult<TFailure extends SessionEntryPatch
   { ok: true; entry: SessionEntry } | TFailure;
 
 const log = createSubsystemLogger("sessions/store");
-let sessionArchiveRuntimePromise: Promise<
-  typeof import("../../gateway/session-archive.runtime.js")
-> | null = null;
-let trajectoryCleanupRuntimePromise: Promise<typeof import("../../trajectory/cleanup.js")> | null =
-  null;
 const writerStoreFileStats = new WeakMap<
   Record<string, SessionEntry>,
   ReturnType<typeof getFileStatSnapshot> | null
 >();
 
-function loadSessionArchiveRuntime() {
-  // Archive cleanup is a cold maintenance path, so keep it lazy to avoid gateway import cycles.
-  if (!sessionArchiveRuntimePromise) {
-    sessionArchiveRuntimePromise = import("../../gateway/session-archive.runtime.js").catch(
-      (err) => {
-        // Reset so the next call retries after transient build/disk races.
-        sessionArchiveRuntimePromise = null;
-        throw err;
-      },
-    );
-  }
-  return sessionArchiveRuntimePromise;
-}
+const loadSessionArchiveRuntime = createLazyRuntimeModule(
+  () => import("../../gateway/session-archive.runtime.js"),
+);
 
-function loadTrajectoryCleanupRuntime() {
-  if (!trajectoryCleanupRuntimePromise) {
-    trajectoryCleanupRuntimePromise = import("../../trajectory/cleanup.js").catch((err) => {
-      // Reset so the next call retries after transient build/disk races.
-      trajectoryCleanupRuntimePromise = null;
-      throw err;
-    });
-  }
-  return trajectoryCleanupRuntimePromise;
-}
+const loadTrajectoryCleanupRuntime = createLazyRuntimeModule(
+  () => import("../../trajectory/cleanup.js"),
+);
 
 function removeThreadFromDeliveryContext(context?: DeliveryContext): DeliveryContext | undefined {
   if (!context || context.threadId == null) {
@@ -293,6 +272,7 @@ export type ResetSessionEntryLifecycleMutation = Omit<
 export type DeleteSessionEntryLifecycleResult = {
   archivedTranscripts: SessionLifecycleArchivedTranscript[];
   deleted: boolean;
+  expectedEntryMismatch?: true;
   deletedEntry?: SessionEntry;
   deletedSessionFile?: string;
   deletedSessionId?: string;
@@ -361,23 +341,22 @@ function cloneSessionEntry(entry: SessionEntry): SessionEntry {
   return cloneSessionStoreRecord({ entry }).entry;
 }
 
-function resolveSessionWorkflowStorePath(
-  options: SessionEntryWorkflowOptions & { sessionKey?: string },
-): string {
-  if (options.storePath) {
-    return options.storePath;
-  }
-  const agentId = options.agentId ?? resolveAgentIdFromSessionKey(options.sessionKey);
-  return resolveStorePath(getRuntimeConfig().session?.store, {
-    agentId,
-    env: options.env,
+export function projectSessionEntryForPersistenceRevision(params: {
+  storePath: string;
+  entry: SessionEntry;
+}): SessionEntry {
+  const stripped = stripPersistedSkillsCache(params.entry);
+  const projected = projectSessionStoreForPersistence({
+    storePath: params.storePath,
+    store: { entry: stripped },
   });
+  return projected.store.entry ?? stripped;
 }
 
 export function getSessionEntry(
   options: SessionEntryWorkflowOptions & { sessionKey: string },
 ): SessionEntry | undefined {
-  const entry = readSessionEntry(resolveSessionWorkflowStorePath(options), options.sessionKey, {
+  const entry = readSessionEntry(resolveSessionStorePathForScope(options), options.sessionKey, {
     hydrateSkillPromptRefs: options.hydrateSkillPromptRefs,
   }) as SessionEntry | undefined;
   return entry ? cloneSessionEntry(entry) : undefined;
@@ -386,7 +365,7 @@ export function getSessionEntry(
 export function listSessionEntries(
   options: SessionEntryWorkflowOptions = {},
 ): Array<{ sessionKey: string; entry: SessionEntry }> {
-  return readSessionEntries(resolveSessionWorkflowStorePath(options)).map(
+  return readSessionEntries(resolveSessionStorePathForScope(options)).map(
     ([sessionKey, entry]) => ({
       sessionKey,
       entry: cloneSessionEntry(entry as SessionEntry),
@@ -677,21 +656,33 @@ function resolveLifecyclePrimaryEntry(params: {
   store: Record<string, SessionEntry>;
   target: SessionLifecycleStoreTarget;
 }): SessionEntry | undefined {
-  const freshestMatch = resolveFreshestLifecycleStoreMatch({
-    store: params.store,
-    storeKeys: params.target.storeKeys,
-  });
-  if (freshestMatch) {
-    const currentPrimary = params.store[params.target.canonicalKey];
-    if (!currentPrimary || (freshestMatch.entry.updatedAt ?? 0) > (currentPrimary.updatedAt ?? 0)) {
-      params.store[params.target.canonicalKey] = freshestMatch.entry;
-    }
+  const primaryEntry = resolveLifecyclePrimaryEntrySnapshot(params);
+  if (primaryEntry) {
+    params.store[params.target.canonicalKey] = primaryEntry;
   }
   pruneLifecycleLegacyStoreKeys({
     store: params.store,
     target: params.target,
   });
   return params.store[params.target.canonicalKey];
+}
+
+function resolveLifecyclePrimaryEntrySnapshot(params: {
+  store: Record<string, SessionEntry>;
+  target: SessionLifecycleStoreTarget;
+}): SessionEntry | undefined {
+  const currentPrimary = params.store[params.target.canonicalKey];
+  const freshestMatch = resolveFreshestLifecycleStoreMatch({
+    store: params.store,
+    storeKeys: params.target.storeKeys,
+  });
+  if (
+    freshestMatch &&
+    (!currentPrimary || (freshestMatch.entry.updatedAt ?? 0) > (currentPrimary.updatedAt ?? 0))
+  ) {
+    return freshestMatch.entry;
+  }
+  return currentPrimary;
 }
 
 function resolveFreshestLifecycleStoreMatch(params: {
@@ -1261,6 +1252,18 @@ export async function resetSessionEntryLifecycle(params: {
     if (previousSessionId) {
       mutation.previousSessionId = previousSessionId;
     }
+    const reusesTranscriptPath =
+      previousSessionFile !== undefined &&
+      normalizePathForLifecycleComparison(previousSessionFile) ===
+        normalizePathForLifecycleComparison(nextSessionFile);
+    // Generated successor paths must exist before callbacks can checkpoint them.
+    // Reused custom paths keep the old callback/archive/header order to preserve observer semantics.
+    if (!reusesTranscriptPath) {
+      ensureLifecycleTranscriptHeader({
+        sessionFile: nextSessionFile,
+        sessionId: nextEntry.sessionId,
+      });
+    }
     await params.afterEntryMutation?.(mutation);
     const archivedTranscripts = await archiveLifecycleSessionTranscripts({
       sessionId: previousSessionId,
@@ -1269,10 +1272,12 @@ export async function resetSessionEntryLifecycle(params: {
       agentId: params.agentId,
       reason: "reset",
     });
-    ensureLifecycleTranscriptHeader({
-      sessionFile: nextSessionFile,
-      sessionId: nextEntry.sessionId,
-    });
+    if (reusesTranscriptPath) {
+      ensureLifecycleTranscriptHeader({
+        sessionFile: nextSessionFile,
+        sessionId: nextEntry.sessionId,
+      });
+    }
     const result: ResetSessionEntryLifecycleResult = {
       ...mutation,
       archivedTranscripts,
@@ -1285,12 +1290,18 @@ export async function resetSessionEntryLifecycle(params: {
 export async function deleteSessionEntryLifecycle(params: {
   agentId?: string;
   archiveTranscript: boolean;
+  expectedEntry?: SessionEntry;
+  expectedLifecycleRevision?: string;
+  expectedSessionId?: string;
+  expectedUpdatedAt?: number;
   storePath: string;
   target: SessionLifecycleStoreTarget;
 }): Promise<DeleteSessionEntryLifecycleResult> {
   return await runExclusiveSessionStoreWrite(params.storePath, async () => {
     const store = loadMutableSessionStoreForWriter(params.storePath);
-    const deletedEntry = resolveLifecyclePrimaryEntry({
+    // Compare against an unmodified snapshot. Alias promotion is itself a
+    // mutation and must not enter the cache when a guarded delete is rejected.
+    const deletedEntry = resolveLifecyclePrimaryEntrySnapshot({
       store,
       target: params.target,
     });
@@ -1301,6 +1312,34 @@ export async function deleteSessionEntryLifecycle(params: {
         deleted: false,
       };
     }
+    const expectedEntryMatches =
+      params.expectedEntry === undefined ||
+      JSON.stringify(deletedEntry) === JSON.stringify(params.expectedEntry);
+    const expectedLifecycleRevisionMatches =
+      params.expectedLifecycleRevision === undefined ||
+      deletedEntry.lifecycleRevision === params.expectedLifecycleRevision;
+    const expectedSessionIdMatches =
+      !params.expectedSessionId ||
+      deletedEntry.sessionId === params.expectedSessionId ||
+      (deletedEntry.sessionId === undefined &&
+        params.expectedLifecycleRevision !== undefined &&
+        expectedLifecycleRevisionMatches);
+    const expectedUpdatedAtMatches =
+      params.expectedUpdatedAt === undefined || deletedEntry.updatedAt === params.expectedUpdatedAt;
+    if (
+      !expectedEntryMatches ||
+      !expectedLifecycleRevisionMatches ||
+      !expectedSessionIdMatches ||
+      !expectedUpdatedAtMatches
+    ) {
+      restoreUnchangedSessionStoreCache(params.storePath, store);
+      return {
+        archivedTranscripts: [],
+        deleted: false,
+        expectedEntryMismatch: true,
+      };
+    }
+    pruneLifecycleLegacyStoreKeys({ store, target: params.target });
     const deletedSessionId = deletedEntry.sessionId;
     const deletedSessionFile = deletedEntry.sessionFile;
     delete store[params.target.canonicalKey];
@@ -1885,7 +1924,7 @@ export async function patchSessionEntry(
 export async function patchSessionEntryWithKey(
   params: SessionEntryPatchParams,
 ): Promise<{ sessionKey: string; entry: SessionEntry } | null> {
-  const storePath = resolveSessionWorkflowStorePath(params);
+  const storePath = resolveSessionStorePathForScope(params);
   return await runExclusiveSessionStoreWrite(storePath, async () => {
     const store = loadMutableSessionStoreForWriter(storePath);
     const resolved = resolveSessionStoreEntry({ store, sessionKey: params.sessionKey });
@@ -1927,7 +1966,7 @@ export async function upsertSessionEntry(
     entry: SessionEntry;
   },
 ): Promise<void> {
-  const storePath = resolveSessionWorkflowStorePath(params);
+  const storePath = resolveSessionStorePathForScope(params);
   await runExclusiveSessionStoreWrite(storePath, async () => {
     const store = loadMutableSessionStoreForWriter(storePath);
     const resolved = resolveSessionStoreEntry({ store, sessionKey: params.sessionKey });
