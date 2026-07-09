@@ -249,6 +249,7 @@ const gatewaySessionRowOptionalFields = {
   estimatedCostUsd: Type.Optional(Type.Number()),
   status: Type.Optional(SessionRunStatusSchema),
   hasActiveRun: Type.Optional(Type.Boolean()),
+  activeRunIds: Type.Optional(Type.Array(Type.String())),
   subagentRunState: Type.Optional(SubagentRunStateSchema),
   hasActiveSubagentRun: Type.Optional(Type.Boolean()),
   startedAt: Type.Optional(Type.Number()),

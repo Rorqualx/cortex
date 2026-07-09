@@ -130,6 +130,15 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "quotaSuspension",
   "restartRecoveryRuns",
   "ambientTranscriptWatermarks",
+  "lifecycleRevision",
+  "archivedAt",
+  "pinnedAt",
+  "lastReadAt",
+  "markedUnreadAt",
+  "lastActivityAt",
+  "pendingSkillSuggestion",
+  "skillCaptureSignalHashes",
+  "category",
 ] as const satisfies ReadonlyArray<keyof SessionEntry | "__proto__" | "constructor" | "prototype">;
 
 type ReservedSessionEntrySlotKey = Extract<

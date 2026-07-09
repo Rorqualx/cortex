@@ -288,6 +288,7 @@ async function startManagedServiceAutoUpdateHandoff(params: {
     const started = await startManagedServiceUpdateHandoff({
       root: resolveAutoUpdateHandoffRoot(params.root),
       timeoutMs: params.timeoutMs,
+      restartDrainTimeoutMs: undefined,
       channel: params.channel,
       restartDelayMs,
       supervisor: params.supervisor,

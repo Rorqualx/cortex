@@ -8,6 +8,7 @@ import {
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
 import { resolveSandboxPath } from "../../agents/sandbox-paths.js";
+import { canonicalizePath } from "../../agents/utils/paths.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { walkDirectorySync } from "../../infra/fs-safe.js";
 import { resolveOsHomeDir } from "../../infra/home-dir.js";
@@ -27,6 +28,7 @@ import type {
   SkillEligibilityContext,
   SkillEntry,
   SkillSnapshot,
+  SkillUsagePath,
 } from "../types.js";
 import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
@@ -36,6 +38,7 @@ import { loadSkillsFromDirSafe, readSkillFrontmatterSafe } from "./local-loader.
 import { resolvePluginSkillDirs } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
 import { formatSkillsForPrompt, type Skill } from "./skill-contract.js";
+import { resolveSkillTelemetrySource } from "./source.js";
 
 const fsp = fs.promises;
 const skillsLogger = createSubsystemLogger("skills");
@@ -1482,6 +1485,7 @@ export function loadWorkspaceSkillEntries(
     skillFilter?: string[];
     agentId?: string;
     eligibility?: SkillEligibilityContext;
+    includeArchived?: boolean;
   },
 ): SkillEntry[] {
   const entries = loadSkillEntries(workspaceDir, opts);
@@ -1559,14 +1563,14 @@ export async function syncSkillsToWorkspace(params: {
   managedSkillsDir?: string;
   bundledSkillsDir?: string;
   pluginSkillsDir?: string;
-}) {
+}): Promise<SkillUsagePath[]> {
   const sourceDir = resolveUserPath(params.sourceWorkspaceDir);
   const targetDir = resolveUserPath(params.targetWorkspaceDir);
   if (sourceDir === targetDir) {
-    return;
+    return [];
   }
 
-  await serializeByKey(`syncSkills:${targetDir}`, async () => {
+  return await serializeByKey(`syncSkills:${targetDir}`, async () => {
     const targetSkillsDir = path.join(targetDir, "skills");
 
     const entries = loadWorkspaceSkillEntries(sourceDir, {
@@ -1583,6 +1587,7 @@ export async function syncSkillsToWorkspace(params: {
     await fsp.mkdir(targetSkillsDir, { recursive: true });
 
     const usedDirNames = new Set<string>();
+    const skillUsagePaths: SkillUsagePath[] = [];
     for (const entry of entries) {
       let dest: string | null;
       try {
@@ -1611,11 +1616,18 @@ export async function syncSkillsToWorkspace(params: {
             return !(name === ".git" || name === "node_modules");
           },
         });
+        skillUsagePaths.push({
+          readPath: path.join(dest, path.relative(entry.skill.baseDir, entry.skill.filePath)),
+          skillFile: canonicalizePath(entry.skill.filePath),
+          skillName: entry.skill.name,
+          skillSource: resolveSkillTelemetrySource(entry.skill),
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : JSON.stringify(error);
         skillsLogger.warn(`Failed to copy ${entry.skill.name} to sandbox: ${message}`);
       }
     }
+    return skillUsagePaths;
   });
 }
 

@@ -256,6 +256,11 @@ export type AgentEventHandlerOptions = {
     clientRunId: string;
     sessionKey: string;
   }) => void;
+  updateRunToolErrorSummary?: (params: {
+    runId: string;
+    clientRunId: string;
+    summary: string | undefined;
+  }) => void;
   markTrackedRunTerminalPersisted?: (params: {
     runId: string;
     clientRunId: string;

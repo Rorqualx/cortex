@@ -460,6 +460,8 @@ async function closeAcpRuntimeForSession(params: {
   fallbackSessionKeys?: Array<string | undefined>;
   reason: "session-reset" | "session-delete";
   onResetMeta?: (params: { sessionKey: string; meta: SessionAcpMeta }) => void;
+  deferResetState?: boolean;
+  onDeferredResetState?: (params: { sessionKey: string; meta: SessionAcpMeta }) => void;
 }) {
   const sessionKeys = Array.from(
     new Set(
@@ -530,6 +532,11 @@ async function closeAcpRuntimeForSession(params: {
       cfg: params.cfg,
       sessionKey: acpSessionKey,
       mutate: () => null,
+    });
+  } else if (params.deferResetState) {
+    params.onDeferredResetState?.({
+      sessionKey: acpSessionKey,
+      meta: acpMeta,
     });
   } else {
     const resetMeta = await ensureFreshAcpResetState({

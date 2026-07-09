@@ -1883,6 +1883,7 @@ export async function persistSessionResetLifecycle(params: {
   if (params.cleanupPreviousTranscript && params.previousSessionId) {
     await archivePreviousSessionTranscript({
       agentId: params.agentId ?? resolveAgentIdFromSessionKey(params.sessionKey),
+      sessionKey: params.sessionKey,
       previousEntry:
         params.previousEntry.sessionId === params.previousSessionId
           ? params.previousEntry

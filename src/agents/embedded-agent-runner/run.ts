@@ -2666,7 +2666,7 @@ export async function runEmbeddedAgent(
             // Retry replay-safe Codex app-server failures.
             const codexAppServerRecoveryRetry = resolveCodexAppServerRecoveryRetry({
               attempt,
-              alreadyRetried: codexAppServerRecoveryRetries > 0,
+              retryAvailable: codexAppServerRecoveryRetries === 0,
             });
             if (codexAppServerRecoveryRetry.retry) {
               codexAppServerRecoveryRetries += 1;
@@ -3081,6 +3081,7 @@ export async function runEmbeddedAgent(
             idleTimedOut,
             timedOutDuringCompaction,
             timedOutDuringToolExecution,
+            timedOutByRunBudget: false,
             allowSameModelIdleTimeoutRetry:
               timedOut &&
               idleTimedOut &&
