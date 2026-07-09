@@ -69,6 +69,23 @@ export type SkillsForgeConfig = {
   autoInvoke?: boolean;
 };
 
+/** Skill Workshop config (interactive/autonomous skill proposal pipeline). */
+export type SkillsWorkshopConfig = {
+  /** Autonomous Skill Workshop behavior controlled separately from user-prompted proposals. */
+  autonomous?: {
+    /** Allow agents to create pending proposals from durable conversation signals. */
+    enabled?: boolean;
+  };
+  /** Allow Skill Workshop apply to write through trusted skill symlink targets. */
+  allowSymlinkTargetWrites?: boolean;
+  /** Whether proposal lifecycle actions need explicit approval. */
+  approvalPolicy?: "pending" | "auto";
+  /** Maximum pending/quarantined proposals retained per workspace. */
+  maxPending?: number;
+  /** Maximum generated skill proposal size in bytes. */
+  maxSkillBytes?: number;
+};
+
 /** Top-level skills config block in openclaw config. */
 export type SkillsConfig = {
   /** Optional bundled-skill allowlist (only affects bundled skills). */
@@ -77,5 +94,6 @@ export type SkillsConfig = {
   install?: SkillsInstallConfig;
   limits?: SkillsLimitsConfig;
   forge?: SkillsForgeConfig;
+  workshop?: SkillsWorkshopConfig;
   entries?: Record<string, SkillConfig>;
 };
