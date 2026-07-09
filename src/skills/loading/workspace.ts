@@ -31,6 +31,7 @@ import type {
   SkillUsagePath,
 } from "../types.js";
 import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";
+import { getArchivedSkillFiles } from "../workshop/curator.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
 import { resolveBundledAllowlist, shouldIncludeSkill } from "./config.js";
 import { resolveOpenClawMetadata, resolveSkillInvocationPolicy } from "./frontmatter.js";
@@ -859,6 +860,7 @@ function loadSkillEntries(
     bundledSkillsDir?: string;
     pluginSkillsDir?: string;
     forgeSkillsDir?: string;
+    includeArchived?: boolean;
   },
 ): SkillEntry[] {
   const limits = resolveSkillsLimits(opts?.config, opts?.agentId);
@@ -1192,28 +1194,39 @@ function loadSkillEntries(
   });
 
   const merged = new Map<string, LoadedSkillRecord>();
+  // Curator-archived skills are excluded from every discovery surface (prompt,
+  // commands, runtime registry, sandbox sync) unless the caller opts in. Filtering
+  // at merge time preserves precedence: an archived record never shadows a live
+  // same-name skill from a lower-precedence source.
+  const archivedSkillFiles = opts?.includeArchived ? null : getArchivedSkillFiles();
+  const mergeRecord = (record: LoadedSkillRecord) => {
+    if (archivedSkillFiles?.has(canonicalizePath(record.skill.filePath))) {
+      return;
+    }
+    merged.set(record.skill.name, record);
+  };
   // Precedence: forge < extra < bundled < managed < agents-skills-personal < agents-skills-project < workspace
   // Forge-promoted skills are auto-generated, so anything user-installed wins.
   for (const record of forgeSkills) {
-    merged.set(record.skill.name, record);
+    mergeRecord(record);
   }
   for (const record of extraSkills) {
-    merged.set(record.skill.name, record);
+    mergeRecord(record);
   }
   for (const record of bundledSkills) {
-    merged.set(record.skill.name, record);
+    mergeRecord(record);
   }
   for (const record of managedSkills) {
-    merged.set(record.skill.name, record);
+    mergeRecord(record);
   }
   for (const record of personalAgentsSkills) {
-    merged.set(record.skill.name, record);
+    mergeRecord(record);
   }
   for (const record of projectAgentsSkills) {
-    merged.set(record.skill.name, record);
+    mergeRecord(record);
   }
   for (const record of workspaceSkills) {
-    merged.set(record.skill.name, record);
+    mergeRecord(record);
   }
 
   const skillEntries: SkillEntry[] = Array.from(merged.values())

@@ -355,6 +355,9 @@ export async function generateVoiceResponse(
 
         const result = await agentRuntime.runEmbeddedAgent({
           sessionId,
+          sessionFile: agentRuntime.session.resolveSessionFilePath(sessionId, sessionEntry, {
+            agentId,
+          }),
           sessionKey: resolvedSessionKey,
           sessionTarget: {
             agentId,

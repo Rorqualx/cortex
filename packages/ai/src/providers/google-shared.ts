@@ -32,9 +32,10 @@ import type {
 import type { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { stripSystemPromptCacheBoundary } from "../utils/system-prompt-cache-boundary.js";
+import { describeToolResultMediaPlaceholder, extractToolResultText } from "./tool-result-text.js";
 import { transformMessages } from "./transform-messages.js";
 
-export type GoogleApiType = "google-generative-ai" | "google-vertex";
+type GoogleApiType = "google-generative-ai" | "google-vertex";
 
 /**
  * Thinking level for Gemini 3 models.
@@ -47,9 +48,9 @@ export type GoogleThinkingLevel =
   | "MEDIUM"
   | "HIGH";
 
-export type GoogleToolChoice = "auto" | "none" | "any";
+type GoogleToolChoice = "auto" | "none" | "any";
 
-export type GoogleThinkingOptions = {
+type GoogleThinkingOptions = {
   enabled: boolean;
   budgetTokens?: number;
   level?: GoogleThinkingLevel;
@@ -85,7 +86,7 @@ type ClampedGoogleThinkingLevel = Exclude<AgentThinkingLevel, "xhigh" | "max">;
  *
  * See: https://ai.google.dev/gemini-api/docs/thought-signatures
  */
-export function isThinkingPart(part: Pick<Part, "thought" | "thoughtSignature">): boolean {
+function isThinkingPart(part: Pick<Part, "thought" | "thoughtSignature">): boolean {
   return part.thought === true;
 }
 
@@ -171,7 +172,20 @@ export function convertMessages<T extends GoogleApiType>(
 
   const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
 
+  // Parallel calls need one immediate function-response turn. Gemini < 3 images cannot
+  // live inside functionResponse, so hold them until the consecutive result run ends.
+  const pendingToolResultImageTurns: Content[] = [];
+  let activeToolResultParts: Part[] | undefined;
+  const flushToolResultRun = (): void => {
+    contents.push(...pendingToolResultImageTurns);
+    pendingToolResultImageTurns.length = 0;
+    activeToolResultParts = undefined;
+  };
+
   for (const msg of transformedMessages) {
+    if (msg.role !== "toolResult") {
+      flushToolResultRun();
+    }
     if (msg.role === "user") {
       if (typeof msg.content === "string") {
         contents.push({
@@ -265,14 +279,14 @@ export function convertMessages<T extends GoogleApiType>(
       });
     } else if (msg.role === "toolResult") {
       // Extract text and image content
-      const textContent = msg.content.filter((c): c is TextContent => c.type === "text");
-      const textResult = textContent.map((c) => c.text).join("\n");
+      const textResult = extractToolResultText(msg.content);
       const imageContent = model.input.includes("image")
         ? msg.content.filter((c): c is ImageContent => c.type === "image")
         : [];
 
       const hasText = textResult.length > 0;
       const hasImages = imageContent.length > 0;
+      const mediaPlaceholder = describeToolResultMediaPlaceholder(msg.content);
 
       // Gemini 3+ models support multimodal function responses with images nested inside
       // functionResponse.parts. Claude and other non-Gemini models behind Cloud Code Assist /
@@ -280,11 +294,7 @@ export function convertMessages<T extends GoogleApiType>(
       const modelSupportsMultimodalFunctionResponse = supportsMultimodalFunctionResponse(model.id);
 
       // Use "output" key for success, "error" key for errors as per SDK documentation
-      const responseValue = hasText
-        ? sanitizeSurrogates(textResult)
-        : hasImages
-          ? "(see attached image)"
-          : "";
+      const responseValue = hasText ? sanitizeSurrogates(textResult) : (mediaPlaceholder ?? "");
 
       const imageParts: Part[] = imageContent.map((imageBlock) => ({
         inlineData: {
@@ -304,20 +314,19 @@ export function convertMessages<T extends GoogleApiType>(
       };
 
       // Cloud Code Assist API requires all function responses to be in a single user turn.
-      // Check if the last content is already a user turn with function responses and merge.
-      const lastContent = contents[contents.length - 1];
-      if (lastContent?.role === "user" && lastContent.parts?.some((p) => p.functionResponse)) {
-        lastContent.parts.push(functionResponsePart);
+      if (activeToolResultParts) {
+        activeToolResultParts.push(functionResponsePart);
       } else {
+        activeToolResultParts = [functionResponsePart];
         contents.push({
           role: "user",
-          parts: [functionResponsePart],
+          parts: activeToolResultParts,
         });
       }
 
       // For Gemini < 3, add images in a separate user message
       if (hasImages && !modelSupportsMultimodalFunctionResponse) {
-        contents.push({
+        pendingToolResultImageTurns.push({
           role: "user",
           parts: [{ text: "Tool result image:" }, ...imageParts],
         });
@@ -325,6 +334,7 @@ export function convertMessages<T extends GoogleApiType>(
     }
   }
 
+  flushToolResultRun();
   return contents;
 }
 
@@ -428,7 +438,7 @@ export async function runGoogleGenerateContentLifecycle<T extends GoogleApiType>
   stream: AssistantMessageEventStream;
   model: Model<T>;
   output: AssistantMessage;
-  options?: Pick<StreamOptions, "signal" | "onPayload" | "onResponse">;
+  options?: Pick<StreamOptions, "signal" | "onPayload">;
   createClient: () => GoogleGenerateContentClient;
   buildParams: () => GenerateContentParameters;
   nextToolCallId: (name: string | undefined) => string;
@@ -443,7 +453,6 @@ export async function runGoogleGenerateContentLifecycle<T extends GoogleApiType>
       requestParams = nextParams as GenerateContentParameters;
     }
     const googleStream = await client.models.generateContentStream(requestParams);
-    await options?.onResponse?.({ status: 200, headers: {} }, model);
     await consumeGoogleGenerateContentStream({
       chunks: googleStream,
       model,
@@ -543,7 +552,7 @@ export function buildGoogleSimpleThinking<T extends GoogleApiType>(
     useFlashLiteBudgets?: boolean;
   },
 ): GoogleThinkingOptions {
-  if (!options?.reasoning) {
+  if (!options?.reasoning || options.reasoning === "off") {
     return { enabled: false };
   }
 
@@ -606,11 +615,11 @@ export function isGemma4Model<T extends GoogleApiType>(model: Model<T>): boolean
   return /gemma-?4/.test(model.id.toLowerCase());
 }
 
-export function isGemini3ProModel<T extends GoogleApiType>(model: Model<T>): boolean {
+function isGemini3ProModel<T extends GoogleApiType>(model: Model<T>): boolean {
   return /gemini-3(?:\.\d+)?-pro/.test(model.id.toLowerCase());
 }
 
-export function isGemini3FlashModel<T extends GoogleApiType>(model: Model<T>): boolean {
+function isGemini3FlashModel<T extends GoogleApiType>(model: Model<T>): boolean {
   return /gemini-3(?:\.\d+)?-flash/.test(model.id.toLowerCase());
 }
 
@@ -738,6 +747,12 @@ export async function consumeGoogleGenerateContentStream<T extends GoogleApiType
   params.stream.push({ type: "start", partial: params.output });
   let currentBlock: TextContent | ThinkingContent | null = null;
   const blocks = params.output.content;
+  const toolCallIds = new Set<string>();
+  for (const block of blocks) {
+    if (block.type === "toolCall") {
+      toolCallIds.add(block.id);
+    }
+  }
   const blockIndex = () => blocks.length - 1;
 
   const endCurrentBlock = () => {
@@ -823,11 +838,7 @@ export async function consumeGoogleGenerateContentStream<T extends GoogleApiType
         if (part.functionCall) {
           endCurrentBlock();
           const providedId = part.functionCall.id;
-          const needsNewId =
-            !providedId ||
-            params.output.content.some(
-              (block) => block.type === "toolCall" && block.id === providedId,
-            );
+          const needsNewId = !providedId || toolCallIds.has(providedId);
           const toolCall: ToolCall = {
             type: "toolCall",
             id: needsNewId ? params.nextToolCallId(part.functionCall.name) : providedId,
@@ -837,6 +848,7 @@ export async function consumeGoogleGenerateContentStream<T extends GoogleApiType
           };
 
           params.output.content.push(toolCall);
+          toolCallIds.add(toolCall.id);
           params.stream.push({
             type: "toolcall_start",
             contentIndex: blockIndex(),
@@ -860,8 +872,8 @@ export async function consumeGoogleGenerateContentStream<T extends GoogleApiType
 
     if (candidate?.finishReason) {
       params.output.stopReason = mapStopReason(candidate.finishReason);
-      // Only promote to a tool-use turn on a clean stop; a MAX_TOKENS-truncated
-      // partial tool call must not be mis-promoted to an executable turn.
+      // MAX_TOKENS can leave a complete-looking partial call. Only a normal
+      // Google stop may promote parsed calls into an executable tool-use turn.
       if (
         params.output.stopReason === "stop" &&
         params.output.content.some((block) => block.type === "toolCall")
@@ -909,18 +921,4 @@ export async function consumeGoogleGenerateContentStream<T extends GoogleApiType
     message: params.output,
   });
   params.stream.end();
-}
-
-/**
- * Map string finish reason to our StopReason (for raw API responses).
- */
-export function mapStopReasonString(reason: string): StopReason {
-  switch (reason) {
-    case "STOP":
-      return "stop";
-    case "MAX_TOKENS":
-      return "length";
-    default:
-      return "error";
-  }
 }
