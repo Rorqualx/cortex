@@ -152,10 +152,18 @@ function sourcePackageAlias(packageId: string, subpath?: string): ControlUiViteA
 
 export function resolveSourcePackageAliasesForVite(): ControlUiViteAlias[] {
   return [
+    sourcePackageAlias("normalization-core", "boolean-coercion"),
+    sourcePackageAlias("normalization-core", "error-coercion"),
+    sourcePackageAlias("normalization-core", "format"),
+    sourcePackageAlias("normalization-core", "json-coercion"),
     sourcePackageAlias("normalization-core", "number-coercion"),
     sourcePackageAlias("normalization-core", "record-coerce"),
     sourcePackageAlias("normalization-core", "string-coerce"),
     sourcePackageAlias("normalization-core", "string-normalization"),
+    sourcePackageAlias("normalization-core", "utf16-slice"),
+    // Bare package alias MUST stay last: it is a string-prefix match that would
+    // otherwise capture the subpath imports above and resolve them against
+    // index.ts as a directory (merge added utf16-slice/format/etc. subpaths).
     sourcePackageAlias("normalization-core"),
   ];
 }
