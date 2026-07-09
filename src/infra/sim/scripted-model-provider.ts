@@ -1,9 +1,9 @@
-import { AssistantMessageEventStream } from "../../../packages/llm-core/src/utils/event-stream.js";
 import type {
-  ApiProviderInternal,
   ApiStreamFunction,
   ApiStreamSimpleFunction,
-} from "../../../packages/llm-runtime/src/api-registry.js";
+  RegisteredApiProvider,
+} from "@openclaw/ai";
+import { AssistantMessageEventStream } from "../../../packages/llm-core/src/utils/event-stream.js";
 /**
  * Scripted model provider — deterministic replay of recorded LLM streams.
  *
@@ -22,7 +22,6 @@ import type {
   AssistantMessageEvent,
   Context,
   Model,
-  SimpleStreamOptions,
   StreamOptions,
 } from "../../llm/types.js";
 
@@ -53,7 +52,7 @@ export interface ScriptedModelProviderOptions {
   /** Script store shared across all scripted providers. */
   scripts: ScriptStore;
   /** The real provider to wrap in RECORD mode. Required when mode === "record". */
-  realProvider?: ApiProviderInternal;
+  realProvider?: RegisteredApiProvider;
 }
 
 /**
@@ -240,7 +239,7 @@ export function createScriptedApiProvider<TApi extends Api>(
  */
 export function createUniversalScriptedProvider(
   options: Omit<ScriptedModelProviderOptions, "realProvider"> & {
-    resolveRealProvider: (api: Api) => ApiProviderInternal | undefined;
+    resolveRealProvider: (api: Api) => RegisteredApiProvider | undefined;
   },
 ): {
   stream: ApiStreamFunction;

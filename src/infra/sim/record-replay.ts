@@ -1,3 +1,4 @@
+import type { RegisteredApiProvider } from "@openclaw/ai";
 /**
  * Record-replay harness for deterministic model I/O simulation.
  *
@@ -23,14 +24,9 @@ import {
   getApiProviders,
   registerApiProvider,
   unregisterApiProviders,
-  type ApiProviderInternal,
-} from "../../../packages/llm-runtime/src/api-registry.js";
-import type {
-  Api,
-  AssistantMessageEvent,
-  ModelScript,
-  ScriptStore,
-} from "./scripted-model-provider.js";
+} from "@openclaw/ai/internal/runtime";
+import type { Api } from "../../llm/types.js";
+import type { ModelScript, ScriptStore } from "./scripted-model-provider.js";
 import {
   createScriptedApiProvider,
   createUniversalScriptedProvider,
@@ -77,7 +73,7 @@ export function deserializeScripts(json: string): ScriptStore {
  */
 export function createModelRecorder(options: RecordReplayOptions) {
   const { scripts, universal = true } = options;
-  const originalProviders = new Map<string, ApiProviderInternal>();
+  const originalProviders = new Map<string, RegisteredApiProvider>();
 
   function captureOriginals(): void {
     for (const p of getApiProviders()) {
@@ -94,7 +90,7 @@ export function createModelRecorder(options: RecordReplayOptions) {
       });
       // Register a catch-all scripted provider for every known API.
       // We replace each existing provider with a scripted wrapper.
-      for (const [api, real] of originalProviders) {
+      for (const [api] of originalProviders) {
         registerApiProvider(
           {
             api: api as Api,
@@ -157,7 +153,7 @@ export function createModelRecorder(options: RecordReplayOptions) {
  */
 export function createModelReplayer(options: RecordReplayOptions) {
   const { scripts, universal = true } = options;
-  const originalProviders = new Map<string, ApiProviderInternal>();
+  const originalProviders = new Map<string, RegisteredApiProvider>();
 
   function captureOriginals(): void {
     for (const p of getApiProviders()) {

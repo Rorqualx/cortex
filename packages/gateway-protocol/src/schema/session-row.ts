@@ -250,6 +250,17 @@ const gatewaySessionRowOptionalFields = {
   status: Type.Optional(SessionRunStatusSchema),
   hasActiveRun: Type.Optional(Type.Boolean()),
   activeRunIds: Type.Optional(Type.Array(Type.String())),
+  // Session-lifecycle projection fields consumed by buildGatewaySessionEventFields
+  // (upstream session grouping / unread / pin / archive controls, #100814). Optional
+  // so rows built before the row-builder populates them emit safe defaults.
+  archived: Type.Optional(Type.Boolean()),
+  archivedAt: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  pinned: Type.Optional(Type.Boolean()),
+  pinnedAt: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  unread: Type.Optional(Type.Boolean()),
+  lastReadAt: Type.Optional(Type.Number()),
+  lastActivityAt: Type.Optional(Type.Number()),
+  category: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   subagentRunState: Type.Optional(SubagentRunStateSchema),
   hasActiveSubagentRun: Type.Optional(Type.Boolean()),
   startedAt: Type.Optional(Type.Number()),

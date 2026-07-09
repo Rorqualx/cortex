@@ -1,3 +1,8 @@
+import {
+  completeSimple,
+  registerApiProvider,
+  unregisterApiProviders,
+} from "@openclaw/ai/internal/runtime";
 /**
  * Integration demonstration: simulated agent turn with scripted model provider.
  *
@@ -10,11 +15,6 @@
 import { createAssistantMessageEventStream } from "@openclaw/llm-core";
 import type { AssistantMessage, Model } from "@openclaw/llm-core";
 import { describe, expect, it } from "vitest";
-import {
-  registerApiProvider,
-  unregisterApiProviders,
-} from "../../../packages/llm-runtime/src/api-registry.js";
-import { completeSimple } from "../../../packages/llm-runtime/src/stream.js";
 import { createModelRecorder, createModelReplayer, recordThenReplay } from "./record-replay.js";
 import { createDeterministicSimulationEnv, withSimulationEnvAsync } from "./simulation-env.js";
 
