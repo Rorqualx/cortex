@@ -7,7 +7,11 @@ import {
   tempDir,
   threadStartResult,
 } from "./run-attempt-test-harness.js";
-import { readCodexAppServerBinding, writeCodexAppServerBinding } from "./session-binding.js";
+import {
+  readCodexAppServerBinding,
+  testCodexAppServerBindingStore,
+  writeCodexAppServerBinding,
+} from "./session-binding.test-helpers.js";
 import { startOrResumeThread } from "./thread-lifecycle.js";
 
 function createThreadLifecycleAppServerOptions(): Parameters<
@@ -202,6 +206,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     const run = startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -237,6 +242,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [
@@ -246,6 +252,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [
@@ -277,6 +284,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [createDeferredNamedDynamicTool("web_search")],
@@ -284,6 +292,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [createNamedDynamicTool("web_search")],
@@ -311,6 +320,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [createNamedDynamicTool("wiki_status"), createNamedDynamicTool("diffs")],
@@ -318,6 +328,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [createNamedDynamicTool("diffs"), createNamedDynamicTool("wiki_status")],
@@ -355,6 +366,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -406,6 +418,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -444,6 +457,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -500,6 +514,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -538,6 +553,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [createDeferredNamedDynamicTool("message")],
@@ -546,6 +562,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     const fingerprint = (await readCodexAppServerBinding(sessionFile))?.dynamicToolsFingerprint;
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -553,6 +570,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [createDeferredNamedDynamicTool("message")],
@@ -621,6 +639,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -641,6 +660,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -694,6 +714,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     await expect(
       startOrResumeThread({
         client: { request } as never,
+        bindingStore: testCodexAppServerBindingStore,
         params: createParams(sessionFile, workspaceDir),
         cwd: workspaceDir,
         dynamicTools: [],
@@ -733,6 +754,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -741,6 +763,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -777,6 +800,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -848,6 +872,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -858,6 +883,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -912,6 +938,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -925,6 +952,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -998,6 +1026,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -1056,6 +1085,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -1117,6 +1147,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -1184,6 +1215,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -1238,6 +1270,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -1303,6 +1336,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -1352,6 +1386,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],
@@ -1399,6 +1434,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
 
     await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [createMessageDynamicTool("Send and manage messages.", ["send"])],
@@ -1406,6 +1442,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
     const binding = await startOrResumeThread({
       client: { request } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [createMessageDynamicTool("Send and manage messages.", ["send", "read"])],
@@ -1439,6 +1476,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
           throw new Error(`unexpected method: ${method}`);
         },
       } as never,
+      bindingStore: testCodexAppServerBindingStore,
       params,
       cwd: workspaceDir,
       dynamicTools: [],

@@ -85,6 +85,12 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   onToolOutcome?: ToolOutcomeObserver;
   /** Supplies run-global model-call ordering for parallel tool outcomes. */
   allocateToolOutcomeOrdinal?: (toolCallId?: string) => number;
+  /**
+   * Invoked when an attempt is aborted externally (user/restart/supersede) so
+   * plugin harnesses (e.g. codex app-server) can tear down their in-flight run.
+   * Optional: core provides it in the general run path; harnesses call it best-effort.
+   */
+  onAttemptAbort?: () => void;
   model: Model;
   authStorage: AuthStorage;
   /** Auth profile store already resolved during startup for this attempt. */
@@ -188,6 +194,12 @@ export type EmbeddedRunAttemptResult = {
   beforeAgentFinalizeRevisionReason?: string;
   assistantTexts: string[];
   lastAssistantTextMessageIndex?: number;
+  /**
+   * True when this attempt took ownership of mirroring the assistant transcript
+   * (plugin harnesses like codex app-server that persist their own transcript).
+   * Consumed by the caller to skip a redundant core-side transcript write.
+   */
+  assistantTranscriptOwned?: boolean;
   toolMetas: Array<{
     toolName: string;
     meta?: string;
