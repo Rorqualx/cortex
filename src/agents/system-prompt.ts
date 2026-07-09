@@ -4,6 +4,7 @@
  * Assembles runtime, workspace, tooling, memory, delegation, channel, and cache-boundary prompt sections.
  */
 import { createHmac, createHash } from "node:crypto";
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "@openclaw/ai/internal/shared";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
@@ -47,7 +48,6 @@ import {
 } from "./prompt-surface.js";
 import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
 import { buildSkillForgePromptSection, SKILL_FORGE_TOOL_NAME } from "./skill-forge-prompt.js";
-import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./system-prompt-cache-boundary.js";
 import type {
   ProviderSystemPromptContribution,
   ProviderSystemPromptSectionId,

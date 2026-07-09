@@ -1,3 +1,4 @@
+import { splitSystemPromptCacheBoundary } from "@openclaw/ai/internal/shared";
 /**
  * Prompt-cache stability for per-turn system-prompt composition.
  *
@@ -10,7 +11,6 @@
  * (the exact code runEmbeddedAttempt calls), no gateway/provider/session needed.
  */
 import { describe, expect, it } from "vitest";
-import { splitSystemPromptCacheBoundary } from "../../system-prompt-cache-boundary.js";
 import { composeAttemptSystemPrompt } from "./attempt.prompt-helpers.js";
 
 const BASE = "You are OpenClaw.\nBe helpful.";

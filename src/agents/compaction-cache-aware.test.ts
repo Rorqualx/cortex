@@ -8,12 +8,12 @@
  * - Improves cache hit rates by respecting boundaries
  */
 
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "@openclaw/ai/internal/shared";
 // SKIP: detectCacheBoundaries, buildCacheAwareChunkPlan, isCacheAwareChunkingBeneficial,
 // and CacheAwareChunkingOptions are fork-only additions to compaction-planning.ts that
 // were not merged into production. Tests are skipped until these APIs are exported from
 // compaction-planning.ts.
 import { describe, it, expect } from "vitest";
-import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./system-prompt-cache-boundary.js";
 
 // Stub types and functions so the skipped block type-checks cleanly.
 type AgentMessage = {
