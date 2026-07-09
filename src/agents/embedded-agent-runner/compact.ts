@@ -860,7 +860,7 @@ async function compactEmbeddedAgentSessionDirectOnce(
       diagnostics: normalizableToolProjection.diagnostics,
       tools: toolsEnabled ? toolsRaw : [],
       runId,
-      agentId: params.sessionAgentId,
+      agentId: effectiveSkillAgentId,
       sessionKey: params.sessionKey,
       sessionId: params.sessionId,
     });
@@ -922,7 +922,7 @@ async function compactEmbeddedAgentSessionDirectOnce(
         diagnostics: normalizableBundledToolProjection.diagnostics,
         tools: filteredBundledTools,
         runId,
-        agentId: params.sessionAgentId,
+        agentId: effectiveSkillAgentId,
         sessionKey: params.sessionKey,
         sessionId: params.sessionId,
       });
@@ -940,7 +940,7 @@ async function compactEmbeddedAgentSessionDirectOnce(
       diagnostics: toolSchemaProjection.diagnostics,
       tools: projectedEffectiveTools,
       runId,
-      agentId: params.sessionAgentId,
+      agentId: effectiveSkillAgentId,
       sessionKey: params.sessionKey,
       sessionId: params.sessionId,
     });

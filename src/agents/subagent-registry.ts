@@ -1482,15 +1482,6 @@ function ensureListener() {
         );
         return;
       }
-      if (phase === "error") {
-        schedulePendingLifecycleError({
-          runId: evt.runId,
-          endedAt,
-          startedAt,
-          error,
-        });
-        return;
-      }
       const blocked = isBlockedLivenessState(livenessState);
       const abandoned = isAbandonedLivenessState(livenessState);
       if (blocked || abandoned) {
@@ -1575,7 +1566,6 @@ const subagentRunManager = createSubagentRunManager({
   notifyContextEngineSubagentEnded,
   completeCleanupBookkeeping,
   completeSubagentRun,
-  resolveSubagentTask: findSubagentTaskForRun,
 });
 
 configureSubagentRegistrySteerRuntime({

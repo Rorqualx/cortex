@@ -261,6 +261,12 @@ export type AgentEventHandlerOptions = {
     clientRunId: string;
     summary: string | undefined;
   }) => void;
+  resolveSessionActiveRunState?: (params: {
+    requestedKey: string;
+    canonicalKey: string;
+    sessionId?: string;
+    agentId?: string;
+  }) => { active: boolean; runIds: string[] };
   markTrackedRunTerminalPersisted?: (params: {
     runId: string;
     clientRunId: string;
