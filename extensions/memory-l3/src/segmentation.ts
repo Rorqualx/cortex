@@ -149,6 +149,121 @@ export function splitByBoundaries(
 }
 
 // -----------------------------------------------------------------
+// Segment-type classification (topic-aware compaction)
+// -----------------------------------------------------------------
+
+/** Segment type for topic-aware extraction density. */
+export type SegmentType = "technical" | "procedural" | "conversational";
+
+// Heuristic signals for cheap segment-type classification.
+const CODE_BLOCK_RE = /```[\s\S]*?```/g;
+const CODE_FENCE_RE = /```/;
+const FILE_PATH_RE = /(?:\/[\w.-]+)+\.[a-z]{1,5}\b/i;
+const SHELL_COMMAND_RE = /^\s*[$>]\s|\b(npm|pnpm|pip|git|docker|kubectl|curl|wget|ssh|scp)\s/u;
+const NUMBERED_LIST_RE = /^\s*\d+[.)]/mu;
+const INSTRUCTION_VERB_RE =
+  /\b(run|execute|install|configure|deploy|build|compile|test|check|verify|validate|commit|push|merge|rebase|backup|restore|migrate|generate|create|update|delete|remove|replace)\b/iu;
+const QUESTION_RE = /\?/;
+const GREETING_RE =
+  /\b(hi|hey|hello|thanks|thank you|bye|good morning|good evening|good night|see you|cheers|no problem|you'?re welcome|np)\b/iu;
+
+export function classifySegmentType(messages: ReadonlyArray<AgentMessage>): SegmentType {
+  const joined = messages
+    .map((m) => {
+      const content = (m as { content?: unknown }).content;
+      if (typeof content === "string") {
+        return content;
+      }
+      if (Array.isArray(content)) {
+        return content
+          .filter((b): b is { type: string; text?: string } => typeof b === "object" && b != null)
+          .map((b) => b.text ?? "")
+          .join(" ");
+      }
+      return "";
+    })
+    .join("\n");
+
+  // Count signals per type
+  let technical = 0;
+  let procedural = 0;
+  let conversational = 0;
+
+  // Technical: code blocks, file paths, shell commands, URLs
+  const codeBlocks = joined.match(CODE_BLOCK_RE);
+  if (codeBlocks) {
+    technical += codeBlocks.length * 3; // code blocks are strong signals
+  }
+  if (CODE_FENCE_RE.test(joined)) {
+    technical += 1;
+  }
+  const filePaths = joined.match(FILE_PATH_RE);
+  if (filePaths) {
+    technical += filePaths.length * 2;
+  }
+  const shellMatches = joined.match(SHELL_COMMAND_RE);
+  if (shellMatches) {
+    technical += shellMatches.length * 2;
+  }
+
+  // Procedural: numbered lists, instruction verbs, tool-call patterns
+  const numLists = joined.match(NUMBERED_LIST_RE);
+  if (numLists) {
+    procedural += numLists.length * 1.5;
+  }
+  const instrVerbs = joined.match(INSTRUCTION_VERB_RE);
+  if (instrVerbs) {
+    procedural += Math.min(instrVerbs.length, 10); // cap to avoid overflow on long segments
+  }
+
+  // Conversational: question marks, greetings, short messages
+  const questions = joined.match(QUESTION_RE);
+  if (questions) {
+    conversational += questions.length;
+  }
+  const greetings = joined.match(GREETING_RE);
+  if (greetings) {
+    conversational += greetings.length * 1.5;
+  }
+
+  // Normalize by message count to avoid bias against long segments
+  const msgCount = Math.max(1, messages.length);
+  const techNorm = technical / msgCount;
+  const procNorm = procedural / msgCount;
+  const convNorm = conversational / msgCount;
+
+  // Classification thresholds
+  if (techNorm >= 0.5) {
+    return "technical";
+  }
+  if (convNorm >= 0.8 && convNorm > procNorm && convNorm > techNorm) {
+    return "conversational";
+  }
+  if (procNorm >= 0.3) {
+    return "procedural";
+  }
+
+  // Default: conversational for low-signal segments
+  return "conversational";
+}
+
+// Per-segment-type extraction prompt suffixes for topic-aware compaction.
+// Technical segments: ask for full detail (no suffix — current behavior).
+// Procedural segments: emphasize actionable steps and tool-call documentation.
+// Conversational segments: compress aggressively — only decisions, preferences, high-importance.
+const SEGMENT_TYPE_PROMPT_SUFFIX: Record<SegmentType, string> = {
+  technical: "", // current behavior — full detail
+  procedural:
+    "\nEXTRACTION MODE: PROCEDURAL. Emphasize actionable steps, tool-call sequences, and verification checkpoints. Extract all facts.",
+  conversational:
+    "\nEXTRACTION MODE: CONVERSATIONAL. Compress aggressively. Extract only decisions, explicit user preferences (importance 0.7+), and safety-critical facts. Omit casual banter.",
+};
+
+export function getSegmentTypePromptSuffix(type: SegmentType): string {
+  return SEGMENT_TYPE_PROMPT_SUFFIX[type] ?? "";
+}
+
+// -----------------------------------------------------------------
 // Message-level embedding index
 // -----------------------------------------------------------------
 

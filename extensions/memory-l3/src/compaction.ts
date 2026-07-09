@@ -18,7 +18,13 @@ import {
   type LlmCaller,
 } from "./llm.js";
 import { cosineSimilarity } from "./scoring.js";
-import { buildMessageChunks, detectTopicBoundaries, splitByBoundaries } from "./segmentation.js";
+import {
+  buildMessageChunks,
+  classifySegmentType,
+  detectTopicBoundaries,
+  getSegmentTypePromptSuffix,
+  splitByBoundaries,
+} from "./segmentation.js";
 import type { Storage } from "./storage.js";
 import type { L2ChunkFrontmatter, L2Fact, L3State, TypedFact } from "./types.js";
 
@@ -66,6 +72,15 @@ export async function compactSession(params: {
    * OPENCLAW_MEMORY_L3_NATIVE_COMPACTION=1 env flag.
    */
   nativeCompaction?: boolean;
+  /**
+   * Topic-aware compaction: classify each topic segment (technical /
+   * procedural / conversational) and vary extraction density per type.
+   * Technical keeps full detail, procedural emphasizes actions, conversational
+   * compresses aggressively. Gated behind the
+   * OPENCLAW_MEMORY_L3_TOPIC_AWARE_COMPACTION=1 env flag. Only applies when
+   * segmented compaction is active (needs topic boundaries).
+   */
+  topicAwareCompaction?: boolean;
 }): Promise<CompactionResult> {
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
@@ -88,6 +103,7 @@ export async function compactSession(params: {
     embeddingProvider: params.embeddingProvider,
     segmentedCompaction: params.segmentedCompaction,
     nativeCompaction: params.nativeCompaction,
+    topicAwareCompaction: params.topicAwareCompaction,
   });
 
   const filtered = dropAlreadyKnown(extracted.facts, alreadyKnownSet);
@@ -394,6 +410,7 @@ async function extractWithOptionalSegmentation(params: {
   embeddingProvider?: EmbeddingProvider;
   segmentedCompaction?: boolean;
   nativeCompaction?: boolean;
+  topicAwareCompaction?: boolean;
 }): Promise<{
   extracted: ExtractResult;
   topicSegments?: Array<{ startMsgIndex: number; endMsgIndex: number }>;
@@ -402,6 +419,8 @@ async function extractWithOptionalSegmentation(params: {
     params.segmentedCompaction ?? process.env.OPENCLAW_MEMORY_L3_SEGMENTED_COMPACTION === "1";
   const native =
     params.nativeCompaction ?? process.env.OPENCLAW_MEMORY_L3_NATIVE_COMPACTION === "1";
+  const topicAware =
+    params.topicAwareCompaction ?? process.env.OPENCLAW_MEMORY_L3_TOPIC_AWARE_COMPACTION === "1";
   const extractFn = native ? extractFactsNative : extractFacts;
   if (enabled && params.embeddingProvider) {
     try {
@@ -420,7 +439,24 @@ async function extractWithOptionalSegmentation(params: {
           if (segmentMessages.length === 0) {
             continue;
           }
-          const segment = await extractFn({ messages: segmentMessages, caller: params.caller });
+          // Topic-aware: classify segment type and apply type-specific extraction density.
+          let systemPromptSuffix: string | undefined;
+          if (topicAware) {
+            const segType = classifySegmentType(segmentMessages);
+            systemPromptSuffix = getSegmentTypePromptSuffix(segType);
+            if (systemPromptSuffix) {
+              l3debug(
+                `extractWithOptionalSegmentation: segment ${range.start}-${range.end} classified as ${segType}`,
+              );
+            }
+          }
+          const segment = systemPromptSuffix
+            ? await extractFn({
+                messages: segmentMessages,
+                caller: params.caller,
+                systemPromptSuffix,
+              })
+            : await extractFn({ messages: segmentMessages, caller: params.caller });
           merged.facts.push(...segment.facts);
           merged.typedFacts.push(...segment.typedFacts);
           merged.decisions.push(...segment.decisions);

@@ -352,10 +352,15 @@ export type ExtractedActionItem = {
 export async function extractFacts(params: {
   messages: ReadonlyArray<AgentMessage>;
   caller: LlmCaller;
+  /** Optional prompt suffix appended to the system prompt for topic-aware extraction modes. */
+  systemPromptSuffix?: string;
 }): Promise<ExtractResult> {
   const userPrompt = buildExtractUserPrompt(params.messages);
+  const systemPrompt = params.systemPromptSuffix
+    ? `${EXTRACT_SYSTEM_PROMPT}${params.systemPromptSuffix}`
+    : EXTRACT_SYSTEM_PROMPT;
   const raw = await params.caller({
-    systemPrompt: EXTRACT_SYSTEM_PROMPT,
+    systemPrompt,
     userPrompt,
     thinking: false,
   });
@@ -365,10 +370,15 @@ export async function extractFacts(params: {
 export async function extractFactsNative(params: {
   messages: ReadonlyArray<AgentMessage>;
   caller: LlmCaller;
+  /** Optional prompt suffix appended to the system prompt for topic-aware extraction modes. */
+  systemPromptSuffix?: string;
 }): Promise<ExtractResult> {
   const userPrompt = buildExtractUserPrompt(params.messages);
+  const systemPrompt = params.systemPromptSuffix
+    ? `${EXTRACT_SYSTEM_PROMPT_NATIVE}${params.systemPromptSuffix}`
+    : EXTRACT_SYSTEM_PROMPT_NATIVE;
   const raw = await params.caller({
-    systemPrompt: EXTRACT_SYSTEM_PROMPT_NATIVE,
+    systemPrompt,
     userPrompt,
     thinking: false,
   });

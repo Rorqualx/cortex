@@ -367,3 +367,113 @@ describe("compactSession", () => {
     expect(JSON.parse(lines[1])).toEqual({ role: "user", content: "second" });
   });
 });
+
+// ── Segment-type classification tests (topic-aware compaction) ─────────────
+
+import {
+  classifySegmentType,
+  getSegmentTypePromptSuffix,
+  type SegmentType,
+} from "./segmentation.js";
+
+describe("classifySegmentType", () => {
+  it("classifies code-heavy messages as technical", () => {
+    const messages = [
+      { role: "user", content: "Can you fix this function?" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Sure, the bug is in \`/Users/joederas/src/app.ts\`. Here is the fix:\n\n\`\`\`typescript\nfunction add(a: number, b: number): number {\n  return a + b;\n}\n\`\`\`",
+          },
+        ],
+      },
+    ];
+    expect(classifySegmentType(messages)).toBe("technical");
+  });
+
+  it("classifies shell-command messages as technical", () => {
+    const messages = [
+      {
+        role: "user",
+        content: "Run npm install && npm run build, then docker compose up -d",
+      },
+    ];
+    expect(classifySegmentType(messages)).toBe("technical");
+  });
+
+  it("classifies procedural messages with numbered steps", () => {
+    const messages = [
+      {
+        role: "user",
+        content:
+          "Here is the deployment procedure:\n1. Run the test suite\n2. Commit your changes\n3. Push to main\n4. Verify the deploy",
+      },
+    ];
+    expect(classifySegmentType(messages)).toBe("procedural");
+  });
+
+  it("classifies instruction-verb-heavy messages as procedural", () => {
+    const messages = [
+      {
+        role: "user",
+        content:
+          "Please verify the config, then validate the build, and generate a report. Also check the backup and restore if needed.",
+      },
+    ];
+    expect(classifySegmentType(messages)).toBe("procedural");
+  });
+
+  it("classifies casual conversation as conversational", () => {
+    const messages = [
+      { role: "user", content: "Hey, how are you doing?" },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "I am doing well, thanks for asking!" }],
+      },
+      { role: "user", content: "Great, see you later!" },
+    ];
+    expect(classifySegmentType(messages)).toBe("conversational");
+  });
+
+  it("classifies greeting-only messages as conversational", () => {
+    const messages = [
+      { role: "user", content: "Hi there!" },
+      { role: "user", content: "Thank you so much!" },
+    ];
+    expect(classifySegmentType(messages)).toBe("conversational");
+  });
+
+  it("defaults low-signal messages to conversational", () => {
+    const messages = [{ role: "user", content: "ok" }];
+    expect(classifySegmentType(messages)).toBe("conversational");
+  });
+
+  it("handles empty messages array", () => {
+    expect(classifySegmentType([])).toBe("conversational");
+  });
+});
+
+describe("getSegmentTypePromptSuffix", () => {
+  it("returns empty string for technical type (no compression)", () => {
+    expect(getSegmentTypePromptSuffix("technical")).toBe("");
+  });
+
+  it("returns procedural guidance for procedural type", () => {
+    const suffix = getSegmentTypePromptSuffix("procedural");
+    expect(suffix).toMatch(/EXTRACTION MODE: PROCEDURAL/);
+    expect(suffix).toMatch(/actionable/);
+  });
+
+  it("returns compression guidance for conversational type", () => {
+    const suffix = getSegmentTypePromptSuffix("conversational");
+    expect(suffix).toMatch(/EXTRACTION MODE: CONVERSATIONAL/);
+    expect(suffix).toMatch(/Compress aggressively/);
+    expect(suffix).toMatch(/importance 0\.7\+/);
+  });
+
+  it("returns empty string for unknown type (safe default)", () => {
+    expect(getSegmentTypePromptSuffix("unknown" as SegmentType)).toBe("");
+  });
+});
