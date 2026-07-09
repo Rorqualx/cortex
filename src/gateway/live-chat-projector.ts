@@ -68,6 +68,23 @@ export function normalizeLiveAssistantBufferedText(text: string): string {
   return stripInternalRuntimeContext(stripInlineDirectiveTagsForDisplay(text).text);
 }
 
+/**
+ * Strips internal runtime context and inline directive tags from live assistant
+ * text/delta before it is surfaced in the fork's live-chat stream.
+ */
+export function normalizeLiveAssistantEventText(params: { text: string; delta?: unknown }): {
+  text: string;
+  delta: string;
+} {
+  return {
+    text: stripInternalRuntimeContext(stripInlineDirectiveTagsForDisplay(params.text).text),
+    delta:
+      typeof params.delta === "string"
+        ? stripInternalRuntimeContext(stripInlineDirectiveTagsForDisplay(params.delta).text)
+        : "",
+  };
+}
+
 /** Projects buffered assistant text into display text or a suppressed/pending state. */
 export function projectLiveAssistantBufferedText(
   rawText: string,

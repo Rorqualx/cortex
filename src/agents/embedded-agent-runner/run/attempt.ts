@@ -128,6 +128,7 @@ import {
   resolveBootstrapFilesForRun,
   resolveContextInjectionMode,
 } from "../../bootstrap-files.js";
+import { isPrimaryBootstrapRun } from "../../bootstrap-routing.js";
 import { createCacheTrace } from "../../cache-trace.js";
 import {
   listChannelSupportedActions,
@@ -315,10 +316,7 @@ import {
   type AsyncStartedToolMeta,
   type CompletionRequiredAsyncTaskWaitResult,
 } from "./attempt.async-tasks.js";
-import {
-  isPrimaryBootstrapRun,
-  remapInjectedContextFilesToWorkspace,
-} from "./attempt.bootstrap-context.js";
+import { remapInjectedContextFilesToWorkspace } from "./attempt.bootstrap-context.js";
 export { buildContextEnginePromptCacheInfo } from "./attempt.context-engine-helpers.js";
 import { resolveUserTimezone } from "../../date-time.js";
 import {
