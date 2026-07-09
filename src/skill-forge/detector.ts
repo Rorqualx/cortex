@@ -242,8 +242,18 @@ const FRUSTRATION_MARKERS =
  * user frustration phrases; 0.5 otherwise. Error-recovery captures contain a
  * tool error by definition, so that lane always scores 0.5 — its skills keep
  * the stricter promotion gate.
+ *
+ * Domain-expertise signals (prompt specificity, verification frequency,
+ * direction precision) contribute 15% of the final score, blending with the
+ * base 85% from error detection and frustration markers.
  */
 function computeSuccessScore(events: TrajectoryEvent[]): number {
+  const baseScore = computeBaseSuccessScore(events);
+  const expertise = computeDomainExpertiseScore(events);
+  return 0.85 * baseScore + 0.15 * expertise;
+}
+
+function computeBaseSuccessScore(events: TrajectoryEvent[]): number {
   if (events.some(isToolErrorResult)) {
     return 0.5;
   }
@@ -253,6 +263,62 @@ function computeSuccessScore(events: TrajectoryEvent[]): number {
     }
   }
   return 1;
+}
+
+// ── Domain-expertise signals ─────────────────────────────────────────────
+
+/** Words that indicate constraint density in user prompts. */
+const CONSTRAINT_KEYWORDS =
+  /\b(must|should|never|always|require|need|only|exactly|specific|correct|precise|mandatory|essential|crucial)\b/giu;
+
+/** Tool names that indicate verification behavior. */
+const VERIFICATION_TOOLS =
+  /\b(read|grep|ast[_-]?grep|rg|find|test|verify|check|lint|typecheck|validate|inspect|audit)\b/iu;
+
+function computePromptSpecificity(userTexts: string[]): number {
+  if (userTexts.length === 0) {
+    return 0;
+  }
+  const first = userTexts[0];
+  const words = first.split(/\s+/u).filter((w) => w.length > 0);
+  if (words.length === 0) {
+    return 0;
+  }
+  const constraintMatches = [...first.matchAll(CONSTRAINT_KEYWORDS)];
+  return Math.min(1, (constraintMatches.length / words.length) * 10);
+}
+
+function computeVerificationFrequency(events: TrajectoryEvent[]): number {
+  const toolCalls = events.filter((e) => e.type === "tool.call");
+  if (toolCalls.length === 0) {
+    return 0;
+  }
+  let verifyCount = 0;
+  for (const call of toolCalls) {
+    const name = call.data?.name;
+    if (typeof name === "string" && VERIFICATION_TOOLS.test(name)) {
+      verifyCount += 1;
+    }
+  }
+  return Math.min(1, (verifyCount / toolCalls.length) * 2);
+}
+
+function computeDirectionPrecision(events: TrajectoryEvent[]): number {
+  const userCount = events.filter((e) => e.type === "user.message").length;
+  const errorCount = events.filter(isToolErrorResult).length;
+  if (errorCount === 0) {
+    return 0.5;
+  }
+  const ratio = userCount / Math.max(1, errorCount);
+  return Math.min(1, Math.max(0, (ratio - 0.5) / 4.5));
+}
+
+function computeDomainExpertiseScore(events: TrajectoryEvent[]): number {
+  const userTexts = extractUserMessageTexts(events);
+  const specificity = computePromptSpecificity(userTexts);
+  const verification = computeVerificationFrequency(events);
+  const direction = computeDirectionPrecision(events);
+  return (specificity + verification + direction) / 3;
 }
 
 export type DetectorInput = {

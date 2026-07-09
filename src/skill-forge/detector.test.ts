@@ -242,12 +242,17 @@ describe("runDetector", () => {
         .filter((c): c is Extract<Candidate, { lane: "explicit" }> => c.lane === "explicit")
         .map((c) => [c.captureDir, c.successScore]),
     );
-    expect(explicitByDir.get(cleanDir)).toBe(1);
-    expect(explicitByDir.get(frustratedDir)).toBe(0.5);
-    expect(explicitByDir.get(erroringDir)).toBe(0.5);
+    // Domain-expertise blend: 85% base + 15% signals. Clean captures
+    // score ~0.875 (1·0.85 + 0.167·0.15); error/frustration ~0.43-0.45.
+    expect(explicitByDir.get(cleanDir)).toBeCloseTo(0.875, 2);
+    expect(explicitByDir.get(frustratedDir)).toBeGreaterThanOrEqual(0.4);
+    expect(explicitByDir.get(frustratedDir)).toBeLessThanOrEqual(0.5);
+    expect(explicitByDir.get(erroringDir)).toBeGreaterThanOrEqual(0.4);
+    expect(explicitByDir.get(erroringDir)).toBeLessThanOrEqual(0.5);
     // Error-recovery captures contain a tool error by definition.
     const recovery = candidates.find((c) => c.lane === "error-recovery");
-    expect(recovery?.successScore).toBe(0.5);
+    expect(recovery?.successScore).toBeGreaterThanOrEqual(0.4);
+    expect(recovery?.successScore).toBeLessThanOrEqual(0.5);
   });
 
   it("ordinary coding language does not taint the success score", async () => {
@@ -259,7 +264,9 @@ describe("runDetector", () => {
     ]);
     const candidates = await runDetector({ captureDirs: [dir] });
     const explicit = candidates.find((c) => c.lane === "explicit");
-    expect(explicit?.successScore).toBe(1);
+    // Domain-expertise blend: clean session scores ~0.875, not exact 1.0.
+    expect(explicit?.successScore).toBeCloseTo(0.875, 2);
+    expect(explicit!.successScore).toBeGreaterThan(0.85);
   });
 
   it("one tainted member pins the whole tool-shape cluster at 0.5", async () => {
