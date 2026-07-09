@@ -1550,10 +1550,16 @@ function ensureListener() {
 const subagentRunManager = createSubagentRunManager({
   runs: subagentRuns,
   resumedRuns,
+  endedHookInFlightRunIds,
   persist: persistSubagentRuns,
   persistOrThrow: persistSubagentRunsOrThrow,
   callGateway: (request) => subagentRegistryDeps.callGateway(request),
   getRuntimeConfig: () => subagentRegistryDeps.getRuntimeConfig(),
+  ensureRuntimePluginsLoaded: (args: {
+    config: OpenClawConfig;
+    workspaceDir?: string;
+    allowGatewaySubagentBinding?: boolean;
+  }) => ensureSubagentRegistryPluginRuntimeLoaded(args),
   ensureListener,
   startSweeper,
   stopSweeper,
