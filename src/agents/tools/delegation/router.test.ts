@@ -3,7 +3,7 @@
 // and dynamic inclusion of newly-configured models.
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { resolveRoute } from "./router.js";
+import { resolveRoute, ROLE_TIER, tierForKind } from "./router.js";
 
 // Minimal cfg mirroring the real provider catalog shape.
 function cfgWith(providers: Record<string, string[]>): OpenClawConfig {
@@ -108,5 +108,51 @@ describe("resolveRoute (config-driven)", () => {
     const route = resolveRoute({ kind: "code" });
     expect(route.primary.provider).toBe("zai");
     expect(route.primary.model).toBe("glm-4.7");
+  });
+});
+
+describe("role-tier routing", () => {
+  it("exports ROLE_TIER with correct backbone/execution classification", () => {
+    expect(ROLE_TIER.plan).toBe("backbone");
+    expect(ROLE_TIER.research).toBe("backbone");
+    expect(ROLE_TIER.academic).toBe("backbone");
+    expect(ROLE_TIER.review).toBe("backbone");
+    expect(ROLE_TIER.code).toBe("execution");
+    expect(ROLE_TIER.explore).toBe("execution");
+    expect(ROLE_TIER.vision).toBe("execution");
+    expect(ROLE_TIER.swarm).toBe("execution");
+    expect(ROLE_TIER.delegate).toBe("execution");
+  });
+
+  it("tierForKind returns the tier for each kind", () => {
+    expect(tierForKind("plan")).toBe("backbone");
+    expect(tierForKind("code")).toBe("execution");
+  });
+
+  it("routes backbone kinds to the strongest model (glm-5.1)", () => {
+    for (const kind of ["plan", "research", "academic", "review"] as const) {
+      const route = resolveRoute({ kind, cfg: FULL });
+      expect(route.primary).toEqual({ provider: "zai", model: "glm-5.1" });
+    }
+  });
+
+  it("routes execution kinds to the fastest/cheaper model (glm-4.7)", () => {
+    for (const kind of ["code", "explore", "swarm", "delegate"] as const) {
+      const route = resolveRoute({ kind, cfg: FULL });
+      expect(route.primary).toEqual({ provider: "zai", model: "glm-4.7" });
+    }
+  });
+
+  it("vision routes to the vision-capable model regardless of tier", () => {
+    const route = resolveRoute({ kind: "vision", cfg: FULL });
+    expect(route.primary).toEqual({ provider: "zai", model: "glm-4.6v" });
+  });
+
+  it("backbone and execution produce different primaries for the same provider", () => {
+    const backbone = resolveRoute({ kind: "plan", cfg: FULL }).primary;
+    const execution = resolveRoute({ kind: "code", cfg: FULL }).primary;
+    expect(backbone.model).not.toBe(execution.model);
+    expect(backbone.model).toBe("glm-5.1");
+    expect(execution.model).toBe("glm-4.7");
   });
 });

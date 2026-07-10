@@ -26,6 +26,50 @@ export type DelegationKind =
   | "academic"
   | "vision";
 
+/**
+ * Role tier for each delegation kind.
+ *
+ * Research (Finding #9 — capacity asymmetry): the delegation *backbone*
+ * (task decomposition, planning, research synthesis) is highly
+ * capacity-sensitive — scaling the backbone improves EM by ~11pp. The
+ * *execution* side (code, explore, vision) is far less sensitive (~2.6pp),
+ * and a 1.7B executor can match frontier sub-agents.
+ *
+ * `ROLE_TIER` makes this policy explicit so routing code, tests, and future
+ * injection-policy work can reason about it without re-deriving from the
+ * PREFERRED table.
+ */
+export const ROLE_TIER = {
+  // Backbone: needs the strongest configured model.
+  plan: "backbone",
+  research: "backbone",
+  academic: "backbone",
+  review: "backbone",
+  // Execution: speed/cost-optimized; capacity matters less.
+  code: "execution",
+  explore: "execution",
+  vision: "execution",
+  swarm: "execution",
+  delegate: "execution",
+} as const satisfies Record<DelegationKind, "backbone" | "execution">;
+
+/** Type guard / accessor for the role tier of a kind. */
+export function tierForKind(kind: DelegationKind): "backbone" | "execution" {
+  return ROLE_TIER[kind];
+}
+
+/**
+ * Tier-default model per provider: backbone → strongest, execution → fastest.
+ * Used when PREFERRED doesn't have an explicit per-kind entry (e.g. vision
+ * needs the -v variant regardless of tier, so it stays explicit).
+ */
+const TIER_DEFAULT: Record<string, Record<"backbone" | "execution", string>> = {
+  zai: { backbone: "glm-5.1", execution: "glm-4.7" },
+  kimi: { backbone: "kimi-for-coding", execution: "kimi-for-coding" },
+  deepseek: { backbone: "deepseek-v4-pro", execution: "deepseek-v4-pro" },
+  moonshot: { backbone: "kimi-k2.6", execution: "kimi-k2.6" },
+};
+
 /** A provider+model candidate. `provider` is an OpenClaw config provider id. */
 export type Candidate = { provider: string; model: string };
 
@@ -33,19 +77,19 @@ export type Candidate = { provider: string; model: string };
 export const PROVIDER_PRIORITY: readonly string[] = ["zai", "kimi", "deepseek", "moonshot"];
 
 /**
- * Preferred model per provider per kind. Used only when the model is actually
- * configured; otherwise the first configured model of that provider is used.
- * `default` applies to any kind without a specific entry.
+ * Preferred model per provider per kind. Explicit per-kind entries override
+ * the tier default (e.g. vision needs the -v variant). Entries not listed
+ * here resolve via TIER_DEFAULT — backbone kinds get the strongest model,
+ * execution kinds get the fastest.
+ *
+ * `default` is the legacy fallback when neither an explicit entry nor a
+ * tier default resolves (and for providers without a TIER_DEFAULT entry).
  */
 const PREFERRED: Record<string, Partial<Record<DelegationKind, string>> & { default: string }> = {
   zai: {
     default: "glm-4.7",
-    review: "glm-5.1",
-    research: "glm-5.1",
-    plan: "glm-5.1",
-    academic: "glm-5.1",
-    // glm-4.7 won the swarm tie-break (both judges) over glm-4.6 — most
-    // file-specific findings + genuine cross-area synthesis, and reliable.
+    // backbone kinds (plan, research, academic, review) auto-resolve to
+    // glm-5.1 via TIER_DEFAULT — no need to list them explicitly.
     explore: "glm-4.7",
     swarm: "glm-4.7",
     vision: "glm-4.6v",
@@ -118,10 +162,25 @@ function orderedProviders(cfg: OpenClawConfig | undefined, override?: string): s
   return [override, ...ordered.filter((p) => p !== override)];
 }
 
-/** Pick a provider's model for a kind: preferred-if-configured, else first configured. */
+/**
+ * Pick a provider's model for a kind. Resolution order:
+ * 1. Explicit per-kind preference (PREFERRED[kind]) — e.g. vision → glm-4.6v.
+ * 2. Tier default (TIER_DEFAULT[tier]) — backbone → strongest, execution → fastest.
+ * 3. Provider default (PREFERRED[default]) — legacy catch-all.
+ * 4. First configured model.
+ */
 function pickModel(providerId: string, kind: DelegationKind, models: string[]): string {
-  const pref = PREFERRED[providerId]?.[kind] ?? PREFERRED[providerId]?.default;
-  if (pref && models.includes(pref)) return pref;
+  // 1. Explicit per-kind preference
+  const explicit = PREFERRED[providerId]?.[kind];
+  if (explicit && models.includes(explicit)) return explicit;
+  // 2. Tier-based preference (backbone → strongest, execution → fastest)
+  const tier = ROLE_TIER[kind];
+  const tierModel = TIER_DEFAULT[providerId]?.[tier];
+  if (tierModel && models.includes(tierModel)) return tierModel;
+  // 3. Provider default
+  const def = PREFERRED[providerId]?.default;
+  if (def && models.includes(def)) return def;
+  // 4. First configured
   return models[0]!;
 }
 
