@@ -121,6 +121,8 @@ export type EmbeddedRunAttemptResult = {
   timedOutDuringCompaction: boolean;
   /** Optional because this type is re-exported as `AgentHarnessAttemptResult`. */
   timedOutDuringToolExecution?: boolean;
+  /** True when the attempt's run-budget timer (timeoutMs) fired the abort. */
+  timedOutByRunBudget?: boolean;
   promptError: unknown;
   /**
    * Identifies which phase produced the promptError.

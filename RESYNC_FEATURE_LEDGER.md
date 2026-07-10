@@ -91,3 +91,34 @@ items for the Phase-0 catch-up resync. Companion to the auto-generated
 - **rerere reseed with correct resolutions** — the rr-cache is empty (replay was OFF). Proper
   seeding needs the merge re-run with recording ON, resolving each conflict to the FINAL
   (green-up-inclusive) state; best folded into the Phase-2 auto-merge engine build.
+
+## Autoreview dispositions (pre-land review of the reconciliation delta)
+
+A fresh workflow `$autoreview` of `ea1fd428dda..HEAD` returned 6 verified findings; dispositions:
+
+1. **FIXED — `timedOutByRunBudget` was hardcoded `false` (run.ts, attempt.ts)**: ported
+   upstream's full producer chain — attempt-local flag set by the run-budget abort timer
+   (only; the idle watchdog and external-abort paths are separate), carried on
+   `EmbeddedRunAttemptResult` and all attempt trajectory events, consumed by
+   `handleAssistantFailover` and the timeout-compaction retry gate
+   (`!timedOutByRunBudget` — compaction cannot buy back an exhausted run budget).
+2. **FIXED — google-shared dropped the fork's `onResponse` attestation hook**: restored
+   `onResponse` to `runGoogleGenerateContentLifecycle`'s options Pick + the synthetic-200
+   invocation after `generateContentStream` (mirrors Mistral/OpenAI providers).
+3. **FLAG (upstream bug candidate, not a merge defect) — session-delete CAS via full-entry
+   `JSON.stringify` (store.ts:1317, :1380)**: upstream-Δ0 code adopted verbatim. Key-order
+   sensitive — the same CAS class as the fork's known reply-session-init bug. Consider an
+   upstream report; do not fork-patch during the resync.
+4. **NO CHANGE — archived-skill filter DB read (workspace.ts:1201)**: the ported call is
+   character-identical to upstream's, and the fail-open on DB error is upstream's own
+   documented design in Δ0 `curator.ts` ("temporarily showing archived skills is safer than
+   breaking prompt/snapshot builds").
+5. **NO CHANGE — `completeSubagentRunWithRecovery` retry guard (subagent-registry.ts:472)**:
+   current code is character-identical to upstream; the fork-baseline's stricter retry
+   precondition belonged to the pre-lifecycle design upstream superseded (adds the
+   rolled-back-durable-write orphan-recovery branch; `sessions_yield`/`cleanupCompletedAt`
+   still gate the final resume, and `completeSubagentRun` in Δ0
+   `subagent-registry-lifecycle.ts` has its own entry guards).
+
+Refuted by verification (no action): google-shared image-turn ordering; a duplicate-import
+style nit in server.impl.

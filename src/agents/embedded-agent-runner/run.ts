@@ -1947,6 +1947,7 @@ export async function runEmbeddedAgent(
             lastAssistant: sessionLastAssistant,
             currentAttemptAssistant,
           } = attempt;
+          const timedOutByRunBudget = attempt.timedOutByRunBudget ?? false;
           const setTerminalLifecycleMeta: NonNullable<typeof attempt.setTerminalLifecycleMeta> = (
             meta,
           ) => {
@@ -2142,8 +2143,14 @@ export async function runEmbeddedAgent(
           }
           // ── Timeout-triggered compaction ──────────────────────────────────
           // When the LLM times out with high context usage, compact before
-          // retrying to break the death spiral of repeated timeouts.
-          if (timedOut && !timedOutDuringCompaction && !timedOutDuringToolExecution) {
+          // retrying to break the death spiral of repeated timeouts. Skip when
+          // the run budget itself expired — compaction cannot buy back budget.
+          if (
+            timedOut &&
+            !timedOutDuringCompaction &&
+            !timedOutDuringToolExecution &&
+            !timedOutByRunBudget
+          ) {
             // Only consider prompt-side tokens here. API totals include output
             // tokens, which can make a long generation look like high context
             // pressure even when the prompt itself was small.
@@ -3081,7 +3088,7 @@ export async function runEmbeddedAgent(
             idleTimedOut,
             timedOutDuringCompaction,
             timedOutDuringToolExecution,
-            timedOutByRunBudget: false,
+            timedOutByRunBudget,
             allowSameModelIdleTimeoutRetry:
               timedOut &&
               idleTimedOut &&

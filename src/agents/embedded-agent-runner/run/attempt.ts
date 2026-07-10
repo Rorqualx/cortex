@@ -913,6 +913,7 @@ export async function runEmbeddedAttempt(
   let timedOut = false;
   let idleTimedOut = false;
   let timedOutDuringCompaction = false;
+  let timedOutByRunBudget = false;
   let timedOutDuringToolExecution = false;
   let promptError: unknown = null;
   let emitDiagnosticRunCompleted:
@@ -3571,6 +3572,7 @@ export async function runEmbeddedAttempt(
             ) {
               timedOutDuringCompaction = true;
             }
+            timedOutByRunBudget = true;
             abortRun(true);
             if (!abortWarnTimer) {
               abortWarnTimer = setTimeout(() => {
@@ -5258,6 +5260,7 @@ export async function runEmbeddedAttempt(
         idleTimedOut,
         timedOutDuringCompaction,
         timedOutDuringToolExecution,
+        timedOutByRunBudget,
         promptError: promptError ? formatErrorMessage(promptError) : undefined,
         promptErrorSource,
         terminalError: attemptTrajectoryTerminal.terminalError,
@@ -5278,7 +5281,7 @@ export async function runEmbeddedAttempt(
           idleTimedOut,
           timedOutDuringCompaction,
           timedOutDuringToolExecution,
-          timedOutByRunBudget: false,
+          timedOutByRunBudget,
           promptError: promptError ? formatErrorMessage(promptError) : undefined,
           promptErrorSource,
           terminalError: attemptTrajectoryTerminal.terminalError,
@@ -5305,6 +5308,7 @@ export async function runEmbeddedAttempt(
         idleTimedOut,
         timedOutDuringCompaction,
         timedOutDuringToolExecution,
+        timedOutByRunBudget,
         promptError: promptError ? formatErrorMessage(promptError) : undefined,
         terminalError: attemptTrajectoryTerminal.terminalError,
       });
@@ -5321,6 +5325,7 @@ export async function runEmbeddedAttempt(
         idleTimedOut,
         timedOutDuringCompaction,
         timedOutDuringToolExecution,
+        timedOutByRunBudget,
         promptError,
         promptErrorSource,
         preflightRecovery,
@@ -5375,6 +5380,7 @@ export async function runEmbeddedAttempt(
           idleTimedOut,
           timedOutDuringCompaction,
           timedOutDuringToolExecution,
+          timedOutByRunBudget,
           promptError: promptError ? formatErrorMessage(promptError) : undefined,
         });
       }
