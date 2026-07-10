@@ -2,6 +2,33 @@
 
 Cortex-fork context-engine plugin. Telegraph style. Read root `AGENTS.md` and `extensions/AGENTS.md` first; this file records the **intentional** deviations so reviews (ClawSweeper, daily scan) do not re-flag them as accidental debt.
 
+## Terminology: Behavioral State Decay
+
+L3's epoch-based consolidation and L1 sliding-window eviction fight a specific
+failure mode that the Proactive Memory Agent paper (arXiv:2607.08716) names
+precisely: **"behavioral state decay"** — decision-relevant state gets buried or
+pushed beyond the context window over long sessions, degrading the agent's
+ability to act on earlier context.
+
+L3's countermeasures:
+
+- **L1 sliding window** evicts oldest messages first (immediate decay buffer).
+- **L2 compaction** densifies evicted L1 content into topic-segmented chunks
+  (medium-term preservation).
+- **L3 typed-fact promotion** extracts durable facts via epoch-boundary LLM
+  extraction with ADD/UPDATE/DELETE resolution (long-term consolidation).
+- **FSRS-based retrievability scoring** applies a forgetting-curve decay so stale
+  facts naturally sink in ranking without being deleted.
+
+Use "behavioral state decay" in commit messages, issues, and design docs when
+discussing consolidation, eviction, or retrieval-ranking work. It is the
+literature-aligned term for the problem L3 exists to solve.
+
+Reference: Proactive Memory Agent (arXiv:2607.08716) — demonstrates that
+selective intervention (inject memory only when trajectory state indicates
+decay) outperforms passive exposure, always-on injection, and advisor-only
+guidance. Relevant to the planned injection-policy architecture (ARCH-1).
+
 ## Enabled by default (fork)
 
 This fork ships memory-l3 as the **default context engine**. The mechanism is a
