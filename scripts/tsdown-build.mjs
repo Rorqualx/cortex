@@ -591,6 +591,18 @@ export function resolveTsdownBuildInvocation(params = {}) {
   };
 }
 
+/** Builds AI package declarations first, then consumes them from the main graph. */
+export function resolveTsdownBuildInvocations(params = {}) {
+  const forwardedArgs = params.args ?? [];
+  return [
+    resolveTsdownBuildInvocation({
+      ...params,
+      args: ["--config", "tsdown.ai.config.ts", ...forwardedArgs],
+    }),
+    resolveTsdownBuildInvocation(params),
+  ];
+}
+
 export async function runTsdownBuildInvocation(invocation, params = {}) {
   const stdout = params.stdout ?? process.stdout;
   const stderr = params.stderr ?? process.stderr;
@@ -714,8 +726,14 @@ if (isMainModule()) {
   if (!args.forwardedArgs.includes("--no-clean")) {
     cleanTsdownOutputRoots();
   }
-  const invocation = resolveTsdownBuildInvocation({ args: args.forwardedArgs });
-  const result = await runTsdownBuildInvocation(invocation);
+  const invocations = resolveTsdownBuildInvocations({ args: args.forwardedArgs });
+  let result;
+  for (const invocation of invocations) {
+    result = await runTsdownBuildInvocation(invocation);
+    if (result.status !== 0 || result.hasIneffectiveDynamicImport || result.fatalUnresolvedImport) {
+      break;
+    }
+  }
 
   if (result.status === 0 && result.hasIneffectiveDynamicImport) {
     console.error(
