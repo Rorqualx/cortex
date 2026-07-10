@@ -122,3 +122,21 @@ A fresh workflow `$autoreview` of `ea1fd428dda..HEAD` returned 6 verified findin
 
 Refuted by verification (no action): google-shared image-turn ordering; a duplicate-import
 style nit in server.impl.
+
+## Boot-green fix (the prior deploy's crash-loop root cause)
+
+The first redo deploy attempt (2026-07-09) crash-looped the gateway:
+`Cannot find module '@openclaw/ai/dist/internal/runtime.mjs'` — despite build+tsgo+tests
+all green. Root cause (pass19): upstream #99059 builds `packages/ai` via a dedicated
+`tsdown.ai.config.ts` that upstream's `scripts/tsdown-build.mjs` invokes **before** the
+main graph; the merge kept the fork's `tsdown-build.mjs` (`merge=ours`, Δupstream=221)
+which predates the extraction, so the config existed in-tree but was never invoked and
+`packages/ai/dist` was never emitted — while the main dist externalizes
+`@openclaw/ai/internal/*`. Grafted upstream's `resolveTsdownBuildInvocations` (AI config
+first) + main-block loop, preserving the fork's build-suicide guard.
+
+**Why every gate missed it:** vitest aliases workspace packages to source, so nothing in
+build/tsgo/test:fast exercises dist module resolution; `openclaw --version` also boots
+without loading the LLM-runtime chunks. **Pre-deploy smoke for this class:** after build,
+`ls packages/ai/dist/internal/` and import a dist chunk that references
+`@openclaw/ai/internal/*` (or start the gateway and wait for `[gateway] ready`).
