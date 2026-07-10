@@ -218,8 +218,10 @@ export async function retrieveTopK(params: {
     l3Boost: number;
     /** For long-term/typed tiers: flat additive boost when lexical > 0. */
     tierBoost: number;
-    /** Pre-computed embedding vector from LongTermFact.embedding, if present. */
+    /** Pre-computed content-side embedding vector (LongTermFact.embedding or LongTermTypedFact.embedding). */
     embedding?: number[];
+    /** Query-side embedding (LongTermTypedFact.queryEmbedding) for asymmetric matching. */
+    queryEmbedding?: number[];
     /** Source chunk's session-novelty metric (L2 tier only). */
     informationGain?: number;
     /** Number of messages in the buffer that produced this fact (L2 tier only). */
@@ -271,6 +273,8 @@ export async function retrieveTopK(params: {
       tier: "longterm-typed",
       l3Boost: 0,
       tierBoost: config.weightLongTermTierBoost,
+      embedding: ltt.embedding,
+      queryEmbedding: ltt.queryEmbedding,
     });
   }
 
@@ -324,13 +328,17 @@ export async function retrieveTopK(params: {
       significant: item.fact.significant,
       informationGain: item.informationGain,
     });
-    // Add embedding-based semantic signal when both query and fact have vectors
-    if (
-      params.queryEmbedding &&
-      item.embedding &&
-      params.queryEmbedding.length === item.embedding.length
-    ) {
-      signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+    // Add embedding-based semantic signal when both query and fact have vectors.
+    // Prefer query-side embedding (asymmetric, MILES) when available — it
+    // captures the slot/intent, which matches queries better than the literal
+    // value. Fall back to content-side embedding (symmetric) otherwise.
+    if (params.queryEmbedding) {
+      const querySide = item.queryEmbedding;
+      if (querySide && querySide.length === params.queryEmbedding.length) {
+        signals.semantic = cosineSimilarity(params.queryEmbedding, querySide);
+      } else if (item.embedding && item.embedding.length === params.queryEmbedding.length) {
+        signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+      }
     }
     const baseScore = composite(signals, config);
     const score = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;

@@ -10,6 +10,7 @@
 // confirmations), typed tracks drift (history = trail of value changes).
 
 import { randomUUID } from "node:crypto";
+import type { EmbeddingProvider } from "./engine.js";
 import type { Storage } from "./storage.js";
 import type {
   LongTermTypedFact,
@@ -164,6 +165,11 @@ export async function consolidateLongTermTyped(params: {
   sessionId?: string;
   /** Model/provider identifier to stamp on newly promoted facts for provenance. */
   modelId?: string;
+  /** Optional embedding provider for asymmetric embedding pairs (MILES).
+   * When provided AND OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS=1, newly
+   * promoted/superseded facts get both query-side (slot) and content-side
+   * (value) embeddings. */
+  embeddingProvider?: EmbeddingProvider;
 }): Promise<ConsolidateLongTermTypedOutput> {
   const config = params.config ?? DEFAULT_LONG_TERM_TYPED_CONFIG;
   const candidates = await aggregateTypedCandidates(params.storage);
@@ -175,6 +181,8 @@ export async function consolidateLongTermTyped(params: {
   let supersededCount = 0;
   let reaffirmedCount = 0;
   let unarchivedCount = 0;
+  /** Slots that were promoted or superseded — need embedding computation. */
+  const slotsNeedingEmbeddings = new Set<string>();
 
   for (const candidate of candidates.values()) {
     if (candidate.recallCount < config.minRecallCount) {
@@ -183,6 +191,7 @@ export async function consolidateLongTermTyped(params: {
     const prior = merged.get(candidate.slot);
     if (!prior) {
       merged.set(candidate.slot, promote(candidate, params.sessionId, params.modelId));
+      slotsNeedingEmbeddings.add(candidate.slot);
       promotedCount += 1;
       continue;
     }
@@ -199,6 +208,7 @@ export async function consolidateLongTermTyped(params: {
         candidate.slot,
         supersede(prior, candidate, params.now, params.sessionId, params.modelId),
       );
+      slotsNeedingEmbeddings.add(candidate.slot);
       supersededCount += 1;
     }
   }
@@ -220,6 +230,31 @@ export async function consolidateLongTermTyped(params: {
   }
 
   const ordered = orderTypedFacts([...merged.values()]);
+
+  // -----------------------------------------------------------------
+  // Asymmetric embedding pairs (MILES) — compute query-side (slot) and
+  // content-side (value) embeddings for newly promoted/superseded facts.
+  // Gate: provider must be present AND env flag must be set. Failures are
+  // non-fatal — typed facts work fine with lexical-only retrieval.
+  // -----------------------------------------------------------------
+  if (
+    params.embeddingProvider &&
+    process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS === "1" &&
+    slotsNeedingEmbeddings.size > 0
+  ) {
+    try {
+      const toEmbed = ordered.filter((f) => !f.archived && slotsNeedingEmbeddings.has(f.slot));
+      for (const fact of toEmbed) {
+        // Query-side: embed the slot (the intent/concept).
+        fact.queryEmbedding = await params.embeddingProvider.embed(fact.slot);
+        // Content-side: embed the value (the literal content).
+        fact.embedding = await params.embeddingProvider.embed(fact.value);
+      }
+    } catch {
+      // Embedding computation failed — facts still work via lexical retrieval.
+    }
+  }
+
   const frontmatter: LongTermTypedFrontmatter = {
     version: 1,
     agentId: params.agentId,

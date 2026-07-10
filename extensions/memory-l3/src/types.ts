@@ -308,6 +308,21 @@ export type LongTermTypedFact = {
    * Absent on facts created before this feature; null when the model was unknown.
    */
   sourceModel?: string | null;
+  /**
+   * Content-side embedding vector computed from the fact's `value` body.
+   * Used for symmetric cosine similarity in retrieval when no query-side
+   * embedding is available. Absent on facts promoted before asymmetric
+   * embedding support.
+   */
+  embedding?: number[];
+  /**
+   * Query-side embedding vector computed from the fact's `slot` (the
+   * intent/concept). Used for asymmetric cosine similarity in retrieval:
+   * a query like "what's Joe's phone" matches "user:phone" (slot) better
+   * than "303-555-1234" (value). MILES-style sub-goal/sub-instruction pairs.
+   * Absent on facts promoted before asymmetric embedding support.
+   */
+  queryEmbedding?: number[];
 };
 
 export type LongTermTypedFrontmatter = {

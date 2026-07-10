@@ -615,4 +615,153 @@ describe("consolidateLongTermTyped", () => {
     expect(ltt.facts[0].sourceSessionId).toBe("session-new");
     expect(ltt.facts[0].recallCount).toBe(2);
   });
+
+  describe("asymmetric embeddings (MILES)", () => {
+    const mockProvider = {
+      embed: async (text: string) => {
+        // Deterministic mock: produce a simple vector from text chars.
+        // Different texts produce different vectors so query≠content.
+        const v = new Array(8).fill(0);
+        for (let i = 0; i < text.length; i++) {
+          v[i % 8] += text.charCodeAt(i);
+        }
+        return v;
+      },
+      embedBatch: async (texts: string[]) =>
+        texts.map((t) => {
+          const v = new Array(8).fill(0);
+          for (let i = 0; i < t.length; i++) v[i % 8] += t.charCodeAt(i);
+          return v;
+        }),
+    };
+
+    /** Helper: write a chunk with a single typed fact. */
+    const writeTyped = async (chunkId: string, slot: string, value: string, createdAt: number) => {
+      await writeChunkWithTyped(
+        chunkId,
+        [
+          {
+            id: `${chunkId}-tf-1`,
+            slot,
+            value,
+            sourceSpan: value,
+            unit: null,
+            confidence: 0.9,
+            createdAt,
+          },
+        ],
+        createdAt,
+      );
+    };
+
+    it("computes queryEmbedding and embedding when provider + env flag are set", async () => {
+      process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS = "1";
+      try {
+        await writeTyped("chunk-1", "user:phone", "303-555-1234", NOW);
+        await consolidateLongTermTyped({
+          storage,
+          agentId: null,
+          now: NOW,
+          embeddingProvider: mockProvider,
+        });
+        const ltt = await storage.readLongTermTyped();
+        expect(ltt.facts.length).toBe(1);
+        expect(ltt.facts[0].queryEmbedding).toBeDefined();
+        expect(ltt.facts[0].embedding).toBeDefined();
+        // Query-side comes from slot text, content-side from value text — they must differ
+        expect(ltt.facts[0].queryEmbedding).not.toEqual(ltt.facts[0].embedding);
+      } finally {
+        delete process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS;
+      }
+    });
+
+    it("does NOT compute embeddings when env flag is off", async () => {
+      delete process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS;
+      await writeTyped("chunk-1", "user:phone", "303-555-1234", NOW);
+      await consolidateLongTermTyped({
+        storage,
+        agentId: null,
+        now: NOW,
+        embeddingProvider: mockProvider,
+      });
+      const ltt = await storage.readLongTermTyped();
+      expect(ltt.facts[0].queryEmbedding).toBeUndefined();
+      expect(ltt.facts[0].embedding).toBeUndefined();
+    });
+
+    it("does NOT compute embeddings when no provider is given", async () => {
+      process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS = "1";
+      try {
+        await writeTyped("chunk-1", "user:phone", "303-555-1234", NOW);
+        await consolidateLongTermTyped({
+          storage,
+          agentId: null,
+          now: NOW,
+          // no embeddingProvider
+        });
+        const ltt = await storage.readLongTermTyped();
+        expect(ltt.facts[0].queryEmbedding).toBeUndefined();
+        expect(ltt.facts[0].embedding).toBeUndefined();
+      } finally {
+        delete process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS;
+      }
+    });
+
+    it("preserves embeddings through reaffirmation (no recompute)", async () => {
+      process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS = "1";
+      try {
+        await writeTyped("chunk-1", "user:phone", "303-555-1234", NOW);
+        await consolidateLongTermTyped({
+          storage,
+          agentId: null,
+          now: NOW,
+          embeddingProvider: mockProvider,
+        });
+        // Second chunk with same value → reaffirm, not promote/supersede
+        await writeTyped("chunk-2", "user:phone", "303-555-1234", NOW + DAY);
+        await consolidateLongTermTyped({
+          storage,
+          agentId: null,
+          now: NOW + DAY,
+          embeddingProvider: mockProvider,
+        });
+        const ltt = await storage.readLongTermTyped();
+        expect(ltt.facts[0].queryEmbedding).toBeDefined();
+        expect(ltt.facts[0].embedding).toBeDefined();
+      } finally {
+        delete process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS;
+      }
+    });
+
+    it("recomputes embeddings on value supersession", async () => {
+      process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS = "1";
+      try {
+        await writeTyped("chunk-1", "user:phone", "old-number", NOW);
+        await consolidateLongTermTyped({
+          storage,
+          agentId: null,
+          now: NOW,
+          embeddingProvider: mockProvider,
+        });
+        const oldEmbedding = (await storage.readLongTermTyped()).facts[0].embedding!;
+
+        // New value → supersede
+        await writeTyped("chunk-2", "user:phone", "new-number", NOW + DAY);
+        await consolidateLongTermTyped({
+          storage,
+          agentId: null,
+          now: NOW + DAY,
+          embeddingProvider: mockProvider,
+        });
+        const ltt = await storage.readLongTermTyped();
+        // Content embedding should change because the value changed
+        expect(ltt.facts[0].embedding).toBeDefined();
+        expect(ltt.facts[0].embedding).not.toEqual(oldEmbedding);
+        // Query embedding comes from slot which didn't change — same intent
+        expect(ltt.facts[0].queryEmbedding).toBeDefined();
+      } finally {
+        delete process.env.OPENCLAW_MEMORY_L3_ASYMMETRIC_EMBEDDINGS;
+      }
+    });
+  });
 });
