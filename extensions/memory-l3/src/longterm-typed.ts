@@ -302,6 +302,7 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
     lastAccessedAt: c.latest.createdAt,
     volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
+    ...(c.latest.category ? { category: c.latest.category } : {}),
     sourceSessionId: sessionId,
     sourceModel: modelId ?? null,
   };
@@ -327,6 +328,7 @@ function reaffirm(
     supersededBy: null,
     archived: false,
     archivedAt: null,
+    ...(c.latest.category ? { category: c.latest.category } : {}),
     sourceSessionId: sessionId ?? prior.sourceSessionId,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
   };
@@ -359,6 +361,7 @@ function supersede(
     archivedAt: null,
     lastAccessedAt: prior.lastAccessedAt,
     volatilityClass: prior.volatilityClass ?? deriveVolatilityClass(c.slot, c.latest.value),
+    ...(c.latest.category ? { category: c.latest.category } : {}),
     sourceSessionId: sessionId ?? prior.sourceSessionId,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
   };

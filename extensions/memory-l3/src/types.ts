@@ -97,6 +97,10 @@ export type TypedFact = {
   confidence: number;
   /** ms timestamp. */
   createdAt: number;
+  /** Standard category prefix for retrieval filtering (e.g. "infra", "task", "person").
+   * See `categories.ts` for the canonical set. Absent on facts extracted before
+   * this field was added; readers treat absent as uncategorized. */
+  category?: string;
 };
 
 /**
@@ -296,6 +300,11 @@ export type LongTermTypedFact = {
    * Absent on facts created before this feature; readers treat absent as semi-volatile.
    */
   volatilityClass?: VolatilityClass;
+  /**
+   * Standard category prefix propagated from the source TypedFact.
+   * See `categories.ts`. Absent on facts created before this field was added.
+   */
+  category?: string;
   /**
    * The session ID that contributed the most recent evidence for this fact.
    * Enables traceability: which conversation produced this fact?

@@ -150,6 +150,7 @@ describe("parseExtractResponse", () => {
         sourceSpan: "my number is 555-1234",
         unit: null,
         confidence: 0.9,
+        category: "preference",
       },
       {
         slot: "infra:port",
@@ -157,6 +158,7 @@ describe("parseExtractResponse", () => {
         sourceSpan: "listening on 18789",
         unit: "tcp",
         confidence: 0.7,
+        category: "infra",
       },
     ]);
   });

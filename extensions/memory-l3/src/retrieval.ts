@@ -1,3 +1,4 @@
+import { resolveCategory } from "./categories.js";
 import { readSharedFacts } from "./cross-context.js";
 import { recordRetrievalSignals } from "./entities.js";
 import {
@@ -164,6 +165,13 @@ export async function retrieveTopK(params: {
    * Default true.
    */
   enableSufficientContext?: boolean;
+  /**
+   * Optional category filter for typed facts. When set (e.g. "infra"),
+   * only typed facts whose category matches are included in results.
+   * Non-typed tiers (prose L2, longterm, insight, etc.) are unaffected.
+   * Default undefined (no filtering — all categories returned).
+   */
+  categoryFilter?: string;
 }): Promise<RetrievalResult> {
   const topK = Math.max(0, params.topK);
   if (topK === 0) {
@@ -249,6 +257,12 @@ export async function retrieveTopK(params: {
       if (canonicalSlots.has(typed.slot)) {
         continue;
       }
+      if (params.categoryFilter) {
+        const cat = resolveCategory(typed.category, typed.slot);
+        if (cat !== params.categoryFilter) {
+          continue;
+        }
+      }
       items.push({
         fact: typedFactAsL2Fact(typed),
         chunkId,
@@ -264,6 +278,12 @@ export async function retrieveTopK(params: {
   for (const ltt of longtermTyped.facts) {
     if (ltt.archived) {
       continue;
+    }
+    if (params.categoryFilter) {
+      const cat = resolveCategory(ltt.category, ltt.slot);
+      if (cat !== params.categoryFilter) {
+        continue;
+      }
     }
     items.push({
       fact: longTermTypedAsL2Fact(ltt, now),

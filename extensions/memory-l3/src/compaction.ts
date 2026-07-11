@@ -301,6 +301,7 @@ function liftToTypedFact(
     sessionId: episodic?.sessionId,
     participants: episodic?.participants,
     mentionTime: episodic?.mentionTime,
+    ...(extracted.category ? { category: extracted.category } : {}),
   };
 }
 

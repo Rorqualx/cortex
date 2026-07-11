@@ -1,4 +1,5 @@
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { resolveCategory } from "./categories.js";
 import type { FactCertainty } from "./types.js";
 
 export type LlmCaller = (params: {
@@ -224,7 +225,7 @@ Rules (PROMPT_VERSION=8):
 - SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
 - CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
 - SEMANTIC_ENTROPY: optional float 0.0–1.0 measuring the extractor's confidence that this fact is semantically coherent and well-supported by the source text. Higher = more confident (lower entropy). Default 1.0 when omitted.
-- TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
+- TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence, and optionally category. Skip when no verbatim values. When emitting a typed fact, tag it with a "category" field using one of: "task", "environment", "attempt", "diagnosis", "subgoal", "preference", "infra", "person", "project".
 - DECISIONS: emit when a clear decision, conclusion, or agreement was reached (including implicit ones like "let's go with X"). Each must have:
   - text: what was decided.
   - maker: "user", "agent", or "both".
@@ -246,7 +247,7 @@ Schema:
     { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional", "semantic_entropy": 1.0 }
   ],
   "typedFacts": [
-    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
+    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9, "category": "infra" }
   ],
   "decisions": [
     { "text": "what was decided", "maker": "user|agent|both", "confidence": 0.9, "sourceSpan": "verbatim context" }
@@ -271,7 +272,7 @@ Rules (PROMPT_VERSION=9-NATIVE):
 - SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
 - CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
 - SEMANTIC_ENTROPY: optional float 0.0–1.0 measuring the extractor's confidence that this fact is semantically coherent and well-supported by the source text. Higher = more confident (lower entropy). Default 1.0 when omitted.
-- TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
+- TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence, and optionally category. Skip when no verbatim values. When emitting a typed fact, tag it with a "category" field using one of: "task", "environment", "attempt", "diagnosis", "subgoal", "preference", "infra", "person", "project".
 - DECISIONS: emit when a clear decision, conclusion, or agreement was reached. Each must have:
   - text: compressed description of what was decided.
   - maker: "user", "agent", or "both".
@@ -293,7 +294,7 @@ Schema:
     { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional", "semantic_entropy": 1.0 }
   ],
   "typedFacts": [
-    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
+    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9, "category": "infra" }
   ],
   "decisions": [
     { "text": "what was decided", "maker": "user|agent|both", "confidence": 0.9, "sourceSpan": "verbatim context" }
@@ -325,6 +326,8 @@ export type ExtractedTypedFact = {
   sourceSpan: string;
   unit: string | null;
   confidence: number;
+  /** Optional standard category prefix (see categories.ts). */
+  category?: string;
 };
 
 export type ExtractResult = {
@@ -519,12 +522,17 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
     }
     const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
     const unit = typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null;
+    const resolvedCategory = resolveCategory(
+      typeof o.category === "string" ? o.category : undefined,
+      slot,
+    );
     out.push({
       slot,
       value: valueRaw,
       sourceSpan: spanRaw,
       unit,
       confidence: Math.max(0, Math.min(1, confidenceRaw)),
+      ...(resolvedCategory ? { category: resolvedCategory } : {}),
     });
   }
   return out;
