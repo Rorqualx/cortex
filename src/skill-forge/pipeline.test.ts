@@ -104,6 +104,29 @@ describe("runForgePipeline", () => {
     expect(result.llmReplay).toEqual({ status: "ran", judged: [] });
   });
 
+  it("persists judge fingerprint and detects drift across runs", async () => {
+    // Manually seed a previous judge fingerprint in the pipeline state.
+    const { resolveSkillForgeTelemetryDir } = await import("./paths.js");
+    const telemetryDir = resolveSkillForgeTelemetryDir(env());
+    await fsp.mkdir(telemetryDir, { recursive: true });
+    await fsp.writeFile(
+      path.join(telemetryDir, "pipeline-state.json"),
+      JSON.stringify({ lastJudgeFingerprint: { provider: "old", modelId: "model-v1" } }),
+      "utf8",
+    );
+
+    // Run with useLlmReplay — no captures means no judged skills, so no
+    // currentFingerprint is produced. The pipeline should NOT overwrite the
+    // previous state and should NOT flag drift.
+    const result = await runForgePipeline({ env: env(), useLlmReplay: true });
+    expect(result.llmReplay).toEqual({
+      status: "ran",
+      judged: [],
+      previousJudgeFingerprint: { provider: "old", modelId: "model-v1" },
+    });
+    expect(result.llmReplay.recalibrationRecommended).toBeUndefined();
+  });
+
   it("skips an already-crystallized capability on re-run instead of re-staging a duplicate", async () => {
     const sessionsDir = resolveSkillForgeSessionsDir(env());
     for (let i = 0; i < 3; i += 1) {

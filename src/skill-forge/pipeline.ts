@@ -13,10 +13,51 @@ import {
 } from "./embedding-clusterer.js";
 import { tryResolveSkillForgeEmbeddingProvider } from "./embedding-provider.js";
 import { nameCollisionCheck } from "./gate.js";
-import { resolveSkillForgeSessionsDir } from "./paths.js";
+import { resolveSkillForgeSessionsDir, resolveSkillForgeTelemetryDir } from "./paths.js";
 import { promoteStagedSkill, type PromotionResult } from "./promoter.js";
 import { judgeSkillCandidateWithLlm, type LlmReplayGateResult } from "./replay-gate.js";
 import { recordSkillCreation } from "./telemetry.js";
+
+/** Fingerprint of the judge model used in a pipeline run. */
+export type JudgeFingerprint = {
+  provider: string;
+  modelId: string;
+};
+
+/** Pipeline-level state persisted across runs (currently tracks judge model drift). */
+type PipelineState = {
+  lastJudgeFingerprint?: JudgeFingerprint;
+};
+
+const PIPELINE_STATE_FILENAME = "pipeline-state.json";
+
+async function readPipelineState(env: NodeJS.ProcessEnv): Promise<PipelineState> {
+  try {
+    const dir = resolveSkillForgeTelemetryDir(env);
+    const raw = await fsp.readFile(path.join(dir, PIPELINE_STATE_FILENAME), "utf8");
+    return JSON.parse(raw) as PipelineState;
+  } catch {
+    return {};
+  }
+}
+
+async function writePipelineState(state: PipelineState, env: NodeJS.ProcessEnv): Promise<void> {
+  const dir = resolveSkillForgeTelemetryDir(env);
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(
+    path.join(dir, PIPELINE_STATE_FILENAME),
+    `${JSON.stringify(state, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+function fingerprintsEqual(
+  a: JudgeFingerprint | undefined,
+  b: JudgeFingerprint | undefined,
+): boolean {
+  if (!a || !b) return false;
+  return a.provider === b.provider && a.modelId === b.modelId;
+}
 
 export type PipelineRunInput = {
   captureDirs?: string[];
@@ -43,6 +84,12 @@ export type EmbeddingLaneResult =
 export type LlmReplayLaneResult = {
   status: "ran";
   judged: Array<{ name: string; gate: LlmReplayGateResult }>;
+  /** Judge model used in this run. Undefined when no skills were judged. */
+  judgeFingerprint?: JudgeFingerprint;
+  /** Judge model used in the previous run, if any. */
+  previousJudgeFingerprint?: JudgeFingerprint;
+  /** True when the judge model changed since the last run (drift signal). */
+  recalibrationRecommended?: boolean;
 };
 
 export type PipelineRunResult = {
@@ -179,6 +226,8 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
   // LLM replay gate (LLM-as-judge): opt-in. Judges each drafted skill body for
   // safety + usefulness. Diagnostic only here — it reports verdicts without
   // gating promotion (promotion already ran above via the strict frontmatter gate).
+  // Also tracks judge model drift across runs — scores from different models are
+  // not interchangeable, so a model swap signals recalibration may be needed.
   let llmReplay: LlmReplayLaneResult | undefined;
   if (input.useLlmReplay) {
     const judged: Array<{ name: string; gate: LlmReplayGateResult }> = [];
@@ -191,7 +240,40 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
       });
       judged.push({ name: target.draft.name, gate });
     }
-    llmReplay = { status: "ran", judged };
+
+    // Derive the current judge fingerprint from the first successful "ran" result.
+    const firstRan = judged.find((j) => j.gate.status === "ran");
+    const currentFingerprint = firstRan
+      ? { provider: firstRan.gate.provider, modelId: firstRan.gate.modelId }
+      : undefined;
+
+    // Compare to previous run's fingerprint.
+    const prevState = await readPipelineState(env);
+    const previousFingerprint = prevState.lastJudgeFingerprint;
+    const driftDetected =
+      currentFingerprint != null && !fingerprintsEqual(currentFingerprint, previousFingerprint);
+
+    if (driftDetected) {
+      console.warn(
+        `[skill-forge] Judge model drift detected: ` +
+          `${previousFingerprint ? previousFingerprint.provider + "/" + previousFingerprint.modelId : "(none)"} -> ` +
+          `${currentFingerprint!.provider}/${currentFingerprint!.modelId}. ` +
+          `Promotion thresholds may need recalibration.`,
+      );
+    }
+
+    // Persist the current fingerprint for the next run's comparison.
+    if (currentFingerprint) {
+      await writePipelineState({ lastJudgeFingerprint: currentFingerprint }, env);
+    }
+
+    llmReplay = {
+      status: "ran",
+      judged,
+      ...(currentFingerprint ? { judgeFingerprint: currentFingerprint } : {}),
+      ...(previousFingerprint ? { previousJudgeFingerprint: previousFingerprint } : {}),
+      ...(driftDetected ? { recalibrationRecommended: true } : {}),
+    };
   }
 
   return {
