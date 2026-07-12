@@ -8,6 +8,15 @@ export { evaluateToolAvailability } from "./availability.js";
 export { defineToolDescriptor, defineToolDescriptors } from "./descriptors.js";
 export { ToolPlanContractError } from "./diagnostics.js";
 export { formatToolExecutorRef } from "./execution.js";
+export {
+  buildArgsSummary,
+  closeToolAuditStoreForTest,
+  localAuditDay,
+  queryToolAuditByDay,
+  recordToolAudit,
+  summarizeToolAudit,
+} from "./tool-audit-store.js";
+export type { ToolAuditRecord, ToolAuditRow, ToolAuditSummary } from "./tool-audit-store.js";
 export { buildToolPlan } from "./planner.js";
 export { toToolProtocolDescriptor, toToolProtocolDescriptors } from "./protocol.js";
 export type {

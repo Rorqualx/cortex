@@ -16,6 +16,7 @@ import { emitAgentEvent } from "../infra/agent-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { findFinalTagMatches } from "../shared/text/final-tags.js";
 import { hasOrphanReasoningCloseBoundary } from "../shared/text/reasoning-tags.js";
+import { recordToolAudit } from "../tools/tool-audit-store.js";
 import { parseInlineDirectives } from "../utils/directive-tags.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
 import { EmbeddedBlockChunker } from "./embedded-agent-block-chunker.js";
@@ -58,6 +59,35 @@ import { mediaUrlsFromGeneratedAttachments } from "./generated-attachments.js";
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
 import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
+
+/**
+ * Best-effort tool audit recording. Never throws — if the audit store fails,
+ * the tool execution itself must not be affected.
+ */
+function recordToolAuditSafe(
+  params: SubscribeEmbeddedAgentSessionParams,
+  toolParams: { toolName: string; toolCallId: string; args: unknown },
+  isError: boolean,
+  error?: unknown,
+): void {
+  try {
+    const errorMessage =
+      error instanceof Error ? error.message : typeof error === "string" ? error : undefined;
+    recordToolAudit({
+      agentId: params.agentId ?? "unknown",
+      sessionId: params.sessionId ?? params.runId ?? "unknown",
+      toolName: toolParams.toolName,
+      toolCallId: toolParams.toolCallId,
+      args: toolParams.args,
+      sourceContext: "embedded-agent",
+      allowed: true,
+      error: isError,
+      ...(errorMessage ? { errorMessage } : {}),
+    });
+  } catch {
+    // Audit logging is best-effort — never interrupt tool execution.
+  }
+}
 
 const STREAM_STRIPPED_BLOCK_TAG_NAMES = [
   "final",
@@ -1348,6 +1378,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           isError: false,
           result,
         } as never);
+        recordToolAuditSafe(params, toolParams, false);
         return result;
       } catch (error) {
         await handleToolExecutionEnd(ctx, {
@@ -1357,6 +1388,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           isError: true,
           result: buildToolLifecycleErrorResult(error),
         } as never);
+        recordToolAuditSafe(params, toolParams, true, error);
         throw error;
       }
     },
