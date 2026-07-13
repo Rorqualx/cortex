@@ -1,7 +1,7 @@
 import { registerContextEngine } from "openclaw/plugin-sdk";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { createHierarchicalL3Engine } from "./src/engine.js";
-import { createMemoryInsightsTool } from "./src/insights.js";
+import { createMemoryInsightsTool, createForgettingCandidatesTool } from "./src/insights.js";
 
 export default definePluginEntry({
   id: "memory-l3",
@@ -12,5 +12,6 @@ export default definePluginEntry({
   register(api) {
     registerContextEngine("memory-l3", (ctx) => createHierarchicalL3Engine(ctx));
     api.registerTool((ctx) => createMemoryInsightsTool(ctx));
+    api.registerTool((ctx) => createForgettingCandidatesTool(ctx));
   },
 });

@@ -6,10 +6,28 @@
 import { jsonResult } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
+import { fsrsRetrievability, DEFAULT_FSRS_PARAMS, DEFAULT_SCORING_CONFIG } from "./scoring.js";
 import { Storage } from "./storage.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FACT_TEXT_MAX_CHARS = 200;
+
+export type ForgettingCandidate = {
+  id: string;
+  text: string;
+  tier: "prose" | "typed";
+  /** FSRS retrievability R(t): probability the fact is still recallable. 0 = fully forgotten. */
+  retrievability: number;
+  recallCount: number;
+  lastConfirmedAt: number;
+  ageDays: number;
+};
+
+export type ForgettingCandidates = {
+  generatedAt: number;
+  threshold: number;
+  candidates: ForgettingCandidate[];
+};
 
 export type MemoryInsights = {
   generatedAt: number;
@@ -142,6 +160,89 @@ export async function collectMemoryInsights(params: {
   };
 }
 
+/**
+ * Collect facts whose FSRS retrievability has dropped below `threshold`.
+ * These are "forgetting candidates" — facts that the memory system considers
+ * effectively forgotten (R(t) < 0.05 by default). Useful for reviewing what
+ * the system is about to lose and deciding whether to re-affirm or archive.
+ *
+ * Read-only; no data mutation.
+ */
+export async function collectForgettingCandidates(params: {
+  storage: Storage;
+  threshold?: number;
+  limit?: number;
+  now?: number;
+}): Promise<ForgettingCandidates> {
+  const now = params.now ?? Date.now();
+  const threshold = params.threshold ?? 0.05;
+  const limit = params.limit ?? 20;
+  const halfLifeDays = DEFAULT_SCORING_CONFIG.recencyHalfLifeDays;
+
+  const [longTerm, longTermTyped] = await Promise.all([
+    params.storage.readLongTerm(),
+    params.storage.readLongTermTyped(),
+  ]);
+
+  const activeProse = longTerm.facts.filter((f) => !f.archived && !f.supersededBy);
+  const activeTyped = longTermTyped.facts.filter((f) => !f.archived);
+
+  const candidates: ForgettingCandidate[] = [];
+
+  for (const fact of activeProse) {
+    const ageMs = now - fact.lastConfirmedAt;
+    const r = fsrsRetrievability({
+      ageMs,
+      recallCount: fact.recallCount,
+      halfLifeDays,
+      significant: fact.significant,
+      fsrs: DEFAULT_FSRS_PARAMS,
+    });
+    if (r < threshold) {
+      candidates.push({
+        id: fact.id,
+        text: clipFactText(fact.text),
+        tier: "prose",
+        retrievability: Math.round(r * 1e6) / 1e6,
+        recallCount: fact.recallCount,
+        lastConfirmedAt: fact.lastConfirmedAt,
+        ageDays: Math.round((ageMs / DAY_MS) * 10) / 10,
+      });
+    }
+  }
+
+  for (const fact of activeTyped) {
+    const ageMs = now - fact.lastConfirmedAt;
+    const r = fsrsRetrievability({
+      ageMs,
+      recallCount: fact.recallCount,
+      halfLifeDays,
+      volatilityClass: fact.volatilityClass,
+      fsrs: DEFAULT_FSRS_PARAMS,
+    });
+    if (r < threshold) {
+      candidates.push({
+        id: fact.id,
+        text: `${fact.slot}: ${clipFactText(fact.value)}`,
+        tier: "typed",
+        retrievability: Math.round(r * 1e6) / 1e6,
+        recallCount: fact.recallCount,
+        lastConfirmedAt: fact.lastConfirmedAt,
+        ageDays: Math.round((ageMs / DAY_MS) * 10) / 10,
+      });
+    }
+  }
+
+  // Lowest retrievability first — most-forgotten at the top
+  candidates.sort((a, b) => a.retrievability - b.retrievability);
+
+  return {
+    generatedAt: now,
+    threshold,
+    candidates: candidates.slice(0, limit),
+  };
+}
+
 const MemoryInsightsToolSchema = Type.Object(
   {
     days: Type.Optional(
@@ -177,6 +278,47 @@ export function createMemoryInsightsTool(ctx: OpenClawPluginToolContext) {
         const days = typeof rawParams.days === "number" ? rawParams.days : undefined;
         const limit = typeof rawParams.limit === "number" ? rawParams.limit : undefined;
         return jsonResult(await collectMemoryInsights({ storage, days, limit }));
+      } finally {
+        storage.close();
+      }
+    },
+  };
+}
+
+const ForgettingCandidatesToolSchema = Type.Object(
+  {
+    threshold: Type.Optional(
+      Type.Number({
+        description:
+          "Retrievability threshold (0–1). Facts with FSRS retrievability below this value are returned. Default 0.05.",
+        minimum: 0,
+        maximum: 1,
+      }),
+    ),
+    limit: Type.Optional(
+      Type.Integer({
+        description: "Max candidates to return (default 20).",
+        minimum: 1,
+        maximum: 100,
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export function createForgettingCandidatesTool(ctx: OpenClawPluginToolContext) {
+  return {
+    name: "memory_forgetting",
+    label: "Memory Forgetting Candidates",
+    description:
+      "Read-only query: returns long-term facts whose FSRS retrievability has dropped below a threshold, meaning the memory system considers them effectively forgotten. Use to review fading facts and decide whether to re-affirm or let them go.",
+    parameters: ForgettingCandidatesToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      const storage = Storage.fromWorkspace(ctx.workspaceDir);
+      try {
+        const threshold = typeof rawParams.threshold === "number" ? rawParams.threshold : undefined;
+        const limit = typeof rawParams.limit === "number" ? rawParams.limit : undefined;
+        return jsonResult(await collectForgettingCandidates({ storage, threshold, limit }));
       } finally {
         storage.close();
       }
