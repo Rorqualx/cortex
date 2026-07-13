@@ -73,6 +73,14 @@ export type L2Fact = {
    * Absent on facts extracted before PROMPT_VERSION=10; readers treat
    * absent as `createdAt`. */
   lastVerifiedAt?: number;
+  /**
+   * Segment confidence (0–1) from the segmented-compaction gating step.
+   * Facts extracted from segments with high information density get a
+   * higher value; this is propagated into the retrieval scoring as a
+   * multiplier on informationGain. Absent when segment-confidence gating
+   * is disabled or when the fact was not extracted via segmentation.
+   */
+  segmentConfidence?: number;
 };
 
 /**

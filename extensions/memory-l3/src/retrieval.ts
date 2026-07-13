@@ -323,6 +323,7 @@ export async function retrieveTopK(params: {
       corpusStats,
       significant: item.fact.significant,
       informationGain: item.informationGain,
+      segmentConfidence: item.fact.segmentConfidence,
     });
     // Add embedding-based semantic signal when both query and fact have vectors
     if (
@@ -658,6 +659,7 @@ export async function retrieveTopK(params: {
           corpusStats,
           significant: cand.fact.significant,
           informationGain: cand.informationGain,
+          segmentConfidence: cand.fact.segmentConfidence,
         });
         finalFacts.push({
           fact: cand.fact,

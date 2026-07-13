@@ -400,6 +400,13 @@ export function scoreFact(params: {
    * about the turn from which this fact was extracted.
    */
   groundingConfidence?: number;
+  /**
+   * Segment confidence (0–1) from segmented-compaction gating.
+   * When present, multiplies the informationGain signal — facts from
+   * high-confidence segments get more retrieval weight. Default 1.0
+   * (no effect) when absent.
+   */
+  segmentConfidence?: number;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -425,7 +432,7 @@ export function scoreFact(params: {
     recency,
     l3Boost: params.l3Boost ?? 0,
     semantic: 0,
-    informationGain: params.informationGain ?? 0,
+    informationGain: (params.informationGain ?? 0) * (params.segmentConfidence ?? 1),
     goalRelevance: params.goalRelevance ?? 0,
     reliability: params.reliability ?? certaintyToReliability(params.fact.certainty),
     semanticEntropy: params.semanticEntropy ?? params.fact.semanticEntropy ?? 1.0,

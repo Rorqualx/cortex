@@ -17,12 +17,13 @@ import {
   formatTranscriptForPrompt,
   type LlmCaller,
 } from "./llm.js";
-import { cosineSimilarity } from "./scoring.js";
+import { cosineSimilarity, tokenize } from "./scoring.js";
 import { buildMessageChunks, detectTopicBoundaries, splitByBoundaries } from "./segmentation.js";
 import type { Storage } from "./storage.js";
 import type { L2ChunkFrontmatter, L2Fact, L3State, TypedFact } from "./types.js";
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
+const SEGMENT_CONFIDENCE_GATING = process.env.OPENCLAW_MEMORY_L3_SEGMENT_CONFIDENCE_GATING === "1";
 function l3debug(msg: string): void {
   if (DEBUG_ENABLED) {
     console.error(`[memory-l3/compaction] ${msg}`);
@@ -88,6 +89,7 @@ export async function compactSession(params: {
     embeddingProvider: params.embeddingProvider,
     segmentedCompaction: params.segmentedCompaction,
     nativeCompaction: params.nativeCompaction,
+    knownDedupKeys: alreadyKnownSet,
   });
 
   const filtered = dropAlreadyKnown(extracted.facts, alreadyKnownSet);
@@ -383,6 +385,50 @@ function capSegmentRanges(
 }
 
 /**
+ * Score a message segment's information density for confidence-gating.
+ * Non-LLM heuristic combining token uniqueness (proxy for lexical density)
+ * and overlap with known dedup keys (proxy for relevance to existing memory).
+ * Returns a 0–1 score; segments scoring below the 10th percentile are
+ * candidates for skipping when confidence gating is enabled.
+ */
+function scoreSegmentInformationDensity(params: {
+  messages: ReadonlyArray<AgentMessage>;
+  knownDedupKeys: ReadonlySet<string>;
+}): number {
+  const text = params.messages
+    .map((m) =>
+      typeof (m as { content?: unknown }).content === "string"
+        ? (m as { content: string }).content
+        : "",
+    )
+    .join(" ");
+  const tokens = tokenize(text);
+  if (tokens.size === 0) {
+    return 0;
+  }
+
+  // Unique-token ratio: segments full of unique terms (IPs, paths, names)
+  // score higher than repetitive small-talk.
+  const tokenCount = text.split(/\s+/).filter((s) => s.length > 0).length;
+  const uniqueness = tokens.size / Math.max(tokenCount, 1);
+
+  // Known-fact overlap: how many segment tokens overlap with known dedup keys.
+  const knownTokens = new Set<string>();
+  for (const key of params.knownDedupKeys) {
+    for (const t of tokenize(key)) {
+      knownTokens.add(t);
+    }
+  }
+  let overlap = 0;
+  for (const t of tokens) {
+    if (knownTokens.has(t)) overlap++;
+  }
+  const overlapRatio = knownTokens.size > 0 ? overlap / tokens.size : 0;
+
+  return (uniqueness + overlapRatio) / 2;
+}
+
+/**
  * Run fact extraction either monolithically (default) or per topic segment
  * when segmented compaction is enabled and an embedding provider is present.
  * Boundary-detection failures fall back to the monolithic path — extraction
@@ -394,6 +440,12 @@ async function extractWithOptionalSegmentation(params: {
   embeddingProvider?: EmbeddingProvider;
   segmentedCompaction?: boolean;
   nativeCompaction?: boolean;
+  /**
+   * Set of known dedup keys from long-term storage, used by segment
+   * confidence gating to compute fact-overlap scores. Optional; when
+   * omitted or when gating is disabled, all segments are extracted.
+   */
+  knownDedupKeys?: ReadonlySet<string>;
 }): Promise<{
   extracted: ExtractResult;
   topicSegments?: Array<{ startMsgIndex: number; endMsgIndex: number }>;
@@ -414,17 +466,63 @@ async function extractWithOptionalSegmentation(params: {
         MAX_COMPACTION_SEGMENTS,
       );
       if (ranges.length > 1) {
+        // Segment confidence gating: score each segment's information density
+        // and skip the bottom percentile to save LLM calls on low-signal segments.
+        const segmentScores: number[] = [];
+        if (SEGMENT_CONFIDENCE_GATING && params.knownDedupKeys) {
+          for (const range of ranges) {
+            const segMsgs = params.messages.slice(range.start, range.end);
+            segmentScores.push(
+              segMsgs.length === 0
+                ? 0
+                : scoreSegmentInformationDensity({
+                    messages: segMsgs,
+                    knownDedupKeys: params.knownDedupKeys,
+                  }),
+            );
+          }
+        }
+        // Conservative threshold: skip only the bottom 10%
+        const sortedScores = [...segmentScores].sort();
+        const percentile10Idx = Math.max(0, Math.ceil(sortedScores.length * 0.1));
+        const skipThreshold =
+          segmentScores.length > 0 && SEGMENT_CONFIDENCE_GATING && params.knownDedupKeys
+            ? (sortedScores[percentile10Idx - 1] ?? 0)
+            : -1;
+
+        let skippedCount = 0;
         const merged: ExtractResult = { facts: [], typedFacts: [], decisions: [], actions: [] };
-        for (const range of ranges) {
+        for (let i = 0; i < ranges.length; i++) {
+          const range = ranges[i];
+          const score = segmentScores[i] ?? 1;
           const segmentMessages = params.messages.slice(range.start, range.end);
           if (segmentMessages.length === 0) {
             continue;
           }
+          if (score < skipThreshold) {
+            skippedCount++;
+            l3debug(
+              `segment-confidence-gate: skipping segment ${i} (score=${score.toFixed(3)} < threshold=${skipThreshold.toFixed(3)})`,
+            );
+            continue;
+          }
           const segment = await extractFn({ messages: segmentMessages, caller: params.caller });
+          if (score > 0 && SEGMENT_CONFIDENCE_GATING) {
+            // Tag extracted facts with segment confidence so retrieval
+            // weights information-gain higher for high-confidence segments.
+            for (const fact of segment.facts) {
+              fact.segmentConfidence = score;
+            }
+          }
           merged.facts.push(...segment.facts);
           merged.typedFacts.push(...segment.typedFacts);
           merged.decisions.push(...segment.decisions);
           merged.actions.push(...segment.actions);
+        }
+        if (skippedCount > 0) {
+          l3debug(
+            `segment-confidence-gate: skipped ${skippedCount}/${ranges.length} low-confidence segments`,
+          );
         }
         l3debug(
           `extractWithOptionalSegmentation: ${ranges.length} topic segments over ${params.messages.length} messages`,
