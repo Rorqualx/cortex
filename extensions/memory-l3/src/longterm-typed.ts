@@ -329,6 +329,7 @@ function reaffirm(
     archivedAt: null,
     sourceSessionId: sessionId ?? prior.sourceSessionId,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
+    sourceQuality: modelId !== undefined ? deriveSourceQuality(modelId) : prior.sourceQuality,
   };
 }
 
@@ -361,6 +362,7 @@ function supersede(
     volatilityClass: prior.volatilityClass ?? deriveVolatilityClass(c.slot, c.latest.value),
     sourceSessionId: sessionId ?? prior.sourceSessionId,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
+    sourceQuality: modelId !== undefined ? deriveSourceQuality(modelId) : prior.sourceQuality,
   };
 }
 

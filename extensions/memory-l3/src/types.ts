@@ -308,7 +308,19 @@ export type LongTermTypedFact = {
    * Absent on facts created before this feature; null when the model was unknown.
    */
   sourceModel?: string | null;
+  /**
+   * Provenance quality of this fact — where did the information originate?
+   * - direct_observation: user stated it directly in conversation
+   * - agent_evaluation: extracted/inferred by an LLM from conversation
+   * - hearsay: confirmed only through L2/L3 propagation, no direct source
+   * - unknown: provenance could not be determined (backward compat default)
+   * Absent on facts created before this feature; readers treat absent as unknown.
+   */
+  sourceQuality?: SourceQuality;
 };
+
+/** Provenance quality of a typed fact. */
+export type SourceQuality = "direct_observation" | "agent_evaluation" | "hearsay" | "unknown";
 
 export type LongTermTypedFrontmatter = {
   version: 1;

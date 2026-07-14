@@ -35,6 +35,7 @@ import type {
   LongTermFact,
   LongTermTypedFact,
   MissingFact,
+  SourceQuality,
   TypedFact,
 } from "./types.js";
 
@@ -743,10 +744,14 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
 function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
   const text = ltt.unit ? `${ltt.slot} = ${ltt.value} ${ltt.unit}` : `${ltt.slot} = ${ltt.value}`;
   const decayedConfidence = typedFactAccessDecay(ltt.confidence, ltt.lastAccessedAt, now);
+  // Apply source-quality reliability multiplier: agent-evaluated and hearsay
+  // facts carry less weight than direct user observations. Default unknown
+  // (backward compat) gets a neutral multiplier to avoid penalizing pre-existing facts.
+  const sourceQualityMultiplier = sourceQualityReliability(ltt.sourceQuality);
   return {
     id: ltt.id,
     text,
-    importance: decayedConfidence,
+    importance: decayedConfidence * sourceQualityMultiplier,
     createdAt: ltt.lastVerifiedAt ?? ltt.lastConfirmedAt,
     dedupKey: ltt.slot,
   };
@@ -774,6 +779,29 @@ function typedFactAccessDecay(
   const ageMs = Math.max(0, now - effectiveLastAccess);
   const ageDays = ageMs / MS_PER_DAY;
   return confidence * Math.exp(-ageDays / TYPED_FACT_ACCESS_HALF_LIFE_DAYS);
+}
+
+/**
+ * Reliability multiplier for source quality.
+ * - direct_observation (user stated it): full weight (1.0)
+ * - agent_evaluation (LLM extracted): slightly discounted (0.85)
+ * - hearsay (propagated through L2/L3 without direct source): significantly discounted (0.7)
+ * - unknown (backward compat, no provenance data): near-neutral (0.95)
+ *
+ * These multipliers compose with access-time decay in longTermTypedAsL2Fact.
+ */
+export function sourceQualityReliability(quality?: SourceQuality): number {
+  switch (quality) {
+    case "direct_observation":
+      return 1.0;
+    case "agent_evaluation":
+      return 0.85;
+    case "hearsay":
+      return 0.7;
+    case "unknown":
+    default:
+      return 0.95;
+  }
 }
 
 /**
