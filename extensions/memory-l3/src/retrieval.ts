@@ -748,10 +748,20 @@ function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
   // facts carry less weight than direct user observations. Default unknown
   // (backward compat) gets a neutral multiplier to avoid penalizing pre-existing facts.
   const sourceQualityMultiplier = sourceQualityReliability(ltt.sourceQuality);
+  // Apply staleness penalty: facts that haven't been verified recently lose
+  // visibility. Hearsay and agent-evaluated facts stale faster.
+  const stalenessScore = computeStalenessScore({
+    lastVerifiedAt: ltt.lastVerifiedAt,
+    lastConfirmedAt: ltt.lastConfirmedAt,
+    now,
+    recallCount: ltt.recallCount,
+    sourceQuality: ltt.sourceQuality,
+  });
+  const stalenessPenalty = stalenessVisibilityPenalty(stalenessScore);
   return {
     id: ltt.id,
     text,
-    importance: decayedConfidence * sourceQualityMultiplier,
+    importance: decayedConfidence * sourceQualityMultiplier * stalenessPenalty,
     createdAt: ltt.lastVerifiedAt ?? ltt.lastConfirmedAt,
     dedupKey: ltt.slot,
   };
@@ -802,6 +812,47 @@ export function sourceQualityReliability(quality?: SourceQuality): number {
     default:
       return 0.95;
   }
+}
+
+/**
+ * Compute staleness score for a typed fact. Higher = more stale.
+ * Formula: (ageMs / 30 days) * qualityMultiplier / (1 + recallCount * 0.2)
+ *
+ * - age: time since last verification (older = more stale)
+ * - recallCount: frequently recalled facts are more trustworthy (dampens staleness)
+ * - sourceQuality: hearsay and agent-evaluated facts stale faster
+ *
+ * Returns a dimensionless score. 0 = just-verified, 2+ = very stale.
+ * Used as a visibility penalty in retrieval: 1 / (1 + stalenessScore).
+ */
+export function computeStalenessScore(params: {
+  lastVerifiedAt: number | undefined;
+  lastConfirmedAt: number;
+  now: number;
+  recallCount: number;
+  sourceQuality?: SourceQuality;
+}): number {
+  const verifiedAt = params.lastVerifiedAt ?? params.lastConfirmedAt;
+  const ageMs = Math.max(0, params.now - verifiedAt);
+  const ageProgress = ageMs / (30 * 24 * 60 * 60 * 1000); // fraction of 30-day half-life
+
+  const qualityMultiplier =
+    params.sourceQuality === "hearsay"
+      ? 2.0
+      : params.sourceQuality === "agent_evaluation"
+        ? 1.5
+        : 1.0; // direct_observation, unknown, absent
+
+  const recallDampener = 1 + Math.max(0, params.recallCount - 1) * 0.2;
+  return (ageProgress * qualityMultiplier) / recallDampener;
+}
+
+/**
+ * Visibility penalty from staleness: maps stalenessScore → (0, 1] multiplier.
+ * 0 = infinitely stale (hidden), 1 = perfectly fresh (no penalty).
+ */
+export function stalenessVisibilityPenalty(stalenessScore: number): number {
+  return 1 / (1 + stalenessScore);
 }
 
 /**

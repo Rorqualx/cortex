@@ -757,6 +757,7 @@ describe("retrieveTopK longterm-typed tier", () => {
             archived: false,
             archivedAt: null,
             lastAccessedAt: NOW - 60 * 86400000,
+            lastVerifiedAt: NOW,
             sourceQuality: "direct_observation",
           },
         ],

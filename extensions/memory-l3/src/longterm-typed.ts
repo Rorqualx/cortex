@@ -231,7 +231,18 @@ export async function consolidateLongTermTyped(params: {
       continue;
     }
     const lastActive = fact.lastVerifiedAt ?? fact.lastConfirmedAt;
-    if (params.now - lastActive < config.maxAgeWithoutConfirmMs) {
+    // Staleness-aware archival: facts that haven't been verified recently
+    // AND have high staleness (hearsay/agent-evaluated with low recall)
+    // archive at a faster rate — 1/3 the normal window.
+    const stalenessScore = (params.now - lastActive) / (30 * 24 * 60 * 60 * 1000);
+    const isHighStaleness =
+      stalenessScore > 0.5 && // older than ~15 days at base rate
+      (fact.sourceQuality === "hearsay" ||
+        (fact.sourceQuality === "agent_evaluation" && fact.recallCount < 3));
+    const effectiveMaxAge = isHighStaleness
+      ? Math.floor(config.maxAgeWithoutConfirmMs / 3)
+      : config.maxAgeWithoutConfirmMs;
+    if (params.now - lastActive < effectiveMaxAge) {
       continue;
     }
     merged.set(slot, archive(fact, params.now));
