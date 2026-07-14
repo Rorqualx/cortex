@@ -317,6 +317,14 @@ export type LongTermTypedFact = {
    * Absent on facts created before this feature; readers treat absent as unknown.
    */
   sourceQuality?: SourceQuality;
+  /**
+   * When true, this fact was extracted by an LLM and requires at least one
+   * extra corroboration cycle before it's considered fully reliable.
+   * Prevents memory contagion — agent evaluations that become self-confirming
+   * echo chambers. Cleared on reaffirmation (surviving a consolidation cycle
+   * counts as corroboration). Absent on facts created before this feature.
+   */
+  requiresCorroboration?: boolean;
 };
 
 /** Provenance quality of a typed fact. */

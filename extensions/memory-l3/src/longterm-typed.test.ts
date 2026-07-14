@@ -508,15 +508,32 @@ describe("consolidateLongTermTyped", () => {
     expect(ltt.facts[0].archived).toBe(false);
   });
 
-  it("stamps sourceSessionId on promoted facts when sessionId is provided", async () => {
+  it("stamps sourceSessionId and sourceModel on promoted facts when sessionId is provided", async () => {
+    // Two chunks needed — the evaluator-bias gate requires recallCount >= minRecallCount + 1
+    // when modelId is set (agent-originated facts need extra corroboration)
     await writeChunkWithTyped(
-      "chunk-sess",
+      "chunk-sess-1",
       [
         {
-          id: "tf-sess",
+          id: "tf-sess-1",
           slot: "user:phone",
           value: "555-1234",
           sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - DAY,
+        },
+      ],
+      NOW - DAY,
+    );
+    await writeChunkWithTyped(
+      "chunk-sess-2",
+      [
+        {
+          id: "tf-sess-2",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "phone is 555-1234",
           unit: null,
           confidence: 0.9,
           createdAt: NOW,

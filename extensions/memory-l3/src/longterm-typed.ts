@@ -14,6 +14,7 @@ import type { Storage } from "./storage.js";
 import type {
   LongTermTypedFact,
   LongTermTypedFrontmatter,
+  SourceQuality,
   TypedFact,
   VolatilityClass,
 } from "./types.js";
@@ -105,6 +106,17 @@ export function deriveVolatilityClass(slot: string, _value: string): VolatilityC
   return "semi-volatile";
 }
 
+/**
+ * Derive source quality from the model that produced the fact.
+ * When a model ID is present, the fact was extracted by an LLM from
+ * conversation — this is an agent evaluation. Without a model ID,
+ * provenance is unknown (may be a direct user statement that we can't
+ * confirm without identity-anchor metadata — see A-2 in the roadmap).
+ */
+export function deriveSourceQuality(modelId?: string): SourceQuality {
+  return modelId ? "agent_evaluation" : "unknown";
+}
+
 export type LongTermTypedConfig = {
   /**
    * After this many ms without re-confirmation, an active canonical entry
@@ -177,10 +189,17 @@ export async function consolidateLongTermTyped(params: {
   let unarchivedCount = 0;
 
   for (const candidate of candidates.values()) {
-    if (candidate.recallCount < config.minRecallCount) {
+    // Evaluator-bias gate: facts that were originally agent-extracted (has
+    // sourceModel) or have `requires_corroboration` from a prior cycle need
+    // an extra confirmation before promotion.
+    const prior = merged.get(candidate.slot);
+    const needsCorroboration = prior?.requiresCorroboration || (!prior && !!params.modelId);
+    const effectiveMinRecall = needsCorroboration
+      ? config.minRecallCount + 1
+      : config.minRecallCount;
+    if (candidate.recallCount < effectiveMinRecall) {
       continue;
     }
-    const prior = merged.get(candidate.slot);
     if (!prior) {
       merged.set(candidate.slot, promote(candidate, params.sessionId, params.modelId));
       promotedCount += 1;
@@ -304,6 +323,8 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
     sourceSessionId: sessionId,
     sourceModel: modelId ?? null,
+    sourceQuality: deriveSourceQuality(modelId),
+    requiresCorroboration: modelId ? true : undefined,
   };
 }
 
@@ -330,6 +351,7 @@ function reaffirm(
     sourceSessionId: sessionId ?? prior.sourceSessionId,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceQuality: modelId !== undefined ? deriveSourceQuality(modelId) : prior.sourceQuality,
+    requiresCorroboration: undefined,
   };
 }
 
@@ -363,6 +385,7 @@ function supersede(
     sourceSessionId: sessionId ?? prior.sourceSessionId,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceQuality: modelId !== undefined ? deriveSourceQuality(modelId) : prior.sourceQuality,
+    requiresCorroboration: modelId ? true : undefined,
   };
 }
 

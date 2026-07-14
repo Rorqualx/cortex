@@ -153,12 +153,16 @@ function mergeFact(
 export function passesPromotionThresholds(
   candidate: ConsolidationCandidate,
   config: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG,
+  /** When true, increase minRecallCount by 1 as an evaluator-bias gate. */
+  requiresCorroboration?: boolean,
 ): boolean {
   const tentative = candidate.certainty === "tentative";
   if (!tentative && candidate.importance >= config.highImportancePassthrough) {
     return true;
   }
-  const minRecallCount = tentative ? config.tentativeMinRecallCount : config.minRecallCount;
+  const minRecallCount =
+    (tentative ? config.tentativeMinRecallCount : config.minRecallCount) +
+    (requiresCorroboration ? 1 : 0);
   const minDayspanMs = tentative ? config.tentativeMinDayspanMs : config.minDayspanMs;
   if (candidate.recallCount < minRecallCount) {
     return false;
