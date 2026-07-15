@@ -66,5 +66,25 @@ export const OPENCLAW_PROVIDER_INDEX = {
         ],
       },
     },
+    minimax: {
+      id: "minimax",
+      name: "MiniMax",
+      plugin: {
+        id: "minimax",
+      },
+      docs: "/providers/minimax",
+      categories: ["cloud", "llm"],
+      previewCatalog: {
+        models: [
+          {
+            id: "MiniMax-M3",
+            name: "MiniMax M3",
+            input: ["text"],
+            reasoning: true,
+            contextWindow: 1000000,
+          },
+        ],
+      },
+    },
   },
 } satisfies OpenClawProviderIndex;
