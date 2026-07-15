@@ -159,9 +159,15 @@ describe("OpenClaw provider index", () => {
       status: "preview",
     });
     expect(index.providers.deepseek?.plugin.id).toBe("deepseek");
+    const deepseekFlash = index.providers.deepseek?.previewCatalog?.models.find(
+      (model) => model.id === "deepseek-v4-flash",
+    );
+    expect(deepseekFlash?.contextWindow).toBe(1000000);
+    expect(deepseekFlash?.reasoning).toBe(true);
+    // Old deprecated model names should no longer be in the catalog
     const deepseekChat = index.providers.deepseek?.previewCatalog?.models.find(
       (model) => model.id === "deepseek-chat",
     );
-    expect(deepseekChat?.contextWindow).toBe(131072);
+    expect(deepseekChat).toBeUndefined();
   });
 });

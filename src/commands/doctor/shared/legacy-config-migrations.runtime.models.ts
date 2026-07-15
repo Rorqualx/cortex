@@ -552,6 +552,17 @@ function upgradeRetiredXaiModelId(model: string): string | null {
   }
 }
 
+function upgradeRetiredDeepSeekModelId(model: string): string | null {
+  const normalized = normalizeString(model);
+  switch (normalized) {
+    case "deepseek-chat":
+    case "deepseek-reasoner":
+      return "deepseek-v4-flash";
+    default:
+      return null;
+  }
+}
+
 function upgradeRetiredOpenAiModelId(model: string, provider?: string): string | null {
   const normalized = normalizeString(model);
   const codexProvider = provider === "openai-codex";
@@ -763,7 +774,9 @@ function upgradeRetiredModelRef(value: string): string | null {
             normalizedProvider === "openai-codex" ||
             normalizedProvider === "github-copilot"
           ? upgradeRetiredOpenAiModelId(model, normalizedProvider)
-          : undefined;
+          : normalizedProvider === "deepseek"
+            ? upgradeRetiredDeepSeekModelId(model)
+            : undefined;
   if (retiredOwnerModel) {
     return `${provider}/${retiredOwnerModel}${split.profile ? `@${split.profile}` : ""}`;
   }

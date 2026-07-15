@@ -3397,6 +3397,51 @@ describe("legacy model compat migrate", () => {
       'Removed models.providers.openrouter.models.0.compat.thinkingFormat (unrecognized value "openrouter-v0"; runtime default applies).',
     ]);
   });
+
+  it("upgrades retired DeepSeek model refs (deepseek-chat/deepseek-reasoner → deepseek-v4-flash)", () => {
+    const res = migrateLegacyConfigForTest({
+      agents: {
+        defaults: {
+          model: {
+            primary: "deepseek/deepseek-chat",
+            fallbacks: ["deepseek/deepseek-reasoner"],
+          },
+          models: {
+            "deepseek/deepseek-chat": { alias: "old-chat" },
+            "deepseek/deepseek-reasoner": { alias: "old-reasoner" },
+          },
+        },
+      },
+      plugins: {
+        entries: {
+          "test-plugin": {
+            config: {
+              summaryModel: "deepseek/deepseek-chat",
+            },
+          },
+        },
+      },
+    });
+
+    expect(res.config?.agents?.defaults?.model).toEqual({
+      primary: "deepseek/deepseek-v4-flash",
+      fallbacks: ["deepseek/deepseek-v4-flash"],
+    });
+    expect(res.config?.agents?.defaults?.models).toEqual({
+      "deepseek/deepseek-v4-flash": { alias: "old-chat" },
+    });
+    expect(
+      (res.config?.plugins?.entries?.["test-plugin"] as { config?: { summaryModel?: string } })
+        ?.config?.summaryModel,
+    ).toBe("deepseek/deepseek-v4-flash");
+    expectMigrationChangesToIncludeFragments(res.changes, [
+      'config.agents.defaults.model.primary from "deepseek/deepseek-chat" to "deepseek/deepseek-v4-flash"',
+      'config.agents.defaults.model.fallbacks.0 from "deepseek/deepseek-reasoner" to "deepseek/deepseek-v4-flash"',
+      'config.agents.defaults.models key from "deepseek/deepseek-chat" to "deepseek/deepseek-v4-flash"',
+      'config.agents.defaults.models key from "deepseek/deepseek-reasoner" to "deepseek/deepseek-v4-flash"',
+      'config.plugins.entries.test-plugin.config.summaryModel from "deepseek/deepseek-chat" to "deepseek/deepseek-v4-flash"',
+    ]);
+  });
 });
 
 describe("legacy skills workshop migrate", () => {
