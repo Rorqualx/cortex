@@ -55,6 +55,7 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text"],
             reasoning: true,
             contextWindow: 1000000,
+            status: "available",
           },
           {
             id: "deepseek-v4-pro",
@@ -62,12 +63,17 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text"],
             reasoning: true,
             contextWindow: 1000000,
+            status: "available",
           },
           {
             id: "deepseek-chat",
             name: "DeepSeek Chat",
             input: ["text"],
             contextWindow: 131072,
+            status: "deprecated",
+            statusReason:
+              "Deprecated by DeepSeek — sunset July 24, 2026. Migrate to deepseek-v4-flash.",
+            replacedBy: "deepseek-v4-flash",
           },
           {
             id: "deepseek-reasoner",
@@ -75,6 +81,10 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text"],
             reasoning: true,
             contextWindow: 131072,
+            status: "deprecated",
+            statusReason:
+              "Deprecated by DeepSeek — sunset July 24, 2026. Migrate to deepseek-v4-flash.",
+            replacedBy: "deepseek-v4-flash",
           },
         ],
       },
