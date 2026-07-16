@@ -18,6 +18,7 @@ import {
 import {
   buildCorpusStats,
   composite,
+  computeAttributionWeight,
   cosineSimilarity,
   DEFAULT_SCORING_CONFIG,
   type CorpusStats,
@@ -249,8 +250,12 @@ export async function retrieveTopK(params: {
       if (canonicalSlots.has(typed.slot)) {
         continue;
       }
+      const attrWeight =
+        config.weightAttribution > 0
+          ? computeAttributionWeight(typed.attribution, typed.confidence)
+          : undefined;
       items.push({
-        fact: typedFactAsL2Fact(typed),
+        fact: typedFactAsL2Fact(typed, attrWeight),
         chunkId,
         tier: "typed",
         l3Boost: 0,
@@ -727,14 +732,15 @@ function insightAsL2Fact(ins: Insight): L2Fact {
  * matching catches both "what's my pi-hole IP" (slot tokens) and
  * "192.168.50.128" (value tokens). Confidence stands in for importance.
  */
-function typedFactAsL2Fact(typed: TypedFact): L2Fact {
+function typedFactAsL2Fact(typed: TypedFact, attributionWeight?: number): L2Fact {
   const text = typed.unit
     ? `${typed.slot} = ${typed.value} ${typed.unit}`
     : `${typed.slot} = ${typed.value}`;
+  const importance = attributionWeight ? typed.confidence * attributionWeight : typed.confidence;
   return {
     id: typed.id,
     text,
-    importance: typed.confidence,
+    importance,
     createdAt: typed.lastVerifiedAt ?? typed.createdAt,
     dedupKey: typed.slot,
   };

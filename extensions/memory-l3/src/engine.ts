@@ -39,6 +39,7 @@ export type EmbeddingProvider = {
   embedBatch(texts: string[]): Promise<number[][]>;
 };
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
+import { DEFAULT_SCORING_CONFIG } from "./scoring.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
@@ -53,6 +54,11 @@ const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 // OPENCLAW_MEMORY_L3_* experimental switches. Promote to a default once the
 // LongMemEval delta is measured.
 const REFLECTION_ENABLED = process.env.OPENCLAW_MEMORY_L3_REFLECTION === "1";
+// Attribution-weighted promotion/relevance: when enabled, facts from
+// high-trust sessions (user-explicit-memory) get a 1.5× importance boost
+// and facts from error/recovery sessions get a 0.5× penalty during
+// retrieval ranking. Default 0 (disabled). Set to 1 to opt in.
+const ATTRIBUTION_WEIGHTING_ENABLED = process.env.OPENCLAW_MEMORY_L3_ATTRIBUTION_WEIGHTING === "1";
 
 function l3debug(msg: string): void {
   if (DEBUG_ENABLED) {
@@ -220,6 +226,9 @@ export class HierarchicalL3Engine implements ContextEngine {
       query: prompt,
       storage: this.storage,
       topK: ASSEMBLE_TOP_K,
+      config: ATTRIBUTION_WEIGHTING_ENABLED
+        ? { ...DEFAULT_SCORING_CONFIG, weightAttribution: 1.0 }
+        : undefined,
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,

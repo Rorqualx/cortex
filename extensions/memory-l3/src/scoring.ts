@@ -75,6 +75,15 @@ export type ScoringConfig = {
    * boost. Default 0.1. Set to 0 to disable.
    */
   weightSemanticEntropy: number;
+  /**
+   * Weight for attribution-based promotion/relevance boost.
+   * When > 0, facts from higher-trust sessions (user-explicit-memory)
+   * get a multiplier on their importance/confidence during retrieval,
+   * while facts from error/recovery sessions get a penalty.
+   * Default 0 — disabled. Opt-in via
+   * OPENCLAW_MEMORY_L3_ATTRIBUTION_WEIGHTING=1.
+   */
+  weightAttribution: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -96,6 +105,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightGoalRelevance: 0.1,
   weightReliability: 0.1,
   weightSemanticEntropy: 0.1,
+  weightAttribution: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -462,4 +472,28 @@ function certaintyToReliability(certainty: import("./types.js").FactCertainty | 
     default:
       return 1.0;
   }
+}
+
+/**
+ * Attribution weight multiplier for TypedFact confidence during retrieval.
+ * When `weightAttribution > 0` in the scoring config, this multiplier is
+ * applied to the fact's importance before scoring. The classification
+ * heuristic:
+ *   - High-confidence (≥0.95) facts from known-good models → 1.5× (user-explicit-memory)
+ *   - Very-low-confidence (<0.5) facts → 0.5× (error/recovery sessions)
+ *   - Default → 1.0× (normal conversation)
+ *
+ * This is a starting heuristic; as session-type metadata becomes available
+ * through the attribution field, the classification can be refined.
+ */
+export function computeAttributionWeight(
+  attribution: { sessionId?: string; model?: string; timestampMs?: number } | undefined,
+  confidence: number,
+): number {
+  if (!attribution) return 1.0;
+  // High-confidence facts from known-reliable models get a boost.
+  if (confidence >= 0.95) return 1.5;
+  // Low-confidence facts likely from error/recovery sessions get a penalty.
+  if (confidence < 0.5) return 0.5;
+  return 1.0;
 }
