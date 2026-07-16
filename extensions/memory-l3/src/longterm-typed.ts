@@ -279,6 +279,9 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
 }
 
 function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongTermTypedFact {
+  const attr = c.latest.attribution;
+  const effectiveSessionId = attr?.sessionId ?? sessionId;
+  const effectiveModelId = attr?.model ?? modelId ?? null;
   const history = c.prior
     .slice()
     .toSorted((a, b) => a.createdAt - b.createdAt)
@@ -302,8 +305,8 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
     lastAccessedAt: c.latest.createdAt,
     volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
-    sourceSessionId: sessionId,
-    sourceModel: modelId ?? null,
+    sourceSessionId: effectiveSessionId,
+    sourceModel: effectiveModelId,
   };
 }
 
@@ -313,6 +316,9 @@ function reaffirm(
   sessionId?: string,
   modelId?: string,
 ): LongTermTypedFact {
+  const attr = c.latest.attribution;
+  const effectiveSessionId = attr?.sessionId ?? sessionId;
+  const effectiveModelId = attr?.model ?? modelId;
   const merged = mergeChunkIds(prior.sourceChunkIds, c.sourceChunkIds);
   return {
     ...prior,
@@ -327,8 +333,8 @@ function reaffirm(
     supersededBy: null,
     archived: false,
     archivedAt: null,
-    sourceSessionId: sessionId ?? prior.sourceSessionId,
-    sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
+    sourceSessionId: effectiveSessionId ?? prior.sourceSessionId,
+    sourceModel: effectiveModelId !== undefined ? effectiveModelId : prior.sourceModel,
   };
 }
 
@@ -339,6 +345,9 @@ function supersede(
   sessionId?: string,
   modelId?: string,
 ): LongTermTypedFact {
+  const attr = c.latest.attribution;
+  const effectiveSessionId = attr?.sessionId ?? sessionId;
+  const effectiveModelId = attr?.model ?? modelId;
   const merged = mergeChunkIds(prior.sourceChunkIds, c.sourceChunkIds);
   return {
     id: prior.id,
@@ -359,8 +368,8 @@ function supersede(
     archivedAt: null,
     lastAccessedAt: prior.lastAccessedAt,
     volatilityClass: prior.volatilityClass ?? deriveVolatilityClass(c.slot, c.latest.value),
-    sourceSessionId: sessionId ?? prior.sourceSessionId,
-    sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
+    sourceSessionId: effectiveSessionId ?? prior.sourceSessionId,
+    sourceModel: effectiveModelId !== undefined ? effectiveModelId : prior.sourceModel,
   };
 }
 

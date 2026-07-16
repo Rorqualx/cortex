@@ -301,6 +301,12 @@ function liftToTypedFact(
     sessionId: episodic?.sessionId,
     participants: episodic?.participants,
     mentionTime: episodic?.mentionTime,
+    attribution: episodic?.sessionId
+      ? {
+          sessionId: episodic.sessionId,
+          timestampMs: createdAt,
+        }
+      : undefined,
   };
 }
 

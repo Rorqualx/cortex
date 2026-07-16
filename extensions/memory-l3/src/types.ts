@@ -97,6 +97,17 @@ export type TypedFact = {
   confidence: number;
   /** ms timestamp. */
   createdAt: number;
+  /**
+   * Provenance metadata: which session and model produced this typed fact.
+   * Populated during L2 compaction and consumed during L2→L3 promotion to
+   * stamp LongTermTypedFact.sourceSessionId / sourceModel.
+   * Absent on facts created before this feature.
+   */
+  attribution?: {
+    sessionId: string;
+    model?: string;
+    timestampMs: number;
+  };
 };
 
 /**
