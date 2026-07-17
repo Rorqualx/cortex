@@ -20,8 +20,6 @@ describe("loadProviderIndexCatalogRowsForList", () => {
       cfg: baseConfig,
     }).map((row) => row.ref);
     expect(refs).toEqual([
-      "deepseek/deepseek-chat",
-      "deepseek/deepseek-reasoner",
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-pro",
       "moonshot/kimi-k2.6",

@@ -603,6 +603,18 @@ function upgradeRetiredOpenAiModelId(model: string, provider?: string): string |
   return null;
 }
 
+function upgradeRetiredDeepSeekModelId(model: string): string | null {
+  const normalized = normalizeString(model);
+  switch (normalized) {
+    case "deepseek-chat":
+      return "deepseek-v4-flash";
+    case "deepseek-reasoner":
+      return "deepseek-v4-pro";
+    default:
+      return null;
+  }
+}
+
 function hasRetiredVersionPrefix(normalized: string, prefix: string): boolean {
   if (normalized === prefix) {
     return true;
@@ -759,11 +771,13 @@ function upgradeRetiredModelRef(value: string): string | null {
       ? upgradeRetiredGroqModelId(model)
       : normalizedProvider === "xai"
         ? upgradeRetiredXaiModelId(model)
-        : normalizedProvider === "openai" ||
-            normalizedProvider === "openai-codex" ||
-            normalizedProvider === "github-copilot"
-          ? upgradeRetiredOpenAiModelId(model, normalizedProvider)
-          : undefined;
+        : normalizedProvider === "deepseek"
+          ? upgradeRetiredDeepSeekModelId(model)
+          : normalizedProvider === "openai" ||
+              normalizedProvider === "openai-codex" ||
+              normalizedProvider === "github-copilot"
+            ? upgradeRetiredOpenAiModelId(model, normalizedProvider)
+            : undefined;
   if (retiredOwnerModel) {
     return `${provider}/${retiredOwnerModel}${split.profile ? `@${split.profile}` : ""}`;
   }

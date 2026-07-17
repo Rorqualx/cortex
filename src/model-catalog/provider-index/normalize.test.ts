@@ -159,9 +159,9 @@ describe("OpenClaw provider index", () => {
       status: "preview",
     });
     expect(index.providers.deepseek?.plugin.id).toBe("deepseek");
-    const deepseekChat = index.providers.deepseek?.previewCatalog?.models.find(
-      (model) => model.id === "deepseek-chat",
+    const deepseekFlash = index.providers.deepseek?.previewCatalog?.models.find(
+      (model) => model.id === "deepseek-v4-flash",
     );
-    expect(deepseekChat?.contextWindow).toBe(131072);
+    expect(deepseekFlash?.contextWindow).toBe(1000000);
   });
 });
