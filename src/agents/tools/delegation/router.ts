@@ -85,6 +85,13 @@ export type RouteRequest = {
   provider?: string | undefined;
   /** Caller override: explicit model id (applies to the chosen primary provider). */
   model?: string | undefined;
+  /**
+   * Optional: recent effective cost per 1M tokens per provider, factoring in
+   * cache-hit savings. When provided, the router prefers cheaper providers
+   * within the same priority tier. Absence falls back to the static priority
+   * order (zai → kimi → deepseek → moonshot).
+   */
+  effectiveCostPerMtok?: Record<string, number> | undefined;
 };
 
 export type Route = {
@@ -110,10 +117,34 @@ function configuredModels(cfg: OpenClawConfig | undefined, providerId: string): 
   return STATIC_MODELS[providerId] ?? [];
 }
 
-/** Provider order: explicit override first, then the configured priority list. */
-function orderedProviders(cfg: OpenClawConfig | undefined, override?: string): string[] {
+/**
+ * Provider order: explicit override first, then the configured priority list.
+ * When `costMap` is provided, providers within the same priority tier are
+ * re-ordered by effective cost (cheapest first), with subscription providers
+ * (zai, kimi) always ahead of metered (deepseek, moonshot) regardless of cost.
+ */
+function orderedProviders(
+  cfg: OpenClawConfig | undefined,
+  override?: string,
+  costMap?: Record<string, number>,
+): string[] {
   const hasModels = (p: string) => configuredModels(cfg, p).length > 0;
-  const ordered = PROVIDER_PRIORITY.filter(hasModels);
+  const ordered = costMap
+    ? PROVIDER_PRIORITY.filter(hasModels).toSorted((a, b) => {
+        const costA = costMap[a];
+        const costB = costMap[b];
+        // Keep subscription-tier providers ahead of metered.
+        const aSub = a === "zai" || a === "kimi";
+        const bSub = b === "zai" || b === "kimi";
+        if (aSub !== bSub) return aSub ? -1 : 1;
+        // Within the same tier, prefer cheaper.
+        if (costA !== undefined && costB !== undefined && costA !== costB) {
+          return costA < costB ? -1 : 1;
+        }
+        // Fall back to static priority when cost data is missing.
+        return PROVIDER_PRIORITY.indexOf(a) - PROVIDER_PRIORITY.indexOf(b);
+      })
+    : PROVIDER_PRIORITY.filter(hasModels);
   if (!override) return ordered;
   return [override, ...ordered.filter((p) => p !== override)];
 }
@@ -132,7 +163,8 @@ function pickModel(providerId: string, kind: DelegationKind, models: string[]): 
  * order) so any configured model is reachable as a deep fallback.
  */
 export function resolveRoute(req: RouteRequest): Route {
-  const providers = orderedProviders(req.cfg, req.provider);
+  const costMap = req.effectiveCostPerMtok;
+  const providers = orderedProviders(req.cfg, req.provider, costMap);
   const primaryProvider =
     req.provider && providers.includes(req.provider) ? req.provider : providers[0];
 
