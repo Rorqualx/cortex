@@ -109,4 +109,60 @@ describe("resolveRoute (config-driven)", () => {
     expect(route.primary.provider).toBe("zai");
     expect(route.primary.model).toBe("glm-4.7");
   });
+
+  it("reorders providers by effective cost within the same tier when cost data is available", () => {
+    // DeepSeek is cheaper than Moonshot; both are metered.
+    // Without cost data: deepseek → moonshot.
+    const baseline = resolveRoute({ kind: "code", cfg: FULL });
+    const baselineProviders = [baseline.primary, ...baseline.fallbacks]
+      .filter((c, i, arr) => arr.findIndex((x) => x.provider === c.provider) === i)
+      .map((c) => c.provider);
+    // zai first (subscription), kimi second (subscription), deepseek third, moonshot fourth
+    expect(baselineProviders).toEqual(["zai", "kimi", "deepseek", "moonshot"]);
+
+    // With cost data: moonshot cheaper than deepseek → reordered within metered tier.
+    const costAware = resolveRoute({
+      kind: "code",
+      cfg: FULL,
+      effectiveCostPerMtok: { deepseek: 1.3, moonshot: 0.5 },
+    });
+    const costProviders = [costAware.primary, ...costAware.fallbacks]
+      .filter((c, i, arr) => arr.findIndex((x) => x.provider === c.provider) === i)
+      .map((c) => c.provider);
+    expect(costProviders).toEqual(["zai", "kimi", "moonshot", "deepseek"]);
+  });
+
+  it("keeps subscription-tier providers ahead of metered regardless of cost", () => {
+    // Even if deepseek is artificially cheap, zai/kimi stay ahead.
+    const route = resolveRoute({
+      kind: "code",
+      cfg: FULL,
+      effectiveCostPerMtok: { zai: 5.0, kimi: 4.0, deepseek: 0.01, moonshot: 0.02 },
+    });
+    const providers = [route.primary, ...route.fallbacks]
+      .filter((c, i, arr) => arr.findIndex((x) => x.provider === c.provider) === i)
+      .map((c) => c.provider);
+    // Subscription providers stay first; within subscription tier, kimi is cheaper → before zai.
+    expect(providers).toEqual(["kimi", "zai", "deepseek", "moonshot"]);
+  });
+
+  it("falls back to static priority when cost data is missing for some providers", () => {
+    // Partial cost data: deepseek has a cost, moonshot doesn't.
+    // Both are metered tier; with one cost missing, fall back to static priority.
+    const route = resolveRoute({
+      kind: "code",
+      cfg: FULL,
+      effectiveCostPerMtok: { deepseek: 1.3 },
+    });
+    const providers = [route.primary, ...route.fallbacks]
+      .filter((c, i, arr) => arr.findIndex((x) => x.provider === c.provider) === i)
+      .map((c) => c.provider);
+    // Static order preserved for metered tier when cost data is incomplete.
+    expect(providers).toEqual(["zai", "kimi", "deepseek", "moonshot"]);
+  });
+
+  it("does not change routing when cost data is absent", () => {
+    const route = resolveRoute({ kind: "code", cfg: FULL });
+    expect(route.primary).toEqual({ provider: "zai", model: "glm-4.7" });
+  });
 });
