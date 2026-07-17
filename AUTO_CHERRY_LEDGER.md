@@ -312,3 +312,35 @@ Review: clean (all fixes, no correctness/security concerns)
 Rollback: main-backup-pre-autocherry @ b721db2a613 / tag autocherry-2026-07-08-pre
 Deploy: deferred (cron-deploy-build.sh quiesced on upstream-merge-nightly still running; should be manually triggered)
 Notes: Divergence grew from 2690 (Jul 7) to 2800. Scanned 40 non-borderline candidates; 11 conflicts, 1 empty, 28 applied cleanly. Remaining: 726 non-borderline + 307 borderline candidates. Needs maintainer `$openclaw-upstream-resync` for the large merge-shaped backlog.
+
+---
+
+## 2026-07-17
+
+Divergence: N=7446 (7 merges, 7439 non-merge) — fix:3956 · refactor:898 · chore:676 · feat:598 · test:535 · docs:197 · perf:161 · other:143 · improve:114 · ci:96 · style:29 · build:19 · policy:11
+
+Classified: 3997 cherry candidates (1110 borderline = all deferred; no claude-connect), 3442 deferred
+
+- Deferred reasons: type=refactor 865× · type=chore 664× · type=feat 568× · type=test 513× · touches codex 206× · type=docs 195× · type=other 138× · type=improve 112× · type=ci 91×
+
+Cherry-picked: 40 non-borderline (oldest-first). 34 conflicts → deferred, 6 applied:
+
+- c69a75f69787 fix(release): mount normalization helper in Docker E2E
+- 93e9e2fe9354 fix(google-meet): neutralize attendance CSV formulas [AI]
+- 89780d5a6017 fix(infra): gateway pid probe no longer hangs when ps sampling stalls (#109731)
+- 065223c438ad fix(apns): cancel redirect relay response body before returning (#109728)
+- 72f4cbd8f287 fix(line): prevent profile cache growth across users (#109750)
+- bd7b0ad85f57 fix(plugins): remove abort listener when channel runtime context is disposed (#109708)
+
+Deferred (34 conflicts): 36ab06da229d 4cdea67a5961 5a8b25cc9a75 0476243d5da0 600ff3acb437 edef9822eefc fee4490fe462 0c17cd4f1f24 62407b36d780 363e8b09ec28 6f3aa0f7aefd c3f552628585 66aa2eda9dd2 d3143ced6d85 5c21b70144ef 819c92d17558 d7056abbc81e 3a268c08dfde 7817a6cf249c 9769642e7f60 4b2b5bcf8955 d9b86cb76c25 bf413374cca4 4e4a5d49056c ee2b4e5acc59 5a0bb2a146d0 4880231ff710 90b498ab3b8e dfd457adc069 5024c100a324 01961bbd38fb d023e8b412c1 45f36640dc3e 708d2020d86c
+
+Proof: build ✓ · tsgo REGRESSED (extensions:test 29→30, 6 other lanes clean) → ABORTED
+
+- tsgo:core 16=16 · extensions 20=20 · core:test 1=1 · extensions:test 29→30 ✗ · test:src 1=1 · test:ui 7=7 · test:packages 0=0
+- test:fast: not reached (aborted on tsgo regression)
+
+Guard: fork-config-snapshot PASS · dry-run merge conflicted (expected with 7446 divergence) · no protected files touched · fork dirs intact
+
+Result: NO LAND — tsgo regression (1 new error in extensions:test). All 6 cherry-picks deferred.
+Rollback: restored, worktree removed, live tree clean
+Notes: Divergence jumped from 2800 to 7446 since Jul 8 — fork needs a full manual re-sync. 34/40 cherry-picks conflicted due to heavy divergence. Deferred cherry backlog is enormous (3991 remaining clean). Needs maintainer `$openclaw-upstream-resync` urgently.
