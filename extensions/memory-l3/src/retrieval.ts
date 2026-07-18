@@ -737,6 +737,8 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     importance: typed.confidence,
     createdAt: typed.lastVerifiedAt ?? typed.createdAt,
     dedupKey: typed.slot,
+    // Failure-avoidance typed facts get significance for FSRS slower decay.
+    significant: typed.slot.startsWith("failure:") || undefined,
   };
 }
 
@@ -749,6 +751,8 @@ function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
     importance: decayedConfidence,
     createdAt: ltt.lastVerifiedAt ?? ltt.lastConfirmedAt,
     dedupKey: ltt.slot,
+    // Failure-avoidance typed facts get significance for FSRS slower decay.
+    significant: ltt.slot.startsWith("failure:") || undefined,
   };
 }
 

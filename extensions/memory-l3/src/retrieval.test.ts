@@ -631,6 +631,53 @@ describe("retrieveTopK typed-fact tier", () => {
   });
 });
 
+describe("retrieveTopK failure-fact significance", () => {
+  it("auto-marks failure: typed facts as significant for FSRS slower decay", async () => {
+    // A failure: typed fact and a non-failure typed fact with identical lexical
+    // relevance. The failure fact should get a recency boost from significance.
+    const failureFact: TypedFact = {
+      id: "tf-fail",
+      slot: "failure:doom_loop_pattern",
+      value: "repeated grep on empty dir wasted 5 iterations",
+      sourceSpan: "repeated grep on empty dir wasted 5 iterations",
+      unit: null,
+      confidence: 0.8,
+      createdAt: NOW,
+    };
+    const normalFact: TypedFact = {
+      id: "tf-normal",
+      slot: "user:phone",
+      value: "555-1234",
+      sourceSpan: "phone 555-1234",
+      unit: null,
+      confidence: 0.8,
+      createdAt: NOW,
+    };
+    await writeChunk("chunk-fail", [], NOW, [failureFact, normalFact]);
+
+    const { facts } = await retrieveTopK({
+      query: "grep iterations",
+      storage,
+      topK: 5,
+      now: NOW + 1000 * 60 * 60 * 24 * 14, // 14 days later
+    });
+
+    // Both should be retrieved (both match some tokens)
+    const failureHit = facts.find((f) => f.fact.dedupKey === "failure:doom_loop_pattern");
+    expect(failureHit).toBeDefined();
+
+    // The failure fact should have `significant` propagated through
+    // (typedFactAsL2Fact sets it based on slot prefix)
+    expect(failureHit?.fact.significant).toBe(true);
+
+    // The normal fact should NOT have significant set
+    const normalHit = facts.find((f) => f.fact.dedupKey === "user:phone");
+    if (normalHit) {
+      expect(normalHit.fact.significant).toBeFalsy();
+    }
+  });
+});
+
 describe("retrieveTopK cross-brain reconciliation", () => {
   it("does not surface a long-term prose fact that has been marked supersededBy", async () => {
     // Need at least one L2 chunk for retrieval to enter the loop.
