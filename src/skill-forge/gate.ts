@@ -5,6 +5,24 @@ import { resolveSkillForgePromotedSkillDir, resolveSkillForgeRetiredSkillDir } f
 export const LLM_REPLAY_TODO =
   "Phase 4 LLM-replay gate (leave-one-out re-run with the candidate skill loaded) requires an LLM provider; defer until provider chosen.";
 
+/*
+ * CONTROLLED-BUDGET EVALUATION PROTOCOL (openclaw-analysis-2026-07-19, Finding #6)
+ *
+ * When implementing the LLM-replay lane, structure it as a controlled-budget
+ * evaluation to prevent promoting skills that are just "extra compute in disguise":
+ *
+ * 1. Run N parallel samples WITHOUT the candidate skill (baseline condition).
+ * 2. Run N parallel samples WITH the candidate skill (treatment condition).
+ * 3. Both conditions use the SAME per-sample token budget.
+ * 4. Promotion gate: treatment success rate must exceed baseline by > Δ%
+ *    (configurable via ParallelSamplingBaseline.promotionThresholdDelta,
+ *    suggest 10% default).
+ * 5. Skills that don't beat baseline are rejected — they're not adding
+ *    capability, just burning more tokens.
+ *
+ * The ParallelSamplingBaseline type in pipeline.ts defines the result shape.
+ */
+
 const MIN_BODY_CHARS = 200;
 const CLEAN_SESSION_MIN_BODY_CHARS = 100;
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/u;

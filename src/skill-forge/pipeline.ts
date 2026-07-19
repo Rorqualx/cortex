@@ -45,6 +45,36 @@ export type LlmReplayLaneResult = {
   judged: Array<{ name: string; gate: LlmReplayGateResult }>;
 };
 
+/**
+ * Controlled-budget parallel sampling baseline for Skill Forge promotions.
+ *
+ * When the LLM-replay lane is implemented, skill promotion must verify that the
+ * candidate skill beats a simple parallel-sampling baseline at a matched token
+ * budget. This prevents promoting skills that are just "extra compute in disguise."
+ *
+ * Protocol:
+ * 1. Run N parallel samples WITHOUT the candidate skill (baseline).
+ * 2. Run N samples WITH the skill (treatment).
+ * 3. Compare success rates at matched token budget.
+ * 4. Promotion gate: skill must beat baseline by > Δ% (configurable, suggest 10%).
+ *
+ * SEE: openclaw-analysis-2026-07-19 (Finding #6 — Harness Evolution)
+ */
+export type ParallelSamplingBaseline = {
+  /** Number of parallel samples per condition (baseline and treatment). */
+  sampleCount: number;
+  /** Token budget per sample (both conditions get the same budget). */
+  tokenBudgetPerSample: number;
+  /** Minimum improvement percentage required for promotion (e.g. 0.10 = 10%). */
+  promotionThresholdDelta: number;
+  /** Baseline (without skill) success rate [0,1]. */
+  baselineSuccessRate: number;
+  /** Treatment (with skill) success rate [0,1]. */
+  treatmentSuccessRate: number;
+  /** Whether the candidate beat the threshold. */
+  beatsBaseline: boolean;
+};
+
 export type PipelineRunResult = {
   scannedCaptureDirs: number;
   candidates: Candidate[];
