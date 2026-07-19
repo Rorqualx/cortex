@@ -976,3 +976,78 @@ describe("retrieveTopK contextWindow (RaMem reinstatement)", () => {
     expect(lt!.contextWindow).toBeUndefined();
   });
 });
+
+describe("retrieveTopK retrieval mode", () => {
+  beforeEach(async () => {
+    await writeChunk("chunk-mode", [
+      {
+        id: "fm1",
+        text: "rust async runtime tokio",
+        importance: 0.8,
+        createdAt: NOW,
+        dedupKey: "k:m1",
+      },
+      {
+        id: "fm2",
+        text: "python gil threading lock",
+        importance: 0.6,
+        createdAt: NOW,
+        dedupKey: "k:m2",
+      },
+    ]);
+  });
+
+  const fullConfig = {
+    useEpochFirst: false,
+    epochExpandTopN: 3,
+    useSubmodularSelect: false,
+    submodularDiversityWeight: 0.3,
+    submodularCoverageWeight: 0.3,
+    submodularTokenBudget: null as number | null,
+    mode: "blended" as const,
+  };
+
+  it("keyword mode zeroes semantic signal but still finds lexical matches", async () => {
+    const { facts } = await retrieveTopK({
+      query: "tokio runtime",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...fullConfig, mode: "keyword" },
+      queryEmbedding: [1.0, 0.0],
+    });
+    expect(facts.length).toBeGreaterThan(0);
+    expect(facts[0].fact.text).toContain("tokio");
+    // Semantic signal should be zeroed in keyword mode
+    expect(facts[0].signals.semantic).toBe(0);
+    // BM25 should be non-zero for matching facts
+    expect(facts[0].signals.bm25).toBeGreaterThan(0);
+  });
+
+  it("semantic mode zeroes bm25 signal", async () => {
+    const { facts } = await retrieveTopK({
+      query: "tokio runtime",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...fullConfig, mode: "semantic" },
+    });
+    // In semantic mode, bm25 should be zeroed in signals for all results
+    for (const f of facts) {
+      expect(f.signals.bm25).toBe(0);
+    }
+  });
+
+  it("blended mode keeps both bm25 and semantic signals", async () => {
+    const { facts } = await retrieveTopK({
+      query: "tokio runtime",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...fullConfig, mode: "blended" },
+    });
+    expect(facts.length).toBeGreaterThan(0);
+    // In blended mode, bm25 should be non-zero for lexical matches
+    expect(facts[0].signals.bm25).toBeGreaterThan(0);
+  });
+});

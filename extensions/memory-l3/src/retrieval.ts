@@ -63,6 +63,14 @@ export type MemoryCoreSearchHit = {
 
 export type MemoryCoreLookup = (query: string) => Promise<MemoryCoreSearchHit[]>;
 
+/**
+ * Retrieval mode controls which scoring signals contribute to ranking.
+ * - `'blended'` (default): BM25 + cosine semantic + other signals — current behavior.
+ * - `'keyword'`: BM25 only (lexical/keyword retrieval, semantic zeroed).
+ * - `'semantic'`: Cosine semantic only (embedding-based retrieval, BM25 zeroed).
+ */
+export type RetrievalMode = "blended" | "keyword" | "semantic";
+
 export type RetrievalConfig = {
   /**
    * When true, use epoch-first retrieval: score epoch summaries first, then
@@ -93,6 +101,13 @@ export type RetrievalConfig = {
    * count (legacy budget mode). Default null.
    */
   submodularTokenBudget: number | null;
+  /**
+   * Controls which scoring signals are active. Default 'blended' (current behavior).
+   * - 'keyword': only BM25/lexical signals, semantic zeroed.
+   * - 'semantic': only cosine embedding signal, BM25 zeroed.
+   * - 'blended': full composite scoring.
+   */
+  mode: RetrievalMode;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -102,6 +117,7 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   submodularDiversityWeight: 0.3,
   submodularCoverageWeight: 0.3,
   submodularTokenBudget: null,
+  mode: "blended",
 };
 
 export type RetrievedFact = {
@@ -331,6 +347,13 @@ export async function retrieveTopK(params: {
       params.queryEmbedding.length === item.embedding.length
     ) {
       signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+    }
+    // Apply retrieval mode: zero out signals not relevant to the selected mode
+    if (retConfig.mode === "keyword") {
+      signals.semantic = 0;
+    } else if (retConfig.mode === "semantic") {
+      signals.bm25 = 0;
+      signals.lexical = 0;
     }
     const baseScore = composite(signals, config);
     const score = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
