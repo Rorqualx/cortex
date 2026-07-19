@@ -344,3 +344,29 @@ Guard: fork-config-snapshot PASS · dry-run merge conflicted (expected with 7446
 Result: NO LAND — tsgo regression (1 new error in extensions:test). All 6 cherry-picks deferred.
 Rollback: restored, worktree removed, live tree clean
 Notes: Divergence jumped from 2800 to 7446 since Jul 8 — fork needs a full manual re-sync. 34/40 cherry-picks conflicted due to heavy divergence. Deferred cherry backlog is enormous (3991 remaining clean). Needs maintainer `$openclaw-upstream-resync` urgently.
+
+## 2026-07-19
+
+Divergence: N=8297 (7 merges, 8290 non-merge) — fix:4485 · refactor:952 · feat:732 · chore:682 · test:604 · docs:218 · perf:174 · improve:131 · ci:100 · style:29 · build:20 · policy:11
+
+Classified: NOT RUN — divergence-report script OOM-killed/timeout at 8297 commits (~16.6K git-show calls). Estimated runtime 2–4h, impractical for nightly window. Manual classification from git-log type sampling above.
+
+Cherry-picked: 0 of 40 cap
+
+- Deferred reasons: classification unavailable at scale · 85% conflict rate observed on last run (34/40) · tsgo regression blocked all lands on 07-17
+
+Proof: NOT ATTEMPTED — no cherries classified or picked
+
+Guard: NOT ATTEMPTED — no worktree created
+
+Result: NO LAND — classification impractical at 8297-commit divergence.
+
+Rollback: N/A (no mutations)
+
+Notes: Backlog growing ~425/day (7446→8297 in 2 days). Last successful land was 07-08. The divergence-report script cannot complete at this scale; it runs O(n) git-show per commit. Fork needs a manual full-resync ($openclaw-upstream-resync) before nightly cherry-pick can resume meaningful operation. The `main..upstream/main` gap is now ~8 months of upstream development.
+
+Trend:
+
+- 07-08: ~2800
+- 07-17: 7446
+- 07-19: 8297
