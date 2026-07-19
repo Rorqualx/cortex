@@ -4,6 +4,7 @@ import {
   createDoomLoopGuard,
   DoomLoopDetectedError,
   meanPairwiseCosineSimilarity,
+  type FailureRecord,
 } from "./doom-loop-guard.js";
 
 describe("createDoomLoopGuard", () => {
@@ -111,6 +112,103 @@ describe("createDoomLoopGuard", () => {
     expect(r1.consecutiveFailures).toBe(1);
     const r2 = guard.recordConfidenceSignal(0.6, 0.7);
     expect(r2.shouldAbort).toBe(true);
+  });
+
+  describe("failure history", () => {
+    it("getFailureHistory returns empty array initially", () => {
+      const guard = createDoomLoopGuard();
+      guard.arm();
+      expect(guard.getFailureHistory()).toEqual([]);
+    });
+
+    it("records failures in history with errorType and timestamp", () => {
+      const guard = createDoomLoopGuard({ maxConsecutiveFailures: 5 });
+      guard.arm();
+      guard.recordFailure("tool_error", 1000);
+      guard.recordFailure("llm_error", 2000);
+      const history = guard.getFailureHistory();
+      expect(history).toHaveLength(2);
+      // Newest first
+      expect(history[0].errorType).toBe("llm_error");
+      expect(history[0].timestamp).toBe(2000);
+      expect(history[1].errorType).toBe("tool_error");
+      expect(history[1].timestamp).toBe(1000);
+    });
+
+    it("trims to ring buffer max size (20)", () => {
+      const guard = createDoomLoopGuard({ maxConsecutiveFailures: 100 });
+      guard.arm();
+      for (let i = 0; i < 25; i++) {
+        guard.recordFailure("tool_error", 1000 + i);
+      }
+      const history = guard.getFailureHistory();
+      expect(history).toHaveLength(20);
+      // Newest entry should be the most recent (i=24)
+      expect(history[0].timestamp).toBe(1024);
+      // Oldest retained should be i=5 (25 - 20 = 5)
+      expect(history[19].timestamp).toBe(1005);
+    });
+
+    it("reset clears failure history", () => {
+      const guard = createDoomLoopGuard({ maxConsecutiveFailures: 5 });
+      guard.arm();
+      guard.recordFailure("tool_error", Date.now());
+      expect(guard.getFailureHistory()).toHaveLength(1);
+      guard.reset();
+      expect(guard.getFailureHistory()).toEqual([]);
+    });
+
+    it("getFailurePatterns returns frequency counts by error type", () => {
+      const guard = createDoomLoopGuard({
+        maxConsecutiveFailures: 10,
+        failureWindowMs: 60_000,
+      });
+      guard.arm();
+      guard.recordFailure("tool_error", Date.now());
+      guard.recordFailure("tool_error", Date.now());
+      guard.recordFailure("llm_error", Date.now());
+      const patterns = guard.getFailurePatterns();
+      expect(patterns["tool_error"]).toBe(2);
+      expect(patterns["llm_error"]).toBe(1);
+    });
+
+    it("getFailurePatterns excludes entries outside the window", () => {
+      const guard = createDoomLoopGuard({
+        maxConsecutiveFailures: 100,
+        failureWindowMs: 100,
+      });
+      guard.arm();
+      // Old failure — outside window
+      guard.recordFailure("tool_error", 1_000_000);
+      // Recent failures — inside window
+      guard.recordFailure("tool_error", Date.now());
+      guard.recordFailure("llm_error", Date.now());
+      const patterns = guard.getFailurePatterns();
+      // Only 2 recent ones should be counted
+      expect(patterns["tool_error"]).toBe(1);
+      expect(patterns["llm_error"]).toBe(1);
+    });
+
+    it("snapshot includes failureHistory and failurePatterns", () => {
+      const guard = createDoomLoopGuard({ maxConsecutiveFailures: 5 });
+      guard.arm();
+      guard.recordFailure("tool_error", Date.now());
+      const snap = guard.snapshot();
+      expect(snap.failureHistory).toHaveLength(1);
+      expect(snap.failureHistory[0].errorType).toBe("tool_error");
+      expect(snap.failurePatterns["tool_error"]).toBe(1);
+    });
+
+    it("non-countable failures are not recorded in history", () => {
+      const guard = createDoomLoopGuard({
+        maxConsecutiveFailures: 5,
+        countableFailures: ["tool_error"],
+      });
+      guard.arm();
+      // llm_error is not in countableFailures
+      guard.recordFailure("llm_error", Date.now());
+      expect(guard.getFailureHistory()).toEqual([]);
+    });
   });
 
   it("failure window expiration resets counter", () => {
