@@ -345,6 +345,35 @@ Result: NO LAND — tsgo regression (1 new error in extensions:test). All 6 cher
 Rollback: restored, worktree removed, live tree clean
 Notes: Divergence jumped from 2800 to 7446 since Jul 8 — fork needs a full manual re-sync. 34/40 cherry-picks conflicted due to heavy divergence. Deferred cherry backlog is enormous (3991 remaining clean). Needs maintainer `$openclaw-upstream-resync` urgently.
 
+## 2026-07-20
+
+Divergence: N=8454 (7 merges, 8447 non-merge) — fix:4595 · refactor:959 · feat:753 · chore:686 · test:610 · docs:221 · perf:175 · improve:133 · ci:100 · style:29 · build:22 · policy:11
+
++156 new since 07-19 (trend: ~425/day). 8 upstream commits in last 3 days touch extensions/codex (must-defer hard invariant).
+
+Classified: NOT RUN — divergence-report.mjs OOM-killed/timeout at 8454 commits (same failure as 07-17, 07-19). Script runs O(n²) git-show per commit; impractical at this scale.
+
+Cherry-picked: 0 of 0
+
+- Deferred reasons: classification unavailable at scale · report script timeout · 85% conflict rate on last attempt (07-17: 34/40 conflicted) · codex-touching upstream commits in the mix · 7 merge parents require manual re-sync
+
+Proof: NOT ATTEMPTED — no candidates classified
+
+Guard: NOT ATTEMPTED — no worktree created
+
+Result: NO LAND — classification pipeline blocked by divergence scale (day 13 since last land)
+
+Rollback: N/A (no mutations)
+
+Notes: Backlog growing steadily. Last land 07-08 (13 days). Fork needs `$openclaw-upstream-resync` manual full-resync — the nightly cherry-pick cannot resume meaningful operation at this divergence depth. The upstream mix is heavily fix-weighted (54% fix), so the deferral cost is high.
+
+Trend:
+
+- 07-08: ~2800
+- 07-17: 7446
+- 07-19: 8297
+- 07-20: 8454
+
 ## 2026-07-19
 
 Divergence: N=8297 (7 merges, 8290 non-merge) — fix:4485 · refactor:952 · feat:732 · chore:682 · test:604 · docs:218 · perf:174 · improve:131 · ci:100 · style:29 · build:20 · policy:11
