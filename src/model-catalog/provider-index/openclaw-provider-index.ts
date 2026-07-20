@@ -68,6 +68,8 @@ export const OPENCLAW_PROVIDER_INDEX = {
             name: "DeepSeek Chat",
             input: ["text"],
             contextWindow: 131072,
+            status: "deprecated",
+            replacedBy: "deepseek-v4-flash",
           },
           {
             id: "deepseek-reasoner",
@@ -75,6 +77,8 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text"],
             reasoning: true,
             contextWindow: 131072,
+            status: "deprecated",
+            replacedBy: "deepseek-v4-pro",
           },
         ],
       },

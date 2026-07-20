@@ -22,4 +22,8 @@ export type ModelCatalogEntry = {
   params?: Record<string, unknown>;
   compat?: ModelCompatConfig;
   mediaInput?: ModelMediaInputConfig;
+  /** Models this entry supersedes (pre-announced deprecation). */
+  replaces?: string[];
+  /** Model that supersedes this entry (pre-announced deprecation target). */
+  replacedBy?: string;
 };

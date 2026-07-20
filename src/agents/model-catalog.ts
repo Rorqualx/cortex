@@ -292,6 +292,12 @@ export function loadManifestModelCatalog(params: {
     if (row.compat) {
       entry.compat = row.compat;
     }
+    if (row.replaces?.length) {
+      entry.replaces = [...row.replaces];
+    }
+    if (row.replacedBy) {
+      entry.replacedBy = row.replacedBy;
+    }
     return entry;
   });
   manifestModelCatalogCache.set(params.config, { snapshot: resolvedSnapshot, rows });
