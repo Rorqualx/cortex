@@ -118,11 +118,20 @@ export type LongTermTypedConfig = {
    * because they're already verbatim-grounded and useful to surface.
    */
   minRecallCount: number;
+  /**
+   * Maximum number of newly promoted slots per epoch. Derived from J-space
+   * capacity research (~20-40 verbalizable concepts). Promoting more than
+   * this floods the next session's context injection and reduces recall
+   * quality for all facts. Capped candidates remain in L2 and re-surface
+   * next epoch — no data loss. Default 30.
+   */
+  maxPromotePerEpoch: number;
 };
 
 export const DEFAULT_LONG_TERM_TYPED_CONFIG: LongTermTypedConfig = {
   maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
   minRecallCount: 1,
+  maxPromotePerEpoch: 30,
 };
 
 export type ConsolidateLongTermTypedOutput = {
@@ -175,6 +184,8 @@ export async function consolidateLongTermTyped(params: {
   let supersededCount = 0;
   let reaffirmedCount = 0;
   let unarchivedCount = 0;
+  /** Slots newly promoted this epoch, for J-space capacity capping. */
+  const newSlotIds: string[] = [];
 
   for (const candidate of candidates.values()) {
     if (candidate.recallCount < config.minRecallCount) {
@@ -184,6 +195,7 @@ export async function consolidateLongTermTyped(params: {
     if (!prior) {
       merged.set(candidate.slot, promote(candidate, params.sessionId, params.modelId));
       promotedCount += 1;
+      newSlotIds.push(candidate.slot);
       continue;
     }
     if (prior.value === candidate.latest.value) {
@@ -200,6 +212,26 @@ export async function consolidateLongTermTyped(params: {
         supersede(prior, candidate, params.now, params.sessionId, params.modelId),
       );
       supersededCount += 1;
+    }
+  }
+
+  // J-space capacity cap: if we promoted more new slots than the verbalizable
+  // workspace can hold (~20-40 concepts), keep only the top-N by recallCount *
+  // confidence. Capped candidates remain in L2 and re-surface next epoch.
+  if (newSlotIds.length > config.maxPromotePerEpoch) {
+    const scored = newSlotIds
+      .map((slot) => {
+        const fact = merged.get(slot);
+        const score = fact ? fact.recallCount * fact.confidence : 0;
+        return { slot, score };
+      })
+      .toSorted((a, b) => b.score - a.score);
+    const keep = new Set(scored.slice(0, config.maxPromotePerEpoch).map((s) => s.slot));
+    for (const slot of newSlotIds) {
+      if (!keep.has(slot)) {
+        merged.delete(slot);
+        promotedCount -= 1;
+      }
     }
   }
 

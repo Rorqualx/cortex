@@ -615,4 +615,69 @@ describe("consolidateLongTermTyped", () => {
     expect(ltt.facts[0].sourceSessionId).toBe("session-new");
     expect(ltt.facts[0].recallCount).toBe(2);
   });
+
+  it("caps newly promoted slots at maxPromotePerEpoch (J-space capacity)", async () => {
+    // Create 35 distinct slots — exceeds default cap of 30.
+    // The top 30 by recallCount * confidence should be kept;
+    // the bottom 5 should be dropped back to L2.
+    const totalSlots = 35;
+    const cap = 30;
+    const slots: Array<{ id: number; recallCount: number; confidence: number }> = [];
+    for (let i = 0; i < totalSlots; i++) {
+      // Vary recallCount and confidence so we get a clear ordering.
+      // High-index slots have lower scores and should be dropped.
+      const recallCount = 1 + Math.floor(i / 5); // 0-4→1, 5-9→2, ..., 30-34→7
+      const confidence = 0.5 + (totalSlots - i) * 0.01; // 0.85 down to ~0.51
+      slots.push({ id: i, recallCount, confidence });
+    }
+
+    for (const s of slots) {
+      // Write the same fact across `recallCount` chunks to build recall.
+      for (let r = 0; r < s.recallCount; r++) {
+        await writeChunkWithTyped(
+          `chunk-cap-s${s.id}-r${r}`,
+          [
+            {
+              id: `tf-cap-${s.id}-${r}`,
+              slot: `test:slot_${String(s.id).padStart(2, "0")}`,
+              value: `value_${s.id}`,
+              sourceSpan: `source ${s.id}`,
+              unit: null,
+              confidence: s.confidence,
+              createdAt: NOW,
+            },
+          ],
+          NOW,
+        );
+      }
+    }
+
+    const out = await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+    expect(out.promotedCount).toBe(cap);
+    expect(out.activeCount).toBe(cap);
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts).toHaveLength(cap);
+
+    // The kept slots should be the ones with the highest recallCount * confidence.
+    // Sort slots by score, descending.
+    const sorted = [...slots].toSorted(
+      (a, b) => b.recallCount * b.confidence - a.recallCount * a.confidence,
+    );
+    const expectedKept = new Set(
+      sorted.slice(0, cap).map((s) => `test:slot_${String(s.id).padStart(2, "0")}`),
+    );
+    const expectedDropped = new Set(
+      sorted.slice(cap).map((s) => `test:slot_${String(s.id).padStart(2, "0")}`),
+    );
+
+    for (const fact of ltt.facts) {
+      expect(expectedKept.has(fact.slot)).toBe(true);
+      expect(expectedDropped.has(fact.slot)).toBe(false);
+    }
+  });
 });
