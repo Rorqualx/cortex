@@ -230,7 +230,11 @@ describe("evaluateGate", () => {
       name: "candidate",
       env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
     });
-    expect(verdict).toEqual({ status: "pass", reasons: [] });
+    expect(verdict.status).toBe("pass");
+    expect(verdict.reasons).toEqual([]);
+    expect(verdict.qualityFacets).toBeDefined();
+    expect(verdict.qualityFacets!.safety).toBe(1);
+    expect(verdict.qualityFacets!.utility).toBe(0.5);
   });
 
   it("short-circuits on validation failure", async () => {

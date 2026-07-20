@@ -27,9 +27,25 @@ const MIN_BODY_CHARS = 200;
 const CLEAN_SESSION_MIN_BODY_CHARS = 100;
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 
+export type QualityFacets = {
+  /** Session-success-score mapped to 0-1. Higher = more useful in practice. */
+  utility: number;
+  /** Replay-gate pass rate across N samples (0-1). Measures cross-session reliability. */
+  robustness: number;
+  /** Safety score from security scan (0-1). 1.0 = no findings, scores down from criticals. */
+  safety: number;
+};
+
 export type GateVerdict = {
   status: "pass" | "fail";
   reasons: string[];
+  /**
+   * Tri-facet quality scores computed from available signals during gating.
+   * utility ← session-success-score, robustness ← replay-gate pass rate,
+   * safety ← security scan findings. Present even when status is "pass"
+   * so callers can still read the scores.
+   */
+  qualityFacets?: QualityFacets;
 };
 
 export type SecurityFinding = {
@@ -249,8 +265,32 @@ export async function evaluateGate(params: {
   name: string;
   successScore?: number;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Optional per-facet minimum thresholds. When any computed facet falls below
+   * its threshold, the gate fails even when all other checks pass. Omit to
+   * run the legacy gate (security + validation + collision only).
+   */
+  minFacets?: Partial<QualityFacets>;
 }): Promise<GateVerdict> {
   const security = await staticSecurityScan(params.skillDir);
+  const hasCriticalFindings = security.findings.some((f) => f.severity === "critical");
+
+  // Compute quality facets from available signals.
+  const facets: QualityFacets = {
+    // Utility: session-success-score mapped to 0-1. When no score is available,
+    // default to 0.5 (neutral). Sanity-cap at 1.0 since success scores above 1
+    // are clamped for the facet.
+    utility: Math.min(1, params.successScore ?? 0.5),
+    // Robustness: not computed yet (replay-gate is a separate lane). Default to
+    // 0.5 (neutral) until the LLM-replay-gate integration threads a pass rate.
+    robustness: 0.5,
+    // Safety: 1.0 when no critical findings; scales down as criticals increase.
+    // Each critical finding subtracts 0.25, floor at 0.
+    safety: hasCriticalFindings
+      ? Math.max(0, 1 - security.findings.filter((f) => f.severity === "critical").length * 0.25)
+      : 1,
+  };
+
   if (security.status === "fail") {
     const criticalFindings = security.findings.filter((f) => f.severity === "critical");
     if (criticalFindings.length > 0) {
@@ -259,16 +299,47 @@ export async function evaluateGate(params: {
         reasons: criticalFindings.map(
           (f) => `[security] ${f.message} (${f.id} at ${f.file}${f.line ? `:${f.line}` : ""})`,
         ),
+        qualityFacets: facets,
       };
     }
   }
+
   const validation = await validateSkillDir(params.skillDir, params.successScore);
   if (validation.status === "fail") {
-    return validation;
+    return { ...validation, qualityFacets: facets };
   }
+
   const collision = await nameCollisionCheck({ name: params.name, env: params.env });
   if (collision.status === "fail") {
-    return collision;
+    return { ...collision, qualityFacets: facets };
   }
-  return { status: "pass", reasons: [] };
+
+  // If minFacets thresholds are specified, check each facet.
+  const reasons: string[] = [];
+  if (params.minFacets) {
+    if (params.minFacets.utility !== undefined && facets.utility < params.minFacets.utility) {
+      reasons.push(
+        `quality facet utility=${facets.utility.toFixed(2)} below threshold ${params.minFacets.utility}`,
+      );
+    }
+    if (
+      params.minFacets.robustness !== undefined &&
+      facets.robustness < params.minFacets.robustness
+    ) {
+      reasons.push(
+        `quality facet robustness=${facets.robustness.toFixed(2)} below threshold ${params.minFacets.robustness}`,
+      );
+    }
+    if (params.minFacets.safety !== undefined && facets.safety < params.minFacets.safety) {
+      reasons.push(
+        `quality facet safety=${facets.safety.toFixed(2)} below threshold ${params.minFacets.safety}`,
+      );
+    }
+  }
+
+  return {
+    status: reasons.length === 0 ? "pass" : "fail",
+    reasons,
+    qualityFacets: facets,
+  };
 }
