@@ -631,6 +631,53 @@ describe("retrieveTopK typed-fact tier", () => {
   });
 });
 
+describe("retrieveTopK failure-fact significance", () => {
+  it("auto-marks failure: typed facts as significant for FSRS slower decay", async () => {
+    // A failure: typed fact and a non-failure typed fact with identical lexical
+    // relevance. The failure fact should get a recency boost from significance.
+    const failureFact: TypedFact = {
+      id: "tf-fail",
+      slot: "failure:doom_loop_pattern",
+      value: "repeated grep on empty dir wasted 5 iterations",
+      sourceSpan: "repeated grep on empty dir wasted 5 iterations",
+      unit: null,
+      confidence: 0.8,
+      createdAt: NOW,
+    };
+    const normalFact: TypedFact = {
+      id: "tf-normal",
+      slot: "user:phone",
+      value: "555-1234",
+      sourceSpan: "phone 555-1234",
+      unit: null,
+      confidence: 0.8,
+      createdAt: NOW,
+    };
+    await writeChunk("chunk-fail", [], NOW, [failureFact, normalFact]);
+
+    const { facts } = await retrieveTopK({
+      query: "grep iterations",
+      storage,
+      topK: 5,
+      now: NOW + 1000 * 60 * 60 * 24 * 14, // 14 days later
+    });
+
+    // Both should be retrieved (both match some tokens)
+    const failureHit = facts.find((f) => f.fact.dedupKey === "failure:doom_loop_pattern");
+    expect(failureHit).toBeDefined();
+
+    // The failure fact should have `significant` propagated through
+    // (typedFactAsL2Fact sets it based on slot prefix)
+    expect(failureHit?.fact.significant).toBe(true);
+
+    // The normal fact should NOT have significant set
+    const normalHit = facts.find((f) => f.fact.dedupKey === "user:phone");
+    if (normalHit) {
+      expect(normalHit.fact.significant).toBeFalsy();
+    }
+  });
+});
+
 describe("retrieveTopK cross-brain reconciliation", () => {
   it("does not surface a long-term prose fact that has been marked supersededBy", async () => {
     // Need at least one L2 chunk for retrieval to enter the loop.
@@ -927,5 +974,80 @@ describe("retrieveTopK contextWindow (RaMem reinstatement)", () => {
     const lt = result.find((r) => r.tier === "longterm");
     expect(lt).toBeDefined();
     expect(lt!.contextWindow).toBeUndefined();
+  });
+});
+
+describe("retrieveTopK retrieval mode", () => {
+  beforeEach(async () => {
+    await writeChunk("chunk-mode", [
+      {
+        id: "fm1",
+        text: "rust async runtime tokio",
+        importance: 0.8,
+        createdAt: NOW,
+        dedupKey: "k:m1",
+      },
+      {
+        id: "fm2",
+        text: "python gil threading lock",
+        importance: 0.6,
+        createdAt: NOW,
+        dedupKey: "k:m2",
+      },
+    ]);
+  });
+
+  const fullConfig = {
+    useEpochFirst: false,
+    epochExpandTopN: 3,
+    useSubmodularSelect: false,
+    submodularDiversityWeight: 0.3,
+    submodularCoverageWeight: 0.3,
+    submodularTokenBudget: null as number | null,
+    mode: "blended" as const,
+  };
+
+  it("keyword mode zeroes semantic signal but still finds lexical matches", async () => {
+    const { facts } = await retrieveTopK({
+      query: "tokio runtime",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...fullConfig, mode: "keyword" },
+      queryEmbedding: [1.0, 0.0],
+    });
+    expect(facts.length).toBeGreaterThan(0);
+    expect(facts[0].fact.text).toContain("tokio");
+    // Semantic signal should be zeroed in keyword mode
+    expect(facts[0].signals.semantic).toBe(0);
+    // BM25 should be non-zero for matching facts
+    expect(facts[0].signals.bm25).toBeGreaterThan(0);
+  });
+
+  it("semantic mode zeroes bm25 signal", async () => {
+    const { facts } = await retrieveTopK({
+      query: "tokio runtime",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...fullConfig, mode: "semantic" },
+    });
+    // In semantic mode, bm25 should be zeroed in signals for all results
+    for (const f of facts) {
+      expect(f.signals.bm25).toBe(0);
+    }
+  });
+
+  it("blended mode keeps both bm25 and semantic signals", async () => {
+    const { facts } = await retrieveTopK({
+      query: "tokio runtime",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...fullConfig, mode: "blended" },
+    });
+    expect(facts.length).toBeGreaterThan(0);
+    // In blended mode, bm25 should be non-zero for lexical matches
+    expect(facts[0].signals.bm25).toBeGreaterThan(0);
   });
 });

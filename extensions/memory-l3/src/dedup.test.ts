@@ -64,4 +64,24 @@ describe("liftToL2Fact", () => {
     expect(a.text).toBe("hi");
     expect(a.dedupKey).toBe("k:1");
   });
+
+  it("auto-marks failure: dedupKeys as significant", () => {
+    const fact = liftToL2Fact(
+      {
+        text: "doom loop from repeated grep",
+        importance: 0.7,
+        dedupKey: "failure:doom_loop_pattern",
+      },
+      1700,
+    );
+    expect(fact.significant).toBe(true);
+  });
+
+  it("does not mark non-failure dedupKeys as significant", () => {
+    const fact = liftToL2Fact(
+      { text: "user likes tea", importance: 0.5, dedupKey: "user_preference:tea" },
+      1700,
+    );
+    expect(fact.significant).toBeFalsy();
+  });
 });

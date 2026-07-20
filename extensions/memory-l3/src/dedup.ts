@@ -34,6 +34,9 @@ export function dropAlreadyKnown(
 }
 
 export function liftToL2Fact(fact: ExtractedFact, createdAt: number): L2Fact {
+  // Failure-avoidance facts get automatic significance so FSRS gives them
+  // 2.7× slower decay — mistakes should persist longer than trivia.
+  const isFailureFact = fact.dedupKey.startsWith("failure:");
   return {
     id: `fact-${randomUUID().slice(0, 8)}`,
     text: fact.text,
@@ -41,7 +44,7 @@ export function liftToL2Fact(fact: ExtractedFact, createdAt: number): L2Fact {
     createdAt,
     dedupKey: fact.dedupKey,
     reasoning: fact.reasoning,
-    significant: fact.significant,
+    significant: fact.significant || isFailureFact || undefined,
     certainty: fact.certainty,
     semanticEntropy: fact.semanticEntropy,
   };

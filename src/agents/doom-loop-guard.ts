@@ -20,6 +20,8 @@ const log = createSubsystemLogger("agents/doom-loop-guard");
 const DEFAULT_MAX_CONSECUTIVE_FAILURES = 5;
 const DEFAULT_FAILURE_WINDOW_MS = 300_000; // 5 minutes
 
+/** Maximum number of failure records to retain in the ring buffer. */
+const DEFAULT_FAILURE_HISTORY_SIZE = 20;
 /** Default buffer size for semantic convergence detection. */
 const DEFAULT_CONVERGENCE_BUFFER_SIZE = 5;
 /** Default cosine similarity threshold above which responses are considered "same". */
@@ -53,6 +55,18 @@ export type DoomLoopGuardConfig = {
 };
 
 /**
+ * A single failure record in the guard's failure history.
+ */
+export type FailureRecord = {
+  errorType: string;
+  timestamp: number;
+  /** Name of the tool that failed, if known. */
+  toolName?: string;
+  /** Short error message or summary, if available. */
+  errorMessage?: string;
+};
+
+/**
  * Doom loop guard snapshot for diagnostics
  */
 export type DoomLoopGuardSnapshot = {
@@ -62,6 +76,10 @@ export type DoomLoopGuardSnapshot = {
   isArmed: boolean;
   /** Timestamp of the last successful turn (last `reset()`). Used for Revise boundary. */
   lastSuccessAt?: number;
+  /** Recent failure history (ring buffer, newest first). */
+  failureHistory: FailureRecord[];
+  /** Frequency of each error type within the current failure window. */
+  failurePatterns: Record<string, number>;
 };
 
 /**
@@ -126,6 +144,9 @@ type GuardState = {
   lastFailureType?: string;
   isArmed: boolean;
   lastSuccessAt?: number;
+  // Failure history (ring buffer)
+  failureHistory: FailureRecord[];
+  failureHistoryMaxSize: number;
   // Semantic convergence detection state
   embeddingBuffer: number[][];
   convergenceBufferSize: number;
@@ -144,6 +165,10 @@ export type DoomLoopGuard = {
   recordFailure: (errorType: string, timestamp: number) => DoomLoopVerdict;
   /** Reset counter on successful turn */
   reset: () => void;
+  /** Get recent failure history (newest first) */
+  getFailureHistory: () => FailureRecord[];
+  /** Get error-type frequency counts within the current failure window */
+  getFailurePatterns: () => Record<string, number>;
   /** Current state for diagnostics */
   snapshot: () => DoomLoopGuardSnapshot;
   /**
@@ -201,6 +226,8 @@ export function createDoomLoopGuard(
       DEFAULT_MAX_CONSECUTIVE_FAILURES,
     ),
     failureWindowMs: asPositiveInt(config?.failureWindowMs, DEFAULT_FAILURE_WINDOW_MS),
+    failureHistory: [],
+    failureHistoryMaxSize: DEFAULT_FAILURE_HISTORY_SIZE,
     countableFailures: new Set(
       config?.countableFailures ?? [
         "llm_error",
@@ -233,8 +260,27 @@ export function createDoomLoopGuard(
     state.lastFailureAt = undefined;
     state.lastFailureType = undefined;
     state.lastSuccessAt = Date.now();
+    state.failureHistory = [];
     state.embeddingBuffer = [];
     state.convergenceConsecutiveCount = 0;
+  };
+
+  const getFailureHistory = (): FailureRecord[] => {
+    // Return a copy of the ring buffer, newest first
+    return [...state.failureHistory].reverse();
+  };
+
+  const getFailurePatterns = (): Record<string, number> => {
+    const now = Date.now();
+    const windowStart = now - state.failureWindowMs;
+    const patterns: Record<string, number> = {};
+    for (const record of state.failureHistory) {
+      // Only count failures within the current window
+      if (record.timestamp >= windowStart) {
+        patterns[record.errorType] = (patterns[record.errorType] ?? 0) + 1;
+      }
+    }
+    return patterns;
   };
 
   const recordFailure = (errorType: string, timestamp: number): DoomLoopVerdict => {
@@ -262,6 +308,17 @@ export function createDoomLoopGuard(
       }
     }
 
+    // Record structured failure entry before incrementing counter
+    const record: FailureRecord = {
+      errorType,
+      timestamp,
+    };
+    state.failureHistory.push(record);
+    // Ring buffer: trim oldest entries
+    while (state.failureHistory.length > state.failureHistoryMaxSize) {
+      state.failureHistory.shift();
+    }
+
     // Increment failure counter
     state.consecutiveFailures++;
     state.lastFailureAt = timestamp;
@@ -273,7 +330,10 @@ export function createDoomLoopGuard(
 
     // Check threshold
     if (state.consecutiveFailures >= state.maxConsecutiveFailures) {
-      const reason = `Doom loop detected: ${state.consecutiveFailures} consecutive failures of type '${errorType}'`;
+      const patterns = getFailurePatterns();
+      const topType = Object.entries(patterns).sort((a, b) => b[1] - a[1])[0];
+      const patternDesc = topType ? ` (most frequent: ${topType[0]} ×${topType[1]})` : "";
+      const reason = `Doom loop detected: ${state.consecutiveFailures} consecutive failures of type '${errorType}'${patternDesc}`;
       log.error(reason);
       return {
         shouldAbort: true,
@@ -292,6 +352,8 @@ export function createDoomLoopGuard(
     lastFailureType: state.lastFailureType,
     isArmed: state.isArmed,
     lastSuccessAt: state.lastSuccessAt,
+    failureHistory: getFailureHistory(),
+    failurePatterns: getFailurePatterns(),
   });
 
   const getFailureBoundary = (): number | undefined => state.lastSuccessAt;
@@ -367,6 +429,8 @@ export function createDoomLoopGuard(
     arm,
     recordFailure,
     reset,
+    getFailureHistory,
+    getFailurePatterns,
     snapshot,
     getFailureBoundary,
     createRevisePrompt,

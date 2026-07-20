@@ -207,7 +207,8 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
   };
 }
 
-// PROMPT_VERSION = 9 — adds SEMANTIC_ENTROPY confidence scoring on prose facts.
+// PROMPT_VERSION = 10 — adds FAILURE FACTS extraction (failure:* typed/prose facts for mistake avoidance).
+// v9 added SEMANTIC_ENTROPY confidence scoring on prose facts.
 // v8 added CERTAINTY tagging so consolidation can hold tentative observations to higher promotion bars.
 // v7 added DECISIONS and ACTIONS co-emission. v6 added SIGNIFICANT.
 // v5 added REASONING. v4 co-emitted prose + typed.
@@ -216,8 +217,16 @@ const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the c
 1. PROSE FACTS — durable LLM-distilled units of information for future recall.
 2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
 3. DECISIONS & ACTIONS — structured decisions reached and action items identified.
+4. FAILURE FACTS — lessons from dead-ends, doom-loops, and mistakes. Emit typed facts with slot prefix 'failure:' (e.g. 'failure:doom_loop_pattern', 'failure:dead_end_search', 'failure:incorrect_assumption'). The value should be a concise description of what went wrong and what to do instead. Also emit a corresponding prose fact with dedupKey prefix 'failure:' and SIGNIFICANT=true so the mistake persists in long-term memory.
 
-Rules (PROMPT_VERSION=8):
+Failure-pattern signals to watch for:
+- Repeated tool calls that produced errors or empty results (doom loop)
+- Search queries that returned irrelevant results followed by rephrased searches (dead-end search)
+- Approaches that were tried and abandoned in favor of a different strategy
+- Incorrect assumptions that led to wasted work
+- Commands that failed and had to be rolled back
+
+Rules (PROMPT_VERSION=10):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions.
@@ -263,8 +272,11 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 1. PROSE FACTS — compressed, token-efficient units. Drop articles, filler words, and redundant connectors. Abbreviate common words where meaning is preserved. Preserve exact entities (names, numbers, dates, IDs, paths, versions, URLs) verbatim. Use compact notation: e.g., "usr:morning_standups=9AM" instead of full sentences.
 2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
 3. DECISIONS & ACTIONS — structured decisions reached and action items identified.
+4. FAILURE FACTS — lessons from dead-ends, doom-loops, mistakes. Emit typed facts with slot prefix 'failure:' (e.g. 'failure:doom_loop_pattern'). Value = concise description of what went wrong + what to do instead. Also emit a prose fact with dedupKey prefix 'failure:' and SIGNIFICANT=true so the mistake persists.
 
-Rules (PROMPT_VERSION=9-NATIVE):
+Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
+
+Rules (PROMPT_VERSION=10-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional compressed sentence explaining WHY this fact is worth remembering across sessions.

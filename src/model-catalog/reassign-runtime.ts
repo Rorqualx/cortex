@@ -27,6 +27,7 @@ import {
 } from "../cron/store.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { listDiscoveredModels, listSilentUpgrades } from "./discovered-store.js";
+import { loadOpenClawProviderIndex } from "./provider-index/index.js";
 import type { ReassignApplyDeps } from "./reassign-apply.js";
 import {
   collectAgentBindings,
@@ -35,6 +36,7 @@ import {
   type ResolveRef,
 } from "./reassign-collect.js";
 import {
+  type DeprecatedReplacement,
   type ModelBinding,
   type ReassignmentPlan,
   buildReplacementDecisions,
@@ -125,11 +127,61 @@ export async function buildRuntimeReassignmentPlan(
   const { db } = openOpenClawStateDatabase();
   const deprecated = listDiscoveredModels(db, { status: "deprecated" });
   const upgrades = listSilentUpgrades(db);
-  if (deprecated.length === 0 && upgrades.length === 0) {
+
+  const catalog = await loadModelCatalog({ config: cfg, readOnly: true });
+
+  // Collect pre-announced deprecations from catalog entries (manifest/provider-index
+  // data that carries a replacedBy hint before the model actually vanishes).
+  const catalogReplacements: DeprecatedReplacement[] = [];
+  for (const entry of catalog) {
+    if (entry.replacedBy) {
+      catalogReplacements.push({
+        provider: entry.provider,
+        deprecatedModelId: entry.id,
+        replacementModelId: entry.replacedBy,
+      });
+    }
+  }
+
+  // Also collect pre-announced deprecations from the provider-index preview catalog
+  // (pre-install discovery data; models here may not yet be in the runtime catalog).
+  const providerIndexReplacements: DeprecatedReplacement[] = [];
+  try {
+    const index = loadOpenClawProviderIndex();
+    if (index) {
+      for (const provider of Object.values(index.providers)) {
+        if (!provider.previewCatalog) continue;
+        for (const model of provider.previewCatalog.models) {
+          if (model.status === "deprecated" && model.replacedBy) {
+            providerIndexReplacements.push({
+              provider: provider.id,
+              deprecatedModelId: model.id,
+              replacementModelId: model.replacedBy,
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    // Provider-index is advisory; failures never block reassignment planning.
+  }
+
+  // Merge pre-specified replacements, with catalog entries taking priority.
+  const preSpecifiedByKey = new Map<string, DeprecatedReplacement>();
+  // Provider-index second so catalog entries take priority.
+  for (const r of providerIndexReplacements) {
+    const key = `${r.provider}/${r.deprecatedModelId}`.toLowerCase();
+    if (!preSpecifiedByKey.has(key)) preSpecifiedByKey.set(key, r);
+  }
+  for (const r of catalogReplacements) {
+    const key = `${r.provider}/${r.deprecatedModelId}`.toLowerCase();
+    preSpecifiedByKey.set(key, r);
+  }
+
+  if (deprecated.length === 0 && upgrades.length === 0 && preSpecifiedByKey.size === 0) {
     return { plan: { actions: [], unresolved: [] }, deprecatedCount: 0 };
   }
 
-  const catalog = await loadModelCatalog({ config: cfg, readOnly: true });
   const candidates = catalog.map(toCandidate);
   const defaultRef = resolveConfiguredModelRef({
     cfg,
@@ -147,13 +199,20 @@ export async function buildRuntimeReassignmentPlan(
     deprecatedModelId: u.from,
     replacementModelId: u.to,
   }));
-  const replacements = [...deprecatedReplacements, ...upgradeReplacements];
+  // Pre-specified replacements take priority over scored ones.
+  const replacements = [
+    ...deprecatedReplacements.filter(
+      (r) => !preSpecifiedByKey.has(`${r.provider}/${r.deprecatedModelId}`.toLowerCase()),
+    ),
+    ...upgradeReplacements,
+    ...preSpecifiedByKey.values(),
+  ];
 
   const aliasIndex = buildModelAliasIndex({ cfg, defaultProvider: DEFAULT_PROVIDER });
   const resolveRef = buildResolveRef(cfg, aliasIndex);
   const bindings = collectAllBindings(cfg, resolveRef, aliasIndex);
   const plan = planReassignments({ bindings, replacements });
-  return { plan, deprecatedCount: deprecated.length };
+  return { plan, deprecatedCount: deprecated.length + preSpecifiedByKey.size };
 }
 
 /**

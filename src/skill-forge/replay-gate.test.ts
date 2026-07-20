@@ -67,6 +67,40 @@ describe("parseLlmJudgeResponse", () => {
   });
 });
 
+describe("parseLlmJudgeResponse — overfitting risk", () => {
+  it("parses overfitting risk from the third line", () => {
+    const raw = "SAFE_USEFUL\nGood generalizable workflow.\nOVERFITTING_RISK: LOW";
+    const result = parseLlmJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.overfittingRisk).toBe("LOW");
+  });
+
+  it("parses HIGH overfitting risk", () => {
+    const raw = "SAFE_NEUTRAL\nNarrowly scoped to one file path.\nRISK: HIGH";
+    const result = parseLlmJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.overfittingRisk).toBe("HIGH");
+  });
+
+  it("leaves overfittingRisk undefined when third line is absent", () => {
+    const raw = "SAFE_USEFUL\nWell-scoped recovery workflow.";
+    const result = parseLlmJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.overfittingRisk).toBeUndefined();
+  });
+
+  it("leaves overfittingRisk undefined when third line has no recognized token", () => {
+    const raw = "SAFE_USEFUL\nGood skill.\nSome extra commentary here.";
+    const result = parseLlmJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.overfittingRisk).toBeUndefined();
+  });
+});
+
 describe("SKILL_FORGE_LLM_JUDGE_SYSTEM", () => {
   it("enumerates the three valid verdict tokens", () => {
     expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/SAFE_USEFUL/u);
@@ -91,6 +125,16 @@ describe("SKILL_FORGE_LLM_JUDGE_SYSTEM", () => {
   it("includes process-quality criteria: provenance", () => {
     expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/PROVENANCE/u);
     expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/Black-box skills/u);
+  });
+
+  it("includes generalization criterion for overfitting risk", () => {
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/GENERALIZATION/u);
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/overfit/u);
+  });
+
+  it("includes baseline comparison criterion", () => {
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/BASELINE COMPARISON/u);
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/baseline agent capability/u);
   });
 });
 
