@@ -79,6 +79,7 @@ describe("node-hosted skill snapshots", () => {
     });
 
     const entries = loadWorkspaceSkillEntries("/workspace", {
+      workspaceOnly: true,
       eligibility: { nodeSkills: { canExec: true } },
     });
     const snapshot = buildWorkspaceSkillSnapshot("/workspace", { entries });

@@ -116,6 +116,7 @@ import {
 } from "../openai-routing.js";
 import { resolveProviderIdForAuth } from "../provider-auth-aliases.js";
 import { runAgentCleanupStep } from "../run-cleanup-timeout.js";
+import { resolveAgentRunSessionTarget } from "../run-session-target.js";
 import { buildAgentRuntimeAuthPlan } from "../runtime-plan/auth.js";
 import { buildAgentRuntimePlan } from "../runtime-plan/build.js";
 import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
@@ -1419,7 +1420,23 @@ export async function runEmbeddedAgent(
       const overloadProfileRotationLimit = resolveOverloadProfileRotationLimit(params.config);
       const rateLimitProfileRotationLimit = resolveRateLimitProfileRotationLimit(params.config);
       let activeSessionId = params.sessionId;
-      let activeSessionFile = params.sessionFile;
+      // Upstream deprecated the required sessionFile in favor of sessionTarget; ephemeral
+      // runs (e.g. the hidden commitments extractor) omit it. Resolve a concrete throwaway
+      // transcript target from the run identity so every file-backed path below (attempt
+      // dispatch, overflow/timeout compaction side effects, context-engine maintenance,
+      // tool-result truncation) keeps a real file to operate on. A caller-supplied
+      // sessionFile short-circuits, so real sessions resolve to the exact same value.
+      let activeSessionFile =
+        params.sessionFile ??
+        (
+          await resolveAgentRunSessionTarget({
+            agentId: params.agentId,
+            config: params.config,
+            sessionId: params.sessionId,
+            sessionKey: resolvedSessionKey,
+            sessionTarget: params.sessionTarget,
+          })
+        ).sessionFile;
       let suppressNextUserMessagePersistence = params.suppressNextUserMessagePersistence ?? false;
       // The embedded agent owns JSONL persistence; this marker lets the outer retry avoid
       // replaying the same inbound channel message after overflow compaction.

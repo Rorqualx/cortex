@@ -22,6 +22,7 @@ import {
 } from "../discovery/agent-filter.js";
 import { normalizeSkillFilter } from "../discovery/filter.js";
 import { filterPromptVisibleSkillEntries } from "../discovery/skill-index.js";
+import { mergeRemoteNodeSkillEntries } from "../runtime/remote-skills.js";
 import type {
   OpenClawSkillMetadata,
   ParsedSkillFrontmatter,
@@ -33,8 +34,17 @@ import type {
 import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";
 import { getArchivedSkillFiles } from "../workshop/curator.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
-import { resolveBundledAllowlist, shouldIncludeSkill } from "./config.js";
-import { resolveOpenClawMetadata, resolveSkillInvocationPolicy } from "./frontmatter.js";
+import {
+  hasUnavailableSkillSecretOwners,
+  isSkillSecretOwnerUnavailable,
+  resolveBundledAllowlist,
+  shouldIncludeSkill,
+} from "./config.js";
+import {
+  resolveOpenClawMetadata,
+  resolveSkillInvocationPolicy,
+  resolveSkillKey,
+} from "./frontmatter.js";
 import { loadSkillsFromDirSafe, readSkillFrontmatterSafe } from "./local-loader.js";
 import { resolvePluginSkillDirs } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
@@ -861,6 +871,7 @@ function loadSkillEntries(
     pluginSkillsDir?: string;
     forgeSkillsDir?: string;
     includeArchived?: boolean;
+    workspaceOnly?: boolean;
   },
 ): SkillEntry[] {
   const limits = resolveSkillsLimits(opts?.config, opts?.agentId);
@@ -1120,17 +1131,26 @@ function loadSkillEntries(
     return loadedSkills;
   };
 
+  // Sandbox/node-scoped loads pass workspaceOnly to list only workspace-materialized
+  // skills. Every machine-level source (bundled, plugin/extra, managed, skill-forge,
+  // personal/project .agents) is empty so remote hosts and sandboxes never inherit
+  // gateway-local skills that cannot execute in their context.
+  const workspaceOnly = opts?.workspaceOnly === true;
   const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
   const workspaceSkillsDir = path.resolve(workspaceDir, "skills");
-  const bundledSkillsDir = opts?.bundledSkillsDir ?? resolveBundledSkillsDir();
+  const bundledSkillsDir = workspaceOnly
+    ? undefined
+    : (opts?.bundledSkillsDir ?? resolveBundledSkillsDir());
   const pluginSkillsDir = opts?.pluginSkillsDir ?? path.join(CONFIG_DIR, "plugin-skills");
-  const extraDirsRaw = opts?.config?.skills?.load?.extraDirs ?? [];
+  const extraDirsRaw = workspaceOnly ? [] : (opts?.config?.skills?.load?.extraDirs ?? []);
   const extraDirs = normalizeTrimmedStringList(extraDirsRaw);
-  const pluginSkillDirs = resolvePluginSkillDirs({
-    workspaceDir,
-    config: opts?.config,
-    pluginSkillsDir,
-  });
+  const pluginSkillDirs = workspaceOnly
+    ? []
+    : resolvePluginSkillDirs({
+        workspaceDir,
+        config: opts?.config,
+        pluginSkillsDir,
+      });
   const mergedExtraDirs = [...extraDirs, ...pluginSkillDirs];
 
   const bundledSkills = bundledSkillsDir
@@ -1154,40 +1174,48 @@ function loadSkillEntries(
       limits,
     }),
   ];
-  const managedSkills = loadSkills({
-    dir: managedSkillsDir,
-    source: "openclaw-managed",
-  });
+  const managedSkills = workspaceOnly
+    ? []
+    : loadSkills({
+        dir: managedSkillsDir,
+        source: "openclaw-managed",
+      });
   // Skill-forge promotes gate-passed skills to <state>/skill-forge/skills/<name>.
   // Underscore siblings (_staging, _retired) hold unvetted drafts and demoted
   // skills; loading them would bypass the forge gate, so load per-skill dirs.
   const forgeSkillsRoot = opts?.forgeSkillsDir ?? resolveSkillForgeSkillsRoot();
-  const forgeSkills = listChildDirectories(forgeSkillsRoot, {
-    followSymlinks: false,
-    maxCandidateDirs: limits.maxCandidatesPerRoot,
-  })
-    .dirs.filter((name) => !name.startsWith("_"))
-    .toSorted()
-    .slice(0, Math.max(0, limits.maxSkillsLoadedPerSource))
-    .flatMap((name) =>
-      loadSkills({
-        dir: path.join(forgeSkillsRoot, name),
-        source: "openclaw-skill-forge",
-      }),
-    );
+  const forgeSkills = workspaceOnly
+    ? []
+    : listChildDirectories(forgeSkillsRoot, {
+        followSymlinks: false,
+        maxCandidateDirs: limits.maxCandidatesPerRoot,
+      })
+        .dirs.filter((name) => !name.startsWith("_"))
+        .toSorted()
+        .slice(0, Math.max(0, limits.maxSkillsLoadedPerSource))
+        .flatMap((name) =>
+          loadSkills({
+            dir: path.join(forgeSkillsRoot, name),
+            source: "openclaw-skill-forge",
+          }),
+        );
   const osHomeDir = resolveUserHomeDir();
   const personalAgentsSkillsDir = osHomeDir
     ? path.resolve(osHomeDir, ".agents", "skills")
     : path.resolve(".agents", "skills");
-  const personalAgentsSkills = loadSkills({
-    dir: personalAgentsSkillsDir,
-    source: "agents-skills-personal",
-  });
+  const personalAgentsSkills = workspaceOnly
+    ? []
+    : loadSkills({
+        dir: personalAgentsSkillsDir,
+        source: "agents-skills-personal",
+      });
   const projectAgentsSkillsDir = path.resolve(workspaceDir, ".agents", "skills");
-  const projectAgentsSkills = loadSkills({
-    dir: projectAgentsSkillsDir,
-    source: "agents-skills-project",
-  });
+  const projectAgentsSkills = workspaceOnly
+    ? []
+    : loadSkills({
+        dir: projectAgentsSkillsDir,
+        source: "agents-skills-project",
+      });
   const workspaceSkills = loadSkills({
     dir: workspaceSkillsDir,
     source: "openclaw-workspace",
@@ -1367,6 +1395,9 @@ export function buildWorkspaceSkillSnapshot(
     prompt,
     skills: eligible.map((entry) => ({
       name: entry.skill.name,
+      // Persist the config key so a later degraded-secret run can match this
+      // skill's isolated owner even when it differs from the prompt-facing name.
+      skillKey: resolveSkillKey(entry.skill, entry),
       primaryEnv: entry.metadata?.primaryEnv,
       requiredEnv: entry.metadata?.requires?.env?.slice(),
     })),
@@ -1472,8 +1503,85 @@ export function resolveSkillsPromptForRun(params: {
   eligibility?: SkillEligibilityContext;
 }): string {
   const snapshotPrompt = params.skillsSnapshot?.prompt?.trim();
+  // An empty saved snapshot is authoritative: it deliberately exposes no skills,
+  // so never fall through to rebuilding from current entries.
+  if (params.skillsSnapshot && !snapshotPrompt) {
+    return "";
+  }
   if (snapshotPrompt) {
-    return snapshotPrompt;
+    // Fail closed whenever a skill whose configured secret was isolated at
+    // startup could surface in the persisted prompt. Leaking a skill whose
+    // secret is broken is a security regression, so we only ever return the
+    // snapshot after proving no unavailable owner is represented.
+    const snapshotHasLegacySkillIdentity = params.skillsSnapshot?.skills.some(
+      (skill) => !skill.skillKey,
+    );
+    const snapshotHasUnavailableSkill =
+      params.skillsSnapshot?.skills.some((skill) =>
+        isSkillSecretOwnerUnavailable(skill.skillKey ?? skill.name),
+      ) ||
+      (snapshotHasLegacySkillIdentity && hasUnavailableSkillSecretOwners());
+    // Older snapshots predate per-skill config keys and precise catalog markup,
+    // so a degraded run cannot safely filter them: fail closed instead.
+    if (
+      snapshotHasUnavailableSkill &&
+      params.skillsSnapshot?.promptFormatVersion !== WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION
+    ) {
+      return "";
+    }
+    // Ambiguous legacy identities cannot be matched to a specific owner, so any
+    // unavailable skill secret forces a full fail-closed on the snapshot.
+    if (snapshotHasLegacySkillIdentity && hasUnavailableSkillSecretOwners()) {
+      return "";
+    }
+    const unavailableNames = new Set(
+      params.skillsSnapshot?.skills
+        .filter(
+          (skill) => skill.skillKey !== undefined && isSkillSecretOwnerUnavailable(skill.skillKey),
+        )
+        .map((skill) => escapeXml(skill.name)),
+    );
+    if (unavailableNames.size === 0) {
+      return snapshotPrompt;
+    }
+    // Surgically drop only the unavailable skills' catalog blocks. Any deviation
+    // from the expected single-catalog markup (stray text, duplicate markers,
+    // malformed block) is treated as untrusted and fails closed.
+    const catalogOpen = "<available_skills>";
+    const catalogClose = "</available_skills>";
+    const catalogStart = snapshotPrompt.indexOf(catalogOpen);
+    const catalogEnd = snapshotPrompt.indexOf(catalogClose, catalogStart + catalogOpen.length);
+    if (
+      catalogStart < 0 ||
+      catalogEnd < 0 ||
+      snapshotPrompt.includes(catalogOpen, catalogStart + catalogOpen.length) ||
+      snapshotPrompt.includes(catalogClose, catalogEnd + catalogClose.length)
+    ) {
+      return "";
+    }
+    const bodyStart = catalogStart + catalogOpen.length;
+    const catalogBody = snapshotPrompt.slice(bodyStart, catalogEnd);
+    const blockPattern = /\n[ ]{2}<skill>\n[\s\S]*?\n[ ]{2}<\/skill>/g;
+    let cursor = 0;
+    let filteredBody = "";
+    for (const match of catalogBody.matchAll(blockPattern)) {
+      const gap = catalogBody.slice(cursor, match.index);
+      const block = match[0];
+      const name = /^[ ]{4}<name>(.*)<\/name>$/m.exec(block)?.[1];
+      if (gap.trim() || !name) {
+        return "";
+      }
+      filteredBody += gap;
+      if (!unavailableNames.has(name)) {
+        filteredBody += block;
+      }
+      cursor = (match.index ?? 0) + block.length;
+    }
+    const tail = catalogBody.slice(cursor);
+    if (tail.trim()) {
+      return "";
+    }
+    return `${snapshotPrompt.slice(0, bodyStart)}${filteredBody}${tail}${snapshotPrompt.slice(catalogEnd)}`.trim();
   }
   if (params.entries && params.entries.length > 0) {
     const prompt = buildWorkspaceSkillsPrompt(params.workspaceDir, {
@@ -1499,9 +1607,16 @@ export function loadWorkspaceSkillEntries(
     agentId?: string;
     eligibility?: SkillEligibilityContext;
     includeArchived?: boolean;
+    workspaceOnly?: boolean;
   },
 ): SkillEntry[] {
-  const entries = loadSkillEntries(workspaceDir, opts);
+  // Node-hosted skills join the local catalog here so every consumer of the
+  // workspace entry list (snapshots, sandbox sync, sync targets) sees the same
+  // merged set. The merge no-ops unless the caller passes nodeSkills.canExec.
+  const entries = mergeRemoteNodeSkillEntries(loadSkillEntries(workspaceDir, opts), {
+    canExec: opts?.eligibility?.nodeSkills?.canExec,
+    node: opts?.eligibility?.nodeSkills?.node,
+  });
   const effectiveSkillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
   if (effectiveSkillFilter === undefined) {
     return entries;
@@ -1520,7 +1635,10 @@ export function loadVisibleWorkspaceSkillEntries(
     eligibility?: SkillEligibilityContext;
   },
 ): SkillEntry[] {
-  const entries = loadSkillEntries(workspaceDir, opts);
+  const entries = mergeRemoteNodeSkillEntries(loadSkillEntries(workspaceDir, opts), {
+    canExec: opts?.eligibility?.nodeSkills?.canExec,
+    node: opts?.eligibility?.nodeSkills?.node,
+  });
   const effectiveSkillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
   return filterSkillEntries(entries, opts?.config, effectiveSkillFilter, opts?.eligibility);
 }
