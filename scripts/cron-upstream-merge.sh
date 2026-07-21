@@ -82,6 +82,19 @@ measure() {
   BEHIND="$(printf '%s' "$json"  | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0,"utf8")).behind))')"
   RESIDUAL="$(printf '%s' "$json" | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0,"utf8")).residualConflicts))')"
   RESIDUAL_JSON="$json"
+  # Fail closed on a non-numeric measurement — empty, or the literal "undefined"
+  # that String(JSON.parse(...).behind) prints when the field is absent (error
+  # payload). Otherwise an empty/`undefined` BEHIND is read as `${BEHIND:-0}`==0 in
+  # route and silently reports UP-TO-DATE, or garbage flows into routing.
+  for v in "$BEHIND" "$RESIDUAL"; do
+    case "$v" in
+      ''|*[!0-9]*)
+        log "non-numeric behind/residual from shadow engine (behind='$BEHIND' residual='$RESIDUAL')"
+        ledger "ERROR reason=measure-parse-failed"
+        exit 2
+        ;;
+    esac
+  done
 }
 
 # --- clean auto-land path ---------------------------------------------------
@@ -125,9 +138,13 @@ land_clean() {
   git -C "$MAIN" tag -f "main-backup-pre-upstream-merge" main >/dev/null 2>&1
   git -C "$MAIN" tag -f "upstream-merge-$date" main >/dev/null 2>&1
   if ! git -C "$MAIN" merge --ff-only "$merge_sha" >/tmp/um-land.log 2>&1; then
-    log "ff-only land failed (main advanced mid-run) — main intact, deferring"
+    # Not only a mid-run main advance: an untracked live-tree file colliding with a
+    # new upstream path fails ff-only persistently, so surface the real git error
+    # instead of always blaming an ff race (operator can't diagnose otherwise).
+    log "ff-only land blocked — main intact, deferring:"
+    tail -n 5 /tmp/um-land.log >&2 2>/dev/null || true
     drop_worktree
-    ledger "DEFER reason=ff-race behind=$BEHIND merge=$merge_sha"
+    ledger "DEFER reason=ff-blocked behind=$BEHIND merge=$merge_sha (see /tmp/um-land.log)"
     exit 1
   fi
   # Regenerate the fork-config baseline for the new main and commit it.
@@ -150,6 +167,20 @@ land_clean() {
 stage_init() {
   local date="${1:-$(today)}"
   local branch="resync-staging/$date"
+  # Protect committed resolution work from fresh_worktree's rm -rf. Gate on the dir
+  # existing (always readable), NOT on git linkage — else a corrupt worktree would
+  # skip the guard and get wiped. Only wipe a readable worktree that is 0 commits
+  # ahead of main (a pristine auto-merge leftover — stays reentrant). Commits ahead
+  # of main, or an unreadable linkage (rev-list fails -> "refuse"), refuse the wipe:
+  # a same-day `checkout -B` would reset the branch ref and orphan the commits
+  # (reflog-only recovery). Tradeoff: edited-but-uncommitted work isn't guarded here.
+  if [ -d "$WORKTREE" ]; then
+    local ahead; ahead="$(git -C "$WORKTREE" rev-list --count main..HEAD 2>/dev/null || echo refuse)"
+    if [ "$ahead" != 0 ]; then
+      log "worktree $WORKTREE has committed or unreadable resolution state (ahead=$ahead) — refusing to wipe; remove it manually to redo"
+      exit 2
+    fi
+  fi
   fresh_worktree
   git -C "$WORKTREE" checkout -B "$branch" >/dev/null 2>&1
   git -C "$WORKTREE" merge --no-commit --no-ff "$UPSTREAM_REF" >/tmp/um-stage-merge.log 2>&1 || true
@@ -161,8 +192,34 @@ stage_init() {
 }
 
 stage_finish() {
-  local date="${1:-$(today)}"
-  local branch="resync-staging/$date"
+  local want_date="${1:-}"   # optional; if given, must match the worktree's staged branch
+  # The resolution guards below read git output through grep; a missing worktree
+  # makes git fail to empty stdout, so every guard would pass and we'd re-prove +
+  # force-push a possibly stale existing branch. Require a real worktree first.
+  if ! git -C "$WORKTREE" rev-parse --git-dir >/dev/null 2>&1; then
+    log "worktree $WORKTREE missing — run stage-init first"
+    exit 2
+  fi
+  # Read the staging branch from the worktree (stage_init checked it out), not an
+  # optional date arg — resolution can span midnight, so a today-derived name would
+  # mismatch the checked-out branch and abort with a misleading error.
+  local branch; branch="$(git -C "$WORKTREE" symbolic-ref --short HEAD 2>/dev/null)"
+  if [ -z "$branch" ]; then
+    log "worktree $WORKTREE is not on a staging branch (detached?) — run stage-init"
+    exit 2
+  fi
+  # Only ever prove+push a staging branch; refuse a worktree switched to anything
+  # else so a mis-checked-out worktree cannot smuggle an arbitrary branch downstream.
+  case "$branch" in
+    resync-staging/*) ;;
+    *) log "worktree is on '$branch', not a resync-staging/* branch — refusing"; exit 2 ;;
+  esac
+  # If a date was named explicitly, it must match what is actually staged, else we'd
+  # silently prove+push a different day's branch than the operator asked to finish.
+  if [ -n "$want_date" ] && [ "$branch" != "resync-staging/$want_date" ]; then
+    log "requested date $want_date but worktree is on $branch — refusing (re-stage to change)"
+    exit 2
+  fi
   # Guard: the agent must have resolved every conflict and committed the merge.
   if [ -n "$(git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)')" ]; then
     log "unresolved conflicts remain in $WORKTREE — resolve + commit before stage-finish"
@@ -172,7 +229,9 @@ stage_finish() {
     log "worktree has an uncommitted merge — commit the resolution before stage-finish"
     exit 2
   fi
-  git -C "$MAIN" branch -f "$branch" "$(git -C "$WORKTREE" rev-parse HEAD)" >/dev/null 2>&1
+  # No branch-ref update needed: the branch is checked out in $WORKTREE and linked
+  # worktrees share refs, so $MAIN already sees $branch at the resolved merge HEAD
+  # (git refuses `branch -f` on a worktree-checked-out branch anyway).
   log "proving $branch on huey (node24)…"
   local proof rc
   proof="$(BASELINE_REF=main remote_proof "$branch")"; rc=$?
