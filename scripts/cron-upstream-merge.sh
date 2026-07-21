@@ -104,6 +104,48 @@ measure() {
 # --- clean auto-land path ---------------------------------------------------
 # residual==0: real-merge in the worktree, prove on Linux, and only on PASS
 # advance main + deploy. Rollback tag is written before main moves.
+# Land a proof-green ref (a clean merge sha, or an LLM-resolved staging branch) onto
+# main and deploy. Shared by the clean-auto path and the resolved staged-land path.
+# ff-only only (main never gets a second-parent merge here); rollback tags first;
+# regen the fork-config baseline; push; then deploy LAST — the build crashes+respawns
+# the gateway, so it must run only once origin durably holds the merge.
+land_and_deploy() {
+  local ref="$1" date="$2" label="$3"
+  git -C "$MAIN" tag -f "main-backup-pre-upstream-merge" main >/dev/null 2>&1
+  git -C "$MAIN" tag -f "upstream-merge-$date" main >/dev/null 2>&1
+  if ! git -C "$MAIN" merge --ff-only "$ref" >/tmp/um-land.log 2>&1; then
+    # An untracked live-tree file colliding with a new upstream path fails ff-only
+    # persistently (not just a mid-run main advance), so surface the real git error.
+    log "ff-only land blocked — main intact, deferring:"
+    tail -n 5 /tmp/um-land.log >&2 2>/dev/null || true
+    drop_worktree
+    ledger "DEFER reason=ff-blocked label=$label behind=${BEHIND:-?} ref=$ref (see /tmp/um-land.log)"
+    exit 1
+  fi
+  # Regenerate the fork-config baseline for the new main and commit it.
+  node "$MAIN/scripts/fork-config-snapshot.mjs" generate >/dev/null 2>&1 || true
+  if [ -n "$(git -C "$MAIN" status --porcelain fork-config-baseline.json)" ]; then
+    "$MAIN/scripts/committer" "chore(resync): regenerate fork-config baseline after nightly upstream merge ($date)" fork-config-baseline.json >/dev/null 2>&1 || true
+  fi
+  local landed; landed="$(git -C "$MAIN" rev-parse --short HEAD)"
+  # Deploy-last is only safe once origin holds the merge; if the push fails the merge
+  # lives ONLY on local disk, so skip the crash-prone deploy and record the true state.
+  if ! git -C "$MAIN" push origin main >/tmp/um-push.log 2>&1; then
+    log "push origin main failed — merge landed LOCAL-ONLY, skipping deploy:"
+    tail -n 5 /tmp/um-push.log >&2 2>/dev/null || true
+    drop_worktree
+    ledger "LAND-LOCAL-ONLY reason=push-failed label=$label main=$landed proof=PASS (see /tmp/um-push.log)"
+    echo "UPSTREAM-MERGE LANDED LOCAL-ONLY: main @ $landed but push to origin FAILED; NOT deploying. Push manually, then run scripts/cron-deploy-build.sh."
+    exit 1
+  fi
+  drop_worktree
+  ledger "LAND $label behind=${BEHIND:-?} main=$landed proof=PASS"
+  echo "UPSTREAM-MERGE LANDED ($label): main @ $landed, Linux proof PASS. Deploying…"
+  # Deploy LAST: this build crashes+respawns the gateway (kills this session);
+  # a detached health watcher records the outcome. main is already durable on origin.
+  exec bash "$MAIN/scripts/cron-deploy-build.sh"
+}
+
 land_clean() {
   local date; date="$(today)"
   local branch="upstream-auto-merge/$date"
@@ -138,44 +180,8 @@ land_clean() {
     exit 1
   fi
 
-  # PROOF green -> land. Rollback safety FIRST.
-  git -C "$MAIN" tag -f "main-backup-pre-upstream-merge" main >/dev/null 2>&1
-  git -C "$MAIN" tag -f "upstream-merge-$date" main >/dev/null 2>&1
-  if ! git -C "$MAIN" merge --ff-only "$merge_sha" >/tmp/um-land.log 2>&1; then
-    # Not only a mid-run main advance: an untracked live-tree file colliding with a
-    # new upstream path fails ff-only persistently, so surface the real git error
-    # instead of always blaming an ff race (operator can't diagnose otherwise).
-    log "ff-only land blocked — main intact, deferring:"
-    tail -n 5 /tmp/um-land.log >&2 2>/dev/null || true
-    drop_worktree
-    ledger "DEFER reason=ff-blocked behind=$BEHIND merge=$merge_sha (see /tmp/um-land.log)"
-    exit 1
-  fi
-  # Regenerate the fork-config baseline for the new main and commit it.
-  node "$MAIN/scripts/fork-config-snapshot.mjs" generate >/dev/null 2>&1 || true
-  if [ -n "$(git -C "$MAIN" status --porcelain fork-config-baseline.json)" ]; then
-    "$MAIN/scripts/committer" "chore(resync): regenerate fork-config baseline after nightly upstream merge ($date)" fork-config-baseline.json >/dev/null 2>&1 || true
-  fi
-  local landed; landed="$(git -C "$MAIN" rev-parse --short HEAD)"
-  # Deploy-last is only safe because origin holds the merge before the build crashes
-  # the gateway. If the push fails the merge lives ONLY on local disk, so do NOT run
-  # the crash-prone deploy on top of it: record the true state and stop with a distinct
-  # exit so the operator pushes + deploys manually instead of risking loss in the build.
-  if ! git -C "$MAIN" push origin main >/tmp/um-push.log 2>&1; then
-    log "push origin main failed — merge landed LOCAL-ONLY, skipping deploy:"
-    tail -n 5 /tmp/um-push.log >&2 2>/dev/null || true
-    drop_worktree
-    ledger "LAND-LOCAL-ONLY reason=push-failed behind=$BEHIND merge=${merge_sha:0:11} main=$landed proof=PASS (see /tmp/um-push.log)"
-    echo "UPSTREAM-MERGE LANDED LOCAL-ONLY: main @ $landed but push to origin FAILED; NOT deploying. Push manually, then run scripts/cron-deploy-build.sh."
-    exit 1
-  fi
-  drop_worktree
-
-  ledger "LAND clean behind=$BEHIND merge=${merge_sha:0:11} main=$landed proof=PASS"
-  echo "UPSTREAM-MERGE LANDED (clean): main @ $landed (+$BEHIND upstream commits), Linux proof PASS. Deploying…"
-  # Deploy LAST: this build crashes+respawns the gateway (kills this session);
-  # the detached health watcher records the outcome. main is already durable on origin.
-  exec bash "$MAIN/scripts/cron-deploy-build.sh"
+  # PROOF green -> land + deploy via the shared path.
+  land_and_deploy "$merge_sha" "$date" clean
 }
 
 # --- staging helpers (agent-driven needs-resolution path) -------------------
@@ -206,62 +212,72 @@ stage_init() {
   ledger "STAGE-INIT branch=$branch conflicts=$conflicts"
 }
 
-stage_finish() {
-  local want_date="${1:-}"   # optional; if given, must match the worktree's staged branch
-  # The resolution guards below read git output through grep; a missing worktree
-  # makes git fail to empty stdout, so every guard would pass and we'd re-prove +
-  # force-push a possibly stale existing branch. Require a real worktree first.
+# Guard the staging worktree and set STAGED_BRANCH (called directly, never in $() —
+# an `exit` from here must escape the whole script, not just a subshell). Refuses a
+# missing/detached worktree, a non-staging branch, a mismatched requested date, or any
+# unresolved/uncommitted merge, so no downstream step proves+lands stale state. Reading
+# the branch from the worktree (not a today-derived arg) survives a past-midnight resolve.
+resolve_staged_branch() {
+  local want_date="$1"
   if ! git -C "$WORKTREE" rev-parse --git-dir >/dev/null 2>&1; then
-    log "worktree $WORKTREE missing — run stage-init first"
-    exit 2
+    log "worktree $WORKTREE missing — run stage-init first"; exit 2
   fi
-  # Read the staging branch from the worktree (stage_init checked it out), not an
-  # optional date arg — resolution can span midnight, so a today-derived name would
-  # mismatch the checked-out branch and abort with a misleading error.
   local branch; branch="$(git -C "$WORKTREE" symbolic-ref --short HEAD 2>/dev/null)"
   if [ -z "$branch" ]; then
-    log "worktree $WORKTREE is not on a staging branch (detached?) — run stage-init"
-    exit 2
+    log "worktree $WORKTREE is not on a staging branch (detached?) — run stage-init"; exit 2
   fi
-  # Only ever prove+push a staging branch; refuse a worktree switched to anything
-  # else so a mis-checked-out worktree cannot smuggle an arbitrary branch downstream.
   case "$branch" in
     resync-staging/*) ;;
     *) log "worktree is on '$branch', not a resync-staging/* branch — refusing"; exit 2 ;;
   esac
-  # If a date was named explicitly, it must match what is actually staged, else we'd
-  # silently prove+push a different day's branch than the operator asked to finish.
   if [ -n "$want_date" ] && [ "$branch" != "resync-staging/$want_date" ]; then
-    log "requested date $want_date but worktree is on $branch — refusing (re-stage to change)"
-    exit 2
+    log "requested date $want_date but worktree is on $branch — refusing (re-stage to change)"; exit 2
   fi
-  # Guard: the agent must have resolved every conflict and committed the merge.
   if [ -n "$(git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)')" ]; then
-    log "unresolved conflicts remain in $WORKTREE — resolve + commit before stage-finish"
-    exit 2
+    log "unresolved conflicts remain in $WORKTREE — resolve + commit first"; exit 2
   fi
   if [ -n "$(git -C "$WORKTREE" status --porcelain --untracked-files=no)" ]; then
-    log "worktree has an uncommitted merge — commit the resolution before stage-finish"
-    exit 2
+    log "worktree has an uncommitted merge — commit the resolution first"; exit 2
   fi
-  # No branch-ref update needed: the branch is checked out in $WORKTREE and linked
-  # worktrees share refs, so $MAIN already sees $branch at the resolved merge HEAD
-  # (git refuses `branch -f` on a worktree-checked-out branch anyway).
-  log "proving $branch on huey (node24)…"
+  # Linked worktrees share refs, so $MAIN already sees $branch at the resolved merge HEAD.
+  STAGED_BRANCH="$branch"
+}
+
+# Prove $STAGED_BRANCH on huey (node24). Non-green exits with the proof rc; main untouched.
+prove_staged() {
+  log "proving $STAGED_BRANCH on huey (node24)…"
   local proof rc
-  proof="$(BASELINE_REF=main remote_proof "$branch")"; rc=$?
+  proof="$(BASELINE_REF=main remote_proof "$STAGED_BRANCH")"; rc=$?
   if [ "$rc" != 0 ]; then
-    ledger "STAGE-PROOF branch=$branch result=$([ "$rc" = 3 ] && echo UNAVAILABLE || echo FAIL)"
-    echo "STAGE proof not green (rc=$rc) — branch kept local, NOT pushed. main untouched."
+    ledger "STAGE-PROOF branch=$STAGED_BRANCH result=$([ "$rc" = 3 ] && echo UNAVAILABLE || echo FAIL)"
+    echo "STAGE proof not green (rc=$rc) — branch kept local, NOT landed. main untouched."
     echo "$proof"
     exit "$rc"
   fi
-  git -C "$MAIN" push -f origin "$branch" >/tmp/um-stage-push.log 2>&1 || log "push staging branch failed"
+}
+
+# Collision / manual path: prove + push the branch, then STOP with the land command.
+# The LLM chooses this when it flags a convergent product-collision it must not auto-pick.
+stage_finish() {
+  resolve_staged_branch "${1:-}"
+  prove_staged
+  git -C "$MAIN" push -f origin "$STAGED_BRANCH" >/tmp/um-stage-push.log 2>&1 || log "push staging branch failed"
   drop_worktree
-  local tip; tip="$(git -C "$MAIN" rev-parse --short "$branch")"
-  ledger "STAGE-READY-TO-LAND branch=$branch tip=$tip proof=PASS"
-  echo "STAGE-READY-TO-LAND: $branch @ $tip — Linux proof PASS, pushed to origin. main untouched."
-  echo "  Land with:  git -C $MAIN checkout main && git -C $MAIN merge --ff-only $branch"
+  local tip; tip="$(git -C "$MAIN" rev-parse --short "$STAGED_BRANCH")"
+  ledger "STAGE-READY-TO-LAND branch=$STAGED_BRANCH tip=$tip proof=PASS"
+  echo "STAGE-READY-TO-LAND: $STAGED_BRANCH @ $tip — Linux proof PASS, pushed to origin. main untouched."
+  echo "  Land with:  git -C $MAIN checkout main && git -C $MAIN merge --ff-only $STAGED_BRANCH"
+}
+
+# Autonomous path: prove the resolved branch and, ONLY on green, land it to main +
+# deploy. The LLM chooses this when it converged with NO flagged product-collision;
+# huey proof is the correctness gate, land_and_deploy does the ff-only land + deploy.
+finish_land() {
+  resolve_staged_branch "${1:-}"
+  prove_staged
+  # Keep the proof-green branch on origin as a durable record before landing.
+  git -C "$MAIN" push -f origin "$STAGED_BRANCH" >/tmp/um-stage-push.log 2>&1 || log "push staging branch failed (landing from local)"
+  land_and_deploy "$STAGED_BRANCH" "${STAGED_BRANCH#resync-staging/}" staged
 }
 
 # remote-proof wrapper (forces node24). Prints proof output on stdout, returns its rc.
@@ -296,5 +312,6 @@ case "$cmd" in
     ;;
   stage-init)   require_main_clean; stage_init "${2:-}";;
   stage-finish) stage_finish "${2:-}";;
-  *) echo "usage: cron-upstream-merge.sh {route|measure|stage-init <date>|stage-finish <date>}" >&2; exit 2;;
+  finish-land)  require_main_clean; finish_land "${2:-}";;
+  *) echo "usage: cron-upstream-merge.sh {route|measure|stage-init <date>|stage-finish <date>|finish-land <date>}" >&2; exit 2;;
 esac
