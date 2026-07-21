@@ -220,5 +220,40 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     },
   };
 
-  return [listTool, readTool, specifyTool, decomposeTool, heartbeatTool, completeTool, blockTool];
+  const researchSyncTool: AnyAgentTool = {
+    name: "workboard_research_sync",
+    label: "Workboard research sync",
+    description:
+      "Ingest the daily-research reports (llm-research / openclaw-analysis / implementation) into the Recursive Self-Improvement Laboratory board: create/update cards, mark implemented items done, and queue un-done quick-wins as 'ready'. Idempotent — safe to run every cycle. Returns created/updated/archived counts.",
+    parameters: Type.Object({
+      defaultAssignee: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 64,
+          description: "Agent id to own newly created cards (e.g. the implementation agent).",
+        }),
+      ),
+      reportsDir: Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })),
+    }),
+    execute: async (_id, args) => {
+      const params = args as Record<string, unknown>;
+      const assignee = readStringParam(params, "defaultAssignee");
+      const reportsDir = readStringParam(params, "reportsDir");
+      return call(deps, "workboard.research.sync", {
+        ...(assignee ? { defaultAssignee: assignee } : {}),
+        ...(reportsDir ? { reportsDir } : {}),
+      });
+    },
+  };
+
+  return [
+    listTool,
+    readTool,
+    specifyTool,
+    decomposeTool,
+    heartbeatTool,
+    completeTool,
+    blockTool,
+    researchSyncTool,
+  ];
 }

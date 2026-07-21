@@ -318,6 +318,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "workboard_research_sync",
+    label: "workboard_research_sync",
+    description: "Ingest daily-research reports into the Self-Improvement Lab board",
+    sectionId: "automation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "gateway",
     label: "gateway",
     description: "Gateway control",

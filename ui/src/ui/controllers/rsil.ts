@@ -114,6 +114,7 @@ export type RsilCard = {
   agentId?: string;
   sourceUrl?: string;
   position: number;
+  createdAt: number;
   updatedAt: number;
   archived: boolean;
   research?: RsilResearchMeta;
@@ -238,6 +239,7 @@ function normalizeCard(value: unknown): RsilCard | null {
     agentId: typeof record.agentId === "string" ? record.agentId : undefined,
     sourceUrl: typeof record.sourceUrl === "string" ? record.sourceUrl : undefined,
     position: typeof record.position === "number" ? record.position : 0,
+    createdAt: typeof record.createdAt === "number" ? record.createdAt : 0,
     updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : 0,
     archived: Boolean(metadata?.archivedAt),
     research: normalizeResearch(metadata?.research),

@@ -3,7 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WorkboardKeyedStore } from "./persistence-types.js";
-import { runResearchIngest, SELF_IMPROVEMENT_BOARD_ID } from "./research-ingest.js";
+import {
+  runResearchIngest,
+  SELF_IMPROVEMENT_BOARD_ID,
+  SELF_IMPROVEMENT_BOARD_NAME,
+} from "./research-ingest.js";
 import { WorkboardStore } from "./store.js";
 
 function memoryStore<T>(): WorkboardKeyedStore<T> {
@@ -186,5 +190,78 @@ describe("runResearchIngest", () => {
     const future = Date.parse("2026-09-01T00:00:00Z");
     const result = await runResearchIngest({ store, reportsDir, now: future, retentionDays: 30 });
     expect(result.archived).toBe(5);
+  });
+
+  it("keeps the 60s dispatcher OFF for the lab board (autoDecompose false)", async () => {
+    const store = newStore();
+    await runResearchIngest({ store, reportsDir });
+    const boards = await store.listBoards();
+    const board = boards.boards.find((b) => b.id === SELF_IMPROVEMENT_BOARD_ID);
+    // The nightly Implementation cron executes this board's quick-wins; the 60s
+    // in-gateway dispatcher must stay off so it can't false-complete them.
+    expect(board?.orchestration?.autoDecompose).toBe(false);
+  });
+
+  it("flips a pre-existing board's autoDecompose:true OFF (migrates prior deployments)", async () => {
+    const store = newStore();
+    // Boards created by the prior version of this code have autoDecompose:true.
+    // The sync must overwrite that, or "ready" quick-wins would be claimed by the
+    // 60s dispatcher and false-completed with zero code landed.
+    await store.upsertBoard({
+      id: SELF_IMPROVEMENT_BOARD_ID,
+      name: SELF_IMPROVEMENT_BOARD_NAME,
+      orchestration: { autoDecompose: true },
+    });
+    await runResearchIngest({ store, reportsDir });
+    const boards = await store.listBoards();
+    const board = boards.boards.find((b) => b.id === SELF_IMPROVEMENT_BOARD_ID);
+    expect(board?.orchestration?.autoDecompose).toBe(false);
+  });
+
+  it("lets an operator veto a quick-win: a userTouched demotion survives re-sync", async () => {
+    const store = newStore();
+    const localDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-rsil-v-"));
+    fs.writeFileSync(
+      path.join(localDir, `openclaw-analysis-${DATE}.md`),
+      `# OpenClaw Source Analysis — ${DATE}\n\n## ⚡ Quick Wins\n\n### QW-7: Auto-executable tweak\n**Complexity:** S · **Risk:** Low\n\n**Change:**\n1. Do it.\n`,
+    );
+    try {
+      await runResearchIngest({ store, reportsDir: localDir });
+      let cards = await store.list({ boardId: SELF_IMPROVEMENT_BOARD_ID });
+      const qw = cards.find((c) => c.metadata?.research?.itemId === "QW-7")!;
+      expect(qw.status).toBe("ready");
+      // Operator demotes it (the UI stamps userTouched on any status change) —
+      // the nightly cron must not re-promote it and implement against intent.
+      await store.update(qw.id, {
+        status: "backlog",
+        metadata: { research: { ...qw.metadata!.research!, userTouched: true } },
+      });
+      await runResearchIngest({ store, reportsDir: localDir });
+      cards = await store.list({ boardId: SELF_IMPROVEMENT_BOARD_ID });
+      const after = cards.find((c) => c.metadata?.research?.itemId === "QW-7")!;
+      expect(after.status).toBe("backlog");
+    } finally {
+      fs.rmSync(localDir, { recursive: true, force: true });
+    }
+  });
+
+  it("queues an un-implemented quick-win as 'ready', architecture as 'backlog'", async () => {
+    const store = newStore();
+    // Fresh report set with a quick-win that has no implementation outcome.
+    const localDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-rsil-q-"));
+    fs.writeFileSync(
+      path.join(localDir, `openclaw-analysis-${DATE}.md`),
+      `# OpenClaw Source Analysis — ${DATE}\n\n## ⚡ Quick Wins\n\n### QW-9: Flip a config default\n**Complexity:** S · **Risk:** Low\n\n**Change:**\n1. Set the flag.\n\n## 🏗️ Architecture\n\n### ARCH-9: Restructure the pipeline\n**Complexity:** L · **Risk:** High\n\n**Change:**\n1. Rewrite it.\n`,
+    );
+    try {
+      await runResearchIngest({ store, reportsDir: localDir });
+      const cards = await store.list({ boardId: SELF_IMPROVEMENT_BOARD_ID });
+      const qw = cards.find((c) => c.metadata?.research?.itemId === "QW-9");
+      const arch = cards.find((c) => c.metadata?.research?.itemId === "ARCH-9");
+      expect(qw?.status).toBe("ready");
+      expect(arch?.status).toBe("backlog");
+    } finally {
+      fs.rmSync(localDir, { recursive: true, force: true });
+    }
   });
 });

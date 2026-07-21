@@ -25,6 +25,7 @@ describe("workboard agent tools", () => {
         "workboard_heartbeat",
         "workboard_list",
         "workboard_read",
+        "workboard_research_sync",
         "workboard_specify",
       ].toSorted(),
     );
@@ -68,5 +69,19 @@ describe("workboard agent tools", () => {
     });
     expect(calls[0]!.method).toBe("workboard.cards.complete");
     expect(calls[0]!.params).toMatchObject({ id: "card-1", summary: "done", token: "tok-1" });
+  });
+
+  it("research_sync wraps the ingest RPC and forwards defaultAssignee", async () => {
+    const { calls, byName } = toolsWithMock();
+    await byName.get("workboard_research_sync")!.execute("t1", { defaultAssignee: "main" });
+    expect(calls[0]!.method).toBe("workboard.research.sync");
+    expect(calls[0]!.params).toEqual({ defaultAssignee: "main" });
+  });
+
+  it("research_sync omits empty optional params", async () => {
+    const { calls, byName } = toolsWithMock();
+    await byName.get("workboard_research_sync")!.execute("t1", {});
+    expect(calls[0]!.method).toBe("workboard.research.sync");
+    expect(calls[0]!.params).toEqual({});
   });
 });

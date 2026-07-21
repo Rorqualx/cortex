@@ -37,6 +37,7 @@ import {
   setFilter,
   setTab,
 } from "../controllers/rsil.ts";
+import { formatDateMs } from "../format.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 
@@ -173,6 +174,35 @@ function renderAssigneeSelect(host: RsilHost, card: RsilCard): TemplateResult {
   `;
 }
 
+// The "Cycle" badge is the research-report date, not when the card entered the
+// board — these surface the real created/updated timestamps so staleness (e.g. a
+// card untouched for weeks) is visible. One dedupe rule (hide updated when it
+// equals/precedes created) shared by the board card and the detail drawer.
+function cardDateLabels(card: RsilCard): { added: string | null; updated: string | null } {
+  return {
+    added: card.createdAt ? `${t("rsil.cardAdded")} ${formatDateMs(card.createdAt)}` : null,
+    // `> createdAt`, not `!==`: only show Updated when it genuinely postdates
+    // creation, so clock-skewed or backfilled rows can't render "Updated <earlier>".
+    updated:
+      card.updatedAt > card.createdAt
+        ? `${t("rsil.cardUpdated")} ${formatDateMs(card.updatedAt)}`
+        : null,
+  };
+}
+
+function renderCardDates(card: RsilCard): TemplateResult | typeof nothing {
+  const { added, updated } = cardDateLabels(card);
+  if (!added && !updated) {
+    return nothing;
+  }
+  return html`
+    <div class="rsil-card__dates">
+      ${added ? html`<span>${added}</span>` : nothing}
+      ${updated ? html`<span>${updated}</span>` : nothing}
+    </div>
+  `;
+}
+
 function renderCard(host: RsilHost, card: RsilCard): TemplateResult {
   return html`
     <article
@@ -180,7 +210,7 @@ function renderCard(host: RsilHost, card: RsilCard): TemplateResult {
       @click=${() => openCard(host, card.id)}
     >
       <div class="rsil-card__title">${card.title}</div>
-      ${renderBadges(card)}
+      ${renderBadges(card)} ${renderCardDates(card)}
       <div class="rsil-card__foot">
         ${renderStatusSelect(host, card)} ${renderAssigneeSelect(host, card)}
       </div>
@@ -344,6 +374,7 @@ function renderNextSteps(host: RsilHost, card: RsilCard): TemplateResult {
 
 function renderDetail(host: RsilHost, card: RsilCard): TemplateResult {
   const r = card.research;
+  const detailDates = cardDateLabels(card);
   const notesHtml = card.notes ? toSanitizedMarkdownHtml(card.notes) : "";
   return html`
     <aside class="rsil-detail">
@@ -365,6 +396,8 @@ function renderDetail(host: RsilHost, card: RsilCard): TemplateResult {
               >${t("rsil.detailOutcome")}: ${r.outcome}</span
             >`
           : nothing}
+        ${detailDates.added ? html`<span class="badge">${detailDates.added}</span>` : nothing}
+        ${detailDates.updated ? html`<span class="badge">${detailDates.updated}</span>` : nothing}
       </div>
       <div class="rsil-detail__controls">
         ${renderStatusSelect(host, card)} ${renderAssigneeSelect(host, card)}

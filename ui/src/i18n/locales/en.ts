@@ -4629,7 +4629,10 @@ export const en: TranslationMap = {
     tagline: "Research findings from the daily pipeline — triage, assign, and execute.",
     tabBoard: "Board",
     tabReports: "Reports",
-    autoWorkOn: "Auto-work is on — “Ready” items are picked up by the dispatcher.",
+    autoWorkOn:
+      "Auto-work is on — “Ready” quick-wins are implemented by the nightly research pipeline.",
+    cardAdded: "Added",
+    cardUpdated: "Updated",
     refresh: "Refresh",
     empty: "No lab items yet. The daily-research cron populates this board overnight.",
     reportsEmpty: "No reports found.",

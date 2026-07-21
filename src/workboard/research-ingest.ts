@@ -30,7 +30,10 @@ import type { WorkboardResearchCategory, WorkboardSection, WorkboardStatus } fro
 export const SELF_IMPROVEMENT_BOARD_ID = "self-improvement-lab";
 export const SELF_IMPROVEMENT_BOARD_NAME = "Recursive Self-Improvement Laboratory";
 
-const DEFAULT_RETENTION_DAYS = 30;
+// 90d, not 30: the board is a rolling research ledger and the nightly backfill
+// must not archive the prior ~month of cycles the moment it catches up after a
+// gap. Callers override via options.retentionDays.
+const DEFAULT_RETENTION_DAYS = 90;
 const REPORT_DATE = /^(llm-research|openclaw-analysis|implementation)-(\d{4}-\d{2}-\d{2})\.md$/;
 
 export type ResearchIngestResult = {
@@ -205,7 +208,10 @@ function extractNextSteps(body: string): string[] {
   return steps.slice(0, 12);
 }
 
-function statusForAnalysisItem(impl?: ParsedImplItem): WorkboardStatus {
+function statusForAnalysisItem(
+  category: WorkboardResearchCategory,
+  impl?: ParsedImplItem,
+): WorkboardStatus {
   if (impl?.outcome === "implemented") {
     return "done";
   }
@@ -215,10 +221,15 @@ function statusForAnalysisItem(impl?: ParsedImplItem): WorkboardStatus {
   if (impl?.outcome === "skipped") {
     return "backlog";
   }
-  // Seed un-implemented items as backlog, not ready: auto-work stays enabled on
-  // the board, but nothing is dispatched until an operator promotes a card to
-  // "ready". This avoids unsupervised workers editing the live checkout (and the
-  // known in-place-`pnpm build` gateway-crash hazard) the moment a sync runs.
+  // Un-done quick-wins queue as "ready": the nightly Implementation cron (06:00)
+  // consumes ready quick-wins on this board, implements + commits them through
+  // the survival-ruled worktree flow, then completes the card. The 60s in-gateway
+  // dispatcher is OFF here (autoDecompose:false), so "ready" cannot trigger the
+  // summary-only worker. Architecture / long-horizon stay "backlog" — higher risk,
+  // reviewed by hand before promotion.
+  if (category === "quick-win") {
+    return "ready";
+  }
   return "backlog";
 }
 
@@ -231,7 +242,7 @@ function buildDesiredCards(cycle: CycleReports): DesiredCard[] {
     const impl = cycle.implByItem.get(item.itemId);
     const findingIndex = item.sourceFinding ? Number(item.sourceFinding.replace("#", "")) : NaN;
     const finding = Number.isFinite(findingIndex) ? findingByIndex.get(findingIndex) : undefined;
-    const status = statusForAnalysisItem(impl);
+    const status = statusForAnalysisItem(item.category, impl);
     const labels = [
       "rsil",
       `rsil:${item.category}`,
@@ -397,7 +408,11 @@ export async function runResearchIngest(
     description: "Items ingested from the daily-research pipeline reports.",
     icon: "brain",
     orchestration: {
-      autoDecompose: true,
+      // autoDecompose stays OFF: the 60s in-gateway dispatcher would claim a
+      // "ready" card and spawn a summary-only worker (no commit step exists in
+      // the dispatch path), marking quick-wins done with zero code landed. The
+      // nightly Implementation cron is the sole executor for this board.
+      autoDecompose: false,
       ...(options.defaultAssignee ? { defaultAssignee: options.defaultAssignee } : {}),
     },
   });
