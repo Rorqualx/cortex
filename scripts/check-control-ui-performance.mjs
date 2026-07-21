@@ -7,21 +7,20 @@ import { fileURLToPath } from "node:url";
 
 const KIB = 1024;
 
-// Small, explicit headroom over the optimized baseline. Budget changes should
-// accompany an intentional loading or chunking decision.
+// Fork budgets: this check is an upstream addition; the cortex fork's Control UI
+// carries additional first-party surfaces upstream does not ship (Workboard,
+// Skill Forge, Dreams, Pixel Office, the redesigned Cron/Automations page, and
+// richer MCP/Nodes views), so its optimized bundles run ~1.7x upstream's ceilings.
+// Values are the current fork footprint plus small headroom; a bundle-size /
+// chunking reduction pass is tracked as follow-up. Keep headroom tight so
+// unintended growth still trips the gate.
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze({
   startupJsRequests: 18,
   startupCssRequests: 1,
-  // 313 KiB accompanies the widget sandbox-origin diagnostics (2026-07): the
-  // startup catalog gained the operator hint strings and main sat within
-  // ~0.1 KiB of the previous ceiling, failing source builds whose zlib packs
-  // slightly worse than CI's. One KiB restores explicit headroom.
-  startupJsGzipBytes: 313 * KIB,
-  // 45 KiB CSS ceilings maintainer-approved 2026-07 alongside the interleaved
-  // sidebar zone styling; headroom over the ~36.5 KiB post-diet baseline.
-  startupCssGzipBytes: 45 * KIB,
-  largestJsGzipBytes: 215 * KIB,
-  largestCssGzipBytes: 45 * KIB,
+  startupJsGzipBytes: 530 * KIB,
+  startupCssGzipBytes: 78 * KIB,
+  largestJsGzipBytes: 380 * KIB,
+  largestCssGzipBytes: 78 * KIB,
 });
 
 function controlUiAssetPathFromUrl(value) {
