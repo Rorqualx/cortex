@@ -132,3 +132,7 @@ export const PluginApprovalResolvedEventSchema = Type.Object(
 // public plugin-sdk declaration graph never pulls in the ProtocolSchemas registry.
 export type PluginApprovalRequestParams = Static<typeof PluginApprovalRequestParamsSchema>;
 export type PluginApprovalResolveParams = Static<typeof PluginApprovalResolveParamsSchema>;
+export type PluginApprovalActionView = Static<typeof PluginApprovalActionViewSchema>;
+export type PluginApprovalRequestPayload = Static<typeof PluginApprovalRequestPayloadSchema>;
+export type PluginApprovalRequestedEvent = Static<typeof PluginApprovalRequestedEventSchema>;
+export type PluginApprovalResolvedEvent = Static<typeof PluginApprovalResolvedEventSchema>;

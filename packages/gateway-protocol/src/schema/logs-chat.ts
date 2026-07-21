@@ -267,3 +267,16 @@ export const ChatEventSchema = Type.Union([
   ChatAbortedEventSchema,
   ChatErrorEventSchema,
 ]);
+
+// Owner-local wire types derived directly from local schema consts so the
+// public plugin-sdk declaration graph never pulls in the ProtocolSchemas registry.
+export type LogsTailParams = Static<typeof LogsTailParamsSchema>;
+export type LogsTailResult = Static<typeof LogsTailResultSchema>;
+export type ChatMetadataParams = Static<typeof ChatMetadataParamsSchema>;
+export type ChatAbortParams = Static<typeof ChatAbortParamsSchema>;
+export type ChatInjectParams = Static<typeof ChatInjectParamsSchema>;
+export type ChatEvent = Static<typeof ChatEventSchema>;
+export type ChatSendTimingEvent = Static<typeof ChatSendTimingEventSchema>;
+/** Server-side phase markers for operator chat.send timing diagnostics. */
+export type ChatSendTimingPhase = ChatSendTimingEvent["phase"];
+export type ChatSideResultEvent = Static<typeof ChatSideResultEventSchema>;

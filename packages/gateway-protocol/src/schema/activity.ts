@@ -1,4 +1,5 @@
 // Gateway Protocol schema module defines protocol validation shapes.
+import type { Static } from "typebox";
 import { Type } from "typebox";
 import { NonEmptyString } from "./primitives.js";
 
@@ -116,3 +117,15 @@ export const ActivitySubscribeResultSchema = Type.Object(
 
 /** Remove the live activity subscription for the calling connection. */
 export const ActivityUnsubscribeParamsSchema = Type.Object({}, { additionalProperties: false });
+
+// Owner-local wire types derived directly from local schema consts so the
+// public plugin-sdk declaration graph never pulls in the ProtocolSchemas registry.
+export type ActivityEvent = Static<typeof ActivityEventSchema>;
+export type ActivityEventDetail = Static<typeof ActivityEventDetailSchema>;
+export type ActivityEventMetrics = Static<typeof ActivityEventMetricsSchema>;
+export type ActivityCursor = Static<typeof ActivityCursorSchema>;
+export type ActivityListParams = Static<typeof ActivityListParamsSchema>;
+export type ActivityListResult = Static<typeof ActivityListResultSchema>;
+export type ActivitySubscribeParams = Static<typeof ActivitySubscribeParamsSchema>;
+export type ActivitySubscribeResult = Static<typeof ActivitySubscribeResultSchema>;
+export type ActivityUnsubscribeParams = Static<typeof ActivityUnsubscribeParamsSchema>;

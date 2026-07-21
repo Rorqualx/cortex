@@ -1626,19 +1626,19 @@ CREATE TABLE IF NOT EXISTS workboard_cards (
   id TEXT NOT NULL PRIMARY KEY,
   version INTEGER NOT NULL DEFAULT 1,
   data TEXT NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS workboard_boards (
   id TEXT NOT NULL PRIMARY KEY,
   version INTEGER NOT NULL DEFAULT 1,
   data TEXT NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS workboard_notification_subscriptions (
   id TEXT NOT NULL PRIMARY KEY,
   version INTEGER NOT NULL DEFAULT 1,
   data TEXT NOT NULL
-);
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS workboard_card_attachments (
   id TEXT NOT NULL PRIMARY KEY,
@@ -1646,7 +1646,7 @@ CREATE TABLE IF NOT EXISTS workboard_card_attachments (
   version INTEGER NOT NULL DEFAULT 1,
   data TEXT NOT NULL,
   content BLOB DEFAULT NULL
-);
+) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_workboard_card_attachments_card_id
   ON workboard_card_attachments(card_id);
@@ -1676,7 +1676,7 @@ CREATE TABLE IF NOT EXISTS model_catalog_discovered (
   raw_json TEXT NOT NULL,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (provider, model_id)
-);
+) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_model_catalog_discovered_provider_status
   ON model_catalog_discovered(provider, status, model_id);
@@ -1710,7 +1710,7 @@ CREATE TABLE IF NOT EXISTS vault_secret (
   description TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
-);
+) STRICT;
 
 -- Persisted "allow always" decisions for an (entry, host) pair so an approved
 -- secret use does not re-prompt on every subsequent same-host call.
@@ -1720,7 +1720,7 @@ CREATE TABLE IF NOT EXISTS vault_secret_grant (
   decision TEXT NOT NULL,
   granted_at INTEGER NOT NULL,
   PRIMARY KEY (name, host)
-);
+) STRICT;
 
 -- Cached session tokens for the stateful 'login' auth kind. The gateway logs in
 -- once, encrypts the captured token here (token_*, same AES-256-GCM scheme as
@@ -1736,7 +1736,7 @@ CREATE TABLE IF NOT EXISTS vault_session (
   expires_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
   PRIMARY KEY (name, host)
-);
+) STRICT;
 
 -- Cross-agent activity feed for the Control UI. A curated, retention-capped
 -- projection of agent events (lifecycle/tool/approval/plan/patch/usage and
@@ -1760,7 +1760,7 @@ CREATE TABLE IF NOT EXISTS activity_events (
   detail_json TEXT,
   metrics_json TEXT,
   created_at INTEGER NOT NULL
-);
+) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_activity_events_ts
   ON activity_events(ts DESC, event_id);

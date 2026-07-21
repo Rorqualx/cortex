@@ -1237,7 +1237,7 @@ export interface WorkboardBoards {
 
 export interface WorkboardCardAttachments {
   card_id: string;
-  content: Generated<Uint8Array>;
+  content: Generated<Uint8Array | null>;
   data: string;
   id: string;
   version: Generated<number>;

@@ -1,4 +1,5 @@
 // Gateway Protocol schema module defines protocol validation shapes.
+import type { Static } from "typebox";
 import { Type } from "typebox";
 import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString } from "./primitives.js";
@@ -447,3 +448,21 @@ export const SessionMessageEventSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+// Owner-local wire types derived directly from local schema consts so the
+// public plugin-sdk declaration graph never pulls in the ProtocolSchemas registry.
+export type GatewaySessionRow = Static<typeof GatewaySessionRowSchema>;
+export type GatewaySessionKind = GatewaySessionRow["kind"];
+export type SessionRunStatus = NonNullable<GatewaySessionRow["status"]>;
+export type SubagentRunState = NonNullable<GatewaySessionRow["subagentRunState"]>;
+export type SessionCompactionCheckpointPreview = NonNullable<
+  GatewaySessionRow["latestCompactionCheckpoint"]
+>;
+export type GatewayThinkingLevelOption = NonNullable<GatewaySessionRow["thinkingLevels"]>[number];
+export type GatewaySessionsDefaults = Static<typeof GatewaySessionsDefaultsSchema>;
+export type SessionGoal = Static<typeof SessionGoalSchema>;
+export type GatewayAgentRuntime = Static<typeof GatewayAgentRuntimeSchema>;
+export type DeliveryContext = Static<typeof DeliveryContextSchema>;
+export type SessionsListResult = Static<typeof SessionsListResultSchema>;
+export type SessionsChangedEvent = Static<typeof SessionsChangedEventSchema>;
+export type SessionMessageEvent = Static<typeof SessionMessageEventSchema>;
