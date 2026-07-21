@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-07-21T00:37:01.532Z",
-  "branch": "resync/upstream-2026-07-20",
-  "headSha": "ba1295be55ff8277ccd3e299f62a2388e94eaa81",
+  "timestamp": "2026-07-21T18:31:50.752Z",
+  "branch": "main",
+  "headSha": "50f11acf32baece74b0aeab9bfd9fe5ff4f12916",
   "files": {
     ".gitattributes": {
       "hash": "05ab26487eb7d53067b38b550771a408c79144181824d04d760e49e157c45f4c",
@@ -394,7 +394,7 @@
       "jsonKeys": null
     },
     "package.json": {
-      "hash": "c65b6d64ee47caf5e6d28a495fa3bfde86cace6b1ba38fe2a7e350d4a21afc81",
+      "hash": "8007e02dd48d9e1b941f638f800db83c72ed1c3aa43bdf841dcbf5298f638e7b",
       "pkgSectionsHash": "811edfcc8040c1f8543824db1fd3d52af32f30280a77425798a1b8c26a0c2121"
     },
     "src/config/schema.ts": {
