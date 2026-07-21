@@ -159,7 +159,11 @@ export const BUILD_ALL_STEPS = [
   {
     label: "write-cli-startup-metadata",
     kind: "node",
-    args: ["--experimental-strip-types", "scripts/write-cli-startup-metadata.ts"],
+    // tsx (not bare --experimental-strip-types): this script imports a sibling
+    // TS module via a ".js" specifier (./lib/cli-startup-root-help-bundle.js),
+    // and type-stripping alone does not rewrite ".js" specifiers to their ".ts"
+    // source, so the import fails at build. tsx resolves it. Matches upstream.
+    args: ["--import", "tsx", "scripts/write-cli-startup-metadata.ts"],
   },
   {
     label: "write-cli-compat",
