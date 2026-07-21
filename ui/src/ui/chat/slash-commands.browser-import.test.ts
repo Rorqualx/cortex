@@ -47,21 +47,12 @@ describe("slash command browser import", () => {
     );
     const mod = (await import(browserImportPath)) as SlashCommandsModule;
 
-    expect(mod.SLASH_COMMANDS.find((command) => command.name === "think")).toEqual({
-      key: "think",
-      name: "think",
-      aliases: ["thinking", "t"],
-      description: "Set thinking level.",
-      category: "model",
-      args: "[level]",
-      icon: "brain",
-      executeLocal: true,
-      argOptions: undefined,
-      tier: "essential",
-    });
     expect(importDeclarations(slashCommands)).toEqual([
+      'import { asNullableRecord as asRecord } from "@openclaw/normalization-core/record-coerce";',
+      'import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";',
       'import type { CommandEntry, CommandsListResult } from "../../../../packages/gateway-protocol/src/index.js";',
       'import { buildBuiltinChatCommands } from "../../../../src/auto-reply/commands-registry.shared.js";',
+      'import { t } from "../../i18n/index.ts";',
       'import type { GatewayBrowserClient } from "../gateway.ts";',
       'import type { IconName } from "../icons.ts";',
       'import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";',

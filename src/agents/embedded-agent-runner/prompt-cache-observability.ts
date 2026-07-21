@@ -266,7 +266,3 @@ export function completePromptCacheObservation(params: {
   tracker.pendingChanges = null;
   return result;
 }
-
-export function resetPromptCacheObservabilityForTest(): void {
-  trackers.clear();
-}

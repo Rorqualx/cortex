@@ -6,6 +6,7 @@ import type { SecretInput } from "openclaw/plugin-sdk/secret-input";
 import { isRecord, normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { applyKimiCodeConfig, KIMI_CODING_MODEL_REF } from "./onboard.js";
 import { buildKimiCodingProvider, normalizeKimiCodingModelId } from "./provider-catalog.js";
+import { isKimiK3ModelId, resolveThinkingProfile } from "./provider-policy-api.js";
 import { KIMI_REPLAY_POLICY } from "./replay-policy.js";
 import { wrapKimiProviderStream } from "./stream.js";
 
@@ -41,7 +42,7 @@ export default definePluginEntry({
           providerId: PROVIDER_ID,
           methodId: "api-key",
           label: "Kimi Code API key (subscription)",
-          hint: "Kimi K2.6 + Kimi",
+          hint: "Kimi Code membership · https://www.kimi.com/membership/pricing",
           optionKey: "kimiCodeApiKey",
           flagName: "--kimi-code-api-key",
           envVar: "KIMI_API_KEY",
@@ -51,15 +52,15 @@ export default definePluginEntry({
           applyConfig: (cfg) => applyKimiCodeConfig(cfg),
           noteMessage: [
             "Kimi uses a dedicated coding endpoint and API key.",
-            "Get your API key at: https://www.kimi.com/code/en",
+            "Get your API key at: https://www.kimi.com/code/console",
           ].join("\n"),
           noteTitle: "Kimi",
           wizard: {
             choiceId: "kimi-code-api-key",
             choiceLabel: "Kimi Code API key (subscription)",
             groupId: "moonshot",
-            groupLabel: "Moonshot AI (Kimi K2.6)",
-            groupHint: "Kimi K2.6",
+            groupLabel: "Moonshot AI (Kimi)",
+            groupHint: "Kimi Code membership · https://www.kimi.com/membership/pricing",
           },
         }),
       ],
@@ -101,20 +102,27 @@ export default definePluginEntry({
         const normalizedId = normalizeKimiCodingModelId(model.id);
         return normalizedId === model.id ? undefined : { ...model, id: normalizedId };
       },
-      // Kimi Code (anthropic-messages) supports graded extended-thinking budgets,
-      // not just on/off: low/medium/high map to 1024/4096/8192 budget_tokens via
-      // KIMI_ANTHROPIC_THINKING_BUDGETS in stream.ts. Surface those distinct tiers
-      // so callers get real depth control. minimal/xhigh/max collapse onto the same
-      // budgets, so they're intentionally not offered (would be indistinguishable).
-      resolveThinkingProfile: () => ({
-        levels: [
-          { id: "off", label: "off" },
-          { id: "low", label: "low" },
-          { id: "medium", label: "medium" },
-          { id: "high", label: "high" },
-        ],
-        defaultLevel: "off",
-      }),
+      // K3 models keep the shared policy profile (off/max + catalog-preserve).
+      // Other Kimi Code models (anthropic-messages) support graded
+      // extended-thinking budgets, not just on/off: low/medium/high map to
+      // 1024/4096/8192 budget_tokens via KIMI_ANTHROPIC_THINKING_BUDGETS in
+      // stream.ts. Surface those distinct tiers so callers get real depth
+      // control. minimal/xhigh/max collapse onto the same budgets, so they're
+      // intentionally not offered (would be indistinguishable).
+      resolveThinkingProfile: (ctx) =>
+        isKimiK3ModelId(ctx.modelId)
+          ? resolveThinkingProfile(ctx)
+          : {
+              levels: [
+                { id: "off", label: "off" },
+                { id: "low", label: "low" },
+                { id: "medium", label: "medium" },
+                { id: "high", label: "high" },
+              ],
+              defaultLevel: "off",
+            },
+      wrapSimpleCompletionStreamFn: (ctx) =>
+        isKimiK3ModelId(ctx.modelId) ? wrapKimiProviderStream(ctx) : ctx.streamFn,
       wrapStreamFn: wrapKimiProviderStream,
     });
   },

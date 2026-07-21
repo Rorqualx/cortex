@@ -98,18 +98,27 @@
 /* Toolbar (filters + actions). */
 .activity-toolbar {
   display: flex;
-  align-items: end;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding-bottom: 2px;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.activity-toolbar__count {
-  flex: 0 0 auto;
-  align-self: center;
-  margin-left: auto;
+.settings-workspace--fill-height .activity-group {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-workspace--fill-height .activity-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.activity-count {
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -135,22 +144,20 @@
 .activity-actions {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-3);
 }
 
-.activity-status-filter,
-.activity-autofollow {
+.activity-status-filter {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 36px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0 10px;
+  gap: var(--space-1);
   color: var(--text);
-  background: var(--secondary);
   font-size: var(--control-ui-text-sm);
-  line-height: 1;
+  cursor: pointer;
+}
+
+.activity-status-filter input {
+  margin: 0;
 }
 
 .activity-status-filter:focus-within,
@@ -199,15 +206,14 @@
   min-height: 260px;
   max-height: calc(100vh - 360px);
   overflow: auto;
-  border-block: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 82%, var(--card));
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 
 .activity-empty {
   display: grid;
   place-items: center;
   min-height: 220px;
-  padding: 24px;
+  padding: var(--space-5);
   color: var(--muted);
   text-align: center;
 }

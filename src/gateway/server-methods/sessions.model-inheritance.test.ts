@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEntry } from "../../config/sessions.js";
-import { inheritSessionRuntimeSelection } from "./sessions.js";
+import { inheritSessionSelection } from "../../config/sessions/session-entry-selection.js";
 
 // A new session created from a parent must respect the agent's configured
 // default model. Only a deliberate USER model pick carries forward; auto-fallback
 // overrides (e.g. a quota fallback that pinned a different model) and the runtime
 // effective model are execution artifacts and must NOT be inherited, or new
 // sessions would silently override the configured default.
-describe("inheritSessionRuntimeSelection", () => {
+describe("inheritSessionSelection", () => {
   const base: SessionEntry = { sessionId: "s", updatedAt: 1 } as SessionEntry;
 
   it("inherits a deliberate user model override", () => {
-    const inherited = inheritSessionRuntimeSelection({
+    const inherited = inheritSessionSelection({
       ...base,
       providerOverride: "anthropic",
       modelOverride: "sonnet-4.6",
@@ -26,7 +26,7 @@ describe("inheritSessionRuntimeSelection", () => {
   });
 
   it("does NOT inherit an auto-fallback override (modelOverrideSource=auto)", () => {
-    const inherited = inheritSessionRuntimeSelection({
+    const inherited = inheritSessionSelection({
       ...base,
       providerOverride: "kimi",
       modelOverride: "kimi-for-coding",
@@ -40,7 +40,7 @@ describe("inheritSessionRuntimeSelection", () => {
   });
 
   it("does NOT inherit a legacy auto-fallback override (no source, has fallback provenance)", () => {
-    const inherited = inheritSessionRuntimeSelection({
+    const inherited = inheritSessionSelection({
       ...base,
       providerOverride: "kimi",
       modelOverride: "kimi-for-coding",
@@ -52,7 +52,7 @@ describe("inheritSessionRuntimeSelection", () => {
   });
 
   it("does NOT inherit the runtime effective model (model/modelProvider)", () => {
-    const inherited = inheritSessionRuntimeSelection({
+    const inherited = inheritSessionSelection({
       ...base,
       modelProvider: "kimi",
       model: "kimi-for-coding",
@@ -66,7 +66,7 @@ describe("inheritSessionRuntimeSelection", () => {
   });
 
   it("still inherits non-model runtime selections (thinking, fastMode)", () => {
-    const inherited = inheritSessionRuntimeSelection({
+    const inherited = inheritSessionSelection({
       ...base,
       thinkingLevel: "high",
       fastMode: true,

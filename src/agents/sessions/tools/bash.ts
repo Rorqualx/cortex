@@ -18,7 +18,7 @@ import { truncateToVisualLines } from "../../modes/interactive/components/visual
 import { theme } from "../../modes/interactive/theme/theme.js";
 import type { AgentTool } from "../../runtime/index.js";
 import { getBashShellConfig, getShellEnv, killProcessTree } from "../../shell-utils.js";
-import { waitForChildProcess } from "../../utils/child-process.js";
+import { waitForChildProcess } from "../../../process/child-process.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import type { BashOperations } from "./bash-operations.js";
 import { OutputAccumulator } from "./output-accumulator.js";

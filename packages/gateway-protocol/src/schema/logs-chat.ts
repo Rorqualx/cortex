@@ -70,6 +70,10 @@ export const ChatMessageGetResultSchema = Type.Object(
 );
 export type ChatMessageGetResult = Static<typeof ChatMessageGetResultSchema>;
 
+// Additive upstream export: sessions-create.ts (upstream module) imports this
+// attachment array shape; the fork-frozen file must still provide it.
+export const ChatAttachmentsSchema = Type.Array(Type.Unknown());
+
 export const ChatSendParamsSchema = Type.Object(
   {
     sessionKey: ChatSendSessionKeyString,

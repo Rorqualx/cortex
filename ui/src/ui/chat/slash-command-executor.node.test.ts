@@ -152,6 +152,31 @@ describe("executeSlashCommand directives", () => {
     });
   });
 
+  it("surfaces terminal compaction failures instead of reporting a skip", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "sessions.compact") {
+        return {
+          ok: false,
+          compacted: false,
+          reason: "codex app-server compaction timed out",
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    const result = await executeSlashCommand(
+      { request } as unknown as GatewayBrowserClient,
+      "main",
+      "compact",
+      "",
+    );
+
+    expect(result).toEqual({
+      content: "Compaction failed: codex app-server compaction timed out",
+      failed: true,
+    });
+  });
+
   it("uses the local model catalog to qualify raw /model overrides when the patch response omits provider", async () => {
     const request = vi.fn(async (method: string, _payload?: unknown) => {
       if (method === "sessions.patch") {
@@ -334,7 +359,7 @@ describe("executeSlashCommand directives", () => {
     );
 
     expect(result.content).toBe(
-      "**Session Usage**\nInput: **1.2k** tokens\nOutput: **300** tokens\nTotal: **1.5k** tokens\nContext: **38%** of 4k\nModel: `gpt-4.1-mini`",
+      "**Thread Usage**\nInput: **1.2k** tokens\nOutput: **300** tokens\nTotal: **1.5k** tokens\nContext: **38%** of 4k\nModel: `gpt-4.1-mini`",
     );
     expect(request).toHaveBeenNthCalledWith(1, "sessions.list", {});
   });
@@ -366,7 +391,7 @@ describe("executeSlashCommand directives", () => {
     );
 
     expect(result.content).toBe(
-      "**Session Usage**\nInput: **1.2k** tokens\nOutput: **300** tokens\nTotal: **~1.5k** tokens\nModel: `gpt-4.1-mini`",
+      "**Thread Usage**\nInput: **1.2k** tokens\nOutput: **300** tokens\nTotal: **~1.5k** tokens\nModel: `gpt-4.1-mini`",
     );
     expect(request).toHaveBeenNthCalledWith(1, "sessions.list", {});
   });
@@ -397,7 +422,7 @@ describe("executeSlashCommand directives", () => {
     );
 
     expect(result.content).toBe(
-      "**Session Usage**\nInput: **1.2k** tokens\nOutput: **300** tokens\nTotal: **1.5k** tokens\nContext: **31%** of 4k\nModel: `gpt-4.1-mini`",
+      "**Thread Usage**\nInput: **1.2k** tokens\nOutput: **300** tokens\nTotal: **1.5k** tokens\nContext: **31%** of 4k\nModel: `gpt-4.1-mini`",
     );
     expect(request).toHaveBeenNthCalledWith(1, "sessions.list", {});
   });
@@ -927,6 +952,7 @@ describe("executeSlashCommand /steer (soft inject)", () => {
     expect(chatSend.payload.sessionKey).toBe("agent:main:main");
     expect(chatSend.payload.message).toBe("try a different approach");
     expect(chatSend.payload.deliver).toBe(false);
+    expect(chatSend.payload.queueMode).toBe("steer");
   });
 
   it("does not mark the current run pending when chat.send returns terminal ok", async () => {
@@ -1366,3 +1392,4 @@ describe("executeSlashCommand /redirect (hard kill-and-restart)", () => {
     expect(result.content).toBe("Failed to redirect: Error: connection lost");
   });
 });
+/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

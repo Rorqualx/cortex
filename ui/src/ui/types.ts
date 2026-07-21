@@ -763,6 +763,36 @@ export type LogEntry = {
   meta?: Record<string, unknown> | null;
 };
 
+// ── Model probe (upstream gateway-protocol ModelsProbeResultSchema) ─
+// Fork's gateway-protocol package predates ModelsProbeResultSchema, so the
+// UI carries the structural type until the protocol package catches up.
+
+export type ModelsProbeStatus =
+  | "ok"
+  | "auth"
+  | "rate_limit"
+  | "billing"
+  | "timeout"
+  | "format"
+  | "unknown"
+  | "no_model";
+
+export type ModelsProbeTargetResult = {
+  profileId?: string;
+  label: string;
+  status: ModelsProbeStatus;
+  latencyMs?: number;
+  error?: string;
+};
+
+export type ModelsProbeResult = {
+  provider: string;
+  status: ModelsProbeStatus;
+  latencyMs?: number;
+  error?: string;
+  results: ModelsProbeTargetResult[];
+};
+
 // ── Attention ───────────────────────────────────────
 
 export type AttentionSeverity = "error" | "warning" | "info";

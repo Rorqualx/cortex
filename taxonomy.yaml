@@ -168,7 +168,7 @@ surfaces:
             description: "`health` and `status` RPCs."
           - name: Identity and presence APIs
             coverageIds: [gateway.identity-and-presence-apis]
-            description: '`gateway.identity.get`, `system.info`, `system-presence`, `system-event`, and heartbeat RPCs.'
+            description: "`gateway.identity.get`, `system.info`, `system-presence`, `system-event`, and heartbeat RPCs."
           - name: Model APIs
             coverageIds: [gateway.model-apis]
             description: "`models.list` RPCs."
@@ -646,7 +646,7 @@ surfaces:
             coverageIds: [cli.service-install-and-control]
             description: The CLI documents install, status, start, stop, restart, and run flows for managed gateway services.
           - name: Service auth wiring
-            coverageIds: [agents.create, channels.discord-config, config.crestodian-setup]
+            coverageIds: [agents.create, channels.discord-config, config.system-agent-setup]
             description: Gateway service installation documents how auth tokens and other sensitive values are handled.
           - name: Drift and reinstall recovery
             coverageIds: [cli.drift-and-reinstall-recovery]
@@ -1167,9 +1167,9 @@ surfaces:
                 agents.create,
                 agents.instructions,
                 channels.discord-config,
-                config.crestodian-setup,
+                config.system-agent-setup,
                 runtime.first-action,
-                runtime.first-hour-20,
+                runtime.multi-turn-continuity,
                 runtime.long-context,
               ]
             description: Starting an agent turn and choosing gateway versus embedded runtime execution.
@@ -1201,7 +1201,7 @@ surfaces:
                 runtime.delivery,
                 runtime.fallback-delivery,
                 runtime.long-context,
-                runtime.soak-100,
+                runtime.long-run-stability,
               ]
             description: Honoring aborts, timing provider/model work, and emitting terminal outcomes.
         docs:
@@ -1437,6 +1437,7 @@ surfaces:
                 runtime.codex-native-workspace.read,
                 runtime.prompt-compatibility,
                 runtime.tool-continuity,
+                tools.ask-user,
                 tools.apply-patch,
                 tools.edit,
                 tools.evidence,
@@ -1556,10 +1557,10 @@ surfaces:
             coverageIds:
               [
                 runtime.codex-app-server,
-                runtime.first-hour-20,
+                runtime.multi-turn-continuity,
                 runtime.gateway-log-sentinel.codex-progress,
                 runtime.long-context,
-                runtime.soak-100,
+                runtime.long-run-stability,
               ]
             description: Covers Token Pressure across manual and automatic compaction, preemptive overflow checks, context-window estimation, session pruning, tool-result trimming, compaction providers, retry/timeout behavior, and compacted transcript checkpoints.
         docs:
@@ -1595,7 +1596,6 @@ surfaces:
         docs:
           - docs/concepts/context.md
           - docs/concepts/context-engine.md
-          - docs/plan/codex-context-engine-harness.md
           - docs/tools/goal.md
         search_anchors:
           - Context Engine
@@ -1829,7 +1829,7 @@ surfaces:
             coverageIds: [channels.status-taxonomy-in-channels-list]
             description: Channel status taxonomy in channels list, channels status, and setup status output
           - name: Setup/onboarding flows
-            coverageIds: [agents.create, channels.discord-config, config.crestodian-setup]
+            coverageIds: [agents.create, channels.discord-config, config.system-agent-setup]
             description: Setup/onboarding flows, including first-run channel selection and channel account setup
           - name: Install-on-demand
             coverageIds: [channels.install-on-demand]
@@ -1892,7 +1892,12 @@ surfaces:
             coverageIds: [security.dm-pairing, channels.pairing-gate]
             description: DM pairing and allowFrom sender controls
           - name: Group/channel allowlists
-            coverageIds: [channels.access-policy, channels.allowlist-hot-reload, channels.group-channel-allowlists]
+            coverageIds:
+              [
+                channels.access-policy,
+                channels.allowlist-hot-reload,
+                channels.group-channel-allowlists,
+              ]
             description: Group/channel allowlists and sender allowlists
           - name: Access group expansion
             coverageIds: [channels.access-group-expansion]
@@ -2510,7 +2515,7 @@ surfaces:
           - name: Model and runtime telemetry
             coverageIds:
               [
-                docker.e2e,
+                docker.runtime-validation,
                 harness.qa-lab,
                 harness.tool-trace-visibility,
                 personal.failure-recovery,
@@ -2530,7 +2535,7 @@ surfaces:
             coverageIds: [telemetry.prometheus-authenticated-gateway-export]
             description: Gateway-authenticated GET /api/diagnostics/prometheus behavior, status, and operator-visible verification.
           - name: Prometheus text exposition
-            coverageIds: [docker.e2e, harness.qa-lab, telemetry.prometheus]
+            coverageIds: [docker.runtime-validation, harness.qa-lab, telemetry.prometheus]
             description: Prometheus text exposition, counters, gauges, histograms, label policy, series cap, and overflow metric
           - name: Trusted diagnostic event subscription
             coverageIds: [telemetry.trusted-diagnostic-event-subscription]
@@ -2613,12 +2618,18 @@ surfaces:
           - name: Agent cron tool
             coverageIds: [channels.qa-channel, personal.reminders, scheduling.cron]
             description: Covers Agent cron tool across cron job creation, listing, inspection, editing, and related cron job lifecycle behavior.
+          - name: Model-authored cron jobs
+            coverageIds: [agents.tool-use]
+            description: Covers model-driven cron tool calls that create and manage scheduled jobs.
           - name: Manual cron runs
             coverageIds: [scheduling.cron]
             description: Covers Manual cron runs across scheduler dispatch, timer arming, manual/due runs, isolated agent execution, and related cron runs and diagnostics behavior.
           - name: Isolated cron execution
             coverageIds: [scheduling.cron, scheduling.dedup]
             description: Covers Isolated cron execution across scheduler dispatch, timer arming, manual/due runs, isolated agent execution, and related cron runs and diagnostics behavior.
+          - name: Scheduler persistence
+            coverageIds: [scheduling.persistence]
+            description: Covers scheduled job persistence and recovery across Gateway restarts.
           - name: Model/provider preflight
             coverageIds: [automation.model-provider-preflight]
             description: Covers Model/provider preflight across scheduler dispatch, timer arming, manual/due runs, isolated agent execution, and related cron runs and diagnostics behavior.
@@ -4413,7 +4424,7 @@ surfaces:
             description: Hosted installer and local-prefix install paths on macOS
           - name: Node 24 recommendation
             coverageIds: [macos.node-24-recommendation]
-            description: Node 24 recommendation and Node 22.19+ compatibility floor
+            description: Node 24.15+ recommendation and WAL-reset-safe Node runtime floor
           - name: App-triggered CLI install
             coverageIds: [macos.app-triggered-cli-install]
             description: App-triggered CLI install and runtime discovery
@@ -5230,7 +5241,7 @@ surfaces:
             description: WSL2 and Ubuntu installation requirements.
           - name: Node runtime
             coverageIds: [wsl2.node-runtime]
-            description: Node 24 and Node 22.19+ runtime requirements inside WSL2.
+            description: WAL-reset-safe Node runtime requirements inside WSL2.
           - name: Linux install flow inside WSL2
             coverageIds: [wsl2.linux-install-flow-inside-wsl2]
             description: Linux install and getting-started flow run inside WSL2.
@@ -6563,7 +6574,7 @@ surfaces:
             coverageIds: [docker.package-artifact-generation]
             description: Docker E2E package artifact generation and shared build helpers
           - name: Docker E2E plan/scheduler scripts
-            coverageIds: [docker.e2e, harness.qa-lab, telemetry.prometheus]
+            coverageIds: [docker.runtime-validation, harness.qa-lab, telemetry.prometheus]
             description: Docker E2E plan/scheduler scripts, lane metadata, targeted grouping, package artifact generation, and GitHub hydration action
           - name: Release-path install
             coverageIds: [docker.release-path-install]

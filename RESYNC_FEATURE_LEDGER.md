@@ -140,3 +140,68 @@ build/tsgo/test:fast exercises dist module resolution; `openclaw --version` also
 without loading the LLM-runtime chunks. **Pre-deploy smoke for this class:** after build,
 `ls packages/ai/dist/internal/` and import a dist chunk that references
 `@openclaw/ai/internal/*` (or start the gateway and wait for `[gateway] ready`).
+
+---
+
+# Phase-2 resync — bbd01c169e5 → e2bb04328f5 (2026-07-20, ~5,962 commits)
+
+Merge `resync/upstream-2026-07-20`; rerere recorded fresh (old cache quarantined at
+`.git/rr-cache.quarantine-20260720`). 1,177 unmerged entries: 651 relocated upstream adds,
+207 fork-deleted/upstream-modified, 283 content conflicts, 36 small classes.
+
+## Structural decisions
+
+1. **Fork keeps `ui/src/ui/**` layout.** Upstream's post-Jul-7 UI restructure
+   (`ui/src/{pages,lib,components,app,api}`) was NOT adopted as architecture. Upstream's
+   651 new files were relocated into the fork layout (588 imports auto-remapped from the
+   merge's relocation map); **228 files of upstream's un-adopted page-shell/api-layer
+   redesign were pruned** (referenced only by each other — dropping them keeps fork
+   behavior; upstream features they carried are re-evaluable later). 74 genuinely
+   referenced integration files had imports remapped/adopted individually.
+2. **207 fork-deletions kept (port-debt)** — upstream modified files the fork had
+   deleted/relocated; kept deleted except the 5 `ChatViewModel+*.swift` extensions
+   (restored: the merged Swift monolith adopted upstream's split shape and needs them).
+   The fork's ChatViewModel delta (+466/−61: message-identity fingerprints,
+   decodeMessages/stripInboundMetadata, user-echo refinements) needs re-porting onto
+   `+HistoryReconciliation`/`+TransportEvents`.
+3. **Skill Forge remains the only skills pipeline surface-side**: upstream's
+   `skill-protocol-schemas.ts` removed (orphaned; registry spread was already dropped);
+   docs keep forge config; BUT upstream's new `src/skills/workshop/**` modules are
+   in-tree with live core callers (experience review et al.) — the workshop-vs-forge
+   runtime boundary needs a deliberate follow-up decision.
+4. **Protocol schema graph proven importable** (both fork Activity/approval surfaces and
+   upstream Board/Question/placement registered; 549 keys, 0 dups; Swift models
+   regenerated; protocol version follows upstream, no bump). `schema/types.ts` kept as
+   the fork's type-alias home; Crestodian* aliases trimmed (upstream renamed to
+   SystemAgent*).
+5. **Zai thinking policy unified**: gate + verified minimal..max ladder moved to
+   `extensions/zai/provider-policy-api.ts`, shared by cold selection and runtime.
+
+## Known integration debt (must clear before land — tsgo loop targets)
+
+- `server.impl.ts` / `server-chat-state.ts` (merge=ours): must adopt the
+  provisional/commit approvals-subscribe registry contract (`sessions-subscriptions.ts`
+  depends on it; typecheck fails at the old void registry).
+- `app-render.ts`/`app-channels.ts` vs rewritten controllers/views: `saveConfig`,
+  `renderExecApprovalPrompt`, cron/usage/skills/mcp/nodes prop contracts.
+- `ui/src/ui/markdown.ts`: needs `highlightJsonHtml` export (channels/debug/config);
+  upstream's markdown.ts rework was dropped by rename detection — adopt-or-skip decision.
+- `ui/src/ui/controllers/cron.ts` duplicate `CronFormState`.
+- skills.proposals gateway modules orphaned (fork keeps forge method list) — register or
+  delete.
+- `controllers/config.test.ts` reduced to a stub; rebuild coverage once the controller
+  surface settles (fork's 10 config functions vs upstream capability layer).
+
+## Deferred follow-ups (post-land)
+
+- Port fork ChatViewModel delta onto upstream's Swift split (see 2).
+- Swift compile proof needs Crabbox/Xcode (no local SwiftPM check ran).
+- `sessions.messages-subscribe-approvals.test.ts` tracks the approvals-subscribe debt.
+- Workboard contract duplication: fork `src/workboard/types.ts` vs upstream
+  `packages/workboard-contract` — consolidate importers on one.
+- `docs/tools/self-learning.md` + dangling `/tools/skill-workshop` links (4 files).
+- Upstream #111194 SQLite reset-history retention may subsume the fork's
+  `preserveResetSessionForDiscovery`; product-level review.
+- `run/helpers.ts`: usage snapshot no longer falls back to accumulator last-call usage
+  (upstream deleted the helper) — minor reporting shift.
+- meta.json i18n hashes stale until next `pnpm ui:i18n:sync`.

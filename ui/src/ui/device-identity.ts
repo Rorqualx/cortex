@@ -107,6 +107,23 @@ export async function loadOrCreateDeviceIdentity(): Promise<DeviceIdentity> {
   return identity;
 }
 
+// Read-only probe used by hasStoredGatewayAuth: must not create an identity,
+// only report whether one is already stored.
+export function peekStoredDeviceIdentityId(): string | null {
+  try {
+    const raw = getSafeLocalStorage()?.getItem(STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as StoredIdentity;
+    return parsed?.version === 1 && typeof parsed.deviceId === "string" && parsed.deviceId
+      ? parsed.deviceId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function signDevicePayload(privateKeyBase64Url: string, payload: string) {
   const key = base64UrlDecode(privateKeyBase64Url);
   const data = new TextEncoder().encode(payload);

@@ -1,17 +1,8 @@
 import { splitShellArgs } from "../utils/shell-argv.js";
-import type {
-  ExecCommandAnalysis,
-  ExecCommandSegment,
-  ShellChainOperator,
-} from "./exec-command-analysis-types.js";
+import type { ExecCommandSegment, ShellChainOperator } from "./exec-command-analysis-types.js";
 import { resolveCommandResolutionFromArgv } from "./exec-command-resolution.js";
 // Shared exec approval analysis types and Windows-only shell enforcement helpers.
-import {
-  analyzeWindowsShellCommand,
-  isWindowsPlatform,
-  rebuildWindowsShellCommandFromSource,
-  windowsEscapeArg,
-} from "./windows-shell-command.js";
+import { rebuildWindowsShellCommandFromSource, windowsEscapeArg } from "./windows-shell-command.js";
 
 export { analyzeArgvCommand } from "./exec-argv-analysis.js";
 

@@ -4,6 +4,7 @@ import { runAgentCleanupStep } from "./run-cleanup-timeout.js";
 
 const AGENT_CLEANUP_STEP_TIMEOUT_MS = 10_000;
 const CLEANUP_TIMEOUT_DETAILS_MAX_CHARS = 512;
+const CLEANUP_TIMEOUT_DETAILS_TRUNCATED_SUFFIX = "...[truncated]";
 
 describe("agent cleanup timeout", () => {
   const log = {
@@ -113,6 +114,33 @@ describe("agent cleanup timeout", () => {
         CLEANUP_TIMEOUT_DETAILS_MAX_CHARS +
         1,
     );
+  });
+
+  it("keeps truncated cleanup timeout details UTF-16 safe", async () => {
+    const cleanup = vi.fn(async () => new Promise<never>(() => {}));
+    const prefixLength =
+      CLEANUP_TIMEOUT_DETAILS_MAX_CHARS - CLEANUP_TIMEOUT_DETAILS_TRUNCATED_SUFFIX.length;
+    const detailsPrefix = "a".repeat(prefixLength - 1);
+    const oversizedDetails = `${detailsPrefix}😀${"b".repeat(CLEANUP_TIMEOUT_DETAILS_MAX_CHARS)}`;
+
+    const result = runAgentCleanupStep({
+      runId: "run-trajectory",
+      sessionId: "session-trajectory",
+      step: "agent-trajectory-flush",
+      cleanup,
+      log,
+      timeoutMs: 5,
+      getTimeoutDetails: () => oversizedDetails,
+    });
+
+    await vi.advanceTimersByTimeAsync(5);
+    await expect(result).resolves.toBeUndefined();
+
+    const message = String(log.warn.mock.calls.at(-1)?.[0] ?? "");
+    expect(message).toContain(
+      ` details=${detailsPrefix}${CLEANUP_TIMEOUT_DETAILS_TRUNCATED_SUFFIX}`,
+    );
+    expect(message).not.toContain("�");
   });
 
   it("does not fail cleanup when timeout details throw", async () => {

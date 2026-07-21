@@ -16,7 +16,7 @@ import {
   type NormalizedUsage,
 } from "../../usage.js";
 import type { EmbeddedAgentMeta } from "../types.js";
-import { toLastCallUsage, toNormalizedUsage, type UsageAccumulator } from "../usage-accumulator.js";
+import { toNormalizedUsage, type UsageAccumulator } from "../usage-accumulator.js";
 
 type UsageSnapshot = {
   input?: number;
@@ -54,6 +54,7 @@ export const MAX_SAME_MODEL_RATE_LIMIT_RETRIES = 3;
 const SAME_MODEL_RATE_LIMIT_BACKOFF_STEP_MS = 10_000;
 const SAME_MODEL_RATE_LIMIT_MAX_BACKOFF_MS = 60_000;
 
+// Fork: auth.cooldowns.* config keys can override the failover budgets.
 export function resolveOverloadFailoverBackoffMs(cfg?: OpenClawConfig): number {
   return cfg?.auth?.cooldowns?.overloadedBackoffMs ?? DEFAULT_OVERLOAD_FAILOVER_BACKOFF_MS;
 }
@@ -130,6 +131,7 @@ const ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL = "ANTHROPIC_MAGIC_STRING_TRIGGER_R
 const ANTHROPIC_MAGIC_STRING_REPLACEMENT = "ANTHROPIC MAGIC STRING TRIGGER REFUSAL (redacted)";
 
 // Avoid Anthropic's refusal test token poisoning session transcripts.
+// Fork: exported because the fork run loop applies the scrub directly.
 export function scrubAnthropicRefusalMagic(prompt: string): string {
   if (!prompt.includes(ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL)) {
     return prompt;
@@ -138,6 +140,18 @@ export function scrubAnthropicRefusalMagic(prompt: string): string {
     ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL,
     ANTHROPIC_MAGIC_STRING_REPLACEMENT,
   );
+}
+
+/** Applies only outer-transport prompt rewrites; native model owners receive the prompt verbatim. */
+export function resolveEmbeddedAttemptBasePrompt(params: {
+  nativeModelOwned: boolean;
+  provider: string;
+  prompt: string;
+}): string {
+  if (params.nativeModelOwned || params.provider !== "anthropic") {
+    return params.prompt;
+  }
+  return scrubAnthropicRefusalMagic(params.prompt);
 }
 
 export function createCompactionDiagId(): string {
@@ -150,6 +164,7 @@ const MIN_RUN_RETRY_ITERATIONS = 32;
 const MAX_RUN_RETRY_ITERATIONS = 160;
 
 // Defensive guard for the outer run loop across all retry branches.
+// Fork: agents.defaults/list runRetries config can tune the budget per agent.
 export function resolveMaxRunRetryIterations(
   profileCandidateCount: number,
   cfg?: OpenClawConfig,
@@ -254,7 +269,7 @@ export function buildUsageAgentMetaFields(params: {
     ? lastAssistantUsage
     : hasNonzeroUsage(params.lastRunPromptUsage)
       ? params.lastRunPromptUsage
-      : toLastCallUsage(params.usageAccumulator);
+      : undefined;
   const promptTokens = deriveContextPromptTokens({
     lastCallUsage: params.lastRunPromptUsage,
   });

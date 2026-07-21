@@ -3,8 +3,8 @@ export {
   renderConfigForm,
   renderChannelConfigModal,
   type ConfigFormProps,
-  SECTION_META,
 } from "./config-form.render.ts";
+export { SECTION_META } from "./config-form.meta.ts";
 export { analyzeConfigSchema, type ConfigSchemaAnalysis } from "./config-form.analyze.ts";
 export { renderNode } from "./config-form.node.ts";
 export { schemaType, type JsonSchema } from "./config-form.shared.ts";

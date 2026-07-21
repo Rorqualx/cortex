@@ -247,7 +247,8 @@ import {
 } from "./views/cron-quick-create.ts";
 import { renderDreamingRestartConfirmation } from "./views/dreaming-restart-confirmation.ts";
 import { renderDreaming, type DreamingAgentOption } from "./views/dreaming.ts";
-import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
+// Self-registering <openclaw-exec-approval> element (upstream modal-queue shape).
+import "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
 import { renderMcp } from "./views/mcp.ts";
@@ -4835,7 +4836,25 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
       </main>
-      ${renderExecApprovalPrompt(state)} ${renderGatewayUrlConfirmation(state)}
+      ${state.execApprovalQueue.length > 0
+        ? html`<openclaw-exec-approval
+            .props=${{
+              queue: state.execApprovalQueue,
+              busy: state.execApprovalBusy,
+              errors: new Map<string, string>(),
+              nowMs: Date.now(),
+              inlineApprovalId: null,
+              // Fork handler decides the queue head only; ignore stale ids from
+              // queue-list clicks so a race can't approve the wrong request.
+              onDecision: (approvalId: string, decision: "allow-once" | "allow-always" | "deny") => {
+                if (approvalId === state.execApprovalQueue[0]?.id) {
+                  void state.handleExecApprovalDecision(decision);
+                }
+              },
+            }}
+          ></openclaw-exec-approval>`
+        : nothing}
+      ${renderGatewayUrlConfirmation(state)}
       ${state.vaultComposerModalOpen
         ? renderLazyView(
             lazyVaultAddModal,

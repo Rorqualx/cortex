@@ -1,4 +1,5 @@
 // Control UI module implements public assets behavior.
+import { CONTROL_UI_BASE_PATH_ATTRIBUTE } from "../../../src/gateway/control-ui-contract.js";
 import { inferBasePathFromPathname, normalizeBasePath } from "./navigation.ts";
 
 export type ControlUiPublicAsset =
@@ -7,12 +8,33 @@ export type ControlUiPublicAsset =
   | "favicon.ico"
   | "favicon.svg"
   | "manifest.webmanifest"
-  | "sw.js";
+  | "sw.js"
+  | `provider-icons/ProviderIcon-${string}.svg`
+  | `plugin-art/${string}.webp`
+  | `app-art/${string}.webp`;
 
 type WindowWithControlUiBasePath = Window &
   typeof globalThis & {
     [key: string]: unknown;
   };
+
+export function resolveControlUiBasePath(pathname: string): string {
+  if (typeof window !== "undefined") {
+    const windowValue = (window as WindowWithControlUiBasePath)[
+      "__OPENCLAW_CONTROL_UI_BASE_PATH__"
+    ];
+    if (typeof windowValue === "string") {
+      return normalizeBasePath(windowValue);
+    }
+  }
+  if (typeof document !== "undefined") {
+    const documentValue = document.documentElement.getAttribute(CONTROL_UI_BASE_PATH_ATTRIBUTE);
+    if (documentValue !== null) {
+      return normalizeBasePath(documentValue);
+    }
+  }
+  return inferBasePathFromPathname(pathname);
+}
 
 export function controlUiPublicAssetPath(
   asset: ControlUiPublicAsset,
@@ -29,20 +51,12 @@ export function inferControlUiPublicAssetPath(
     pathname?: string;
   },
 ): string {
-  const configured = params?.basePath ?? readConfiguredBasePath();
-  const inferredBasePath =
-    configured != null
-      ? configured
-      : inferBasePathFromPathname(params?.pathname ?? currentPathname());
-  return controlUiPublicAssetPath(asset, inferredBasePath);
-}
-
-function readConfiguredBasePath(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const value = (window as WindowWithControlUiBasePath)["__OPENCLAW_CONTROL_UI_BASE_PATH__"];
-  return typeof value === "string" ? value : null;
+  const basePath =
+    params?.basePath ??
+    (params?.pathname === undefined
+      ? resolveControlUiBasePath(currentPathname())
+      : inferBasePathFromPathname(params.pathname));
+  return controlUiPublicAssetPath(asset, basePath);
 }
 
 function currentPathname(): string {

@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-07-20T20:25:54.849Z",
-  "branch": "main",
-  "headSha": "b82de8b4063dbafaf9ec332fec6968ae1332db47",
+  "timestamp": "2026-07-21T00:37:01.532Z",
+  "branch": "resync/upstream-2026-07-20",
+  "headSha": "ba1295be55ff8277ccd3e299f62a2388e94eaa81",
   "files": {
     ".gitattributes": {
       "hash": "05ab26487eb7d53067b38b550771a408c79144181824d04d760e49e157c45f4c",
@@ -367,7 +367,7 @@
       "hash": "cf2e3d813228e2aeec68367bd280c6b365dff0d0c02d781e6337b3155ecf6d91"
     },
     ".oxlintrc.json": {
-      "hash": "675de1562dec6d154e75436990cc3887f352d967d12b8e69dedc462ce0b396b4",
+      "hash": "71667502f7e1aee8bf3af0350f7bcf7ab63c4439f6cf6fbbb8340582400cf2ff",
       "jsonKeys": [
         "$schema",
         "plugins",
@@ -378,7 +378,7 @@
       ]
     },
     "tsconfig.json": {
-      "hash": "deeebb276c93c831036248f2d07a81b4bb6a4974d990b064eb67cc85c0298c4d",
+      "hash": "d9aae5c18a0d8b6d3b4e169fd0a9f1392d07346c0353bdd4cdf07f4c41eea526",
       "jsonKeys": [
         "compilerOptions",
         "include",
@@ -386,29 +386,19 @@
       ]
     },
     "tsconfig.core.json": {
-      "hash": "68cbb3d86fda0670a3634a182a5c60a0abc08fa69847de5663ec87430d9a5323",
-      "jsonKeys": [
-        "extends",
-        "compilerOptions",
-        "include",
-        "exclude"
-      ]
+      "hash": "8cfaaeea92670510a32de661254dce32d3aa520426efbce26db00504b59e2136",
+      "jsonKeys": null
     },
     "tsconfig.extensions.json": {
-      "hash": "fda20fc37da7a663d987ceb3f557e8d4dbc1d21120f864e1c89871d03b5b51f6",
-      "jsonKeys": [
-        "extends",
-        "compilerOptions",
-        "include",
-        "exclude"
-      ]
+      "hash": "26f1594747121353a59b11168ab2dde10b0e3d7ca6f2cde37770ed208f4fcda3",
+      "jsonKeys": null
     },
     "package.json": {
-      "hash": "e684c69892c2496e2210ea6665228da38090689104fa9fcf81568aad15b26477",
-      "pkgSectionsHash": "7b1fc1f0a25d6e6ccadec02eed651bf513c540012a8b3f82b74ce2242c48f7e5"
+      "hash": "c65b6d64ee47caf5e6d28a495fa3bfde86cace6b1ba38fe2a7e350d4a21afc81",
+      "pkgSectionsHash": "811edfcc8040c1f8543824db1fd3d52af32f30280a77425798a1b8c26a0c2121"
     },
     "src/config/schema.ts": {
-      "hash": "6a445062e415dbd88ba7cf33297b84a63f13e21e1727e20e677c594d6e881bff"
+      "hash": "a81b8b84a3f3d146f86b56fffa8450401a207fa1fe45c1932d5a96658aa8f341"
     },
     "src/config/runtime-schema.ts": {
       "hash": "8cf5bb07c1072182966147c7b16b1c2261c844e53f28d343ea581f5c92b45ac3"

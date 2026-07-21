@@ -16,10 +16,6 @@ function buildProps(overrides?: Partial<DreamingProps>): DreamingProps {
   const props: DreamingProps = {
     active: true,
     selectedAgentId: "main",
-    agentOptions: [
-      { id: "main", label: "main" },
-      { id: "ceo", label: "ceo" },
-    ],
     shortTermCount: 47,
     groundedSignalCount: 9,
     totalSignalCount: 182,
@@ -194,7 +190,6 @@ function buildProps(overrides?: Partial<DreamingProps>): DreamingProps {
       ],
     },
     onRefresh: () => {},
-    onSelectAgent: () => {},
     onRefreshDiary: () => {},
     onRefreshImports: () => {},
     onRefreshMemoryPalace: () => {},
@@ -241,6 +236,15 @@ describe("dreaming view", () => {
 
     // A specific agent is selected, so that agent's avatar dreams in the scene.
     expectElement(container, ".dreams__dreamer-avatar");
+
+    // The sleeper is the seeded pet cameo: eyes closed, pupils hidden.
+    const closedEyes = container.querySelector<SVGGElement>(".dreams__lobster .lob-eye-closed");
+    expect(closedEyes?.getAttribute("style")).toContain("opacity:1");
+    const openEyes = container.querySelector<SVGGElement>(".dreams__lobster .lob-eye-open");
+    expect(openEyes?.getAttribute("style")).toContain("display:none");
+    expect(
+      container.querySelector<HTMLElement>(".dreams__lobster")?.getAttribute("style"),
+    ).toContain("--lob-shell:");
 
     expect(textItems(container, ".dreams__z")).toEqual(["z", "z", "Z"]);
 
@@ -419,6 +423,8 @@ describe("dreaming view", () => {
     expect(compactText(container.querySelector(".dreams-diary__preview-hint"))).toBe(
       "Showing the first chunk of this page (6001 total lines).",
     );
+    expect(container.querySelector("openclaw-modal-dialog")).not.toBeNull();
+    expect(container.querySelector(".dreams-diary__preview-backdrop")).toBeNull();
 
     const closePreviewButton = container.querySelector<HTMLButtonElement>(
       ".dreams-diary__preview-header .btn",
@@ -436,10 +442,10 @@ describe("dreaming view", () => {
     expect(compactText(container.querySelector(".dreams-diary__date"))).toBe(
       "Vault · 2 pages · 2 claim rows · 1 open question · 1 contradiction",
     );
-    expect(compactText(container.querySelectorAll(".dreams-diary__para")[0])).toBe(
+    expect(compactText(container.querySelectorAll(".dreams-diary__para").item(0))).toBe(
       "Full vault breakdown: Sources · 1 page; Syntheses · 1 page.",
     );
-    expect(compactText(container.querySelectorAll(".dreams-diary__para")[1])).toContain(
+    expect(compactText(container.querySelectorAll(".dreams-diary__para").item(1))).toContain(
       "Selected section: Syntheses: 1 page · 2 claim rows · 1 open question on 1 page · 1 contradiction.",
     );
     const insight = container.querySelector(".dreams-diary__insight-card");

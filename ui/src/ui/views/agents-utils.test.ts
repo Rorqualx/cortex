@@ -1,9 +1,12 @@
 // Control UI tests cover agents utils behavior.
 import { describe, expect, it } from "vitest";
+import { AVATAR_MAX_DATA_URL_CHARS } from "../../../../src/shared/avatar-limits.js";
 import {
   agentLogoUrl,
   assistantAvatarFallbackUrl,
   buildAgentContext,
+  formatBytes,
+  isRenderableControlUiAvatarUrl,
   resolveConfiguredCronModelSuggestions,
   resolveAgentAvatarUrl,
   resolveAssistantTextAvatar,
@@ -11,6 +14,16 @@ import {
   resolveEffectiveModelFallbacks,
   sortLocaleStrings,
 } from "./agents-utils.ts";
+
+describe("formatBytes", () => {
+  it("preserves the Control UI byte-size display contract", () => {
+    expect(formatBytes(undefined)).toBe("-");
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(1536)).toBe("1.5 KB");
+    expect(formatBytes(12 * 1024)).toBe("12 KB");
+    expect(formatBytes(2 * 1024 * 1024)).toBe("2.0 MB");
+  });
+});
 
 describe("resolveEffectiveModelFallbacks", () => {
   it("inherits defaults when no entry fallbacks are configured", () => {
@@ -155,6 +168,15 @@ describe("resolveAssistantTextAvatar", () => {
 });
 
 describe("resolveAgentAvatarUrl", () => {
+  it("accepts image data URLs only through the shared encoded-size boundary", () => {
+    const prefix = "data:image/svg+xml;base64,";
+    const exact = `${prefix}${"A".repeat(AVATAR_MAX_DATA_URL_CHARS - prefix.length)}`;
+
+    expect(isRenderableControlUiAvatarUrl(exact)).toBe(true);
+    expect(isRenderableControlUiAvatarUrl(`${exact}A`)).toBe(false);
+    expect(isRenderableControlUiAvatarUrl("data:text/plain,avatar")).toBe(false);
+  });
+
   it("prefers a runtime avatar URL over non-URL identity avatars", () => {
     expect(
       resolveAgentAvatarUrl(

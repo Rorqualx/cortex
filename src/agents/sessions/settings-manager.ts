@@ -7,12 +7,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { resolveIntegerOption } from "@openclaw/normalization-core/number-coercion";
-import lockfile from "proper-lockfile";
+import { mergeDeep } from "../../infra/deep-merge.js";
 import type { Transport } from "../../llm/types.js";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.js";
+import { acquireLockSyncWithRetry } from "./storage-lock.js";
 
-export interface CompactionSettings {
+interface CompactionSettings {
   enabled?: boolean; // default: true
   reserveTokens?: number; // default: 16384
   keepRecentTokens?: number; // default: 20000
@@ -126,33 +127,7 @@ export interface Settings {
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
 function deepMergeSettings(base: Settings, overrides: Settings): Settings {
-  const result: Settings = { ...base };
-
-  for (const key of Object.keys(overrides) as (keyof Settings)[]) {
-    const overrideValue = overrides[key];
-    const baseValue = base[key];
-
-    if (overrideValue === undefined) {
-      continue;
-    }
-
-    // For nested objects, merge recursively
-    if (
-      typeof overrideValue === "object" &&
-      overrideValue !== null &&
-      !Array.isArray(overrideValue) &&
-      typeof baseValue === "object" &&
-      baseValue !== null &&
-      !Array.isArray(baseValue)
-    ) {
-      (result as Record<string, unknown>)[key] = { ...baseValue, ...overrideValue };
-    } else {
-      // For primitives and arrays, override value wins
-      (result as Record<string, unknown>)[key] = overrideValue;
-    }
-  }
-
-  return result;
+  return mergeDeep(base, overrides) as Settings;
 }
 
 export type SettingsScope = "global" | "project";
@@ -175,33 +150,6 @@ export class FileSettingsStorage implements SettingsStorage {
     this.projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
   }
 
-  private acquireLockSyncWithRetry(path: string): () => void {
-    const maxAttempts = 10;
-    const delayMs = 20;
-    let lastError: unknown;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return lockfile.lockSync(path, { realpath: false });
-      } catch (error) {
-        const code =
-          typeof error === "object" && error !== null && "code" in error
-            ? String((error as { code?: unknown }).code)
-            : undefined;
-        if (code !== "ELOCKED" || attempt === maxAttempts) {
-          throw error;
-        }
-        lastError = error;
-        const start = Date.now();
-        while (Date.now() - start < delayMs) {
-          // Sleep synchronously to avoid changing callers to async.
-        }
-      }
-    }
-
-    throw (lastError as Error) ?? new Error("Failed to acquire settings lock");
-  }
-
   withLock(scope: SettingsScope, fn: (current: string | undefined) => string | undefined): void {
     const path = scope === "global" ? this.globalSettingsPath : this.projectSettingsPath;
     const dir = dirname(path);
@@ -211,7 +159,7 @@ export class FileSettingsStorage implements SettingsStorage {
       // Only create directory and lock if file exists or we need to write
       const fileExists = existsSync(path);
       if (fileExists) {
-        release = this.acquireLockSyncWithRetry(path);
+        release = acquireLockSyncWithRetry(path);
       }
       const current = fileExists ? readFileSync(path, "utf-8") : undefined;
       const next = fn(current);
@@ -221,7 +169,7 @@ export class FileSettingsStorage implements SettingsStorage {
           mkdirSync(dir, { recursive: true });
         }
         if (!release) {
-          release = this.acquireLockSyncWithRetry(path);
+          release = acquireLockSyncWithRetry(path);
         }
         writeFileSync(path, next, "utf-8");
       }
@@ -1014,11 +962,7 @@ export class SettingsManager {
   }
 
   getClearOnShrink(): boolean {
-    // Settings takes precedence, then env var, then default false
-    if (this.settings.terminal?.clearOnShrink !== undefined) {
-      return this.settings.terminal.clearOnShrink;
-    }
-    return process.env.OPENCLAW_CLEAR_ON_SHRINK === "1";
+    return this.settings.terminal?.clearOnShrink ?? false;
   }
 
   setClearOnShrink(enabled: boolean): void {
@@ -1102,7 +1046,7 @@ export class SettingsManager {
   }
 
   getShowHardwareCursor(): boolean {
-    return this.settings.showHardwareCursor ?? process.env.OPENCLAW_HARDWARE_CURSOR === "1";
+    return this.settings.showHardwareCursor ?? false;
   }
 
   setShowHardwareCursor(enabled: boolean): void {
@@ -1145,3 +1089,4 @@ export class SettingsManager {
     this.save();
   }
 }
+/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

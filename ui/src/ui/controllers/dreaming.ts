@@ -1,8 +1,11 @@
-import { isGatewayMethodAdvertised } from "../gateway-methods.ts";
-// Control UI controller manages dreaming gateway state.
+// Control UI controller manages dreaming gateway state (upstream body, fork paths).
+import { asNullableRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
 import type { GatewayBrowserClient, GatewayHelloOk } from "../gateway.ts";
+import { copyToClipboard } from "../chat/clipboard.ts";
+import { isGatewayMethodAdvertised } from "../gateway-methods.ts";
 import { isPluginEnabledInConfigSnapshot } from "../plugin-activation.ts";
 import type { ConfigSnapshot } from "../types.ts";
+import type { RuntimeConfigCapability } from "./config-capability.ts";
 
 const DEFAULT_DREAM_DIARY_PATH = "DREAMS.md";
 const DEFAULT_DREAMING_PLUGIN_ID = "memory-core";
@@ -234,9 +237,19 @@ export type DreamingState = {
   dreamDiaryError: string | null;
   dreamDiaryPath: string | null;
   dreamDiaryContent: string | null;
+  // Agent switches can overlap RPCs; generations keep an old A -> B -> A response
+  // from replacing the current agent's wiki data.
+  wikiImportInsightsRequestAgentId?: string | null;
+  wikiImportInsightsRequestGeneration?: number;
+  wikiImportInsightsActiveRequestGeneration?: number | null;
+  wikiImportInsightsAgentId?: string | null;
   wikiImportInsightsLoading: boolean;
   wikiImportInsightsError: string | null;
   wikiImportInsights: WikiImportInsights | null;
+  wikiMemoryPalaceRequestAgentId?: string | null;
+  wikiMemoryPalaceRequestGeneration?: number;
+  wikiMemoryPalaceActiveRequestGeneration?: number | null;
+  wikiMemoryPalaceAgentId?: string | null;
   wikiMemoryPalaceLoading: boolean;
   wikiMemoryPalaceError: string | null;
   wikiMemoryPalace: WikiMemoryPalace | null;
@@ -290,7 +303,7 @@ function buildDreamDiaryActionSuccessMessage(
       const actions: string[] = [];
       const archiveDir = normalizeTrimmedString(payload?.archiveDir);
       if (payload?.archivedSessionCorpus === true) {
-        actions.push("archived session corpus");
+        actions.push("archived thread corpus");
       }
       if (payload?.archivedSessionIngestion === true) {
         actions.push("archived ingestion state");
@@ -313,13 +326,6 @@ function buildDreamDiaryActionSuccessMessage(
       return `Cleared ${typeof payload?.removedShortTermEntries === "number" ? payload.removedShortTermEntries : 0} replayed short-term entries.`;
   }
   return "Dream diary action complete.";
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
 }
 
 function normalizeTrimmedString(value: unknown): string | undefined {
@@ -964,47 +970,114 @@ export async function loadDreamDiary(state: DreamingState): Promise<void> {
 }
 
 export async function loadWikiImportInsights(state: DreamingState): Promise<void> {
-  if (!state.client || !state.connected || state.wikiImportInsightsLoading) {
+  if (!state.client || !state.connected) {
     return;
   }
+  const agentId = resolveSelectedAgentId(state);
+  if (state.wikiImportInsightsLoading && state.wikiImportInsightsRequestAgentId === agentId) {
+    return;
+  }
+  if (state.wikiImportInsightsAgentId !== agentId) {
+    state.wikiImportInsights = null;
+  }
   if (!canCallMemoryWikiMethod(state, "wiki.importInsights")) {
+    state.wikiImportInsightsActiveRequestGeneration = null;
+    state.wikiImportInsightsRequestAgentId = null;
+    state.wikiImportInsightsLoading = false;
     state.wikiImportInsights = null;
     state.wikiImportInsightsError = null;
     return;
   }
+  const requestGeneration = (state.wikiImportInsightsRequestGeneration ?? 0) + 1;
+  state.wikiImportInsightsRequestGeneration = requestGeneration;
+  state.wikiImportInsightsActiveRequestGeneration = requestGeneration;
+  state.wikiImportInsightsRequestAgentId = agentId;
   state.wikiImportInsightsLoading = true;
   state.wikiImportInsightsError = null;
   try {
     const payload = await state.client.request<WikiImportInsightsPayload>(
       "wiki.importInsights",
-      {},
+      buildSelectedAgentPayloadForAgentId(agentId),
     );
+    if (
+      state.wikiImportInsightsActiveRequestGeneration !== requestGeneration ||
+      state.wikiImportInsightsRequestAgentId !== agentId ||
+      resolveSelectedAgentId(state) !== agentId
+    ) {
+      return;
+    }
     state.wikiImportInsights = normalizeWikiImportInsights(payload);
+    state.wikiImportInsightsAgentId = agentId;
   } catch (err) {
-    state.wikiImportInsightsError = String(err);
+    if (
+      state.wikiImportInsightsActiveRequestGeneration === requestGeneration &&
+      state.wikiImportInsightsRequestAgentId === agentId &&
+      resolveSelectedAgentId(state) === agentId
+    ) {
+      state.wikiImportInsightsError = String(err);
+    }
   } finally {
-    state.wikiImportInsightsLoading = false;
+    if (state.wikiImportInsightsActiveRequestGeneration === requestGeneration) {
+      state.wikiImportInsightsLoading = false;
+      state.wikiImportInsightsRequestAgentId = null;
+      state.wikiImportInsightsActiveRequestGeneration = null;
+    }
   }
 }
 
 export async function loadWikiMemoryPalace(state: DreamingState): Promise<void> {
-  if (!state.client || !state.connected || state.wikiMemoryPalaceLoading) {
+  if (!state.client || !state.connected) {
     return;
   }
+  const agentId = resolveSelectedAgentId(state);
+  if (state.wikiMemoryPalaceLoading && state.wikiMemoryPalaceRequestAgentId === agentId) {
+    return;
+  }
+  if (state.wikiMemoryPalaceAgentId !== agentId) {
+    state.wikiMemoryPalace = null;
+  }
   if (!canCallMemoryWikiMethod(state, "wiki.palace")) {
+    state.wikiMemoryPalaceActiveRequestGeneration = null;
+    state.wikiMemoryPalaceRequestAgentId = null;
+    state.wikiMemoryPalaceLoading = false;
     state.wikiMemoryPalace = null;
     state.wikiMemoryPalaceError = null;
     return;
   }
+  const requestGeneration = (state.wikiMemoryPalaceRequestGeneration ?? 0) + 1;
+  state.wikiMemoryPalaceRequestGeneration = requestGeneration;
+  state.wikiMemoryPalaceActiveRequestGeneration = requestGeneration;
+  state.wikiMemoryPalaceRequestAgentId = agentId;
   state.wikiMemoryPalaceLoading = true;
   state.wikiMemoryPalaceError = null;
   try {
-    const payload = await state.client.request<WikiMemoryPalacePayload>("wiki.palace", {});
+    const payload = await state.client.request<WikiMemoryPalacePayload>(
+      "wiki.palace",
+      buildSelectedAgentPayloadForAgentId(agentId),
+    );
+    if (
+      state.wikiMemoryPalaceActiveRequestGeneration !== requestGeneration ||
+      state.wikiMemoryPalaceRequestAgentId !== agentId ||
+      resolveSelectedAgentId(state) !== agentId
+    ) {
+      return;
+    }
     state.wikiMemoryPalace = normalizeWikiMemoryPalace(payload);
+    state.wikiMemoryPalaceAgentId = agentId;
   } catch (err) {
-    state.wikiMemoryPalaceError = String(err);
+    if (
+      state.wikiMemoryPalaceActiveRequestGeneration === requestGeneration &&
+      state.wikiMemoryPalaceRequestAgentId === agentId &&
+      resolveSelectedAgentId(state) === agentId
+    ) {
+      state.wikiMemoryPalaceError = String(err);
+    }
   } finally {
-    state.wikiMemoryPalaceLoading = false;
+    if (state.wikiMemoryPalaceActiveRequestGeneration === requestGeneration) {
+      state.wikiMemoryPalaceLoading = false;
+      state.wikiMemoryPalaceRequestAgentId = null;
+      state.wikiMemoryPalaceActiveRequestGeneration = null;
+    }
   }
 }
 
@@ -1099,27 +1172,18 @@ export async function copyDreamingArchivePath(state: DreamingState): Promise<boo
   if (!path) {
     return false;
   }
-  if (!globalThis.navigator?.clipboard?.writeText) {
-    state.dreamDiaryActionMessage = {
-      kind: "error",
-      text: "Could not copy archive path.",
-    };
-    return false;
-  }
-  try {
-    await globalThis.navigator.clipboard.writeText(path);
+  if (await copyToClipboard(path)) {
     state.dreamDiaryActionMessage = {
       kind: "success",
       text: "Archive path copied.",
     };
     return true;
-  } catch {
-    state.dreamDiaryActionMessage = {
-      kind: "error",
-      text: "Could not copy archive path.",
-    };
-    return false;
   }
+  state.dreamDiaryActionMessage = {
+    kind: "error",
+    text: "Could not copy archive path.",
+  };
+  return false;
 }
 
 export async function dedupeDreamDiary(state: DreamingState): Promise<boolean> {
@@ -1242,3 +1306,4 @@ export async function updateDreamingEnabled(
   }
   return ok;
 }
+/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

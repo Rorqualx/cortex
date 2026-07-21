@@ -43,10 +43,12 @@ export type CronFormState = {
   clearAgent: boolean;
   enabled: boolean;
   deleteAfterRun: boolean;
-  scheduleKind: "at" | "every" | "cron";
+  // on-exit jobs are read-only because the form cannot edit a watched command.
+  // Preserve their schedule verbatim on save instead of rebuilding it.
+  scheduleKind: "at" | "every" | "cron" | "on-exit";
   scheduleAt: string;
   everyAmount: string;
-  everyUnit: "minutes" | "hours" | "days";
+  everyUnit: "seconds" | "minutes" | "hours" | "days";
   cronExpr: string;
   cronTz: string;
   scheduleExact: boolean;

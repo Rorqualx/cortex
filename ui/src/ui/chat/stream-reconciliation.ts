@@ -5,7 +5,7 @@ import { extractText } from "./message-extract.ts";
 import { trimAccumulatedStreamPrefix } from "./stream-text.ts";
 import { extractToolMessageRefs } from "./tool-message-refs.ts";
 
-export type StreamReconciliationState = {
+type StreamReconciliationState = {
   chatStream: string | null;
   chatStreamStartedAt: number | null;
 };
@@ -308,6 +308,37 @@ export function hasVisibleStreamParts(
   opts: Pick<MaterializeVisibleStreamOptions, "includeCurrent" | "isHiddenStreamText">,
 ): boolean {
   return visibleAssistantStreamParts(state, opts).length > 0;
+}
+
+export function terminalMessageReplacesVisibleStream(
+  message: unknown,
+  state: StreamReconciliationState,
+  opts: Pick<MaterializeVisibleStreamOptions, "isHiddenStreamText" | "persistCommentary">,
+): boolean {
+  const terminalText = extractText(message)?.trim();
+  if (!terminalText) {
+    return false;
+  }
+  const parts = visibleAssistantStreamParts(state, {
+    includeCurrent: true,
+    isHiddenStreamText: opts.isHiddenStreamText,
+  }).filter((part) => opts.persistCommentary === true || !part.itemId);
+  if (parts.length === 0) {
+    return false;
+  }
+
+  let searchStart = 0;
+  for (const [index, part] of parts.entries()) {
+    const text = part.text.trim();
+    const matchIndex = terminalText.indexOf(text, searchStart);
+    // A terminal replacement must preserve the complete visible stream in order,
+    // beginning with its first part. Otherwise both outputs are user-visible.
+    if (matchIndex < 0 || (index === 0 && matchIndex !== 0)) {
+      return false;
+    }
+    searchStart = matchIndex + text.length;
+  }
+  return true;
 }
 
 function currentToolStreamMessageIndex(

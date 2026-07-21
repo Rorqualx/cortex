@@ -250,10 +250,14 @@ export type AppViewState = ScrollHost &
     configLoading: boolean;
     configRaw: string;
     configRawOriginal: string;
+    configRawOriginalParsed: Record<string, unknown> | null;
+    configRawOriginalParsePending: Promise<void> | null;
     configValid: boolean | null;
     configIssues: unknown[];
     configSaving: boolean;
     configApplying: boolean;
+    configAutoSaveStatus: import("./controllers/config.ts").ConfigAutoSaveStatus;
+    configNeedsApply: boolean;
     updateRunning: boolean;
     applySessionKey: string;
     configSnapshot: ConfigSnapshot | null;

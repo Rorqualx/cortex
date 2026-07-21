@@ -8,7 +8,7 @@
 import { normalizeModelCatalogProviderId } from "@openclaw/model-catalog-core/model-catalog-refs";
 import { listAgentIds } from "../agents/agent-scope-config.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
-import { loadModelCatalog } from "../agents/model-catalog.js";
+import { loadPreparedModelCatalog } from "../agents/prepared-model-catalog.js";
 import type { ModelCatalogEntry } from "../agents/model-catalog.types.js";
 import {
   buildModelAliasIndex,
@@ -128,7 +128,7 @@ export async function buildRuntimeReassignmentPlan(
   const deprecated = listDiscoveredModels(db, { status: "deprecated" });
   const upgrades = listSilentUpgrades(db);
 
-  const catalog = await loadModelCatalog({ config: cfg, readOnly: true });
+  const catalog = await loadPreparedModelCatalog({ config: cfg, readOnly: true });
 
   // Collect pre-announced deprecations from catalog entries (manifest/provider-index
   // data that carries a replacedBy hint before the model actually vanishes).

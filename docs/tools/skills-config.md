@@ -81,8 +81,8 @@ Most skills configuration lives under `skills` in
 
 <ParamField path="skills.install.nodeManager" type='"npm" | "pnpm" | "yarn" | "bun"' default='"npm"'>
   Node package manager preference for skill installs. This only affects skill
-  installs — the Gateway runtime should still use Node (Bun is not
-  recommended for WhatsApp/Telegram). `openclaw setup --node-manager` and
+  installs - the OpenClaw CLI and Gateway runtime require Node because the
+  canonical state store uses `node:sqlite`. `openclaw setup --node-manager` and
   `openclaw onboard --node-manager` accept `npm`, `pnpm`, or `bun`; set
   `"yarn"` directly in config for Yarn-backed skill installs.
 </ParamField>
@@ -331,9 +331,6 @@ different visible skill set per agent.
   Legacy `skills.workshop` config is migrated by `openclaw doctor --fix`.
 </ParamField>
 
-See [Skill Workshop](/tools/skill-workshop) for the proposal lifecycle, CLI
-commands, agent tool parameters, and Gateway methods this config controls.
-
 ## Symlinked skill roots
 
 By default, workspace, project-agent, extra-dir, and bundled skill roots are
@@ -418,6 +415,9 @@ change.
   </Card>
   <Card title="Creating skills" href="/tools/creating-skills" icon="hammer">
     Authoring custom workspace skills.
+  </Card>
+  <Card title="Self-learning" href="/tools/self-learning" icon="brain">
+    Conservative, opt-in proposals from completed work.
   </Card>
   <Card title="Slash commands" href="/tools/slash-commands" icon="terminal">
     Native slash-command catalog and chat directives.

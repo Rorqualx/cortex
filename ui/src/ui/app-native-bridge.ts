@@ -22,6 +22,7 @@ export function isWebView2(): boolean {
   return getWebview() !== undefined;
 }
 
+// Keep WebView2 messaging distinct from the DOM Window.postMessage contract.
 export function sendToNative(msg: NativeBridgeMessage): void {
   getWebview()?.postMessage(msg);
 }

@@ -1,9 +1,15 @@
 // Gateway node session runtime factory.
 // Creates node registry, subscription, and voice-wake fanout state.
-import { NodeRegistry, type SerializedEventPayload } from "./node-registry.js";
+import {
+  NodeRegistry,
+  type NodeRegistryOptions,
+  type SerializedEventPayload,
+} from "./node-registry.js";
 import {
   createSessionEventSubscriberRegistry,
   createSessionMessageSubscriberRegistry,
+  type SessionEventSubscriberRegistry,
+  type SessionMessageSubscriberRegistry,
 } from "./server-chat-state.js";
 import { createNodeSubscriptionManager } from "./server-node-subscriptions.js";
 import { hasConnectedTalkNode } from "./server-talk-nodes.js";
@@ -13,12 +19,25 @@ import { hasConnectedTalkNode } from "./server-talk-nodes.js";
 /** Creates node registry/subscription runtime state for a gateway server. */
 export function createGatewayNodeSessionRuntime(params: {
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
+  listRegisteredNodePluginToolCommands?: NodeRegistryOptions["listRegisteredNodePluginToolCommands"];
+  nodePluginToolsEnabled?: boolean;
+  nodeSkillsEnabled?: boolean;
+  // Optional so the fork's server.impl.ts (merge=ours) can keep its
+  // { broadcast }-only call shape; upstream-style callers inject registries.
+  sessionEventSubscribers?: SessionEventSubscriberRegistry;
+  sessionMessageSubscribers?: SessionMessageSubscriberRegistry;
 }) {
-  const nodeRegistry = new NodeRegistry();
+  const nodeRegistry = new NodeRegistry({
+    listRegisteredNodePluginToolCommands: params.listRegisteredNodePluginToolCommands,
+    nodePluginToolsEnabled: params.nodePluginToolsEnabled,
+    nodeSkillsEnabled: params.nodeSkillsEnabled,
+  });
   const nodePresenceTimers = new Map<string, ReturnType<typeof setInterval>>();
   const nodeSubscriptions = createNodeSubscriptionManager();
-  const sessionEventSubscribers = createSessionEventSubscriberRegistry();
-  const sessionMessageSubscribers = createSessionMessageSubscriberRegistry();
+  const sessionEventSubscribers =
+    params.sessionEventSubscribers ?? createSessionEventSubscriberRegistry();
+  const sessionMessageSubscribers =
+    params.sessionMessageSubscribers ?? createSessionMessageSubscriberRegistry();
   // Connection-scoped subscribers of the cross-agent activity feed broadcast.
   const activitySubscribers = createSessionEventSubscriberRegistry();
   const nodeSendEvent = (opts: {

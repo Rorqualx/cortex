@@ -1,6 +1,6 @@
 // Control UI tests cover session goal behavior.
 import { describe, expect, it } from "vitest";
-import { formatGoalDetail, formatGoalSummary, formatGoalTokenCount } from "./session-goal.ts";
+import { formatGoalDetail, formatGoalSummary } from "./session-goal.ts";
 import type { SessionGoal } from "./types.ts";
 
 function buildGoal(overrides: Partial<SessionGoal> = {}): SessionGoal {
@@ -20,14 +20,6 @@ function buildGoal(overrides: Partial<SessionGoal> = {}): SessionGoal {
 }
 
 describe("session goal formatting", () => {
-  it("formats compact token counts for goal usage", () => {
-    expect(formatGoalTokenCount(999)).toBe("999");
-    expect(formatGoalTokenCount(1_240)).toBe("1.2k");
-    expect(formatGoalTokenCount(12_400)).toBe("12k");
-    expect(formatGoalTokenCount(999_999)).toBe("1m");
-    expect(formatGoalTokenCount(1_240_000)).toBe("1.2m");
-  });
-
   it("summarizes goal status and objective details", () => {
     const goal = buildGoal({ lastStatusNote: "Waiting for CI" });
 

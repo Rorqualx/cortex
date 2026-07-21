@@ -103,11 +103,22 @@ const BORDERLINE_FILE_COUNT = 15;
 const CHERRY_TYPES = new Set(["fix", "perf", "security", "revert-fix"]);
 
 // --- Enumerate commits (chronological, oldest-first) -------------------------
+// Single-pass `git log`: one process for the whole range. The previous shape
+// spawned two `git show` per commit and OOM/timed out beyond ~5k commits, which
+// blocked the nightly entirely at real divergence scale.
 const range = `${base}..${upstream}`;
-const shas = git(["rev-list", "--reverse", range]).split("\n").filter(Boolean);
-const mergeShas = new Set(
-  git(["rev-list", "--reverse", "--merges", range]).split("\n").filter(Boolean),
-);
+const mergeShas = new Set(git(["rev-list", "--merges", range]).split("\n").filter(Boolean));
+const logRaw = git(["log", "--reverse", "--name-only", `--format=%x00%H%x1f%s`, range]);
+const commits = [];
+for (const block of logRaw.split("\u0000")) {
+  const sep = block.indexOf("\u001f");
+  if (sep < 0) continue;
+  const sha = block.slice(0, sep).trim();
+  const lines = block.slice(sep + 1).split("\n");
+  const subject = (lines[0] ?? "").trim();
+  const files = lines.slice(1).map((l) => l.trim()).filter(Boolean);
+  if (sha) commits.push({ sha, subject, files });
+}
 
 const mix = {};
 const cherryCandidates = [];
@@ -115,14 +126,12 @@ const deferred = [];
 const forkExclusiveTouched = new Set();
 const hotspotsTouched = new Set();
 
-for (const sha of shas) {
-  const subject = git(["show", "-s", "--format=%s", sha]).trim();
+for (const { sha, subject, files } of commits) {
   const typeMatch = subject.match(/^([a-z]+)/);
   const type = typeMatch ? typeMatch[1] : "other";
   mix[type] = (mix[type] || 0) + 1;
 
   const isSecurity = /\bsecurity\b|\bCVE-|\bvuln/i.test(subject);
-  const files = git(["show", "--name-only", "--format=", sha]).split("\n").filter(Boolean);
 
   // Which convergent-surface globs does this commit touch?
   const hits = [];
@@ -189,11 +198,40 @@ for (const sha of shas) {
   });
 }
 
+// --- Unlanded-resync detection ----------------------------------------------
+// A local resync/redo branch whose upstream merge-base is NEWER than main's
+// means a finished (or in-flight) resync exists that main does not have. Every
+// divergence number this report emits is then measured from the WRONG baseline
+// (this exact failure produced 13 days of misleading NO LAND reports in July
+// 2026). Surface it loudly instead of letting the nightly re-classify from main.
+const mainUpstreamBase = git(["merge-base", base, upstream]).trim();
+const unlandedResyncBranches = [];
+for (const branch of git(["for-each-ref", "--format=%(refname:short)", "refs/heads/"])
+  .split("\n")
+  .filter((b) => /resync|redo/i.test(b))) {
+  try {
+    const branchBase = git(["merge-base", branch, upstream]).trim();
+    if (branchBase === mainUpstreamBase) continue;
+    // Throws (non-zero exit) when main's base is NOT an ancestor — caught below.
+    git(["merge-base", "--is-ancestor", mainUpstreamBase, branchBase]);
+    unlandedResyncBranches.push({
+      branch,
+      upstreamBase: branchBase.slice(0, 12),
+      aheadOfMainBase: Number(
+        git(["rev-list", "--count", `${mainUpstreamBase}..${branchBase}`]).trim(),
+      ),
+    });
+  } catch {
+    // is-ancestor exits non-zero when not an ancestor — not an unlanded resync.
+  }
+}
+
 const report = {
   base,
   upstream,
-  n: shas.length,
+  n: commits.length,
   merges: mergeShas.size,
+  unlandedResyncBranches,
   mix,
   forkExclusiveTouched: [...forkExclusiveTouched].sort(),
   hotspotsTouched: [...hotspotsTouched].sort(),
@@ -213,6 +251,15 @@ if (pretty) {
     .sort((a, b) => b[1] - a[1])
     .map(([k, v]) => `${k}:${v}`)
     .join(" · ");
+  if (unlandedResyncBranches.length > 0) {
+    for (const u of unlandedResyncBranches) {
+      process.stderr.write(
+        `\n⚠️  UNLANDED RESYNC: branch ${u.branch} contains a newer upstream base ` +
+          `(${u.upstreamBase}, +${u.aheadOfMainBase} upstream commits past main's base). ` +
+          `Land or reconcile it FIRST — divergence below is measured from main and is misleading.\n`,
+      );
+    }
+  }
   process.stderr.write(
     `\nN=${report.n} (${report.merges} merges) — ${mixStr}\n` +
       `cherry: ${report.counts.cherry} (${report.counts.cherryBorderline} borderline) · deferred: ${report.counts.deferred}\n` +

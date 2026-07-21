@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   isKnownInternalHookEvent,
   isKnownInternalHookEventKey,
-  KNOWN_INTERNAL_HOOK_EVENT_KEYS,
   KNOWN_INTERNAL_HOOK_EVENTS,
 } from "./internal-hook-types.js";
 
@@ -47,7 +46,22 @@ describe("isKnownInternalHookEvent", () => {
 
 describe("isKnownInternalHookEventKey", () => {
   it("accepts every emitted type:action key", () => {
-    for (const key of KNOWN_INTERNAL_HOOK_EVENT_KEYS) {
+    for (const key of [
+      "agent:bootstrap",
+      "command:new",
+      "command:reset",
+      "command:stop",
+      "gateway:pre-restart",
+      "gateway:shutdown",
+      "gateway:startup",
+      "message:preprocessed",
+      "message:received",
+      "message:sent",
+      "message:transcribed",
+      "session:compact:after",
+      "session:compact:before",
+      "session:patch",
+    ]) {
       expect(isKnownInternalHookEventKey(key), key).toBe(true);
     }
   });

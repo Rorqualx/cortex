@@ -414,10 +414,15 @@ export class OpenClawApp extends LitElement {
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";
   @state() configRawOriginal = "";
+  // Submit-time bookkeeping for the config controller; not render-driving.
+  configRawOriginalParsed: Record<string, unknown> | null = null;
+  configRawOriginalParsePending: Promise<void> | null = null;
   @state() configValid: boolean | null = null;
   @state() configIssues: unknown[] = [];
   @state() configSaving = false;
   @state() configApplying = false;
+  @state() configAutoSaveStatus: import("./controllers/config.ts").ConfigAutoSaveStatus = "idle";
+  @state() configNeedsApply = false;
   @state() updateRunning = false;
   @state() applySessionKey = this.settings.lastActiveSessionKey;
   @state() configSnapshot: ConfigSnapshot | null = null;

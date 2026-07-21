@@ -194,12 +194,12 @@ if (!quick) {
 // ── 7. Gateway smoke ─────────────────────────────────────────────────────
 
 sec("Gateway smoke");
-const gw = run("node -e \"require('./dist/gateway.js')\" 2>&1 || true");
-// Just check the build exists
-if (existsSync("dist/gateway.js")) {
-  ok("Gateway build exists");
+// dist/index.js is the launchd entry (`node dist/index.js gateway`); the old
+// dist/gateway.js entry no longer exists, so checking it always warned.
+if (existsSync("dist/index.js")) {
+  ok("Gateway build exists (dist/index.js)");
 } else {
-  hm("dist/gateway.js not found — run build");
+  hm("dist/index.js not found — run build");
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────

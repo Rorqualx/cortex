@@ -3,6 +3,14 @@ import type { ChatModelOverride } from "./chat-model-ref.types.ts";
 import type { ModelCatalogEntry } from "./types.ts";
 export type { ChatModelOverride } from "./chat-model-ref.types.ts";
 
+// Legacy Codex provider ids fold into "openai"; doctor migrates stale profiles.
+const LEGACY_OPENAI_PROVIDER_IDS = new Set(["codex", "openai-codex"]);
+
+export function normalizeChatModelProviderId(provider: string): string {
+  const normalized = provider.trim().toLowerCase();
+  return LEGACY_OPENAI_PROVIDER_IDS.has(normalized) ? "openai" : normalized;
+}
+
 export function buildQualifiedChatModelValue(model: string, provider?: string | null): string {
   const trimmedModel = model.trim();
   if (!trimmedModel) {

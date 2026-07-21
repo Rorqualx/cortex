@@ -342,6 +342,11 @@ const autoHighlightLanguages = [
   "yaml",
 ];
 
+/** Highlight a JSON/JSON5 snippet; output is escaped hljs markup safe for unsafeHTML in a code block. */
+export function highlightJsonHtml(text: string): string {
+  return highlightCode(text, "json");
+}
+
 export function highlightCode(text: string, lang: string): string {
   const language = normalizeHighlightLanguage(lang);
   try {

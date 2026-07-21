@@ -5,55 +5,83 @@ import { formatRelativeTimestamp } from "../format.ts";
 import type { ChannelAccountSnapshot, TelegramStatus } from "../types.ts";
 import { renderChannelConfigSection } from "./channels.config.ts";
 import {
+  boolStatusKind,
   formatNullableBoolean,
+  renderChannelAccountRow,
+  renderChannelActionRow,
+  renderChannelErrorRow,
+  renderChannelProbeRow,
   renderSingleAccountChannelCard,
   resolveChannelConfigured,
-  resolveChannelStatusBadge,
 } from "./channels.shared.ts";
 import type { ChannelsProps } from "./channels.types.ts";
+import { renderSettingsSection } from "./settings-ui.ts";
 
 export function renderTelegramCard(params: {
   props: ChannelsProps;
   telegram?: TelegramStatus;
   telegramAccounts: ChannelAccountSnapshot[];
-  accountCountLabel: unknown;
+  accountCount?: number;
 }) {
-  const { props, telegram, telegramAccounts, accountCountLabel } = params;
+  const { props, telegram, telegramAccounts, accountCount } = params;
   const hasMultipleAccounts = telegramAccounts.length > 1;
   const configured = resolveChannelConfigured("telegram", props);
 
-  if (hasMultipleAccounts) {
-    return html`
-      <div class="card channels-grid__wide">
-        <div class="card-title">Telegram</div>
-        <div class="card-sub">Bot status and channel configuration.</div>
-        ${accountCountLabel}
-        ${telegram?.lastError
-          ? html`<div class="callout danger" style="margin-top: 12px;">${telegram.lastError}</div>`
-          : nothing}
-        ${telegram?.probe
-          ? html`<div class="callout" style="margin-top: 12px;">
-              ${telegram.probe.ok ? t("common.probeOk") : t("common.probeFailed")} ·
-              ${telegram.probe.status ?? ""} ${telegram.probe.error ?? ""}
-            </div>`
-          : nothing}
-        ${renderChannelConfigSection({ channelId: "telegram", props })}
+  const renderAccountRow = (account: ChannelAccountSnapshot) => {
+    const probe = account.probe as { bot?: { username?: string } } | undefined;
+    const botUsername = probe?.bot?.username;
+    const label = account.name || account.accountId;
+    return renderChannelAccountRow({
+      title: botUsername ? `@${botUsername}` : label,
+      accountId: account.accountId,
+      facts: [
+        `${t("common.configured")}: ${account.configured ? t("common.yes") : t("common.no")}`,
+      ],
+      status: {
+        kind: boolStatusKind(account.running),
+        label: account.running ? t("common.running") : t("common.no"),
+      },
+      lastInboundAt: account.lastInboundAt,
+      lastError: account.lastError,
+    });
+  };
 
-        <div class="row" style="margin-top: 12px;">
-          <button class="btn" @click=${() => props.onRefresh(true)}>${t("common.probe")}</button>
-        </div>
-      </div>
-    `;
+  if (hasMultipleAccounts) {
+    return renderSettingsSection(
+      {
+        title: t("channels.telegram.title"),
+        description: t("channels.telegram.subtitle"),
+        ...(accountCount !== undefined ? { count: accountCount } : {}),
+      },
+      html`
+        ${telegramAccounts.map((account) => renderAccountRow(account))}
+        ${telegram?.lastError ? renderChannelErrorRow(telegram.lastError) : nothing}
+        ${telegram?.probe ? renderChannelProbeRow(telegram.probe) : nothing}
+        ${renderChannelConfigSection({ channelId: "telegram", props })}
+        ${renderChannelActionRow(
+          html`<button class="btn" @click=${() => props.onRefresh(true)}>
+            ${t("common.probe")}
+          </button>`,
+        )}
+      `,
+    );
   }
 
   return renderSingleAccountChannelCard({
-    title: "Telegram",
-    subtitle: "Bot status and channel configuration.",
-    status: resolveChannelStatusBadge(configured, telegram?.running ?? null),
-    accountCountLabel,
+    title: t("channels.telegram.title"),
+    subtitle: t("channels.telegram.subtitle"),
+    accountCount,
     statusRows: [
-      { label: t("common.configured"), value: formatNullableBoolean(configured) },
-      { label: t("common.running"), value: telegram?.running ? t("common.yes") : t("common.no") },
+      {
+        label: t("common.configured"),
+        value: formatNullableBoolean(configured),
+        kind: boolStatusKind(configured),
+      },
+      {
+        label: t("common.running"),
+        value: telegram?.running ? t("common.yes") : t("common.no"),
+        kind: boolStatusKind(telegram?.running),
+      },
       { label: t("common.mode"), value: telegram?.mode ?? t("common.na") },
       {
         label: t("common.lastStart"),
@@ -69,15 +97,10 @@ export function renderTelegramCard(params: {
       },
     ],
     lastError: telegram?.lastError,
-    secondaryCallout: telegram?.probe
-      ? html`<div class="callout" style="margin-top: 12px;">
-          ${telegram.probe.ok ? t("common.probeOk") : t("common.probeFailed")} ·
-          ${telegram.probe.status ?? ""} ${telegram.probe.error ?? ""}
-        </div>`
-      : nothing,
+    secondaryCallout: telegram?.probe ? renderChannelProbeRow(telegram.probe) : nothing,
     configSection: renderChannelConfigSection({ channelId: "telegram", props }),
-    footer: html`<div class="row" style="margin-top: 12px;">
-      <button class="btn" @click=${() => props.onRefresh(true)}>${t("common.probe")}</button>
-    </div>`,
+    footer: html`<button class="btn" @click=${() => props.onRefresh(true)}>
+      ${t("common.probe")}
+    </button>`,
   });
 }

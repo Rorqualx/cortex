@@ -1,13 +1,32 @@
-// Control UI type declarations define nodes contracts.
-import type { DevicePairingList } from "../controllers/devices.ts";
-import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "../controllers/exec-approvals.ts";
+// Nodes page view contracts.
+import type { PresenceEntry } from "../types.ts";
+import type {
+  DevicePairingList,
+  ExecApprovalsFile,
+  ExecApprovalsSnapshot,
+  InventoryRemovalRequest,
+} from "../nodes/index.ts";
+
+/**
+ * Pending destructive inventory action awaiting in-page confirmation. Native
+ * `window.confirm` silently returns false in webviews without a dialog bridge
+ * (macOS app before the confirm-panel fix, Tauri), so the page renders its own
+ * confirm dialog instead.
+ */
+export type InventoryRemovalPrompt =
+  | { kind: "entry"; entry: InventoryRemovalRequest }
+  | { kind: "stale"; entries: InventoryRemovalRequest[] };
 
 export type NodesProps = {
   loading: boolean;
   nodes: Array<Record<string, unknown>>;
+  presence: PresenceEntry[];
+  gatewayVersion: string | null;
+  lastError: string | null;
   devicesLoading: boolean;
   devicesError: string | null;
   devicesList: DevicePairingList | null;
+  canPairDevice: boolean;
   configForm: Record<string, unknown> | null;
   configLoading: boolean;
   configSaving: boolean;
@@ -21,14 +40,18 @@ export type NodesProps = {
   execApprovalsSelectedAgent: string | null;
   execApprovalsTarget: "gateway" | "node";
   execApprovalsTargetNodeId: string | null;
-  onRefresh: () => void;
-  onDevicesRefresh: () => void;
+  onDevicePairSetupOpen: () => void;
   onDeviceApprove: (requestId: string) => void;
   onDeviceReject: (requestId: string) => void;
   onDeviceRotate: (deviceId: string, role: string, scopes?: string[]) => void;
   onDeviceRevoke: (deviceId: string, role: string) => void;
-  onDeviceRemove: (deviceId: string) => void;
-  onRemoveOtherDevices: () => void;
+  onNodeApprove: (requestId: string) => void;
+  onNodeReject: (requestId: string) => void;
+  inventoryRemovalPrompt: InventoryRemovalPrompt | null;
+  onInventoryRemove: (entry: InventoryRemovalRequest) => void;
+  onInventoryCleanup: (entries: InventoryRemovalRequest[]) => void;
+  onInventoryRemovalConfirm: () => void;
+  onInventoryRemovalCancel: () => void;
   onLoadConfig: () => void;
   onLoadExecApprovals: () => void;
   onBindDefault: (nodeId: string | null) => void;

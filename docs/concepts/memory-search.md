@@ -82,6 +82,9 @@ flowchart LR
   machine running OpenClaw").
 - **BM25 keyword search** matches exact terms (IDs, error strings, config
   keys).
+- **Filename search** indexes paths separately from note bodies. Exact full
+  paths, basenames, and filename stems rank ahead of partial path matches,
+  while snippets and body keyword scores still come from note content.
 
 If only one path is available, the other runs alone.
 
@@ -155,16 +158,21 @@ for setup.
 
 ## Session memory search
 
-You can optionally index session transcripts so `memory_search` can recall
-earlier conversations. This is opt-in via
-`memorySearch.experimental.sessionMemory` and `sources: ["sessions"]`; the default
-source list is memory-only. The experimental flag enables session transcript
-indexing, while `sources` controls whether session chunks are searched.
+For exact full-text recall from session transcripts, use [`sessions_search`](/concepts/session-search)
+and then open a result with `sessions_history`. Session-memory search remains the semantic,
+experimental complement.
 
-Session hits obey `tools.sessions.visibility`: the default `tree` setting only
-exposes the current session and sessions it spawned. To recall an unrelated
-same-agent gateway-dispatched session from a separate DM session, intentionally
-widen visibility to `agent`.
+Optionally index session transcripts so `memory_search` can recall earlier
+conversations. This is opt-in: set `experimental.sessionMemory: true` and add
+`"sessions"` to `sources` (default `sources` is `["memory"]`).
+
+Session hits obey `tools.sessions.visibility`: the default `"tree"` exposes the
+current session, sessions it spawned, and same-agent group sessions watched
+through ambient group awareness. With `session.dmScope: "main"`, a multi-user
+DM setup shares that main session, so users routed there can recall content
+from its watched groups. Use a per-peer `dmScope` for DM isolation, or set
+visibility to `"self"` to opt out of ambient watched-session reads. Other
+unrelated same-agent sessions still require `"agent"` visibility.
 
 When using QMD, also set `memory.qmd.sessions.enabled: true` so transcripts are
 exported into a QMD collection. See the

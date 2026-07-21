@@ -2,11 +2,36 @@
 import type { ChatSideResultEvent } from "../../../../packages/gateway-protocol/src/index.js";
 import { normalizeOptionalString } from "../string-coerce.ts";
 
+/** Local-only placeholder shown while a sent /btw side question awaits its result. */
+export type ChatSideResultPending = {
+  question: string;
+  ts: number;
+  /** Detached send run id, set once the send is acked; used to drop the card
+   * when the run terminates without ever emitting a chat.side_result. */
+  runId?: string;
+};
+
 // Parsed projection of ChatSideResultEventSchema: seq is consumed at the gateway
 // layer and isError is defaulted to false by the parser below.
 export type ChatSideResult = Omit<ChatSideResultEvent, "seq" | "isError"> & {
   isError: boolean;
 };
+
+/**
+ * Drops the pending BTW card without consuming its run. The run id is
+ * recorded in the suppression set so late side_result/terminal events from
+ * the abandoned run cannot reach the side-result card or the transcript.
+ */
+export function retirePendingChatSideQuestion(state: {
+  chatSideResultPending?: ChatSideResultPending | null;
+  chatSideResultTerminalRuns?: Set<string>;
+}) {
+  const runId = state.chatSideResultPending?.runId;
+  if (runId) {
+    state.chatSideResultTerminalRuns?.add(runId);
+  }
+  state.chatSideResultPending = null;
+}
 
 export function parseChatSideResult(payload: unknown): ChatSideResult | null {
   if (!payload || typeof payload !== "object") {

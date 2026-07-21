@@ -2,14 +2,11 @@
 import "./styles.css";
 import "./ui/app.ts";
 import { inferControlUiPublicAssetPath } from "./ui/public-assets.ts";
-import { reloadForStaleChunk } from "./ui/stale-chunk-reload.ts";
-
-// Vite fires this when any dynamically-imported chunk fails to load — e.g. its
-// hashed filename changed in a redeploy and the old SPA requests a deleted file.
-// Reload once (guarded) to recover with the current bundle.
-globalThis.addEventListener?.("vite:preloadError", () => {
-  reloadForStaleChunk();
-});
+import {
+  installMissingStylesheetRecovery,
+  installStaleChunkReloadListener,
+} from "./ui/stale-chunk-reload.ts";
+import { CONTROL_UI_BUILD_INFO } from "./build-info.ts";
 
 type ViteImportMeta = ImportMeta & {
   readonly env?: {
@@ -17,12 +14,12 @@ type ViteImportMeta = ImportMeta & {
   };
 };
 
-declare const OPENCLAW_CONTROL_UI_BUILD_ID: string | undefined;
-
 const isProd = (import.meta as ViteImportMeta).env?.PROD === true;
-const currentControlUiBuildId = OPENCLAW_CONTROL_UI_BUILD_ID || "dev";
+const currentControlUiBuildId = CONTROL_UI_BUILD_INFO.buildId;
 
 syncDocumentPublicAssetLinks();
+installStaleChunkReloadListener();
+installMissingStylesheetRecovery();
 
 if (isProd && "serviceWorker" in navigator) {
   const swUrl = new URL(inferControlUiPublicAssetPath("sw.js"), window.location.origin);

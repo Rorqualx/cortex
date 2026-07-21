@@ -36,6 +36,11 @@ import { detectZaiEndpoint, type ZaiEndpointId } from "./detect.js";
 import { zaiMediaUnderstandingProvider } from "./media-understanding-provider.js";
 import { buildZaiModelDefinition, resolveZaiBaseUrl } from "./model-definitions.js";
 import { applyZaiConfig, applyZaiProviderConfig, resolveZaiModelId } from "./onboard.js";
+import {
+  resolveThinkingProfile,
+  supportsZaiReasoningEffort,
+  ZAI_REASONING_EFFORT_LEVELS,
+} from "./provider-policy-api.js";
 
 const PROVIDER_ID = "zai";
 const GLM5_TEMPLATE_MODEL_ID = "glm-4.7";
@@ -128,25 +133,9 @@ function isDisabledThinkingLevel(thinkingLevel: ProviderWrapStreamFnContext["thi
   return thinkingLevel === "off";
 }
 
-// Ordered reasoning_effort ladder the modern GLM API accepts (verified live via
-// the 400 enum: none|minimal|low|medium|high|xhigh|max). "none"/"off" are sent as
-// thinking.disabled, so the selectable ladder starts at minimal. Single source for
-// both the passthrough guard and the offered thinking levels — no drift.
-const ZAI_REASONING_EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+// Gate + ladder live in provider-policy-api.ts (shared with core cold selection)
+// so the offered rungs cannot drift from what the mapper forwards.
 const ZAI_REASONING_EFFORTS: ReadonlySet<string> = new Set(ZAI_REASONING_EFFORT_LEVELS);
-
-// reasoning_effort is a GLM-family param accepted across every SKU shape tested
-// live — base, turbo, and vision (glm-4.6v) — of the glm-4.6/4.7/5 generation, so
-// vision/turbo variants like glm-5v-turbo are covered. Gated to that generation;
-// "flash"/"flashx" were unreachable to confirm (coding-plan 429/timeout) and
-// glm-4.5* predates it, so both stay on the binary toggle rather than risk a 400
-// from an unconfirmed SKU.
-function supportsZaiReasoningEffort(modelId?: string | null): boolean {
-  const lower = normalizeLowercaseStringOrEmpty(modelId);
-  const modernFamily =
-    lower.startsWith("glm-5") || lower.startsWith("glm-4.7") || lower.startsWith("glm-4.6");
-  return modernFamily && !lower.includes("flash");
-}
 
 // GLM levels map 1:1 onto reasoning_effort, so pass through instead of collapsing
 // low/medium/high (which silently discarded the chosen depth). "adaptive" has no
@@ -401,31 +390,19 @@ export default definePluginEntry({
         }),
       ],
       resolveDynamicModel: (ctx) => resolveGlm5ForwardCompatModel(ctx),
+      matchesContextOverflowError: ({ errorMessage }) =>
+        /\b(?:tokens? in request more than max tokens? allowed|prompt exceeds max(?:imum)? length)\b/i.test(
+          errorMessage,
+        ),
       ...buildProviderReplayFamilyHooks({
         family: "openai-compatible",
         dropReasoningFromHistory: false,
       }),
       prepareExtraParams: (ctx) => defaultToolStreamExtraParams(ctx.extraParams),
       wrapStreamFn: (ctx) => wrapZaiStreamFn(ctx),
-      resolveThinkingProfile: (ctx) =>
-        supportsZaiReasoningEffort(ctx.modelId)
-          ? {
-              // Derived from the single effort ladder above so the offered rungs
-              // can't drift from what the mapper actually forwards. "off" covers
-              // reasoning_effort:none via thinking.disabled.
-              levels: [
-                { id: "off", label: "off" },
-                ...ZAI_REASONING_EFFORT_LEVELS.map((id) => ({ id, label: id })),
-              ],
-              defaultLevel: "off",
-            }
-          : {
-              levels: [
-                { id: "off", label: "off" },
-                { id: "low", label: "on" },
-              ],
-              defaultLevel: "off",
-            },
+      // Shared policy surface: modern SKUs get the full effort ladder, the rest
+      // the binary toggle — same profile core cold selection sees.
+      resolveThinkingProfile: (ctx) => resolveThinkingProfile(ctx),
       isModernModelRef: ({ modelId }) => {
         const lower = normalizeLowercaseStringOrEmpty(modelId);
         return (

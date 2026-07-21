@@ -1,5 +1,5 @@
 // Control UI module implements user identity behavior.
-import { coerceIdentityValue } from "../../../src/shared/assistant-identity-values.js";
+import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { normalizeOptionalString } from "./string-coerce.ts";
 import {
   isRenderableControlUiAvatarUrl,
@@ -32,12 +32,9 @@ function normalizeAvatar(value?: string | null): string | null {
 export function normalizeLocalUserIdentity(
   input?: Partial<LocalUserIdentity> | null,
 ): LocalUserIdentity {
+  const name = normalizeOptionalString(input?.name);
   return {
-    name:
-      coerceIdentityValue(
-        typeof input?.name === "string" ? input.name : undefined,
-        MAX_LOCAL_USER_NAME,
-      ) ?? null,
+    name: name ? truncateUtf16Safe(name, MAX_LOCAL_USER_NAME) : null,
     avatar: normalizeAvatar(input?.avatar),
   };
 }
