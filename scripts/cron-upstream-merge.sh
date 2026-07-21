@@ -32,8 +32,12 @@
 #       (route only) · 3 proof UNAVAILABLE/deferred · non-zero local error.
 set -uo pipefail
 
-MAIN="/Users/joederas/Documents/Cline/code/claudy/openclaw"
-WORKTREE="${UPSTREAM_MERGE_WORKTREE:-/Users/joederas/Documents/Cline/code/claudy/openclaw-upstream-nightly}"
+# Derive the repo root from the script's own location so a relocated checkout, a
+# second machine, or a CI invocation works without editing this file; keep an env
+# override matching the other knobs below.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAIN="${UPSTREAM_MERGE_MAIN:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+WORKTREE="${UPSTREAM_MERGE_WORKTREE:-$MAIN-upstream-nightly}"
 UPSTREAM_REF="${UPSTREAM_REF:-upstream/main}"
 REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node24/bin}"   # upstream needs node>=22.22.3
 LOG="${UPSTREAM_MERGE_LOG:-$HOME/.openclaw/workspace/memory/reports/upstream-merge-nightly.log}"
@@ -152,10 +156,21 @@ land_clean() {
   if [ -n "$(git -C "$MAIN" status --porcelain fork-config-baseline.json)" ]; then
     "$MAIN/scripts/committer" "chore(resync): regenerate fork-config baseline after nightly upstream merge ($date)" fork-config-baseline.json >/dev/null 2>&1 || true
   fi
-  git -C "$MAIN" push origin main >/tmp/um-push.log 2>&1 || log "push origin main failed (landed locally)"
+  local landed; landed="$(git -C "$MAIN" rev-parse --short HEAD)"
+  # Deploy-last is only safe because origin holds the merge before the build crashes
+  # the gateway. If the push fails the merge lives ONLY on local disk, so do NOT run
+  # the crash-prone deploy on top of it: record the true state and stop with a distinct
+  # exit so the operator pushes + deploys manually instead of risking loss in the build.
+  if ! git -C "$MAIN" push origin main >/tmp/um-push.log 2>&1; then
+    log "push origin main failed — merge landed LOCAL-ONLY, skipping deploy:"
+    tail -n 5 /tmp/um-push.log >&2 2>/dev/null || true
+    drop_worktree
+    ledger "LAND-LOCAL-ONLY reason=push-failed behind=$BEHIND merge=${merge_sha:0:11} main=$landed proof=PASS (see /tmp/um-push.log)"
+    echo "UPSTREAM-MERGE LANDED LOCAL-ONLY: main @ $landed but push to origin FAILED; NOT deploying. Push manually, then run scripts/cron-deploy-build.sh."
+    exit 1
+  fi
   drop_worktree
 
-  local landed; landed="$(git -C "$MAIN" rev-parse --short HEAD)"
   ledger "LAND clean behind=$BEHIND merge=${merge_sha:0:11} main=$landed proof=PASS"
   echo "UPSTREAM-MERGE LANDED (clean): main @ $landed (+$BEHIND upstream commits), Linux proof PASS. Deploying…"
   # Deploy LAST: this build crashes+respawns the gateway (kills this session);
