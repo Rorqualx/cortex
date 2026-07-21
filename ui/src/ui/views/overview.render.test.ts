@@ -202,6 +202,7 @@ describe("overview view rendering", () => {
             status: "ok",
             profiles: [{ profileId: "codex", type: "oauth", status: "ok" }],
             usage: {
+              providerId: "openai",
               windows: [
                 { label: "3h", usedPercent: 18 },
                 { label: "Week", usedPercent: 72 },
@@ -214,6 +215,7 @@ describe("overview view rendering", () => {
             status: "ok",
             profiles: [{ profileId: "anthropic", type: "token", status: "ok" }],
             usage: {
+              providerId: "anthropic",
               windows: [{ label: "5h", usedPercent: 60 }],
             },
           },

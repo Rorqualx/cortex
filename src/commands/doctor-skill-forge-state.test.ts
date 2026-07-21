@@ -59,7 +59,9 @@ describe("doctor skill-forge stale state", () => {
     expect(state.hashedRecoverySkills.map((s) => s.name)).toEqual([
       "forge-recover-exec-via-exec-2b6ef7",
     ]);
-    expect(state.hashedRecoverySkills[0].stableName).toBe("forge-recover-exec-via-exec");
+    const recovery = state.hashedRecoverySkills[0];
+    if (!recovery) throw new Error("expected hashed recovery skill");
+    expect(recovery.stableName).toBe("forge-recover-exec-via-exec");
   });
 
   it("dry-run reports actions without mutating disk", async () => {

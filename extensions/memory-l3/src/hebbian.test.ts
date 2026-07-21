@@ -33,10 +33,10 @@ describe("hebbian", () => {
       const facts = [makeFact("a", "key:alpha"), makeFact("b", "key:beta")];
       const edges = extractEdges(facts);
       assert.strictEqual(edges.length, 1);
-      assert.strictEqual(edges[0].weight, 1);
+      assert.strictEqual(edges[0]!.weight, 1);
       // Keys sorted
-      assert.strictEqual(edges[0].a, "key:alpha");
-      assert.strictEqual(edges[0].b, "key:beta");
+      assert.strictEqual(edges[0]!.a, "key:alpha");
+      assert.strictEqual(edges[0]!.b, "key:beta");
     });
 
     it("creates N*(N-1)/2 edges for N facts", () => {
@@ -59,8 +59,8 @@ describe("hebbian", () => {
     it("sorts keys in edges canonically", () => {
       const facts = [makeFact("z", "key:zebra"), makeFact("a", "key:ant")];
       const edges = extractEdges(facts);
-      assert.strictEqual(edges[0].a, "key:ant");
-      assert.strictEqual(edges[0].b, "key:zebra");
+      assert.strictEqual(edges[0]!.a, "key:ant");
+      assert.strictEqual(edges[0]!.b, "key:zebra");
     });
   });
 
@@ -69,7 +69,7 @@ describe("hebbian", () => {
       const newEdges: HebbianEdge[] = [{ a: "k:1", b: "k:2", weight: 1 }];
       const result = mergeEdges([], newEdges);
       assert.strictEqual(result.length, 1);
-      assert.strictEqual(result[0].weight, 1);
+      assert.strictEqual(result[0]!.weight, 1);
     });
 
     it("increments weight for repeated co-occurrence", () => {
@@ -77,7 +77,7 @@ describe("hebbian", () => {
       const newEdges: HebbianEdge[] = [{ a: "k:1", b: "k:2", weight: 1 }];
       const result = mergeEdges(existing, newEdges);
       assert.strictEqual(result.length, 1);
-      assert.strictEqual(result[0].weight, 3);
+      assert.strictEqual(result[0]!.weight, 3);
     });
 
     it("adds new edges alongside existing", () => {
@@ -91,7 +91,7 @@ describe("hebbian", () => {
       const existing: HebbianEdge[] = [{ a: "k:1", b: "k:2", weight: 5 }];
       const result = mergeEdges(existing, []);
       assert.strictEqual(result.length, 1);
-      assert.strictEqual(result[0].weight, 5);
+      assert.strictEqual(result[0]!.weight, 5);
     });
   });
 
@@ -118,6 +118,8 @@ describe("hebbian", () => {
         maxEdgeWeight: 10,
         enabled: false,
         twoHopDecay: 0,
+        expandTopN: 0,
+        expansionFactor: 0.5,
       };
       assert.strictEqual(hebbianBoost("k:1", lookup, scores, config), 0);
     });
@@ -144,6 +146,8 @@ describe("hebbian", () => {
         maxEdgeWeight: 5,
         enabled: true,
         twoHopDecay: 0,
+        expandTopN: 0,
+        expansionFactor: 0.5,
       };
       // boost = 1.0 * min(100, 5) * 0.05 = 1.0 * 5 * 0.05 = 0.25
       const boost = hebbianBoost("k:1", lookup, scores, config);
@@ -179,6 +183,8 @@ describe("hebbian", () => {
         maxEdgeWeight: 10,
         enabled: true,
         twoHopDecay: 0.3,
+        expandTopN: 0,
+        expansionFactor: 0.5,
       };
       // hop1: 0.5 * 4 * 0.05 = 0.1
       // hop2: 0.8 * min(4, 2) * 0.05 * 0.3 = 0.8 * 2 * 0.015 = 0.024
@@ -205,6 +211,8 @@ describe("hebbian", () => {
         maxEdgeWeight: 10,
         enabled: true,
         twoHopDecay: 1,
+        expandTopN: 0,
+        expansionFactor: 0.5,
       };
       // Only the two direct contributions: 1 * 1 * 0.05 each.
       const boost = hebbianBoost("k:1", lookup, scores, config);
@@ -233,9 +241,9 @@ describe("hebbian", () => {
       const results = [{ fact: { dedupKey: "key:alpha" } }, { fact: { dedupKey: "key:beta" } }];
       const edges = extractEdgesFromRetrieval(results);
       assert.strictEqual(edges.length, 1);
-      assert.strictEqual(edges[0].weight, 1);
-      assert.strictEqual(edges[0].a, "key:alpha");
-      assert.strictEqual(edges[0].b, "key:beta");
+      assert.strictEqual(edges[0]!.weight, 1);
+      assert.strictEqual(edges[0]!.a, "key:alpha");
+      assert.strictEqual(edges[0]!.b, "key:beta");
     });
 
     it("creates N*(N-1)/2 edges for N results", () => {
@@ -258,8 +266,8 @@ describe("hebbian", () => {
     it("sorts keys canonically", () => {
       const results = [{ fact: { dedupKey: "key:zebra" } }, { fact: { dedupKey: "key:ant" } }];
       const edges = extractEdgesFromRetrieval(results);
-      assert.strictEqual(edges[0].a, "key:ant");
-      assert.strictEqual(edges[0].b, "key:zebra");
+      assert.strictEqual(edges[0]!.a, "key:ant");
+      assert.strictEqual(edges[0]!.b, "key:zebra");
     });
   });
 

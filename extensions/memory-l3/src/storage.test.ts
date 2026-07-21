@@ -147,8 +147,12 @@ describe("Storage L1 archive", () => {
     const contents = readFileSync(archivePath, "utf8");
     const lines = contents.split("\n").filter((l) => l.length > 0);
     expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0])).toEqual({ role: "user", content: "first" });
-    expect(JSON.parse(lines[1])).toEqual({ role: "assistant", content: "second" });
+    const [line0, line1] = lines;
+    if (line0 === undefined || line1 === undefined) {
+      throw new Error("expected two archive lines");
+    }
+    expect(JSON.parse(line0)).toEqual({ role: "user", content: "first" });
+    expect(JSON.parse(line1)).toEqual({ role: "assistant", content: "second" });
   });
 });
 
@@ -218,7 +222,7 @@ describe("Storage long-term tier I/O", () => {
     const round = await storage.readLongTerm();
     expect(round.lastConsolidatedAt).toBe(2);
     expect(round.facts).toHaveLength(1);
-    expect(round.facts[0].dedupKey).toBe("user_pref:tabs");
+    expect(round.facts[0]?.dedupKey).toBe("user_pref:tabs");
   });
 
   it("preserves archived facts on round-trip", async () => {
@@ -244,8 +248,8 @@ describe("Storage long-term tier I/O", () => {
     };
     await storage.writeLongTerm(fm, "");
     const round = await storage.readLongTerm();
-    expect(round.facts[0].archived).toBe(true);
-    expect(round.facts[0].archivedAt).toBe(8500);
+    expect(round.facts[0]?.archived).toBe(true);
+    expect(round.facts[0]?.archivedAt).toBe(8500);
   });
 });
 

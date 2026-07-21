@@ -20,7 +20,7 @@ import {
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../../agents/agent-scope.js";
-import { canExecRequestNode } from "../../agents/exec-defaults.js";
+import { resolveNodeExecEligibility } from "../../agents/exec-defaults.js";
 import { listAgentWorkspaceDirs } from "../../agents/workspace-dirs.js";
 import { redactConfigObject } from "../../config/redact-snapshot.js";
 import { fetchClawHubSkillDetail } from "../../infra/clawhub.js";
@@ -91,15 +91,18 @@ type ResolvedSkillsWorkspace = Extract<
 >;
 
 function buildRemoteAwareWorkspaceSkillStatus(resolved: ResolvedSkillsWorkspace) {
+  // Remote skill availability depends on the agent's executable-node surface,
+  // not only the workspace contents, so status reports include live eligibility.
+  const nodeSkills = resolveNodeExecEligibility({
+    cfg: resolved.cfg,
+    agentId: resolved.agentId,
+  });
   return buildWorkspaceSkillStatus(resolved.workspaceDir, {
     config: resolved.cfg,
+    agentId: resolved.agentId,
     eligibility: {
-      remote: getRemoteSkillEligibility({
-        advertiseExecNode: canExecRequestNode({
-          cfg: resolved.cfg,
-          agentId: resolved.agentId,
-        }),
-      }),
+      nodeSkills,
+      remote: getRemoteSkillEligibility({ advertiseExecNode: nodeSkills.canExec }),
     },
   });
 }
@@ -144,7 +147,7 @@ async function readSkillDescription(skillDir: string): Promise<string> {
     if (!match) {
       return "";
     }
-    const descMatch = match[1].match(/^description:\s*['"]?(.+?)['"]?\s*$/m);
+    const descMatch = match[1]?.match(/^description:\s*['"]?(.+?)['"]?\s*$/m);
     return descMatch?.[1]?.trim() ?? "";
   } catch {
     return "";

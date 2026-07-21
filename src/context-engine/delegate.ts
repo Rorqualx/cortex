@@ -1,6 +1,10 @@
 // Context-engine delegates bridge custom engines to built-in compaction and memory prompt paths.
 import { normalizeStructuredPromptSection } from "@openclaw/ai/internal/shared";
-import { parseSqliteSessionFileMarker } from "../config/sessions/sqlite-marker.js";
+import { resolveSessionStorePathForScope } from "../config/sessions/session-store-path.js";
+import {
+  formatSqliteSessionFileMarker,
+  parseSqliteSessionFileMarker,
+} from "../config/sessions/sqlite-marker.js";
 import {
   buildMemoryPromptSection,
   getActivePreparedMemoryPromptSection,
@@ -8,6 +12,7 @@ import {
   type MemoryPromptSectionParams,
   type PreparedMemoryPromptSection,
 } from "../plugins/memory-state.js";
+import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { createLazyRuntimeModule } from "../shared/lazy-runtime.js";
 import type {
   ContextEngine,
@@ -84,8 +89,24 @@ export async function delegateCompactionToRuntime(
       ? Math.floor(runtimeContext.currentTokenCount)
       : undefined);
 
+  // Fork transcript contract: compaction runs address transcripts by an
+  // explicit SQLite marker. Prefer the host-resolved sessionFile; otherwise
+  // synthesize the marker from the session identity this delegate is keyed by.
+  const markerAgentId =
+    agentId ?? sessionTarget?.agentId ?? resolveAgentIdFromSessionKey(sessionKey);
+  const sessionFile =
+    typeof runtimeContext.sessionFile === "string" && runtimeContext.sessionFile.trim()
+      ? runtimeContext.sessionFile
+      : formatSqliteSessionFileMarker({
+          agentId: markerAgentId,
+          sessionId: params.sessionId,
+          storePath:
+            sessionTarget?.storePath ??
+            resolveSessionStorePathForScope({ agentId: markerAgentId, sessionKey }),
+        });
   const result = await compactEmbeddedAgentSessionDirect({
     ...runtimeContextParams,
+    sessionFile,
     ...(agentId ? { agentId } : {}),
     sessionId: params.sessionId,
     ...(sessionKey ? { sessionKey } : {}),

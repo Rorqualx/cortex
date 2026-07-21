@@ -17,8 +17,8 @@ describe("dedupWithinChunk", () => {
     ];
     const result = dedupWithinChunk(facts);
     expect(result).toHaveLength(1);
-    expect(result[0].text).toBe("first");
-    expect(result[0].importance).toBe(0.8);
+    expect(result[0]!.text).toBe("first");
+    expect(result[0]!.importance).toBe(0.8);
   });
 
   it("preserves order across distinct dedupKeys", () => {
@@ -46,7 +46,7 @@ describe("dropAlreadyKnown", () => {
     const known = new Set(["k:1"]);
     const result = dropAlreadyKnown(facts, known);
     expect(result).toHaveLength(1);
-    expect(result[0].dedupKey).toBe("k:2");
+    expect(result[0]!.dedupKey).toBe("k:2");
   });
 
   it("returns input unchanged when known set is empty", () => {

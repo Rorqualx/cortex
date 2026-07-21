@@ -34,6 +34,9 @@ export type MaterializeVisibleStreamOptions = {
   replacementMessages?: unknown[];
   isHiddenAssistantMessage: AssistantMessageVisibility;
   isHiddenStreamText: StreamVisibility;
+  // Keep tool-associated commentary parts when reconciling a terminal message
+  // instead of dropping them as plain assistant text.
+  persistCommentary?: boolean;
 };
 
 export function currentLiveToolCallIds(state: StreamReconciliationState): string[] {
@@ -322,7 +325,7 @@ export function terminalMessageReplacesVisibleStream(
   const parts = visibleAssistantStreamParts(state, {
     includeCurrent: true,
     isHiddenStreamText: opts.isHiddenStreamText,
-  }).filter((part) => opts.persistCommentary === true || !part.itemId);
+  }).filter((part) => opts.persistCommentary === true || !part.toolCallId);
   if (parts.length === 0) {
     return false;
   }

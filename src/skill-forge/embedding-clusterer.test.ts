@@ -108,8 +108,10 @@ describe("clusterByCosineAndToolShape", () => {
       DEFAULT_TOOL_SHAPE_OVERLAP_MIN,
     );
     expect(clusters).toHaveLength(2);
-    expect(clusters[0]).toHaveLength(2);
-    expect(clusters[0].map((c) => c.captureDir)).toEqual(["/a", "/b"]);
+    const firstCluster = clusters[0];
+    if (!firstCluster) throw new Error("expected cluster");
+    expect(firstCluster).toHaveLength(2);
+    expect(firstCluster.map((c) => c.captureDir)).toEqual(["/a", "/b"]);
   });
 
   it("does NOT cluster captures with high cosine but disjoint tools (false-positive guard)", () => {
@@ -180,9 +182,11 @@ describe("detectEmbeddingRepetitionCandidates", () => {
     });
     expect(report.embeddedCaptures).toBe(3);
     expect(report.candidates).toHaveLength(1);
-    expect(report.candidates[0].occurrences).toBe(2);
-    expect(report.candidates[0].captureDirs).toEqual([a, b]);
-    expect(report.candidates[0].toolSequence).toEqual(["read_file", "edit_file"]);
+    const candidate = report.candidates[0];
+    if (!candidate) throw new Error("expected candidate");
+    expect(candidate.occurrences).toBe(2);
+    expect(candidate.captureDirs).toEqual([a, b]);
+    expect(candidate.toolSequence).toEqual(["read_file", "edit_file"]);
   });
 
   it("records skipped captures when embed throws", async () => {
@@ -197,7 +201,9 @@ describe("detectEmbeddingRepetitionCandidates", () => {
     });
     expect(report.embeddedCaptures).toBe(0);
     expect(report.skippedCaptures).toHaveLength(1);
-    expect(report.skippedCaptures[0].reason).toMatch(/network down/u);
+    const skipped = report.skippedCaptures[0];
+    if (!skipped) throw new Error("expected skipped capture");
+    expect(skipped.reason).toMatch(/network down/u);
     expect(report.candidates).toHaveLength(0);
   });
 });

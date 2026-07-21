@@ -26,10 +26,16 @@ import {
   isSensitiveConfigPath,
   pathKey,
   REDACTED_PLACEHOLDER,
+  humanize,
   schemaType,
   type JsonSchema,
 } from "./config-form.shared.ts";
-import { analyzeConfigSchema, renderChannelConfigModal, renderConfigForm } from "./config-form.ts";
+import {
+  analyzeConfigSchema,
+  renderChannelConfigModal,
+  renderConfigForm,
+  SECTION_META,
+} from "./config-form.ts";
 import { getLobsterdex, getLobsterdexEntries } from "./lobster-dex.ts";
 import { LOBSTER_PET_PALETTES, canonicalLobsterLook, renderLobsterSvg } from "./lobster-pet.ts";
 import { renderNotificationsSection, type WebPushUiState } from "./notifications-section.ts";
@@ -536,13 +542,29 @@ function scopeSchemaSections(
   return { ...schema, properties: nextProps };
 }
 
+function resolveSectionMeta(
+  key: string,
+  schema?: JsonSchema,
+): {
+  label: string;
+  description?: string;
+} {
+  const meta = SECTION_META[key];
+  if (meta) {
+    return meta;
+  }
+  return {
+    label: schema?.title ?? humanize(key),
+    description: schema?.description ?? "",
+  };
+}
+
 function asConfigSchema(value: unknown): JsonSchema | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
   return value as JsonSchema;
 }
-
 
 const MAX_CONFIG_DIFF_DEPTH = 64;
 const MAX_CONFIG_DIFF_NODES = 20_000;
@@ -1551,6 +1573,21 @@ export function renderConfig(props: ConfigProps) {
     includeVirtualSections &&
     VIRTUAL_SECTIONS.has(key) &&
     (key === "__appearance__" || include?.has(key) === true);
+  const isVirtualSection =
+    includeVirtualSections &&
+    props.activeSection != null &&
+    VIRTUAL_SECTIONS.has(props.activeSection);
+  const activeSectionSchema =
+    props.activeSection &&
+    !isVirtualSection &&
+    analysis.schema &&
+    schemaType(analysis.schema) === "object"
+      ? analysis.schema.properties?.[props.activeSection]
+      : undefined;
+  const activeSectionMeta =
+    props.activeSection && !isVirtualSection
+      ? resolveSectionMeta(props.activeSection, activeSectionSchema)
+      : null;
   const resolveNavSectionLabel = (key: string) => {
     const sectionKey =
       key === "__appearance__" ? "theme" : key === "__notifications__" ? "notifications" : key;
@@ -1956,11 +1993,21 @@ export function renderConfig(props: ConfigProps) {
                           <div class="config-diff__path">${formatConfigDiffPath(change.path)}</div>
                           <div class="config-diff__values">
                             <span class="config-diff__from"
-                              >${renderDiffValue(change.path, change.from, props.uiHints)}</span
+                              >${renderRawDiffValue(
+                                change.path,
+                                change.from,
+                                props.uiHints,
+                                false,
+                              )}</span
                             >
                             <span class="config-diff__arrow">→</span>
                             <span class="config-diff__to"
-                              >${renderDiffValue(change.path, change.to, props.uiHints)}</span
+                              >${renderRawDiffValue(
+                                change.path,
+                                change.to,
+                                props.uiHints,
+                                false,
+                              )}</span
                             >
                           </div>
                         </div>

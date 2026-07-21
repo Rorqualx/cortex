@@ -58,7 +58,7 @@ function buildForwardReferenceIndex(messages: AgentMessage[]): Set<number> {
   const toolResultByCallId = new Map<string, number>();
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    if (msg.role === "toolResult" && "toolCallId" in msg) {
+    if (msg?.role === "toolResult" && "toolCallId" in msg) {
       toolResultByCallId.set((msg as { toolCallId: string }).toolCallId, i);
     }
   }
@@ -67,7 +67,7 @@ function buildForwardReferenceIndex(messages: AgentMessage[]): Set<number> {
   // a tool result, that tool result has forward relevance
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    if (msg.role !== "assistant") {
+    if (msg?.role !== "assistant") {
       continue;
     }
 
@@ -88,7 +88,7 @@ function buildForwardReferenceIndex(messages: AgentMessage[]): Set<number> {
 
     // Also: if this assistant comes right before a tool result, mark the
     // preceding assistant as referenced (the assistant-tool pair should stay together)
-    if (i + 1 < messages.length && messages[i + 1].role === "toolResult") {
+    if (i + 1 < messages.length && messages[i + 1]?.role === "toolResult") {
       referenced.add(i);
       referenced.add(i + 1);
     }
@@ -173,9 +173,13 @@ export function enforceTokenBudget(
   const forwardRefs = buildForwardReferenceIndex(messages);
 
   for (let i = 0; i < messages.length; i++) {
-    const tokens = estimateMessageTokens(messages[i]);
+    const msg = messages[i];
+    if (!msg) {
+      continue; // index bounded by messages.length; guard for noUncheckedIndexedAccess only
+    }
+    const tokens = estimateMessageTokens(msg);
     totalTokens += tokens;
-    const score = scoreMessageForRetention(messages[i], i, messages.length, forwardRefs);
+    const score = scoreMessageForRetention(msg, i, messages.length, forwardRefs);
     estimates.push({ index: i, tokens, score });
   }
 
@@ -190,7 +194,7 @@ export function enforceTokenBudget(
 
   // Last user message
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "user") {
+    if (messages[i]?.role === "user") {
       protectedIndices.add(i);
       break;
     }

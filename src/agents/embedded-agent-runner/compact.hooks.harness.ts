@@ -306,6 +306,7 @@ function createCompactHooksRuntimePlan(params: BuildAgentRuntimePlanParams): Age
   const transcriptPolicy = {
     sanitizeMode: "full" as const,
     sanitizeToolCallIds: false,
+    sanitizeThinkingSignatures: false,
     preserveNativeAnthropicToolUseIds: false,
     repairToolUseResultPairing: false,
     preserveSignatures: false,

@@ -169,6 +169,9 @@ export async function generateSummaryEmbedding(params: {
   const text = buildSummaryEmbeddingText(params.summary);
   const vectors = await provider.embedBatch([text]);
   const embedding = vectors[0];
+  if (embedding === undefined) {
+    throw new Error("Embedding provider returned no vector for summary");
+  }
   // Mutate summary in place so callers that already hold a reference
   // get the embedding without reassignment.
   params.summary.embedding = embedding;

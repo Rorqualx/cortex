@@ -222,8 +222,8 @@ justification = "Safe"
 `;
     const result = parsePolicyToml(toml);
     expect(result.rules).toHaveLength(1);
-    expect(result.rules[0].decision).toBe("allow");
-    expect(result.rules[0].pattern).toEqual([["git"], ["status"]]);
+    expect(result.rules[0]!.decision).toBe("allow");
+    expect(result.rules[0]!.pattern).toEqual([["git"], ["status"]]);
   });
 
   it("parses rules with alternatives", () => {
@@ -234,7 +234,7 @@ decision = "allow"
 `;
     const result = parsePolicyToml(toml);
     expect(result.rules).toHaveLength(1);
-    expect(result.rules[0].pattern).toEqual([["npm", "pnpm"], ["install"]]);
+    expect(result.rules[0]!.pattern).toEqual([["npm", "pnpm"], ["install"]]);
   });
 
   it("parses banned prefixes", () => {
@@ -245,7 +245,7 @@ justification = "Dangerous"
 `;
     const result = parsePolicyToml(toml);
     expect(result.banned).toHaveLength(1);
-    expect(result.banned[0].pattern).toEqual(["sudo", "rm"]);
+    expect(result.banned[0]!.pattern).toEqual(["sudo", "rm"]);
   });
 
   it("handles empty TOML", () => {
@@ -261,7 +261,7 @@ pattern = ["foo"]
 decision = "unknown_value"
 `;
     const result = parsePolicyToml(toml);
-    expect(result.rules[0].decision).toBe("prompt");
+    expect(result.rules[0]?.decision).toBe("prompt");
   });
 });
 

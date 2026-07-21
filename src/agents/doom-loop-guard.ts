@@ -106,9 +106,11 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   let magA = 0;
   let magB = 0;
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    magA += a[i] * a[i];
-    magB += b[i] * b[i];
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    dot += av * bv;
+    magA += av * av;
+    magB += bv * bv;
   }
   const denom = Math.sqrt(magA) * Math.sqrt(magB);
   return denom === 0 ? 0 : dot / denom;
@@ -124,7 +126,7 @@ export function meanPairwiseCosineSimilarity(buffer: number[][]): number {
   let count = 0;
   for (let i = 0; i < buffer.length; i++) {
     for (let j = i + 1; j < buffer.length; j++) {
-      sum += cosineSimilarity(buffer[i], buffer[j]);
+      sum += cosineSimilarity(buffer[i] ?? [], buffer[j] ?? []);
       count++;
     }
   }

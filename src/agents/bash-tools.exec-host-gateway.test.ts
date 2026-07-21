@@ -4,7 +4,9 @@
  * follow-ups, and gateway approval result routing.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { ExecApprovalFollowupTarget } from "./bash-tools.exec-host-shared.js";
+type ExecApprovalFollowupTarget = Parameters<
+  typeof import("./bash-tools.exec-host-shared.js").buildExecApprovalFollowupTarget
+>[0];
 import type { ExecApprovalFollowupFactory } from "./bash-tools.exec-types.js";
 
 type StrictInlineEvalBoundary =

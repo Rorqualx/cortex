@@ -126,12 +126,16 @@ function isSearchContent(content: string): boolean {
   let grepLines = 0;
   const sampleSize = Math.min(lines.length, 30);
   for (let i = 0; i < sampleSize; i++) {
+    const line = lines[i];
+    if (line === undefined) {
+      continue;
+    }
     // file:line:content format
-    if (/^\/?\S+:\d+:/.test(lines[i])) {
+    if (/^\/?\S+:\d+:/.test(line)) {
       grepLines++;
     }
     // Just file paths
-    else if (/^\/?\S+\.\w{1,10}$/.test(lines[i].trim())) {
+    else if (/^\/?\S+\.\w{1,10}$/.test(line.trim())) {
       grepLines++;
     }
   }
@@ -143,20 +147,24 @@ function isLogContent(content: string): boolean {
   let logLines = 0;
   const sampleSize = Math.min(lines.length, 20);
   for (let i = 0; i < sampleSize; i++) {
+    const line = lines[i];
+    if (line === undefined) {
+      continue;
+    }
     // Timestamp patterns
-    if (/^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(lines[i])) {
+    if (/^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(line)) {
       logLines++;
     }
     // Log levels
-    else if (/\b(ERROR|WARN|INFO|DEBUG|TRACE|FATAL)\b/.test(lines[i])) {
+    else if (/\b(ERROR|WARN|INFO|DEBUG|TRACE|FATAL)\b/.test(line)) {
       logLines++;
     }
     // Build tool output
-    else if (/^\s*\[(ERROR|WARN|INFO)\]/.test(lines[i])) {
+    else if (/^\s*\[(ERROR|WARN|INFO)\]/.test(line)) {
       logLines++;
-    } else if (/\b(passed|failed|skipped)\s*\d*\b/i.test(lines[i])) {
+    } else if (/\b(passed|failed|skipped)\s*\d*\b/i.test(line)) {
       logLines++;
-    } else if (/npm (warn|error|info)/i.test(lines[i])) {
+    } else if (/npm (warn|error|info)/i.test(line)) {
       logLines++;
     }
   }

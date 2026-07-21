@@ -1981,7 +1981,7 @@ describe("workboard controller", () => {
     await startWorkboardCard({
       host,
       client: client as never,
-      card: remaining,
+      card: remaining!,
     });
 
     expect(client.request).toHaveBeenNthCalledWith(

@@ -37,7 +37,7 @@ export const PROVIDER_PRIORITY: readonly string[] = ["zai", "kimi", "deepseek", 
  * configured; otherwise the first configured model of that provider is used.
  * `default` applies to any kind without a specific entry.
  */
-const PREFERRED: Record<string, Partial<Record<DelegationKind, string>> & { default: string }> = {
+const PREFERRED = {
   zai: {
     default: "glm-4.7",
     review: "glm-5.1",
@@ -53,7 +53,14 @@ const PREFERRED: Record<string, Partial<Record<DelegationKind, string>> & { defa
   kimi: { default: "kimi-for-coding" },
   deepseek: { default: "deepseek-v4-pro" },
   moonshot: { default: "kimi-k2.6", vision: "moonshot-v1-128k-vision-preview" },
-};
+} satisfies Record<string, Partial<Record<DelegationKind, string>> & { default: string }>;
+
+// String-keyed view for dynamic provider lookups; PREFERRED keeps literal keys
+// so known providers (e.g. the zai fallback) stay non-optional.
+const PREFERRED_BY_PROVIDER: Record<
+  string,
+  Partial<Record<DelegationKind, string>> & { default: string }
+> = PREFERRED;
 
 /**
  * Same-provider secondary retry for the PRIMARY provider only: tried right after
@@ -120,7 +127,8 @@ function orderedProviders(cfg: OpenClawConfig | undefined, override?: string): s
 
 /** Pick a provider's model for a kind: preferred-if-configured, else first configured. */
 function pickModel(providerId: string, kind: DelegationKind, models: string[]): string {
-  const pref = PREFERRED[providerId]?.[kind] ?? PREFERRED[providerId]?.default;
+  const providerPrefs = PREFERRED_BY_PROVIDER[providerId];
+  const pref = providerPrefs?.[kind] ?? providerPrefs?.default;
   if (pref && models.includes(pref)) return pref;
   return models[0]!;
 }

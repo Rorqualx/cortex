@@ -137,7 +137,7 @@ describe("reconcileCrossBrain", () => {
     const out = await reconcileCrossBrain({ storage, caller, agentId: "j-rorqual", now: NOW });
     expect(out.unmarkedNowAgreed).toBe(1);
     const persisted = await storage.readLongTerm();
-    expect(persisted.facts[0].supersededBy ?? null).toBeNull();
+    expect(persisted.facts[0]?.supersededBy ?? null).toBeNull();
   });
 
   it("ignores LLM decisions that reference unknown factIds or unknown slots", async () => {
@@ -156,7 +156,7 @@ describe("reconcileCrossBrain", () => {
     const out = await reconcileCrossBrain({ storage, caller, agentId: "j-rorqual", now: NOW });
     expect(out.newlyMarkedStale).toBe(0);
     const persisted = await storage.readLongTerm();
-    expect(persisted.facts[0].supersededBy ?? null).toBeNull();
+    expect(persisted.facts[0]?.supersededBy ?? null).toBeNull();
   });
 
   it("doesn't rewrite the file when no marks change", async () => {

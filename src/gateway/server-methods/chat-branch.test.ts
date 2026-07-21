@@ -35,7 +35,9 @@ function transcriptEntries(file: string): Array<Record<string, unknown>> {
 
 async function callChatBranch(params: Record<string, unknown>): Promise<RespondCall> {
   let result: RespondCall | undefined;
-  await chatBranchHandlers["chat.branch"]({
+  const handler = chatBranchHandlers["chat.branch"];
+  if (!handler) throw new Error("chat.branch handler not registered");
+  await handler({
     params,
     respond: (ok: boolean, payload?: unknown, error?: unknown) => {
       result = { ok, payload, error };
@@ -50,7 +52,9 @@ async function callChatBranch(params: Record<string, unknown>): Promise<RespondC
 
 async function callChatBranches(params: Record<string, unknown>): Promise<RespondCall> {
   let result: RespondCall | undefined;
-  await chatBranchHandlers["chat.branches"]({
+  const handler = chatBranchHandlers["chat.branches"];
+  if (!handler) throw new Error("chat.branches handler not registered");
+  await handler({
     params,
     respond: (ok: boolean, payload?: unknown, error?: unknown) => {
       result = { ok, payload, error };

@@ -1877,7 +1877,7 @@ describe("handleSendChat", () => {
     await Promise.resolve();
     const queuedId = host.chatQueue[0]?.id;
     expect(queuedId).toEqual(expect.any(String));
-    removeQueuedMessage(host, queuedId);
+    removeQueuedMessage(host, queuedId ?? "");
 
     switchUpdate.resolve(false);
     await send;

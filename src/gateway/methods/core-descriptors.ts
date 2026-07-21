@@ -11,9 +11,15 @@ import {
 type CoreGatewayMethodSpec = {
   name: string;
   scope: GatewayMethodScope;
+  // Release-train vintage for the method (fork feature consumed by core-descriptors.since.test.ts).
+  since?: string;
   advertise?: false;
   startup?: true;
   controlPlaneWrite?: true;
+};
+
+export type CoreGatewayMethodMetadata = Pick<CoreGatewayMethodSpec, "name" | "scope"> & {
+  since: string;
 };
 
 // This is the canonical core method policy table: every core handler must appear here so
@@ -281,6 +287,15 @@ export function listCoreAdvertisedGatewayMethodNames(): string[] {
 /** Returns all registered core method names, including hidden/internal compatibility methods. */
 export function listCoreGatewayMethodNames(): string[] {
   return CORE_GATEWAY_METHOD_SPECS.map((spec) => spec.name);
+}
+
+/** Returns per-method release-train metadata used by vintage/release-train tracking. */
+export function listCoreGatewayMethodMetadata(): CoreGatewayMethodMetadata[] {
+  return CORE_GATEWAY_METHOD_SPECS.map((spec) => ({
+    name: spec.name,
+    scope: spec.scope,
+    since: spec.since ?? "<=2026.7",
+  }));
 }
 
 /** Looks up the raw core method scope, including node and dynamic sentinel scopes. */

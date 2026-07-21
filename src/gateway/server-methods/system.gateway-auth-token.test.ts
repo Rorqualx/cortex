@@ -11,7 +11,11 @@ vi.mock("../auth-token-resolution.js", () => ({
 
 import { systemHandlers } from "./system.ts";
 
-const handler = systemHandlers["gateway.auth.token.get"];
+const registeredHandler = systemHandlers["gateway.auth.token.get"];
+if (!registeredHandler) throw new Error("gateway.auth.token.get handler not registered");
+// Bind to a definitely-typed const so the narrowing survives into the invoke
+// closure below (control-flow narrowing of the indexed access does not).
+const handler = registeredHandler;
 
 async function invoke(scopes: string[]) {
   const respond = vi.fn();
@@ -32,7 +36,9 @@ describe("gateway.auth.token.get", () => {
   it("rejects non-admin callers without resolving the token", async () => {
     const respond = await invoke(["operator.read", "operator.write"]);
     expect(respond).toHaveBeenCalledTimes(1);
-    const [ok, payload, error] = respond.mock.calls[0];
+    const call = respond.mock.calls[0];
+    if (!call) throw new Error("expected respond call");
+    const [ok, payload, error] = call;
     expect(ok).toBe(false);
     expect(payload).toBeUndefined();
     expect(String(error?.message ?? "")).toContain("operator.admin");
@@ -46,7 +52,9 @@ describe("gateway.auth.token.get", () => {
       secretRefConfigured: false,
     });
     const respond = await invoke(["operator.admin"]);
-    const [ok, payload] = respond.mock.calls[0];
+    const call = respond.mock.calls[0];
+    if (!call) throw new Error("expected respond call");
+    const [ok, payload] = call;
     expect(ok).toBe(true);
     expect(payload).toEqual({ token: "deadbeef", source: "config", secretRefConfigured: false });
   });
@@ -58,7 +66,9 @@ describe("gateway.auth.token.get", () => {
       secretRefConfigured: true,
     });
     const respond = await invoke(["operator.admin"]);
-    const [ok, payload] = respond.mock.calls[0];
+    const call = respond.mock.calls[0];
+    if (!call) throw new Error("expected respond call");
+    const [ok, payload] = call;
     expect(ok).toBe(true);
     expect(payload).toEqual({ token: null, source: "secretRef", secretRefConfigured: true });
   });
@@ -70,7 +80,9 @@ describe("gateway.auth.token.get", () => {
       secretRefConfigured: false,
     });
     const respond = await invoke(["operator.admin"]);
-    const [ok, payload] = respond.mock.calls[0];
+    const call = respond.mock.calls[0];
+    if (!call) throw new Error("expected respond call");
+    const [ok, payload] = call;
     expect(ok).toBe(true);
     expect(payload).toEqual({ token: null, source: null, secretRefConfigured: false });
   });

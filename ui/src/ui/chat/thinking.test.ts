@@ -5,7 +5,7 @@ import {
   normalizeThinkLevel,
   resolveChatThinkingSelectState,
   resolveThinkingLevelInput,
-} from "../thinking.ts";
+} from "./thinking.ts";
 
 describe("chat thinking helpers", () => {
   it("keeps literal Ultra distinct from the legacy ultrathink alias", () => {

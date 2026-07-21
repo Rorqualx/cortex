@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin, UserConfig } from "vite";
-import { controlUiManualChunk } from "./config/control-ui-chunking.ts";
+import { controlUiStableChunkName } from "./config/control-ui-chunking.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
@@ -264,7 +264,7 @@ export default function controlUiViteConfig(): UserConfig {
       sourcemap: true,
       rollupOptions: {
         output: {
-          manualChunks: controlUiManualChunk,
+          manualChunks: controlUiStableChunkName,
         },
       },
       // Keep CI/onboard logs clean; the app chunk is split into stable runtime buckets above.

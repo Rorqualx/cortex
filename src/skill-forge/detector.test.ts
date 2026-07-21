@@ -102,9 +102,11 @@ describe("detectErrorRecovery", () => {
       toolResult("ok"),
     ]);
     expect(motifs).toHaveLength(1);
-    expect(motifs[0].failingTool).toBe("write_file");
-    expect(motifs[0].recoveringTool).toBe("mkdir");
-    expect(motifs[0].recoverySequence).toEqual(["mkdir"]);
+    const motif = motifs[0];
+    if (!motif) throw new Error("expected motif");
+    expect(motif.failingTool).toBe("write_file");
+    expect(motif.recoveringTool).toBe("mkdir");
+    expect(motif.recoverySequence).toEqual(["mkdir"]);
   });
 
   it("does not flag when no recovery happens", () => {
@@ -123,7 +125,9 @@ describe("detectErrorRecovery", () => {
       toolResult("ok"),
     ]);
     expect(motifs).toHaveLength(1);
-    expect(motifs[0].recoveringTool).toBe("retry_with_backoff");
+    const motif = motifs[0];
+    if (!motif) throw new Error("expected motif");
+    expect(motif.recoveringTool).toBe("retry_with_backoff");
   });
 });
 
@@ -143,8 +147,10 @@ describe("detectExplicitInstructions", () => {
   it("truncates the prompt excerpt to 200 chars", () => {
     const long = "x".repeat(500);
     const matches = detectExplicitInstructions([userMessage(`save this as a skill ${long}`)]);
-    expect(matches[0].promptExcerpt).toHaveLength(200);
-    expect(matches[0].matchedPhrase).toBe("save this as a skill");
+    const first = matches[0];
+    if (!first) throw new Error("expected match");
+    expect(first.promptExcerpt).toHaveLength(200);
+    expect(first.matchedPhrase).toBe("save this as a skill");
   });
 });
 
@@ -186,9 +192,11 @@ describe("runDetector", () => {
       (c): c is Extract<Candidate, { lane: "tool-shape" }> => c.lane === "tool-shape",
     );
     expect(repetitions).toHaveLength(1);
-    expect(repetitions[0].occurrences).toBe(REPETITION_THRESHOLD);
-    expect(repetitions[0].toolSequence).toEqual(["read_file", "grep"]);
-    expect(repetitions[0].captureDirs).toEqual(dirs);
+    const repetition = repetitions[0];
+    if (!repetition) throw new Error("expected repetition");
+    expect(repetition.occurrences).toBe(REPETITION_THRESHOLD);
+    expect(repetition.toolSequence).toEqual(["read_file", "grep"]);
+    expect(repetition.captureDirs).toEqual(dirs);
   });
 
   it("emits error-recovery and explicit candidates per-capture", async () => {
@@ -306,8 +314,10 @@ describe("writeCandidatesToForge", () => {
       OPENCLAW_TEST_FAST: "1",
     });
     expect(files).toHaveLength(1);
-    expect(files[0]).toBe(path.join(stateDir, "skill-forge", "candidates", "explicit-abc123.json"));
-    const onDisk = JSON.parse(await fsp.readFile(files[0], "utf8"));
+    const file = files[0];
+    if (!file) throw new Error("expected candidate file");
+    expect(file).toBe(path.join(stateDir, "skill-forge", "candidates", "explicit-abc123.json"));
+    const onDisk = JSON.parse(await fsp.readFile(file, "utf8"));
     expect(onDisk).toEqual(candidate);
   });
 });

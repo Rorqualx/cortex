@@ -30,6 +30,15 @@ export type OllamaEmbeddingProvider = {
   embedBatch: (texts: string[], options?: { signal?: AbortSignal }) => Promise<number[][]>;
 };
 
+type MemoryCoreAcquireLocalService = (
+  target: {
+    providerId: string;
+    baseUrl: string;
+    headers?: HeadersInit;
+  },
+  signal?: AbortSignal | null,
+) => Promise<{ release: () => void } | undefined>;
+
 type OllamaEmbeddingOptions = {
   config: OpenClawConfig;
   agentDir?: string;
@@ -44,6 +53,7 @@ type OllamaEmbeddingOptions = {
   local?: unknown;
   outputDimensionality?: number;
   taskType?: unknown;
+  acquireLocalService?: MemoryCoreAcquireLocalService;
 };
 
 export type OllamaEmbeddingClient = {

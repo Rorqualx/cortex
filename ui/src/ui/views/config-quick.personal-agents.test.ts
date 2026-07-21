@@ -19,7 +19,7 @@ function createProps(overrides: Partial<QuickSettingsProps> = {}): QuickSettings
     selectedModelValue: "",
     onModelSelect: vi.fn(),
     onThinkingChange: vi.fn(),
-    onFastModeToggle: vi.fn(),
+    onFastModeChange: vi.fn(),
     channels: [],
     onChannelConfigure: vi.fn(),
     automation: { cronJobCount: 0, skillCount: 0, mcpServerCount: 0 },

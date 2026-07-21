@@ -29,7 +29,8 @@ const defaultRuntime = resolveDefaultRuntime();
 export const defaultApiRegistry = defaultRuntime.registry;
 export const defaultLlmRuntime = defaultRuntime.runtime;
 
-export const { getApiProvider, getApiProviders } = defaultApiRegistry;
+export const { registerApiProvider, getApiProvider, getApiProviders, unregisterApiProviders } =
+  defaultApiRegistry;
 
 export function clearApiProviders(): void {
   defaultApiRegistry.clearApiProviders();

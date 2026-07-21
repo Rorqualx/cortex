@@ -56,7 +56,7 @@ describe("selectSlidingWindow", () => {
 
   it("trims oldest messages until the tail fits the budget", () => {
     const messages = [userMsg("first"), userMsg("second"), userMsg("third"), userMsg("fourth")];
-    const lastTwoCost = estimateMessageTokens(messages[2]) + estimateMessageTokens(messages[3]);
+    const lastTwoCost = estimateMessageTokens(messages[2]!) + estimateMessageTokens(messages[3]!);
     const result = selectSlidingWindow({ messages, tokenBudget: lastTwoCost });
     expect(result.selected).toHaveLength(2);
     expect(result.selected[0]).toBe(messages[2]);
@@ -70,7 +70,7 @@ describe("selectSlidingWindow", () => {
       toolResultMsg("tc-1", "result"),
       userMsg("followup"),
     ];
-    const lastTwoCost = estimateMessageTokens(messages[2]) + estimateMessageTokens(messages[3]);
+    const lastTwoCost = estimateMessageTokens(messages[2]!) + estimateMessageTokens(messages[3]!);
     const result = selectSlidingWindow({ messages, tokenBudget: lastTwoCost });
     expect(result.selected[0]).toBe(messages[1]);
     expect((result.selected[0] as { role: string }).role).toBe("assistant");
@@ -88,9 +88,9 @@ describe("selectSlidingWindow", () => {
     const result = selectSlidingWindow({
       messages,
       tokenBudget:
-        estimateMessageTokens(messages[2]) +
-        estimateMessageTokens(messages[3]) +
-        estimateMessageTokens(messages[4]),
+        estimateMessageTokens(messages[2]!) +
+        estimateMessageTokens(messages[3]!) +
+        estimateMessageTokens(messages[4]!),
     });
     expect((result.selected[0] as { role: string }).role).toBe("assistant");
   });

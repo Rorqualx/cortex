@@ -59,6 +59,7 @@ describe("server-activity-recorder", () => {
     const page = queryActivityEvents();
     expect(page.events).toHaveLength(1);
     const event = page.events[0];
+    if (!event) throw new Error("expected event");
     expect(event.kind).toBe("tool");
     expect(event.status).toBe("ok");
     expect(event.title).toContain("pnpm test");

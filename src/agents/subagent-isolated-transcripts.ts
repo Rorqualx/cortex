@@ -186,17 +186,18 @@ export async function readIsolatedTranscript(params: {
     const raw = await fs.readFile(filePath, "utf-8");
     const lines = raw.split(JSONL_NEWLINE).filter((line) => line.trim() !== "");
 
-    if (lines.length < 2) {
+    const [metaRaw, contentRaw] = lines;
+    if (metaRaw === undefined || contentRaw === undefined) {
       logWarn(`isolated-transcript: invalid format for ${id} (${lines.length} lines)`);
       return null;
     }
 
     // Parse metadata line
-    const metaLine = JSON.parse(lines[0]);
+    const metaLine = JSON.parse(metaRaw);
     const meta: IsolatedTranscriptMeta = metaLine.meta;
 
     // Parse content line
-    const contentLine = JSON.parse(lines[1]);
+    const contentLine = JSON.parse(contentRaw);
     const content: string = contentLine.content;
 
     const now = Date.now();
@@ -276,7 +277,8 @@ export async function cleanupIsolatedTranscripts(
         const raw = await fs.readFile(filePath, "utf-8");
         const lines = raw.split(JSONL_NEWLINE).filter((line) => line.trim() !== "");
 
-        if (lines.length < 2) {
+        const metaRaw = lines.length >= 2 ? lines[0] : undefined;
+        if (metaRaw === undefined) {
           // Invalid format, safe to delete
           if (!dryRun) {
             const stats = await fs.stat(filePath);
@@ -288,7 +290,7 @@ export async function cleanupIsolatedTranscripts(
           continue;
         }
 
-        const metaLine = JSON.parse(lines[0]);
+        const metaLine = JSON.parse(metaRaw);
         const meta: IsolatedTranscriptMeta = metaLine.meta;
 
         // Filter by runId if specified
@@ -398,5 +400,5 @@ export function isolatedTranscriptReferenceToken(id: string): string {
  */
 export function parseIsolatedTranscriptReferenceToken(token: string): string | null {
   const match = token.match(/^\[isolated:([a-f0-9-]+)\]$/);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }

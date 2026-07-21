@@ -2,19 +2,8 @@ import {
   GATEWAY_EVENT_UPDATE_AVAILABLE,
   type GatewayUpdateAvailableEventPayload,
 } from "../../../src/gateway/events.js";
-import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
-import type { UpdateAvailable } from "./types.ts";
 import { controlUiVersionDiffersFrom } from "../build-info.ts";
-import {
-  closeDevicePairSetup as closeDevicePairSetupState,
-  createDevicePairSetupState,
-  openDevicePairSetup as openDevicePairSetupState,
-  readDevicePairSetupSnapshot,
-  refreshDevicePairSetup as refreshDevicePairSetupState,
-  setDevicePairSetupAccess as setPairAccess,
-  type DevicePairSetup,
-  type DevicePairSetupAccess,
-} from "./device-pair-setup.ts";
+import type { ApplicationGateway } from "./application-gateway.ts";
 import {
   clearExecApprovalTimers,
   clearResolvedExecApprovalPrompt,
@@ -28,7 +17,18 @@ import {
   type ExecApprovalPromptState,
   type ExecApprovalRequest,
 } from "./controllers/exec-approval.ts";
-import type { ApplicationGateway } from "./application-gateway.ts";
+import {
+  closeDevicePairSetup as closeDevicePairSetupState,
+  createDevicePairSetupState,
+  openDevicePairSetup as openDevicePairSetupState,
+  readDevicePairSetupSnapshot,
+  refreshDevicePairSetup as refreshDevicePairSetupState,
+  setDevicePairSetupAccess as setPairAccess,
+  type DevicePairSetup,
+  type DevicePairSetupAccess,
+} from "./device-pair-setup.ts";
+import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
+import type { UpdateAvailable } from "./types.ts";
 
 type ApplicationStatusBanner = {
   tone: "danger" | "warn" | "info";
@@ -258,6 +258,7 @@ export function createApplicationOverlays(
     client: activeClient,
     execApprovalQueue: [],
     execApprovalBusy: false,
+    execApprovalError: null,
     execApprovalErrors: new Map(),
     execApprovalNowMs: Date.now(),
     execApprovalExpiryTimers: new Map(),
@@ -327,11 +328,11 @@ export function createApplicationOverlays(
     client: NonNullable<typeof activeClient>,
     epoch = connectedEpoch,
   ) => {
-    const applied = await refreshPendingApprovalQueue(promptState, {
-      isCurrentClient: (requestClient) =>
-        requestClient === client && epoch === connectedEpoch && isCurrentClient(client),
-    });
-    if (applied && !disposed) {
+    await refreshPendingApprovalQueue(promptState);
+    // The refresh mutates promptState in place; only publish when this client
+    // and epoch are still the connected pair so a stale refresh cannot repaint
+    // the queue after a reconnect swapped the active client.
+    if (epoch === connectedEpoch && isCurrentClient(client)) {
       publish();
     }
   };
@@ -478,7 +479,7 @@ export function createApplicationOverlays(
     if (!next.connected || !next.client) {
       promptState.execApprovalQueue = [];
       promptState.execApprovalBusy = false;
-      promptState.execApprovalErrors.clear();
+      promptState.execApprovalErrors?.clear();
       snapshot = { ...snapshot, updateAvailable: null, updateRunning: false };
       if (!next.client) {
         connectedEpoch = 0;
@@ -645,7 +646,7 @@ export function createApplicationOverlays(
         return;
       }
       promptState.execApprovalBusy = true;
-      promptState.execApprovalErrors.delete(active.id);
+      promptState.execApprovalErrors?.delete(active.id);
       const operation = { client, epoch: connectedEpoch, id: active.id };
       approvalDecision = operation;
       const isCurrentOperation = () =>
@@ -676,7 +677,7 @@ export function createApplicationOverlays(
           isCurrentOperation() &&
           promptState.execApprovalQueue.some((entry) => entry.id === active.id)
         ) {
-          promptState.execApprovalErrors.set(
+          promptState.execApprovalErrors?.set(
             active.id,
             `Approval failed: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -729,7 +730,7 @@ export function createApplicationOverlays(
       stopGateway();
       stopEvents();
       clearExecApprovalTimers(promptState);
-      promptState.execApprovalErrors.clear();
+      promptState.execApprovalErrors?.clear();
       listeners.clear();
     },
   };

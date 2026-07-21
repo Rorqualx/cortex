@@ -34,6 +34,9 @@ export function compressLogOutput(content: string, targetRatio: number): Compres
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) {
+      continue; // index bounded by lines.length; guard for noUncheckedIndexedAccess only
+    }
     const isErr = isErrorOrWarning(line);
     const isStackTrace = isStackLine(line);
     const isImportant = isErr || isStackTrace || isTestResult(line);

@@ -357,11 +357,12 @@ export class Storage {
 
   /** Write message-level chunks for a given L2 chunk (replaces that chunk's rows). */
   async writeMessageChunks(chunks: ReadonlyArray<MessageChunk>): Promise<void> {
-    if (chunks.length === 0) {
+    const first = chunks[0];
+    if (!first) {
       return;
     }
     const db = this.database();
-    const parentChunkId = chunks[0].chunkId;
+    const parentChunkId = first.chunkId;
     runSqliteImmediateTransactionSync(db, () => {
       db.prepare("DELETE FROM l3_message_chunks WHERE chunk_id = ?").run(parentChunkId);
       const insert = db.prepare(

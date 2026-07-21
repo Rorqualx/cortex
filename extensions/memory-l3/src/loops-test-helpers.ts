@@ -108,11 +108,24 @@ export function buildConceptCorpus(
   // Deterministic Fisher-Yates shuffle so the seed controls concept selection.
   for (let i = indices.length - 1; i > 0; i -= 1) {
     const j = Math.floor(rng() * (i + 1));
-    [indices[i], indices[j]] = [indices[j], indices[i]];
+    const vi = indices[i];
+    const vj = indices[j];
+    if (vi === undefined || vj === undefined) {
+      continue;
+    }
+    indices[i] = vj;
+    indices[j] = vi;
   }
   const out: Concept[] = [];
   for (let k = 0; k < Math.min(conceptCount, indices.length); k += 1) {
-    const row = TOPIC_VOCAB[indices[k]];
+    const idx = indices[k];
+    if (idx === undefined) {
+      continue;
+    }
+    const row = TOPIC_VOCAB[idx];
+    if (!row) {
+      continue;
+    }
     const [id, canonical, ...rest] = row;
     out.push({
       id,
@@ -161,7 +174,7 @@ function parseAlreadyKnown(prompt: string): Set<string> {
   if (!match) {
     return out;
   }
-  for (const raw of match[1].split("\n")) {
+  for (const raw of (match[1] ?? "").split("\n")) {
     const cleaned = raw.replace(/^[\s\-•]+/, "").trim();
     if (cleaned.length > 0 && cleaned !== "(none)") {
       out.add(cleaned);
@@ -172,7 +185,7 @@ function parseAlreadyKnown(prompt: string): Set<string> {
 
 function parseConversationBlock(prompt: string): string {
   const match = /<conversation>([\s\S]*?)<\/conversation>/.exec(prompt);
-  return match ? match[1] : prompt;
+  return match?.[1] ?? prompt;
 }
 
 export function makeUserMessage(content: string): AgentMessage {

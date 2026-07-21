@@ -229,9 +229,10 @@ export function renderChannelConfigForm(props: ChannelConfigFormProps) {
   // instead of digging through one buried "Accounts" map.
   const accounts = asRecord(value.accounts);
   const accountIds = Object.keys(accounts);
+  const firstAccountId = accountIds[0];
   const accountNode =
-    accountIds.length > 0
-      ? resolveSchemaNode(normalized, [...basePath, "accounts", accountIds[0]])
+    firstAccountId !== undefined
+      ? resolveSchemaNode(normalized, [...basePath, "accounts", firstAccountId])
       : null;
   const accountProps =
     accountNode && schemaType(accountNode) === "object" ? (accountNode.properties ?? null) : null;

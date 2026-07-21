@@ -82,7 +82,7 @@ function sortPendingSteeringItems(a: AgentSteeringQueueItem, b: AgentSteeringQue
 }
 
 /** List pending completion payloads that should be steered into a requester turn. */
-function listPendingAgentSteeringItemsFromSubagentRuns(params: {
+export function listPendingAgentSteeringItemsFromSubagentRuns(params: {
   runs: Map<string, SubagentRunRecord>;
   requesterSessionKey: string;
   now?: number;

@@ -1513,7 +1513,7 @@ export async function truncateOversizedToolResultsInActiveTarget(params: {
 /**
  * Truncates a named transcript file artifact.
  */
-async function truncateOversizedToolResultsInSession(params: {
+export async function truncateOversizedToolResultsInSession(params: {
   sessionFile: string;
   contextWindowTokens: number;
   maxCharsOverride?: number;

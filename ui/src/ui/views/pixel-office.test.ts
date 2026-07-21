@@ -8,7 +8,7 @@ function agentsList(ids: string[]): AgentsListResult {
     defaultId: ids[0] ?? "main",
     mainKey: "main",
     scope: "operator",
-    agents: ids.map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1) })),
+    agents: ids.map((id) => ({ id, name: (id[0] ?? "").toUpperCase() + id.slice(1) })),
   };
 }
 
@@ -137,6 +137,9 @@ describe("renderPixelAgentsStrip", () => {
     // Fields (Name, Role, Workspace) all use .mo-field input, so target by placeholder.
     const inputs = [...container.querySelectorAll<HTMLInputElement>(".mo-field input")];
     const nameInput = inputs[0];
+    if (!nameInput) {
+      throw new Error("name input not found");
+    }
     const workspaceInput = inputs.find((i) => i.placeholder.includes("/path/to/workspace"));
     if (!workspaceInput) {
       throw new Error("workspace input not found");

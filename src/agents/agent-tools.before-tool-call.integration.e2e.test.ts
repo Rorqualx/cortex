@@ -28,7 +28,7 @@ import {
 } from "./agent-tools.before-tool-call.js";
 import { markCodeModeControlTool } from "./code-mode-control-tools.js";
 import { CODE_MODE_EXEC_TOOL_NAME, createCodeModeTools } from "./code-mode.js";
-import { splitSdkTools } from "./embedded-agent-runner.js";
+import { splitSdkTools } from "./embedded-agent-runner/tool-split.js";
 
 type BeforeToolCallHandlerMock = ReturnType<typeof vi.fn>;
 
@@ -285,6 +285,9 @@ describe("before_tool_call hook deduplication (#15502)", () => {
       sessionKey: "main",
     });
     const [def] = toToolDefinitions([wrapped]);
+    if (!def) {
+      throw new Error("missing tool definition");
+    }
     const extensionContext = {} as Parameters<typeof def.execute>[4];
     await def.execute(
       "call-dedup",
@@ -926,6 +929,9 @@ describe("before_tool_call hook deduplication (#15502)", () => {
     });
     const withAbort = wrapToolWithAbortSignal(wrapped, abortController.signal);
     const [def] = toToolDefinitions([withAbort]);
+    if (!def) {
+      throw new Error("missing tool definition");
+    }
     const extensionContext = {} as Parameters<typeof def.execute>[4];
 
     await def.execute(
@@ -949,6 +955,9 @@ describe("before_tool_call hook deduplication (#15502)", () => {
       runId: "run-code",
       channelId: "channel-code",
     });
+    if (!def) {
+      throw new Error("missing tool definition");
+    }
     const extensionContext = {} as Parameters<typeof def.execute>[4];
 
     await def.execute(
@@ -1018,6 +1027,9 @@ describe("before_tool_call hook integration for client tools", () => {
       onClientToolCall,
       { agentId: "main", sessionKey: "main" },
     );
+    if (!tool) {
+      throw new Error("missing client tool definition");
+    }
     const extensionContext = {} as Parameters<typeof tool.execute>[4];
     await tool.execute("client-call-1", { value: "ok" }, undefined, undefined, extensionContext);
 
@@ -1207,6 +1219,9 @@ describe("before_tool_call hook integration for client tools", () => {
           config: config as never,
         },
       );
+      if (!tool) {
+        throw new Error("missing client tool definition");
+      }
       const extensionContext = {} as Parameters<typeof tool.execute>[4];
       await tool.execute("client-call-policy", {}, undefined, undefined, extensionContext);
 

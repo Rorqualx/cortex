@@ -8,7 +8,7 @@ import {
   pushServerUiPrefs,
   resetServerUiPrefsSync,
 } from "./server-prefs.ts";
-import { loadSettings, patchSettings } from "./board/settings.ts";
+import { loadSettings, patchSettings } from "./storage.ts";
 
 beforeEach(() => {
   vi.stubGlobal("localStorage", createStorageMock());

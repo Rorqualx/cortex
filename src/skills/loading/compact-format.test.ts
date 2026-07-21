@@ -100,31 +100,24 @@ describe("formatSkillsCompact", () => {
   });
 
   it("omits descriptions when their compact budget is zero", () => {
-    const out = formatSkillsCompact([makeSkill("weather", "Get weather data")], {
-      descriptionMaxChars: 0,
-    });
+    const out = formatSkillsCompact([makeSkill("weather", "Get weather data")]);
     expect(out).toContain("<name>weather</name>");
     expect(out).not.toContain("<description>");
   });
 
   it("preserves location notes when compact descriptions are omitted", () => {
-    const out = formatSkillsCompact(
-      [
-        {
-          ...makeSkill("remote", "Remote skill"),
-          locationNote: "Load with exec host=node node=node-1.",
-        },
-      ],
-      { descriptionMaxChars: 0 },
-    );
+    const out = formatSkillsCompact([
+      {
+        ...makeSkill("remote", "Remote skill"),
+        locationNote: "Load with exec host=node node=node-1.",
+      },
+    ]);
 
     expect(out).toContain("<location_note>Load with exec host=node node=node-1.</location_note>");
   });
 
   it("truncates descriptions without splitting emoji surrogate pairs", () => {
-    const out = formatSkillsCompact([makeSkill("emoji", `${"A".repeat(16)}😀 trailing`)], {
-      descriptionMaxChars: 20,
-    });
+    const out = formatSkillsCompact([makeSkill("emoji", `${"A".repeat(16)}😀 trailing`)]);
 
     expect(out).toContain(`<description>${"A".repeat(16)}...</description>`);
     expect(out).not.toMatch(/[\uD800-\uDFFF]/u);
@@ -217,7 +210,7 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
 
   it("preserves every identity before allocating description budget", () => {
     const skills = Array.from({ length: 50 }, (_, i) => makeSkill(`skill-${i}`, "A".repeat(800)));
-    const identityCatalog = formatSkillsCompact(skills, { descriptionMaxChars: 0 });
+    const identityCatalog = formatSkillsCompact(skills);
     const budget = `${COMPACT_OMITTED_NOTICE}\n${identityCatalog}`.length;
     expect(formatSkillsForPrompt(skills).length).toBeGreaterThan(budget);
 
@@ -233,7 +226,7 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
 
   it("uses leftover compact budget for descriptions without dropping identities", () => {
     const skills = Array.from({ length: 8 }, (_, i) => makeSkill(`skill-${i}`, "A".repeat(800)));
-    const identityCatalog = formatSkillsCompact(skills, { descriptionMaxChars: 0 });
+    const identityCatalog = formatSkillsCompact(skills);
     const budget = `${COMPACT_OMITTED_NOTICE}\n${identityCatalog}`.length + 500;
 
     const prompt = buildPrompt(skills, { maxChars: budget });
@@ -319,10 +312,8 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
       ...s,
       filePath: s.filePath.replace(home, "~"),
     }));
-    const compactedCompactLen = formatSkillsCompact(compactedSkills, {
-      descriptionMaxChars: 0,
-    }).length;
-    const canonicalCompactLen = formatSkillsCompact(skills, { descriptionMaxChars: 0 }).length;
+    const compactedCompactLen = formatSkillsCompact(compactedSkills).length;
+    const canonicalCompactLen = formatSkillsCompact(skills).length;
     // Sanity: canonical paths are longer than compacted paths
     expect(canonicalCompactLen).toBeGreaterThan(compactedCompactLen);
     // Set budget between compacted and canonical lengths — only fits if

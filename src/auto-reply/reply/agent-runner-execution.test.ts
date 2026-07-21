@@ -4,6 +4,7 @@ import { OAuthRefreshFailureError } from "../../agents/auth-profiles/oauth-refre
 import { FailoverError } from "../../agents/failover-error.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 import { MissingProviderAuthError } from "../../agents/model-auth.js";
+import { resolveSessionRuntimeOverrideForProvider } from "../../agents/session-runtime-compat.js";
 import { SessionWriteLockTimeoutError } from "../../agents/session-write-lock-error.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import type { ModelDefinitionConfig } from "../../config/types.models.js";
@@ -16,13 +17,10 @@ import { getReplyPayloadMetadata } from "../reply-payload.js";
 import type { TemplateContext } from "../templating.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
-import {
-  buildContextOverflowRecoveryText,
-  computeContextAwareReserveTokensFloor,
-  MAX_LIVE_SWITCH_RETRIES,
-  resolveSessionRuntimeOverrideForProvider,
-  resolveRunAfterAutoFallbackPrimaryProbeRecheck,
-} from "./agent-runner-execution.js";
+import { resolveRunAfterAutoFallbackPrimaryProbeRecheck } from "./agent-runner-auto-fallback.js";
+import { buildContextOverflowRecoveryText } from "./agent-runner-context-recovery.js";
+import { MAX_LIVE_SWITCH_RETRIES } from "./agent-runner-error-handler.js";
+import { computeContextAwareReserveTokensFloor } from "./agent-runner-execution.js";
 import { HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT } from "./agent-runner-failure-copy.js";
 import { PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE } from "./provider-request-error-classifier.js";
 import type { FollowupRun } from "./queue.js";
@@ -209,10 +207,6 @@ async function getRunAgentTurnWithFallback() {
   return (await import("./agent-runner-execution.js")).runAgentTurnWithFallback;
 }
 
-async function getApplyFallbackCandidateSelectionToEntry() {
-  return (await import("./agent-runner-execution.js")).applyFallbackCandidateSelectionToEntry;
-}
-
 type FallbackRunnerParams = {
   provider: string;
   model: string;
@@ -332,7 +326,7 @@ function createMockReplyOperation(): {
       fail: failMock,
       abortByUser: vi.fn(),
       abortForRestart: vi.fn(),
-    },
+    } as unknown as ReplyOperation,
   };
 }
 
@@ -6536,77 +6530,6 @@ describe("runAgentTurnWithFallback", () => {
     expect(sessionEntry.modelOverrideSource).toBe("auto");
     expect(sessionEntry.modelOverrideFallbackOriginProvider).toBe("anthropic");
     expect(sessionEntry.modelOverrideFallbackOriginModel).toBe("claude-opus-4-6");
-  });
-
-  it("keeps same-provider auth profile when fallback only changes model", async () => {
-    const applyFallbackCandidateSelectionToEntry =
-      await getApplyFallbackCandidateSelectionToEntry();
-    const entry = {
-      sessionId: "session",
-      updatedAt: 1,
-      authProfileOverride: "anthropic:openclaw",
-      authProfileOverrideSource: "user" as const,
-    } as SessionEntry;
-
-    const { updated } = applyFallbackCandidateSelectionToEntry({
-      entry,
-      run: {
-        provider: "anthropic",
-        model: "claude-opus",
-        authProfileId: "anthropic:openclaw",
-        authProfileIdSource: "user",
-      } as FollowupRun["run"],
-      provider: "anthropic",
-      model: "claude-sonnet",
-      now: 123,
-    });
-
-    expect(updated).toBe(true);
-    expectRecordFields(entry as unknown as Record<string, unknown>, {
-      updatedAt: 123,
-      providerOverride: "anthropic",
-      modelOverride: "claude-sonnet",
-      modelOverrideSource: "auto",
-      modelOverrideFallbackOriginProvider: "anthropic",
-      modelOverrideFallbackOriginModel: "claude-opus",
-      authProfileOverride: "anthropic:openclaw",
-      authProfileOverrideSource: "user",
-    });
-  });
-
-  it("preserves original auto-fallback origin across chained fallbacks", async () => {
-    const applyFallbackCandidateSelectionToEntry =
-      await getApplyFallbackCandidateSelectionToEntry();
-    const entry = {
-      sessionId: "session",
-      updatedAt: 1,
-      providerOverride: "openrouter",
-      modelOverride: "fallback-b",
-      modelOverrideSource: "auto" as const,
-      modelOverrideFallbackOriginProvider: "anthropic",
-      modelOverrideFallbackOriginModel: "claude-opus",
-    } as SessionEntry;
-
-    const { updated } = applyFallbackCandidateSelectionToEntry({
-      entry,
-      run: {
-        provider: "openrouter",
-        model: "fallback-b",
-      } as FollowupRun["run"],
-      provider: "openrouter",
-      model: "fallback-c",
-      now: 123,
-    });
-
-    expect(updated).toBe(true);
-    expectRecordFields(entry as unknown as Record<string, unknown>, {
-      updatedAt: 123,
-      providerOverride: "openrouter",
-      modelOverride: "fallback-c",
-      modelOverrideSource: "auto",
-      modelOverrideFallbackOriginProvider: "anthropic",
-      modelOverrideFallbackOriginModel: "claude-opus",
-    });
   });
 
   it("latches assistant error stub suppression across main reply fallback candidates", async () => {

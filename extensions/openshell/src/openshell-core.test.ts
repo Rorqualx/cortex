@@ -2,7 +2,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { CreateSandboxBackendParams } from "openclaw/plugin-sdk/sandbox";
+import {
+  buildExecRemoteCommand,
+  shellEscape,
+  type CreateSandboxBackendParams,
+} from "openclaw/plugin-sdk/sandbox";
 import {
   createSandboxBrowserConfig,
   createSandboxPruneConfig,
@@ -10,15 +14,12 @@ import {
   createSandboxTestContext,
 } from "openclaw/plugin-sdk/test-fixtures";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenShellSandboxBackend } from "./backend.js";
+import type { OpenShellSandboxBackend } from "./backend.types.js";
 import {
   applyGatewayEndpointToSshConfig,
-  buildExecRemoteCommand,
-  buildValidatedExecRemoteCommand,
   buildOpenShellBaseArgv,
-  resolveOpenShellCommand,
+  buildValidatedExecRemoteCommand,
   runOpenShellCli,
-  shellEscape,
 } from "./cli.js";
 import { resolveOpenShellPluginConfig } from "./config.js";
 
@@ -59,14 +60,7 @@ describe("openshell cli helpers", () => {
   it("uses the configured NVIDIA OpenShell CLI command directly", () => {
     const config = resolveOpenShellPluginConfig(undefined);
 
-    expect(resolveOpenShellCommand("openshell")).toBe("openshell");
     expect(buildOpenShellBaseArgv(config)).toEqual(["openshell"]);
-  });
-
-  it("preserves an explicit NVIDIA OpenShell CLI path", () => {
-    expect(resolveOpenShellCommand("/opt/openshell/bin/openshell")).toBe(
-      "/opt/openshell/bin/openshell",
-    );
   });
 
   it("shell escapes single quotes", () => {

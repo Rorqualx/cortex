@@ -19,8 +19,6 @@ import {
   type SkillsState,
 } from "./skills.ts";
 
-type SkillsState = Parameters<typeof loadSkills>[0];
-
 type TestRequest = (method: string, payload?: unknown) => Promise<unknown>;
 
 function createDeferred<T>() {
@@ -49,6 +47,7 @@ function createState(): { state: SkillsState; request: ReturnType<typeof vi.fn<T
     skillsDetailKey: null,
     skillsDetailTab: "overview",
     clawhubSearchQuery: "github",
+    clawhubInstallSlug: null,
     clawhubSearchResults: [
       {
         score: 0.9,

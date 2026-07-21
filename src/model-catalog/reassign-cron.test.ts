@@ -41,9 +41,11 @@ describe("applyCronReassignments", () => {
       },
     ];
     const result = applyCronReassignments(s, actions, NOW);
-    const payload = result.store.jobs[0].payload;
+    const job0 = result.store.jobs[0];
+    if (!job0) throw new Error("expected job");
+    const payload = job0.payload;
     expect(payload.kind === "agentTurn" && payload.model).toBe("zai/glm-5.1");
-    expect(result.store.jobs[0].updatedAtMs).toBe(NOW);
+    expect(job0.updatedAtMs).toBe(NOW);
     expect(result.changes).toEqual([
       { jobId: "j1", field: "model", from: "zai/glm-4.6v", to: "zai/glm-5.1" },
     ]);
@@ -62,8 +64,10 @@ describe("applyCronReassignments", () => {
       },
     ];
     const result = applyCronReassignments(s, actions, NOW);
-    expect(result.store.jobs[0].enabled).toBe(false);
-    const payload = result.store.jobs[0].payload;
+    const job0 = result.store.jobs[0];
+    if (!job0) throw new Error("expected job");
+    expect(job0.enabled).toBe(false);
+    const payload = job0.payload;
     // The dead model is kept on the disabled job for audit, not silently erased.
     expect(payload.kind === "agentTurn" && payload.model).toBe("zai/glm-4-long");
     expect(result.changes).toEqual([
@@ -95,7 +99,9 @@ describe("applyCronReassignments", () => {
       },
     ];
     const result = applyCronReassignments(s, actions, NOW);
-    const payload = result.store.jobs[0].payload;
+    const job0 = result.store.jobs[0];
+    if (!job0) throw new Error("expected job");
+    const payload = job0.payload;
     expect(payload.kind === "agentTurn" && payload.fallbacks).toEqual(["zai/glm-5.1", "zai/glm-5"]);
     expect(result.changes).toEqual([
       { jobId: "j1", field: "fallback", index: 0, from: "zai/glm-4.6v", to: "zai/glm-5.1" },
@@ -117,7 +123,9 @@ describe("applyCronReassignments", () => {
       },
     ];
     const result = applyCronReassignments(s, actions, NOW);
-    const payload = result.store.jobs[0].payload;
+    const job0 = result.store.jobs[0];
+    if (!job0) throw new Error("expected job");
+    const payload = job0.payload;
     expect(payload.kind === "agentTurn" && "fallbacks" in payload).toBe(false);
   });
 
@@ -145,6 +153,6 @@ describe("applyCronReassignments", () => {
     ];
     const result = applyCronReassignments(store(sysJob), actions, NOW);
     expect(result.changes).toEqual([]);
-    expect(result.store.jobs[0].enabled).toBe(true);
+    expect(result.store.jobs[0]?.enabled).toBe(true);
   });
 });

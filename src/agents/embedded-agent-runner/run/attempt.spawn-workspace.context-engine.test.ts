@@ -9,7 +9,7 @@ import type { OpenClawConfig } from "../../../config/types.js";
 import { buildMemorySystemPromptAddition } from "../../../context-engine/delegate.js";
 import {
   clearMemoryPluginState,
-  registerMemoryPromptSection,
+  registerMemoryPromptSupplement,
 } from "../../../plugins/memory-state.js";
 import {
   type AttemptContextEngine,
@@ -2033,7 +2033,7 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
   });
 
   it("lets non-legacy engines opt into the active memory prompt helper", async () => {
-    registerMemoryPromptSection(({ availableTools, citationsMode }) => {
+    registerMemoryPromptSupplement("test-memory-plugin", ({ availableTools, citationsMode }) => {
       if (!availableTools.has("memory_search")) {
         return [];
       }

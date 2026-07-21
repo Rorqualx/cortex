@@ -115,10 +115,12 @@ description: Repeated exec+edit pattern
 
       const facts = await readPromotedSkills(path.join(tmpBase, "skills"));
       assert.strictEqual(facts.length, 1);
-      assert.strictEqual(facts[0].skillName, "forge-recover-bash-via-read-abc123");
-      assert.strictEqual(facts[0].toolSequence.length, 3);
-      assert.strictEqual(facts[0].lane, "error-recovery");
-      assert.strictEqual(facts[0].usageCount, 0);
+      const skill = facts[0];
+      assert.ok(skill);
+      assert.strictEqual(skill.skillName, "forge-recover-bash-via-read-abc123");
+      assert.strictEqual(skill.toolSequence.length, 3);
+      assert.strictEqual(skill.lane, "error-recovery");
+      assert.strictEqual(skill.usageCount, 0);
       await cleanup();
     });
 
@@ -133,9 +135,11 @@ description: Repeated exec+edit pattern
       );
 
       const facts = await readPromotedSkills(path.join(tmpBase, "skills-tel"));
-      assert.strictEqual(facts[0].usageCount, 5);
-      assert.strictEqual(facts[0].successCount, 4);
-      assert.strictEqual(facts[0].lastUsedAt, 1234567890);
+      const skill = facts[0];
+      assert.ok(skill);
+      assert.strictEqual(skill.usageCount, 5);
+      assert.strictEqual(skill.successCount, 4);
+      assert.strictEqual(skill.lastUsedAt, 1234567890);
       await cleanup();
     });
 

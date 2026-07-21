@@ -104,7 +104,9 @@ describe("extractEntitiesFromFacts", () => {
     });
     const ipEntities = entities.filter((e) => e.name === "192.168.50.185");
     expect(ipEntities.length).toBe(1);
-    expect(ipEntities[0].mentionCount).toBeGreaterThanOrEqual(1);
+    const [ipEntity] = ipEntities;
+    if (!ipEntity) throw new Error("expected deduplicated ip entity");
+    expect(ipEntity.mentionCount).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -143,10 +145,12 @@ describe("mergeEntities", () => {
     ];
     const merged = mergeEntities(existing, incoming);
     expect(merged.length).toBe(1);
-    expect(merged[0].mentionCount).toBe(2);
-    expect(merged[0].aliases).toContain("infra:pi_hole_ip");
-    expect(merged[0].sourceChunkIds).toContain("chunk-0");
-    expect(merged[0].sourceChunkIds).toContain("chunk-1");
+    const [mergedEntity] = merged;
+    if (!mergedEntity) throw new Error("expected merged entity");
+    expect(mergedEntity.mentionCount).toBe(2);
+    expect(mergedEntity.aliases).toContain("infra:pi_hole_ip");
+    expect(mergedEntity.sourceChunkIds).toContain("chunk-0");
+    expect(mergedEntity.sourceChunkIds).toContain("chunk-1");
   });
 
   it("adds new entities not in existing index", () => {
@@ -166,7 +170,7 @@ describe("mergeEntities", () => {
     ];
     const merged = mergeEntities(existing, incoming);
     expect(merged.length).toBe(1);
-    expect(merged[0].name).toBe("HueyTheDestroyer");
+    expect(merged[0]?.name).toBe("HueyTheDestroyer");
   });
 });
 
@@ -205,7 +209,9 @@ describe("adjustImportance", () => {
       ],
     ]);
     const adjusted = adjustImportance({ facts, signals, now });
-    expect(adjusted[0].importance).toBeGreaterThan(0.5);
+    const [adjustedFact] = adjusted;
+    if (!adjustedFact) throw new Error("expected adjusted fact");
+    expect(adjustedFact.importance).toBeGreaterThan(0.5);
   });
 
   it("decays old unrecalled facts", () => {
@@ -224,9 +230,11 @@ describe("adjustImportance", () => {
       },
     ];
     const adjusted = adjustImportance({ facts, signals: new Map(), now });
+    const [adjustedFact] = adjusted;
+    if (!adjustedFact) throw new Error("expected adjusted fact");
     // Should still be >= 70% of original (0.49) but less than original
-    expect(adjusted[0].importance).toBeLessThan(0.7);
-    expect(adjusted[0].importance).toBeGreaterThanOrEqual(0.7 * 0.7);
+    expect(adjustedFact.importance).toBeLessThan(0.7);
+    expect(adjustedFact.importance).toBeGreaterThanOrEqual(0.7 * 0.7);
   });
 
   it("decays significant facts slower", () => {
@@ -245,17 +253,22 @@ describe("adjustImportance", () => {
         significant: true,
       },
     ];
+    const [significantFact] = facts;
+    if (!significantFact) throw new Error("expected significant fact");
     const normalFacts: LongTermFact[] = [
       {
-        ...facts[0],
+        ...significantFact,
         id: "f4",
         dedupKey: "dk4",
-        significant: undefined,
+        significant: false,
       },
     ];
     const adjustedSignificant = adjustImportance({ facts, signals: new Map(), now });
     const adjustedNormal = adjustImportance({ facts: normalFacts, signals: new Map(), now });
-    expect(adjustedSignificant[0].importance).toBeGreaterThan(adjustedNormal[0].importance);
+    const [sigAdjusted] = adjustedSignificant;
+    const [normalAdjusted] = adjustedNormal;
+    if (!sigAdjusted || !normalAdjusted) throw new Error("expected adjusted facts");
+    expect(sigAdjusted.importance).toBeGreaterThan(normalAdjusted.importance);
   });
 
   it("preserves facts with no meaningful change", () => {
@@ -275,7 +288,7 @@ describe("adjustImportance", () => {
     ];
     const adjusted = adjustImportance({ facts, signals: new Map(), now });
     // Very recent fact with no retrieval signal — change should be < 0.01
-    expect(adjusted[0].importance).toBe(facts[0].importance);
+    expect(adjusted[0]?.importance).toBe(facts[0]?.importance);
     // Reference equality means no new object was created
     expect(adjusted[0]).toBe(facts[0]);
   });
@@ -324,9 +337,11 @@ describe("findTopicLinks", () => {
       threshold: 0.7,
     });
     expect(links.length).toBe(1);
-    expect(links[0].sourceChunkId).toBe("chunk-1");
-    expect(links[0].targetChunkId).toBe("chunk-0");
-    expect(links[0].similarity).toBeGreaterThan(0.7);
+    const [link] = links;
+    if (!link) throw new Error("expected topic link");
+    expect(link.sourceChunkId).toBe("chunk-1");
+    expect(link.targetChunkId).toBe("chunk-0");
+    expect(link.similarity).toBeGreaterThan(0.7);
   });
 
   it("skips chunks below threshold", async () => {

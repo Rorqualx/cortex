@@ -74,7 +74,7 @@ export type ClawHubSkillSecurityVerdict = {
   };
 };
 
-type SkillsState = {
+export type SkillsState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
   skillsAgentId: string | null;
@@ -95,6 +95,7 @@ type SkillsState = {
   clawhubDetailSlug: string | null;
   clawhubDetailLoading: boolean;
   clawhubDetailError: string | null;
+  clawhubInstallSlug: string | null;
   clawhubInstallMessage: {
     kind: "success" | "error";
     text: string;

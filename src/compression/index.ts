@@ -106,6 +106,9 @@ function compressToolResults(
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
+    if (!msg) {
+      continue; // index bounded by messages.length; guard for noUncheckedIndexedAccess only
+    }
 
     // Only compress toolResult messages
     if (msg.role !== "toolResult") {

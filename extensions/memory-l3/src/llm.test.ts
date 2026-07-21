@@ -91,7 +91,7 @@ describe("parseExtractResponse", () => {
     });
     const result = parseExtractResponse(raw);
     expect(result.facts).toHaveLength(1);
-    expect(result.facts[0].reasoning).toBe("User mentioned this preference unprompted");
+    expect(result.facts[0]!.reasoning).toBe("User mentioned this preference unprompted");
   });
 
   it("drops empty/whitespace reasoning", () => {
@@ -99,7 +99,7 @@ describe("parseExtractResponse", () => {
       facts: [{ text: "alpha", importance: 0.5, dedupKey: "k:1", reasoning: "   " }],
     });
     const result = parseExtractResponse(raw);
-    expect(result.facts[0].reasoning).toBeUndefined();
+    expect(result.facts[0]!.reasoning).toBeUndefined();
   });
 
   it("drops malformed prose entries (missing text or dedupKey)", () => {
@@ -113,13 +113,13 @@ describe("parseExtractResponse", () => {
     });
     const result = parseExtractResponse(raw);
     expect(result.facts).toHaveLength(1);
-    expect(result.facts[0].dedupKey).toBe("valid");
+    expect(result.facts[0]!.dedupKey).toBe("valid");
   });
 
   it("defaults missing importance to 0.5", () => {
     const raw = JSON.stringify({ facts: [{ text: "ok", dedupKey: "k:1" }] });
     const result = parseExtractResponse(raw);
-    expect(result.facts[0].importance).toBe(0.5);
+    expect(result.facts[0]!.importance).toBe(0.5);
   });
 
   it("normalizes a valid typedFacts array", () => {
@@ -172,7 +172,7 @@ describe("parseExtractResponse", () => {
     });
     const result = parseExtractResponse(raw);
     expect(result.typedFacts).toHaveLength(1);
-    expect(result.typedFacts[0].slot).toBe("ok");
+    expect(result.typedFacts[0]!.slot).toBe("ok");
   });
 
   it("clamps confidence into [0,1] and treats empty-string unit as null", () => {
@@ -183,10 +183,10 @@ describe("parseExtractResponse", () => {
       ],
     });
     const result = parseExtractResponse(raw);
-    expect(result.typedFacts[0].unit).toBeNull();
-    expect(result.typedFacts[0].confidence).toBe(1);
-    expect(result.typedFacts[1].unit).toBe("MB");
-    expect(result.typedFacts[1].confidence).toBe(0);
+    expect(result.typedFacts[0]!.unit).toBeNull();
+    expect(result.typedFacts[0]!.confidence).toBe(1);
+    expect(result.typedFacts[1]!.unit).toBe("MB");
+    expect(result.typedFacts[1]!.confidence).toBe(0);
   });
 });
 
@@ -213,11 +213,11 @@ describe("extractFacts", () => {
       caller,
     });
     expect(result.facts).toHaveLength(1);
-    expect(result.facts[0].text).toBe("user prefers morning standups");
+    expect(result.facts[0]!.text).toBe("user prefers morning standups");
     expect(result.typedFacts).toHaveLength(1);
-    expect(result.typedFacts[0].slot).toBe("user:phone");
+    expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
-    const call = caller.mock.calls[0][0];
+    const call = caller.mock.calls[0]![0];
     expect(call.systemPrompt).toContain("PROMPT_VERSION=10");
     expect(call.systemPrompt).toContain("REASONING");
     expect(call.userPrompt).not.toContain("already-known");
@@ -250,7 +250,7 @@ describe("createGlmCaller", () => {
     const result = await caller({ systemPrompt: "sys", userPrompt: "usr" });
     expect(result).toBe("hello");
     expect(fetchImpl).toHaveBeenCalledOnce();
-    const [url, init] = fetchImpl.mock.calls[0];
+    const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBe(`${DEFAULT_GLM_BASE_URL}/chat/completions`);
     expect((init as { headers: Record<string, string> }).headers.authorization).toBe(
       "Bearer test-key",

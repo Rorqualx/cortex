@@ -90,7 +90,7 @@ function buildFeedback(params: {
   };
 }
 
-function resolveLoginFailureFeedback(
+export function resolveLoginFailureFeedback(
   params: LoginFailureFeedbackParams,
 ): LoginFailureFeedback | null {
   if (params.connected || !params.lastError) {
@@ -376,9 +376,9 @@ export function renderLoginGate(state: AppViewState) {
               <button
                 type="button"
                 class="btn btn--icon ${state.loginShowGatewayPassword ? "active" : ""}"
-                title=${state.loginShowGatewayPassword
-                  ? t("login.hidePassword")
-                  : t("login.showPassword")}
+                title=${
+                  state.loginShowGatewayPassword ? t("login.hidePassword") : t("login.showPassword")
+                }
                 aria-label=${t("login.togglePasswordVisibility")}
                 aria-pressed=${state.loginShowGatewayPassword}
                 @click=${() => {

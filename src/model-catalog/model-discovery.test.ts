@@ -34,7 +34,9 @@ describe("fetchAnthropicMessagesModels", () => {
       return;
     }
     expect(result.models[0]).toMatchObject({ modelId: "kimi-for-coding", name: "K2.7 Code" });
-    const [url, init] = fetchFn.mock.calls[0];
+    const call = fetchFn.mock.calls[0];
+    if (!call) throw new Error("expected fetch call");
+    const [url, init] = call;
     expect(url).toBe("https://api.kimi.com/coding/v1/models");
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["x-api-key"]).toBe("k");

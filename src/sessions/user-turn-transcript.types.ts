@@ -75,7 +75,24 @@ type UserTurnTranscriptPersistenceTarget = {
   beforeMessageWrite?: UserTurnBeforeMessageWrite;
 };
 
-export type UserTurnTranscriptTarget = UserTurnTranscriptPersistenceTarget;
+// Fork feature: persist a user-turn transcript to an explicit JSONL file path,
+// bypassing the session store. Reached when a run has no resolvable session
+// key/store (ad-hoc CLI/embedded runs). The session accessor honors an explicit
+// `sessionFile` via its shouldUseExplicitTranscriptFile branch; without this
+// variant those turns silently fall through to the SQLite store instead of the
+// caller's transcript file.
+export type UserTurnTranscriptFileTarget = {
+  transcriptPath: string;
+  sessionId?: string;
+  agentId?: string;
+  sessionKey?: string;
+  cwd?: string;
+  config?: unknown;
+};
+
+export type UserTurnTranscriptTarget =
+  | UserTurnTranscriptPersistenceTarget
+  | UserTurnTranscriptFileTarget;
 
 export type UserTurnTranscriptPersistResult = {
   /** True only when this call inserted the transcript message. */

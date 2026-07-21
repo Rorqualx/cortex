@@ -61,7 +61,7 @@ import type {
 import type { SessionBranchPoint } from "./types/chat-types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
-import type { SessionLogEntry } from "./views/usage.ts";
+import type { SessionLogEntry } from "./views/usageTypes.ts";
 
 // AppViewState describes the OpenClawApp element instance handed to render/controller
 // code; it includes ScrollHost and ToolStreamHost because that code schedules scrolls
@@ -345,6 +345,8 @@ export type AppViewState = ScrollHost &
     toolsEffectiveError: string | null;
     toolsEffectiveResult: import("./types.js").ToolsEffectiveResult | null;
     agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+    // Shared load-invalidation counter for the agent files/skills controllers.
+    requestGeneration: number;
     agentFilesLoading: boolean;
     agentFilesError: string | null;
     agentFilesList: AgentsFilesListResult | null;
@@ -415,7 +417,7 @@ export type AppViewState = ScrollHost &
     usageHeaderPinned: boolean;
     usageSessionsTab: "all" | "recent";
     usageVisibleColumns: string[];
-    usageLogFilterRoles: import("./views/usage.js").SessionLogRole[];
+    usageLogFilterRoles: import("./views/usageTypes.js").SessionLogRole[];
     usageLogFilterTools: string[];
     usageLogFilterHasTools: boolean;
     usageLogFilterQuery: string;
@@ -442,7 +444,6 @@ export type AppViewState = ScrollHost &
     | "cronStatus"
     | "cronError"
     | "cronForm"
-    | "cronFormCollapsed"
     | "cronFieldErrors"
     | "cronEditingJobId"
     | "cronRunsJobId"
@@ -459,8 +460,16 @@ export type AppViewState = ScrollHost &
     | "cronRunsQuery"
     | "cronRunsSortDir"
     | "cronBusy"
+    | "cronAgentId"
+    | "cronScopedTotal"
+    | "cronScopedNextWakeAtMs"
+    | "cronFailingCount"
+    | "cronCreateOpen"
   > &
   Pick<CronModelSuggestionsState, "cronModelSuggestions"> & {
+    // Fork-owned app-level toggle for the collapsible cron form; declared as a
+    // direct @state on the app element, not part of the cron controller state.
+    cronFormCollapsed: boolean;
     skillsLoading: boolean;
     skillsAgentId: string | null;
     skillsAgentRevision: number;
@@ -471,6 +480,7 @@ export type AppViewState = ScrollHost &
     skillEdits: Record<string, string>;
     skillMessages: Record<string, SkillMessage>;
     skillsBusyKey: string | null;
+    skillOperation: import("./controllers/skills.js").SkillOperation;
     skillsDetailKey: string | null;
     skillsDetailTab: "overview" | "card";
     clawhubSearchQuery: string;

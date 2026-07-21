@@ -146,14 +146,22 @@ describe("Mistral bounded-stream-read direct (synthetic ReadableStream)", () => 
       status: 200,
       headers: { "content-type": "application/octet-stream" },
     });
-    const fetcher = createBoundedMistralFetcher(MAX, async () => syntheticResponse);
+    // The fetcher now routes through global fetch; stub it to return the
+    // synthetic oversized response so the cap fires without a wire layer.
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => syntheticResponse) as typeof fetch;
+    const fetcher = createBoundedMistralFetcher(MAX);
 
     let captured: Error | undefined;
-    const wrapped = await fetcher("http://unused.invalid/");
     try {
-      await readAllChunks(wrapped.body);
-    } catch (err) {
-      captured = err as Error;
+      const wrapped = await fetcher("http://unused.invalid/");
+      try {
+        await readAllChunks(wrapped.body);
+      } catch (err) {
+        captured = err as Error;
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
     }
     expect(captured).toBeInstanceOf(Error);
     const match = (captured as Error).message.match(

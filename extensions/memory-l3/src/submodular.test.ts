@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { submodularSelect } from "./retrieval.js";
-import type { RetrievedFact, Signals } from "./retrieval.js";
+import type { RetrievedFact } from "./retrieval.js";
+import type { Signals } from "./scoring.js";
 
 function rf(text: string, score: number): RetrievedFact {
   return {
@@ -27,8 +28,8 @@ describe("submodularSelect", () => {
     ];
     const result = submodularSelect(items, new Set(["alpha"]), 2, 0, 0, null);
     expect(result.length).toBe(2);
-    expect(result[0].fact.text).toBe("alpha beta gamma");
-    expect(result[1].fact.text).toBe("beta gamma delta");
+    expect(result[0]!.fact.text).toBe("alpha beta gamma");
+    expect(result[1]!.fact.text).toBe("beta gamma delta");
   });
 
   it("prefers diverse items when diversityWeight > 0", () => {

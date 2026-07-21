@@ -20,6 +20,7 @@ import {
   AGENT_RUN_RESTART_ABORT_STOP_REASON,
   resolveAgentRunErrorLifecycleFields,
 } from "../../agents/run-termination.js";
+import { isSessionWriteLockBusyWithActiveRun } from "../../agents/session-write-lock-error.js";
 import { logVerbose } from "../../globals.js";
 import { emitAgentEvent } from "../../infra/agent-events.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
@@ -33,6 +34,7 @@ import type { AgentRunLoopResult, AgentTurnParams } from "./agent-runner-executi
 import {
   GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
   HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  SESSION_BUSY_WITH_ACTIVE_RUN_TEXT,
 } from "./agent-runner-failure-copy.js";
 import {
   buildAuthProfileFailoverFailureText,
@@ -56,7 +58,7 @@ import {
   resolveRestartLifecycleError,
 } from "./reply-operation-abort.js";
 
-const MAX_LIVE_SWITCH_RETRIES = 2;
+export const MAX_LIVE_SWITCH_RETRIES = 2;
 const TRANSIENT_HTTP_RETRY_DELAY_MS = 2_500;
 // Overload recovery stays inside one turn: bounded backoff absorbs short provider incidents,
 // while the delayed notice prevents a long silent wait without becoming assistant content.
@@ -232,6 +234,26 @@ export async function handleAgentExecutionError(params: {
   const replyOperationAbortAction = resolveReplyOperationAbortAction(err);
   if (replyOperationAbortAction) {
     return replyOperationAbortAction;
+  }
+  // Fork: a still-live turn in this gateway holds the session write lock (e.g.
+  // a prior turn mid tool-call). The follow-up can't run concurrently without
+  // racing the transcript, so surface a calm "still working" notice instead of
+  // the raw lock-timeout diagnostic. Not a real failure: the holder will
+  // release once its turn finishes.
+  if (isSessionWriteLockBusyWithActiveRun(err)) {
+    takePendingLifecycleTerminal()?.emit("error", err);
+    turn.replyOperation?.fail("run_failed", err);
+    return {
+      kind: "final",
+      payload: markAgentRunFailureReplyPayload({
+        text: resolveExternalRunFailureTextForConversation({
+          text: SESSION_BUSY_WITH_ACTIVE_RUN_TEXT,
+          sessionCtx: turn.sessionCtx,
+          isGenericRunnerFailure: false,
+          cfg: turn.followupRun.run.config,
+        }),
+      }),
+    };
   }
   const restartLifecycleError = resolveRestartLifecycleError(err);
   if (

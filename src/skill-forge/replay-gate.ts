@@ -116,23 +116,25 @@ export function parseLlmJudgeResponse(raw: string): ParsedJudgeResponse {
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  if (lines.length === 0) {
+  const [firstLine] = lines;
+  if (firstLine === undefined) {
     return { ok: false, reason: "judge returned empty body" };
   }
-  const verdictLine = lines[0].toUpperCase();
+  const verdictLine = firstLine.toUpperCase();
   const matched = VERDICT_TOKENS.find((token) => verdictLine.startsWith(token));
   if (!matched) {
     return {
       ok: false,
-      reason: `judge first line did not start with a known verdict token: "${lines[0].slice(0, 80)}"`,
+      reason: `judge first line did not start with a known verdict token: "${firstLine.slice(0, 80)}"`,
     };
   }
   const rationale = (lines[1] ?? "").slice(0, MAX_RATIONALE_CHARS) || "(no rationale supplied)";
 
   // Parse optional overfitting risk from the third line (HIGH/MEDIUM/LOW).
   let overfittingRisk: "HIGH" | "MEDIUM" | "LOW" | undefined;
-  if (lines.length >= 3) {
-    const riskLine = lines[2].toUpperCase();
+  const thirdLine = lines[2];
+  if (thirdLine !== undefined) {
+    const riskLine = thirdLine.toUpperCase();
     for (const token of OVERFITTING_TOKENS) {
       if (riskLine.includes(token)) {
         overfittingRisk = token;

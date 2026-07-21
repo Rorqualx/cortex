@@ -102,7 +102,9 @@ export async function compactSession(params: {
   const now = params.now ?? Date.now();
   const eventTime = (messages[0] as { timestamp?: number })?.timestamp ?? now;
   const participants = [
-    ...new Set(messages.map((m) => (m as { role?: string }).role).filter(Boolean)),
+    ...new Set(
+      messages.map((m) => (m as { role?: string }).role).filter((r): r is string => Boolean(r)),
+    ),
   ];
   const chunkId = nextChunkId(params.state);
   const facts: L2Fact[] = deduped.map((f) => liftToL2Fact(f, now));
@@ -379,7 +381,12 @@ function capSegmentRanges(
   }
   const head = ranges.slice(0, max - 1);
   const tail = ranges.slice(max - 1);
-  return [...head, { start: tail[0].start, end: tail[tail.length - 1].end }];
+  const first = tail[0];
+  const last = tail[tail.length - 1];
+  if (!first || !last) {
+    return ranges;
+  }
+  return [...head, { start: first.start, end: last.end }];
 }
 
 /**

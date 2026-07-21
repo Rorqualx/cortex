@@ -28,7 +28,7 @@ import {
   type ExecTarget,
 } from "../infra/exec-approvals.js";
 import { defaultRuntime } from "../runtime.js";
-import auditTactics from "../sandbox/audit-tactics.json";
+import auditTactics from "../sandbox/audit-tactics.json" with { type: "json" };
 
 type ExecPolicyPresetName = "yolo" | "cautious" | "deny-all";
 
@@ -436,16 +436,20 @@ async function auditExecPolicy(): Promise<AuditFinding[]> {
   );
   const configSnapshot = await readConfigFileSnapshot();
   const approvalsSnapshot = readExecApprovalsSnapshot();
-  const cfg = configSnapshot.config ?? {};
-  const execCfg = (cfg as Record<string, unknown>).tools?.exec ?? {};
-  const host = (execCfg as Record<string, unknown>).host ?? "auto";
-  const security = (execCfg as Record<string, unknown>).security ?? "full";
-  const ask = (execCfg as Record<string, unknown>).ask ?? "off";
+  const cfg: OpenClawConfig = configSnapshot.config ?? {};
+  const execCfg = cfg.tools?.exec ?? {};
+  const host = execCfg.host ?? "auto";
+  const security = execCfg.security ?? "full";
+  const ask = execCfg.ask ?? "off";
   const askFallback = approvalsSnapshot.file?.defaults?.askFallback ?? "full";
-  const sandboxCfg = (cfg as Record<string, unknown>).sandbox ?? {};
-  const sandboxEnabled = (sandboxCfg as Record<string, unknown>).enabled ?? false;
-  const sandboxType = (sandboxCfg as Record<string, unknown>).type ?? "none";
-  const sandboxNetwork = (sandboxCfg as Record<string, unknown>).network ?? "allow";
+  // The audit's sandbox knobs live outside the typed config schema, so read the
+  // raw top-level `sandbox` block defensively instead of casting the config.
+  const rawSandbox = (cfg as { sandbox?: unknown }).sandbox;
+  const sandboxCfg: Record<string, unknown> =
+    rawSandbox && typeof rawSandbox === "object" ? (rawSandbox as Record<string, unknown>) : {};
+  const sandboxEnabled = Boolean(sandboxCfg.enabled ?? false);
+  const sandboxType = sandboxCfg.type ?? "none";
+  const sandboxNetwork = sandboxCfg.network ?? "allow";
   const findings: AuditFinding[] = [];
 
   for (const tactic of auditTactics.tactics) {
@@ -589,17 +593,17 @@ export function registerExecPolicyCli(program: Command) {
         const heading = (text: string) => (rich ? theme.heading(text) : text);
         const muted = (text: string) => (rich ? theme.muted(text) : text);
         defaultRuntime.log(heading("Exec Policy Audit"));
-        defaultRuntime.log(muted());
+        defaultRuntime.log(muted(`Tactic checklist v${auditTactics.version}`));
         defaultRuntime.log("");
         if (findings.length === 0) {
           defaultRuntime.log("No issues found. Policy passes all checks.");
         } else {
           for (const f of findings) {
             const sev = f.severity.toUpperCase();
-            defaultRuntime.log();
-            defaultRuntime.log();
+            defaultRuntime.log(`[${sev}] ${f.name} (${f.id})`);
+            defaultRuntime.log(`  ${f.message}`);
             if (f.mitigation) {
-              defaultRuntime.log();
+              defaultRuntime.log(muted(`  Mitigation: ${f.mitigation}`));
             }
             defaultRuntime.log("");
           }

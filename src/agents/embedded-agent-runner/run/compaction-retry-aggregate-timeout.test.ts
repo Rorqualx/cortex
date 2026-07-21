@@ -42,7 +42,7 @@ function buildAggregateTimeoutParams(
     waitForCompactionRetry: overrides.waitForCompactionRetry,
     abortable: overrides.abortable ?? (async (promise) => await promise),
     aggregateTimeoutMs: overrides.aggregateTimeoutMs ?? 60_000,
-    isCompactionStillInFlight: overrides.isCompactionStillInFlight,
+    isCompactionRetryStillActive: overrides.isCompactionRetryStillActive,
     onTimeout,
   };
 }
@@ -79,7 +79,7 @@ describe("waitForCompactionRetryWithAggregateTimeout", () => {
       );
       const params = buildAggregateTimeoutParams({
         waitForCompactionRetry,
-        isCompactionStillInFlight: () => compactionInFlight,
+        isCompactionRetryStillActive: () => compactionInFlight,
       });
 
       const resultPromise = waitForCompactionRetryWithAggregateTimeout(params);
@@ -101,7 +101,7 @@ describe("waitForCompactionRetryWithAggregateTimeout", () => {
       }, 90_000);
       const params = buildAggregateTimeoutParams({
         waitForCompactionRetry,
-        isCompactionStillInFlight: () => compactionInFlight,
+        isCompactionRetryStillActive: () => compactionInFlight,
       });
 
       const resultPromise = waitForCompactionRetryWithAggregateTimeout(params);

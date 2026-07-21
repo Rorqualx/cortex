@@ -1,12 +1,6 @@
-import type { GatewayHelloOk } from "../gateway.ts";
-import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
-import { isCronSessionKey } from "../session-display.ts";
-import {
-  normalizeLowercaseStringOrEmpty,
-  normalizeOptionalLowercaseString,
-  normalizeOptionalString,
-} from "../string-coerce.ts";
 import { parseCatalogSessionKey } from "../catalog-key.ts";
+import type { GatewayHelloOk } from "../gateway.ts";
+import { isCronSessionKey } from "../session-display.ts";
 import {
   areUiSessionKeysEquivalent,
   isUiGlobalSessionKey,
@@ -22,6 +16,12 @@ import {
   resolveUiSelectedGlobalAgentId,
   uiSessionRowMatchesSelectedChat,
 } from "../session-key.ts";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "../string-coerce.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 type SessionNavigationInput = {
   result: SessionsListResult | null;
   resultAgentId?: string | null;
@@ -238,7 +238,7 @@ export function filterVisibleSessionRows(
       !row.archived &&
       row.kind !== "global" &&
       row.kind !== "unknown" &&
-      (options.showCron === true || (row.kind !== "cron" && !isCronSessionKey(row.key))) &&
+      (options.showCron === true || !isCronSessionKey(row.key)) &&
       !isSubagentSessionKey(row.key) &&
       !row.spawnedBy &&
       (!options.filterByAgent ||

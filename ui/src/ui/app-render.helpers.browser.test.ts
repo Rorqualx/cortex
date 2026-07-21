@@ -150,6 +150,7 @@ describe("chat header controls (browser)", () => {
           status: "ok",
           profiles: [{ profileId: "codex", type: "oauth", status: "ok" }],
           usage: {
+            providerId: "openai",
             windows: [
               { label: "3h", usedPercent: 18 },
               { label: "Week", usedPercent: 72 },

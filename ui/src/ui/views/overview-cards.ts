@@ -9,9 +9,9 @@ import { icons } from "../icons.ts";
 import { isMonitoredAuthProvider } from "../model-auth-helpers.ts";
 import { formatNextRun } from "../presenter.ts";
 import {
-  collectQuotaWindows,
+  collectProviderQuotaGroups,
   formatQuotaReset,
-  type QuotaWindowSummary,
+  type ProviderQuotaGroup,
 } from "../provider-quota-summary.ts";
 import { resolveSessionDisplayName } from "../session-display.ts";
 import type {
@@ -76,7 +76,37 @@ function renderStatCard(card: StatCard, onNavigate: (tab: string) => void) {
   `;
 }
 
-function renderProviderQuotaCard(windows: QuotaWindowSummary[]): StatCard | null {
+type QuotaWindowView = {
+  displayName: string;
+  label: string;
+  remaining: number;
+  resetAt?: number;
+};
+
+// Upstream replaced the flat collectQuotaWindows helper with grouped
+// ProviderQuotaGroup rows (windows carry usedPercent). Flatten back to the
+// fork's per-window "remaining %" shape so the overview quota card is unchanged.
+function flattenQuotaWindows(groups: ProviderQuotaGroup[]): QuotaWindowView[] {
+  const windows: QuotaWindowView[] = [];
+  for (const group of groups) {
+    for (const window of group.windows) {
+      const view: QuotaWindowView = {
+        displayName: group.displayName,
+        label: window.label,
+        remaining: Math.max(0, Math.min(100, Math.round(100 - window.usedPercent))),
+      };
+      if (window.resetAt !== undefined) {
+        view.resetAt = window.resetAt;
+      }
+      windows.push(view);
+    }
+  }
+  return windows.toSorted(
+    (a, b) => a.remaining - b.remaining || a.displayName.localeCompare(b.displayName),
+  );
+}
+
+function renderProviderQuotaCard(windows: QuotaWindowView[]): StatCard | null {
   const primary = windows[0];
   if (!primary) {
     return null;
@@ -164,9 +194,11 @@ export function renderOverviewCards(props: OverviewCardsProps) {
   const cronJobCount = props.cronJobs.length;
   const failedCronCount = props.cronJobs.filter(isCronJobActiveFailure).length;
   const authLoading = props.modelAuthStatus === null;
-  const authProviders = props.modelAuthStatus?.providers ?? [];
-  const monitoredProviders = authProviders.filter(isMonitoredAuthProvider);
-  const quotaCard = renderProviderQuotaCard(collectQuotaWindows(monitoredProviders));
+  const quotaGroups = collectProviderQuotaGroups(props.modelAuthStatus, isMonitoredAuthProvider);
+  const quotaCard = renderProviderQuotaCard(flattenQuotaWindows(quotaGroups));
+  const monitoredProviders = (props.modelAuthStatus?.providers ?? []).filter(
+    isMonitoredAuthProvider,
+  );
 
   const cronValue =
     cronEnabled == null

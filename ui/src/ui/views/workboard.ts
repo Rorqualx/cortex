@@ -208,7 +208,7 @@ function focusWorkboardDialog(root: HTMLElement, initialFocusSelector?: string) 
       preferred && isFocusableWorkboardElement(preferred)
         ? preferred
         : initialFocusSelector
-          ? getFocusableWorkboardElements(root)[0]
+          ? (getFocusableWorkboardElements(root)[0] ?? root)
           : root;
     focusElement(target);
   });
@@ -253,12 +253,12 @@ function trapWorkboardDialogFocus(event: KeyboardEvent, root: HTMLElement) {
 
   if (event.shiftKey && (!focusInside || active === first || active === root)) {
     event.preventDefault();
-    focusElement(last);
+    focusElement(last ?? root);
     return;
   }
   if (!event.shiftKey && (!focusInside || active === last || active === root)) {
     event.preventDefault();
-    focusElement(first);
+    focusElement(first ?? root);
   }
 }
 

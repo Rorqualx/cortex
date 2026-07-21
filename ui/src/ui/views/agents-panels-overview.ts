@@ -116,7 +116,12 @@ export function renderAgentOverview(params: {
       return;
     }
     const next = [...fallbackChips];
-    [next[index], next[target]] = [next[target], next[index]];
+    const current = next[index];
+    const swapped = next[target];
+    if (current !== undefined && swapped !== undefined) {
+      next[index] = swapped;
+      next[target] = current;
+    }
     onModelFallbacksChange(agent.id, next);
   };
 

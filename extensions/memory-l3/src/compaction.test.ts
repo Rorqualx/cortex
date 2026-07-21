@@ -208,9 +208,9 @@ describe("compactSession", () => {
 
     const paths = await storage.listL2ChunkPaths();
     expect(paths).toHaveLength(1);
-    const doc = await storage.readL2ChunkAtPath(paths[0]);
+    const doc = await storage.readL2ChunkAtPath(paths[0]!);
     expect(doc?.frontmatter.facts).toHaveLength(1);
-    expect(doc?.frontmatter.facts[0].text).toBe("user prefers morning standups");
+    expect(doc?.frontmatter.facts[0]?.text).toBe("user prefers morning standups");
     expect(doc?.frontmatter.dedupKeys).toEqual(["user_preference:morning_standups"]);
   });
 
@@ -270,9 +270,9 @@ describe("compactSession", () => {
     const result = await compactSession({ sessionId: "s1", buffer, storage, caller, state });
     expect(result.factsAdded).toBe(1);
     const paths = await storage.listL2ChunkPaths();
-    const doc = await storage.readL2ChunkAtPath(paths[0]);
-    expect(doc?.frontmatter.facts[0].text).toBe("first emission");
-    expect(doc?.frontmatter.facts[0].importance).toBe(0.8);
+    const doc = await storage.readL2ChunkAtPath(paths[0]!);
+    expect(doc?.frontmatter.facts[0]?.text).toBe("first emission");
+    expect(doc?.frontmatter.facts[0]?.importance).toBe(0.8);
   });
 
   it("grounds typed facts against the transcript and persists only those that survive", async () => {
@@ -314,13 +314,13 @@ describe("compactSession", () => {
     expect(result.typedFactsAdded).toBe(2);
 
     const paths = await storage.listL2ChunkPaths();
-    const doc = await storage.readL2ChunkAtPath(paths[0]);
+    const doc = await storage.readL2ChunkAtPath(paths[0]!);
     expect(doc?.frontmatter.typedFacts).toHaveLength(2);
     expect(doc?.frontmatter.typedFacts?.map((t) => t.slot)).toEqual([
       "infra:pi_hole_ip",
       "infra:router_ip",
     ]);
-    expect(doc?.frontmatter.typedFacts?.[0].value).toBe("192.168.50.128");
+    expect(doc?.frontmatter.typedFacts?.[0]?.value).toBe("192.168.50.128");
   });
 
   it("uses the native compaction prompt when nativeCompaction is enabled", async () => {
@@ -346,7 +346,7 @@ describe("compactSession", () => {
       nativeCompaction: true,
     });
     expect(caller).toHaveBeenCalledTimes(1);
-    const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0][0].systemPrompt;
+    const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.systemPrompt;
     expect(systemPrompt).toContain("PROMPT_VERSION=10-NATIVE");
   });
 
@@ -363,7 +363,7 @@ describe("compactSession", () => {
       .split("\n")
       .filter((l) => l.length > 0);
     expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0])).toEqual({ role: "user", content: "first" });
-    expect(JSON.parse(lines[1])).toEqual({ role: "user", content: "second" });
+    expect(JSON.parse(lines[0]!)).toEqual({ role: "user", content: "first" });
+    expect(JSON.parse(lines[1]!)).toEqual({ role: "user", content: "second" });
   });
 });

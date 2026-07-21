@@ -3,11 +3,12 @@
  *
  * Executes local shell commands with streaming output accumulation and TUI renderers.
  */
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { Type } from "typebox";
+import { releaseChildProcessOutputAfterExit } from "../../../process/child-process.js";
+import { spawnCommand } from "../../../process/exec.js";
 import {
   checkExecGuard,
   releaseExecGuard,
@@ -17,8 +18,12 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { theme } from "../../modes/interactive/theme/theme.js";
 import type { AgentTool } from "../../runtime/index.js";
-import { getBashShellConfig, getShellEnv, killProcessTree } from "../../shell-utils.js";
-import { waitForChildProcess } from "../../../process/child-process.js";
+import {
+  buildShellCommandInvocation,
+  getBashShellConfig,
+  getBashShellEnv,
+  killProcessTree,
+} from "../../shell-utils.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import type { BashOperations } from "./bash-operations.js";
 import { OutputAccumulator } from "./output-accumulator.js";
@@ -58,20 +63,25 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
   return {
     exec: (command, cwd, { onData, signal, timeout, env }) => {
       return new Promise((resolve, reject) => {
-        const { shell, args } = getBashShellConfig(options?.shellPath);
+        const shellConfig = getBashShellConfig(options?.shellPath);
+        const invocation = buildShellCommandInvocation(command, shellConfig);
         if (!existsSync(cwd)) {
           reject(
             new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`),
           );
           return;
         }
-        const child = spawn(shell, [...args, command], {
+        const child = spawnCommand(invocation.argv, {
+          baseEnv: {},
+          buffer: false,
           cwd,
           detached: process.platform !== "win32",
-          env: env ?? getShellEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-          windowsHide: true,
+          env: env ?? getBashShellEnv(shellConfig.shell),
+          ...(invocation.input === undefined ? {} : { input: invocation.input }),
+          reject: false,
+          stdio: [invocation.stdin, "pipe", "pipe"],
         });
+        const releaseOutput = releaseChildProcessOutputAfterExit(child);
         let timedOut = false;
         let timeoutHandle: NodeJS.Timeout | undefined;
         const timeoutMs = resolveBashTimeoutMs(timeout);
@@ -79,7 +89,7 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
           timeoutHandle = setTimeout(() => {
             timedOut = true;
             if (child.pid) {
-              killProcessTree(child.pid);
+              killProcessTree(child.pid, { detached: true });
             }
           }, timeoutMs);
         }
@@ -89,7 +99,7 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
         // Handle abort signal by killing the entire process tree.
         const onAbort = () => {
           if (child.pid) {
-            killProcessTree(child.pid);
+            killProcessTree(child.pid, { detached: true });
           }
         };
         if (signal) {
@@ -99,10 +109,14 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
             signal.addEventListener("abort", onAbort, { once: true });
           }
         }
-        // Handle shell spawn errors and wait for the process to terminate without hanging
-        // on inherited stdio handles held by detached descendants.
-        waitForChildProcess(child)
-          .then((code) => {
+        void child
+          .then((result) => {
+            if (result.failed && result.exitCode === undefined && result.signal === undefined) {
+              if (result instanceof Error) {
+                throw result;
+              }
+              throw new Error(`Failed to launch shell: ${shellConfig.shell}`, { cause: result });
+            }
             if (timeoutHandle) {
               clearTimeout(timeoutHandle);
             }
@@ -117,7 +131,7 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
               reject(new Error(`timeout:${timeout}`));
               return;
             }
-            resolve({ exitCode: code });
+            resolve({ exitCode: result.exitCode ?? (result.failed ? 1 : 0) });
           })
           .catch((err: unknown) => {
             if (timeoutHandle) {
@@ -127,7 +141,8 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
               signal.removeEventListener("abort", onAbort);
             }
             reject(toLintErrorObject(err, "Non-Error rejection"));
-          });
+          })
+          .finally(releaseOutput);
       });
     },
   };
@@ -146,7 +161,7 @@ function resolveSpawnContext(
   cwd: string,
   spawnHook?: BashSpawnHook,
 ): BashSpawnContext {
-  const baseContext: BashSpawnContext = { command, cwd, env: { ...getShellEnv() } };
+  const baseContext: BashSpawnContext = { command, cwd, env: getBashShellEnv() };
   return spawnHook ? spawnHook(baseContext) : baseContext;
 }
 

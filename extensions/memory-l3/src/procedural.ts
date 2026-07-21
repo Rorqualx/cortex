@@ -106,7 +106,10 @@ export function parseSkillMd(raw: string): {
   const toolPattern = /^\d+\.\s+`([^`]+)`/gm;
   let match: RegExpExecArray | null;
   while ((match = toolPattern.exec(body)) !== null) {
-    toolSequence.push(match[1]);
+    const tool = match[1];
+    if (tool !== undefined) {
+      toolSequence.push(tool);
+    }
   }
 
   // Detect lane from skill name prefix

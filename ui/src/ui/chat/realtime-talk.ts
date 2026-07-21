@@ -18,7 +18,7 @@ import { WebRtcSdpRealtimeTalkTransport } from "./realtime-talk-webrtc.ts";
 
 export type { RealtimeTalkStatus };
 
-type RealtimeTalkLaunchOptions = {
+export type RealtimeTalkLaunchOptions = {
   provider?: string;
   model?: string;
   voice?: string;
@@ -145,12 +145,14 @@ export class RealtimeTalkSession {
   private acceptingTranscripts = false;
   private serverOwnedVoiceSession = false;
   private transcriptWrites: Promise<void> = Promise.resolve();
-
   constructor(
     private readonly client: GatewayBrowserClient,
     private readonly sessionKey: string,
     private readonly callbacks: RealtimeTalkCallbacks = {},
     private readonly options: RealtimeTalkLaunchOptions = {},
+    // Device selection carried across the session; switchCamera mutates videoDeviceId
+    // so the choice survives transport restarts within one Talk session.
+    private readonly localOptions: RealtimeTalkLocalOptions = {},
   ) {}
 
   async start(): Promise<void> {

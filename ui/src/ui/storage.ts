@@ -116,7 +116,12 @@ export type UiSettings = {
   themeMode: ThemeMode;
   chatShowThinking: boolean;
   chatShowToolCalls: boolean;
+  chatPersistCommentary?: boolean;
+  chatSendShortcut?: ChatSendShortcut;
+  chatFollowUpMode?: ChatFollowUpMode;
   chatAutoScroll?: ChatAutoScrollMode;
+  sidebarEntries?: string[];
+  sidebarLiveActivity?: boolean;
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   navCollapsed: boolean; // Collapsible sidebar state
   navWidth: number; // Sidebar width when expanded (240–400px)
@@ -363,6 +368,14 @@ export function saveSettings(next: UiSettings) {
   persistSettings(next);
 }
 
+// Merge a partial change onto the current settings and persist it. Server-pref
+// sync applies device-local edits this way so unrelated keys keep their values.
+export function patchSettings(patch: Partial<UiSettings>): UiSettings {
+  const next = { ...loadSettings(), ...patch };
+  saveSettings(next);
+  return next;
+}
+
 export function loadLocalUserIdentity(): LocalUserIdentity {
   const storage = getSafeLocalStorage();
   try {
@@ -449,7 +462,7 @@ export function loadLocalAssistantIdentity(opts?: {
       avatars[agentId] = legacyAvatar;
       persistLocalAssistantAvatarMap(storage, avatars);
     }
-    return { avatar: Object.hasOwn(avatars, agentId) ? avatars[agentId] : null, agentId };
+    return { avatar: Object.hasOwn(avatars, agentId) ? (avatars[agentId] ?? null) : null, agentId };
   } catch {
     return { avatar: null };
   }

@@ -729,8 +729,8 @@ describe("runWithModelFallback", () => {
     expect(result.result).toBe("ok");
     expect(run).toHaveBeenCalledTimes(2);
     expect(result.attempts).toHaveLength(1);
-    expect(result.attempts[0].error).toBe("bad request");
-    expect(result.attempts[0].reason).toBe("unknown");
+    expect(result.attempts[0]?.error).toBe("bad request");
+    expect(result.attempts[0]?.reason).toBe("unknown");
   });
 
   it("does not prepare agent harness plugins for forced OpenClaw candidates", async () => {
@@ -1072,7 +1072,11 @@ describe("runWithModelFallback", () => {
 
   it("does not treat command-lane watchdog timeouts as model fallback failures", async () => {
     const cfg = makeCfg();
-    const timeoutError = new CommandLaneTaskTimeoutError("cron-nested", 330_000);
+    const timeoutError = new CommandLaneTaskTimeoutError("cron-nested", {
+      cause: "task-budget",
+      elapsedMs: 330_000,
+      taskBudgetMs: 330_000,
+    });
     const run = vi.fn().mockRejectedValue(timeoutError);
 
     await expect(

@@ -36,7 +36,7 @@ function createMemoryStore<T = PersistedWorkboardCard>(options?: {
   };
 }
 
-function statfsFixture(type: number): ReturnType<typeof fs.statfsSync> {
+function statfsFixture(type: number): fs.StatsFs {
   return {
     type,
     bsize: 1024,
@@ -44,6 +44,7 @@ function statfsFixture(type: number): ReturnType<typeof fs.statfsSync> {
     bfree: 1,
     bavail: 1,
     files: 0,
+    frsize: 1024,
     ffree: 0,
   };
 }

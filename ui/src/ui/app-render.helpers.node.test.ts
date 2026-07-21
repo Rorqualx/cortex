@@ -1311,7 +1311,7 @@ describe("collectChannelChatNavCandidates", () => {
       "agent:main:telegram:direct:777",
       "agent:main:telegram:direct:888",
     ]);
-    expect(candidates[0].updatedAt).toBe(50);
+    expect(candidates[0]?.updatedAt).toBe(50);
     expect(candidates.every((c) => c.channelId === "telegram")).toBe(true);
   });
 });

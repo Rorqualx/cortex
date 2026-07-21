@@ -1,4 +1,4 @@
-import type { PanelRefreshStatus } from "./panel-refresh-status.ts";
+import type { UsageSummary as ProviderUsageSummary } from "../../../../src/infra/provider-usage.types.js";
 // Control UI view renders usageTypes screen content.
 import type {
   CostUsageDailyEntry,
@@ -7,6 +7,7 @@ import type {
   SessionsUsageTotals,
   SessionUsageTimePoint,
 } from "../usage-types.ts";
+import type { PanelRefreshStatus } from "./panel-refresh-status.ts";
 
 export type UsageSessionEntry = SessionsUsageEntry;
 export type UsageTotals = SessionsUsageTotals;
@@ -46,6 +47,7 @@ export type UsageDataState = {
   aggregates: UsageAggregates | null;
   costDaily: CostDailyEntry[];
   cacheStatus: SessionsUsageResult["cacheStatus"];
+  providerUsage: ProviderUsageSummary["providers"];
 };
 
 export type UsageFilterState = {

@@ -278,7 +278,9 @@ function createChatHeaderState(
             }
           }
           currentModelProvider =
-            matchingProviders.length === 1 ? matchingProviders[0] : currentModelProvider;
+            matchingProviders.length === 1
+              ? (matchingProviders[0] ?? currentModelProvider)
+              : currentModelProvider;
         }
       }
       return { ok: true, key: "main" };
@@ -818,7 +820,7 @@ describe("chat history render window", () => {
     );
     expect(frameCallbacks).toHaveLength(1);
 
-    frameCallbacks[0](0);
+    frameCallbacks[0]?.(0);
 
     expect(onRequestUpdate).toHaveBeenCalledTimes(1);
     expect(onScrollToBottom).toHaveBeenCalledTimes(1);
@@ -2070,7 +2072,7 @@ describe("chat slash menu accessibility", () => {
           createChatProps({
             currentAgentId: "stale-replay-agent",
             draft: drafts[sessionKey],
-            getDraft: () => drafts[sessionKey],
+            getDraft: () => drafts[sessionKey] ?? "",
             onDraftChange: (next) => onDraftChange(sessionKey, next),
             onSend: () => {
               drafts[sessionKey] = "";
@@ -2120,7 +2122,7 @@ describe("chat slash menu accessibility", () => {
           createChatProps({
             currentAgentId: "delayed-replay-agent",
             draft: drafts[sessionKey],
-            getDraft: () => drafts[sessionKey],
+            getDraft: () => drafts[sessionKey] ?? "",
             onDraftChange: (next) => onDraftChange(sessionKey, next),
             onSend: () => {
               drafts[sessionKey] = "";
@@ -2384,7 +2386,7 @@ describe("chat attachment picker", () => {
     expect(attachments[0]?.fileName).toBe("pasted-image.png");
     expect(attachments[0]?.mimeType).toBe("image/png");
     expect(attachments[0]?.sizeBytes).toBe(3);
-    expect(getChatAttachmentDataUrl(attachments[0])).toBe(`data:image/png;base64,${base64}`);
+    expect(getChatAttachmentDataUrl(attachments[0]!)).toBe(`data:image/png;base64,${base64}`);
   });
 
   it("opens the scoped file input from the visible attach button", () => {
@@ -2429,7 +2431,7 @@ describe("chat attachment picker", () => {
     });
 
     const nextAttachments = requireFirstAttachmentsChange(onAttachmentsChange);
-    expect(getChatAttachmentDataUrl(nextAttachments[0])).toMatch(/^data:application\/pdf;base64,/);
+    expect(getChatAttachmentDataUrl(nextAttachments[0]!)).toMatch(/^data:application\/pdf;base64,/);
     const preview = renderChatView({ attachments: nextAttachments });
     expect(preview.querySelectorAll(".chat-attachment-thumb--file")).toHaveLength(1);
     expect(preview.querySelector(".chat-attachment-file__name")?.textContent).toBe("brief.pdf");
@@ -2466,10 +2468,10 @@ describe("chat queue", () => {
 
     const steerButtons = container.querySelectorAll<HTMLButtonElement>(".chat-queue__steer");
     expect(steerButtons).toHaveLength(1);
-    expect(steerButtons[0].textContent?.trim()).toBe("Steer");
+    expect(steerButtons[0]?.textContent?.trim()).toBe("Steer");
     expect(container.querySelector(".chat-queue__badge")?.textContent?.trim()).toBe("Steered");
 
-    steerButtons[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    steerButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(onQueueSteer).toHaveBeenCalledWith("queued-1");
 
@@ -3754,6 +3756,7 @@ describe("chat session controls", () => {
           status: "ok",
           profiles: [{ profileId: "codex", type: "oauth", status: "ok" }],
           usage: {
+            providerId: "openai",
             windows: [
               { label: "3h", usedPercent: 18 },
               { label: "Week", usedPercent: 72 },
@@ -3786,6 +3789,7 @@ describe("chat session controls", () => {
           status: "ok",
           profiles: [{ profileId: "codex", type: "oauth", status: "ok" }],
           usage: {
+            providerId: "openai",
             windows: [
               { label: "3h", usedPercent: 18 },
               { label: "Week", usedPercent: 72 },
@@ -3821,6 +3825,7 @@ describe("chat session controls", () => {
           status: "ok",
           profiles: [{ profileId: "codex", type: "oauth", status: "ok" }],
           usage: {
+            providerId: "openai",
             windows: [{ label: "3h", usedPercent: 18 }],
           },
         },
@@ -4276,7 +4281,7 @@ describe("chat session controls", () => {
         },
       ],
     });
-    const session = state.sessionsResult!.sessions[0];
+    const session = state.sessionsResult!.sessions[0]!;
     state.sessionsResult = {
       ...state.sessionsResult!,
       defaults: {

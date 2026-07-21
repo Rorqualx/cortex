@@ -1339,11 +1339,13 @@ function clearSubmittedComposerState(
 } {
   const attachmentsUnchanged =
     host.chatAttachments.length === submittedAttachments.length &&
-    host.chatAttachments.every(
-      (attachment, index) =>
-        attachmentSubmitSignature(attachment) ===
-        attachmentSubmitSignature(submittedAttachments[index]),
-    );
+    host.chatAttachments.every((attachment, index) => {
+      const submitted = submittedAttachments[index];
+      return (
+        submitted !== undefined &&
+        attachmentSubmitSignature(attachment) === attachmentSubmitSignature(submitted)
+      );
+    });
   const clearedDraft = host.chatMessage === submittedDraft && attachmentsUnchanged;
   const clearedAttachments = clearedDraft;
   if (clearedDraft) {
@@ -1453,6 +1455,9 @@ async function flushChatQueue(host: ChatHost) {
     return;
   }
   const next = host.chatQueue[nextIndex];
+  if (!next) {
+    return;
+  }
   let ok = false;
   try {
     if (next.localCommandName) {

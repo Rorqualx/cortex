@@ -167,6 +167,7 @@ describe("renderUsageInsights", () => {
           errorRate: 0,
         },
         false,
+        false,
         [],
         1,
         1,
@@ -193,8 +194,8 @@ describe("renderDailyChartCompact", () => {
       dailyEntry("2026-05-02", 4, 0.01),
     ]);
 
-    mockElementRect(bars[0], 100, 100, 24, 200);
-    bars[0].dispatchEvent(new MouseEvent("mouseenter"));
+    mockElementRect(bars[0]!, 100, 100, 24, 200);
+    bars[0]!.dispatchEvent(new MouseEvent("mouseenter"));
 
     let tooltip = getFloatingTooltip();
     expect(tooltip).not.toBeNull();
@@ -202,16 +203,16 @@ describe("renderDailyChartCompact", () => {
     expect(tooltip?.style.top).toBe("28px");
     expect(document.body.querySelectorAll(".daily-bar-tooltip--floating")).toHaveLength(1);
 
-    bars[0].dispatchEvent(new MouseEvent("mouseleave"));
+    bars[0]!.dispatchEvent(new MouseEvent("mouseleave"));
     expect(getFloatingTooltip()).toBeNull();
 
-    mockElementRect(bars[1], 200, 320, 24, 6);
-    bars[1].dispatchEvent(new MouseEvent("mouseenter"));
+    mockElementRect(bars[1]!, 200, 320, 24, 6);
+    bars[1]!.dispatchEvent(new MouseEvent("mouseenter"));
 
     tooltip = getFloatingTooltip();
     expect(tooltip).not.toBeNull();
     expect(tooltip?.textContent).toContain("4 tokens");
-    bars[1].dispatchEvent(new MouseEvent("mouseleave"));
+    bars[1]!.dispatchEvent(new MouseEvent("mouseleave"));
   });
 
   it("flips below when the bar is near the top and clamps inside a narrow viewport", () => {
@@ -219,23 +220,23 @@ describe("renderDailyChartCompact", () => {
     mockTooltipRect(100, 40);
     const { bars } = renderDailyChart([dailyEntry("2026-05-03", 10_000, 1)]);
 
-    mockElementRect(bars[0], 110, 12, 20, 20);
-    bars[0].dispatchEvent(new MouseEvent("mouseenter"));
+    mockElementRect(bars[0]!, 110, 12, 20, 20);
+    bars[0]!.dispatchEvent(new MouseEvent("mouseenter"));
 
     const tooltip = getFloatingTooltip();
     expect(tooltip?.dataset.placement).toBe("below");
     expect(tooltip?.style.top).toBe("40px");
     expect(tooltip?.style.left).toBe("12px");
-    bars[0].dispatchEvent(new MouseEvent("mouseleave"));
+    bars[0]!.dispatchEvent(new MouseEvent("mouseleave"));
   });
 
   it("clears the floating tooltip when the chart DOM is removed", async () => {
     setViewport(800, 600);
     mockTooltipRect(160, 56);
     const { bars, container } = renderDailyChart([dailyEntry("2026-05-04", 500, 0.2)]);
-    mockElementRect(bars[0], 300, 220, 24, 80);
+    mockElementRect(bars[0]!, 300, 220, 24, 80);
 
-    bars[0].dispatchEvent(new MouseEvent("mouseenter"));
+    bars[0]!.dispatchEvent(new MouseEvent("mouseenter"));
     expect(getFloatingTooltip()).not.toBeNull();
 
     container.remove();
@@ -247,18 +248,18 @@ describe("renderDailyChartCompact", () => {
     setViewport(800, 600);
     mockTooltipRect(160, 56);
     const { bars, onSelectDay } = renderDailyChart([dailyEntry("2026-05-04", 500, 0.2)]);
-    mockElementRect(bars[0], 300, 220, 24, 80);
+    mockElementRect(bars[0]!, 300, 220, 24, 80);
 
-    bars[0].dispatchEvent(new Event("focus"));
+    bars[0]!.dispatchEvent(new Event("focus"));
     expect(getFloatingTooltip()?.textContent).toContain("500 tokens");
 
-    bars[0].dispatchEvent(new Event("blur"));
+    bars[0]!.dispatchEvent(new Event("blur"));
     expect(getFloatingTooltip()).toBeNull();
 
-    bars[0].dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    bars[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
     expect(onSelectDay).toHaveBeenCalledWith("2026-05-04", true);
 
-    bars[0].dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+    bars[0]!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
     expect(onSelectDay).toHaveBeenCalledWith("2026-05-04", false);
 
     const space = new KeyboardEvent("keydown", {
@@ -267,14 +268,14 @@ describe("renderDailyChartCompact", () => {
       key: " ",
       shiftKey: true,
     });
-    bars[0].dispatchEvent(space);
+    bars[0]!.dispatchEvent(space);
     expect(space.defaultPrevented).toBe(true);
     expect(onSelectDay).toHaveBeenCalledWith("2026-05-04", true);
 
-    bars[0].dispatchEvent(new MouseEvent("mouseenter"));
-    bars[0].dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    bars[0].dispatchEvent(new Event("focus"));
-    bars[0].dispatchEvent(new MouseEvent("mouseleave"));
+    bars[0]!.dispatchEvent(new MouseEvent("mouseenter"));
+    bars[0]!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    bars[0]!.dispatchEvent(new Event("focus"));
+    bars[0]!.dispatchEvent(new MouseEvent("mouseleave"));
     expect(getFloatingTooltip()).toBeNull();
   });
 });

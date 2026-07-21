@@ -324,9 +324,15 @@ export const ExecApprovalRequestPayloadSchema = Type.Object(
     // Immutable keeps the schema-derived field `readonly`, matching the
     // server-side payload types that freeze the decision set after build.
     allowedDecisions: Type.Optional(Type.Immutable(Type.Array(ExecApprovalDecisionSchema))),
+    unavailableDecisions: Type.Optional(
+      Type.Immutable(Type.Array(Type.String({ enum: ["allow-always"] }))),
+    ),
     agentId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     resolvedPath: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     sessionKey: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    sessionId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    runId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    toolCallId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     turnSourceChannel: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     turnSourceTo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     turnSourceAccountId: Type.Optional(Type.Union([Type.String(), Type.Null()])),

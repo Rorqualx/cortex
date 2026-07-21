@@ -25,7 +25,7 @@ const catalog = createModelCatalog(OPENAI_GPT5_MINI_MODEL, {
 
 describe("chat-model-ref helpers", () => {
   it("builds provider-qualified option values and prefers catalog names for labels", () => {
-    expect(buildChatModelOption(catalog[0], catalog)).toEqual({
+    expect(buildChatModelOption(catalog[0]!, catalog)).toEqual({
       value: "openai/gpt-5-mini",
       label: "GPT-5 Mini",
     });
@@ -99,7 +99,7 @@ describe("chat-model-ref helpers", () => {
       },
     );
 
-    expect(buildChatModelOption(duplicateNameCatalog[0], duplicateNameCatalog)).toEqual({
+    expect(buildChatModelOption(duplicateNameCatalog[0]!, duplicateNameCatalog)).toEqual({
       value: "anthropic/claude-3-7-sonnet",
       label: "Claude Sonnet · anthropic",
     });
@@ -129,11 +129,11 @@ describe("chat-model-ref helpers", () => {
       },
     );
 
-    expect(buildChatModelOption(kimiCatalog[0], kimiCatalog)).toEqual({
+    expect(buildChatModelOption(kimiCatalog[0]!, kimiCatalog)).toEqual({
       value: "kimi/kimi-for-coding",
       label: "Kimi · Code plan",
     });
-    expect(buildChatModelOption(kimiCatalog[1], kimiCatalog)).toEqual({
+    expect(buildChatModelOption(kimiCatalog[1]!, kimiCatalog)).toEqual({
       value: "moonshot/kimi-k2.6",
       label: "Kimi · pay-as-you-go",
     });
@@ -157,7 +157,7 @@ describe("chat-model-ref helpers", () => {
     );
 
     expect(
-      buildChatModelOption(duplicateNameAndProviderCatalog[0], duplicateNameAndProviderCatalog),
+      buildChatModelOption(duplicateNameAndProviderCatalog[0]!, duplicateNameAndProviderCatalog),
     ).toEqual({
       value: "anthropic/claude-3-7-sonnet",
       label: "Claude Sonnet · claude-3-7-sonnet · anthropic",

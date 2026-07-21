@@ -6,10 +6,24 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import type { AgentsListResult, SkillStatusEntry, SkillStatusReport } from "../types.ts";
+import { t } from "../../i18n/index.ts";
+import {
+  clawhubVerdictKey,
+  type ClawHubSkillSecurityVerdict,
+  type ClawHubSearchResult,
+  type ClawHubSkillDetail,
+  type SkillOperation,
+  type SkillMessageMap,
+} from "../controllers/skills.ts";
+import { clampText } from "../format.ts";
+import "../components/modal-dialog.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
-import "../components/modal-dialog.ts";
+import { resolveSafeExternalUrl } from "../open-external-url.ts";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
+import type { AgentsListResult, SkillStatusEntry, SkillStatusReport } from "../types.ts";
+import "../../styles/plugins.css";
+import "../../styles/sidebar-markdown.css";
 import {
   renderSettingsEmpty,
   renderSettingsPage,
@@ -19,27 +33,13 @@ import {
   renderSettingsToggle,
   renderSettingsValue,
 } from "./settings-ui.ts";
-import { t } from "../../i18n/index.ts";
-import { clampText } from "../format.ts";
-import { resolveSafeExternalUrl } from "../open-external-url.ts";
 import { groupSkills, type SkillGroup } from "./skills-grouping.ts";
-import "../../styles/plugins.css";
-import "../../styles/sidebar-markdown.css";
 import {
   computeSkillMissing,
   computeSkillReasons,
   isSkillAvailable,
   renderSkillStatusChips,
 } from "./skills-shared.ts";
-import {
-  clawhubVerdictKey,
-  type ClawHubSkillSecurityVerdict,
-  type ClawHubSearchResult,
-  type ClawHubSkillDetail,
-  type SkillOperation,
-  type SkillMessageMap,
-} from "../controllers/skills.ts";
-import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 
 function safeExternalHref(raw?: string): string | null {
   if (!raw) {
@@ -575,18 +575,6 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
           ariaLabel: t("skillsPage.enabledNamed", { name: skill.name }),
           onChange: () => props.onToggle(skill.skillKey, skill.disabled),
         })}
-      </div>
-      <div class="skill-card__title">
-        <span class="statusDot ${dotClass}"></span>
-        <span class="skill-card__name">${skill.name}</span>
-      </div>
-      <div class="skill-card__desc">${clampText(skill.description, 120)}</div>
-      <div class="skill-card__foot">
-        ${skill.clawhub?.status === "linked"
-          ? html`<span class="chip ${verdictChipClass(verdict)}">${verdictLabel(verdict)}</span>`
-          : skill.clawhub?.status === "invalid"
-            ? html`<span class="chip chip-warn">ClawHub link invalid</span>`
-            : nothing}
       </div>
     </div>
   `;

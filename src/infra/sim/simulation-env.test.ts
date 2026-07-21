@@ -1,3 +1,8 @@
+import {
+  getApiProvider,
+  registerApiProvider,
+  unregisterApiProviders,
+} from "@openclaw/ai/internal/runtime";
 /**
  * Tests for the DST SimulationEnv and scripted model provider.
  */
@@ -7,11 +12,6 @@ import {
   type Model,
 } from "@openclaw/llm-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  getApiProvider,
-  registerApiProvider,
-  unregisterApiProviders,
-} from "../../../packages/llm-runtime/src/api-registry.js";
 import {
   createModelRecorder,
   createModelReplayer,
@@ -36,6 +36,15 @@ import {
   withSimulationEnv,
   withSimulationEnvAsync,
 } from "./simulation-env.js";
+
+// ES2023 lib lacks Array.fromAsync; drain async iterables with an equivalent local helper.
+async function collectAsync<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of iterable) {
+    items.push(item);
+  }
+  return items;
+}
 
 const TEST_SOURCE_ID = "test:sim";
 
@@ -336,7 +345,7 @@ describe("ScriptedModelProvider", () => {
     });
 
     const recordedStream = recorder.stream(testModel, testContext);
-    await Array.fromAsync(recordedStream);
+    await collectAsync(recordedStream);
     await recordedStream.result();
 
     expect(scripts.size).toBe(1);
@@ -394,7 +403,7 @@ describe("RecordReplayHarness", () => {
       const p = getApiProvider("test-api");
       expect(p).toBeDefined();
       const s = p!.stream(testModel, testContext);
-      await Array.fromAsync(s);
+      await collectAsync(s);
       return "ok";
     });
 
@@ -530,7 +539,7 @@ describe("RecordReplayHarness", () => {
         callCount++;
         const p = getApiProvider("test-api");
         const s = p!.stream(testModel, testContext);
-        await Array.fromAsync(s);
+        await collectAsync(s);
         return { callCount };
       },
     });

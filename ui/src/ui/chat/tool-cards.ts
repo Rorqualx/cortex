@@ -301,6 +301,7 @@ export function extractToolCards(message: unknown, prefix = "tool"): ToolCard[] 
         fallbackMatchedCards.add(existing);
         existing.outputText = text;
         existing.preview = preview;
+        existing.completed = true;
         if (isError !== undefined) {
           existing.isError = isError;
         }
@@ -311,6 +312,7 @@ export function extractToolCards(message: unknown, prefix = "tool"): ToolCard[] 
         name,
         outputText: text,
         messageId: transcriptMessageId,
+        completed: true,
         ...(isError !== undefined ? { isError } : {}),
         preview,
       });
@@ -336,6 +338,7 @@ export function extractToolCards(message: unknown, prefix = "tool"): ToolCard[] 
       name,
       outputText: text,
       messageId: transcriptMessageId,
+      completed: true,
       ...(messageIsError !== undefined ? { isError: messageIsError } : {}),
       preview: extractToolPreview(text, name),
     });

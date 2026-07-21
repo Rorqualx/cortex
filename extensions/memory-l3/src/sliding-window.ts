@@ -25,7 +25,11 @@ export function selectSlidingWindow(params: {
   let total = 0;
   let firstIdx = messages.length;
   for (let i = messages.length - 1; i >= 0; i--) {
-    const cost = estimateMessageTokens(messages[i]);
+    const msg = messages[i];
+    if (!msg) {
+      continue;
+    }
+    const cost = estimateMessageTokens(msg);
     if (firstIdx < messages.length && total + cost > tokenBudget) {
       break;
     }
@@ -33,9 +37,16 @@ export function selectSlidingWindow(params: {
     firstIdx = i;
   }
 
-  while (firstIdx > 0 && isToolResultMessage(messages[firstIdx])) {
+  while (firstIdx > 0) {
+    const current = messages[firstIdx];
+    if (!current || !isToolResultMessage(current)) {
+      break;
+    }
     firstIdx -= 1;
-    total += estimateMessageTokens(messages[firstIdx]);
+    const prev = messages[firstIdx];
+    if (prev) {
+      total += estimateMessageTokens(prev);
+    }
   }
 
   return {

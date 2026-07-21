@@ -1,5 +1,5 @@
-import type { ChatAttachment } from "../types/chat-types.ts";
 import { releaseChatAttachmentPayloads } from "../chat/attachment-payload-store.ts";
+import type { ChatAttachment } from "../ui-types.ts";
 
 export class NewSessionAttachmentDraft {
   attachments: ChatAttachment[] = [];

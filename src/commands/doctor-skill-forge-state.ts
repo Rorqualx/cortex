@@ -37,6 +37,9 @@ function stableRecoveryName(name: string): string | undefined {
     return undefined;
   }
   const stable = match[1];
+  if (stable === undefined) {
+    return undefined;
+  }
   // Guard the greedy capture: the collapsed name must still name a recover tool.
   return /^forge-recover-.+-via-.+$/u.test(stable) ? stable : undefined;
 }

@@ -97,10 +97,12 @@ export async function detectTopicBoundaries(params: {
 
   const boundaries: TopicBoundary[] = [];
   for (let i = 1; i < embeddings.length; i++) {
-    if (!embeddings[i - 1] || !embeddings[i]) {
+    const prev = embeddings[i - 1];
+    const curr = embeddings[i];
+    if (!prev || !curr) {
       continue;
     }
-    const sim = cosineSimilarity(embeddings[i - 1], embeddings[i]);
+    const sim = cosineSimilarity(prev, curr);
     if (sim < threshold) {
       boundaries.push({
         messageIndex: i * windowSize,

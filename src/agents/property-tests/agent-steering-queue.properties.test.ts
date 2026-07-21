@@ -68,12 +68,15 @@ describe("agent-steering-queue properties", () => {
 
             // Verify ordering by endedAt (ascending)
             for (let i = 1; i < items.length; i++) {
+              const prev = items[i - 1];
+              const curr = items[i];
+              if (!prev || !curr) {
+                throw new Error(`unexpected sparse queue snapshot at index ${i}`);
+              }
               const prevEnded =
-                items[i - 1].payload.endedAt ??
-                items[i - 1].entry.endedAt ??
-                Number.MAX_SAFE_INTEGER;
+                prev.payload.endedAt ?? prev.entry.endedAt ?? Number.MAX_SAFE_INTEGER;
               const currEnded =
-                items[i].payload.endedAt ?? items[i].entry.endedAt ?? Number.MAX_SAFE_INTEGER;
+                curr.payload.endedAt ?? curr.entry.endedAt ?? Number.MAX_SAFE_INTEGER;
               expect(currEnded).toBeGreaterThanOrEqual(prevEnded);
             }
           },
@@ -123,9 +126,13 @@ describe("agent-steering-queue properties", () => {
 
             // When endedAt is equal, should order by delivery.createdAt
             for (let i = 1; i < items.length; i++) {
-              const prevCreated =
-                items[i - 1].entry.delivery?.createdAt ?? items[i - 1].entry.createdAt;
-              const currCreated = items[i].entry.delivery?.createdAt ?? items[i].entry.createdAt;
+              const prev = items[i - 1];
+              const curr = items[i];
+              if (!prev || !curr) {
+                throw new Error(`unexpected sparse queue snapshot at index ${i}`);
+              }
+              const prevCreated = prev.entry.delivery?.createdAt ?? prev.entry.createdAt;
+              const currCreated = curr.entry.delivery?.createdAt ?? curr.entry.createdAt;
               expect(currCreated).toBeGreaterThanOrEqual(prevCreated);
             }
           },

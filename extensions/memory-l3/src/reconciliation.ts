@@ -226,6 +226,9 @@ export async function reconcileProseInterference(params: {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i];
       const b = active[j];
+      if (!a || !b) {
+        continue;
+      }
       // Prefer embedding cosine when enabled and both facts carry vectors;
       // otherwise lexical jaccard. Each metric uses its own scale-appropriate
       // threshold (cosine and jaccard are not comparable).

@@ -87,7 +87,7 @@ export function parseProjectLabel(label: string): ParsedProjectLabel | null {
   if (!match) {
     return null;
   }
-  const segments = match[1].split(":");
+  const segments = (match[1] ?? "").split(":");
   const name = decodeSegment(segments[0] ?? "").trim();
   if (!name) {
     return null;

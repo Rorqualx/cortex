@@ -27,6 +27,10 @@ import {
   wrapProviderStreamFn as wrapProviderStreamFnRuntime,
 } from "../../plugins/provider-hook-runtime.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import {
+  type NativeWebSearchToolPolicyParams,
+  isNativeWebSearchAllowedByToolPolicy,
+} from "../codex-native-web-search-core.js";
 import { canonicalizeMaxTokensParam, resolveMaxTokensParam } from "../model-max-tokens-params.js";
 import { legacyModelKey, modelKey } from "../model-selection-normalize.js";
 import { supportsGptParallelToolCallsPayload } from "../provider-api-families.js";
@@ -36,6 +40,7 @@ import type { StreamFn } from "../runtime/index.js";
 import type { SettingsManager } from "../sessions/index.js";
 import { log } from "./logger.js";
 import { resolveCacheRetention } from "./prompt-cache-retention.js";
+import { mapThinkingLevelForProvider } from "./utils.js";
 
 const defaultProviderRuntimeDeps = {
   prepareProviderExtraParams: prepareProviderExtraParamsRuntime,
@@ -298,7 +303,7 @@ export function resolvePreparedExtraParams(params: {
         modelId: params.modelId,
         model: params.model,
         extraParams: merged,
-        thinkingLevel: params.thinkingLevel,
+        thinkingLevel: mapThinkingLevelForProvider(params.thinkingLevel),
       },
     }) ?? merged;
   const transportPatch = providerRuntimeDeps.resolveProviderExtraParamsForTransport({
@@ -313,7 +318,7 @@ export function resolvePreparedExtraParams(params: {
       provider: params.provider,
       modelId: params.modelId,
       extraParams: prepared,
-      thinkingLevel: params.thinkingLevel,
+      thinkingLevel: mapThinkingLevelForProvider(params.thinkingLevel),
       model: params.model,
       transport: params.resolvedTransport ?? resolveSupportedTransport(prepared.transport),
     },
@@ -827,7 +832,7 @@ function applyPostPluginStreamWrappers(
   if (!ctx.providerWrapperHandled) {
     ctx.agent.streamFn = createDeepSeekV4OpenAICompatibleThinkingWrapper({
       baseStreamFn: ctx.agent.streamFn,
-      thinkingLevel: ctx.thinkingLevel,
+      thinkingLevel: mapThinkingLevelForProvider(ctx.thinkingLevel),
       shouldPatchModel: isDeepSeekV4OpenAICompatibleModel,
     });
 
@@ -838,7 +843,7 @@ function applyPostPluginStreamWrappers(
     // here as a fallback so multi-turn tool calls succeed.
     ctx.agent.streamFn = createDeepSeekV4OpenAICompatibleThinkingWrapper({
       baseStreamFn: ctx.agent.streamFn,
-      thinkingLevel: ctx.thinkingLevel,
+      thinkingLevel: mapThinkingLevelForProvider(ctx.thinkingLevel),
       shouldPatchModel: isMiMoReasoningOpenAICompatibleModel,
     });
     // Legacy MiMo V2 can put final visible answers in reasoning_content. Apply
@@ -850,7 +855,10 @@ function applyPostPluginStreamWrappers(
 
     // Guard Google-family payloads against invalid negative thinking budgets
     // emitted by upstream model-ID heuristics for Gemini 3.1 variants.
-    ctx.agent.streamFn = createGoogleThinkingPayloadWrapper(ctx.agent.streamFn, ctx.thinkingLevel);
+    ctx.agent.streamFn = createGoogleThinkingPayloadWrapper(
+      ctx.agent.streamFn,
+      mapThinkingLevelForProvider(ctx.thinkingLevel),
+    );
 
     // Work around upstream shared model runtime hardcoding `store: false` for Responses API.
     // Force `store=true` for direct OpenAI Responses models and auto-enable
@@ -915,7 +923,7 @@ function normalizeDeepSeekV4CandidateId(modelId: unknown): string | undefined {
   if (typeof modelId !== "string") {
     return undefined;
   }
-  const withoutSuffix = modelId.trim().toLowerCase().split(":", 1)[0];
+  const withoutSuffix = modelId.trim().toLowerCase().split(":", 1)[0] ?? "";
   return withoutSuffix.split("/").pop();
 }
 
@@ -975,7 +983,10 @@ export function applyExtraParamsToAgent(
   model?: ProviderRuntimeModel,
   agentDir?: string,
   resolvedTransport?: SupportedTransport,
-  options?: { preparedExtraParams?: Record<string, unknown> },
+  options?: {
+    preparedExtraParams?: Record<string, unknown>;
+    nativeWebSearchPolicyContext?: NativeWebSearchToolPolicyParams;
+  },
 ): { effectiveExtraParams: Record<string, unknown> } {
   const resolvedExtraParams = resolveExtraParams({
     cfg,
@@ -1021,6 +1032,15 @@ export function applyExtraParamsToAgent(
   };
 
   const providerStreamBase = agent.streamFn;
+  const nativeWebSearchAllowedByToolPolicy = options?.nativeWebSearchPolicyContext
+    ? isNativeWebSearchAllowedByToolPolicy({
+        config: cfg,
+        modelProvider: model?.provider,
+        modelId: model?.id,
+        agentId,
+        ...options.nativeWebSearchPolicyContext,
+      })
+    : undefined;
   const pluginWrappedStreamFn = providerRuntimeDeps.wrapProviderStreamFn({
     provider,
     config: cfg,
@@ -1028,10 +1048,12 @@ export function applyExtraParamsToAgent(
       config: cfg,
       agentDir,
       workspaceDir,
+      agentId,
+      nativeWebSearchAllowedByToolPolicy,
       provider,
       modelId,
       extraParams: effectiveExtraParams,
-      thinkingLevel,
+      thinkingLevel: mapThinkingLevelForProvider(thinkingLevel),
       model,
       streamFn: providerStreamBase,
     },

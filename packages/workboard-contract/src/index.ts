@@ -12,6 +12,11 @@ export const WORKBOARD_STATUSES = [
 ] as const;
 
 export const WORKBOARD_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
+
+export const WORKBOARD_SECTIONS = ["goals", "implementations", "tasks", "ideas"] as const;
+
+export type WorkboardSection = (typeof WORKBOARD_SECTIONS)[number];
+
 /** Built-in launch choices. Persisted execution engines remain an open runtime identifier. */
 export const WORKBOARD_EXECUTION_ENGINES = ["codex", "claude"] as const;
 export const WORKBOARD_EXECUTION_MODES = ["autonomous", "manual"] as const;
@@ -241,6 +246,10 @@ export type WorkboardWorkspace = {
   kind: "scratch" | "dir" | "worktree";
   path?: string;
   branch?: string;
+  /** Source repository path a worktree workspace was created from. */
+  sourcePath?: string;
+  /** Source branch a worktree workspace was created from. */
+  sourceBranch?: string;
 };
 
 export type WorkboardWorkspaceAccess =

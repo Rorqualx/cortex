@@ -45,8 +45,7 @@ function buildFilesystemPolicy(
   const prefix = actionToParamPrefix(action);
   const parts: string[] = [];
 
-  for (let i = 0; i < roots.length; i++) {
-    const root = roots[i];
+  for (const [i, root] of roots.entries()) {
     const normalizedPath = path.resolve(root.path);
     // Resolve symlinks — Seatbelt operates on real paths, not symlinks
     let resolvedPath: string;
@@ -62,8 +61,8 @@ function buildFilesystemPolicy(
     if (root.excluded && root.excluded.length > 0) {
       // Has explicit exclusions
       const requireParts: string[] = [`(subpath (param "${paramKey}"))`];
-      for (let j = 0; j < root.excluded.length; j++) {
-        const excludedPath = path.resolve(normalizedPath, root.excluded[j]);
+      for (const [j, excluded] of root.excluded.entries()) {
+        const excludedPath = path.resolve(normalizedPath, excluded);
         let resolvedExcluded: string;
         try {
           resolvedExcluded = fs.realpathSync(excludedPath);

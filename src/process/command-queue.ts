@@ -33,7 +33,7 @@ export class CommandLaneClearedError extends Error {
  * lane timeout. The underlying task may still be unwinding, but the lane is
  * released so queued work is not blocked forever.
  */
-class CommandLaneTaskTimeoutError extends Error {
+export class CommandLaneTaskTimeoutError extends Error {
   constructor(
     lane: string,
     details:

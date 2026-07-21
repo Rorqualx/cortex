@@ -77,9 +77,8 @@ import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import {
   clearResolvedExecApprovalPrompt,
   enqueueExecApprovalPrompt,
-  parseExecApprovalRequested,
+  parseApprovalRequestedEvent,
   parseExecApprovalResolved,
-  parsePluginApprovalRequested,
   pruneExecApprovalQueue,
 } from "./controllers/exec-approval.ts";
 import { loadHealthState, type HealthState } from "./controllers/health.ts";
@@ -1352,7 +1351,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   }
 
   if (evt.event === "exec.approval.requested") {
-    enqueueApprovalRequest(host, parseExecApprovalRequested(evt.payload));
+    enqueueApprovalRequest(host, parseApprovalRequestedEvent(evt.event, evt.payload));
     return;
   }
 
@@ -1362,7 +1361,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   }
 
   if (evt.event === "plugin.approval.requested") {
-    enqueueApprovalRequest(host, parsePluginApprovalRequested(evt.payload));
+    enqueueApprovalRequest(host, parseApprovalRequestedEvent(evt.event, evt.payload));
     return;
   }
 

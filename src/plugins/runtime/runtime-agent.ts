@@ -17,7 +17,7 @@ import { ensureAgentWorkspace } from "../../agents/workspace.js";
 import { normalizeThinkLevel, resolveThinkingProfile } from "../../auto-reply/thinking.js";
 import { getRuntimeConfig } from "../../config/config.js";
 import { resolveSessionWorkStartError } from "../../config/sessions/lifecycle.js";
-import { resolveStorePath } from "../../config/sessions/paths.js";
+import { resolveSessionFilePath, resolveStorePath } from "../../config/sessions/paths.js";
 import {
   deleteSessionEntryLifecycle,
   listSessionEntries as listAccessorSessionEntries,
@@ -501,6 +501,7 @@ export function createRuntimeAgent(): PluginRuntime["agent"] {
   );
   defineCachedValue(agentRuntime, "session", () => ({
     resolveStorePath,
+    resolveSessionFilePath,
     createSessionEntry,
     getSessionEntry,
     listSessionEntries,

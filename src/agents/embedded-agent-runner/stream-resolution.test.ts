@@ -46,9 +46,9 @@ const llmRuntime = {
 } as LlmRuntime;
 
 function describeEmbeddedAgentStreamStrategy(
-  params: Omit<Parameters<typeof describeEmbeddedAgentStreamStrategyImpl>[0], "llmRuntime">,
+  params: Parameters<typeof describeEmbeddedAgentStreamStrategyImpl>[0],
 ) {
-  return describeEmbeddedAgentStreamStrategyImpl({ ...params, llmRuntime });
+  return describeEmbeddedAgentStreamStrategyImpl(params);
 }
 
 function resolveEmbeddedAgentStreamFn(

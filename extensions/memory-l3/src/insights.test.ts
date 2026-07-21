@@ -203,7 +203,9 @@ describe("collectMemoryInsights", () => {
 
     const insights = await collectMemoryInsights({ storage, limit: 2, now: NOW });
     expect(insights.topRecalled).toHaveLength(2);
-    expect(insights.topRecalled[0].text.length).toBeLessThanOrEqual(201);
-    expect(insights.topRecalled[0].text.endsWith("…")).toBe(true);
+    const [topRecalled] = insights.topRecalled;
+    if (!topRecalled) throw new Error("expected top recalled insight");
+    expect(topRecalled.text.length).toBeLessThanOrEqual(201);
+    expect(topRecalled.text.endsWith("…")).toBe(true);
   });
 });

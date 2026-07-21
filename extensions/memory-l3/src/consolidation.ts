@@ -255,6 +255,9 @@ export async function runVerificationGate(params: {
   for (let i = 0; i < params.candidates.length; i++) {
     const s = scores[i];
     const candidate = params.candidates[i];
+    if (!s || !candidate) {
+      continue;
+    }
     if (
       s.coverage >= params.config.thresholds.coverage &&
       s.preservation >= params.config.thresholds.preservation &&
@@ -286,7 +289,11 @@ function buildVerificationPrompt(
     "",
   ];
   for (let i = 0; i < inputs.length; i++) {
-    const { candidate, sourceFacts, priorText } = inputs[i];
+    const input = inputs[i];
+    if (!input) {
+      continue;
+    }
+    const { candidate, sourceFacts, priorText } = input;
     lines.push(`--- Candidate ${i + 1} ---`);
     lines.push(`dedupKey: ${candidate.dedupKey}`);
     lines.push(`consolidated text: ${candidate.text}`);

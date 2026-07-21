@@ -5,6 +5,7 @@ import {
   formatValidationErrors,
   validateRequestFrame,
 } from "../../../../packages/gateway-protocol/src/index.js";
+import { noteStaleDistCandidateError } from "../../../infra/stale-dist-restart.js";
 import { formatForLog, logWs } from "../../ws-log.js";
 import type { GatewayWsClient } from "../ws-types.js";
 import type { GatewayWsMessageHandlerParams } from "./message-handler-types.js";
@@ -150,6 +151,8 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
       });
     })().catch((err: unknown) => {
       logGateway.error(`request handler failed: ${formatForLog(err)}`);
+      // Lazy handler imports fail here when dist rotated under this process.
+      noteStaleDistCandidateError(err);
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
     });
     if (DEVICE_CREDENTIAL_INVALIDATING_METHODS.has(req.method)) {

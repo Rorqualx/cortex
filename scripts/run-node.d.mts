@@ -32,6 +32,15 @@ export function acquireRunNodeBuildLock(deps: {
   stderr: { write: (value: string) => void };
 }): Promise<() => void>;
 
+export const GATEWAY_SERVICE_MARKER_ENV_KEYS: string[];
+export function isManagedGatewayServiceEnv(env: NodeJS.ProcessEnv): boolean;
+export function stripGatewayServiceMarkers(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+
+export const STALE_REBUILD_REASONS: Set<string>;
+export const STALE_RUNTIME_POSTBUILD_REASONS: Set<string>;
+export const BUILD_REASON_LABELS: Record<string, string>;
+export const RUNTIME_POSTBUILD_REASON_LABELS: Record<string, string>;
+
 export function runNodeMain(params?: {
   spawn?: (
     cmd: string,

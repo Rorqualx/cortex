@@ -550,7 +550,7 @@ async function consumeChatStream(
   finishCurrentBlock(currentBlock);
   for (const index of toolBlocksByKey.values()) {
     const block = output.content[index];
-    if (block.type !== "toolCall") {
+    if (block?.type !== "toolCall") {
       continue;
     }
     const toolBlock = block as ToolCall & { partialArgs?: string };

@@ -12,6 +12,7 @@ import { resolveSandboxBrowserDockerCreateConfig } from "./config.js";
 import {
   SANDBOX_BROWSER_IMAGE_CONTRACT_EPOCH,
   SANDBOX_BROWSER_SECURITY_HASH_EPOCH,
+  SANDBOX_DOCKER_CREATE_ARGS_EPOCH,
 } from "./constants.js";
 import { collectDockerFlagValues, findDockerArgsCall } from "./test-args.js";
 import type { SandboxConfig } from "./types.js";
@@ -397,6 +398,7 @@ describe("ensureSandboxBrowser create args", () => {
       workspaceDir,
       agentWorkspaceDir,
       mountFormatVersion: SANDBOX_MOUNT_FORMAT_VERSION,
+      createArgsEpoch: SANDBOX_DOCKER_CREATE_ARGS_EPOCH,
       readOnlyWorkspaceSkillMounts: [],
     });
 

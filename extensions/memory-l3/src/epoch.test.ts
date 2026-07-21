@@ -81,7 +81,7 @@ describe("maybeWriteEpoch", () => {
     state.l2ChunkIndex = EPOCH_CHUNK_THRESHOLD;
     await maybeWriteEpoch({ storage, state, now: NOW });
     const doc = await storage.readL3Epoch("epoch-0000");
-    expect(doc?.frontmatter.representativeFacts[0].id).toBe("high");
+    expect(doc?.frontmatter.representativeFacts[0]?.id).toBe("high");
   });
 
   it("caps representative facts at REPRESENTATIVE_FACT_COUNT", async () => {

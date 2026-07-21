@@ -71,7 +71,7 @@ describe("aggregateCandidates", () => {
     );
     const result = await aggregateCandidates(storage);
     expect(result).toHaveLength(1);
-    const c = result[0];
+    const c = result[0]!;
     expect(c.dedupKey).toBe("user_pref:tabs");
     expect(c.recallCount).toBe(2);
     expect(c.firstSeenAt).toBe(NOW - 5 * MS_PER_DAY);
@@ -90,7 +90,7 @@ describe("aggregateCandidates", () => {
       [fact("f2", "strong phrasing", 0.9, NOW - Number(MS_PER_DAY), "k:1")],
       NOW - Number(MS_PER_DAY),
     );
-    const [c] = await aggregateCandidates(storage);
+    const c = (await aggregateCandidates(storage))[0]!;
     expect(c.text).toBe("strong phrasing");
     expect(c.importance).toBe(0.9);
   });
@@ -106,7 +106,7 @@ describe("aggregateCandidates", () => {
       [fact("f2", "newer phrasing", 0.7, NOW - Number(MS_PER_DAY), "k:1")],
       NOW - Number(MS_PER_DAY),
     );
-    const [c] = await aggregateCandidates(storage);
+    const c = (await aggregateCandidates(storage))[0]!;
     expect(c.text).toBe("newer phrasing");
   });
 
@@ -117,7 +117,7 @@ describe("aggregateCandidates", () => {
       fact("f1", "a", 0.5, NOW, "k:1"),
       fact("f2", "a", 0.5, NOW, "k:1"),
     ]);
-    const [c] = await aggregateCandidates(storage);
+    const c = (await aggregateCandidates(storage))[0]!;
     expect(c.sourceChunkIds).toEqual(["chunk-x"]);
   });
 });
@@ -404,8 +404,8 @@ describe("ConvMemory v3 safety invariants", () => {
 
         // Invariant: supersededAt timestamps are non-decreasing
         for (let i = 1; i < fact.history.length; i++) {
-          expect(fact.history[i].supersededAt).toBeGreaterThanOrEqual(
-            fact.history[i - 1].supersededAt,
+          expect(fact.history[i]?.supersededAt).toBeGreaterThanOrEqual(
+            fact.history[i - 1]!.supersededAt,
           );
         }
       } finally {
@@ -446,8 +446,8 @@ describe("ConvMemory v3 safety invariants", () => {
 
         // Current canonical value at this point is "active"
         const afterFirst = await t.storage!.readLongTermTyped();
-        expect(afterFirst.facts[0].value).toBe("active");
-        expect(afterFirst.facts[0].history).toEqual([]);
+        expect(afterFirst.facts[0]?.value).toBe("active");
+        expect(afterFirst.facts[0]?.history).toEqual([]);
 
         await writeTypedChunk(
           t.storage!,
@@ -475,7 +475,7 @@ describe("ConvMemory v3 safety invariants", () => {
         // The only history entry should be "active" — which was indeed the
         // canonical value after the first pass.
         expect(fact.history.length).toBe(1);
-        expect(fact.history[0].value).toBe("active");
+        expect(fact.history[0]?.value).toBe("active");
       } finally {
         typedTeardown(t);
       }
@@ -519,7 +519,7 @@ describe("ConvMemory v3 safety invariants", () => {
         await consolidateLongTermTyped({ storage: t.storage!, agentId: "test", now: NOW });
 
         const ltt = await t.storage!.readLongTermTyped();
-        const fact = ltt.facts[0];
+        const fact = ltt.facts[0]!;
 
         // Invariant: no history entry holds the same value as the current canonical
         for (const h of fact.history) {
@@ -568,7 +568,11 @@ describe("ConvMemory v3 safety invariants", () => {
           storage: t.storage!,
           agentId: "test",
           now: NOW,
-          config: { maxAgeWithoutConfirmMs: 60 * MS_PER_DAY, minRecallCount: 1 },
+          config: {
+            maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
+            minRecallCount: 1,
+            maxPromotePerEpoch: 30,
+          },
         });
         expect(out.archivedCount).toBe(1);
 
@@ -757,8 +761,8 @@ describe("ConvMemory v3 safety invariants", () => {
         // (pass metadata like promoted/reaffirmed counts naturally differ — what
         // matters is the stored canonical state)
         for (let i = 0; i < ltt1.facts.length; i++) {
-          const a = ltt1.facts[i];
-          const b = ltt2.facts[i];
+          const a = ltt1.facts[i]!;
+          const b = ltt2.facts[i]!;
           expect(b.slot).toBe(a.slot);
           expect(b.value).toBe(a.value);
           expect(b.confidence).toBe(a.confidence);

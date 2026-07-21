@@ -55,6 +55,9 @@ describe("Loop A: duplicate accumulation", () => {
       const messageCount = 1 + Math.floor(rng() * 3);
       for (let m = 0; m < messageCount; m += 1) {
         const concept = concepts[Math.floor(rng() * concepts.length)];
+        if (!concept) {
+          continue;
+        }
         const paraphraseIdx = Math.floor(rng() * concept.paraphrases.length);
         const paraphrase = concept.paraphrases[paraphraseIdx] ?? concept.canonical;
         buffer.push("s1", makeUserMessage(paraphrase));
@@ -164,7 +167,7 @@ describe("Loop 5: long-horizon needle recall", () => {
     const needleQuery = "bali trip planning";
 
     for (let i = 0; i < needleAges.length; i += 1) {
-      const ageDays = needleAges[i];
+      const ageDays = needleAges[i] ?? 0;
       const createdAt = NOW - ageDays * MS_PER_DAY;
       await storage.writeL2Chunk(
         {
@@ -362,10 +365,13 @@ describe("Loop F: demotion of stale long-term facts", () => {
       now: NOW - 100 * MS_PER_DAY,
     });
     const ltAfterPromote = await storage.readLongTerm();
-    expect(ltAfterPromote.facts[0].archived).toBe(false);
+    expect(ltAfterPromote.facts[0]?.archived).toBe(false);
 
     // Remove the L2 chunk so the next consolidation has no candidates.
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    const chunkPathToDelete = (await storage.listL2ChunkPaths())[0];
+    if (chunkPathToDelete) {
+      await storage.deleteL2Chunk(chunkPathToDelete);
+    }
 
     // Verify retrieval surfaces the active long-term fact at T=now-90d
     // (still inside the 60-day window).
@@ -383,7 +389,7 @@ describe("Loop F: demotion of stale long-term facts", () => {
     // The fact is still active in storage but the retrieve uses now=NOW-90d,
     // by which point lastConfirmedAt-now < 60 days so it'd remain active.
     const ltStill = await storage.readLongTerm();
-    expect(ltStill.facts[0].archived).toBe(false);
+    expect(ltStill.facts[0]?.archived).toBe(false);
 
     // Run consolidation past the window — the fact should archive.
     const result = await consolidateLongTerm({
@@ -395,8 +401,8 @@ describe("Loop F: demotion of stale long-term facts", () => {
     expect(result.activeCount).toBe(0);
 
     const ltFinal = await storage.readLongTerm();
-    expect(ltFinal.facts[0].archived).toBe(true);
-    expect(ltFinal.facts[0].archivedAt).toBe(NOW);
+    expect(ltFinal.facts[0]?.archived).toBe(true);
+    expect(ltFinal.facts[0]?.archivedAt).toBe(NOW);
 
     // Retrieval should not surface the archived fact even on a perfect query.
     const afterStaleResult = await retrieveTopK({

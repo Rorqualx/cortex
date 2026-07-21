@@ -400,6 +400,7 @@ export async function retrieveTopK(params: {
             informationGain: 0,
             goalRelevance: 0,
             reliability: 0,
+            semanticEntropy: 1,
           },
           chunkId: hit.path,
           tier: "memory-core",
@@ -603,6 +604,7 @@ export async function retrieveTopK(params: {
               informationGain: 0,
               goalRelevance: 0,
               reliability: 0,
+              semanticEntropy: 1,
             },
             chunkId: cid,
             tier: "l2" as RetrievalTier,
@@ -851,10 +853,12 @@ async function resolveBoostMap(
   const ranges: Array<{ start: number; end: number; score: number }> = [];
   for (const [key, score] of rangeMap) {
     const m = /^__range__(\d+)_(\d+)$/.exec(key);
-    if (!m) {
+    const startStr = m?.[1];
+    const endStr = m?.[2];
+    if (startStr === undefined || endStr === undefined) {
       continue;
     }
-    ranges.push({ start: Number.parseInt(m[1], 10), end: Number.parseInt(m[2], 10), score });
+    ranges.push({ start: Number.parseInt(startStr, 10), end: Number.parseInt(endStr, 10), score });
   }
   const out = new Map<string, number>();
   const paths = await storage.listL2ChunkPaths();
@@ -941,7 +945,7 @@ async function selectEpochPaths(
 
   // Also always include the last epoch's worth of chunks (recency bias)
   const lastChunk = allPaths[allPaths.length - 1];
-  const lastDoc = await storage.readL2ChunkAtPath(lastChunk);
+  const lastDoc = lastChunk ? await storage.readL2ChunkAtPath(lastChunk) : null;
   const lastSeq = lastDoc ? chunkSeq(lastDoc.frontmatter.id) : null;
   if (lastSeq !== null) {
     const recentMin = Math.max(0, lastSeq - 7); // last ~8 chunks
@@ -974,8 +978,8 @@ async function selectEpochPaths(
 }
 
 function chunkSeq(chunkId: string): number | null {
-  const m = /^chunk-(\d+)/.exec(chunkId);
-  return m ? Number.parseInt(m[1], 10) : null;
+  const seq = /^chunk-(\d+)/.exec(chunkId)?.[1];
+  return seq !== undefined ? Number.parseInt(seq, 10) : null;
 }
 
 // Greedy submodular fact selector (arXiv:2607.00725).
@@ -1009,7 +1013,7 @@ export function submodularSelect(
 
     for (let i = 0; i < pool.length; i += 1) {
       const item = pool[i];
-      if (selectedKeys.has(item.fact.dedupKey)) {
+      if (!item || selectedKeys.has(item.fact.dedupKey)) {
         continue;
       }
 
@@ -1055,6 +1059,9 @@ export function submodularSelect(
     }
 
     const chosen = pool[bestIdx];
+    if (!chosen) {
+      break;
+    }
     selected.push(chosen);
     selectedKeys.add(chosen.fact.dedupKey);
     const chosenTokens = tokenize(chosen.fact.text);
@@ -1212,7 +1219,7 @@ function extractRequestedFields(query: string): string[] {
     /(?:what|show|tell|get|find|list)(?:\s+(?:me|us|the|all))?\s+(?:the\s+)?([a-z][a-z0-9_\-]*\s*(?:,\s*[a-z][a-z0-9_\-]*\s*)+(?:\s+and\s+[a-z][a-z0-9_\-]*)?)/gi;
   const commaMatch = commaListPattern.exec(query);
   if (commaMatch) {
-    const listPart = commaMatch[1];
+    const listPart = commaMatch[1] ?? "";
     // Split by comma, clean up "and" articles
     const items = listPart
       .split(/,\s*|\s+and\s+/i)
@@ -1227,7 +1234,7 @@ function extractRequestedFields(query: string): string[] {
   const andMatch = andPattern.exec(query);
   if (andMatch && !commaMatch) {
     // Only use this if we didn't already match a comma list
-    const pairPart = andMatch[1];
+    const pairPart = andMatch[1] ?? "";
     const items = pairPart.split(/\s+and\s+/i).map((s) => s.trim());
     fields.push(...items);
   }
@@ -1235,7 +1242,10 @@ function extractRequestedFields(query: string): string[] {
   // Pattern 3: possessive requests ("Joe's phone", "server's IP")
   const possessivePattern = /([a-z][a-z0-9_\-]*'s\s+[a-z][a-z0-9_\-]+)/gi;
   for (const match of query.matchAll(possessivePattern)) {
-    fields.push(match[1]);
+    const field = match[1];
+    if (field !== undefined) {
+      fields.push(field);
+    }
   }
 
   return fields;

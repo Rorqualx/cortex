@@ -220,6 +220,9 @@ function getFenceMarker(line: string): { marker: "`" | "~"; length: number } | n
     return null;
   }
   const fence = match[1];
+  if (fence === undefined) {
+    return null;
+  }
   const marker = fence[0] as "`" | "~";
   return { marker, length: fence.length };
 }
@@ -242,8 +245,12 @@ function isFenceClose(line: string, fence: { marker: "`" | "~"; length: number }
   if (!match) {
     return false;
   }
-  const marker = match[1][0];
-  if (marker !== fence.marker || match[1].length < fence.length) {
+  const group = match[1];
+  if (group === undefined) {
+    return false;
+  }
+  const marker = group[0];
+  if (marker !== fence.marker || group.length < fence.length) {
     return false;
   }
   return trimmed.slice(match[0].length).trim() === "";
@@ -451,6 +458,9 @@ md.linkify.add("www", {
 
     while (len > 0) {
       const ch = tail[len - 1];
+      if (ch === undefined) {
+        break;
+      }
       // GFM trailing punctuation: ?, !, ., ,, :, *, _, ~ stripped unconditionally.
       // Semicolon is handled specially below (entity reference rule).
       if (/[?!.,:*_~]/.test(ch)) {
@@ -462,7 +472,11 @@ md.linkify.add("www", {
       if (ch === ";") {
         // Backward scan to find & (O(n) total, avoids string allocation)
         let j = len - 2;
-        while (j >= 0 && /[a-zA-Z0-9]/.test(tail[j])) {
+        while (j >= 0) {
+          const cj = tail[j];
+          if (cj === undefined || !/[a-zA-Z0-9]/.test(cj)) {
+            break;
+          }
           j--;
         }
         // j < len - 2 ensures at least one alphanumeric between & and ;
@@ -483,11 +497,14 @@ md.linkify.add("www", {
             len--;
             continue;
           }
-        } else if (balance[ch] < 0) {
+        } else {
           // Distinct pair: strip if more closes than opens
-          balance[ch]++;
-          len--;
-          continue;
+          const closeBalance = balance[ch] ?? 0;
+          if (closeBalance < 0) {
+            balance[ch] = closeBalance + 1;
+            len--;
+            continue;
+          }
         }
       }
       break;
@@ -523,7 +540,7 @@ md.core.ruler.after("linkify", "linkify-cjk-trim", (state) => {
     const children = blockToken.children;
     for (let i = children.length - 1; i >= 0; i--) {
       const token = children[i];
-      if (token.type !== "link_open") {
+      if (!token || token.type !== "link_open") {
         continue;
       }
       // Only trim linkify-generated autolinks, not explicit markdown links
@@ -542,7 +559,11 @@ md.core.ruler.after("linkify", "linkify-cjk-trim", (state) => {
       // Middle CJK must be preserved (e.g. https://example.com/你/test stays intact);
       // only strip a contiguous CJK tail adjacent to non-URL text.
       let cjkIdx = displayText.length;
-      while (cjkIdx > 0 && CJK_RE.test(displayText[cjkIdx - 1])) {
+      while (cjkIdx > 0) {
+        const prev = displayText[cjkIdx - 1];
+        if (prev === undefined || !CJK_RE.test(prev)) {
+          break;
+        }
         cjkIdx--;
       }
       if (cjkIdx <= 0 || cjkIdx === displayText.length) {
@@ -560,7 +581,7 @@ md.core.ruler.after("linkify", "linkify-cjk-trim", (state) => {
       textToken.content = trimmedDisplay;
       // Find link_close and insert CJK text after it
       for (let j = i + 1; j < children.length; j++) {
-        if (children[j].type === "link_close") {
+        if (children[j]?.type === "link_close") {
           const tailToken = new state.Token("text", "", 0);
           tailToken.content = cjkTail;
           children.splice(j + 1, 0, tailToken);
@@ -585,23 +606,25 @@ md.use(markdownItTaskLists, { enabled: false, label: false });
 md.core.ruler.after("github-task-lists", "task-list-allowlist", (state) => {
   const tokens = state.tokens;
   for (let i = 2; i < tokens.length; i++) {
-    if (tokens[i].type !== "inline" || !tokens[i].children) {
-      continue;
-    }
-    if (tokens[i - 1].type !== "paragraph_open") {
-      continue;
-    }
-    if (tokens[i - 2].type !== "list_item_open") {
-      continue;
-    }
+    const token = tokens[i];
+    const paragraph = tokens[i - 1];
     const listItem = tokens[i - 2];
+    if (!token || !token.children || token.type !== "inline") {
+      continue;
+    }
+    if (paragraph?.type !== "paragraph_open") {
+      continue;
+    }
+    if (!listItem || listItem.type !== "list_item_open") {
+      continue;
+    }
     const cls = listItem.attrGet("class") ?? "";
     if (!cls.includes("task-list-item")) {
       continue;
     }
     // Only trust the checkbox <input> token from the plugin, not other user-supplied HTML.
     // The plugin inserts an <input> at the start; user HTML elsewhere must stay escaped.
-    for (const child of tokens[i].children!) {
+    for (const child of token.children) {
       if (child.type === "html_inline" && /^<input\s/i.test(child.content)) {
         child.meta = { taskListPlugin: true };
         break; // Only one checkbox per item
@@ -615,10 +638,13 @@ md.core.ruler.after("github-task-lists", "task-list-allowlist", (state) => {
 // are allowed through — they are generated by our own plugin pipeline, not user input,
 // and DOMPurify provides the final safety net regardless.
 md.renderer.rules.html_block = (tokens, idx) => {
-  return escapeHtml(tokens[idx].content) + "\n";
+  return escapeHtml(tokens[idx]?.content ?? "") + "\n";
 };
 md.renderer.rules.html_inline = (tokens, idx) => {
   const token = tokens[idx];
+  if (!token) {
+    return "";
+  }
   if (token.meta?.taskListPlugin === true) {
     return token.content;
   }
@@ -628,6 +654,9 @@ md.renderer.rules.html_inline = (tokens, idx) => {
 // Override image to only allow base64 data URIs (#15437)
 md.renderer.rules.image = (tokens, idx) => {
   const token = tokens[idx];
+  if (!token) {
+    return "";
+  }
   const src = token.attrGet("src")?.trim() ?? "";
   // Use token.content which preserves raw markdown formatting (e.g. **bold**)
   // to match original marked.js behavior.
@@ -646,7 +675,7 @@ md.renderer.rules.image = (tokens, idx) => {
 function wrapWithLineNumbers(highlighted: string): string {
   const lines = highlighted.split("\n");
   // Remove trailing empty line if the source ended with \n
-  if (lines.length > 1 && lines[lines.length - 1].trim() === "") {
+  if (lines.length > 1 && lines[lines.length - 1]?.trim() === "") {
     lines.pop();
   }
   let html = '<table class="code-lines"><tbody>';
@@ -659,6 +688,9 @@ function wrapWithLineNumbers(highlighted: string): string {
 
 md.renderer.rules.fence = (tokens, idx, _options, env) => {
   const token = tokens[idx];
+  if (!token) {
+    return "";
+  }
   // token.info contains the full fence info string (e.g., "json title=foo");
   // extract only the first whitespace-separated token as the language.
   const lang = token.info.trim().split(/\s+/)[0] || "";
@@ -693,6 +725,9 @@ md.renderer.rules.fence = (tokens, idx, _options, env) => {
 // Override indented code blocks (code_block) with the same treatment as fence
 md.renderer.rules.code_block = (tokens, idx, _options, env) => {
   const token = tokens[idx];
+  if (!token) {
+    return "";
+  }
   const text = token.content;
   const highlighted = highlightCode(text, "");
   const classAttr = codeClassAttribute("", highlighted);

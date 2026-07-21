@@ -323,7 +323,7 @@ function deduplicateStreamSegmentsAgainstFinal(items: ChatItem[]): ChatItem[] {
   let lastUserIndex = -1;
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
-    if (item.kind !== "message") {
+    if (!item || item.kind !== "message") {
       continue;
     }
     const normalized = safeNormalizeMessage(item.message);
@@ -335,7 +335,7 @@ function deduplicateStreamSegmentsAgainstFinal(items: ChatItem[]): ChatItem[] {
   const assistantTexts: string[] = [];
   for (let i = lastUserIndex + 1; i < items.length; i++) {
     const item = items[i];
-    if (item.kind !== "message") {
+    if (!item || item.kind !== "message") {
       continue;
     }
     const normalized = safeNormalizeMessage(item.message);
@@ -884,8 +884,9 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
   const maxLen = Math.max(segments.length, tools.length);
   let previousAccumulatedStreamText: string | null = null;
   for (let i = 0; i < maxLen; i++) {
-    if (i < segments.length) {
-      const text = sanitizeStreamText(segments[i].text);
+    const segment = segments[i];
+    if (segment) {
+      const text = sanitizeStreamText(segment.text);
       const visibleText = trimAccumulatedStreamPrefix(text, previousAccumulatedStreamText);
       if (text.length > 0) {
         previousAccumulatedStreamText = text;
@@ -895,16 +896,17 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
           kind: "stream",
           key: `stream-seg:${props.sessionKey}:${i}`,
           text: visibleText,
-          startedAt: segments[i].ts,
+          startedAt: segment.ts,
           isStreaming: false,
         });
       }
     }
-    if (i < tools.length && props.showToolCalls) {
+    const tool = tools[i];
+    if (tool && props.showToolCalls) {
       items.push({
         kind: "message",
-        key: messageKey(tools[i], i + history.length),
-        message: tools[i],
+        key: messageKey(tool, i + history.length),
+        message: tool,
       });
     }
   }

@@ -123,6 +123,7 @@ import type {
   ClawHubSkillSecurityVerdict,
   ClawHubSkillDetail,
   SkillMessage,
+  SkillOperation,
 } from "./controllers/skills.ts";
 import { importCustomThemeFromUrl } from "./custom-theme.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
@@ -515,6 +516,9 @@ export class OpenClawApp extends LitElement {
   @state() toolsEffectiveResult: ToolsEffectiveResult | null = null;
   @state() agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" =
     "overview";
+  // Shared generation counter for agent files/skills loads; controllers bump it to
+  // invalidate in-flight requests when the selected agent or panel changes.
+  requestGeneration = 0;
   @state() agentFilesLoading = false;
   @state() agentFilesError: string | null = null;
   @state() agentFilesList: AgentsFilesListResult | null = null;
@@ -580,7 +584,7 @@ export class OpenClawApp extends LitElement {
   @state() usageTimeSeriesLoading = false;
   @state() usageTimeSeriesCursorStart: number | null = null;
   @state() usageTimeSeriesCursorEnd: number | null = null;
-  @state() usageSessionLogs: import("./views/usage.js").SessionLogEntry[] | null = null;
+  @state() usageSessionLogs: import("./views/usageTypes.js").SessionLogEntry[] | null = null;
   @state() usageSessionLogsLoading = false;
   @state() usageSessionLogsExpanded = false;
   // Applied query (used to filter the already-loaded sessions list client-side).
@@ -604,7 +608,7 @@ export class OpenClawApp extends LitElement {
     "errors",
     "duration",
   ];
-  @state() usageLogFilterRoles: import("./views/usage.js").SessionLogRole[] = [];
+  @state() usageLogFilterRoles: import("./views/usageTypes.js").SessionLogRole[] = [];
   @state() usageLogFilterTools: string[] = [];
   @state() usageLogFilterHasTools = false;
   @state() usageLogFilterQuery = "";
@@ -635,6 +639,13 @@ export class OpenClawApp extends LitElement {
   @state() cronJobsSortBy: import("./types.js").CronJobsSortBy = "nextRunAtMs";
   @state() cronJobsSortDir: import("./types.js").CronSortDir = "asc";
   @state() cronStatus: CronStatus | null = null;
+  @state() cronAgentId: string | null = null;
+  @state() cronScopedTotal: number | null = null;
+  @state() cronScopedNextWakeAtMs: number | null = null;
+  // Global enabled+error job count for the stats card; null until loaded.
+  @state() cronFailingCount: number | null = null;
+  // True while the create panel owns the detail pane (job selection wins over it).
+  @state() cronCreateOpen = false;
   @state() cronError: string | null = null;
   @state() cronForm: CronFormState = { ...DEFAULT_CRON_FORM };
   @state() cronFormCollapsed = true;
@@ -685,6 +696,8 @@ export class OpenClawApp extends LitElement {
   @state() skillsStatusFilter: "all" | "ready" | "needs-setup" | "disabled" = "all";
   @state() skillEdits: Record<string, string> = {};
   @state() skillsBusyKey: string | null = null;
+  // In-flight skills operation tracked by the skills controller (refresh/skill/clawhub).
+  @state() skillOperation: SkillOperation = null;
   @state() skillMessages: Record<string, SkillMessage> = {};
   @state() skillsDetailKey: string | null = null;
   @state() skillsDetailTab: "overview" | "card" = "overview";

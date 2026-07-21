@@ -293,19 +293,12 @@ describe("subagent registry steer restarts", () => {
     previousRunId: string;
     nextRunId: string;
     fallback?: ReturnType<typeof listMainRuns>[number];
-    transcriptTarget?: {
-      agentId: string;
-      sessionId: string;
-      sessionKey: string;
-      storePath: string;
-    };
     task?: string;
   }) => {
     const replaced = mod.replaceSubagentRunAfterSteer({
       previousRunId: params.previousRunId,
       nextRunId: params.nextRunId,
       fallback: params.fallback,
-      transcriptTarget: params.transcriptTarget,
       task: params.task,
     });
     expect(replaced).toBe(true);

@@ -439,7 +439,7 @@ function summarizeRaw(raw: string, limit = 160): string {
 export function parseJsonResponse(raw: string): unknown {
   const trimmed = raw.trim();
   const fenced = /^```(?:json|javascript)?\s*\n?([\s\S]*?)\n?```$/.exec(trimmed);
-  return JSON.parse(fenced ? fenced[1] : trimmed);
+  return JSON.parse(fenced?.[1] ?? trimmed);
 }
 
 function normalizeFacts(facts: ReadonlyArray<unknown>): ExtractedFact[] {

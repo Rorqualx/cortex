@@ -3,11 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  testing as replyRunTesting,
-  createReplyOperation,
-  replyRunRegistry,
-} from "../auto-reply/reply/reply-run-registry.js";
+import { createReplyOperation, replyRunRegistry } from "../auto-reply/reply/reply-run-registry.js";
+import { testing as replyRunTesting } from "../auto-reply/reply/reply-run-registry.test-support.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { CURRENT_SESSION_VERSION } from "../config/sessions/version.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -177,7 +174,9 @@ function buildPreparedContext(params?: {
       backend,
       env: {},
     },
-    reusableCliSession: params?.cliSessionId ? { sessionId: params.cliSessionId } : {},
+    reusableCliSession: params?.cliSessionId
+      ? { mode: "reuse", sessionId: params.cliSessionId }
+      : { mode: "none" },
     hadSessionFile: false,
     contextEngineConfig: {},
     modelId: model,
@@ -1676,7 +1675,11 @@ describe("runCliAgent reliability", () => {
       expect(JSON.stringify(hookRunner.runAgentEnd.mock.calls)).not.toContain("secret prompt");
 
       const lines = fs.readFileSync(sessionFile, "utf-8").trim().split("\n");
-      const blockedLine = JSON.parse(lines[lines.length - 1]);
+      const lastLine = lines[lines.length - 1];
+      if (!lastLine) {
+        throw new Error("expected a session transcript line");
+      }
+      const blockedLine = JSON.parse(lastLine);
       expect(blockedLine.message.content[0].text).toBe(
         "Your message could not be sent: The agent cannot read this message. (blocked by policy-plugin)",
       );
@@ -2006,7 +2009,8 @@ describe("resolveCliNoOutputTimeoutMs", () => {
         reliability: {
           watchdog: {
             resume: {
-              noOutputTimeoutMs: 42_000,
+              minMs: 42_000,
+              maxMs: 42_000,
             },
           },
         },

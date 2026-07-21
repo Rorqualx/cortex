@@ -291,9 +291,13 @@ function parseAnswer(raw: string): string {
     .map((l) => l.trim())
     .filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const m = /^answer\s*:\s*(.*)$/i.exec(lines[i]);
+    const line = lines[i];
+    if (line === undefined) {
+      continue;
+    }
+    const m = /^answer\s*:\s*(.*)$/i.exec(line);
     if (m) {
-      return m[1].trim();
+      return m[1]?.trim() ?? "";
     }
   }
   return lines[lines.length - 1] ?? "";
@@ -353,7 +357,11 @@ async function ingestSessions(
         embeddingProvider: deps.embeddingProvider,
       });
     };
-    for (const turn of q.haystack_sessions[s]) {
+    const session = q.haystack_sessions[s];
+    if (!session) {
+      continue;
+    }
+    for (const turn of session) {
       buffer.push(sessionId, toAgentMessage(turn, ts) as never);
       if (buffer.tokens(sessionId) >= BATCH_TOKENS) {
         await flush();
@@ -515,7 +523,11 @@ async function runWithConcurrency<T, R>(
       if (idx >= items.length) {
         return;
       }
-      results[idx] = await fn(items[idx]);
+      const item = items[idx];
+      if (item === undefined) {
+        continue;
+      }
+      results[idx] = await fn(item);
       process.stdout.write(`\r  progress: ${++done}/${items.length} `);
     }
   });

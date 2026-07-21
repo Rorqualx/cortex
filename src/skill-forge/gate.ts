@@ -107,6 +107,9 @@ function scanContent(content: string, fileName: string): SecurityFinding[] {
   for (const pattern of SECURITY_PATTERNS) {
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
+      if (line === undefined) {
+        continue;
+      }
       pattern.regex.lastIndex = 0;
       if (pattern.regex.test(line)) {
         findings.push({
@@ -181,9 +184,11 @@ function frontmatterFields(frontmatter: string): { name?: string; description?: 
     }
     return trimmed;
   };
+  const name = nameMatch?.[1];
+  const description = descriptionMatch?.[1];
   return {
-    name: nameMatch ? unquote(nameMatch[1]) : undefined,
-    description: descriptionMatch ? unquote(descriptionMatch[1]) : undefined,
+    name: name !== undefined ? unquote(name) : undefined,
+    description: description !== undefined ? unquote(description) : undefined,
   };
 }
 
@@ -203,6 +208,9 @@ export async function validateSkillDir(
     return { status: "fail", reasons: ["Frontmatter missing or malformed"] };
   }
   const [, frontmatter, body] = frontmatterMatch;
+  if (frontmatter === undefined || body === undefined) {
+    return { status: "fail", reasons: ["Frontmatter missing or malformed"] };
+  }
   const { name, description } = frontmatterFields(frontmatter);
   const reasons: string[] = [];
   if (!name || name.length === 0) {

@@ -1,3 +1,6 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { resolveStateDir } from "../config/paths.js";
 import { resolveInternalSessionEffectsIdentity } from "../config/sessions/internal-session-key.js";
 /** Manages hidden SQLite sessions used for suppressed agent side effects. */
 import {
@@ -106,6 +109,27 @@ export async function prepareInternalSessionEffectsSession(params: {
     sessionKey: scope.sessionKey,
     storePath: params.storePath,
   });
+}
+
+/**
+ * Removes a legacy file-based internal session-effect transcript if it is inside
+ * the owned dir. Registry/run-manager cleanup of fork runs recorded with
+ * execution.transcriptFile still routes here; SQLite-target runs use
+ * removeInternalSessionEffectsSession instead.
+ */
+export async function removeInternalSessionEffectsTranscript(
+  sessionFile: string | undefined,
+): Promise<void> {
+  const dir = path.join(resolveStateDir(), "internal-agent-runs");
+  const resolved = sessionFile ? path.resolve(sessionFile) : "";
+  if (!resolved || path.dirname(resolved) !== path.resolve(dir)) {
+    return;
+  }
+  try {
+    await fs.rm(resolved, { force: true });
+  } catch {
+    // Best-effort privacy/disk cleanup; run cleanup must not fail on temp-file races.
+  }
 }
 
 /** Hard-deletes a run-owned hidden session and its SQLite transcript rows. */

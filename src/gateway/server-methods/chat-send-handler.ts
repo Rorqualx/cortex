@@ -18,7 +18,12 @@ import {
   measureDiagnosticsTimelineSpan,
 } from "../../infra/diagnostics-timeline.js";
 import { retainGatewayRootWorkAdmissionContinuation } from "../../process/gateway-work-admission.js";
+import {
+  readLedger,
+  sessionActivityRegistry as sessionAwarenessRegistry,
+} from "../../session-awareness/index.js";
 import { isOperatorUiClient } from "../../utils/message-channel.js";
+import { generateAutoTitle, shouldGenerateAutoTitle } from "../auto-title-generator.js";
 import { updateChatRunProvider } from "../chat-abort.js";
 import {
   completeQueuedChatTurn,
@@ -60,6 +65,7 @@ import {
   shouldIncludeChatSendAckServerTiming,
   type ChatSendServerTimingPhase,
 } from "./chat-server-timing.js";
+import { createSteeredFollowupReplyGate } from "./chat-steered-reply-gate.js";
 import { normalizeOptionalChatText as normalizeOptionalText } from "./chat-text-normalization.js";
 import { createGatewayChatUserTurnController } from "./chat-user-turn-recorder.js";
 import { gatewayClientSenderFields } from "./gateway-client-identity.js";
@@ -373,6 +379,12 @@ export const handleChatSend: GatewayRequestHandlers["chat.send"] = async ({
       chatSendTiming.dispatchStartedAtMs = dispatchStartedAtMs;
     }
     emitServerTiming("dispatch-started");
+    // Classifies each committed assistant turn as the run's primary reply (owned
+    // by this dispatch's delivery path) or a steered follow-up reply we must
+    // broadcast ourselves. Lives in the dispatch closure so its per-run count
+    // survives attempt retries (which happen below this frame). See
+    // chat-steered-reply-gate.ts.
+    const classifySteeredReply = createSteeredFollowupReplyGate();
     let firstAssistantServerTimingEmitted = false;
     const emitFirstAssistantServerTiming = () => {
       if (firstAssistantServerTimingEmitted || chatSendTiming?.firstAssistantEventSent) {
@@ -407,6 +419,25 @@ export const handleChatSend: GatewayRequestHandlers["chat.send"] = async ({
               },
               replyOptions: {
                 runId: clientRunId,
+                onAssistantMessagePersisted: (message) => {
+                  const decision = classifySteeredReply(
+                    (message as { stopReason?: string }).stopReason,
+                  );
+                  if (decision.kind !== "steered") {
+                    return;
+                  }
+                  // Use a runId distinct from the active run so the client treats this
+                  // as an out-of-band final (append the message) instead of the active
+                  // run's own terminal (which would reconcile the still-streaming run
+                  // to "done"). Same semantics as a sub-agent announce final.
+                  broadcastChatFinal({
+                    context,
+                    runId: `${clientRunId}:followup:${decision.followupIndex}`,
+                    sessionKey,
+                    agentId,
+                    message: message as Record<string, unknown>,
+                  });
+                },
                 ...(isOperatorUiClient(clientInfo)
                   ? {
                       promptCacheKey: resolveWebchatPromptCacheKey({
@@ -661,6 +692,32 @@ export const handleChatSend: GatewayRequestHandlers["chat.send"] = async ({
           },
           dispatchStartedAtMs,
         );
+        // Fork: auto-title generation (llmTitle) — fire-and-forget after first turn.
+        if (agentRunStarted && storePath && shouldGenerateAutoTitle(entry)) {
+          const finalReplyTexts = deliveredReplies
+            .filter((r) => r.kind === "final" && !r.payload.isError)
+            .map((r) => r.payload.text?.trim())
+            .filter((t): t is string => Boolean(t));
+          const assistantReply = finalReplyTexts.join(" ").slice(0, 500);
+          if (rawMessage?.trim() && assistantReply) {
+            void generateAutoTitle({
+              userMessage: rawMessage,
+              assistantReply,
+              cfg,
+              agentId,
+              sessionKey,
+              storePath,
+              entry: entry ?? undefined,
+              onTitleGenerated: () => {
+                emitSessionsChanged(context, {
+                  sessionKey,
+                  agentId: sessionKey === "global" ? agentId : undefined,
+                  reason: "auto-title",
+                });
+              },
+            });
+          }
+        }
         if (queuedFollowupEnqueued && !context.chatAbortedRuns.has(clientRunId)) {
           // Successful queue admission ends this client run. The later
           // aggregate/followup owns its own run id.
@@ -698,6 +755,9 @@ export const handleChatSend: GatewayRequestHandlers["chat.send"] = async ({
     cleanupAdmittedRun({ force: true });
     clearAgentRunContext(clientRunId, lifecycleGeneration);
     context.removeChatRun(clientRunId, clientRunId, sessionKey);
+    // Fork: release all file claims / read-ledger state held by this session.
+    sessionAwarenessRegistry.releaseAllForSession(sessionKey);
+    readLedger.clearSession(sessionKey);
     const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
     const payload = {
       runId: clientRunId,

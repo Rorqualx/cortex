@@ -336,7 +336,9 @@ describe("subagent-isolated-transcripts", () => {
       for (const filePath of [path1, path2]) {
         const content = await fs.readFile(filePath, "utf-8");
         const lines = content.split("\n").filter((line) => line.trim() !== "");
-        const metaLine = JSON.parse(lines[0]);
+        const metaRaw = lines[0];
+        if (!metaRaw) throw new Error("expected transcript meta line");
+        const metaLine = JSON.parse(metaRaw);
         metaLine.meta.createdAt = oldTimestamp;
 
         const agedContent = JSON.stringify({ meta: metaLine.meta }) + "\n" + lines[1] + "\n";

@@ -5,6 +5,7 @@ import type { UsageState } from "./controllers/usage.ts";
 import { loadUsage, loadSessionTimeSeries, loadSessionLogs } from "./controllers/usage.ts";
 import type { LazyView } from "./lazy-view.ts";
 import { renderLazyView } from "./lazy-view.ts";
+import { createPanelRefreshStatus } from "./views/panel-refresh-status.ts";
 import type { UsageColumnId } from "./views/usageTypes.ts";
 
 type UsageViewModule = typeof import("./views/usage.ts");
@@ -65,6 +66,10 @@ export function renderUsageTab(state: AppViewState, usageView: LazyView<UsageVie
           state.usageResult?.cacheStatus,
           state.usageCostSummary?.cacheStatus,
         ),
+        // Provider-usage summary is an upstream-only usage section not yet wired
+        // into the fork usage pipeline; empty renders nothing (renderProviderUsage
+        // returns nothing for an empty list). Deferred wiring.
+        providerUsage: [],
       },
       filters: {
         startDate: state.usageStartDate,
@@ -94,10 +99,12 @@ export function renderUsageTab(state: AppViewState, usageView: LazyView<UsageVie
         timeSeriesBreakdownMode: state.usageTimeSeriesBreakdownMode,
         timeSeries: state.usageTimeSeries,
         timeSeriesLoading: state.usageTimeSeriesLoading,
+        timeSeriesStatus: createPanelRefreshStatus(),
         timeSeriesCursorStart: state.usageTimeSeriesCursorStart,
         timeSeriesCursorEnd: state.usageTimeSeriesCursorEnd,
         sessionLogs: state.usageSessionLogs,
         sessionLogsLoading: state.usageSessionLogsLoading,
+        sessionLogsStatus: createPanelRefreshStatus(),
         sessionLogsExpanded: state.usageSessionLogsExpanded,
         logFilters: {
           roles: state.usageLogFilterRoles,
@@ -155,7 +162,7 @@ export function renderUsageTab(state: AppViewState, usageView: LazyView<UsageVie
             if (shiftKey && state.usageSelectedHours.length > 0) {
               const allHours = Array.from({ length: 24 }, (_, i) => i);
               const lastSelected = state.usageSelectedHours[state.usageSelectedHours.length - 1];
-              const lastIdx = allHours.indexOf(lastSelected);
+              const lastIdx = lastSelected === undefined ? -1 : allHours.indexOf(lastSelected);
               const thisIdx = allHours.indexOf(hour);
               if (lastIdx !== -1 && thisIdx !== -1) {
                 const [start, end] = lastIdx < thisIdx ? [lastIdx, thisIdx] : [thisIdx, lastIdx];
@@ -198,7 +205,7 @@ export function renderUsageTab(state: AppViewState, usageView: LazyView<UsageVie
               // Shift-click: select range from last selected to this day
               const allDays = (state.usageCostSummary?.daily ?? []).map((d) => d.date);
               const lastSelected = state.usageSelectedDays[state.usageSelectedDays.length - 1];
-              const lastIdx = allDays.indexOf(lastSelected);
+              const lastIdx = lastSelected === undefined ? -1 : allDays.indexOf(lastSelected);
               const thisIdx = allDays.indexOf(day);
               if (lastIdx !== -1 && thisIdx !== -1) {
                 const [start, end] = lastIdx < thisIdx ? [lastIdx, thisIdx] : [thisIdx, lastIdx];
@@ -301,7 +308,7 @@ export function renderUsageTab(state: AppViewState, usageView: LazyView<UsageVie
               const allKeys = sortedSessions.map((s) => s.key);
               const lastSelected =
                 state.usageSelectedSessions[state.usageSelectedSessions.length - 1];
-              const lastIdx = allKeys.indexOf(lastSelected);
+              const lastIdx = lastSelected === undefined ? -1 : allKeys.indexOf(lastSelected);
               const thisIdx = allKeys.indexOf(key);
               if (lastIdx !== -1 && thisIdx !== -1) {
                 const [start, end] = lastIdx < thisIdx ? [lastIdx, thisIdx] : [thisIdx, lastIdx];
@@ -322,9 +329,11 @@ export function renderUsageTab(state: AppViewState, usageView: LazyView<UsageVie
             state.usageTimeSeriesCursorStart = null;
             state.usageTimeSeriesCursorEnd = null;
 
-            if (state.usageSelectedSessions.length === 1) {
-              void loadSessionTimeSeries(state, state.usageSelectedSessions[0]);
-              void loadSessionLogs(state, state.usageSelectedSessions[0]);
+            const singleKey =
+              state.usageSelectedSessions.length === 1 ? state.usageSelectedSessions[0] : undefined;
+            if (singleKey !== undefined) {
+              void loadSessionTimeSeries(state, singleKey);
+              void loadSessionLogs(state, singleKey);
             }
           },
           onTimeSeriesModeChange: (mode) => {
@@ -336,6 +345,18 @@ export function renderUsageTab(state: AppViewState, usageView: LazyView<UsageVie
           onTimeSeriesCursorRangeChange: (start, end) => {
             state.usageTimeSeriesCursorStart = start;
             state.usageTimeSeriesCursorEnd = end;
+          },
+          onRetryTimeSeries: () => {
+            const key = state.usageSelectedSessions[0];
+            if (key !== undefined) {
+              void loadSessionTimeSeries(state, key);
+            }
+          },
+          onRetrySessionLogs: () => {
+            const key = state.usageSelectedSessions[0];
+            if (key !== undefined) {
+              void loadSessionLogs(state, key);
+            }
           },
         },
       },

@@ -97,6 +97,19 @@ export type TypedFact = {
   confidence: number;
   /** ms timestamp. */
   createdAt: number;
+  /** Epoch ms when this typed value was last explicitly verified / reaffirmed.
+   * Threaded into `LongTermTypedFact.lastVerifiedAt` at consolidation for
+   * temporal-currency scoring. Absent on facts extracted before this feature;
+   * readers treat absent as `createdAt`. */
+  lastVerifiedAt?: number;
+  /** Episodic annotation: wall-clock time of the source event (ms). */
+  eventTime?: number;
+  /** Session that produced this fact. */
+  sessionId?: string;
+  /** Distinct participant roles present in the source chunk. */
+  participants?: string[];
+  /** Time the fact was mentioned / extracted (ms). */
+  mentionTime?: number;
 };
 
 /**

@@ -189,8 +189,8 @@ describe.skip("tool-policy: deny-first rule", () => {
       const tools = ["read", "write", "exec"];
       const result = applyDenyFirstRule({
         tools,
-        denylist: policies[0].deny ?? [],
-        allowlist: policies[0].allow ?? [],
+        denylist: policies[0]?.deny ?? [],
+        allowlist: policies[0]?.allow ?? [],
       });
 
       expect(result).toEqual(["read", "write"]);

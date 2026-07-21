@@ -154,7 +154,9 @@ describe("subagent-isolation: end-to-end integration", () => {
 
       // Rewrite with old timestamp
       const lines = content.split("\n").filter((line) => line.trim() !== "");
-      const metaLine = JSON.parse(lines[0]);
+      const metaRaw = lines[0];
+      if (!metaRaw) throw new Error("expected transcript meta line");
+      const metaLine = JSON.parse(metaRaw);
       metaLine.meta.createdAt = oldTimestamp;
 
       const agedContent = JSON.stringify({ meta: metaLine.meta }) + "\n" + lines[1] + "\n";
@@ -194,10 +196,13 @@ describe("subagent-isolation: end-to-end integration", () => {
 
       // Write all isolated transcripts
       for (let i = 0; i < isolatedIds.length; i++) {
+        const id = isolatedIds[i];
+        const output = outputs[i];
+        if (!id || output === undefined) throw new Error("expected id and output");
         await writeIsolatedTranscript({
           agentDir: testAgentDir,
-          id: isolatedIds[i],
-          content: outputs[i],
+          id,
+          content: output,
           runId: `${testRunId}-${i}`,
           tokens: 100 + i * 50,
         });
@@ -215,6 +220,7 @@ describe("subagent-isolation: end-to-end integration", () => {
       // Parent accesses only the second one
       const accessedIndex = 1;
       const accessedId = isolatedIds[accessedIndex];
+      if (!accessedId) throw new Error("expected accessed id");
 
       const fetched = await readIsolatedTranscript({
         agentDir: testAgentDir,
@@ -228,7 +234,9 @@ describe("subagent-isolation: end-to-end integration", () => {
         const isolatedPath = resolveIsolatedTranscriptPath(testAgentDir, id);
         const content = await fs.readFile(isolatedPath, "utf-8");
         const lines = content.split("\n").filter((line) => line.trim() !== "");
-        const metaLine = JSON.parse(lines[0]);
+        const metaRaw = lines[0];
+        if (!metaRaw) throw new Error("expected transcript meta line");
+        const metaLine = JSON.parse(metaRaw);
         metaLine.meta.createdAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
 
         const agedContent = JSON.stringify({ meta: metaLine.meta }) + "\n" + lines[1] + "\n";
@@ -259,9 +267,11 @@ describe("subagent-isolation: end-to-end integration", () => {
           continue;
         }
 
+        const id = isolatedIds[i];
+        if (!id) throw new Error("expected id");
         const exists = await isolatedTranscriptExists({
           agentDir: testAgentDir,
-          id: isolatedIds[i],
+          id,
         });
         expect(exists).toBe(false);
       }
@@ -332,7 +342,9 @@ describe("subagent-isolation: end-to-end integration", () => {
       const isolatedPath = resolveIsolatedTranscriptPath(testAgentDir, isolatedId);
       const content = await fs.readFile(isolatedPath, "utf-8");
       const lines = content.split("\n").filter((line) => line.trim() !== "");
-      const metaLine = JSON.parse(lines[0]);
+      const metaRaw = lines[0];
+      if (!metaRaw) throw new Error("expected transcript meta line");
+      const metaLine = JSON.parse(metaRaw);
       metaLine.meta.createdAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
 
       const agedContent = JSON.stringify({ meta: metaLine.meta }) + "\n" + lines[1] + "\n";

@@ -412,8 +412,15 @@ export async function getPairedNode(
   nodeId: string,
   baseDir?: string,
 ): Promise<NodePairingPairedNode | null> {
-  const state = await loadState(baseDir);
-  return state.pairedByNodeId[normalizeNodeId(nodeId)] ?? null;
+  // Upstream folded node pairing state into paired device records; the fork's
+  // per-node lookup now reads the node surface off the paired device.
+  return await withPairedDeviceRecords<NodePairingPairedNode | null>(
+    baseDir,
+    (pairedByDeviceId) => {
+      const device = nodeSurfaceDevice(pairedByDeviceId, nodeId);
+      return { value: device ? toPairedNode(device) : null, persist: false };
+    },
+  );
 }
 
 /** Create or refresh a pending node pairing request for operator approval. */

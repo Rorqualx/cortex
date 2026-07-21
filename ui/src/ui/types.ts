@@ -11,6 +11,19 @@ export type { ConfigUiHint, ConfigUiHints } from "../../../src/shared/config-ui-
 import type { FastMode } from "@openclaw/normalization-core/string-coerce";
 export type { FastMode };
 export type { SessionGoal } from "../../../packages/gateway-protocol/src/index.js";
+// Session branch/fork/rewind result contracts live in the gateway protocol; the
+// Control UI consumes them by their protocol names, and the file RPC results are
+// re-exported under the fork's Workspace* aliases the session store expects.
+export type {
+  SessionBranch,
+  SessionsBranchesListResult,
+  SessionsBranchesSwitchResult,
+  SessionsForkResult,
+  SessionsRewindResult,
+  SessionsFilesListResult as SessionWorkspaceListResult,
+  SessionsFilesGetResult as SessionWorkspaceGetResult,
+  SessionsFilesSetResult as SessionWorkspaceSetResult,
+} from "../../../packages/gateway-protocol/src/index.js";
 export type {
   ActivityEvent,
   ActivityEventDetail,
@@ -305,6 +318,11 @@ export type ConfigSnapshot = {
   runtimeConfig?: Record<string, unknown> | null;
   config?: Record<string, unknown> | null;
   issues?: ConfigSnapshotIssue[] | null;
+  // Apply-gate hashes from config.get: the current on-disk config revision vs the
+  // hash the running gateway actually applied. The UI compares them to surface a
+  // pending "needs apply/restart" state.
+  configRevisionHash?: string | null;
+  appliedConfigHash?: string | null;
 };
 
 export type ConfigSchemaResponse = {
@@ -607,6 +625,10 @@ export type CronRunsResult = {
   hasMore?: boolean;
 };
 
+// Single `cron.run` invocation result; mirrors the cron service contract so the
+// UI can discriminate ran/enqueued/not-started reasons.
+export type CronRunResult = import("../../../src/cron/service/state.js").CronRunResult;
+
 export type SkillsStatusConfigCheck = {
   path: string;
   satisfied: boolean;
@@ -726,22 +748,28 @@ export type ModelCatalogEntry = {
   contextWindow?: number;
   reasoning?: boolean;
   input?: Array<"text" | "image" | "document">;
+  // Gateway-supplied capability signals for the model-providers page: whether the
+  // model is currently reachable, whether the provider accepts an API key, and the
+  // resolved agent runtime metadata. Optional because trimmed catalog projections omit them.
+  available?: boolean;
+  apiKeySupported?: boolean;
+  agentRuntime?: GatewayAgentRuntime;
 };
 
 export type ToolCatalogProfile =
-  import("../../../packages/gateway-protocol/src/schema.js").ToolCatalogProfile;
+  import("../../../packages/gateway-protocol/src/schema/types.js").ToolCatalogProfile;
 export type ToolCatalogEntry =
-  import("../../../packages/gateway-protocol/src/schema.js").ToolCatalogEntry;
+  import("../../../packages/gateway-protocol/src/schema/types.js").ToolCatalogEntry;
 export type ToolCatalogGroup =
-  import("../../../packages/gateway-protocol/src/schema.js").ToolCatalogGroup;
+  import("../../../packages/gateway-protocol/src/schema/types.js").ToolCatalogGroup;
 export type ToolsCatalogResult =
-  import("../../../packages/gateway-protocol/src/schema.js").ToolsCatalogResult;
+  import("../../../packages/gateway-protocol/src/schema/types.js").ToolsCatalogResult;
 export type ToolsEffectiveEntry =
-  import("../../../packages/gateway-protocol/src/schema.js").ToolsEffectiveEntry;
+  import("../../../packages/gateway-protocol/src/schema/types.js").ToolsEffectiveEntry;
 export type ToolsEffectiveGroup =
-  import("../../../packages/gateway-protocol/src/schema.js").ToolsEffectiveGroup;
+  import("../../../packages/gateway-protocol/src/schema/types.js").ToolsEffectiveGroup;
 export type ToolsEffectiveResult =
-  import("../../../packages/gateway-protocol/src/schema.js").ToolsEffectiveResult;
+  import("../../../packages/gateway-protocol/src/schema/types.js").ToolsEffectiveResult;
 
 export type ModelAuthExpiry =
   import("../../../src/gateway/server-methods/models-auth-status.js").ModelAuthExpiry;

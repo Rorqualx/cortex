@@ -240,10 +240,7 @@ describe("compact channel card", () => {
     });
 
     const container = document.createElement("div");
-    render(
-      renderTelegramCard({ props, telegram, telegramAccounts: [], accountCountLabel: null }),
-      container,
-    );
+    render(renderTelegramCard({ props, telegram, telegramAccounts: [] }), container);
 
     // Compact strip replaces the old full-width .status-list rows.
     expect(container.querySelector(".channel-status-strip")).toBeTruthy();

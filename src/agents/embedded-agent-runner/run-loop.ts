@@ -191,9 +191,10 @@ export async function runPreparedEmbeddedLoop(
     cfg: params.config,
     agentId: sessionAgentId,
   });
-  const postCompactionGuard = createPostCompactionLoopGuard({
-    enabled: resolvedLoopDetectionConfig?.enabled !== false,
-  });
+  const postCompactionGuard = createPostCompactionLoopGuard(
+    resolvedLoopDetectionConfig?.postCompactionGuard,
+    { enabled: resolvedLoopDetectionConfig?.enabled !== false },
+  );
   let postCompactionAbortController: AbortController | undefined;
   let postCompactionAbortError: PostCompactionLoopPersistedError | undefined;
   const attemptTerminalToolPresentation = {

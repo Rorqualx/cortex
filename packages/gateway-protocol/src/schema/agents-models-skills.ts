@@ -274,6 +274,51 @@ export const ModelsListResultSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/** Runs a bounded live credential probe for one model provider. */
+export const ModelsProbeParamsSchema = Type.Object(
+  {
+    provider: NonEmptyString,
+    profileId: Type.Optional(NonEmptyString),
+    timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
+  },
+  { additionalProperties: false },
+);
+
+export const AuthProbeStatusSchema = Type.Union([
+  Type.Literal("ok"),
+  Type.Literal("auth"),
+  Type.Literal("rate_limit"),
+  Type.Literal("billing"),
+  Type.Literal("timeout"),
+  Type.Literal("format"),
+  Type.Literal("unknown"),
+  Type.Literal("no_model"),
+]);
+
+/** Secret-free result for one provider credential target. */
+export const ModelsProbeTargetResultSchema = Type.Object(
+  {
+    profileId: Type.Optional(NonEmptyString),
+    label: NonEmptyString,
+    status: AuthProbeStatusSchema,
+    latencyMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    error: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+/** Provider-level live probe rollup plus per-credential results. */
+export const ModelsProbeResultSchema = Type.Object(
+  {
+    provider: NonEmptyString,
+    status: AuthProbeStatusSchema,
+    latencyMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    error: Type.Optional(Type.String()),
+    results: Type.Array(ModelsProbeTargetResultSchema),
+  },
+  { additionalProperties: false },
+);
+
 /** Reads installed skill status, optionally for a selected agent. */
 export const SkillsStatusParamsSchema = Type.Object(
   {
@@ -600,6 +645,11 @@ export const ToolsInvokeParamsSchema = Type.Object(
     agentId: Type.Optional(NonEmptyString),
     confirm: Type.Optional(Type.Boolean()),
     idempotencyKey: Type.Optional(NonEmptyString),
+    /**
+     * Explicit operation-local marker for an authenticated direct operator.
+     * Missing values remain delegated, and agent runtime identity wins server-side.
+     */
+    conversationReadOrigin: Type.Optional(Type.Literal("direct-operator")),
   },
   { additionalProperties: false },
 );

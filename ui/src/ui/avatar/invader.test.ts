@@ -41,7 +41,7 @@ describe("generateInvader", () => {
       const sprite = generateInvader(`feat-${i}`);
       counts.add(sprite.whiteCells.length);
       for (const [x, y] of sprite.whiteCells) {
-        expect(sprite.cells[y][x]).toBe(true); // feature sits on the body silhouette
+        expect(sprite.cells[y]?.[x]).toBe(true); // feature sits on the body silhouette
       }
     }
     expect(counts.has(0)).toBe(true); // some agents have no features

@@ -49,7 +49,7 @@ export function formatEventPayload(payload: unknown): string {
 export function formatCronState(job: CronJob) {
   const state = job.state ?? {};
   const status = resolveCronJobLastRunStatus(job);
-  const parts = [status];
+  const parts: string[] = [status];
   if (state.nextRunAtMs) {
     parts.push(`next ${formatNextRun(state.nextRunAtMs)}`);
   }
@@ -86,6 +86,15 @@ export function describeCronExpr(expr: string): string | null {
     return null;
   }
   const [min, hour, dom, mon, dow] = parts;
+  if (
+    min === undefined ||
+    hour === undefined ||
+    dom === undefined ||
+    mon === undefined ||
+    dow === undefined
+  ) {
+    return null;
+  }
   const wildcardRest = hour === "*" && dom === "*" && mon === "*" && dow === "*";
 
   const everyMinutes = /^\*\/(\d+)$/.exec(min);

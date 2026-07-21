@@ -16,6 +16,8 @@ function buildProps(overrides?: Partial<DreamingProps>): DreamingProps {
   const props: DreamingProps = {
     active: true,
     selectedAgentId: "main",
+    agentOptions: [{ id: "main", label: "Main" }],
+    onSelectAgent: vi.fn(),
     shortTermCount: 47,
     groundedSignalCount: 9,
     totalSignalCount: 182,

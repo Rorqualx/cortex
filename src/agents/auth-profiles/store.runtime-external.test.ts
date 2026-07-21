@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProviderExternalAuthProfile } from "../../plugins/types.js";
-import { testing as externalAuthTesting } from "./external-auth.js";
+import { testing as externalAuthTesting } from "./external-auth.test-support.js";
 import { resolveAuthStatePath, resolveAuthStorePath } from "./paths.js";
 import { getRuntimeAuthProfileStoreSnapshot } from "./runtime-snapshots.js";
 import {

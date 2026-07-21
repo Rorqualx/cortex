@@ -2,6 +2,7 @@
 import "../../styles/lobster-pet.css";
 import { expectDefined } from "@openclaw/normalization-core";
 import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { t } from "../../i18n/index.ts";
 import { agentAvatarUrl } from "../avatar/agent-avatar.ts";
@@ -148,6 +149,7 @@ function renderDreamingAgentAvatar(entry: DreamingAgentOption) {
 export type DreamingProps = {
   active: boolean;
   selectedAgentId: string;
+  agentOptions: DreamingAgentOption[];
   shortTermCount: number;
   groundedSignalCount: number;
   totalSignalCount: number;
@@ -183,6 +185,7 @@ export type DreamingProps = {
   wikiMemoryPalaceError: string | null;
   wikiMemoryPalace: WikiMemoryPalace | null;
   onRefresh: () => void;
+  onSelectAgent: (agentId: string) => void;
   onRefreshDiary: () => void;
   onRefreshImports: () => void;
   onRefreshMemoryPalace: () => void;
@@ -314,15 +317,41 @@ const STARS: {
   { top: 88, left: 18, size: 2, delay: 2.3, hue: "neutral" },
 ];
 
-// The dreams sleeper is the same seeded lobster that visits the sidebar for
-// this agent (eyes closed), so the pet identity carries across surfaces.
-function renderDreamsCameo(agentId: string) {
-  const look = createLobsterPetLook(lobsterPetSeed(agentId));
-  const style = `--lob-shell:${look.palette.shell};--lob-claw:${look.palette.claw}`;
-  return html`
-    <div class="dreams__lobster" style=${style}>${renderLobsterSvg(look, { sleeping: true })}</div>
-  `;
-}
+const sleepingLobster = html`
+  <svg viewBox="0 0 120 120" fill="none">
+    <defs>
+      <linearGradient id="dream-lob-g" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ff4d4d" />
+        <stop offset="100%" stop-color="#991b1b" />
+      </linearGradient>
+    </defs>
+    <path
+      d="M60 10C30 10 15 35 15 55C15 75 30 95 45 100L45 110L55 110L55 100C55 100 60 102 65 100L65 110L75 110L75 100C90 95 105 75 105 55C105 35 90 10 60 10Z"
+      fill="url(#dream-lob-g)"
+    />
+    <path d="M20 45C5 40 0 50 5 60C10 70 20 65 25 55C28 48 25 45 20 45Z" fill="url(#dream-lob-g)" />
+    <path
+      d="M100 45C115 40 120 50 115 60C110 70 100 65 95 55C92 48 95 45 100 45Z"
+      fill="url(#dream-lob-g)"
+    />
+    <path d="M45 15Q38 8 35 14" stroke="#ff4d4d" stroke-width="3" stroke-linecap="round" />
+    <path d="M75 15Q82 8 85 14" stroke="#ff4d4d" stroke-width="3" stroke-linecap="round" />
+    <path
+      d="M39 36Q45 32 51 36"
+      stroke="#050810"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      fill="none"
+    />
+    <path
+      d="M69 36Q75 32 81 36"
+      stroke="#050810"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      fill="none"
+    />
+  </svg>
+`;
 
 export function renderDreaming(props: DreamingProps) {
   const idle = !props.active;
@@ -804,23 +833,25 @@ function renderWikiPreviewOverlay(props: DreamingProps) {
           </button>
         </div>
         <div class="dreams-diary__preview-body">
-          ${wikiPreviewLoading
-            ? html`<div class="dreams-diary__empty-text">Loading wiki page…</div>`
-            : wikiPreviewError
-              ? html`<div class="dreams-diary__error">${wikiPreviewError}</div>`
-              : html`
-                  ${wikiPreviewTruncated
-                    ? html`
-                        <div class="dreams-diary__preview-hint">
-                          Showing the first chunk of this
-                          page${wikiPreviewTotalLines !== null
-                            ? ` (${wikiPreviewTotalLines} total lines)`
-                            : ""}.
-                        </div>
-                      `
-                    : nothing}
-                  <pre class="dreams-diary__preview-pre">${wikiPreviewContent}</pre>
-                `}
+          ${
+            wikiPreviewLoading
+              ? html`<div class="dreams-diary__empty-text">Loading wiki page…</div>`
+              : wikiPreviewError
+                ? html`<div class="dreams-diary__error">${wikiPreviewError}</div>`
+                : html`
+                    ${wikiPreviewTruncated
+                      ? html`
+                          <div class="dreams-diary__preview-hint">
+                            Showing the first chunk of this
+                            page${wikiPreviewTotalLines !== null
+                              ? ` (${wikiPreviewTotalLines} total lines)`
+                              : ""}.
+                          </div>
+                        `
+                      : nothing}
+                    <pre class="dreams-diary__preview-pre">${wikiPreviewContent}</pre>
+                  `
+          }
         </div>
       </div>
     </openclaw-modal-dialog>
@@ -1159,7 +1190,7 @@ function renderDiaryImportsSection(props: DreamingProps) {
 
   diaryEntryCount = clusters.length;
   const clusterIndex = Math.max(0, Math.min(diaryPage, clusters.length - 1));
-  const cluster = clusters[clusterIndex];
+  const cluster = expectDefined(clusters[clusterIndex], "dreaming import cluster");
 
   return html`
     <div class="dreams-diary__daychips">
@@ -1344,7 +1375,7 @@ function renderMemoryPalaceSection(props: DreamingProps) {
 
   diaryEntryCount = clusters.length;
   const clusterIndex = Math.max(0, Math.min(diaryPage, clusters.length - 1));
-  const cluster = clusters[clusterIndex];
+  const cluster = expectDefined(clusters[clusterIndex], "dreaming memory palace cluster");
   const totalPages = palace?.totalPages ?? palace?.totalItems ?? 0;
   const totalClaims = palace?.totalClaims ?? 0;
   const totalQuestions = palace?.totalQuestions ?? 0;
@@ -1636,7 +1667,7 @@ function renderDreamDiaryEntries(props: DreamingProps) {
 
   const reversed = buildDiaryNavigation(entries);
   const page = Math.max(0, Math.min(diaryPage, reversed.length - 1));
-  const entry = reversed[page];
+  const entry = expectDefined(reversed[page], "dreaming diary entry");
 
   // Timeline shows every entry as a feed; badges/dropdown show one. The dropdown
   // already names the selected date, so its single entry hides its date header.

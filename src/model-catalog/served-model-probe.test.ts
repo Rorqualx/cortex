@@ -19,7 +19,9 @@ describe("probeServedModel", () => {
     });
     expect(served).toBe("glm-5.2");
     // posts to /chat/completions with the requested model
-    const [url, init] = fetchFn.mock.calls[0];
+    const call = fetchFn.mock.calls[0];
+    if (!call) throw new Error("expected fetch call");
+    const [url, init] = call;
     expect(url).toBe("https://api.z.ai/api/coding/paas/v4/chat/completions");
     expect(JSON.parse((init as RequestInit).body as string).model).toBe("glm-5.1");
   });
@@ -60,7 +62,9 @@ describe("probeServedModel", () => {
       fetchFn: fetchFn as unknown as typeof fetch,
     });
     expect(served).toBe("kimi-for-coding");
-    const [url, init] = fetchFn.mock.calls[0];
+    const call = fetchFn.mock.calls[0];
+    if (!call) throw new Error("expected fetch call");
+    const [url, init] = call;
     expect(url).toBe("https://api.kimi.com/coding/v1/messages");
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["x-api-key"]).toBe("k");

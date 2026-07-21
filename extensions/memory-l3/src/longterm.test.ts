@@ -75,7 +75,7 @@ describe("consolidateLongTerm", () => {
     expect(result.promotedCount).toBe(1);
     expect(result.activeCount).toBe(1);
     const lt = await storage.readLongTerm();
-    const promoted = lt.facts[0];
+    const promoted = lt.facts[0]!;
     expect(promoted.dedupKey).toBe("user:identity");
     expect(promoted.archived).toBe(false);
     expect(promoted.recallCount).toBe(1);
@@ -109,7 +109,7 @@ describe("consolidateLongTerm", () => {
     expect(r1.promotedCount).toBe(1);
 
     const ltAfterFirst = await storage.readLongTerm();
-    const promotedId = ltAfterFirst.facts[0].id;
+    const promotedId = ltAfterFirst.facts[0]!.id;
 
     // Second pass: another chunk confirms the same dedupKey
     await writeChunk(
@@ -126,7 +126,7 @@ describe("consolidateLongTerm", () => {
     expect(r2.reaffirmedCount).toBe(1);
 
     const ltAfterSecond = await storage.readLongTerm();
-    const reaffirmed = ltAfterSecond.facts[0];
+    const reaffirmed = ltAfterSecond.facts[0]!;
     expect(reaffirmed.id).toBe(promotedId);
     expect(reaffirmed.recallCount).toBe(3);
     expect(reaffirmed.text).toBe("tabs strongly"); // higher importance wins
@@ -153,7 +153,7 @@ describe("consolidateLongTerm", () => {
     const result = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
     expect(result.reaffirmedCount).toBe(1);
     const longTerm = await storage.readLongTerm();
-    expect(longTerm.facts[0].history).toBeUndefined();
+    expect(longTerm.facts[0]!.history).toBeUndefined();
   });
 
   it("archives an active fact that has not been confirmed in maxAgeWithoutConfirmMs", async () => {
@@ -175,15 +175,15 @@ describe("consolidateLongTerm", () => {
     // does NOT get archived. Demonstrate the archive path by deleting
     // the L2 chunk first — simulating a workspace where the fact has
     // not been re-confirmed and the promotable set no longer contains it.
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
 
     const r2 = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
     expect(r2.archivedCount).toBe(1);
     expect(r2.activeCount).toBe(0);
 
     const lt = await storage.readLongTerm();
-    expect(lt.facts[0].archived).toBe(true);
-    expect(lt.facts[0].archivedAt).toBe(NOW);
+    expect(lt.facts[0]!.archived).toBe(true);
+    expect(lt.facts[0]!.archivedAt).toBe(NOW);
   });
 
   it("does not archive when lastConfirmedAt is recent enough", async () => {
@@ -191,7 +191,7 @@ describe("consolidateLongTerm", () => {
     await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
 
     // Remove the L2 chunk but query soon after — under the threshold.
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
 
     const result = await consolidateLongTerm({
       storage,
@@ -200,7 +200,7 @@ describe("consolidateLongTerm", () => {
     });
     expect(result.archivedCount).toBe(0);
     const lt = await storage.readLongTerm();
-    expect(lt.facts[0].archived).toBe(false);
+    expect(lt.facts[0]!.archived).toBe(false);
   });
 
   it("unarchives a previously-archived fact when it re-appears in candidates", async () => {
@@ -240,7 +240,7 @@ describe("consolidateLongTerm", () => {
     expect(result.activeCount).toBe(1);
 
     const lt = await storage.readLongTerm();
-    const fact1 = lt.facts[0];
+    const fact1 = lt.facts[0]!;
     expect(fact1.archived).toBe(false);
     expect(fact1.archivedAt).toBeNull();
     expect(fact1.id).toBe("lt-old"); // identity preserved
@@ -252,12 +252,15 @@ describe("consolidateLongTerm", () => {
     await writeChunk("chunk-x", [fact("f1", "fresh", 0.9, NOW, "fresh:1")], NOW);
     await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
 
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
 
     const tightConfig: LongTermConfig = {
       maxAgeWithoutConfirmMs: MS_PER_DAY,
       epochGraceMultiplier: 1.5,
       semanticDedupThreshold: 0.85,
+      semanticDedupCosineThreshold: 0.85,
+      retrievalStabilityEnabled: false,
+      retrievalStabilityMaxRecall: 10,
     };
     const result = await consolidateLongTerm({
       storage,
@@ -286,7 +289,7 @@ describe("consolidateLongTerm", () => {
     await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
 
     // Remove the L2 chunk so the fact won't be re-confirmed
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
 
     // At 65 days (past 60-day window but under 90-day grace window),
     // the fact should receive epoch grace since it's the last one from its epoch
@@ -323,7 +326,7 @@ describe("consolidateLongTerm", () => {
     await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
 
     // Remove the L2 chunk so facts won't be re-confirmed
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
 
     // At 65 days, facts should archive normally — there are 2 in the epoch,
     // so the "last fact" grace doesn't apply to the first one archived.
@@ -352,7 +355,7 @@ describe("consolidateLongTerm", () => {
     );
     await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
 
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
 
     // At 65 days, 2 facts archive normally (epoch has 3), then the 3rd
     // becomes the last-in-epoch and receives grace.
@@ -374,12 +377,15 @@ describe("consolidateLongTerm", () => {
     );
     await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
 
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
 
     const noGraceConfig: LongTermConfig = {
       maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
       epochGraceMultiplier: 1,
       semanticDedupThreshold: 0.85,
+      semanticDedupCosineThreshold: 0.85,
+      retrievalStabilityEnabled: false,
+      retrievalStabilityMaxRecall: 10,
     };
     // At 65 days, no grace — archives immediately
     const result = await consolidateLongTerm({
@@ -475,7 +481,7 @@ describe("consolidateLongTerm QMD mirror", () => {
     });
 
     // Remove the L2 chunk, then re-run consolidation past the 60-day window.
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
     await consolidateLongTerm({
       storage,
       agentId: "j-rorqual",
@@ -506,8 +512,8 @@ describe("consolidateLongTerm — G3 retrieval reaffirms durability", () => {
       NOW - 100 * MS_PER_DAY,
     );
     await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW - 100 * MS_PER_DAY });
-    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]);
-    return (await storage.readLongTerm()).facts[0].id;
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
+    return (await storage.readLongTerm()).facts[0]!.id;
   };
 
   const signal = (factId: string, overrides: Partial<RetrievalSignal>): RetrievalSignal => ({
@@ -537,7 +543,7 @@ describe("consolidateLongTerm — G3 retrieval reaffirms durability", () => {
     });
     expect(r.archivedCount).toBe(0);
     expect(r.activeCount).toBe(1);
-    expect((await storage.readLongTerm()).facts[0].archived).toBe(false);
+    expect((await storage.readLongTerm()).facts[0]!.archived).toBe(false);
   });
 
   it("enabled but stale/low recall: still archives (stability is not blanket immunity)", async () => {

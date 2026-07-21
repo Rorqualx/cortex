@@ -92,9 +92,9 @@ export function validateLlmDistilledProse(raw: string): ProseValidation {
     return { ok: false, reason: "LLM returned empty body" };
   }
   let body = trimmed;
-  const fence = body.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/u);
-  if (fence) {
-    body = fence[1].trim();
+  const fenced = body.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/u)?.[1];
+  if (fenced !== undefined) {
+    body = fenced.trim();
   }
   if (/^---\s*$/mu.test(body.split("\n").slice(0, 8).join("\n"))) {
     return { ok: false, reason: "LLM output attempted to inject YAML frontmatter" };

@@ -76,9 +76,9 @@ describe("cross-context", () => {
       await writeSharedFacts(facts, dir);
       const read = await readSharedFacts(dir);
       assert.strictEqual(read.length, 2);
-      assert.strictEqual(read[0].dedupKey, "key:alpha");
-      assert.strictEqual(read[0].sourceAgentId, "agent-1");
-      assert.strictEqual(read[1].dedupKey, "key:beta");
+      assert.strictEqual(read[0]!.dedupKey, "key:alpha");
+      assert.strictEqual(read[0]!.sourceAgentId, "agent-1");
+      assert.strictEqual(read[1]!.dedupKey, "key:beta");
       await cleanup();
     });
   });
@@ -102,7 +102,7 @@ describe("cross-context", () => {
       const archived = resolved.filter((f) => f.archived);
       assert.strictEqual(active.length, 1);
       assert.strictEqual(archived.length, 1);
-      assert.strictEqual(active[0].sourceAgentId, "agent-a");
+      assert.strictEqual(active[0]!.sourceAgentId, "agent-a");
     });
 
     it("uses lastConfirmedAt as tiebreaker when importance is equal", () => {
@@ -124,7 +124,7 @@ describe("cross-context", () => {
       assert.strictEqual(result.published, 2);
       const stored = await readSharedFacts(dir);
       assert.strictEqual(stored.length, 2);
-      assert.strictEqual(stored[0].sourceAgentId, "agent-1");
+      assert.strictEqual(stored[0]!.sourceAgentId, "agent-1");
       await cleanup();
     });
 
@@ -139,7 +139,7 @@ describe("cross-context", () => {
       const stored = await readSharedFacts(dir);
       const active = stored.filter((f) => !f.archived);
       assert.strictEqual(active.length, 1);
-      assert.strictEqual(active[0].text, "new address");
+      assert.strictEqual(active[0]!.text, "new address");
       await cleanup();
     });
 
@@ -153,7 +153,7 @@ describe("cross-context", () => {
       const stored = await readSharedFacts(dir);
       const active = stored.filter((f) => !f.archived);
       assert.strictEqual(active.length, 1);
-      assert.strictEqual(active[0].dedupKey, "key:active");
+      assert.strictEqual(active[0]!.dedupKey, "key:active");
       await cleanup();
     });
 

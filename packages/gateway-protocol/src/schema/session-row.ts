@@ -2,6 +2,7 @@
 import { Type } from "typebox";
 import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString } from "./primitives.js";
+import { SessionPlacementSchema } from "./session-placement.js";
 import { SessionCompactionCheckpointReasonSchema } from "./sessions.js";
 
 /**
@@ -99,6 +100,7 @@ export const GatewayAgentRuntimeSchema = Type.Object(
       Type.Literal("model"),
       Type.Literal("provider"),
       Type.Literal("implicit"),
+      Type.Literal("session"),
       Type.Literal("session-key"),
     ]),
   },
@@ -174,6 +176,35 @@ export const SessionContextBudgetStatusSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/** Queue mode for follow-up sends while a run is active. */
+export const SessionQueueModeSchema = Type.Union([
+  Type.Literal("steer"),
+  Type.Literal("followup"),
+  Type.Literal("collect"),
+  Type.Literal("interrupt"),
+]);
+
+/** Transient operator-facing agent status note surfaced on a session row. */
+export const SessionAgentStatusSchema = Type.Object(
+  {
+    note: Type.String(),
+    expiresAt: Type.Number(),
+    // Literal list mirrors SESSION_AGENT_ATTENTION_ICON_IDS in ../session-icon.ts;
+    // a mapped Type.Union loses the literal tuple and degrades Static inference.
+    attention: Type.Optional(
+      Type.Union([
+        Type.Literal("hand"),
+        Type.Literal("key"),
+        Type.Literal("alert"),
+        Type.Literal("flag"),
+        Type.Literal("lock"),
+        Type.Literal("hourglass"),
+      ]),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 /** Compact checkpoint preview embedded in session rows. */
 export const SessionCompactionCheckpointPreviewSchema = Type.Object(
   {
@@ -199,6 +230,29 @@ export const PluginSessionExtensionSchema = Type.Object(
 // goal (nullable only in events) are declared per-schema below.
 const gatewaySessionRowOptionalFields = {
   spawnedBy: Type.Optional(Type.String()),
+  /** Collector swarm group that owns this child session, when applicable. */
+  swarmGroupId: Type.Optional(Type.String()),
+  icon: Type.Optional(Type.String()),
+  agentStatus: Type.Optional(SessionAgentStatusSchema),
+  /** Compact user-facing reason for the latest failed or timed-out run. */
+  lastRunError: Type.Optional(Type.String()),
+  /** An enabled cron job is bound to this session (runs in it or delivers to it). */
+  hasAutomation: Type.Optional(Type.Boolean()),
+  /** Managed worktree bound to this session (repo checkout + branch). */
+  worktree: Type.Optional(
+    Type.Object(
+      {
+        id: NonEmptyString,
+        branch: Type.String(),
+        repoRoot: Type.String(),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  /** Session-scoped exec node binding (exec host=node routing). */
+  execNode: Type.Optional(Type.String()),
+  /** Working directory interpreted only by the bound exec node. */
+  execCwd: Type.Optional(Type.String()),
   spawnedWorkspaceDir: Type.Optional(Type.String()),
   spawnedCwd: Type.Optional(Type.String()),
   forkedFromParent: Type.Optional(Type.Boolean()),
@@ -259,6 +313,8 @@ const gatewaySessionRowOptionalFields = {
   pinnedAt: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   unread: Type.Optional(Type.Boolean()),
   lastReadAt: Type.Optional(Type.Number()),
+  /** Last real user/channel interaction; background work does not advance it. */
+  lastInteractionAt: Type.Optional(Type.Number()),
   lastActivityAt: Type.Optional(Type.Number()),
   category: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   subagentRunState: Type.Optional(SubagentRunStateSchema),
@@ -284,8 +340,14 @@ const gatewaySessionRowOptionalFields = {
       Type.Literal("full"),
     ]),
   ),
+  /** Explicit per-session queue override, before channel/global defaults. */
+  queueMode: Type.Optional(SessionQueueModeSchema),
+  /** Queue mode for Control UI sends (session override → webchat config → global default). */
+  effectiveQueueMode: Type.Optional(SessionQueueModeSchema),
+  placement: Type.Optional(SessionPlacementSchema),
   modelProvider: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
+  modelSelectionLocked: Type.Optional(Type.Boolean()),
   agentRuntime: Type.Optional(GatewayAgentRuntimeSchema),
   contextTokens: Type.Optional(Type.Number()),
   contextBudgetStatus: Type.Optional(SessionContextBudgetStatusSchema),
@@ -317,6 +379,7 @@ export const GatewaySessionsDefaultsSchema = Type.Object(
     modelProvider: Type.Union([Type.String(), Type.Null()]),
     model: Type.Union([Type.String(), Type.Null()]),
     contextTokens: Type.Union([Type.Number(), Type.Null()]),
+    agentRuntime: Type.Optional(GatewayAgentRuntimeSchema),
     thinkingLevels: Type.Optional(Type.Array(GatewayThinkingLevelOptionSchema)),
     thinkingOptions: Type.Optional(Type.Array(Type.String())),
     thinkingDefault: Type.Optional(Type.String()),

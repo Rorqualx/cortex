@@ -101,8 +101,8 @@ describe("parseResearchReport", () => {
       index: 1,
       title: expect.stringContaining("H-RePlan"),
     });
-    expect(data.findings[1].source).toContain("arXiv:2606.12945");
-    expect(data.findings[1].relevance).toContain("Memory-L3");
+    expect(data.findings[1]?.source).toContain("arXiv:2606.12945");
+    expect(data.findings[1]?.relevance).toContain("Memory-L3");
   });
 
   it("extracts quick-win / longer-bet / watch lists", () => {
@@ -120,16 +120,16 @@ describe("parseAnalysisReport", () => {
     const byId = Object.fromEntries(data.items.map((i) => [i.itemId, i]));
     expect(Object.keys(byId).sort()).toEqual(["ARCH-1", "CONTRA-1", "QW-1"]);
     expect(byId["QW-1"]).toMatchObject({ category: "quick-win", complexity: "S", risk: "Low" });
-    expect(byId["QW-1"].sourceFinding).toBe("#2");
+    expect(byId["QW-1"]?.sourceFinding).toBe("#2");
     expect(byId["ARCH-1"]).toMatchObject({ category: "architecture", risk: "Medium" });
-    expect(byId["CONTRA-1"].category).toBe("contradictory");
+    expect(byId["CONTRA-1"]?.category).toBe("contradictory");
   });
 
   it("applies recommended action order ranks", () => {
     const { data } = parseAnalysisReport(ANALYSIS);
     const byId = Object.fromEntries(data.items.map((i) => [i.itemId, i]));
-    expect(byId["QW-1"].actionOrder).toBe(2);
-    expect(byId["ARCH-1"].actionOrder).toBe(3);
+    expect(byId["QW-1"]?.actionOrder).toBe(2);
+    expect(byId["ARCH-1"]?.actionOrder).toBe(3);
   });
 });
 
@@ -138,8 +138,8 @@ describe("parseImplementationReport", () => {
     const { data } = parseImplementationReport(IMPLEMENTATION);
     const byId = Object.fromEntries(data.items.map((i) => [i.itemId, i]));
     expect(byId["QW-1"]).toMatchObject({ outcome: "implemented", commit: "22f4a4e36a" });
-    expect(byId["QW-1"].filesChanged).toContain("scoring.ts");
-    expect(byId["QW-3"].outcome).toBe("skipped");
+    expect(byId["QW-1"]?.filesChanged).toContain("scoring.ts");
+    expect(byId["QW-3"]?.outcome).toBe("skipped");
   });
 
   it("parses remaining backlog with item ids", () => {

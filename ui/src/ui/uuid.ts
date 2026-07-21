@@ -7,8 +7,8 @@ type CryptoLike = {
 let warnedWeakCrypto = false;
 
 function uuidFromBytes(bytes: Uint8Array): string {
-  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 1
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40; // version 4
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80; // variant 1
 
   let hex = "";
   for (const byte of bytes) {

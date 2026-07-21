@@ -5,6 +5,7 @@
  * Each card answers a "what do I want to do?" question with status + actions.
  */
 
+import type { FastMode } from "@openclaw/normalization-core/string-coerce";
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../../i18n/index.ts";
 import { openAvatarLightbox } from "../avatar-lightbox.ts";
@@ -59,13 +60,13 @@ export type QuickSettingsProps = {
   // Model & Thinking
   currentModel: string;
   thinkingLevel: string;
-  fastMode: boolean;
+  fastMode: FastMode;
   modelOptions?: { value: string; label: string }[];
   selectedModelValue?: string;
   modelSelectDisabled?: boolean;
   onModelSelect?: (value: string) => void;
   onThinkingChange?: (level: string) => void;
-  onFastModeToggle?: () => void;
+  onFastModeChange?: (mode: FastMode) => void;
 
   // Channels
   channels: QuickSettingsChannel[];
@@ -177,6 +178,15 @@ const TEXT_SCALE_OPTIONS: Array<{ value: TextScaleStop; label: string }> = [
 ];
 
 const THINKING_LEVELS = ["off", "low", "medium", "high"];
+
+// Fast mode is tri-state: "auto" defers to the model's own speed heuristic,
+// while true/false pin the fast/standard variant. Keep this ordering aligned
+// with the segmented control the quick settings render.
+const FAST_MODE_OPTIONS: readonly { label: string; value: FastMode }[] = [
+  { label: "Auto", value: "auto" },
+  { label: "Fast", value: true },
+  { label: "Standard", value: false },
+];
 const TOOL_PROFILES = ["minimal", "coding", "messaging", "full"];
 const LOCAL_USER_LABEL = "You";
 // Keep raw uploads comfortably below the 2 MB persisted data URL limit after
@@ -520,13 +530,24 @@ function renderModelCard(props: QuickSettingsProps) {
         </div>
         <div class="qs-row">
           <span class="qs-row__label">Fast mode</span>
-          <label class="qs-toggle">
-            <input type="checkbox" .checked=${props.fastMode} @change=${props.onFastModeToggle} />
-            <span class="qs-toggle__track"></span>
-            <span class="qs-toggle__hint muted"
-              >${props.fastMode ? "On — cheaper, less capable" : "Off"}</span
-            >
-          </label>
+          <div class="qs-segmented">
+            ${FAST_MODE_OPTIONS.map(
+              (option) => html`
+                <button
+                  class="qs-segmented__btn ${option.value === props.fastMode
+                    ? "qs-segmented__btn--active"
+                    : ""}"
+                  @click=${() => {
+                    if (option.value !== props.fastMode) {
+                      props.onFastModeChange?.(option.value);
+                    }
+                  }}
+                >
+                  ${option.label}
+                </button>
+              `,
+            )}
+          </div>
         </div>
       </div>
     </div>

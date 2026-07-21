@@ -129,10 +129,10 @@ describe("createDoomLoopGuard", () => {
       const history = guard.getFailureHistory();
       expect(history).toHaveLength(2);
       // Newest first
-      expect(history[0].errorType).toBe("llm_error");
-      expect(history[0].timestamp).toBe(2000);
-      expect(history[1].errorType).toBe("tool_error");
-      expect(history[1].timestamp).toBe(1000);
+      expect(history[0]?.errorType).toBe("llm_error");
+      expect(history[0]?.timestamp).toBe(2000);
+      expect(history[1]?.errorType).toBe("tool_error");
+      expect(history[1]?.timestamp).toBe(1000);
     });
 
     it("trims to ring buffer max size (20)", () => {
@@ -144,9 +144,9 @@ describe("createDoomLoopGuard", () => {
       const history = guard.getFailureHistory();
       expect(history).toHaveLength(20);
       // Newest entry should be the most recent (i=24)
-      expect(history[0].timestamp).toBe(1024);
+      expect(history[0]?.timestamp).toBe(1024);
       // Oldest retained should be i=5 (25 - 20 = 5)
-      expect(history[19].timestamp).toBe(1005);
+      expect(history[19]?.timestamp).toBe(1005);
     });
 
     it("reset clears failure history", () => {
@@ -195,7 +195,7 @@ describe("createDoomLoopGuard", () => {
       guard.recordFailure("tool_error", Date.now());
       const snap = guard.snapshot();
       expect(snap.failureHistory).toHaveLength(1);
-      expect(snap.failureHistory[0].errorType).toBe("tool_error");
+      expect(snap.failureHistory[0]?.errorType).toBe("tool_error");
       expect(snap.failurePatterns["tool_error"]).toBe(1);
     });
 
@@ -314,7 +314,9 @@ describe("recordResponseEmbedding (semantic convergence)", () => {
     // This is round 2, should fire
     const result = guard.recordResponseEmbedding(emb);
     expect(result?.shouldAbort).toBe(true);
-    expect(result?.detector).toBe("semantic_convergence");
+    // `detector` only exists on the shouldAbort:true branch of DoomLoopVerdict.
+    if (!result?.shouldAbort) throw new Error("expected abort verdict");
+    expect(result.detector).toBe("semantic_convergence");
   });
 
   it("resets consecutive count when similarity drops", () => {

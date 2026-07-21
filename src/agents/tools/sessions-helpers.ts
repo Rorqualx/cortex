@@ -154,9 +154,9 @@ export function deriveChannel(params: {
   if (lastChannel) {
     return lastChannel;
   }
-  const parts = params.key.split(":").filter(Boolean);
-  if (parts.length >= 3 && (parts[1] === "group" || parts[1] === "channel")) {
-    return parts[0];
+  const [scopePart, kindPart, targetPart] = params.key.split(":").filter(Boolean);
+  if (scopePart && targetPart !== undefined && (kindPart === "group" || kindPart === "channel")) {
+    return scopePart;
   }
   return "unknown";
 }

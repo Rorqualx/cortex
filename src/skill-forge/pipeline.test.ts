@@ -63,17 +63,23 @@ describe("runForgePipeline", () => {
 
     expect(result.scannedCaptureDirs).toBe(3);
     expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0].lane).toBe("tool-shape");
+    const candidate = result.candidates[0];
+    if (!candidate) throw new Error("expected candidate");
+    expect(candidate.lane).toBe("tool-shape");
     expect(result.drafted).toHaveLength(1);
+    const draft = result.drafted[0];
+    if (!draft) throw new Error("expected draft");
     expect(result.promotions).toHaveLength(1);
-    expect(result.promotions[0].status).toBe("promoted");
+    const promotion = result.promotions[0];
+    if (!promotion) throw new Error("expected promotion");
+    expect(promotion.status).toBe("promoted");
 
     const candidatesDir = resolveSkillForgeCandidatesDir(env());
     const candidateFiles = await fsp.readdir(candidatesDir);
     expect(candidateFiles).toHaveLength(1);
 
     const promotedDir = resolveSkillForgePromotedSkillDir({
-      name: result.drafted[0].name,
+      name: draft.name,
       env: env(),
     });
     const skillContent = await fsp.readFile(path.join(promotedDir, "SKILL.md"), "utf8");
@@ -119,7 +125,9 @@ describe("runForgePipeline", () => {
     expect(first.drafted).toHaveLength(1);
     expect(first.promotions[0]?.status).toBe("promoted");
     expect(first.skipped).toEqual([]);
-    const promotedName = first.drafted[0].name;
+    const firstDraft = first.drafted[0];
+    if (!firstDraft) throw new Error("expected draft");
+    const promotedName = firstDraft.name;
 
     // Same captures, same detected candidate name: the second run must not
     // re-draft or re-promote — the skill is already crystallized.

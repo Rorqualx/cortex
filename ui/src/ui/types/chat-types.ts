@@ -1,6 +1,7 @@
 /**
  * Chat message types for the UI layer.
  */
+import type { SenderIdentity } from "../chat/sender-label.ts";
 
 /**
  * A branch point from the chat.branches RPC — one transcript entry with more
@@ -30,6 +31,8 @@ export type ChatItem =
       key: string;
       label: string;
       description?: string;
+      /** Optional trailing stat rendered next to the label (e.g. compaction savings). */
+      metric?: string;
       action?: { kind: "session-checkpoints"; label: string };
       timestamp: number;
     }
@@ -99,6 +102,8 @@ export type NormalizedMessage = {
   timestamp: number;
   id?: string;
   senderLabel?: string | null;
+  /** Structured author identity (non-display); resolves the avatar gutter. */
+  sender?: SenderIdentity | null;
   audioAsVoice?: boolean;
   replyTarget?:
     | {
@@ -119,6 +124,8 @@ export type ToolCard = {
   inputText?: string;
   outputText?: string;
   isError?: boolean;
+  /** Set once the tool's result arrives (a call-only card stays undefined). */
+  completed?: boolean;
   messageId?: string;
   preview?: {
     kind: "canvas";
@@ -130,5 +137,17 @@ export type ToolCard = {
     viewId?: string;
     className?: string;
     style?: string;
+    // Fork canvas extensions: sandbox mode override, dashboard-pin name, and MCP
+    // app view metadata carried through from the tool preview payload.
+    sandbox?: "strict" | "scripts";
+    boardWidgetName?: string;
+    mcpApp?: {
+      viewId: string;
+      serverName?: string;
+      toolName?: string;
+      uiResourceUri?: string;
+      toolCallId?: string;
+      originSessionKey?: string;
+    };
   };
 };

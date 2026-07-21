@@ -37,7 +37,6 @@ import {
   ActivitySubscribeParamsSchema,
   ActivitySubscribeResultSchema,
   ActivityUnsubscribeParamsSchema,
-  type AgentEvent,
   BoardActionParamsSchema,
   BoardDataReadParamsSchema,
   BoardEventParamsSchema,
@@ -158,6 +157,8 @@ import {
   ChatSideResultEventSchema,
   ChatHistoryParamsSchema,
   ChatMetadataParamsSchema,
+  ChatToolTitlesParamsSchema,
+  ChatToolTitlesResultSchema,
   ChatMessageGetParamsSchema,
   ChatInjectParamsSchema,
   ChatSendParamsSchema,
@@ -237,14 +238,10 @@ import {
   ExecApprovalDecisionSchema,
   type VaultListParams,
   VaultListParamsSchema,
-  type VaultListResult,
   type VaultSaveParams,
   VaultSaveParamsSchema,
   type VaultDeleteParams,
   VaultDeleteParamsSchema,
-  type VaultMutationResult,
-  type VaultSecretEntry,
-  type VaultApprovalPolicy,
   ExecApprovalCommandSpanSchema,
   CommandExplanationSummarySchema,
   SystemRunApprovalFileOperandSchema,
@@ -382,6 +379,9 @@ import {
   TerminalUploadResultSchema,
   UiCommandParamsSchema,
   ModelsListParamsSchema,
+  ModelsProbeParamsSchema,
+  ModelsProbeResultSchema,
+  ModelsProbeTargetResultSchema,
   NodeDescribeParamsSchema,
   type NodeEventResult,
   type NodePresenceAlivePayload,
@@ -425,11 +425,8 @@ import {
   type WebPushTestParams,
   WebPushTestParamsSchema,
   PresenceEntrySchema,
-  type PresenceEvent,
   PresenceEventSchema,
-  type UpdateAvailableEvent,
   UpdateAvailableEventSchema,
-  type RequestFrame,
   RequestFrameSchema,
   ResponseFrameSchema,
   SendParamsSchema,
@@ -623,7 +620,6 @@ import type {
   ActivitySubscribeParams,
   ActivityUnsubscribeParams,
   GatewayAgentRuntime,
-  SkillsSearchParams,
 } from "./schema/types.js";
 
 // Validator names mirror schemas so callers can pair them with wire contracts.
@@ -910,6 +906,7 @@ export const validateChannelsStartParams = lazyCompile(ChannelsStartParamsSchema
 export const validateChannelsStopParams = lazyCompile(ChannelsStopParamsSchema);
 export const validateChannelsLogoutParams = lazyCompile(ChannelsLogoutParamsSchema);
 export const validateModelsListParams = lazyCompile(ModelsListParamsSchema);
+export const validateModelsProbeParams = lazyCompile(ModelsProbeParamsSchema);
 export const validateSkillsStatusParams = lazyCompile(SkillsStatusParamsSchema);
 export const validateToolsCatalogParams = lazyCompile(ToolsCatalogParamsSchema);
 export const validateToolsEffectiveParams = lazyCompile(ToolsEffectiveParamsSchema);
@@ -922,8 +919,6 @@ export const validateSkillsUploadCommitParams = lazyCompile(SkillsUploadCommitPa
 export const validateSkillsUpdateParams = lazyCompile(SkillsUpdateParamsSchema);
 export const validateSkillsSearchParams = lazyCompile(SkillsSearchParamsSchema);
 export const validateSkillsDetailParams = lazyCompile(SkillsDetailParamsSchema);
-export const validateSkillsProposalRequestRevisionParams = lazyCompile(
-);
 export const validateSkillsSecurityVerdictsParams = lazyCompile(SkillsSecurityVerdictsParamsSchema);
 export const validateSkillsSkillCardParams = lazyCompile(SkillsSkillCardParamsSchema);
 export const validateCronListParams = lazyCompile(CronListParamsSchema);
@@ -972,28 +967,15 @@ export const validateExecApprovalsNodeGetParams = lazyCompile(ExecApprovalsNodeG
 export const validateExecApprovalsNodeSetParams = lazyCompile(ExecApprovalsNodeSetParamsSchema);
 export const validateExecApprovalsNodeSnapshot = lazyCompile(ExecApprovalsNodeSnapshotSchema);
 export const validateLogsTailParams = lazyCompile(LogsTailParamsSchema);
-export const validateTalkSessionOkResult =
-  lazyCompile<TalkSessionOkResult>(TalkSessionOkResultSchema);
-export const validateTalkSpeakResult = lazyCompile<TalkSpeakResult>(TalkSpeakResultSchema);
-export const validateTtsSpeakResult = lazyCompile<TtsSpeakResult>(TtsSpeakResultSchema);
+export const validateTalkSessionOkResult = lazyCompile(TalkSessionOkResultSchema);
+export const validateTalkSpeakResult = lazyCompile(TalkSpeakResultSchema);
+export const validateTtsSpeakResult = lazyCompile(TtsSpeakResultSchema);
 export const validateVaultListParams = lazyCompile<VaultListParams>(VaultListParamsSchema);
 export const validateVaultSaveParams = lazyCompile<VaultSaveParams>(VaultSaveParamsSchema);
 export const validateVaultDeleteParams = lazyCompile<VaultDeleteParams>(VaultDeleteParamsSchema);
-export const validateTerminalOpenParams = lazyCompile<TerminalOpenParams>(TerminalOpenParamsSchema);
-export const validateTerminalInputParams =
-  lazyCompile<TerminalInputParams>(TerminalInputParamsSchema);
-export const validateTerminalResizeParams = lazyCompile<TerminalResizeParams>(
-  TerminalResizeParamsSchema,
-);
-export const validateTerminalCloseParams =
-  lazyCompile<TerminalCloseParams>(TerminalCloseParamsSchema);
-export const validateTerminalAttachParams = lazyCompile<TerminalAttachParams>(
-  TerminalAttachParamsSchema,
-);
-export const validateTerminalTextParams = lazyCompile<TerminalTextParams>(TerminalTextParamsSchema);
-export const validateTerminalEvent = lazyCompile<TerminalEvent>(TerminalEventSchema);
 export const validateChatHistoryParams = lazyCompile(ChatHistoryParamsSchema);
 export const validateChatMetadataParams = lazyCompile(ChatMetadataParamsSchema);
+export const validateChatToolTitlesParams = lazyCompile(ChatToolTitlesParamsSchema);
 export const validateChatMessageGetParams = lazyCompile(ChatMessageGetParamsSchema);
 export const validateChatSendParams = lazyCompile(ChatSendParamsSchema);
 export const validateChatAbortParams = lazyCompile(ChatAbortParamsSchema);
@@ -1398,6 +1380,9 @@ export {
   PluginsUninstallParamsSchema,
   PluginsUninstallResultSchema,
   ModelsListParamsSchema,
+  ModelsProbeParamsSchema,
+  ModelsProbeResultSchema,
+  ModelsProbeTargetResultSchema,
   SkillsStatusParamsSchema,
   ToolsCatalogParamsSchema,
   ToolsEffectiveParamsSchema,
@@ -1510,6 +1495,8 @@ export {
   QuestionWaitAnswerResultSchema,
   ChatHistoryParamsSchema,
   ChatMetadataParamsSchema,
+  ChatToolTitlesParamsSchema,
+  ChatToolTitlesResultSchema,
   ChatSendParamsSchema,
   ChatInjectParamsSchema,
   UpdateRunParamsSchema,
@@ -2001,6 +1988,9 @@ export type {
   GatewayAgentRuntime,
   GatewaySessionKind,
   GatewaySessionRow,
+  ModelsProbeParams,
+  ModelsProbeResult,
+  ModelsProbeTargetResult,
   GatewaySessionsDefaults,
   GatewayThinkingLevelOption,
   LogsTailParams,
@@ -2009,7 +1999,6 @@ export type {
   PluginApprovalRequestPayload,
   PluginApprovalRequestedEvent,
   PluginApprovalResolvedEvent,
-  SessionCompactionCheckpoint,
   SessionCompactionCheckpointPreview,
   SessionGoal,
   SessionMessageEvent,
@@ -2043,6 +2032,10 @@ export type {
   ToolsInvokeParams,
   ToolsInvokeResult,
 } from "./schema/types.js";
+
+// SessionCompactionCheckpoint is co-located with its schema in sessions.ts (upstream
+// moved it off the central types registry); re-export from its canonical module.
+export type { SessionCompactionCheckpoint } from "./schema/sessions.js";
 
 // Local structural result keeps this package independent of core session types.
 export type SessionsPatchResult = {

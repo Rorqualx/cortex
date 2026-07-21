@@ -167,10 +167,15 @@ export async function consolidateLongTerm(params: {
       const texts = factsNeedingEmbedding.map((f) => f.text);
       const vectors = await params.embeddingProvider.embedBatch(texts);
       for (let i = 0; i < factsNeedingEmbedding.length; i++) {
-        const dedupKey = factsNeedingEmbedding[i].dedupKey;
+        const needing = factsNeedingEmbedding[i];
+        const vector = vectors[i];
+        if (!needing) {
+          continue;
+        }
+        const dedupKey = needing.dedupKey;
         const fact = pendingFacts.get(dedupKey);
-        if (fact && vectors[i]) {
-          pendingFacts.set(dedupKey, { ...fact, embedding: vectors[i] });
+        if (fact && vector) {
+          pendingFacts.set(dedupKey, { ...fact, embedding: vector });
         }
       }
     } catch (embedErr) {
@@ -327,6 +332,9 @@ export async function consolidateLongTerm(params: {
         for (let j = i + 1; j < activeFacts.length; j++) {
           const a = activeFacts[i];
           const b = activeFacts[j];
+          if (!a || !b) {
+            continue;
+          }
           if (toArchive.has(a.dedupKey) || toArchive.has(b.dedupKey)) {
             continue;
           }
@@ -379,7 +387,7 @@ export async function consolidateLongTerm(params: {
         now: params.now,
       });
       const changed = adjustedFacts.filter(
-        (f, i) => Math.abs(f.importance - orderedFacts[i].importance) >= 0.01,
+        (f, i) => Math.abs(f.importance - (orderedFacts[i]?.importance ?? f.importance)) >= 0.01,
       ).length;
       if (changed > 0) {
         l3debug(`dynamic importance: adjusted ${changed}/${orderedFacts.length} facts`);

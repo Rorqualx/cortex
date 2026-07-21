@@ -596,7 +596,7 @@ function parseOneHunk(lines: string[], lineNumber: number): { hunk: Hunk; consum
   if (lines.length === 0) {
     throw new Error(`Invalid patch hunk at line ${lineNumber}: empty hunk`);
   }
-  const firstLine = lines[0].trim();
+  const firstLine = (lines[0] ?? "").trim();
   if (firstLine.startsWith(ADD_FILE_MARKER)) {
     const targetPath = firstLine.slice(ADD_FILE_MARKER.length);
     let contents = "";
@@ -638,12 +638,13 @@ function parseOneHunk(lines: string[], lineNumber: number): { hunk: Hunk; consum
 
     const chunks: UpdateFileChunk[] = [];
     while (remaining.length > 0) {
-      if (remaining[0].trim() === "") {
+      const head = remaining[0] ?? "";
+      if (head.trim() === "") {
         remaining = remaining.slice(1);
         consumed += 1;
         continue;
       }
-      if (remaining[0].startsWith("***")) {
+      if (head.startsWith("***")) {
         break;
       }
       const { chunk, consumed: chunkLines } = parseUpdateFileChunk(
@@ -691,10 +692,11 @@ function parseUpdateFileChunk(
 
   let changeContext: string | undefined;
   let startIndex = 0;
-  if (lines[0] === EMPTY_CHANGE_CONTEXT_MARKER) {
+  const head = lines[0] ?? "";
+  if (head === EMPTY_CHANGE_CONTEXT_MARKER) {
     startIndex = 1;
-  } else if (lines[0].startsWith(CHANGE_CONTEXT_MARKER)) {
-    changeContext = lines[0].slice(CHANGE_CONTEXT_MARKER.length);
+  } else if (head.startsWith(CHANGE_CONTEXT_MARKER)) {
+    changeContext = head.slice(CHANGE_CONTEXT_MARKER.length);
     startIndex = 1;
   } else if (!allowMissingContext) {
     throw new Error(

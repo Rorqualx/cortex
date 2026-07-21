@@ -84,6 +84,9 @@ async function loadCycles(reportsDir: string): Promise<CycleReports[]> {
       continue;
     }
     const [, kind, date] = match;
+    if (date === undefined) {
+      continue;
+    }
     const slot = byDate.get(date) ?? {};
     if (kind === "llm-research") {
       slot.research = name;
@@ -193,10 +196,10 @@ function extractNextSteps(body: string): string[] {
     if (!inChange) {
       continue;
     }
-    const match = line.match(/^\s*(?:\d+\.|[-*])\s+(.*\S)\s*$/);
-    if (match) {
+    const step = line.match(/^\s*(?:\d+\.|[-*])\s+(.*\S)\s*$/)?.[1];
+    if (step !== undefined) {
       // Bound each step under the store's per-entry string limit (600).
-      steps.push(truncate(match[1].replace(/\s+/g, " ").trim(), 560));
+      steps.push(truncate(step.replace(/\s+/g, " ").trim(), 560));
     }
   }
   return steps.slice(0, 12);

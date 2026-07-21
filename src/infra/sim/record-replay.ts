@@ -19,12 +19,12 @@ import type { RegisteredApiProvider } from "@openclaw/ai";
  *     // ... same code path, now produces identical events
  *   });
  */
-import {
-  getApiProvider,
-  getApiProviders,
-  registerApiProvider,
-  unregisterApiProviders,
-} from "@openclaw/ai/internal/runtime";
+import { defaultApiRegistry, getApiProvider, getApiProviders } from "@openclaw/ai/internal/runtime";
+
+// Upstream removed the standalone register/unregister re-exports; the default
+// process registry still owns them, and the sim harness intentionally mutates
+// that registry to intercept model I/O.
+const { registerApiProvider, unregisterApiProviders } = defaultApiRegistry;
 import type { Api } from "../../llm/types.js";
 import type { ModelScript, ScriptStore } from "./scripted-model-provider.js";
 import {

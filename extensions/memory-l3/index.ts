@@ -1,4 +1,4 @@
-import { registerContextEngine } from "openclaw/plugin-sdk";
+import { registerContextEngine } from "openclaw/plugin-sdk/memory-core-engine-runtime";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { createHierarchicalL3Engine } from "./src/engine.js";
 import { createMemoryInsightsTool } from "./src/insights.js";

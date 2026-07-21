@@ -523,6 +523,9 @@ export function createPluginRuntimeMock(overrides: DeepPartial<PluginRuntime> = 
         resolveStorePath: vi.fn(
           () => "/tmp/agent-sessions.json",
         ) as unknown as PluginRuntime["agent"]["session"]["resolveStorePath"],
+        resolveSessionFilePath: vi.fn(
+          (sessionId: string) => `/tmp/agent-sessions/${sessionId}.jsonl`,
+        ) as unknown as PluginRuntime["agent"]["session"]["resolveSessionFilePath"],
         createSessionEntry: vi.fn(
           async (
             params: Parameters<PluginRuntime["agent"]["session"]["createSessionEntry"]>[0],

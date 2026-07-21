@@ -629,7 +629,7 @@ function findLiveSessionModelSwitchRedirectIndex(params: {
   const targetKey = modelKey(params.error.provider, params.error.model);
   for (let i = params.currentIndex + 1; i < params.candidates.length; i += 1) {
     const candidate = params.candidates[i];
-    if (modelKey(candidate.provider, candidate.model) === targetKey) {
+    if (candidate && modelKey(candidate.provider, candidate.model) === targetKey) {
       return i;
     }
   }
@@ -1296,6 +1296,14 @@ export async function runWithModelFallback<T>(
     onError?: ModelFallbackErrorHandler;
     onFallbackStep?: ModelFallbackStepHandler;
     classifyResult?: ModelFallbackResultClassifier<T>;
+    /** Return false when a thrown attempt committed work that must not be replayed. */
+    canFallbackAfterError?: (params: {
+      provider: string;
+      model: string;
+      error: unknown;
+      attempt: number;
+      total: number;
+    }) => boolean | Promise<boolean>;
     mergeExhaustedResult?: (params: { latestResult: T; preferredResult: T }) => T;
     skipAuthProfileRuntime?: boolean;
     abortSignal?: AbortSignal;
@@ -1351,7 +1359,10 @@ export async function runWithModelFallback<T>(
   const requestedCandidate = candidates[0];
 
   for (let i = 0; i < candidates.length; i += 1) {
-    const candidate = candidates[i];
+    const candidate = candidates.at(i);
+    if (!candidate) {
+      throw new Error(`Missing model fallback candidate at index ${i}`);
+    }
     const candidateHarnessAuth = await resolveModelFallbackCandidateHarnessAuthPrecheck({
       cfg: params.cfg,
       agentId: params.agentId,
@@ -1625,6 +1636,21 @@ export async function runWithModelFallback<T>(
       return attemptRun.success;
     }
     const err = attemptRun.error;
+    // Committed side effects make fresh replay unsafe; the caller vetoes
+    // candidate fallback and the original error surfaces instead.
+    if (
+      !attemptRun.classifiedResult &&
+      params.canFallbackAfterError &&
+      !(await params.canFallbackAfterError({
+        provider: candidate.provider,
+        model: candidate.model,
+        error: err,
+        attempt: i + 1,
+        total: candidates.length,
+      }))
+    ) {
+      throw err;
+    }
     // Track the most recent usable result and the highest-priority result a
     // classifier asked us to preserve, so an exhausted chain can still return a
     // partial answer instead of throwing when mergeExhaustedResult is provided.
@@ -1835,7 +1861,10 @@ export async function runWithImageModelFallback<T>(params: {
   let lastError: unknown;
 
   for (let i = 0; i < candidates.length; i += 1) {
-    const candidate = candidates[i];
+    const candidate = candidates.at(i);
+    if (!candidate) {
+      throw new Error(`Missing image fallback candidate at index ${i}`);
+    }
     const attemptRun = await runFallbackAttempt({
       run: params.run,
       ...candidate,

@@ -379,7 +379,7 @@ export async function processGatewayAllowlist(
   }
   // "prompt" or no match → fall through to existing allowlist/approval flow.
 
-  const { approvals, hostSecurity, hostAsk, askFallback } = resolveExecHostApprovalContext({
+  const { approvals, hostSecurity, hostAsk, askFallback } = await resolveExecHostApprovalContext({
     agentId: params.agentId,
     security: params.security,
     ask: params.ask,
@@ -488,7 +488,7 @@ export async function processGatewayAllowlist(
       allowlistEval.segments.length === 1 &&
       (autoReviewSegment?.raw === undefined ||
         autoReviewSegment.raw.trim() === params.command.trim())
-        ? autoReviewSegment.argv
+        ? autoReviewSegment?.argv
         : undefined;
     const autoReviewHasBoundCommand = analysisOk && autoReviewArgv !== undefined;
     const canAutoReviewApprovalMiss =
@@ -592,7 +592,6 @@ export async function processGatewayAllowlist(
     });
     if (
       shouldResolveExecApprovalUnavailableInline({
-        trigger: params.trigger,
         unavailableReason,
         preResolvedDecision,
       })

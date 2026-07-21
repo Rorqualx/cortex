@@ -96,6 +96,6 @@ describe("groundAndDedupTypedFacts", () => {
     ];
     const result = groundAndDedupTypedFacts(facts, transcript);
     expect(result).toHaveLength(1);
-    expect(result[0].value).toBe("192.168.50.1");
+    expect(result[0]?.value).toBe("192.168.50.1");
   });
 });

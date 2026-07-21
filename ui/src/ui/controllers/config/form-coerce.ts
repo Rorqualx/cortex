@@ -60,7 +60,7 @@ export function coerceFormValues(value: unknown, schema: JsonSchema): unknown {
     );
 
     if (variants.length === 1) {
-      return coerceFormValues(value, variants[0]);
+      return coerceFormValues(value, variants[0]!);
     }
 
     // Try number/boolean coercion for string values

@@ -52,7 +52,9 @@ export function matchesPrefix(commandTokens: string[], pattern: string[][]): boo
   for (let i = 0; i < pattern.length; i++) {
     const alternatives = pattern[i];
     const commandToken = commandTokens[i];
-    if (!alternatives.some((alt) => alt === commandToken)) {
+    // `?.`: i < pattern.length keeps the index in bounds; an impossible hole
+    // simply fails the match instead of throwing.
+    if (!alternatives?.some((alt) => alt === commandToken)) {
       return false;
     }
   }
@@ -192,6 +194,9 @@ export function evaluatePolicy(
 
   // Lookup rules by first token
   const firstToken = tokens[0];
+  if (firstToken === undefined) {
+    return { decision: "prompt", matchedRules: [], matched: false };
+  }
   const rules = policy.rules.get(firstToken) ?? [];
 
   // Also check wildcard rules ("*" matches everything)

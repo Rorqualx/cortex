@@ -75,10 +75,12 @@ export function compressSearchResults(content: string, targetRatio: number): Com
     // Take first, last, and fill with errors
     const fileSelected: GrepEntry[] = [];
     if (nonErrors.length > 0) {
-      fileSelected.push(nonErrors[0]); // first match
+      // Index 0 exists: length > 0 checked above.
+      fileSelected.push(nonErrors[0]!); // first match
     }
     if (nonErrors.length > 1) {
-      fileSelected.push(nonErrors[nonErrors.length - 1]); // last match
+      // Last index exists: length > 1 checked above.
+      fileSelected.push(nonErrors[nonErrors.length - 1]!); // last match
     }
 
     // Add error matches (always kept)
@@ -153,9 +155,11 @@ function compressFileListing(content: string, _targetRatio: number): CompressorO
   // Keep first and last per directory, plus summary
   const kept: string[] = [];
   for (const [dir, files] of byDir) {
-    kept.push(files[0]);
+    // byDir lists are non-empty: each is created with an initial push above.
+    kept.push(files[0]!);
     if (files.length > 1) {
-      kept.push(files[files.length - 1]);
+      // Last index exists: length > 1 checked above.
+      kept.push(files[files.length - 1]!);
     }
     if (files.length > 2) {
       kept.push(`  ... (${files.length - 2} more in ${dir})`);
@@ -188,12 +192,18 @@ function parseGrepLine(line: string): GrepEntry | null {
   // Try range format first
   const rangeMatch = GREP_RANGE.exec(line);
   if (rangeMatch) {
-    return { file: rangeMatch[1], line: Number.parseInt(rangeMatch[2], 10), text: rangeMatch[4] };
+    // GREP_RANGE capture groups 1-4 are non-optional, so always defined on a match.
+    return {
+      file: rangeMatch[1]!,
+      line: Number.parseInt(rangeMatch[2]!, 10),
+      text: rangeMatch[4]!,
+    };
   }
   // Try standard format
   const match = GREP_LINE.exec(line);
   if (match) {
-    return { file: match[1], line: Number.parseInt(match[2], 10), text: match[3] };
+    // GREP_LINE capture groups 1-3 are non-optional, so always defined on a match.
+    return { file: match[1]!, line: Number.parseInt(match[2]!, 10), text: match[3]! };
   }
   return null;
 }

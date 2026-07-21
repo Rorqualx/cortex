@@ -1091,10 +1091,12 @@ async function loadChatHistoryUncached(
 
 function dataUrlToBase64(dataUrl: string): { content: string; mimeType: string } | null {
   const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
-  if (!match) {
+  const mimeType = match?.[1];
+  const content = match?.[2];
+  if (mimeType === undefined || content === undefined) {
     return null;
   }
-  return { mimeType: match[1], content: match[2] };
+  return { mimeType, content };
 }
 
 function buildApiAttachments(attachments?: ChatAttachment[]) {

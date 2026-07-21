@@ -5,6 +5,7 @@ import {
   normalizeToolName,
   resolveToolProfilePolicy,
 } from "../../../../src/agents/tool-policy-shared.js";
+import { t } from "../../i18n/index.ts";
 import { DEFAULT_ASSISTANT_AVATAR } from "../assistant-identity.ts";
 import { buildQualifiedChatModelValue } from "../chat-model-ref.ts";
 import { controlUiPublicAssetPath } from "../public-assets.ts";
@@ -17,7 +18,6 @@ import type {
   ToolCatalogProfile,
   ToolsCatalogResult,
 } from "../types.ts";
-import { t } from "../../i18n/index.ts";
 
 export type AgentToolEntry = {
   id: string;
@@ -635,16 +635,41 @@ export function sortLocaleStrings(values: Iterable<string>): string[] {
     let j = middle;
     let k = left;
     while (i < middle && j < right) {
-      buffer[k++] = sorted[i].localeCompare(sorted[j]) <= 0 ? sorted[i++] : sorted[j++];
+      const leftValue = sorted[i];
+      const rightValue = sorted[j];
+      if (leftValue === undefined) {
+        i += 1;
+        continue;
+      }
+      if (rightValue === undefined) {
+        j += 1;
+        continue;
+      }
+      if (leftValue.localeCompare(rightValue) <= 0) {
+        buffer[k++] = leftValue;
+        i += 1;
+      } else {
+        buffer[k++] = rightValue;
+        j += 1;
+      }
     }
     while (i < middle) {
-      buffer[k++] = sorted[i++];
+      const value = sorted[i++];
+      if (value !== undefined) {
+        buffer[k++] = value;
+      }
     }
     while (j < right) {
-      buffer[k++] = sorted[j++];
+      const value = sorted[j++];
+      if (value !== undefined) {
+        buffer[k++] = value;
+      }
     }
     for (let idx = left; idx < right; idx += 1) {
-      sorted[idx] = buffer[idx];
+      const value = buffer[idx];
+      if (value !== undefined) {
+        sorted[idx] = value;
+      }
     }
   };
 

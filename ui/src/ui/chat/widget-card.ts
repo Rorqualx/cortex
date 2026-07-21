@@ -1,24 +1,24 @@
 import { html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
-import { ensureCustomElementDefined } from "../lazy-custom-element.ts";
-import { icons } from "../icons.ts";
-import {
-  dispatchWidgetPrompt,
-  WIDGET_PROMPT_EVENT,
-  type WidgetPromptEventDetail,
-} from "../views/mcp-app-security.ts";
-import "../views/web-awesome.ts";
 import { t } from "../../i18n/index.ts";
 import {
   canvasWidgetNameForDocument,
   mcpAppWidgetNameForViewId,
   type BoardProvider,
 } from "../board/provider.ts";
-import type { ToolPreview } from "./tool-cards.ts";
 import { isInternalCanvasEntryUrl, resolveCanvasIframeUrl } from "../canvas-url.ts";
+import "../views/web-awesome.ts";
 import { resolveEmbedSandbox, type EmbedSandboxMode } from "../embed-sandbox.ts";
-import { showToast } from "../toast.ts";
+import { icons } from "../icons.ts";
+import { ensureCustomElementDefined } from "../lazy-custom-element.ts";
 import type { SidebarContent } from "../sidebar-content.ts";
+import { showToast } from "../toast.ts";
+import {
+  dispatchWidgetPrompt,
+  WIDGET_PROMPT_EVENT,
+  type WidgetPromptEventDetail,
+} from "../views/mcp-app-security.ts";
+import type { ToolPreview } from "./tool-cards.ts";
 import { exportWidget } from "./widget-export.ts";
 import { installWidgetThemeObserver, postWidgetTheme } from "./widget-theme.ts";
 
@@ -366,7 +366,7 @@ function renderWidgetContent(
           options?.allowExternalEmbedUrls ?? false,
         ),
         height: preview.preferredHeight,
-        sandbox: resolveEmbedSandbox(options?.embedSandboxMode ?? "scripts", preview.sandbox),
+        sandbox: resolveEmbedSandbox(preview.sandbox ?? options?.embedSandboxMode ?? "scripts"),
         // Only hosted Canvas documents may drive the chat; externally
         // allowed embed URLs render but never get prompt authority.
         promptCapable: isInternalCanvasEntryUrl(preview.url),

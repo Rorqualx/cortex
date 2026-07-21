@@ -89,7 +89,7 @@ describe("vault store", () => {
       },
       options,
     );
-    const entry = listVaultSecrets(options)[0];
+    const entry = listVaultSecrets(options)[0]!;
     expect(entry.authKind).toBe("header");
     expect(entry.authConfig).toEqual({ kind: "header", headers: ["X-Api-Key", "X-Account"] });
     expect(JSON.stringify(entry)).not.toContain("key-abc");
@@ -117,7 +117,7 @@ describe("vault store", () => {
       },
       options,
     );
-    const entry = listVaultSecrets(options)[0];
+    const entry = listVaultSecrets(options)[0]!;
     expect(entry.authKind).toBe("login");
     expect(entry.authConfig).toMatchObject({
       kind: "login",
@@ -255,7 +255,7 @@ describe("vault store", () => {
     closeOpenClawStateDatabaseForTest();
 
     // Reopen triggers backfillVaultAuthKinds.
-    const entry = listVaultSecrets(options)[0];
+    const entry = listVaultSecrets(options)[0]!;
     expect(entry.authKind).toBe("bearer");
     expect(entry.authConfig).toEqual({ kind: "bearer" });
     expect(resolveVaultSecretMaterial("legacy", options)).toEqual({
@@ -277,7 +277,7 @@ describe("vault store", () => {
       )
       .run(rawJson.iv, rawJson.ciphertext, rawJson.tag);
     closeOpenClawStateDatabaseForTest();
-    expect(listVaultSecrets(options)[0].authConfig).toEqual({ kind: "bearer" });
+    expect(listVaultSecrets(options)[0]?.authConfig).toEqual({ kind: "bearer" });
     expect(resolveVaultSecretMaterial("legacy", options)).toEqual({
       kind: "bearer",
       token: jsonValue,

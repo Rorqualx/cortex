@@ -236,6 +236,7 @@
   "ingress-effect-once",
   "keyed-async-queue",
   "qa-runner-runtime",
+  "memory-core-engine-runtime",
   "memory-core-host-embedding-registry",
   "memory-core-host-engine-embeddings",
   "memory-core-host-engine-foundation",

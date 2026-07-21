@@ -274,7 +274,12 @@ describe("createBundleMcpToolRuntime", () => {
       }),
     });
 
-    const result = await runtime.tools[0].execute("call-bundle-probe", {}, undefined, undefined);
+    const result = await expectDefined(runtime.tools[0], "runtime.tools[0] test invariant").execute(
+      "call-bundle-probe",
+      {},
+      undefined,
+      undefined,
+    );
     const block = result.content[0] as { type: string; text: string };
     expect(block.text).toContain("[REMOVED_TOOL_DELIMITER]");
     expect(block.text).not.toContain("</parameter>");
@@ -351,7 +356,12 @@ describe("createBundleMcpToolRuntime", () => {
       }),
     });
 
-    const result = await runtime.tools[0].execute("call-bundle-probe", {}, undefined, undefined);
+    const result = await expectDefined(runtime.tools[0], "runtime.tools[0] test invariant").execute(
+      "call-bundle-probe",
+      {},
+      undefined,
+      undefined,
+    );
     const block = result.content[0] as { type: string; text: string };
     expect(block.text).toContain("[REMOVED_TOOL_DELIMITER]");
     expect(block.text).not.toContain("</parameter>");

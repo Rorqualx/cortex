@@ -71,8 +71,6 @@ type GroundingVerifierDeps = {
   completeWithPreparedSimpleCompletionModel?: typeof completeWithPreparedSimpleCompletionModel;
 };
 
-const GROUNDED: GroundingVerdict = { status: "grounded" };
-
 function skip(
   why: GroundingSkipReason,
   preConfidence?: number,

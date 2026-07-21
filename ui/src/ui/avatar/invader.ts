@@ -61,15 +61,18 @@ export function generateInvader(seed: string): InvaderSprite {
   );
   // Random mirror-symmetric body.
   for (let y = 0; y < HEIGHT; y++) {
+    const row = cells[y];
+    if (!row) continue;
     for (let x = 0; x < HALF; x++) {
       const filled = rand() < 0.5;
-      cells[y][x] = filled;
-      cells[y][WIDTH - 1 - x] = filled; // mirror across the center column
+      row[x] = filled;
+      row[WIDTH - 1 - x] = filled; // mirror across the center column
     }
   }
   // Guarantee a connected core so no avatar reads as blank: a central torso.
   for (let y = 1; y <= 6; y++) {
-    cells[y][CENTER_X] = true;
+    const row = cells[y];
+    if (row) row[CENTER_X] = true;
   }
 
   // White feature squares for variety. Each is present independently per seed,
@@ -78,7 +81,9 @@ export function generateInvader(seed: string): InvaderSprite {
   const feat = seedFrom(`${seed}:feat`);
   const whiteCells: Array<[number, number]> = [];
   const addWhite = (x: number, y: number): void => {
-    cells[y][x] = true;
+    const row = cells[y];
+    if (!row) return;
+    row[x] = true;
     whiteCells.push([x, y]);
   };
   if (feat & 1) {
@@ -103,15 +108,18 @@ export function generateInvader(seed: string): InvaderSprite {
   }
 
   const legXs: number[] = [];
+  const bottom = cells[HEIGHT - 1];
   for (let x = 0; x < WIDTH; x++) {
-    if (cells[HEIGHT - 1][x]) {
+    if (bottom?.[x]) {
       legXs.push(x);
     }
   }
   // Never legless: fall back to a symmetric stance.
   if (legXs.length === 0) {
-    cells[HEIGHT - 1][2] = true;
-    cells[HEIGHT - 1][WIDTH - 1 - 2] = true;
+    if (bottom) {
+      bottom[2] = true;
+      bottom[WIDTH - 1 - 2] = true;
+    }
     legXs.push(2, WIDTH - 1 - 2);
   }
   return { cells, whiteCells, legXs };
@@ -134,8 +142,10 @@ export function invaderBoxShadow(
     shadows.push(`${x * px}px ${y * px}px 0 #ffffff`);
   }
   for (let y = 0; y < HEIGHT - 1; y++) {
+    const row = sprite.cells[y];
+    if (!row) continue;
     for (let x = 0; x < WIDTH; x++) {
-      if (sprite.cells[y][x]) {
+      if (row[x]) {
         shadows.push(`${x * px}px ${y * px}px 0 ${color}`);
       }
     }
@@ -162,8 +172,10 @@ export function invaderSvg(
   const h = (HEIGHT + 1) * SVG_UNIT; // +1 row of headroom for the dropped legs
   const rects: string[] = [];
   for (let y = 0; y < HEIGHT - 1; y++) {
+    const row = sprite.cells[y];
+    if (!row) continue;
     for (let x = 0; x < WIDTH; x++) {
-      if (sprite.cells[y][x]) {
+      if (row[x]) {
         rects.push(rect(x * SVG_UNIT, y * SVG_UNIT, color));
       }
     }
@@ -246,7 +258,8 @@ function shadeHex(hex: string, amount: number): string {
 
 /** Deterministic neon color for a seed: base hue + a per-seed brighter/darker shade. */
 export function invaderColor(seed: string): string {
-  const base = INVADER_PALETTE[seedFrom(seed) % INVADER_PALETTE.length];
+  const base =
+    INVADER_PALETTE[seedFrom(seed) % INVADER_PALETTE.length] ?? INVADER_PALETTE[0] ?? "#5a8a6e";
   // Independent shade seed so hue and shade vary independently per agent.
   const shadeIndex = seedFrom(`${seed}:shade`) % SHADE_STEPS;
   // Map step -> [-0.4, +0.45]: darker through brighter, keeping colors visible.

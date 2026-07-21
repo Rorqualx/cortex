@@ -216,12 +216,12 @@ function trapFocus(event: KeyboardEvent, root: HTMLElement) {
 
   if (event.shiftKey && (!focusInside || active === first)) {
     event.preventDefault();
-    last.focus();
+    last?.focus();
     return;
   }
   if (!event.shiftKey && (!focusInside || active === last)) {
     event.preventDefault();
-    first.focus();
+    first?.focus();
   }
 }
 
@@ -251,8 +251,11 @@ function handleKeydown(e: KeyboardEvent, props: CommandPaletteProps) {
       break;
     case "Enter":
       e.preventDefault();
-      if (items[props.activeIndex]) {
-        selectItem(items[props.activeIndex], props);
+      {
+        const activeItem = items[props.activeIndex];
+        if (activeItem) {
+          selectItem(activeItem, props);
+        }
       }
       break;
     case "Escape":

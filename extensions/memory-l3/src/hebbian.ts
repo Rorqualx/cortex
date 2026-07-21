@@ -79,8 +79,13 @@ export function extractEdges(facts: ReadonlyArray<L2Fact>): HebbianEdge[] {
   const edges: HebbianEdge[] = [];
   for (let i = 0; i < facts.length; i++) {
     for (let j = i + 1; j < facts.length; j++) {
-      const a = facts[i].dedupKey;
-      const b = facts[j].dedupKey;
+      const fa = facts[i];
+      const fb = facts[j];
+      if (!fa || !fb) {
+        continue;
+      }
+      const a = fa.dedupKey;
+      const b = fb.dedupKey;
       if (a === b) {
         continue;
       }
@@ -107,8 +112,13 @@ export function extractEdgesFromRetrieval(
   const edges: HebbianEdge[] = [];
   for (let i = 0; i < results.length; i++) {
     for (let j = i + 1; j < results.length; j++) {
-      const a = results[i].fact.dedupKey;
-      const b = results[j].fact.dedupKey;
+      const ra = results[i];
+      const rb = results[j];
+      if (!ra || !rb) {
+        continue;
+      }
+      const a = ra.fact.dedupKey;
+      const b = rb.fact.dedupKey;
       if (a === b) {
         continue;
       }

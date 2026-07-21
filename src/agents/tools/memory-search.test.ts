@@ -217,7 +217,12 @@ describe("executeMemorySearch", () => {
     });
 
     for (let i = 1; i < results.length; i++) {
-      expect(results[i].similarityScore).toBeLessThanOrEqual(results[i - 1].similarityScore);
+      const current = results[i];
+      const previous = results[i - 1];
+      if (!current || !previous) {
+        throw new Error("missing result row");
+      }
+      expect(current.similarityScore).toBeLessThanOrEqual(previous.similarityScore);
     }
   });
 
@@ -400,7 +405,12 @@ describe("Memory Search Integration", () => {
 
     // Results should be sorted by similarity
     for (let i = 1; i < results.length; i++) {
-      expect(results[i].similarityScore).toBeLessThanOrEqual(results[i - 1].similarityScore);
+      const current = results[i];
+      const previous = results[i - 1];
+      if (!current || !previous) {
+        throw new Error("missing result row");
+      }
+      expect(current.similarityScore).toBeLessThanOrEqual(previous.similarityScore);
     }
   });
 

@@ -128,13 +128,15 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
   }
 
   function bindCurrentPolicyToPlan(plan: SystemRunApprovalPlan): SystemRunApprovalPlan {
+    const snapshot = createExecApprovalPolicySnapshot({
+      file: loadExecApprovals(),
+      agentId: plan.agentId ?? undefined,
+    });
     return {
       ...plan,
       sessionKey: plan.sessionKey ?? "agent:main:main",
-      policySnapshot: createExecApprovalPolicySnapshot({
-        file: loadExecApprovals(),
-        agentId: plan.agentId ?? undefined,
-      }),
+      // Wire plan uses a mutable allowlistRules array; the snapshot returns a readonly one.
+      policySnapshot: { ...snapshot, allowlistRules: [...snapshot.allowlistRules] },
     };
   }
 

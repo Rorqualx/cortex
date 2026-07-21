@@ -2,6 +2,10 @@ import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/i
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { clearAgentRunContext } from "../../infra/agent-events.js";
 import { retainGatewayRootWorkAdmissionContinuation } from "../../process/gateway-work-admission.js";
+import {
+  readLedger,
+  sessionActivityRegistry as sessionAwarenessRegistry,
+} from "../../session-awareness/index.js";
 import type { UserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { persistGatewaySessionLifecycleEvent } from "../session-lifecycle-state.js";
 import { formatForLog } from "../ws-log.js";
@@ -152,6 +156,9 @@ export function createChatSendDispatchErrorLifecycle(params: {
     cleanupAdmittedRun();
     clearAgentRunContext(clientRunId, lifecycleGeneration);
     context.removeChatRun(clientRunId, clientRunId, sessionKey);
+    // Fork: release all file claims / read-ledger state held by this session.
+    sessionAwarenessRegistry.releaseAllForSession(sessionKey);
+    readLedger.clearSession(sessionKey);
     if (!dispatchError) {
       return;
     }

@@ -112,7 +112,7 @@ function channelFromSessionKey(key: string): string | null {
     return null;
   }
   const restLower = normalizeLowercaseStringOrEmpty(parsed.rest);
-  const channelSegment = restLower.split(":")[0];
+  const channelSegment = restLower.split(":")[0] ?? "";
   return CHANNEL_SURFACES_FOR_AGENT_DROPDOWN.has(channelSegment) ? channelSegment : null;
 }
 
@@ -1584,7 +1584,10 @@ export async function switchChatModel(state: AppViewState, nextModel: string): P
       return true;
     } catch (err) {
       // Roll back so the picker reflects the actual server model.
-      state.chatModelOverrides = { ...state.chatModelOverrides, [targetSessionKey]: prevOverride };
+      state.chatModelOverrides = {
+        ...state.chatModelOverrides,
+        [targetSessionKey]: prevOverride ?? null,
+      };
       setChatError(state, `Failed to set model: ${String(err)}`);
       return false;
     } finally {

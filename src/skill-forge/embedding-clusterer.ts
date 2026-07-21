@@ -27,8 +27,9 @@ export function cosineSimilarity(a: readonly number[], b: readonly number[]): nu
   let normA = 0;
   let normB = 0;
   for (let i = 0; i < a.length; i += 1) {
-    const ai = a[i];
-    const bi = b[i];
+    // i < a.length and a.length === b.length (checked above), so both are defined.
+    const ai = a[i]!;
+    const bi = b[i]!;
     dot += ai * bi;
     normA += ai * ai;
     normB += bi * bi;
@@ -119,24 +120,26 @@ export function clusterByCosineAndToolShape(
   const visited = new Set<number>();
   const clusters: EmbeddedCapture[][] = [];
   for (let i = 0; i < items.length; i += 1) {
-    if (visited.has(i)) {
+    const base = items[i];
+    if (base === undefined || visited.has(i)) {
       continue;
     }
-    const cluster: EmbeddedCapture[] = [items[i]];
+    const cluster: EmbeddedCapture[] = [base];
     visited.add(i);
     for (let j = i + 1; j < items.length; j += 1) {
-      if (visited.has(j)) {
+      const other = items[j];
+      if (other === undefined || visited.has(j)) {
         continue;
       }
-      const cos = cosineSimilarity(items[i].embedding, items[j].embedding);
+      const cos = cosineSimilarity(base.embedding, other.embedding);
       if (cos < cosineThreshold) {
         continue;
       }
-      const overlap = toolShapeOverlap(items[i].toolSequence, items[j].toolSequence);
+      const overlap = toolShapeOverlap(base.toolSequence, other.toolSequence);
       if (overlap < toolShapeMin) {
         continue;
       }
-      cluster.push(items[j]);
+      cluster.push(other);
       visited.add(j);
     }
     clusters.push(cluster);
@@ -201,10 +204,11 @@ export async function detectEmbeddingRepetitionCandidates(params: {
   const clusters = clusterByCosineAndToolShape(embedded, cosineThreshold, toolShapeMin);
   const candidates: RepetitionCandidate[] = [];
   for (const cluster of clusters) {
-    if (cluster.length < REPETITION_THRESHOLD_FOR_EMBEDDING_LANE) {
+    const [first] = cluster;
+    if (first === undefined || cluster.length < REPETITION_THRESHOLD_FOR_EMBEDDING_LANE) {
       continue;
     }
-    const toolSequence = cluster[0].toolSequence;
+    const toolSequence = first.toolSequence;
     const captureDirs = cluster.map((item) => item.captureDir);
     const candidateId = candidateIdForCluster(toolSequence, captureDirs);
     candidates.push({

@@ -128,11 +128,11 @@ function renderCodeViewer(content: import("../sidebar-content.ts").CodeSidebarCo
   const highlighted = highlightCode(content.content, lang);
   const lines = highlighted.split("\n");
   // Remove trailing empty line from trailing newline
-  if (lines.length > 1 && lines[lines.length - 1].trim() === "") {
+  if (lines.length > 1 && lines[lines.length - 1]?.trim() === "") {
     lines.pop();
   }
   const rawLines = content.content.split("\n");
-  if (rawLines.length > 1 && rawLines[rawLines.length - 1].trim() === "") {
+  if (rawLines.length > 1 && rawLines[rawLines.length - 1]?.trim() === "") {
     rawLines.pop();
   }
   const lineCount = lines.length;

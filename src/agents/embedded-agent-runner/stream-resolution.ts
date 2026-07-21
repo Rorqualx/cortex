@@ -1,6 +1,7 @@
 /**
  * Resolves provider stream functions and API keys for embedded agents.
  */
+import type { LlmRuntime } from "@openclaw/ai";
 import { getApiProvider } from "@openclaw/ai/internal/runtime";
 import { stripSystemPromptCacheBoundary } from "@openclaw/ai/internal/shared";
 import { streamSimple } from "../../llm/stream.js";
@@ -36,8 +37,9 @@ export function resetEmbeddedAgentBaseStreamFnCacheForTest(): void {
 function isDefaultOpenClawStreamFnForModel(
   model: EmbeddedRunAttemptParams["model"],
   streamFn: StreamFn | undefined,
+  llmRuntime?: LlmRuntime,
 ): boolean {
-  if (!streamFn || streamFn === streamSimple) {
+  if (!streamFn || streamFn === streamSimple || streamFn === llmRuntime?.streamSimple) {
     return true;
   }
   const api = typeof model.api === "string" ? model.api.trim() : "";
@@ -116,6 +118,8 @@ export async function resolveEmbeddedAgentApiKey(params: {
 }
 
 export function resolveEmbeddedAgentStreamFn(params: {
+  /** Lifecycle-owned runtime; supplies the default stream when the session has none. */
+  llmRuntime?: LlmRuntime;
   currentStreamFn: StreamFn | undefined;
   providerStreamFn?: StreamFn;
   sessionId: string;
@@ -123,6 +127,8 @@ export function resolveEmbeddedAgentStreamFn(params: {
   signal?: AbortSignal;
   model: EmbeddedRunAttemptParams["model"];
   resolvedApiKey?: string;
+  /** True when a transport credential is already resolved for this attempt. */
+  transportAuthAvailable?: boolean;
   authProfileId?: string;
   authStorage?: { getApiKey(provider: string): Promise<string | undefined> };
   /** Callback for provider HTTP response headers (used by attestation). */
@@ -150,7 +156,7 @@ export function resolveEmbeddedAgentStreamFn(params: {
     });
   }
 
-  const currentStreamFn = params.currentStreamFn ?? streamSimple;
+  const currentStreamFn = params.currentStreamFn ?? params.llmRuntime?.streamSimple ?? streamSimple;
   if (params.model.provider === "anthropic-vertex") {
     return createAnthropicVertexStreamFnForModel(params.model);
   }
@@ -180,8 +186,18 @@ export function resolveEmbeddedAgentStreamFn(params: {
   }
 
   if (
-    isDefaultOpenClawStreamFnForModel(params.model, params.currentStreamFn) ||
-    hasResolvedRuntimeApiKey(params.resolvedApiKey)
+    isDefaultOpenClawStreamFnForModel(params.model, params.currentStreamFn, params.llmRuntime) ||
+    hasResolvedRuntimeApiKey(params.resolvedApiKey) ||
+    params.transportAuthAvailable ||
+    // Proxied anthropic-messages providers (provider !== "anthropic", e.g. pioneer)
+    // must use the boundary-aware managed transport even without a resolved runtime
+    // key — it is the only place a tool-using turn's narration gets tagged
+    // phase:commentary; the base SDK stream never tags it, so proxied anthropic
+    // providers silently lost their narration lane. Scoped to non-"anthropic"
+    // providers so direct-anthropic edge cases (thinking-replay repair without a
+    // resolved key) are unchanged; the wrap below injects the resolved key
+    // (fallback options.apiKey), preserving x-api-key auth.
+    (params.model.api === "anthropic-messages" && params.model.provider !== "anthropic")
   ) {
     const boundaryAwareStreamFn = createBoundaryAwareStreamFnForModel(params.model);
     if (boundaryAwareStreamFn) {

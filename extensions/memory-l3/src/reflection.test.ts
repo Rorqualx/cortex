@@ -61,8 +61,8 @@ describe("generateInsights", () => {
     );
     const out = await generateInsights({ facts, caller, now: NOW, maxInsights: 5 });
     expect(out).toHaveLength(1);
-    expect(out[0].text).toContain("TypeScript/Node");
-    expect(out[0].sources).toEqual(["stack:ts", "stack:node"]);
+    expect(out[0]?.text).toContain("TypeScript/Node");
+    expect(out[0]?.sources).toEqual(["stack:ts", "stack:node"]);
   });
 
   it("drops only the unverifiable citations, keeping grounded ones on a mixed insight", async () => {
@@ -73,7 +73,7 @@ describe("generateInsights", () => {
     );
     const out = await generateInsights({ facts, caller, now: NOW, maxInsights: 5 });
     expect(out).toHaveLength(1);
-    expect(out[0].sources).toEqual(["stack:ts"]);
+    expect(out[0]?.sources).toEqual(["stack:ts"]);
   });
 
   it("returns [] for fewer than two facts and never calls the LLM", async () => {

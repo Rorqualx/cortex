@@ -270,13 +270,11 @@ function formatEditCall(
 }
 
 function formatEditResult(
-  args: RenderableEditArgs | undefined,
   preview: EditPreview | undefined,
   result: EditToolResultLike,
   theme: typeof import("../../modes/interactive/theme/theme.js").theme,
   isError: boolean,
 ): string | undefined {
-  const rawPath = str(args?.file_path ?? args?.path);
   const previewDiff = preview && !("error" in preview) ? preview.diff : undefined;
   const previewError = preview && "error" in preview ? preview.error : undefined;
   if (isError) {
@@ -290,9 +288,9 @@ function formatEditResult(
     return theme.fg("error", errorText);
   }
 
-  const resultDiff = result.details?.diff;
+  const resultDiff = result.details?.changed === true ? result.details.diff : undefined;
   if (resultDiff && resultDiff !== previewDiff) {
-    return renderDiff(resultDiff, { filePath: rawPath ?? undefined });
+    return renderDiff(resultDiff);
   }
 
   return undefined;
@@ -428,7 +426,7 @@ export function createEditToolDefinition(
                     text: `No changes made to ${path}. The replacement text is identical to the original.`,
                   },
                 ],
-                details: { diff: "", patch: "" },
+                details: { changed: false } satisfies EditToolDetails,
                 terminate: true,
               };
             }
@@ -453,6 +451,7 @@ export function createEditToolDefinition(
                 },
               ],
               details: {
+                changed: true,
                 diff: diffResult.diff,
                 patch,
                 firstChangedLine: diffResult.firstChangedLine,
@@ -474,7 +473,7 @@ export function createEditToolDefinition(
                     text: `Successfully replaced ${realEdits.length} block(s) in ${path}.`,
                   },
                 ],
-                details: { diff: "", patch: "" },
+                details: { changed: true, diff: "", patch: "" },
               };
             }
             // Terminal no-op: the edit matched but produced identical content.
@@ -486,7 +485,7 @@ export function createEditToolDefinition(
                     text: `No changes made to ${path}. The replacement produced identical content.`,
                   },
                 ],
-                details: { diff: "", patch: "" },
+                details: { changed: false } satisfies EditToolDetails,
                 terminate: true,
               };
             }
@@ -538,14 +537,16 @@ export function createEditToolDefinition(
         ? JSON.stringify({ path: previewInput.path, edits: previewInput.edits })
         : undefined;
       const typedResult = result as EditToolResultLike;
-      const resultDiff = !context.isError ? typedResult.details?.diff : undefined;
+      const resultDetails =
+        !context.isError && typedResult.details?.changed === true ? typedResult.details : undefined;
+      const resultDiff = resultDetails?.diff;
       let changed = false;
       if (callComponent) {
         if (typeof resultDiff === "string") {
           changed =
             setEditPreview(
               callComponent,
-              { diff: resultDiff, firstChangedLine: typedResult.details?.firstChangedLine },
+              { diff: resultDiff, firstChangedLine: resultDetails?.firstChangedLine },
               argsKey,
             ) || changed;
         }
@@ -562,13 +563,7 @@ export function createEditToolDefinition(
         }
       }
 
-      const output = formatEditResult(
-        context.args,
-        callComponent?.preview,
-        typedResult,
-        theme,
-        context.isError,
-      );
+      const output = formatEditResult(callComponent?.preview, typedResult, theme, context.isError);
       const component = (context.lastComponent as Container | undefined) ?? new Container();
       component.clear();
       if (!output) {

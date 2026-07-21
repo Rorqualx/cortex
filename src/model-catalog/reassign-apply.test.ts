@@ -88,7 +88,11 @@ describe("applyReassignmentPlan", () => {
     expect(result.deadAliases).toEqual(["Podrick Cloud"]);
     // cron store saved once with the rewritten model
     expect(d.saved).toHaveLength(1);
-    const payload = d.saved[0].jobs[0].payload;
+    const savedFile = d.saved[0];
+    if (!savedFile) throw new Error("expected saved cron store");
+    const savedJob = savedFile.jobs[0];
+    if (!savedJob) throw new Error("expected saved job");
+    const payload = savedJob.payload;
     expect(payload.kind === "agentTurn" && payload.model).toBe("zai/glm-5.1");
     // agent session patched to clear the override
     expect(d.patches).toEqual([
@@ -115,8 +119,10 @@ describe("applyReassignmentPlan", () => {
 
   it("does not load the cron store when no cron actions exist", async () => {
     const loadCronStore = vi.fn(async (): Promise<CronStoreFile> => ({ version: 1, jobs: [] }));
+    const agentAction = plan.actions[1];
+    if (!agentAction) throw new Error("expected agent action");
     const agentOnlyPlan: ReassignmentPlan = {
-      actions: [plan.actions[1]],
+      actions: [agentAction],
       unresolved: [],
     };
     const d = deps({ loadCronStore });

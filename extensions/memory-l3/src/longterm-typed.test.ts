@@ -119,10 +119,10 @@ describe("consolidateLongTermTyped", () => {
 
     const ltt = await storage.readLongTermTyped();
     expect(ltt.facts).toHaveLength(1);
-    expect(ltt.facts[0].slot).toBe("user:phone");
-    expect(ltt.facts[0].value).toBe("555-1234");
-    expect(ltt.facts[0].history).toEqual([]);
-    expect(ltt.facts[0].recallCount).toBe(1);
+    expect(ltt.facts[0]!.slot).toBe("user:phone");
+    expect(ltt.facts[0]!.value).toBe("555-1234");
+    expect(ltt.facts[0]!.history).toEqual([]);
+    expect(ltt.facts[0]!.recallCount).toBe(1);
   });
 
   it("supersedes when the same slot's value changes across chunks", async () => {
@@ -165,10 +165,10 @@ describe("consolidateLongTermTyped", () => {
     expect(out.promotedCount).toBe(1);
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].value).toBe("750.00");
-    expect(ltt.facts[0].history).toHaveLength(1);
-    expect(ltt.facts[0].history[0].value).toBe("500.00");
-    expect(ltt.facts[0].recallCount).toBe(2);
+    expect(ltt.facts[0]!.value).toBe("750.00");
+    expect(ltt.facts[0]!.history).toHaveLength(1);
+    expect(ltt.facts[0]!.history[0]!.value).toBe("500.00");
+    expect(ltt.facts[0]!.recallCount).toBe(2);
   });
 
   it("re-affirms when value is identical across chunks (no history entry)", async () => {
@@ -211,9 +211,9 @@ describe("consolidateLongTermTyped", () => {
     expect(out.promotedCount).toBe(1);
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].value).toBe("192.168.50.128");
-    expect(ltt.facts[0].history).toEqual([]);
-    expect(ltt.facts[0].recallCount).toBe(2);
+    expect(ltt.facts[0]!.value).toBe("192.168.50.128");
+    expect(ltt.facts[0]!.history).toEqual([]);
+    expect(ltt.facts[0]!.recallCount).toBe(2);
   });
 
   it("supersedes existing canonical entry on a second pass", async () => {
@@ -262,9 +262,9 @@ describe("consolidateLongTermTyped", () => {
     expect(out.promotedCount).toBe(0);
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].value).toBe("750.00");
-    expect(ltt.facts[0].history).toHaveLength(1);
-    expect(ltt.facts[0].history[0].value).toBe("500.00");
+    expect(ltt.facts[0]!.value).toBe("750.00");
+    expect(ltt.facts[0]!.history).toHaveLength(1);
+    expect(ltt.facts[0]!.history[0]!.value).toBe("500.00");
   });
 
   it("archives entries that aren't seen for longer than maxAgeWithoutConfirmMs", async () => {
@@ -297,11 +297,11 @@ describe("consolidateLongTermTyped", () => {
       storage,
       agentId: "j-rorqual",
       now: NOW,
-      config: { maxAgeWithoutConfirmMs: 60 * DAY, minRecallCount: 1 },
+      config: { maxAgeWithoutConfirmMs: 60 * DAY, minRecallCount: 1, maxPromotePerEpoch: 30 },
     });
     expect(out.archivedCount).toBe(1);
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].archived).toBe(true);
+    expect(ltt.facts[0]!.archived).toBe(true);
   });
 
   it("sets lastVerifiedAt on promotion and updates it on reaffirmation", async () => {
@@ -323,7 +323,7 @@ describe("consolidateLongTermTyped", () => {
     await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 3 * DAY });
 
     const ltt1 = await storage.readLongTermTyped();
-    expect(ltt1.facts[0].lastVerifiedAt).toBe(NOW - 3 * DAY);
+    expect(ltt1.facts[0]!.lastVerifiedAt).toBe(NOW - 3 * DAY);
 
     // Reaffirm with a newer chunk
     await writeChunkWithTyped(
@@ -344,8 +344,8 @@ describe("consolidateLongTermTyped", () => {
     await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
 
     const ltt2 = await storage.readLongTermTyped();
-    expect(ltt2.facts[0].lastVerifiedAt).toBe(NOW);
-    expect(ltt2.facts[0].recallCount).toBe(2);
+    expect(ltt2.facts[0]!.lastVerifiedAt).toBe(NOW);
+    expect(ltt2.facts[0]!.recallCount).toBe(2);
   });
 
   it("assigns volatile class for config/API-related slots", async () => {
@@ -372,7 +372,7 @@ describe("consolidateLongTermTyped", () => {
     });
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].volatilityClass).toBe("volatile");
+    expect(ltt.facts[0]!.volatilityClass).toBe("volatile");
   });
 
   it("assigns stable class for preference/name slots", async () => {
@@ -399,7 +399,7 @@ describe("consolidateLongTermTyped", () => {
     });
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].volatilityClass).toBe("stable");
+    expect(ltt.facts[0]!.volatilityClass).toBe("stable");
   });
 
   it("assigns semi-volatile for unrecognized slots", async () => {
@@ -426,7 +426,7 @@ describe("consolidateLongTermTyped", () => {
     });
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].volatilityClass).toBe("semi-volatile");
+    expect(ltt.facts[0]!.volatilityClass).toBe("semi-volatile");
   });
 
   it("preserves volatilityClass on reaffirmation", async () => {
@@ -466,8 +466,8 @@ describe("consolidateLongTermTyped", () => {
     await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].volatilityClass).toBe("volatile");
-    expect(ltt.facts[0].recallCount).toBe(2);
+    expect(ltt.facts[0]!.volatilityClass).toBe("volatile");
+    expect(ltt.facts[0]!.recallCount).toBe(2);
   });
 
   it("uses lastVerifiedAt to prevent archival when value was recently verified", async () => {
@@ -501,11 +501,11 @@ describe("consolidateLongTermTyped", () => {
       storage,
       agentId: "j-rorqual",
       now: NOW,
-      config: { maxAgeWithoutConfirmMs: 60 * DAY, minRecallCount: 1 },
+      config: { maxAgeWithoutConfirmMs: 60 * DAY, minRecallCount: 1, maxPromotePerEpoch: 30 },
     });
     expect(out.archivedCount).toBe(0);
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].archived).toBe(false);
+    expect(ltt.facts[0]!.archived).toBe(false);
   });
 
   it("stamps sourceSessionId on promoted facts when sessionId is provided", async () => {
@@ -534,8 +534,8 @@ describe("consolidateLongTermTyped", () => {
     });
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].sourceSessionId).toBe("session-abc-123");
-    expect(ltt.facts[0].sourceModel).toBe("deepseek/deepseek-v4-pro");
+    expect(ltt.facts[0]!.sourceSessionId).toBe("session-abc-123");
+    expect(ltt.facts[0]!.sourceModel).toBe("deepseek/deepseek-v4-pro");
   });
 
   it("leaves sourceSessionId unset when sessionId is not provided (backward compat)", async () => {
@@ -562,8 +562,8 @@ describe("consolidateLongTermTyped", () => {
     });
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].sourceSessionId).toBeUndefined();
-    expect(ltt.facts[0].sourceModel).toBeNull();
+    expect(ltt.facts[0]!.sourceSessionId).toBeUndefined();
+    expect(ltt.facts[0]!.sourceModel).toBeNull();
   });
 
   it("updates sourceSessionId on reaffirmation when a newer session is provided", async () => {
@@ -612,8 +612,8 @@ describe("consolidateLongTermTyped", () => {
     });
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].sourceSessionId).toBe("session-new");
-    expect(ltt.facts[0].recallCount).toBe(2);
+    expect(ltt.facts[0]!.sourceSessionId).toBe("session-new");
+    expect(ltt.facts[0]!.recallCount).toBe(2);
   });
 
   it("caps newly promoted slots at maxPromotePerEpoch (J-space capacity)", async () => {

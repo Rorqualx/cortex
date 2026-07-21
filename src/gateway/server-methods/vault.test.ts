@@ -14,6 +14,7 @@ function invoke(method: keyof typeof vaultHandlers, params: Record<string, unkno
     captured = { ok, result, error };
   };
   const handler = vaultHandlers[method];
+  if (!handler) throw new Error(`vault handler not registered: ${String(method)}`);
   // Handlers only read params/respond; cast the partial context for the test.
   void handler({ params, respond } as never);
   if (!captured) {

@@ -2,7 +2,7 @@
 import { EventEmitter } from "node:events";
 import { DisconnectReason } from "baileys";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getRegisteredWhatsAppConnectionController } from "./connection-controller-registry.js";
+import { getWhatsAppConnectionController } from "./connection-controller-runtime-context.js";
 import {
   closeWaSocket,
   waitForWhatsAppLoginResult,
@@ -398,7 +398,7 @@ describe("WhatsAppConnectionController", () => {
       createListener: async () => liveListener,
     });
 
-    expect(getRegisteredWhatsAppConnectionController("work")).toBe(liveController);
+    expect(getWhatsAppConnectionController("work")).toBe(liveController);
 
     const replacement = new WhatsAppConnectionController({
       accountId: "work",
@@ -429,7 +429,7 @@ describe("WhatsAppConnectionController", () => {
         }),
       ).rejects.toThrow("replacement failed");
 
-      expect(getRegisteredWhatsAppConnectionController("work")).toBe(liveController);
+      expect(getWhatsAppConnectionController("work")).toBe(liveController);
     } finally {
       await replacement.shutdown();
       await liveController.shutdown();

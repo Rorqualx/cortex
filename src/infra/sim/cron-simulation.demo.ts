@@ -1,8 +1,8 @@
-import {
-  completeSimple,
-  registerApiProvider,
-  unregisterApiProviders,
-} from "@openclaw/ai/internal/runtime";
+import { completeSimple, defaultApiRegistry } from "@openclaw/ai/internal/runtime";
+
+// Upstream removed the standalone register/unregister re-exports; use the
+// default process registry methods directly (same registry the runtime reads).
+const { registerApiProvider, unregisterApiProviders } = defaultApiRegistry;
 /**
  * Integration demonstration: simulated agent turn with scripted model provider.
  *

@@ -32,7 +32,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
     throw new Error(`Vector dimension mismatch: ${a.length} vs ${b.length}`);
   }
 
-  const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+  const dotProduct = a.reduce((sum, val, i) => sum + val * (b[i] ?? 0), 0);
   const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
   const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
 
@@ -72,7 +72,11 @@ async function generateQueryEmbedding(params: {
   }
 
   const embeddings = await provider.embedBatch([params.query]);
-  return embeddings[0];
+  const embedding = embeddings[0];
+  if (!embedding) {
+    throw new Error(`Embedding provider returned no embedding for query: ${providerId}`);
+  }
+  return embedding;
 }
 
 /**

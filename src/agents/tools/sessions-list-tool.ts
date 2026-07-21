@@ -18,10 +18,8 @@ import {
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { callGateway } from "../../gateway/call.js";
-import {
-  deriveSessionTitle,
-  readSessionTitleFieldsFromTranscriptAsync,
-} from "../../gateway/session-utils.js";
+import { readSessionTitleFieldsFromTranscriptAsync } from "../../gateway/session-transcript-readers.js";
+import { deriveSessionTitle } from "../../gateway/session-utils.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { deliveryContextFromSession } from "../../utils/delivery-context.shared.js";
 import {
@@ -382,16 +380,15 @@ export function createSessionsListTool(opts?: {
           while (true) {
             const next = index;
             index += 1;
-            if (next >= titleTargets.length) {
+            const target = titleTargets[next];
+            if (!target) {
               return;
             }
-            const target = titleTargets[next];
-            const fields = await readSessionTitleFieldsFromTranscriptAsync(
-              target.sessionId,
-              storePath,
-              target.sessionFile,
-              target.agentId,
-            );
+            const fields = await readSessionTitleFieldsFromTranscriptAsync({
+              sessionId: target.sessionId,
+              ...(target.sessionFile ? { sessionFile: target.sessionFile } : {}),
+              ...(target.agentId ? { agentId: target.agentId } : {}),
+            });
             if (includeDerivedTitles && !target.row.derivedTitle) {
               target.row.derivedTitle = deriveSessionTitle(
                 target.titleEntry,
@@ -413,10 +410,10 @@ export function createSessionsListTool(opts?: {
           while (true) {
             const next = index;
             index += 1;
-            if (next >= historyTargets.length) {
+            const target = historyTargets[next];
+            if (!target) {
               return;
             }
-            const target = historyTargets[next];
             const history = await gatewayCall<{ messages: Array<unknown> }>({
               method: "chat.history",
               params: { sessionKey: target.resolvedKey, limit: messageLimit },

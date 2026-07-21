@@ -355,7 +355,7 @@ describe("connectGateway chat load startup work", () => {
       }),
     );
     expect(refreshActiveTabMock.mock.invocationCallOrder[0]).toBeLessThan(
-      loadControlUiBootstrapConfigMock.mock.invocationCallOrder[0],
+      loadControlUiBootstrapConfigMock.mock.invocationCallOrder[0]!,
     );
     expect(loadAssistantIdentityMock).toHaveBeenCalledWith(host);
     expect(loadHealthStateMock).toHaveBeenCalledWith(host);

@@ -114,10 +114,12 @@ export function pickReplacementModel(params: {
   if (usable.length === 0) {
     return null;
   }
-  return usable
+  const [best] = usable
     .map((candidate) => ({
       id: candidate.id,
       score: scoreCandidate(deprecated, candidate, defaultModelId),
     }))
-    .toSorted((a, b) => compareScores(a.score, b.score))[0].id;
+    .toSorted((a, b) => compareScores(a.score, b.score));
+  // usable.length > 0 (checked above) and map/toSorted preserve length.
+  return best!.id;
 }

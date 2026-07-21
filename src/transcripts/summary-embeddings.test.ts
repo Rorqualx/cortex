@@ -113,7 +113,7 @@ describe("Summary Embeddings", () => {
 
       await generateSummaryEmbedding({ summary, cfg });
 
-      const embeddingText = mockProvider.embedBatch.mock.calls[0][0][0];
+      const embeddingText = mockProvider.embedBatch.mock.calls[0]![0]![0];
       expect(embeddingText).toContain("authentication system");
       expect(embeddingText).toContain("Decisions:");
       expect(embeddingText).toContain("Use JWT for authentication");
@@ -149,7 +149,7 @@ describe("Summary Embeddings", () => {
       const embedding = await generateSummaryEmbedding({ summary, cfg });
 
       expect(embedding).toEqual([0.1, 0.2, 0.3]);
-      const embeddingText = mockProvider.embedBatch.mock.calls[0][0][0];
+      const embeddingText = mockProvider.embedBatch.mock.calls[0]![0]![0];
       expect(embeddingText).toContain("Brief discussion");
     });
   });

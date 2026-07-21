@@ -346,6 +346,8 @@ type AgentRuntimeTranscriptPolicy = {
     allowBase64Only?: boolean;
     includeCamelCase?: boolean;
   };
+  /** Strip unverifiable thinking-block signatures before provider transport (fork policy field). */
+  sanitizeThinkingSignatures: boolean;
   dropThinkingBlocks: boolean;
   dropReasoningFromHistory?: boolean;
   applyGoogleTurnOrdering: boolean;

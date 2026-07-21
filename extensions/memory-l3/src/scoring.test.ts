@@ -391,7 +391,7 @@ describe("buildCorpusStats + BM25", () => {
       importance: 0.5,
       createdAt: Date.now(),
       dedupKey: "k:1",
-      certainty: "tentative",
+      certainty: "tentative" as const,
     };
     const signals = scoreFact({
       queryTokens: new Set(),
@@ -413,7 +413,7 @@ describe("buildCorpusStats + BM25", () => {
       importance: 0.5,
       createdAt: Date.now(),
       dedupKey: "k:1",
-      certainty: "confirmed",
+      certainty: "confirmed" as const,
     };
     const signals = scoreFact({
       queryTokens: new Set(),
@@ -433,7 +433,7 @@ describe("buildCorpusStats + BM25", () => {
       importance: 0.5,
       createdAt: Date.now(),
       dedupKey: "k:1",
-      certainty: "confirmed",
+      certainty: "confirmed" as const,
     };
     const signals = scoreFact({
       queryTokens: new Set(),

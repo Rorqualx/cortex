@@ -2,7 +2,7 @@
  * Plans which core, bundle MCP, and bundle LSP tools an attempt should build.
  */
 import { TOOL_NAME_SEPARATOR } from "../../agent-bundle-mcp-names.js";
-import type { OpenClawCodingToolConstructionPlan } from "../../agent-tools.js";
+import type { OpenClawCodingToolConstructionPlan } from "../../core-tool-factory-descriptors.js";
 import { isToolAllowedByPolicyName } from "../../tool-policy-match.js";
 import {
   buildPluginToolGroups,
@@ -132,20 +132,21 @@ export function applyEmbeddedAttemptToolsAllow<T extends { name: string }>(
  */
 export function mergeForcedEmbeddedAttemptToolsAllow(
   toolsAllow: string[] | undefined,
-  params: { forceMessageTool?: boolean },
+  params: { forceMessageTool?: boolean; forceToolNames?: readonly string[] },
 ): string[] | undefined {
-  if (
-    !params.forceMessageTool ||
-    toolsAllow === undefined ||
-    hasWildcardToolAllowlist(toolsAllow)
-  ) {
+  if (toolsAllow === undefined || hasWildcardToolAllowlist(toolsAllow)) {
     return toolsAllow;
   }
-  if (toolsAllow.length === 0) {
-    return ["message"];
+  const required = [
+    ...(params.forceMessageTool ? ["message"] : []),
+    ...(params.forceToolNames ?? []),
+  ];
+  if (required.length === 0) {
+    return toolsAllow;
   }
   const normalized = new Set(toolsAllow.map((entry) => normalizeToolName(entry)));
-  return normalized.has("message") ? toolsAllow : [...toolsAllow, "message"];
+  const missing = required.filter((name) => !normalized.has(normalizeToolName(name)));
+  return missing.length === 0 ? toolsAllow : [...toolsAllow, ...missing];
 }
 
 function resolveCodingToolConstructionPlanForAllowlist(
@@ -193,6 +194,7 @@ function resolveCodingToolConstructionPlanForAllowlist(
 export function resolveEmbeddedAttemptToolConstructionPlan(params: {
   disableTools?: boolean;
   isRawModelRun?: boolean;
+  toolsEnabled?: boolean;
   toolsAllow?: string[];
   forceMessageTool?: boolean;
 }): {
@@ -201,7 +203,13 @@ export function resolveEmbeddedAttemptToolConstructionPlan(params: {
   runtimeToolAllowlist?: string[];
   codingToolConstructionPlan: OpenClawCodingToolConstructionPlan;
 } {
-  if (params.disableTools === true || params.isRawModelRun === true) {
+  // Model capability is authoritative: forced delivery cannot materialize a
+  // tool the selected model cannot call.
+  if (
+    params.disableTools === true ||
+    params.isRawModelRun === true ||
+    params.toolsEnabled === false
+  ) {
     return {
       constructTools: false,
       includeCoreTools: false,

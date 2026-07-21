@@ -102,9 +102,9 @@ function splitTopSections(markdown: string): { title: string; lines: string[] }[
   const out: { title: string; lines: string[] }[] = [];
   let current: { title: string; lines: string[] } | null = null;
   for (const line of markdown.split(/\r?\n/)) {
-    const match = line.match(SECTION_HEADING);
-    if (match) {
-      current = { title: match[1].trim(), lines: [] };
+    const title = line.match(SECTION_HEADING)?.[1];
+    if (title !== undefined) {
+      current = { title: title.trim(), lines: [] };
       out.push(current);
       continue;
     }
@@ -120,9 +120,9 @@ function fieldValue(lines: string[], label: string): string | undefined {
   // Handle both `**Label:**` (colon inside the bold) and `**Label**:` forms.
   const re = new RegExp(`^[-*\\s]*\\*\\*${label}:?\\*\\*:?\\s*(.*)$`, "i");
   for (const line of lines) {
-    const match = line.match(re);
-    if (match && match[1].trim()) {
-      return match[1].trim();
+    const value = line.match(re)?.[1]?.trim();
+    if (value) {
+      return value;
     }
   }
   return undefined;
@@ -157,7 +157,8 @@ export function parseResearchReport(markdown: string): ParseResult<ParsedResearc
     const heading = line.match(FINDING_HEADING);
     if (heading) {
       flush();
-      block = { index: Number(heading[1]), title: heading[2], lines: [] };
+      // FINDING_HEADING groups 1-2 are non-optional; a match always defines them.
+      block = { index: Number(heading[1]), title: heading[2]!, lines: [] };
       continue;
     }
     if (line.match(SECTION_HEADING)) {
@@ -193,9 +194,9 @@ export function parseResearchReport(markdown: string): ParseResult<ParsedResearc
 function extractListItems(lines: string[]): string[] {
   const items: string[] = [];
   for (const raw of lines) {
-    const match = raw.match(/^\s*(?:\d+\.|[-*])\s+(.*\S)\s*$/);
-    if (match) {
-      items.push(compact(match[1]));
+    const item = raw.match(/^\s*(?:\d+\.|[-*])\s+(.*\S)\s*$/)?.[1];
+    if (item !== undefined) {
+      items.push(compact(item));
     }
   }
   return items;
@@ -229,11 +230,12 @@ export function parseAnalysisReport(markdown: string): ParseResult<ParsedAnalysi
     const heading = line.match(ANALYSIS_ITEM_HEADING);
     if (heading) {
       flush();
-      const prefix = heading[1];
+      // ANALYSIS_ITEM_HEADING groups 1-3 are non-optional; a match always defines them.
+      const prefix = heading[1]!;
       block = {
         itemId: `${prefix}-${heading[2]}`,
         category: ANALYSIS_PREFIX_TO_CATEGORY[prefix] ?? "finding",
-        title: heading[3],
+        title: heading[3]!,
         lines: [],
       };
       continue;

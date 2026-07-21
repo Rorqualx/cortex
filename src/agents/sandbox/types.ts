@@ -1,4 +1,4 @@
-import type { SkillEligibilityContext } from "../../skills/types.js";
+import type { SkillEligibilityContext, SkillUsagePath } from "../../skills/types.js";
 /**
  * Sandbox runtime configuration and context types.
  *
@@ -108,6 +108,7 @@ export type SandboxContext = {
   agentWorkspaceDir: string;
   skillsWorkspaceDir?: string;
   skillsEligibility?: SkillEligibilityContext;
+  skillUsagePaths?: SkillUsagePath[];
   workspaceAccess: SandboxWorkspaceAccess;
   runtimeId: string;
   runtimeLabel: string;
@@ -126,5 +127,6 @@ export type SandboxWorkspaceInfo = {
   containerWorkdir?: string;
   skillsWorkspaceDir?: string;
   skillsEligibility?: SkillEligibilityContext;
+  skillUsagePaths?: SkillUsagePath[];
   workspaceAccess?: SandboxWorkspaceAccess;
 };

@@ -417,7 +417,7 @@ describe("appendLink", () => {
     });
     appendLink(chain, link);
     expect(chain.links).toHaveLength(1);
-    expect(chain.links[0].receiptId).toBe("r1");
+    expect(chain.links[0]!.receiptId).toBe("r1");
   });
 });
 
@@ -623,9 +623,9 @@ describe("captureProviderAttestations", () => {
       { captureHeaders: true },
     );
     expect(results).toHaveLength(1);
-    expect(results[0].provider).toBe("openai");
-    expect(results[0].headerName).toBe("x-oai-attestation");
-    expect(results[0].headerValue).toBe("token-123");
+    expect(results[0]!.provider).toBe("openai");
+    expect(results[0]!.headerName).toBe("x-oai-attestation");
+    expect(results[0]!.headerValue).toBe("token-123");
   });
 
   it("captures with case-insensitive header matching", () => {
@@ -637,7 +637,7 @@ describe("captureProviderAttestations", () => {
       { captureHeaders: true },
     );
     expect(results).toHaveLength(1);
-    expect(results[0].headerValue).toBe("token-456");
+    expect(results[0]!.headerValue).toBe("token-456");
   });
 
   it("returns empty when no matching headers", () => {
@@ -761,7 +761,7 @@ describe("end-to-end attestation flow", () => {
     // Find children.
     const children = findChildren(chain, rootReceipt.id);
     expect(children).toHaveLength(1);
-    expect(children[0].agentId).toBe("sub-agent-1");
+    expect(children[0]!.agentId).toBe("sub-agent-1");
   });
 
   it("captures provider attestation alongside receipt", () => {
@@ -775,6 +775,6 @@ describe("end-to-end attestation flow", () => {
     );
 
     expect(providerAttestations).toHaveLength(1);
-    expect(providerAttestations[0].headerName).toBe("x-oai-attestation");
+    expect(providerAttestations[0]!.headerName).toBe("x-oai-attestation");
   });
 });

@@ -690,7 +690,7 @@ function resolveGatewayServiceRecovery(
   return undefined;
 }
 
-function stripSupervisorHintEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function stripSupervisorHintEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env };
   for (const key of SUPERVISOR_HINT_ENV_VARS) {
     if (SERVICE_IDENTITY_ENV_VARS.has(key)) {

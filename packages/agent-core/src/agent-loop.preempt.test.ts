@@ -53,6 +53,9 @@ function scriptedStreamFn(messages: AssistantMessage[]): StreamFn {
   let turn = 0;
   return () => {
     const message = messages[Math.min(turn, messages.length - 1)];
+    if (!message) {
+      throw new Error("scriptedStreamFn: no scripted message for turn");
+    }
     turn += 1;
     return {
       async *[Symbol.asyncIterator]() {
@@ -139,7 +142,7 @@ describe("agentLoop steering preemption", () => {
 
     const toolResults = toolResultMessages(result);
     expect(toolResults).toHaveLength(1);
-    expect(JSON.stringify(toolResults[0].content)).toContain(
+    expect(JSON.stringify(toolResults[0]?.content)).toContain(
       "interrupted to handle a new user message",
     );
     // The steer was injected as a user message after the interrupted tool result.
@@ -177,8 +180,8 @@ describe("agentLoop steering preemption", () => {
 
     const toolResults = toolResultMessages(result);
     expect(toolResults).toHaveLength(1);
-    expect(JSON.stringify(toolResults[0].content)).toContain("edit applied");
-    expect(JSON.stringify(toolResults[0].content)).not.toContain("interrupted");
+    expect(JSON.stringify(toolResults[0]?.content)).toContain("edit applied");
+    expect(JSON.stringify(toolResults[0]?.content)).not.toContain("interrupted");
   });
 });
 
@@ -220,7 +223,7 @@ describe("Agent steering preemption wiring", () => {
     const messages = agent.state.messages;
     const toolResults = messages.filter((m) => m.role === "toolResult");
     expect(toolResults).toHaveLength(1);
-    expect(JSON.stringify(toolResults[0].content)).toContain(
+    expect(JSON.stringify(toolResults[0]?.content)).toContain(
       "interrupted to handle a new user message",
     );
     const injectedSteer = messages.find(
@@ -271,7 +274,7 @@ describe("Agent steering preemption wiring", () => {
 
     const toolResults = agent.state.messages.filter((m) => m.role === "toolResult");
     expect(toolResults).toHaveLength(1);
-    expect(JSON.stringify(toolResults[0].content)).toContain("slow done");
+    expect(JSON.stringify(toolResults[0]?.content)).toContain("slow done");
     expect(aborted).toBe(false);
   });
 
@@ -323,7 +326,7 @@ describe("Agent steering preemption wiring", () => {
     const messages = agentRef.state.messages;
     const toolResults = messages.filter((m) => m.role === "toolResult");
     expect(toolResults).toHaveLength(1);
-    expect(JSON.stringify(toolResults[0].content)).toContain(
+    expect(JSON.stringify(toolResults[0]?.content)).toContain(
       "interrupted to handle a new user message",
     );
     const injectedSteer = messages.find(

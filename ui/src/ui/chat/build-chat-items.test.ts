@@ -85,8 +85,8 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].role).toBe("user");
-    expect(groups[0].messages).toHaveLength(2);
+    expect(groups[0]!.role).toBe("user");
+    expect(groups[0]!.messages).toHaveLength(2);
   });
 
   it("keeps forwarded assistant display messages separate from local assistant replies", () => {
@@ -123,9 +123,9 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].role).toBe("assistant");
-    expect(groups[0].senderLabel).toBe("Forwarded from main");
-    expect(groups[0].messages).toHaveLength(1);
+    expect(groups[0]!.role).toBe("assistant");
+    expect(groups[0]!.senderLabel).toBe("Forwarded from main");
+    expect(groups[0]!.messages).toHaveLength(1);
   });
 
   it("collapses consecutive duplicate text messages into one rendered item with a count", () => {
@@ -138,8 +138,8 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].messages).toHaveLength(1);
-    expect(groups[0].messages[0].duplicateCount).toBe(3);
+    expect(groups[0]!.messages).toHaveLength(1);
+    expect(groups[0]!.messages[0]!.duplicateCount).toBe(3);
   });
 
   it("suppresses assistant HEARTBEAT_OK acknowledgements before rendering history", () => {
@@ -153,9 +153,9 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(2);
-    expect(groups[0].role).toBe("user");
-    expect(groups[1].role).toBe("assistant");
-    expect(messageRecord(groups[1]).content).toStrictEqual([
+    expect(groups[0]!.role).toBe("user");
+    expect(groups[1]!.role).toBe("assistant");
+    expect(messageRecord(groups[1]!).content).toStrictEqual([
       { type: "text", text: "Visible reply" },
     ]);
   });
@@ -195,8 +195,8 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].messages).toHaveLength(1);
-    expect(messageRecord(groups[0]).content).toStrictEqual([
+    expect(groups[0]!.messages).toHaveLength(1);
+    expect(messageRecord(groups[0]!).content).toStrictEqual([
       { type: "thinking", thinking: "Useful hidden reasoning." },
       { type: "text", text: "Visible reply" },
     ]);
@@ -215,8 +215,8 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].messages).toHaveLength(1);
-    expect(canvasBlocksIn(groups[0])).toHaveLength(1);
+    expect(groups[0]!.messages).toHaveLength(1);
+    expect(canvasBlocksIn(groups[0]!)).toHaveLength(1);
   });
 
   it("suppresses active HEARTBEAT_OK streams before rendering", () => {
@@ -353,8 +353,8 @@ describe("buildChatItems", () => {
     const groups = items.filter((item) => item.kind === "group");
 
     expect(groups).toHaveLength(105);
-    expect(messageRecord(groups[0]).content).toBe("message 0");
-    expect(messageRecord(groups[groups.length - 1]).content).toBe("message 104");
+    expect(messageRecord(groups[0]!).content).toBe("message 0");
+    expect(messageRecord(groups[groups.length - 1]!).content).toBe("message 104");
     expect(
       groups.some((group) =>
         String(messageRecord(requireGroup(group)).content).startsWith("Showing last"),
@@ -379,8 +379,8 @@ describe("buildChatItems", () => {
     const noticeGroup = requireGroup(items[0]);
     expect(messageRecord(noticeGroup).content).toBe("Showing last 30 messages (75 hidden).");
     expect(groups).toHaveLength(31);
-    expect(messageRecord(groups[1]).content).toBe("message 75");
-    expect(messageRecord(groups[groups.length - 1]).content).toBe("message 104");
+    expect(messageRecord(groups[1]!).content).toBe("message 75");
+    expect(messageRecord(groups[groups.length - 1]!).content).toBe("message 104");
   });
 
   it("renders large tool-result history fully with no render budget", () => {
@@ -403,9 +403,9 @@ describe("buildChatItems", () => {
 
     const groups = items.filter((item) => item.kind === "group");
     expect(groups).toHaveLength(1);
-    expect(groups[0].messages).toHaveLength(6);
-    expect(messageRecord(groups[0], 0).timestamp).toBe(0);
-    expect(messageRecord(groups[0], 5).timestamp).toBe(5);
+    expect(groups[0]!.messages).toHaveLength(6);
+    expect(messageRecord(groups[0]!, 0).timestamp).toBe(0);
+    expect(messageRecord(groups[0]!, 5).timestamp).toBe(5);
   });
 
   it("does not crash when history contains malformed entries", () => {
@@ -425,7 +425,7 @@ describe("buildChatItems", () => {
 
     const groups = items.filter((item) => item.kind === "group");
     expect(groups).toHaveLength(1);
-    expect(messageRecord(groups[0]).content).toBe("still visible");
+    expect(messageRecord(groups[0]!).content).toBe("still visible");
   });
 
   it("does not collapse duplicate text messages separated by another message", () => {
@@ -438,8 +438,8 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(3);
-    expect(groups[0].messages[0].duplicateCount).toBeUndefined();
-    expect(groups[2].messages[0].duplicateCount).toBeUndefined();
+    expect(groups[0]!.messages[0]!.duplicateCount).toBeUndefined();
+    expect(groups[2]!.messages[0]!.duplicateCount).toBeUndefined();
   });
 
   it("does not collapse messages that carry canvas previews", () => {
@@ -460,8 +460,8 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].messages).toHaveLength(2);
-    expect(groups[0].messages[0].duplicateCount).toBeUndefined();
+    expect(groups[0]!.messages).toHaveLength(2);
+    expect(groups[0]!.messages[0]!.duplicateCount).toBeUndefined();
   });
 
   it("orders live tool messages before newer history messages", () => {
@@ -486,8 +486,8 @@ describe("buildChatItems", () => {
 
     expect(groups).toHaveLength(2);
     expect(groups.map((group) => group.role)).toEqual(["tool", "assistant"]);
-    expect(messageRecord(groups[0]).content).toBe("Older live tool output.");
-    expect(messageRecord(groups[1]).content).toStrictEqual([
+    expect(messageRecord(groups[0]!).content).toBe("Older live tool output.");
+    expect(messageRecord(groups[1]!).content).toStrictEqual([
       { type: "text", text: "Newer history reply." },
     ]);
   });
@@ -596,7 +596,7 @@ describe("buildChatItems", () => {
     });
 
     expect(groups.map((group) => group.role)).toEqual(["assistant", "user"]);
-    expect(messageRecord(groups[1]).content).toStrictEqual([
+    expect(messageRecord(groups[1]!).content).toStrictEqual([
       { type: "text", text: "first visible send" },
     ]);
   });
@@ -623,7 +623,7 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(messageRecord(groups[0]).content).toStrictEqual([
+    expect(messageRecord(groups[0]!).content).toStrictEqual([
       { type: "text", text: "see attached" },
       {
         type: "image",
@@ -648,9 +648,9 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].messages).toHaveLength(2);
-    expect(groups[0].messages[0].duplicateCount).toBeUndefined();
-    expect(groups[0].messages[1].duplicateCount).toBeUndefined();
+    expect(groups[0]!.messages).toHaveLength(2);
+    expect(groups[0]!.messages[0]!.duplicateCount).toBeUndefined();
+    expect(groups[0]!.messages[1]!.duplicateCount).toBeUndefined();
   });
 
   it("keeps failed queued sends out of the thread", () => {
@@ -692,7 +692,7 @@ describe("buildChatItems", () => {
     });
 
     expect(groups).toHaveLength(1);
-    expect(messageRecord(groups[0]).content).toStrictEqual([
+    expect(messageRecord(groups[0]!).content).toStrictEqual([
       { type: "text", text: "matching prompt" },
     ]);
   });
@@ -737,8 +737,8 @@ describe("buildChatItems", () => {
       ],
     });
 
-    expect(canvasBlocksIn(groups[0])).toHaveLength(1);
-    expect(canvasBlocksIn(groups[1])).toStrictEqual([]);
+    expect(canvasBlocksIn(groups[0]!)).toHaveLength(1);
+    expect(canvasBlocksIn(groups[1]!)).toStrictEqual([]);
   });
 
   it("preserves a metadata-only assistant anchor when lifting canvas previews", () => {
@@ -816,7 +816,7 @@ describe("buildChatItems", () => {
       ],
     });
 
-    expect(canvasBlocksIn(groups[0])).toStrictEqual([]);
+    expect(canvasBlocksIn(groups[0]!)).toStrictEqual([]);
   });
 
   it("lifts streamed canvas toolresult blocks into the assistant bubble", () => {

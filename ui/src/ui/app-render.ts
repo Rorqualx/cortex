@@ -1,3 +1,4 @@
+import { normalizeFastMode } from "@openclaw/normalization-core/string-coerce";
 import { html, nothing } from "lit";
 import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
@@ -200,6 +201,7 @@ import {
 import { resolveAgentArgPath } from "./path-arg.ts";
 import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
 import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
+import "./components/dashboard-header.ts";
 import {
   buildAgentMainSessionKey,
   isSessionKeyTiedToAgent,
@@ -208,7 +210,6 @@ import {
   parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
 } from "./session-key.ts";
-import "./components/dashboard-header.ts";
 import type { PendingEdit } from "./sidebar-content.ts";
 import {
   getLocalAgentAvatarOverride,
@@ -221,6 +222,8 @@ import type {
   AgentsFilesGetResult,
   AgentsFilesListResult,
   AgentFileEntry,
+  CronJob,
+  FastMode,
   GatewaySessionRow,
 } from "./types.ts";
 import { isRenderableControlUiAvatarUrl } from "./views/agents-utils.ts";
@@ -247,12 +250,13 @@ import {
 } from "./views/cron-quick-create.ts";
 import { renderDreamingRestartConfirmation } from "./views/dreaming-restart-confirmation.ts";
 import { renderDreaming, type DreamingAgentOption } from "./views/dreaming.ts";
+import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 // Self-registering <openclaw-exec-approval> element (upstream modal-queue shape).
 import "./views/exec-approval.ts";
-import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
+import { createPanelRefreshStatus, failPanelRefresh } from "./views/panel-refresh-status.ts";
 import { renderPixelAgentsStrip } from "./views/pixel-office.ts";
 import { renderRsil } from "./views/rsil.ts";
 
@@ -374,8 +378,9 @@ function resolveChannelsNavItems(
   for (const [surface, agentIds] of surfaceToAgents) {
     const agentsArray = [...agentIds];
     const nonDefault = agentsArray.filter((id) => normalizeAgentId(id) !== defaultAgentId);
+    let chosen: string | undefined;
     if (nonDefault.length === 1) {
-      agentSurfaceAgents.set(surface, nonDefault[0]);
+      chosen = nonDefault[0];
     } else if (nonDefault.length > 1) {
       // Multiple non-default agents — pick the one whose name matches the surface label
       const surfaceLabel = AGENT_CHANNEL_SURFACE_META[surface]?.label?.toLowerCase();
@@ -386,9 +391,12 @@ function resolveChannelsNavItems(
             return name.includes(surfaceLabel);
           })
         : undefined;
-      agentSurfaceAgents.set(surface, match ?? nonDefault[0]);
+      chosen = match ?? nonDefault[0];
     } else {
-      agentSurfaceAgents.set(surface, agentsArray[0]);
+      chosen = agentsArray[0];
+    }
+    if (chosen !== undefined) {
+      agentSurfaceAgents.set(surface, chosen);
     }
   }
 
@@ -2031,10 +2039,10 @@ export function renderApp(state: AppViewState) {
               : typeof agentsDefaults.thinkingLevel === "string"
                 ? agentsDefaults.thinkingLevel
                 : "off";
-          const fastMode =
-            typeof activeSession?.fastMode === "boolean"
-              ? activeSession.fastMode
-              : agentsDefaults.fastMode === true;
+          const fastMode: FastMode =
+            normalizeFastMode(activeSession?.fastMode) ??
+            normalizeFastMode(agentsDefaults.fastMode) ??
+            false;
           const modelSelect = resolveChatModelSelectState(state);
           const modelSwitching = Boolean(state.chatModelSwitchPromises?.[state.sessionKey]);
           return renderQuickSettings({
@@ -2052,8 +2060,8 @@ export function renderApp(state: AppViewState) {
                 requestHostUpdate?.(),
               );
             },
-            onFastModeToggle: () => {
-              void patchSession(state, state.sessionKey, { fastMode: !fastMode }).then(() =>
+            onFastModeChange: (mode) => {
+              void patchSession(state, state.sessionKey, { fastMode: mode }).then(() =>
                 requestHostUpdate?.(),
               );
             },
@@ -2250,6 +2258,26 @@ export function renderApp(state: AppViewState) {
             },
             nostrProfileFormState: state.nostrProfileFormState,
             nostrProfileAccountId: state.nostrProfileAccountId,
+            // Detail pane reuses the existing channel-config selection state so the
+            // per-channel config form stays reachable under upstream's list/detail view.
+            selectedChannel: state.configChannelModalKey,
+            onShowDetail: (channelId: string) => {
+              state.configChannelModalKey = channelId;
+              requestHostUpdate?.();
+            },
+            onCloseDetail: () => {
+              state.configChannelModalKey = null;
+              requestHostUpdate?.();
+            },
+            setupBlockedByDirtyConfig: false,
+            // Channel setup wizard is an upstream-only feature with no fork gateway
+            // wiring yet; keep it idle so the list/detail config UI works. Deferred.
+            wizard: { phase: "idle" },
+            wizardMultiselect: [],
+            onStartSetup: () => undefined,
+            onWizardAnswer: () => undefined,
+            onWizardToggleMultiselect: () => undefined,
+            onWizardClose: () => undefined,
             onRefresh: (probe) => void loadChannels(state, probe),
             onWhatsAppStart: (force) => void state.handleWhatsAppStart(force),
             onWhatsAppWait: () => void state.handleWhatsAppWait(),
@@ -2337,7 +2365,7 @@ export function renderApp(state: AppViewState) {
           connected: state.connected,
           onSaveConfig: () => void saveConfig(state),
           onApplyConfig: () => void applyConfig(state),
-          onServerEnabledChange: (name, enabled) => {
+          onServerEnabledChange: (name: string, enabled: boolean) => {
             updateMcpServerEnabled(state, name, enabled);
             requestHostUpdate?.();
           },
@@ -3363,7 +3391,7 @@ export function renderApp(state: AppViewState) {
                     requestHostUpdate?.();
                   })();
                 },
-                onEdit: (job) => {
+                onEdit: (job: CronJob) => {
                   state.cronFormCollapsed = false;
                   startCronEdit(state, job);
                 },
@@ -3376,12 +3404,12 @@ export function renderApp(state: AppViewState) {
                   state.cronFormCollapsed = true;
                   requestHostUpdate?.();
                 },
-                onToggleFormCollapsed: (collapsed) => {
+                onToggleFormCollapsed: (collapsed: boolean) => {
                   state.cronFormCollapsed = collapsed;
                   requestHostUpdate?.();
                 },
                 onToggle: (job, enabled) => void toggleCronJob(state, job, enabled),
-                onRun: (job, mode) => void runCronJob(state, job, mode ?? "force"),
+                onRun: (job, mode) => void runCronJob(state, job.id, mode ?? "force"),
                 onRemove: (job) => void removeCronJob(state, job),
                 onQuickCreate: () => {
                   state.cronQuickCreateOpen = true;
@@ -3620,7 +3648,7 @@ export function renderApp(state: AppViewState) {
                   if (!job) {
                     return;
                   }
-                  void runCronJob(state, job, "force");
+                  void runCronJob(state, job.id, "force");
                 },
                 onSkillsFilterChange: (next) => (state.skillsFilter = next),
                 onSkillsRefresh: () => {
@@ -3775,7 +3803,7 @@ export function renderApp(state: AppViewState) {
                 statusFilter: state.skillsStatusFilter,
                 edits: state.skillEdits,
                 messages: state.skillMessages,
-                busyKey: state.skillsBusyKey,
+                operation: state.skillOperation,
                 detailKey: state.skillsDetailKey,
                 detailTab: state.skillsDetailTab,
                 clawhubVerdicts: state.clawhubVerdicts,
@@ -3792,7 +3820,6 @@ export function renderApp(state: AppViewState) {
                 clawhubDetailSlug: state.clawhubDetailSlug,
                 clawhubDetailLoading: state.clawhubDetailLoading,
                 clawhubDetailError: state.clawhubDetailError,
-                clawhubInstallSlug: state.clawhubInstallSlug,
                 clawhubInstallMessage: state.clawhubInstallMessage,
                 onAgentChange: (agentId) => {
                   setSkillsAgentId(state, agentId);
@@ -3897,7 +3924,7 @@ export function renderApp(state: AppViewState) {
                 onDevicesRefresh: () => void loadDevices(state),
                 onDeviceApprove: (requestId) => void approveDevicePairing(state, requestId),
                 onDeviceReject: (requestId) => void rejectDevicePairing(state, requestId),
-                onDeviceRotate: (deviceId, role, scopes) =>
+                onDeviceRotate: (deviceId: string, role: string, scopes?: string[]) =>
                   void rotateDeviceToken(state, { deviceId, role, scopes }),
                 onDeviceRevoke: (deviceId, role) =>
                   void revokeDeviceToken(state, { deviceId, role }),
@@ -4273,17 +4300,17 @@ export function renderApp(state: AppViewState) {
                     // then fall back to removed lines if content is still old.
                     let matchLineIndex: number | undefined;
                     const fileLines = sc.content.split("\n");
-                    if (fileLines.length > 1 && fileLines[fileLines.length - 1].trim() === "") {
+                    if (fileLines.length > 1 && fileLines[fileLines.length - 1]?.trim() === "") {
                       fileLines.pop();
                     }
                     // Try added lines first (content is post-edit)
                     const firstAdded = added[0]?.trim();
                     if (firstAdded) {
                       for (let li = 0; li < fileLines.length; li++) {
-                        if (fileLines[li].trim() === firstAdded) {
+                        if (fileLines[li]?.trim() === firstAdded) {
                           let fullMatch = true;
                           for (let ai = 0; ai < added.length && li + ai < fileLines.length; ai++) {
-                            if (fileLines[li + ai].trim() !== added[ai].trim()) {
+                            if (fileLines[li + ai]?.trim() !== added[ai]?.trim()) {
                               fullMatch = false;
                               break;
                             }
@@ -4300,14 +4327,14 @@ export function renderApp(state: AppViewState) {
                       const firstRemoved = removed[0]?.trim();
                       if (firstRemoved) {
                         for (let li = 0; li < fileLines.length; li++) {
-                          if (fileLines[li].trim() === firstRemoved) {
+                          if (fileLines[li]?.trim() === firstRemoved) {
                             let fullMatch = true;
                             for (
                               let ri = 0;
                               ri < removed.length && li + ri < fileLines.length;
                               ri++
                             ) {
-                              if (fileLines[li + ri].trim() !== removed[ri].trim()) {
+                              if (fileLines[li + ri]?.trim() !== removed[ri]?.trim()) {
                                 fullMatch = false;
                                 break;
                               }
@@ -4402,8 +4429,9 @@ export function renderApp(state: AppViewState) {
                   state.chatOpenSessionTabs = state.chatOpenSessionTabs.filter((k) => k !== key);
                   if (key === state.sessionKey) {
                     const remaining = state.chatOpenSessionTabs;
-                    if (remaining.length > 0) {
-                      switchChatSession(state, remaining[remaining.length - 1]);
+                    const lastRemaining = remaining[remaining.length - 1];
+                    if (lastRemaining !== undefined) {
+                      switchChatSession(state, lastRemaining);
                     }
                   }
                   // Drop the closed session's saved runtime (after any switch, which
@@ -4719,7 +4747,11 @@ export function renderApp(state: AppViewState) {
               renderLazyView(lazyLogs, (m) =>
                 m.renderLogs({
                   loading: state.logsLoading,
-                  error: state.logsError,
+                  // Upstream logs view consumes a PanelRefreshStatus; map the fork's
+                  // string logsError into a failed status so the error banner still renders.
+                  status: state.logsError
+                    ? failPanelRefresh(createPanelRefreshStatus(), state.logsError)
+                    : createPanelRefreshStatus(),
                   file: state.logsFile,
                   entries: state.logsEntries,
                   filterText: state.logsFilterText,
@@ -4846,7 +4878,10 @@ export function renderApp(state: AppViewState) {
               inlineApprovalId: null,
               // Fork handler decides the queue head only; ignore stale ids from
               // queue-list clicks so a race can't approve the wrong request.
-              onDecision: (approvalId: string, decision: "allow-once" | "allow-always" | "deny") => {
+              onDecision: (
+                approvalId: string,
+                decision: "allow-once" | "allow-always" | "deny",
+              ) => {
                 if (approvalId === state.execApprovalQueue[0]?.id) {
                   void state.handleExecApprovalDecision(decision);
                 }

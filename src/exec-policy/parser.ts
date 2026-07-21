@@ -99,6 +99,9 @@ export function indexRules(rules: PrefixRule[]): Map<string, PrefixRule[]> {
       continue;
     }
     const firstAlternatives = rule.pattern[0];
+    if (firstAlternatives === undefined) {
+      continue;
+    }
     for (const alt of firstAlternatives) {
       const existing = index.get(alt) ?? [];
       existing.push(rule);

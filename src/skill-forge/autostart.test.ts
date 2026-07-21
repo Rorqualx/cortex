@@ -44,7 +44,7 @@ describe("buildSkillForgeLaunchdPlist", () => {
       throw new Error("unreachable");
     }
     const order =
-      argsBlock[1]
+      (argsBlock[1] ?? "")
         .match(/<string>([^<]*)<\/string>/gu)
         ?.map((s) => s.replace(/<\/?string>/gu, "")) ?? [];
     expect(order).toEqual([

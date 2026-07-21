@@ -711,6 +711,7 @@ describe("hooks mapping", () => {
         ],
       });
       const mapping = mappings[0];
+      if (!mapping) throw new Error("expected mapping");
       expect(mapping.validateViaAgent).toBe(true);
       expect(mapping.validationAgentId).toBe("security-validator");
       expect(mapping.validationPrompt).toBe("Check if this request meets security policy");
@@ -729,7 +730,7 @@ describe("hooks mapping", () => {
           },
         ],
       });
-      expect(mappings[0].validationAgentId).toBe("validator");
+      expect(mappings[0]?.validationAgentId).toBe("validator");
     });
 
     it("handles missing validationAgentId gracefully", () => {
@@ -746,6 +747,7 @@ describe("hooks mapping", () => {
         ],
       });
       const mapping = mappings[0];
+      if (!mapping) throw new Error("expected mapping");
       expect(mapping.validateViaAgent).toBe(true);
       expect(mapping.validationAgentId).toBeUndefined();
     });
@@ -769,7 +771,7 @@ describe("hooks mapping", () => {
             },
           ],
         });
-        expect(mappings[0].validationPrompt).toBe(customPrompt);
+        expect(mappings[0]?.validationPrompt).toBe(customPrompt);
       });
 
       it("uses default prompt when validationPrompt is omitted", () => {
@@ -784,7 +786,7 @@ describe("hooks mapping", () => {
             },
           ],
         });
-        expect(mappings[0].validationPrompt).toBeUndefined();
+        expect(mappings[0]?.validationPrompt).toBeUndefined();
       });
     });
 

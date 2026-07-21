@@ -276,7 +276,7 @@ export function pruneExecApprovalQueue(queue: ExecApprovalRequest[]): ExecApprov
   return queue.filter((entry) => entry.expiresAtMs > now);
 }
 
-function addExecApproval(
+export function addExecApproval(
   queue: ExecApprovalRequest[],
   entry: ExecApprovalRequest,
 ): ExecApprovalRequest[] {
@@ -393,6 +393,14 @@ function synchronizeApprovalCountdownTimer(state: ExecApprovalPromptState): void
     state.execApprovalChanged?.();
     synchronizeApprovalCountdownTimer(state);
   }, 1_000);
+}
+
+function clearApprovalExpiryTimer(state: ExecApprovalPromptState, id: string): void {
+  const timer = state.execApprovalExpiryTimers?.get(id);
+  if (timer !== undefined) {
+    globalThis.clearTimeout(timer);
+    state.execApprovalExpiryTimers?.delete(id);
+  }
 }
 
 function scheduleApprovalExpiryPrune(

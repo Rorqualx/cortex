@@ -101,7 +101,7 @@ describe("createPostCompactionLoopGuard", () => {
   });
 
   it("respects the parent loop detection disabled state", () => {
-    const guard = createPostCompactionLoopGuard({ enabled: false });
+    const guard = createPostCompactionLoopGuard(undefined, { enabled: false });
     guard.armPostCompaction();
     guard.observe(callOutcome("gateway", { x: 1 }, "r1"));
     guard.observe(callOutcome("gateway", { x: 1 }, "r1"));

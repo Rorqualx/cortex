@@ -42,7 +42,7 @@ describe("vault crypto", () => {
     const key = loadOrCreateVaultKey(env);
     const payload = encryptSecret("tamper-me", key);
     const flipped = Buffer.from(payload.ciphertext, "base64");
-    flipped[0] ^= 0xff;
+    flipped[0] = flipped[0]! ^ 0xff;
     expect(() =>
       decryptSecret({ ...payload, ciphertext: flipped.toString("base64") }, key),
     ).toThrow();

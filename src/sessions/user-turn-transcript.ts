@@ -15,6 +15,7 @@ import type {
   UserTurnMessagePersistenceParams,
   UserTurnInput,
   UserTurnTranscriptPersistResult,
+  UserTurnTranscriptFileTarget,
   UserTurnTranscriptRecorder,
   UserTurnTranscriptTarget,
   UserTurnTranscriptTargetResolver,
@@ -474,6 +475,73 @@ async function resolveUserTurnTranscriptTarget(
   return typeof target === "function" ? await target() : target;
 }
 
+// A file target carries an explicit `transcriptPath`; the store target never
+// does. Discriminating on the field keeps the two persistence paths separate.
+function isUserTurnTranscriptFileTarget(
+  target: UserTurnTranscriptTarget,
+): target is UserTurnTranscriptFileTarget {
+  return "transcriptPath" in target;
+}
+
+// Explicit-file persistence: write the user turn straight to the caller's
+// transcript file via the session accessor's explicit-`sessionFile` branch,
+// bypassing store resolution (which would route the turn into SQLite instead).
+async function persistUserTurnTranscriptToFile(params: {
+  target: UserTurnTranscriptFileTarget;
+  message: PersistedUserTurnMessage;
+  updateMode: UserTurnTranscriptUpdateMode;
+  beforeMessageWrite?: UserTurnMessagePersistenceParams["beforeMessageWrite"];
+}): Promise<UserTurnTranscriptPersistResult | undefined> {
+  const { target } = params;
+  const turn = await persistSessionTranscriptTurn(
+    {
+      sessionFile: target.transcriptPath,
+      sessionKey: target.sessionKey ?? "",
+      ...(target.agentId ? { agentId: target.agentId } : {}),
+      ...(target.sessionId ? { sessionId: target.sessionId } : {}),
+    },
+    {
+      ...(target.cwd ? { cwd: target.cwd } : {}),
+      ...(target.config
+        ? { config: target.config as SessionTranscriptTurnPersistOptions["config"] }
+        : {}),
+      updateMode: params.updateMode,
+      messages: [
+        {
+          message: params.message,
+          idempotencyLookup: "scan",
+          prepareMessageAfterIdempotencyCheck: (candidate) =>
+            preparePersistedUserTurnMessageForTranscriptWrite(
+              candidate as PersistedUserTurnMessage,
+              {
+                ...(target.agentId ? { agentId: target.agentId } : {}),
+                ...(target.sessionKey ? { sessionKey: target.sessionKey } : {}),
+                ...(params.beforeMessageWrite
+                  ? { beforeMessageWrite: params.beforeMessageWrite }
+                  : {}),
+              },
+            ),
+        },
+      ],
+    },
+  );
+  const appended = turn.messages[0] as
+    | {
+        appended: boolean;
+        messageId: string;
+        message: PersistedUserTurnMessage;
+      }
+    | undefined;
+  if (!appended) {
+    return undefined;
+  }
+  return {
+    ...appended,
+    sessionEntry: undefined,
+    sessionFile: target.transcriptPath,
+  };
+}
+
 export function createUserTurnTranscriptRecorder(
   params: CreateUserTurnTranscriptRecorderParams,
 ): UserTurnTranscriptRecorder {
@@ -594,8 +662,16 @@ export function createUserTurnTranscriptRecorder(
       const persistMessage = async (
         candidate: PersistedUserTurnMessage,
         candidateUpdateMode: UserTurnTranscriptUpdateMode,
-      ) =>
-        await persistUserTurnTranscript({
+      ) => {
+        if (isUserTurnTranscriptFileTarget(resolvedTarget)) {
+          return await persistUserTurnTranscriptToFile({
+            target: resolvedTarget,
+            message: candidate,
+            updateMode: candidateUpdateMode,
+            ...(params.beforeMessageWrite ? { beforeMessageWrite: params.beforeMessageWrite } : {}),
+          });
+        }
+        return await persistUserTurnTranscript({
           ...resolvedTarget,
           message: candidate,
           ...(options.expectedSessionId ? { expectedSessionId: options.expectedSessionId } : {}),
@@ -613,6 +689,7 @@ export function createUserTurnTranscriptRecorder(
           updateMode: candidateUpdateMode,
           ...(params.beforeMessageWrite ? { beforeMessageWrite: params.beforeMessageWrite } : {}),
         });
+      };
       const lateMediaMessage =
         sentToProvider && !resolvedBeforeProvider
           ? buildLateResolvedMediaMessage({

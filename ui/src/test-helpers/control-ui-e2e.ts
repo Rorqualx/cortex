@@ -11,7 +11,6 @@ import { PROTOCOL_VERSION } from "../../../packages/gateway-protocol/src/version
 import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "../../../src/gateway/control-ui-contract.js";
 import {
   controlUiBrowserOnlySharedModuleAliases,
-  resolveExternalPackageAliasesForVite,
   resolveSourcePackageAliasesForVite,
   resolveTsconfigPathAliasesForVite,
 } from "../../vite.config.ts";
@@ -202,7 +201,6 @@ export async function startControlUiE2eServer(
     resolve: {
       alias: [
         { find: "json5", replacement: json5EsmPath },
-        ...resolveExternalPackageAliasesForVite(),
         ...resolveSourcePackageAliasesForVite(),
         ...resolveTsconfigPathAliasesForVite(),
       ],

@@ -363,11 +363,11 @@ async function listDirs(dirPath: string): Promise<string[]> {
 async function readSkillDesc(skillDir: string): Promise<string> {
   try {
     const content = await fsp.readFile(path.join(skillDir, "SKILL.md"), "utf8");
-    const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-    if (!match) {
+    const frontmatter = content.match(/^---\s*\n([\s\S]*?)\n---/)?.[1];
+    if (!frontmatter) {
       return "";
     }
-    const descMatch = match[1].match(/^description:\s*['"]?(.+?)['"]?\s*$/m);
+    const descMatch = frontmatter.match(/^description:\s*['"]?(.+?)['"]?\s*$/m);
     return descMatch?.[1]?.trim() ?? "";
   } catch {
     return "";

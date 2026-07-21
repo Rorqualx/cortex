@@ -278,12 +278,20 @@ export function resolveConflicts(facts: ReadonlyArray<SharedLongTermFact>): Shar
       return b.lastConfirmedAt - a.lastConfirmedAt;
     });
     // Winner stays active; rest get archived
-    result.push(candidates[0]);
+    const winner = candidates[0];
+    if (!winner) {
+      continue;
+    }
+    result.push(winner);
     for (let i = 1; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (!c) {
+        continue;
+      }
       result.push({
-        ...candidates[i],
+        ...c,
         archived: true,
-        archivedAt: candidates[i].archivedAt ?? Date.now(),
+        archivedAt: c.archivedAt ?? Date.now(),
       });
     }
   }

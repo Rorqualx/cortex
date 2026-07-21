@@ -1,10 +1,19 @@
 import { tokenize, jaccard } from "./scoring.js";
 
+type ScoredFact = { fact: { dedupKey: string; text: string }; score: number };
+
 // Copy of submodularSelect for standalone verification
-function submodularSelect(scored, queryTokens, topK, diversityWeight, coverageWeight, tokenBudget) {
-  const selected = [];
-  const selectedKeys = new Set();
-  const coveredTokens = new Set();
+function submodularSelect(
+  scored: ScoredFact[],
+  queryTokens: Set<string>,
+  topK: number,
+  diversityWeight: number,
+  coverageWeight: number,
+  tokenBudget: number | null,
+): ScoredFact[] {
+  const selected: ScoredFact[] = [];
+  const selectedKeys = new Set<string>();
+  const coveredTokens = new Set<string>();
   let usedTokens = 0;
   const budget = tokenBudget ?? topK * 20;
   const pool = scored.slice();
@@ -15,7 +24,7 @@ function submodularSelect(scored, queryTokens, topK, diversityWeight, coverageWe
 
     for (let i = 0; i < pool.length; i++) {
       const item = pool[i];
-      if (selectedKeys.has(item.fact.dedupKey)) continue;
+      if (!item || selectedKeys.has(item.fact.dedupKey)) continue;
 
       const itemTokens = Math.ceil(item.fact.text.length / 4);
       // Budget check: when tokenBudget is explicit, enforce it strictly.
@@ -46,6 +55,7 @@ function submodularSelect(scored, queryTokens, topK, diversityWeight, coverageWe
     if (bestIdx === -1) break;
 
     const chosen = pool[bestIdx];
+    if (!chosen) break;
     selected.push(chosen);
     selectedKeys.add(chosen.fact.dedupKey);
     const chosenTokens = tokenize(chosen.fact.text);
@@ -61,7 +71,7 @@ function submodularSelect(scored, queryTokens, topK, diversityWeight, coverageWe
   return selected;
 }
 
-function rf(text, score) {
+function rf(text: string, score: number) {
   return {
     fact: {
       id: `f-${text.slice(0, 10)}`,
@@ -87,8 +97,8 @@ const t1 = submodularSelect(
   null,
 );
 console.assert(t1.length === 2, "t1 length");
-console.assert(t1[0].fact.text === "alpha beta gamma", "t1[0]");
-console.assert(t1[1].fact.text === "beta gamma delta", "t1[1]");
+console.assert(t1[0]?.fact.text === "alpha beta gamma", "t1[0]");
+console.assert(t1[1]?.fact.text === "beta gamma delta", "t1[1]");
 
 // Test 2: diversity
 const t2 = submodularSelect(

@@ -1,11 +1,11 @@
 // Shared attachment controls for chat and new-session composers.
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { html, nothing } from "lit";
-import { icons } from "../icons.ts";
+import { t } from "../../i18n/index.ts";
 import "../views/tooltip.ts";
 import "../views/web-awesome.ts";
-import { t } from "../../i18n/index.ts";
-import type { ChatAttachment } from "../types/chat-types.ts";
+import { icons } from "../icons.ts";
+import type { ChatAttachment } from "../ui-types.ts";
 import {
   getChatAttachmentDataUrl,
   getChatAttachmentPreviewUrl,

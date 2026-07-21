@@ -73,5 +73,6 @@ export function buildCompressionMarker(
  */
 export function extractHashesFromContent(content: string): string[] {
   const matches = content.matchAll(/Retrieve: hash=([a-f0-9]+)/g);
-  return [...matches].map((m) => m[1]);
+  // Capture group 1 is non-optional in the regex, so it is always defined on a match.
+  return [...matches].map((m) => m[1]!);
 }

@@ -153,7 +153,7 @@ describe("handleConnected", () => {
     expect(applySettingsFromUrlMock).toHaveBeenCalledTimes(1);
     expect(loadBootstrapMock).toHaveBeenCalledTimes(1);
     expect(applySettingsFromUrlMock.mock.invocationCallOrder[0]).toBeLessThan(
-      loadBootstrapMock.mock.invocationCallOrder[0],
+      loadBootstrapMock.mock.invocationCallOrder[0]!,
     );
     expect(loadBootstrapMock).toHaveBeenCalledWith(host, { applyIdentity: false });
     expect(
@@ -175,7 +175,7 @@ describe("handleConnected", () => {
 
     expect(restoreComposerMock).toHaveBeenCalledWith(host, { preserveCurrent: true });
     expect(restoreComposerMock.mock.invocationCallOrder[0]).toBeLessThan(
-      connectGatewayMock.mock.invocationCallOrder[0],
+      connectGatewayMock.mock.invocationCallOrder[0]!,
     );
     expect(host.chatComposerProvisionalRestore).toEqual({
       sessionKey: "main",

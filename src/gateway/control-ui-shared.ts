@@ -1,10 +1,7 @@
 // Control UI shared URL helpers.
 // Normalizes base paths and avatar URLs for browser/gateway surfaces.
-import {
-  isAvatarHttpUrl,
-  isAvatarImageDataUrl,
-  looksLikeAvatarPath,
-} from "../shared/avatar-policy.js";
+import { isRenderableAvatarImageDataUrl } from "../shared/avatar-limits.js";
+import { isAvatarHttpUrl, looksLikeAvatarPath } from "../shared/avatar-policy.js";
 
 const CONTROL_UI_AVATAR_PREFIX = "/avatar";
 
@@ -47,7 +44,7 @@ export function resolveAssistantAvatarUrl(params: {
   if (!avatar) {
     return undefined;
   }
-  if (isAvatarHttpUrl(avatar) || isAvatarImageDataUrl(avatar)) {
+  if (isAvatarHttpUrl(avatar) || isRenderableAvatarImageDataUrl(avatar)) {
     return avatar;
   }
 

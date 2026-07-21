@@ -79,8 +79,9 @@ export function crushJsonArray(
 
   // Build header with constant fields
   const header: Record<string, unknown> = {};
-  if (constantFields.length > 0 && selected.length > 0) {
-    const firstItem = selected[0].item;
+  const firstSelected = selected[0];
+  if (constantFields.length > 0 && firstSelected) {
+    const firstItem = firstSelected.item;
     for (const field of constantFields) {
       if (field in firstItem) {
         header[field] = firstItem[field];

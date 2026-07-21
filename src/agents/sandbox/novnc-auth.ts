@@ -29,6 +29,11 @@ type NoVncObserverTokenPayload = {
 
 const NO_VNC_OBSERVER_TOKENS = new Map<string, NoVncObserverTokenEntry>();
 
+/** Test-only: clears the in-process observer-token registry between cases. */
+export function resetNoVncObserverTokensForTests(): void {
+  NO_VNC_OBSERVER_TOKENS.clear();
+}
+
 function pruneExpiredNoVncObserverTokens(now: number) {
   for (const [token, entry] of NO_VNC_OBSERVER_TOKENS) {
     if (!isFutureDateTimestampMs(entry.expiresAt, { nowMs: now })) {

@@ -40,9 +40,9 @@ import { getOrCreateSessionCacheValue } from "../chat/session-cache.ts";
 import { renderSideResult } from "../chat/side-result-render.ts";
 import type { ChatSideResult } from "../chat/side-result.ts";
 import {
-  CATEGORY_LABELS,
   SLASH_COMMANDS,
   getHiddenCommandCount,
+  getSlashCommandCategoryLabel,
   getSlashCommandCompletions,
   type SlashCommandCategory,
   type SlashCommandDef,
@@ -716,7 +716,7 @@ function chatAttachmentFromFile(file: File, dataUrl: string): ChatAttachment {
 
 function dataImageClipboardFile(dataUrl: string): { file: File; dataUrl: string } | null {
   const match = /^\s*data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)\s*$/i.exec(dataUrl);
-  if (!match) {
+  if (!match?.[1] || !match[2]) {
     return null;
   }
   const mimeType = match[1].toLowerCase();
@@ -1187,7 +1187,7 @@ function closeSlashMenuIfNeeded(requestUpdate: () => void): void {
 function updateSlashMenu(value: string, requestUpdate: () => void): void {
   // Arg mode: /command <partial-arg>
   const argMatch = value.match(/^\/(\S+)\s(.*)$/);
-  if (argMatch) {
+  if (argMatch?.[1] !== undefined && argMatch[2] !== undefined) {
     const cmdName = argMatch[1].toLowerCase();
     const argFilter = argMatch[2].toLowerCase();
     const cmd = SLASH_COMMANDS.find((c) => c.name === cmdName);
@@ -1212,7 +1212,7 @@ function updateSlashMenu(value: string, requestUpdate: () => void): void {
 
   // Command mode: /partial-command
   const match = value.match(/^\/(\S*)$/);
-  if (match) {
+  if (match?.[1] !== undefined) {
     const items = getSlashCommandCompletions(match[1], { showAll: vs.slashMenuExpanded });
     vs.slashMenuItems = items;
     vs.slashMenuOpen = items.length > 0;
@@ -1533,6 +1533,7 @@ function renderSlashMenu(
   >();
   for (let i = 0; i < vs.slashMenuItems.length; i++) {
     const cmd = vs.slashMenuItems[i];
+    if (!cmd) continue;
     const cat = cmd.category ?? "session";
     let list = grouped.get(cat);
     if (!list) {
@@ -1546,7 +1547,7 @@ function renderSlashMenu(
   for (const [cat, entries] of grouped) {
     sections.push(html`
       <div class="slash-menu-group">
-        <div class="slash-menu-group__label">${CATEGORY_LABELS[cat]}</div>
+        <div class="slash-menu-group__label">${getSlashCommandCategoryLabel(cat)}</div>
         ${entries.map(
           ({ cmd, globalIdx }) => html`
             <div
@@ -2029,14 +2030,18 @@ export function renderChat(props: ChatProps) {
           vs.slashMenuIndex = (vs.slashMenuIndex - 1 + len) % len;
           requestUpdate();
           return;
-        case "Tab":
+        case "Tab": {
           e.preventDefault();
-          selectSlashArg(vs.slashMenuArgItems[vs.slashMenuIndex], props, requestUpdate, false);
+          const arg = vs.slashMenuArgItems[vs.slashMenuIndex];
+          if (arg !== undefined) selectSlashArg(arg, props, requestUpdate, false);
           return;
-        case "Enter":
+        }
+        case "Enter": {
           e.preventDefault();
-          selectSlashArg(vs.slashMenuArgItems[vs.slashMenuIndex], props, requestUpdate, true);
+          const arg = vs.slashMenuArgItems[vs.slashMenuIndex];
+          if (arg !== undefined) selectSlashArg(arg, props, requestUpdate, true);
           return;
+        }
         case "Escape":
           e.preventDefault();
           vs.slashMenuOpen = false;
@@ -2060,14 +2065,18 @@ export function renderChat(props: ChatProps) {
           vs.slashMenuIndex = (vs.slashMenuIndex - 1 + len) % len;
           requestUpdate();
           return;
-        case "Tab":
+        case "Tab": {
           e.preventDefault();
-          tabCompleteSlashCommand(vs.slashMenuItems[vs.slashMenuIndex], props, requestUpdate);
+          const cmd = vs.slashMenuItems[vs.slashMenuIndex];
+          if (cmd !== undefined) tabCompleteSlashCommand(cmd, props, requestUpdate);
           return;
-        case "Enter":
+        }
+        case "Enter": {
           e.preventDefault();
-          selectSlashCommand(vs.slashMenuItems[vs.slashMenuIndex], props, requestUpdate);
+          const cmd = vs.slashMenuItems[vs.slashMenuIndex];
+          if (cmd !== undefined) selectSlashCommand(cmd, props, requestUpdate);
           return;
+        }
         case "Escape":
           e.preventDefault();
           vs.slashMenuOpen = false;

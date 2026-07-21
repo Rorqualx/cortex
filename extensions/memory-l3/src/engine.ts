@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type {
   AssembleResult,
   BootstrapResult,
@@ -9,9 +10,8 @@ import type {
   ContextEngineInfo,
   IngestBatchResult,
   IngestResult,
-} from "openclaw/plugin-sdk";
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
-import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+} from "openclaw/plugin-sdk/memory-core-engine-runtime";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core-engine-runtime";
 import { getMemorySearchManager } from "openclaw/plugin-sdk/memory-core-engine-runtime";
 import { compactSession } from "./compaction.js";
 import { publishToFacts } from "./cross-context.js";
@@ -471,7 +471,11 @@ export class HierarchicalL3Engine implements ContextEngine {
   async compact(params: {
     sessionId: string;
     sessionKey?: string;
-    sessionFile: string;
+    // Optional so this override stays assignable to ContextEngine.compact, whose
+    // callers pass a storage-neutral sessionTarget rather than a file path. L3
+    // compacts purely from sessionId + its own buffer, so the extra fields are
+    // accepted but unused.
+    sessionFile?: string;
     tokenBudget?: number;
     force?: boolean;
     currentTokenCount?: number;

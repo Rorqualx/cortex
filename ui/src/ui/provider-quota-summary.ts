@@ -148,3 +148,35 @@ export function collectProviderQuotaGroups(
   }
   return groups.map((entry) => entry.group);
 }
+
+/** One usage window flattened out of its provider group for the chat quota pill. */
+export type QuotaWindowSummary = {
+  displayName: string;
+  label: string;
+  remaining: number;
+  resetAt?: number;
+};
+
+/**
+ * Flattens the per-provider quota groups into a single ordered list of usage
+ * windows, each carrying its provider display name and remaining budget, so the
+ * compact chat quota pill can surface the tightest window without re-grouping.
+ */
+export function collectQuotaWindowsFromAuthStatus(
+  status: ModelAuthStatusResult | null,
+  filter: (provider: ModelAuthStatusProvider) => boolean,
+): QuotaWindowSummary[] {
+  return collectProviderQuotaGroups(status, filter).flatMap((group) =>
+    group.windows.map((window) => {
+      const summary: QuotaWindowSummary = {
+        displayName: group.displayName,
+        label: window.label ?? "",
+        remaining: clampPercent(100 - window.usedPercent),
+      };
+      if (window.resetAt !== undefined) {
+        summary.resetAt = window.resetAt;
+      }
+      return summary;
+    }),
+  );
+}

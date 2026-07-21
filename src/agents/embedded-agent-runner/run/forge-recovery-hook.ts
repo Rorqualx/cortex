@@ -92,7 +92,7 @@ function toNameToken(tool: string): string {
 
 function stripFrontmatter(content: string): string {
   const match = content.match(/^---\n[\s\S]+?\n---\n([\s\S]*)$/u);
-  return (match ? match[1] : content).trim();
+  return (match?.[1] ?? content).trim();
 }
 
 /**

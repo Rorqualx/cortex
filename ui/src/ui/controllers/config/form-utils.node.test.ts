@@ -8,6 +8,43 @@ import {
   setPathValue,
 } from "./form-utils.ts";
 
+function makeConfigWithProvider(): Record<string, unknown> {
+  return {
+    gateway: { auth: { token: "test-token" } },
+    models: {
+      providers: {
+        xai: {
+          baseUrl: "https://api.x.ai/v1",
+          models: [
+            {
+              id: "grok-4",
+              name: "Grok 4",
+              contextWindow: 131072,
+              maxTokens: 8192,
+              cost: { input: 0.5, output: 1, cacheRead: 0.1, cacheWrite: 0.2 },
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+function getFirstXaiModel(payload: Record<string, unknown>): Record<string, unknown> {
+  const model = payload.models as Record<string, unknown>;
+  const providers = model.providers as Record<string, unknown>;
+  const xai = providers.xai as Record<string, unknown>;
+  const models = xai.models as Array<Record<string, unknown>>;
+  return models[0] ?? {};
+}
+
+function expectNumericModelCore(model: Record<string, unknown>) {
+  expect(typeof model.maxTokens).toBe("number");
+  expect(model.maxTokens).toBe(8192);
+  expect(typeof model.contextWindow).toBe("number");
+  expect(model.contextWindow).toBe(131072);
+}
+
 describe("form-utils preserves numeric types", () => {
   it("serializeConfigForm preserves numbers in JSON output", () => {
     const form = makeConfigWithProvider();

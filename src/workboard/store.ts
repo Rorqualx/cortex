@@ -12,10 +12,10 @@ import type {
   PersistedWorkboardNotificationSubscription,
   WorkboardKeyedStore,
 } from "./persistence-types.js";
+import { WorkboardChangeTracker } from "./store-change-tracker.js";
 import {
   WORKBOARD_DIAGNOSTIC_KINDS,
   WORKBOARD_DIAGNOSTIC_SEVERITIES,
-  WORKBOARD_EXECUTION_ENGINES,
   WORKBOARD_EXECUTION_MODES,
   WORKBOARD_EXECUTION_STATUSES,
   WORKBOARD_ATTEMPT_STATUSES,
@@ -35,6 +35,7 @@ import {
   type WorkboardAttemptStatus,
   type WorkboardAutomation,
   type WorkboardBoardMetadata,
+  type WorkboardChange,
   type WorkboardClaim,
   type WorkboardComment,
   type WorkboardDiagnostic,
@@ -721,13 +722,9 @@ function normalizeExecutionEngine(
   value: unknown,
   fallback: WorkboardExecutionEngine,
 ): WorkboardExecutionEngine {
-  if (
-    typeof value === "string" &&
-    WORKBOARD_EXECUTION_ENGINES.includes(value as WorkboardExecutionEngine)
-  ) {
-    return value as WorkboardExecutionEngine;
-  }
-  return fallback;
+  // Engines are open runtime identifiers (see WorkboardExecutionEngine);
+  // WORKBOARD_EXECUTION_ENGINES only lists built-in launch choices.
+  return normalizeBoundedString(value, undefined, 160, "execution engine") ?? fallback;
 }
 
 function normalizeExecutionMode(
@@ -862,15 +859,14 @@ function normalizeAttempt(value: unknown): WorkboardRunAttempt | null {
   const runId = normalizeOptionalString(record.runId);
   const error = normalizeBoundedString(record.error, undefined, 800, "attempt error");
   const model = normalizeBoundedString(record.model, undefined, 160, "attempt model");
+  // Engines are open runtime identifiers, not restricted to built-in launch choices.
+  const engine = normalizeBoundedString(record.engine, undefined, 160, "attempt engine");
   return {
     id,
     status: normalizeAttemptStatus(record.status, "running"),
     startedAt,
     ...(endedAt ? { endedAt } : {}),
-    ...(typeof record.engine === "string" &&
-    WORKBOARD_EXECUTION_ENGINES.includes(record.engine as WorkboardExecutionEngine)
-      ? { engine: record.engine as WorkboardExecutionEngine }
-      : {}),
+    ...(engine ? { engine } : {}),
     ...(typeof record.mode === "string" &&
     WORKBOARD_EXECUTION_MODES.includes(record.mode as WorkboardExecutionMode)
       ? { mode: record.mode as WorkboardExecutionMode }
@@ -2342,20 +2338,29 @@ function compareNotifications(a: WorkboardNotification, b: WorkboardNotification
 export class WorkboardStore {
   private mutationQueue: Promise<unknown> = Promise.resolve();
   private lastNotificationSequence = 0;
+  private readonly changes: WorkboardChangeTracker;
+  private readonly store: WorkboardKeyedStore;
   private readonly boardStore: WorkboardKeyedStore<PersistedWorkboardBoard>;
   private readonly subscriptionStore: WorkboardKeyedStore<PersistedWorkboardNotificationSubscription>;
   private readonly attachmentStore: WorkboardKeyedStore<PersistedWorkboardAttachment>;
 
   constructor(
-    private readonly store: WorkboardKeyedStore,
+    store: WorkboardKeyedStore,
     stores: {
       boards?: WorkboardKeyedStore<PersistedWorkboardBoard>;
       subscriptions?: WorkboardKeyedStore<PersistedWorkboardNotificationSubscription>;
       attachments?: WorkboardKeyedStore<PersistedWorkboardAttachment>;
+      /** SQLite data_version reader used to detect commits from other processes. */
+      dataVersion?: () => number;
     } = {},
   ) {
-    this.boardStore =
-      stores.boards ?? (store as unknown as WorkboardKeyedStore<PersistedWorkboardBoard>);
+    // Card/board writes drive UI change events; wrap those stores so mutations
+    // bump the tracker revision and emit after each queued mutation settles.
+    this.changes = new WorkboardChangeTracker(stores.dataVersion);
+    this.store = this.changes.track(store);
+    this.boardStore = this.changes.track(
+      stores.boards ?? (store as unknown as WorkboardKeyedStore<PersistedWorkboardBoard>),
+    );
     this.subscriptionStore =
       stores.subscriptions ??
       (store as unknown as WorkboardKeyedStore<PersistedWorkboardNotificationSubscription>);
@@ -2363,8 +2368,21 @@ export class WorkboardStore {
       stores.attachments ?? (store as unknown as WorkboardKeyedStore<PersistedWorkboardAttachment>);
   }
 
+  subscribeChanges(listener: (change: WorkboardChange) => void): () => void {
+    return this.changes.subscribe(listener);
+  }
+
+  announceChangeEpoch(): void {
+    this.changes.announceEpoch();
+  }
+
+  reconcileExternalChanges(): boolean {
+    return this.changes.reconcileExternalChanges();
+  }
+
   private async enqueueMutation<T>(run: () => Promise<T>): Promise<T> {
-    const result = this.mutationQueue.then(run, run);
+    const runAndNotify = async () => await this.changes.runMutation(run);
+    const result = this.mutationQueue.then(runAndNotify, runAndNotify);
     this.mutationQueue = result.then(
       () => undefined,
       () => undefined,
@@ -2913,10 +2931,28 @@ export class WorkboardStore {
     }
   }
 
-  async move(id: string, status: unknown, position: unknown): Promise<WorkboardCard> {
-    return await this.update(id, {
-      status,
-      position,
+  async move(
+    id: string,
+    status: unknown,
+    position: unknown,
+    scope?: WorkboardMutationScope,
+  ): Promise<WorkboardCard> {
+    return await this.enqueueMutation(async () => {
+      const existing = await this.get(id);
+      if (!existing) {
+        throw new Error(`card not found: ${id}`);
+      }
+      // Operator surfaces omit scope and may override claims. Agent tools pass scope so a
+      // worker cannot move another worker's claimed card between the preflight and this write.
+      assertCanMutateClaimedCard(existing, scope);
+      return await this.updateCard(
+        id,
+        { status, position },
+        {
+          allowMetadataDependencyLinks: false,
+          enforceStatusHolds: true,
+        },
+      );
     });
   }
 

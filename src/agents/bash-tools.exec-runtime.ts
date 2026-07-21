@@ -185,17 +185,21 @@ export type ExecProcessOutcome =
       status: "completed";
       exitCode: number;
       exitSignal: NodeJS.Signals | number | null;
+      exitReason?: TerminationReason;
       durationMs: number;
       aggregated: string;
       timedOut: false;
+      noOutputTimedOut?: boolean;
     }
   | {
       status: "failed";
       exitCode: number | null;
       exitSignal: NodeJS.Signals | number | null;
+      exitReason?: TerminationReason;
       durationMs: number;
       aggregated: string;
       timedOut: boolean;
+      noOutputTimedOut?: boolean;
       failureKind: ExecProcessFailureKind;
       reason: string;
     };
@@ -589,9 +593,11 @@ export function buildExecExitOutcome(params: {
       status: "completed",
       exitCode,
       exitSignal: params.exit.exitSignal,
+      exitReason: params.exit.reason,
       durationMs: params.durationMs,
       aggregated: params.aggregated + exitMsg,
       timedOut: false,
+      noOutputTimedOut: params.exit.noOutputTimedOut,
     };
   }
   const failureKind = classifyExecFailureKind({
@@ -609,9 +615,11 @@ export function buildExecExitOutcome(params: {
     status: "failed",
     exitCode: params.exit.exitCode,
     exitSignal: params.exit.exitSignal,
+    exitReason: params.exit.reason,
     durationMs: params.durationMs,
     aggregated: params.aggregated,
     timedOut: params.exit.timedOut,
+    noOutputTimedOut: params.exit.noOutputTimedOut,
     failureKind,
     reason: joinExecFailureOutput(params.aggregated, reason),
   };

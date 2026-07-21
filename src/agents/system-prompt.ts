@@ -27,7 +27,10 @@ import {
 } from "../channels/plugins/native-approval-prompt.js";
 import type { SubagentDelegationMode } from "../config/types.agent-defaults.js";
 import type { MemoryCitationsMode } from "../config/types.memory.js";
-import { buildMemoryPromptSection } from "../plugins/memory-state.js";
+import {
+  buildMemoryPromptSection,
+  type PreparedMemoryPromptSection,
+} from "../plugins/memory-state.js";
 import type { AgentPromptSurfaceKind } from "../plugins/types.js";
 import { listDeliverableMessageChannels } from "../utils/message-channel.js";
 import type { ActiveProcessSessionReference } from "./bash-process-references.js";
@@ -112,6 +115,23 @@ function buildSubagentDelegationPreferenceSection(params: {
       : "",
     "",
   ].filter(Boolean);
+}
+
+function buildProactiveSubagentOrchestrationSection(params: {
+  enabled: boolean;
+  hasSessionsSpawn: boolean;
+}): string[] {
+  if (!params.enabled || !params.hasSessionsSpawn) {
+    return [];
+  }
+  return [
+    "## Proactive Sub-Agent Orchestration",
+    "Ultra active. Use `sessions_spawn` when independent work improves speed/quality.",
+    "- Parallelize independent investigation, implementation, verification.",
+    "- Simple/tightly coupled stays local.",
+    "- Give bounded objective; synthesize before reply.",
+    "",
+  ];
 }
 
 const stablePromptPrefixCache = new Map<string, StablePromptPrefixCacheEntry>();
@@ -284,14 +304,24 @@ function buildMemorySection(params: {
   includeMemorySection?: boolean;
   availableTools: Set<string>;
   citationsMode?: MemoryCitationsMode;
+  agentId?: string;
+  agentSessionKey?: string;
+  sandboxed?: boolean;
+  prepared?: PreparedMemoryPromptSection;
 }) {
   if (params.isMinimal || params.includeMemorySection === false) {
     return [];
   }
-  return buildMemoryPromptSection({
-    availableTools: params.availableTools,
-    citationsMode: params.citationsMode,
-  });
+  return buildMemoryPromptSection(
+    {
+      availableTools: params.availableTools,
+      citationsMode: params.citationsMode,
+      agentId: params.agentId,
+      agentSessionKey: params.agentSessionKey,
+      sandboxed: params.sandboxed,
+    },
+    params.prepared,
+  );
 }
 
 export function buildAgentBootstrapSystemContext(params: {
@@ -703,6 +733,8 @@ export function buildAgentSystemPrompt(params: {
   requireExplicitMessageTarget?: boolean;
   /** Prompt-only strength for delegating non-trivial work through sub-agents. Defaults to "suggest". */
   subagentDelegationMode?: SubagentDelegationMode;
+  /** Run-scoped Ultra behavior; independent from configured delegation preference. */
+  proactiveSubagentOrchestration?: boolean;
   /** Whether ACP-specific routing guidance should be included. Defaults to true. */
   acpEnabled?: boolean;
   /** Prompt surface controls runtime-specific fallback fragments. Defaults to OpenClaw main. */
@@ -713,6 +745,7 @@ export function buildAgentSystemPrompt(params: {
   nativeCommandGuidanceLines?: string[];
   runtimeInfo?: {
     agentId?: string;
+    sessionKey?: string;
     host?: string;
     os?: string;
     arch?: string;
@@ -738,6 +771,8 @@ export function buildAgentSystemPrompt(params: {
   };
   includeMemorySection?: boolean;
   memoryCitationsMode?: MemoryCitationsMode;
+  /** Immutable memory state prepared before synchronous prompt assembly. */
+  preparedMemoryPrompt?: PreparedMemoryPromptSection;
   promptContribution?: ProviderSystemPromptContribution;
 }) {
   const acpEnabled = params.acpEnabled === true;
@@ -914,6 +949,7 @@ export function buildAgentSystemPrompt(params: {
   const promptMode = params.promptMode ?? "full";
   const isMinimal = promptMode === "minimal" || promptMode === "none";
   const subagentDelegationMode = normalizeSubagentDelegationMode(params.subagentDelegationMode);
+  const proactiveSubagentOrchestration = params.proactiveSubagentOrchestration === true;
   const sourceMessageToolOnly = params.sourceReplyDeliveryMode === "message_tool_only";
   const messageChannelOptions = availableTools.has("message")
     ? buildMessageChannelOptions(runtimeChannel)
@@ -963,6 +999,10 @@ export function buildAgentSystemPrompt(params: {
     includeMemorySection: params.includeMemorySection,
     availableTools,
     citationsMode: params.memoryCitationsMode,
+    agentId: params.runtimeInfo?.agentId,
+    agentSessionKey: params.runtimeInfo?.sessionKey,
+    sandboxed: params.sandboxInfo?.enabled === true,
+    prepared: params.preparedMemoryPrompt,
   });
   const docsSection = buildDocsSection({
     docsPath: params.docsPath,
@@ -1011,6 +1051,7 @@ export function buildAgentSystemPrompt(params: {
     sourceMessageToolOnly,
     silentReplyPromptMode,
     subagentDelegationMode,
+    proactiveSubagentOrchestration,
     sandboxInfo: params.sandboxInfo,
     displayWorkspaceDir,
     workspaceGuidance,
@@ -1078,8 +1119,12 @@ export function buildAgentSystemPrompt(params: {
           ]
         : []),
       "",
+      ...buildProactiveSubagentOrchestrationSection({
+        enabled: proactiveSubagentOrchestration,
+        hasSessionsSpawn,
+      }),
       ...buildSubagentDelegationPreferenceSection({
-        mode: subagentDelegationMode,
+        mode: proactiveSubagentOrchestration ? "suggest" : subagentDelegationMode,
         isMinimal,
         hasSessionsSpawn,
         hasSubagents: availableTools.has("subagents"),

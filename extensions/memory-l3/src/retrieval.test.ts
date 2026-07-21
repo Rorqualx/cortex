@@ -86,7 +86,7 @@ describe("retrieveTopK", () => {
       now: NOW,
     });
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].fact.id).toBe("f-match");
+    expect(result[0]!.fact.id).toBe("f-match");
   });
 
   it("respects the topK cap", async () => {
@@ -118,7 +118,7 @@ describe("retrieveTopK", () => {
       topK: 2,
       now: NOW,
     });
-    expect(result[0].fact.id).toBe("new");
+    expect(result[0]!.fact.id).toBe("new");
   });
 
   it("attaches signals so callers can debug ranking", async () => {
@@ -126,9 +126,9 @@ describe("retrieveTopK", () => {
       { id: "f1", text: "morning standup", importance: 0.7, createdAt: NOW, dedupKey: "k:1" },
     ]);
     const { facts: result } = await retrieveTopK({ query: "morning", storage, topK: 1, now: NOW });
-    expect(result[0].signals.lexical).toBeGreaterThan(0);
-    expect(result[0].signals.importance).toBe(0.7);
-    expect(result[0].signals.recency).toBeCloseTo(1, 4);
+    expect(result[0]!.signals.lexical).toBeGreaterThan(0);
+    expect(result[0]!.signals.importance).toBe(0.7);
+    expect(result[0]!.signals.recency).toBeCloseTo(1, 4);
   });
 });
 
@@ -170,7 +170,7 @@ describe("retrieveTopK with L3 boost", () => {
     // f-new should rank higher than f-old because it's in the epoch range.
     const fNewIdx = result.findIndex((r) => r.fact.id === "f-new");
     expect(fNewIdx).toBeGreaterThanOrEqual(0);
-    expect(result[fNewIdx].signals.l3Boost).toBeGreaterThan(0);
+    expect(result[fNewIdx]!.signals.l3Boost).toBeGreaterThan(0);
   });
 });
 
@@ -198,6 +198,9 @@ describe("formatMemorySection", () => {
           l3Boost: 0,
           semantic: 0,
           informationGain: 0,
+          goalRelevance: 0,
+          reliability: 1,
+          semanticEntropy: 1,
         },
         chunkId: "chunk-1",
         tier: "l2",
@@ -226,6 +229,9 @@ describe("formatMemorySection", () => {
           l3Boost: 0,
           semantic: 0,
           informationGain: 0,
+          goalRelevance: 0,
+          reliability: 1,
+          semanticEntropy: 1,
         },
         chunkId: "longterm",
         tier: "longterm",
@@ -247,6 +253,9 @@ describe("formatMemorySection", () => {
           l3Boost: 0,
           semantic: 0,
           informationGain: 0,
+          goalRelevance: 0,
+          reliability: 1,
+          semanticEntropy: 1,
         },
         chunkId: "chunk-1",
         tier: "l2",
@@ -456,7 +465,7 @@ describe("retrieveTopK long-term tier", () => {
       now: NOW,
     });
     expect(result.length).toBeGreaterThanOrEqual(2);
-    expect(result[0].tier).toBe("longterm");
+    expect(result[0]!.tier).toBe("longterm");
   });
 });
 
@@ -546,8 +555,8 @@ describe("retrieveTopK typed-fact tier", () => {
       topK: 5,
       now: NOW,
     });
-    expect(result[0].tier).toBe("typed");
-    expect(result[0].fact.id).toBe("tf-phone");
+    expect(result[0]!.tier).toBe("typed");
+    expect(result[0]!.fact.id).toBe("tf-phone");
   });
 
   it("renders relative ages and a guidance prelude when `now` is provided", () => {
@@ -570,6 +579,9 @@ describe("retrieveTopK typed-fact tier", () => {
             l3Boost: 0,
             semantic: 0,
             informationGain: 0,
+            goalRelevance: 0,
+            reliability: 1,
+            semanticEntropy: 1,
           },
           chunkId: "chunk-1",
           tier: "l2",
@@ -591,6 +603,9 @@ describe("retrieveTopK typed-fact tier", () => {
             l3Boost: 0,
             semantic: 0,
             informationGain: 0,
+            goalRelevance: 0,
+            reliability: 1,
+            semanticEntropy: 1,
           },
           chunkId: "chunk-2",
           tier: "l2",
@@ -622,6 +637,9 @@ describe("retrieveTopK typed-fact tier", () => {
           l3Boost: 0,
           semantic: 0,
           informationGain: 0,
+          goalRelevance: 0,
+          reliability: 1,
+          semanticEntropy: 1,
         },
         chunkId: "chunk-1",
         tier: "typed",
@@ -756,6 +774,9 @@ describe("retrieveTopK longterm-typed tier", () => {
             recallCount: 2,
             sourceChunkIds: ["chunk-a", "chunk-b"],
             history: [{ value: "500.00", supersededAt: NOW }],
+            validFrom: NOW,
+            validUntil: null,
+            supersededBy: null,
             archived: false,
             archivedAt: null,
             lastAccessedAt: NOW,
@@ -801,6 +822,9 @@ describe("retrieveTopK longterm-typed tier", () => {
             recallCount: 1,
             sourceChunkIds: ["chunk-a"],
             history: [],
+            validFrom: NOW - 60 * 86400000,
+            validUntil: null,
+            supersededBy: null,
             archived: false,
             archivedAt: null,
             lastAccessedAt: NOW - 60 * 86400000,
@@ -844,6 +868,9 @@ describe("retrieveTopK longterm-typed tier", () => {
             recallCount: 1,
             sourceChunkIds: ["chunk-a"],
             history: [],
+            validFrom: NOW - 10 * 86400000,
+            validUntil: null,
+            supersededBy: null,
             archived: false,
             archivedAt: null,
             lastAccessedAt: NOW - 10 * 86400000,
@@ -861,7 +888,7 @@ describe("retrieveTopK longterm-typed tier", () => {
     });
 
     const ltt = await storage.readLongTermTyped();
-    expect(ltt.facts[0].lastAccessedAt).toBe(NOW);
+    expect(ltt.facts[0]!.lastAccessedAt).toBe(NOW);
   });
 });
 
@@ -910,7 +937,7 @@ describe("retrieveTopK memory-core tier", () => {
     });
     // L2 result still returned, no memory-core hits
     expect(result.length).toBe(1);
-    expect(result[0].tier).toBe("l2");
+    expect(result[0]!.tier).toBe("l2");
   });
 
   it("does not call the lookup when none is provided (existing tests stay valid)", async () => {
@@ -941,8 +968,8 @@ describe("retrieveTopK contextWindow (RaMem reinstatement)", () => {
     );
     const { facts: result } = await retrieveTopK({ query: "tabs", storage, topK: 5, now: NOW });
     expect(result).toHaveLength(1);
-    expect(result[0].tier).toBe("l2");
-    expect(result[0].contextWindow).toBe(5);
+    expect(result[0]!.tier).toBe("l2");
+    expect(result[0]!.contextWindow).toBe(5);
   });
 
   it("omits contextWindow on long-term facts", async () => {
@@ -1017,11 +1044,11 @@ describe("retrieveTopK retrieval mode", () => {
       queryEmbedding: [1.0, 0.0],
     });
     expect(facts.length).toBeGreaterThan(0);
-    expect(facts[0].fact.text).toContain("tokio");
+    expect(facts[0]!.fact.text).toContain("tokio");
     // Semantic signal should be zeroed in keyword mode
-    expect(facts[0].signals.semantic).toBe(0);
+    expect(facts[0]!.signals.semantic).toBe(0);
     // BM25 should be non-zero for matching facts
-    expect(facts[0].signals.bm25).toBeGreaterThan(0);
+    expect(facts[0]!.signals.bm25).toBeGreaterThan(0);
   });
 
   it("semantic mode zeroes bm25 signal", async () => {
@@ -1048,6 +1075,6 @@ describe("retrieveTopK retrieval mode", () => {
     });
     expect(facts.length).toBeGreaterThan(0);
     // In blended mode, bm25 should be non-zero for lexical matches
-    expect(facts[0].signals.bm25).toBeGreaterThan(0);
+    expect(facts[0]!.signals.bm25).toBeGreaterThan(0);
   });
 });

@@ -68,7 +68,13 @@ export function normalizeSystemRunApprovalPlan(value: unknown): SystemRunApprova
     commandPreview: normalizeNonEmptyString(candidate.commandPreview),
     agentId: normalizeNonEmptyString(candidate.agentId),
     sessionKey: normalizeNonEmptyString(candidate.sessionKey),
-    ...(policySnapshot ? { policySnapshot } : {}),
+    // The wire plan schema wants a mutable allowlistRules array; the normalized
+    // snapshot carries a readonly one, so copy it at the boundary.
+    ...(policySnapshot
+      ? {
+          policySnapshot: { ...policySnapshot, allowlistRules: [...policySnapshot.allowlistRules] },
+        }
+      : {}),
     mutableFileOperand: mutableFileOperand ?? undefined,
   };
 }

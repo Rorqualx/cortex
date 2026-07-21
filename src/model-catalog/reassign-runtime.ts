@@ -8,16 +8,16 @@
 import { normalizeModelCatalogProviderId } from "@openclaw/model-catalog-core/model-catalog-refs";
 import { listAgentIds } from "../agents/agent-scope-config.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
-import { loadPreparedModelCatalog } from "../agents/prepared-model-catalog.js";
 import type { ModelCatalogEntry } from "../agents/model-catalog.types.js";
 import {
   buildModelAliasIndex,
   resolveConfiguredModelRef,
   resolveModelRefFromString,
 } from "../agents/model-selection-shared.js";
+import { loadPreparedModelCatalog } from "../agents/prepared-model-catalog.js";
 import { resolveDefaultSessionStorePath } from "../config/sessions/paths.js";
-import { readSessionEntries } from "../config/sessions/store-load.js";
-import { applySessionStoreEntryPatch } from "../config/sessions/store.js";
+import { loadSessionStore } from "../config/sessions/store-load.js";
+import { patchSessionEntryWithKey } from "../config/sessions/store.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   loadCronJobsStore,
@@ -111,7 +111,9 @@ function loadCronJobsStoreSyncSafe() {
 
 function readSessionEntriesSafe(storePath: string) {
   try {
-    return readSessionEntries(storePath);
+    // Read-only binding scan: no clone keeps this on the shared store cache
+    // (the former readSessionEntries snapshot helper was removed upstream).
+    return Object.entries(loadSessionStore(storePath, { clone: false }));
   } catch {
     return [];
   }
@@ -250,10 +252,12 @@ export function buildRuntimeApplyDeps(params: {
     loadCronStore: () => loadCronJobsStore(cronStorePath),
     saveCronStore: (store) => saveCronJobsStore(cronStorePath, store),
     patchAgentSession: async (agentId, sessionKey, patch) => {
-      await applySessionStoreEntryPatch({
+      // Merge-patch the existing entry; missing sessions are skipped (returns null),
+      // matching the removed applySessionStoreEntryPatch helper.
+      await patchSessionEntryWithKey({
         storePath: resolveDefaultSessionStorePath(agentId),
         sessionKey,
-        patch: patch,
+        update: () => patch,
       });
     },
     nowMs: params.nowMs,

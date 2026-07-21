@@ -785,7 +785,7 @@ describe("ContextTracker", () => {
     // Query about engine errors should match first entry
     const relevant = tracker.detectRelevance("engine TypeError error");
     expect(relevant.length).toBeGreaterThan(0);
-    expect(relevant[0].hash).toBe("h1");
+    expect(relevant[0]?.hash).toBe("h1");
   });
 
   it("returns empty for irrelevant queries", () => {
@@ -836,8 +836,8 @@ describe("ContextTracker", () => {
     }
     const recent = tracker.getRecentEntries(2);
     expect(recent.length).toBe(2);
-    expect(recent[0].hash).toBe("h3");
-    expect(recent[1].hash).toBe("h4");
+    expect(recent[0]?.hash).toBe("h3");
+    expect(recent[1]?.hash).toBe("h4");
   });
 });
 
@@ -919,6 +919,7 @@ describe("compressAssembledContext with CCR", () => {
 
     // Original should be retrievable
     const hash = result.ccrHashes[0];
+    if (!hash) throw new Error("expected a CCR hash");
     const original = store.retrieve(hash);
     expect(original).toBe(largeJson);
 

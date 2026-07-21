@@ -589,6 +589,14 @@ export function sweepStaleRunContexts(maxAgeMs = 30 * 60 * 1000): number {
   return swept;
 }
 
+/** Test-only: clears all per-run agent event state so suites start from a clean registry. */
+export function resetAgentRunContextForTest() {
+  const state = getAgentEventState();
+  state.runContextById.clear();
+  state.seqByRun.clear();
+  getAgentRunContextOwners(state).clear();
+}
+
 function enrichAgentEvent(
   event: Omit<AgentEventPayload, "seq" | "ts">,
   claimId?: string,

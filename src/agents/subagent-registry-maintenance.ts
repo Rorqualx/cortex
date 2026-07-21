@@ -43,7 +43,7 @@ function shouldPreserveForMaintenance(entry: SubagentRunRecord): boolean {
 }
 
 /** Lists child session keys protected from session-store maintenance pruning. */
-function listSessionMaintenanceProtectedSubagentSessionKeys(): string[] {
+export function listSessionMaintenanceProtectedSubagentSessionKeys(): string[] {
   const keys = new Set<string>();
   for (const entry of getSubagentRunsSnapshotForRead(subagentRuns).values()) {
     if (!shouldPreserveForMaintenance(entry)) {

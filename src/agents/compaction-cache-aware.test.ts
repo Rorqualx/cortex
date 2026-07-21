@@ -122,9 +122,9 @@ describe.skip("compaction: cache-aware chunking", () => {
 
       expect(result.hasBoundary).toBe(true);
       expect(result.positions).toHaveLength(1);
-      expect(result.positions[0].messageIndex).toBe(0);
-      expect(result.positions[0].isCacheStart).toBe(true);
-      expect(result.positions[0].isCacheEnd).toBe(true);
+      expect(result.positions[0]?.messageIndex).toBe(0);
+      expect(result.positions[0]?.isCacheStart).toBe(true);
+      expect(result.positions[0]?.isCacheEnd).toBe(true);
       expect(result.firstDynamicIndex).toBe(0);
     });
 
@@ -142,7 +142,7 @@ describe.skip("compaction: cache-aware chunking", () => {
 
       expect(result.hasBoundary).toBe(true);
       expect(result.positions).toHaveLength(1);
-      expect(result.positions[0].messageIndex).toBe(1);
+      expect(result.positions[0]?.messageIndex).toBe(1);
       expect(result.firstDynamicIndex).toBe(1);
     });
 
@@ -190,7 +190,7 @@ describe.skip("compaction: cache-aware chunking", () => {
       const result = detectCacheBoundaries(messages);
 
       expect(result.hasBoundary).toBe(true);
-      expect(result.positions[0].charOffset).toBe(prefix.length * 10);
+      expect(result.positions[0]?.charOffset).toBe(prefix.length * 10);
     });
   });
 
@@ -244,7 +244,7 @@ describe.skip("compaction: cache-aware chunking", () => {
 
       // First chunk should contain cache-carryover content
       const firstChunk = result.chunks[0];
-      expect(firstChunk.length).toBeGreaterThan(10);
+      expect(firstChunk?.length).toBeGreaterThan(10);
     });
 
     it("should chunk dynamic content with maxTokens limit", () => {
@@ -343,7 +343,7 @@ describe.skip("compaction: cache-aware chunking", () => {
 
       expect(result.cachePreserved).toBe(true);
       // With buffer multiplier, large cached content should be preserved
-      expect(result.chunks[0].length).toBeGreaterThanOrEqual(50);
+      expect(result.chunks[0]?.length).toBeGreaterThanOrEqual(50);
     });
   });
 
@@ -451,10 +451,11 @@ Current session context and recent activity:`;
 
       // First chunk should have the system prompt with cache boundary intact
       const firstChunk = result.chunks[0];
+      if (!firstChunk) throw new Error("expected first chunk");
       expect(firstChunk.length).toBeGreaterThan(0);
 
       // Verify boundary is preserved in first chunk
-      const firstChunkContent = (firstChunk[0] as { content?: string }).content ?? "";
+      const firstChunkContent = (firstChunk[0] as { content?: string } | undefined)?.content ?? "";
       expect(firstChunkContent).toContain(SYSTEM_PROMPT_CACHE_BOUNDARY);
 
       // Dynamic content should be chunked across multiple chunks
@@ -481,8 +482,10 @@ Current session context and recent activity:`;
       expect(plan1.cachePreserved).toBe(true);
 
       // Simulate adding new messages and compacting again
+      const systemPromptMessage = messages[0];
+      if (!systemPromptMessage) throw new Error("expected system prompt message");
       messages = [
-        messages[0], // Keep system prompt
+        systemPromptMessage, // Keep system prompt
         ...plan1.chunks.slice(1).flat(), // Add compacted conversation
         ...Array.from({ length: 10 }, (_, i) => ({
           role: "user" as const,
@@ -496,7 +499,8 @@ Current session context and recent activity:`;
       expect(plan2.cachePreserved).toBe(true);
 
       // System prompt should still be in first chunk
-      const firstChunkContent = (plan2.chunks[0][0] as { content?: string }).content ?? "";
+      const firstChunkContent =
+        (plan2.chunks[0]?.[0] as { content?: string } | undefined)?.content ?? "";
       expect(firstChunkContent).toContain(SYSTEM_PROMPT_CACHE_BOUNDARY);
     });
   });

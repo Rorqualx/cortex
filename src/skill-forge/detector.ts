@@ -172,7 +172,8 @@ export type ErrorRecoveryMotif = {
 export function detectErrorRecovery(events: TrajectoryEvent[]): ErrorRecoveryMotif[] {
   const motifs: ErrorRecoveryMotif[] = [];
   for (let i = 0; i < events.length; i += 1) {
-    if (!isToolErrorResult(events[i])) {
+    const event = events[i];
+    if (event === undefined || !isToolErrorResult(event)) {
       continue;
     }
     const failingTool = findPrecedingToolCallName(events, i);
@@ -184,6 +185,9 @@ export function detectErrorRecovery(events: TrajectoryEvent[]): ErrorRecoveryMot
     let recovered = false;
     for (let k = i + 1; k < lookaheadEnd; k += 1) {
       const next = events[k];
+      if (next === undefined) {
+        continue;
+      }
       if (next.type === "tool.call") {
         const name = next.data?.name;
         if (typeof name === "string" && name.length > 0) {
@@ -194,10 +198,11 @@ export function detectErrorRecovery(events: TrajectoryEvent[]): ErrorRecoveryMot
         break;
       }
     }
-    if (recovered && recoveryTools.length > 0) {
+    const recoveringTool = recoveryTools.at(-1);
+    if (recovered && recoveringTool !== undefined) {
       motifs.push({
         failingTool,
-        recoveringTool: recoveryTools[recoveryTools.length - 1],
+        recoveringTool,
         recoverySequence: recoveryTools,
       });
     }
@@ -349,7 +354,8 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     clusters.set(item.toolShapeHash, list);
   }
   for (const [hash, members] of clusters) {
-    if (members.length >= REPETITION_THRESHOLD) {
+    const [first] = members;
+    if (first !== undefined && members.length >= REPETITION_THRESHOLD) {
       // One bad session taints the cluster: the relaxed gate is only for
       // workflows whose every observed run was clean.
       const allClean = members.every((member) => member.successScore >= 1);
@@ -357,7 +363,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         lane: "tool-shape",
         candidateId: hash,
         toolShapeHash: hash,
-        toolSequence: members[0].toolSequence,
+        toolSequence: first.toolSequence,
         captureDirs: members.map((member) => member.captureDir),
         occurrences: members.length,
         successScore: allClean ? 1 : 0.5,

@@ -163,6 +163,12 @@ function createSandboxBackendTestConfig(
     },
     tools: {},
     prune: { idleHours: 0, maxAgeDays: 0 },
+    osSandbox: {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "deny",
+    },
     ...overrides,
   };
 }

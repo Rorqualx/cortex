@@ -20,7 +20,6 @@ import {
   scanSessionTranscriptTree,
   selectSessionTranscriptTreePathNodes,
   type SessionTranscriptTree,
-  type SessionTranscriptTreeNode,
 } from "../../config/sessions/transcript-tree.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { loadSessionEntry } from "../session-utils.js";
@@ -150,7 +149,8 @@ function validateChatBranchesParams(params: unknown): params is ChatBranchesPara
 
 const ROOT_PARENT_KEY = "__root__";
 
-type BranchTreeNode = SessionTranscriptTreeNode<SessionEntry>;
+// transcript-tree.ts no longer exports its node type; derive it from the tree shape.
+type BranchTreeNode = SessionTranscriptTree<SessionEntry>["nodes"][number];
 
 function entryFieldString(node: BranchTreeNode | undefined, field: string): string | undefined {
   const value = (node?.entry as Record<string, unknown> | undefined)?.[field];

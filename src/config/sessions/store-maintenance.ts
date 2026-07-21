@@ -317,7 +317,7 @@ export function pruneStaleModelRunEntries(
   return pruned;
 }
 
-const DEFAULT_QUOTA_SUSPENSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+export const DEFAULT_QUOTA_SUSPENSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const QUOTA_SUSPENSION_CLEANUP_FACTOR = 2; // entries beyond N*ttl are deleted outright
 
 type QuotaSuspensionEntryMaintenanceResult = {

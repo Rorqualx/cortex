@@ -160,7 +160,7 @@ export function isTransientProviderHttpStatus(status: number): boolean {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
-function isTransientProviderOperationError(error: unknown, message: string): boolean {
+export function isTransientProviderOperationError(error: unknown, message: string): boolean {
   const status = readErrorStatus(error);
   if (status !== undefined) {
     return isTransientProviderHttpStatus(status);

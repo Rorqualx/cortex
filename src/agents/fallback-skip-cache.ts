@@ -88,6 +88,16 @@ function getBuckets(): SkipBySession {
   return getState().buckets;
 }
 
+/** Test-only: drops the process-global skip cache so cases start from a clean slate. */
+export function resetFallbackSkipCacheForTest(): void {
+  const globalStore = globalThis as typeof globalThis & {
+    openclawFallbackSkipCache?: SkipBySession;
+    openclawFallbackSkipCacheState?: SkipCacheState;
+  };
+  globalStore.openclawFallbackSkipCache = undefined;
+  globalStore.openclawFallbackSkipCacheState = undefined;
+}
+
 function sessionBucket(sessionId: string, create: boolean): Map<string, SkipEntry> | undefined {
   const buckets = getBuckets();
   let bucket = buckets.get(sessionId);

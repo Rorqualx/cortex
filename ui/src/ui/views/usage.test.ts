@@ -62,6 +62,7 @@ function createUsageProps(overrides: Partial<UsageProps> = {}): UsageProps {
       aggregates: null,
       costDaily: [],
       cacheStatus: undefined,
+      providerUsage: [],
     },
     filters: {
       startDate: "2026-05-14",

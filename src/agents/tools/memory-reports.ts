@@ -52,9 +52,9 @@ async function readFilePreview(filePath: string, maxLines = 10): Promise<string[
 function extractTopics(lines: string[]): string[] {
   const topics = new Set<string>();
   for (const line of lines) {
-    const match = line.match(/^#{1,3}\s+(.+)$/);
-    if (match) {
-      topics.add(match[1].trim());
+    const heading = line.match(/^#{1,3}\s+(.+)$/)?.[1];
+    if (heading) {
+      topics.add(heading.trim());
     }
   }
   return [...topics];

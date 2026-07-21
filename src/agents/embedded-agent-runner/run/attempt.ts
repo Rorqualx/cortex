@@ -12,11 +12,8 @@ import { filterHeartbeatTranscriptArtifacts } from "../../../auto-reply/heartbea
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../../auto-reply/tokens.js";
 import { getRuntimeConfig } from "../../../config/config.js";
 import { resolveStorePath } from "../../../config/sessions/paths.js";
-import {
-  loadSessionStore,
-  runQuotaSuspensionMaintenance,
-  updateSessionStoreEntry,
-} from "../../../config/sessions/store.js";
+import { updateSessionEntry } from "../../../config/sessions/session-accessor.js";
+import { loadSessionStore, runQuotaSuspensionMaintenance } from "../../../config/sessions/store.js";
 import {
   bindOwnedSessionTranscriptWrites,
   withOwnedSessionTranscriptWrites,
@@ -143,6 +140,7 @@ import {
   createCodeModeTools,
   resolveCodeModeConfig,
 } from "../../code-mode.js";
+import { resolveConversationCapabilityProfile } from "../../conversation-capability-profile.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../defaults.js";
 import { resolveOpenClawReferencePaths } from "../../docs-path.js";
 import {
@@ -226,10 +224,7 @@ import { isRunnerAbortError } from "../abort.js";
 import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "../cache-ttl.js";
 import { resolveCompactionTimeoutMs } from "../compaction-safety-timeout.js";
 import { runContextEngineMaintenance } from "../context-engine-maintenance.js";
-import {
-  applyFinalEffectiveToolPolicy,
-  resolveConversationCapabilityProfile,
-} from "../effective-tool-policy.js";
+import { applyFinalEffectiveToolPolicy } from "../effective-tool-policy.js";
 import { buildEmbeddedExtensionFactories } from "../extensions.js";
 import {
   applyExtraParamsToAgent,
@@ -298,7 +293,7 @@ import {
   truncateOversizedToolResultsInSessionManager,
 } from "../tool-result-truncation.js";
 import { splitSdkTools } from "../tool-split.js";
-import { mapThinkingLevel } from "../utils.js";
+import { mapThinkingLevel, mapThinkingLevelForProvider } from "../utils.js";
 import { flushPendingToolResultsAfterIdle } from "../wait-for-idle-before-flush.js";
 import { abortable as abortableWithSignal } from "./abortable.js";
 import { createEmbeddedAgentSessionWithResourceLoader } from "./attempt-session.js";
@@ -2580,7 +2575,7 @@ export async function runEmbeddedAttempt(
       };
       const preparedRuntimeExtraParams = params.runtimePlan?.transport.resolveExtraParams({
         extraParamsOverride: streamExtraParamsOverride,
-        thinkingLevel: params.thinkLevel,
+        thinkingLevel: mapThinkingLevelForProvider(params.thinkLevel),
         agentId: sessionAgentId,
         workspaceDir: effectiveWorkspace,
         model: params.model,
@@ -2943,7 +2938,7 @@ export async function runEmbeddedAttempt(
             const store = loadSessionStore(storePath, { skipCache: true });
             const sessionEntry = store[params.sessionKey];
             const suspension = sessionEntry?.quotaSuspension;
-            if (suspension?.state === "resuming") {
+            if (sessionEntry && suspension?.state === "resuming") {
               const subagents = Object.values(store)
                 .filter((s) => s.spawnedBy === sessionEntry.sessionId)
                 .map((s) => ({
@@ -2956,12 +2951,9 @@ export async function runEmbeddedAttempt(
                 activeSubagents: subagents,
               });
               validated.push(handoffMsg);
-              await updateSessionStoreEntry({
-                storePath,
-                sessionKey: params.sessionKey,
-                skipMaintenance: true,
-                takeCacheOwnership: true,
-                update: async (entry) => {
+              await updateSessionEntry(
+                { sessionKey: params.sessionKey, storePath },
+                async (entry) => {
                   if (entry.quotaSuspension?.state !== "resuming") {
                     return null;
                   }
@@ -2969,7 +2961,8 @@ export async function runEmbeddedAttempt(
                     quotaSuspension: { ...entry.quotaSuspension, state: "active" },
                   };
                 },
-              });
+                { skipMaintenance: true, takeCacheOwnership: true },
+              );
             }
           }
 
@@ -3711,7 +3704,6 @@ export async function runEmbeddedAttempt(
         }
 
         // Run before_prompt_build hooks to allow plugins to inject prompt context.
-        // Legacy compatibility: before_agent_start is also checked for context fields.
         let effectivePrompt = params.prompt;
         const hookCtx = {
           runId: params.runId,
@@ -3735,7 +3727,6 @@ export async function runEmbeddedAttempt(
               messages: promptBuildMessages,
               hookCtx,
               hookRunner,
-              beforeAgentStartResult: params.beforeAgentStartResult,
             });
         const promptBeforePromptBuildHooks = effectivePrompt;
         const promptBuildPrependContext = hookResult?.prependContext;
@@ -4708,7 +4699,7 @@ export async function runEmbeddedAttempt(
                 waitForCompactionRetry,
                 abortable,
                 aggregateTimeoutMs: COMPACTION_RETRY_AGGREGATE_TIMEOUT_MS,
-                isCompactionStillInFlight: isCompactionInFlight,
+                isCompactionRetryStillActive: isCompactionInFlight,
               });
           if (compactionRetryWait.timedOut) {
             timedOutDuringCompaction = true;
@@ -5218,6 +5209,7 @@ export async function runEmbeddedAttempt(
           lastToolError,
           lastAssistant,
           itemLifecycle: getItemLifecycle(),
+          messagesSnapshot,
           toolMetas: toolMetasNormalized,
           replayMetadata,
           providerResponseHeaders: providerResponseHeadersContainer.headers,

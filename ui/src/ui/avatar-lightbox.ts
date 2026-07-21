@@ -453,12 +453,13 @@ export class AvatarLightbox extends LitElement {
     ctx.strokeRect(x, y, size, size);
 
     ctx.fillStyle = "var(--accent, #4a9)";
-    for (const [cx, cy] of [
+    const corners: Array<[number, number]> = [
       [x, y],
       [x + size, y],
       [x, y + size],
       [x + size, y + size],
-    ]) {
+    ];
+    for (const [cx, cy] of corners) {
       ctx.beginPath();
       ctx.arc(cx, cy, 4, 0, Math.PI * 2);
       ctx.fill();
@@ -506,6 +507,9 @@ export class AvatarLightbox extends LitElement {
   private onTouchStart = (e: TouchEvent) => {
     e.preventDefault();
     const t = e.touches[0];
+    if (!t) {
+      return;
+    }
     this.dragStart = this.canvasCoords(t.clientX, t.clientY);
     this.dragging = true;
   };
@@ -516,6 +520,9 @@ export class AvatarLightbox extends LitElement {
       return;
     }
     const t = e.touches[0];
+    if (!t) {
+      return;
+    }
     this.updateCropFromPointer(t.clientX, t.clientY);
   };
 

@@ -29,36 +29,6 @@ export function isConfiguredAgent(cfg: OpenClawConfig, agentId: string): boolean
   return findAgentEntryIndex(listAgentEntries(cfg), agentId) >= 0;
 }
 
-/** Adds a new agent entry through the retrying config mutation path. */
-export async function createAgentConfigEntry(params: {
-  agentId: string;
-  name: string;
-  workspace: string;
-  model?: string;
-  description?: string;
-  identity?: IdentityConfig;
-  agentDir: string;
-}): Promise<void> {
-  await mutateConfigFileWithRetry({
-    afterWrite: { mode: "auto" },
-    mutate: (draft) => {
-      if (isConfiguredAgent(draft, params.agentId)) {
-        throw new AgentConfigPreconditionError("already-exists", params.agentId);
-      }
-      const latestNextConfig = applyAgentConfig(draft, {
-        agentId: params.agentId,
-        name: params.name,
-        workspace: params.workspace,
-        model: params.model,
-        ...(params.description !== undefined ? { description: params.description } : {}),
-        identity: params.identity,
-        agentDir: params.agentDir,
-      });
-      Object.assign(draft, latestNextConfig);
-    },
-  });
-}
-
 /** Updates an existing agent entry while preserving omitted fields. */
 export async function updateAgentConfigEntry(params: {
   agentId: string;

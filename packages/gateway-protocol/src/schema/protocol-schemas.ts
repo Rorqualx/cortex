@@ -55,12 +55,14 @@ import {
   ModelChoiceSchema,
   ModelsListParamsSchema,
   ModelsListResultSchema,
+  ModelsProbeParamsSchema,
+  ModelsProbeResultSchema,
+  ModelsProbeTargetResultSchema,
   SkillsBinsParamsSchema,
   SkillsBinsResultSchema,
   SkillsDetailParamsSchema,
   SkillsDetailResultSchema,
   SkillsInstallParamsSchema,
-
   SkillsSearchParamsSchema,
   SkillsSearchResultSchema,
   SkillsSecurityVerdictsParamsSchema,
@@ -454,6 +456,15 @@ import {
   SecretsResolveResultSchema,
 } from "./secrets.js";
 import {
+  SessionDiscussionInfoParamsSchema,
+  SessionDiscussionInfoResultSchema,
+  SessionDiscussionInfoSchema,
+  SessionDiscussionOpenParamsSchema,
+  SessionDiscussionOpenResultSchema,
+  SessionDiscussionStateSchema,
+} from "./session-discussion.js";
+import { SessionPlacementProtocolSchemas } from "./session-placement.js";
+import {
   DeliveryContextSchema,
   GatewayAgentRuntimeSchema,
   GatewaySessionRowSchema,
@@ -463,15 +474,6 @@ import {
   SessionsChangedEventSchema,
   SessionsListResultSchema,
 } from "./session-row.js";
-import {
-  SessionDiscussionInfoParamsSchema,
-  SessionDiscussionInfoResultSchema,
-  SessionDiscussionInfoSchema,
-  SessionDiscussionOpenParamsSchema,
-  SessionDiscussionOpenResultSchema,
-  SessionDiscussionStateSchema,
-} from "./session-discussion.js";
-import { SessionPlacementProtocolSchemas } from "./session-placement.js";
 import {
   SessionCatalogCapabilitiesSchema,
   SessionCatalogDescriptorSchema,
@@ -1014,6 +1016,9 @@ export const ProtocolSchemas = {
   ModelChoice: ModelChoiceSchema,
   ModelsListParams: ModelsListParamsSchema,
   ModelsListResult: ModelsListResultSchema,
+  ModelsProbeParams: ModelsProbeParamsSchema,
+  ModelsProbeTargetResult: ModelsProbeTargetResultSchema,
+  ModelsProbeResult: ModelsProbeResultSchema,
   CommandEntry: CommandEntrySchema,
   CommandsListParams: CommandsListParamsSchema,
   CommandsListResult: CommandsListResultSchema,

@@ -18,6 +18,12 @@ import {
 } from "./src/cross-context.js";
 import { Storage } from "./src/storage.js";
 
+// Contract: memory-l3 ships exactly two state migrations (shared store, per-agent tier).
+const [sharedStoreMigration, perAgentTierMigration] = stateMigrations;
+if (!sharedStoreMigration || !perAgentTierMigration) {
+  throw new Error("expected two memory-l3 state migrations");
+}
+
 function createDoctorContext(env: NodeJS.ProcessEnv): PluginDoctorStateMigrationContext {
   return {
     openPluginStateKeyedStore<T>(options: OpenKeyedStoreOptions) {
@@ -86,16 +92,16 @@ describe("memory-l3 doctor shared-store migration", () => {
   }
 
   it("detects nothing when the legacy JSON file is absent", async () => {
-    expect(await stateMigrations[0].detectLegacyState(migrationParams())).toBeNull();
+    expect(await sharedStoreMigration.detectLegacyState(migrationParams())).toBeNull();
   });
 
   it("imports legacy JSON facts into the SQLite store and archives the source", async () => {
     await writeLegacy([makeSharedFact("k:a", "agent-1"), makeSharedFact("k:b", "agent-2")]);
 
-    const preview = await stateMigrations[0].detectLegacyState(migrationParams());
+    const preview = await sharedStoreMigration.detectLegacyState(migrationParams());
     expect(preview?.preview).toHaveLength(1);
 
-    const result = await stateMigrations[0].migrateLegacyState(migrationParams());
+    const result = await sharedStoreMigration.migrateLegacyState(migrationParams());
     expect(result.changes.some((c) => c.includes("2 fact(s)"))).toBe(true);
 
     const stored = await readSharedFacts(sharedDir);
@@ -107,18 +113,18 @@ describe("memory-l3 doctor shared-store migration", () => {
 
   it("is idempotent: re-running finds nothing to migrate", async () => {
     await writeLegacy([makeSharedFact("k:a", "agent-1")]);
-    await stateMigrations[0].migrateLegacyState(migrationParams());
+    await sharedStoreMigration.migrateLegacyState(migrationParams());
 
-    const second = await stateMigrations[0].migrateLegacyState(migrationParams());
+    const second = await sharedStoreMigration.migrateLegacyState(migrationParams());
     expect(second.changes).toEqual([]);
-    expect(await stateMigrations[0].detectLegacyState(migrationParams())).toBeNull();
+    expect(await sharedStoreMigration.detectLegacyState(migrationParams())).toBeNull();
   });
 
   it("skips import when the SQLite store already has rows", async () => {
     await writeSharedFacts([makeSharedFact("k:existing", "agent-9")], sharedDir);
     await writeLegacy([makeSharedFact("k:a", "agent-1")]);
 
-    const result = await stateMigrations[0].migrateLegacyState(migrationParams());
+    const result = await sharedStoreMigration.migrateLegacyState(migrationParams());
     expect(result.changes).toEqual([]);
     expect(result.warnings.some((w) => w.includes("already has rows"))).toBe(true);
     // Legacy source is left in place when skipped.
@@ -294,32 +300,32 @@ describe("memory-l3 doctor per-agent tier migration", () => {
   }
 
   it("detects nothing when no legacy L3 root exists", async () => {
-    expect(await stateMigrations[1].detectLegacyState(migrationParams())).toBeNull();
+    expect(await perAgentTierMigration.detectLegacyState(migrationParams())).toBeNull();
   });
 
   it("imports legacy per-agent tiers into l3.sqlite and archives index files", async () => {
     await seedLegacyRoot();
 
-    const preview = await stateMigrations[1].detectLegacyState(migrationParams());
+    const preview = await perAgentTierMigration.detectLegacyState(migrationParams());
     expect(preview?.preview).toHaveLength(1);
 
-    const result = await stateMigrations[1].migrateLegacyState(migrationParams());
+    const result = await perAgentTierMigration.migrateLegacyState(migrationParams());
     expect(result.changes.some((c) => c.includes("l3.sqlite"))).toBe(true);
 
     const storage = new Storage(l3Root);
     try {
       // Every tier round-trips through the importer + Storage writers.
       expect((await storage.readState()).l2ChunkIndex).toBe(2);
-      expect((await storage.readLongTerm()).facts[0].dedupKey).toBe("pref:tabs");
-      expect((await storage.readLongTermTyped()).facts[0].slot).toBe("infra:ip");
+      expect((await storage.readLongTerm()).facts[0]?.dedupKey).toBe("pref:tabs");
+      expect((await storage.readLongTermTyped()).facts[0]?.slot).toBe("infra:ip");
       expect(await storage.listL2ChunkPaths()).toHaveLength(1);
       expect(await storage.listL3EpochPaths()).toHaveLength(1);
       const msgChunks = await storage.readMessageChunks("c1");
       expect(msgChunks).toHaveLength(1);
-      expect(msgChunks[0].embedding).toEqual([0.1, 0.2, 0.3]);
-      expect((await storage.readEntityIndex())[0].name).toBe("Pi");
-      expect((await storage.readTopicLinks())[0].targetChunkId).toBe("c0");
-      expect((await storage.readRetrievalSignals())[0].factId).toBe("lt-1");
+      expect(msgChunks[0]?.embedding).toEqual([0.1, 0.2, 0.3]);
+      expect((await storage.readEntityIndex())[0]?.name).toBe("Pi");
+      expect((await storage.readTopicLinks())[0]?.targetChunkId).toBe("c0");
+      expect((await storage.readRetrievalSignals())[0]?.factId).toBe("lt-1");
       expect((await storage.readEdgeMap())[0]).toEqual({
         a: "pref:tabs",
         b: "pref:dark",
@@ -359,14 +365,14 @@ describe("memory-l3 doctor per-agent tier migration", () => {
       pre.close();
     }
 
-    const result = await stateMigrations[1].migrateLegacyState(migrationParams());
+    const result = await perAgentTierMigration.migrateLegacyState(migrationParams());
     expect(result.changes.some((c) => c.includes("l3.sqlite"))).toBe(true);
     expect(result.warnings.some((w) => w.includes("already had chunks"))).toBe(true);
 
     const storage = new Storage(l3Root);
     try {
       // Legacy long-term memory is present (not orphaned); runtime chunk survives too.
-      expect((await storage.readLongTerm()).facts[0].dedupKey).toBe("pref:tabs");
+      expect((await storage.readLongTerm()).facts[0]?.dedupKey).toBe("pref:tabs");
       const ids = (await storage.listL2ChunkPaths()).map((p) =>
         p.replace(/.*\//, "").replace(/\.md$/, ""),
       );
@@ -379,10 +385,10 @@ describe("memory-l3 doctor per-agent tier migration", () => {
 
   it("is idempotent: re-running finds nothing (sentinel archived)", async () => {
     await seedLegacyRoot();
-    await stateMigrations[1].migrateLegacyState(migrationParams());
+    await perAgentTierMigration.migrateLegacyState(migrationParams());
 
-    expect(await stateMigrations[1].detectLegacyState(migrationParams())).toBeNull();
-    const second = await stateMigrations[1].migrateLegacyState(migrationParams());
+    expect(await perAgentTierMigration.detectLegacyState(migrationParams())).toBeNull();
+    const second = await perAgentTierMigration.migrateLegacyState(migrationParams());
     expect(second.changes).toEqual([]);
   });
 });

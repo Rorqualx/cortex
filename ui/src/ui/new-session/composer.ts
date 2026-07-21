@@ -1,8 +1,6 @@
 import { html, nothing, type TemplateResult } from "lit";
-import { icons } from "../icons.ts";
-import "../views/tooltip.ts";
 import { t } from "../../i18n/index.ts";
-import type { ChatAttachment } from "../types/chat-types.ts";
+import "../views/tooltip.ts";
 import {
   handleChatAttachmentDrop,
   handleChatAttachmentPaste,
@@ -12,6 +10,8 @@ import {
   renderChatAttachmentInputs,
   renderChatAttachmentMenu,
 } from "../chat/chat-attachments.ts";
+import { icons } from "../icons.ts";
+import type { ChatAttachment } from "../ui-types.ts";
 import type { NewSessionAttachmentDraft } from "./attachment-draft.ts";
 import type { NewSessionModelControl } from "./model-control.ts";
 

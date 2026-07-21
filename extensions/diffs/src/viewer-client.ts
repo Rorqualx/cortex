@@ -34,7 +34,7 @@ type DiffController = {
   diff: FileDiff;
 };
 
-const controllers: DiffController[] = [];
+export const controllers: DiffController[] = [];
 
 const viewerState: ViewerState = {
   theme: "dark",

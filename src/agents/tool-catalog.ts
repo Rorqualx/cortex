@@ -570,11 +570,16 @@ export function resolveCoreToolProfilePolicy(profile?: string): ToolProfilePolic
 }
 
 /** Lists core tools grouped into UI sections. */
-export function listCoreToolSections(): CoreToolSection[] {
+export function listCoreToolSections(params?: { swarmEnabled?: boolean }): CoreToolSection[] {
+  // Callers resolve the swarm gate and pass the fact in; resolving config here
+  // would couple this ui-shared module to the server graph.
+  const swarmEnabled = params?.swarmEnabled === true;
   return CORE_TOOL_SECTION_ORDER.map((section) => ({
     id: section.id,
     label: section.label,
-    tools: CORE_TOOL_DEFINITIONS.filter((tool) => tool.sectionId === section.id).map((tool) => ({
+    tools: CORE_TOOL_DEFINITIONS.filter(
+      (tool) => tool.sectionId === section.id && (tool.id !== "agents_wait" || swarmEnabled),
+    ).map((tool) => ({
       id: tool.id,
       label: tool.label,
       description: tool.description,

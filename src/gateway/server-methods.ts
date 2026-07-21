@@ -666,7 +666,7 @@ export async function handleGatewayRequest(
     return;
   }
   if (methodRegistry.isControlPlaneWrite(req.method)) {
-    const budget = consumeControlPlaneWriteBudget({ client });
+    const budget = consumeControlPlaneWriteBudget({ client, method: req.method });
     if (!budget.allowed) {
       // Control-plane writes mutate gateway-wide state; rate limit before handler lookup so
       // plugin and aux write methods share the same protection.

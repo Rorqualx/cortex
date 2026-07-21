@@ -25,6 +25,7 @@ import {
 } from "../../agents/failover-error.js";
 import { isMissingProviderAuthError } from "../../agents/model-auth.js";
 import { isFallbackSummaryError } from "../../agents/model-fallback.js";
+import { isSessionWriteLockBusyWithActiveRun } from "../../agents/session-write-lock-error.js";
 import { resolveSilentReplyPolicy } from "../../config/silent-reply.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -36,6 +37,7 @@ import type { ReplyPayload } from "../types.js";
 import {
   GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
   HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  SESSION_BUSY_WITH_ACTIVE_RUN_TEXT,
 } from "./agent-runner-failure-copy.js";
 import { classifyProviderRequestError } from "./provider-request-error-classifier.js";
 
@@ -522,6 +524,18 @@ export function buildKnownAgentRunFailureReplyPayload(params: {
   resolvedVerboseLevel: VerboseLevel | undefined;
   cfg?: OpenClawConfig;
 }): ReplyPayload | undefined {
+  if (isSessionWriteLockBusyWithActiveRun(params.err)) {
+    // Fork: a live in-process turn still holds the session lock; this is
+    // contention, not a failure (see the execution error handler's branch).
+    return markAgentRunFailureReplyPayload({
+      text: resolveExternalRunFailureTextForConversation({
+        text: SESSION_BUSY_WITH_ACTIVE_RUN_TEXT,
+        sessionCtx: params.sessionCtx,
+        isGenericRunnerFailure: false,
+        cfg: params.cfg,
+      }),
+    });
+  }
   const message = formatErrorMessage(params.err);
   const isFallbackSummary = isFallbackSummaryError(params.err);
   const isBilling = isFallbackSummary

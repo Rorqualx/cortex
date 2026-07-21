@@ -609,6 +609,7 @@ export function createPluginRuntimeResolver(state: PluginRegistryState) {
           const session = agent.session;
           const scopedSession = {
             resolveStorePath: session.resolveStorePath,
+            resolveSessionFilePath: session.resolveSessionFilePath,
             getSessionEntry: session.getSessionEntry,
             listSessionEntries: session.listSessionEntries,
             createSessionEntry: async (params) =>

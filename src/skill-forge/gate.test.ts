@@ -150,7 +150,9 @@ describe("staticSecurityScan", () => {
   it("fails when SKILL.md is missing", async () => {
     const result = await staticSecurityScan(tmp);
     expect(result.status).toBe("fail");
-    expect(result.findings[0].id).toBe("missing-skill");
+    const finding = result.findings[0];
+    if (!finding) throw new Error("expected finding");
+    expect(finding.id).toBe("missing-skill");
   });
 
   it("passes on a clean skill with no suspicious patterns", async () => {

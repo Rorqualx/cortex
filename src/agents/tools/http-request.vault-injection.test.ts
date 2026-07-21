@@ -247,7 +247,8 @@ describe("http_request vault injection (mocked fetch)", () => {
       if (params.url.endsWith("/login")) {
         loginCount += 1;
         // First login succeeds; the forced re-login returns no cookie → null token.
-        const headers = loginCount === 1 ? { "set-cookie": "asus_token=TOK1; path=/" } : {};
+        const headers: Record<string, string> =
+          loginCount === 1 ? { "set-cookie": "asus_token=TOK1; path=/" } : {};
         return {
           response: new Response("{}", { status: 200, headers }),
           finalUrl: params.url,

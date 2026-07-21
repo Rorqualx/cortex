@@ -287,7 +287,7 @@ describe("parseSlashCommand", () => {
 
     const remoteCommands = SLASH_COMMANDS.filter((entry) => entry.name.startsWith("plugin-"));
     expect(remoteCommands).toHaveLength(500);
-    const first = remoteCommands[0];
+    const first = remoteCommands[0]!;
     expect(first.aliases).toHaveLength(19);
     expect(first.description.length).toBeLessThanOrEqual(2_000);
     expect(first.args?.split(" ")).toHaveLength(20);

@@ -60,7 +60,7 @@ describe("buildReplacementDecisions", () => {
       candidates,
       defaultModelByProvider: new Map([["zai", "glm-5.1"]]),
     });
-    expect(decisions[0].replacementModelId).toBe("glm-5.1");
+    expect(decisions[0]?.replacementModelId).toBe("glm-5.1");
   });
 
   it("returns null replacement when no candidate survives for the provider", () => {

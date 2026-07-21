@@ -46,8 +46,9 @@ export async function ensureDreamingLayers(host: DreamingLayersHost): Promise<vo
   } finally {
     layersLoading = false;
   }
-  if (layers.length > 0 && !activeLayerId) {
-    await loadLayer(host, layers[0].id);
+  const firstLayer = layers[0];
+  if (firstLayer && !activeLayerId) {
+    await loadLayer(host, firstLayer.id);
   }
   host.onRequestUpdate?.();
 }

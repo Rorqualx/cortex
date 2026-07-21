@@ -1193,7 +1193,6 @@ export async function runBtwSideQuestion(
     apiRegistry: modelRegistryRuntime.apiRegistry,
   });
   const streamFn = resolveEmbeddedAgentStreamFn({
-    llmRuntime: modelRegistryRuntime.llmRuntime,
     currentStreamFn: modelRegistryRuntime.llmRuntime.streamSimple,
     providerStreamFn,
     sessionId,

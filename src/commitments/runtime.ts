@@ -4,6 +4,8 @@ import { resolveExpiresAtMsFromDurationMs } from "@openclaw/normalization-core/n
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import type { OpenClawConfig } from "../config/config.js";
+import { resolveSessionStorePathForScope } from "../config/sessions/session-store-path.js";
+import { formatSqliteSessionFileMarker } from "../config/sessions/sqlite-marker.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveCommitmentTimezone, resolveCommitmentsConfig } from "./config.js";
 import {
@@ -247,6 +249,13 @@ async function defaultExtractBatch(params: {
     sessionId: runId,
     sessionKey: `agent:${first.agentId}:commitments:${runId}`,
     agentId: first.agentId,
+    // Fork transcript contract: embedded runs carry an explicit SQLite
+    // transcript marker; ephemeral extraction runs use the agent's store.
+    sessionFile: formatSqliteSessionFileMarker({
+      agentId: first.agentId,
+      sessionId: runId,
+      storePath: resolveSessionStorePathForScope({ agentId: first.agentId }),
+    }),
     trigger: "manual",
     workspaceDir: resolveAgentWorkspaceDir(cfg, first.agentId),
     config: cfg,

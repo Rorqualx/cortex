@@ -1,6 +1,10 @@
 // Smoke test for RW-1: Access-time decay for L3 typed facts
 
-function typedFactAccessDecay(confidence, lastAccessedAt, now) {
+function typedFactAccessDecay(
+  confidence: number,
+  lastAccessedAt: number | undefined,
+  now: number,
+): number {
   const effectiveLastAccess = lastAccessedAt ?? now;
   const ageMs = Math.max(0, now - effectiveLastAccess);
   const ageDays = ageMs / (24 * 60 * 60 * 1000);

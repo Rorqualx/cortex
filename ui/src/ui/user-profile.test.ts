@@ -9,9 +9,9 @@ import {
 describe("connection user profile helpers", () => {
   it("resolves identity only from the current live presence entry", () => {
     const entries = [
-      { instanceId: "other", user: { id: "other-profile", name: "Other" } },
-      { instanceId: "self", user: { id: "old", name: "Old" }, reason: "disconnect" },
-      { instanceId: "self", user: { id: "profile-1", name: "Ada" } },
+      { instanceId: "other", user: { id: "other-profile", name: "Other" }, ts: 1_000 },
+      { instanceId: "self", user: { id: "old", name: "Old" }, reason: "disconnect", ts: 1_000 },
+      { instanceId: "self", user: { id: "profile-1", name: "Ada" }, ts: 1_000 },
     ];
 
     expect(resolveSelfPresenceUser(entries, "self")).toEqual({ id: "profile-1", name: "Ada" });
@@ -20,7 +20,9 @@ describe("connection user profile helpers", () => {
   });
 
   it("prefers locally refreshed identity state over the presence snapshot", () => {
-    const presenceEntries = [{ instanceId: "self", user: { id: "profile-1", name: "Ada" } }];
+    const presenceEntries = [
+      { instanceId: "self", user: { id: "profile-1", name: "Ada" }, ts: 1_000 },
+    ];
 
     expect(
       resolveCurrentSelfUser({

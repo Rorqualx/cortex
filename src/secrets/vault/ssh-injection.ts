@@ -137,10 +137,11 @@ function parseRemoteSpec(spec: string): {
  */
 export function detectSshTarget(command: string): SshDetectedTarget | null {
   const tokens = tokenizeCommand(command);
-  if (tokens.length === 0) {
+  const firstToken = tokens[0];
+  if (firstToken === undefined) {
     return null;
   }
-  const tool = baseName(tokens[0]);
+  const tool = baseName(firstToken);
   if (!SSH_TOOLS.has(tool)) {
     return null;
   }
@@ -168,6 +169,11 @@ function detectSsh(args: string[]): SshDetectedTarget | null {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    // tokenizeCommand yields a dense array; the guard only satisfies indexing types.
+    if (arg === undefined) {
+      continue;
+    }
+    const next = args[i + 1];
     if (seenDashDash) {
       // After --, the next token is the host target
       if (!arg.startsWith("-")) {
@@ -183,8 +189,8 @@ function detectSsh(args: string[]): SshDetectedTarget | null {
       seenDashDash = true;
       continue;
     }
-    if (arg === "-p" && i + 1 < args.length) {
-      port = parseInt(args[i + 1], 10);
+    if (arg === "-p" && next !== undefined) {
+      port = parseInt(next, 10);
       i++;
       continue;
     }
@@ -273,6 +279,11 @@ function detectScp(args: string[]): SshDetectedTarget | null {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    // tokenizeCommand yields a dense array; the guard only satisfies indexing types.
+    if (arg === undefined) {
+      continue;
+    }
+    const next = args[i + 1];
     if (seenDashDash) {
       // After --, args are paths (some could still be remote in scp)
       if (arg.includes(":") || arg.includes("@")) {
@@ -284,8 +295,8 @@ function detectScp(args: string[]): SshDetectedTarget | null {
       seenDashDash = true;
       continue;
     }
-    if (arg === "-P" && i + 1 < args.length) {
-      port = parseInt(args[i + 1], 10);
+    if (arg === "-P" && next !== undefined) {
+      port = parseInt(next, 10);
       i++;
       continue;
     }
@@ -344,6 +355,11 @@ function detectRsync(args: string[]): SshDetectedTarget | null {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    // tokenizeCommand yields a dense array; the guard only satisfies indexing types.
+    if (arg === undefined) {
+      continue;
+    }
+    const next = args[i + 1];
     if (seenDashDash) {
       pathArgs.push(arg);
       continue;
@@ -353,12 +369,11 @@ function detectRsync(args: string[]): SshDetectedTarget | null {
       continue;
     }
     // --rsh="ssh -p 2222" or -e "ssh -p 2222"
-    if ((arg === "-e" || arg === "--rsh") && i + 1 < args.length) {
-      const rshValue = args[i + 1];
+    if ((arg === "-e" || arg === "--rsh") && next !== undefined) {
       // Try to extract port from the rsh value
-      const portMatch = rshValue.match(/-p\s+(\d+)/);
-      if (portMatch) {
-        port = parseInt(portMatch[1], 10);
+      const portValue = next.match(/-p\s+(\d+)/)?.[1];
+      if (portValue !== undefined) {
+        port = parseInt(portValue, 10);
       }
       i++;
       continue;
@@ -366,22 +381,22 @@ function detectRsync(args: string[]): SshDetectedTarget | null {
     if (arg.startsWith("-e") && arg.length > 2) {
       // -essh or -e "ssh ..."
       const rshValue = arg.slice(2);
-      const portMatch = rshValue.match(/-p\s+(\d+)/);
-      if (portMatch) {
-        port = parseInt(portMatch[1], 10);
+      const portValue = rshValue.match(/-p\s+(\d+)/)?.[1];
+      if (portValue !== undefined) {
+        port = parseInt(portValue, 10);
       }
       continue;
     }
     if (arg.startsWith("--rsh=")) {
       const rshValue = arg.slice("--rsh=".length).replace(/^["']|["']$/g, "");
-      const portMatch = rshValue.match(/-p\s+(\d+)/);
-      if (portMatch) {
-        port = parseInt(portMatch[1], 10);
+      const portValue = rshValue.match(/-p\s+(\d+)/)?.[1];
+      if (portValue !== undefined) {
+        port = parseInt(portValue, 10);
       }
       continue;
     }
-    if (arg === "--port" && i + 1 < args.length) {
-      port = parseInt(args[i + 1], 10);
+    if (arg === "--port" && next !== undefined) {
+      port = parseInt(next, 10);
       i++;
       continue;
     }
@@ -393,7 +408,7 @@ function detectRsync(args: string[]): SshDetectedTarget | null {
     if (arg.startsWith("--") && arg.includes("=")) {
       continue; // --option=value
     }
-    if (arg.startsWith("--") && i + 1 < args.length && !args[i + 1].startsWith("-")) {
+    if (arg.startsWith("--") && next !== undefined && !next.startsWith("-")) {
       // Some long options take a value; but for host detection, the path args
       // are the non-flag ones. We'll be conservative and only skip known value-taking options.
       if (
@@ -427,7 +442,8 @@ function detectRsync(args: string[]): SshDetectedTarget | null {
   for (const pArg of pathArgs) {
     // rsync daemon mode: host::module/path
     if (pArg.includes("::")) {
-      const beforeColon = pArg.split("::")[0];
+      // String.split always returns at least one element.
+      const beforeColon = pArg.split("::")[0]!;
       const parsed = parseRemoteSpec(beforeColon);
       if (parsed.host) {
         host = parsed.host;
@@ -467,6 +483,11 @@ function detectSftp(args: string[]): SshDetectedTarget | null {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    // tokenizeCommand yields a dense array; the guard only satisfies indexing types.
+    if (arg === undefined) {
+      continue;
+    }
+    const next = args[i + 1];
     if (seenDashDash) {
       if (!arg.startsWith("-")) {
         const parsed = parseRemoteSpec(arg);
@@ -481,8 +502,8 @@ function detectSftp(args: string[]): SshDetectedTarget | null {
       seenDashDash = true;
       continue;
     }
-    if (arg === "-P" && i + 1 < args.length) {
-      port = parseInt(args[i + 1], 10);
+    if (arg === "-P" && next !== undefined) {
+      port = parseInt(next, 10);
       i++;
       continue;
     }
@@ -751,9 +772,14 @@ function injectOption(command: string, flag: string, value: string): string {
   // Insert after the leading flags, before the first non-flag (host) argument.
   let insertAt = 1;
   for (let i = 1; i < tokens.length; i++) {
-    if (tokens[i].startsWith("-")) {
+    // Dense token array; guard only satisfies indexing types.
+    const token = tokens[i];
+    if (token === undefined) {
+      continue;
+    }
+    if (token.startsWith("-")) {
       const nextToken = tokens[i + 1];
-      if (nextToken && !nextToken.startsWith("-") && isFlagWithValue(tokens[i])) {
+      if (nextToken && !nextToken.startsWith("-") && isFlagWithValue(token)) {
         i++; // Skip the value too
       }
       insertAt = i + 1;
@@ -799,6 +825,10 @@ function injectUsername(command: string, detected: SshDetectedTarget, username: 
   let modified = false;
   for (let i = 1; i < tokens.length; i++) {
     const token = tokens[i];
+    // Dense token array; guard only satisfies indexing types.
+    if (token === undefined) {
+      continue;
+    }
     if (token.includes(hostPattern) && !token.includes(`${username}@${hostPattern}`)) {
       // Check if this token contains the host without a username prefix
       // For ssh: token is just "host" or "host command..."
@@ -842,11 +872,18 @@ function injectRsyncRsh(command: string, rshArgs: string, sshpassPrefix: string)
   };
   for (let i = 1; i < tokens.length; i++) {
     const token = tokens[i];
+    // Dense token array; guard only satisfies indexing types.
+    if (token === undefined) {
+      continue;
+    }
     // tokenizeCommand already strips the quotes around an -e/--rsh value, so the
     // value token holds the literal remote-shell command with its spaces intact.
-    if ((token === "-e" || token === "--rsh") && i + 1 < tokens.length) {
-      tokens[i + 1] = buildValue(tokens[i + 1]);
-      return retokenize(tokens);
+    if (token === "-e" || token === "--rsh") {
+      const rshValue = tokens[i + 1];
+      if (rshValue !== undefined) {
+        tokens[i + 1] = buildValue(rshValue);
+        return retokenize(tokens);
+      }
     }
     if (token.startsWith("-e") && token.length > 2) {
       tokens[i] = "-e";

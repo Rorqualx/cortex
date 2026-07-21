@@ -63,7 +63,10 @@ export class ContextTracker {
     const relevant = [...scores.entries()]
       .filter(([, score]) => score >= threshold)
       .toSorted((a, b) => b[1] - a[1])
-      .map(([idx]) => this.entries[idx]);
+      .flatMap(([idx]) => {
+        const entry = this.entries[idx];
+        return entry ? [entry] : [];
+      });
 
     return relevant;
   }

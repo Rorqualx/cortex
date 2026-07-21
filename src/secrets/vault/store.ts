@@ -257,9 +257,10 @@ export function buildAuthHeaders(
     case "header": {
       // Emit headers in the saved order so injection is deterministic.
       const order = config.kind === "header" ? config.headers : Object.keys(material.values);
-      return order
-        .filter((name) => material.values[name] !== undefined)
-        .map((name) => ({ name, value: material.values[name] }));
+      return order.flatMap((name) => {
+        const value = material.values[name];
+        return value === undefined ? [] : [{ name, value }];
+      });
     }
     case "login":
       return [];

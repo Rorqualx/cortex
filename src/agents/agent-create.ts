@@ -54,6 +54,10 @@ type CreateAgentParams = {
   model?: string;
   emoji?: unknown;
   avatar?: unknown;
+  /** Display-only identity role label persisted on the agent entry. */
+  role?: unknown;
+  /** Human-readable agent description persisted on the agent entry. */
+  description?: unknown;
   agentDir?: string;
   bindingSpecs?: string[];
   transformConfig?: typeof transformConfigFileWithRetry;
@@ -103,11 +107,16 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
 
   const safeName = sanitizeAgentIdentityLine(rawName);
   const model = normalizeOptionalString(params.model);
-  const identity = createAgentIdentityConfig({
+  const role = normalizeOptionalString(params.role);
+  const description = normalizeOptionalString(params.description);
+  const baseIdentity = createAgentIdentityConfig({
     name: safeName,
     emoji: params.emoji,
     avatar: params.avatar,
   }) ?? { name: safeName };
+  // Role is a display-only identity label the shared helper does not model;
+  // layer it on top so creation persists it alongside the other identity fields.
+  const identity = role ? { ...baseIdentity, role: sanitizeAgentIdentityLine(role) } : baseIdentity;
   const explicitWorkspace = params.workspace?.trim()
     ? resolveUserPath(params.workspace.trim())
     : undefined;
@@ -153,6 +162,7 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
             workspace: workspaceDir,
             agentDir,
             model,
+            ...(description !== undefined ? { description } : {}),
             identity,
           });
           const bindingParse = parseBindingSpecs({

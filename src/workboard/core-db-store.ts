@@ -146,5 +146,13 @@ export function openWorkboardCoreStore(env?: NodeJS.ProcessEnv): WorkboardStore 
     boards: stores.boards,
     subscriptions: stores.subscriptions,
     attachments: stores.attachments,
+    // data_version bumps on commits from other connections (CLI vs gateway),
+    // letting the change-event service surface external board writes.
+    dataVersion: () => {
+      const row = stateDb.db.prepare("PRAGMA data_version").get() as
+        | { data_version?: number | bigint }
+        | undefined;
+      return Number(row?.data_version ?? 0);
+    },
   });
 }

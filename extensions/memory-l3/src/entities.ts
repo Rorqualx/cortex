@@ -133,13 +133,19 @@ export function extractEntitiesFromFacts(params: {
     // Infrastructure: IP-like patterns
     const ipMatches = text.matchAll(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g);
     for (const m of ipMatches) {
-      addEntity(m[1], "infrastructure");
+      const ip = m[1];
+      if (ip !== undefined) {
+        addEntity(ip, "infrastructure");
+      }
     }
 
     // Hostnames: word.word pattern (e.g., HueyTheDestroyer, rorqualx.asuscomm.com)
     const hostnameMatches = text.matchAll(/\b([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z][a-zA-Z0-9]*)+)\b/g);
     for (const m of hostnameMatches) {
       const host = m[1];
+      if (host === undefined) {
+        continue;
+      }
       // Skip common English words that look like hostnames
       if (/^(e\.g|etc|i\.e|vs)\.$/i.test(host)) {
         continue;
@@ -162,7 +168,11 @@ export function extractEntitiesFromFacts(params: {
     ]);
     const words = text.split(/\s+/);
     for (let i = 0; i < words.length - 1; i++) {
-      const clean = words[i].toLowerCase().replace(/[.,;:!?]/g, "");
+      const word = words[i];
+      if (word === undefined) {
+        continue;
+      }
+      const clean = word.toLowerCase().replace(/[.,;:!?]/g, "");
       if (projectKeywords.has(clean)) {
         const next = words[i + 1]?.replace(/[.,;:!?'"()]/g, "");
         if (next && next.length > 1 && /^[A-Z]/.test(next)) {
@@ -175,6 +185,9 @@ export function extractEntitiesFromFacts(params: {
     const dockerMatches = text.matchAll(/\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+)\b/g);
     for (const m of dockerMatches) {
       const name = m[1];
+      if (name === undefined) {
+        continue;
+      }
       // Filter out common English hyphenated words
       const noise = new Set([
         "well-known",
