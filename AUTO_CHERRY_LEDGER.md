@@ -1,16 +1,27 @@
 # Auto-Cherry Ledger — nightly upstream sync
 
-Append-only log for the autonomous `upstream-merge-nightly` cron (`4986d9df`).
-Each nightly run appends one dated block. The cron **cherry-picks provably-safe
+> **RETIRED 2026-07-21.** The per-commit cherry-pick classifier
+> (`scripts/upstream-divergence-report.mjs`, now deleted) OOM'd / timed out at
+> 8k+ commit divergence (see the `NO LAND` ledger commits). The `upstream-merge-nightly`
+> cron (`4986d9df`) was flipped to the **hybrid merge-gated** flow:
+> `scripts/cron-upstream-merge.sh` does the REAL `git merge upstream/main`
+> (merge=ours + rerere) in a throwaway worktree, auto-lands+deploys only a
+> ZERO-conflict Linux-proof-green merge, and otherwise stages a proof-green
+> `resync-staging/<date>` branch for the maintainer to land — never landing
+> conflicts. Nightly run log: `~/.openclaw/workspace/memory/reports/upstream-merge-nightly.log`.
+> The entries below are the historical cherry-pick record.
+
+Historical: append-only log for the autonomous `upstream-merge-nightly` cron (`4986d9df`).
+Each nightly run appended one dated block. The cron **cherry-picked provably-safe
 upstream fixes only** (`fix`/`perf`/security, no convergent-surface files, no
-codex); wholesale merges are classified, deferred, and left for a maintainer
+codex); wholesale merges were classified, deferred, and left for a maintainer
 `$openclaw-upstream-resync` pass.
 
-Classification is produced by `scripts/upstream-divergence-report.mjs` (canonical
+Classification was produced by `scripts/upstream-divergence-report.mjs` (canonical
 convergent surface = `.gitattributes merge=ours` ∪ `extensions/codex/**`). Proof
-is `scripts/remote-proof.sh` (Linux build + 7 tsgo lanes + `test:fast`) plus a
-`claude-connect` `$autoreview` on the applied cherry diff. Nothing lands without
-green proof; every land sets `main-backup-pre-autocherry` + a tag for one-command
+was `scripts/remote-proof.sh` (Linux build + 7 tsgo lanes + `test:fast`) plus a
+`claude-connect` `$autoreview` on the applied cherry diff. Nothing landed without
+green proof; every land set `main-backup-pre-autocherry` + a tag for one-command
 rollback.
 
 ## Entry format
