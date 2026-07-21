@@ -83,9 +83,12 @@ LANES="$LANES"
 BASE=$BASE
 BASELINE_REF=$BASELINE_REF
 
-# Failing test files only: vitest prints a per-file summary line containing
-# "failed" plus the file path; passing files never say "failed".
-fail_files() { grep -E "failed" "\$1" 2>/dev/null | grep -oE "[A-Za-z0-9_./-]+\.(test|e2e\.test)\.ts" | sort -u; }
+# Failing test files only. Match vitest's per-file summary line
+# "<path>.test.ts (N tests | M failed)" after stripping ANSI SGR codes; a bare
+# grep for "failed" false-positives on stderr log lines that merely contain the
+# word (e.g. a test that logs "...failed delivery"), spuriously flagging a passing
+# upstream-only file as a regression.
+fail_files() { sed -E "s/\x1b\[[0-9;]*[a-zA-Z]//g" "\$1" 2>/dev/null | grep -oE "[A-Za-z0-9_./-]+\.(test|e2e\.test)\.ts \([0-9]+ tests?[^)]*[0-9]+ failed" | grep -oE "[A-Za-z0-9_./-]+\.(test|e2e\.test)\.ts" | sort -u; }
 
 if [ ! -d "\$PROOF_DIR/.git" ]; then
   git clone $FORK_URL "\$PROOF_DIR" || { echo 'EXIT=90 (clone)'; exit 90; }
