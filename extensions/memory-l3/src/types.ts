@@ -73,6 +73,14 @@ export type L2Fact = {
    * Absent on facts extracted before PROMPT_VERSION=10; readers treat
    * absent as `createdAt`. */
   lastVerifiedAt?: number;
+  /** Episodic annotation: wall-clock time of the source event (ms).
+   * When present, enables RaMem-style validity scoring during retrieval —
+   * facts tied to stale episodic contexts receive a soft penalty. */
+  eventTime?: number;
+  /** Session that produced this fact. */
+  sessionId?: string;
+  /** Distinct participant roles present in the source chunk. */
+  participants?: string[];
 };
 
 /**

@@ -75,6 +75,13 @@ export type ScoringConfig = {
    * boost. Default 0.1. Set to 0 to disable.
    */
   weightSemanticEntropy: number;
+  /**
+   * Weight for episodic-validity signal (RaMem-inspired contextual
+   * reinstatement). Facts whose `eventTime` is stale relative to the
+   * query context receive a soft penalty. Default 0.05. Set to 0 to
+   * disable.
+   */
+  weightValidity: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -96,6 +103,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightGoalRelevance: 0.1,
   weightReliability: 0.1,
   weightSemanticEntropy: 0.1,
+  weightValidity: 0.05,
 };
 
 // ---------------------------------------------------------------------------
@@ -227,6 +235,9 @@ export type Signals = {
   reliability: number;
   /** Semantic-entropy confidence score (0–1). Higher = more confident / lower entropy. */
   semanticEntropy: number;
+  /** Episodic-validity score (0–1). Lower = stale or context-incompatible.
+   * Default 1.0 (neutral) when no episodic context is available. */
+  validity: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
@@ -434,6 +445,7 @@ export function scoreFact(params: {
     goalRelevance: params.goalRelevance ?? 0,
     reliability: params.reliability ?? certaintyToReliability(params.fact.certainty),
     semanticEntropy: params.semanticEntropy ?? params.fact.semanticEntropy ?? 1.0,
+    validity: episodicValidity(params.fact, params.now),
   };
   if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
     signals.reliability = signals.reliability * params.groundingConfidence;
@@ -452,7 +464,8 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.informationGain * config.weightInformationGain +
     signals.goalRelevance * config.weightGoalRelevance +
     signals.reliability * config.weightReliability +
-    signals.semanticEntropy * config.weightSemanticEntropy
+    signals.semanticEntropy * config.weightSemanticEntropy +
+    signals.validity * config.weightValidity
   );
 }
 
@@ -467,4 +480,40 @@ function certaintyToReliability(certainty: import("./types.js").FactCertainty | 
     default:
       return 1.0;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Episodic validity (RaMem-inspired contextual reinstatement)
+// ---------------------------------------------------------------------------
+
+/** Half-life in days for episodic-validity decay. Facts tied to events older
+ * than this lose validity faster. Longer than recencyHalfLifeDays because
+ * episodic context (who said what, when) degrades more slowly than fact
+ * freshness — a phone number from 3 months ago is likely still valid even
+ * if the conversation context is stale. */
+const EPISODIC_VALIDITY_HALF_LIFE_DAYS = 90;
+
+/**
+ * Compute an episodic-validity signal for a fact.
+ *
+ * Inspired by RaMem (arXiv:2606.22844): validity-aware retrieval penalises
+ * facts whose source context (event time, participants, session) is stale
+ * or potentially incompatible with the current query.
+ *
+ * - No `eventTime`: returns 1.0 (neutral — no episodic context to penalise).
+ * - With `eventTime`: applies a soft exponential decay with a 90-day half-life.
+ *   A fact from yesterday gets ~0.99; a fact from 90 days ago gets ~0.5;
+ *   a fact from a year ago gets ~0.05.
+ *
+ * This is intentionally a *soft* penalty (default weight 0.05). Combined
+ * with the recency signal (which tracks when the fact was *stored*), it
+ * captures a different dimension: when the underlying *event* happened.
+ */
+export function episodicValidity(fact: L2Fact, now: number): number {
+  if (fact.eventTime === undefined || fact.eventTime === null) {
+    return 1.0;
+  }
+  const ageMs = Math.max(0, now - fact.eventTime);
+  const ageDays = ageMs / MS_PER_DAY;
+  return Math.exp((-Math.LN2 * ageDays) / EPISODIC_VALIDITY_HALF_LIFE_DAYS);
 }

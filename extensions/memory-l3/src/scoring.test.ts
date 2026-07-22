@@ -5,6 +5,7 @@ import {
   composite,
   DEFAULT_FSRS_PARAMS,
   DEFAULT_SCORING_CONFIG,
+  episodicValidity,
   fsrsRetrievability,
   jaccard,
   recencyScore,
@@ -146,6 +147,7 @@ describe("scoreFact + composite", () => {
       weightGoalRelevance: 0,
       weightReliability: 0,
       weightSemanticEntropy: 0,
+      weightValidity: 0,
     };
     const score = composite(
       {
@@ -159,6 +161,7 @@ describe("scoreFact + composite", () => {
         goalRelevance: 0,
         reliability: 0,
         semanticEntropy: 1.0,
+        validity: 1.0,
       },
       config,
     );
@@ -175,6 +178,7 @@ describe("scoreFact + composite", () => {
         goalRelevance: 0,
         reliability: 0,
         semanticEntropy: 1.0,
+        validity: 1.0,
       },
       config,
     );
@@ -198,6 +202,7 @@ describe("scoreFact + composite", () => {
       weightGoalRelevance: 0,
       weightReliability: 0,
       weightSemanticEntropy: 0,
+      weightValidity: 0,
     };
     const signals = {
       lexical: 0,
@@ -210,6 +215,7 @@ describe("scoreFact + composite", () => {
       goalRelevance: 0,
       reliability: 0,
       semanticEntropy: 1.0,
+      validity: 1.0,
     };
     expect(composite(signals, config)).toBe(0);
     expect(composite(signals, { ...config, weightInformationGain: 0.5 })).toBeCloseTo(0.4, 6);
@@ -232,6 +238,7 @@ describe("scoreFact + composite", () => {
       weightGoalRelevance: 0,
       weightReliability: 0,
       weightSemanticEntropy: 0,
+      weightValidity: 0,
     };
     const score = composite(
       {
@@ -245,6 +252,7 @@ describe("scoreFact + composite", () => {
         goalRelevance: 0,
         reliability: 0,
         semanticEntropy: 1.0,
+        validity: 1.0,
       },
       config,
     );
@@ -461,6 +469,7 @@ describe("buildCorpusStats + BM25", () => {
       weightGoalRelevance: 0.2,
       weightReliability: 0.3,
       weightSemanticEntropy: 0,
+      weightValidity: 0,
     };
     const signals = {
       lexical: 0,
@@ -473,8 +482,111 @@ describe("buildCorpusStats + BM25", () => {
       goalRelevance: 0.5,
       reliability: 0.8,
       semanticEntropy: 1.0,
+      validity: 1.0,
     };
     expect(composite(signals, config)).toBeCloseTo(0.5 * 0.2 + 0.8 * 0.3, 6);
+  });
+});
+
+describe("episodicValidity", () => {
+  it("returns 1.0 for facts without eventTime (neutral)", () => {
+    const fact = { id: "f1", text: "test", importance: 0.5, createdAt: 0, dedupKey: "k" };
+    expect(episodicValidity(fact, Date.now())).toBe(1.0);
+  });
+
+  it("returns ~1.0 for very recent eventTime", () => {
+    const now = Date.now();
+    const fact = {
+      id: "f1",
+      text: "user is in Tokyo",
+      importance: 0.5,
+      createdAt: now,
+      dedupKey: "k",
+      eventTime: now - 1000, // 1 second ago
+    };
+    expect(episodicValidity(fact, now)).toBeCloseTo(1.0, 2);
+  });
+
+  it("returns ~0.5 for 90-day-old eventTime", () => {
+    const now = Date.now();
+    const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+    const fact = {
+      id: "f1",
+      text: "old event",
+      importance: 0.5,
+      createdAt: now - ninetyDaysMs,
+      dedupKey: "k",
+      eventTime: now - ninetyDaysMs,
+    };
+    expect(episodicValidity(fact, now)).toBeCloseTo(0.5, 1);
+  });
+
+  it("returns near-0 for very old eventTime", () => {
+    const now = Date.now();
+    const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+    const fact = {
+      id: "f1",
+      text: "ancient event",
+      importance: 0.5,
+      createdAt: now - oneYearMs,
+      dedupKey: "k",
+      eventTime: now - oneYearMs,
+    };
+    const v = episodicValidity(fact, now);
+    expect(v).toBeLessThan(0.1);
+    expect(v).toBeGreaterThan(0);
+  });
+
+  it("contributes to composite score via weightValidity", () => {
+    const config = {
+      weightLexical: 0,
+      weightBm25: 0,
+      weightImportance: 0,
+      weightRecency: 0,
+      weightL3Boost: 0,
+      weightLongTermTierBoost: 0,
+      weightMemoryCoreTierMultiplier: 0.7,
+      weightTypedFactTierBoost: 0,
+      recencyHalfLifeDays: 7,
+      useFsrs: false,
+      weightSemantic: 0,
+      weightInformationGain: 0,
+      weightGoalRelevance: 0,
+      weightReliability: 0,
+      weightSemanticEntropy: 0,
+      weightValidity: 0.5,
+    };
+    const now = Date.now();
+    const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+    const staleFact = {
+      id: "f1",
+      text: "stale",
+      importance: 0.5,
+      createdAt: now - ninetyDaysMs,
+      dedupKey: "k",
+      eventTime: now - ninetyDaysMs,
+    };
+    const freshFact = {
+      id: "f2",
+      text: "fresh",
+      importance: 0.5,
+      createdAt: now,
+      dedupKey: "k2",
+      eventTime: now,
+    };
+    const staleScore = scoreFact({
+      queryTokens: new Set(["test"]),
+      fact: staleFact,
+      now,
+      config,
+    });
+    const freshScore = scoreFact({
+      queryTokens: new Set(["test"]),
+      fact: freshFact,
+      now,
+      config,
+    });
+    expect(composite(freshScore, config)).toBeGreaterThan(composite(staleScore, config));
   });
 });
 

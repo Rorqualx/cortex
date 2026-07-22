@@ -401,6 +401,7 @@ export async function retrieveTopK(params: {
             goalRelevance: 0,
             reliability: 0,
             semanticEntropy: 1,
+            validity: 1,
           },
           chunkId: hit.path,
           tier: "memory-core",
@@ -605,6 +606,7 @@ export async function retrieveTopK(params: {
               goalRelevance: 0,
               reliability: 0,
               semanticEntropy: 1,
+              validity: 1,
             },
             chunkId: cid,
             tier: "l2" as RetrievalTier,
@@ -764,6 +766,10 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     dedupKey: typed.slot,
     // Failure-avoidance typed facts get significance for FSRS slower decay.
     significant: typed.slot.startsWith("failure:") || undefined,
+    // Propagate episodic context for RaMem-style validity scoring.
+    eventTime: typed.eventTime,
+    sessionId: typed.sessionId,
+    participants: typed.participants,
   };
 }
 
