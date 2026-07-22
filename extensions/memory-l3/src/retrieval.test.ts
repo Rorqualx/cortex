@@ -201,6 +201,7 @@ describe("formatMemorySection", () => {
           goalRelevance: 0,
           reliability: 1,
           semanticEntropy: 1,
+          validity: 1,
         },
         chunkId: "chunk-1",
         tier: "l2",
@@ -232,6 +233,7 @@ describe("formatMemorySection", () => {
           goalRelevance: 0,
           reliability: 1,
           semanticEntropy: 1,
+          validity: 1,
         },
         chunkId: "longterm",
         tier: "longterm",
@@ -256,6 +258,7 @@ describe("formatMemorySection", () => {
           goalRelevance: 0,
           reliability: 1,
           semanticEntropy: 1,
+          validity: 1,
         },
         chunkId: "chunk-1",
         tier: "l2",
@@ -582,6 +585,7 @@ describe("retrieveTopK typed-fact tier", () => {
             goalRelevance: 0,
             reliability: 1,
             semanticEntropy: 1,
+            validity: 1,
           },
           chunkId: "chunk-1",
           tier: "l2",
@@ -606,6 +610,7 @@ describe("retrieveTopK typed-fact tier", () => {
             goalRelevance: 0,
             reliability: 1,
             semanticEntropy: 1,
+            validity: 1,
           },
           chunkId: "chunk-2",
           tier: "l2",
@@ -640,6 +645,7 @@ describe("retrieveTopK typed-fact tier", () => {
           goalRelevance: 0,
           reliability: 1,
           semanticEntropy: 1,
+          validity: 1,
         },
         chunkId: "chunk-1",
         tier: "typed",
@@ -1076,5 +1082,115 @@ describe("retrieveTopK retrieval mode", () => {
     expect(facts.length).toBeGreaterThan(0);
     // In blended mode, bm25 should be non-zero for lexical matches
     expect(facts[0]!.signals.bm25).toBeGreaterThan(0);
+  });
+});
+
+describe("retrieveTopK episodic validity (RaMem filter)", () => {
+  it("down-ranks typed facts with stale eventTime", async () => {
+    const recentEvent = NOW - 10 * 86400000; // 10 days ago
+    const staleEvent = NOW - 400 * 86400000; // ~13 months ago
+
+    await writeChunk("chunk-recent", [], NOW, [
+      {
+        id: "tf-recent",
+        slot: "user:status",
+        value: "active",
+        sourceSpan: "status is active",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW,
+        eventTime: recentEvent,
+      },
+    ]);
+    await writeChunk("chunk-stale", [], NOW, [
+      {
+        id: "tf-stale",
+        slot: "user:old_status",
+        value: "inactive",
+        sourceSpan: "status was inactive",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW,
+        eventTime: staleEvent,
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "status",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+
+    const recent = facts.find((f) => f.fact.id === "tf-recent");
+    const stale = facts.find((f) => f.fact.id === "tf-stale");
+    expect(recent).toBeDefined();
+    expect(stale).toBeDefined();
+    // Recent fact should have higher validity signal
+    expect(recent!.signals.validity).toBeGreaterThan(stale!.signals.validity);
+  });
+
+  it("assigns validity=1.0 to facts without episodic metadata", async () => {
+    await writeChunk("chunk-plain", [
+      {
+        id: "f1",
+        text: "user likes coffee",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:coffee",
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "coffee",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+
+    expect(facts.length).toBeGreaterThan(0);
+    expect(facts[0]!.signals.validity).toBe(1.0);
+  });
+
+  it("applies participant mismatch penalty", async () => {
+    await writeChunk("chunk-participants", [], NOW, [
+      {
+        id: "tf-no-user",
+        slot: "agent:config",
+        value: "production",
+        sourceSpan: "config is production",
+        unit: null,
+        confidence: 0.8,
+        createdAt: NOW,
+        eventTime: NOW,
+        participants: ["agent", "system"],
+      },
+    ]);
+    await writeChunk("chunk-with-user", [], NOW, [
+      {
+        id: "tf-with-user",
+        slot: "user:config",
+        value: "development",
+        sourceSpan: "my config is development",
+        unit: null,
+        confidence: 0.8,
+        createdAt: NOW,
+        eventTime: NOW,
+        participants: ["user", "agent"],
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "config",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+
+    const noUser = facts.find((f) => f.fact.id === "tf-no-user");
+    const withUser = facts.find((f) => f.fact.id === "tf-with-user");
+    if (noUser && withUser) {
+      expect(withUser.signals.validity).toBeGreaterThan(noUser.signals.validity);
+    }
   });
 });

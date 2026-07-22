@@ -75,6 +75,15 @@ export type ScoringConfig = {
    * boost. Default 0.1. Set to 0 to disable.
    */
   weightSemanticEntropy: number;
+  /**
+   * Weight for episodic-validity signal (RaMem-inspired contextual
+   * reinstatement). Facts whose source event is temporally or contextually
+   * incompatible with the retrieval context get a lower validity score,
+   * causing them to rank below facts with compatible episodic context.
+   * Validity defaults to 1.0 (neutral) when no episodic metadata is
+   * available. Default 0.05.
+   */
+  weightValidity: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -96,6 +105,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightGoalRelevance: 0.1,
   weightReliability: 0.1,
   weightSemanticEntropy: 0.1,
+  weightValidity: 0.05,
 };
 
 // ---------------------------------------------------------------------------
@@ -227,6 +237,13 @@ export type Signals = {
   reliability: number;
   /** Semantic-entropy confidence score (0–1). Higher = more confident / lower entropy. */
   semanticEntropy: number;
+  /**
+   * Episodic-validity score (0–1). How compatible the fact's source context
+   * is with the current retrieval context. 1.0 = fully valid (recent,
+   * compatible context); lower values indicate temporal or contextual
+   * mismatch (RaMem-inspired). Defaults to 1.0 when no episodic metadata.
+   */
+  validity: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
@@ -400,6 +417,13 @@ export function scoreFact(params: {
   /** Semantic-entropy confidence score (0–1). Higher = more confident. Defaults to fact.semanticEntropy or 1.0. */
   semanticEntropy?: number;
   /**
+   * Episodic-validity score (0–1) from RaMem-style contextual reinstatement.
+   * When provided, folds into the composite as a soft penalty for facts
+   * whose source context is temporally/contextually incompatible with the
+   * current query. Defaults to 1.0 (neutral) when not provided.
+   */
+  validity?: number;
+  /**
    * Grounding confidence from the CALIBER dual-confidence verifier (0–1).
    * When present, scales the reliability signal to reflect model uncertainty
    * about the turn from which this fact was extracted.
@@ -438,6 +462,10 @@ export function scoreFact(params: {
   if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
     signals.reliability = signals.reliability * params.groundingConfidence;
   }
+  // Episodic validity (RaMem-inspired) — callers pass a pre-computed validity
+  // score derived from eventTime/participants metadata. Defaults to 1.0
+  // (neutral) when not provided.
+  signals.validity = params.validity ?? 1.0;
   return signals;
 }
 
@@ -452,7 +480,8 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.informationGain * config.weightInformationGain +
     signals.goalRelevance * config.weightGoalRelevance +
     signals.reliability * config.weightReliability +
-    signals.semanticEntropy * config.weightSemanticEntropy
+    signals.semanticEntropy * config.weightSemanticEntropy +
+    signals.validity * config.weightValidity
   );
 }
 

@@ -146,6 +146,7 @@ describe("scoreFact + composite", () => {
       weightGoalRelevance: 0,
       weightReliability: 0,
       weightSemanticEntropy: 0,
+      weightValidity: 0,
     };
     const score = composite(
       {
@@ -159,6 +160,7 @@ describe("scoreFact + composite", () => {
         goalRelevance: 0,
         reliability: 0,
         semanticEntropy: 1.0,
+        validity: 1.0,
       },
       config,
     );
@@ -175,6 +177,7 @@ describe("scoreFact + composite", () => {
         goalRelevance: 0,
         reliability: 0,
         semanticEntropy: 1.0,
+        validity: 1.0,
       },
       config,
     );
@@ -198,6 +201,7 @@ describe("scoreFact + composite", () => {
       weightGoalRelevance: 0,
       weightReliability: 0,
       weightSemanticEntropy: 0,
+      weightValidity: 0,
     };
     const signals = {
       lexical: 0,
@@ -210,6 +214,7 @@ describe("scoreFact + composite", () => {
       goalRelevance: 0,
       reliability: 0,
       semanticEntropy: 1.0,
+      validity: 1.0,
     };
     expect(composite(signals, config)).toBe(0);
     expect(composite(signals, { ...config, weightInformationGain: 0.5 })).toBeCloseTo(0.4, 6);
@@ -232,6 +237,7 @@ describe("scoreFact + composite", () => {
       weightGoalRelevance: 0,
       weightReliability: 0,
       weightSemanticEntropy: 0,
+      weightValidity: 0,
     };
     const score = composite(
       {
@@ -245,6 +251,7 @@ describe("scoreFact + composite", () => {
         goalRelevance: 0,
         reliability: 0,
         semanticEntropy: 1.0,
+        validity: 1.0,
       },
       config,
     );
@@ -461,6 +468,7 @@ describe("buildCorpusStats + BM25", () => {
       weightGoalRelevance: 0.2,
       weightReliability: 0.3,
       weightSemanticEntropy: 0,
+      weightValidity: 0,
     };
     const signals = {
       lexical: 0,
@@ -473,8 +481,88 @@ describe("buildCorpusStats + BM25", () => {
       goalRelevance: 0.5,
       reliability: 0.8,
       semanticEntropy: 1.0,
+      validity: 1.0,
     };
     expect(composite(signals, config)).toBeCloseTo(0.5 * 0.2 + 0.8 * 0.3, 6);
+  });
+});
+
+describe("episodic validity signal", () => {
+  it("defaults to 1.0 when not provided", () => {
+    const signals = scoreFact({
+      queryTokens: new Set(),
+      fact: { id: "f", text: "x", importance: 0.5, createdAt: Date.now(), dedupKey: "k" },
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    expect(signals.validity).toBe(1.0);
+  });
+
+  it("uses the provided validity value", () => {
+    const signals = scoreFact({
+      queryTokens: new Set(),
+      fact: { id: "f", text: "x", importance: 0.5, createdAt: Date.now(), dedupKey: "k" },
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+      validity: 0.4,
+    });
+    expect(signals.validity).toBe(0.4);
+  });
+
+  it("contributes to composite via weightValidity", () => {
+    const config = {
+      weightLexical: 0,
+      weightBm25: 0,
+      weightImportance: 0,
+      weightRecency: 0,
+      weightL3Boost: 0,
+      weightLongTermTierBoost: 0,
+      weightMemoryCoreTierMultiplier: 0.7,
+      weightTypedFactTierBoost: 0,
+      recencyHalfLifeDays: 7,
+      useFsrs: false,
+      weightSemantic: 0,
+      weightInformationGain: 0,
+      weightGoalRelevance: 0,
+      weightReliability: 0,
+      weightSemanticEntropy: 0,
+      weightValidity: 0.2,
+    };
+    const high = composite(
+      {
+        lexical: 0,
+        bm25: 0,
+        importance: 0,
+        recency: 0,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0,
+        semanticEntropy: 1,
+        validity: 1.0,
+      },
+      config,
+    );
+    const low = composite(
+      {
+        lexical: 0,
+        bm25: 0,
+        importance: 0,
+        recency: 0,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0,
+        semanticEntropy: 1,
+        validity: 0.4,
+      },
+      config,
+    );
+    expect(high).toBeCloseTo(0.2, 6);
+    expect(low).toBeCloseTo(0.08, 6);
+    expect(high).toBeGreaterThan(low);
   });
 });
 

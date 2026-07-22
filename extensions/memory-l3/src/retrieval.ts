@@ -240,6 +240,9 @@ export async function retrieveTopK(params: {
     informationGain?: number;
     /** Number of messages in the buffer that produced this fact (L2 tier only). */
     contextWindow?: number;
+    /** Episodic metadata from the source TypedFact (RaMem validity filter). */
+    eventTime?: number;
+    participants?: string[];
   };
   const items: ScorableItem[] = [];
 
@@ -272,6 +275,8 @@ export async function retrieveTopK(params: {
         l3Boost: 0,
         tierBoost: config.weightTypedFactTierBoost,
         contextWindow: doc.frontmatter.contextWindow,
+        eventTime: typed.eventTime,
+        participants: typed.participants,
       });
     }
   }
@@ -339,6 +344,7 @@ export async function retrieveTopK(params: {
       corpusStats,
       significant: item.fact.significant,
       informationGain: item.informationGain,
+      validity: computeEpisodicValidity(item.eventTime, item.participants, now),
     });
     // Add embedding-based semantic signal when both query and fact have vectors
     if (
@@ -401,6 +407,7 @@ export async function retrieveTopK(params: {
             goalRelevance: 0,
             reliability: 0,
             semanticEntropy: 1,
+            validity: 1,
           },
           chunkId: hit.path,
           tier: "memory-core",
@@ -605,6 +612,7 @@ export async function retrieveTopK(params: {
               goalRelevance: 0,
               reliability: 0,
               semanticEntropy: 1,
+              validity: 1,
             },
             chunkId: cid,
             tier: "l2" as RetrievalTier,
@@ -724,6 +732,47 @@ export async function retrieveTopK(params: {
       : undefined;
 
   return { facts: finalFacts, missingInfo };
+}
+
+/**
+ * Compute episodic-validity score (RaMem-inspired contextual reinstatement).
+ *
+ * Evaluates whether a fact's source context (event time, participants) is
+ * compatible with the current retrieval context. Returns a 0–1 score where
+ * 1.0 = fully valid and lower values indicate temporal/contextual mismatch.
+ *
+ * - No episodic metadata → 1.0 (neutral, backward-compatible)
+ * - Recent event (< 90 days) → 1.0
+ * - Moderately dated (90–365 days) → 0.7
+ * - Stale (> 365 days) → 0.4
+ * - Missing "user" in participants → ×0.8 (mild contextual mismatch)
+ *
+ * This is intentionally soft — it nudges rather than filters, letting the
+ * weightValidity config control how aggressively it impacts ranking.
+ */
+function computeEpisodicValidity(
+  eventTime: number | undefined,
+  participants: string[] | undefined,
+  now: number,
+): number {
+  if (eventTime === undefined && participants === undefined) {
+    return 1.0;
+  }
+  let validity = 1.0;
+  if (eventTime !== undefined) {
+    const ageDays = Math.max(0, (now - eventTime) / (24 * 60 * 60 * 1000));
+    if (ageDays > 365) {
+      validity = 0.4;
+    } else if (ageDays > 90) {
+      validity = 0.7;
+    }
+  }
+  if (participants !== undefined && participants.length > 0) {
+    if (!participants.some((p) => p.toLowerCase().includes("user"))) {
+      validity *= 0.8;
+    }
+  }
+  return validity;
 }
 
 function longTermAsL2Fact(lt: LongTermFact): L2Fact {
