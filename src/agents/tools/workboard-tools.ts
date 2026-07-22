@@ -246,6 +246,29 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     },
   };
 
+  const researchStageTool: AnyAgentTool = {
+    name: "workboard_research_stage",
+    label: "Workboard research stage",
+    description:
+      "Advance an architecture/long-horizon Improvement Lab card one lifecycle stage (research → rescope → design → plan → probe → test → review → implement). Records the transition in the card's stage log; setting stage to 'implement' flips the card to 'ready' so the nightly Implementation cron lands it. Pass a short note summarizing what this stage produced.",
+    parameters: Type.Object({
+      id: Type.String({ minLength: 1 }),
+      stage: Type.String({
+        description: "research | rescope | design | plan | probe | test | review | implement",
+      }),
+      note: Type.Optional(Type.String({ maxLength: 400 })),
+    }),
+    execute: async (_id, args) => {
+      const params = args as Record<string, unknown>;
+      const note = readStringParam(params, "note");
+      return call(deps, "workboard.research.stage", {
+        id: readStringParam(params, "id"),
+        stage: readStringParam(params, "stage"),
+        ...(note ? { note } : {}),
+      });
+    },
+  };
+
   return [
     listTool,
     readTool,
@@ -255,5 +278,6 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     completeTool,
     blockTool,
     researchSyncTool,
+    researchStageTool,
   ];
 }

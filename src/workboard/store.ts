@@ -26,6 +26,7 @@ import {
   WORKBOARD_PROOF_STATUSES,
   WORKBOARD_RESEARCH_CATEGORIES,
   WORKBOARD_RESEARCH_OUTCOMES,
+  WORKBOARD_RESEARCH_STAGES,
   WORKBOARD_SECTIONS,
   WORKBOARD_STATUSES,
   WORKBOARD_TEMPLATE_IDS,
@@ -53,6 +54,8 @@ import {
   type WorkboardMetadata,
   type WorkboardResearchMeta,
   type WorkboardResearchOutcome,
+  type WorkboardResearchStage,
+  type WorkboardResearchStageEntry,
   type WorkboardNotification,
   type WorkboardNotificationKind,
   type WorkboardNotificationSubscription,
@@ -1228,6 +1231,28 @@ function normalizeProofInput(input: WorkboardProofInput, now: number): Workboard
 }
 
 const MAX_RESEARCH_NEXT_STEPS = 12;
+const MAX_RESEARCH_STAGE_LOG = 24;
+
+function normalizeStageLog(value: unknown): WorkboardResearchStageEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const out: WorkboardResearchStageEntry[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    if (!WORKBOARD_RESEARCH_STAGES.includes(record.stage as WorkboardResearchStage)) {
+      continue;
+    }
+    const at = typeof record.at === "number" && Number.isFinite(record.at) ? record.at : 0;
+    const note = normalizeBoundedString(record.note, undefined, 400, "research stage note");
+    out.push({ stage: record.stage as WorkboardResearchStage, at, ...(note ? { note } : {}) });
+  }
+  // Keep the most recent transitions; the trail is a display + resume aid, not a ledger.
+  return out.slice(-MAX_RESEARCH_STAGE_LOG);
+}
 
 function normalizeResearchMeta(
   value: unknown,
@@ -1259,6 +1284,12 @@ function normalizeResearchMeta(
         MAX_RESEARCH_NEXT_STEPS,
       )
     : fallback?.nextSteps;
+  const stage = WORKBOARD_RESEARCH_STAGES.includes(record.stage as WorkboardResearchStage)
+    ? (record.stage as WorkboardResearchStage)
+    : fallback?.stage;
+  const stageLog = Object.hasOwn(record, "stageLog")
+    ? normalizeStageLog(record.stageLog)
+    : fallback?.stageLog;
   return {
     cycleDate,
     itemId,
@@ -1280,6 +1311,8 @@ function normalizeResearchMeta(
     nextSteps: nextSteps && nextSteps.length > 0 ? nextSteps : undefined,
     outcome,
     commit: normalizeBoundedString(record.commit, fallback?.commit, 40, "commit"),
+    stage,
+    stageLog: stageLog && stageLog.length > 0 ? stageLog : undefined,
     userTouched:
       typeof record.userTouched === "boolean" ? record.userTouched : fallback?.userTouched,
   };

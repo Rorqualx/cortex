@@ -10,6 +10,7 @@ import type { GatewayMethodHandler } from "../gateway/methods/descriptor.js";
  */
 import { resolveResearchReportsDir, runResearchIngest } from "./research-ingest.js";
 import { WorkboardStore } from "./store.js";
+import { WORKBOARD_RESEARCH_STAGES, type WorkboardResearchStage } from "./types.js";
 
 export { WorkboardStore } from "./store.js";
 
@@ -241,6 +242,83 @@ export function createWorkboardGatewayHandlers(
           ? p.defaultAssignee.trim()
           : undefined;
       return runResearchIngest({ store: s, reportsDir, defaultAssignee });
+    },
+
+    // Deep pipeline: advance an architecture/long-horizon card one lifecycle stage.
+    // Appends to stageLog and, at `implement`, flips the card to `ready` so the
+    // 06:00 Implementation cron lands it like a quick-win. Single-writer (the Deep
+    // Pipeline cron works one stage per card), so the get→update is not contended.
+    "workboard.research.stage": async (p: Record<string, unknown>) => {
+      const id = readId(p);
+      const stage = p.stage as WorkboardResearchStage;
+      if (!WORKBOARD_RESEARCH_STAGES.includes(stage)) {
+        throw Object.assign(new Error(`invalid research stage: ${String(p.stage)}`), {
+          code: "workboard_error",
+        });
+      }
+      const card = await s.get(id);
+      if (!card) {
+        throw Object.assign(new Error("card not found"), { code: "workboard_error" });
+      }
+      const research = card.metadata?.research;
+      if (!research) {
+        throw Object.assign(new Error("card has no research metadata"), {
+          code: "workboard_error",
+        });
+      }
+      // Only architecture/long-horizon cards run the deep pipeline. Guarding here
+      // stops a stray call from giving a quick-win/finding a stage — which would
+      // make it pipelineActive and freeze its re-sync updates (see research-ingest).
+      if (research.category !== "architecture" && research.category !== "long-horizon") {
+        throw Object.assign(
+          new Error("research stage pipeline is only for architecture/long-horizon cards"),
+          { code: "workboard_error" },
+        );
+      }
+      // One step at a time: allow the next stage or a backward step (probe/review
+      // can send a card back to design), but never skip forward past the next stage
+      // — that would let a card jump straight to implement→ready unvetted.
+      const currentIdx = research.stage ? WORKBOARD_RESEARCH_STAGES.indexOf(research.stage) : -1;
+      if (WORKBOARD_RESEARCH_STAGES.indexOf(stage) > currentIdx + 1) {
+        throw Object.assign(
+          new Error(`cannot skip stages: ${research.stage ?? "(none)"} -> ${stage}`),
+          { code: "workboard_error" },
+        );
+      }
+      // A done/blocked card is out of the pipeline; a stray/retried call must not
+      // rewrite its stage (stale badge) or re-land it. Reject rather than mutate.
+      if (card.status === "done" || card.status === "blocked") {
+        throw Object.assign(new Error(`card is ${card.status}; deep pipeline is complete`), {
+          code: "workboard_error",
+        });
+      }
+      // Same-stage call is an idempotent no-op — return as-is without appending a
+      // duplicate transition (the log is a bounded resume aid, not an event stream).
+      if (stage === research.stage) {
+        return { card: redactToken(card as unknown as Record<string, unknown>) };
+      }
+      const note =
+        typeof p.note === "string" && p.note.trim() ? p.note.trim().slice(0, 400) : undefined;
+      const stageLog = [
+        ...(research.stageLog ?? []),
+        { stage, at: Date.now(), ...(note ? { note } : {}) },
+      ];
+      // Status transitions: `implement` queues the card for the 06:00 cron (→ ready).
+      // The inverse only fires when the pipeline itself queued it (was at `implement`,
+      // status `ready`): walking it back un-queues it. Never demote an operator's
+      // manual `ready` (userTouched) on a normal advance.
+      const wasImplementQueued = research.stage === "implement" && card.status === "ready";
+      const statusPatch =
+        stage === "implement"
+          ? { status: "ready" as const }
+          : wasImplementQueued && research.userTouched !== true
+            ? { status: "backlog" as const }
+            : {};
+      const updated = await s.update(id, {
+        ...statusPatch,
+        metadata: { research: { ...research, stage, stageLog } },
+      });
+      return { card: redactToken(updated as unknown as Record<string, unknown>) };
     },
 
     // Research lab: list + read the raw report markdown for the Reports browser.

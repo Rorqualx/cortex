@@ -100,6 +100,8 @@ export type RsilResearchMeta = {
   nextSteps?: string[];
   outcome?: "implemented" | "skipped" | "failed";
   commit?: string;
+  /** Deep-pipeline stage for architecture/long-horizon cards. */
+  stage?: string;
   userTouched?: boolean;
 };
 
@@ -127,6 +129,8 @@ export type RsilHost = {
   connected: boolean;
   agentsList: AgentsListResult | null;
   requestUpdate?: () => void;
+  /** Seed the chat composer with text and switch to the chat tab (app host). */
+  openChatWithContext?: (text: string) => void;
 };
 
 type RsilState = {
@@ -213,6 +217,7 @@ function normalizeResearch(value: unknown): RsilResearchMeta | undefined {
         ? record.outcome
         : undefined,
     commit: typeof record.commit === "string" ? record.commit : undefined,
+    stage: typeof record.stage === "string" ? record.stage : undefined,
     userTouched: record.userTouched === true,
   };
 }
@@ -494,6 +499,33 @@ export function doneCards(): RsilCard[] {
 
 export function selectedCard(): RsilCard | null {
   return state.cards.find((c) => c.id === state.selectedCardId) ?? null;
+}
+
+/**
+ * Seed the chat composer with the card's context and jump to the chat tab, so
+ * the operator can ask about the topic with the research already loaded.
+ */
+export function discussCardInChat(host: RsilHost, card: RsilCard): void {
+  const r = card.research;
+  const lines = [`Let's discuss this Improvement Lab item.`, ``, `**${card.title}**`];
+  const facets = [
+    r?.category ? `category: ${r.category}` : null,
+    r?.stage ? `stage: ${r.stage}` : null,
+    r?.cycleDate ? `cycle: ${r.cycleDate}` : null,
+    r?.complexity ? `complexity: ${r.complexity}` : null,
+    r?.risk ? `risk: ${r.risk}` : null,
+  ].filter((v): v is string => v !== null);
+  if (facets.length > 0) {
+    lines.push(facets.join(" · "));
+  }
+  if (r?.sourcePaper) {
+    lines.push(`source: ${r.sourcePaper}`);
+  }
+  if (card.notes) {
+    lines.push(``, card.notes.slice(0, 2000));
+  }
+  lines.push(``, `My question: `);
+  host.openChatWithContext?.(lines.join("\n"));
 }
 
 export function setTab(host: RsilHost, tab: "board" | "reports"): void {

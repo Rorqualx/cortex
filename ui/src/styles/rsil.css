@@ -417,6 +417,43 @@
   background: color-mix(in oklab, var(--ok, #22c55e) 14%, transparent);
   color: #86efac;
 }
+.badge.rsil-badge--stage {
+  background: color-mix(in oklab, #8b5cf6 18%, transparent);
+  color: #c4b5fd;
+}
+
+/* Detail header actions: the Discuss button + close, right-aligned. */
+.rsil-detail__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.rsil-detail__discuss {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-accent, var(--card));
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.rsil-detail__discuss svg {
+  width: 15px;
+  height: 15px;
+}
+.rsil-detail__discuss:hover {
+  background: color-mix(in oklab, #8b5cf6 16%, var(--bg-accent, var(--card)));
+  color: var(--text-strong, var(--text));
+}
 
 /* Detail drawer */
 .rsil-detail {

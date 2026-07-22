@@ -25,7 +25,12 @@ import {
   type ResearchCategory,
 } from "./research-report-parser.js";
 import type { WorkboardStore } from "./store.js";
-import type { WorkboardResearchCategory, WorkboardSection, WorkboardStatus } from "./types.js";
+import type {
+  WorkboardResearchCategory,
+  WorkboardResearchStage,
+  WorkboardSection,
+  WorkboardStatus,
+} from "./types.js";
 
 export const SELF_IMPROVEMENT_BOARD_ID = "self-improvement-lab";
 export const SELF_IMPROVEMENT_BOARD_NAME = "Recursive Self-Improvement Laboratory";
@@ -208,6 +213,22 @@ function extractNextSteps(body: string): string[] {
   return steps.slice(0, 12);
 }
 
+// Architecture / long-horizon items enter the deterministic Deep Pipeline at the
+// `research` stage; quick-wins/findings/watch never carry a stage. Already-landed
+// or failed items don't re-enter the pipeline.
+function initialStageFor(
+  category: WorkboardResearchCategory,
+  impl?: ParsedImplItem,
+): WorkboardResearchStage | undefined {
+  if (category !== "architecture" && category !== "long-horizon") {
+    return undefined;
+  }
+  if (impl?.outcome === "implemented" || impl?.outcome === "failed") {
+    return undefined;
+  }
+  return "research";
+}
+
 function statusForAnalysisItem(
   category: WorkboardResearchCategory,
   impl?: ParsedImplItem,
@@ -243,6 +264,7 @@ function buildDesiredCards(cycle: CycleReports): DesiredCard[] {
     const findingIndex = item.sourceFinding ? Number(item.sourceFinding.replace("#", "")) : NaN;
     const finding = Number.isFinite(findingIndex) ? findingByIndex.get(findingIndex) : undefined;
     const status = statusForAnalysisItem(item.category, impl);
+    const stage = initialStageFor(item.category, impl);
     const labels = [
       "rsil",
       `rsil:${item.category}`,
@@ -269,6 +291,10 @@ function buildDesiredCards(cycle: CycleReports): DesiredCard[] {
         cycleDate: cycle.date,
         itemId: item.itemId,
         category: item.category,
+        // Seed arch/long-horizon at the first pipeline stage; the Deep Pipeline
+        // cron advances it. The update path preserves this once the pipeline runs
+        // (stageLog present), so re-sync never resets in-flight cards to research.
+        ...(stage ? { stage } : {}),
         complexity: item.complexity ? truncate(item.complexity, 24) : undefined,
         risk: item.risk ? truncate(item.risk, 24) : undefined,
         sourcePaper: truncate(
@@ -447,8 +473,23 @@ export async function runResearchIngest(
         result.created += 1;
         continue;
       }
-      const userTouched = found.metadata?.research?.userTouched === true;
-      if (userTouched) {
+      const existingResearch = found.metadata?.research;
+      const pipelineActive = (existingResearch?.stageLog?.length ?? 0) > 0;
+      const userTouched = existingResearch?.userTouched === true;
+      if (pipelineActive) {
+        // The Deep Pipeline owns this card once it has advanced a stage. Preserve
+        // its stage/status/notes/stageLog by not passing them; refresh only the
+        // provenance labels + source link so re-sync never rewinds the pipeline.
+        // Terminal completion is authoritative from the Implementation cron's direct
+        // workboard_complete/block (status → done/blocked), NOT from re-sync — a
+        // card's original cycle report has no impl outcome for a later cross-cycle
+        // land, so reconciling here would wrongly reset a finished card to backlog.
+        await store.update(found.id, {
+          labels: desired.labels,
+          ...(desired.sourceUrl ? { sourceUrl: desired.sourceUrl } : {}),
+        });
+        result.updated += 1;
+      } else if (userTouched) {
         // Refresh descriptive fields only; preserve manual status/assignee/next-steps.
         // Omit `nextSteps` entirely (not undefined) so the normalizer keeps the
         // operator's edited steps rather than overwriting them.

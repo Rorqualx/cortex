@@ -1063,6 +1063,13 @@ export class OpenClawApp extends LitElement {
     this.navDrawerOpen = false;
   }
 
+  /** Seed the chat composer and jump to the chat tab (used by the Lab "Discuss" button). */
+  openChatWithContext(text: string) {
+    // Preserve any in-progress draft — append rather than clobber what was typed.
+    this.chatMessage = this.chatMessage.trim() ? `${this.chatMessage}\n\n${text}` : text;
+    this.setTab("chat");
+  }
+
   setChatMobileControlsOpen(
     open: boolean,
     options?: { trigger?: HTMLElement | null; restoreFocus?: boolean },

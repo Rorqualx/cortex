@@ -218,6 +218,40 @@ describe("runResearchIngest", () => {
     expect(board?.orchestration?.autoDecompose).toBe(false);
   });
 
+  it("seeds architecture cards at the 'research' deep-pipeline stage", async () => {
+    const store = newStore();
+    await runResearchIngest({ store, reportsDir });
+    const cards = await store.list({ boardId: SELF_IMPROVEMENT_BOARD_ID });
+    const arch1 = cards.find((c) => c.metadata?.research?.itemId === "ARCH-1");
+    const qw1 = cards.find((c) => c.metadata?.research?.itemId === "QW-1");
+    expect(arch1?.metadata?.research?.stage).toBe("research");
+    // Quick-wins skip the deep pipeline entirely.
+    expect(qw1?.metadata?.research?.stage).toBeUndefined();
+  });
+
+  it("preserves a deep-pipeline card's stage/status on re-sync (stageLog owns it)", async () => {
+    const store = newStore();
+    await runResearchIngest({ store, reportsDir });
+    let cards = await store.list({ boardId: SELF_IMPROVEMENT_BOARD_ID });
+    const arch1 = cards.find((c) => c.metadata?.research?.itemId === "ARCH-1")!;
+    // Simulate the Deep Pipeline cron advancing the card past research.
+    await store.update(arch1.id, {
+      status: "todo",
+      metadata: {
+        research: {
+          ...arch1.metadata!.research!,
+          stage: "design",
+          stageLog: [{ stage: "research", at: 1_000 }],
+        },
+      },
+    });
+    await runResearchIngest({ store, reportsDir });
+    cards = await store.list({ boardId: SELF_IMPROVEMENT_BOARD_ID });
+    const after = cards.find((c) => c.metadata?.research?.itemId === "ARCH-1")!;
+    expect(after.metadata?.research?.stage).toBe("design");
+    expect(after.status).toBe("todo");
+  });
+
   it("lets an operator veto a quick-win: a userTouched demotion survives re-sync", async () => {
     const store = newStore();
     const localDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-rsil-v-"));

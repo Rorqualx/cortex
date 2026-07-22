@@ -25,6 +25,7 @@ describe("workboard agent tools", () => {
         "workboard_heartbeat",
         "workboard_list",
         "workboard_read",
+        "workboard_research_stage",
         "workboard_research_sync",
         "workboard_specify",
       ].toSorted(),
@@ -83,5 +84,14 @@ describe("workboard agent tools", () => {
     await byName.get("workboard_research_sync")!.execute("t1", {});
     expect(calls[0]!.method).toBe("workboard.research.sync");
     expect(calls[0]!.params).toEqual({});
+  });
+
+  it("research_stage forwards id, stage, and note to the stage RPC", async () => {
+    const { calls, byName } = toolsWithMock();
+    await byName
+      .get("workboard_research_stage")!
+      .execute("t1", { id: "card-9", stage: "design", note: "chose approach B" });
+    expect(calls[0]!.method).toBe("workboard.research.stage");
+    expect(calls[0]!.params).toEqual({ id: "card-9", stage: "design", note: "chose approach B" });
   });
 });

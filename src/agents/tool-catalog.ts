@@ -326,6 +326,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "workboard_research_stage",
+    label: "workboard_research_stage",
+    description: "Advance an arch/long-horizon Lab card one deep-pipeline stage",
+    sectionId: "automation",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "gateway",
     label: "gateway",
     description: "Gateway control",

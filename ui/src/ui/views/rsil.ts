@@ -16,6 +16,7 @@ import {
   assigneeOptions,
   cardsByCategory,
   cycleDates,
+  discussCardInChat,
   doneCards,
   ensureRsil,
   filteredCards,
@@ -117,6 +118,9 @@ function renderBadges(card: RsilCard): TemplateResult {
         ? html`<span class="badge rsil-badge--risk-${r.risk.toLowerCase()}"
             >${t("rsil.cardRisk")}: ${r.risk}</span
           >`
+        : nothing}
+      ${r?.stage
+        ? html`<span class="badge rsil-badge--stage">${t("rsil.stage")}: ${r.stage}</span>`
         : nothing}
       ${r?.outcome
         ? html`<span class="badge rsil-badge--${r.outcome}">${r.outcome}</span>`
@@ -380,7 +384,18 @@ function renderDetail(host: RsilHost, card: RsilCard): TemplateResult {
     <aside class="rsil-detail">
       <header class="rsil-detail__head">
         <h3>${card.title}</h3>
-        <button class="rsil-detail__close" @click=${() => openCard(host, null)}>${icons.x}</button>
+        <div class="rsil-detail__head-actions">
+          <button
+            class="rsil-detail__discuss"
+            title=${t("rsil.discussHint")}
+            @click=${() => discussCardInChat(host, card)}
+          >
+            ${icons.messageSquare} ${t("rsil.discuss")}
+          </button>
+          <button class="rsil-detail__close" @click=${() => openCard(host, null)}>
+            ${icons.x}
+          </button>
+        </div>
       </header>
       <div class="rsil-detail__meta">
         ${r?.category ? html`<span class="badge">${categoryLabel(r.category)}</span>` : nothing}
@@ -391,6 +406,9 @@ function renderDetail(host: RsilHost, card: RsilCard): TemplateResult {
           ? html`<span class="badge">${t("rsil.cardComplexity")}: ${r.complexity}</span>`
           : nothing}
         ${r?.risk ? html`<span class="badge">${t("rsil.cardRisk")}: ${r.risk}</span>` : nothing}
+        ${r?.stage
+          ? html`<span class="badge rsil-badge--stage">${t("rsil.stage")}: ${r.stage}</span>`
+          : nothing}
         ${r?.outcome
           ? html`<span class="badge rsil-badge--${r.outcome}"
               >${t("rsil.detailOutcome")}: ${r.outcome}</span
