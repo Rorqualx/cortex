@@ -439,6 +439,7 @@ function promote(candidate: ConsolidationCandidate): LongTermFact {
     archived: false,
     archivedAt: null,
     supersededBy: null,
+    ...(detectHedge(candidate.text) ? { certaintyProvenance: "hedged" as const } : {}),
   };
 }
 
@@ -473,11 +474,79 @@ function reaffirm(prior: LongTermFact, candidate: ConsolidationCandidate): LongT
     // run again with current data to decide.
     supersededBy: prior.supersededBy ?? null,
     ...(history.length > 0 ? { history } : {}),
+    // Preserve hedge provenance from prior or detect in new text.
+    // Once a fact is flagged as hedged, it stays hedged — the original
+    // uncertainty shouldn't be lost just because the text was rephrased.
+    ...resolveCertaintyProvenance(prior, candidate),
   };
 }
 
 function archive(fact: LongTermFact, now: number): LongTermFact {
   return { ...fact, archived: true, archivedAt: now };
+}
+
+// ---------------------------------------------------------------------------
+// Hedge-marker detection (Manufactured Confidence — arXiv:2606.29279)
+// ---------------------------------------------------------------------------
+// Consolidation tends to upgrade hedged remarks ("maybe the server is down")
+// into confident assertions ("the server is down"). This heuristic detects
+// common hedge language so the consolidation pipeline can preserve the
+// original uncertainty signal via `certaintyProvenance: "hedged"`.
+
+/** Common English hedge markers indicating uncertainty. */
+const HEDGE_MARKERS = [
+  "maybe",
+  "perhaps",
+  "i think",
+  "i believe",
+  "might be",
+  "could be",
+  "possibly",
+  "probably",
+  "seems like",
+  "appears to",
+  "not sure",
+  "i guess",
+  "supposedly",
+  "allegedly",
+  "presumably",
+];
+
+/**
+ * Detect hedge language in fact text. Returns true if any common hedge
+ * marker is present as a word-level match (not a substring).
+ */
+function detectHedge(text: string): boolean {
+  const lower = text.toLowerCase();
+  return HEDGE_MARKERS.some((marker) => {
+    // Word-boundary safe match to avoid false positives (e.g. "maybe" in
+    // "maybelline"). Use a simple regex per marker.
+    return new RegExp(`\\b${marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(lower);
+  });
+}
+
+/**
+ * Resolve certainty provenance during reaffirmation. Once a fact is flagged
+ * as hedged, it stays hedged — the original uncertainty shouldn't be erased
+ * by rephrasing. New candidates that contain hedge markers also flag as hedged.
+ */
+function resolveCertaintyProvenance(
+  prior: LongTermFact,
+  candidate: ConsolidationCandidate,
+): { certaintyProvenance?: "hedged" | "asserted" | "corroborated" } {
+  // Prior hedge flag is sticky
+  if (prior.certaintyProvenance === "hedged") {
+    return { certaintyProvenance: "hedged" };
+  }
+  // Check if the new candidate text has hedge markers
+  if (detectHedge(candidate.text)) {
+    return { certaintyProvenance: "hedged" };
+  }
+  // Preserve existing non-hedged provenance
+  if (prior.certaintyProvenance) {
+    return { certaintyProvenance: prior.certaintyProvenance };
+  }
+  return {};
 }
 
 function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<string>): string[] {

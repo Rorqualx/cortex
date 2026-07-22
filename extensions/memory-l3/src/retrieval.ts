@@ -243,6 +243,8 @@ export async function retrieveTopK(params: {
     /** Episodic metadata from the source TypedFact (RaMem validity filter). */
     eventTime?: number;
     participants?: string[];
+    /** Hedge-marker provenance from LongTermFact (Manufactured Confidence). */
+    certaintyProvenance?: "hedged" | "asserted" | "corroborated";
   };
   const items: ScorableItem[] = [];
 
@@ -311,6 +313,7 @@ export async function retrieveTopK(params: {
       l3Boost: 0,
       tierBoost: config.weightLongTermTierBoost,
       embedding: lt.embedding,
+      certaintyProvenance: lt.certaintyProvenance,
     });
   }
 
@@ -345,6 +348,7 @@ export async function retrieveTopK(params: {
       significant: item.fact.significant,
       informationGain: item.informationGain,
       validity: computeEpisodicValidity(item.eventTime, item.participants, now),
+      certaintyProvenance: item.certaintyProvenance,
     });
     // Add embedding-based semantic signal when both query and fact have vectors
     if (

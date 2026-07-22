@@ -229,6 +229,17 @@ export type LongTermFact = {
    * facts that never changed.
    */
   history?: Array<{ text: string; supersededAt: number }>;
+  /**
+   * Provenance of the certainty assessment — detects whether the source
+   * text contained hedging language ("maybe", "perhaps", "I think") that
+   * was later consolidated into a confident assertion. When "hedged", the
+   * reliability signal in scoring is penalised to reflect the original
+   * uncertainty. Defaults to undefined (treated as "asserted").
+   *
+   * Inspired by arXiv:2606.29279 — consolidation upgrades hedged remarks
+   * into confident assertions; the fix is to *keep* the tentative signal.
+   */
+  certaintyProvenance?: "hedged" | "asserted" | "corroborated";
 };
 
 /**

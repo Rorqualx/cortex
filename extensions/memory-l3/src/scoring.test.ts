@@ -566,6 +566,80 @@ describe("episodic validity signal", () => {
   });
 });
 
+describe("hedge-marker certainty provenance", () => {
+  it("applies 0.7× reliability penalty for hedged facts", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const now = Date.now();
+    const fact = {
+      id: "f",
+      text: "anything",
+      importance: 0.5,
+      createdAt: now,
+      dedupKey: "k",
+      certainty: "confirmed" as const,
+    };
+    const asserted = scoreFact({
+      queryTokens: new Set(),
+      fact,
+      now,
+      config,
+      certaintyProvenance: "asserted",
+    });
+    const hedged = scoreFact({
+      queryTokens: new Set(),
+      fact,
+      now,
+      config,
+      certaintyProvenance: "hedged",
+    });
+    // confirmed → reliability 1.0; hedged → 1.0 × 0.7 = 0.7
+    expect(asserted.reliability).toBe(1.0);
+    expect(hedged.reliability).toBeCloseTo(0.7, 6);
+    expect(hedged.reliability).toBeLessThan(asserted.reliability);
+  });
+
+  it("does not penalise when certaintyProvenance is absent", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const fact = {
+      id: "f",
+      text: "anything",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k",
+      certainty: "confirmed" as const,
+    };
+    const signals = scoreFact({
+      queryTokens: new Set(),
+      fact,
+      now: Date.now(),
+      config,
+    });
+    expect(signals.reliability).toBe(1.0);
+  });
+
+  it("stacks with grounding confidence penalty", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const fact = {
+      id: "f",
+      text: "anything",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k",
+      certainty: "confirmed" as const,
+    };
+    const signals = scoreFact({
+      queryTokens: new Set(),
+      fact,
+      now: Date.now(),
+      config,
+      certaintyProvenance: "hedged",
+      groundingConfidence: 0.5,
+    });
+    // 1.0 × 0.5 (grounding) × 0.7 (hedged) = 0.35
+    expect(signals.reliability).toBeCloseTo(0.35, 6);
+  });
+});
+
 describe("volatilityMultiplier", () => {
   it("returns 1.0 for semi-volatile (default)", () => {
     expect(volatilityMultiplier("semi-volatile")).toBe(1.0);

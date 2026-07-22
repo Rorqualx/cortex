@@ -429,6 +429,13 @@ export function scoreFact(params: {
    * about the turn from which this fact was extracted.
    */
   groundingConfidence?: number;
+  /**
+   * Certainty provenance from hedge-marker detection (Manufactured
+   * Confidence paper). When "hedged", the reliability signal is penalised
+   * to reflect original phrasing uncertainty that consolidation would
+   * otherwise erase.
+   */
+  certaintyProvenance?: "hedged" | "asserted" | "corroborated";
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -461,6 +468,12 @@ export function scoreFact(params: {
   };
   if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
     signals.reliability = signals.reliability * params.groundingConfidence;
+  }
+  // Hedge-marker penalty (Manufactured Confidence — arXiv:2606.29279):
+  // facts whose source text contained hedging language ("maybe", "perhaps")
+  // get a 0.7× reliability penalty to preserve the original uncertainty.
+  if (params.certaintyProvenance === "hedged") {
+    signals.reliability = signals.reliability * 0.7;
   }
   // Episodic validity (RaMem-inspired) — callers pass a pre-computed validity
   // score derived from eventTime/participants metadata. Defaults to 1.0
