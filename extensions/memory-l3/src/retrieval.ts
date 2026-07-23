@@ -27,6 +27,104 @@ import {
   type Signals,
   tokenize,
 } from "./scoring.js";
+
+// ---------------------------------------------------------------------------
+// SCM Query-Intent Router (arXiv:2607.19096 — Structured Contextual Memory)
+// ---------------------------------------------------------------------------
+// Heuristic query-intent classifier that selects scoring presets per intent.
+// Factual lookups → BM25-heavy; multi-hop → balanced + Hebbian-friendly;
+// synthesis → semantic-heavy + importance-boosted.
+
+export type QueryIntent = "factual" | "multihop" | "synthesis";
+
+/**
+ * Classify a retrieval query into one of three intents using keyword/pattern
+ * heuristics. No LLM call — adds zero latency.
+ *
+ * - **factual**: direct lookups ("what is X", IPs, values, short specific queries)
+ * - **multihop**: questions requiring connecting multiple facts (comparisons,
+ *   change-over-time, relational queries with conjunctions)
+ * - **synthesis**: open-ended requests ("summarize", "explain", "overview")
+ *
+ * Default: "factual" (the safest, most common retrieval pattern).
+ */
+export function classifyQueryIntent(query: string): QueryIntent {
+  const q = query.toLowerCase().trim();
+
+  // --- Synthesis signals ---
+  const SYNTHESIS_PATTERNS = [
+    /^\s*(summar\w+|explain|overview|tell me about|what do you know|describe|recap|review|elaborate)\b/,
+    /\b(in general|overall|big picture|everything|all about)\b/,
+  ];
+  for (const pattern of SYNTHESIS_PATTERNS) {
+    if (pattern.test(q)) return "synthesis";
+  }
+
+  // --- Multi-hop signals ---
+  // Comparison or relational queries that need to connect facts
+  const MULTIHOP_PATTERNS = [
+    /\b(compare|comparison|vs\.?|versus|difference between|differ from)\b/,
+    /\b(how .+ (relate|connect|compare|differ|depend).+)\b/,
+    /\b(what changed|changes? since|since when|history of)\b/,
+    /\b(which .+ (and|or) .+)/,
+    // Two or more distinct entities joined by conjunction
+    /\b\w+\s+(and|vs\.?)\s+\w+/,
+  ];
+  for (const pattern of MULTIHOP_PATTERNS) {
+    if (pattern.test(q)) return "multihop";
+  }
+
+  // --- Factual signals (default) ---
+  // Short, specific lookups: "what is/are X", "what's my Y", value retrieval
+  return "factual";
+}
+
+/**
+ * Intent-specific scoring presets. Each adjusts the weight distribution
+ * without changing the set of available signals — routed mode keeps all
+ * signals active, just re-weighted.
+ */
+const INTENT_SCORING_PRESETS: Record<QueryIntent, ScoringConfig> = {
+  // Factual: BM25-heavy for exact term matching, typed facts prioritised,
+  // semantic reduced (exact matches matter more than paraphrase for lookups).
+  factual: {
+    ...DEFAULT_SCORING_CONFIG,
+    weightBm25: 0.45,
+    weightLexical: 0.2,
+    weightSemantic: 0.2,
+    weightTypedFactTierBoost: 0.2,
+    weightLongTermTierBoost: 0.2,
+  },
+  // Multi-hop: balanced scoring, slightly higher goal-relevance for
+  // connecting related facts, typed-fact boost maintained.
+  multihop: {
+    ...DEFAULT_SCORING_CONFIG,
+    weightBm25: 0.25,
+    weightLexical: 0.2,
+    weightSemantic: 0.3,
+    weightGoalRelevance: 0.15,
+    weightLongTermTierBoost: 0.2,
+  },
+  // Synthesis: semantic-heavy (paraphrase matching matters for open-ended
+  // queries), importance boosted (surface the most significant facts),
+  // BM25 reduced (exact terms less critical for "explain" queries).
+  synthesis: {
+    ...DEFAULT_SCORING_CONFIG,
+    weightBm25: 0.15,
+    weightLexical: 0.15,
+    weightSemantic: 0.45,
+    weightImportance: 0.2,
+    weightLongTermTierBoost: 0.2,
+  },
+};
+
+/**
+ * Get the scoring config preset for a query intent.
+ * Exported for testing and consumer inspection.
+ */
+export function getIntentScoringPreset(intent: QueryIntent): ScoringConfig {
+  return INTENT_SCORING_PRESETS[intent];
+}
 import type { Storage } from "./storage.js";
 import type {
   Insight,
@@ -68,8 +166,11 @@ export type MemoryCoreLookup = (query: string) => Promise<MemoryCoreSearchHit[]>
  * - `'blended'` (default): BM25 + cosine semantic + other signals — current behavior.
  * - `'keyword'`: BM25 only (lexical/keyword retrieval, semantic zeroed).
  * - `'semantic'`: Cosine semantic only (embedding-based retrieval, BM25 zeroed).
+ * - `'routed'`: SCM query-intent router classifies the query and selects a
+ *   scoring preset (factual → BM25-heavy, multihop → balanced, synthesis →
+ *   semantic-heavy). All signals stay active; only weights change.
  */
-export type RetrievalMode = "blended" | "keyword" | "semantic";
+export type RetrievalMode = "blended" | "keyword" | "semantic" | "routed";
 
 export type RetrievalConfig = {
   /**
@@ -196,8 +297,15 @@ export async function retrieveTopK(params: {
   }
 
   const now = params.now ?? Date.now();
-  const config = params.config ?? DEFAULT_SCORING_CONFIG;
+  const baseConfig = params.config ?? DEFAULT_SCORING_CONFIG;
   const retConfig = params.retrievalConfig ?? DEFAULT_RETRIEVAL_CONFIG;
+  // SCM query-intent router: when mode is "routed", classify the query and
+  // select a scoring preset. Caller-provided config still wins over presets
+  // (explicit > routed > default).
+  const config =
+    retConfig.mode === "routed" && !params.config
+      ? getIntentScoringPreset(classifyQueryIntent(params.query))
+      : baseConfig;
 
   // -----------------------------------------------------------------
   // Epoch-first retrieval (DeepSeek V4 CSA-inspired)
