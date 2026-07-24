@@ -30,7 +30,7 @@
     "@tanstack/lit-virtual": "3.13.33",
     "@tanstack/virtual-core": "3.17.4",
     "dompurify": "3.4.12",
-    "ghostty-web": "0.4.0"
+    "ghostty-web": "0.4.0",
     "highlight.js": "11.11.1",
     "json5": "2.2.3",
     "lit": "3.3.3",
