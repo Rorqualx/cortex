@@ -192,6 +192,15 @@ export function fsrsRetrievability(params: {
   significant?: boolean;
   volatilityClass?: string | null;
   fsrs?: FsrsParams;
+  /**
+   * Transient drift-demotion multiplier (default 1.0 = neutral).
+   * Set > 1.0 to accelerate forgetting for facts whose source intent has
+   * drifted — e.g., an intent pivot detected via cooperative steering.
+   * Applied alongside the volatility class in the forgetting curve:
+   *   R(t) = e^(-(w2 · vc · driftDemotion · t) / S)
+   * This is a scoring-time modifier, not a persisted fact attribute.
+   */
+  driftDemotion?: number;
 }): number {
   const fsrs = params.fsrs ?? DEFAULT_FSRS_PARAMS;
   const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
@@ -211,12 +220,17 @@ export function fsrsRetrievability(params: {
   // Volatility-class multiplier — modulates the effective decay rate
   const vc = volatilityMultiplier(params.volatilityClass, fsrs);
 
-  // R(t) = e^(-(w2 · vc · t) / S) — Ebbinghaus curve with per-fact stability,
-  // where vc accelerates/brakes decay per volatility class:
+  // Drift-demotion multiplier — transient penalty for facts whose source
+  // intent has drifted (set by retrieval callers, not persisted on facts).
+  const dd = params.driftDemotion ?? 1.0;
+
+  // R(t) = e^(-(w2 · vc · dd · t) / S) — Ebbinghaus curve with per-fact
+  // stability, where vc accelerates/brakes decay per volatility class:
   //   stable=0.3 (preferences decay 3× slower)
   //   semi-volatile=1.0 (default)
   //   volatile=2.5 (APIs/configs decay 2.5× faster)
-  return Math.exp(-(fsrs.w2 * vc * ageDays) / stability);
+  // and dd further accelerates decay when intent drift is detected.
+  return Math.exp(-(fsrs.w2 * vc * dd * ageDays) / stability);
 }
 
 export type Signals = {
@@ -416,6 +430,12 @@ export function scoreFact(params: {
    * about the turn from which this fact was extracted.
    */
   groundingConfidence?: number;
+  /**
+   * Transient drift-demotion multiplier (default 1.0 = neutral).
+   * Values > 1.0 accelerate forgetting via the FSRS forgetting curve,
+   * demoting facts whose source intent has drifted. Not persisted.
+   */
+  driftDemotion?: number;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -432,6 +452,7 @@ export function scoreFact(params: {
           recallCount: params.recallCount ?? 1,
           halfLifeDays: params.config.recencyHalfLifeDays,
           significant: params.significant,
+          driftDemotion: params.driftDemotion,
         })
       : recencyScore(ageMs, params.config.recencyHalfLifeDays);
   const signals: Signals = {
