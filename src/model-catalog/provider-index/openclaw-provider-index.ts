@@ -92,7 +92,9 @@ export const OPENCLAW_PROVIDER_INDEX = {
             reasoning: true,
             contextWindow: 1000000,
             status: "deprecated",
-            replacedBy: "deepseek-v4-pro",
+            // DeepSeek's deprecation notice maps reasoner → v4-flash (thinking
+            // mode), not v4-pro. Flash already carries reasoning: true.
+            replacedBy: "deepseek-v4-flash",
           },
         ],
       },
