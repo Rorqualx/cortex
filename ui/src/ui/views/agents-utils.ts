@@ -19,6 +19,20 @@ import type {
   ToolsCatalogResult,
 } from "../types.ts";
 
+type AgentRosterEntry = {
+  id: string;
+  kind?: "agent" | "system";
+};
+
+/** Ordinary agent targets; system rows remain available to diagnostic surfaces. */
+export function listSelectableAgents<T extends AgentRosterEntry>(agents: readonly T[]): T[] {
+  return agents.filter((agent) => agent.kind !== "system");
+}
+
+export function selectableAgentsList(agentsList: AgentsListResult): AgentsListResult {
+  return { ...agentsList, agents: listSelectableAgents(agentsList.agents) };
+}
+
 export type AgentToolEntry = {
   id: string;
   label: string;
@@ -394,7 +408,7 @@ export function resolveAgentTextAvatar(
 }
 
 export function agentBadgeText(agentId: string, defaultId: string | null) {
-  return defaultId && agentId === defaultId ? "default" : null;
+  return defaultId && agentId === defaultId ? t("agents.default") : null;
 }
 
 export function formatBytes(bytes?: number) {

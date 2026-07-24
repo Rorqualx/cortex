@@ -1,7 +1,7 @@
 /** Shared doctor-only SQLite compaction mechanics. */
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import { requireNodeSqlite } from "../infra/node-sqlite.js";
+import { requireNodeSqlite, resolveNodeSqliteLocation } from "../infra/node-sqlite.js";
 import { assertSqliteIntegrity } from "../infra/sqlite-integrity.js";
 import { OPENCLAW_SQLITE_BUSY_TIMEOUT_MS } from "../state/openclaw-state-db.js";
 
@@ -21,7 +21,7 @@ type DoctorSqliteCompactResult = {
 };
 
 type DoctorSqliteCompactOptions = {
-  afterMutation?: () => void;
+  afterSuccess?: () => void;
   busyTimeoutMs?: number;
   sqlitePath: string;
   validateBeforeMutation?: (database: DatabaseSync) => void;
@@ -38,8 +38,7 @@ export function compactDoctorSqliteFile(
   options: DoctorSqliteCompactOptions,
 ): DoctorSqliteCompactResult {
   const sqlite = requireNodeSqlite();
-  const database = new sqlite.DatabaseSync(options.sqlitePath);
-  let mutationStarted = false;
+  const database = new sqlite.DatabaseSync(resolveNodeSqliteLocation(options.sqlitePath));
   let operationError: unknown;
   let result: DoctorSqliteCompactResult | undefined;
   try {
@@ -50,7 +49,6 @@ export function compactDoctorSqliteFile(
     options.validateBeforeMutation?.(database);
     const before = readCompactSnapshot(database, options.sqlitePath);
     assertSqliteIntegrity(database, options.sqlitePath);
-    mutationStarted = true;
     checkpointTruncate(database, options.sqlitePath);
     database.exec("PRAGMA auto_vacuum = INCREMENTAL;");
     database.exec("VACUUM;");
@@ -73,9 +71,9 @@ export function compactDoctorSqliteFile(
   } catch (error) {
     operationError ??= error;
   }
-  if (mutationStarted) {
+  if (operationError === undefined && result) {
     try {
-      options.afterMutation?.();
+      options.afterSuccess?.();
     } catch (error) {
       operationError ??= error;
     }

@@ -12,6 +12,14 @@ export const HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT =
 export const SESSION_BUSY_WITH_ACTIVE_RUN_TEXT =
   "⏳ Still finishing your previous message — I can't start this one until the current turn wraps up. Send it again in a moment and I'll pick it up.";
 
+const CONTROL_UI_LOG_HINT = "To view logs, run `openclaw logs --follow` in a terminal.";
+
+/** Preserves raw errors on internal surfaces while making the log command actionable. */
+export function buildControlUiAgentFailureText(errorText: string): string {
+  const trimmedError = errorText.trim().replace(/\.\s*$/, "");
+  return `⚠️ Agent failed before reply: ${trimmedError}.\n${CONTROL_UI_LOG_HINT}`;
+}
+
 /** True when text is exactly the generic external run failure copy. */
 function isGenericExternalRunFailureText(text: string | undefined): boolean {
   return text?.trim() === GENERIC_EXTERNAL_RUN_FAILURE_TEXT;

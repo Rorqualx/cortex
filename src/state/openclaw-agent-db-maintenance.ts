@@ -4,7 +4,7 @@ import {
   MEMORY_PATH_FTS_TRIGGER_DEFINITIONS,
 } from "../../packages/memory-host-sdk/src/host/memory-schema.js";
 import { clearNodeSqliteKyselyCacheForDatabase } from "../infra/kysely-sync.js";
-import { requireNodeSqlite } from "../infra/node-sqlite.js";
+import { requireNodeSqlite, resolveNodeSqliteLocation } from "../infra/node-sqlite.js";
 import {
   assertSqliteSchemaContains,
   type SqliteSchemaCompatibility,
@@ -36,11 +36,11 @@ const OPENCLAW_AGENT_MAINTENANCE_SCHEMA_COMPATIBILITY = {
   ],
 } satisfies SqliteSchemaCompatibility;
 
-/** Require the exact agent owner and schema before offline file maintenance. */
-export function assertOpenClawAgentDatabaseForMaintenance(
+/** Require exact agent ownership without requiring the latest schema. */
+export function assertOpenClawAgentDatabaseOwner(
   database: DatabaseSync,
   options: { agentId: string; pathname: string },
-): void {
+): NonNullable<ReturnType<typeof readExistingAgentSchemaMeta>> {
   const agentId = normalizeAgentId(options.agentId);
   const metadata = readExistingAgentSchemaMeta(database);
   if (!metadata) {
@@ -49,6 +49,20 @@ export function assertOpenClawAgentDatabaseForMaintenance(
     );
   }
   assertExistingAgentSchemaOwner(metadata, agentId, options.pathname);
+  if (metadata.agentId !== agentId) {
+    throw new Error(
+      `OpenClaw agent database ${options.pathname} belongs to agent ${metadata.agentId}; requested agent ${agentId}.`,
+    );
+  }
+  return metadata;
+}
+
+/** Require the exact agent owner and schema before offline file maintenance. */
+export function assertOpenClawAgentDatabaseForMaintenance(
+  database: DatabaseSync,
+  options: { agentId: string; pathname: string },
+): void {
+  const metadata = assertOpenClawAgentDatabaseOwner(database, options);
 
   const userVersion = readSqliteUserVersion(database);
   if (userVersion > OPENCLAW_AGENT_SCHEMA_VERSION) {
@@ -84,7 +98,7 @@ export function migrateOpenClawAgentDatabaseForMaintenance(options: {
 }): void {
   const agentId = normalizeAgentId(options.agentId);
   const sqlite = requireNodeSqlite();
-  const database = new sqlite.DatabaseSync(options.pathname);
+  const database = new sqlite.DatabaseSync(resolveNodeSqliteLocation(options.pathname));
   try {
     database.exec(`PRAGMA busy_timeout = ${OPENCLAW_SQLITE_BUSY_TIMEOUT_MS};`);
     const metadata = readExistingAgentSchemaMeta(database);

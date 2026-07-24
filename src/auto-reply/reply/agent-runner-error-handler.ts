@@ -32,6 +32,7 @@ import { SILENT_REPLY_TOKEN } from "../tokens.js";
 import { buildContextOverflowRecoveryText } from "./agent-runner-context-recovery.js";
 import type { AgentRunLoopResult, AgentTurnParams } from "./agent-runner-execution.types.js";
 import {
+  buildControlUiAgentFailureText,
   GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
   HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
   SESSION_BUSY_WITH_ACTIVE_RUN_TEXT,
@@ -169,9 +170,9 @@ export async function handleAgentExecutionError(params: {
     );
     takePendingLifecycleTerminal()?.emit("error", err);
     const switchErrorText = params.shouldSurfaceToControlUi
-      ? "⚠️ Agent failed before reply: model switch could not be completed. " +
-        "The requested model may be temporarily unavailable.\n" +
-        "Logs: openclaw logs --follow"
+      ? buildControlUiAgentFailureText(
+          "model switch could not be completed. The requested model may be temporarily unavailable.",
+        )
       : isVerboseFailureDetailEnabled(turn.resolvedVerboseLevel)
         ? "⚠️ Agent failed before reply: model switch could not be completed. " +
           "The requested model may be temporarily unavailable. Please try again shortly."
@@ -460,9 +461,9 @@ export async function handleAgentExecutionError(params: {
           failoverReason === "overloaded" ? "overloaded" : message,
         )
       : undefined;
-  const trimmedMessage = (
-    isTransientHttp ? sanitizeUserFacingText(message, { errorContext: true }) : message
-  ).replace(/\.\s*$/, "");
+  const userFacingMessage = isTransientHttp
+    ? sanitizeUserFacingText(message, { errorContext: true })
+    : message;
   const externalRunFailureReply =
     !isBilling &&
     !(isRateLimit && !isOverloaded) &&
@@ -488,7 +489,7 @@ export async function handleAgentExecutionError(params: {
         : isContextOverflow
           ? "⚠️ Context overflow — prompt too large for this model. Try a shorter message or a larger-context model."
           : params.shouldSurfaceToControlUi
-            ? `⚠️ Agent failed before reply: ${trimmedMessage}.\nLogs: openclaw logs --follow`
+            ? buildControlUiAgentFailureText(userFacingMessage)
             : (externalRunFailureReply?.text ??
               (turn.isHeartbeat
                 ? HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT

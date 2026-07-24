@@ -1,12 +1,17 @@
 // OpenClaw state database manages shared persisted state and migrations.
 import { existsSync } from "node:fs";
+import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import {
   clearNodeSqliteKyselyCacheForDatabase,
   executeSqliteQuerySync,
   getNodeSqliteKysely,
 } from "../infra/kysely-sync.js";
-import { requireNodeSqlite } from "../infra/node-sqlite.js";
+import {
+  requireNodeSqlite,
+  resolveNodeSqliteLocation,
+  resolveNodeSqliteReadOnlyLocation,
+} from "../infra/node-sqlite.js";
 import {
   repairCanonicalSqliteUniqueIndexes,
   type CanonicalSqliteUniqueIndex,
@@ -102,6 +107,13 @@ const OPENCLAW_STATE_CANONICAL_UNIQUE_INDEXES = [
       WHERE lease_id IS NOT NULL
     `,
   },
+  {
+    name: "idx_worker_inference_turns_pending_run",
+    definition: `
+      ON worker_inference_turns(session_id, run_epoch, run_id)
+      WHERE state = 'pending'
+    `,
+  },
 ] as const satisfies readonly CanonicalSqliteUniqueIndex[];
 
 const cachedDatabases = new Map<string, OpenClawStateDatabase>();
@@ -144,7 +156,7 @@ export function repairOpenClawStateDatabaseSchema(options: OpenClawStateDatabase
   }
   ensureOpenClawStatePermissions(pathname, env);
   const sqlite = requireNodeSqlite();
-  const db = new sqlite.DatabaseSync(pathname);
+  const db = new sqlite.DatabaseSync(resolveNodeSqliteLocation(pathname));
   try {
     assertSqliteIntegrity(db, pathname);
     assertSupportedSchemaVersion(db, pathname);
@@ -292,6 +304,40 @@ function ensureSchema(db: DatabaseSync, pathname: string, env: NodeJS.ProcessEnv
   }
 }
 
+/** Open existing shared state without creating, migrating, chmodding, or configuring it. */
+export function openExistingOpenClawStateDatabaseReadOnly(
+  options: OpenClawStateDatabaseOptions = {},
+): OpenClawStateDatabase | undefined {
+  const pathname = resolveDatabasePath(options);
+  if (!existsSync(pathname)) {
+    return undefined;
+  }
+  const sqlite = requireNodeSqlite();
+  const hasWalSidecars = existsSync(`${pathname}-wal`) || existsSync(`${pathname}-shm`);
+  const db = new sqlite.DatabaseSync(resolveNodeSqliteReadOnlyLocation(pathname, hasWalSidecars), {
+    readOnly: true,
+  });
+  try {
+    assertSupportedSchemaVersion(db, pathname);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return {
+    db,
+    path: pathname,
+    walMaintenance: {
+      checkpoint: () => false,
+      close: () => {
+        if (!db.isOpen) {
+          return false;
+        }
+        db.close();
+        return true;
+      },
+    },
+  };
+}
 function assertStateDatabaseIntegrityBeforeMutation(
   database: DatabaseSync,
   pathname: string,
@@ -325,6 +371,9 @@ function assertStateDatabaseIntegrityBeforeMutation(
 export function openOpenClawStateDatabase(
   options: OpenClawStateDatabaseOptions = {},
 ): OpenClawStateDatabase {
+  if (options.database) {
+    return options.database;
+  }
   const env = options.env ?? process.env;
   const pathname = resolveDatabasePath(options);
   // Latched paths are quarantined: the recorder closed any live handle, and
@@ -362,7 +411,7 @@ export function openOpenClawStateDatabase(
   }
   ensureOpenClawStatePermissions(pathname, env);
   const sqlite = requireNodeSqlite();
-  const db = new sqlite.DatabaseSync(pathname);
+  const db = new sqlite.DatabaseSync(resolveNodeSqliteLocation(pathname));
   const walMaintenance = (() => {
     let maintenance: SqliteWalMaintenance | undefined;
     try {
@@ -423,6 +472,22 @@ export function runOpenClawStateWriteTransaction<T>(
     // callers never retry an operation that is durable in SQLite.
   }
   return result;
+}
+
+/** Close one cached shared state database handle by exact pathname. */
+export function closeOpenClawStateDatabaseByPath(pathname: string): boolean {
+  const resolvedPath = path.resolve(pathname);
+  const database = cachedDatabases.get(resolvedPath);
+  if (!database) {
+    return false;
+  }
+  database.walMaintenance.close();
+  clearNodeSqliteKyselyCacheForDatabase(database.db);
+  if (database.db.isOpen) {
+    database.db.close();
+  }
+  cachedDatabases.delete(resolvedPath);
+  return true;
 }
 
 /** Close all cached shared state database handles. */

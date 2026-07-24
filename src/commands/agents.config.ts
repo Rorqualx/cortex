@@ -37,6 +37,15 @@ export type AgentSummary = {
 
 type AgentEntry = NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[number];
 
+function toAgentEntries(list: AgentEntry[]): Record<string, Omit<AgentEntry, "id">> {
+  return Object.fromEntries(
+    list.map((entry) => {
+      const { id, ...config } = entry;
+      return [id, config];
+    }),
+  );
+}
+
 export type AgentIdentity = AgentIdentityFile;
 export { listAgentEntries };
 
@@ -169,7 +178,7 @@ export function applyAgentConfig(
     ...cfg,
     agents: {
       ...cfg.agents,
-      list: nextList,
+      entries: toAgentEntries(nextList),
     },
   };
 }
@@ -207,7 +216,7 @@ export function pruneAgentConfig(
         : entry,
     );
   }
-  const nextAgents = nextAgentsList.length > 0 ? nextAgentsList : undefined;
+  const nextAgents = nextAgentsList.length > 0 ? toAgentEntries(nextAgentsList) : undefined;
 
   const bindings = cfg.bindings ?? [];
   const filteredBindings = bindings.filter((binding) => normalizeAgentId(binding.agentId) !== id);
@@ -225,9 +234,9 @@ export function pruneAgentConfig(
       }
     : cfg.agents?.defaults;
   const nextAgentsConfig = cfg.agents
-    ? { ...cfg.agents, defaults: nextDefaults, list: nextAgents }
+    ? { ...cfg.agents, defaults: nextDefaults, entries: nextAgents }
     : nextAgents
-      ? { list: nextAgents }
+      ? { entries: nextAgents }
       : undefined;
   const nextTools = cfg.tools?.agentToAgent
     ? {

@@ -468,9 +468,13 @@ function renderWidgetCard(
       ? mcpAppWidgetNameForViewId(mcpAppViewId)
       : undefined
     : canvasWidgetName(preview);
-  const pinned = Boolean(
-    pinName && provider?.snapshot$.value.widgets.some((widget) => widget.name === pinName),
-  );
+  const pinnedWidget = pinName
+    ? provider?.snapshot$.value.widgets.find((widget) => widget.name === pinName)
+    : undefined;
+  const pinned = Boolean(pinnedWidget);
+  // Chat keeps its labeled card shell, but the inner inset follows the pinned
+  // widget's presentation so authored edge-to-edge content matches the board.
+  const bleed = pinned && (pinnedWidget?.presentation ?? "card") !== "card";
   const pinAction =
     provider &&
     (contentKind === "mcp-app" ? provider.canPinMcpApps : provider.canPinWidgets) &&
@@ -498,7 +502,12 @@ function renderWidgetCard(
         </button>`
       : nothing;
   return html`
-    <div class="chat-tool-card__preview" data-kind="canvas" data-surface=${surface}>
+    <div
+      class="chat-tool-card__preview"
+      data-content-kind=${contentKind}
+      data-kind="canvas"
+      data-surface=${surface}
+    >
       <div class="chat-tool-card__preview-header">
         <span class="chat-tool-card__preview-label">${label}</span>
         <div class="chat-tool-card__preview-actions">
@@ -506,7 +515,7 @@ function renderWidgetCard(
           ${renderWidgetActions(preview)}
         </div>
       </div>
-      <div class="chat-tool-card__preview-panel" data-side="canvas">
+      <div class="chat-tool-card__preview-panel" data-side="canvas" ?data-bleed=${bleed}>
         ${renderWidgetContent(contentKind, preview, options)}
       </div>
     </div>

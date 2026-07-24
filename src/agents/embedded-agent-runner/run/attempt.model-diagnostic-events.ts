@@ -55,6 +55,7 @@ type ModelCallDiagnosticContext = {
   contentCapture?: DiagnosticModelContentCapturePolicy;
   nextCallId: () => string;
   onStarted?: () => void;
+  suppressPluginHooks?: boolean;
 };
 
 type ModelCallEventBase = Omit<
@@ -96,6 +97,7 @@ type ModelCallObservationState = {
   contentCapture?: DiagnosticModelContentCapturePolicy;
   lastStreamProgressAt?: number;
   terminalEventEmitted?: boolean;
+  suppressPluginHooks?: boolean;
 };
 
 const MODEL_CALL_STREAM_PROGRESS_INTERVAL_MS = 30_000;
@@ -552,6 +554,7 @@ function dispatchModelCallEndedHook(
 function emitModelCallStarted(
   eventBase: ModelCallEventBase,
   modelContent: DiagnosticModelCallContent | undefined,
+  suppressPluginHooks: boolean,
 ): void {
   emitTrustedDiagnosticEventWithPrivateData(
     {
@@ -560,7 +563,9 @@ function emitModelCallStarted(
     },
     modelContentPrivateData(modelContent),
   );
-  dispatchModelCallStartedHook(eventBase);
+  if (!suppressPluginHooks) {
+    dispatchModelCallStartedHook(eventBase);
+  }
 }
 
 function emitModelCallCompleted(
@@ -585,11 +590,13 @@ function emitModelCallCompleted(
     },
     modelContentPrivateData(modelCallCompletedContent(state)),
   );
-  dispatchModelCallEndedHook(eventBase, {
-    durationMs,
-    outcome: "completed",
-    ...sizeTimingFields,
-  });
+  if (!state.suppressPluginHooks) {
+    dispatchModelCallEndedHook(eventBase, {
+      durationMs,
+      outcome: "completed",
+      ...sizeTimingFields,
+    });
+  }
 }
 
 function emitModelCallError(
@@ -616,12 +623,14 @@ function emitModelCallError(
     },
     modelContentPrivateData(modelCallCompletedContent(state)),
   );
-  dispatchModelCallEndedHook(eventBase, {
-    durationMs,
-    outcome: "error",
-    ...sizeTimingFields,
-    ...fields,
-  });
+  if (!state.suppressPluginHooks) {
+    dispatchModelCallEndedHook(eventBase, {
+      durationMs,
+      outcome: "error",
+      ...sizeTimingFields,
+      ...fields,
+    });
+  }
 }
 
 function withDiagnosticRequestContext(
@@ -864,13 +873,14 @@ export function wrapStreamFnWithDiagnosticModelCallEvents(
       : undefined;
     const eventBase = baseModelCallEvent(ctx, callId, trace, promptStats);
     const modelContent = streamContextModelContentFields(ctx.contentCapture, streamContext);
-    emitModelCallStarted(eventBase, modelContent);
+    emitModelCallStarted(eventBase, modelContent, ctx.suppressPluginHooks === true);
     ctx.onStarted?.();
     const startedAt = Date.now();
     const state: ModelCallObservationState = {
       responseStreamBytes: 0,
       modelContent,
       contentCapture: ctx.contentCapture,
+      suppressPluginHooks: ctx.suppressPluginHooks,
     };
     // Provider wrappers consume this same call id for transport correlation,
     // keeping external request evidence joined to the emitted diagnostics.
