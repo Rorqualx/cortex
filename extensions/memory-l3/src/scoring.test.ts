@@ -688,3 +688,126 @@ describe("fsrsRetrievability with volatility class", () => {
     expect(volatileR).toBeLessThan(0.1);
   });
 });
+
+describe("fsrsRetrievability with drift demotion", () => {
+  const halfLifeDays = 7;
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("defaults to neutral (1.0) when driftDemotion is absent", () => {
+    const ageMs = halfLifeDays * DAY;
+    const without = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+    });
+    const withNeutral = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      driftDemotion: 1.0,
+    });
+    expect(without).toBe(withNeutral);
+  });
+
+  it("driftDemotion > 1.0 accelerates forgetting", () => {
+    const ageMs = halfLifeDays * DAY;
+    const demoted = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      driftDemotion: 1.5,
+    });
+    const neutral = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      driftDemotion: 1.0,
+    });
+    expect(demoted).toBeLessThan(neutral);
+  });
+
+  it("driftDemotion composes with volatility class", () => {
+    const ageMs = halfLifeDays * DAY;
+    // A volatile + drift-demoted fact should decay faster than either alone
+    const both = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      volatilityClass: "volatile",
+      driftDemotion: 1.5,
+    });
+    const volatileOnly = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      volatilityClass: "volatile",
+    });
+    const driftOnly = fsrsRetrievability({
+      ageMs,
+      recallCount: 1,
+      halfLifeDays,
+      driftDemotion: 1.5,
+    });
+    expect(both).toBeLessThan(volatileOnly);
+    expect(both).toBeLessThan(driftOnly);
+  });
+});
+
+describe("scoreFact with drift demotion", () => {
+  it("driftDemotion reduces recency signal for old facts", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const ageMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+    const fact = {
+      id: "f1",
+      text: "old intent fact",
+      importance: 0.5,
+      createdAt: Date.now() - ageMs,
+      dedupKey: "k:1",
+    };
+    const queryTokens = new Set<string>();
+    const neutral = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config,
+      recallCount: 2,
+    });
+    const demoted = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config,
+      recallCount: 2,
+      driftDemotion: 2.0,
+    });
+    expect(demoted.recency).toBeLessThan(neutral.recency);
+  });
+
+  it("driftDemotion has no effect when useFsrs is false", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, useFsrs: false };
+    const fact = {
+      id: "f1",
+      text: "test",
+      importance: 0.5,
+      createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000,
+      dedupKey: "k:1",
+    };
+    const queryTokens = new Set<string>();
+    const neutral = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config,
+      recallCount: 2,
+    });
+    const demoted = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config,
+      recallCount: 2,
+      driftDemotion: 2.0,
+    });
+    expect(demoted.recency).toBe(neutral.recency);
+  });
+});
