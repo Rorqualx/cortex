@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { compactSession } from "./compaction.js";
+import { compactSession, applyCategoryBudget } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
 import type { LlmCaller } from "./llm.js";
 import { Storage } from "./storage.js";
@@ -365,5 +365,63 @@ describe("compactSession", () => {
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]!)).toEqual({ role: "user", content: "first" });
     expect(JSON.parse(lines[1]!)).toEqual({ role: "user", content: "second" });
+  });
+});
+
+describe("applyCategoryBudget", () => {
+  it("returns all facts when budget is 0 (disabled)", () => {
+    const facts = [
+      { text: "a", importance: 0.5, dedupKey: "cat_a:1" },
+      { text: "b", importance: 0.5, dedupKey: "cat_b:1" },
+    ];
+    expect(applyCategoryBudget(facts, 0)).toHaveLength(2);
+  });
+
+  it("drops lowest-importance facts over budget within a category", () => {
+    const facts = [
+      { text: "important", importance: 0.9, dedupKey: "infra:important" },
+      { text: "less important", importance: 0.3, dedupKey: "infra:less" },
+      { text: "least", importance: 0.1, dedupKey: "infra:least" },
+    ];
+    // "important" = ceil(9/4)+1 = 4 tokens. Budget of 4 keeps only the first.
+    const result = applyCategoryBudget(facts, 4);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.text).toBe("important");
+  });
+
+  it("applies budget independently per category", () => {
+    const facts = [
+      { text: "infra fact one", importance: 0.9, dedupKey: "infra:1" },
+      { text: "infra fact two", importance: 0.5, dedupKey: "infra:2" },
+      { text: "pref fact one", importance: 0.9, dedupKey: "user_preference:1" },
+      { text: "pref fact two", importance: 0.5, dedupKey: "user_preference:2" },
+    ];
+    // Each fact = ceil(14/4)+1 = 5 tokens. Budget of 5 keeps 1 per category.
+    const result = applyCategoryBudget(facts, 5);
+    expect(result).toHaveLength(2);
+    expect(result.map((f) => f.text)).toContain("infra fact one");
+    expect(result.map((f) => f.text)).toContain("pref fact one");
+  });
+
+  it("groups facts without a colon as 'uncategorized'", () => {
+    const facts = [
+      { text: "no prefix", importance: 0.5, dedupKey: "noprefix" },
+      { text: "has prefix", importance: 0.9, dedupKey: "categorized:yes" },
+    ];
+    // Both are in different categories, so both survive a small budget.
+    const result = applyCategoryBudget(facts, 10);
+    expect(result).toHaveLength(2);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(applyCategoryBudget([], 100)).toEqual([]);
+  });
+
+  it("preserves all facts when total is under budget", () => {
+    const facts = [
+      { text: "short", importance: 0.5, dedupKey: "a:1" },
+      { text: "also short", importance: 0.5, dedupKey: "a:2" },
+    ];
+    expect(applyCategoryBudget(facts, 1000)).toHaveLength(2);
   });
 });

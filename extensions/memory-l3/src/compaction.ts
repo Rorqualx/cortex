@@ -7,6 +7,7 @@ import { maybeWriteEpoch } from "./epoch.js";
 import { groundAndDedupTypedFacts } from "./grounding.js";
 import { extractEdges, mergeEdges, type HebbianEdge } from "./hebbian.js";
 import type { IngestBuffer } from "./ingest.js";
+import type { ExtractedFact } from "./llm.js";
 import {
   extractFacts,
   extractFactsNative,
@@ -41,6 +42,65 @@ export type CompactionResult = {
 const RECENT_DEDUP_KEYS_LIMIT = 200;
 const RECENT_CHUNKS_TO_SCAN = 50;
 
+// --- Category-capped L2 state budget ---
+// Groups facts by their dedupKey namespace prefix (e.g. `user_preference:`,
+// `infra:`, `failure:`) and enforces a per-category token cap by dropping the
+// lowest-importance facts over budget. Prevents a single chatty category from
+// crowding out diverse signal in long sessions. Default off (0 = no cap).
+//
+// Token estimate: ~4 chars/token (matching token-estimate.ts heuristic).
+const CHARS_PER_TOKEN = 4;
+
+function extractCategory(dedupKey: string): string {
+  const colonIdx = dedupKey.indexOf(":");
+  return colonIdx > 0 ? dedupKey.slice(0, colonIdx) : "uncategorized";
+}
+
+function estimateFactTokens(text: string): number {
+  return Math.ceil(text.length / CHARS_PER_TOKEN) + 1;
+}
+
+/**
+ * Apply a per-category token budget to extracted facts. Facts within each
+ * category are sorted by importance (descending); the lowest-importance facts
+ * are dropped until the category is under budget.
+ */
+export function applyCategoryBudget(
+  facts: ReadonlyArray<ExtractedFact>,
+  maxTokensPerCategory: number,
+): ExtractedFact[] {
+  if (maxTokensPerCategory <= 0) return [...facts];
+
+  // Group by category prefix.
+  const groups = new Map<string, ExtractedFact[]>();
+  for (const fact of facts) {
+    const cat = extractCategory(fact.dedupKey);
+    const list = groups.get(cat);
+    if (list) {
+      list.push(fact);
+    } else {
+      groups.set(cat, [fact]);
+    }
+  }
+
+  const result: ExtractedFact[] = [];
+  for (const [, group] of groups) {
+    // Sort by importance descending — keep the most important facts.
+    const sorted = [...group].sort((a, b) => b.importance - a.importance);
+    let tokenSum = 0;
+    for (const fact of sorted) {
+      const cost = estimateFactTokens(fact.text);
+      if (tokenSum + cost > maxTokensPerCategory) {
+        break;
+      }
+      tokenSum += cost;
+      result.push(fact);
+    }
+  }
+
+  return result;
+}
+
 export async function compactSession(params: {
   sessionId: string;
   buffer: IngestBuffer;
@@ -66,6 +126,14 @@ export async function compactSession(params: {
    * OPENCLAW_MEMORY_L3_NATIVE_COMPACTION=1 env flag.
    */
   nativeCompaction?: boolean;
+  /**
+   * Per-category token budget for L2 facts. After extraction + dedup,
+   * facts are grouped by dedupKey prefix (e.g. `user_preference:`,
+   `infra:`) and the lowest-importance facts over budget are dropped.
+   * 0 = no cap (default). Set via
+   * OPENCLAW_MEMORY_L3_CATEGORY_BUDGET env var or directly.
+   */
+  categoryBudget?: number;
 }): Promise<CompactionResult> {
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
@@ -93,6 +161,12 @@ export async function compactSession(params: {
   const filtered = dropAlreadyKnown(extracted.facts, alreadyKnownSet);
   const deduped = dedupWithinChunk(filtered);
 
+  // Apply per-category token budget if configured (QW-1). Prevents a single
+  // chatty category from crowding out diverse signal in long sessions.
+  const categoryBudget =
+    params.categoryBudget ?? Number(process.env.OPENCLAW_MEMORY_L3_CATEGORY_BUDGET ?? "0");
+  const budgeted = categoryBudget > 0 ? applyCategoryBudget(deduped, categoryBudget) : deduped;
+
   // Verbatim source-grounding for typed facts: the LLM's claimed values
   // must appear inside the original transcript character-for-character.
   // Anything that fails grounding is hallucinated and dropped silently.
@@ -108,7 +182,7 @@ export async function compactSession(params: {
   ];
   const chunkId = nextChunkId(params.state);
   const intentShift = params.buffer.hasIntentShift(params.sessionId);
-  const facts: L2Fact[] = deduped.map((f) =>
+  const facts: L2Fact[] = budgeted.map((f) =>
     liftToL2Fact(f, now, intentShift ? { forceSignificant: true } : undefined),
   );
   const typedFacts: TypedFact[] = groundedTyped.map((t) =>
