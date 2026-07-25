@@ -107,7 +107,10 @@ export async function compactSession(params: {
     ),
   ];
   const chunkId = nextChunkId(params.state);
-  const facts: L2Fact[] = deduped.map((f) => liftToL2Fact(f, now));
+  const intentShift = params.buffer.hasIntentShift(params.sessionId);
+  const facts: L2Fact[] = deduped.map((f) =>
+    liftToL2Fact(f, now, intentShift ? { forceSignificant: true } : undefined),
+  );
   const typedFacts: TypedFact[] = groundedTyped.map((t) =>
     liftToTypedFact(t, now, {
       eventTime,

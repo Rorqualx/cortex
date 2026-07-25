@@ -84,4 +84,22 @@ describe("liftToL2Fact", () => {
     );
     expect(fact.significant).toBeFalsy();
   });
+
+  it("forceSignificant marks facts from intent-shift chunks", () => {
+    const fact = liftToL2Fact(
+      { text: "user decided on Postgres", importance: 0.7, dedupKey: "decision:database" },
+      1700,
+      { forceSignificant: true },
+    );
+    expect(fact.significant).toBe(true);
+  });
+
+  it("forceSignificant does not override when fact already significant", () => {
+    const fact = liftToL2Fact(
+      { text: "remember this", importance: 0.9, dedupKey: "user_preference:x", significant: true },
+      1700,
+      { forceSignificant: false },
+    );
+    expect(fact.significant).toBe(true);
+  });
 });
