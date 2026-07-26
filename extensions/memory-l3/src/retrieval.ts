@@ -833,7 +833,95 @@ export async function retrieveTopK(params: {
       ? await checkSufficientContext(params.query, finalFacts)
       : undefined;
 
-  return { facts: finalFacts, missingInfo };
+  // -----------------------------------------------------------------
+  // REFACT-style adaptive fact compression (arXiv:2507.15147)
+  // -----------------------------------------------------------------
+  // Adaptively compress fact text based on query intent so the caller
+  // gets the right level of detail without wasting context budget:
+  // - factual: typed facts are already concise; trim prose to 1st sentence
+  // - multihop: keep typed facts full; condense prose to 2 sentences
+  // - synthesis: keep prose full; typed facts already compact (slot=value)
+  const intent = retConfig.mode === "routed" ? classifyQueryIntent(params.query) : "factual";
+  const compressedFacts = compressFactsForResult(finalFacts, intent);
+
+  return { facts: compressedFacts, missingInfo };
+}
+
+/**
+ * REFACT-style adaptive fact compression: trim fact text based on query
+ * intent so the caller receives the appropriate level of detail.
+ *
+ * - **factual**: typed/longterm-typed facts are already concise
+ *   ("slot = value"); trim L2 prose to the first sentence only.
+ * - **multihop**: keep typed facts full (they connect entities);
+ *   condense prose facts to the first 2 sentences.
+ * - **synthesis**: keep prose facts full (they carry narrative context);
+ *   typed facts are already one-liners — no further compression.
+ *
+ * This is a pure output-formatting layer. Internal processing (Hebbian
+ * boosting, edge extraction, signal recording) always sees the full text.
+ */
+function compressFactsForResult(facts: RetrievedFact[], intent: QueryIntent): RetrievedFact[] {
+  if (intent === "synthesis") {
+    // Prose is the hero; typed facts are already compact. No compression needed.
+    return facts;
+  }
+
+  const typedTiers = new Set<string>(["typed", "longterm-typed"]);
+
+  return facts.map((rf) => {
+    // Typed facts: already "slot = value" — keep as-is for all intents.
+    if (typedTiers.has(rf.tier)) {
+      return rf;
+    }
+
+    // Prose facts: compress based on intent.
+    const maxSentences = intent === "factual" ? 1 : 2; // multihop → 2
+    const compressedText = truncateToSentences(rf.fact.text, maxSentences);
+    if (compressedText === rf.fact.text) {
+      return rf; // No change — text was already short enough
+    }
+    return {
+      ...rf,
+      fact: { ...rf.fact, text: compressedText },
+    };
+  });
+}
+
+/**
+ * Truncate a text block to the first N sentences. If the text has fewer
+ * than N sentence boundaries, returns it unchanged.
+ */
+function truncateToSentences(text: string, maxSentences: number): string {
+  if (maxSentences <= 0) return text;
+  // Split on sentence boundaries: ., !, ? followed by whitespace or end.
+  const sentences: string[] = [];
+  let current = "";
+  let truncated = false;
+  for (let i = 0; i < text.length; i++) {
+    current += text[i];
+    if (
+      (text[i] === "." || text[i] === "!" || text[i] === "?") &&
+      (i === text.length - 1 || /\s/.test(text[i + 1]))
+    ) {
+      sentences.push(current.trim());
+      current = "";
+      if (sentences.length >= maxSentences) {
+        // Check if there's remaining content — if not, text was exactly N sentences.
+        const remaining = text.slice(i + 1).trim();
+        if (!remaining) return text;
+        truncated = true;
+        break;
+      }
+    }
+  }
+  if (!truncated && current.trim()) {
+    sentences.push(current.trim());
+  }
+  if (!truncated && sentences.length <= maxSentences) {
+    return text; // Already short enough
+  }
+  return sentences.slice(0, maxSentences).join(" ") + " …";
 }
 
 function longTermAsL2Fact(lt: LongTermFact): L2Fact {
