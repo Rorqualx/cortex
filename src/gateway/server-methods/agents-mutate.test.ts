@@ -182,13 +182,6 @@ vi.mock("../../commands/agents.config.js", () => ({
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: () => ["main"],
   listAgentEntries: mocks.listAgentEntries,
-  resolveDefaultAgentId: (cfg: unknown) => {
-    const defaults = getAgentList(cfg).filter((entry) => entry.default === true);
-    if (defaults.length !== 1) {
-      throw new Error("expected exactly one default agent");
-    }
-    return defaults[0]!.id;
-  },
   resolveAgentDir: mocks.resolveAgentDir,
   resolveAgentConfig: (cfg: unknown, agentId: string) =>
     getAgentList(cfg).find((entry) => entry.id === agentId),

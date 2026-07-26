@@ -16,6 +16,7 @@ export {
   consumeAdjustedParamsForToolCall,
   consumePreExecutionBlockedToolCall,
   peekAdjustedParamsForToolCall,
+  resetAdjustedParamsByToolCallIdForTests,
 } from "./agent-tools.before-tool-call.state.js";
 export {
   copyBeforeToolCallHookMarker,

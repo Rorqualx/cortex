@@ -117,7 +117,9 @@ function trackChatMessagesAssignments(state: ChatState) {
   return assignments;
 }
 
-function createOtherRunSilentFinalPayload(text: string): ChatEventPayload {
+// Returns the narrowed `final` variant, not the whole union: callers assert on
+// `payload.message`, which only exists on the message-bearing variants.
+function createOtherRunSilentFinalPayload(text: string) {
   return {
     runId: "run-announce",
     sessionKey: "main",
@@ -127,7 +129,7 @@ function createOtherRunSilentFinalPayload(text: string): ChatEventPayload {
       role: "assistant",
       content: [{ type: "text", text }],
     },
-  };
+  } satisfies ChatEventPayload;
 }
 
 function createOtherRunNoReplyFinalPayload(): ChatEventPayload {
@@ -768,6 +770,9 @@ describe("handleChatEvent", () => {
   it("keeps active stream while appending unowned assistant finals", () => {
     const state = createActiveStreamingState();
     const payload = {
+      // Unowned final: a real runId that is not the active one. The protocol
+      // requires runId, so an omitted-runId fixture cannot occur on the wire.
+      runId: "run-other",
       sessionKey: "main",
       seq: 0,
       state: "final",
@@ -775,7 +780,7 @@ describe("handleChatEvent", () => {
         role: "assistant",
         content: [{ type: "text", text: "Injected note" }],
       },
-    } as ChatEventPayload;
+    } satisfies ChatEventPayload;
 
     expect(handleChatEvent(state, payload)).toBe(null);
     expect(state.chatRunId).toBe("run-user");

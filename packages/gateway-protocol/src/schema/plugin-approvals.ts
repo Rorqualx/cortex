@@ -84,6 +84,9 @@ export const PluginApprovalRequestPayloadSchema = Type.Object(
     pluginId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     title: Type.String(),
     description: Type.String(),
+    // Reviewer-surface-only; approval forwarders must strip this before any
+    // channel message or push alert (see exec-approval-ios-push redaction).
+    detail: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     severity: Type.Optional(
       Type.Union([
         Type.Literal("info"),

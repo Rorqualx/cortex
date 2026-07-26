@@ -32,8 +32,10 @@ describe("embedded stream transport host", () => {
       }),
     ).toBeUndefined();
     expect(
+      // Fork keeps the direct `currentStreamFn` shape; upstream's
+      // EmbeddedStreamRuntimeOwner indirection was deliberately reverted, so
+      // there is no llmRuntime to hand in here.
       describeEmbeddedAgentStreamStrategy({
-        llmRuntime: createLlmRuntime(),
         currentStreamFn: undefined,
         model,
       }),

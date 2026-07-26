@@ -1362,7 +1362,11 @@ describe("session accessor seam", () => {
       },
     );
 
-    const snapshot = loadReplySessionInitializationSnapshot({ sessionKey, storePath });
+    const snapshot = loadReplySessionInitializationSnapshot({
+      agentId: "main",
+      sessionKey,
+      storePath,
+    });
     const committed = await commitReplySessionInitialization({
       activeSessionKey: sessionKey,
       agentId: "main",

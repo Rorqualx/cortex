@@ -78,7 +78,7 @@ export type ControlUiMockGatewayScenario = {
   }>;
   /** Subscription-scoped Gateway events replayed on a fixed browser-side cycle. */
   repeatingSessionEvents?: {
-    events: Array<{ event: "agent" | "session.tool"; payload: unknown }>;
+    events: Array<{ event: "agent" | "session.tool" | "session.observer"; payload: unknown }>;
     intervalMs?: number;
   };
   /** Session run state served alongside history (hasActiveRun/activeRunIds). */
@@ -95,6 +95,8 @@ export type ControlUiMockGatewayScenario = {
   /** Initial gateway-owned custom group catalog (sessions.groups.*), in order. */
   sessionGroups?: string[];
   terminalEnabled?: boolean;
+  /** Agent workspace path reported by `agents.files.list`. */
+  workspace?: string;
   workspaceGit?: boolean;
 };
 
@@ -285,6 +287,7 @@ function normalizeScenario(
     sessionKey,
     sessionGroups: scenario.sessionGroups ?? [],
     terminalEnabled: scenario.terminalEnabled ?? false,
+    workspace: scenario.workspace ?? "",
     workspaceGit: scenario.workspaceGit ?? false,
   };
 }
@@ -884,7 +887,7 @@ function installControlUiMockGateway(input: {
               ? params.agentId
               : scenario.defaultAgentId,
           files: [],
-          workspace: "",
+          workspace: scenario.workspace ?? "",
         };
       case "agents.files.get":
         return null;

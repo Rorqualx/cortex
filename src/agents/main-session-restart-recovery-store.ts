@@ -79,10 +79,13 @@ function isDriftedWebchatRouting(entry: SessionEntry): boolean {
  */
 function applyWebchatRoutingReset(entry: SessionEntry): void {
   entry.delivery = { kind: "internal" };
-  // Neutralize the captured external delivery target too: resume resolves the
-  // pending final BEFORE the session delivery state, so leaving it would still
-  // route the [System] continuation to the drifted channel.
+  // Neutralize every captured external delivery target too: resume resolves
+  // these BEFORE the session delivery state
+  // (resolveRestartRecoveryDeliveryContext), so leaving any of them would still
+  // route the [System] continuation / pending final to the drifted channel.
   entry.pendingFinalDeliveryContext = undefined;
+  entry.restartRecoveryDeliveryContext = undefined;
+  entry.restartRecoveryDeliveryRunId = undefined;
 }
 
 export function loadExpectedRestartRecoveryTarget(params: {

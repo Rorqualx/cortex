@@ -531,11 +531,16 @@ describe("main-session-restart-recovery", () => {
         abortedLastRun: true,
         sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
         origin: { surface: "webchat", provider: "webchat" },
-        route: { channel: "telegram" },
-        deliveryContext: { channel: "telegram", to: "7814261895" },
-        lastChannel: "telegram",
-        lastTo: "7814261895",
+        // Drift shape: delivery went external while the session still originates
+        // from the dashboard, which is exactly what the heal keys off.
+        delivery: {
+          kind: "external",
+          route: { channel: "telegram", target: { to: "7814261895" } },
+          context: { channel: "telegram", to: "7814261895" },
+          origin: { surface: "webchat", provider: "webchat" },
+        },
         restartRecoveryDeliveryContext: { channel: "telegram", to: "7814261895" },
+        restartRecoveryDeliveryRunId: "drifted-recovery-run",
         pendingFinalDeliveryContext: { channel: "telegram", to: "7814261895" },
       },
     });
@@ -546,20 +551,22 @@ describe("main-session-restart-recovery", () => {
     expect(result.recovered).toBe(1);
     const store = readStore(path.join(sessionsDir, "sessions.json"));
     const healed = store[sessionKey];
-    // Key preserved; delivery routing + captured contexts reset to webchat.
+    // Key preserved; delivery ownership + captured contexts reset to internal.
     expect(Object.keys(store)).toEqual([sessionKey]);
-    expect(healed?.lastChannel).toBe("webchat");
-    expect(healed?.route?.channel).toBe("webchat");
-    expect(healed?.deliveryContext?.channel).toBe("webchat");
+    expect(healed?.delivery).toEqual({ kind: "internal" });
     expect(healed?.restartRecoveryDeliveryContext).toBeUndefined();
+    // The stale claim must not survive the heal. Recovery re-claims the entry
+    // with a fresh id for the resume it is about to dispatch, so assert the
+    // drifted claim is gone rather than that the field is empty.
+    expect(healed?.restartRecoveryDeliveryRunId).not.toBe("drifted-recovery-run");
     expect(healed?.pendingFinalDeliveryContext).toBeUndefined();
     // No telegram target remnant on the entry (the peer id survives only inside
     // the unchanged session key, never as a delivery target).
-    expect(healed?.lastTo).toBeUndefined();
-    expect(healed?.deliveryContext?.to).toBeUndefined();
+    expect(JSON.stringify(healed)).not.toContain("telegram");
+    expect(JSON.stringify(healed)).not.toContain("7814261895");
     // The resume must not deliver the [System] continuation to any external
     // channel — with the captured contexts cleared, delivery resolves to none.
-    const resumeParams = firstGatewayParams();
+    const resumeParams = gatewayParams();
     expect(resumeParams.sessionKey).toBe(sessionKey);
     expect(resumeParams.deliver).toBe(false);
     expect(resumeParams.channel).toBeUndefined();
@@ -580,10 +587,12 @@ describe("main-session-restart-recovery", () => {
         abortedLastRun: true,
         sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
         origin: { surface: "telegram", provider: "telegram" },
-        route: { channel: "telegram" },
-        deliveryContext: { channel: "telegram", to: "555" },
-        lastChannel: "telegram",
-        lastTo: "555",
+        delivery: {
+          kind: "external",
+          route: { channel: "telegram", target: { to: "555" } },
+          context: { channel: "telegram", to: "555" },
+          origin: { surface: "telegram", provider: "telegram" },
+        },
       },
     });
     await writeTranscript(sessionsDir, sessionId, [{ role: "user", content: "hi" }]);
@@ -593,8 +602,8 @@ describe("main-session-restart-recovery", () => {
     const store = readStore(path.join(sessionsDir, "sessions.json"));
     const entry = store[sessionKey];
     // Channel routing preserved — the heal did not fire.
-    expect(entry?.lastChannel).toBe("telegram");
-    expect(entry?.route?.channel).toBe("telegram");
+    expect(entry?.delivery?.kind).toBe("external");
+    expect(entry?.delivery).toMatchObject({ route: { channel: "telegram" } });
     expect(JSON.stringify(entry)).toContain("555");
   });
 

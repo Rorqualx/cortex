@@ -156,6 +156,14 @@ function buildConfig(noVncEnabled: boolean): SandboxConfig {
       idleHours: 24,
       maxAgeDays: 7,
     },
+    // Matches resolveSandboxOsSandboxConfig() with no config input; the browser
+    // create path does not read it, but SandboxConfig requires it.
+    osSandbox: {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "allow-loopback",
+    },
   };
 }
 
@@ -418,7 +426,7 @@ describe("ensureSandboxBrowser create args", () => {
         vncPort: cfg.browser.vncPort,
         noVncPort: cfg.browser.noVncPort,
         headless: cfg.browser.headless,
-        enableNoVnc: cfg.browser.enableNoVnc,
+        noVncEnabled: cfg.browser.noVncEnabled,
         autoStartTimeoutMs: cfg.browser.autoStartTimeoutMs,
         cdpSourceRange: undefined,
       },

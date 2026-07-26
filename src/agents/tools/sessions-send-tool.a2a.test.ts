@@ -294,7 +294,7 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
         to: "channel:target-room",
         accountId,
       },
-    } satisfies GatewaySessionListRow;
+    } satisfies SessionListRow;
     sessionListRows = [session];
 
     await runSessionsSendA2AFlow({

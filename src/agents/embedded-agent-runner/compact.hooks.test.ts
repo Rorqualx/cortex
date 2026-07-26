@@ -860,6 +860,8 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
 
     await compactTesting.prepareCompactionSessionAgent({
       session: session as never,
+      // Stream resolution is mocked here; the runtime handle is only forwarded.
+      llmRuntime: {} as never,
       providerStreamFn: vi.fn(),
       sessionId: "session-1",
       signal: new AbortController().signal,
@@ -925,6 +927,7 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
         agent: { streamFn: vi.fn() },
         messages: [{ role: "user", content: "hello" }],
       } as never,
+      llmRuntime: {} as never,
       providerStreamFn: vi.fn(),
       sessionId: "session-1",
       signal: new AbortController().signal,
@@ -2328,6 +2331,8 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
       config: undefined,
       agentDir: "/tmp",
       effectiveWorkspace: "/tmp",
+      // Provider registration is mocked; only the handle is forwarded.
+      apiRegistry: {} as never,
     });
 
     expect(result).toBe(streamFn);

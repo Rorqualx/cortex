@@ -128,9 +128,10 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
   }
 
   function bindCurrentPolicyToPlan(plan: SystemRunApprovalPlan): SystemRunApprovalPlan {
+    const agentId = plan.agentId ?? "main";
     const snapshot = createExecApprovalPolicySnapshot({
       file: loadExecApprovals(),
-      agentId: plan.agentId ?? undefined,
+      agentId,
     });
     return {
       ...plan,

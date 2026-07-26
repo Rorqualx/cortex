@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { updateSessionStore, type SessionEntry } from "../config/sessions.js";
+import { upsertSessionEntry } from "../config/sessions/session-accessor.js";
 import { resetDiagnosticSessionStateForTest } from "../logging/diagnostic-session-state.js";
 import {
   initializeGlobalHookRunner,
@@ -21,9 +21,9 @@ import type { PluginHookRegistration } from "../plugins/types.js";
 import { toClientToolDefinitions, toToolDefinitions } from "./agent-tool-definition-adapter.js";
 import { wrapToolWithAbortSignal } from "./agent-tools.abort.js";
 import {
-  testing as beforeToolCallTesting,
   consumeAdjustedParamsForToolCall,
   isToolWrappedWithBeforeToolCallHook,
+  resetAdjustedParamsByToolCallIdForTests,
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
 import { markCodeModeControlTool } from "./code-mode-control-tools.js";
@@ -88,7 +88,7 @@ describe("before_tool_call hook integration", () => {
   beforeEach(() => {
     resetGlobalHookRunner();
     resetDiagnosticSessionStateForTest();
-    beforeToolCallTesting.adjustedParamsByToolCallId.clear();
+    resetAdjustedParamsByToolCallIdForTests();
     beforeToolCallHook = installBeforeToolCallHook();
   });
 
@@ -1180,12 +1180,10 @@ describe("before_tool_call hook integration for client tools", () => {
     ];
     setActivePluginRegistry(registry);
     try {
-      await updateSessionStore(storePath, (store) => {
-        store["agent:main:client"] = {
-          sessionId: "session-client",
-          updatedAt: Date.now(),
-        } as SessionEntry;
-      });
+      await upsertSessionEntry(
+        { agentId: "main", sessionKey: "agent:main:client", storePath },
+        { sessionId: "session-client", updatedAt: Date.now() },
+      );
       await expect(
         patchPluginSessionExtension({
           cfg: config as never,
