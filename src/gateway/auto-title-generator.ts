@@ -83,10 +83,7 @@ export async function generateAutoTitle(params: AutoTitleParams): Promise<void> 
     // returns the entry even when update() declines, so track application
     // separately to keep the original only-fires-when-written semantics.
     let applied = false;
-    const updated = await patchSessionEntryWithKey({
-      storePath,
-      sessionKey,
-      update: (entry) => {
+    const updated = await patchSessionEntryWithKey({ storePath, sessionKey }, (entry: SessionEntry) => {
         // Only set if not already set (race guard)
         if (entry.llmTitle) {
           return null;
@@ -94,7 +91,7 @@ export async function generateAutoTitle(params: AutoTitleParams): Promise<void> 
         applied = true;
         return { llmTitle: trimmedTitle };
       },
-    });
+    );
 
     if (updated && applied) {
       logVerbose(`auto-title: generated title "${trimmedTitle}" for ${sessionKey}`);

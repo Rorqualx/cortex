@@ -113,7 +113,7 @@ function readSessionEntriesSafe(storePath: string) {
   try {
     // Read-only binding scan: no clone keeps this on the shared store cache
     // (the former readSessionEntries snapshot helper was removed upstream).
-    return Object.entries(loadSessionStore(storePath, { clone: false }));
+    return Object.entries(loadSessionStore(storePath));
   } catch {
     return [];
   }
@@ -254,11 +254,10 @@ export function buildRuntimeApplyDeps(params: {
     patchAgentSession: async (agentId, sessionKey, patch) => {
       // Merge-patch the existing entry; missing sessions are skipped (returns null),
       // matching the removed applySessionStoreEntryPatch helper.
-      await patchSessionEntryWithKey({
-        storePath: resolveDefaultSessionStorePath(agentId),
-        sessionKey,
-        update: () => patch,
-      });
+      await patchSessionEntryWithKey(
+        { storePath: resolveDefaultSessionStorePath(agentId), sessionKey },
+        () => patch,
+      );
     },
     nowMs: params.nowMs,
     dryRun: params.dryRun,

@@ -9,7 +9,6 @@ import {
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../../routing/session-key.js";
-import { snapshotSessionOrigin } from "./metadata.js";
 import { updateSessionStore } from "../../plugin-sdk/session-store-runtime.js";
 import type { SessionEntry } from "./types.js";
 

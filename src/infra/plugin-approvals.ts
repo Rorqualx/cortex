@@ -1,6 +1,5 @@
 import type {
   PluginApprovalActionView as WirePluginApprovalActionView,
-  PluginApprovalRequestPayload as WirePluginApprovalRequestPayload,
   PluginApprovalRequestedEvent as WirePluginApprovalRequestedEvent,
   PluginApprovalResolvedEvent as WirePluginApprovalResolvedEvent,
 } from "../../packages/gateway-protocol/src/index.js";
