@@ -184,7 +184,14 @@ function computeTestBrowserHash(params: {
       noVncEnabled: params.cfg.browser.noVncEnabled,
       autoStartTimeoutMs: params.cfg.browser.autoStartTimeoutMs,
     },
-  };
+    securityEpoch: SANDBOX_BROWSER_SECURITY_HASH_EPOCH,
+    workspaceAccess: params.cfg.workspaceAccess,
+    workspaceDir,
+    agentWorkspaceDir,
+    mountFormatVersion: SANDBOX_MOUNT_FORMAT_VERSION,
+    createArgsEpoch: params.createArgsEpoch,
+    readOnlyWorkspaceSkillMounts: [],
+  });
 }
 
 type EnsureSandboxBrowserParams = Parameters<typeof import("./browser.js").ensureSandboxBrowser>[0];
