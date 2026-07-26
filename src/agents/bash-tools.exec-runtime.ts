@@ -713,6 +713,8 @@ export async function runExecProcess(opts: {
   osSandboxConfig?: ResolvedOsSandbox;
   notifyDeliveryContext?: DeliveryContext;
   timeoutSec: number | null;
+  /** Observes the settled outcome before listeners are notified. */
+  onSettledBeforeNotify?: (outcome: ExecProcessOutcome) => void;
   onUpdate?: (partialResult: AgentToolResult<ExecToolDetails>) => void;
 }): Promise<ExecProcessHandle> {
   const startedAt = Date.now();
