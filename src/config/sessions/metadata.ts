@@ -369,8 +369,8 @@ export function deriveLastRoutePatch(params: {
 
 // Fork-owned; predates the current merge base so the upstream rebase drops it.
 export function snapshotSessionOrigin(entry?: SessionEntry): SessionOrigin | undefined {
-  if (!entry?.origin) {
-    return undefined;
-  }
-  return { ...entry.origin };
+  // Upstream carries origin inside the external delivery variant, so read it
+  // from there rather than the retired top-level field.
+  const origin = entry?.delivery?.kind === "external" ? entry.delivery.origin : undefined;
+  return origin ? { ...origin } : undefined;
 }

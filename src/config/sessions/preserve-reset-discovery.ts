@@ -136,7 +136,9 @@ export async function preserveResetSessionForDiscovery(params: {
         abortedLastRun: false,
         displayName: `Previous: ${title}`,
         chatType: oldEntry?.chatType,
-        origin: snapshotSessionOrigin(oldEntry),
+        // Carry the archived chat's delivery ownership so the preserved row keeps
+        // its origin; upstream models origin inside the external delivery variant.
+        ...(oldEntry?.delivery ? { delivery: oldEntry.delivery } : {}),
       };
       store[previousKey] = entry;
       return entry;
