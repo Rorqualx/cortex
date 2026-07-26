@@ -548,3 +548,7 @@ export function classifyAgentHarnessTerminalOutcome(
 function hasVisibleAssistantText(assistantTexts: readonly string[]): boolean {
   return assistantTexts.some((text) => text.trim().length > 0);
 }
+export {
+  buildSkillForgePromptSection,
+  SKILL_FORGE_TOOL_NAME,
+} from "../agents/skill-forge-prompt.js";
