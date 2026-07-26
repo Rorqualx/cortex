@@ -408,6 +408,8 @@ export async function prepareGatewayLifecycle(params: {
     await createGatewayCloseHandler({
       bonjourStop: runtimeState.bonjourStop,
       tailscaleCleanup: runtimeState.tailscaleCleanup,
+      // Fork activity feed: the close handler releases the recorder subscription.
+      activityRecorderUnsub: runtimeState.activityRecorderUnsub,
       releasePluginRouteRegistry,
       channelIds,
       stopChannel,
