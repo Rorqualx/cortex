@@ -31,17 +31,6 @@ public enum ErrorCode: String, Codable, Sendable {
     case unavailable = "UNAVAILABLE"
 }
 
-public enum AuthProbeStatus: String, Codable, Sendable {
-    case ok = "ok"
-    case auth = "auth"
-    case rateLimit = "rate_limit"
-    case billing = "billing"
-    case timeout = "timeout"
-    case format = "format"
-    case unknown = "unknown"
-    case noModel = "no_model"
-}
-
 public enum EnvironmentStatus: String, Codable, Sendable {
     case available = "available"
     case unavailable = "unavailable"
@@ -267,12 +256,240 @@ public enum QuestionStatus: String, Codable, Sendable {
     case expired = "expired"
 }
 
+public enum ExecApprovalDecision: String, Codable, Sendable {
+    case allowOnce = "allow-once"
+    case allowAlways = "allow-always"
+    case deny = "deny"
+}
+
 public enum ChatRunStartupPhase: String, Codable, Sendable {
     case preparingWorkspace = "preparing_workspace"
     case provisioningEnvironment = "provisioning_environment"
     case preparingContext = "preparing_context"
     case startingModel = "starting_model"
 }
+
+public struct ActivityCursor: Codable, Sendable {
+    public let ts: Int
+    public let id: String
+
+    public init(
+        ts: Int,
+        id: String)
+    {
+        self.ts = ts
+        self.id = id
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ts
+        case id
+    }
+}
+
+public struct ActivityEventDetail: Codable, Sendable {
+    public let summary: String?
+    public let preview: String?
+    public let truncated: Bool?
+    public let model: String?
+    public let exitcode: Int?
+    public let error: String?
+    public let approvalid: String?
+    public let meta: String?
+
+    public init(
+        summary: String? = nil,
+        preview: String? = nil,
+        truncated: Bool? = nil,
+        model: String? = nil,
+        exitcode: Int? = nil,
+        error: String? = nil,
+        approvalid: String? = nil,
+        meta: String? = nil)
+    {
+        self.summary = summary
+        self.preview = preview
+        self.truncated = truncated
+        self.model = model
+        self.exitcode = exitcode
+        self.error = error
+        self.approvalid = approvalid
+        self.meta = meta
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case summary
+        case preview
+        case truncated
+        case model
+        case exitcode = "exitCode"
+        case error
+        case approvalid = "approvalId"
+        case meta
+    }
+}
+
+public struct ActivityEventMetrics: Codable, Sendable {
+    public let durationms: Double?
+    public let inputtokens: Double?
+    public let outputtokens: Double?
+    public let cachereadtokens: Double?
+    public let cachewritetokens: Double?
+    public let costusd: Double?
+
+    public init(
+        durationms: Double? = nil,
+        inputtokens: Double? = nil,
+        outputtokens: Double? = nil,
+        cachereadtokens: Double? = nil,
+        cachewritetokens: Double? = nil,
+        costusd: Double? = nil)
+    {
+        self.durationms = durationms
+        self.inputtokens = inputtokens
+        self.outputtokens = outputtokens
+        self.cachereadtokens = cachereadtokens
+        self.cachewritetokens = cachewritetokens
+        self.costusd = costusd
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case durationms = "durationMs"
+        case inputtokens = "inputTokens"
+        case outputtokens = "outputTokens"
+        case cachereadtokens = "cacheReadTokens"
+        case cachewritetokens = "cacheWriteTokens"
+        case costusd = "costUsd"
+    }
+}
+
+public struct ActivityEvent: Codable, Sendable {
+    public let eventid: String
+    public let ts: Int
+    public let agentid: String?
+    public let sessionkey: String?
+    public let runid: String?
+    public let groupkey: String?
+    public let kind: String
+    public let status: String
+    public let title: String
+    public let detail: ActivityEventDetail?
+    public let metrics: ActivityEventMetrics?
+
+    public init(
+        eventid: String,
+        ts: Int,
+        agentid: String? = nil,
+        sessionkey: String? = nil,
+        runid: String? = nil,
+        groupkey: String? = nil,
+        kind: String,
+        status: String,
+        title: String,
+        detail: ActivityEventDetail? = nil,
+        metrics: ActivityEventMetrics? = nil)
+    {
+        self.eventid = eventid
+        self.ts = ts
+        self.agentid = agentid
+        self.sessionkey = sessionkey
+        self.runid = runid
+        self.groupkey = groupkey
+        self.kind = kind
+        self.status = status
+        self.title = title
+        self.detail = detail
+        self.metrics = metrics
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case eventid = "eventId"
+        case ts
+        case agentid = "agentId"
+        case sessionkey = "sessionKey"
+        case runid = "runId"
+        case groupkey = "groupKey"
+        case kind
+        case status
+        case title
+        case detail
+        case metrics
+    }
+}
+
+public struct ActivityListParams: Codable, Sendable {
+    public let agentids: [String]?
+    public let kinds: [String]?
+    public let statuses: [String]?
+    public let since: Int?
+    public let search: String?
+    public let limit: Int?
+    public let cursor: ActivityCursor?
+
+    public init(
+        agentids: [String]? = nil,
+        kinds: [String]? = nil,
+        statuses: [String]? = nil,
+        since: Int? = nil,
+        search: String? = nil,
+        limit: Int? = nil,
+        cursor: ActivityCursor? = nil)
+    {
+        self.agentids = agentids
+        self.kinds = kinds
+        self.statuses = statuses
+        self.since = since
+        self.search = search
+        self.limit = limit
+        self.cursor = cursor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case agentids = "agentIds"
+        case kinds
+        case statuses
+        case since
+        case search
+        case limit
+        case cursor
+    }
+}
+
+public struct ActivityListResult: Codable, Sendable {
+    public let events: [ActivityEvent]
+    public let nextcursor: ActivityCursor?
+
+    public init(
+        events: [ActivityEvent],
+        nextcursor: ActivityCursor? = nil)
+    {
+        self.events = events
+        self.nextcursor = nextcursor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case events
+        case nextcursor = "nextCursor"
+    }
+}
+
+public struct ActivitySubscribeParams: Codable, Sendable {}
+
+public struct ActivitySubscribeResult: Codable, Sendable {
+    public let subscribed: Bool
+
+    public init(
+        subscribed: Bool)
+    {
+        self.subscribed = subscribed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case subscribed
+    }
+}
+
+public struct ActivityUnsubscribeParams: Codable, Sendable {}
 
 public struct BoardTab: Codable, Sendable {
     public let tabid: String
@@ -2069,6 +2286,9 @@ public struct AgentEvent: Codable, Sendable {
     public let seq: Int
     public let stream: String
     public let ts: Int
+    public let sessionkey: String?
+    public let sessionid: String?
+    public let agentid: String?
     public let spawnedby: String?
     public let isheartbeat: Bool?
     public let data: [String: AnyCodable]
@@ -2078,6 +2298,9 @@ public struct AgentEvent: Codable, Sendable {
         seq: Int,
         stream: String,
         ts: Int,
+        sessionkey: String? = nil,
+        sessionid: String? = nil,
+        agentid: String? = nil,
         spawnedby: String? = nil,
         isheartbeat: Bool? = nil,
         data: [String: AnyCodable])
@@ -2086,6 +2309,9 @@ public struct AgentEvent: Codable, Sendable {
         self.seq = seq
         self.stream = stream
         self.ts = ts
+        self.sessionkey = sessionkey
+        self.sessionid = sessionid
+        self.agentid = agentid
         self.spawnedby = spawnedby
         self.isheartbeat = isheartbeat
         self.data = data
@@ -2096,6 +2322,9 @@ public struct AgentEvent: Codable, Sendable {
         case seq
         case stream
         case ts
+        case sessionkey = "sessionKey"
+        case sessionid = "sessionId"
+        case agentid = "agentId"
         case spawnedby = "spawnedBy"
         case isheartbeat = "isHeartbeat"
         case data
@@ -3999,6 +4228,1418 @@ public struct SecretsResolveResult: Codable, Sendable {
         case assignments
         case diagnostics
         case inactiverefpaths = "inactiveRefPaths"
+    }
+}
+
+public struct GatewaySessionRow: Codable, Sendable {
+    public let key: String
+    public let kind: AnyCodable
+    public let updatedat: AnyCodable
+    public let goal: SessionGoal?
+    public let spawnedby: String?
+    public let swarmgroupid: String?
+    public let icon: String?
+    public let agentstatus: [String: AnyCodable]?
+    public let lastrunerror: String?
+    public let hasautomation: Bool?
+    public let worktree: [String: AnyCodable]?
+    public let execnode: String?
+    public let execcwd: String?
+    public let spawnedworkspacedir: String?
+    public let spawnedcwd: String?
+    public let forkedfromparent: Bool?
+    public let spawndepth: Double?
+    public let subagentrole: AnyCodable?
+    public let subagentcontrolscope: AnyCodable?
+    public let label: String?
+    public let displayname: String?
+    public let derivedtitle: String?
+    public let llmtitle: String?
+    public let firstmessagepreview: String?
+    public let lastmessagepreview: String?
+    public let channel: String?
+    public let subject: String?
+    public let groupchannel: String?
+    public let space: String?
+    public let chattype: AnyCodable?
+    public let origin: [String: AnyCodable]?
+    public let sessionid: String?
+    public let systemsent: Bool?
+    public let abortedlastrun: Bool?
+    public let thinkinglevel: String?
+    public let thinkinglevels: [[String: AnyCodable]]?
+    public let thinkingoptions: [String]?
+    public let thinkingdefault: String?
+    public let fastmode: AnyCodable?
+    public let effectivefastmode: AnyCodable?
+    public let effectivefastmodesource: AnyCodable?
+    public let fastautoonseconds: Int?
+    public let verboselevel: String?
+    public let tracelevel: String?
+    public let reasoninglevel: String?
+    public let elevatedlevel: String?
+    public let sendpolicy: AnyCodable?
+    public let inputtokens: Double?
+    public let outputtokens: Double?
+    public let cacheread: Double?
+    public let cachewrite: Double?
+    public let totaltokens: Double?
+    public let totaltokensfresh: Bool?
+    public let estimatedcostusd: Double?
+    public let status: AnyCodable?
+    public let hasactiverun: Bool?
+    public let activerunids: [String]?
+    public let archived: Bool?
+    public let archivedat: AnyCodable?
+    public let pinned: Bool?
+    public let pinnedat: AnyCodable?
+    public let unread: Bool?
+    public let lastreadat: Double?
+    public let lastinteractionat: Double?
+    public let lastactivityat: Double?
+    public let category: AnyCodable?
+    public let subagentrunstate: AnyCodable?
+    public let hasactivesubagentrun: Bool?
+    public let startedat: Double?
+    public let endedat: Double?
+    public let runtimems: Double?
+    public let parentsessionkey: String?
+    public let childsessions: [String]?
+    public let responseusage: AnyCodable?
+    public let effectiveresponseusage: AnyCodable?
+    public let queuemode: AnyCodable?
+    public let effectivequeuemode: AnyCodable?
+    public let placement: SessionPlacement?
+    public let modelprovider: String?
+    public let model: String?
+    public let modelselectionlocked: Bool?
+    public let agentruntime: GatewayAgentRuntime?
+    public let contexttokens: Double?
+    public let contextbudgetstatus: [String: AnyCodable]?
+    public let deliverycontext: DeliveryContext?
+    public let lastchannel: String?
+    public let lastto: String?
+    public let lastaccountid: String?
+    public let lastthreadid: AnyCodable?
+    public let compactioncheckpointcount: Double?
+    public let latestcompactioncheckpoint: [String: AnyCodable]?
+    public let pluginextensions: [[String: AnyCodable]]?
+
+    public init(
+        key: String,
+        kind: AnyCodable,
+        updatedat: AnyCodable,
+        goal: SessionGoal? = nil,
+        spawnedby: String? = nil,
+        swarmgroupid: String? = nil,
+        icon: String? = nil,
+        agentstatus: [String: AnyCodable]? = nil,
+        lastrunerror: String? = nil,
+        hasautomation: Bool? = nil,
+        worktree: [String: AnyCodable]? = nil,
+        execnode: String? = nil,
+        execcwd: String? = nil,
+        spawnedworkspacedir: String? = nil,
+        spawnedcwd: String? = nil,
+        forkedfromparent: Bool? = nil,
+        spawndepth: Double? = nil,
+        subagentrole: AnyCodable? = nil,
+        subagentcontrolscope: AnyCodable? = nil,
+        label: String? = nil,
+        displayname: String? = nil,
+        derivedtitle: String? = nil,
+        llmtitle: String? = nil,
+        firstmessagepreview: String? = nil,
+        lastmessagepreview: String? = nil,
+        channel: String? = nil,
+        subject: String? = nil,
+        groupchannel: String? = nil,
+        space: String? = nil,
+        chattype: AnyCodable? = nil,
+        origin: [String: AnyCodable]? = nil,
+        sessionid: String? = nil,
+        systemsent: Bool? = nil,
+        abortedlastrun: Bool? = nil,
+        thinkinglevel: String? = nil,
+        thinkinglevels: [[String: AnyCodable]]? = nil,
+        thinkingoptions: [String]? = nil,
+        thinkingdefault: String? = nil,
+        fastmode: AnyCodable? = nil,
+        effectivefastmode: AnyCodable? = nil,
+        effectivefastmodesource: AnyCodable? = nil,
+        fastautoonseconds: Int? = nil,
+        verboselevel: String? = nil,
+        tracelevel: String? = nil,
+        reasoninglevel: String? = nil,
+        elevatedlevel: String? = nil,
+        sendpolicy: AnyCodable? = nil,
+        inputtokens: Double? = nil,
+        outputtokens: Double? = nil,
+        cacheread: Double? = nil,
+        cachewrite: Double? = nil,
+        totaltokens: Double? = nil,
+        totaltokensfresh: Bool? = nil,
+        estimatedcostusd: Double? = nil,
+        status: AnyCodable? = nil,
+        hasactiverun: Bool? = nil,
+        activerunids: [String]? = nil,
+        archived: Bool? = nil,
+        archivedat: AnyCodable? = nil,
+        pinned: Bool? = nil,
+        pinnedat: AnyCodable? = nil,
+        unread: Bool? = nil,
+        lastreadat: Double? = nil,
+        lastinteractionat: Double? = nil,
+        lastactivityat: Double? = nil,
+        category: AnyCodable? = nil,
+        subagentrunstate: AnyCodable? = nil,
+        hasactivesubagentrun: Bool? = nil,
+        startedat: Double? = nil,
+        endedat: Double? = nil,
+        runtimems: Double? = nil,
+        parentsessionkey: String? = nil,
+        childsessions: [String]? = nil,
+        responseusage: AnyCodable? = nil,
+        effectiveresponseusage: AnyCodable? = nil,
+        queuemode: AnyCodable? = nil,
+        effectivequeuemode: AnyCodable? = nil,
+        placement: SessionPlacement? = nil,
+        modelprovider: String? = nil,
+        model: String? = nil,
+        modelselectionlocked: Bool? = nil,
+        agentruntime: GatewayAgentRuntime? = nil,
+        contexttokens: Double? = nil,
+        contextbudgetstatus: [String: AnyCodable]? = nil,
+        deliverycontext: DeliveryContext? = nil,
+        lastchannel: String? = nil,
+        lastto: String? = nil,
+        lastaccountid: String? = nil,
+        lastthreadid: AnyCodable? = nil,
+        compactioncheckpointcount: Double? = nil,
+        latestcompactioncheckpoint: [String: AnyCodable]? = nil,
+        pluginextensions: [[String: AnyCodable]]? = nil)
+    {
+        self.key = key
+        self.kind = kind
+        self.updatedat = updatedat
+        self.goal = goal
+        self.spawnedby = spawnedby
+        self.swarmgroupid = swarmgroupid
+        self.icon = icon
+        self.agentstatus = agentstatus
+        self.lastrunerror = lastrunerror
+        self.hasautomation = hasautomation
+        self.worktree = worktree
+        self.execnode = execnode
+        self.execcwd = execcwd
+        self.spawnedworkspacedir = spawnedworkspacedir
+        self.spawnedcwd = spawnedcwd
+        self.forkedfromparent = forkedfromparent
+        self.spawndepth = spawndepth
+        self.subagentrole = subagentrole
+        self.subagentcontrolscope = subagentcontrolscope
+        self.label = label
+        self.displayname = displayname
+        self.derivedtitle = derivedtitle
+        self.llmtitle = llmtitle
+        self.firstmessagepreview = firstmessagepreview
+        self.lastmessagepreview = lastmessagepreview
+        self.channel = channel
+        self.subject = subject
+        self.groupchannel = groupchannel
+        self.space = space
+        self.chattype = chattype
+        self.origin = origin
+        self.sessionid = sessionid
+        self.systemsent = systemsent
+        self.abortedlastrun = abortedlastrun
+        self.thinkinglevel = thinkinglevel
+        self.thinkinglevels = thinkinglevels
+        self.thinkingoptions = thinkingoptions
+        self.thinkingdefault = thinkingdefault
+        self.fastmode = fastmode
+        self.effectivefastmode = effectivefastmode
+        self.effectivefastmodesource = effectivefastmodesource
+        self.fastautoonseconds = fastautoonseconds
+        self.verboselevel = verboselevel
+        self.tracelevel = tracelevel
+        self.reasoninglevel = reasoninglevel
+        self.elevatedlevel = elevatedlevel
+        self.sendpolicy = sendpolicy
+        self.inputtokens = inputtokens
+        self.outputtokens = outputtokens
+        self.cacheread = cacheread
+        self.cachewrite = cachewrite
+        self.totaltokens = totaltokens
+        self.totaltokensfresh = totaltokensfresh
+        self.estimatedcostusd = estimatedcostusd
+        self.status = status
+        self.hasactiverun = hasactiverun
+        self.activerunids = activerunids
+        self.archived = archived
+        self.archivedat = archivedat
+        self.pinned = pinned
+        self.pinnedat = pinnedat
+        self.unread = unread
+        self.lastreadat = lastreadat
+        self.lastinteractionat = lastinteractionat
+        self.lastactivityat = lastactivityat
+        self.category = category
+        self.subagentrunstate = subagentrunstate
+        self.hasactivesubagentrun = hasactivesubagentrun
+        self.startedat = startedat
+        self.endedat = endedat
+        self.runtimems = runtimems
+        self.parentsessionkey = parentsessionkey
+        self.childsessions = childsessions
+        self.responseusage = responseusage
+        self.effectiveresponseusage = effectiveresponseusage
+        self.queuemode = queuemode
+        self.effectivequeuemode = effectivequeuemode
+        self.placement = placement
+        self.modelprovider = modelprovider
+        self.model = model
+        self.modelselectionlocked = modelselectionlocked
+        self.agentruntime = agentruntime
+        self.contexttokens = contexttokens
+        self.contextbudgetstatus = contextbudgetstatus
+        self.deliverycontext = deliverycontext
+        self.lastchannel = lastchannel
+        self.lastto = lastto
+        self.lastaccountid = lastaccountid
+        self.lastthreadid = lastthreadid
+        self.compactioncheckpointcount = compactioncheckpointcount
+        self.latestcompactioncheckpoint = latestcompactioncheckpoint
+        self.pluginextensions = pluginextensions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case kind
+        case updatedat = "updatedAt"
+        case goal
+        case spawnedby = "spawnedBy"
+        case swarmgroupid = "swarmGroupId"
+        case icon
+        case agentstatus = "agentStatus"
+        case lastrunerror = "lastRunError"
+        case hasautomation = "hasAutomation"
+        case worktree
+        case execnode = "execNode"
+        case execcwd = "execCwd"
+        case spawnedworkspacedir = "spawnedWorkspaceDir"
+        case spawnedcwd = "spawnedCwd"
+        case forkedfromparent = "forkedFromParent"
+        case spawndepth = "spawnDepth"
+        case subagentrole = "subagentRole"
+        case subagentcontrolscope = "subagentControlScope"
+        case label
+        case displayname = "displayName"
+        case derivedtitle = "derivedTitle"
+        case llmtitle = "llmTitle"
+        case firstmessagepreview = "firstMessagePreview"
+        case lastmessagepreview = "lastMessagePreview"
+        case channel
+        case subject
+        case groupchannel = "groupChannel"
+        case space
+        case chattype = "chatType"
+        case origin
+        case sessionid = "sessionId"
+        case systemsent = "systemSent"
+        case abortedlastrun = "abortedLastRun"
+        case thinkinglevel = "thinkingLevel"
+        case thinkinglevels = "thinkingLevels"
+        case thinkingoptions = "thinkingOptions"
+        case thinkingdefault = "thinkingDefault"
+        case fastmode = "fastMode"
+        case effectivefastmode = "effectiveFastMode"
+        case effectivefastmodesource = "effectiveFastModeSource"
+        case fastautoonseconds = "fastAutoOnSeconds"
+        case verboselevel = "verboseLevel"
+        case tracelevel = "traceLevel"
+        case reasoninglevel = "reasoningLevel"
+        case elevatedlevel = "elevatedLevel"
+        case sendpolicy = "sendPolicy"
+        case inputtokens = "inputTokens"
+        case outputtokens = "outputTokens"
+        case cacheread = "cacheRead"
+        case cachewrite = "cacheWrite"
+        case totaltokens = "totalTokens"
+        case totaltokensfresh = "totalTokensFresh"
+        case estimatedcostusd = "estimatedCostUsd"
+        case status
+        case hasactiverun = "hasActiveRun"
+        case activerunids = "activeRunIds"
+        case archived
+        case archivedat = "archivedAt"
+        case pinned
+        case pinnedat = "pinnedAt"
+        case unread
+        case lastreadat = "lastReadAt"
+        case lastinteractionat = "lastInteractionAt"
+        case lastactivityat = "lastActivityAt"
+        case category
+        case subagentrunstate = "subagentRunState"
+        case hasactivesubagentrun = "hasActiveSubagentRun"
+        case startedat = "startedAt"
+        case endedat = "endedAt"
+        case runtimems = "runtimeMs"
+        case parentsessionkey = "parentSessionKey"
+        case childsessions = "childSessions"
+        case responseusage = "responseUsage"
+        case effectiveresponseusage = "effectiveResponseUsage"
+        case queuemode = "queueMode"
+        case effectivequeuemode = "effectiveQueueMode"
+        case placement
+        case modelprovider = "modelProvider"
+        case model
+        case modelselectionlocked = "modelSelectionLocked"
+        case agentruntime = "agentRuntime"
+        case contexttokens = "contextTokens"
+        case contextbudgetstatus = "contextBudgetStatus"
+        case deliverycontext = "deliveryContext"
+        case lastchannel = "lastChannel"
+        case lastto = "lastTo"
+        case lastaccountid = "lastAccountId"
+        case lastthreadid = "lastThreadId"
+        case compactioncheckpointcount = "compactionCheckpointCount"
+        case latestcompactioncheckpoint = "latestCompactionCheckpoint"
+        case pluginextensions = "pluginExtensions"
+    }
+}
+
+public struct GatewaySessionsDefaults: Codable, Sendable {
+    public let modelprovider: AnyCodable
+    public let model: AnyCodable
+    public let contexttokens: AnyCodable
+    public let agentruntime: GatewayAgentRuntime?
+    public let thinkinglevels: [[String: AnyCodable]]?
+    public let thinkingoptions: [String]?
+    public let thinkingdefault: String?
+
+    public init(
+        modelprovider: AnyCodable,
+        model: AnyCodable,
+        contexttokens: AnyCodable,
+        agentruntime: GatewayAgentRuntime? = nil,
+        thinkinglevels: [[String: AnyCodable]]? = nil,
+        thinkingoptions: [String]? = nil,
+        thinkingdefault: String? = nil)
+    {
+        self.modelprovider = modelprovider
+        self.model = model
+        self.contexttokens = contexttokens
+        self.agentruntime = agentruntime
+        self.thinkinglevels = thinkinglevels
+        self.thinkingoptions = thinkingoptions
+        self.thinkingdefault = thinkingdefault
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case modelprovider = "modelProvider"
+        case model
+        case contexttokens = "contextTokens"
+        case agentruntime = "agentRuntime"
+        case thinkinglevels = "thinkingLevels"
+        case thinkingoptions = "thinkingOptions"
+        case thinkingdefault = "thinkingDefault"
+    }
+}
+
+public struct SessionGoal: Codable, Sendable {
+    public let schemaversion: Double
+    public let id: String
+    public let objective: String
+    public let status: AnyCodable
+    public let createdat: Double
+    public let updatedat: Double
+    public let tokenstart: Double
+    public let tokenstartfresh: Bool?
+    public let tokensused: Double
+    public let tokenbudget: Double?
+    public let continuationturns: Double
+    public let laststatusnote: String?
+    public let pausedat: Double?
+    public let blockedat: Double?
+    public let completedat: Double?
+    public let usagelimitedat: Double?
+    public let budgetlimitedat: Double?
+
+    public init(
+        schemaversion: Double,
+        id: String,
+        objective: String,
+        status: AnyCodable,
+        createdat: Double,
+        updatedat: Double,
+        tokenstart: Double,
+        tokenstartfresh: Bool? = nil,
+        tokensused: Double,
+        tokenbudget: Double? = nil,
+        continuationturns: Double,
+        laststatusnote: String? = nil,
+        pausedat: Double? = nil,
+        blockedat: Double? = nil,
+        completedat: Double? = nil,
+        usagelimitedat: Double? = nil,
+        budgetlimitedat: Double? = nil)
+    {
+        self.schemaversion = schemaversion
+        self.id = id
+        self.objective = objective
+        self.status = status
+        self.createdat = createdat
+        self.updatedat = updatedat
+        self.tokenstart = tokenstart
+        self.tokenstartfresh = tokenstartfresh
+        self.tokensused = tokensused
+        self.tokenbudget = tokenbudget
+        self.continuationturns = continuationturns
+        self.laststatusnote = laststatusnote
+        self.pausedat = pausedat
+        self.blockedat = blockedat
+        self.completedat = completedat
+        self.usagelimitedat = usagelimitedat
+        self.budgetlimitedat = budgetlimitedat
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaversion = "schemaVersion"
+        case id
+        case objective
+        case status
+        case createdat = "createdAt"
+        case updatedat = "updatedAt"
+        case tokenstart = "tokenStart"
+        case tokenstartfresh = "tokenStartFresh"
+        case tokensused = "tokensUsed"
+        case tokenbudget = "tokenBudget"
+        case continuationturns = "continuationTurns"
+        case laststatusnote = "lastStatusNote"
+        case pausedat = "pausedAt"
+        case blockedat = "blockedAt"
+        case completedat = "completedAt"
+        case usagelimitedat = "usageLimitedAt"
+        case budgetlimitedat = "budgetLimitedAt"
+    }
+}
+
+public struct GatewayAgentRuntime: Codable, Sendable {
+    public let id: String
+    public let fallback: AnyCodable?
+    public let source: AnyCodable
+
+    public init(
+        id: String,
+        fallback: AnyCodable? = nil,
+        source: AnyCodable)
+    {
+        self.id = id
+        self.fallback = fallback
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case fallback
+        case source
+    }
+}
+
+public struct DeliveryContext: Codable, Sendable {
+    public let channel: String?
+    public let to: String?
+    public let accountid: String?
+    public let threadid: AnyCodable?
+    public let deliveryintent: [String: AnyCodable]?
+
+    public init(
+        channel: String? = nil,
+        to: String? = nil,
+        accountid: String? = nil,
+        threadid: AnyCodable? = nil,
+        deliveryintent: [String: AnyCodable]? = nil)
+    {
+        self.channel = channel
+        self.to = to
+        self.accountid = accountid
+        self.threadid = threadid
+        self.deliveryintent = deliveryintent
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case channel
+        case to
+        case accountid = "accountId"
+        case threadid = "threadId"
+        case deliveryintent = "deliveryIntent"
+    }
+}
+
+public struct SessionsListResult: Codable, Sendable {
+    public let ts: Double
+    public let path: String
+    public let count: Double
+    public let totalcount: Double?
+    public let limitapplied: Double?
+    public let offset: Double?
+    public let nextoffset: AnyCodable?
+    public let hasmore: Bool?
+    public let defaults: GatewaySessionsDefaults
+    public let sessions: [GatewaySessionRow]
+
+    public init(
+        ts: Double,
+        path: String,
+        count: Double,
+        totalcount: Double? = nil,
+        limitapplied: Double? = nil,
+        offset: Double? = nil,
+        nextoffset: AnyCodable? = nil,
+        hasmore: Bool? = nil,
+        defaults: GatewaySessionsDefaults,
+        sessions: [GatewaySessionRow])
+    {
+        self.ts = ts
+        self.path = path
+        self.count = count
+        self.totalcount = totalcount
+        self.limitapplied = limitapplied
+        self.offset = offset
+        self.nextoffset = nextoffset
+        self.hasmore = hasmore
+        self.defaults = defaults
+        self.sessions = sessions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ts
+        case path
+        case count
+        case totalcount = "totalCount"
+        case limitapplied = "limitApplied"
+        case offset
+        case nextoffset = "nextOffset"
+        case hasmore = "hasMore"
+        case defaults
+        case sessions
+    }
+}
+
+public struct SessionsChangedEvent: Codable, Sendable {
+    public let ts: Double
+    public let sessionkey: String?
+    public let agentid: String?
+    public let reason: String?
+    public let compacted: Bool?
+    public let phase: String?
+    public let runid: String?
+    public let clientrunid: String?
+    public let messageid: String?
+    public let messageseq: Double?
+    public let kind: AnyCodable?
+    public let updatedat: AnyCodable?
+    public let goal: AnyCodable?
+    public let session: GatewaySessionRow?
+    public let spawnedby: String?
+    public let swarmgroupid: String?
+    public let icon: String?
+    public let agentstatus: [String: AnyCodable]?
+    public let lastrunerror: String?
+    public let hasautomation: Bool?
+    public let worktree: [String: AnyCodable]?
+    public let execnode: String?
+    public let execcwd: String?
+    public let spawnedworkspacedir: String?
+    public let spawnedcwd: String?
+    public let forkedfromparent: Bool?
+    public let spawndepth: Double?
+    public let subagentrole: AnyCodable?
+    public let subagentcontrolscope: AnyCodable?
+    public let label: String?
+    public let displayname: String?
+    public let derivedtitle: String?
+    public let llmtitle: String?
+    public let firstmessagepreview: String?
+    public let lastmessagepreview: String?
+    public let channel: String?
+    public let subject: String?
+    public let groupchannel: String?
+    public let space: String?
+    public let chattype: AnyCodable?
+    public let origin: [String: AnyCodable]?
+    public let sessionid: String?
+    public let systemsent: Bool?
+    public let abortedlastrun: Bool?
+    public let thinkinglevel: String?
+    public let thinkinglevels: [[String: AnyCodable]]?
+    public let thinkingoptions: [String]?
+    public let thinkingdefault: String?
+    public let fastmode: AnyCodable?
+    public let effectivefastmode: AnyCodable?
+    public let effectivefastmodesource: AnyCodable?
+    public let fastautoonseconds: Int?
+    public let verboselevel: String?
+    public let tracelevel: String?
+    public let reasoninglevel: String?
+    public let elevatedlevel: String?
+    public let sendpolicy: AnyCodable?
+    public let inputtokens: Double?
+    public let outputtokens: Double?
+    public let cacheread: Double?
+    public let cachewrite: Double?
+    public let totaltokens: Double?
+    public let totaltokensfresh: Bool?
+    public let estimatedcostusd: Double?
+    public let status: AnyCodable?
+    public let hasactiverun: Bool?
+    public let activerunids: [String]?
+    public let archived: Bool?
+    public let archivedat: AnyCodable?
+    public let pinned: Bool?
+    public let pinnedat: AnyCodable?
+    public let unread: Bool?
+    public let lastreadat: Double?
+    public let lastinteractionat: Double?
+    public let lastactivityat: Double?
+    public let category: AnyCodable?
+    public let subagentrunstate: AnyCodable?
+    public let hasactivesubagentrun: Bool?
+    public let startedat: Double?
+    public let endedat: Double?
+    public let runtimems: Double?
+    public let parentsessionkey: String?
+    public let childsessions: [String]?
+    public let responseusage: AnyCodable?
+    public let effectiveresponseusage: AnyCodable?
+    public let queuemode: AnyCodable?
+    public let effectivequeuemode: AnyCodable?
+    public let placement: SessionPlacement?
+    public let modelprovider: String?
+    public let model: String?
+    public let modelselectionlocked: Bool?
+    public let agentruntime: GatewayAgentRuntime?
+    public let contexttokens: Double?
+    public let contextbudgetstatus: [String: AnyCodable]?
+    public let deliverycontext: DeliveryContext?
+    public let lastchannel: String?
+    public let lastto: String?
+    public let lastaccountid: String?
+    public let lastthreadid: AnyCodable?
+    public let compactioncheckpointcount: Double?
+    public let latestcompactioncheckpoint: [String: AnyCodable]?
+    public let pluginextensions: [[String: AnyCodable]]?
+
+    public init(
+        ts: Double,
+        sessionkey: String? = nil,
+        agentid: String? = nil,
+        reason: String? = nil,
+        compacted: Bool? = nil,
+        phase: String? = nil,
+        runid: String? = nil,
+        clientrunid: String? = nil,
+        messageid: String? = nil,
+        messageseq: Double? = nil,
+        kind: AnyCodable? = nil,
+        updatedat: AnyCodable? = nil,
+        goal: AnyCodable? = nil,
+        session: GatewaySessionRow? = nil,
+        spawnedby: String? = nil,
+        swarmgroupid: String? = nil,
+        icon: String? = nil,
+        agentstatus: [String: AnyCodable]? = nil,
+        lastrunerror: String? = nil,
+        hasautomation: Bool? = nil,
+        worktree: [String: AnyCodable]? = nil,
+        execnode: String? = nil,
+        execcwd: String? = nil,
+        spawnedworkspacedir: String? = nil,
+        spawnedcwd: String? = nil,
+        forkedfromparent: Bool? = nil,
+        spawndepth: Double? = nil,
+        subagentrole: AnyCodable? = nil,
+        subagentcontrolscope: AnyCodable? = nil,
+        label: String? = nil,
+        displayname: String? = nil,
+        derivedtitle: String? = nil,
+        llmtitle: String? = nil,
+        firstmessagepreview: String? = nil,
+        lastmessagepreview: String? = nil,
+        channel: String? = nil,
+        subject: String? = nil,
+        groupchannel: String? = nil,
+        space: String? = nil,
+        chattype: AnyCodable? = nil,
+        origin: [String: AnyCodable]? = nil,
+        sessionid: String? = nil,
+        systemsent: Bool? = nil,
+        abortedlastrun: Bool? = nil,
+        thinkinglevel: String? = nil,
+        thinkinglevels: [[String: AnyCodable]]? = nil,
+        thinkingoptions: [String]? = nil,
+        thinkingdefault: String? = nil,
+        fastmode: AnyCodable? = nil,
+        effectivefastmode: AnyCodable? = nil,
+        effectivefastmodesource: AnyCodable? = nil,
+        fastautoonseconds: Int? = nil,
+        verboselevel: String? = nil,
+        tracelevel: String? = nil,
+        reasoninglevel: String? = nil,
+        elevatedlevel: String? = nil,
+        sendpolicy: AnyCodable? = nil,
+        inputtokens: Double? = nil,
+        outputtokens: Double? = nil,
+        cacheread: Double? = nil,
+        cachewrite: Double? = nil,
+        totaltokens: Double? = nil,
+        totaltokensfresh: Bool? = nil,
+        estimatedcostusd: Double? = nil,
+        status: AnyCodable? = nil,
+        hasactiverun: Bool? = nil,
+        activerunids: [String]? = nil,
+        archived: Bool? = nil,
+        archivedat: AnyCodable? = nil,
+        pinned: Bool? = nil,
+        pinnedat: AnyCodable? = nil,
+        unread: Bool? = nil,
+        lastreadat: Double? = nil,
+        lastinteractionat: Double? = nil,
+        lastactivityat: Double? = nil,
+        category: AnyCodable? = nil,
+        subagentrunstate: AnyCodable? = nil,
+        hasactivesubagentrun: Bool? = nil,
+        startedat: Double? = nil,
+        endedat: Double? = nil,
+        runtimems: Double? = nil,
+        parentsessionkey: String? = nil,
+        childsessions: [String]? = nil,
+        responseusage: AnyCodable? = nil,
+        effectiveresponseusage: AnyCodable? = nil,
+        queuemode: AnyCodable? = nil,
+        effectivequeuemode: AnyCodable? = nil,
+        placement: SessionPlacement? = nil,
+        modelprovider: String? = nil,
+        model: String? = nil,
+        modelselectionlocked: Bool? = nil,
+        agentruntime: GatewayAgentRuntime? = nil,
+        contexttokens: Double? = nil,
+        contextbudgetstatus: [String: AnyCodable]? = nil,
+        deliverycontext: DeliveryContext? = nil,
+        lastchannel: String? = nil,
+        lastto: String? = nil,
+        lastaccountid: String? = nil,
+        lastthreadid: AnyCodable? = nil,
+        compactioncheckpointcount: Double? = nil,
+        latestcompactioncheckpoint: [String: AnyCodable]? = nil,
+        pluginextensions: [[String: AnyCodable]]? = nil)
+    {
+        self.ts = ts
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.reason = reason
+        self.compacted = compacted
+        self.phase = phase
+        self.runid = runid
+        self.clientrunid = clientrunid
+        self.messageid = messageid
+        self.messageseq = messageseq
+        self.kind = kind
+        self.updatedat = updatedat
+        self.goal = goal
+        self.session = session
+        self.spawnedby = spawnedby
+        self.swarmgroupid = swarmgroupid
+        self.icon = icon
+        self.agentstatus = agentstatus
+        self.lastrunerror = lastrunerror
+        self.hasautomation = hasautomation
+        self.worktree = worktree
+        self.execnode = execnode
+        self.execcwd = execcwd
+        self.spawnedworkspacedir = spawnedworkspacedir
+        self.spawnedcwd = spawnedcwd
+        self.forkedfromparent = forkedfromparent
+        self.spawndepth = spawndepth
+        self.subagentrole = subagentrole
+        self.subagentcontrolscope = subagentcontrolscope
+        self.label = label
+        self.displayname = displayname
+        self.derivedtitle = derivedtitle
+        self.llmtitle = llmtitle
+        self.firstmessagepreview = firstmessagepreview
+        self.lastmessagepreview = lastmessagepreview
+        self.channel = channel
+        self.subject = subject
+        self.groupchannel = groupchannel
+        self.space = space
+        self.chattype = chattype
+        self.origin = origin
+        self.sessionid = sessionid
+        self.systemsent = systemsent
+        self.abortedlastrun = abortedlastrun
+        self.thinkinglevel = thinkinglevel
+        self.thinkinglevels = thinkinglevels
+        self.thinkingoptions = thinkingoptions
+        self.thinkingdefault = thinkingdefault
+        self.fastmode = fastmode
+        self.effectivefastmode = effectivefastmode
+        self.effectivefastmodesource = effectivefastmodesource
+        self.fastautoonseconds = fastautoonseconds
+        self.verboselevel = verboselevel
+        self.tracelevel = tracelevel
+        self.reasoninglevel = reasoninglevel
+        self.elevatedlevel = elevatedlevel
+        self.sendpolicy = sendpolicy
+        self.inputtokens = inputtokens
+        self.outputtokens = outputtokens
+        self.cacheread = cacheread
+        self.cachewrite = cachewrite
+        self.totaltokens = totaltokens
+        self.totaltokensfresh = totaltokensfresh
+        self.estimatedcostusd = estimatedcostusd
+        self.status = status
+        self.hasactiverun = hasactiverun
+        self.activerunids = activerunids
+        self.archived = archived
+        self.archivedat = archivedat
+        self.pinned = pinned
+        self.pinnedat = pinnedat
+        self.unread = unread
+        self.lastreadat = lastreadat
+        self.lastinteractionat = lastinteractionat
+        self.lastactivityat = lastactivityat
+        self.category = category
+        self.subagentrunstate = subagentrunstate
+        self.hasactivesubagentrun = hasactivesubagentrun
+        self.startedat = startedat
+        self.endedat = endedat
+        self.runtimems = runtimems
+        self.parentsessionkey = parentsessionkey
+        self.childsessions = childsessions
+        self.responseusage = responseusage
+        self.effectiveresponseusage = effectiveresponseusage
+        self.queuemode = queuemode
+        self.effectivequeuemode = effectivequeuemode
+        self.placement = placement
+        self.modelprovider = modelprovider
+        self.model = model
+        self.modelselectionlocked = modelselectionlocked
+        self.agentruntime = agentruntime
+        self.contexttokens = contexttokens
+        self.contextbudgetstatus = contextbudgetstatus
+        self.deliverycontext = deliverycontext
+        self.lastchannel = lastchannel
+        self.lastto = lastto
+        self.lastaccountid = lastaccountid
+        self.lastthreadid = lastthreadid
+        self.compactioncheckpointcount = compactioncheckpointcount
+        self.latestcompactioncheckpoint = latestcompactioncheckpoint
+        self.pluginextensions = pluginextensions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ts
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case reason
+        case compacted
+        case phase
+        case runid = "runId"
+        case clientrunid = "clientRunId"
+        case messageid = "messageId"
+        case messageseq = "messageSeq"
+        case kind
+        case updatedat = "updatedAt"
+        case goal
+        case session
+        case spawnedby = "spawnedBy"
+        case swarmgroupid = "swarmGroupId"
+        case icon
+        case agentstatus = "agentStatus"
+        case lastrunerror = "lastRunError"
+        case hasautomation = "hasAutomation"
+        case worktree
+        case execnode = "execNode"
+        case execcwd = "execCwd"
+        case spawnedworkspacedir = "spawnedWorkspaceDir"
+        case spawnedcwd = "spawnedCwd"
+        case forkedfromparent = "forkedFromParent"
+        case spawndepth = "spawnDepth"
+        case subagentrole = "subagentRole"
+        case subagentcontrolscope = "subagentControlScope"
+        case label
+        case displayname = "displayName"
+        case derivedtitle = "derivedTitle"
+        case llmtitle = "llmTitle"
+        case firstmessagepreview = "firstMessagePreview"
+        case lastmessagepreview = "lastMessagePreview"
+        case channel
+        case subject
+        case groupchannel = "groupChannel"
+        case space
+        case chattype = "chatType"
+        case origin
+        case sessionid = "sessionId"
+        case systemsent = "systemSent"
+        case abortedlastrun = "abortedLastRun"
+        case thinkinglevel = "thinkingLevel"
+        case thinkinglevels = "thinkingLevels"
+        case thinkingoptions = "thinkingOptions"
+        case thinkingdefault = "thinkingDefault"
+        case fastmode = "fastMode"
+        case effectivefastmode = "effectiveFastMode"
+        case effectivefastmodesource = "effectiveFastModeSource"
+        case fastautoonseconds = "fastAutoOnSeconds"
+        case verboselevel = "verboseLevel"
+        case tracelevel = "traceLevel"
+        case reasoninglevel = "reasoningLevel"
+        case elevatedlevel = "elevatedLevel"
+        case sendpolicy = "sendPolicy"
+        case inputtokens = "inputTokens"
+        case outputtokens = "outputTokens"
+        case cacheread = "cacheRead"
+        case cachewrite = "cacheWrite"
+        case totaltokens = "totalTokens"
+        case totaltokensfresh = "totalTokensFresh"
+        case estimatedcostusd = "estimatedCostUsd"
+        case status
+        case hasactiverun = "hasActiveRun"
+        case activerunids = "activeRunIds"
+        case archived
+        case archivedat = "archivedAt"
+        case pinned
+        case pinnedat = "pinnedAt"
+        case unread
+        case lastreadat = "lastReadAt"
+        case lastinteractionat = "lastInteractionAt"
+        case lastactivityat = "lastActivityAt"
+        case category
+        case subagentrunstate = "subagentRunState"
+        case hasactivesubagentrun = "hasActiveSubagentRun"
+        case startedat = "startedAt"
+        case endedat = "endedAt"
+        case runtimems = "runtimeMs"
+        case parentsessionkey = "parentSessionKey"
+        case childsessions = "childSessions"
+        case responseusage = "responseUsage"
+        case effectiveresponseusage = "effectiveResponseUsage"
+        case queuemode = "queueMode"
+        case effectivequeuemode = "effectiveQueueMode"
+        case placement
+        case modelprovider = "modelProvider"
+        case model
+        case modelselectionlocked = "modelSelectionLocked"
+        case agentruntime = "agentRuntime"
+        case contexttokens = "contextTokens"
+        case contextbudgetstatus = "contextBudgetStatus"
+        case deliverycontext = "deliveryContext"
+        case lastchannel = "lastChannel"
+        case lastto = "lastTo"
+        case lastaccountid = "lastAccountId"
+        case lastthreadid = "lastThreadId"
+        case compactioncheckpointcount = "compactionCheckpointCount"
+        case latestcompactioncheckpoint = "latestCompactionCheckpoint"
+        case pluginextensions = "pluginExtensions"
+    }
+}
+
+public struct SessionMessageEvent: Codable, Sendable {
+    public let sessionkey: String
+    public let agentid: String?
+    public let message: AnyCodable
+    public let messageid: String?
+    public let messageseq: Double?
+    public let kind: AnyCodable?
+    public let updatedat: AnyCodable?
+    public let goal: AnyCodable?
+    public let session: GatewaySessionRow?
+    public let spawnedby: String?
+    public let swarmgroupid: String?
+    public let icon: String?
+    public let agentstatus: [String: AnyCodable]?
+    public let lastrunerror: String?
+    public let hasautomation: Bool?
+    public let worktree: [String: AnyCodable]?
+    public let execnode: String?
+    public let execcwd: String?
+    public let spawnedworkspacedir: String?
+    public let spawnedcwd: String?
+    public let forkedfromparent: Bool?
+    public let spawndepth: Double?
+    public let subagentrole: AnyCodable?
+    public let subagentcontrolscope: AnyCodable?
+    public let label: String?
+    public let displayname: String?
+    public let derivedtitle: String?
+    public let llmtitle: String?
+    public let firstmessagepreview: String?
+    public let lastmessagepreview: String?
+    public let channel: String?
+    public let subject: String?
+    public let groupchannel: String?
+    public let space: String?
+    public let chattype: AnyCodable?
+    public let origin: [String: AnyCodable]?
+    public let sessionid: String?
+    public let systemsent: Bool?
+    public let abortedlastrun: Bool?
+    public let thinkinglevel: String?
+    public let thinkinglevels: [[String: AnyCodable]]?
+    public let thinkingoptions: [String]?
+    public let thinkingdefault: String?
+    public let fastmode: AnyCodable?
+    public let effectivefastmode: AnyCodable?
+    public let effectivefastmodesource: AnyCodable?
+    public let fastautoonseconds: Int?
+    public let verboselevel: String?
+    public let tracelevel: String?
+    public let reasoninglevel: String?
+    public let elevatedlevel: String?
+    public let sendpolicy: AnyCodable?
+    public let inputtokens: Double?
+    public let outputtokens: Double?
+    public let cacheread: Double?
+    public let cachewrite: Double?
+    public let totaltokens: Double?
+    public let totaltokensfresh: Bool?
+    public let estimatedcostusd: Double?
+    public let status: AnyCodable?
+    public let hasactiverun: Bool?
+    public let activerunids: [String]?
+    public let archived: Bool?
+    public let archivedat: AnyCodable?
+    public let pinned: Bool?
+    public let pinnedat: AnyCodable?
+    public let unread: Bool?
+    public let lastreadat: Double?
+    public let lastinteractionat: Double?
+    public let lastactivityat: Double?
+    public let category: AnyCodable?
+    public let subagentrunstate: AnyCodable?
+    public let hasactivesubagentrun: Bool?
+    public let startedat: Double?
+    public let endedat: Double?
+    public let runtimems: Double?
+    public let parentsessionkey: String?
+    public let childsessions: [String]?
+    public let responseusage: AnyCodable?
+    public let effectiveresponseusage: AnyCodable?
+    public let queuemode: AnyCodable?
+    public let effectivequeuemode: AnyCodable?
+    public let placement: SessionPlacement?
+    public let modelprovider: String?
+    public let model: String?
+    public let modelselectionlocked: Bool?
+    public let agentruntime: GatewayAgentRuntime?
+    public let contexttokens: Double?
+    public let contextbudgetstatus: [String: AnyCodable]?
+    public let deliverycontext: DeliveryContext?
+    public let lastchannel: String?
+    public let lastto: String?
+    public let lastaccountid: String?
+    public let lastthreadid: AnyCodable?
+    public let compactioncheckpointcount: Double?
+    public let latestcompactioncheckpoint: [String: AnyCodable]?
+    public let pluginextensions: [[String: AnyCodable]]?
+
+    public init(
+        sessionkey: String,
+        agentid: String? = nil,
+        message: AnyCodable,
+        messageid: String? = nil,
+        messageseq: Double? = nil,
+        kind: AnyCodable? = nil,
+        updatedat: AnyCodable? = nil,
+        goal: AnyCodable? = nil,
+        session: GatewaySessionRow? = nil,
+        spawnedby: String? = nil,
+        swarmgroupid: String? = nil,
+        icon: String? = nil,
+        agentstatus: [String: AnyCodable]? = nil,
+        lastrunerror: String? = nil,
+        hasautomation: Bool? = nil,
+        worktree: [String: AnyCodable]? = nil,
+        execnode: String? = nil,
+        execcwd: String? = nil,
+        spawnedworkspacedir: String? = nil,
+        spawnedcwd: String? = nil,
+        forkedfromparent: Bool? = nil,
+        spawndepth: Double? = nil,
+        subagentrole: AnyCodable? = nil,
+        subagentcontrolscope: AnyCodable? = nil,
+        label: String? = nil,
+        displayname: String? = nil,
+        derivedtitle: String? = nil,
+        llmtitle: String? = nil,
+        firstmessagepreview: String? = nil,
+        lastmessagepreview: String? = nil,
+        channel: String? = nil,
+        subject: String? = nil,
+        groupchannel: String? = nil,
+        space: String? = nil,
+        chattype: AnyCodable? = nil,
+        origin: [String: AnyCodable]? = nil,
+        sessionid: String? = nil,
+        systemsent: Bool? = nil,
+        abortedlastrun: Bool? = nil,
+        thinkinglevel: String? = nil,
+        thinkinglevels: [[String: AnyCodable]]? = nil,
+        thinkingoptions: [String]? = nil,
+        thinkingdefault: String? = nil,
+        fastmode: AnyCodable? = nil,
+        effectivefastmode: AnyCodable? = nil,
+        effectivefastmodesource: AnyCodable? = nil,
+        fastautoonseconds: Int? = nil,
+        verboselevel: String? = nil,
+        tracelevel: String? = nil,
+        reasoninglevel: String? = nil,
+        elevatedlevel: String? = nil,
+        sendpolicy: AnyCodable? = nil,
+        inputtokens: Double? = nil,
+        outputtokens: Double? = nil,
+        cacheread: Double? = nil,
+        cachewrite: Double? = nil,
+        totaltokens: Double? = nil,
+        totaltokensfresh: Bool? = nil,
+        estimatedcostusd: Double? = nil,
+        status: AnyCodable? = nil,
+        hasactiverun: Bool? = nil,
+        activerunids: [String]? = nil,
+        archived: Bool? = nil,
+        archivedat: AnyCodable? = nil,
+        pinned: Bool? = nil,
+        pinnedat: AnyCodable? = nil,
+        unread: Bool? = nil,
+        lastreadat: Double? = nil,
+        lastinteractionat: Double? = nil,
+        lastactivityat: Double? = nil,
+        category: AnyCodable? = nil,
+        subagentrunstate: AnyCodable? = nil,
+        hasactivesubagentrun: Bool? = nil,
+        startedat: Double? = nil,
+        endedat: Double? = nil,
+        runtimems: Double? = nil,
+        parentsessionkey: String? = nil,
+        childsessions: [String]? = nil,
+        responseusage: AnyCodable? = nil,
+        effectiveresponseusage: AnyCodable? = nil,
+        queuemode: AnyCodable? = nil,
+        effectivequeuemode: AnyCodable? = nil,
+        placement: SessionPlacement? = nil,
+        modelprovider: String? = nil,
+        model: String? = nil,
+        modelselectionlocked: Bool? = nil,
+        agentruntime: GatewayAgentRuntime? = nil,
+        contexttokens: Double? = nil,
+        contextbudgetstatus: [String: AnyCodable]? = nil,
+        deliverycontext: DeliveryContext? = nil,
+        lastchannel: String? = nil,
+        lastto: String? = nil,
+        lastaccountid: String? = nil,
+        lastthreadid: AnyCodable? = nil,
+        compactioncheckpointcount: Double? = nil,
+        latestcompactioncheckpoint: [String: AnyCodable]? = nil,
+        pluginextensions: [[String: AnyCodable]]? = nil)
+    {
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.message = message
+        self.messageid = messageid
+        self.messageseq = messageseq
+        self.kind = kind
+        self.updatedat = updatedat
+        self.goal = goal
+        self.session = session
+        self.spawnedby = spawnedby
+        self.swarmgroupid = swarmgroupid
+        self.icon = icon
+        self.agentstatus = agentstatus
+        self.lastrunerror = lastrunerror
+        self.hasautomation = hasautomation
+        self.worktree = worktree
+        self.execnode = execnode
+        self.execcwd = execcwd
+        self.spawnedworkspacedir = spawnedworkspacedir
+        self.spawnedcwd = spawnedcwd
+        self.forkedfromparent = forkedfromparent
+        self.spawndepth = spawndepth
+        self.subagentrole = subagentrole
+        self.subagentcontrolscope = subagentcontrolscope
+        self.label = label
+        self.displayname = displayname
+        self.derivedtitle = derivedtitle
+        self.llmtitle = llmtitle
+        self.firstmessagepreview = firstmessagepreview
+        self.lastmessagepreview = lastmessagepreview
+        self.channel = channel
+        self.subject = subject
+        self.groupchannel = groupchannel
+        self.space = space
+        self.chattype = chattype
+        self.origin = origin
+        self.sessionid = sessionid
+        self.systemsent = systemsent
+        self.abortedlastrun = abortedlastrun
+        self.thinkinglevel = thinkinglevel
+        self.thinkinglevels = thinkinglevels
+        self.thinkingoptions = thinkingoptions
+        self.thinkingdefault = thinkingdefault
+        self.fastmode = fastmode
+        self.effectivefastmode = effectivefastmode
+        self.effectivefastmodesource = effectivefastmodesource
+        self.fastautoonseconds = fastautoonseconds
+        self.verboselevel = verboselevel
+        self.tracelevel = tracelevel
+        self.reasoninglevel = reasoninglevel
+        self.elevatedlevel = elevatedlevel
+        self.sendpolicy = sendpolicy
+        self.inputtokens = inputtokens
+        self.outputtokens = outputtokens
+        self.cacheread = cacheread
+        self.cachewrite = cachewrite
+        self.totaltokens = totaltokens
+        self.totaltokensfresh = totaltokensfresh
+        self.estimatedcostusd = estimatedcostusd
+        self.status = status
+        self.hasactiverun = hasactiverun
+        self.activerunids = activerunids
+        self.archived = archived
+        self.archivedat = archivedat
+        self.pinned = pinned
+        self.pinnedat = pinnedat
+        self.unread = unread
+        self.lastreadat = lastreadat
+        self.lastinteractionat = lastinteractionat
+        self.lastactivityat = lastactivityat
+        self.category = category
+        self.subagentrunstate = subagentrunstate
+        self.hasactivesubagentrun = hasactivesubagentrun
+        self.startedat = startedat
+        self.endedat = endedat
+        self.runtimems = runtimems
+        self.parentsessionkey = parentsessionkey
+        self.childsessions = childsessions
+        self.responseusage = responseusage
+        self.effectiveresponseusage = effectiveresponseusage
+        self.queuemode = queuemode
+        self.effectivequeuemode = effectivequeuemode
+        self.placement = placement
+        self.modelprovider = modelprovider
+        self.model = model
+        self.modelselectionlocked = modelselectionlocked
+        self.agentruntime = agentruntime
+        self.contexttokens = contexttokens
+        self.contextbudgetstatus = contextbudgetstatus
+        self.deliverycontext = deliverycontext
+        self.lastchannel = lastchannel
+        self.lastto = lastto
+        self.lastaccountid = lastaccountid
+        self.lastthreadid = lastthreadid
+        self.compactioncheckpointcount = compactioncheckpointcount
+        self.latestcompactioncheckpoint = latestcompactioncheckpoint
+        self.pluginextensions = pluginextensions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case message
+        case messageid = "messageId"
+        case messageseq = "messageSeq"
+        case kind
+        case updatedat = "updatedAt"
+        case goal
+        case session
+        case spawnedby = "spawnedBy"
+        case swarmgroupid = "swarmGroupId"
+        case icon
+        case agentstatus = "agentStatus"
+        case lastrunerror = "lastRunError"
+        case hasautomation = "hasAutomation"
+        case worktree
+        case execnode = "execNode"
+        case execcwd = "execCwd"
+        case spawnedworkspacedir = "spawnedWorkspaceDir"
+        case spawnedcwd = "spawnedCwd"
+        case forkedfromparent = "forkedFromParent"
+        case spawndepth = "spawnDepth"
+        case subagentrole = "subagentRole"
+        case subagentcontrolscope = "subagentControlScope"
+        case label
+        case displayname = "displayName"
+        case derivedtitle = "derivedTitle"
+        case llmtitle = "llmTitle"
+        case firstmessagepreview = "firstMessagePreview"
+        case lastmessagepreview = "lastMessagePreview"
+        case channel
+        case subject
+        case groupchannel = "groupChannel"
+        case space
+        case chattype = "chatType"
+        case origin
+        case sessionid = "sessionId"
+        case systemsent = "systemSent"
+        case abortedlastrun = "abortedLastRun"
+        case thinkinglevel = "thinkingLevel"
+        case thinkinglevels = "thinkingLevels"
+        case thinkingoptions = "thinkingOptions"
+        case thinkingdefault = "thinkingDefault"
+        case fastmode = "fastMode"
+        case effectivefastmode = "effectiveFastMode"
+        case effectivefastmodesource = "effectiveFastModeSource"
+        case fastautoonseconds = "fastAutoOnSeconds"
+        case verboselevel = "verboseLevel"
+        case tracelevel = "traceLevel"
+        case reasoninglevel = "reasoningLevel"
+        case elevatedlevel = "elevatedLevel"
+        case sendpolicy = "sendPolicy"
+        case inputtokens = "inputTokens"
+        case outputtokens = "outputTokens"
+        case cacheread = "cacheRead"
+        case cachewrite = "cacheWrite"
+        case totaltokens = "totalTokens"
+        case totaltokensfresh = "totalTokensFresh"
+        case estimatedcostusd = "estimatedCostUsd"
+        case status
+        case hasactiverun = "hasActiveRun"
+        case activerunids = "activeRunIds"
+        case archived
+        case archivedat = "archivedAt"
+        case pinned
+        case pinnedat = "pinnedAt"
+        case unread
+        case lastreadat = "lastReadAt"
+        case lastinteractionat = "lastInteractionAt"
+        case lastactivityat = "lastActivityAt"
+        case category
+        case subagentrunstate = "subagentRunState"
+        case hasactivesubagentrun = "hasActiveSubagentRun"
+        case startedat = "startedAt"
+        case endedat = "endedAt"
+        case runtimems = "runtimeMs"
+        case parentsessionkey = "parentSessionKey"
+        case childsessions = "childSessions"
+        case responseusage = "responseUsage"
+        case effectiveresponseusage = "effectiveResponseUsage"
+        case queuemode = "queueMode"
+        case effectivequeuemode = "effectiveQueueMode"
+        case placement
+        case modelprovider = "modelProvider"
+        case model
+        case modelselectionlocked = "modelSelectionLocked"
+        case agentruntime = "agentRuntime"
+        case contexttokens = "contextTokens"
+        case contextbudgetstatus = "contextBudgetStatus"
+        case deliverycontext = "deliveryContext"
+        case lastchannel = "lastChannel"
+        case lastto = "lastTo"
+        case lastaccountid = "lastAccountId"
+        case lastthreadid = "lastThreadId"
+        case compactioncheckpointcount = "compactionCheckpointCount"
+        case latestcompactioncheckpoint = "latestCompactionCheckpoint"
+        case pluginextensions = "pluginExtensions"
     }
 }
 
@@ -11965,14 +13606,14 @@ public struct ModelsProbeParams: Codable, Sendable {
 public struct ModelsProbeTargetResult: Codable, Sendable {
     public let profileid: String?
     public let label: String
-    public let status: AuthProbeStatus
+    public let status: AnyCodable
     public let latencyms: Int?
     public let error: String?
 
     public init(
         profileid: String? = nil,
         label: String,
-        status: AuthProbeStatus,
+        status: AnyCodable,
         latencyms: Int? = nil,
         error: String? = nil)
     {
@@ -11994,14 +13635,14 @@ public struct ModelsProbeTargetResult: Codable, Sendable {
 
 public struct ModelsProbeResult: Codable, Sendable {
     public let provider: String
-    public let status: AuthProbeStatus
+    public let status: AnyCodable
     public let latencyms: Int?
     public let error: String?
     public let results: [ModelsProbeTargetResult]
 
     public init(
         provider: String,
-        status: AuthProbeStatus,
+        status: AnyCodable,
         latencyms: Int? = nil,
         error: String? = nil,
         results: [ModelsProbeTargetResult])
@@ -12577,576 +14218,6 @@ public struct SkillsDetailResult: Codable, Sendable {
         case latestversion = "latestVersion"
         case metadata
         case owner
-    }
-}
-
-public struct SkillsCuratorActionParams: Codable, Sendable {
-    public let skill: String
-
-    public init(
-        skill: String)
-    {
-        self.skill = skill
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case skill
-    }
-}
-
-public struct SkillsCuratorActionResult: Codable, Sendable {
-    public let skillfile: String
-    public let skillkey: String
-    public let skillname: String
-    public let state: AnyCodable
-    public let pinned: Bool
-    public let createdatms: Double
-    public let statechangedatms: Double
-    public let lastusedatms: AnyCodable
-    public let usecount: Double
-    public let archivedreason: AnyCodable
-
-    public init(
-        skillfile: String,
-        skillkey: String,
-        skillname: String,
-        state: AnyCodable,
-        pinned: Bool,
-        createdatms: Double,
-        statechangedatms: Double,
-        lastusedatms: AnyCodable,
-        usecount: Double,
-        archivedreason: AnyCodable)
-    {
-        self.skillfile = skillfile
-        self.skillkey = skillkey
-        self.skillname = skillname
-        self.state = state
-        self.pinned = pinned
-        self.createdatms = createdatms
-        self.statechangedatms = statechangedatms
-        self.lastusedatms = lastusedatms
-        self.usecount = usecount
-        self.archivedreason = archivedreason
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case skillfile = "skillFile"
-        case skillkey = "skillKey"
-        case skillname = "skillName"
-        case state
-        case pinned
-        case createdatms = "createdAtMs"
-        case statechangedatms = "stateChangedAtMs"
-        case lastusedatms = "lastUsedAtMs"
-        case usecount = "useCount"
-        case archivedreason = "archivedReason"
-    }
-}
-
-public struct SkillsCuratorStatusParams: Codable, Sendable {}
-
-public struct SkillsCuratorStatusResult: Codable, Sendable {
-    public let lastattemptatms: AnyCodable
-    public let lastsuccessatms: AnyCodable
-    public let lasterror: AnyCodable
-    public let counts: [String: AnyCodable]
-    public let skills: [SkillsCuratorActionResult]
-    public let overlaps: [[String: AnyCodable]]
-
-    public init(
-        lastattemptatms: AnyCodable,
-        lastsuccessatms: AnyCodable,
-        lasterror: AnyCodable,
-        counts: [String: AnyCodable],
-        skills: [SkillsCuratorActionResult],
-        overlaps: [[String: AnyCodable]])
-    {
-        self.lastattemptatms = lastattemptatms
-        self.lastsuccessatms = lastsuccessatms
-        self.lasterror = lasterror
-        self.counts = counts
-        self.skills = skills
-        self.overlaps = overlaps
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case lastattemptatms = "lastAttemptAtMs"
-        case lastsuccessatms = "lastSuccessAtMs"
-        case lasterror = "lastError"
-        case counts
-        case skills
-        case overlaps
-    }
-}
-
-public struct SkillsProposalsListParams: Codable, Sendable {
-    public let agentid: String?
-
-    public init(
-        agentid: String? = nil)
-    {
-        self.agentid = agentid
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-    }
-}
-
-public struct SkillsProposalsListResult: Codable, Sendable {
-    public let schema: String
-    public let updatedat: String
-    public let proposals: [[String: AnyCodable]]
-
-    public init(
-        schema: String,
-        updatedat: String,
-        proposals: [[String: AnyCodable]])
-    {
-        self.schema = schema
-        self.updatedat = updatedat
-        self.proposals = proposals
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case schema
-        case updatedat = "updatedAt"
-        case proposals
-    }
-}
-
-public struct SkillsProposalHistoryStatusParams: Codable, Sendable {
-    public let agentid: String?
-
-    public init(
-        agentid: String? = nil)
-    {
-        self.agentid = agentid
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-    }
-}
-
-public struct SkillsProposalHistoryScanParams: Codable, Sendable {
-    public let agentid: String?
-    public let direction: AnyCodable?
-
-    public init(
-        agentid: String? = nil,
-        direction: AnyCodable? = nil)
-    {
-        self.agentid = agentid
-        self.direction = direction
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-        case direction
-    }
-}
-
-public struct SkillsProposalHistoryScanResult: Codable, Sendable {
-    public let schema: String
-    public let hasscanned: Bool
-    public let reviewedsessions: Int
-    public let ideasfound: Int
-    public let hasmore: Bool
-    public let lastscanreviewed: Int
-    public let lastscanideas: Int
-    public let lastscanat: String?
-    public let oldestreviewedat: String?
-    public let newestreviewedat: String?
-
-    public init(
-        schema: String,
-        hasscanned: Bool,
-        reviewedsessions: Int,
-        ideasfound: Int,
-        hasmore: Bool,
-        lastscanreviewed: Int,
-        lastscanideas: Int,
-        lastscanat: String? = nil,
-        oldestreviewedat: String? = nil,
-        newestreviewedat: String? = nil)
-    {
-        self.schema = schema
-        self.hasscanned = hasscanned
-        self.reviewedsessions = reviewedsessions
-        self.ideasfound = ideasfound
-        self.hasmore = hasmore
-        self.lastscanreviewed = lastscanreviewed
-        self.lastscanideas = lastscanideas
-        self.lastscanat = lastscanat
-        self.oldestreviewedat = oldestreviewedat
-        self.newestreviewedat = newestreviewedat
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case schema
-        case hasscanned = "hasScanned"
-        case reviewedsessions = "reviewedSessions"
-        case ideasfound = "ideasFound"
-        case hasmore = "hasMore"
-        case lastscanreviewed = "lastScanReviewed"
-        case lastscanideas = "lastScanIdeas"
-        case lastscanat = "lastScanAt"
-        case oldestreviewedat = "oldestReviewedAt"
-        case newestreviewedat = "newestReviewedAt"
-    }
-}
-
-public struct SkillsProposalInspectParams: Codable, Sendable {
-    public let agentid: String?
-    public let proposalid: String
-
-    public init(
-        agentid: String? = nil,
-        proposalid: String)
-    {
-        self.agentid = agentid
-        self.proposalid = proposalid
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-        case proposalid = "proposalId"
-    }
-}
-
-public struct SkillsProposalInspectResult: Codable, Sendable {
-    public let record: SkillsProposalRecordResult
-    public let content: String
-    public let supportfiles: [[String: AnyCodable]]?
-
-    public init(
-        record: SkillsProposalRecordResult,
-        content: String,
-        supportfiles: [[String: AnyCodable]]? = nil)
-    {
-        self.record = record
-        self.content = content
-        self.supportfiles = supportfiles
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case record
-        case content
-        case supportfiles = "supportFiles"
-    }
-}
-
-public struct SkillsProposalCreateParams: Codable, Sendable {
-    public let agentid: String?
-    public let name: String
-    public let description: String
-    public let content: String
-    public let supportfiles: [[String: AnyCodable]]?
-    public let goal: String?
-    public let evidence: String?
-
-    public init(
-        agentid: String? = nil,
-        name: String,
-        description: String,
-        content: String,
-        supportfiles: [[String: AnyCodable]]? = nil,
-        goal: String? = nil,
-        evidence: String? = nil)
-    {
-        self.agentid = agentid
-        self.name = name
-        self.description = description
-        self.content = content
-        self.supportfiles = supportfiles
-        self.goal = goal
-        self.evidence = evidence
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-        case name
-        case description
-        case content
-        case supportfiles = "supportFiles"
-        case goal
-        case evidence
-    }
-}
-
-public struct SkillsProposalUpdateParams: Codable, Sendable {
-    public let agentid: String?
-    public let skillname: String
-    public let description: String?
-    public let content: String
-    public let supportfiles: [[String: AnyCodable]]?
-    public let goal: String?
-    public let evidence: String?
-
-    public init(
-        agentid: String? = nil,
-        skillname: String,
-        description: String? = nil,
-        content: String,
-        supportfiles: [[String: AnyCodable]]? = nil,
-        goal: String? = nil,
-        evidence: String? = nil)
-    {
-        self.agentid = agentid
-        self.skillname = skillname
-        self.description = description
-        self.content = content
-        self.supportfiles = supportfiles
-        self.goal = goal
-        self.evidence = evidence
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-        case skillname = "skillName"
-        case description
-        case content
-        case supportfiles = "supportFiles"
-        case goal
-        case evidence
-    }
-}
-
-public struct SkillsProposalReviseParams: Codable, Sendable {
-    public let agentid: String?
-    public let proposalid: String
-    public let content: String
-    public let supportfiles: [[String: AnyCodable]]?
-    public let description: String?
-    public let goal: String?
-    public let evidence: String?
-
-    public init(
-        agentid: String? = nil,
-        proposalid: String,
-        content: String,
-        supportfiles: [[String: AnyCodable]]? = nil,
-        description: String? = nil,
-        goal: String? = nil,
-        evidence: String? = nil)
-    {
-        self.agentid = agentid
-        self.proposalid = proposalid
-        self.content = content
-        self.supportfiles = supportfiles
-        self.description = description
-        self.goal = goal
-        self.evidence = evidence
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-        case proposalid = "proposalId"
-        case content
-        case supportfiles = "supportFiles"
-        case description
-        case goal
-        case evidence
-    }
-}
-
-public struct SkillsProposalRequestRevisionParams: Codable, Sendable {
-    public let agentid: String?
-    public let targetagentid: String?
-    public let proposalid: String
-    public let instructions: String
-    public let sessionkey: String
-    public let sessionid: String?
-    public let idempotencykey: String
-
-    public init(
-        agentid: String? = nil,
-        targetagentid: String? = nil,
-        proposalid: String,
-        instructions: String,
-        sessionkey: String,
-        sessionid: String? = nil,
-        idempotencykey: String)
-    {
-        self.agentid = agentid
-        self.targetagentid = targetagentid
-        self.proposalid = proposalid
-        self.instructions = instructions
-        self.sessionkey = sessionkey
-        self.sessionid = sessionid
-        self.idempotencykey = idempotencykey
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-        case targetagentid = "targetAgentId"
-        case proposalid = "proposalId"
-        case instructions
-        case sessionkey = "sessionKey"
-        case sessionid = "sessionId"
-        case idempotencykey = "idempotencyKey"
-    }
-}
-
-public struct SkillsProposalRequestRevisionResult: Codable, Sendable {
-    public let runid: String
-    public let status: AnyCodable
-
-    public init(
-        runid: String,
-        status: AnyCodable)
-    {
-        self.runid = runid
-        self.status = status
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case runid = "runId"
-        case status
-    }
-}
-
-public struct SkillsProposalActionParams: Codable, Sendable {
-    public let agentid: String?
-    public let proposalid: String
-    public let reason: String?
-
-    public init(
-        agentid: String? = nil,
-        proposalid: String,
-        reason: String? = nil)
-    {
-        self.agentid = agentid
-        self.proposalid = proposalid
-        self.reason = reason
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case agentid = "agentId"
-        case proposalid = "proposalId"
-        case reason
-    }
-}
-
-public struct SkillsProposalApplyResult: Codable, Sendable {
-    public let record: SkillsProposalRecordResult
-    public let targetskillfile: String
-
-    public init(
-        record: SkillsProposalRecordResult,
-        targetskillfile: String)
-    {
-        self.record = record
-        self.targetskillfile = targetskillfile
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case record
-        case targetskillfile = "targetSkillFile"
-    }
-}
-
-public struct SkillsProposalRecordResult: Codable, Sendable {
-    public let schema: String
-    public let id: String
-    public let kind: AnyCodable
-    public let status: AnyCodable
-    public let title: String
-    public let description: String
-    public let createdat: String
-    public let updatedat: String
-    public let createdby: AnyCodable
-    public let origin: [String: AnyCodable]?
-    public let proposedversion: String
-    public let draftfile: String
-    public let drafthash: String
-    public let supportfiles: [[String: AnyCodable]]?
-    public let target: [String: AnyCodable]
-    public let scan: [String: AnyCodable]
-    public let goal: String?
-    public let evidence: String?
-    public let appliedat: String?
-    public let rejectedat: String?
-    public let quarantinedat: String?
-    public let staleat: String?
-    public let statusreason: String?
-
-    public init(
-        schema: String,
-        id: String,
-        kind: AnyCodable,
-        status: AnyCodable,
-        title: String,
-        description: String,
-        createdat: String,
-        updatedat: String,
-        createdby: AnyCodable,
-        origin: [String: AnyCodable]? = nil,
-        proposedversion: String,
-        draftfile: String,
-        drafthash: String,
-        supportfiles: [[String: AnyCodable]]? = nil,
-        target: [String: AnyCodable],
-        scan: [String: AnyCodable],
-        goal: String? = nil,
-        evidence: String? = nil,
-        appliedat: String? = nil,
-        rejectedat: String? = nil,
-        quarantinedat: String? = nil,
-        staleat: String? = nil,
-        statusreason: String? = nil)
-    {
-        self.schema = schema
-        self.id = id
-        self.kind = kind
-        self.status = status
-        self.title = title
-        self.description = description
-        self.createdat = createdat
-        self.updatedat = updatedat
-        self.createdby = createdby
-        self.origin = origin
-        self.proposedversion = proposedversion
-        self.draftfile = draftfile
-        self.drafthash = drafthash
-        self.supportfiles = supportfiles
-        self.target = target
-        self.scan = scan
-        self.goal = goal
-        self.evidence = evidence
-        self.appliedat = appliedat
-        self.rejectedat = rejectedat
-        self.quarantinedat = quarantinedat
-        self.staleat = staleat
-        self.statusreason = statusreason
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case schema
-        case id
-        case kind
-        case status
-        case title
-        case description
-        case createdat = "createdAt"
-        case updatedat = "updatedAt"
-        case createdby = "createdBy"
-        case origin
-        case proposedversion = "proposedVersion"
-        case draftfile = "draftFile"
-        case drafthash = "draftHash"
-        case supportfiles = "supportFiles"
-        case target
-        case scan
-        case goal
-        case evidence
-        case appliedat = "appliedAt"
-        case rejectedat = "rejectedAt"
-        case quarantinedat = "quarantinedAt"
-        case staleat = "staleAt"
-        case statusreason = "statusReason"
     }
 }
 
@@ -15170,7 +16241,7 @@ public struct ExecApprovalRequestParams: Codable, Sendable {
     public let id: String?
     public let command: String?
     public let commandargv: [String]?
-    public let systemrunplan: [String: AnyCodable]?
+    public let systemrunplan: SystemRunApprovalPlan?
     public let env: [String: AnyCodable]?
     public let cwd: AnyCodable?
     public let nodeid: AnyCodable?
@@ -15179,7 +16250,7 @@ public struct ExecApprovalRequestParams: Codable, Sendable {
     public let ask: AnyCodable?
     public let warningtext: AnyCodable?
     public let unavailabledecisions: [String]?
-    public let commandspans: [[String: AnyCodable]]?
+    public let commandspans: [ExecApprovalCommandSpan]?
     public let agentid: AnyCodable?
     public let resolvedpath: AnyCodable?
     public let sessionkey: AnyCodable?
@@ -15200,7 +16271,7 @@ public struct ExecApprovalRequestParams: Codable, Sendable {
         id: String? = nil,
         command: String? = nil,
         commandargv: [String]? = nil,
-        systemrunplan: [String: AnyCodable]? = nil,
+        systemrunplan: SystemRunApprovalPlan? = nil,
         env: [String: AnyCodable]? = nil,
         cwd: AnyCodable? = nil,
         nodeid: AnyCodable? = nil,
@@ -15209,7 +16280,7 @@ public struct ExecApprovalRequestParams: Codable, Sendable {
         ask: AnyCodable? = nil,
         warningtext: AnyCodable? = nil,
         unavailabledecisions: [String]? = nil,
-        commandspans: [[String: AnyCodable]]? = nil,
+        commandspans: [ExecApprovalCommandSpan]? = nil,
         agentid: AnyCodable? = nil,
         resolvedpath: AnyCodable? = nil,
         sessionkey: AnyCodable? = nil,
@@ -15663,6 +16734,466 @@ public struct PluginApprovalResolveParams: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id
         case decision
+    }
+}
+
+public struct ExecApprovalCommandSpan: Codable, Sendable {
+    public let startindex: Int
+    public let endindex: Int
+
+    public init(
+        startindex: Int,
+        endindex: Int)
+    {
+        self.startindex = startindex
+        self.endindex = endindex
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case startindex = "startIndex"
+        case endindex = "endIndex"
+    }
+}
+
+public struct CommandExplanationSummary: Codable, Sendable {
+    public let commandcount: Double
+    public let nestedcommandcount: Double
+    public let riskkinds: [String]
+    public let warninglines: [String]
+
+    public init(
+        commandcount: Double,
+        nestedcommandcount: Double,
+        riskkinds: [String],
+        warninglines: [String])
+    {
+        self.commandcount = commandcount
+        self.nestedcommandcount = nestedcommandcount
+        self.riskkinds = riskkinds
+        self.warninglines = warninglines
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case commandcount = "commandCount"
+        case nestedcommandcount = "nestedCommandCount"
+        case riskkinds = "riskKinds"
+        case warninglines = "warningLines"
+    }
+}
+
+public struct SystemRunApprovalFileOperand: Codable, Sendable {
+    public let argvindex: Int
+    public let path: String
+    public let sha256: String
+
+    public init(
+        argvindex: Int,
+        path: String,
+        sha256: String)
+    {
+        self.argvindex = argvindex
+        self.path = path
+        self.sha256 = sha256
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case argvindex = "argvIndex"
+        case path
+        case sha256
+    }
+}
+
+public struct SystemRunApprovalPlan: Codable, Sendable {
+    public let argv: [String]
+    public let cwd: AnyCodable
+    public let commandtext: String
+    public let commandpreview: AnyCodable?
+    public let agentid: AnyCodable
+    public let sessionkey: AnyCodable
+    public let policysnapshot: [String: AnyCodable]?
+    public let mutablefileoperand: AnyCodable?
+
+    public init(
+        argv: [String],
+        cwd: AnyCodable,
+        commandtext: String,
+        commandpreview: AnyCodable? = nil,
+        agentid: AnyCodable,
+        sessionkey: AnyCodable,
+        policysnapshot: [String: AnyCodable]? = nil,
+        mutablefileoperand: AnyCodable? = nil)
+    {
+        self.argv = argv
+        self.cwd = cwd
+        self.commandtext = commandtext
+        self.commandpreview = commandpreview
+        self.agentid = agentid
+        self.sessionkey = sessionkey
+        self.policysnapshot = policysnapshot
+        self.mutablefileoperand = mutablefileoperand
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case argv
+        case cwd
+        case commandtext = "commandText"
+        case commandpreview = "commandPreview"
+        case agentid = "agentId"
+        case sessionkey = "sessionKey"
+        case policysnapshot = "policySnapshot"
+        case mutablefileoperand = "mutableFileOperand"
+    }
+}
+
+public struct SystemRunApprovalBinding: Codable, Sendable {
+    public let argv: [String]
+    public let cwd: AnyCodable
+    public let agentid: AnyCodable
+    public let sessionkey: AnyCodable
+    public let envhash: AnyCodable
+
+    public init(
+        argv: [String],
+        cwd: AnyCodable,
+        agentid: AnyCodable,
+        sessionkey: AnyCodable,
+        envhash: AnyCodable)
+    {
+        self.argv = argv
+        self.cwd = cwd
+        self.agentid = agentid
+        self.sessionkey = sessionkey
+        self.envhash = envhash
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case argv
+        case cwd
+        case agentid = "agentId"
+        case sessionkey = "sessionKey"
+        case envhash = "envHash"
+    }
+}
+
+public struct ExecApprovalRequestPayload: Codable, Sendable {
+    public let command: String
+    public let commandpreview: AnyCodable?
+    public let commandargv: [String]?
+    public let envkeys: [String]?
+    public let systemrunbinding: AnyCodable?
+    public let systemrunplan: AnyCodable?
+    public let cwd: AnyCodable?
+    public let nodeid: AnyCodable?
+    public let host: AnyCodable?
+    public let security: AnyCodable?
+    public let ask: AnyCodable?
+    public let warningtext: AnyCodable?
+    public let commandanalysis: AnyCodable?
+    public let commandspans: [ExecApprovalCommandSpan]?
+    public let alloweddecisions: [AnyCodable]?
+    public let unavailabledecisions: [String]?
+    public let agentid: AnyCodable?
+    public let resolvedpath: AnyCodable?
+    public let sessionkey: AnyCodable?
+    public let sessionid: AnyCodable?
+    public let runid: AnyCodable?
+    public let toolcallid: AnyCodable?
+    public let turnsourcechannel: AnyCodable?
+    public let turnsourceto: AnyCodable?
+    public let turnsourceaccountid: AnyCodable?
+    public let turnsourcethreadid: AnyCodable?
+
+    public init(
+        command: String,
+        commandpreview: AnyCodable? = nil,
+        commandargv: [String]? = nil,
+        envkeys: [String]? = nil,
+        systemrunbinding: AnyCodable? = nil,
+        systemrunplan: AnyCodable? = nil,
+        cwd: AnyCodable? = nil,
+        nodeid: AnyCodable? = nil,
+        host: AnyCodable? = nil,
+        security: AnyCodable? = nil,
+        ask: AnyCodable? = nil,
+        warningtext: AnyCodable? = nil,
+        commandanalysis: AnyCodable? = nil,
+        commandspans: [ExecApprovalCommandSpan]? = nil,
+        alloweddecisions: [AnyCodable]? = nil,
+        unavailabledecisions: [String]? = nil,
+        agentid: AnyCodable? = nil,
+        resolvedpath: AnyCodable? = nil,
+        sessionkey: AnyCodable? = nil,
+        sessionid: AnyCodable? = nil,
+        runid: AnyCodable? = nil,
+        toolcallid: AnyCodable? = nil,
+        turnsourcechannel: AnyCodable? = nil,
+        turnsourceto: AnyCodable? = nil,
+        turnsourceaccountid: AnyCodable? = nil,
+        turnsourcethreadid: AnyCodable? = nil)
+    {
+        self.command = command
+        self.commandpreview = commandpreview
+        self.commandargv = commandargv
+        self.envkeys = envkeys
+        self.systemrunbinding = systemrunbinding
+        self.systemrunplan = systemrunplan
+        self.cwd = cwd
+        self.nodeid = nodeid
+        self.host = host
+        self.security = security
+        self.ask = ask
+        self.warningtext = warningtext
+        self.commandanalysis = commandanalysis
+        self.commandspans = commandspans
+        self.alloweddecisions = alloweddecisions
+        self.unavailabledecisions = unavailabledecisions
+        self.agentid = agentid
+        self.resolvedpath = resolvedpath
+        self.sessionkey = sessionkey
+        self.sessionid = sessionid
+        self.runid = runid
+        self.toolcallid = toolcallid
+        self.turnsourcechannel = turnsourcechannel
+        self.turnsourceto = turnsourceto
+        self.turnsourceaccountid = turnsourceaccountid
+        self.turnsourcethreadid = turnsourcethreadid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case command
+        case commandpreview = "commandPreview"
+        case commandargv = "commandArgv"
+        case envkeys = "envKeys"
+        case systemrunbinding = "systemRunBinding"
+        case systemrunplan = "systemRunPlan"
+        case cwd
+        case nodeid = "nodeId"
+        case host
+        case security
+        case ask
+        case warningtext = "warningText"
+        case commandanalysis = "commandAnalysis"
+        case commandspans = "commandSpans"
+        case alloweddecisions = "allowedDecisions"
+        case unavailabledecisions = "unavailableDecisions"
+        case agentid = "agentId"
+        case resolvedpath = "resolvedPath"
+        case sessionkey = "sessionKey"
+        case sessionid = "sessionId"
+        case runid = "runId"
+        case toolcallid = "toolCallId"
+        case turnsourcechannel = "turnSourceChannel"
+        case turnsourceto = "turnSourceTo"
+        case turnsourceaccountid = "turnSourceAccountId"
+        case turnsourcethreadid = "turnSourceThreadId"
+    }
+}
+
+public struct ExecApprovalRequestedEvent: Codable, Sendable {
+    public let id: String
+    public let request: ExecApprovalRequestPayload
+    public let createdatms: Double
+    public let expiresatms: Double
+
+    public init(
+        id: String,
+        request: ExecApprovalRequestPayload,
+        createdatms: Double,
+        expiresatms: Double)
+    {
+        self.id = id
+        self.request = request
+        self.createdatms = createdatms
+        self.expiresatms = expiresatms
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case request
+        case createdatms = "createdAtMs"
+        case expiresatms = "expiresAtMs"
+    }
+}
+
+public struct ExecApprovalResolvedEvent: Codable, Sendable {
+    public let id: String
+    public let decision: ExecApprovalDecision
+    public let resolvedby: AnyCodable?
+    public let ts: Double
+    public let request: ExecApprovalRequestPayload?
+
+    public init(
+        id: String,
+        decision: ExecApprovalDecision,
+        resolvedby: AnyCodable? = nil,
+        ts: Double,
+        request: ExecApprovalRequestPayload? = nil)
+    {
+        self.id = id
+        self.decision = decision
+        self.resolvedby = resolvedby
+        self.ts = ts
+        self.request = request
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case decision
+        case resolvedby = "resolvedBy"
+        case ts
+        case request
+    }
+}
+
+public struct PluginApprovalActionView: Codable, Sendable {
+    public let kind: AnyCodable?
+    public let label: String
+    public let command: String
+    public let decision: AnyCodable?
+    public let style: AnyCodable?
+
+    public init(
+        kind: AnyCodable? = nil,
+        label: String,
+        command: String,
+        decision: AnyCodable? = nil,
+        style: AnyCodable? = nil)
+    {
+        self.kind = kind
+        self.label = label
+        self.command = command
+        self.decision = decision
+        self.style = style
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case label
+        case command
+        case decision
+        case style
+    }
+}
+
+public struct PluginApprovalRequestPayload: Codable, Sendable {
+    public let pluginid: AnyCodable?
+    public let title: String
+    public let description: String
+    public let severity: AnyCodable?
+    public let toolname: AnyCodable?
+    public let toolcallid: AnyCodable?
+    public let alloweddecisions: AnyCodable?
+    public let actions: AnyCodable?
+    public let agentid: AnyCodable?
+    public let sessionkey: AnyCodable?
+    public let turnsourcechannel: AnyCodable?
+    public let turnsourceto: AnyCodable?
+    public let turnsourceaccountid: AnyCodable?
+    public let turnsourcethreadid: AnyCodable?
+
+    public init(
+        pluginid: AnyCodable? = nil,
+        title: String,
+        description: String,
+        severity: AnyCodable? = nil,
+        toolname: AnyCodable? = nil,
+        toolcallid: AnyCodable? = nil,
+        alloweddecisions: AnyCodable? = nil,
+        actions: AnyCodable? = nil,
+        agentid: AnyCodable? = nil,
+        sessionkey: AnyCodable? = nil,
+        turnsourcechannel: AnyCodable? = nil,
+        turnsourceto: AnyCodable? = nil,
+        turnsourceaccountid: AnyCodable? = nil,
+        turnsourcethreadid: AnyCodable? = nil)
+    {
+        self.pluginid = pluginid
+        self.title = title
+        self.description = description
+        self.severity = severity
+        self.toolname = toolname
+        self.toolcallid = toolcallid
+        self.alloweddecisions = alloweddecisions
+        self.actions = actions
+        self.agentid = agentid
+        self.sessionkey = sessionkey
+        self.turnsourcechannel = turnsourcechannel
+        self.turnsourceto = turnsourceto
+        self.turnsourceaccountid = turnsourceaccountid
+        self.turnsourcethreadid = turnsourcethreadid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pluginid = "pluginId"
+        case title
+        case description
+        case severity
+        case toolname = "toolName"
+        case toolcallid = "toolCallId"
+        case alloweddecisions = "allowedDecisions"
+        case actions
+        case agentid = "agentId"
+        case sessionkey = "sessionKey"
+        case turnsourcechannel = "turnSourceChannel"
+        case turnsourceto = "turnSourceTo"
+        case turnsourceaccountid = "turnSourceAccountId"
+        case turnsourcethreadid = "turnSourceThreadId"
+    }
+}
+
+public struct PluginApprovalRequestedEvent: Codable, Sendable {
+    public let id: String
+    public let request: PluginApprovalRequestPayload
+    public let createdatms: Double
+    public let expiresatms: Double
+
+    public init(
+        id: String,
+        request: PluginApprovalRequestPayload,
+        createdatms: Double,
+        expiresatms: Double)
+    {
+        self.id = id
+        self.request = request
+        self.createdatms = createdatms
+        self.expiresatms = expiresatms
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case request
+        case createdatms = "createdAtMs"
+        case expiresatms = "expiresAtMs"
+    }
+}
+
+public struct PluginApprovalResolvedEvent: Codable, Sendable {
+    public let id: String
+    public let decision: ExecApprovalDecision
+    public let resolvedby: AnyCodable?
+    public let ts: Double
+    public let request: PluginApprovalRequestPayload?
+
+    public init(
+        id: String,
+        decision: ExecApprovalDecision,
+        resolvedby: AnyCodable? = nil,
+        ts: Double,
+        request: PluginApprovalRequestPayload? = nil)
+    {
+        self.id = id
+        self.decision = decision
+        self.resolvedby = resolvedby
+        self.ts = ts
+        self.request = request
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case decision
+        case resolvedby = "resolvedBy"
+        case ts
+        case request
     }
 }
 
@@ -16624,46 +18155,6 @@ public struct ChatMessageGetResult: Codable, Sendable {
     }
 }
 
-public struct ChatToolTitlesParams: Codable, Sendable {
-    public let sessionkey: String
-    public let agentid: String?
-    public let items: [[String: AnyCodable]]
-
-    public init(
-        sessionkey: String,
-        agentid: String? = nil,
-        items: [[String: AnyCodable]])
-    {
-        self.sessionkey = sessionkey
-        self.agentid = agentid
-        self.items = items
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case sessionkey = "sessionKey"
-        case agentid = "agentId"
-        case items
-    }
-}
-
-public struct ChatToolTitlesResult: Codable, Sendable {
-    public let titles: [String: AnyCodable]
-    public let disabled: Bool?
-
-    public init(
-        titles: [String: AnyCodable],
-        disabled: Bool? = nil)
-    {
-        self.titles = titles
-        self.disabled = disabled
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case titles
-        case disabled
-    }
-}
-
 public struct ChatSendParams: Codable, Sendable {
     public let sessionkey: String
     public let agentid: String?
@@ -16916,6 +18407,7 @@ public struct ChatDeltaEvent: Codable, Sendable {
     public let state: String
     public let message: AnyCodable?
     public let deltatext: String
+    public let deltathinking: String?
     public let replace: Bool?
     public let usage: AnyCodable?
 
@@ -16928,6 +18420,7 @@ public struct ChatDeltaEvent: Codable, Sendable {
         state: String,
         message: AnyCodable? = nil,
         deltatext: String,
+        deltathinking: String? = nil,
         replace: Bool? = nil,
         usage: AnyCodable? = nil)
     {
@@ -16939,6 +18432,7 @@ public struct ChatDeltaEvent: Codable, Sendable {
         self.state = state
         self.message = message
         self.deltatext = deltatext
+        self.deltathinking = deltathinking
         self.replace = replace
         self.usage = usage
     }
@@ -16952,6 +18446,7 @@ public struct ChatDeltaEvent: Codable, Sendable {
         case state
         case message
         case deltatext = "deltaText"
+        case deltathinking = "deltaThinking"
         case replace
         case usage
     }
@@ -17104,6 +18599,134 @@ public struct ChatErrorEvent: Codable, Sendable {
         case errorkind = "errorKind"
         case usage
         case stopreason = "stopReason"
+    }
+}
+
+public struct ChatSendTimingEvent: Codable, Sendable {
+    public let phase: AnyCodable
+    public let runid: String
+    public let sessionkey: String
+    public let agentid: String?
+    public let acktophasems: Double
+    public let receivedtophasems: Double
+    public let dispatchstartedtophasems: Double?
+    public let postdispatchms: Double?
+    public let provider: String?
+    public let model: String?
+    public let agentrunid: String?
+
+    public init(
+        phase: AnyCodable,
+        runid: String,
+        sessionkey: String,
+        agentid: String? = nil,
+        acktophasems: Double,
+        receivedtophasems: Double,
+        dispatchstartedtophasems: Double? = nil,
+        postdispatchms: Double? = nil,
+        provider: String? = nil,
+        model: String? = nil,
+        agentrunid: String? = nil)
+    {
+        self.phase = phase
+        self.runid = runid
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.acktophasems = acktophasems
+        self.receivedtophasems = receivedtophasems
+        self.dispatchstartedtophasems = dispatchstartedtophasems
+        self.postdispatchms = postdispatchms
+        self.provider = provider
+        self.model = model
+        self.agentrunid = agentrunid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case phase
+        case runid = "runId"
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case acktophasems = "ackToPhaseMs"
+        case receivedtophasems = "receivedToPhaseMs"
+        case dispatchstartedtophasems = "dispatchStartedToPhaseMs"
+        case postdispatchms = "postDispatchMs"
+        case provider
+        case model
+        case agentrunid = "agentRunId"
+    }
+}
+
+public struct ChatSideResultEvent: Codable, Sendable {
+    public let kind: String
+    public let runid: String
+    public let sessionkey: String
+    public let agentid: String?
+    public let question: String
+    public let text: String
+    public let iserror: Bool?
+    public let ts: Int
+    public let seq: Int
+
+    public init(
+        kind: String,
+        runid: String,
+        sessionkey: String,
+        agentid: String? = nil,
+        question: String,
+        text: String,
+        iserror: Bool? = nil,
+        ts: Int,
+        seq: Int)
+    {
+        self.kind = kind
+        self.runid = runid
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.question = question
+        self.text = text
+        self.iserror = iserror
+        self.ts = ts
+        self.seq = seq
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case runid = "runId"
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case question
+        case text
+        case iserror = "isError"
+        case ts
+        case seq
+    }
+}
+
+public struct PresenceEvent: Codable, Sendable {
+    public let presence: [PresenceEntry]
+
+    public init(
+        presence: [PresenceEntry])
+    {
+        self.presence = presence
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case presence
+    }
+}
+
+public struct UpdateAvailableEvent: Codable, Sendable {
+    public let updateavailable: AnyCodable
+
+    public init(
+        updateavailable: AnyCodable)
+    {
+        self.updateavailable = updateavailable
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case updateavailable = "updateAvailable"
     }
 }
 

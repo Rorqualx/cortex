@@ -173,6 +173,8 @@ export function isUnscopedSessionKeySentinel(sessionKey: string | undefined | nu
 export function isIncognitoSessionKey(sessionKey: string | undefined | null): boolean {
   const rest = parseAgentSessionKey(sessionKey)?.rest;
   return typeof rest === "string" && INCOGNITO_SESSION_RE.test(rest);
+}
+
 /** Control-UI ("dashboard"/webchat) chat sessions: `agent:<id>:dashboard:<uuid>`. */
 export function isDashboardSessionKey(sessionKey: string | undefined | null): boolean {
   return normalizeLowercaseStringOrEmpty(sessionKey).includes(":dashboard:");

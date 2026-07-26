@@ -891,7 +891,6 @@ export interface ModelCapabilityCache {
   updated_at_ms: number;
 }
 
-<<<<<<< HEAD
 export interface ModelCatalogDiscovered {
   created_remote_ms: number | null;
   deprecated_at_ms: number | null;
@@ -906,7 +905,8 @@ export interface ModelCatalogDiscovered {
   source: Generated<string>;
   status: Generated<string>;
   updated_at: number;
-=======
+}
+
 export interface ModelCatalogRemote {
   bundle_json: string;
   checked_at: number;
@@ -916,7 +916,6 @@ export interface ModelCatalogRemote {
   last_modified: string | null;
   min_version: string | null;
   source_url: string;
->>>>>>> upstream/main
 }
 
 export interface NativeHookRelayBridges {
@@ -1644,11 +1643,8 @@ export interface DB {
   migration_runs: MigrationRuns;
   migration_sources: MigrationSources;
   model_capability_cache: ModelCapabilityCache;
-<<<<<<< HEAD
   model_catalog_discovered: ModelCatalogDiscovered;
-=======
   model_catalog_remote: ModelCatalogRemote;
->>>>>>> upstream/main
   native_hook_relay_bridges: NativeHookRelayBridges;
   node_host_config: NodeHostConfig;
   official_external_plugin_catalog_snapshots: OfficialExternalPluginCatalogSnapshots;

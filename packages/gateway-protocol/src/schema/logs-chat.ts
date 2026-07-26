@@ -1,203 +1,147 @@
+// Gateway Protocol schema module defines protocol validation shapes.
 import type { Static } from "typebox";
 import { Type } from "typebox";
+import { closedObject } from "./closed-object.js";
 import { ChatSendSessionKeyString, InputProvenanceSchema, NonEmptyString } from "./primitives.js";
 
-export const LogsTailParamsSchema = Type.Object(
-  {
-    cursor: Type.Optional(Type.Integer({ minimum: 0 })),
-    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 5000 })),
-    maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })),
-  },
-  { additionalProperties: false },
-);
+/** Cursor-based request for the gateway log tail endpoint. */
+export const LogsTailParamsSchema = closedObject({
+  cursor: Type.Optional(Type.Integer({ minimum: 0 })),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 5000 })),
+  maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })),
+});
 
-export const LogsTailResultSchema = Type.Object(
-  {
-    file: NonEmptyString,
-    cursor: Type.Integer({ minimum: 0 }),
-    size: Type.Integer({ minimum: 0 }),
-    lines: Type.Array(Type.String()),
-    truncated: Type.Optional(Type.Boolean()),
-    reset: Type.Optional(Type.Boolean()),
-  },
-  { additionalProperties: false },
-);
+/** Gateway log tail payload returned to dashboard clients. */
+export const LogsTailResultSchema = closedObject({
+  file: NonEmptyString,
+  cursor: Type.Integer({ minimum: 0 }),
+  size: Type.Integer({ minimum: 0 }),
+  lines: Type.Array(Type.String()),
+  truncated: Type.Optional(Type.Boolean()),
+  reset: Type.Optional(Type.Boolean()),
+});
 
-// WebChat/WebSocket-native chat methods
-export const ChatHistoryParamsSchema = Type.Object(
-  {
-    sessionKey: NonEmptyString,
-    agentId: Type.Optional(NonEmptyString),
-    // Keep in sync with the chat.history handler's hardMax (whole-history UI
-    // requests the full transcript window in one response).
-    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
-    maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 500_000 })),
-  },
-  { additionalProperties: false },
-);
+/** Session-scoped history request used by WebChat and native WebSocket clients. */
+export const ChatHistoryParamsSchema = closedObject({
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+  offset: Type.Optional(Type.Integer({ minimum: 0 })),
+  messageId: Type.Optional(NonEmptyString),
+  sessionId: Type.Optional(NonEmptyString),
+  maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 500_000 })),
+});
 
 /** Lightweight chat metadata request; optional agent scope keeps selector state explicit. */
-export const ChatMetadataParamsSchema = Type.Object(
-  {
-    agentId: Type.Optional(NonEmptyString),
-  },
-  { additionalProperties: false },
-);
+export const ChatMetadataParamsSchema = closedObject({
+  agentId: Type.Optional(NonEmptyString),
+});
 
 /** Batched purpose-title request for tool calls rendered in the Control UI. */
-export const ChatToolTitlesParamsSchema = Type.Object(
-  {
-    sessionKey: NonEmptyString,
-    agentId: Type.Optional(NonEmptyString),
-    items: Type.Array(
-      Type.Object(
-        {
-          id: Type.String({ minLength: 1, maxLength: 64 }),
-          name: Type.String({ minLength: 1, maxLength: 200 }),
-          input: Type.String({ minLength: 1, maxLength: 4_000 }),
-        },
-        { additionalProperties: false },
-      ),
-      { minItems: 1, maxItems: 24 },
-    ),
-  },
-  { additionalProperties: false },
-);
-export type ChatToolTitlesParams = Static<typeof ChatToolTitlesParamsSchema>;
+export const ChatToolTitlesParamsSchema = closedObject({
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  items: Type.Array(
+    closedObject({
+      id: Type.String({ minLength: 1, maxLength: 64 }),
+      name: Type.String({ minLength: 1, maxLength: 200 }),
+      input: Type.String({ minLength: 1, maxLength: 4_000 }),
+    }),
+    { minItems: 1, maxItems: 24 },
+  ),
+});
 
 /**
  * Titles keyed by the caller-provided item id; missing ids mean no title.
  * `disabled: true` tells clients the gateway has tool titles switched off so
  * they stop requesting for the rest of the session.
  */
-export const ChatToolTitlesResultSchema = Type.Object(
-  {
-    titles: Type.Record(Type.String(), Type.String()),
-    disabled: Type.Optional(Type.Boolean()),
-  },
-  { additionalProperties: false },
-);
+export const ChatToolTitlesResultSchema = closedObject({
+  titles: Type.Record(Type.String(), Type.String()),
+  disabled: Type.Optional(Type.Boolean()),
+});
 /** Typed result shape for tool-title consumers. */
 export type ChatToolTitlesResult = Static<typeof ChatToolTitlesResultSchema>;
 
-export const ChatMessageGetParamsSchema = Type.Object(
-  {
-    sessionKey: NonEmptyString,
-    agentId: Type.Optional(NonEmptyString),
-    messageId: NonEmptyString,
-    maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_000_000 })),
-  },
-  { additionalProperties: false },
-);
+/** Fetches one stored chat message without forcing history callers to request huge payloads. */
+export const ChatMessageGetParamsSchema = closedObject({
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  messageId: NonEmptyString,
+  maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_000_000 })),
+});
 
-export const ChatMessageGetResultSchema = Type.Object(
-  {
-    ok: Type.Boolean(),
-    message: Type.Optional(Type.Unknown()),
-    unavailableReason: Type.Optional(
-      Type.Union([
-        Type.Literal("not_found"),
-        Type.Literal("oversized"),
-        Type.Literal("not_visible"),
-      ]),
-    ),
-  },
-  { additionalProperties: false },
-);
+/** Result envelope for single-message lookup, including the stable miss/visibility reason. */
+export const ChatMessageGetResultSchema = closedObject({
+  ok: Type.Boolean(),
+  message: Type.Optional(Type.Unknown()),
+  unavailableReason: Type.Optional(
+    Type.Union([Type.Literal("not_found"), Type.Literal("oversized"), Type.Literal("not_visible")]),
+  ),
+});
+/** Typed result shape for callers that branch on message availability. */
 export type ChatMessageGetResult = Static<typeof ChatMessageGetResultSchema>;
 
-// Additive upstream export: sessions-create.ts (upstream module) imports this
-// attachment array shape; the fork-frozen file must still provide it.
+/** Attachment envelope shared by chat.send and session creation's initial turn. */
 export const ChatAttachmentsSchema = Type.Array(Type.Unknown());
 
-export const ChatSendParamsSchema = Type.Object(
-  {
-    sessionKey: ChatSendSessionKeyString,
-    agentId: Type.Optional(NonEmptyString),
-    sessionId: Type.Optional(NonEmptyString),
-    message: Type.String(),
-    thinking: Type.Optional(Type.String()),
-    fastMode: Type.Optional(Type.Boolean()),
-    deliver: Type.Optional(Type.Boolean()),
-    originatingChannel: Type.Optional(Type.String()),
-    originatingTo: Type.Optional(Type.String()),
-    originatingAccountId: Type.Optional(Type.String()),
-    originatingThreadId: Type.Optional(Type.String()),
-    attachments: Type.Optional(Type.Array(Type.Unknown())),
-    timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
-    systemInputProvenance: Type.Optional(InputProvenanceSchema),
-    systemProvenanceReceipt: Type.Optional(Type.String()),
-    // Treat the message as literal text even when it looks like a slash command;
-    // the chat.send handler honors it, so the schema must admit it or the
-    // strict additionalProperties gate rejects the whole send.
-    suppressCommandInterpretation: Type.Optional(Type.Boolean()),
-    idempotencyKey: NonEmptyString,
-  },
-  { additionalProperties: false },
+/** Opaque, out-of-band plugin bindings carried separately from model input. */
+const RunToolBindingsSchema = Type.Record(
+  Type.String({ minLength: 1, maxLength: 128 }),
+  Type.Unknown(),
+  { maxProperties: 16 },
 );
 
-export const ChatAbortParamsSchema = Type.Object(
-  {
-    sessionKey: NonEmptyString,
-    agentId: Type.Optional(NonEmptyString),
-    runId: Type.Optional(NonEmptyString),
-  },
-  { additionalProperties: false },
-);
+/** User-to-agent send request; idempotency key lets clients safely retry transport failures. */
+export const ChatSendParamsSchema = closedObject({
+  sessionKey: ChatSendSessionKeyString,
+  agentId: Type.Optional(NonEmptyString),
+  sessionId: Type.Optional(NonEmptyString),
+  message: Type.String(),
+  thinking: Type.Optional(Type.String()),
+  fastMode: Type.Optional(Type.Union([Type.Boolean(), Type.Literal("auto")])),
+  // One-turn override for auto fast-mode cutoff seconds.
+  fastAutoOnSeconds: Type.Optional(Type.Integer({ minimum: 1 })),
+  // One-turn override for active-run queue admission.
+  queueMode: Type.Optional(Type.String({ enum: ["steer", "followup", "collect", "interrupt"] })),
+  deliver: Type.Optional(Type.Boolean()),
+  originatingChannel: Type.Optional(Type.String()),
+  originatingTo: Type.Optional(Type.String()),
+  originatingAccountId: Type.Optional(Type.String()),
+  originatingThreadId: Type.Optional(Type.String()),
+  // Transcript id of the message this send replies to; the Gateway hydrates
+  // channel-agnostic reply context metadata from session history.
+  replyToId: Type.Optional(NonEmptyString),
+  attachments: Type.Optional(ChatAttachmentsSchema),
+  toolBindings: Type.Optional(RunToolBindingsSchema),
+  timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
+  systemInputProvenance: Type.Optional(InputProvenanceSchema),
+  systemProvenanceReceipt: Type.Optional(Type.String()),
+  suppressCommandInterpretation: Type.Optional(Type.Boolean()),
+  // Client's believed active-branch leaf entry id. A mismatch with the
+  // session's current active leaf rejects the send so stale views cannot post elsewhere.
+  expectedLeafEntryId: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
+  expectedSessionRoutingContract: Type.Optional(NonEmptyString),
+  idempotencyKey: NonEmptyString,
+});
 
-export const ChatInjectParamsSchema = Type.Object(
-  {
-    sessionKey: NonEmptyString,
-    agentId: Type.Optional(NonEmptyString),
-    message: NonEmptyString,
-    label: Type.Optional(Type.String({ maxLength: 100 })),
-  },
-  { additionalProperties: false },
-);
+/** Cancels the active or named run for a chat session. */
+export const ChatAbortParamsSchema = closedObject({
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  runId: Type.Optional(NonEmptyString),
+  preserveSideRuns: Type.Optional(Type.Boolean()),
+});
 
-/** Server-side phase markers for operator chat.send timing diagnostics. */
-const ChatSendTimingPhaseSchema = Type.Union([
-  Type.Literal("dispatch-started"),
-  Type.Literal("model-selected"),
-  Type.Literal("agent-run-started"),
-  Type.Literal("dispatch-completed"),
-  Type.Literal("post-dispatch-completed"),
-]);
+/** Inserts an operator-visible synthetic message into an existing chat transcript. */
+export const ChatInjectParamsSchema = closedObject({
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  message: NonEmptyString,
+  label: Type.Optional(Type.String({ maxLength: 100 })),
+});
 
-/** Payload broadcast on `chat.send_timing` to the operator UI that issued the send. */
-export const ChatSendTimingEventSchema = Type.Object(
-  {
-    phase: ChatSendTimingPhaseSchema,
-    runId: NonEmptyString,
-    sessionKey: NonEmptyString,
-    agentId: Type.Optional(NonEmptyString),
-    ackToPhaseMs: Type.Number({ minimum: 0 }),
-    receivedToPhaseMs: Type.Number({ minimum: 0 }),
-    dispatchStartedToPhaseMs: Type.Optional(Type.Number({ minimum: 0 })),
-    postDispatchMs: Type.Optional(Type.Number({ minimum: 0 })),
-    provider: Type.Optional(Type.String()),
-    model: Type.Optional(Type.String()),
-    agentRunId: Type.Optional(NonEmptyString),
-  },
-  { additionalProperties: false },
-);
-
-/** Payload broadcast on `chat.side_result` for side-channel run output (btw answers). */
-export const ChatSideResultEventSchema = Type.Object(
-  {
-    kind: Type.Literal("btw"),
-    runId: NonEmptyString,
-    sessionKey: NonEmptyString,
-    agentId: Type.Optional(NonEmptyString),
-    question: Type.String(),
-    text: Type.String(),
-    isError: Type.Optional(Type.Boolean()),
-    ts: Type.Integer({ minimum: 0 }),
-    seq: Type.Integer({ minimum: 0 }),
-  },
-  { additionalProperties: false },
-);
-
+/** Shared event fields preserve stream ordering and route events to the right session. */
 const ChatEventBaseSchema = {
   runId: NonEmptyString,
   sessionKey: NonEmptyString,
@@ -206,6 +150,7 @@ const ChatEventBaseSchema = {
   seq: Type.Integer({ minimum: 0 }),
 };
 
+/** Stable error categories exposed over the chat stream. */
 const ChatEventErrorKindSchema = Type.Union([
   Type.Literal("refusal"),
   Type.Literal("timeout"),
@@ -214,69 +159,122 @@ const ChatEventErrorKindSchema = Type.Union([
   Type.Literal("unknown"),
 ]);
 
-export const ChatDeltaEventSchema = Type.Object(
-  {
-    ...ChatEventBaseSchema,
-    state: Type.Literal("delta"),
-    message: Type.Optional(Type.Unknown()),
-    deltaText: Type.String(),
-    deltaThinking: Type.Optional(Type.String()),
-    replace: Type.Optional(Type.Boolean()),
-    usage: Type.Optional(Type.Unknown()),
-  },
-  { additionalProperties: false },
-);
+/** Coarse startup stages shown while a run has not produced visible activity yet. */
+export const ChatRunStartupPhaseSchema = Type.Union([
+  Type.Literal("preparing_workspace"),
+  Type.Literal("provisioning_environment"),
+  Type.Literal("preparing_context"),
+  Type.Literal("starting_model"),
+]);
 
-export const ChatFinalEventSchema = Type.Object(
-  {
-    ...ChatEventBaseSchema,
-    state: Type.Literal("final"),
-    message: Type.Optional(Type.Unknown()),
-    usage: Type.Optional(Type.Unknown()),
-    stopReason: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
+/** Non-terminal run status emitted before assistant or tool activity becomes visible. */
+export const ChatStatusEventSchema = closedObject({
+  ...ChatEventBaseSchema,
+  state: Type.Literal("status"),
+  phase: ChatRunStartupPhaseSchema,
+});
 
-export const ChatAbortedEventSchema = Type.Object(
-  {
-    ...ChatEventBaseSchema,
-    state: Type.Literal("aborted"),
-    message: Type.Optional(Type.Unknown()),
-    stopReason: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
+/** Incremental assistant output event; `replace` marks full-content refresh deltas. */
+export const ChatDeltaEventSchema = closedObject({
+  ...ChatEventBaseSchema,
+  state: Type.Literal("delta"),
+  message: Type.Optional(Type.Unknown()),
+  deltaText: Type.String(),
+  // Fork: real-time model thinking streamed to the Control UI alongside deltaText.
+  deltaThinking: Type.Optional(Type.String()),
+  replace: Type.Optional(Type.Boolean()),
+  usage: Type.Optional(Type.Unknown()),
+});
 
-export const ChatErrorEventSchema = Type.Object(
-  {
-    ...ChatEventBaseSchema,
-    state: Type.Literal("error"),
-    message: Type.Optional(Type.Unknown()),
-    errorMessage: Type.Optional(Type.String()),
-    errorKind: Type.Optional(ChatEventErrorKindSchema),
-    usage: Type.Optional(Type.Unknown()),
-    stopReason: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
+/** Successful terminal event for a completed chat run. */
+export const ChatFinalEventSchema = closedObject({
+  ...ChatEventBaseSchema,
+  state: Type.Literal("final"),
+  message: Type.Optional(Type.Unknown()),
+  usage: Type.Optional(Type.Unknown()),
+  stopReason: Type.Optional(Type.String()),
+  yielded: Type.Optional(Type.Literal(true)),
+});
 
+/** Terminal event for user-initiated or coordinator-initiated cancellation. */
+export const ChatAbortedEventSchema = closedObject({
+  ...ChatEventBaseSchema,
+  state: Type.Literal("aborted"),
+  message: Type.Optional(Type.Unknown()),
+  errorMessage: Type.Optional(Type.String()),
+  stopReason: Type.Optional(Type.String()),
+});
+
+/** Terminal event for failed chat runs with an optional normalized failure kind. */
+export const ChatErrorEventSchema = closedObject({
+  ...ChatEventBaseSchema,
+  state: Type.Literal("error"),
+  message: Type.Optional(Type.Unknown()),
+  errorMessage: Type.Optional(Type.String()),
+  errorKind: Type.Optional(ChatEventErrorKindSchema),
+  usage: Type.Optional(Type.Unknown()),
+  stopReason: Type.Optional(Type.String()),
+});
+
+/** Public chat stream event union consumed by gateway protocol validators. */
 export const ChatEventSchema = Type.Union([
+  ChatStatusEventSchema,
   ChatDeltaEventSchema,
   ChatFinalEventSchema,
   ChatAbortedEventSchema,
   ChatErrorEventSchema,
 ]);
 
-// Owner-local wire types derived directly from local schema consts so the
-// public plugin-sdk declaration graph never pulls in the ProtocolSchemas registry.
+// Wire types derive directly from local schema consts so public d.ts graphs never
+// pull in the ProtocolSchemas registry.
+export type ChatMetadataParams = Static<typeof ChatMetadataParamsSchema>;
+export type ChatToolTitlesParams = Static<typeof ChatToolTitlesParamsSchema>;
 export type LogsTailParams = Static<typeof LogsTailParamsSchema>;
 export type LogsTailResult = Static<typeof LogsTailResultSchema>;
-export type ChatMetadataParams = Static<typeof ChatMetadataParamsSchema>;
 export type ChatAbortParams = Static<typeof ChatAbortParamsSchema>;
 export type ChatInjectParams = Static<typeof ChatInjectParamsSchema>;
+export type ChatRunStartupPhase = Static<typeof ChatRunStartupPhaseSchema>;
+export type ChatStatusEvent = Static<typeof ChatStatusEventSchema>;
 export type ChatEvent = Static<typeof ChatEventSchema>;
+
+/** Fork: server-side phase markers for operator chat.send timing diagnostics. */
+const ChatSendTimingPhaseSchema = Type.Union([
+  Type.Literal("dispatch-started"),
+  Type.Literal("model-selected"),
+  Type.Literal("agent-run-started"),
+  Type.Literal("dispatch-completed"),
+  Type.Literal("post-dispatch-completed"),
+]);
+
+/** Fork: payload broadcast on `chat.send_timing` to the operator UI that issued the send. */
+export const ChatSendTimingEventSchema = closedObject({
+  phase: ChatSendTimingPhaseSchema,
+  runId: NonEmptyString,
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  ackToPhaseMs: Type.Number({ minimum: 0 }),
+  receivedToPhaseMs: Type.Number({ minimum: 0 }),
+  dispatchStartedToPhaseMs: Type.Optional(Type.Number({ minimum: 0 })),
+  postDispatchMs: Type.Optional(Type.Number({ minimum: 0 })),
+  provider: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
+  agentRunId: Type.Optional(NonEmptyString),
+});
+
+/** Fork: out-of-band "btw" side-question result streamed next to the main run. */
+export const ChatSideResultEventSchema = closedObject({
+  kind: Type.Literal("btw"),
+  runId: NonEmptyString,
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  question: Type.String(),
+  text: Type.String(),
+  isError: Type.Optional(Type.Boolean()),
+  ts: Type.Integer({ minimum: 0 }),
+  seq: Type.Integer({ minimum: 0 }),
+});
+
 export type ChatSendTimingEvent = Static<typeof ChatSendTimingEventSchema>;
-/** Server-side phase markers for operator chat.send timing diagnostics. */
+/** Fork: server-side phase markers for operator chat.send timing diagnostics. */
 export type ChatSendTimingPhase = ChatSendTimingEvent["phase"];
 export type ChatSideResultEvent = Static<typeof ChatSideResultEventSchema>;

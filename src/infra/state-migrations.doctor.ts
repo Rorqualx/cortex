@@ -1610,8 +1610,7 @@ export async function autoMigrateLegacyState(params: {
         acpSessionMetadata.changes.length > 0 ||
         deviceAuth.changes.length > 0 ||
         deviceIdentity.changes.length > 0 ||
-        meetingTranscripts.changes.length > 0,
-        deviceIdentity.changes.length > 0 ||
+        meetingTranscripts.changes.length > 0 ||
         workboardDb.changes.length > 0,
       skipped: false,
       changes,
