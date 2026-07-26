@@ -58,45 +58,31 @@ import {
 
 /**
  * Fork: true when a webchat chat's delivery routing has drifted to a real
- * channel (origin is webchat but lastChannel points at e.g. telegram). Any
- * non-webchat lastChannel on a webchat-origin session is treated as drift — we
- * deliberately do not gate on isDeliverableMessageChannel, which depends on
- * plugin registration order at recovery time and would miss not-yet-registered
- * third-party channels.
+ * channel — the session was opened from the Control UI (webchat origin) but its
+ * persisted delivery is now external. Upstream models delivery as a closed
+ * union, so origin travels with the external variant and the drift is exactly
+ * "external delivery whose origin surface is webchat".
  */
 function isDriftedWebchatRouting(entry: SessionEntry): boolean {
-  if (entry.origin?.surface !== INTERNAL_MESSAGE_CHANNEL) {
-    return false;
-  }
-  const routedChannel = entry.lastChannel ? String(entry.lastChannel) : undefined;
-  return routedChannel !== undefined && routedChannel !== INTERNAL_MESSAGE_CHANNEL;
+  return (
+    entry.delivery?.kind === "external" &&
+    entry.delivery.origin?.surface === INTERNAL_MESSAGE_CHANNEL
+  );
 }
 
 /**
- * Fork: resets a drifted webchat chat back to webchat delivery in place.
+ * Fork: resets a drifted webchat chat back to internal delivery in place.
  * Without this a restart-resume would deliver the [System] continuation to the
  * drifted channel instead of the dashboard. The session key is intentionally
  * left unchanged so the Control UI keeps its localStorage pointer (re-keying
- * would orphan the open conversation); the Channels-vs-Chat nav classification
- * is handled in the UI from the webchat origin.
+ * would orphan the open conversation).
  */
 function applyWebchatRoutingReset(entry: SessionEntry): void {
-  // Reset the session delivery fields to webchat and clear the legacy last*
-  // mirrors (the store re-derives route/deliveryContext from them on save, so a
-  // leftover lastTo would resurrect the old channel target).
-  entry.route = { channel: INTERNAL_MESSAGE_CHANNEL };
-  entry.deliveryContext = { channel: INTERNAL_MESSAGE_CHANNEL };
-  entry.lastChannel = INTERNAL_MESSAGE_CHANNEL;
-  entry.lastTo = undefined;
-  entry.lastAccountId = undefined;
-  entry.lastThreadId = undefined;
-  // Neutralize the captured external delivery targets too: resume resolves
-  // these BEFORE the session fields (resolveRestartRecoveryDeliveryContext), so
-  // leaving them would still route the [System] continuation / pending final to
-  // the drifted channel. Mirrors markSessionFailed's neutralize.
+  entry.delivery = { kind: "internal" };
+  // Neutralize the captured external delivery target too: resume resolves the
+  // pending final BEFORE the session delivery state, so leaving it would still
+  // route the [System] continuation to the drifted channel.
   entry.pendingFinalDeliveryContext = undefined;
-  entry.restartRecoveryDeliveryContext = undefined;
-  entry.restartRecoveryDeliveryRunId = undefined;
 }
 
 export function loadExpectedRestartRecoveryTarget(params: {

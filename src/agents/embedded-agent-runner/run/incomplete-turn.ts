@@ -3,11 +3,13 @@
  */
 import { asFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
+import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
 import {
   isSilentReplyPayloadText,
   isSilentReplyText,
   SILENT_REPLY_TOKEN,
 } from "../../../auto-reply/tokens.js";
+import type { EmbeddedAgentExecutionContract } from "../../../config/types.agent-defaults.js";
 import { hasAcceptedSessionSpawn } from "../../accepted-session-spawn.js";
 import { projectAgentRunAttemptTerminal } from "../../agent-run-terminal-outcome.js";
 import { collectTextContentBlocks } from "../../content-blocks.js";
@@ -18,6 +20,7 @@ import {
 } from "../../execution-contract.js";
 import { hasOnlyAssistantReasoningContent } from "../../replay-turn-classification.js";
 import type { AgentMessage } from "../../runtime/index.js";
+import { isLikelyMutatingToolName } from "../../tool-mutation.js";
 import {
   hasCommittedMessagingToolDeliveryEvidence,
   hasMessagingToolDeliveryEvidence,
@@ -62,8 +65,26 @@ type IncompleteTurnAttempt = Pick<
   | "replayMetadata"
   | "terminal"
   | "toolMetas"
+  | "providerResponseHeaders"
 > &
   Partial<Pick<EmbeddedRunAttemptResult, "acceptedSessionSpawns">>;
+
+type PlanningOnlyAttempt = Pick<
+  EmbeddedRunAttemptResult,
+  | "assistantTexts"
+  | "clientToolCalls"
+  | "yieldDetected"
+  | "didSendDeterministicApprovalPrompt"
+  | "didSendViaMessagingTool"
+  | "lastToolError"
+  | "lastAssistant"
+  | "itemLifecycle"
+  | "replayMetadata"
+  | "messagingToolSentTexts"
+  | "messagingToolSentMediaUrls"
+  | "messagingToolSentTargets"
+  | "toolMetas"
+>;
 
 function hasPositiveOutputTokenUsage(message: AgentMessage | null): boolean {
   if (!message || typeof message !== "object") {
@@ -103,11 +124,38 @@ export function isIncompleteTerminalAssistantTurn(params: {
   lastAssistant?: { stopReason?: string } | null;
 }): boolean {
   const stopReason = params.lastAssistant?.stopReason;
-  // Tool-use expects a post-tool continuation; length means the output budget
-  // ended before a complete final answer. Partial visible text completes neither.
+  // A tool-use stop reason means the model issued a tool call and expected
+  // to continue after tool results. If the session ended before the
+  // post-tool assistant message arrived, the turn is incomplete regardless
+  // of whether pre-tool text exists — that text is preliminary analysis,
+  // not the final answer. (#76477) A `length` stop without committed terminal
+  // output means the budget ended before a complete final answer.
   return stopReason === "toolUse" || (stopReason === "length" && !params.hasTerminalOutput);
 }
 
+const PLANNING_ONLY_PROMISE_RE =
+  /\b(?:i(?:'ll| will)|let me|i(?:'m| am)\s+going to|first[, ]+i(?:'ll| will)|next[, ]+i(?:'ll| will)|i can do that)\b/i;
+const PLANNING_ONLY_COMPLETION_RE =
+  /\b(?:done|finished|implemented|updated|fixed|changed|ran|verified|found|here(?:'s| is) what|blocked by|the blocker is)\b/i;
+const PLANNING_ONLY_HEADING_RE = /^(?:plan|steps?|next steps?)\s*:/i;
+const PLANNING_ONLY_BULLET_RE = /^(?:[-*•]\s+|\d+[.)]\s+)/u;
+const PLANNING_ONLY_MAX_VISIBLE_TEXT = 700;
+const PLANNING_ONLY_ACTION_VERB_RE =
+  /\b(?:inspect|investigate|check|look(?:\s+into|\s+at)?|read|search|find|debug|fix|patch|update|change|edit|write|implement|run|test|verify|review|analy(?:s|z)e|summari(?:s|z)e|explain|answer|show|share|report|prepare|capture|take|refactor|restart|deploy|ship)\b/i;
+const SINGLE_ACTION_EXPLICIT_CONTINUATION_RE =
+  /\b(?:going to|first[, ]+i(?:'ll| will)|next[, ]+i(?:'ll| will)|then[, ]+i(?:'ll| will)|i can do that next|let me (?!know\b)\w+(?:\s+\w+){0,3}\s+(?:next|then|first)\b)/i;
+const SINGLE_ACTION_MULTI_STEP_PROMISE_RE =
+  /\bi(?:'ll| will)\b(?=[^.!?]{0,160}\b(?:next|then|after(?:wards)?|once)\b)/i;
+const SINGLE_ACTION_RESULT_STYLE_RE =
+  /\b(?:i(?:'ll| will)\s+(?:summarize|explain|share|show|report|describe|clarify|answer|recap)(?:\s+\w+){0,4}\s*:|(?:here(?:'s| is)|summary|result|answer|findings?|root cause)\s*:)/i;
+const SINGLE_ACTION_RETRY_SAFE_TOOL_NAMES = new Set([
+  "read",
+  "search",
+  "find",
+  "grep",
+  "glob",
+  "ls",
+]);
 const GEMINI_INCOMPLETE_TURN_PROVIDER_IDS = new Set([
   "google",
   "google-vertex",
@@ -115,7 +163,8 @@ const GEMINI_INCOMPLETE_TURN_PROVIDER_IDS = new Set([
   "google-gemini-cli",
 ]);
 const GEMINI_INCOMPLETE_TURN_MODEL_ID_PATTERN = /^gemini(?:[.-]|$)/;
-// Ollama native `/api/chat` can finish with only thinking/internal blocks when constrained.
+// Ollama native `/api/chat` can finish with only thinking/internal blocks when
+// constrained, but it should not inherit the stricter planning-only/ack prompts.
 const OLLAMA_INCOMPLETE_TURN_PROVIDER_ID_PATTERN = /^ollama(?:-|$)/;
 // Model APIs eligible for the non-visible turn retry guard.  OpenAI Responses
 // family can produce reasoning-only turns where usage.output > 0 but no visible
@@ -131,29 +180,88 @@ const RETRY_GUARD_MODEL_APIS = new Set([
   "openclaw-openai-chatgpt-responses-transport",
   "openclaw-azure-openai-responses-transport",
 ]);
+const DEFAULT_PLANNING_ONLY_RETRY_LIMIT = 1;
+const STRICT_AGENTIC_PLANNING_ONLY_RETRY_LIMIT = 2;
 // Allow one immediate continuation plus one follow-up continuation before
 // surfacing the existing incomplete-turn error path.
 export const DEFAULT_REASONING_ONLY_RETRY_LIMIT = 2;
 export const DEFAULT_EMPTY_RESPONSE_RETRY_LIMIT = 1;
-const REASONING_ONLY_RETRY_INSTRUCTION =
+const ACK_EXECUTION_NORMALIZED_SET = new Set([
+  "ok",
+  "okay",
+  "ok do it",
+  "okay do it",
+  "do it",
+  "go ahead",
+  "please do",
+  "sounds good",
+  "sounds good do it",
+  "ship it",
+  "fix it",
+  "make it so",
+  "yes do it",
+  "yep do it",
+  "تمام",
+  "حسنا",
+  "حسنًا",
+  "امض قدما",
+  "نفذها",
+  "mach es",
+  "leg los",
+  "los geht s",
+  "weiter",
+  "やって",
+  "進めて",
+  "そのまま進めて",
+  "allez y",
+  "vas y",
+  "fais le",
+  "continue",
+  "hazlo",
+  "adelante",
+  "sigue",
+  "faz isso",
+  "vai em frente",
+  "pode fazer",
+  "해줘",
+  "진행해",
+  "계속해",
+]);
+const ACTIONABLE_PROMPT_DIRECTIVE_RE =
+  /^\s*(?:please\s+)?(?:check|look(?:\s+into|\s+at)?|read|write|edit|update|fix|investigate|debug|run|search|find|implement|add|remove|refactor|explain|summari(?:s|z)e|analy(?:s|z)e|review|tell|show|make|restart|deploy|prepare)\b/i;
+const ACTIONABLE_PROMPT_REQUEST_RE =
+  /\b(?:can|could|would|will)\s+you\b|\b(?:please|pls)\b|\b(?:help|explain|summari(?:s|z)e|analy(?:s|z)e|review|investigate|debug|fix|check|look(?:\s+into|\s+at)?|read|write|edit|update|run|search|find|implement|add|remove|refactor|show|tell me|walk me through)\b/i;
+
+export const PLANNING_ONLY_RETRY_INSTRUCTION =
+  "The previous assistant turn only described the plan. Do not restate the plan. Act now: take the first concrete tool action you can. If a real blocker prevents action, reply with the exact blocker in one sentence.";
+export const REASONING_ONLY_RETRY_INSTRUCTION =
   "The previous assistant turn recorded reasoning but did not produce a user-visible answer. Continue from that partial turn and produce the visible answer now. Do not restate the reasoning or restart from scratch.";
-const EMPTY_RESPONSE_RETRY_INSTRUCTION =
+export const EMPTY_RESPONSE_RETRY_INSTRUCTION =
   "The previous attempt did not produce a user-visible answer. Continue from the current state and produce the visible answer now. Do not restart from scratch.";
 const SETTLED_TOOL_TERMINAL_CONTINUATION_INSTRUCTION =
   "The previous assistant turn completed its tool calls but did not produce a user-visible answer. Continue from the current transcript and produce the final user-visible answer now. Do not repeat completed tool calls or restart from scratch.";
+export const ACK_EXECUTION_FAST_PATH_INSTRUCTION =
+  "The latest user message is a short approval to proceed. Do not recap or restate the plan. Start with the first concrete tool action immediately. Keep any user-facing follow-up brief and natural.";
+export const STRICT_AGENTIC_BLOCKED_TEXT =
+  "Agent stopped after repeated plan-only turns without taking a concrete action. No concrete tool action or external side effect advanced the task.";
+
+export type PlanningOnlyPlanDetails = {
+  explanation: string;
+  steps: string[];
+};
 
 /**
- * Marks whether retrying the attempt can safely replay the prompt. Concrete
- * tool-instance policy, async work, committed delivery, spawned sessions, and
- * cron writes all contribute side-effect evidence.
+ * Marks whether retrying the attempt can safely replay the prompt. Mutating
+ * tools, async work, committed delivery, spawned sessions, and cron writes all
+ * count as side effects that make blind replay unsafe.
  */
 export function buildAttemptReplayMetadata(
   params: ReplayMetadataAttempt,
 ): EmbeddedRunAttemptResult["replayMetadata"] {
-  const hadUnsafeTools = params.toolMetas.some((entry) => entry.replaySafe !== true);
+  const hadMutatingTools = params.toolMetas.some((t) => isLikelyMutatingToolName(t.toolName));
   const hadAsyncStartedTool = params.toolMetas.some((t) => t.asyncStarted === true);
   const hadPotentialSideEffects =
-    hadUnsafeTools ||
+    hadMutatingTools ||
     hadAsyncStartedTool ||
     hasMessagingToolDeliveryEvidence(params) ||
     hasAcceptedSessionSpawn(params.acceptedSessionSpawns) ||
@@ -235,28 +343,23 @@ export function resolveIncompleteTurnPayloadText(params: {
   hadPotentialSideEffects?: boolean;
   attempt: IncompleteTurnAttempt;
 }): string | null {
-  // Prefer the current attempt's terminal message. The session fallback can
-  // still point at the pre-tool turn after a post-tool answer completes. (#80918)
+  // Tool-use terminal guard: when the last assistant message ended with a
+  // tool-call stop reason, the model expected to continue after tool results.
+  // Pre-tool text alone (payloadCount > 0) must not suppress the incomplete-
+  // turn check in that case — the final post-tool response was never
+  // produced. (#76477)
+  const toolUseTerminal = params.attempt.lastAssistant?.stopReason === "toolUse";
   const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
-  const hasTerminalOutput = hasAttemptTerminalState(params.attempt);
-  // Tool-use expects a post-tool continuation, while length means the output
-  // budget ended. Partial visible text completes neither. (#76477)
-  const incompleteTerminalAssistant = isIncompleteTerminalAssistantTurn({
-    hasAssistantVisibleText: params.payloadCount > 0,
-    hasTerminalOutput,
-    lastAssistant: assistant,
-  });
-  // Thinking payloads can count toward payloadCount but carry no user-visible
-  // content; bypass the visible-text guard when thinking was the only output
-  // so that incomplete-turn stall detection fires below. (#89787, #91953)
-  const thinkingOnlyTerminal =
+  // Unsigned thinking payloads count toward payloadCount but carry no user-visible
+  // content; bypass the visible-text guard when unsigned thinking was the only output
+  // so that incomplete-turn stall detection fires below. (#89787)
+  const unsignedThinkingOnlyTerminal =
     params.payloadCount !== 0 &&
     !joinAssistantTexts(params.attempt.assistantTexts).length &&
-    !hasTerminalOutput &&
-    Boolean(assistant && hasOnlyAssistantReasoningContent(assistant));
+    isUnsignedThinkingOnlyAssistantTurn(assistant);
 
   if (
-    (params.payloadCount !== 0 && !incompleteTerminalAssistant && !thinkingOnlyTerminal) ||
+    (params.payloadCount !== 0 && !toolUseTerminal && !unsignedThinkingOnlyTerminal) ||
     (params.aborted && params.externalAbort) ||
     params.timedOut ||
     params.attempt.clientToolCalls ||
@@ -283,7 +386,12 @@ export function resolveIncompleteTurnPayloadText(params: {
     return null;
   }
 
-  const stopReason = assistant?.stopReason;
+  const stopReason = params.attempt.lastAssistant?.stopReason;
+  const incompleteTerminalAssistant = isIncompleteTerminalAssistantTurn({
+    hasAssistantVisibleText: params.payloadCount > 0,
+    hasTerminalOutput: hasAttemptTerminalState(params.attempt),
+    lastAssistant: params.attempt.lastAssistant,
+  });
   const reasoningOnlyAssistant = isReasoningOnlyAssistantTurn(assistant);
   const emptyResponseAssistant = isEmptyResponseAssistantTurn({
     payloadCount: params.payloadCount,
@@ -292,7 +400,7 @@ export function resolveIncompleteTurnPayloadText(params: {
   if (
     !incompleteTerminalAssistant &&
     !reasoningOnlyAssistant &&
-    !thinkingOnlyTerminal &&
+    !unsignedThinkingOnlyTerminal &&
     !emptyResponseAssistant &&
     stopReason !== "error"
   ) {
@@ -663,7 +771,7 @@ function isNonVisibleAssistantTurnEligibleForSilentReply(params: {
   return isReasoningOnlyAssistantTurn(assistant);
 }
 
-function shouldSkipNonVisibleTurnRetry(params: {
+function shouldSkipPlanningOnlyRetry(params: {
   aborted: boolean;
   timedOut: boolean;
   attempt: IncompleteTurnAttempt;
@@ -680,7 +788,7 @@ function shouldSkipNonVisibleTurnRetry(params: {
   );
 }
 
-/** Allows configured silent handling for replay-safe empty, reasoning-only, or explicit silent turns. */
+/** Allows configured silent handling for replay-safe empty or reasoning-only assistant turns. */
 export function shouldTreatEmptyAssistantReplyAsSilent(params: {
   allowEmptyAssistantReplyAsSilent?: boolean;
   onlyExplicitSilentReply?: boolean;
@@ -689,7 +797,7 @@ export function shouldTreatEmptyAssistantReplyAsSilent(params: {
   timedOut: boolean;
   attempt: IncompleteTurnAttempt;
 }): boolean {
-  if (!params.allowEmptyAssistantReplyAsSilent || shouldSkipNonVisibleTurnRetry(params)) {
+  if (!params.allowEmptyAssistantReplyAsSilent || shouldSkipPlanningOnlyRetry(params)) {
     return false;
   }
   if (hasCommittedMessagingToolDeliveryEvidence(params.attempt)) {
@@ -736,7 +844,7 @@ export function resolveReasoningOnlyRetryInstruction(params: {
   timedOut: boolean;
   attempt: IncompleteTurnAttempt;
 }): string | null {
-  if (shouldSkipNonVisibleTurnRetry(params)) {
+  if (shouldSkipPlanningOnlyRetry(params)) {
     return null;
   }
 
@@ -870,7 +978,7 @@ export function resolveEmptyResponseRetryInstruction(params: {
   timedOut: boolean;
   attempt: IncompleteTurnAttempt;
 }): string | null {
-  if (shouldSkipNonVisibleTurnRetry(params)) {
+  if (shouldSkipPlanningOnlyRetry(params)) {
     return null;
   }
 
@@ -912,25 +1020,36 @@ export function resolveEmptyResponseRetryInstruction(params: {
   return null;
 }
 
+function shouldApplyPlanningOnlyRetryGuard(params: {
+  provider?: string;
+  modelId?: string;
+  executionContract?: string;
+}): boolean {
+  if (params.executionContract === "strict-agentic") {
+    return true;
+  }
+  return isIncompleteTurnRecoverySupportedProviderModel({
+    provider: params.provider,
+    modelId: params.modelId,
+  });
+}
+
 function shouldApplyNonVisibleTurnRetryGuard(params: {
   provider?: string;
   modelId?: string;
   modelApi?: string;
   executionContract?: string;
 }): boolean {
-  if (
-    params.executionContract === "strict-agentic" ||
-    isIncompleteTurnRecoverySupportedProviderModel({
-      provider: params.provider,
-      modelId: params.modelId,
-    })
-  ) {
+  if (shouldApplyPlanningOnlyRetryGuard(params)) {
     return true;
   }
   if (RETRY_GUARD_MODEL_APIS.has(normalizeLowercaseStringOrEmpty(params.modelApi ?? ""))) {
     return true;
   }
-  // This path uses provider output structure only: no user or assistant prose classification.
+  // Non-visible final turns are narrower than planning-only turns: there is no
+  // user text to classify, just a replay-safe empty/thinking-only result. Ollama
+  // gets this continuation guard without getting the planning-only or ack
+  // fast-path wording, which would be too opinionated for local models.
   return OLLAMA_INCOMPLETE_TURN_PROVIDER_ID_PATTERN.test(
     normalizeLowercaseStringOrEmpty(params.provider ?? ""),
   );
@@ -955,4 +1074,221 @@ function isIncompleteTurnRecoverySupportedProviderModel(params: {
   const modelId = typeof params.modelId === "string" ? params.modelId : "";
   return GEMINI_INCOMPLETE_TURN_MODEL_ID_PATTERN.test(stripProviderPrefix(modelId));
 }
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
+
+function normalizeAckPrompt(text: string): string {
+  const normalized = text
+    .normalize("NFKC")
+    .trim()
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalizeLowercaseStringOrEmpty(normalized);
+}
+
+/** Detects short multilingual approval prompts that should continue execution immediately. */
+export function isLikelyExecutionAckPrompt(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 80 || trimmed.includes("\n") || trimmed.includes("?")) {
+    return false;
+  }
+  return ACK_EXECUTION_NORMALIZED_SET.has(normalizeAckPrompt(trimmed));
+}
+
+function isLikelyActionableUserPrompt(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (isLikelyExecutionAckPrompt(trimmed) || trimmed.includes("?")) {
+    return true;
+  }
+  return ACTIONABLE_PROMPT_DIRECTIVE_RE.test(trimmed) || ACTIONABLE_PROMPT_REQUEST_RE.test(trimmed);
+}
+
+/** Builds the fast-path execution instruction for short approval prompts like "go ahead". */
+export function resolveAckExecutionFastPathInstruction(params: {
+  provider?: string;
+  modelId?: string;
+  prompt: string;
+}): string | null {
+  if (
+    !shouldApplyPlanningOnlyRetryGuard({
+      provider: params.provider,
+      modelId: params.modelId,
+    }) ||
+    !isLikelyExecutionAckPrompt(params.prompt)
+  ) {
+    return null;
+  }
+  return ACK_EXECUTION_FAST_PATH_INSTRUCTION;
+}
+
+function extractPlanningOnlySteps(text: string): string[] {
+  const lines = normalizeStringEntries(text.split(/\r?\n/));
+  const bulletLines = normalizeStringEntries(
+    lines.map((line) => line.replace(/^[-*•]\s+|^\d+[.)]\s+/u, "")),
+  );
+  if (bulletLines.length >= 2) {
+    return bulletLines.slice(0, 4);
+  }
+  return normalizeStringEntries(text.split(/(?<=[.!?])\s+/u)).slice(0, 4);
+}
+
+function hasStructuredPlanningOnlyFormat(text: string): boolean {
+  const lines = normalizeStringEntries(text.split(/\r?\n/));
+  if (lines.length === 0) {
+    return false;
+  }
+  const bulletLineCount = lines.filter((line) => PLANNING_ONLY_BULLET_RE.test(line)).length;
+  const hasPlanningCueLine = lines.some((line) => PLANNING_ONLY_PROMISE_RE.test(line));
+  const hasPlanningHeading = PLANNING_ONLY_HEADING_RE.test(lines[0] ?? "");
+  return (hasPlanningHeading && hasPlanningCueLine) || (bulletLineCount >= 2 && hasPlanningCueLine);
+}
+
+/** Extracts the visible plan text and normalized step list from a plan-only reply. */
+export function extractPlanningOnlyPlanDetails(text: string): PlanningOnlyPlanDetails | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const steps = extractPlanningOnlySteps(trimmed);
+  return {
+    explanation: trimmed,
+    steps,
+  };
+}
+
+function normalizePlanningToolMetas(
+  toolMetas?: PlanningOnlyAttempt["toolMetas"],
+): PlanningOnlyAttempt["toolMetas"] {
+  return toolMetas ?? [];
+}
+
+function countPlanOnlyToolMetas(toolMetas?: PlanningOnlyAttempt["toolMetas"]): number {
+  return normalizePlanningToolMetas(toolMetas).filter((entry) => entry.toolName === "update_plan")
+    .length;
+}
+
+function countNonPlanToolCalls(toolMetas?: PlanningOnlyAttempt["toolMetas"]): number {
+  return normalizePlanningToolMetas(toolMetas).filter((entry) => entry.toolName !== "update_plan")
+    .length;
+}
+
+function hasNonPlanToolActivity(toolMetas?: PlanningOnlyAttempt["toolMetas"]): boolean {
+  return normalizePlanningToolMetas(toolMetas).some((entry) => entry.toolName !== "update_plan");
+}
+
+function hasSingleRetrySafeNonPlanTool(toolMetas?: PlanningOnlyAttempt["toolMetas"]): boolean {
+  const nonPlanToolNames = normalizePlanningToolMetas(toolMetas)
+    .map((entry) => normalizeLowercaseStringOrEmpty(entry.toolName))
+    .filter((toolName) => toolName && toolName !== "update_plan");
+  return (
+    nonPlanToolNames.length === 1 &&
+    SINGLE_ACTION_RETRY_SAFE_TOOL_NAMES.has(nonPlanToolNames[0] ?? "")
+  );
+}
+
+/**
+ * Treat a turn with exactly one non-plan tool call plus visible "I'll do X
+ * next" prose as effectively planning-only from the user's perspective. This
+ * closes the one-action-then-narrative loophole without changing the 2+ tool
+ * call path, which still counts as real multi-step progress.
+ */
+function isSingleActionThenNarrativePattern(params: {
+  toolMetas?: PlanningOnlyAttempt["toolMetas"];
+  assistantTexts?: readonly string[];
+}): boolean {
+  const nonPlanCount = countNonPlanToolCalls(params.toolMetas);
+  if (nonPlanCount !== 1) {
+    return false;
+  }
+  const text = (params.assistantTexts ?? []).join("\n\n").trim();
+  if (!text || text.length > PLANNING_ONLY_MAX_VISIBLE_TEXT) {
+    return false;
+  }
+  if (SINGLE_ACTION_RESULT_STYLE_RE.test(text)) {
+    return false;
+  }
+  return (
+    SINGLE_ACTION_EXPLICIT_CONTINUATION_RE.test(text) ||
+    SINGLE_ACTION_MULTI_STEP_PROMISE_RE.test(text)
+  );
+}
+
+/** Retry budget for plan-only recovery, higher for strict-agentic models. */
+export function resolvePlanningOnlyRetryLimit(
+  executionContract?: EmbeddedAgentExecutionContract,
+): number {
+  return executionContract === "strict-agentic"
+    ? STRICT_AGENTIC_PLANNING_ONLY_RETRY_LIMIT
+    : DEFAULT_PLANNING_ONLY_RETRY_LIMIT;
+}
+
+/**
+ * Builds the retry instruction for assistant turns that only promised a plan
+ * instead of taking concrete action. The guard excludes real side effects,
+ * non-actionable prompts, explicit completions, and multi-tool progress.
+ */
+export function resolvePlanningOnlyRetryInstruction(params: {
+  provider?: string;
+  modelId?: string;
+  executionContract?: string;
+  prompt?: string;
+  aborted: boolean;
+  timedOut: boolean;
+  attempt: PlanningOnlyAttempt;
+}): string | null {
+  const planOnlyToolMetaCount = countPlanOnlyToolMetas(params.attempt.toolMetas);
+  const singleActionNarrative = isSingleActionThenNarrativePattern({
+    toolMetas: params.attempt.toolMetas,
+    assistantTexts: params.attempt.assistantTexts,
+  });
+  const allowSingleActionRetryBypass =
+    singleActionNarrative && hasSingleRetrySafeNonPlanTool(params.attempt.toolMetas);
+  if (
+    !shouldApplyPlanningOnlyRetryGuard({
+      provider: params.provider,
+      modelId: params.modelId,
+      executionContract: params.executionContract,
+    }) ||
+    (typeof params.prompt === "string" && !isLikelyActionableUserPrompt(params.prompt)) ||
+    params.aborted ||
+    params.timedOut ||
+    params.attempt.clientToolCalls ||
+    params.attempt.yieldDetected ||
+    params.attempt.didSendDeterministicApprovalPrompt ||
+    hasMessagingToolDeliveryEvidence(params.attempt) ||
+    params.attempt.lastToolError ||
+    (hasNonPlanToolActivity(params.attempt.toolMetas) && !allowSingleActionRetryBypass) ||
+    ((params.attempt.itemLifecycle?.startedCount ?? 0) > planOnlyToolMetaCount &&
+      !allowSingleActionRetryBypass) ||
+    resolveAttemptReplayMetadata(params.attempt).hadPotentialSideEffects
+  ) {
+    return null;
+  }
+
+  const stopReason = params.attempt.lastAssistant?.stopReason;
+  if (stopReason && stopReason !== "stop") {
+    return null;
+  }
+
+  const text = (params.attempt.assistantTexts ?? []).join("\n\n").trim();
+  if (!text || text.length > PLANNING_ONLY_MAX_VISIBLE_TEXT || text.includes("```")) {
+    return null;
+  }
+  const hasStructuredPlanningFormat = hasStructuredPlanningOnlyFormat(text);
+  if (!PLANNING_ONLY_PROMISE_RE.test(text) && !hasStructuredPlanningFormat) {
+    return null;
+  }
+  if (
+    !hasStructuredPlanningFormat &&
+    !singleActionNarrative &&
+    !PLANNING_ONLY_ACTION_VERB_RE.test(text)
+  ) {
+    return null;
+  }
+  if (PLANNING_ONLY_COMPLETION_RE.test(text)) {
+    return null;
+  }
+  return PLANNING_ONLY_RETRY_INSTRUCTION;
+}
