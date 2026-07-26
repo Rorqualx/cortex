@@ -811,3 +811,50 @@ export function resetAgentEventsForTest(options?: { preserveListeners?: boolean 
   state.runContextById.clear();
   getAgentRunContextOwners(state).clear();
 }
+
+export type AgentItemEventData = {
+  itemId: string;
+  phase: AgentItemEventPhase;
+  kind: AgentItemEventKind;
+  title: string;
+  status: AgentItemEventStatus;
+  name?: string;
+  meta?: string;
+  toolCallId?: string;
+  startedAt?: number;
+  endedAt?: number;
+  error?: string;
+  summary?: string;
+  progressText?: string;
+  /** Preserve item telemetry while letting channel progress render a sibling tool event instead. */
+  suppressChannelProgress?: boolean;
+  /** Preserve activity telemetry without rendering this internal item in channel progress. */
+  hideFromChannelProgress?: boolean;
+  approvalId?: string;
+  approvalSlug?: string;
+};
+
+export type AgentCommandOutputEventData = {
+  itemId: string;
+  phase: "delta" | "end";
+  title: string;
+  toolCallId: string;
+  name?: string;
+  output?: string;
+  status?: AgentItemEventStatus | "running";
+  exitCode?: number | null;
+  durationMs?: number;
+  cwd?: string;
+};
+
+export type AgentPatchSummaryEventData = {
+  itemId: string;
+  phase: "end";
+  title: string;
+  toolCallId: string;
+  name?: string;
+  added: string[];
+  modified: string[];
+  deleted: string[];
+  summary: string;
+};

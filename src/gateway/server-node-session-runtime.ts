@@ -28,6 +28,9 @@ export function createGatewayNodeSessionRuntime(params: {
   listRegisteredNodePluginToolCommands?: NodeRegistryOptions["listRegisteredNodePluginToolCommands"];
   nodePluginToolsEnabled?: boolean;
   nodeSkillsEnabled?: boolean;
+  resolveCurrentPairingState?: NodeRegistryOptions["resolveCurrentPairingState"];
+  isPairingStateCurrent?: NodeRegistryOptions["isPairingStateCurrent"];
+  onPairingInvalidated?: NodeRegistryOptions["onPairingInvalidated"];
   // Optional so the fork's server.impl.ts (merge=ours) can keep its
   // { broadcast }-only call shape; upstream-style callers inject registries.
   sessionEventSubscribers?: SessionEventSubscriberRegistry;
