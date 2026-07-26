@@ -60,3 +60,4 @@ export * from "./schema/worktrees.js";
 // Fork-owned schema modules (activity feed, egress vault).
 export * from "./schema/activity.js";
 export * from "./schema/vault.js";
+export * from "./schema/session-row.js";
