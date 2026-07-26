@@ -7,7 +7,7 @@
 # returns UNAVAILABLE (3) so the caller DEFERS the land rather than shipping
 # unproven code.
 #
-# Remote layout (huey): node 22 at $REMOTE_NODE_BIN, pnpm via corepack, a
+# Remote layout (huey): node 24 at $REMOTE_NODE_BIN, pnpm via corepack, a
 # self-provisioned proof clone at $PROOF_DIR (cloned from GitHub origin on first
 # run). The cherry branch is built on the Mac's LOCAL main which may be ahead of
 # origin, so the delta bundle is based on origin/main (the point huey can fetch
@@ -16,7 +16,7 @@
 # Exit codes:  0 = PASS   1 = FAIL   2 = usage/local error   3 = UNAVAILABLE
 # Usage: scripts/remote-proof.sh <branch>
 #
-# Env: REMOTE_HOST (joe@192.168.50.185) · REMOTE_NODE_BIN (/home/joe/node22/bin)
+# Env: REMOTE_HOST (joe@192.168.50.185) · REMOTE_NODE_BIN (/home/joe/node24/bin)
 #      PROOF_DIR (~/openclaw-proof) · FORK_URL · PROOF_TIMEOUT (5400) · POLL (25)
 
 set -uo pipefail
@@ -28,7 +28,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 
 REMOTE_HOST="${REMOTE_HOST:-joe@192.168.50.185}"
-REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node22/bin}"
+# node24, not huey's node22 (22.19.0): the repo preinstall guard requires
+# node>=22.22.3, so a node22 proof dies in `pnpm install` before any lane runs.
+REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node24/bin}"
 PROOF_DIR="${PROOF_DIR:-\$HOME/openclaw-proof}"
 FORK_URL="${FORK_URL:-https://github.com/Rorqualx/cortex.git}"
 UPSTREAM_URL="${UPSTREAM_URL:-https://github.com/openclaw/openclaw.git}"
