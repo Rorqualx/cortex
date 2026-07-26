@@ -552,3 +552,19 @@ export type {
 export type {
   SessionsChangedEvent,
 } from "./schema.js";
+
+// Types the Control UI consumes from the protocol barrel.
+export type {
+  GatewaySessionRow,
+  GatewaySessionsDefaults,
+  GatewayThinkingLevelOption,
+  SessionCompactionCheckpoint,
+  SessionCompactionCheckpointPreview,
+  SessionRunStatus,
+  SessionsListResult,
+  SubagentRunState,
+  SessionGoal,
+  ChatSideResultEvent,
+  ChatSendTimingPhase,
+  ExecApprovalDecision,
+} from "./schema.js";
