@@ -5,7 +5,6 @@
  * this barrel gives package consumers one stable path for schema-level imports.
  */
 export * from "./schema/primitives.js";
-export * from "./schema/activity.js";
 export * from "./schema/agent.js";
 export * from "./schema/agents-models-skills.js";
 export * from "./schema/agents-workspace.js";
@@ -16,6 +15,7 @@ export * from "./schema/audit.js";
 export * from "./schema/board.js";
 export * from "./schema/users.js";
 export * from "./schema/channels.js";
+export * from "./schema/channel-pairing.js";
 export * from "./schema/talk-marks.js";
 export * from "./schema/commands.js";
 export * from "./schema/config.js";
@@ -38,8 +38,9 @@ export * from "./schema/questions.js";
 export * from "./schema/secrets.js";
 export * from "./schema/session-placement.js";
 export * from "./schema/session-discussion.js";
-export * from "./schema/session-row.js";
 export * from "./schema/sessions.js";
+export * from "./schema/sessions-sharing.js";
+export * from "./schema/sessions-suggestions.js";
 export * from "./schema/sessions-catalog.js";
 export * from "./schema/skill-history.js";
 export * from "./schema/snapshot.js";
@@ -48,11 +49,9 @@ export * from "./schema/system-event.js";
 export * from "./schema/task-suggestions.js";
 export * from "./schema/tasks.js";
 export * from "./schema/terminal.js";
-export * from "./schema/types.js";
 export * from "./schema/ui-command.js";
 export * from "./schema/plugin-approvals.js";
 export * from "./schema/plugins.js";
-export * from "./schema/vault.js";
 export * from "./schema/wizard.js";
 export * from "./schema/worker-admission.js";
 export * from "./schema/worker-inference.js";

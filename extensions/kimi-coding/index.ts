@@ -102,6 +102,7 @@ export default definePluginEntry({
         const normalizedId = normalizeKimiCodingModelId(model.id);
         return normalizedId === model.id ? undefined : { ...model, id: normalizedId };
       },
+      normalizeModelId: ({ modelId }) => normalizeKimiCodingModelId(modelId),
       // K3 models keep the shared policy profile (off/max + catalog-preserve).
       // Other Kimi Code models (anthropic-messages) support graded
       // extended-thinking budgets, not just on/off: low/medium/high map to

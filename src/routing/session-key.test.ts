@@ -1,5 +1,7 @@
 // Routing session key tests cover route-derived session key behavior.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.unmock("./session-key.js");
 import {
   resolveSessionStoreAgentId,
   resolveSessionStoreKey,
@@ -18,6 +20,7 @@ import {
   classifySessionKeyShape,
   isValidAgentId,
   parseAgentSessionKey,
+  resolveAgentIdFromSessionKey,
   resolveEventSessionKey,
   scopedHeartbeatWakeOptions,
   isDashboardSessionKey,
@@ -25,6 +28,19 @@ import {
   scopeLegacySessionKeyToAgent,
   toAgentStoreSessionKey,
 } from "./session-key.js";
+
+describe("agent id session-key boundary", () => {
+  it("keeps legacy keys absent at parse time and resolves them only with a configured default", () => {
+    expect(parseAgentSessionKey("main")?.agentId).toBeUndefined();
+    expect(() => resolveAgentIdFromSessionKey("main")).toThrow("configured default agent");
+    expect(() => resolveAgentIdFromSessionKey("main", "   ")).toThrow("configured default agent");
+    expect(resolveAgentIdFromSessionKey("main", "primary")).toBe("primary");
+    expect(resolveAgentIdFromSessionKey("agent:worker:main", "primary")).toBe("worker");
+    expect(() => resolveAgentIdFromSessionKey("agent::secret", "primary")).toThrow(
+      "Malformed agent session key",
+    );
+  });
+});
 
 describe("classifySessionKeyShape", () => {
   it.each([

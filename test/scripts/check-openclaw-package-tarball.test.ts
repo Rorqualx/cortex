@@ -26,6 +26,16 @@ const AI_RUNTIME_PACKAGE_JSON = JSON.stringify({
   exports: {
     ".": { import: "./dist/index.mjs" },
     "./providers": { import: "./dist/providers.mjs" },
+    "./transports": { import: "./dist/transports.mjs" },
+    "./internal/*": { import: "./dist/internal/*.mjs" },
+  },
+});
+const LEGACY_AI_RUNTIME_PACKAGE_JSON = JSON.stringify({
+  name: "@openclaw/ai",
+  version: "2026.7.2-beta.4",
+  exports: {
+    ".": { import: "./dist/index.mjs" },
+    "./providers": { import: "./dist/providers.mjs" },
     "./internal/*": { import: "./dist/internal/*.mjs" },
   },
 });
@@ -347,6 +357,66 @@ describe("check-openclaw-package-tarball", () => {
     );
   });
 
+  it("rejects leaked private QA Docker chunks that import an omitted QA runtime", () => {
+    withTarball(
+      ["dist/docker-runtime-BVdgRgxA.js"],
+      {
+        "dist/docker-runtime-BVdgRgxA.js":
+          'import { createQaDockerRuntime } from "./qa-runtime-Bi1S3plf.js";\n' +
+          "export { createQaDockerRuntime };\n",
+      },
+      (tarball) => {
+        const result = spawnSync("node", [CHECK_SCRIPT, tarball], { encoding: "utf8" });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(
+          "dist/docker-runtime-BVdgRgxA.js imports missing dist/qa-runtime-Bi1S3plf.js",
+        );
+      },
+    );
+  });
+
+  it.each([
+    {
+      name: "named imports",
+      source: 'import { value } from "./missing.js";\n',
+    },
+    {
+      name: "multiline named imports",
+      source: 'import {\n  value,\n} from "./missing.js";\n',
+    },
+    {
+      name: "named re-exports",
+      source: 'export { value } from "./missing.js";\n',
+    },
+  ])("rejects missing packaged chunks in $name", ({ source }) => {
+    withTarball(
+      ["dist/index.js"],
+      { "dist/index.js": source },
+      (tarball) => {
+        const result = spawnSync("node", [CHECK_SCRIPT, tarball], { encoding: "utf8" });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("dist/index.js imports missing dist/missing.js");
+      },
+      "2026.4.27",
+    );
+  });
+
+  it("does not reject import-like text inside packaged template literals", () => {
+    withTarball(
+      ["dist/index.js"],
+      { "dist/index.js": 'const example = `\nimport "./phantom.js"\n`;\n' },
+      (tarball) => {
+        const result = spawnSync("node", [CHECK_SCRIPT, tarball], { encoding: "utf8" });
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toContain("OpenClaw package tarball integrity passed.");
+      },
+      "2026.4.27",
+    );
+  });
+
   it("accepts dist files whose relative chunks are present", () => {
     withTarball(
       ["dist/cli/run-main.js", "dist/memory-state-current.js"],
@@ -378,6 +448,23 @@ describe("check-openclaw-package-tarball", () => {
         expect(result.stderr).toContain(
           "inventory omits imported dist file dist/memory-state-current.js",
         );
+      },
+      "2026.4.27",
+    );
+  });
+
+  it("rejects named imported chunks omitted from the postinstall inventory", () => {
+    withTarball(
+      ["dist/index.js"],
+      {
+        "dist/index.js": 'import { value } from "./chunk.js";\nexport { value };\n',
+        "dist/chunk.js": "export const value = 42;\n",
+      },
+      (tarball) => {
+        const result = spawnSync("node", [CHECK_SCRIPT, tarball], { encoding: "utf8" });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("inventory omits imported dist file dist/chunk.js");
       },
       "2026.4.27",
     );
@@ -457,6 +544,27 @@ describe("check-openclaw-package-tarball", () => {
     withTarball(
       ["dist/index.js"],
       { "dist/index.js": 'const root = new URL("../..", import.meta.url);\n' },
+      (tarball) => {
+        const result = spawnSync("node", [CHECK_SCRIPT, tarball], { encoding: "utf8" });
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toContain("OpenClaw package tarball integrity passed.");
+      },
+      "2026.4.27",
+    );
+  });
+
+  it.each([
+    "../../openclaw.mjs",
+    "../../scripts/run-node.mjs",
+    "../../dist/entry.js",
+    "../../dist/entry.mjs",
+  ])("allows import.meta.url JavaScript probes outside packaged dist (%s)", (specifier) => {
+    withTarball(
+      ["dist/index.js"],
+      {
+        "dist/index.js": `const candidate = new URL(${JSON.stringify(specifier)}, import.meta.url);\n`,
+      },
       (tarball) => {
         const result = spawnSync("node", [CHECK_SCRIPT, tarball], { encoding: "utf8" });
 
@@ -681,6 +789,7 @@ describe("check-openclaw-package-tarball", () => {
         "node_modules/@openclaw/ai/package.json": AI_RUNTIME_PACKAGE_JSON,
         "node_modules/@openclaw/ai/dist/index.mjs": "export {};\n",
         "node_modules/@openclaw/ai/dist/providers.mjs": "export {};\n",
+        "node_modules/@openclaw/ai/dist/transports.mjs": "export {};\n",
         "node_modules/@openclaw/ai/dist/internal/runtime.mjs": "export {};\n",
       },
       (tarball) => {
@@ -703,6 +812,36 @@ describe("check-openclaw-package-tarball", () => {
     );
   });
 
+  it("accepts frozen AI runtimes that predate an optional exported subpath", () => {
+    withTarball(
+      ["dist/index.js"],
+      {
+        "dist/index.js": "export {};\n",
+        "node_modules/@openclaw/ai/package.json": LEGACY_AI_RUNTIME_PACKAGE_JSON,
+        "node_modules/@openclaw/ai/dist/index.mjs": "export {};\n",
+        "node_modules/@openclaw/ai/dist/providers.mjs": "export {};\n",
+        "node_modules/@openclaw/ai/dist/internal/runtime.mjs": "export {};\n",
+      },
+      (tarball) => {
+        const result = spawnSync(
+          "node",
+          [CHECK_SCRIPT, "--require-bundled-workspace-deps", tarball],
+          { encoding: "utf8" },
+        );
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toContain("OpenClaw package tarball integrity passed.");
+      },
+      "2026.7.2-beta.4",
+      {
+        packageJson: {
+          dependencies: { "@openclaw/ai": "2026.7.2-beta.4" },
+          bundleDependencies: ["@openclaw/ai"],
+        },
+      },
+    );
+  });
+
   it("rejects a missing required bundled AI runtime entry", () => {
     withTarball(
       ["dist/index.js"],
@@ -710,6 +849,7 @@ describe("check-openclaw-package-tarball", () => {
         "dist/index.js": "export {};\n",
         "node_modules/@openclaw/ai/package.json": AI_RUNTIME_PACKAGE_JSON,
         "node_modules/@openclaw/ai/dist/index.mjs": "export {};\n",
+        "node_modules/@openclaw/ai/dist/transports.mjs": "export {};\n",
         "node_modules/@openclaw/ai/dist/internal/runtime.mjs": "export {};\n",
       },
       (tarball) => {
@@ -750,6 +890,7 @@ describe("check-openclaw-package-tarball", () => {
         }),
         "node_modules/@openclaw/ai/dist/index.mjs": "export {};\n",
         "node_modules/@openclaw/ai/dist/providers.mjs": "export {};\n",
+        "node_modules/@openclaw/ai/dist/transports.mjs": "export {};\n",
         "node_modules/@openclaw/ai/dist/internal/runtime.mjs": "export {};\n",
       },
       (tarball) => {

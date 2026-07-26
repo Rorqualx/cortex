@@ -24,6 +24,7 @@ AUTO_DETECT_SIGNING=1
 GATEWAY_WAIT_SECONDS="${OPENCLAW_GATEWAY_WAIT_SECONDS:-0}"
 LAUNCHAGENT_DISABLE_MARKER="${HOME}/.openclaw/disable-launchagent"
 ATTACH_ONLY=1
+BACKGROUND_ONLY=0
 TARGET_ONLY=0
 TARGET_APP_BUNDLE="${ROOT_DIR}/dist/OpenClaw.app"
 TARGET_EXECUTABLE="${TARGET_APP_BUNDLE}/${APP_EXECUTABLE_RELATIVE_PATH}"
@@ -115,15 +116,17 @@ for arg in "$@"; do
     --attach-only) ATTACH_ONLY=1 ;;
     --no-attach-only) ATTACH_ONLY=0 ;;
     --force|-f) FORCE=1 ;;
+    --background-only) BACKGROUND_ONLY=1 ;;
     --target-only) TARGET_ONLY=1 ;;
     --help|-h)
-      log "Usage: $(basename "$0") [--wait] [--force] [--no-sign] [--sign] [--attach-only|--no-attach-only] [--target-only]"
+      log "Usage: $(basename "$0") [--wait] [--force] [--no-sign] [--sign] [--attach-only|--no-attach-only] [--background-only] [--target-only]"
       log "  --wait    Wait for other restart to complete instead of exiting"
       log "  --force   Restart even while cron jobs are running (kills in-flight runs)"
       log "  --no-sign Force no code signing (fastest for development)"
       log "  --sign    Force code signing (will fail if no signing key available)"
       log "  --attach-only    Launch app with --attach-only (skip launchd install)"
       log "  --no-attach-only Launch app without attach-only override"
+      log "  --background-only Launch app without automatic windows or prompts"
       log "  --target-only    Restart only this checkout's dist app; fail if another OpenClaw app is active"
       log ""
       log "Env:"
@@ -164,6 +167,9 @@ if [[ "$NO_SIGN" -eq 1 ]]; then
 fi
 if [[ "$ATTACH_ONLY" -eq 1 ]]; then
   log "==> Using --attach-only (skip launchd install)"
+fi
+if [[ "$BACKGROUND_ONLY" -eq 1 ]]; then
+  log "==> Using --background-only (suppress automatic presentation)"
 fi
 
 acquire_lock
@@ -484,9 +490,12 @@ if [ "$NO_SIGN" -eq 1 ] && [ "$ATTACH_ONLY" -ne 1 ]; then
   run_step "verify gateway port ${GATEWAY_PORT} (unsigned)" verify_gateway_port_listening "${GATEWAY_PORT}"
 fi
 
-ATTACH_ONLY_ARGS=()
+APP_LAUNCH_ARGS=()
 if [[ "$ATTACH_ONLY" -eq 1 ]]; then
-  ATTACH_ONLY_ARGS+=(--args --attach-only)
+  APP_LAUNCH_ARGS+=(--attach-only)
+fi
+if [[ "$BACKGROUND_ONLY" -eq 1 ]]; then
+  APP_LAUNCH_ARGS+=(--background-only)
 fi
 
 if [[ "$TARGET_ONLY" -eq 1 ]]; then
@@ -501,6 +510,10 @@ fi
 
 run_step "install packaged app" install_staged_app
 choose_app_bundle
+OPEN_ARGS=(-n "${APP_BUNDLE}")
+if [[ "$ATTACH_ONLY" -eq 1 || "$BACKGROUND_ONLY" -eq 1 ]]; then
+  OPEN_ARGS+=(--args "${APP_LAUNCH_ARGS[@]}")
+fi
 
 # 4) Launch the installed app in the foreground so the menu bar extra appears.
 # LaunchServices can inherit a huge environment from this shell (secrets, prompt vars, etc.).
@@ -512,7 +525,7 @@ run_step "launch app" env -i \
   TMPDIR="${TMPDIR:-/tmp}" \
   PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
   LANG="${LANG:-en_US.UTF-8}" \
-  /usr/bin/open -n "${APP_BUNDLE}" ${ATTACH_ONLY_ARGS[@]:+"${ATTACH_ONLY_ARGS[@]}"}
+  /usr/bin/open "${OPEN_ARGS[@]}"
 
 # 5) Verify the app is alive.
 sleep 1.5

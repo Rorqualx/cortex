@@ -5,6 +5,13 @@ export const GENERIC_EXTERNAL_RUN_FAILURE_TEXT =
 export const HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT =
   "⚠️ Heartbeat check failed before it could produce an update. The main chat session remains available.";
 
+const CONTROL_UI_LOG_HINT = "To view logs, run `openclaw logs --follow` in a terminal.";
+
+/** Preserves raw errors on internal surfaces while making the log command actionable. */
+export function buildControlUiAgentFailureText(errorText: string): string {
+  const trimmedError = errorText.trim().replace(/\.\s*$/, "");
+  return `⚠️ Agent failed before reply: ${trimmedError}.\n${CONTROL_UI_LOG_HINT}`;
+}
 // Shown when a follow-up arrives while a prior turn still holds the session
 // write lock (e.g. mid tool-call). The active turn owns the transcript, so the
 // follow-up can't run concurrently — tell the user it's still working rather

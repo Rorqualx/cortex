@@ -1225,6 +1225,7 @@
                 "group": "Sessions and memory",
                 "pages": [
                   "concepts/main-session",
+                  "concepts/multi-user",
                   "concepts/session",
                   "concepts/session-search",
                   "concepts/channel-docking",
@@ -1792,6 +1793,7 @@
                     "pages": [
                       "cli/agent",
                       "cli/agents",
+                      "cli/claws",
                       "cli/audit",
                       "cli/hooks",
                       "cli/infer",

@@ -4,6 +4,8 @@
  * Applies request timeouts, proxy/TLS overrides, SSRF policy, local-service leases, retry hints, and SSE normalization.
  */
 import { parseRetryAfterHttpDateMs } from "@openclaw/ai/internal/retry-after";
+import { emitModelTransportDebug } from "@openclaw/ai/transports";
+import { formatModelTransportDebugUrl } from "@openclaw/ai/transports";
 import {
   isCloudMetadataIpAddress,
   isLinkLocalIpAddress,
@@ -462,7 +464,7 @@ async function requestBodyHasStreamTrue(
   }
 }
 
-export function parseRetryAfterSeconds(headers: Headers): number | undefined {
+function parseRetryAfterSeconds(headers: Headers): number | undefined {
   const retryAfterMs = headers.get("retry-after-ms");
   if (retryAfterMs) {
     const trimmedRetryAfterMs = retryAfterMs.trim();

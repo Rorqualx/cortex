@@ -182,14 +182,6 @@ export async function isCliBindingFlushed(
   return false;
 }
 
-function flushSessionManagerTranscript(sessionManager: SessionManager): void {
-  (
-    sessionManager as unknown as {
-      replacePersistedTranscript?: () => void;
-    }
-  ).replacePersistedTranscript?.();
-}
-
 async function assertSuccessfulCliRuntimeBindingCurrent(
   context: PreparedCliRunContext,
 ): Promise<void> {
@@ -885,7 +877,7 @@ export async function runPreparedCliAgent(
       sessionManager.appendMessage(
         redactedUserMessage as Parameters<typeof sessionManager.appendMessage>[0],
       );
-      flushSessionManagerTranscript(sessionManager);
+      sessionManager.flushPendingPersistence();
     } catch (err) {
       log.warn(
         `before_agent_run block: failed to persist redacted CLI user message: ${formatErrorMessage(

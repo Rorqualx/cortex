@@ -62,7 +62,7 @@ import { isTruthyEnvValue } from "../infra/env.js";
 import type { ModelRegistry } from "../llm/model-registry.js";
 import { normalizeGoogleModelId } from "../plugin-sdk/google-model-id.js";
 import { resolveProviderThinkingProfile } from "../plugins/provider-runtime.js";
-import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
+import { LEGACY_IMPLICIT_AGENT_ID as DEFAULT_AGENT_ID } from "../routing/session-key.js";
 import { stripAssistantInternalScaffolding } from "../shared/text/assistant-visible-text.js";
 import { findFinalTagMatches, stripFinalTags } from "../shared/text/final-tags.js";
 import { deleteTestEnvValue, setTestEnvValue } from "../test-utils/env.js";
@@ -4358,15 +4358,14 @@ function buildLiveGatewayConfig(params: {
     ...providerOverrides,
   };
   const providers = Object.keys(nextProviders).length > 0 ? nextProviders : baseProviders;
-  const configuredAgents = [
-    {
-      id: GATEWAY_LIVE_AGENT_ID,
+  const configuredAgents = {
+    [GATEWAY_LIVE_AGENT_ID]: {
       default: true,
       agentDir: params.liveAgentDir,
       workspace: params.liveAgentWorkspaceDir,
       sandbox: { mode: "off" },
     },
-  ] satisfies NonNullable<OpenClawConfig["agents"]>["list"];
+  } satisfies NonNullable<OpenClawConfig["agents"]>["entries"];
   const baseModels = params.cfg.models;
   return {
     ...params.cfg,
@@ -4374,7 +4373,7 @@ function buildLiveGatewayConfig(params: {
     broadcast: undefined,
     agents: {
       ...params.cfg.agents,
-      list: configuredAgents,
+      entries: configuredAgents,
       defaults: {
         ...params.cfg.agents?.defaults,
         // Live tests should avoid Docker sandboxing so tool probes can

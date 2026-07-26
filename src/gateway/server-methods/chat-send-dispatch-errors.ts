@@ -86,7 +86,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
       context.logGateway.warn(
         `webchat dispatch failed after followup queue admission: ${formatForLog(err)}`,
       );
-      if (!context.chatAbortedRuns.has(clientRunId)) {
+      if (!context.chatRunState.hasAbortMarker(clientRunId)) {
         setGatewayDedupeEntry({
           dedupe: context.dedupe,
           key: `chat:${clientRunId}`,
@@ -114,7 +114,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
     if (
       !restartSafeDispatchFailureTerminalized &&
       !activeRunAbort.controller.signal.aborted &&
-      !context.chatAbortedRuns.has(clientRunId)
+      !context.chatRunState.hasAbortMarker(clientRunId)
     ) {
       pendingDispatchLifecycleError = {
         endedAt: Date.now(),

@@ -8,6 +8,7 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { GatewayClientRequestError } from "../gateway/client.js";
 import {
   onInternalDiagnosticEvent,
@@ -2731,22 +2732,17 @@ describe("before_tool_call tool content private-data capture", () => {
     }
   }
 
-  function configWithToolContent(
-    fields: { toolInputs?: boolean; toolOutputs?: boolean } = {
-      toolInputs: true,
-      toolOutputs: true,
-    },
-  ) {
+  function configWithToolContent(): OpenClawConfig {
     return {
       diagnostics: {
         enabled: true,
         otel: {
           enabled: true,
           traces: true,
-          captureContent: { enabled: true, ...fields },
+          captureContent: true,
         },
       },
-    } as unknown as import("../config/types.openclaw.js").OpenClawConfig;
+    };
   }
 
   it("attaches tool input/output to private data when opted in", async () => {
@@ -2793,7 +2789,7 @@ describe("before_tool_call tool content private-data capture", () => {
     });
   });
 
-  it("captures only opted-in fields and clones away from live params", async () => {
+  it("clones captured content away from live params", async () => {
     const liveParams = { path: "/etc/secret" };
     const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "out" }] });
     const tool = wrapToolWithBeforeToolCallHook(asAgentTool({ name: "read", execute }), {
@@ -2801,7 +2797,7 @@ describe("before_tool_call tool content private-data capture", () => {
       sessionKey: "session-key",
       runId: "run-1",
       loopDetection: { enabled: false },
-      config: configWithToolContent({ toolInputs: true, toolOutputs: false }),
+      config: configWithToolContent(),
     });
 
     await withTrustedToolEvents(async (emitted, flush) => {
@@ -2810,7 +2806,9 @@ describe("before_tool_call tool content private-data capture", () => {
 
       const completed = emitted.find((e) => e.event.type === "tool.execution.completed");
       expect(completed?.privateData.toolContent?.toolInput).toEqual({ path: "/etc/secret" });
-      expect(completed?.privateData.toolContent?.toolOutput).toBeUndefined();
+      expect(completed?.privateData.toolContent?.toolOutput).toEqual({
+        content: [{ type: "text", text: "out" }],
+      });
       // Captured snapshot is a clone, not the live params object.
       expect(completed?.privateData.toolContent?.toolInput).not.toBe(liveParams);
     });
