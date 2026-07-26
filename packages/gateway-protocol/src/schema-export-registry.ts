@@ -576,3 +576,7 @@ export {
 export {
   AgentsComposePromptParamsSchema,
 } from "./schema.js";
+
+export {
+  SessionsChangedEventSchema,
+} from "./schema.js";

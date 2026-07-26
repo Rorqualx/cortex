@@ -549,3 +549,6 @@ export type {
   VaultSaveParams,
 } from "./schema.js";
 
+export type {
+  SessionsChangedEvent,
+} from "./schema.js";

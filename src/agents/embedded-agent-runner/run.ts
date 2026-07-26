@@ -2513,8 +2513,6 @@ export async function runEmbeddedAgent(
                     contextWindowTokens: ctxInfo.tokens,
                     maxCharsOverride: resolveLiveToolResultMaxChars({
                       contextWindowTokens: ctxInfo.tokens,
-                      cfg: params.config,
-                      agentId: sessionAgentId,
                     }),
                     sessionId: activeSessionId,
                     sessionKey: params.sessionKey,
@@ -2558,8 +2556,6 @@ export async function runEmbeddedAgent(
               const contextWindowTokens = ctxInfo.tokens;
               const toolResultMaxChars = resolveLiveToolResultMaxChars({
                 contextWindowTokens,
-                cfg: params.config,
-                agentId: sessionAgentId,
               });
               const hasOversized = attempt.messagesSnapshot
                 ? sessionLikelyHasOversizedToolResults({
