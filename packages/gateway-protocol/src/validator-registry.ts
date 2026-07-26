@@ -613,16 +613,6 @@ export const validateSkillsUploadCommitParams = lazyCompile(SkillsUploadCommitPa
 export const validateSkillsUpdateParams = lazyCompile(SkillsUpdateParamsSchema);
 export const validateSkillsSearchParams = lazyCompile(SkillsSearchParamsSchema);
 export const validateSkillsDetailParams = lazyCompile(SkillsDetailParamsSchema);
-export const validateSkillsCuratorStatusParams = lazyCompile(SkillsCuratorStatusParamsSchema);
-export const validateSkillsCuratorActionParams = lazyCompile(SkillsCuratorActionParamsSchema);
-export const validateSkillsProposalsListParams = lazyCompile(SkillsProposalsListParamsSchema);
-export const validateSkillsProposalInspectParams = lazyCompile(SkillsProposalInspectParamsSchema);
-export const validateSkillsProposalCreateParams = lazyCompile(SkillsProposalCreateParamsSchema);
-export const validateSkillsProposalUpdateParams = lazyCompile(SkillsProposalUpdateParamsSchema);
-export const validateSkillsProposalReviseParams = lazyCompile(SkillsProposalReviseParamsSchema);
-export const validateSkillsProposalRequestRevisionParams = lazyCompile(
-);
-export const validateSkillsProposalActionParams = lazyCompile(SkillsProposalActionParamsSchema);
 export const validateSkillsSecurityVerdictsParams = lazyCompile(SkillsSecurityVerdictsParamsSchema);
 export const validateSkillsSkillCardParams = lazyCompile(SkillsSkillCardParamsSchema);
 export const validateCronListParams = lazyCompile(CronListParamsSchema);
