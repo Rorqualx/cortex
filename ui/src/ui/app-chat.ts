@@ -858,7 +858,7 @@ function chatEventHasVisibleTerminalPayload(payload: ChatEventPayload): boolean 
   if (payload.state === "error" && payload.errorMessage?.trim()) {
     return true;
   }
-  return Boolean(payload.message && typeof payload.message === "object");
+  return Boolean("message" in payload && payload.message && typeof payload.message === "object");
 }
 
 function resolveFirstAssistantTimingPhase(

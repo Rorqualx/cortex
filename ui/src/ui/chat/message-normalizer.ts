@@ -221,7 +221,13 @@ function inferAttachmentKind(url: string): {
   label: string;
 } {
   const mimeType = mimeTypeFromUrl(url);
-  const kind = mediaKindFromMime(mimeType) ?? "document";
+  const inferredKind = mediaKindFromMime(mimeType) ?? "document";
+  // MediaKind also carries "sticker" | "unknown"; the attachment descriptor only
+  // renders the four display kinds, so anything else falls back to document.
+  const kind =
+    inferredKind === "image" || inferredKind === "audio" || inferredKind === "video"
+      ? inferredKind
+      : "document";
   const label = (() => {
     try {
       if (/^https?:\/\//i.test(url)) {

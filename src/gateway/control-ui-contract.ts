@@ -151,6 +151,8 @@ export type ControlUiBootstrapConfig = {
   seamColor?: string;
   /** Resolved `agents.defaults.timeFormat`; "auto" keeps the browser locale default. */
   timeFormat?: "auto" | "12" | "24";
+  /** Fork: `gateway.controlUi.chatMessageMaxWidth` CSS width cap for chat bubbles. */
+  chatMessageMaxWidth?: string;
   /**
    * Whether the operator terminal surface is enabled (`gateway.terminal.enabled`).
    * The Control UI hides the terminal entirely when false so a disabled kill
