@@ -188,6 +188,35 @@ describe("parseExtractResponse", () => {
     expect(result.typedFacts[1]!.unit).toBe("MB");
     expect(result.typedFacts[1]!.confidence).toBe(0);
   });
+
+  it("normalizes a valid activeConstraints array", () => {
+    const raw = JSON.stringify({
+      activeConstraints: [
+        { text: "Must support Python 3.9+", status: "open", sourceSpan: "needs to work on 3.9+" },
+        {
+          text: "Verified API returns JSON",
+          status: "verified",
+          sourceSpan: "the API returns JSON",
+        },
+        { text: "bad entry without span" },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.activeConstraints).toEqual([
+      { text: "Must support Python 3.9+", status: "open", sourceSpan: "needs to work on 3.9+" },
+      { text: "Verified API returns JSON", status: "verified", sourceSpan: "the API returns JSON" },
+    ]);
+  });
+
+  it("defaults unknown constraint status to open", () => {
+    const raw = JSON.stringify({
+      activeConstraints: [{ text: "something", status: "whatever", sourceSpan: "ctx" }],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.activeConstraints).toEqual([
+      { text: "something", status: "open", sourceSpan: "ctx" },
+    ]);
+  });
 });
 
 describe("extractFacts", () => {
@@ -218,7 +247,7 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=10");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=11");
     expect(call.systemPrompt).toContain("REASONING");
     expect(call.userPrompt).not.toContain("already-known");
   });

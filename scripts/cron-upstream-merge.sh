@@ -27,6 +27,16 @@
 #                         print the residual conflict list for the agent to resolve.
 #   stage-finish <date>   after the agent resolved+committed in the worktree: prove on huey,
 #                         push the branch, print the one-line land command. Never touches main.
+#   finish-land <date>    same, but lands ff-only into main + deploys on green proof.
+#
+# Two policies keep the residual bounded and honest (both learned the hard way on
+# the 2026-07-22..25 runs, which never landed anything):
+#   - ui/ is fork-owned; see apply_fork_ui_ownership. Without it ~92% of the
+#     conflicts are the upstream Control-UI rearchitecture the fork has not adopted.
+#   - merge=ours keeps our whole FILE, so upstream additions to a protected file
+#     vanish silently; see report_merge_ours_drift, and rebase those files onto
+#     upstream re-applying only the fork delta.
+# Every path runs `preflight` locally before spending a huey cycle.
 #
 # Exit: 0 ok (up-to-date, clean landed, or stage step done) · 20 needs-resolution
 #       (route only) · 3 proof UNAVAILABLE/deferred · non-zero local error.
@@ -75,6 +85,50 @@ fresh_worktree() {
 }
 
 drop_worktree() { git -C "$MAIN" worktree remove --force "$WORKTREE" 2>/dev/null || true; }
+
+# --- fork ownership of ui/ --------------------------------------------------
+# Upstream rearchitected the Control UI into ui/src/{pages,lib,api}/**; this fork
+# still ships the pre-rearchitecture ui/src/ui/** tree with its merge=ours
+# customizations. Merging the two produces a hybrid that never builds: 2026-07-22
+# through 2026-07-25 all died here, with ui/src accounting for ~92% of conflicts
+# (622 of 678 on 07-25) while everything else was ~55 files of ordinary work.
+# So ui/ is resolved by policy, not by the model: take main's tree wholesale and
+# drop the upstream-only UI files the merge dragged in. Revisit only if the fork
+# adopts upstream's UI architecture — see FORK-MERGE-GUIDE.md.
+apply_fork_ui_ownership() {
+  local wt="$1"
+  git -C "$wt" checkout main -- ui 2>/dev/null || return 0
+  git -C "$wt" ls-tree -r --name-only main ui | LC_ALL=C sort > /tmp/um-ui-main.txt
+  git -C "$wt" ls-files -- ui | LC_ALL=C sort > /tmp/um-ui-index.txt
+  comm -13 /tmp/um-ui-main.txt /tmp/um-ui-index.txt > /tmp/um-ui-extra.txt
+  local dropped; dropped="$(wc -l < /tmp/um-ui-extra.txt | tr -d ' ')"
+  if [ "$dropped" != 0 ]; then
+    tr '\n' '\0' < /tmp/um-ui-extra.txt | xargs -0 git -C "$wt" rm -q -f --ignore-unmatch --
+  fi
+  echo "$dropped"
+}
+
+# `merge=ours` keeps OUR whole FILE, not our delta — so when upstream adds an
+# export to a protected file, the merge silently drops it and every
+# upstream-adopted consumer that imports it breaks at runtime. tsgo does not see
+# this (the importing module type-checks against the stale file). On 2026-07-25
+# this hid three dropped protocol exports until the protocol generator failed.
+# List the protected files upstream actually touched so resolution rebases them
+# onto upstream and re-applies only the fork delta.
+report_merge_ours_drift() {
+  local wt="$1" base="$2"
+  # --stdin batches one check-attr over the whole changed set; per-file forks over
+  # an 8k-file upstream delta take minutes and invite SIGPIPE truncation.
+  git -C "$wt" diff --name-only "$base" "$UPSTREAM_REF" 2>/dev/null \
+    | git -C "$wt" check-attr merge --stdin 2>/dev/null \
+    | sed -n 's/: merge: ours$//p' > /tmp/um-merge-ours-drift.txt
+  local all code
+  all="$(wc -l < /tmp/um-merge-ours-drift.txt | tr -d ' ')"
+  grep -E '\.(ts|tsx|mjs|swift|kt)$' /tmp/um-merge-ours-drift.txt > /tmp/um-merge-ours-drift-code.txt || true
+  code="$(wc -l < /tmp/um-merge-ours-drift-code.txt | tr -d ' ')"
+  sed 's/^/  MERGE-OURS-DRIFT /' /tmp/um-merge-ours-drift-code.txt
+  echo "MERGE-OURS-DRIFT-COUNT $code code files ($all total)"
+}
 
 # Measure the post-driver residual via the shadow engine (read-only; own worktree).
 # Emits: BEHIND / RESIDUAL globals.
@@ -158,8 +212,26 @@ land_clean() {
     ledger "DEFER reason=clean-merge-conflicted behind=$BEHIND"
     exit 20
   fi
+  # Zero conflicts still means upstream's UI-architecture files were ADDED
+  # alongside the fork's ui/src/ui tree; apply the same ownership policy here.
+  local ui_dropped; ui_dropped="$(apply_fork_ui_ownership "$WORKTREE")"
+  if [ "${ui_dropped:-0}" != 0 ]; then
+    git -C "$WORKTREE" commit -q --no-verify --amend --no-edit
+    log "fork ui/ ownership: dropped $ui_dropped upstream-only ui files from the clean merge"
+  fi
   local merge_sha; merge_sha="$(git -C "$WORKTREE" rev-parse HEAD)"
   git -C "$WORKTREE" branch -f "$branch" "$merge_sha" >/dev/null 2>&1
+
+  local pre
+  if ! pre="$(preflight "$WORKTREE")"; then
+    log "clean merge failed local preflight — NOT shipping to huey"
+    drop_worktree
+    ledger "NO-LAND reason=preflight-failed behind=$BEHIND merge=$merge_sha"
+    echo "UPSTREAM-MERGE NO-LAND: clean merge failed local preflight; main untouched."
+    printf '%s\n' "$pre"
+    exit 1
+  fi
+  printf '%s\n' "$pre"
 
   log "clean merge $merge_sha (branch $branch); proving on huey (node24)…"
   local proof rc
@@ -197,19 +269,72 @@ stage_init() {
   # (reflog-only recovery). Tradeoff: edited-but-uncommitted work isn't guarded here.
   if [ -d "$WORKTREE" ]; then
     local ahead; ahead="$(git -C "$WORKTREE" rev-list --count main..HEAD 2>/dev/null || echo refuse)"
+    local held; held="$(git -C "$WORKTREE" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    if [ "$ahead" != 0 ] && [ "$held" = "$branch" ]; then
+      log "worktree $WORKTREE already holds today's resolution ($branch, ahead=$ahead) — resume it instead of restaging"
+      ledger "STAGE-RESUME branch=$branch ahead=$ahead"
+      echo "STAGE-RESUME worktree=$WORKTREE branch=$branch ahead=$ahead"
+      return 0
+    fi
+    # A previous night's staging branch that never landed must not deadlock the
+    # nightly: 2026-07-23 and 07-24 each left one behind, and 07-25's committed
+    # resolution would have blocked tonight's run entirely. The branch ref keeps
+    # the commits reachable, so only the worktree is reclaimed.
     if [ "$ahead" != 0 ]; then
-      log "worktree $WORKTREE has committed or unreadable resolution state (ahead=$ahead) — refusing to wipe; remove it manually to redo"
-      exit 2
+      log "reclaiming stale worktree from '$held' (ahead=$ahead); branch ref keeps those commits"
+      ledger "STAGE-RECLAIM stale=$held ahead=$ahead"
     fi
   fi
   fresh_worktree
   git -C "$WORKTREE" checkout -B "$branch" >/dev/null 2>&1
+  # rerere replays cached resolutions from earlier passes; a poisoned entry silently
+  # re-lands a bad merge, so this worktree always resolves from scratch.
+  git -C "$WORKTREE" config rerere.enabled false
   git -C "$WORKTREE" merge --no-commit --no-ff "$UPSTREAM_REF" >/tmp/um-stage-merge.log 2>&1 || true
+  local raw; raw="$(git -C "$WORKTREE" status --porcelain | grep -cE '^(DD|AU|UD|UA|DU|AA|UU)' || true)"
+  local ui_dropped; ui_dropped="$(apply_fork_ui_ownership "$WORKTREE")"
   local conflicts; conflicts="$(git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' | wc -l | tr -d ' ')"
-  echo "STAGE-READY worktree=$WORKTREE branch=$branch conflicts=$conflicts"
-  echo "--- conflict files (resolve in $WORKTREE, then commit, then run: stage-finish $date) ---"
+  local base; base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
+  echo "STAGE-READY worktree=$WORKTREE branch=$branch conflicts=$conflicts (raw=$raw, ui-policy resolved $((raw - conflicts)), dropped $ui_dropped upstream-only ui files)"
+  echo "--- conflict files (resolve in $WORKTREE, then commit, then run: finish-land / stage-finish) ---"
   git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' || true
-  ledger "STAGE-INIT branch=$branch conflicts=$conflicts"
+  echo "--- merge=ours files upstream changed (rebase these onto upstream, re-apply the fork delta) ---"
+  report_merge_ours_drift "$WORKTREE" "$base"
+  echo "--- merge base for fork-delta extraction: $base ---"
+  ledger "STAGE-INIT branch=$branch conflicts=$conflicts raw=$raw ui-dropped=$ui_dropped"
+}
+
+# Cheap local gate before spending a ~10 minute huey cycle. On 2026-07-25 three
+# proof runs were burned on states this would have rejected in seconds: an
+# unresolved `,,` from a conflict, then a merge whose tsgo:core went 1 -> 696.
+# Runs in the worktree, so it never touches the live tree's dist/.
+preflight() {
+  local wt="$1"
+  local markers
+  markers="$(git -C "$wt" grep -lE '^(<{7}|={7}|>{7})( |$)' -- '*.ts' '*.tsx' '*.mjs' '*.json' '*.yaml' '*.swift' 2>/dev/null | head -20)"
+  if [ -n "$markers" ]; then
+    echo "PREFLIGHT=FAIL reason=conflict-markers"
+    printf '%s\n' "$markers"
+    return 1
+  fi
+  # The protocol generator actually imports the schema modules, so it catches the
+  # dropped-export breakage that merge=ours hides from tsgo entirely.
+  if ! (cd "$wt" && node --import tsx scripts/protocol-gen.ts >/tmp/um-preflight-protocol.log 2>&1); then
+    echo "PREFLIGHT=FAIL reason=protocol-gen"
+    tail -n 6 /tmp/um-preflight-protocol.log
+    return 1
+  fi
+  local cand base_errors
+  (cd "$wt" && rm -rf .artifacts/tsgo-cache && node scripts/run-tsgo.mjs -p tsconfig.core.json >/tmp/um-preflight-tsgo.log 2>&1) || true
+  cand="$(grep -cE 'error TS' /tmp/um-preflight-tsgo.log || true)"
+  base_errors="${UPSTREAM_MERGE_TSGO_BASELINE:-1}"
+  if [ "${cand:-0}" -gt "$base_errors" ]; then
+    echo "PREFLIGHT=FAIL reason=tsgo-core cand=$cand baseline=$base_errors"
+    grep -E 'error TS' /tmp/um-preflight-tsgo.log | head -20
+    return 1
+  fi
+  echo "PREFLIGHT=PASS tsgo:core=$cand"
+  return 0
 }
 
 # Guard the staging worktree and set STAGED_BRANCH (called directly, never in $() —
@@ -245,12 +370,28 @@ resolve_staged_branch() {
 
 # Prove $STAGED_BRANCH on huey (node24). Non-green exits with the proof rc; main untouched.
 prove_staged() {
+  # Local gate first — a failure here costs seconds, the huey cycle costs ~10 min.
+  local pre
+  if ! pre="$(preflight "$WORKTREE")"; then
+    ledger "STAGE-PREFLIGHT branch=$STAGED_BRANCH result=FAIL"
+    echo "STAGE preflight failed — not shipping to huey. Fix in $WORKTREE, re-commit, re-run."
+    printf '%s\n' "$pre"
+    exit 1
+  fi
+  printf '%s\n' "$pre"
   log "proving $STAGED_BRANCH on huey (node24)…"
-  local proof rc
+  local proof rc result
   proof="$(BASELINE_REF=main remote_proof "$STAGED_BRANCH")"; rc=$?
   if [ "$rc" != 0 ]; then
-    ledger "STAGE-PROOF branch=$STAGED_BRANCH result=$([ "$rc" = 3 ] && echo UNAVAILABLE || echo FAIL)"
-    echo "STAGE proof not green (rc=$rc) — branch kept local, NOT landed. main untouched."
+    # Separate "the candidate is red" from "we could not reach the prover", so a
+    # transport outage is never read back as a code failure in the ledger.
+    case "$rc" in
+      3) result=UNAVAILABLE ;;
+      2) result=TRANSPORT-ERROR ;;
+      *) result=FAIL ;;
+    esac
+    ledger "STAGE-PROOF branch=$STAGED_BRANCH result=$result rc=$rc"
+    echo "STAGE proof not green (rc=$rc, $result) — branch kept local, NOT landed. main untouched."
     echo "$proof"
     exit "$rc"
   fi

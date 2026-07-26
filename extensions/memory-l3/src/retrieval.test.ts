@@ -1224,3 +1224,109 @@ describe("retrieveTopK routed mode", () => {
     expect(facts.length).toBeGreaterThan(0);
   });
 });
+
+describe("REFACT-style adaptive fact compression", () => {
+  const routedConfig = {
+    useEpochFirst: false,
+    epochExpandTopN: 3,
+    useSubmodularSelect: false,
+    submodularDiversityWeight: 0.3,
+    submodularCoverageWeight: 0.3,
+    submodularTokenBudget: null,
+    mode: "routed" as const,
+  };
+
+  it("compresses prose facts to 1 sentence for factual queries in routed mode", async () => {
+    // Write a chunk with a multi-sentence prose fact
+    await writeChunk(
+      "chunk-prose",
+      [
+        {
+          id: "fact-prose-1",
+          text: "The server runs on port 3000. It was configured last week. The config file is at /etc/server.conf.",
+          importance: 0.8,
+          createdAt: NOW,
+          dedupKey: "prose-1",
+        },
+      ],
+      NOW,
+      [],
+    );
+
+    const { facts } = await retrieveTopK({
+      query: "server port",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: routedConfig, // triggers intent classification → factual
+    });
+
+    expect(facts.length).toBeGreaterThan(0);
+    const proseFact = facts.find((f) => f.fact.dedupKey === "prose-1");
+    expect(proseFact).toBeDefined();
+    // Should be compressed to first sentence + ellipsis
+    expect(proseFact!.fact.text).toMatch(/port 3000/);
+    expect(proseFact!.fact.text).not.toMatch(/configured last week/i);
+    expect(proseFact!.fact.text.endsWith("…")).toBe(true);
+  });
+
+  it("keeps typed facts uncompressed for factual queries", async () => {
+    const typedFacts: TypedFact[] = [
+      {
+        slot: "server:port",
+        value: "3000",
+        id: "tf-port",
+        confidence: 0.95,
+        createdAt: NOW,
+      },
+    ];
+    await writeChunk("chunk-typed", [], NOW, typedFacts);
+
+    const { facts } = await retrieveTopK({
+      query: "server port",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: routedConfig,
+    });
+
+    const typedResult = facts.find((f) => f.tier === "typed");
+    if (typedResult) {
+      // Typed facts should keep their full "slot = value" format
+      expect(typedResult.fact.text).toMatch(/server:port = 3000/u);
+    }
+  });
+
+  it("keeps prose uncompressed for synthesis queries", async () => {
+    const longText =
+      "The system architecture is complex. It involves many moving parts. Each part has a specific role in the pipeline.";
+    await writeChunk(
+      "chunk-synth",
+      [
+        {
+          id: "fact-synth-1",
+          text: longText,
+          importance: 0.9,
+          createdAt: NOW,
+          dedupKey: "synth-1",
+        },
+      ],
+      NOW,
+      [],
+    );
+
+    const { facts } = await retrieveTopK({
+      query: "summarize the architecture",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: routedConfig, // synthesis intent
+    });
+
+    const proseResult = facts.find((f) => f.fact.dedupKey === "synth-1");
+    if (proseResult) {
+      // Synthesis should keep prose full
+      expect(proseResult.fact.text).toBe(longText);
+    }
+  });
+});

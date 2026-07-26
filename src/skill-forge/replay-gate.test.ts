@@ -136,6 +136,11 @@ describe("SKILL_FORGE_LLM_JUDGE_SYSTEM", () => {
     expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/BASELINE COMPARISON/u);
     expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/baseline agent capability/u);
   });
+
+  it("includes principle articulation criterion", () => {
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/PRINCIPLE ARTICULATION/u);
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/transferable principle/u);
+  });
 });
 
 // Process-oriented parse fixtures: rationales that cite process-quality reasons
