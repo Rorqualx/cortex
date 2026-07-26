@@ -27,7 +27,6 @@ export type ModelCatalogEntry = {
   mediaInput?: ModelMediaInputConfig;
   status?: ModelCatalogStatus;
   statusReason?: string;
-  replaces?: string[];
   /** Models this entry supersedes (pre-announced deprecation). */
   replaces?: string[];
   /** Model that supersedes this entry (pre-announced deprecation target). */

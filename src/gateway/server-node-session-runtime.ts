@@ -50,7 +50,6 @@ export function createGatewayNodeSessionRuntime(params: {
     },
   });
   const nodePresenceTimers = new Map<string, ReturnType<typeof setInterval>>();
-  const nodeSubscriptions = createNodeSubscriptionManager();
   const sessionEventSubscribers =
     params.sessionEventSubscribers ?? createSessionEventSubscriberRegistry();
   const sessionMessageSubscribers =

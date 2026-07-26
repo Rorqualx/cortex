@@ -178,8 +178,6 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
 
 export type EmbeddedRunAttemptResult = {
   terminal: AgentRunAttemptTerminal;
-  /** True when the runtime made the authoritative final-assistant transcript decision. */
-  assistantTranscriptOwned?: boolean;
   /** Exact idempotency key for the runtime-owned final-assistant transcript row. */
   assistantTranscriptIdempotencyKey?: string;
   preflightRecovery?:
