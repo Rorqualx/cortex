@@ -215,6 +215,7 @@ function buildSkillVerificationOutput(
               label: CLAWHUB_SKILLS_SH_TRUST_LABEL,
             },
           }
+  const verifiedSourceUrl = readVerifiedClawHubSkillSourceUrl(result.provenance);
         : {}),
       ...(verifiedSourceUrl ? { verifiedSourceUrl } : {}),
     },

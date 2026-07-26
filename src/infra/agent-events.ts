@@ -812,6 +812,10 @@ export function resetAgentEventsForTest(options?: { preserveListeners?: boolean 
   getAgentRunContextOwners(state).clear();
 }
 
+type AgentItemEventPhase = "start" | "update" | "end";
+type AgentItemEventStatus = "running" | "completed" | "failed" | "blocked";
+type AgentItemEventKind = "tool" | "command" | "patch" | "search" | "analysis" | (string & {});
+
 export type AgentItemEventData = {
   itemId: string;
   phase: AgentItemEventPhase;
