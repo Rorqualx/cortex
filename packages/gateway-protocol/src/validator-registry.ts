@@ -1,5 +1,6 @@
 import { lazyCompile } from "./protocol-validator.js";
 import {
+  AgentsComposePromptParamsSchema,
   ActivityListParamsSchema,
   ActivitySubscribeParamsSchema,
   ActivityUnsubscribeParamsSchema,
@@ -241,15 +242,6 @@ import {
   SkillsUpdateParamsSchema,
   SkillsSearchParamsSchema,
   SkillsDetailParamsSchema,
-  SkillsCuratorStatusParamsSchema,
-  SkillsCuratorActionParamsSchema,
-  SkillsProposalsListParamsSchema,
-  SkillsProposalInspectParamsSchema,
-  SkillsProposalCreateParamsSchema,
-  SkillsProposalUpdateParamsSchema,
-  SkillsProposalReviseParamsSchema,
-  SkillsProposalRequestRevisionParamsSchema,
-  SkillsProposalActionParamsSchema,
   SkillsSecurityVerdictsParamsSchema,
   SkillsSkillCardParamsSchema,
   CronListParamsSchema,
@@ -629,7 +621,6 @@ export const validateSkillsProposalCreateParams = lazyCompile(SkillsProposalCrea
 export const validateSkillsProposalUpdateParams = lazyCompile(SkillsProposalUpdateParamsSchema);
 export const validateSkillsProposalReviseParams = lazyCompile(SkillsProposalReviseParamsSchema);
 export const validateSkillsProposalRequestRevisionParams = lazyCompile(
-  SkillsProposalRequestRevisionParamsSchema,
 );
 export const validateSkillsProposalActionParams = lazyCompile(SkillsProposalActionParamsSchema);
 export const validateSkillsSecurityVerdictsParams = lazyCompile(SkillsSecurityVerdictsParamsSchema);
@@ -709,3 +700,4 @@ export const validateActivityUnsubscribeParams = lazyCompile<ActivityUnsubscribe
 export const validateVaultListParams = lazyCompile<VaultListParams>(VaultListParamsSchema);
 export const validateVaultSaveParams = lazyCompile<VaultSaveParams>(VaultSaveParamsSchema);
 export const validateVaultDeleteParams = lazyCompile<VaultDeleteParams>(VaultDeleteParamsSchema);
+export const validateAgentsComposePromptParams = lazyCompile(AgentsComposePromptParamsSchema);
