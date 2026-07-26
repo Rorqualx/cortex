@@ -7,10 +7,13 @@ import { existsSync } from "node:fs";
 import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { Type } from "typebox";
-import { toErrorObject } from "../../../infra/errors.js";
-import { formatDurationSeconds } from "../../../infra/format-time/format-duration.js";
 import { releaseChildProcessOutputAfterExit } from "../../../process/child-process.js";
 import { spawnCommand } from "../../../process/exec.js";
+import {
+  checkExecGuard,
+  releaseExecGuard,
+  formatExecGuardError,
+} from "../../../session-awareness/exec-guard.js";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { theme } from "../../modes/interactive/theme/theme.js";
@@ -25,32 +28,29 @@ import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/type
 import type { BashOperations } from "./bash-operations.js";
 import { OutputAccumulator } from "./output-accumulator.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
-import { formatFullOutputFooter, type BashToolDetails } from "./tool-contracts.js";
+import type { BashToolDetails } from "./tool-contracts.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "./truncate.js";
 
 const bashSchema = Type.Object({
-  command: Type.String({ description: "Bash command." }),
-  timeout: Type.Optional(Type.Number({ description: "Optional timeout seconds; default none." })),
+  command: Type.String({ description: "Bash command to execute" }),
+  timeout: Type.Optional(
+    Type.Number({ description: "Timeout in seconds (optional, no default timeout)" }),
+  ),
 });
-function resolveBashTimeoutMs(timeoutSeconds: unknown): number | undefined {
-  if (timeoutSeconds === undefined) {
-    return undefined;
-  }
+export type { BashToolDetails, BashToolInput } from "./tool-contracts.js";
+
+export type { BashOperations } from "./bash-operations.js";
+
+export function resolveBashTimeoutMs(timeoutSeconds: unknown): number | undefined {
   if (
     typeof timeoutSeconds !== "number" ||
     !Number.isFinite(timeoutSeconds) ||
     timeoutSeconds <= 0
   ) {
-    throw new Error("Invalid timeout: must be a positive finite number of seconds");
+    return undefined;
   }
   return resolveTimerTimeoutMs(timeoutSeconds * 1000, 1);
-}
-
-if (process.env.VITEST || process.env.NODE_ENV === "test") {
-  (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.bashToolTestApi")] = {
-    resolveBashTimeoutMs,
-  };
 }
 
 /**
@@ -141,7 +141,7 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
             if (signal) {
               signal.removeEventListener("abort", onAbort);
             }
-            reject(toErrorObject(err, "Non-Error rejection"));
+            reject(toLintErrorObject(err, "Non-Error rejection"));
           })
           .finally(releaseOutput);
       });
@@ -161,9 +161,8 @@ function resolveSpawnContext(
   command: string,
   cwd: string,
   spawnHook?: BashSpawnHook,
-  shellPath?: string,
 ): BashSpawnContext {
-  const baseContext: BashSpawnContext = { command, cwd, env: getBashShellEnv(shellPath) };
+  const baseContext: BashSpawnContext = { command, cwd, env: getBashShellEnv() };
   return spawnHook ? spawnHook(baseContext) : baseContext;
 }
 
@@ -199,6 +198,10 @@ class BashResultRenderComponent extends Container {
     cachedLines: undefined,
     cachedSkipped: undefined,
   };
+}
+
+function formatDuration(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {
@@ -271,7 +274,7 @@ function rebuildBashResultRenderComponent(
   if (truncation?.truncated || fullOutputPath) {
     const warnings: string[] = [];
     if (fullOutputPath) {
-      warnings.push(formatFullOutputFooter(fullOutputPath));
+      warnings.push(`Full output: ${fullOutputPath}`);
     }
     if (truncation?.truncated) {
       if (truncation.truncatedBy === "lines") {
@@ -291,11 +294,7 @@ function rebuildBashResultRenderComponent(
     const label = options.isPartial ? "Elapsed" : "Took";
     const endTime = endedAt ?? Date.now();
     component.addChild(
-      new Text(
-        `\n${theme.fg("muted", `${label} ${formatDurationSeconds(endTime - startedAt)}`)}`,
-        0,
-        0,
-      ),
+      new Text(`\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`, 0, 0),
     );
   }
 }
@@ -310,9 +309,12 @@ export function createBashToolDefinition(
   return {
     name: "bash",
     label: "bash",
-    description: `Run bash in cwd; stdout+stderr. Returns last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB; full truncated output saved temp. Optional timeout seconds.`,
+    description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
     promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
     parameters: bashSchema,
+    // The child process is killed on abort, so a long-running command can be
+    // cut to deliver a follow-up sooner when preemption is enabled.
+    preemptable: true,
     async execute(
       toolCallId,
       { command, timeout }: { command: string; timeout?: number },
@@ -322,11 +324,17 @@ export function createBashToolDefinition(
     ) {
       void toolCallId;
       void ctx;
-      resolveBashTimeoutMs(timeout);
       const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
-      const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook, options?.shellPath);
+
+      // ── Cross-session exec guard ──
+      // Detects git commit/push and restart commands, blocks if another
+      // session has claimed the same scope.
+      const execGuard = checkExecGuard(resolvedCommand, cwd);
+      if (!execGuard.allowed && execGuard.error) {
+        throw new Error(formatExecGuardError(execGuard.error));
+      }
+      const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
       const output = new OutputAccumulator({ tempFilePrefix: "openclaw-bash" });
-      let acceptingOutput = true;
       let updateTimer: NodeJS.Timeout | undefined;
       let updateDirty = false;
       let lastUpdateAt = 0;
@@ -384,7 +392,6 @@ export function createBashToolDefinition(
       };
 
       const finishOutput = async () => {
-        acceptingOutput = false;
         output.finish();
         clearUpdateTimer();
         emitOutputUpdate();
@@ -401,20 +408,16 @@ export function createBashToolDefinition(
         let text = snapshot.content || emptyText;
         let details: BashToolDetails | undefined;
         if (truncation.truncated) {
-          const fullOutputPath = snapshot.fullOutputPath;
-          if (!fullOutputPath) {
-            throw new Error("Missing full output path for truncated bash output");
-          }
-          details = { truncation, fullOutputPath };
+          details = { truncation, fullOutputPath: snapshot.fullOutputPath };
           const startLine = truncation.totalLines - truncation.outputLines + 1;
           const endLine = truncation.totalLines;
           if (truncation.lastLinePartial) {
             const lastLineSize = formatSize(output.getLastLineBytes());
-            text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). ${formatFullOutputFooter(fullOutputPath)}]`;
+            text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${snapshot.fullOutputPath}]`;
           } else if (truncation.truncatedBy === "lines") {
-            text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. ${formatFullOutputFooter(fullOutputPath)}]`;
+            text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
           } else {
-            text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). ${formatFullOutputFooter(fullOutputPath)}]`;
+            text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
           }
         }
         return { text, details };
@@ -456,6 +459,7 @@ export function createBashToolDefinition(
         return { content: [{ type: "text", text: outputText }], details };
       } finally {
         clearUpdateTimer();
+        releaseExecGuard(execGuard.scopeKey);
       }
     },
     renderCall(args, themeValue, context) {
@@ -504,4 +508,18 @@ export function createBashTool(
   options?: BashToolOptions,
 ): AgentTool<typeof bashSchema> {
   return wrapToolDefinition(createBashToolDefinition(cwd, options));
+}
+
+function toLintErrorObject(value: unknown, fallbackMessage: string): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return new Error(value);
+  }
+  const error = new Error(fallbackMessage, { cause: value });
+  if ((typeof value === "object" && value !== null) || typeof value === "function") {
+    Object.assign(error, value);
+  }
+  return error;
 }

@@ -47,13 +47,16 @@ type EmbeddedRunAttemptBase = Omit<
   | "sessionFile"
 >;
 
-type EmbeddedRunContextWindowInfo = {
+// Attempt-level fast mode is the resolved effective setting, not the raw "auto"
+// union: a thunk lets the harness re-read it as the auto timer elapses mid-run,
+// while `fastModeAuto` records whether the auto policy is the source.
+export type EmbeddedRunFastModeParam = boolean | (() => boolean | undefined);
+
+export type EmbeddedRunContextWindowInfo = {
   tokens: number;
   referenceTokens?: number;
   source: "model" | "modelsConfig" | "agentContextTokens" | "default";
 };
-
-export type EmbeddedRunFastModeParam = boolean | (() => boolean | undefined);
 
 type EmbeddedRunAttemptOperation = "attempt" | "settled-tool-finalization";
 
@@ -147,10 +150,14 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   onAttemptTimeoutArmed?: () => void;
   /** Signals that this attempt's timeout has fired and must unwind promptly. */
   onAttemptTimeout?: (reason: Error) => void;
-  /** Signals an explicit cancellation through the active native run handle. */
-  onAttemptAbort?: () => void;
   /** Supplies run-global model-call ordering for parallel tool outcomes. */
   allocateToolOutcomeOrdinal?: (toolCallId?: string) => number;
+  /**
+   * Invoked when an attempt is aborted externally (user/restart/supersede) so
+   * plugin harnesses (e.g. codex app-server) can tear down their in-flight run.
+   * Optional: core provides it in the general run path; harnesses call it best-effort.
+   */
+  onAttemptAbort?: () => void;
   model: Model;
   authStorage: AuthStorage;
   /** Auth profile store already resolved during startup for this attempt. */
@@ -255,6 +262,12 @@ export type EmbeddedRunAttemptResult = {
   assistantTexts: string[];
   latestMcpAppChannelView?: McpAppChannelView;
   lastAssistantTextMessageIndex?: number;
+  /**
+   * True when this attempt took ownership of mirroring the assistant transcript
+   * (plugin harnesses like codex app-server that persist their own transcript).
+   * Consumed by the caller to skip a redundant core-side transcript write.
+   */
+  assistantTranscriptOwned?: boolean;
   toolMetas: Array<{
     toolName: string;
     meta?: string;
@@ -310,6 +323,8 @@ export type EmbeddedRunAttemptResult = {
    * Older harnesses may omit it and retain conservative cumulative retry gating.
    */
   currentAttemptReplayMetadata?: EmbeddedRunReplayMetadata;
+  /** HTTP response headers from the LLM provider (for attestation header capture). */
+  providerResponseHeaders?: Record<string, string>;
   itemLifecycle: {
     startedCount: number;
     completedCount: number;
