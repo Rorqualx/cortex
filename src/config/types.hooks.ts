@@ -34,6 +34,20 @@ export type HookMappingConfig = {
   thinking?: string;
   timeoutSeconds?: number;
   transform?: HookMappingTransform;
+  /**
+   * Enable LLM-based validation for this hook mapping.
+   * When true, spawns a subagent to validate complex conditions before executing the hook.
+   */
+  validateViaAgent?: boolean;
+  /**
+   * Agent ID to use for validation. If omitted, uses the hook's target agentId or default agent.
+   */
+  validationAgentId?: string;
+  /**
+   * Custom prompt for validation. Should describe the validation criteria.
+   * Template variables like {{path}}, {{headers.*}}, {{payload.*}} are available.
+   */
+  validationPrompt?: string;
 };
 
 export type HooksGmailTailscaleMode = "off" | "serve" | "funnel";
@@ -114,6 +128,7 @@ export type HooksConfig = {
    * allow any agent. Set `[]` to deny all agent routing.
    */
   allowedAgentIds?: string[];
+  maxBodyBytes?: number;
   presets?: string[];
   transformsDir?: string;
   mappings?: HookMappingConfig[];

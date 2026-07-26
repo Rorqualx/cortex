@@ -54,7 +54,20 @@ export type SkillsLimitsConfig = {
   maxSkillFileBytes?: number;
 };
 
-/** Autonomous and approval settings for generated skill proposals. */
+/** Approval settings for Skill Forge lifecycle actions. */
+export type SkillsForgeConfig = {
+  /** Whether skill_forge promote/retire actions need explicit approval. */
+  approvalPolicy?: "pending" | "auto";
+  /**
+   * Auto-invoke promoted recovery skills on matching tool errors: inline the
+   * skill's guidance into the failed tool result and record usage so the decay
+   * sweep keeps it. Default on; set false to disable the runtime nudge without
+   * unloading the skills.
+   */
+  autoInvoke?: boolean;
+};
+
+/** Skill Workshop config (interactive/autonomous skill proposal pipeline). */
 export type SkillsWorkshopConfig = {
   /** Autonomous Skill Workshop behavior controlled separately from user-prompted proposals. */
   autonomous?: {
@@ -78,6 +91,7 @@ export type SkillsConfig = {
   load?: SkillsLoadConfig;
   install?: SkillsInstallConfig;
   limits?: SkillsLimitsConfig;
+  forge?: SkillsForgeConfig;
   workshop?: SkillsWorkshopConfig;
   entries?: Record<string, SkillConfig>;
 };

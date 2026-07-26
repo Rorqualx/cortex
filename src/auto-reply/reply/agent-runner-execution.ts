@@ -475,6 +475,29 @@ async function runAgentTurnWithFallbackInternal(
   }
 }
 
+/** Minimum tokens held back from the context window for the model's reply. */
+const DEFAULT_RESERVE_TOKENS_FLOOR = 20_000;
+
+/**
+ * Context-aware reserve floor: larger context windows keep proportionally more
+ * headroom so big-window models do not starve the reply budget.
+ */
+export function computeContextAwareReserveTokensFloor(contextWindow: number | undefined): number {
+  if (typeof contextWindow !== "number" || contextWindow <= 0) {
+    return DEFAULT_RESERVE_TOKENS_FLOOR;
+  }
+  if (contextWindow >= 1_000_000) {
+    return 100_000;
+  }
+  if (contextWindow >= 200_000) {
+    return 50_000;
+  }
+  if (contextWindow >= 100_000) {
+    return 35_000;
+  }
+  return DEFAULT_RESERVE_TOKENS_FLOOR;
+}
+
 /** Runs the agent turn with provider/model fallback, retry, and failure mapping. */
 export async function runAgentTurnWithFallback(
   params: AgentTurnParams,

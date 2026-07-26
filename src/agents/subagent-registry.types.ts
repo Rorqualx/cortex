@@ -64,6 +64,9 @@ export type SubagentExecutionState = {
   interruptedAt?: number;
   interruptionReason?: "gateway-restart" | "lost-execution-context";
   transcriptTarget?: AgentRunSessionTarget;
+  // Fork transcript-cleanup contract: registry/run-manager remove this exact
+  // internal-effects transcript file on retire; transcriptTarget does not carry it.
+  transcriptFile?: string;
 };
 
 export type SubagentCompletionState = {
@@ -261,4 +264,17 @@ export type SubagentRunRecord = {
   /** Set after failed-launch context-engine cleanup succeeds, preventing duplicate end hooks. */
   contextEngineCleanupCompletedAt?: number;
   collectorCompletion?: SwarmCollectorCompletion;
+  /** Isolated transcript metadata - set when isolateTranscript was enabled at spawn time. */
+  isolatedTranscript?: {
+    /** UUID for the isolated transcript */
+    id: string;
+    /** Path to the isolated .jsonl file (relative to agent dir) */
+    path: string;
+    /** When the reference token was delivered to parent */
+    deliveredAt?: number;
+    /** When parent first accessed the full content */
+    accessedAt?: number;
+    /** Approximate token count */
+    tokens?: number;
+  };
 };

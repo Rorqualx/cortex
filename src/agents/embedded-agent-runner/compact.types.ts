@@ -121,6 +121,8 @@ export type CompactEmbeddedAgentSessionParams = {
   allowGatewaySubagentBinding?: boolean;
   /** Mark explicit one-shot local CLI runs so plugin tools can release resources promptly. */
   oneShotCliRun?: boolean;
+  /** W3C trace context for distributed tracing correlation. */
+  traceContext?: import("../../infra/agent-execution-events.js").W3CTraceContext;
 };
 
 export type CompactEmbeddedAgentSessionRuntimeParams = Omit<

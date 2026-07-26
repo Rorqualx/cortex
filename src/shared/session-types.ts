@@ -1,6 +1,7 @@
 /** Agent identity fields returned by gateway session listing APIs. */
-type GatewayAgentIdentity = {
+export type GatewayAgentIdentity = {
   name?: string;
+  role?: string;
   theme?: string;
   emoji?: string;
   avatar?: string;
@@ -8,7 +9,7 @@ type GatewayAgentIdentity = {
 };
 
 /** Model summary returned for an agent/session row. */
-type GatewayAgentModel = {
+export type GatewayAgentModel = {
   primary?: string;
   fallbacks?: string[];
 };
@@ -41,6 +42,8 @@ export type GatewayAgentRow = {
   id: string;
   kind?: GatewayAgentKind;
   name?: string;
+  /** Optional human-readable description of this agent's purpose. */
+  description?: string;
   identity?: GatewayAgentIdentity;
   workspace?: string;
   workspaceGit?: boolean;

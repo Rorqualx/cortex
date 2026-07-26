@@ -126,6 +126,12 @@ const coreCliCommandCatalog = defineCommandDescriptorCatalog([
     description: "Inspect durable background tasks and TaskFlow state",
     hasSubcommands: true,
   },
+  // Fork: Workboard LLM-loop CLI (cards + worker dispatch).
+  {
+    name: "workboard",
+    description: "Manage Workboard cards and worker dispatch",
+    hasSubcommands: true,
+  },
 ] as const satisfies ReadonlyArray<CoreCliCommandDescriptor>);
 
 /** Static root-command descriptors for the core CLI surface. */

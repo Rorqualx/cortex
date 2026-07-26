@@ -1,3 +1,5 @@
+import type { AttestationConfig } from "../attestation/types.js";
+import type { CompressionConfig } from "../compression/types.js";
 // Defines the top-level OpenClaw configuration type.
 import type { SilentReplyPolicyShape } from "../shared/silent-reply-policy.js";
 import type { TranscriptsConfig } from "../transcripts/config.js";
@@ -137,6 +139,12 @@ export type OpenClawConfig = {
     auto?: {
       /** Enable background auto-update checks and apply logic. Default: false. */
       enabled?: boolean;
+      /** Stable channel minimum delay before auto-apply. Default: 6. */
+      stableDelayHours?: number;
+      /** Additional stable-channel jitter window. Default: 12. */
+      stableJitterHours?: number;
+      /** Beta channel check cadence. Default: 1 hour. */
+      betaCheckIntervalHours?: number;
     };
   };
   /** Browser automation and browser plugin integration settings. */
@@ -236,6 +244,10 @@ export type OpenClawConfig = {
   mcp?: McpConfig;
   /** Network-level SSRF protection via an operator-managed forward proxy. */
   proxy?: ProxyConfig;
+  /** Cryptographic attestation for model responses (enterprise feature). */
+  attestation?: AttestationConfig;
+  /** Context compression pipeline for reducing token usage in tool results. */
+  compression?: CompressionConfig;
 };
 
 /** Config input shape accepted before model provider defaults are fully materialized. */

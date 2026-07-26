@@ -43,6 +43,7 @@ import {
 } from "./openclaw-tools.registration.js";
 import { createOpenClawSwarmToolGroups } from "./openclaw-tools.swarm.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
+import { createSessionAwarenessTool } from "./sessions/tools/session-awareness-tool.js";
 import type { SpawnedToolContext } from "./spawned-context.js";
 import type { ToolFsPolicy } from "./tool-fs-policy.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
@@ -57,6 +58,7 @@ import {
 } from "./tools/conversation-tools.js";
 import { createCronTool, type CronCreatorToolAllowlistEntry } from "./tools/cron-tool.js";
 import { createDashboardTool } from "./tools/dashboard-tool.js";
+import { createDelegationTools } from "./tools/delegation/tools.js";
 import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
 import { createGatewayToolCallerWrapper } from "./tools/gateway-caller-context.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
@@ -66,8 +68,11 @@ import {
   createUpdateGoalTool,
 } from "./tools/goal-tools.js";
 import { createHeartbeatResponseTool } from "./tools/heartbeat-response-tool.js";
+import { createGatewaySecretApprover } from "./tools/http-request.approval.js";
+import { createHttpRequestTool } from "./tools/http-request.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
+import { createMemoryReportsTool } from "./tools/memory-reports.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createMobileUiTool } from "./tools/mobile-ui-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
@@ -83,7 +88,7 @@ import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createSessionsTool } from "./tools/sessions-tool.js";
 import { createSessionsYieldTool } from "./tools/sessions-yield-tool.js";
-import { createConfiguredSkillWorkshopTool } from "./tools/skill-workshop-tool-factory.js";
+import { createSkillForgeTool } from "./tools/skill-forge-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
 import { createTaskSuggestionTools } from "./tools/task-suggestion-tools.js";
 import { createTerminalTool } from "./tools/terminal-tool.js";
@@ -92,6 +97,7 @@ import { createTtsTool } from "./tools/tts-tool.js";
 import { createUpdatePlanTool } from "./tools/update-plan-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
+import { createWorkboardTools } from "./tools/workboard-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
 export function createOpenClawTools(
@@ -431,6 +437,23 @@ export function createOpenClawTools(
   });
   options?.recordToolPrepStage?.("openclaw-tools:nodes-tool");
   const embedded = isEmbeddedMode();
+  // Egress tool that brokers saved vault credentials. Returns null until the
+  // user has saved at least one secret, so it stays opt-in per deployment. The
+  // approver routes "ask"-policy prompts through the plugin-approval pipeline
+  // (Control UI modal + bound channel); absent it, "ask" fails closed.
+  const httpRequestTool = embedded
+    ? null
+    : createHttpRequestTool({
+        approveSecretUse: createGatewaySecretApprover({
+          agentId: sessionAgentId,
+          sessionKey: options?.agentSessionKey,
+          turnSourceChannel: options?.agentChannel,
+          turnSourceTo: options?.currentChannelId ?? options?.agentTo,
+          turnSourceAccountId: options?.agentAccountId,
+          turnSourceThreadId: options?.currentThreadTs ?? options?.agentThreadId,
+        }),
+      });
+  options?.recordToolPrepStage?.("openclaw-tools:http-request-tool");
   const explicitFactoryAllowlist = mergeFactoryPolicyList(
     resolvedConfig?.tools?.allow,
     resolvedConfig?.tools?.alsoAllow,
@@ -541,6 +564,12 @@ export function createOpenClawTools(
       ? [createTranscriptsTool({ agentId: sessionAgentId, config: resolvedConfig })]
       : []),
     ...collectPresentOpenClawTools([imageGenerateTool, musicGenerateTool, videoGenerateTool]),
+    ...createDelegationTools({
+      config: resolvedConfig,
+      agentDir: options?.agentDir,
+      workspaceDir,
+      agentSessionKey: options?.agentSessionKey,
+    }),
     ...(embedded
       ? []
       : [
@@ -569,17 +598,17 @@ export function createOpenClawTools(
       sessionAgentId,
       config: resolvedConfig,
     }),
+    // Available to embedded workers too — dispatched worker/orchestrator subagents
+    // drive the board through these (specify/decompose/complete/block).
+    ...createWorkboardTools({ config: resolvedConfig, callGateway: effectiveCallGateway }),
     ...(options?.sandboxed
       ? []
       : [
-          createConfiguredSkillWorkshopTool({
+          // Fork: Skill Forge replaces the upstream Skill Workshop tool surface.
+          createSkillForgeTool({
             workspaceDir,
             config: resolvedConfig,
             agentId: sessionAgentId,
-            sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-            runId: options?.runId,
-            messageId: options?.currentMessageId,
-            run: options?.skillWorkshop,
           }),
         ]),
     ...(includeUpdatePlanTool ? [createUpdatePlanTool()] : []),
@@ -707,7 +736,19 @@ export function createOpenClawTools(
         threadId: options?.currentThreadTs ?? options?.agentThreadId,
       },
     }),
-    ...collectPresentOpenClawTools([webSearchTool, webFetchTool, imageTool, pdfTool]),
+    createSessionAwarenessTool({
+      cwd: workspaceDir,
+    }),
+    createMemoryReportsTool({
+      workspaceDir,
+    }),
+    ...collectPresentOpenClawTools([
+      webSearchTool,
+      webFetchTool,
+      httpRequestTool,
+      imageTool,
+      pdfTool,
+    ]),
   ];
   options?.recordToolPrepStage?.("openclaw-tools:core-tool-list");
   let allTools = tools;

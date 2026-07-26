@@ -135,6 +135,12 @@ const coreEntrySpecs: readonly CommandGroupDescriptorSpec<
         loadModule: () => import("./register.status-health-sessions.js"),
         exportName: "registerStatusHealthSessionsCommands",
       },
+      // Fork: Workboard LLM-loop CLI (cards + worker dispatch).
+      {
+        commandNames: ["workboard"],
+        loadModule: () => import("./register.workboard.js"),
+        exportName: "registerWorkboardCli",
+      },
     ]),
   ),
 ];
