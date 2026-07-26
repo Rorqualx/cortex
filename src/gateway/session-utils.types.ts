@@ -85,6 +85,8 @@ export type GatewaySessionRow = {
   category?: string;
   displayName?: string;
   derivedTitle?: string;
+  /** Fork: LLM-generated conversation title shown in Control UI lists. */
+  llmTitle?: string;
   lastMessagePreview?: string;
   channel?: string;
   subject?: string;

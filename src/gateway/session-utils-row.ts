@@ -418,6 +418,7 @@ export function buildGatewaySessionRow(params: {
     category: entry?.category,
     displayName,
     derivedTitle,
+    llmTitle: entry?.llmTitle,
     lastMessagePreview,
     channel,
     subject,
