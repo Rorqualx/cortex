@@ -2,6 +2,7 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
+import { GatewayAgentRuntimeSchema } from "./session-row.js";
 import { NonEmptyString } from "./primitives.js";
 
 /**

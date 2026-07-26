@@ -14,7 +14,6 @@ import {
   checkReadBeforeMutation,
   formatReadBeforeEditError,
 } from "../../../session-awareness/file-write-guard.js";
-import { KeyedAsyncQueue } from "../../../plugin-sdk/keyed-async-queue.js";
 
 const fileMutationQueues = new Map<string, Promise<void>>();
 

@@ -12,6 +12,7 @@ import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import { createStreamingDirectiveAccumulator } from "../auto-reply/reply/streaming-directives.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { formatToolAggregate } from "../auto-reply/tool-meta.js";
+import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
 import { emitAgentEvent, emitAgentEventIfCurrent } from "../infra/agent-events.js";
 import { recordAgentRunOutputTokens } from "../infra/agent-run-usage.js";
 import type { AssistantMessage } from "../llm/types.js";

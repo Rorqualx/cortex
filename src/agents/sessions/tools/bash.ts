@@ -383,6 +383,7 @@ export function createBashToolDefinition(
         onUpdate({ content: [], details: undefined });
       }
 
+      let acceptingOutput = true;
       const handleData = (data: Buffer, stream?: "stdout" | "stderr") => {
         if (!acceptingOutput) {
           return;

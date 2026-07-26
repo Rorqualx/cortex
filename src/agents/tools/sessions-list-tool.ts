@@ -44,7 +44,7 @@ import {
   resolveEffectiveSessionToolsVisibility,
   resolveInternalSessionKey,
   resolveSandboxedSessionToolContext,
-  type GatewaySessionListRow,
+  type SessionListRow,
   type SessionListRow,
   type SessionRunStatus,
 } from "./sessions-helpers.js";
@@ -186,7 +186,7 @@ export function createSessionsListTool(opts?: {
       const a2aPolicy = createAgentToAgentPolicy(cfg);
       const hydrateTranscriptFieldsAfterFiltering = includeDerivedTitles || includeLastMessage;
 
-      const list = await gatewayCall<{ sessions: Array<GatewaySessionListRow>; path: string }>({
+      const list = await gatewayCall<{ sessions: Array<SessionListRow>; path: string }>({
         method: "sessions.list",
         params: {
           limit,
