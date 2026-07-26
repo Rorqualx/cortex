@@ -1275,6 +1275,8 @@ describe("REFACT-style adaptive fact compression", () => {
       {
         slot: "server:port",
         value: "3000",
+        sourceSpan: "the dev server listens on port 3000 by default",
+        unit: null,
         id: "tf-port",
         confidence: 0.95,
         createdAt: NOW,

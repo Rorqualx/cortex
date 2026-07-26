@@ -899,11 +899,10 @@ function truncateToSentences(text: string, maxSentences: number): string {
   let current = "";
   let truncated = false;
   for (let i = 0; i < text.length; i++) {
-    current += text[i];
-    if (
-      (text[i] === "." || text[i] === "!" || text[i] === "?") &&
-      (i === text.length - 1 || /\s/.test(text[i + 1]))
-    ) {
+    const char = text[i];
+    current += char;
+    const next = text[i + 1];
+    if ((char === "." || char === "!" || char === "?") && (next === undefined || /\s/.test(next))) {
       sentences.push(current.trim());
       current = "";
       if (sentences.length >= maxSentences) {
