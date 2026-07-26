@@ -6,6 +6,7 @@ import type { SafeBinProfileFixture } from "../infra/exec-safe-bin-policy.js";
 import type { AgentModelConfig } from "./types.agents-shared.js";
 import type { AgentElevatedAllowFromConfig, SessionSendPolicyAction } from "./types.base.js";
 import type { ConfiguredProviderRequest } from "./types.provider-request.js";
+import type { SecretInput } from "./types.secrets.js";
 export type { MemorySearchConfig } from "./types.memory.js";
 
 export type MediaUnderstandingScopeMatch = {

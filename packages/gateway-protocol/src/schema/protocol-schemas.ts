@@ -36,7 +36,6 @@ import {
   WakeParamsSchema,
 } from "./agent.js";
 import {
-  AuthProbeStatusSchema,
   AgentKindSchema,
   AgentSummarySchema,
   AgentsCreateParamsSchema,

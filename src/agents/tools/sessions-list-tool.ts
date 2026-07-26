@@ -45,7 +45,6 @@ import {
   resolveInternalSessionKey,
   resolveSandboxedSessionToolContext,
   type SessionListRow,
-  type SessionListRow,
   type SessionRunStatus,
 } from "./sessions-helpers.js";
 

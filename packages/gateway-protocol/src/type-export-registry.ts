@@ -549,6 +549,3 @@ export type {
   VaultSaveParams,
 } from "./schema.js";
 
-export type {
-  AgentsComposePromptParams,
-} from "./schema.js";
