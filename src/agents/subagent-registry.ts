@@ -40,6 +40,7 @@ import {
 } from "./subagent-registry-run-manager.js";
 import { clearSubagentRunsReadCacheForTest } from "./subagent-registry-state.js";
 import { configureSubagentRegistrySteerRuntime } from "./subagent-registry-steer-runtime.js";
+import type { ensureRuntimePluginsLoaded as ensureRuntimePluginsLoadedFn } from "./runtime-plugins.js";
 import { resolveSubagentTaskForRun } from "./subagent-registry-sweep-kill.js";
 import {
   createSubagentRegistrySweeper,
@@ -412,6 +413,9 @@ const subagentListener = createSubagentRegistryListener({
 const subagentRunManager = createSubagentRunManager({
   runs: subagentRuns,
   resumedRuns,
+  endedHookInFlightRunIds,
+  ensureRuntimePluginsLoaded: (args: Parameters<typeof ensureRuntimePluginsLoadedFn>[0]) =>
+    subagentRegistryDeps.ensureRuntimePluginsLoaded?.(args),
   persist: persistSubagentRuns,
   persistOrThrow: persistSubagentRunsOrThrow,
   callGateway: async <T>(request: Parameters<typeof callGateway>[0]) => {
@@ -434,7 +438,6 @@ const subagentRunManager = createSubagentRunManager({
   stopSweeper: subagentSweeper.stop,
   resumeSubagentRun,
   clearPendingLifecycleError,
-  clearPendingLifecycleTimeout,
   resolveSubagentWaitTimeoutMs,
   scheduleOrphanRecovery: (args) => scheduleSubagentOrphanRecovery(args),
   resolveSubagentSessionCompletion,
@@ -444,7 +447,6 @@ const subagentRunManager = createSubagentRunManager({
   completeSubagentRun: async (params) => {
     await completionRuntime.completeSubagentRunWithRecovery(params, "subagent-wait");
   },
-  resolveSubagentTask: findSubagentTaskForRun,
 });
 
 configureSubagentRegistrySteerRuntime({
