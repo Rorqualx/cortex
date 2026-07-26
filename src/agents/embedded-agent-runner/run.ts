@@ -1,6 +1,7 @@
 /**
  * Top-level embedded-agent run orchestration entrypoint.
  */
+import { projectAgentRunAttemptTerminal } from "../agent-run-terminal-outcome.js";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
@@ -1949,20 +1950,26 @@ export async function runEmbeddedAgent(
           const attempt = normalizeEmbeddedRunAttemptResult(rawAttempt);
 
           const {
-            aborted,
-            externalAbort,
-            promptError,
-            promptErrorSource,
             preflightRecovery,
-            timedOut,
-            idleTimedOut,
-            timedOutDuringCompaction,
             sessionIdUsed,
             sessionFileUsed,
             lastAssistant: sessionLastAssistant,
             currentAttemptAssistant,
           } = attempt;
-          const timedOutByRunBudget = attempt.timedOutByRunBudget ?? false;
+          // Upstream collapsed the flat attempt result flags into a closed terminal
+          // union; project it here rather than rederiving timeout/cancel precedence
+          // (see agent-run-terminal-outcome.ts).
+          const {
+            aborted,
+            externalAbort,
+            promptError,
+            promptErrorSource,
+            idleTimedOut,
+            timedOutDuringCompaction,
+            timedOutByRunBudget,
+            timedOutDuringToolExecution: attemptTimedOutDuringToolExecution,
+          } = projectAgentRunAttemptTerminal(attempt.terminal);
+          const timedOut = attempt.terminal.kind === "timeout" && attempt.terminal.source !== "observation";
           const setTerminalLifecycleMeta: NonNullable<typeof attempt.setTerminalLifecycleMeta> = (
             meta,
           ) => {
@@ -1990,7 +1997,7 @@ export async function runEmbeddedAgent(
                 })
               : null;
           void _attestationRecord; // Prevent unused-var lint; future: attach to transcript metadata.
-          const timedOutDuringToolExecution = attempt.timedOutDuringToolExecution ?? false;
+          const timedOutDuringToolExecution = attemptTimedOutDuringToolExecution ?? false;
           if (sessionIdUsed && sessionIdUsed !== activeSessionId) {
             activeSessionId = sessionIdUsed;
             // Track the live session for lifecycle persistence identity (#88538).
@@ -2702,7 +2709,7 @@ export async function runEmbeddedAgent(
             // app-server transport is not retryable, or the retry was exhausted.
             shouldSurfaceCodexCompletionTimeout =
               attempt.codexAppServerFailure?.kind === "turn_completion_idle_timeout" &&
-              attempt.timedOut;
+              timedOut;
             if (
               attempt.codexAppServerFailure &&
               !hasRecoverableCodexAppServerTimeoutOutcome &&
