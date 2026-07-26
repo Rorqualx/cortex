@@ -169,6 +169,13 @@ export type L2ChunkFrontmatter = {
    * monolithic extraction. Indexes are into the compacted message slice.
    */
   topicSegments?: Array<{ startMsgIndex: number; endMsgIndex: number }>;
+  /**
+   * AREX-style active constraints extracted from this chunk (PROMPT_VERSION=11).
+   * Unresolved problem constraints, open questions, or verified evidence
+   * that must persist across compaction boundaries. Absent on chunks
+   * written before v11.
+   */
+  activeConstraints?: ActiveConstraint[];
 };
 
 /**
@@ -377,6 +384,20 @@ export type ExtractedActionItem = {
   deadline: string | null;
   /** Confidence 0..1. */
   confidence: number;
+  /** Verbatim source span from the conversation. */
+  sourceSpan: string;
+};
+
+/**
+ * AREX-style active constraint — an unresolved problem constraint, open
+ * question, or verified evidence that must persist across compaction.
+ * (PROMPT_VERSION=11)
+ */
+export type ActiveConstraint = {
+  /** The constraint or evidence statement. */
+  text: string;
+  /** Whether the constraint is still open, resolved, or verified. */
+  status: "open" | "resolved" | "verified";
   /** Verbatim source span from the conversation. */
   sourceSpan: string;
 };

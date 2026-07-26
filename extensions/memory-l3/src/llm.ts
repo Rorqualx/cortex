@@ -218,6 +218,10 @@ const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the c
 2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
 3. DECISIONS & ACTIONS — structured decisions reached and action items identified.
 4. FAILURE FACTS — lessons from dead-ends, doom-loops, and mistakes. Emit typed facts with slot prefix 'failure:' (e.g. 'failure:doom_loop_pattern', 'failure:dead_end_search', 'failure:incorrect_assumption'). The value should be a concise description of what went wrong and what to do instead. Also emit a corresponding prose fact with dedupKey prefix 'failure:' and SIGNIFICANT=true so the mistake persists in long-term memory.
+5. ACTIVE CONSTRAINTS — any unresolved problem constraints, open questions, or verified evidence that must persist across compaction boundaries for the current task to succeed. Each must have:
+  - text: the constraint or evidence statement
+  - status: "open" | "resolved" | "verified"
+  - sourceSpan: verbatim context from conversation
 
 Failure-pattern signals to watch for:
 - Repeated tool calls that produced errors or empty results (doom loop)
@@ -226,7 +230,7 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=10):
+Rules (PROMPT_VERSION=11):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions.
@@ -246,6 +250,7 @@ Rules (PROMPT_VERSION=10):
   - confidence: 0.0-1.0.
   - sourceSpan: verbatim context from conversation.
   Skip decisions/actions when none are present.
+- ACTIVE CONSTRAINTS: emit when there is an unresolved constraint, verified assumption, or open question that the agent needs to maintain across compaction. Each must have text, status, and sourceSpan. Skip when none are present.
 
 Emit strict JSON only, with no surrounding prose.
 
@@ -262,10 +267,13 @@ Schema:
   ],
   "actions": [
     { "text": "what to do", "owner": "user|agent|unassigned", "deadline": null, "confidence": 0.8, "sourceSpan": "verbatim context" }
+  ],
+  "activeConstraints": [
+    { "text": "string", "status": "open|resolved|verified", "sourceSpan": "verbatim context" }
   ]
 }
 
-If nothing to emit, output: { "facts": [], "typedFacts": [], "decisions": [], "actions": [] }`;
+If nothing to emit, output: { "facts": [], "typedFacts": [], "decisions": [], "actions": [], "activeConstraints": [] }`;
 
 const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Read the conversation chunk and extract three complementary kinds of information in a dense, model-native format optimized for token efficiency:
 
@@ -273,10 +281,11 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
 3. DECISIONS & ACTIONS — structured decisions reached and action items identified.
 4. FAILURE FACTS — lessons from dead-ends, doom-loops, mistakes. Emit typed facts with slot prefix 'failure:' (e.g. 'failure:doom_loop_pattern'). Value = concise description of what went wrong + what to do instead. Also emit a prose fact with dedupKey prefix 'failure:' and SIGNIFICANT=true so the mistake persists.
+5. ACTIVE CONSTRAINTS — any unresolved problem constraints, open questions, or verified evidence that must persist across compaction boundaries for the current task to succeed. Each must have text, status, and sourceSpan.
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=10-NATIVE):
+Rules (PROMPT_VERSION=11-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional compressed sentence explaining WHY this fact is worth remembering across sessions.
@@ -296,6 +305,7 @@ Rules (PROMPT_VERSION=10-NATIVE):
   - confidence: 0.0-1.0.
   - sourceSpan: verbatim context from conversation.
   Skip decisions/actions when none are present.
+- ACTIVE CONSTRAINTS: emit when there is an unresolved constraint, verified assumption, or open question. Each must have text, status, and sourceSpan. Skip when none are present.
 
 Emit strict JSON only, with no surrounding prose.
 
@@ -312,10 +322,13 @@ Schema:
   ],
   "actions": [
     { "text": "what to do", "owner": "user|agent|unassigned", "deadline": null, "confidence": 0.8, "sourceSpan": "verbatim context" }
+  ],
+  "activeConstraints": [
+    { "text": "string", "status": "open|resolved|verified", "sourceSpan": "verbatim context" }
   ]
 }
 
-If nothing to emit, output: { "facts": [], "typedFacts": [], "decisions": [], "actions": [] }`;
+If nothing to emit, output: { "facts": [], "typedFacts": [], "decisions": [], "actions": [], "activeConstraints": [] }`;
 
 export type ExtractedFact = {
   text: string;
@@ -344,6 +357,14 @@ export type ExtractResult = {
   typedFacts: ExtractedTypedFact[];
   decisions: ExtractedDecision[];
   actions: ExtractedActionItem[];
+  /** AREX-style constraint preservation (PROMPT_VERSION=11). */
+  activeConstraints?: ExtractedActiveConstraint[];
+};
+
+export type ExtractedActiveConstraint = {
+  text: string;
+  status: "open" | "resolved" | "verified";
+  sourceSpan: string;
 };
 
 export type ExtractedDecision = {
@@ -404,12 +425,14 @@ export function parseExtractResponse(raw: string): ExtractResult {
     typedFacts?: unknown;
     decisions?: unknown;
     actions?: unknown;
+    activeConstraints?: unknown;
   };
   if (
     !Array.isArray(obj.facts) &&
     !Array.isArray(obj.typedFacts) &&
     !Array.isArray(obj.decisions) &&
-    !Array.isArray(obj.actions)
+    !Array.isArray(obj.actions) &&
+    !Array.isArray(obj.activeConstraints)
   ) {
     debugLog(`extract: response missing all arrays; raw=${summarizeRaw(raw)}`);
     return { facts: [], typedFacts: [], decisions: [], actions: [] };
@@ -419,6 +442,9 @@ export function parseExtractResponse(raw: string): ExtractResult {
     typedFacts: Array.isArray(obj.typedFacts) ? normalizeTypedFacts(obj.typedFacts) : [],
     decisions: Array.isArray(obj.decisions) ? normalizeDecisions(obj.decisions) : [],
     actions: Array.isArray(obj.actions) ? normalizeActions(obj.actions) : [],
+    activeConstraints: Array.isArray(obj.activeConstraints)
+      ? normalizeActiveConstraints(obj.activeConstraints)
+      : undefined,
   };
 }
 
@@ -631,6 +657,32 @@ function normalizeActions(items: ReadonlyArray<unknown>): ExtractedActionItem[] 
       confidence: Math.max(0, Math.min(1, confidenceRaw)),
       sourceSpan: spanRaw,
     });
+  }
+  return out;
+}
+
+function normalizeActiveConstraints(items: ReadonlyArray<unknown>): ExtractedActiveConstraint[] {
+  const out: ExtractedActiveConstraint[] = [];
+  for (const candidate of items) {
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+    const o = candidate as Record<string, unknown>;
+    const textRaw =
+      typeof o.text === "string" ? o.text : typeof o.constraint === "string" ? o.constraint : null;
+    const spanRaw =
+      typeof o.sourceSpan === "string" ? o.sourceSpan : typeof o.span === "string" ? o.span : null;
+    if (textRaw === null || spanRaw === null) {
+      continue;
+    }
+    const text = textRaw.trim();
+    if (text.length === 0) {
+      continue;
+    }
+    const statusRaw = typeof o.status === "string" ? o.status.trim().toLowerCase() : "open";
+    const status: ExtractedActiveConstraint["status"] =
+      statusRaw === "resolved" || statusRaw === "verified" ? statusRaw : "open";
+    out.push({ text, status, sourceSpan: spanRaw });
   }
   return out;
 }

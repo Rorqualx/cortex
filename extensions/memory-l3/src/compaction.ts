@@ -14,6 +14,7 @@ import {
   type ExtractResult,
   type ExtractedDecision,
   type ExtractedActionItem,
+  type ExtractedActiveConstraint,
   type ExtractedTypedFact,
   formatTranscriptForPrompt,
   type LlmCaller,
@@ -239,6 +240,10 @@ export async function compactSession(params: {
     dedupKeys: facts.map((f) => f.dedupKey),
     decisions: extracted.decisions.length > 0 ? extracted.decisions : undefined,
     actionItems: extracted.actions.length > 0 ? extracted.actions : undefined,
+    activeConstraints:
+      extracted.activeConstraints && extracted.activeConstraints.length > 0
+        ? extracted.activeConstraints
+        : undefined,
     informationGain,
     contextWindow: messages.length,
     topicSegments,
@@ -246,7 +251,14 @@ export async function compactSession(params: {
 
   await params.storage.writeL2Chunk(
     frontmatter,
-    formatChunkBody(messages, facts, typedFacts, extracted.decisions, extracted.actions),
+    formatChunkBody(
+      messages,
+      facts,
+      typedFacts,
+      extracted.decisions,
+      extracted.actions,
+      extracted.activeConstraints,
+    ),
   );
 
   // Hebbian co-occurrence: extract edges from facts in this chunk and
@@ -413,6 +425,7 @@ function formatChunkBody(
   typedFacts: ReadonlyArray<TypedFact>,
   decisions?: ReadonlyArray<ExtractedDecision>,
   actions?: ReadonlyArray<ExtractedActionItem>,
+  constraints?: ReadonlyArray<ExtractedActiveConstraint>,
 ): string {
   const factSection =
     facts.length > 0
@@ -435,8 +448,19 @@ function formatChunkBody(
     actions && actions.length > 0
       ? `## Action Items\n${actions.map((a) => `- (${a.owner}) ${a.text}${a.deadline ? ` [${a.deadline}]` : ""}`).join("\n")}`
       : "";
+  const constraintsSection =
+    constraints && constraints.length > 0
+      ? `## Active Constraints\n${constraints.map((c) => `- [${c.status}] ${c.text}`).join("\n")}`
+      : "";
   const summarySection = `## Conversation\n${messages.length} message(s) compacted.`;
-  return [factSection, typedSection, decisionsSection, actionsSection, summarySection]
+  return [
+    factSection,
+    typedSection,
+    decisionsSection,
+    actionsSection,
+    constraintsSection,
+    summarySection,
+  ]
     .filter((s) => s.length > 0)
     .join("\n\n");
 }
@@ -509,6 +533,10 @@ async function extractWithOptionalSegmentation(params: {
           merged.typedFacts.push(...segment.typedFacts);
           merged.decisions.push(...segment.decisions);
           merged.actions.push(...segment.actions);
+          if (segment.activeConstraints) {
+            merged.activeConstraints ??= [];
+            merged.activeConstraints.push(...segment.activeConstraints);
+          }
         }
         l3debug(
           `extractWithOptionalSegmentation: ${ranges.length} topic segments over ${params.messages.length} messages`,
