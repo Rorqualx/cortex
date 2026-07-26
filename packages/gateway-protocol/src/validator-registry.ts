@@ -1,5 +1,20 @@
 import { lazyCompile } from "./protocol-validator.js";
 import {
+  ActivityListParamsSchema,
+  ActivitySubscribeParamsSchema,
+  ActivityUnsubscribeParamsSchema,
+  VaultDeleteParamsSchema,
+  VaultListParamsSchema,
+  VaultSaveParamsSchema,
+  type ActivityListParams,
+  type ActivitySubscribeParams,
+  type ActivityUnsubscribeParams,
+  type VaultDeleteParams,
+  type VaultListParams,
+  type VaultSaveParams,
+} from "./schema.js";
+
+import {
   CommandsListParamsSchema,
   ConnectParamsSchema,
   WorkerAdmissionHandshakeSchema,
@@ -680,3 +695,17 @@ export const validateUpdateRunParams = lazyCompile(UpdateRunParamsSchema);
 export const validateUiCommandParams = lazyCompile(UiCommandParamsSchema);
 export const validateWebLoginStartParams = lazyCompile(WebLoginStartParamsSchema);
 export const validateWebLoginWaitParams = lazyCompile(WebLoginWaitParamsSchema);
+
+// Fork RPC validators (activity feed + egress vault).
+export const validateActivityListParams = lazyCompile<ActivityListParams>(
+  ActivityListParamsSchema,
+);
+export const validateActivitySubscribeParams = lazyCompile<ActivitySubscribeParams>(
+  ActivitySubscribeParamsSchema,
+);
+export const validateActivityUnsubscribeParams = lazyCompile<ActivityUnsubscribeParams>(
+  ActivityUnsubscribeParamsSchema,
+);
+export const validateVaultListParams = lazyCompile<VaultListParams>(VaultListParamsSchema);
+export const validateVaultSaveParams = lazyCompile<VaultSaveParams>(VaultSaveParamsSchema);
+export const validateVaultDeleteParams = lazyCompile<VaultDeleteParams>(VaultDeleteParamsSchema);

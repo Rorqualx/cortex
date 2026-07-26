@@ -542,3 +542,25 @@ type GatewayAgentRuntime = {
     | "session"
     | "session-key";
 };
+
+// Fork protocol types mirroring the fork schema exports.
+export type {
+  ActivityCursor,
+  ActivityEvent,
+  ActivityEventDetail,
+  ActivityEventMetrics,
+  ActivityListParams,
+  ActivityListResult,
+  ActivitySubscribeParams,
+  ActivitySubscribeResult,
+  ActivityUnsubscribeParams,
+  PluginApprovalActionView,
+  PluginApprovalRequestPayload,
+  PluginApprovalRequestedEvent,
+  PluginApprovalResolvedEvent,
+  PresenceEvent,
+  UpdateAvailableEvent,
+  VaultDeleteParams,
+  VaultListParams,
+  VaultSaveParams,
+} from "./schema.js";

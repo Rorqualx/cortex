@@ -56,3 +56,7 @@ export * from "./schema/wizard.js";
 export * from "./schema/worker-admission.js";
 export * from "./schema/worker-inference.js";
 export * from "./schema/worktrees.js";
+
+// Fork-owned schema modules (activity feed, egress vault).
+export * from "./schema/activity.js";
+export * from "./schema/vault.js";

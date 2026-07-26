@@ -565,3 +565,26 @@ export {
   errorShape,
   missingScopeErrorShape,
 } from "./schema.js";
+
+// Fork protocol surface: cross-agent activity feed, egress vault, plugin
+// approvals view, and the presence/update events the Control UI subscribes to.
+export {
+  ActivityCursorSchema,
+  ActivityEventDetailSchema,
+  ActivityEventMetricsSchema,
+  ActivityEventSchema,
+  ActivityListParamsSchema,
+  ActivityListResultSchema,
+  ActivitySubscribeParamsSchema,
+  ActivitySubscribeResultSchema,
+  ActivityUnsubscribeParamsSchema,
+  PluginApprovalActionViewSchema,
+  PluginApprovalRequestPayloadSchema,
+  PluginApprovalRequestedEventSchema,
+  PluginApprovalResolvedEventSchema,
+  PresenceEventSchema,
+  UpdateAvailableEventSchema,
+  VaultDeleteParamsSchema,
+  VaultListParamsSchema,
+  VaultSaveParamsSchema,
+} from "./schema.js";
