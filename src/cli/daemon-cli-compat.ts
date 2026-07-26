@@ -46,6 +46,9 @@ function parseExportAliases(bundleSource: string): Map<string, string> | null {
       return null;
     }
     const original = parsed[1];
+    if (!original) {
+      return null;
+    }
     const alias = parsed[2] ?? original;
     aliases.set(original, alias);
   }
