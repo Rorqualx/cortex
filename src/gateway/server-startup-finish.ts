@@ -115,6 +115,7 @@ export async function finishGatewayStartup(params: {
     unsubscribeSessionMessageEvents,
     sessionEventSubscribers,
     sessionMessageSubscribers,
+    activitySubscribers,
     toolEventRecipients,
     dedupe,
     wizardSessions,
@@ -261,6 +262,10 @@ export async function finishGatewayStartup(params: {
       removeChatRun,
       subscribeSessionEvents: sessionEventSubscribers.subscribe,
       unsubscribeSessionEvents: sessionEventSubscribers.unsubscribe,
+      // Fork: cross-agent activity feed. The node runtime owns the registry;
+      // the request context exposes subscribe/unsubscribe to gateway clients.
+      subscribeActivityEvents: activitySubscribers.subscribe,
+      unsubscribeActivityEvents: activitySubscribers.unsubscribe,
       subscribeSessionMessageEvents,
       unsubscribeSessionMessageEvents,
       unsubscribeAllSessionEvents: (connId: string) => {
