@@ -24,6 +24,7 @@ import {
 } from "../infra/clawhub.js";
 import { defaultRuntime } from "../runtime.js";
 import {
+  readVerifiedClawHubSkillSourceUrl,
   installSkillFromClawHub,
   readTrackedClawHubSkillSlugs,
   resolveClawHubSkillVerificationTarget,

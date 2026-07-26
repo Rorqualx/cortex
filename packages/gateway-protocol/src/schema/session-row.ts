@@ -365,8 +365,6 @@ const gatewaySessionRowOptionalFields = {
 /** One session row projected for sessions.list and session event payloads. */
 export const GatewaySessionRowSchema = Type.Object(
   {
-    // Fork: LLM-generated conversation title shown in Control UI lists.
-    llmTitle: Type.Optional(Type.String()),
     key: NonEmptyString,
     kind: GatewaySessionKindSchema,
     updatedAt: Type.Union([Type.Number(), Type.Null()]),
