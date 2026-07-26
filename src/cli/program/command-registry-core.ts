@@ -65,6 +65,11 @@ const coreEntrySpecs: readonly CommandGroupDescriptorSpec<
         exportName: "registerConfigCli",
       },
       {
+        commandNames: ["claws"],
+        loadModule: () => import("../claws-cli.js"),
+        exportName: "registerClawsCli",
+      },
+      {
         commandNames: ["backup"],
         loadModule: () => import("./register.backup.js"),
         exportName: "registerBackupCommand",
@@ -130,25 +135,20 @@ const coreEntrySpecs: readonly CommandGroupDescriptorSpec<
         loadModule: () => import("./register.status-health-sessions.js"),
         exportName: "registerStatusHealthSessionsCommands",
       },
-      // Fork: Workboard LLM-loop CLI (cards + worker dispatch).
-      {
-        commandNames: ["workboard"],
-        loadModule: () => import("./register.workboard.js"),
-        exportName: "registerWorkboardCli",
-      },
     ]),
   ),
 ];
 
 function resolveCoreCommandGroups(ctx: ProgramContext, argv: string[]): CommandGroupEntry[] {
-  // Descriptor metadata and import specs stay separate so help can stay cheap.
-  return buildCommandGroupEntries(
-    getCoreCliCommandDescriptors(),
-    coreEntrySpecs,
-    (register) => async (program) => {
-      await register({ program, ctx, argv });
-    },
+  const descriptors = getCoreCliCommandDescriptors();
+  const visibleCommandNames = new Set(descriptors.map((descriptor) => descriptor.name));
+  const visibleEntrySpecs = coreEntrySpecs.filter((spec) =>
+    spec.commandNames.every((name) => visibleCommandNames.has(name)),
   );
+  // Descriptor metadata and import specs stay separate so help can stay cheap.
+  return buildCommandGroupEntries(descriptors, visibleEntrySpecs, (register) => async (program) => {
+    await register({ program, ctx, argv });
+  });
 }
 
 export function getCoreCliCommandNames(): string[] {

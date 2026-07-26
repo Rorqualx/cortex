@@ -1,14 +1,16 @@
 // Agents gateway methods expose agent listing, config mutation, workspace file
 // reads/writes, identity merging, and safe deletion for operator clients.
-import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { normalizeOptionalString as resolveOptionalStringParam } from "@openclaw/normalization-core/string-coerce";
 import {
+  GATEWAY_CLIENT_CAPS,
+  hasGatewayClientCap,
+} from "../../../packages/gateway-protocol/src/client-info.js";
+import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
-  validateAgentsComposePromptParams,
   validateAgentsCreateParams,
   validateAgentsDeleteParams,
   validateAgentsFilesGetParams,
@@ -32,11 +34,11 @@ import {
   beginAgentDeletion,
   claimCompletedAgentDeletion,
 } from "../../agents/agent-lifecycle-registry.js";
+import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import {
   listAgentIds,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
 } from "../../agents/agent-scope.js";
 import {
   createAgentIdentityConfig,
@@ -45,10 +47,6 @@ import {
   sanitizeAgentIdentityLine,
 } from "../../agents/identity-file.js";
 import { resolveAgentIdentity } from "../../agents/identity.js";
-import {
-  completeWithPreparedSimpleCompletionModel,
-  prepareSimpleCompletionModelForAgent,
-} from "../../agents/simple-completion-runtime.js";
 import {
   prepareLegacyWorkspaceStateReset,
   removeLegacyWorkspaceStateForReset,
@@ -60,14 +58,11 @@ import {
 import {
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_BOOTSTRAP_FILENAME,
-  DEFAULT_HEARTBEAT_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_MEMORY_FILENAME,
   DEFAULT_SOUL_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_USER_FILENAME,
-  SOULS_DIRNAME,
-  agentSoulRelativePath,
   ensureAgentWorkspace,
   isWorkspaceSetupCompleted,
 } from "../../agents/workspace.js";
@@ -85,7 +80,7 @@ import { root, FsSafeError, type ReadResult } from "../../infra/fs-safe.js";
 import { isPathInside } from "../../infra/path-guards.js";
 import { resolveSqliteDatabaseFilePaths } from "../../infra/sqlite-files.js";
 import { movePathToTrash } from "../../plugin-sdk/browser-maintenance.js";
-import { DEFAULT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js";
+import { LEGACY_IMPLICIT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js";
 import {
   readAgentDeletionJournal,
   type AgentDeletionJournalCleanupPath,
@@ -114,7 +109,6 @@ const BOOTSTRAP_FILE_NAMES = [
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_USER_FILENAME,
-  DEFAULT_HEARTBEAT_FILENAME,
   DEFAULT_BOOTSTRAP_FILENAME,
 ] as const;
 const BOOTSTRAP_FILE_NAMES_POST_ONBOARDING = BOOTSTRAP_FILE_NAMES.filter(
@@ -188,124 +182,6 @@ type FileMeta = {
 };
 
 type WorkspaceRoot = Awaited<ReturnType<typeof root>>;
-
-// Soul editor binding. The default agent's soul IS the workspace root SOUL.md
-// (also the shared template + the runtime fallback for everyone else). Every
-// other agent reads/writes only its own souls/<id>.md and never the root file
-// here, so the editor always shows that agent's individual soul — empty until
-// authored — instead of the shared template. Other workspace files pass through.
-function resolveSoulRelPath(agentId: string, name: string, isDefaultAgent: boolean): string {
-  if (name !== DEFAULT_SOUL_FILENAME || isDefaultAgent) {
-    return name;
-  }
-  return agentSoulRelativePath(agentId) ?? DEFAULT_SOUL_FILENAME;
-}
-
-type AgentFileEntry = {
-  name: string;
-  path: string;
-  missing: boolean;
-  size?: number;
-  updatedAtMs?: number;
-  isDirectory?: boolean;
-};
-
-/**
- * List files in an arbitrary directory (used for the active-dir workspace rail).
- * Returns up to 100 files, sorted alphabetically.
- */
-function listDirectoryFiles(dirPath: string): AgentFileEntry[] {
-  try {
-    const entries = fsSync.readdirSync(dirPath, { withFileTypes: true });
-    const files: AgentFileEntry[] = [];
-    for (const entry of entries) {
-      if (entry.name.startsWith(".")) {
-        continue;
-      } // skip hidden files
-      const fullPath = path.join(dirPath, entry.name);
-      if (entry.isFile()) {
-        try {
-          const stat = fsSync.statSync(fullPath);
-          files.push({
-            name: entry.name,
-            path: fullPath,
-            missing: false,
-            size: stat.size,
-            updatedAtMs: stat.mtimeMs,
-          });
-        } catch {
-          files.push({ name: entry.name, path: fullPath, missing: true });
-        }
-      }
-    }
-    return files.toSorted((a, b) => a.name.localeCompare(b.name)).slice(0, 100);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Lists subdirectories of an arbitrary directory for the project folder picker.
- * Separate from listDirectoryFiles so the active-dir file rail is unaffected.
- * Returns up to 200 directories, sorted alphabetically, hidden dirs excluded.
- */
-function listDirectorySubdirs(dirPath: string): AgentFileEntry[] {
-  try {
-    const entries = fsSync.readdirSync(dirPath, { withFileTypes: true });
-    const dirs: AgentFileEntry[] = [];
-    for (const entry of entries) {
-      if (entry.name.startsWith(".")) {
-        continue;
-      }
-      if (entry.isDirectory()) {
-        dirs.push({
-          name: entry.name,
-          path: path.join(dirPath, entry.name),
-          missing: false,
-          isDirectory: true,
-        });
-      }
-    }
-    return dirs.toSorted((a, b) => a.name.localeCompare(b.name)).slice(0, 200);
-  } catch {
-    return [];
-  }
-}
-
-// Standards/template the composer must follow when turning a brief into a full
-// agent prompt. Mirrors docs/reference/templates/SOUL.md so generated prompts
-// drop straight into the agent's SOUL.md (which is loaded into its context).
-const AGENT_PROMPT_COMPOSER_SYSTEM =
-  `You write SOUL.md files for OpenClaw agents — the persona/behavior prompt loaded into the agent's context.
-Given a brief description of an agent, produce a complete, well-structured SOUL.md in markdown.
-
-Output ONLY the markdown body (no code fences, no YAML frontmatter). Address the agent as "you". Use these sections:
-- "# <Agent name or role>" title line.
-- "## Core Truths" — 3-5 bullet points on who the agent is and what it's for.
-- "## Boundaries" — what it must not do; safety/ownership limits.
-- "## Vibe" — tone and working style.
-- "## Continuity" — how it should carry context and follow up.
-Keep it concise (under 1500 characters), concrete, and free of secrets or absolute filesystem paths.`.trim();
-
-/** Flatten an LLM completion's content blocks into plain text. */
-function collectComposedPromptText(content: unknown): string {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (!Array.isArray(content)) {
-    return "";
-  }
-  const parts: string[] = [];
-  for (const block of content) {
-    if (block && typeof block === "object" && "text" in block) {
-      const text = (block as { text?: unknown }).text;
-      if (typeof text === "string" && text.length > 0) {
-        parts.push(text);
-      }
-    }
-  }
-  return parts.join("\n");
-}
 
 function isRegularWorkspaceFileStat(stat: {
   isFile: boolean | (() => boolean);
@@ -1010,7 +886,7 @@ async function buildIdentityMarkdownOrRespondUnsafe(params: {
 }
 
 export const agentsHandlers: GatewayRequestHandlers = {
-  "agents.list": async ({ params, respond, context }) => {
+  "agents.list": async ({ params, respond, context, client }) => {
     if (!validateAgentsListParams(params)) {
       respondInvalidMethodParams(respond, "agents.list", validateAgentsListParams.errors);
       return;
@@ -1020,7 +896,9 @@ export const agentsHandlers: GatewayRequestHandlers = {
     const modelCatalog = await loadOptionalServerMethodModelCatalog(context, "agents.list", {
       logOnceKey: "agents.list",
     });
-    const result = listAgentsForGateway(cfg, modelCatalog);
+    const result = listAgentsForGateway(cfg, modelCatalog, {
+      includeSystem: hasGatewayClientCap(client?.connect.caps, GATEWAY_CLIENT_CAPS.AGENT_KIND),
+    });
     respond(true, result, undefined);
   },
   "agents.create": async ({ params, respond }) => {
@@ -1052,93 +930,6 @@ export const agentsHandlers: GatewayRequestHandlers = {
       undefined,
     );
   },
-  "agents.composePrompt": async ({ params, respond, context }) => {
-    if (!validateAgentsComposePromptParams(params)) {
-      respondInvalidMethodParams(
-        respond,
-        "agents.composePrompt",
-        validateAgentsComposePromptParams.errors,
-      );
-      return;
-    }
-    const cfg = context.getRuntimeConfig();
-    const briefRaw = (params as { brief?: unknown }).brief;
-    const brief = typeof briefRaw === "string" ? briefRaw.trim() : "";
-    if (!brief) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "brief is required"));
-      return;
-    }
-    const rawAgentId = (params as { agentId?: unknown }).agentId;
-    const agentId =
-      typeof rawAgentId === "string" && rawAgentId.trim()
-        ? normalizeAgentId(rawAgentId.trim())
-        : resolveDefaultAgentId(cfg);
-
-    let prepared;
-    try {
-      prepared = await prepareSimpleCompletionModelForAgent({
-        cfg,
-        agentId,
-        allowMissingApiKeyModes: ["aws-sdk"],
-        skipAgentDiscovery: true,
-      });
-    } catch (error) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          `model preparation failed: ${error instanceof Error ? error.message : "unknown"}`,
-        ),
-      );
-      return;
-    }
-    if ("error" in prepared) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, prepared.error));
-      return;
-    }
-
-    let result;
-    try {
-      result = await completeWithPreparedSimpleCompletionModel({
-        model: prepared.model,
-        auth: prepared.auth,
-        cfg,
-        context: {
-          systemPrompt: AGENT_PROMPT_COMPOSER_SYSTEM,
-          messages: [{ role: "user", content: brief, timestamp: Date.now() }],
-        },
-        options: {
-          maxTokens:
-            typeof prepared.model.maxTokens === "number" &&
-            Number.isFinite(prepared.model.maxTokens)
-              ? Math.min(prepared.model.maxTokens, 2000)
-              : 2000,
-        },
-      });
-    } catch (error) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.UNAVAILABLE,
-          `prompt composition failed: ${error instanceof Error ? error.message : "unknown"}`,
-        ),
-      );
-      return;
-    }
-
-    const prompt = collectComposedPromptText(result.content).trim();
-    if (!prompt) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.UNAVAILABLE, "model returned no text for prompt composition"),
-      );
-      return;
-    }
-    respond(true, { ok: true, prompt }, undefined);
-  },
   "agents.update": async ({ params, respond, context }) => {
     if (!validateAgentsUpdateParams(params)) {
       respondInvalidMethodParams(respond, "agents.update", validateAgentsUpdateParams.errors);
@@ -1164,18 +955,11 @@ export const agentsHandlers: GatewayRequestHandlers = {
         ? sanitizeAgentIdentityLine(params.name.trim())
         : undefined;
 
-    const description = resolveOptionalStringParam(params.description);
-    const role = resolveOptionalStringParam(params.role);
-    const baseIdentity = createAgentIdentityConfig({
+    const identity = createAgentIdentityConfig({
       name: safeName,
       emoji: params.emoji,
       avatar: params.avatar,
     });
-    // Role is a display-only identity label the shared helper does not model;
-    // layer it on top so role-only updates still produce an identity patch.
-    const identity = role
-      ? { ...baseIdentity, role: sanitizeAgentIdentityLine(role) }
-      : baseIdentity;
     const hasIdentityFields = Boolean(identity);
 
     const agentConfigUpdate: Parameters<typeof updateAgentConfigEntry>[0] = {
@@ -1183,8 +967,6 @@ export const agentsHandlers: GatewayRequestHandlers = {
       ...(safeName ? { name: safeName } : {}),
       ...(workspaceDir ? { workspace: workspaceDir } : {}),
       ...(model !== undefined ? { model } : {}),
-      ...(description !== undefined ? { description } : {}),
-      ...(params.thinkingDefault ? { thinkingDefault: params.thinkingDefault } : {}),
       ...(identity ? { identity } : {}),
     };
     const nextConfig = applyAgentConfig(cfg, agentConfigUpdate);
@@ -1250,11 +1032,13 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     const cfg = context.getRuntimeConfig();
     const agentId = normalizeAgentId(params.agentId);
-    if (agentId === DEFAULT_AGENT_ID) {
+    // agents/main/agent also owns the shipped shared legacy auth store.
+    // Keep main undeletable until named agents make auth-store ownership explicit.
+    if (agentId === LEGACY_IMPLICIT_AGENT_ID) {
       respond(
         false,
         undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `"${DEFAULT_AGENT_ID}" cannot be deleted`),
+        errorShape(ErrorCodes.INVALID_REQUEST, `"${LEGACY_IMPLICIT_AGENT_ID}" cannot be deleted`),
       );
       return;
     }
@@ -1266,6 +1050,17 @@ export const agentsHandlers: GatewayRequestHandlers = {
       respondAgentNotFound(respond, agentId);
       return;
     }
+    if (agentId === resolveDefaultAgentId(cfg)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `Agent "${agentId}" is the default and cannot be deleted. Reassign default first.`,
+        ),
+      );
+      return;
+    }
 
     const requestedDeleteFiles =
       typeof params.deleteFiles === "boolean" ? params.deleteFiles : true;
@@ -1275,6 +1070,11 @@ export const agentsHandlers: GatewayRequestHandlers = {
         const configured = isConfiguredAgent(lockedConfig, agentId);
         if (!configured && (!lockedJournal || lockedJournal.cleanupCompleted)) {
           throw new AgentConfigPreconditionError(`agent "${agentId}" not found`);
+        }
+        if (agentId === resolveDefaultAgentId(lockedConfig)) {
+          throw new AgentConfigPreconditionError(
+            `agent "${agentId}" is the default; reassign default first`,
+          );
         }
         if (configured && lockedJournal?.cleanupCompleted) {
           const claimed = claimCompletedAgentDeletion(agentId, lockedJournal.operationId);
@@ -1715,72 +1515,13 @@ export const agentsHandlers: GatewayRequestHandlers = {
       // Fall back to showing BOOTSTRAP if workspace state cannot be read.
     }
     const files = await listAgentFiles(workspaceDir, { hideBootstrap });
-    // If an alternate path is requested, list files + subdirectories from it.
-    // activeDirSubdirs powers the project folder picker; ~ expands to home.
-    let activeDirFiles: AgentFileEntry[] | undefined;
-    let activeDirSubdirs: AgentFileEntry[] | undefined;
-    if (typeof params.path === "string" && params.path.trim()) {
-      const requestedPath = resolveUserPath(params.path.trim());
-      // Only allow listing if the path exists and is a directory
-      try {
-        const stat = fsSync.statSync(requestedPath);
-        if (stat.isDirectory()) {
-          activeDirFiles = listDirectoryFiles(requestedPath);
-          activeDirSubdirs = listDirectorySubdirs(requestedPath);
-        }
-      } catch {
-        // Path doesn't exist or isn't readable — skip
-      }
-    }
-    respond(
-      true,
-      { agentId, workspace: workspaceDir, files, activeDirFiles, activeDirSubdirs },
-      undefined,
-    );
+    respond(true, { agentId, workspace: workspaceDir, files }, undefined);
   },
   "agents.files.get": async ({ params, respond, context }) => {
     if (!validateAgentsFilesGetParams(params)) {
       respondInvalidMethodParams(respond, "agents.files.get", validateAgentsFilesGetParams.errors);
       return;
     }
-
-    // If a full path is provided (active directory file), read it directly
-    if (typeof params.path === "string" && params.path.trim()) {
-      const filePath = path.resolve(params.path.trim());
-      const name = path.basename(filePath);
-      try {
-        const stat = fsSync.statSync(filePath);
-        if (!stat.isFile()) {
-          respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "not a file"));
-          return;
-        }
-        // Cap at 500KB
-        if (stat.size > 500 * 1024) {
-          respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "file too large"));
-          return;
-        }
-        const content = await fs.readFile(filePath, "utf-8");
-        respond(
-          true,
-          {
-            agentId: params.agentId ?? "main",
-            workspace: path.dirname(filePath),
-            file: { name, path: filePath, content, size: stat.size, updatedAtMs: stat.mtimeMs },
-          },
-          undefined,
-        );
-      } catch {
-        respondWorkspaceFileMissing({
-          respond,
-          agentId: params.agentId ?? "main",
-          workspaceDir: path.dirname(filePath),
-          name,
-          filePath,
-        });
-      }
-      return;
-    }
-
     const resolved = resolveAgentWorkspaceFileOrRespondError(
       params,
       respond,
@@ -1789,35 +1530,17 @@ export const agentsHandlers: GatewayRequestHandlers = {
     if (!resolved) {
       return;
     }
-    const { cfg, agentId, workspaceDir, name } = resolved;
-    const isDefaultAgent = resolveDefaultAgentId(cfg) === agentId;
-    const readRelPath = resolveSoulRelPath(agentId, name, isDefaultAgent);
-    const filePath = path.join(workspaceDir, readRelPath);
+    const { agentId, workspaceDir, name } = resolved;
+    const filePath = path.join(workspaceDir, name);
     let safeRead: ReadResult;
     try {
       const workspaceRoot = await agentsHandlerDeps.root(workspaceDir);
-      safeRead = await workspaceRoot.read(readRelPath, {
+      safeRead = await workspaceRoot.read(name, {
         hardlinks: "reject",
         nonBlockingRead: true,
       });
     } catch (err) {
       if (err instanceof FsSafeError && err.code === "not-found") {
-        if (name === DEFAULT_SOUL_FILENAME && !isDefaultAgent) {
-          // Non-default agent with no souls/<id>.md yet: show an empty editor,
-          // not the shared root SOUL.md, so the field reflects this agent. It
-          // still inherits the shared soul at runtime until one is saved here.
-          // The default agent keeps the plain missing-file response below.
-          respond(
-            true,
-            {
-              agentId,
-              workspace: workspaceDir,
-              file: { name, path: filePath, missing: true, content: "" },
-            },
-            undefined,
-          );
-          return;
-        }
         respondWorkspaceFileMissing({ respond, agentId, workspaceDir, name, filePath });
         return;
       }
@@ -1857,20 +1580,14 @@ export const agentsHandlers: GatewayRequestHandlers = {
     if (!resolved) {
       return;
     }
-    const { cfg, agentId, workspaceDir, name } = resolved;
-    const isDefaultAgent = resolveDefaultAgentId(cfg) === agentId;
-    const writeRelPath = resolveSoulRelPath(agentId, name, isDefaultAgent);
+    const { agentId, workspaceDir, name } = resolved;
     await fs.mkdir(workspaceDir, { recursive: true });
-    if (writeRelPath !== name) {
-      // Ensure souls/ exists before the guarded write targets souls/<id>.md.
-      await fs.mkdir(path.join(workspaceDir, SOULS_DIRNAME), { recursive: true });
-    }
-    const filePath = path.join(workspaceDir, writeRelPath);
+    const filePath = path.join(workspaceDir, name);
     const content = params.content;
     let workspaceRoot: WorkspaceRoot;
     try {
       workspaceRoot = await agentsHandlerDeps.root(workspaceDir);
-      await workspaceRoot.write(writeRelPath, content, { encoding: "utf8" });
+      await workspaceRoot.write(name, content, { encoding: "utf8" });
     } catch (err) {
       if (!(err instanceof FsSafeError)) {
         throw err;
@@ -1878,7 +1595,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       respondWorkspaceFileUnsafe(respond, name);
       return;
     }
-    const meta = await statWorkspaceFileSafely(workspaceRoot, workspaceDir, writeRelPath);
+    const meta = await statWorkspaceFileSafely(workspaceRoot, workspaceDir, name);
     respond(
       true,
       {

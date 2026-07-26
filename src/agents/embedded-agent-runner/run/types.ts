@@ -12,6 +12,7 @@ import type { DiagnosticTraceContext } from "../../../infra/diagnostic-trace-con
 import type { AssistantMessage, Model } from "../../../llm/types.js";
 import type { AgentHarnessTaskRuntimeScope } from "../../../tasks/agent-harness-task-runtime-scope.js";
 import type { AcceptedSessionSpawn } from "../../accepted-session-spawn.js";
+import type { AgentRunAttemptTerminal } from "../../agent-run-terminal-outcome.js";
 import type { ToolOutcomeObserver } from "../../agent-tools.before-tool-call.js";
 import type { AuthProfileStore } from "../../auth-profiles/types.js";
 import type { DelegationCapability } from "../../delegation-capability.js";
@@ -46,16 +47,15 @@ type EmbeddedRunAttemptBase = Omit<
   | "sessionFile"
 >;
 
-// Attempt-level fast mode is the resolved effective setting, not the raw "auto"
-// union: a thunk lets the harness re-read it as the auto timer elapses mid-run,
-// while `fastModeAuto` records whether the auto policy is the source.
-export type EmbeddedRunFastModeParam = boolean | (() => boolean | undefined);
-
-export type EmbeddedRunContextWindowInfo = {
+type EmbeddedRunContextWindowInfo = {
   tokens: number;
   referenceTokens?: number;
   source: "model" | "modelsConfig" | "agentContextTokens" | "default";
 };
+
+export type EmbeddedRunFastModeParam = boolean | (() => boolean | undefined);
+
+type EmbeddedRunAttemptOperation = "attempt" | "settled-tool-finalization";
 
 type EmbeddedRunAttemptToolTerminalObservation = {
   toolCallId?: string;
@@ -95,6 +95,8 @@ export type EmbeddedRunAttemptTrajectoryRecorder = {
 };
 
 export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
+  /** Sticky operation identity used to suppress ordinary retry and hook policy. */
+  operation?: EmbeddedRunAttemptOperation;
   preparedModelRuntime?: PreparedModelRuntimeSnapshot;
   /** Active file-backed artifact target resolved by the run/session target seam. */
   sessionFile: string;
@@ -145,14 +147,10 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   onAttemptTimeoutArmed?: () => void;
   /** Signals that this attempt's timeout has fired and must unwind promptly. */
   onAttemptTimeout?: (reason: Error) => void;
+  /** Signals an explicit cancellation through the active native run handle. */
+  onAttemptAbort?: () => void;
   /** Supplies run-global model-call ordering for parallel tool outcomes. */
   allocateToolOutcomeOrdinal?: (toolCallId?: string) => number;
-  /**
-   * Invoked when an attempt is aborted externally (user/restart/supersede) so
-   * plugin harnesses (e.g. codex app-server) can tear down their in-flight run.
-   * Optional: core provides it in the general run path; harnesses call it best-effort.
-   */
-  onAttemptAbort?: () => void;
   model: Model;
   authStorage: AuthStorage;
   /** Auth profile store already resolved during startup for this attempt. */
@@ -172,30 +170,11 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
 };
 
 export type EmbeddedRunAttemptResult = {
-  aborted: boolean;
-  /** True when the abort originated from the caller-provided abortSignal. */
-  externalAbort: boolean;
-  timedOut: boolean;
-  /** True when the no-response LLM idle watchdog caused the timeout. */
-  idleTimedOut: boolean;
-  /** True if the timeout occurred while compaction was in progress or pending. */
-  timedOutDuringCompaction: boolean;
-  /** Optional because this type is re-exported as `AgentHarnessAttemptResult`. */
-  timedOutDuringToolExecution?: boolean;
-  /** True when the attempt's run-budget timer (timeoutMs) fired the abort. */
-  timedOutByRunBudget?: boolean;
-  promptError: unknown;
-  /**
-   * Identifies which phase produced the promptError.
-   * - "prompt": the LLM call itself failed and may be eligible for retry/fallback.
-   * - "compaction": the prompt succeeded, but waiting for compaction/retry teardown was aborted;
-   *   this must not be retried as a fresh prompt or the same tool turn can replay.
-   * - "precheck": pre-prompt overflow recovery intentionally short-circuited the prompt so the
-   *   outer run loop can recover via compaction/truncation before any model call is made.
-   * - "hook:before_agent_run": a lifecycle hook blocked the run before the prompt was sent.
-   * - null: no promptError.
-   */
-  promptErrorSource: "prompt" | "compaction" | "precheck" | "hook:before_agent_run" | null;
+  terminal: AgentRunAttemptTerminal;
+  /** True when the runtime made the authoritative final-assistant transcript decision. */
+  assistantTranscriptOwned?: boolean;
+  /** Exact idempotency key for the runtime-owned final-assistant transcript row. */
+  assistantTranscriptIdempotencyKey?: string;
   preflightRecovery?:
     | {
         route: Exclude<PreemptiveCompactionRoute, "fits">;
@@ -264,16 +243,18 @@ export type EmbeddedRunAttemptResult = {
   systemPromptReport?: SessionSystemPromptReport;
   finalPromptText?: string;
   messagesSnapshot: AgentMessage[];
+  /**
+   * Complete application transcript frozen through a settled tool boundary.
+   * Projection-backed finalizers must fail closed when their harness does not provide it.
+   */
+  settledTurnFinalizationContext?: {
+    readonly source: "openclaw-transcript";
+    readonly messages: readonly AgentMessage[];
+  };
   beforeAgentFinalizeRevisionReason?: string;
   assistantTexts: string[];
   latestMcpAppChannelView?: McpAppChannelView;
   lastAssistantTextMessageIndex?: number;
-  /**
-   * True when this attempt took ownership of mirroring the assistant transcript
-   * (plugin harnesses like codex app-server that persist their own transcript).
-   * Consumed by the caller to skip a redundant core-side transcript write.
-   */
-  assistantTranscriptOwned?: boolean;
   toolMetas: Array<{
     toolName: string;
     meta?: string;
@@ -329,8 +310,6 @@ export type EmbeddedRunAttemptResult = {
    * Older harnesses may omit it and retain conservative cumulative retry gating.
    */
   currentAttemptReplayMetadata?: EmbeddedRunReplayMetadata;
-  /** HTTP response headers from the LLM provider (for attestation header capture). */
-  providerResponseHeaders?: Record<string, string>;
   itemLifecycle: {
     startedCount: number;
     completedCount: number;

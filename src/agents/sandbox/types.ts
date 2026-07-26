@@ -19,7 +19,7 @@ export type SandboxToolPolicySource = {
   source: "agent" | "global" | "default";
   /**
    * Config key path hint for humans.
-   * (Arrays use `agents.list[].…` form.)
+   * (Keyed agent entries use `agents.entries.*.…` form.)
    */
   key: string;
 };
@@ -45,7 +45,7 @@ export type SandboxBrowserConfig = {
   vncPort: number;
   noVncPort: number;
   headless: boolean;
-  enableNoVnc: boolean;
+  noVncEnabled: boolean;
   allowHostControl: boolean;
   autoStart: boolean;
   autoStartTimeoutMs: number;
@@ -73,13 +73,6 @@ export type SandboxSshConfig = {
 
 export type SandboxScope = "session" | "agent" | "shared";
 
-export type SandboxOsSandboxConfig = {
-  enabled: boolean;
-  extraWritableRoots: string[];
-  extraProtectedMetadata: string[];
-  network: "deny" | "allow" | "allow-loopback";
-};
-
 export type SandboxConfig = {
   mode: "off" | "non-main" | "all";
   backend: SandboxBackendId;
@@ -91,7 +84,6 @@ export type SandboxConfig = {
   browser: SandboxBrowserConfig;
   tools: SandboxToolPolicy;
   prune: SandboxPruneConfig;
-  osSandbox: SandboxOsSandboxConfig;
 };
 
 export type SandboxBrowserContext = {

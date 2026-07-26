@@ -29,7 +29,6 @@ import type {
   SandboxBrowserConfig,
   SandboxConfig,
   SandboxDockerConfig,
-  SandboxOsSandboxConfig,
   SandboxPruneConfig,
   SandboxScope,
   SandboxSshConfig,
@@ -162,7 +161,7 @@ export function resolveSandboxBrowserConfig(params: {
     noVncPort:
       agentBrowser?.noVncPort ?? globalBrowser?.noVncPort ?? DEFAULT_SANDBOX_BROWSER_NOVNC_PORT,
     headless: agentBrowser?.headless ?? globalBrowser?.headless ?? false,
-    enableNoVnc: agentBrowser?.enableNoVnc ?? globalBrowser?.enableNoVnc ?? true,
+    noVncEnabled: agentBrowser?.noVncEnabled ?? globalBrowser?.noVncEnabled ?? true,
     allowHostControl: agentBrowser?.allowHostControl ?? globalBrowser?.allowHostControl ?? false,
     autoStart: agentBrowser?.autoStart ?? globalBrowser?.autoStart ?? true,
     autoStartTimeoutMs: resolveSandboxBrowserAutoStartTimeoutMs(
@@ -228,23 +227,6 @@ export function resolveSandboxSshConfig(params: {
   };
 }
 
-export function resolveSandboxOsSandboxConfig(params: {
-  globalOsSandbox?: import("../../config/types.sandbox.js").OsSandboxSettings;
-  agentOsSandbox?: import("../../config/types.sandbox.js").OsSandboxSettings;
-}): SandboxOsSandboxConfig {
-  const g = params.globalOsSandbox;
-  const a = params.agentOsSandbox;
-  return {
-    enabled: a?.enabled ?? g?.enabled ?? false,
-    extraWritableRoots: [...(g?.extraWritableRoots ?? []), ...(a?.extraWritableRoots ?? [])],
-    extraProtectedMetadata: [
-      ...(g?.extraProtectedMetadata ?? []),
-      ...(a?.extraProtectedMetadata ?? []),
-    ],
-    network: a?.network ?? g?.network ?? "allow-loopback",
-  };
-}
-
 export function resolveSandboxConfigForAgent(
   cfg?: OpenClawConfig,
   agentId?: string,
@@ -299,10 +281,6 @@ export function resolveSandboxConfigForAgent(
       scope,
       globalPrune: agent?.prune,
       agentPrune: agentSandbox?.prune,
-    }),
-    osSandbox: resolveSandboxOsSandboxConfig({
-      globalOsSandbox: agent?.osSandbox,
-      agentOsSandbox: agentSandbox?.osSandbox,
     }),
   };
 }
