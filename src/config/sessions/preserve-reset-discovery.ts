@@ -10,7 +10,7 @@ import {
   parseAgentSessionKey,
 } from "../../routing/session-key.js";
 import { snapshotSessionOrigin } from "./metadata.js";
-import { updateSessionStore } from "./store.js";
+import { updateSessionStore } from "../../plugin-sdk/session-store-runtime.js";
 import type { SessionEntry } from "./types.js";
 
 export function extractFirstUserMessageText(messages: unknown[]): string | undefined {

@@ -366,3 +366,11 @@ export function deriveLastRoutePatch(params: {
   const basePatch: Partial<SessionEntry> = { delivery };
   return metaPatch ? { ...basePatch, ...metaPatch } : basePatch;
 }
+
+// Fork-owned; predates the current merge base so the upstream rebase drops it.
+export function snapshotSessionOrigin(entry?: SessionEntry): SessionOrigin | undefined {
+  if (!entry?.origin) {
+    return undefined;
+  }
+  return { ...entry.origin };
+}

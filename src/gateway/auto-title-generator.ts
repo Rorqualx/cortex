@@ -4,7 +4,7 @@
 
 import { resolveAgentDir, resolveDefaultAgentDir } from "../agents/agent-scope.js";
 import { generateConversationLabel } from "../auto-reply/reply/conversation-label-generator.js";
-import { patchSessionEntryWithKey } from "../config/sessions/store.js";
+import { patchSessionEntryWithKey } from "../config/sessions/session-accessor.entry.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { logVerbose } from "../globals.js";

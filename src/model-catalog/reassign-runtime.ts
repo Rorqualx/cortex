@@ -16,8 +16,8 @@ import {
 } from "../agents/model-selection-shared.js";
 import { loadPreparedModelCatalog } from "../agents/prepared-model-catalog.js";
 import { resolveDefaultSessionStorePath } from "../config/sessions/paths.js";
-import { loadSessionStore } from "../config/sessions/store-load.js";
-import { patchSessionEntryWithKey } from "../config/sessions/store.js";
+import { patchSessionEntryWithKey } from "../config/sessions/session-accessor.entry.js";
+import { loadSessionStore } from "../plugin-sdk/session-store-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   loadCronJobsStore,

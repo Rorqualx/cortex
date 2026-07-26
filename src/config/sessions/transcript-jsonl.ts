@@ -65,3 +65,12 @@ export async function writeJsonlLines(
   });
   return content;
 }
+
+// Fork-owned; predates the current merge base so the upstream rebase drops it.
+export function appendJsonlEntrySync(
+  filePath: string,
+  entry: unknown,
+  options?: { prefixNewline?: boolean },
+): string {
+  return appendSerializedJsonlEntrySync(filePath, serializeJsonlEntry(entry), options);
+}

@@ -32,15 +32,13 @@ import {
 import type { Model } from "../llm/types.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveDebugProxySettings } from "../proxy-capture/env.js";
+import { acquireProviderRequestSlot } from "./provider-concurrency-gate.js";
 import {
   containsSecretSentinel,
   resolveSecretSentinel,
   SECRET_SENTINEL_PATTERN,
   swapSecretSentinelsInText,
 } from "../secrets/sentinel.js";
-import { emitModelTransportDebug } from "./model-transport-debug.js";
-import { formatModelTransportDebugUrl } from "./model-transport-url.js";
-import { acquireProviderRequestSlot } from "./provider-concurrency-gate.js";
 import { ProviderHttpError, readResponseTextLimited } from "./provider-http-errors.js";
 import {
   ensureModelProviderLocalService,
@@ -873,14 +871,6 @@ export function buildGuardedModelFetch(
     let result: Awaited<ReturnType<typeof fetchWithSsrFGuard>>;
     const fetchStartedAt = Date.now();
     const useEnvProxy = !dispatcherPolicy && shouldUseEnvHttpProxyForUrl(url);
-    emitModelTransportDebug(
-      log,
-      `[model-fetch] start provider=${model.provider} api=${model.api} model=${model.id} ` +
-        // Log the pre-swap URL: the swapped URL can carry an injected credential in its path.
-        `method=${baseInit?.method ?? "GET"} url=${formatModelTransportDebugUrl(rawUrl)} timeoutMs=${requestTimeoutMs} ` +
-        `proxy=${dispatcherPolicy ? "configured" : useEnvProxy ? "env" : "none"} ` +
-        `policy=${policy ? "custom" : "default"}`,
-    );
     // Hold a provider concurrency slot for the whole request+stream lifetime so
     // simultaneous in-flight calls stay under the provider's ceiling (e.g. Z.ai
     // 429 "1302"). Undefined limit = no-op. Released once the response body
@@ -889,6 +879,14 @@ export function buildGuardedModelFetch(
       model.provider,
       requestConfig.maxConcurrentRequests,
       baseSignal,
+    );
+    emitModelTransportDebug(
+      log,
+      `[model-fetch] start provider=${model.provider} api=${model.api} model=${model.id} ` +
+        // Log the pre-swap URL: the swapped URL can carry an injected credential in its path.
+        `method=${baseInit?.method ?? "GET"} url=${formatModelTransportDebugUrl(rawUrl)} timeoutMs=${requestTimeoutMs} ` +
+        `proxy=${dispatcherPolicy ? "configured" : useEnvProxy ? "env" : "none"} ` +
+        `policy=${policy ? "custom" : "default"}`,
     );
     try {
       localServiceLease = await ensureModelProviderLocalService(
@@ -906,8 +904,8 @@ export function buildGuardedModelFetch(
         `[model-fetch] error provider=${model.provider} api=${model.api} model=${model.id} ` +
           `elapsedMs=${Date.now() - fetchStartedAt} ${summarizeError(error)}`,
       );
-      releaseSlot();
       localServiceLease?.release();
+      releaseSlot();
       throw error;
     }
     // Compose the concurrency-slot release into the managed-response release so the
@@ -921,45 +919,35 @@ export function buildGuardedModelFetch(
       }
     };
     let response = result.response;
-    try {
-      emitModelTransportDebug(
-        log,
-        `[model-fetch] response provider=${model.provider} api=${model.api} model=${model.id} ` +
-          `status=${response.status} elapsedMs=${Date.now() - fetchStartedAt} ` +
-          `contentType=${response.headers.get("content-type") ?? ""}`,
-      );
-      if (shouldBypassLongSdkRetry(response)) {
-        const headers = new Headers(response.headers);
-        headers.set("x-should-retry", "false");
-        response = new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers,
-        });
-      }
-      if (synthesizeJsonAsSse && options?.sanitizeSse !== false) {
-        response = await normalizeOpenAISdkStreamContentType({
-          response,
-          model,
-          release: result.release,
-          localServiceLease,
-        });
-      }
-      // buildManagedResponse takes ownership of releaseResultAndSlot on success. If
-      // any post-fetch step above throws first (e.g. normalizeOpenAISdkStreamContentType
-      // on a bad content-type), release here so the concurrency slot is not leaked —
-      // a leaked slot would permanently shrink this provider's ceiling and deadlock it.
-      response = buildManagedResponse(
-        response,
-        releaseResultAndSlot,
-        result.refreshTimeout,
-        localServiceLease,
-      );
-    } catch (error) {
-      await releaseResultAndSlot();
-      localServiceLease?.release();
-      throw error;
+    emitModelTransportDebug(
+      log,
+      `[model-fetch] response provider=${model.provider} api=${model.api} model=${model.id} ` +
+        `status=${response.status} elapsedMs=${Date.now() - fetchStartedAt} ` +
+        `contentType=${response.headers.get("content-type") ?? ""}`,
+    );
+    if (shouldBypassLongSdkRetry(response)) {
+      const headers = new Headers(response.headers);
+      headers.set("x-should-retry", "false");
+      response = new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
     }
+    if (synthesizeJsonAsSse && options?.sanitizeSse !== false) {
+      response = await normalizeOpenAISdkStreamContentType({
+        response,
+        model,
+        release: releaseResultAndSlot,
+        localServiceLease,
+      });
+    }
+    response = buildManagedResponse(
+      response,
+      releaseResultAndSlot,
+      result.refreshTimeout,
+      localServiceLease,
+    );
     return options?.sanitizeSse === false || !shouldSanitizeOpenAISdkSseResponse(model)
       ? response
       : sanitizeOpenAISdkSseResponse(response, { synthesizeJsonAsSse });

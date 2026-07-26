@@ -180,6 +180,8 @@ export const ChatDeltaEventSchema = closedObject({
   state: Type.Literal("delta"),
   message: Type.Optional(Type.Unknown()),
   deltaText: Type.String(),
+  // Fork: real-time model thinking streamed to the Control UI alongside deltaText.
+  deltaThinking: Type.Optional(Type.String()),
   replace: Type.Optional(Type.Boolean()),
   usage: Type.Optional(Type.Unknown()),
 });
@@ -234,3 +236,45 @@ export type ChatInjectParams = Static<typeof ChatInjectParamsSchema>;
 export type ChatRunStartupPhase = Static<typeof ChatRunStartupPhaseSchema>;
 export type ChatStatusEvent = Static<typeof ChatStatusEventSchema>;
 export type ChatEvent = Static<typeof ChatEventSchema>;
+
+/** Fork: server-side phase markers for operator chat.send timing diagnostics. */
+const ChatSendTimingPhaseSchema = Type.Union([
+  Type.Literal("dispatch-started"),
+  Type.Literal("model-selected"),
+  Type.Literal("agent-run-started"),
+  Type.Literal("dispatch-completed"),
+  Type.Literal("post-dispatch-completed"),
+]);
+
+/** Fork: payload broadcast on `chat.send_timing` to the operator UI that issued the send. */
+export const ChatSendTimingEventSchema = closedObject({
+  phase: ChatSendTimingPhaseSchema,
+  runId: NonEmptyString,
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  ackToPhaseMs: Type.Number({ minimum: 0 }),
+  receivedToPhaseMs: Type.Number({ minimum: 0 }),
+  dispatchStartedToPhaseMs: Type.Optional(Type.Number({ minimum: 0 })),
+  postDispatchMs: Type.Optional(Type.Number({ minimum: 0 })),
+  provider: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
+  agentRunId: Type.Optional(NonEmptyString),
+});
+
+/** Fork: out-of-band "btw" side-question result streamed next to the main run. */
+export const ChatSideResultEventSchema = closedObject({
+  kind: Type.Literal("btw"),
+  runId: NonEmptyString,
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  question: Type.String(),
+  text: Type.String(),
+  isError: Type.Optional(Type.Boolean()),
+  ts: Type.Integer({ minimum: 0 }),
+  seq: Type.Integer({ minimum: 0 }),
+});
+
+export type ChatSendTimingEvent = Static<typeof ChatSendTimingEventSchema>;
+/** Fork: server-side phase markers for operator chat.send timing diagnostics. */
+export type ChatSendTimingPhase = ChatSendTimingEvent["phase"];
+export type ChatSideResultEvent = Static<typeof ChatSideResultEventSchema>;
