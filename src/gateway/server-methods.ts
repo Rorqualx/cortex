@@ -97,6 +97,21 @@ const loadCommandsHandlers = lazyHandlerModule(
   () => import("./server-methods/commands.js"),
   (module) => module.commandsHandlers,
 );
+// Fork handler groups. The 2026-07 resync dropped these three registrations
+// while their modules survived, so the methods type-checked and built but the
+// dispatcher answered "unknown method" at runtime.
+const loadActivityHandlers = lazyHandlerModule(
+  () => import("./server-methods/activity.js"),
+  (module) => module.activityHandlers,
+);
+const loadChatBranchHandlers = lazyHandlerModule(
+  () => import("./server-methods/chat-branch.js"),
+  (module) => module.chatBranchHandlers,
+);
+const loadVaultHandlers = lazyHandlerModule(
+  () => import("./server-methods/vault.js"),
+  (module) => module.vaultHandlers,
+);
 const loadConfigHandlers = lazyHandlerModule(
   () => import("./server-methods/config.js"),
   (module) => module.configHandlers,
@@ -502,6 +517,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: [
       "doctor.memory.status",
+      "doctor.memory.l3Layers",
       "doctor.memory.dreamDiary",
       "doctor.memory.backfillDreamDiary",
       "doctor.memory.resetDreamDiary",
@@ -723,6 +739,20 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: ["sessions.companion.ask", "sessions.companion.state", "sessions.companion.reset"],
     loadHandlers: loadSessionCompanionHandlers,
+  }),
+  // Fork groups restored after the 2026-07 resync dropped their registration.
+  // Appended at the tail so no existing advertised method index shifts.
+  ...createLazyCoreHandlers({
+    methods: ["activity.list", "activity.subscribe", "activity.unsubscribe"],
+    loadHandlers: loadActivityHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["vault.list", "vault.save", "vault.delete"],
+    loadHandlers: loadVaultHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["chat.branch", "chat.branches"],
+    loadHandlers: loadChatBranchHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: [

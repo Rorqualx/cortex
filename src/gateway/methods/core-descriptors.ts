@@ -473,6 +473,21 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
     since: "2026.7",
     controlPlaneWrite: true,
   },
+  // Fork handler groups whose descriptors AND lazy registrations were dropped by
+  // the 2026-07 resync: the modules survived and type-checked, so every lane
+  // stayed green while the dispatcher answered "unknown method" at runtime.
+  // Appended rather than restored to their old slots so no existing advertised
+  // index shifts (see the legacy-order guard in server-methods-list.test.ts).
+  // Scopes are the pre-resync values, verified against 07315d7a613.
+  { name: "activity.list", scope: "operator.read", since: "<=2026.7" },
+  { name: "activity.subscribe", scope: "operator.read", since: "<=2026.7" },
+  { name: "activity.unsubscribe", scope: "operator.read", since: "<=2026.7" },
+  { name: "vault.list", scope: "operator.read", since: "<=2026.7" },
+  { name: "vault.save", scope: "operator.admin", since: "<=2026.7" },
+  { name: "vault.delete", scope: "operator.admin", since: "<=2026.7" },
+  { name: "chat.branch", scope: "operator.write", since: "<=2026.7", startup: true },
+  { name: "chat.branches", scope: "operator.read", since: "<=2026.7", startup: true },
+  { name: "doctor.memory.l3Layers", scope: "operator.read", since: "<=2026.7" },
 ] as const;
 
 const CORE_GATEWAY_METHOD_SPEC_BY_NAME: ReadonlyMap<string, CoreGatewayMethodSpec> = new Map(
