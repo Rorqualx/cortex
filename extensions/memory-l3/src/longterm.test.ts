@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_CONSOLIDATION_CONFIG } from "./consolidation.js";
 import { consolidateLongTerm, DEFAULT_LONG_TERM_CONFIG, type LongTermConfig } from "./longterm.js";
 import { Storage } from "./storage.js";
 import type { L2Fact, LongTermFact, RetrievalSignal } from "./types.js";
@@ -59,6 +60,7 @@ describe("consolidateLongTerm", () => {
       unarchivedCount: 0,
       semanticDedupCount: 0,
       activeCount: 0,
+      verificationBlocked: 0,
     });
     const lt = await storage.readLongTerm();
     expect(lt.facts).toEqual([]);
@@ -396,6 +398,81 @@ describe("consolidateLongTerm", () => {
     });
     expect(result.archivedCount).toBe(1);
     expect(result.epochGraceCount).toBe(0);
+  });
+});
+
+describe("consolidateLongTerm verification gate", () => {
+  it("passes all candidates when verification is disabled (default)", async () => {
+    await writeChunk(
+      "chunk-000000-v",
+      [fact("fv1", "user likes rust", 0.9, NOW, "user:pref:rust")],
+      NOW,
+    );
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "test",
+      now: NOW,
+      llm: async () =>
+        '{ "results": [{ "coverage": 0.1, "preservation": 0.1, "faithfulness": 0.1 }] }',
+    });
+    // Verification is disabled by default, so the gate is not invoked —
+    // even though the mock LLM would fail every candidate.
+    expect(result.promotedCount).toBe(1);
+    expect(result.verificationBlocked).toBe(0);
+  });
+
+  it("blocks candidates that fail the verification gate", async () => {
+    await writeChunk(
+      "chunk-000000-v2",
+      [fact("fv2", "user lives in denver", 0.9, NOW, "user:location")],
+      NOW,
+    );
+    const mockLlm = async () =>
+      JSON.stringify({
+        results: [{ coverage: 0.3, preservation: 1.0, faithfulness: 0.3 }],
+      });
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "test",
+      now: NOW,
+      llm: mockLlm,
+      consolidationConfig: {
+        ...DEFAULT_CONSOLIDATION_CONFIG,
+        verification: {
+          enabled: true,
+          thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7 },
+        },
+      },
+    });
+    expect(result.promotedCount).toBe(0);
+    expect(result.verificationBlocked).toBe(1);
+  });
+
+  it("promotes candidates that pass the verification gate", async () => {
+    await writeChunk(
+      "chunk-000000-v3",
+      [fact("fv3", "user works with rust", 0.9, NOW, "user:pref:rust2")],
+      NOW,
+    );
+    const mockLlm = async () =>
+      JSON.stringify({
+        results: [{ coverage: 0.95, preservation: 1.0, faithfulness: 0.9 }],
+      });
+    const result = await consolidateLongTerm({
+      storage,
+      agentId: "test",
+      now: NOW,
+      llm: mockLlm,
+      consolidationConfig: {
+        ...DEFAULT_CONSOLIDATION_CONFIG,
+        verification: {
+          enabled: true,
+          thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7 },
+        },
+      },
+    });
+    expect(result.promotedCount).toBe(1);
+    expect(result.verificationBlocked).toBe(0);
   });
 });
 

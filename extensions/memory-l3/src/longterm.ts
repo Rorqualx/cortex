@@ -5,9 +5,11 @@ import {
   type ConsolidationCandidate,
   type ConsolidationConfig,
   DEFAULT_CONSOLIDATION_CONFIG,
+  runVerificationGate,
   selectPromotable,
 } from "./consolidation.js";
 import { adjustImportance } from "./entities.js";
+import type { LlmCaller } from "./llm.js";
 import { DEFAULT_FSRS_PARAMS, nearDuplicateSimilarity, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type { LongTermFact, LongTermFrontmatter, RetrievalSignal } from "./types.js";
@@ -91,6 +93,8 @@ export type ConsolidationOutput = {
   semanticDedupCount: number;
   /** Total active facts after the pass (excludes archived). */
   activeCount: number;
+  /** Candidates blocked by the TRUSTMEM verification gate (0 when gate is disabled). */
+  verificationBlocked: number;
 };
 
 /**
@@ -118,11 +122,48 @@ export async function consolidateLongTerm(params: {
    * Falls back to jaccard when unavailable.
    */
   embeddingProvider?: { embedBatch(texts: string[]): Promise<number[][]> };
+  /**
+   * Optional LLM caller for the TRUSTMEM verification gate. When provided
+   * AND `consolidationConfig.verification.enabled` is true, each promotable
+   * candidate is scored on coverage/preservation/faithfulness before L3
+   * write. When null/undefined or verification is disabled, all candidates
+   * pass through (existing behavior).
+   */
+  llm?: LlmCaller | null;
 }): Promise<ConsolidationOutput> {
   const consolidationConfig = params.consolidationConfig ?? DEFAULT_CONSOLIDATION_CONFIG;
   const longTermConfig = params.longTermConfig ?? DEFAULT_LONG_TERM_CONFIG;
 
-  const promotable = await selectPromotable(params.storage, consolidationConfig);
+  let promotable = await selectPromotable(params.storage, consolidationConfig);
+
+  // TRUSTMEM 3-axis verification gate: when enabled and an LLM caller is
+  // available, score each promotable candidate on coverage, preservation,
+  // and faithfulness before any L3 write. Candidates that fail any axis
+  // are blocked from promotion (but can still be reaffirmed if they
+  // already exist in L3).
+  let verificationBlocked = 0;
+  if (consolidationConfig.verification?.enabled && params.llm) {
+    const existingLt = await params.storage.readLongTerm();
+    const priorFactsMap = new Map<string, LongTermFact>();
+    for (const f of existingLt.facts) {
+      priorFactsMap.set(f.dedupKey, f);
+    }
+    const gateResult = await runVerificationGate({
+      candidates: promotable,
+      storage: params.storage,
+      priorFacts: priorFactsMap,
+      llm: params.llm,
+      config: consolidationConfig.verification,
+    });
+    promotable = gateResult.passed;
+    verificationBlocked = gateResult.blockedCount;
+    if (verificationBlocked > 0) {
+      l3debug(
+        `verification gate: blocked ${verificationBlocked}/${promotable.length + verificationBlocked} candidates`,
+      );
+    }
+  }
+
   const promotableByKey = new Map(promotable.map((c) => [c.dedupKey, c]));
 
   const existing = await params.storage.readLongTerm();
@@ -423,6 +464,7 @@ export async function consolidateLongTerm(params: {
     unarchivedCount,
     semanticDedupCount,
     activeCount: adjustedFacts.filter((f) => !f.archived).length,
+    verificationBlocked,
   };
 }
 
