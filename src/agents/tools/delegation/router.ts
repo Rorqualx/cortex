@@ -46,18 +46,26 @@ export function recordProviderError(provider: string): void {
   _errorCounts.set(provider, (_errorCounts.get(provider) ?? 0) + 1);
 }
 
-/** Compute an EWMA latency + error penalty for a provider. Returns ms. */
-function providerLatencyPenalty(provider: string): number {
+/**
+ * EWMA latency + error penalty in ms, or undefined when we have no opinion.
+ *
+ * Returning 0 for an unmeasured provider would rank it ahead of every measured
+ * healthy one — the inverse of this mechanism's purpose, and of the ordering
+ * contract in resolveRoute. Errors count even with no successful samples, so a
+ * provider that only ever fails is demoted rather than treated as pristine.
+ */
+function providerLatencyPenalty(provider: string): number | undefined {
   const history = _latencyHistory.get(provider);
-  if (!history || history.length < LATENCY_MIN_SAMPLES) return 0;
+  const errors = _errorCounts.get(provider) ?? 0;
+  const hasLatency = (history?.length ?? 0) >= LATENCY_MIN_SAMPLES;
+  if (!hasLatency && errors === 0) return undefined;
+  if (!hasLatency) return errors * ERROR_PENALTY_MS;
 
   // EWMA with alpha=0.3 — recent samples weighted more
-  let ewma = history[0]!;
-  for (let i = 1; i < history.length; i++) {
-    ewma = 0.3 * history[i]! + 0.7 * ewma;
+  let ewma = history![0]!;
+  for (let i = 1; i < history!.length; i++) {
+    ewma = 0.3 * history![i]! + 0.7 * ewma;
   }
-
-  const errors = _errorCounts.get(provider) ?? 0;
   return ewma + errors * ERROR_PENALTY_MS;
 }
 
@@ -330,9 +338,14 @@ export function resolveRoute(req: RouteRequest): Route {
       (_latencyHistory.get(c.provider)?.length ?? 0) >= LATENCY_MIN_SAMPLES,
   );
   if (hasLatencyData) {
-    fallbacks = [...fallbacks].sort(
-      (a, b) => providerLatencyPenalty(a.provider) - providerLatencyPenalty(b.provider),
-    );
+    // Array.sort is stable, so returning 0 whenever either side has no opinion
+    // leaves unmeasured providers exactly where orderedProviders put them
+    // (subscription before metered) instead of floating them to the front.
+    fallbacks = [...fallbacks].sort((a, b) => {
+      const pa = providerLatencyPenalty(a.provider);
+      const pb = providerLatencyPenalty(b.provider);
+      return pa === undefined || pb === undefined ? 0 : pa - pb;
+    });
   }
 
   return { primary, fallbacks };

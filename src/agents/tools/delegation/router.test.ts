@@ -1,9 +1,16 @@
 // Router tests: config-driven auto-routing, priority tiers (zai/kimi primary,
 // deepseek/moonshot fallback), real configured model ids, explicit overrides,
 // and dynamic inclusion of newly-configured models.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { resolveRoute, ROLE_TIER, tierForKind } from "./router.js";
+import {
+  recordProviderError,
+  recordProviderLatency,
+  resetLatencyState,
+  resolveRoute,
+  ROLE_TIER,
+  tierForKind,
+} from "./router.js";
 
 // Minimal cfg mirroring the real provider catalog shape.
 function cfgWith(providers: Record<string, string[]>): OpenClawConfig {
@@ -210,5 +217,51 @@ describe("role-tier routing", () => {
     expect(backbone.model).not.toBe(execution.model);
     expect(backbone.model).toBe("glm-5.1");
     expect(execution.model).toBe("glm-4.7");
+  });
+});
+
+// Latency balancing only reorders providers it has an opinion about. Returning a
+// zero penalty for unmeasured providers would rank them ahead of measured healthy
+// ones, and would leave an error-only provider looking pristine.
+describe("delegation router adaptive latency balancing", () => {
+  afterEach(() => {
+    resetLatencyState();
+  });
+
+  const providerOrder = (kind: "code") =>
+    resolveRoute({ kind, cfg: FULL }).fallbacks.map((c) => c.provider);
+
+  it("preserves subscription-before-metered order when nobody has latency data", () => {
+    // One preferred model per provider (priority order), then the deep-fallback tail.
+    expect(providerOrder("code")).toEqual([
+      "zai",
+      "kimi",
+      "deepseek",
+      "moonshot",
+      "zai",
+      "zai",
+      "deepseek",
+    ]);
+  });
+
+  it("floats the faster of two measured providers ahead of the slower", () => {
+    for (let i = 0; i < 3; i++) {
+      recordProviderLatency("kimi", 15_000);
+      recordProviderLatency("moonshot", 200);
+    }
+    const order = providerOrder("code");
+    expect(order.indexOf("moonshot")).toBeLessThan(order.indexOf("kimi"));
+  });
+
+  it("demotes a provider that has only ever errored", () => {
+    const baseline = providerOrder("code");
+    const [first, second] = baseline;
+    for (let i = 0; i < 3; i++) {
+      recordProviderLatency(second!, 100);
+    }
+    recordProviderError(first!);
+    recordProviderError(first!);
+    const reordered = providerOrder("code");
+    expect(reordered.indexOf(second!)).toBeLessThan(reordered.indexOf(first!));
   });
 });

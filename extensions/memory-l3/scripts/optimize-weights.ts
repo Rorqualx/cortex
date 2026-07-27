@@ -40,7 +40,7 @@
 // applying.
 
 import { spawnSync } from "node:child_process";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir } from "node:fs/promises";
 import * as path from "node:path";
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
@@ -106,7 +106,6 @@ type EvalResult = {
  * Returns the overall accuracy (fraction correct).
  */
 function runEvaluation(config: ScoringConfig, iteration: number, keyName: string): EvalResult {
-  const tag = `opt-i${iteration}-${keyName}`;
   const scoringJson = JSON.stringify(config);
 
   console.log(`\n  [iter ${iteration}] Testing ${keyName}...`);

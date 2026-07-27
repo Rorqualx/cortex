@@ -141,13 +141,25 @@ export function buildArgsSummary(args: unknown): string {
   }
 }
 
+/** Redact and cap a tool error message before it is persisted. */
+export function buildErrorSummary(message: string): string {
+  const redacted = sanitizeToolArgs(message);
+  const text = typeof redacted === "string" ? redacted : String(redacted);
+  return text.length <= MAX_ARGS_SUMMARY_LENGTH
+    ? text
+    : `${text.slice(0, MAX_ARGS_SUMMARY_LENGTH - 3)}...`;
+}
+
 /** Insert an audit row for a single tool invocation. */
 export function recordToolAudit(params: ToolAuditRecord): void {
   const db = openDb(params.dir);
   const now = params.now ?? Date.now();
   const day = localAuditDay(now);
   const argsSummary = buildArgsSummary(params.args);
-  const errorMessage = params.errorMessage ?? null;
+  // Tool errors routinely echo their inputs (failed commands, URLs with tokens,
+  // file contents in stack traces), so a secret stripped from args_summary would
+  // walk straight back into the store through here. Same redaction, same cap.
+  const errorMessage = params.errorMessage ? buildErrorSummary(params.errorMessage) : null;
 
   const stmt = db.prepare(
     `INSERT INTO tool_audit (timestamp, day, agent_id, session_id, tool_name, tool_call_id, args_summary, source_context, allowed, error, error_message)

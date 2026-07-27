@@ -195,6 +195,22 @@ function registerDecayCommand(parent: Command): void {
     });
 }
 
+/**
+ * Parse --threshold. `Math.max(0, Math.min(1, NaN))` is NaN, and every
+ * `rate <= NaN` comparison is false, so an unvalidated non-numeric value would
+ * silently fail the audit with a "threshold: NaN%" report instead of erroring.
+ */
+function resolveAuditThreshold(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`--threshold must be a number between 0 and 1 (got ${String(raw)})`);
+  }
+  return Math.max(0, Math.min(1, parsed));
+}
+
 function registerAuditJudgeCommand(parent: Command): void {
   parent
     .command("audit-judge")
@@ -206,10 +222,7 @@ function registerAuditJudgeCommand(parent: Command): void {
     .option("--threshold <n>", `Maximum acceptable false-pass rate (default ${0.15}, range 0-1).`)
     .action(async (opts) => {
       const agentId = typeof opts.agent === "string" && opts.agent ? opts.agent : undefined;
-      const threshold =
-        opts.threshold !== undefined && opts.threshold !== null
-          ? Math.max(0, Math.min(1, Number(opts.threshold)))
-          : undefined;
+      const threshold = resolveAuditThreshold(opts.threshold);
       console.log("Running judge defect-injection audit...");
       const report = await actionAuditJudge({ agentId, threshold });
       console.log("=== judge audit report ===");
