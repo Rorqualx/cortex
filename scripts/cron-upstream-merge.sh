@@ -130,6 +130,28 @@ report_merge_ours_drift() {
   echo "MERGE-OURS-DRIFT-COUNT $code code files ($all total)"
 }
 
+# Upstream files that are NEW since the merge base and absent from the merge
+# result. tsgo cannot see this class at all: when a dropped module's consumers
+# are dropped with it the tree still compiles, so the feature is simply missing
+# and every lane stays green. The 2026-07-25 resync landed with 136 such files
+# (101 prod), including whole subsystems and 27 files dropped into plugins the
+# fork ships. `ui/` is excluded — it is fork-owned by policy, not dropped.
+report_dropped_upstream_files() {
+  local wt="$1" base="$2"
+  [ -n "$base" ] || { echo "DROPPED-UPSTREAM-COUNT skipped (no merge base)"; return 0; }
+  git -C "$wt" ls-tree -r --name-only "$UPSTREAM_REF" | LC_ALL=C sort > /tmp/um-up.txt
+  git -C "$wt" ls-tree -r --name-only HEAD          | LC_ALL=C sort > /tmp/um-head.txt
+  git -C "$wt" ls-tree -r --name-only "$base"       | LC_ALL=C sort > /tmp/um-base.txt
+  # in upstream, not at the base (i.e. upstream-new), and not in the merge result
+  comm -23 /tmp/um-up.txt /tmp/um-base.txt > /tmp/um-upnew.txt
+  comm -23 /tmp/um-upnew.txt /tmp/um-head.txt | grep -v '^ui/' > /tmp/um-dropped.txt || true
+  local dropped; dropped="$(wc -l < /tmp/um-dropped.txt | tr -d ' ')"
+  if [ "$dropped" != 0 ]; then
+    head -20 /tmp/um-dropped.txt | sed 's/^/  DROPPED-UPSTREAM /'
+  fi
+  echo "DROPPED-UPSTREAM-COUNT $dropped upstream-new files absent from the merge (full list: /tmp/um-dropped.txt)"
+}
+
 # Measure the post-driver residual via the shadow engine (read-only; own worktree).
 # Emits: BEHIND / RESIDUAL globals.
 measure() {
@@ -205,7 +227,11 @@ land_clean() {
   local branch="upstream-auto-merge/$date"
   fresh_worktree
   # Real merge; residual is 0 (measured), so this completes without conflicts.
-  if ! git -C "$WORKTREE" merge --no-ff --no-edit "$UPSTREAM_REF" >/tmp/um-merge.log 2>&1; then
+  # Same rerere scoping as stage_init: this path is only reached when the shadow
+  # measurement said zero conflicts, so a rerere replay firing here would mean it
+  # silently auto-resolved a conflict the measurement missed.
+  if ! git -C "$WORKTREE" -c rerere.enabled=false \
+    merge --no-ff --no-edit "$UPSTREAM_REF" >/tmp/um-merge.log 2>&1; then
     log "clean merge unexpectedly conflicted — deferring to resolution path"
     git -C "$WORKTREE" merge --abort 2>/dev/null || true
     drop_worktree
@@ -215,9 +241,15 @@ land_clean() {
   # Zero conflicts still means upstream's UI-architecture files were ADDED
   # alongside the fork's ui/src/ui tree; apply the same ownership policy here.
   local ui_dropped; ui_dropped="$(apply_fork_ui_ownership "$WORKTREE")"
-  if [ "${ui_dropped:-0}" != 0 ]; then
+  # Gate on the INDEX, not the dropped count. apply_fork_ui_ownership also stages
+  # `checkout main -- ui`, which reverts upstream's edits to EXISTING fork ui
+  # files; that path stages changes while dropping nothing. Amending only on
+  # dropped>0 left those reverts uncommitted, so preflight validated a different
+  # tree than the branch that got proved and landed, and upstream ui edits landed
+  # anyway — the exact hybrid the ownership policy exists to prevent.
+  if ! git -C "$WORKTREE" diff --cached --quiet HEAD; then
     git -C "$WORKTREE" commit -q --no-verify --amend --no-edit
-    log "fork ui/ ownership: dropped $ui_dropped upstream-only ui files from the clean merge"
+    log "fork ui/ ownership applied to the clean merge (dropped $ui_dropped upstream-only ui files)"
   fi
   local merge_sha; merge_sha="$(git -C "$WORKTREE" rev-parse HEAD)"
   git -C "$WORKTREE" branch -f "$branch" "$merge_sha" >/dev/null 2>&1
@@ -288,9 +320,12 @@ stage_init() {
   fresh_worktree
   git -C "$WORKTREE" checkout -B "$branch" >/dev/null 2>&1
   # rerere replays cached resolutions from earlier passes; a poisoned entry silently
-  # re-lands a bad merge, so this worktree always resolves from scratch.
-  git -C "$WORKTREE" config rerere.enabled false
-  git -C "$WORKTREE" merge --no-commit --no-ff "$UPSTREAM_REF" >/tmp/um-stage-merge.log 2>&1 || true
+  # re-lands a bad merge, so this merge always resolves from scratch. Scoped with
+  # `-c` on the invocation: linked worktrees share the repository config, so
+  # `git config rerere.enabled false` here would disable rerere for the operator's
+  # live checkout and every future worktree, and outlive this one.
+  git -C "$WORKTREE" -c rerere.enabled=false \
+    merge --no-commit --no-ff "$UPSTREAM_REF" >/tmp/um-stage-merge.log 2>&1 || true
   local raw; raw="$(git -C "$WORKTREE" status --porcelain | grep -cE '^(DD|AU|UD|UA|DU|AA|UU)' || true)"
   local ui_dropped; ui_dropped="$(apply_fork_ui_ownership "$WORKTREE")"
   local conflicts; conflicts="$(git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' | wc -l | tr -d ' ')"
@@ -300,8 +335,11 @@ stage_init() {
   git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' || true
   echo "--- merge=ours files upstream changed (rebase these onto upstream, re-apply the fork delta) ---"
   report_merge_ours_drift "$WORKTREE" "$base"
+  echo "--- upstream-new files absent from the merge (tsgo is blind to these) ---"
+  local dropped_up; dropped_up="$(report_dropped_upstream_files "$WORKTREE" "$base")"
+  printf '%s\n' "$dropped_up"
   echo "--- merge base for fork-delta extraction: $base ---"
-  ledger "STAGE-INIT branch=$branch conflicts=$conflicts raw=$raw ui-dropped=$ui_dropped"
+  ledger "STAGE-INIT branch=$branch conflicts=$conflicts raw=$raw ui-dropped=$ui_dropped $(printf '%s' "$dropped_up" | sed -n 's/^DROPPED-UPSTREAM-COUNT \([0-9]*\).*/dropped-upstream=\1/p')"
 }
 
 # Cheap local gate before spending a ~10 minute huey cycle. On 2026-07-25 three
@@ -311,7 +349,10 @@ stage_init() {
 preflight() {
   local wt="$1"
   local markers
-  markers="$(git -C "$wt" grep -lE '^(<{7}|={7}|>{7})( |$)' -- '*.ts' '*.tsx' '*.mjs' '*.json' '*.yaml' '*.swift' 2>/dev/null | head -20)"
+  # Keep this list aligned with the extensions report_merge_ours_drift treats as
+  # code: a stray marker in a .kt or .yml file passes an incomplete scan and then
+  # burns the ~10 minute huey cycle this gate exists to save.
+  markers="$(git -C "$wt" grep -lE '^(<{7}|={7}|>{7})( |$)' -- '*.ts' '*.tsx' '*.mjs' '*.json' '*.yaml' '*.yml' '*.swift' '*.kt' '*.sh' 2>/dev/null | head -20)"
   if [ -n "$markers" ]; then
     echo "PREFLIGHT=FAIL reason=conflict-markers"
     printf '%s\n' "$markers"
@@ -385,9 +426,12 @@ prove_staged() {
   if [ "$rc" != 0 ]; then
     # Separate "the candidate is red" from "we could not reach the prover", so a
     # transport outage is never read back as a code failure in the ledger.
+    # remote-proof.sh documents 3 = UNAVAILABLE (transport) and 2 = usage/local
+    # error; mapping 2 to a transport label would triage a local misinvocation as
+    # a network outage, which is the inverse of what this split is for.
     case "$rc" in
       3) result=UNAVAILABLE ;;
-      2) result=TRANSPORT-ERROR ;;
+      2) result=LOCAL-ERROR ;;
       *) result=FAIL ;;
     esac
     ledger "STAGE-PROOF branch=$STAGED_BRANCH result=$result rc=$rc"
