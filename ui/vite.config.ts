@@ -352,7 +352,10 @@ function normalizeViteImporterPath(importer: string): string {
 }
 
 export function controlUiBrowserOnlySharedModuleAliases(): Plugin {
-  const browserRedactPath = path.join(here, "src/lib/browser-redact.ts");
+  // Fork-owned UI layout: the browser redactor lives under src/ui/, not
+  // upstream's rearchitected src/lib/. Pointing this at src/lib/ fails the
+  // Vite build with UNLOADABLE_DEPENDENCY, which no tsgo lane can catch.
+  const browserRedactPath = path.join(here, "src/ui/browser-redact.ts");
   const sharedRedactImporters = new Set([
     path.join(repoRoot, "src/agents/tool-display-common.ts"),
     path.join(repoRoot, "src/agents/tool-display-exec.ts"),
