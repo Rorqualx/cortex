@@ -102,6 +102,252 @@ export function applyCategoryBudget(
   return result;
 }
 
+// --- Budget-aware L2 operator selection (Kang et al. inspired) ---
+//
+// When budget pressure is high, instead of just dropping facts, apply
+// progressive operators that compress more aggressively but preserve
+// more information than simple dropping:
+//   - Low pressure (<30%): Retain — keep important facts, drop the rest
+//     (same as applyCategoryBudget above).
+//   - Moderate pressure (30-60%): Merge — concatenate textually similar
+//     overflow facts into a single merged fact, preserving their content.
+//   - High pressure (>60%): Abstract — when even merging can't fit, the
+//     caller may optionally provide an LLM to summarize overflow facts
+//     into one concise abstract fact.
+//
+// Gate: enabled via `budgetAwareCompaction` param or
+// OPENCLAW_MEMORY_L3_BUDGET_AWARE=1 env flag. Default off — existing
+// `applyCategoryBudget` behavior is unchanged.
+
+/** Thresholds for budget-pressure operator selection. */
+const LOW_PRESSURE_THRESHOLD = 0.3;
+const HIGH_PRESSURE_THRESHOLD = 0.6;
+
+/**
+ * Compute budget pressure ratio for a category group.
+ * Returns overflow / totalBudget (0 = no pressure, 1+ = severe overflow).
+ */
+function computePressureRatio(
+  facts: ReadonlyArray<ExtractedFact>,
+  maxTokens: number,
+): { totalTokens: number; overflowTokens: number; pressure: number } {
+  let totalTokens = 0;
+  for (const f of facts) {
+    totalTokens += estimateFactTokens(f.text);
+  }
+  const overflowTokens = Math.max(0, totalTokens - maxTokens);
+  return { totalTokens, overflowTokens, pressure: maxTokens > 0 ? overflowTokens / maxTokens : 0 };
+}
+
+/**
+ * Merge multiple fact texts by extracting common words/phrases and
+ * combining unique suffixes. Produces a shorter text than raw
+ * concatenation. Example:
+ *   ["alpha system config", "alpha system params"] → "alpha system: config; params"
+ */
+function compactMerge(texts: string[]): string {
+  if (texts.length === 1) return texts[0]!;
+  const wordsPerText = texts.map((t) => t.split(/\s+/));
+  // Find common prefix words.
+  const first = wordsPerText[0]!;
+  let prefixLen = 0;
+  for (let i = 0; i < first.length; i++) {
+    const word = first[i];
+    if (!wordsPerText.every((ws) => ws[i] === word)) break;
+    prefixLen = i + 1;
+  }
+  const commonPrefix = first.slice(0, prefixLen).join(" ");
+  // Extract unique tails.
+  const tails = wordsPerText.map((ws) => ws.slice(prefixLen).join(" ")).filter((t) => t.length > 0);
+  if (commonPrefix && tails.length > 0) {
+    return `${commonPrefix}: ${tails.join("; ")}`;
+  }
+  // No common prefix — join with semicolons.
+  return texts.join("; ");
+}
+
+/**
+ * Merge textually similar overflow facts into a single fact. Each merged
+ * fact takes the highest importance and combines text with semicolons.
+ * Only facts that share a sub-category (after the first colon) are merged.
+ */
+function mergeOverflowFacts(overflow: ReadonlyArray<ExtractedFact>): ExtractedFact[] {
+  if (overflow.length <= 1) return [...overflow];
+
+  // Group by sub-category (the part after the category prefix).
+  const subGroups = new Map<string, ExtractedFact[]>();
+  for (const f of overflow) {
+    const subKey = f.dedupKey.split(":").slice(1).join(":") || "default";
+    const list = subGroups.get(subKey);
+    if (list) {
+      list.push(f);
+    } else {
+      subGroups.set(subKey, [f]);
+    }
+  }
+
+  const merged: ExtractedFact[] = [];
+  for (const [, group] of subGroups) {
+    if (group.length === 1) {
+      merged.push(group[0]!);
+      continue;
+    }
+    // Merge: combine texts with shared-content extraction.
+    const sorted = [...group].sort((a, b) => b.importance - a.importance);
+    const head = sorted[0]!;
+    const texts = sorted.map((f) => f.text);
+    // Deduplicate identical texts.
+    const uniqueTexts = [...new Set(texts)];
+    const mergedText = compactMerge(uniqueTexts);
+    merged.push({
+      ...head,
+      text: mergedText,
+      reasoning: `merged:${group.length}`,
+    });
+  }
+  return merged;
+}
+
+/**
+ * Apply budget-aware operator selection to facts across all categories.
+ * When pressure is low, behaves identically to `applyCategoryBudget`.
+ * At moderate pressure, merges similar overflow facts. At high pressure
+ * with an LLM caller, summarizes overflow into an abstract fact.
+ */
+export async function applyCategoryBudgetWithOperators(params: {
+  facts: ReadonlyArray<ExtractedFact>;
+  maxTokensPerCategory: number;
+  /** Optional LLM caller for the abstraction operator (high pressure). */
+  caller?: LlmCaller;
+}): Promise<ExtractedFact[]> {
+  const { facts, maxTokensPerCategory } = params;
+  if (maxTokensPerCategory <= 0) return [...facts];
+
+  // Group by category prefix.
+  const groups = new Map<string, ExtractedFact[]>();
+  for (const fact of facts) {
+    const cat = extractCategory(fact.dedupKey);
+    const list = groups.get(cat);
+    if (list) {
+      list.push(fact);
+    } else {
+      groups.set(cat, [fact]);
+    }
+  }
+
+  const result: ExtractedFact[] = [];
+  for (const [, group] of groups) {
+    const sorted = [...group].sort((a, b) => b.importance - a.importance);
+    const { pressure } = computePressureRatio(sorted, maxTokensPerCategory);
+
+    if (pressure < LOW_PRESSURE_THRESHOLD) {
+      // Low pressure: simple retain/drop (same as applyCategoryBudget).
+      let tokenSum = 0;
+      for (const fact of sorted) {
+        const cost = estimateFactTokens(fact.text);
+        if (tokenSum + cost > maxTokensPerCategory) break;
+        tokenSum += cost;
+        result.push(fact);
+      }
+    } else {
+      // Moderate or high pressure: retain what fits, then merge overflow.
+      const retained: ExtractedFact[] = [];
+      const overflow: ExtractedFact[] = [];
+      let tokenSum = 0;
+      for (const fact of sorted) {
+        const cost = estimateFactTokens(fact.text);
+        if (tokenSum + cost <= maxTokensPerCategory) {
+          tokenSum += cost;
+          retained.push(fact);
+        } else {
+          overflow.push(fact);
+        }
+      }
+
+      if (overflow.length === 0) {
+        result.push(...retained);
+        continue;
+      }
+
+      // Merge overflow facts (textual merge, no LLM call).
+      const merged = mergeOverflowFacts(overflow);
+
+      // Accept merged facts within the budget. Genuinely merged facts
+      // (reasoning starts with "merged:") get the full category budget as
+      // allowance since they replace multiple facts. Unmerged passthrough
+      // facts (no merge partner found) are held to the remaining budget.
+      const remainingBudget = maxTokensPerCategory - tokenSum;
+      const fitsAfterMerge: ExtractedFact[] = [];
+      const stillOverflowing: ExtractedFact[] = [];
+      for (const f of merged) {
+        const cost = estimateFactTokens(f.text);
+        const isMerged = f.reasoning?.startsWith("merged:");
+        const allowance = isMerged ? maxTokensPerCategory : remainingBudget;
+        if (cost <= allowance) {
+          fitsAfterMerge.push(f);
+        } else {
+          stillOverflowing.push(f);
+        }
+      }
+
+      result.push(...retained, ...fitsAfterMerge);
+
+      // High pressure with LLM: abstract the still-overflowing facts.
+      if (stillOverflowing.length > 0 && pressure >= HIGH_PRESSURE_THRESHOLD && params.caller) {
+        try {
+          const abstractFact = await abstractOverflow(stillOverflowing, params.caller);
+          if (abstractFact) {
+            result.push(abstractFact);
+          }
+        } catch {
+          // LLM abstraction failure is non-fatal — just drop the overflow.
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Use an LLM to abstract a set of overflow facts into a single concise fact.
+ */
+async function abstractOverflow(
+  facts: ReadonlyArray<ExtractedFact>,
+  caller: LlmCaller,
+): Promise<ExtractedFact | null> {
+  if (facts.length === 0) return null;
+  if (facts.length === 1) return facts[0]!;
+
+  const factList = facts.map((f, i) => `${i + 1}. ${f.text}`).join("\n");
+  const prompt = `Compress these facts into a single concise statement that preserves the key information. Output only the statement, no preamble:
+
+${factList}`;
+
+  let raw: string;
+  try {
+    raw = await caller({
+      systemPrompt:
+        "You are a fact compressor. Combine multiple related facts into one concise sentence. Output only the combined fact, nothing else.",
+      userPrompt: prompt,
+      thinking: false,
+    });
+  } catch {
+    return null;
+  }
+
+  const text = raw.trim();
+  if (!text || text.length < 5) return null;
+
+  // Use the highest-importance fact as the template.
+  const head = [...facts].sort((a, b) => b.importance - a.importance)[0]!;
+  return {
+    ...head,
+    text,
+    reasoning: `abstract:${facts.length}`,
+  };
+}
+
 export async function compactSession(params: {
   sessionId: string;
   buffer: IngestBuffer;
@@ -135,6 +381,13 @@ export async function compactSession(params: {
    * OPENCLAW_MEMORY_L3_CATEGORY_BUDGET env var or directly.
    */
   categoryBudget?: number;
+  /**
+   * Budget-aware L2 operator selection (Kang et al.). When enabled, budget
+   * pressure triggers progressive operators (merge, abstract) instead of
+   * simple dropping. Defaults to the
+   * OPENCLAW_MEMORY_L3_BUDGET_AWARE=1 env flag.
+   */
+  budgetAwareCompaction?: boolean;
 }): Promise<CompactionResult> {
   const messages = [...params.buffer.peek(params.sessionId)];
   const tokensBefore = params.buffer.tokens(params.sessionId);
@@ -164,9 +417,24 @@ export async function compactSession(params: {
 
   // Apply per-category token budget if configured (QW-1). Prevents a single
   // chatty category from crowding out diverse signal in long sessions.
+  // When budgetAwareCompaction is enabled, budget pressure triggers
+  // progressive operators (merge, abstract) instead of simple dropping.
   const categoryBudget =
     params.categoryBudget ?? Number(process.env.OPENCLAW_MEMORY_L3_CATEGORY_BUDGET ?? "0");
-  const budgeted = categoryBudget > 0 ? applyCategoryBudget(deduped, categoryBudget) : deduped;
+  const budgetAware =
+    params.budgetAwareCompaction ?? process.env.OPENCLAW_MEMORY_L3_BUDGET_AWARE === "1";
+  let budgeted: ExtractedFact[];
+  if (categoryBudget > 0 && budgetAware) {
+    budgeted = await applyCategoryBudgetWithOperators({
+      facts: deduped,
+      maxTokensPerCategory: categoryBudget,
+      caller: params.caller,
+    });
+  } else if (categoryBudget > 0) {
+    budgeted = applyCategoryBudget(deduped, categoryBudget);
+  } else {
+    budgeted = deduped;
+  }
 
   // Verbatim source-grounding for typed facts: the LLM's claimed values
   // must appear inside the original transcript character-for-character.

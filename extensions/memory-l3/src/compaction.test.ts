@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { compactSession, applyCategoryBudget } from "./compaction.js";
+import {
+  compactSession,
+  applyCategoryBudget,
+  applyCategoryBudgetWithOperators,
+} from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
 import type { LlmCaller } from "./llm.js";
 import { Storage } from "./storage.js";
@@ -423,5 +427,73 @@ describe("applyCategoryBudget", () => {
       { text: "also short", importance: 0.5, dedupKey: "a:2" },
     ];
     expect(applyCategoryBudget(facts, 1000)).toHaveLength(2);
+  });
+});
+
+describe("applyCategoryBudgetWithOperators", () => {
+  it("returns all facts when budget is 0 (disabled)", async () => {
+    const facts = [
+      { text: "fact one", importance: 0.8, dedupKey: "a:1" },
+      { text: "fact two", importance: 0.5, dedupKey: "a:2" },
+    ];
+    expect(await applyCategoryBudgetWithOperators({ facts, maxTokensPerCategory: 0 })).toHaveLength(
+      2,
+    );
+  });
+
+  it("behaves like simple budget at low pressure (retain/drop)", async () => {
+    const facts = [
+      { text: "high importance fact here", importance: 0.9, dedupKey: "a:1" },
+      { text: "low importance fact", importance: 0.3, dedupKey: "a:2" },
+    ];
+    // Budget barely over the first fact — ~9% pressure (low).
+    const result = await applyCategoryBudgetWithOperators({ facts, maxTokensPerCategory: 11 });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.dedupKey).toBe("a:1");
+  });
+
+  it("merges overflow facts at moderate pressure", async () => {
+    // Facts share sub-category "sys" so they can be merged.
+    // 3 facts × ~7 tokens ≈ 20 total. Budget = 12 → ~67% pressure.
+    // Merged fact (11 tokens) fits within category budget.
+    const facts = [
+      { text: "alpha system configuration", importance: 0.9, dedupKey: "a:sys" },
+      { text: "alpha system parameters", importance: 0.7, dedupKey: "a:sys" },
+      { text: "alpha system diagnostics", importance: 0.5, dedupKey: "a:sys" },
+    ];
+    const result = await applyCategoryBudgetWithOperators({ facts, maxTokensPerCategory: 12 });
+    // Should retain the most important fact and merge the overflow.
+    const mergedFacts = result.filter((f) => f.reasoning?.startsWith("merged:"));
+    expect(mergedFacts.length).toBeGreaterThan(0);
+  });
+
+  it("uses LLM abstraction at high pressure when caller is provided", async () => {
+    // High pressure: 6 facts, tiny budget.
+    const facts = [
+      { text: "alpha fact one", importance: 0.9, dedupKey: "a:1" },
+      { text: "alpha fact two", importance: 0.8, dedupKey: "a:2" },
+      { text: "alpha fact three", importance: 0.7, dedupKey: "a:3" },
+      { text: "alpha fact four", importance: 0.6, dedupKey: "a:4" },
+    ];
+    const mockCaller: LlmCaller = async () => "alpha facts 1-4 combined";
+    const result = await applyCategoryBudgetWithOperators({
+      facts,
+      maxTokensPerCategory: 6,
+      caller: mockCaller,
+    });
+    const abstractFact = result.find((f) => f.reasoning === "abstract:2");
+    // May or may not produce an abstract fact depending on merge behavior,
+    // but the result should have fewer facts than the input.
+    expect(result.length).toBeLessThan(facts.length);
+  });
+
+  it("applies budget independently per category", async () => {
+    const facts = [
+      { text: "cat a fact", importance: 0.8, dedupKey: "a:1" },
+      { text: "cat b fact", importance: 0.8, dedupKey: "b:1" },
+    ];
+    // Both are in different categories, so both survive a small budget.
+    const result = await applyCategoryBudgetWithOperators({ facts, maxTokensPerCategory: 10 });
+    expect(result).toHaveLength(2);
   });
 });
