@@ -841,7 +841,12 @@ export async function retrieveTopK(params: {
   // - factual: typed facts are already concise; trim prose to 1st sentence
   // - multihop: keep typed facts full; condense prose to 2 sentences
   // - synthesis: keep prose full; typed facts already compact (slot=value)
-  const intent = retConfig.mode === "routed" ? classifyQueryIntent(params.query) : "factual";
+  // Only routed mode carries an intent signal. Every other mode (including the
+  // "blended" default) has none, so it must fall back to the LOSSLESS setting —
+  // defaulting to "factual" would silently truncate every prose fact to its
+  // first sentence on the default retrieval path.
+  const intent: QueryIntent =
+    retConfig.mode === "routed" ? classifyQueryIntent(params.query) : "synthesis";
   const compressedFacts = compressFactsForResult(finalFacts, intent);
 
   return { facts: compressedFacts, missingInfo };

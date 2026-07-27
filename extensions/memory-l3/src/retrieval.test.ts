@@ -1293,10 +1293,9 @@ describe("REFACT-style adaptive fact compression", () => {
     });
 
     const typedResult = facts.find((f) => f.tier === "typed");
-    if (typedResult) {
-      // Typed facts should keep their full "slot = value" format
-      expect(typedResult.fact.text).toMatch(/server:port = 3000/u);
-    }
+    expect(typedResult).toBeDefined();
+    // Typed facts should keep their full "slot = value" format
+    expect(typedResult!.fact.text).toMatch(/server:port = 3000/u);
   });
 
   it("keeps prose uncompressed for synthesis queries", async () => {
@@ -1326,9 +1325,42 @@ describe("REFACT-style adaptive fact compression", () => {
     });
 
     const proseResult = facts.find((f) => f.fact.dedupKey === "synth-1");
-    if (proseResult) {
-      // Synthesis should keep prose full
-      expect(proseResult.fact.text).toBe(longText);
-    }
+    expect(proseResult).toBeDefined();
+    // Synthesis should keep prose full
+    expect(proseResult!.fact.text).toBe(longText);
+  });
+
+  it("leaves prose uncompressed when the mode carries no intent signal", async () => {
+    // Guards the default (non-routed) path: with no intent to route on, the
+    // lossless setting must win. Hardcoding "factual" here truncated every
+    // prose fact to its first sentence on the default retrieval path.
+    const longText =
+      "The server runs on port 3000. The config file is at /etc/server.conf. Restart after edits.";
+    await writeChunk(
+      "chunk-default-mode",
+      [
+        {
+          id: "fact-default-1",
+          text: longText,
+          importance: 0.9,
+          createdAt: NOW,
+          dedupKey: "default-1",
+        },
+      ],
+      NOW,
+      [],
+    );
+
+    const { facts } = await retrieveTopK({
+      query: "what port does the server run on",
+      storage,
+      topK: 5,
+      now: NOW,
+      // No retrievalConfig -> DEFAULT_RETRIEVAL_CONFIG, i.e. mode "blended".
+    });
+
+    const proseFact = facts.find((f) => f.fact.dedupKey === "default-1");
+    expect(proseFact).toBeDefined();
+    expect(proseFact!.fact.text).toBe(longText);
   });
 });
