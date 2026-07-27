@@ -488,6 +488,41 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "chat.branch", scope: "operator.write", since: "<=2026.7", startup: true },
   { name: "chat.branches", scope: "operator.read", since: "<=2026.7", startup: true },
   { name: "doctor.memory.l3Layers", scope: "operator.read", since: "<=2026.7" },
+  // Workboard lost only its descriptors, not its registrations, so the four groups
+  // above (found by diffing registrations) did not surface it: the handlers stayed
+  // registered and fell through to the aux bucket's ADMIN_SCOPE default. That breaks
+  // both ends at once — the server starts demanding operator.admin for reads, and
+  // resolveLeastPrivilegeOperatorScopesForMethod default-denies unclassified methods,
+  // so agent/cron callers present no scope at all. Restoring the specs fixes both.
+  { name: "workboard.cards.list", scope: "operator.read", since: "<=2026.7" },
+  { name: "workboard.cards.read", scope: "operator.read", since: "<=2026.7" },
+  { name: "workboard.cards.stats", scope: "operator.read", since: "<=2026.7" },
+  { name: "workboard.cards.runs", scope: "operator.read", since: "<=2026.7" },
+  { name: "workboard.cards.create", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.update", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.move", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.delete", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.specify", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.decompose", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.claim", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.release", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.heartbeat", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.complete", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.block", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.unblock", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.promote", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.reassign", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.reclaim", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.cards.dispatch", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.boards.list", scope: "operator.read", since: "<=2026.7" },
+  { name: "workboard.boards.create", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.boards.archive", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.boards.delete", scope: "operator.write", since: "<=2026.7" },
+  // research.* never had specs (the fork shipped 24 against 26 registered methods),
+  // so these were admin-defaulted from the day the Improvement Lab pipeline landed.
+  { name: "workboard.research.reports", scope: "operator.read", since: "<=2026.7" },
+  { name: "workboard.research.sync", scope: "operator.write", since: "<=2026.7" },
+  { name: "workboard.research.stage", scope: "operator.write", since: "<=2026.7" },
 ] as const;
 
 const CORE_GATEWAY_METHOD_SPEC_BY_NAME: ReadonlyMap<string, CoreGatewayMethodSpec> = new Map(

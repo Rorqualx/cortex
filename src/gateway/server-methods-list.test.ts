@@ -62,7 +62,7 @@ describe("listGatewayMethods", () => {
   });
 
   it("appends new methods after model probing without shifting older method indices", () => {
-    expect(listGatewayMethods().slice(-33)).toEqual([
+    expect(listGatewayMethods().slice(-60)).toEqual([
       "models.probe",
       "migrations.memory.plan",
       "migrations.memory.apply",
@@ -96,6 +96,33 @@ describe("listGatewayMethods", () => {
       "chat.branch",
       "chat.branches",
       "doctor.memory.l3Layers",
+      "workboard.cards.list",
+      "workboard.cards.read",
+      "workboard.cards.stats",
+      "workboard.cards.runs",
+      "workboard.cards.create",
+      "workboard.cards.update",
+      "workboard.cards.move",
+      "workboard.cards.delete",
+      "workboard.cards.specify",
+      "workboard.cards.decompose",
+      "workboard.cards.claim",
+      "workboard.cards.release",
+      "workboard.cards.heartbeat",
+      "workboard.cards.complete",
+      "workboard.cards.block",
+      "workboard.cards.unblock",
+      "workboard.cards.promote",
+      "workboard.cards.reassign",
+      "workboard.cards.reclaim",
+      "workboard.cards.dispatch",
+      "workboard.boards.list",
+      "workboard.boards.create",
+      "workboard.boards.archive",
+      "workboard.boards.delete",
+      "workboard.research.reports",
+      "workboard.research.sync",
+      "workboard.research.stage",
     ]);
     const methods = listGatewayMethods();
     expect(methods.indexOf("node.pluginSurface.refresh")).toBe(
@@ -156,7 +183,7 @@ describe("listGatewayMethods", () => {
       "exec.approval.get",
     ]);
     expect(methods).toContain("tts.speak");
-    expect(coreMethods.slice(-40)).toEqual([
+    expect(coreMethods.slice(-67)).toEqual([
       "sessions.catalog.continue",
       "sessions.catalog.archive",
       "approval.get",
@@ -197,6 +224,33 @@ describe("listGatewayMethods", () => {
       "chat.branch",
       "chat.branches",
       "doctor.memory.l3Layers",
+      "workboard.cards.list",
+      "workboard.cards.read",
+      "workboard.cards.stats",
+      "workboard.cards.runs",
+      "workboard.cards.create",
+      "workboard.cards.update",
+      "workboard.cards.move",
+      "workboard.cards.delete",
+      "workboard.cards.specify",
+      "workboard.cards.decompose",
+      "workboard.cards.claim",
+      "workboard.cards.release",
+      "workboard.cards.heartbeat",
+      "workboard.cards.complete",
+      "workboard.cards.block",
+      "workboard.cards.unblock",
+      "workboard.cards.promote",
+      "workboard.cards.reassign",
+      "workboard.cards.reclaim",
+      "workboard.cards.dispatch",
+      "workboard.boards.list",
+      "workboard.boards.create",
+      "workboard.boards.archive",
+      "workboard.boards.delete",
+      "workboard.research.reports",
+      "workboard.research.sync",
+      "workboard.research.stage",
     ]);
     expect(methods.indexOf("approval.get")).toBeGreaterThan(methods.indexOf("tts.speak"));
     expect(methods.indexOf("approval.resolve")).toBe(methods.indexOf("approval.get") + 1);
@@ -248,6 +302,10 @@ describe("listGatewayMethods", () => {
     // is served by the control-ui handler.
     const injectedElsewhere = new Set<string>([...GATEWAY_AUX_METHODS, "assistant.media.get"]);
     const missing = listCoreGatewayMethodNames()
+      // Workboard is injected at server construction too, and createGatewayAuxHandlers
+      // derives its registration list from these same specs — so a descriptor without a
+      // handler is unrepresentable there rather than merely untested.
+      .filter((method) => !method.startsWith("workboard."))
       .filter((method) => !injectedElsewhere.has(method))
       .filter((method) => typeof coreGatewayHandlers[method] !== "function");
     expect(missing).toEqual([]);

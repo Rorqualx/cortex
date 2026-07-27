@@ -42,6 +42,7 @@ import {
   type OperatorApprovalLifecycleEvent,
 } from "./exec-approval-manager.js";
 import { createLazyHandler } from "./lazy-handler.js";
+import { listCoreGatewayMethodNames } from "./methods/core-descriptors.js";
 import {
   closeOrphanedOperatorApprovals,
   pruneTerminalOperatorApprovals,
@@ -553,36 +554,12 @@ export function createGatewayAuxHandlers(params: {
       await handler(opts);
     };
 
-  // Add workboard to extraHandlers so they route through core descriptors
+  // Add workboard to extraHandlers so they route through core descriptors. Derived
+  // from the descriptor table rather than a second hand-maintained list: a literal
+  // here drifted from src/workboard/api.ts and left workboard.research.stage
+  // registered nowhere, so it answered "unknown method" to the deep-pipeline cron.
   const wbHandlers: GatewayRequestHandlers = {};
-  const WB_METHODS = [
-    "workboard.cards.list",
-    "workboard.cards.create",
-    "workboard.cards.read",
-    "workboard.cards.update",
-    "workboard.cards.move",
-    "workboard.cards.delete",
-    "workboard.cards.specify",
-    "workboard.cards.decompose",
-    "workboard.cards.claim",
-    "workboard.cards.release",
-    "workboard.cards.heartbeat",
-    "workboard.cards.complete",
-    "workboard.cards.block",
-    "workboard.cards.unblock",
-    "workboard.cards.promote",
-    "workboard.cards.reassign",
-    "workboard.cards.reclaim",
-    "workboard.cards.dispatch",
-    "workboard.cards.stats",
-    "workboard.cards.runs",
-    "workboard.boards.list",
-    "workboard.boards.create",
-    "workboard.boards.archive",
-    "workboard.boards.delete",
-    "workboard.research.sync",
-    "workboard.research.reports",
-  ];
+  const WB_METHODS = listCoreGatewayMethodNames().filter((name) => name.startsWith("workboard."));
   for (const m of WB_METHODS) {
     wbHandlers[m] = loadWorkboardHandler(m) as GatewayRequestHandler;
   }
