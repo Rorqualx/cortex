@@ -365,10 +365,23 @@ preflight() {
     tail -n 6 /tmp/um-preflight-protocol.log
     return 1
   fi
-  local cand base_errors
+  local cand base_errors syntax
   (cd "$wt" && rm -rf .artifacts/tsgo-cache && node scripts/run-tsgo.mjs -p tsconfig.core.json >/tmp/um-preflight-tsgo.log 2>&1) || true
+  # A syntax error aborts the whole check, so the error count stops meaning
+  # anything: on 2026-07-27 one orphan `}` from a union-merged conflict reported
+  # tsgo:core=1 while the tree actually had 284 errors, making the worst candidate
+  # yet look cleaner than a healthy one. TS1xxx is TypeScript's grammar range, so
+  # reject on presence and never let it reach the count comparison below.
+  syntax="$(grep -E 'error TS1[0-9]{3}:' /tmp/um-preflight-tsgo.log | head -10 || true)"
+  if [ -n "$syntax" ]; then
+    echo "PREFLIGHT=FAIL reason=tsgo-syntax (error count is unusable until this parses)"
+    printf '%s\n' "$syntax"
+    return 1
+  fi
   cand="$(grep -cE 'error TS' /tmp/um-preflight-tsgo.log || true)"
-  base_errors="${UPSTREAM_MERGE_TSGO_BASELINE:-1}"
+  # main has been at 0 since the 2026-07-26 resync landed; a stale non-zero
+  # baseline silently grants the candidate that many free regressions.
+  base_errors="${UPSTREAM_MERGE_TSGO_BASELINE:-0}"
   if [ "${cand:-0}" -gt "$base_errors" ]; then
     echo "PREFLIGHT=FAIL reason=tsgo-core cand=$cand baseline=$base_errors"
     grep -E 'error TS' /tmp/um-preflight-tsgo.log | head -20
