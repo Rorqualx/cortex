@@ -25,7 +25,11 @@ export const LogsTailResultSchema = closedObject({
 export const ChatHistoryParamsSchema = closedObject({
   sessionKey: NonEmptyString,
   agentId: Type.Optional(NonEmptyString),
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+  // Validation ceiling only: the fork's Control UI asks for its whole transcript
+  // window in one call (CHAT_HISTORY_REQUEST_LIMIT = 10_000), and the handler
+  // clamps delivery to 1000 regardless. Upstream's 1000 ceiling rejects that
+  // request outright, so chat.startup fails and the dashboard loads no history.
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
   offset: Type.Optional(Type.Integer({ minimum: 0 })),
   messageId: Type.Optional(NonEmptyString),
   sessionId: Type.Optional(NonEmptyString),
