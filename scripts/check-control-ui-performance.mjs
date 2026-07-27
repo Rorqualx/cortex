@@ -24,10 +24,16 @@ export const CONTROL_UI_STARTUP_JS_GZIP_TOLERANCE_BYTES = 1024;
 // Values are the current fork footprint plus small headroom; a bundle-size /
 // chunking reduction pass is tracked as follow-up. Keep headroom tight so
 // unintended growth still trips the gate.
+//
+// The request/gzip ceilings were raised for the 2026-07 upstream resync, which
+// adopts upstream's finer-grained chunk graph: startup went 8 -> 20 requests
+// while startup gzip moved only 516.7 -> 541.2 KiB (+4.7%) and the largest JS
+// chunk fell 372 -> 78 KiB. More, smaller parallel chunks is the intended
+// trade; the old 18-request ceiling was calibrated for the pre-resync layout.
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze({
-  startupJsRequests: 18,
+  startupJsRequests: 24,
   startupCssRequests: 1,
-  startupJsGzipBytes: 530 * KIB,
+  startupJsGzipBytes: 560 * KIB,
   startupCssGzipBytes: 78 * KIB,
   largestJsGzipBytes: 380 * KIB,
   largestCssGzipBytes: 78 * KIB,
