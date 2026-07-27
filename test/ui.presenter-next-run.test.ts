@@ -1,7 +1,8 @@
 // UI presenter next-run tests cover presenter scheduling output.
 import { describe, expect, it } from "vitest";
 import { t } from "../ui/src/i18n/index.ts";
-import { formatNextRun } from "../ui/src/lib/presenter.ts";
+// Upstream keeps this module under ui/src/lib/; the fork's UI lives in ui/src/ui/.
+import { formatNextRun } from "../ui/src/ui/presenter.ts";
 
 describe("formatNextRun", () => {
   it("returns localized n/a for nullish values", () => {

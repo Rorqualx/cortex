@@ -1213,7 +1213,7 @@ export function buildAgentSystemPrompt(params: {
         ? "If you need the current date, time, or day of week, run session_status (📊 session_status)."
         : "",
       "## Workspace",
-      `Your working directory is: ${displayWorkspaceDir}`,
+      `Working directory: ${displayWorkspaceDir}`,
       workspaceGuidance,
       workspaceOnlyGuidance,
       ...workspaceNotes,

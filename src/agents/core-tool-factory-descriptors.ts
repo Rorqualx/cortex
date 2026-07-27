@@ -60,6 +60,30 @@ const CORE_TOOL_FACTORY_DESCRIPTORS = [
   { name: "video_generate", family: "openclaw" },
   { name: "web_fetch", family: "openclaw" },
   { name: "web_search", family: "openclaw" },
+  // Fork-owned tools. Kept in one block rather than interleaved so upstream edits
+  // above stay conflict-free. Every name the factory emits must appear here —
+  // openclaw-tools.update-plan.test.ts fails the whole catalog otherwise.
+  { name: "delegate_academic", family: "openclaw" },
+  { name: "delegate_code", family: "openclaw" },
+  { name: "delegate_explore", family: "openclaw" },
+  { name: "delegate_generic", family: "openclaw" },
+  { name: "delegate_plan", family: "openclaw" },
+  { name: "delegate_research", family: "openclaw" },
+  { name: "delegate_review", family: "openclaw" },
+  { name: "delegate_swarm", family: "openclaw" },
+  { name: "delegate_vision", family: "openclaw" },
+  { name: "memory_reports", family: "openclaw" },
+  { name: "session_awareness", family: "openclaw" },
+  { name: "skill_forge", family: "openclaw" },
+  { name: "workboard_block", family: "openclaw" },
+  { name: "workboard_complete", family: "openclaw" },
+  { name: "workboard_decompose", family: "openclaw" },
+  { name: "workboard_heartbeat", family: "openclaw" },
+  { name: "workboard_list", family: "openclaw" },
+  { name: "workboard_read", family: "openclaw" },
+  { name: "workboard_research_stage", family: "openclaw" },
+  { name: "workboard_research_sync", family: "openclaw" },
+  { name: "workboard_specify", family: "openclaw" },
 ] as const satisfies readonly CoreToolFactoryDescriptor[];
 
 const CORE_TOOL_FACTORY_FAMILY_BY_NAME = new Map<string, CoreToolFactoryFamily>(

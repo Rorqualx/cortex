@@ -12,7 +12,6 @@ import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import { createStreamingDirectiveAccumulator } from "../auto-reply/reply/streaming-directives.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { formatToolAggregate } from "../auto-reply/tool-meta.js";
-import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
 import { emitAgentEvent, emitAgentEventIfCurrent } from "../infra/agent-events.js";
 import { recordAgentRunOutputTokens } from "../infra/agent-run-usage.js";
 import type { AssistantMessage } from "../llm/types.js";
@@ -34,6 +33,7 @@ import {
 } from "./embedded-agent-runner/replay-state.js";
 import { consumeEmbeddedToolSendReceipt } from "./embedded-agent-runner/tool-send-receipts.js";
 import type { EmbeddedRunLivenessState } from "./embedded-agent-runner/types.js";
+import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
 import { createEmbeddedAgentSessionEventHandler } from "./embedded-agent-subscribe.handlers.js";
 import {
   consumePendingAssistantReplyDirectivesIntoReply,
@@ -42,6 +42,7 @@ import {
   readPendingToolMediaReply,
 } from "./embedded-agent-subscribe.handlers.messages.js";
 import {
+  cleanupRunToolStartData,
   handleToolExecutionEnd,
   handleToolExecutionStart,
 } from "./embedded-agent-subscribe.handlers.tools.js";
@@ -1344,6 +1345,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     // Mark as unsubscribed FIRST to prevent waitForCompactionRetry from creating
     // new un-resolvable promises during teardown.
     state.unsubscribed = true;
+    cleanupRunToolStartData(params.runId);
     // Reject pending compaction wait to unblock awaiting code.
     // Don't resolve, as that would incorrectly signal "compaction complete" when it's still in-flight.
     if (state.compactionRetryPromise) {
@@ -1403,7 +1405,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           toolName: toolParams.toolName,
           toolCallId: toolParams.toolCallId,
           isError: false,
+          executionStarted: true,
           result,
+          hideFromChannelProgress: toolParams.hideFromChannelProgress,
         } as never);
         return result;
       } catch (error) {
@@ -1412,7 +1416,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           toolName: toolParams.toolName,
           toolCallId: toolParams.toolCallId,
           isError: true,
+          executionStarted: true,
           result: buildToolLifecycleErrorResult(error),
+          hideFromChannelProgress: toolParams.hideFromChannelProgress,
         } as never);
         throw error;
       }
