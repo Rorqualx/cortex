@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-07-21T18:31:50.752Z",
+  "timestamp": "2026-07-28T19:03:10.336Z",
   "branch": "main",
-  "headSha": "50f11acf32baece74b0aeab9bfd9fe5ff4f12916",
+  "headSha": "dd25c70dcd3789e0c19eecaed4523a55cf0f2305",
   "files": {
     ".gitattributes": {
-      "hash": "05ab26487eb7d53067b38b550771a408c79144181824d04d760e49e157c45f4c",
+      "hash": "3e6c24af4f94c561f6641264a3c1146143e11aec25746d4d8d462b150a4edb71",
       "mergeOursLines": [
         "extensions/memory-l3/**                                              merge=ours",
         "memory/.l3/**                                                        merge=ours",
-        "# `merge=ours` keeps OUR version on conflict; non-overlapping upstream",
+        "# `merge=ours` keeps OUR WHOLE FILE, not our delta. Once both sides have touched",
         "docs/concepts/model-providers.md                                     merge=ours",
         "src/agents/embedded-agent-runner/extra-params.ts                     merge=ours",
         "src/agents/embedded-agent-runner-extraparams-resolve.test.ts         merge=ours",
@@ -44,7 +44,6 @@
         "scripts/fork-config-snapshot.mjs                                       merge=ours",
         "scripts/fork-merge-guard.mjs                                            merge=ours",
         "scripts/fork-merge-verify.mjs                                           merge=ours",
-        "scripts/upstream-divergence-report.mjs                                 merge=ours",
         "scripts/remote-proof.sh                                                 merge=ours",
         "AUTO_CHERRY_LEDGER.md                                                   merge=ours",
         "FORK-MERGE-GUIDE.md                                                     merge=ours",
@@ -111,11 +110,9 @@
         "ui/src/styles/pixel-office.css                                          merge=ours",
         "ui/src/styles/skill-forge.css                                           merge=ours",
         "ui/src/ui/avatar-lightbox.ts                                            merge=ours",
-        "ui/src/ui/chat/branch-service.ts                                        merge=ours",
         "ui/src/ui/chat/chat-tab-bar.ts                                          merge=ours",
         "ui/src/ui/chat/session-controls.sidebar-model.test.ts                   merge=ours",
         "ui/src/ui/controllers/skill-forge.ts                                    merge=ours",
-        "ui/src/ui/file-icons.ts                                                 merge=ours",
         "ui/src/ui/views/conversations.ts                                        merge=ours",
         "ui/src/ui/views/pixel-office.ts                                         merge=ours",
         "ui/src/ui/views/skill-forge.ts                                          merge=ours",
@@ -135,7 +132,6 @@
         "extensions/whatsapp/src/connection-controller.test.ts                   merge=ours",
         "packages/gateway-protocol/src/schema/agents-models-skills.ts            merge=ours",
         "scripts/e2e/lib/live-plugin-tool/assertions.mjs                         merge=ours",
-        "scripts/e2e/npm-telegram-rtt-docker.sh                                  merge=ours",
         "scripts/tsdown-build.mjs                                                merge=ours",
         "src/agents/agent-tools.before-tool-call.ts                              merge=ours",
         "src/agents/apply-patch.ts                                               merge=ours",
@@ -183,7 +179,6 @@
         "src/cli/plugins-location-bridges.ts                                     merge=ours",
         "src/cli/program/command-registry-core.ts                                merge=ours",
         "src/cli/program/core-command-descriptors.ts                             merge=ours",
-        "src/config/sessions/store.ts                                            merge=ours",
         "src/config/sessions/types.ts                                            merge=ours",
         "src/config/types.agents-shared.ts                                       merge=ours",
         "src/config/types.hooks.ts                                               merge=ours",
@@ -214,8 +209,6 @@
         "src/infra/update-managed-service-handoff.test.ts                        merge=ours",
         "src/infra/update-managed-service-handoff.ts                             merge=ours",
         "src/infra/update-startup.ts                                             merge=ours",
-        "src/llm/providers/google-shared.ts                                      merge=ours",
-        "src/llm/providers/mistral.ts                                            merge=ours",
         "src/mcp/channel-shared.ts                                               merge=ours",
         "src/plugin-sdk/agent-harness-runtime.ts                                 merge=ours",
         "src/plugins/externalized-bundled-plugins.ts                             merge=ours",
@@ -264,7 +257,6 @@
         "ui/src/ui/controllers/chat.test.ts                                      merge=ours",
         "ui/src/ui/controllers/sessions.test.ts                                  merge=ours",
         "ui/src/ui/controllers/sessions.ts                                       merge=ours",
-        "ui/src/ui/controllers/skill-workshop.ts                                 merge=ours",
         "ui/src/ui/controllers/workboard.ts                                      merge=ours",
         "ui/src/ui/icons.ts                                                      merge=ours",
         "ui/src/ui/markdown.ts                                                   merge=ours",
@@ -305,7 +297,6 @@
         "src/gateway/server-chat.agent-events.test.ts                             merge=ours",
         "src/gateway/server.sessions.reset-cleanup.test.ts                        merge=ours",
         "packages/agent-core/src/agent-loop.test.ts                              merge=ours",
-        "src/llm/providers/mistral.test.ts                                       merge=ours",
         "packages/ai/src/providers/google-shared.ts merge=ours",
         "packages/ai/src/providers/mistral.test.ts merge=ours",
         "packages/ai/src/providers/mistral.ts merge=ours",
@@ -340,7 +331,6 @@
         "ui/src/pages/config/quick.ts merge=ours",
         "ui/src/pages/skill-workshop/proposals.ts merge=ours",
         "ui/src/pages/skill-workshop/view.ts merge=ours",
-        "ui/src/pages/workboard/data.test.ts merge=ours",
         "ui/src/pages/workboard/view.ts merge=ours",
         "# --- fork test surfaces whose impl is merge=ours; keep test in sync on merge ---",
         "packages/gateway-protocol/src/schema/agents-models-skills.test.ts merge=ours",
@@ -351,7 +341,6 @@
         "src/gateway/session-utils.test.ts merge=ours",
         "ui/src/ui/avatar-lightbox.test.ts merge=ours",
         "ui/src/ui/chat/run-lifecycle.test.ts merge=ours",
-        "ui/src/ui/controllers/skill-workshop.test.ts merge=ours",
         "ui/src/ui/views/agents.test.ts merge=ours",
         "ui/src/ui/views/chat.test.ts merge=ours",
         "ui/src/ui/views/config-quick.test.ts merge=ours",
@@ -378,7 +367,7 @@
       ]
     },
     "tsconfig.json": {
-      "hash": "d9aae5c18a0d8b6d3b4e169fd0a9f1392d07346c0353bdd4cdf07f4c41eea526",
+      "hash": "4f0658269560d0f196e878b63edf2c4e691e5de7be68cc59a2b826592e610eb9",
       "jsonKeys": [
         "compilerOptions",
         "include",
@@ -394,14 +383,14 @@
       "jsonKeys": null
     },
     "package.json": {
-      "hash": "8007e02dd48d9e1b941f638f800db83c72ed1c3aa43bdf841dcbf5298f638e7b",
-      "pkgSectionsHash": "811edfcc8040c1f8543824db1fd3d52af32f30280a77425798a1b8c26a0c2121"
+      "hash": "90da6792887ad8bb47a90197a3b084c1ca95e1cf3e9e72ce66e2ed015bb7fe31",
+      "pkgSectionsHash": "a925fed620360682dec7e3cc5a40ecef4a0f86f36ec8c742bbf62d781911bfc1"
     },
     "src/config/schema.ts": {
-      "hash": "a81b8b84a3f3d146f86b56fffa8450401a207fa1fe45c1932d5a96658aa8f341"
+      "hash": "3cb6a184f14c4348a2f9a832bde4de1b15cfca05d6f7f954899ae098f895dd79"
     },
     "src/config/runtime-schema.ts": {
-      "hash": "8cf5bb07c1072182966147c7b16b1c2261c844e53f28d343ea581f5c92b45ac3"
+      "hash": "c726624e6d1f46c908543a44df773b24e9fe7552b5369f194fe3668d29185d7e"
     }
   }
 }
