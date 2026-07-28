@@ -1127,10 +1127,38 @@ describe("getIntentScoringPreset", () => {
     expect(preset.weightSemantic).toBeLessThan(DEFAULT_SCORING_CONFIG.weightSemantic);
   });
 
+  it("factual preset favours sparse over dense (APS-RAG)", () => {
+    const preset = getIntentScoringPreset("factual");
+    const sparse = preset.weightBm25 + preset.weightLexical;
+    const dense = preset.weightSemantic;
+    expect(sparse / dense).toBeGreaterThan(3); // strong sparse dominance
+  });
+
+  it("factual preset boosts reliability for confirmed sources", () => {
+    const preset = getIntentScoringPreset("factual");
+    expect(preset.weightReliability).toBeGreaterThan(DEFAULT_SCORING_CONFIG.weightReliability);
+  });
+
   it("returns balanced config for multihop intent", () => {
     const preset = getIntentScoringPreset("multihop");
     expect(preset.weightSemantic).toBeGreaterThan(preset.weightBm25);
     expect(preset.weightGoalRelevance).toBeGreaterThan(DEFAULT_SCORING_CONFIG.weightGoalRelevance);
+  });
+
+  it("multihop preset has near 1:1 dense/sparse ratio (APS-RAG)", () => {
+    const preset = getIntentScoringPreset("multihop");
+    const sparse = preset.weightBm25 + preset.weightLexical;
+    const dense = preset.weightSemantic;
+    // Should be roughly balanced (between 0.8 and 1.5)
+    expect(sparse / dense).toBeGreaterThan(0.8);
+    expect(sparse / dense).toBeLessThan(1.5);
+  });
+
+  it("multihop preset boosts informationGain for novel connections", () => {
+    const preset = getIntentScoringPreset("multihop");
+    expect(preset.weightInformationGain).toBeGreaterThan(
+      DEFAULT_SCORING_CONFIG.weightInformationGain,
+    );
   });
 
   it("returns semantic-heavy config for synthesis intent", () => {
@@ -1138,6 +1166,20 @@ describe("getIntentScoringPreset", () => {
     expect(preset.weightSemantic).toBeGreaterThan(DEFAULT_SCORING_CONFIG.weightSemantic);
     expect(preset.weightImportance).toBeGreaterThan(DEFAULT_SCORING_CONFIG.weightImportance);
     expect(preset.weightBm25).toBeLessThan(DEFAULT_SCORING_CONFIG.weightBm25);
+  });
+
+  it("synthesis preset favours dense over sparse (APS-RAG)", () => {
+    const preset = getIntentScoringPreset("synthesis");
+    const sparse = preset.weightBm25 + preset.weightLexical;
+    const dense = preset.weightSemantic;
+    expect(dense / sparse).toBeGreaterThan(2); // strong dense dominance
+  });
+
+  it("synthesis preset boosts informationGain for diverse perspectives", () => {
+    const preset = getIntentScoringPreset("synthesis");
+    expect(preset.weightInformationGain).toBeGreaterThan(
+      DEFAULT_SCORING_CONFIG.weightInformationGain,
+    );
   });
 });
 

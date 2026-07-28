@@ -9,6 +9,7 @@ import {
   fsrsRetrievability,
   jaccard,
   recencyScore,
+  staleDemotionMultiplier,
   scoreFact,
   tokenize,
   volatilityMultiplier,
@@ -809,5 +810,101 @@ describe("scoreFact with drift demotion", () => {
       driftDemotion: 2.0,
     });
     expect(demoted.recency).toBe(neutral.recency);
+  });
+});
+
+describe("staleDemotionMultiplier", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("returns 1.0 when recallCount > 0", () => {
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 1,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+      }),
+    ).toBe(1.0);
+  });
+
+  it("returns 1.0 when age is below threshold", () => {
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 10 * DAY, // below default 21-day threshold
+        config: DEFAULT_SCORING_CONFIG,
+      }),
+    ).toBe(1.0);
+  });
+
+  it("returns the demotion factor when recallCount=0 and age >= threshold", () => {
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 21 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+      }),
+    ).toBe(0.5);
+  });
+
+  it("returns 1.0 when demotion factor is 1.0 (disabled)", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, staleZeroRecallDemotion: 1.0 };
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config,
+      }),
+    ).toBe(1.0);
+  });
+
+  it("respects custom threshold", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, staleZeroRecallAgeDays: 5 };
+    // Below custom threshold
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 4 * DAY,
+        config,
+      }),
+    ).toBe(1.0);
+    // At custom threshold
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 5 * DAY,
+        config,
+      }),
+    ).toBe(0.5);
+  });
+
+  it("respects custom demotion factor", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, staleZeroRecallDemotion: 0.3 };
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 30 * DAY,
+        config,
+      }),
+    ).toBe(0.3);
+  });
+
+  it("clamps negative age to 0 (treats as fresh)", () => {
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: -1000,
+        config: DEFAULT_SCORING_CONFIG,
+      }),
+    ).toBe(1.0);
+  });
+
+  it("demotes a fact that is well past the threshold", () => {
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 90 * DAY, // 90 days old, never recalled
+        config: DEFAULT_SCORING_CONFIG,
+      }),
+    ).toBe(0.5);
   });
 });

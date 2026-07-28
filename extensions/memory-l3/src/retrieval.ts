@@ -24,6 +24,7 @@ import {
   jaccard,
   type ScoringConfig,
   scoreFact,
+  staleDemotionMultiplier,
   type Signals,
   tokenize,
 } from "./scoring.js";
@@ -80,40 +81,53 @@ export function classifyQueryIntent(query: string): QueryIntent {
 }
 
 /**
- * Intent-specific scoring presets. Each adjusts the weight distribution
- * without changing the set of available signals — routed mode keeps all
- * signals active, just re-weighted.
+ * Intent-specific scoring presets tuned against APS-RAG findings
+ * (arXiv:2607.19681 — query-type-adaptive reciprocal-rank fusion).
+ *
+ * APS-RAG's key insight: different query types benefit from different
+ * dense/sparse fusion ratios. The presets below apply those ratios while
+ * keeping all signals active (just re-weighted).
+ *
+ * Factual:  sparse:dense ≈ 4.7:1 (exact-term dominance, semantic = noise floor)
+ * Multihop: sparse:dense ≈ 1.1:1 (balanced; connecting facts from both paths)
+ * Synthesis: sparse:dense ≈ 0.44:1 (semantic dominance; paraphrase matters)
  */
 const INTENT_SCORING_PRESETS: Record<QueryIntent, ScoringConfig> = {
-  // Factual: BM25-heavy for exact term matching, typed facts prioritised,
-  // semantic reduced (exact matches matter more than paraphrase for lookups).
+  // Factual: BM25-dominant for exact term matching. Semantic kept low but
+  // non-zero to catch paraphrase. Reliability boosted to surface confirmed
+  // facts over tentative ones.
   factual: {
     ...DEFAULT_SCORING_CONFIG,
-    weightBm25: 0.45,
+    weightBm25: 0.5,
     weightLexical: 0.2,
-    weightSemantic: 0.2,
+    weightSemantic: 0.15,
     weightTypedFactTierBoost: 0.2,
     weightLongTermTierBoost: 0.2,
+    weightReliability: 0.15,
   },
-  // Multi-hop: balanced scoring, slightly higher goal-relevance for
-  // connecting related facts, typed-fact boost maintained.
+  // Multi-hop: balanced dense/sparse fusion (~1:1). Goal-relevance and
+  // information-gain boosted to surface connecting facts. Recency slightly
+  // higher for temporal relationship queries.
   multihop: {
     ...DEFAULT_SCORING_CONFIG,
-    weightBm25: 0.25,
-    weightLexical: 0.2,
-    weightSemantic: 0.3,
+    weightBm25: 0.22,
+    weightLexical: 0.18,
+    weightSemantic: 0.35,
     weightGoalRelevance: 0.15,
+    weightInformationGain: 0.08,
     weightLongTermTierBoost: 0.2,
+    weightRecency: 0.08,
   },
-  // Synthesis: semantic-heavy (paraphrase matching matters for open-ended
-  // queries), importance boosted (surface the most significant facts),
-  // BM25 reduced (exact terms less critical for "explain" queries).
+  // Synthesis: semantic-dominant. Importance and information-gain boosted
+  // to surface the most significant and novel facts. BM25 reduced to
+  // near-floor since exact terms matter less for open-ended queries.
   synthesis: {
     ...DEFAULT_SCORING_CONFIG,
-    weightBm25: 0.15,
-    weightLexical: 0.15,
-    weightSemantic: 0.45,
+    weightBm25: 0.1,
+    weightLexical: 0.12,
+    weightSemantic: 0.5,
     weightImportance: 0.2,
+    weightInformationGain: 0.08,
     weightLongTermTierBoost: 0.2,
   },
 };
@@ -133,6 +147,7 @@ import type {
   LongTermFact,
   LongTermTypedFact,
   MissingFact,
+  RetrievalSignal,
   TypedFact,
 } from "./types.js";
 
@@ -431,6 +446,16 @@ export async function retrieveTopK(params: {
     });
   }
 
+  // Pre-load retrieval signals for stale-utility demotion (RMM-inspired).
+  // Reused later for post-retrieval signal recording to avoid a second read.
+  let preloadedSignals: RetrievalSignal[] = [];
+  try {
+    preloadedSignals = await params.storage.readRetrievalSignals();
+  } catch {
+    // Signal read is non-critical — demotion defaults to no-penalty when unavailable.
+  }
+  const retrievalSignalMap = new Map(preloadedSignals.map((s) => [s.factId, s]));
+
   // Build corpus stats from all fact texts for BM25 IDF computation.
   const corpusStats: CorpusStats | undefined =
     config.weightBm25 > 0 ? buildCorpusStats(items.map((i) => i.fact.text)) : undefined;
@@ -464,7 +489,16 @@ export async function retrieveTopK(params: {
       signals.lexical = 0;
     }
     const baseScore = composite(signals, config);
-    const score = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+    const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+    // Stale-utility demotion: facts never retrieved across multiple epochs
+    // get their composite score multiplied down to reflect low demonstrated
+    // utility (RMM — arXiv:2607.19873).
+    const demotion = staleDemotionMultiplier({
+      recallCount: retrievalSignalMap.get(item.fact.id)?.recallCount ?? 0,
+      ageMs: now - item.fact.createdAt,
+      config,
+    });
+    const score = rawScore * demotion;
     if (score > 0) {
       scored.push({
         fact: item.fact,
@@ -610,8 +644,7 @@ export async function retrieveTopK(params: {
   const topForSignals = scored.slice(0, topK);
   try {
     if (topForSignals.length > 0) {
-      const existingSignals = await params.storage.readRetrievalSignals();
-      const existingMap = new Map(existingSignals.map((s) => [s.factId, s]));
+      const existingMap = new Map(preloadedSignals.map((s) => [s.factId, s]));
       const updated = recordRetrievalSignals(
         existingMap,
         topForSignals.map((f) => f.fact.id),

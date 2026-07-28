@@ -82,6 +82,18 @@ export type ScoringConfig = {
    * disable.
    */
   weightValidity: number;
+  /**
+   * Age in days beyond which a fact with zero retrieval recallCount is
+   * considered stale. The demotion multiplier is then applied to its
+   * composite score. Default 21 (≈3 weekly epochs).
+   */
+  staleZeroRecallAgeDays?: number;
+  /**
+   * Multiplier applied to the composite score of a fact that has never
+   * been retrieved and is older than staleZeroRecallAgeDays. Default 0.5.
+   * Set to 1.0 to disable demotion entirely.
+   */
+  staleZeroRecallDemotion?: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -104,6 +116,8 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightReliability: 0.1,
   weightSemanticEntropy: 0.1,
   weightValidity: 0.05,
+  staleZeroRecallAgeDays: 21,
+  staleZeroRecallDemotion: 0.5,
 };
 
 // ---------------------------------------------------------------------------
@@ -472,6 +486,33 @@ export function scoreFact(params: {
     signals.reliability = signals.reliability * params.groundingConfidence;
   }
   return signals;
+}
+
+/**
+ * Stale-utility demotion multiplier (RMM-inspired — arXiv:2607.19873).
+ *
+ * Facts that have never been retrieved across multiple epochs are demoted
+ * to reflect their low demonstrated utility. This is the flip-side of the
+ * FSRS promotion path: high-recall facts get longer half-lives; zero-recall
+ * facts get a composite-score penalty.
+ *
+ * Returns 1.0 (no demotion) when:
+ * - `recallCount > 0` (fact has been retrieved at least once)
+ * - age in days < `staleZeroRecallAgeDays` (fact hasn't been around long enough)
+ *
+ * Returns `staleZeroRecallDemotion` (default 0.5) otherwise.
+ */
+export function staleDemotionMultiplier(params: {
+  recallCount: number;
+  ageMs: number;
+  config: ScoringConfig;
+}): number {
+  if (params.recallCount > 0) return 1.0;
+  const thresholdDays = params.config.staleZeroRecallAgeDays ?? 21;
+  const factor = params.config.staleZeroRecallDemotion ?? 0.5;
+  if (thresholdDays <= 0 || factor >= 1.0) return 1.0;
+  const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
+  return ageDays >= thresholdDays ? factor : 1.0;
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {
