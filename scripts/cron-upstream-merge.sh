@@ -203,6 +203,35 @@ land_and_deploy() {
   if [ -n "$(git -C "$MAIN" status --porcelain fork-config-baseline.json)" ]; then
     "$MAIN/scripts/committer" "chore(resync): regenerate fork-config baseline after nightly upstream merge ($date)" fork-config-baseline.json >/dev/null 2>&1 || true
   fi
+  # Same problem, different artifacts: a merge can take bundle outputs that do not
+  # match the sources it merged, and every later build then re-dirties the tree —
+  # which makes THIS script SKIP on the following night (it happened twice on
+  # 2026-07-27). The generators are deterministic, so regenerating here settles
+  # them in the landing commit stream instead of blocking the next run. Paths are
+  # explicit so a broken generator cannot sweep unrelated files into the commit.
+  # Only the tracked outputs; diffs-language-pack's 10MB viewer-runtime.js is
+  # generated-but-untracked and must not be swept into a commit.
+  local asset_paths="extensions/canvas/src/host/a2ui/.bundle.hash extensions/diffs/assets/viewer-runtime.js"
+  # Commit ONLY on generator success. A crash partway (OOM, a dependency the merge
+  # moved, cron's minimal PATH) leaves a truncated artifact that a dirtiness-only
+  # check would read as a valid regeneration and then land AND deploy. A failed
+  # generator must leave the tree alone; the next run's dirty-tree SKIP is the
+  # cheap failure, committing garbage is not.
+  if (cd "$MAIN" && node scripts/bundled-plugin-assets.mjs --phase build) >/tmp/um-assets.log 2>&1; then
+    # shellcheck disable=SC2086 # word splitting is the intent: one arg per path
+    if [ -n "$(git -C "$MAIN" status --porcelain -- $asset_paths)" ]; then
+      # shellcheck disable=SC2086
+      "$MAIN/scripts/committer" "chore(resync): refresh generated plugin bundle artifacts after nightly upstream merge ($date)" $asset_paths >/dev/null 2>&1 || true
+    fi
+  else
+    # Restore rather than merely decline to commit: the generator may have crashed
+    # mid-write, and land_and_deploy pushes and deploys right after this. Without
+    # the checkout a truncated artifact would ship, and the next night would SKIP
+    # on the dirty tree it left behind.
+    # shellcheck disable=SC2086
+    git -C "$MAIN" checkout -- $asset_paths >/dev/null 2>&1 || true
+    log "plugin asset regeneration failed — artifacts restored (see /tmp/um-assets.log)"
+  fi
   local landed; landed="$(git -C "$MAIN" rev-parse --short HEAD)"
   # Deploy-last is only safe once origin holds the merge; if the push fails the merge
   # lives ONLY on local disk, so skip the crash-prone deploy and record the true state.
