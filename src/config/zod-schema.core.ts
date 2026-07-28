@@ -551,13 +551,6 @@ const ModelProvidersSchema = z
     }
   });
 
-const ModelPricingConfigSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-  })
-  .strict()
-  .optional();
-
 const ModelCatalogRefreshConfigSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -589,7 +582,6 @@ export const ModelsConfigSchema = z
   .object({
     mode: z.union([z.literal("merge"), z.literal("replace")]).optional(),
     providers: ModelProvidersSchema.optional(),
-    pricing: ModelPricingConfigSchema,
     catalogRefresh: ModelCatalogRefreshConfigSchema,
     // Gateway background model-discovery cadence in hours (default 24, 0 = off).
     refreshIntervalHours: z.number().min(0).optional(),

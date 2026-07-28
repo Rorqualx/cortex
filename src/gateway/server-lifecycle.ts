@@ -365,7 +365,6 @@ export async function prepareGatewayLifecycle(params: {
         nodeReapprovalCoordinator.dispose();
       },
       disposeBrowserAuthRateLimiter: () => browserAuthRateLimiter.dispose(),
-      stopModelPricingRefresh: runtimeState.stopModelPricingRefresh,
       stopChannelHealthMonitor: async () => {
         const monitor = runtimeState?.channelHealthMonitor;
         monitor?.shutdown();

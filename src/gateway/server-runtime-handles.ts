@@ -35,7 +35,6 @@ export type GatewayServerMutableState = {
   skillsRefreshDelayMs: number;
   skillsChangeUnsub: () => void;
   channelHealthMonitor: ChannelHealthMonitor | null;
-  stopModelPricingRefresh: () => void;
   stopModelCatalogRefresh: () => void;
   mcpServer: { port: number; close: () => Promise<void> } | undefined;
   configReloader: GatewayConfigReloaderHandle;
@@ -76,7 +75,6 @@ export function createGatewayServerMutableState(): GatewayServerMutableState {
     skillsRefreshDelayMs: 30_000,
     skillsChangeUnsub: () => {},
     channelHealthMonitor: null as ChannelHealthMonitor | null,
-    stopModelPricingRefresh: () => {},
     stopModelCatalogRefresh: () => {},
     mcpServer: undefined as { port: number; close: () => Promise<void> } | undefined,
     configReloader: {

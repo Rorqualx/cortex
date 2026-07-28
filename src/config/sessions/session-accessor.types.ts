@@ -61,7 +61,10 @@ export type LogicalSessionAccessScope = {
   sessionKey: string;
 };
 
-export type SessionEntryListScope = Partial<Omit<SessionAccessScope, "sessionKey">>;
+export type SessionEntryListScope = Partial<Omit<SessionAccessScope, "sessionKey">> & {
+  /** Listing views do not consume the large per-run prompt snapshots. */
+  projection?: "full" | "list";
+};
 export type SessionEntryStatus = NonNullable<SessionEntry["status"]>;
 
 export type ResolvedSessionEntryAccessTarget = {
@@ -653,6 +656,8 @@ export type SessionMessageCutMutationResult =
       key: string;
       entry: SessionEntry;
       editorText?: string;
+      editorAttachments?: Array<{ mimeType: string; data: string }>;
+      editorMediaRefs?: Array<{ path: string; contentType: string }>;
     }
   | { status: "missing-session" }
   | { status: "missing-entry" }

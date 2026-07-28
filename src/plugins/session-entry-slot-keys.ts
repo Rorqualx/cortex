@@ -161,6 +161,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "label",
   "llmTitle",
   "category",
+  "boardFace",
   "displayName",
   "delivery",
   "groupId",

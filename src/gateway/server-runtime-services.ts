@@ -1,5 +1,5 @@
 // Gateway post-ready runtime services.
-// Starts delayed maintenance, cron, heartbeat, recovery, and pricing refresh work.
+// Starts delayed maintenance, cron, heartbeat, recovery, and model-catalog refresh work.
 import { getRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isVitestRuntimeEnv } from "../infra/env.js";
@@ -13,12 +13,10 @@ import {
   schedulePendingSessionDeliveries,
   startSessionDeliveryRuntime,
 } from "../infra/session-delivery-queue-runtime.js";
-import type { PluginMetadataRegistryView } from "../plugins/plugin-metadata-snapshot.types.js";
 import { runWithGatewayIndependentRootWorkAdmission } from "../process/gateway-work-admission.js";
 import { startSessionUpstreamMonitor } from "../sessions/session-upstream-monitor.js";
 import { removeCronRunContinuationSessionIfIdle } from "../tasks/cron-run-continuation-cleanup.js";
 import { startGatewayModelCatalogRefresh } from "./model-catalog-refresh.js";
-import { isGatewayModelPricingEnabled } from "./model-pricing-config.js";
 import type { GatewayCronReconciliation } from "./server-cron-reconciled.js";
 import type { GatewayCronState } from "./server-cron.js";
 import type { startGatewayMaintenanceTimers } from "./server-maintenance.js";
@@ -307,41 +305,6 @@ function startPendingSessionDeliveryRuntime(params: {
   };
 }
 
-function startGatewayModelPricingRefreshOnDemand(params: {
-  config: OpenClawConfig;
-  pluginLookUpTable?: PluginMetadataRegistryView;
-  log: GatewayRuntimeServiceLogger;
-}): () => void {
-  if (!isGatewayModelPricingEnabled(params.config)) {
-    return () => {};
-  }
-  let stopped = false;
-  let stopRefresh: (() => void) | undefined;
-  // Import pricing refresh lazily; many gateway starts never use model-pricing metadata.
-  // The stopped flag closes the race where shutdown happens before the import resolves.
-  void runWithGatewayIndependentRootWorkAdmission(async () => {
-    const { startGatewayModelPricingRefresh } = await import("./model-pricing-cache.js");
-    if (stopped) {
-      return;
-    }
-    stopRefresh = startGatewayModelPricingRefresh({
-      config: params.config,
-      ...(params.pluginLookUpTable ? { pluginLookUpTable: params.pluginLookUpTable } : {}),
-    });
-    if (stopped) {
-      stopRefresh();
-      stopRefresh = undefined;
-    }
-  }).catch((err: unknown) =>
-    params.log.error(`Model pricing refresh failed to start: ${String(err)}`),
-  );
-  return () => {
-    stopped = true;
-    stopRefresh?.();
-    stopRefresh = undefined;
-  };
-}
-
 /** Activates background gateway services after core runtime startup is ready. */
 export function activateGatewayScheduledServices(params: {
   minimalTestGateway: boolean;
@@ -353,10 +316,8 @@ export function activateGatewayScheduledServices(params: {
   startCron?: boolean;
   logCron: { error: (message: string) => void };
   log: GatewayRuntimeServiceLogger;
-  pluginLookUpTable?: PluginMetadataRegistryView;
 }): {
   heartbeatRunner: HeartbeatRunner;
-  stopModelPricingRefresh: () => void;
   stopModelCatalogRefresh: () => void;
 } {
   if (params.minimalTestGateway) {
@@ -364,7 +325,6 @@ export function activateGatewayScheduledServices(params: {
     // production starts without launching background loops.
     return {
       heartbeatRunner: createNoopHeartbeatRunner(),
-      stopModelPricingRefresh: () => {},
       stopModelCatalogRefresh: () => {},
     };
   }
@@ -411,14 +371,9 @@ export function activateGatewayScheduledServices(params: {
     cfg: params.cfgAtStart,
     log: params.log,
   });
-  const stopModelPricingRefresh = !isVitestRuntimeEnv()
-    ? startGatewayModelPricingRefreshOnDemand({
-        config: params.cfgAtStart,
-        ...(params.pluginLookUpTable ? { pluginLookUpTable: params.pluginLookUpTable } : {}),
-        log: params.log,
-      })
-    : () => {};
-  // Fork: live model-catalog discovery refresh runs alongside pricing refresh.
+  // Fork: live model-catalog discovery refresh. Upstream retired its sibling
+  // client-side pricing refresh in #114060 (pricing now comes from the hosted
+  // catalog); this one is fork-only and stays.
   const stopModelCatalogRefresh = !isVitestRuntimeEnv()
     ? startGatewayModelCatalogRefresh({
         config: params.cfgAtStart,
@@ -427,7 +382,6 @@ export function activateGatewayScheduledServices(params: {
     : () => {};
   return {
     heartbeatRunner: heartbeatRunnerWithUpstreamMonitor,
-    stopModelPricingRefresh,
     stopModelCatalogRefresh,
   };
 }

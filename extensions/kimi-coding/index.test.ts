@@ -52,7 +52,7 @@ describe("kimi provider plugin", () => {
     });
   });
 
-  it.each(["k3", "k3[1m]"])("exposes %s adaptive thinking levels", async (modelId) => {
+  it.each(["k3", "k3-256k"])("exposes %s adaptive thinking levels", async (modelId) => {
     const provider = await registerSingleProviderPlugin(plugin);
 
     expect(

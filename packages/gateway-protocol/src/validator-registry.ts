@@ -154,9 +154,11 @@ import {
   SessionsResetParamsSchema,
   SessionsDeleteParamsSchema,
   SessionsGroupsListParamsSchema,
+  SessionsGroupsListResultSchema,
   SessionsGroupsPutParamsSchema,
   SessionsGroupsRenameParamsSchema,
   SessionsGroupsDeleteParamsSchema,
+  SessionsGroupsMutationResultSchema,
   SessionsCompactParamsSchema,
   SessionsCompactionListParamsSchema,
   SessionsCompactionGetParamsSchema,
@@ -511,9 +513,11 @@ export const validateSessionsPluginPatchParams = lazyCompile(SessionsPluginPatch
 export const validateSessionsResetParams = lazyCompile(SessionsResetParamsSchema);
 export const validateSessionsDeleteParams = lazyCompile(SessionsDeleteParamsSchema);
 export const validateSessionsGroupsListParams = lazyCompile(SessionsGroupsListParamsSchema);
+export const validateSessionsGroupsListResult = lazyCompile(SessionsGroupsListResultSchema);
 export const validateSessionsGroupsPutParams = lazyCompile(SessionsGroupsPutParamsSchema);
 export const validateSessionsGroupsRenameParams = lazyCompile(SessionsGroupsRenameParamsSchema);
 export const validateSessionsGroupsDeleteParams = lazyCompile(SessionsGroupsDeleteParamsSchema);
+export const validateSessionsGroupsMutationResult = lazyCompile(SessionsGroupsMutationResultSchema);
 export const validateSessionsCompactParams = lazyCompile(SessionsCompactParamsSchema);
 export const validateSessionsCompactionListParams = lazyCompile(SessionsCompactionListParamsSchema);
 export const validateSessionsCompactionGetParams = lazyCompile(SessionsCompactionGetParamsSchema);

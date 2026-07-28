@@ -333,6 +333,8 @@ export const SessionsListParamsSchema = closedObject({
    */
   includeLastMessage: Type.Optional(Type.Boolean()),
   label: Type.Optional(SessionLabelString),
+  /** Limit rows to sessions with an explicitly stored Control UI face preference. */
+  boardFace: Type.Optional(Type.Union([Type.Literal("chat"), Type.Literal("dashboard")])),
   /** Filter rows by their permanent creator identity. */
   creatorId: Type.Optional(NonEmptyString),
   spawnedBy: Type.Optional(NonEmptyString),
@@ -471,6 +473,7 @@ export const SessionsPatchParamsSchema = closedObject({
   label: Type.Optional(Type.Union([SessionLabelString, Type.Null()])),
   /** User-defined organization bucket ("category", not chat-group); null clears it. */
   category: Type.Optional(Type.Union([SessionLabelString, Type.Null()])),
+  boardFace: Type.Optional(Type.Union([Type.Literal("chat"), Type.Literal("dashboard")])),
   icon: Type.Optional(
     Type.Union([NonEmptyString, Type.Null()], {
       description: "Sidebar icon: one emoji, name:<id>, or svg:<svg ...>...</svg>.",
@@ -573,14 +576,18 @@ export const SessionGroupSchema = closedObject({
   position: Type.Integer({ minimum: 0 }),
 });
 
+const SidebarSectionIdString = Type.String({ minLength: 1, maxLength: 512 });
+
 /** Custom session group catalog in display order. */
 export const SessionsGroupsListResultSchema = closedObject({
   groups: Type.Array(SessionGroupSchema),
+  sectionOrder: Type.Optional(Type.Array(SidebarSectionIdString, { maxItems: 232 })),
 });
 
 /** Replaces the ordered group catalog; creates listed names, keeps member categories untouched. */
 export const SessionsGroupsPutParamsSchema = closedObject({
   names: Type.Array(SessionLabelString, { maxItems: 200 }),
+  sectionOrder: Type.Optional(Type.Array(SidebarSectionIdString, { maxItems: 232 })),
 });
 
 /** Renames a group and repoints every member session's category. */
@@ -596,6 +603,7 @@ export const SessionsGroupsDeleteParamsSchema = closedObject({ name: SessionLabe
 export const SessionsGroupsMutationResultSchema = closedObject({
   ok: Type.Literal(true),
   groups: Type.Array(SessionGroupSchema),
+  sectionOrder: Type.Optional(Type.Array(SidebarSectionIdString, { maxItems: 232 })),
   updatedSessions: Type.Optional(Type.Integer({ minimum: 0 })),
 });
 
@@ -647,13 +655,20 @@ export const SessionsForkParamsSchema = closedObject({
   entryId: NonEmptyString,
 });
 
+const SessionEditorAttachmentSchema = closedObject({
+  mimeType: Type.String(),
+  data: Type.String(),
+});
+
 export const SessionsRewindResultSchema = closedObject({
   editorText: Type.Optional(Type.String()),
+  editorAttachments: Type.Optional(Type.Array(SessionEditorAttachmentSchema)),
 });
 
 export const SessionsForkResultSchema = closedObject({
   sessionKey: NonEmptyString,
   editorText: Type.Optional(Type.String()),
+  editorAttachments: Type.Optional(Type.Array(SessionEditorAttachmentSchema)),
 });
 
 export const SessionBranchSchema = closedObject({
