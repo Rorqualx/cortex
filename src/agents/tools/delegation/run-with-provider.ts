@@ -10,7 +10,7 @@
 // result is classified as fallback-eligible so a silent dud advances too.
 
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { runWithModelFallback } from "../../model-fallback.js";
+import { runWithModelFallback } from "../../model-fallback-runner.js";
 import { resolveDelegationClient, type HostAuthResolver } from "./host-config.js";
 import type { LlmClient } from "./providers/types.js";
 import { recordProviderError, recordProviderLatency } from "./router.js";

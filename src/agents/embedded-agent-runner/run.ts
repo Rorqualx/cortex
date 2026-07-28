@@ -3081,30 +3081,22 @@ export async function runEmbeddedAgent(
           const assistantFailoverDecision = resolveRunFailoverDecision({
             stage: "assistant",
             allowFormatRetry: cloudCodeAssistFormatError,
-            aborted,
-            externalAbort,
+            terminal: attempt.terminal,
+            signalOwnedInterruption: false,
             fallbackConfigured,
             failoverFailure,
             failoverReason: assistantFailoverReason,
-            timedOut,
-            idleTimedOut,
-            timedOutDuringCompaction,
-            timedOutDuringToolExecution,
             harnessOwnsTransport: pluginHarnessOwnsTransport,
             profileRotated: false,
           });
           const assistantFailoverOutcome = await handleAssistantFailover({
             initialDecision: assistantFailoverDecision,
-            aborted,
-            externalAbort,
+            terminal: attempt.terminal,
+            signalOwnedInterruption: false,
+            harnessOwnsTransport: pluginHarnessOwnsTransport,
             fallbackConfigured,
             failoverFailure,
             failoverReason: assistantFailoverReason,
-            timedOut,
-            idleTimedOut,
-            timedOutDuringCompaction,
-            timedOutDuringToolExecution,
-            timedOutByRunBudget,
             allowSameModelIdleTimeoutRetry:
               timedOut &&
               idleTimedOut &&

@@ -13,7 +13,7 @@ import {
   type VaultDeleteParams,
   type VaultListParams,
   type VaultSaveParams,
-} from "./schema.js";
+} from "./schema-modules.js";
 
 import {
   CommandsListParamsSchema,
@@ -307,7 +307,7 @@ import {
   UiCommandParamsSchema,
   WebLoginStartParamsSchema,
   WebLoginWaitParamsSchema,
-} from "./schema.js";
+} from "./schema-modules.js";
 import type { ValidationError } from "./validation-errors.js";
 
 // Validator names mirror schemas so callers can pair them with wire contracts.

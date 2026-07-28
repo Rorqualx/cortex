@@ -165,17 +165,18 @@ export const AgentsDeleteResultSchema = Type.Object(
 );
 
 /** File metadata and optional content for agent-local editable files. */
-export const AgentsFileEntrySchema = Type.Object(
-  {
-    name: NonEmptyString,
-    path: NonEmptyString,
-    missing: Type.Boolean(),
-    size: Type.Optional(Type.Integer({ minimum: 0 })),
-    updatedAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
-    content: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
+export const AgentsFileEntrySchema = closedObject({
+  name: NonEmptyString,
+  path: NonEmptyString,
+  missing: Type.Boolean(),
+  // True when absence is a normal workspace state (optional profile files, and
+  // MEMORY.md before anything is written). Editors should offer these for
+  // creation rather than flagging them as faults.
+  expectedAbsent: Type.Optional(Type.Boolean()),
+  size: Type.Optional(Type.Integer({ minimum: 0 })),
+  updatedAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
+  content: Type.Optional(Type.String()),
+});
 
 /** Lists editable files for one agent. */
 export const AgentsFilesListParamsSchema = Type.Object(

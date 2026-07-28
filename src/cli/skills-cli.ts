@@ -39,7 +39,9 @@ import { CONFIG_DIR } from "../utils.js";
 import { resolveClawHubRiskAcknowledgementCliOptions } from "./clawhub-risk-acknowledgement.js";
 import { resolveOptionFromCommand } from "./cli-utils.js";
 import { parseStrictPositiveIntOption } from "./program/helpers.js";
+import { setCommandJsonMode } from "./program/json-mode.js";
 import { formatSkillInfo, formatSkillsCheck, formatSkillsList } from "./skills-cli.format.js";
+import { isSkillsMachineOutput } from "./skills-output-mode.js";
 
 export type {
   SkillInfoOptions,
@@ -253,6 +255,7 @@ export function registerSkillsCli(program: Command) {
       () =>
         `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/skills", "docs.openclaw.ai/cli/skills")}\n`,
     );
+  setCommandJsonMode(skills, "output", ({ argv }) => isSkillsMachineOutput(argv));
 
   skills
     .command("search")

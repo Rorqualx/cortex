@@ -14,16 +14,12 @@ function makeParams(overrides: Partial<Params> = {}): Params {
   const model = "claude-haiku-4-5-20251001";
   const defaults: Params = {
     initialDecision: { action: "surface_error", reason: "billing" },
-    aborted: false,
-    externalAbort: false,
+    terminal: { kind: "ok" },
+    signalOwnedInterruption: false,
     fallbackConfigured: false,
     failoverFailure: true,
     failoverReason: "billing",
-    timedOut: false,
-    idleTimedOut: false,
-    timedOutDuringCompaction: false,
-    timedOutDuringToolExecution: false,
-    timedOutByRunBudget: false,
+    harnessOwnsTransport: false,
     allowSameModelIdleTimeoutRetry: false,
     allowSameModelRateLimitRetry: true,
     transientFailure: false,
@@ -520,7 +516,7 @@ describe("handleAssistantFailover", () => {
         makeParams({
           initialDecision: { action: "rotate_profile", reason: "timeout" },
           failoverReason: "timeout",
-          timedOut: true,
+          terminal: { kind: "timeout", phase: "prompt", source: "runtime" },
           cloudCodeAssistFormatError: true,
           lastProfileId: undefined,
           billingFailure: false,
@@ -540,7 +536,7 @@ describe("handleAssistantFailover", () => {
         makeParams({
           initialDecision: { action: "rotate_profile", reason: "timeout" },
           failoverReason: "timeout",
-          timedOut: true,
+          terminal: { kind: "timeout", phase: "prompt", source: "runtime" },
           assistantProfileFailureReason: "timeout",
           lastProfileId: "profile-timeout",
           advanceAuthProfile: vi.fn(async () => true),
@@ -554,6 +550,22 @@ describe("handleAssistantFailover", () => {
         reason: "timeout",
         modelId: "claude-haiku-4-5-20251001",
       });
+    });
+
+    it("preserves harness-owned timeout policy when profile rotation is exhausted", async () => {
+      const outcome = await handleAssistantFailover(
+        makeParams({
+          initialDecision: { action: "rotate_profile", reason: "timeout" },
+          terminal: { kind: "ok" },
+          harnessOwnsTransport: true,
+          fallbackConfigured: true,
+          failoverReason: "timeout",
+          billingFailure: false,
+          advanceAuthProfile: vi.fn(async () => false),
+        }),
+      );
+
+      expect(outcome.action).toBe("continue_normal");
     });
   });
 
@@ -610,6 +622,29 @@ describe("handleAssistantFailover", () => {
       expect(err.status).toBe(429);
     });
 
+    it("throws format-classified provider rejections to the outer model fallback", async () => {
+      const rawError =
+        '{"type":"error","error":{"type":"invalid_request_error","message":"thinking blocks cannot be modified"}}';
+      const outcome = await handleAssistantFailover(
+        makeParams({
+          initialDecision: { action: "surface_error", reason: "format" },
+          fallbackConfigured: true,
+          failoverReason: "format",
+          billingFailure: false,
+          lastAssistant: {
+            errorMessage: rawError,
+            model: "claude-haiku-4-5-20251001",
+            provider: "Anthropic",
+          } as Params["lastAssistant"],
+        }),
+      );
+
+      const err = expectThrownFailoverError(outcome);
+      expect(err.reason).toBe("format");
+      expect(err.status).toBe(400);
+      expect(err.rawError).toBe(rawError);
+    });
+
     it("preserves the raw provider error on surfaced failures", async () => {
       const rawError = '  400 {"error":{"message":"credit balance is too low"}}  ';
       const outcome = await handleAssistantFailover(
@@ -635,7 +670,6 @@ describe("handleAssistantFailover", () => {
         makeParams({
           initialDecision: { action: "surface_error", reason: null },
           failoverReason: null,
-          timedOut: false,
           billingFailure: false,
           authFailure: true,
         }),
@@ -680,8 +714,7 @@ describe("handleAssistantFailover", () => {
       const outcome = await handleAssistantFailover(
         makeParams({
           initialDecision: { action: "surface_error", reason: null },
-          externalAbort: true,
-          aborted: true,
+          terminal: { kind: "aborted", source: "external" },
           failoverReason: null,
           billingFailure: false,
         }),
@@ -703,7 +736,7 @@ describe("handleAssistantFailover", () => {
         makeParams({
           initialDecision: { action: "surface_error", reason: null },
           failoverReason: null,
-          timedOut: true,
+          terminal: { kind: "timeout", phase: "prompt", source: "runtime" },
           billingFailure: false,
         }),
       );
@@ -716,8 +749,7 @@ describe("handleAssistantFailover", () => {
         makeParams({
           initialDecision: { action: "surface_error", reason: null },
           failoverReason: null,
-          timedOut: true,
-          idleTimedOut: true,
+          terminal: { kind: "timeout", phase: "prompt", source: "idle" },
           allowSameModelIdleTimeoutRetry: true,
           billingFailure: false,
         }),

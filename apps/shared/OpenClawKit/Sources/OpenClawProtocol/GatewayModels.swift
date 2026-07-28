@@ -6515,6 +6515,7 @@ public struct SessionObserverPlanProgress: Codable, Sendable {
 
 public struct SessionObserverDigest: Codable, Sendable {
     public let sessionkey: String
+    public let agentid: String?
     public let runid: String?
     public let revision: Int
     public let updatedat: Int
@@ -6525,6 +6526,7 @@ public struct SessionObserverDigest: Codable, Sendable {
 
     public init(
         sessionkey: String,
+        agentid: String? = nil,
         runid: String? = nil,
         revision: Int,
         updatedat: Int,
@@ -6534,6 +6536,7 @@ public struct SessionObserverDigest: Codable, Sendable {
         planprogress: SessionObserverPlanProgress? = nil)
     {
         self.sessionkey = sessionkey
+        self.agentid = agentid
         self.runid = runid
         self.revision = revision
         self.updatedat = updatedat
@@ -6545,6 +6548,7 @@ public struct SessionObserverDigest: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case sessionkey = "sessionKey"
+        case agentid = "agentId"
         case runid = "runId"
         case revision
         case updatedat = "updatedAt"
@@ -9134,6 +9138,8 @@ public struct SessionsAbortParams: Codable, Sendable {
 public struct SessionsPatchParams: Codable, Sendable {
     public let key: String
     public let agentid: String?
+    public let expectedsessionid: String?
+    public let expectedlifecyclerevision: String?
     public let label: AnyCodable?
     public let category: AnyCodable?
     public let boardface: AnyCodable?
@@ -9166,6 +9172,8 @@ public struct SessionsPatchParams: Codable, Sendable {
     public init(
         key: String,
         agentid: String? = nil,
+        expectedsessionid: String? = nil,
+        expectedlifecyclerevision: String? = nil,
         label: AnyCodable? = nil,
         category: AnyCodable? = nil,
         boardface: AnyCodable? = nil,
@@ -9197,6 +9205,8 @@ public struct SessionsPatchParams: Codable, Sendable {
     {
         self.key = key
         self.agentid = agentid
+        self.expectedsessionid = expectedsessionid
+        self.expectedlifecyclerevision = expectedlifecyclerevision
         self.label = label
         self.category = category
         self.boardface = boardface
@@ -9230,6 +9240,8 @@ public struct SessionsPatchParams: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case key
         case agentid = "agentId"
+        case expectedsessionid = "expectedSessionId"
+        case expectedlifecyclerevision = "expectedLifecycleRevision"
         case label
         case category
         case boardface = "boardFace"
@@ -12947,6 +12959,7 @@ public struct AgentsFileEntry: Codable, Sendable {
     public let name: String
     public let path: String
     public let missing: Bool
+    public let expectedabsent: Bool?
     public let size: Int?
     public let updatedatms: Int?
     public let content: String?
@@ -12955,6 +12968,7 @@ public struct AgentsFileEntry: Codable, Sendable {
         name: String,
         path: String,
         missing: Bool,
+        expectedabsent: Bool? = nil,
         size: Int? = nil,
         updatedatms: Int? = nil,
         content: String? = nil)
@@ -12962,6 +12976,7 @@ public struct AgentsFileEntry: Codable, Sendable {
         self.name = name
         self.path = path
         self.missing = missing
+        self.expectedabsent = expectedabsent
         self.size = size
         self.updatedatms = updatedatms
         self.content = content
@@ -12971,6 +12986,7 @@ public struct AgentsFileEntry: Codable, Sendable {
         case name
         case path
         case missing
+        case expectedabsent = "expectedAbsent"
         case size
         case updatedatms = "updatedAtMs"
         case content
@@ -14561,6 +14577,7 @@ public struct CronListParams: Codable, Sendable {
     public let sortdir: AnyCodable?
     public let agentid: String?
     public let compact: Bool?
+    public let includedeliverypreviews: Bool?
 
     public init(
         includedisabled: Bool? = nil,
@@ -14573,7 +14590,8 @@ public struct CronListParams: Codable, Sendable {
         sortby: AnyCodable? = nil,
         sortdir: AnyCodable? = nil,
         agentid: String? = nil,
-        compact: Bool? = nil)
+        compact: Bool? = nil,
+        includedeliverypreviews: Bool? = nil)
     {
         self.includedisabled = includedisabled
         self.limit = limit
@@ -14586,6 +14604,7 @@ public struct CronListParams: Codable, Sendable {
         self.sortdir = sortdir
         self.agentid = agentid
         self.compact = compact
+        self.includedeliverypreviews = includedeliverypreviews
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -14600,6 +14619,7 @@ public struct CronListParams: Codable, Sendable {
         case sortdir = "sortDir"
         case agentid = "agentId"
         case compact
+        case includedeliverypreviews = "includeDeliveryPreviews"
     }
 }
 
@@ -16522,6 +16542,7 @@ public struct QuestionRecord: Codable, Sendable {
     public let questions: [Question]
     public let agentid: String?
     public let sessionkey: String?
+    public let runid: String?
     public let createdatms: Int
     public let expiresatms: Int
     public let status: QuestionStatus
@@ -16533,6 +16554,7 @@ public struct QuestionRecord: Codable, Sendable {
         questions: [Question],
         agentid: String? = nil,
         sessionkey: String? = nil,
+        runid: String? = nil,
         createdatms: Int,
         expiresatms: Int,
         status: QuestionStatus,
@@ -16543,6 +16565,7 @@ public struct QuestionRecord: Codable, Sendable {
         self.questions = questions
         self.agentid = agentid
         self.sessionkey = sessionkey
+        self.runid = runid
         self.createdatms = createdatms
         self.expiresatms = expiresatms
         self.status = status
@@ -16555,6 +16578,7 @@ public struct QuestionRecord: Codable, Sendable {
         case questions
         case agentid = "agentId"
         case sessionkey = "sessionKey"
+        case runid = "runId"
         case createdatms = "createdAtMs"
         case expiresatms = "expiresAtMs"
         case status
@@ -16568,6 +16592,7 @@ public struct QuestionRequestParams: Codable, Sendable {
     public let questions: [QuestionRequestQuestion]
     public let agentid: String?
     public let sessionkey: String?
+    public let runid: String?
     public let timeoutms: Int?
 
     public init(
@@ -16575,12 +16600,14 @@ public struct QuestionRequestParams: Codable, Sendable {
         questions: [QuestionRequestQuestion],
         agentid: String? = nil,
         sessionkey: String? = nil,
+        runid: String? = nil,
         timeoutms: Int? = nil)
     {
         self.id = id
         self.questions = questions
         self.agentid = agentid
         self.sessionkey = sessionkey
+        self.runid = runid
         self.timeoutms = timeoutms
     }
 
@@ -16589,6 +16616,7 @@ public struct QuestionRequestParams: Codable, Sendable {
         case questions
         case agentid = "agentId"
         case sessionkey = "sessionKey"
+        case runid = "runId"
         case timeoutms = "timeoutMs"
     }
 }

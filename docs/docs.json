@@ -1308,6 +1308,7 @@
                   "plugins/workboard",
                   "plugins/webhooks",
                   "plugins/admin-http-rpc",
+                  "plugins/beam",
                   "plugins/voice-call",
                   "plugins/vault",
                   "plugins/onepassword",
@@ -1937,7 +1938,6 @@
                   "reference/templates/HEARTBEAT",
                   "reference/templates/IDENTITY",
                   "reference/templates/SOUL",
-                  "reference/templates/TOOLS",
                   "reference/templates/USER"
                 ]
               },

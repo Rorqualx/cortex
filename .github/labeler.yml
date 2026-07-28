@@ -85,6 +85,12 @@
       - any-glob-to-any-file:
           - "extensions/harness-guardrails/**"
           - "docs/plugins/harness-guardrails.md"
+"plugin: beam":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/beam/**"
+          - "docs/plugins/beam.md"
+          - "docs/plugins/reference/beam.md"
 "plugin: migrate-hermes":
   - changed-files:
       - any-glob-to-any-file:

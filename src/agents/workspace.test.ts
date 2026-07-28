@@ -32,7 +32,6 @@ import {
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_MEMORY_FILENAME,
   DEFAULT_SOUL_FILENAME,
-  DEFAULT_TOOLS_FILENAME,
   DEFAULT_USER_FILENAME,
   ensureAgentWorkspace,
   filterBootstrapFilesForSession,
@@ -144,12 +143,12 @@ async function expectCompletedWithoutBootstrap(dir: string) {
 
 function expectSubagentAllowedBootstrapNames(files: WorkspaceBootstrapFile[]) {
   const names = files.map((file) => file.name);
-  expect(names).toStrictEqual(["AGENTS.md", "TOOLS.md"]);
+  expect(names).toStrictEqual(["AGENTS.md"]);
 }
 
 function expectCronAllowedBootstrapNames(files: WorkspaceBootstrapFile[]) {
   const names = files.map((file) => file.name);
-  expect(names).toStrictEqual(["AGENTS.md", "SOUL.md", "TOOLS.md", "IDENTITY.md", "USER.md"]);
+  expect(names).toStrictEqual(["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md"]);
 }
 
 describe("ensureAgentWorkspace", () => {
@@ -291,7 +290,7 @@ describe("ensureAgentWorkspace", () => {
     await expectPathMissing(path.join(tempDir, DEFAULT_BOOTSTRAP_FILENAME));
   });
 
-  it("refuses to accept old generated bootstrap files recorded by SQLite attestation", async () => {
+  it("accepts an intact historical AGENTS.md recorded by SQLite attestation", async () => {
     const tempDir = await makeTempWorkspace("openclaw-workspace-");
     const oldGeneratedAgents = "old generated agents\n";
     await fs.writeFile(path.join(tempDir, DEFAULT_AGENTS_FILENAME), oldGeneratedAgents);
@@ -307,9 +306,9 @@ describe("ensureAgentWorkspace", () => {
       ]),
     });
 
-    await expectWorkspaceVanished(
+    await expect(
       ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true }),
-    );
+    ).resolves.toMatchObject({ dir: tempDir });
     await expectPathMissing(path.join(tempDir, DEFAULT_BOOTSTRAP_FILENAME));
   });
 
@@ -567,12 +566,10 @@ describe("ensureAgentWorkspace", () => {
     await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_IDENTITY_FILENAME, content: "custom" });
     await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_USER_FILENAME, content: "custom" });
     await fs.unlink(path.join(tempDir, DEFAULT_BOOTSTRAP_FILENAME));
-    await fs.unlink(path.join(tempDir, DEFAULT_TOOLS_FILENAME));
 
     await ensureAgentWorkspace({ dir: tempDir, ensureBootstrapFiles: true });
 
     await expectPathMissing(path.join(tempDir, DEFAULT_BOOTSTRAP_FILENAME));
-    await expect(fs.access(path.join(tempDir, DEFAULT_TOOLS_FILENAME))).resolves.toBeUndefined();
     const state = await readWorkspaceState(tempDir);
     expect(state.setupCompletedAt).toMatch(/\d{4}-\d{2}-\d{2}T/);
   });
@@ -631,7 +628,6 @@ describe("ensureAgentWorkspace", () => {
     });
 
     await expect(fs.access(path.join(tempDir, DEFAULT_AGENTS_FILENAME))).resolves.toBeUndefined();
-    await expect(fs.access(path.join(tempDir, DEFAULT_TOOLS_FILENAME))).resolves.toBeUndefined();
     await expect(
       fs.access(path.join(tempDir, DEFAULT_BOOTSTRAP_FILENAME)),
     ).resolves.toBeUndefined();
@@ -880,9 +876,8 @@ describe("ensureAgentWorkspace", () => {
     await expectPathMissing(path.join(tempDir, DEFAULT_USER_FILENAME));
     await expectPathMissing(path.join(tempDir, DEFAULT_HEARTBEAT_FILENAME));
 
-    // Verify required files (AGENTS.md, TOOLS.md) still exist.
+    // Verify the required AGENTS.md file still exists.
     await expect(fs.access(path.join(tempDir, DEFAULT_AGENTS_FILENAME))).resolves.toBeUndefined();
-    await expect(fs.access(path.join(tempDir, DEFAULT_TOOLS_FILENAME))).resolves.toBeUndefined();
   });
 
   it("observes setup completed concurrently before writing optional bootstrap files", async () => {
@@ -1183,7 +1178,6 @@ describe("filterBootstrapFilesForSession", () => {
   const mockFiles: WorkspaceBootstrapFile[] = [
     { name: "AGENTS.md", path: "/w/AGENTS.md", content: "", missing: false },
     { name: "SOUL.md", path: "/w/SOUL.md", content: "", missing: false },
-    { name: "TOOLS.md", path: "/w/TOOLS.md", content: "", missing: false },
     { name: "IDENTITY.md", path: "/w/IDENTITY.md", content: "", missing: false },
     { name: "USER.md", path: "/w/USER.md", content: "", missing: false },
     { name: "BOOTSTRAP.md", path: "/w/BOOTSTRAP.md", content: "", missing: false },

@@ -539,16 +539,18 @@ export {
   FsDirEntrySchema,
   FsListDirParamsSchema,
   FsListDirResultSchema,
-  MIN_CLIENT_PROTOCOL_VERSION,
-  MIN_NODE_PROTOCOL_VERSION,
-  MIN_PROBE_PROTOCOL_VERSION,
-  PROTOCOL_VERSION,
   ErrorCodes,
   buildMissingScopeErrorDetails,
   GatewayErrorDetailCodes,
   errorShape,
   missingScopeErrorShape,
-} from "./schema.js";
+} from "./schema-modules.js";
+export {
+  MIN_CLIENT_PROTOCOL_VERSION,
+  MIN_NODE_PROTOCOL_VERSION,
+  MIN_PROBE_PROTOCOL_VERSION,
+  PROTOCOL_VERSION,
+} from "./version.js";
 
 // Fork protocol surface: cross-agent activity feed, egress vault, plugin
 // approvals view, and the presence/update events the Control UI subscribes to.
@@ -562,21 +564,15 @@ export {
   ActivitySubscribeParamsSchema,
   ActivitySubscribeResultSchema,
   ActivityUnsubscribeParamsSchema,
+  AgentsComposePromptParamsSchema,
   PluginApprovalActionViewSchema,
   PluginApprovalRequestPayloadSchema,
   PluginApprovalRequestedEventSchema,
   PluginApprovalResolvedEventSchema,
   PresenceEventSchema,
+  SessionsChangedEventSchema,
   UpdateAvailableEventSchema,
   VaultDeleteParamsSchema,
   VaultListParamsSchema,
   VaultSaveParamsSchema,
-} from "./schema.js";
-
-export {
-  AgentsComposePromptParamsSchema,
-} from "./schema.js";
-
-export {
-  SessionsChangedEventSchema,
-} from "./schema.js";
+} from "./schema-modules.js";
