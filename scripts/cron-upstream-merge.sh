@@ -51,6 +51,10 @@ WORKTREE="${UPSTREAM_MERGE_WORKTREE:-$MAIN-upstream-nightly}"
 UPSTREAM_REF="${UPSTREAM_REF:-upstream/main}"
 REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node24/bin}"   # upstream needs node>=22.22.3
 LOG="${UPSTREAM_MERGE_LOG:-$HOME/.openclaw/workspace/memory/reports/upstream-merge-nightly.log}"
+# Scratch for the set-comparison plumbing (drift/dropped/ui listings). Overridable
+# so a test run cannot clobber a concurrent nightly's intermediate files, and vice
+# versa. Operator-facing logs keep their fixed /tmp paths; these are internal.
+UM_TMP="${UPSTREAM_MERGE_TMPDIR:-/tmp}"
 export REMOTE_NODE_BIN
 
 cd "$MAIN" || { echo "MERGE-ABORT: main tree missing"; exit 2; }
@@ -98,12 +102,19 @@ drop_worktree() { git -C "$MAIN" worktree remove --force "$WORKTREE" 2>/dev/null
 apply_fork_ui_ownership() {
   local wt="$1"
   git -C "$wt" checkout main -- ui 2>/dev/null || return 0
-  git -C "$wt" ls-tree -r --name-only main ui | LC_ALL=C sort > /tmp/um-ui-main.txt
-  git -C "$wt" ls-files -- ui | LC_ALL=C sort > /tmp/um-ui-index.txt
-  comm -13 /tmp/um-ui-main.txt /tmp/um-ui-index.txt > /tmp/um-ui-extra.txt
-  local dropped; dropped="$(wc -l < /tmp/um-ui-extra.txt | tr -d ' ')"
+  # core.quotePath=false for the same reason as report_merge_ours_drift: a quoted
+  # non-ASCII path would be handed to `git rm --ignore-unmatch`, match nothing, and
+  # fail silently while still being counted as dropped.
+  git -C "$wt" -c core.quotePath=false ls-tree -r --name-only main ui | LC_ALL=C sort > "$UM_TMP/um-ui-main.txt"
+  git -C "$wt" -c core.quotePath=false ls-files -- ui | LC_ALL=C sort -u > "$UM_TMP/um-ui-index.txt"
+  # comm compares under its own collation, so it must run in the same locale the
+  # inputs were sorted in. Sorting C and comparing under en_US.UTF-8 desynchronizes
+  # the streams and yields near-garbage (measured: 447 phantom "dropped" files
+  # against a true 2). ls-files also emits one line per conflict stage, so -u.
+  LC_ALL=C comm -13 "$UM_TMP/um-ui-main.txt" "$UM_TMP/um-ui-index.txt" > "$UM_TMP/um-ui-extra.txt"
+  local dropped; dropped="$(wc -l < "$UM_TMP/um-ui-extra.txt" | tr -d ' ')"
   if [ "$dropped" != 0 ]; then
-    tr '\n' '\0' < /tmp/um-ui-extra.txt | xargs -0 git -C "$wt" rm -q -f --ignore-unmatch --
+    tr '\n' '\0' < "$UM_TMP/um-ui-extra.txt" | xargs -0 git -C "$wt" rm -q -f --ignore-unmatch --
   fi
   echo "$dropped"
 }
@@ -115,19 +126,279 @@ apply_fork_ui_ownership() {
 # this hid three dropped protocol exports until the protocol generator failed.
 # List the protected files upstream actually touched so resolution rebases them
 # onto upstream and re-applies only the fork delta.
+#
+# Writes the real-loss set to $UM_TMP/um-merge-ours-drift-code.txt for the export
+# gate below. "Real loss" is narrower than "protected and upstream-changed":
+#   - the `ours` driver only runs when BOTH sides changed. A protected file the
+#     fork never edited merges to upstream normally, so it loses nothing
+#     (verified: server-methods/chat.ts, fork delta 0, merged == upstream).
+#   - `.gitattributes` also carries entries for paths that no longer exist here
+#     and for files upstream has since renamed away.
+# Reporting the wide set buried the 24 files that actually lose work under 15
+# harmless ones plus rename noise.
 report_merge_ours_drift() {
   local wt="$1" base="$2"
+  : > "$UM_TMP/um-merge-ours-drift-code.txt"
+  [ -n "$base" ] || { echo "MERGE-OURS-DRIFT-COUNT skipped (no merge base)"; return 0; }
   # --stdin batches one check-attr over the whole changed set; per-file forks over
   # an 8k-file upstream delta take minutes and invite SIGPIPE truncation.
-  git -C "$wt" diff --name-only "$base" "$UPSTREAM_REF" 2>/dev/null \
-    | git -C "$wt" check-attr merge --stdin 2>/dev/null \
-    | sed -n 's/: merge: ours$//p' > /tmp/um-merge-ours-drift.txt
-  local all code
-  all="$(wc -l < /tmp/um-merge-ours-drift.txt | tr -d ' ')"
-  grep -E '\.(ts|tsx|mjs|swift|kt)$' /tmp/um-merge-ours-drift.txt > /tmp/um-merge-ours-drift-code.txt || true
-  code="$(wc -l < /tmp/um-merge-ours-drift-code.txt | tr -d ' ')"
-  sed 's/^/  MERGE-OURS-DRIFT /' /tmp/um-merge-ours-drift-code.txt
-  echo "MERGE-OURS-DRIFT-COUNT $code code files ($all total)"
+  # core.quotePath=false: these paths are consumed programmatically. Quoted output
+  # ("a\303\244.ts", with the quotes) fails every rev-parse below and the || continue
+  # guards would then drop such a file from the loss report entirely.
+  git -C "$wt" -c core.quotePath=false diff --name-only "$base" "$UPSTREAM_REF" 2>/dev/null \
+    | git -C "$wt" -c core.quotePath=false check-attr merge --stdin 2>/dev/null \
+    | sed -n 's/: merge: ours$//p' > "$UM_TMP/um-merge-ours-drift.txt"
+  local all; all="$(wc -l < "$UM_TMP/um-merge-ours-drift.txt" | tr -d ' ')"
+  # ui/ is fork-owned by policy (apply_fork_ui_ownership), not silently dropped.
+  local f merged ours upstream
+  while read -r f; do
+    case "$f" in ui/*) continue ;; *.ts|*.tsx|*.mjs|*.swift|*.kt) ;; *) continue ;; esac
+    merged="$(git -C "$wt" rev-parse ":0:$f" 2>/dev/null)" || continue
+    ours="$(git -C "$wt" rev-parse "main:$f" 2>/dev/null)" || continue
+    upstream="$(git -C "$wt" rev-parse "$UPSTREAM_REF:$f" 2>/dev/null)" || continue
+    # kept ours AND upstream's version differs => upstream's delta was discarded
+    [ "$merged" = "$ours" ] || continue
+    [ "$upstream" = "$ours" ] && continue
+    echo "$f" >> "$UM_TMP/um-merge-ours-drift-code.txt"
+  done < "$UM_TMP/um-merge-ours-drift.txt"
+  local code; code="$(wc -l < "$UM_TMP/um-merge-ours-drift-code.txt" | tr -d ' ')"
+  sed 's/^/  MERGE-OURS-DRIFT /' "$UM_TMP/um-merge-ours-drift-code.txt"
+  echo "MERGE-OURS-DRIFT-COUNT $code code files losing upstream work ($all protected paths in the delta)"
+}
+
+# The exported NAMES of one object (`<rev>:<path>` or `:0:<path>`), sorted+unique.
+# Names, not whole lines: upstream reformats constantly, and a line-level compare
+# reads `export const S = Type.Object(` vs `export const S = closedObject(` as two
+# different exports. On agents-models-skills.ts that alone reported ~80 phantom
+# losses for a file whose exported surface is nearly identical.
+sorted_export_names() {
+  git -C "$1" show "$2" 2>/dev/null | awk '
+    # Strip block comments before any rule sees the line. A commented-out `export`
+    # is not an export, in both directions: a one-sided commented export invents a
+    # phantom name, and a name living only inside a comment here would look present
+    # and mask a real upstream loss. Anchoring on `/*` at line start would miss the
+    # `code; /*` opening, so this tracks the state wherever the delimiter appears.
+    {
+      if (incomment) {
+        if (match($0, /\*\//)) { incomment = 0; $0 = substr($0, RSTART + 2) } else { next }
+      }
+      # A template literal spans lines, so its body is scanned as code unless the
+      # open-backtick state is carried the way incomment is. Generator sources are
+      # in the protected set (scripts/build-all.mjs), and a body line starting with
+      # `export ` would be emitted as a phantom name.
+      if (intemplate) {
+        if (match($0, /`/)) { intemplate = 0; $0 = substr($0, RSTART + 1) } else { next }
+      }
+      # Detect on a copy with string bodies blanked: a glob like "src/**/*.ts" or a
+      # URL ending in /* would otherwise open comment mode and silently swallow every
+      # export below it (966 such lines on this tree). mask_strings is length-
+      # preserving, so match offsets apply unchanged to the real line.
+      masked = mask_strings($0)
+      while (match(masked, /\/\*/)) {
+        cstart = RSTART
+        # Locate the CLOSE on the raw line: a comment body is not code, so masking
+        # it is wrong. `/* don'"'"'t use */` has an unbalanced quote that blanks its own
+        # `*/` in the masked copy, and the comment would latch open — swallowing
+        # every export below it in this revision only.
+        rest = substr($0, cstart + 2)
+        if (match(rest, /\*\//)) {
+          $0 = substr($0, 1, cstart - 1) substr(rest, RSTART + 2)
+          masked = mask_strings($0)
+        } else {
+          incomment = 1
+          $0 = substr($0, 1, cstart - 1)
+          unterminated_backtick = 0
+          masked = $0
+          break
+        }
+      }
+      # Drop any line comment once, here, so no rule below has to think about it.
+      $0 = substr($0, 1, length(masked))
+      if (unterminated_backtick) { intemplate = 1 }
+      if ($0 ~ /^[[:space:]]*$/) { next }
+    }
+    # Inside a multi-line `export { ... }` list, every identifier is exported,
+    # or its alias when written `a as b`.
+    inlist {
+      # Close on a `}` in the masked copy, so one inside a string cannot end the
+      # list early and drop every name on the lines below.
+      inmask = mask_strings($0)
+      if (match(inmask, /}/)) { $0 = substr($0, 1, RSTART - 1); inlist = 0 }
+      emit_list($0); next
+    }
+    /^[[:space:]]*export([^A-Za-z0-9_]|$)/ {
+      line = $0
+      sub(/^[[:space:]]*export/, "", line)
+      sub(/^[[:space:]]+/, "", line)
+      if (line ~ /^default/)  { print "default"; next }
+      # Star re-exports, including `export type * from` — matched before the
+      # modifier strip, which would otherwise leave `* from "./x"` and emit the
+      # phantom name `from`. `* as ns` exports the namespace binding, not `*`.
+      if (line ~ /^(type[[:space:]]+)?\*/) {
+        sub(/^type[[:space:]]+/, "", line)
+        if (match(line, /^\*[[:space:]]+as[[:space:]]+[A-Za-z_$][A-Za-z0-9_$]*/)) {
+          tail = substr(line, RSTART, RLENGTH)
+          sub(/^\*[[:space:]]+as[[:space:]]+/, "", tail)
+          print tail
+        } else if (match(line, /["'"'"'][^"'"'"']+["'"'"']/)) {
+          # Keyed by module specifier, so a barrel gaining a second
+          # `export * from "./new"` is a new set element. A bare `*` for all of them
+          # deduped through `sort -u` and the gate never saw the addition — the
+          # invisible-to-tsgo class it exists to catch. The specifier is stable
+          # across reformatting, so this cannot invent a one-sided phantom.
+          print "*:" substr(line, RSTART + 1, RLENGTH - 2)
+        } else {
+          print "*"
+        }
+        next
+      }
+      # `export type { A, B }` is a grouped list, not a `type` declaration. Without
+      # this the modifier strip below eats the `type` and the single-identifier
+      # fallback returns only `A`, hiding every later name — and reading
+      # `type { A as B }` as `A` instead of the exported `B`.
+      if (line ~ /^type[[:space:]]*\{/) { sub(/^type[[:space:]]*/, "", line) }
+      if (line ~ /^\{/) {
+        sub(/^\{/, "", line)
+        if (match(line, /}/)) { sub(/}.*/, "", line) } else { inlist = 1 }
+        emit_list(line); next
+      }
+      # `export declare async function foo` and friends: drop modifiers, then the
+      # first identifier is the exported name.
+      # The `\*?` keeps generators: without it `export function* gen` fails the
+      # strip and the fallback below returns the literal word `function`, so every
+      # generator export collapses to one name and a renamed one is invisible.
+      # `const enum` leads the alternation so it wins over bare `const`; otherwise
+      # every const enum in a file extracts as the literal word `enum` and a rename
+      # between two of them is invisible.
+      sub(/^(declare[[:space:]]+)?(abstract[[:space:]]+)?(async[[:space:]]+)?(const[[:space:]]+enum|const|let|var|function|class|interface|enum|type|namespace)[[:space:]]*\*?[[:space:]]*/, "", line)
+      # `export const { a, b } = x` binds every name in the pattern.
+      if (line ~ /^[{[]/) {
+        sub(/^[{[]/, "", line)
+        sub(/[}\]].*/, "", line)
+        emit_list(line); next
+      }
+      # Otherwise exactly one name, taken without splitting on commas. Splitting
+      # here would invent phantom names from commas that are not separators, and
+      # those outnumber the real multi-declarator exports by ~27x on this tree
+      # (measured 2026-07-27: 82 `export const x: Foo<A, B> = ...` style lines
+      # against 3 `export const A = 1, B = 2`). A phantom present on only one side
+      # fails the gate over an unchanged export surface, so the trade is not close.
+      # Accepted gap: the second name of those 3 declarator lists is not tracked.
+      if (match(line, /[A-Za-z_$][A-Za-z0-9_$]*/)) {
+        print substr(line, RSTART, RLENGTH)
+      }
+      next
+    }
+    # A copy of the line safe to scan for comment delimiters: quoted spans are
+    # blanked and a line comment truncates the rest. Everything a `/*` could hide
+    # behind must be neutralised here, because one unclosed `/*` latches comment
+    # mode and drops every export below it — one-sided, that is either a phantom
+    # missing export (spurious PREFLIGHT=FAIL) or a masked real loss.
+    # Length is preserved up to the truncation point, so match offsets taken from
+    # this copy address the same characters in the real line.
+    # Accepted gap: regex literals. Recognising `/.../ ` needs real lexing, and a
+    # regex containing an unclosed `/*` is far rarer than the forms handled here.
+    function mask_strings(s,   out, i, c, q, n) {
+      out = ""; q = ""; n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (q != "") {
+          # Escaped char: blank the pair so a `\"` cannot end masking early and
+          # expose the rest of the literal to the comment scan.
+          if (c == "\\") { out = out "  "; i++; continue }
+          out = out ((c == q) ? c : " ")
+          if (c == q) { q = "" }
+        } else if (c == "\"" || c == "'"'"'" || c == "`") {
+          q = c; out = out c
+        } else if (c == "/" && substr(s, i + 1, 1) == "/") {
+          unterminated_backtick = 0
+          return out
+        } else { out = out c }
+      }
+      # Signals an open template literal to the caller, which carries the state to
+      # the next line.
+      unterminated_backtick = (q == "`")
+      return out
+    }
+    function emit_list(s,   parts, i, n, tok) {
+      n = split(s, parts, ",")
+      for (i = 1; i <= n; i++) {
+        tok = parts[i]
+        sub(/.*[[:space:]]as[[:space:]]+/, "", tok)   # `a as b` exports b
+        # Inline type specifier `{ x, type T }` (typescript-eslint autofixes to
+        # this form); without the strip the gsub below welds it into `typeT` and
+        # a pure type-annotation refactor upstream reads as a renamed export.
+        sub(/^[[:space:]]*type[[:space:]]+/, "", tok)
+        # Destructuring rename `{ a: renamed }` binds `renamed`; without this the
+        # gsub below welds the pair into `arenamed`, inventing a name and hiding
+        # the real one. Grouped export lists never contain a colon.
+        sub(/.*:[[:space:]]*/, "", tok)
+        # Destructuring default `{ a = 1 }` binds `a`; the gsub would weld it to `a1`
+        # and a default-only upstream change would fail the gate on a phantom.
+        sub(/=.*/, "", tok)
+        gsub(/[^A-Za-z0-9_$]/, "", tok)
+        if (tok != "") print tok
+      }
+    }
+  ' | LC_ALL=C sort -u
+}
+
+# The subset of merge=ours loss that breaks consumers instead of merely aging the
+# file: upstream changed the module's EXPORTED surface and the merge kept our copy,
+# so an upstream-adopted importer resolves against a stale module. tsgo is blind
+# (the importer type-checks against the file that is actually there) and the tree
+# stays green until something dereferences the missing symbol at runtime — this is
+# how three protocol exports vanished on 2026-07-25. Ordinary internal upstream
+# edits to a protected file are the accepted, documented cost of forking it; only
+# the export surface fails the build for someone else, so only it gates.
+# Resolution is per file: rebase it onto upstream and re-apply the fork delta.
+check_merge_ours_export_drift() {
+  local wt="$1" base="$2"
+  # Never skip silently: this gate exists to catch loss nothing else sees, so a
+  # skipped run must not read like a clean pass in the preflight log.
+  if [ -z "$base" ]; then
+    echo "EXPORT-DRIFT-GATE skipped (no merge base) — protected-file export loss unchecked"
+    return 0
+  fi
+  if ! report_merge_ours_drift "$wt" "$base" >/dev/null 2>"$UM_TMP/um-drift-err.txt"; then
+    echo "EXPORT-DRIFT-GATE skipped (drift report failed) — export loss unchecked"
+    tail -n 3 "$UM_TMP/um-drift-err.txt" 2>/dev/null
+    return 0
+  fi
+  local f hits missing
+  hits=""
+  while read -r f; do
+    # `export` is a TS/JS keyword; the loss report also admits .swift/.kt, whose
+    # public surface is spelled with visibility modifiers. Gating those here would
+    # compare two empty sets and pass unconditionally — coverage a future reader
+    # would assume is real. They stay in the report; only TS-family files gate.
+    case "$f" in *.ts | *.tsx | *.mjs) ;; *) continue ;; esac
+    # (upstream_now - base) - ours: an export upstream ADDED in this window that
+    # the merge result lacks. Each term is load-bearing.
+    #   - subtracting base skips long-standing fork divergence. The fork has
+    #     deliberately dropped 32 SkillsCurator*/SkillsProposal* exports from
+    #     agents-models-skills.ts since before this base; upstream changed none of
+    #     them, so this merge drops nothing and the gate must stay quiet.
+    #   - comparing against ours (not base) keeps the gate clearable: the operator
+    #     hand-carries the new export in and it goes green. A base-vs-upstream
+    #     compare never would — the base only advances when a merge lands, and the
+    #     gate is what blocks landing.
+    # A pure upstream rename still fires, correctly: the new name is absent here.
+    missing="$(LC_ALL=C comm -23 \
+      <(LC_ALL=C comm -23 \
+        <(sorted_export_names "$wt" "$UPSTREAM_REF:$f") \
+        <(sorted_export_names "$wt" "$base:$f")) \
+      <(sorted_export_names "$wt" ":0:$f"))"
+    if [ -n "$missing" ]; then
+      hits="$hits $f"
+    fi
+  done < "$UM_TMP/um-merge-ours-drift-code.txt"
+  [ -n "$hits" ] || return 0
+  echo "PREFLIGHT=FAIL reason=merge-ours-export-drift files=$hits"
+  echo "  merge=ours kept our copy of these; upstream exports symbols they lack."
+  echo "  Rebase each onto $UPSTREAM_REF and re-apply only the fork delta; keeping"
+  echo "  our stale copy leaves upstream-adopted importers resolving a dead symbol."
+  return 1
 }
 
 # Upstream files that are NEW since the merge base and absent from the merge
@@ -139,17 +410,20 @@ report_merge_ours_drift() {
 report_dropped_upstream_files() {
   local wt="$1" base="$2"
   [ -n "$base" ] || { echo "DROPPED-UPSTREAM-COUNT skipped (no merge base)"; return 0; }
-  git -C "$wt" ls-tree -r --name-only "$UPSTREAM_REF" | LC_ALL=C sort > /tmp/um-up.txt
-  git -C "$wt" ls-tree -r --name-only HEAD          | LC_ALL=C sort > /tmp/um-head.txt
-  git -C "$wt" ls-tree -r --name-only "$base"       | LC_ALL=C sort > /tmp/um-base.txt
-  # in upstream, not at the base (i.e. upstream-new), and not in the merge result
-  comm -23 /tmp/um-up.txt /tmp/um-base.txt > /tmp/um-upnew.txt
-  comm -23 /tmp/um-upnew.txt /tmp/um-head.txt | grep -v '^ui/' > /tmp/um-dropped.txt || true
-  local dropped; dropped="$(wc -l < /tmp/um-dropped.txt | tr -d ' ')"
+  git -C "$wt" -c core.quotePath=false ls-tree -r --name-only "$UPSTREAM_REF" | LC_ALL=C sort > "$UM_TMP/um-up.txt"
+  # The merge result is the INDEX, not HEAD: this runs mid-merge (--no-commit), so
+  # HEAD is still pre-merge main and every upstream-new file would read as dropped.
+  git -C "$wt" -c core.quotePath=false ls-files          | LC_ALL=C sort -u > "$UM_TMP/um-head.txt"
+  git -C "$wt" -c core.quotePath=false ls-tree -r --name-only "$base"        | LC_ALL=C sort > "$UM_TMP/um-base.txt"
+  # in upstream, not at the base (i.e. upstream-new), and not in the merge result.
+  # LC_ALL=C on comm for the same reason as apply_fork_ui_ownership.
+  LC_ALL=C comm -23 "$UM_TMP/um-up.txt" "$UM_TMP/um-base.txt" > "$UM_TMP/um-upnew.txt"
+  LC_ALL=C comm -23 "$UM_TMP/um-upnew.txt" "$UM_TMP/um-head.txt" | grep -v '^ui/' > "$UM_TMP/um-dropped.txt" || true
+  local dropped; dropped="$(wc -l < "$UM_TMP/um-dropped.txt" | tr -d ' ')"
   if [ "$dropped" != 0 ]; then
-    head -20 /tmp/um-dropped.txt | sed 's/^/  DROPPED-UPSTREAM /'
+    head -20 "$UM_TMP/um-dropped.txt" | sed 's/^/  DROPPED-UPSTREAM /'
   fi
-  echo "DROPPED-UPSTREAM-COUNT $dropped upstream-new files absent from the merge (full list: /tmp/um-dropped.txt)"
+  echo "DROPPED-UPSTREAM-COUNT $dropped upstream-new files absent from the merge (full list: $UM_TMP/um-dropped.txt)"
 }
 
 # Measure the post-driver residual via the shadow engine (read-only; own worktree).
@@ -387,6 +661,10 @@ preflight() {
     printf '%s\n' "$markers"
     return 1
   fi
+  # Cheaper than protocol-gen and names the owning files, so it runs first; it also
+  # covers the protected files protocol-gen never imports.
+  local pf_base; pf_base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
+  check_merge_ours_export_drift "$wt" "$pf_base" || return 1
   # The protocol generator actually imports the schema modules, so it catches the
   # dropped-export breakage that merge=ours hides from tsgo entirely.
   if ! (cd "$wt" && node --import tsx scripts/protocol-gen.ts >/tmp/um-preflight-protocol.log 2>&1); then
@@ -531,6 +809,14 @@ remote_proof() {
 }
 
 # --- dispatch ----------------------------------------------------------------
+# Sourcing this file loads the functions without running anything, so the merge
+# =ours loss reporting can be tested against real git fixtures. Executed normally
+# BASH_SOURCE[0] == $0 and the dispatch runs as before; note that a bare `source`
+# with no args would otherwise default to `route`, which mutates and deploys.
+if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
+  return 0
+fi
+
 cmd="${1:-route}"
 case "$cmd" in
   route)

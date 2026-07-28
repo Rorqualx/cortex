@@ -12,9 +12,17 @@ memory/.l3/**                                                        merge=ours
 
 # --- fork: canonical-file feature protection ---
 # Edits to upstream-owned files that encode intentional fork behavior.
-# `merge=ours` keeps OUR version on conflict; non-overlapping upstream
-# changes still flow in via auto-merge (verify post-merge if you want
-# byte-level freeze).
+#
+# `merge=ours` keeps OUR WHOLE FILE, not our delta. Once both sides have touched
+# a file the driver runs and upstream's entire delta is discarded — including
+# hunks that do not overlap the fork's. Measured on 2026-07-27:
+# channel-catalog-registry.ts has a 27-line fork delta and lost all 165 upstream
+# lines. Only a file the fork has NEVER edited merges normally, and then the
+# attribute is doing nothing. So protecting a file is a standing decision to
+# hand-carry upstream's work into it, not a way to "keep ours where we differ".
+# scripts/cron-upstream-merge.sh reports the loss each merge and fails preflight
+# when a protected file's upstream EXPORT surface changed, since that is the
+# subset that breaks other modules invisibly.
 
 # Feature A: default OpenAI transport=sse for GPT-5 API-key models
 # (WebSocket path under investigation; explicit opt-in required).
@@ -85,7 +93,6 @@ fork-config-baseline.json                                               merge=ou
 scripts/fork-config-snapshot.mjs                                       merge=ours
 scripts/fork-merge-guard.mjs                                            merge=ours
 scripts/fork-merge-verify.mjs                                           merge=ours
-scripts/upstream-divergence-report.mjs                                 merge=ours
 scripts/remote-proof.sh                                                 merge=ours
 AUTO_CHERRY_LEDGER.md                                                   merge=ours
 FORK-MERGE-GUIDE.md                                                     merge=ours
@@ -165,11 +172,9 @@ test-chunking.mjs                                                       merge=ou
 ui/src/styles/pixel-office.css                                          merge=ours
 ui/src/styles/skill-forge.css                                           merge=ours
 ui/src/ui/avatar-lightbox.ts                                            merge=ours
-ui/src/ui/chat/branch-service.ts                                        merge=ours
 ui/src/ui/chat/chat-tab-bar.ts                                          merge=ours
 ui/src/ui/chat/session-controls.sidebar-model.test.ts                   merge=ours
 ui/src/ui/controllers/skill-forge.ts                                    merge=ours
-ui/src/ui/file-icons.ts                                                 merge=ours
 ui/src/ui/views/conversations.ts                                        merge=ours
 ui/src/ui/views/pixel-office.ts                                         merge=ours
 ui/src/ui/views/skill-forge.ts                                          merge=ours
@@ -192,7 +197,6 @@ extensions/ollama/src/embedding-provider.ts                             merge=ou
 extensions/whatsapp/src/connection-controller.test.ts                   merge=ours
 packages/gateway-protocol/src/schema/agents-models-skills.ts            merge=ours
 scripts/e2e/lib/live-plugin-tool/assertions.mjs                         merge=ours
-scripts/e2e/npm-telegram-rtt-docker.sh                                  merge=ours
 scripts/tsdown-build.mjs                                                merge=ours
 src/agents/agent-tools.before-tool-call.ts                              merge=ours
 src/agents/apply-patch.ts                                               merge=ours
@@ -240,7 +244,6 @@ src/channels/message/inbound-reply-dispatch.ts                          merge=ou
 src/cli/plugins-location-bridges.ts                                     merge=ours
 src/cli/program/command-registry-core.ts                                merge=ours
 src/cli/program/core-command-descriptors.ts                             merge=ours
-src/config/sessions/store.ts                                            merge=ours
 src/config/sessions/types.ts                                            merge=ours
 src/config/types.agents-shared.ts                                       merge=ours
 src/config/types.hooks.ts                                               merge=ours
@@ -271,8 +274,6 @@ src/infra/tsdown-config.test.ts                                         merge=ou
 src/infra/update-managed-service-handoff.test.ts                        merge=ours
 src/infra/update-managed-service-handoff.ts                             merge=ours
 src/infra/update-startup.ts                                             merge=ours
-src/llm/providers/google-shared.ts                                      merge=ours
-src/llm/providers/mistral.ts                                            merge=ours
 src/mcp/channel-shared.ts                                               merge=ours
 src/plugin-sdk/agent-harness-runtime.ts                                 merge=ours
 src/plugins/externalized-bundled-plugins.ts                             merge=ours
@@ -321,7 +322,6 @@ ui/src/ui/chat/tool-cards.test.ts                                       merge=ou
 ui/src/ui/controllers/chat.test.ts                                      merge=ours
 ui/src/ui/controllers/sessions.test.ts                                  merge=ours
 ui/src/ui/controllers/sessions.ts                                       merge=ours
-ui/src/ui/controllers/skill-workshop.ts                                 merge=ours
 ui/src/ui/controllers/workboard.ts                                      merge=ours
 ui/src/ui/icons.ts                                                      merge=ours
 ui/src/ui/markdown.ts                                                   merge=ours
@@ -375,9 +375,14 @@ src/agents/sandbox/ssh-backend.test.ts                                   merge=o
 src/gateway/server-chat.agent-events.test.ts                             merge=ours
 src/gateway/server.sessions.reset-cleanup.test.ts                        merge=ours
 packages/agent-core/src/agent-loop.test.ts                              merge=ours
-src/llm/providers/mistral.test.ts                                       merge=ours
 
 # --- relocation remaps (protection follows upstream renames; see scripts/relocation-map.mjs) ---
+# The ui/src/{api,app,components,lib,pages}/** entries below name upstream's
+# post-rearchitecture paths, which do not exist in this fork. They are inert while
+# apply_fork_ui_ownership (scripts/cron-upstream-merge.sh) resolves ui/ by policy —
+# it takes main's tree wholesale, so no ui/ merge driver ever runs. They matter
+# again only if the fork adopts upstream's UI architecture and that policy is
+# dropped; keep them in sync with relocation-map.mjs until then.
 packages/ai/src/providers/google-shared.ts merge=ours
 packages/ai/src/providers/mistral.test.ts merge=ours
 packages/ai/src/providers/mistral.ts merge=ours
@@ -412,7 +417,6 @@ ui/src/pages/chat/tool-stream.ts merge=ours
 ui/src/pages/config/quick.ts merge=ours
 ui/src/pages/skill-workshop/proposals.ts merge=ours
 ui/src/pages/skill-workshop/view.ts merge=ours
-ui/src/pages/workboard/data.test.ts merge=ours
 ui/src/pages/workboard/view.ts merge=ours
 
 # --- fork test surfaces whose impl is merge=ours; keep test in sync on merge ---
@@ -424,7 +428,6 @@ src/agents/tool-catalog.test.ts merge=ours
 src/gateway/session-utils.test.ts merge=ours
 ui/src/ui/avatar-lightbox.test.ts merge=ours
 ui/src/ui/chat/run-lifecycle.test.ts merge=ours
-ui/src/ui/controllers/skill-workshop.test.ts merge=ours
 ui/src/ui/views/agents.test.ts merge=ours
 ui/src/ui/views/chat.test.ts merge=ours
 ui/src/ui/views/config-quick.test.ts merge=ours
