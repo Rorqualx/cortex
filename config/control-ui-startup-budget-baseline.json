@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 554145,
-  "reason": "2026-07 upstream resync adopts upstream's finer-grained chunk graph (startup 8 -> 20 requests, gzip +4.7%, largest chunk 372 -> 78 KiB); the prior value was upstream's baseline for their rearchitected UI, not this fork's. Owner-approved; recorded on huey (Linux, CI truth)",
-  "updatedAt": "2026-07-26"
+  "startupJsGzipBytes": 555218,
+  "reason": "2026-07-28 upstream resync step 1 (200 commits, 8d75a6ded6e -> ffec7731a4a): +1073 B startup JS (+0.19%) from upstream code reaching the Control UI graph; recorded on huey (Linux, CI truth). Owner-approved.",
+  "updatedAt": "2026-07-28"
 }
