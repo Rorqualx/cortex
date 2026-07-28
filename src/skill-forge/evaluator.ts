@@ -58,7 +58,7 @@ export function evaluateProcessVsOutcome(candidate: Candidate): ProcessVsOutcome
       base.reusability = true;
       break;
 
-    case "explicit":
+    case "explicit": {
       // Explicit skills depend on the matched phrase - analyze the prompt excerpt
       const promptText = candidate.promptExcerpt.toLowerCase();
 
@@ -87,6 +87,7 @@ export function evaluateProcessVsOutcome(candidate: Candidate): ProcessVsOutcome
         candidate.rationale.includes("error");
 
       break;
+    }
   }
 
   return base;
