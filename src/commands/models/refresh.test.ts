@@ -1,87 +1,105 @@
+// `openclaw models refresh` is a fork command: it probes each refreshable
+// provider's live /models endpoint and reports what appeared or was deprecated.
+// Upstream repointed the same command name at its hosted catalog, so the test
+// that shipped with upstream exercised a body this fork does not have.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ refresh: vi.fn(), getConfig: vi.fn(() => ({})) }));
-vi.mock("../../config/config.js", () => ({ getRuntimeConfig: mocks.getConfig }));
-vi.mock("../../model-catalog/remote-refresh.js", () => ({
-  refreshRemoteModelCatalog: mocks.refresh,
+const mocks = vi.hoisted(() => ({
+  loadModelsConfig: vi.fn(async () => ({}) as never),
+  listRefreshableProviders: vi.fn(() => [] as string[]),
+  runProviderModelDiscovery: vi.fn(),
+}));
+vi.mock("./load-config.js", () => ({ loadModelsConfig: mocks.loadModelsConfig }));
+vi.mock("../../model-catalog/discovery-orchestrator.js", () => ({
+  listRefreshableProviders: mocks.listRefreshableProviders,
+  runProviderModelDiscovery: mocks.runProviderModelDiscovery,
 }));
 
 import { modelsRefreshCommand } from "./refresh.js";
 
 function runtime() {
+  return { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
+}
+
+function report(over: Record<string, unknown> = {}) {
   return {
-    log: vi.fn(),
-    error: vi.fn(),
-    exit: vi.fn(),
-    writeStdout: vi.fn(),
-    writeJson: vi.fn(),
+    ok: true,
+    provider: "zai",
+    activeCount: 2,
+    added: [],
+    deprecated: [],
+    probedAdded: [],
+    ...over,
   };
 }
 
-beforeEach(() => mocks.refresh.mockReset());
+beforeEach(() => {
+  mocks.loadModelsConfig.mockClear();
+  mocks.listRefreshableProviders.mockReset().mockReturnValue([]);
+  mocks.runProviderModelDiscovery.mockReset();
+});
 
 describe("models refresh", () => {
-  it("prints updated, fresh, disabled, error, and JSON results", async () => {
-    const updatedRuntime = runtime();
-    mocks.refresh.mockResolvedValueOnce({
-      status: "updated",
-      providers: 2,
-      models: 3,
-      generatedAt: 1_753_500_000_000,
-    });
-    await modelsRefreshCommand({}, updatedRuntime);
-    expect(updatedRuntime.log).toHaveBeenLastCalledWith(
-      "A running Gateway applies the updated catalog after its next restart.",
-    );
-
-    const freshRuntime = runtime();
-    mocks.refresh.mockResolvedValueOnce({
-      status: "fresh",
-      providers: 2,
-      models: 3,
-      generatedAt: 1_753_500_000_000,
-    });
-    await modelsRefreshCommand({}, freshRuntime);
-    expect(freshRuntime.log).toHaveBeenCalledWith(expect.stringContaining("refresh: fresh"));
-
-    const disabledRuntime = runtime();
-    mocks.refresh.mockResolvedValueOnce({ status: "disabled", providers: 0, models: 0 });
-    await modelsRefreshCommand({}, disabledRuntime);
-    expect(disabledRuntime.log).toHaveBeenCalledWith(
-      "Remote catalog refresh is disabled (models.catalogRefresh.enabled=false)",
-    );
-
-    const errorRuntime = runtime();
-    mocks.refresh.mockResolvedValueOnce({
-      status: "error",
-      providers: 0,
-      models: 0,
-      error: "boom",
-    });
-    await modelsRefreshCommand({}, errorRuntime);
-    expect(errorRuntime.error).toHaveBeenCalledWith("Remote catalog refresh failed: boom");
-    expect(errorRuntime.exit).toHaveBeenCalledWith(1);
-
-    const jsonRuntime = runtime();
-    mocks.refresh.mockResolvedValueOnce({ status: "disabled", providers: 0, models: 0 });
-    await modelsRefreshCommand({ json: true }, jsonRuntime);
-    expect(jsonRuntime.writeJson).toHaveBeenCalledWith(
-      { status: "disabled", providers: 0, models: 0 },
-      0,
-    );
-    expect(jsonRuntime.log).not.toHaveBeenCalled();
+  it("explains how to opt in when no provider is refreshable", async () => {
+    const rt = runtime();
+    await modelsRefreshCommand({}, rt as never);
+    expect(mocks.runProviderModelDiscovery).not.toHaveBeenCalled();
+    expect(rt.log).toHaveBeenCalledWith(expect.stringContaining('discovery: "refreshable"'));
   });
 
-  it("writes refresh errors to structured stdout before exiting in JSON mode", async () => {
-    const jsonRuntime = runtime();
-    const result = { status: "error", providers: 0, models: 0, error: "boom" };
-    mocks.refresh.mockResolvedValueOnce(result);
+  it("refreshes an explicit --provider even when it is not opted in", async () => {
+    // The opt-in gates the no-argument sweep; naming a provider is an explicit
+    // operator request and must override it.
+    const rt = runtime();
+    mocks.runProviderModelDiscovery.mockResolvedValue(report({ provider: "kimi" }));
+    await modelsRefreshCommand({ provider: "kimi" }, rt as never);
+    expect(mocks.listRefreshableProviders).not.toHaveBeenCalled();
+    expect(mocks.runProviderModelDiscovery).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "kimi", probeServed: true }),
+    );
+  });
 
-    await modelsRefreshCommand({ json: true }, jsonRuntime);
+  it("reports added, served-only, and deprecated models per provider", async () => {
+    const rt = runtime();
+    mocks.listRefreshableProviders.mockReturnValue(["zai"]);
+    mocks.runProviderModelDiscovery.mockResolvedValue(
+      report({ added: ["glm-5.2"], probedAdded: ["glm-5.2-air"], deprecated: ["glm-4.9"] }),
+    );
+    await modelsRefreshCommand({}, rt as never);
+    const out = rt.log.mock.calls.flat().join("\n");
+    expect(out).toContain("glm-5.2");
+    expect(out).toContain("glm-5.2-air");
+    expect(out).toContain("glm-4.9");
+    // Deprecated models stay recorded, so the operator has to be told what clears them.
+    expect(out).toContain("openclaw doctor --fix");
+  });
 
-    expect(jsonRuntime.writeJson).toHaveBeenCalledWith(result, 0);
-    expect(jsonRuntime.exit).toHaveBeenCalledWith(1);
-    expect(jsonRuntime.log).not.toHaveBeenCalled();
-    expect(jsonRuntime.error).not.toHaveBeenCalled();
+  it("omits the doctor hint when nothing was deprecated", async () => {
+    const rt = runtime();
+    mocks.listRefreshableProviders.mockReturnValue(["zai"]);
+    mocks.runProviderModelDiscovery.mockResolvedValue(report({ added: ["glm-5.2"] }));
+    await modelsRefreshCommand({}, rt as never);
+    expect(rt.log.mock.calls.flat().join("\n")).not.toContain("openclaw doctor --fix");
+  });
+
+  it("emits the raw reports and no prose in JSON mode", async () => {
+    const rt = runtime();
+    mocks.listRefreshableProviders.mockReturnValue(["zai"]);
+    mocks.runProviderModelDiscovery.mockResolvedValue(report());
+    await modelsRefreshCommand({ json: true }, rt as never);
+    expect(rt.log).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(rt.log.mock.calls[0]![0] as string).reports).toHaveLength(1);
+  });
+
+  it("surfaces a skipped provider with its reason instead of failing", async () => {
+    const rt = runtime();
+    mocks.listRefreshableProviders.mockReturnValue(["zai"]);
+    mocks.runProviderModelDiscovery.mockResolvedValue({
+      ok: false,
+      provider: "zai",
+      reason: "no api key",
+    });
+    await modelsRefreshCommand({}, rt as never);
+    expect(rt.log.mock.calls.flat().join("\n")).toContain("skipped (no api key)");
   });
 });
