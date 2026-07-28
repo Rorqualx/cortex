@@ -42,12 +42,12 @@ describe("tool audit store", () => {
 
     const rows = queryToolAuditByDay({ day: DAY, dir });
     expect(rows).toHaveLength(1);
-    expect(rows[0].tool_name).toBe("read");
-    expect(rows[0].agent_id).toBe("main");
-    expect(rows[0].session_id).toBe("sess-1");
-    expect(rows[0].allowed).toBe(1);
-    expect(rows[0].error).toBe(0);
-    expect(rows[0].args_summary).toContain("/tmp/test.txt");
+    expect(rows[0]!.tool_name).toBe("read");
+    expect(rows[0]!.agent_id).toBe("main");
+    expect(rows[0]!.session_id).toBe("sess-1");
+    expect(rows[0]!.allowed).toBe(1);
+    expect(rows[0]!.error).toBe(0);
+    expect(rows[0]!.args_summary).toContain("/tmp/test.txt");
   });
 
   it("records error outcomes with error message", () => {
@@ -67,8 +67,8 @@ describe("tool audit store", () => {
 
     const rows = queryToolAuditByDay({ day: DAY, dir });
     expect(rows).toHaveLength(1);
-    expect(rows[0].error).toBe(1);
-    expect(rows[0].error_message).toBe("Command blocked by exec-policy");
+    expect(rows[0]!.error).toBe(1);
+    expect(rows[0]!.error_message).toBe("Command blocked by exec-policy");
   });
 
   it("records blocked calls (allowed=false)", () => {
@@ -88,7 +88,7 @@ describe("tool audit store", () => {
     const summary = summarizeToolAudit({ fromDay: DAY, dir });
     expect(summary.totalCalls).toBe(1);
     expect(summary.blocked).toBe(1);
-    expect(summary.byTool[0].blocked).toBe(1);
+    expect(summary.byTool[0]!.blocked).toBe(1);
   });
 
   it("aggregates summary across multiple tools and agents", () => {
@@ -174,7 +174,7 @@ describe("tool audit store", () => {
 
     const summary = summarizeToolAudit({ fromDay: DAY, dir });
     expect(summary.totalCalls).toBe(1);
-    expect(summary.byTool[0].toolName).toBe("exec");
+    expect(summary.byTool[0]!.toolName).toBe("exec");
   });
 });
 

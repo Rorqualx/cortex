@@ -338,14 +338,24 @@ export function resolveRoute(req: RouteRequest): Route {
       (_latencyHistory.get(c.provider)?.length ?? 0) >= LATENCY_MIN_SAMPLES,
   );
   if (hasLatencyData) {
-    // Array.sort is stable, so returning 0 whenever either side has no opinion
-    // leaves unmeasured providers exactly where orderedProviders put them
-    // (subscription before metered) instead of floating them to the front.
-    fallbacks = [...fallbacks].sort((a, b) => {
-      const pa = providerLatencyPenalty(a.provider);
-      const pb = providerLatencyPenalty(b.provider);
-      return pa === undefined || pb === undefined ? 0 : pa - pb;
-    });
+    // Reorder ONLY the measured entries, in place, leaving every unmeasured slot
+    // untouched. A comparator that returns 0 against unmeasured providers is
+    // non-transitive (slow > fast, yet each ties with the unmeasured one between
+    // them), so the result would depend on where V8's sort happens to compare —
+    // a slow provider could keep its lead over a fast one.
+    const measuredSlots: number[] = [];
+    for (const [index, candidate] of fallbacks.entries()) {
+      if (providerLatencyPenalty(candidate.provider) !== undefined) {
+        measuredSlots.push(index);
+      }
+    }
+    const reordered = measuredSlots
+      .map((index) => fallbacks[index]!)
+      .sort((a, b) => providerLatencyPenalty(a.provider)! - providerLatencyPenalty(b.provider)!);
+    fallbacks = [...fallbacks];
+    for (const [slot, index] of measuredSlots.entries()) {
+      fallbacks[index] = reordered[slot]!;
+    }
   }
 
   return { primary, fallbacks };

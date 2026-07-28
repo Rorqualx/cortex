@@ -253,6 +253,20 @@ describe("delegation router adaptive latency balancing", () => {
     expect(order.indexOf("moonshot")).toBeLessThan(order.indexOf("kimi"));
   });
 
+  it("reorders measured providers across an unmeasured one and leaves its slot alone", () => {
+    // Chain is zai,kimi,deepseek,moonshot,… — measure the outer two and leave
+    // deepseek unmeasured between them. A non-transitive comparator would let
+    // slow kimi keep its lead here, since each side merely ties with deepseek.
+    for (let i = 0; i < 3; i++) {
+      recordProviderLatency("kimi", 15_000);
+      recordProviderLatency("moonshot", 200);
+    }
+    const order = providerOrder("code");
+    expect(order.indexOf("moonshot")).toBeLessThan(order.indexOf("kimi"));
+    // deepseek has no opinion, so it stays in the slot priority order gave it.
+    expect(order[2]).toBe("deepseek");
+  });
+
   it("demotes a provider that has only ever errored", () => {
     const baseline = providerOrder("code");
     const [first, second] = baseline;

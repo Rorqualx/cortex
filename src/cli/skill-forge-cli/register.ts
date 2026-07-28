@@ -206,7 +206,7 @@ function resolveAuditThreshold(raw: unknown): number | undefined {
   }
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`--threshold must be a number between 0 and 1 (got ${String(raw)})`);
+    throw new Error(`--threshold must be a number between 0 and 1 (got ${JSON.stringify(raw)})`);
   }
   return Math.max(0, Math.min(1, parsed));
 }
@@ -219,7 +219,7 @@ function registerAuditJudgeCommand(parent: Command): void {
         "skill drafts through the judge and reports false-pass/false-fail rates.",
     )
     .option("--agent <id>", "Agent whose default model is used for the judge.")
-    .option("--threshold <n>", `Maximum acceptable false-pass rate (default ${0.15}, range 0-1).`)
+    .option("--threshold <n>", "Maximum acceptable false-pass rate (default 0.15, range 0-1).")
     .action(async (opts) => {
       const agentId = typeof opts.agent === "string" && opts.agent ? opts.agent : undefined;
       const threshold = resolveAuditThreshold(opts.threshold);

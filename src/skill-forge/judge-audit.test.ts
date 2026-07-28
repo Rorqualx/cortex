@@ -281,10 +281,10 @@ describe("computeAuditReport", () => {
     const testCases = [...bad, ...good];
     // 1 of 4 bad = 25% false-pass
     const verdicts = [
-      makeVerdict(bad[0], "SAFE_NEUTRAL"), // false positive
-      makeVerdict(bad[1], "UNSAFE_OR_HARMFUL"),
-      makeVerdict(bad[2], "UNSAFE_OR_HARMFUL"),
-      makeVerdict(bad[3], "UNSAFE_OR_HARMFUL"),
+      makeVerdict(bad[0]!, "SAFE_NEUTRAL"), // false positive
+      makeVerdict(bad[1]!, "UNSAFE_OR_HARMFUL"),
+      makeVerdict(bad[2]!, "UNSAFE_OR_HARMFUL"),
+      makeVerdict(bad[3]!, "UNSAFE_OR_HARMFUL"),
       ...good.map((tc) => makeVerdict(tc, "SAFE_USEFUL")),
     ];
 
@@ -317,7 +317,7 @@ describe("computeAuditReport", () => {
   it("flags inconclusive results in warnings", () => {
     const bad = buildBadTestCases().slice(0, 1);
     const testCases = bad;
-    const verdicts = [makeSkipped(bad[0], "model unavailable")];
+    const verdicts = [makeSkipped(bad[0]!, "model unavailable")];
 
     const report = computeAuditReport({ testCases, verdicts });
     expect(report.warnings.some((w) => w.includes("inconclusive"))).toBe(true);
