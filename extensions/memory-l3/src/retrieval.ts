@@ -24,6 +24,7 @@ import {
   jaccard,
   type ScoringConfig,
   scoreFact,
+  staleDemotionMultiplier,
   type Signals,
   tokenize,
 } from "./scoring.js";
@@ -133,6 +134,7 @@ import type {
   LongTermFact,
   LongTermTypedFact,
   MissingFact,
+  RetrievalSignal,
   TypedFact,
 } from "./types.js";
 
@@ -431,6 +433,16 @@ export async function retrieveTopK(params: {
     });
   }
 
+  // Pre-load retrieval signals for stale-utility demotion (RMM-inspired).
+  // Reused later for post-retrieval signal recording to avoid a second read.
+  let preloadedSignals: RetrievalSignal[] = [];
+  try {
+    preloadedSignals = await params.storage.readRetrievalSignals();
+  } catch {
+    // Signal read is non-critical — demotion defaults to no-penalty when unavailable.
+  }
+  const retrievalSignalMap = new Map(preloadedSignals.map((s) => [s.factId, s]));
+
   // Build corpus stats from all fact texts for BM25 IDF computation.
   const corpusStats: CorpusStats | undefined =
     config.weightBm25 > 0 ? buildCorpusStats(items.map((i) => i.fact.text)) : undefined;
@@ -464,7 +476,16 @@ export async function retrieveTopK(params: {
       signals.lexical = 0;
     }
     const baseScore = composite(signals, config);
-    const score = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+    const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+    // Stale-utility demotion: facts never retrieved across multiple epochs
+    // get their composite score multiplied down to reflect low demonstrated
+    // utility (RMM — arXiv:2607.19873).
+    const demotion = staleDemotionMultiplier({
+      recallCount: retrievalSignalMap.get(item.fact.id)?.recallCount ?? 0,
+      ageMs: now - item.fact.createdAt,
+      config,
+    });
+    const score = rawScore * demotion;
     if (score > 0) {
       scored.push({
         fact: item.fact,
@@ -610,8 +631,7 @@ export async function retrieveTopK(params: {
   const topForSignals = scored.slice(0, topK);
   try {
     if (topForSignals.length > 0) {
-      const existingSignals = await params.storage.readRetrievalSignals();
-      const existingMap = new Map(existingSignals.map((s) => [s.factId, s]));
+      const existingMap = new Map(preloadedSignals.map((s) => [s.factId, s]));
       const updated = recordRetrievalSignals(
         existingMap,
         topForSignals.map((f) => f.fact.id),
