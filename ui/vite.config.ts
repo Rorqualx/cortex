@@ -275,12 +275,51 @@ function resolveTsconfigPathAlias(key: string, target: string): ControlUiViteAli
     return null;
   }
 
+  // Match only names the target directory actually contains. tsconfig carries a
+  // catch-all `"@openclaw/*": ["./extensions/*"]`, which equally matches the
+  // published `@openclaw/*` npm dependencies (fs-safe, retry, ...). Aliasing one
+  // of those to a nonexistent extensions/<id> kills the Control UI build with
+  // UNLOADABLE_DEPENDENCY as soon as anything it imports reaches that package —
+  // which is how a src-side refactor upstream can break a ui/ tree that never
+  // changed. Enumerating keeps local extension packages aliased and lets real
+  // dependencies fall through to node resolution.
+  const names = listWildcardAliasNames(resolveTsconfigTargetPath(target));
+  if (names.length === 0) {
+    return null;
+  }
   const prefix = key.slice(0, keyWildcardIndex);
   const suffix = key.slice(keyWildcardIndex + 1);
+  const alternation = names.map((name) => escapeRegExp(name)).join("|");
   return {
-    find: new RegExp(`^${escapeRegExp(prefix)}(.+)${escapeRegExp(suffix)}$`),
+    find: new RegExp(
+      `^${escapeRegExp(prefix)}((?:${alternation})(?:/.+)?)${escapeRegExp(suffix)}$`,
+    ),
     replacement: resolveTsconfigTargetPath(target).replace("*", "$1"),
   };
+}
+
+/**
+ * The names a wildcard target can legitimately match. Both shapes occur in
+ * tsconfig: `packages/net-policy/src/*` matches modules (`ip` -> `ip.ts`), while
+ * `extensions/*` matches package directories, so file stems and directory names
+ * both count.
+ */
+function listWildcardAliasNames(target: string): string[] {
+  const root = target.replace(/[\\/]?\*.*$/u, "");
+  try {
+    const names = fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.name.startsWith(".")) {
+        return [];
+      }
+      if (entry.isDirectory() || entry.isSymbolicLink()) {
+        return [entry.name];
+      }
+      return entry.isFile() ? [entry.name.replace(/\.[^.]+$/u, "")] : [];
+    });
+    return [...new Set(names)];
+  } catch {
+    return [];
+  }
 }
 
 function sourcePackageAlias(packageId: string, subpath?: string): ControlUiViteAlias {

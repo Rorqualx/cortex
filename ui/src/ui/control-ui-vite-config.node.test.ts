@@ -59,6 +59,22 @@ describe("Control UI Vite config", () => {
     expect(netPolicyWildcardIndex).toBeLessThan(broadOpenClawWildcardIndex);
   });
 
+  it("does not alias published @openclaw packages onto extensions/", () => {
+    // tsconfig's catch-all `"@openclaw/*": ["./extensions/*"]` equally matches
+    // npm dependencies like @openclaw/fs-safe. Aliasing one to a nonexistent
+    // extensions/<id> broke the Control UI build with UNLOADABLE_DEPENDENCY as
+    // soon as an upstream src refactor put that package in the ui import graph.
+    const broad = resolveTsconfigPathAliasesForVite().find(
+      (alias) => alias.find instanceof RegExp && alias.replacement.includes("extensions/$1"),
+    );
+    expect(broad).toBeDefined();
+    const pattern = broad?.find as RegExp;
+    expect(pattern.test("@openclaw/fs-safe")).toBe(false);
+    expect(pattern.test("@openclaw/fs-safe/root")).toBe(false);
+    // Local extension packages must still resolve through it.
+    expect(pattern.test("@openclaw/telegram")).toBe(true);
+  });
+
   it("uses a browser-safe redactor for shared tool display imports", async () => {
     const plugin = controlUiBrowserOnlySharedModuleAliases();
     const resolveIdHook = plugin.resolveId;
