@@ -394,7 +394,7 @@ preflight() {
     tail -n 6 /tmp/um-preflight-protocol.log
     return 1
   fi
-  local cand base_errors syntax
+  local cand base_errors syntax union union_files
   (cd "$wt" && rm -rf .artifacts/tsgo-cache && node scripts/run-tsgo.mjs -p tsconfig.core.json >/tmp/um-preflight-tsgo.log 2>&1) || true
   # A syntax error aborts the whole check, so the error count stops meaning
   # anything: on 2026-07-27 one orphan `}` from a union-merged conflict reported
@@ -405,6 +405,24 @@ preflight() {
   if [ -n "$syntax" ]; then
     echo "PREFLIGHT=FAIL reason=tsgo-syntax (error count is unusable until this parses)"
     printf '%s\n' "$syntax"
+    return 1
+  fi
+  # Union-merge signature. When upstream extracts helpers into modules and imports
+  # them while the fork still defines them locally, both hunks read as additive and
+  # a resolver keeps BOTH — so the file imports and declares the same symbol. tsgo
+  # names that collision exactly: TS2440 import-vs-local, TS2323 redeclared export,
+  # TS2484 export-declaration conflict. Reporting the class and the owning files
+  # beats the generic count, because the collateral swamps it: on 2026-07-27 these
+  # 57 collisions dragged 145 more TS2304 "cannot find name" behind them, and the
+  # real instruction — re-resolve two files, do not chase 284 errors — was invisible.
+  union="$(grep -E 'error TS(2440|2323|2484):' /tmp/um-preflight-tsgo.log | head -10 || true)"
+  if [ -n "$union" ]; then
+    union_files="$(grep -E 'error TS(2440|2323|2484):' /tmp/um-preflight-tsgo.log | cut -d'(' -f1 | sort -u | tr '\n' ' ')"
+    echo "PREFLIGHT=FAIL reason=union-merge files=$union_files"
+    echo "  Both sides were kept: these files import a symbol they also declare."
+    echo "  Re-resolve those files (adopt upstream's extraction OR keep the fork's"
+    echo "  local definitions — not both); most other errors are downstream of this."
+    printf '%s\n' "$union"
     return 1
   fi
   cand="$(grep -cE 'error TS' /tmp/um-preflight-tsgo.log || true)"

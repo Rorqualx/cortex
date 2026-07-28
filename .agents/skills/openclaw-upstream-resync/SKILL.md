@@ -93,6 +93,42 @@ For every convergent hunk/file:
 
 **Never weaken a guard or delete fork behavior to satisfy a type error** — reconcile the type/API instead.
 
+### Never resolve a hunk by keeping both sides
+
+The rubric above is a choice of one. The most expensive resolution failure in this
+repo's history is the fourth, non-option: **union** — keeping upstream's lines *and*
+ours. It looks safe, because when upstream extracts helpers into modules the two
+sides both read as purely additive:
+
+<!-- markers indented: check:no-conflict-markers and `git diff --check` both anchor at column 0 -->
+
+```
+  <<<<<<< HEAD
+  function computeJobNextRunAtMs(...) { ... }      // fork still defines it locally
+  =======
+  import { computeJobNextRunAtMs } from "./schedule.js";   // upstream extracted it
+  >>>>>>> upstream/main
+```
+
+Keep both and the file now imports a symbol it also declares. On 2026-07-27 that
+produced **284 tsgo errors from 18 conflicts** — 57 direct collisions in two cron
+files, dragging 145 `TS2304 cannot find name` behind them. It is also how the
+2026-07-06 resync ended up with duplicate declarations across seven files.
+
+- **Signature:** `TS2440` (import conflicts with local declaration), `TS2323`
+  (cannot redeclare exported), `TS2484` (export declaration conflicts). The
+  nightly preflight fails with `reason=union-merge` and names the owning files.
+- **When you see it, re-resolve those files** — do not start fixing the 145
+  downstream `cannot find name` errors. They evaporate when the collision goes.
+- **The choice is real:** either adopt upstream's extraction (take the imports,
+  delete the fork's local copies, and re-graft any fork-only logic into the new
+  module) or keep the fork's monolith (drop the imports). Both are defensible;
+  holding both is never correct.
+- A duplicate declaration in a file that still compiles is the dangerous variant —
+  tsgo cannot see a second `const` in a different scope. After resolving, scan the
+  files you touched for repeated top-level names, and remember an import-vs-local
+  collision will not show up in a declaration-only scan.
+
 ---
 
 ## Provenance recipes (do this BEFORE calling something a regression)
