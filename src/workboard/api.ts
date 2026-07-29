@@ -2,6 +2,7 @@ import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { GatewayMethodHandler } from "../gateway/methods/descriptor.js";
+import { DEFAULT_PROBE_PROMOTION_THRESHOLD, evaluateProbeGate } from "./probe-gate.js";
 /**
  * Workboard API — bridge from store to core gateway method registry.
  *
@@ -296,6 +297,45 @@ export function createWorkboardGatewayHandlers(
       // duplicate transition (the log is a bounded resume aid, not an event stream).
       if (stage === research.stage) {
         return { card: redactToken(card as unknown as Record<string, unknown>) };
+      }
+
+      // -----------------------------------------------------------------
+      // Checkpoint-preservation gate (RSIBench-Data, arXiv:2607.25886)
+      // -----------------------------------------------------------------
+      // When advancing from `probe` → `test`, check if the probe result beat
+      // the baseline by at least the promotion threshold. If not, automatically
+      // walk the card back to `design` instead of advancing. 78% of continued
+      // searches after a non-improving checkpoint regress — this gate prevents
+      // that waste. Only fires when both probeBaseline and probeResult are set;
+      // without them, normal advancement proceeds.
+      if (
+        research.stage === "probe" &&
+        stage === "test" &&
+        research.probeBaseline !== undefined &&
+        research.probeResult !== undefined
+      ) {
+        const threshold =
+          typeof p.promotionThreshold === "number" && p.promotionThreshold >= 0
+            ? p.promotionThreshold
+            : DEFAULT_PROBE_PROMOTION_THRESHOLD;
+        const gate = evaluateProbeGate(research.probeBaseline, research.probeResult, threshold);
+        if (gate && !gate.improved) {
+          // Walk back to design instead of advancing to test.
+          const walkBackLog = [
+            ...(research.stageLog ?? []),
+            {
+              stage: "design" as const,
+              at: Date.now(),
+              note: `probe gate: Δ=${gate.delta} < threshold=${threshold}, walked back to design`,
+            },
+          ];
+          const walkedBack = await s.update(id, {
+            metadata: {
+              research: { ...research, stage: "design" as const, stageLog: walkBackLog },
+            },
+          });
+          return { card: redactToken(walkedBack as unknown as Record<string, unknown>) };
+        }
       }
       const note =
         typeof p.note === "string" && p.note.trim() ? p.note.trim().slice(0, 400) : undefined;
