@@ -353,3 +353,158 @@ describe("recordResponseEmbedding (semantic convergence)", () => {
     expect(r).toBeUndefined();
   });
 });
+
+describe("recordDriftCheck (instruction drift)", () => {
+  it("returns undefined when drift detection is not configured", () => {
+    const guard = createDoomLoopGuard();
+    guard.arm();
+    guard.setObjectiveEmbedding([1, 0, 0]);
+    const result = guard.recordDriftCheck([1, 0, 0]);
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when no objective embedding has been set", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1, similarityThreshold: 0.3, consecutiveRounds: 1 },
+    });
+    guard.arm();
+    const result = guard.recordDriftCheck([1, 0, 0]);
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when not armed", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1, similarityThreshold: 0.3, consecutiveRounds: 1 },
+    });
+    guard.setObjectiveEmbedding([1, 0, 0]);
+    const result = guard.recordDriftCheck([1, 0, 0]);
+    expect(result).toBeUndefined();
+  });
+
+  it("does not fire before checkIntervalTurns is reached", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 3, similarityThreshold: 0.3, consecutiveRounds: 1 },
+    });
+    guard.arm();
+    guard.setObjectiveEmbedding([1, 0, 0]);
+
+    // Turn 1 — not yet at interval
+    const r1 = guard.recordDriftCheck([-1, 0, 0]);
+    expect(r1).toBeUndefined();
+    // Turn 2 — still not at interval
+    const r2 = guard.recordDriftCheck([-1, 0, 0]);
+    expect(r2).toBeUndefined();
+  });
+
+  it("fires when activity is unrelated to objective", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1, similarityThreshold: 0.3, consecutiveRounds: 2 },
+    });
+    guard.arm();
+    // Objective: pointing in direction [1, 0, 0]
+    guard.setObjectiveEmbedding([1, 0, 0]);
+
+    // Activity pointing opposite direction — cosine sim = -1
+    const r1 = guard.recordDriftCheck([-1, 0, 0]);
+    expect(r1?.shouldAbort).toBe(false);
+
+    // Second consecutive drift check
+    const r2 = guard.recordDriftCheck([-1, 0, 0]);
+    expect(r2?.shouldAbort).toBe(true);
+    if (!r2?.shouldAbort) throw new Error("expected abort verdict");
+    expect(r2.detector).toBe("drift");
+    expect(r2.reason).toContain("Instruction drift detected");
+  });
+
+  it("does not fire when activity aligns with objective", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1, similarityThreshold: 0.3, consecutiveRounds: 1 },
+    });
+    guard.arm();
+    guard.setObjectiveEmbedding([1, 0, 0]);
+
+    // Activity in same direction — cosine sim = 1.0
+    const result = guard.recordDriftCheck([1, 0, 0]);
+    expect(result?.shouldAbort).toBe(false);
+  });
+
+  it("resets drift counter when activity realigns", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1, similarityThreshold: 0.3, consecutiveRounds: 3 },
+    });
+    guard.arm();
+    guard.setObjectiveEmbedding([1, 0, 0]);
+
+    // Drifted
+    guard.recordDriftCheck([-1, 0, 0]);
+    expect(guard.recordDriftCheck([-1, 0, 0])?.shouldAbort).toBe(false); // count=2
+
+    // Realigned — should reset counter
+    guard.recordDriftCheck([1, 0, 0]);
+
+    // Drifted again — count should be 1, not 3
+    const result = guard.recordDriftCheck([-1, 0, 0]);
+    expect(result?.shouldAbort).toBe(false);
+  });
+
+  it("reset clears drift state", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1, similarityThreshold: 0.3, consecutiveRounds: 2 },
+    });
+    guard.arm();
+    guard.setObjectiveEmbedding([1, 0, 0]);
+    // Accumulate one drift check
+    guard.recordDriftCheck([-1, 0, 0]);
+
+    guard.reset();
+
+    // After reset, first check should not fire (needs 2 consecutive)
+    const r = guard.recordDriftCheck([-1, 0, 0]);
+    expect(r?.shouldAbort).toBe(false);
+  });
+
+  it("setObjectiveEmbedding resets drift counters", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1, similarityThreshold: 0.3, consecutiveRounds: 2 },
+    });
+    guard.arm();
+    guard.setObjectiveEmbedding([1, 0, 0]);
+    // Accumulate one drift
+    guard.recordDriftCheck([-1, 0, 0]);
+
+    // Setting a new objective resets counters
+    guard.setObjectiveEmbedding([0, 1, 0]);
+
+    const r = guard.recordDriftCheck([0, -1, 0]);
+    expect(r?.shouldAbort).toBe(false); // count=1, need 2
+  });
+});
+
+describe("createDriftPrompt", () => {
+  it("includes drift detection message", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1 },
+    });
+    const prompt = guard.createDriftPrompt();
+    expect(prompt).toContain("Objective drift detected");
+    expect(prompt).toContain("original goal");
+  });
+
+  it("includes original prompt snippet when provided", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1 },
+    });
+    const prompt = guard.createDriftPrompt("Fix the login bug in auth.ts");
+    expect(prompt).toContain("Fix the login bug in auth.ts");
+  });
+
+  it("truncates long original prompts", () => {
+    const guard = createDoomLoopGuard({
+      driftDetection: { checkIntervalTurns: 1 },
+    });
+    const longPrompt = "x".repeat(300);
+    const prompt = guard.createDriftPrompt(longPrompt);
+    // Should contain at most 200 chars of the prompt + ellipsis quote
+    expect(prompt.length).toBeLessThan(longPrompt.length + 300);
+  });
+});

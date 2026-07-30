@@ -28,6 +28,12 @@ const DEFAULT_CONVERGENCE_BUFFER_SIZE = 5;
 const DEFAULT_CONVERGENCE_SIMILARITY_THRESHOLD = 0.92;
 /** Default number of consecutive rounds above threshold before convergence fires. */
 const DEFAULT_CONVERGENCE_CONSECUTIVE_ROUNDS = 3;
+/** Default interval (in turns) between drift checks. */
+const DEFAULT_DRIFT_CHECK_INTERVAL_TURNS = 5;
+/** Default cosine similarity threshold below which activity is considered drifted. */
+const DEFAULT_DRIFT_SIMILARITY_THRESHOLD = 0.3;
+/** Default number of consecutive drift checks below threshold before firing. */
+const DEFAULT_DRIFT_CONSECUTIVE_ROUNDS = 2;
 
 /**
  * Doom loop guard configuration
@@ -50,6 +56,23 @@ export type DoomLoopGuardConfig = {
     /** Cosine similarity threshold above which responses are considered convergent (default: 0.92). */
     similarityThreshold?: number;
     /** Number of consecutive turns above threshold before recovery fires (default: 3). */
+    consecutiveRounds?: number;
+  };
+  /**
+   * Instruction-drift detection config. When enabled, the guard periodically
+   * compares the agent's current activity embedding against the original user
+   * prompt embedding. If similarity drops below a threshold for N consecutive
+   * checks, drift recovery fires — catching cases where the agent is busily
+   * doing the *wrong thing* (not stuck, not failing, just off-track).
+   */
+  driftDetection?: {
+    /** Whether drift detection is active (default: true when block is present). */
+    enabled?: boolean;
+    /** Check every N turns (default: 5). */
+    checkIntervalTurns?: number;
+    /** Cosine similarity below which the activity is considered off-track (default: 0.3). */
+    similarityThreshold?: number;
+    /** Number of consecutive below-threshold checks before recovery fires (default: 2). */
     consecutiveRounds?: number;
   };
 };
@@ -91,7 +114,7 @@ export type DoomLoopVerdict =
       shouldAbort: true;
       consecutiveFailures: number;
       reason: string;
-      detector: "doom_loop" | "semantic_convergence";
+      detector: "doom_loop" | "semantic_convergence" | "drift";
     };
 
 /**
@@ -155,6 +178,14 @@ type GuardState = {
   convergenceSimilarityThreshold: number;
   convergenceConsecutiveRounds: number;
   convergenceConsecutiveCount: number;
+  // Drift detection state
+  objectiveEmbedding: number[] | undefined;
+  driftTurnCounter: number;
+  driftConsecutiveCount: number;
+  driftEnabled: boolean;
+  driftCheckInterval: number;
+  driftSimilarityThreshold: number;
+  driftConsecutiveRounds: number;
 };
 
 /**
@@ -200,6 +231,25 @@ export type DoomLoopGuard = {
    * Returns undefined when convergence detection is not configured.
    */
   recordResponseEmbedding: (embedding: number[]) => DoomLoopVerdict | undefined;
+  /**
+   * Store the original user prompt embedding for drift comparison.
+   * Should be called once at session start (or when the objective changes).
+   */
+  setObjectiveEmbedding: (embedding: number[]) => void;
+  /**
+   * Record a turn embedding and check for objective drift.
+   * Every `checkIntervalTurns`, computes cosine similarity between the
+   * provided embedding and the stored objective embedding. If below
+   * threshold for `consecutiveRounds` checks, fires drift detection.
+   * Returns undefined when drift detection is not configured or no
+   * objective embedding has been set.
+   */
+  recordDriftCheck: (embedding: number[]) => DoomLoopVerdict | undefined;
+  /**
+   * Create a drift-specific revise prompt that reminds the agent of its
+   * original objective.
+   */
+  createDriftPrompt: (originalPrompt?: string) => string;
 };
 
 function asPositiveInt(value: number | undefined, fallback: number): number {
@@ -221,6 +271,7 @@ export function createDoomLoopGuard(
   options?: { enabled?: boolean },
 ): DoomLoopGuard {
   const sc = config?.semanticConvergence;
+  const dc = config?.driftDetection;
   const state: GuardState = {
     enabled: options?.enabled ?? true,
     maxConsecutiveFailures: asPositiveInt(
@@ -248,6 +299,13 @@ export function createDoomLoopGuard(
       sc?.similarityThreshold ?? DEFAULT_CONVERGENCE_SIMILARITY_THRESHOLD,
     convergenceConsecutiveRounds: sc?.consecutiveRounds ?? DEFAULT_CONVERGENCE_CONSECUTIVE_ROUNDS,
     convergenceConsecutiveCount: 0,
+    objectiveEmbedding: undefined,
+    driftTurnCounter: 0,
+    driftConsecutiveCount: 0,
+    driftEnabled: dc?.enabled ?? (config?.driftDetection ? true : false),
+    driftCheckInterval: asPositiveInt(dc?.checkIntervalTurns, DEFAULT_DRIFT_CHECK_INTERVAL_TURNS),
+    driftSimilarityThreshold: dc?.similarityThreshold ?? DEFAULT_DRIFT_SIMILARITY_THRESHOLD,
+    driftConsecutiveRounds: asPositiveInt(dc?.consecutiveRounds, DEFAULT_DRIFT_CONSECUTIVE_ROUNDS),
   };
 
   const arm = (): void => {
@@ -265,6 +323,8 @@ export function createDoomLoopGuard(
     state.failureHistory = [];
     state.embeddingBuffer = [];
     state.convergenceConsecutiveCount = 0;
+    state.driftTurnCounter = 0;
+    state.driftConsecutiveCount = 0;
   };
 
   const getFailureHistory = (): FailureRecord[] => {
@@ -427,6 +487,72 @@ export function createDoomLoopGuard(
     return { shouldAbort: false, consecutiveFailures: state.consecutiveFailures };
   };
 
+  const setObjectiveEmbedding = (embedding: number[]): void => {
+    state.objectiveEmbedding = embedding;
+    state.driftTurnCounter = 0;
+    state.driftConsecutiveCount = 0;
+    log.debug("objective embedding set for drift detection");
+  };
+
+  const recordDriftCheck = (embedding: number[]): DoomLoopVerdict | undefined => {
+    // No-op when drift detection is not configured
+    if (!state.driftEnabled || !config?.driftDetection) {
+      return undefined;
+    }
+
+    if (!state.enabled || !state.isArmed) {
+      return undefined;
+    }
+
+    // Need an objective embedding to compare against
+    if (!state.objectiveEmbedding) {
+      return undefined;
+    }
+
+    // Only check at the configured interval
+    state.driftTurnCounter++;
+    if (state.driftTurnCounter < state.driftCheckInterval) {
+      return undefined;
+    }
+
+    // Reset counter for next interval
+    state.driftTurnCounter = 0;
+
+    // Compute cosine similarity between current activity and original objective
+    const sim = cosineSimilarity(embedding, state.objectiveEmbedding);
+
+    if (sim < state.driftSimilarityThreshold) {
+      state.driftConsecutiveCount++;
+    } else {
+      state.driftConsecutiveCount = 0;
+    }
+
+    if (state.driftConsecutiveCount >= state.driftConsecutiveRounds) {
+      const reason = `Instruction drift detected: cosine similarity to original objective ${sim.toFixed(4)} < ${state.driftSimilarityThreshold} for ${state.driftConsecutiveCount} consecutive checks`;
+      log.warn(reason);
+      return {
+        shouldAbort: true,
+        consecutiveFailures: state.consecutiveFailures,
+        reason,
+        detector: "drift",
+      };
+    }
+
+    return { shouldAbort: false, consecutiveFailures: state.consecutiveFailures };
+  };
+
+  const createDriftPrompt = (originalPrompt?: string): string => {
+    const promptSnippet = originalPrompt
+      ? ` The original request was: "${originalPrompt.slice(0, 200)}"`
+      : "";
+    return [
+      `[OpenClaw runtime] Objective drift detected.${promptSnippet}`,
+      "Current activity appears unrelated to the original request.",
+      "Reassess: what was the original goal, and does the current work directly serve it?",
+      "If you've gone down a rabbit hole, step back and return to the main task.",
+    ].join("\n");
+  };
+
   return {
     arm,
     recordFailure,
@@ -438,6 +564,9 @@ export function createDoomLoopGuard(
     createRevisePrompt,
     recordConfidenceSignal,
     recordResponseEmbedding,
+    setObjectiveEmbedding,
+    recordDriftCheck,
+    createDriftPrompt,
   };
 }
 
