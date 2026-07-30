@@ -83,6 +83,18 @@ export type ScoringConfig = {
    */
   weightValidity: number;
   /**
+   * Weight for entity-overlap signal. When the query and fact share named
+   * entities (people, projects, IPs, tools), the fact gets a slight boost.
+   * Only active when `useEntityScoring` is true. Default 0.08.
+   */
+  weightEntity: number;
+  /**
+   * Toggle for entity-overlap scoring. When true, `scoreFact()` computes
+   * an entity-overlap signal using the capitalized-token heuristic and
+   * applies `weightEntity` in the composite. Default false (opt-in).
+   */
+  useEntityScoring: boolean;
+  /**
    * Age in days beyond which a fact with zero retrieval recallCount is
    * considered stale. The demotion multiplier is then applied to its
    * composite score. Default 21 (≈3 weekly epochs).
@@ -116,6 +128,8 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightReliability: 0.1,
   weightSemanticEntropy: 0.1,
   weightValidity: 0.05,
+  weightEntity: 0.08,
+  useEntityScoring: false,
   staleZeroRecallAgeDays: 21,
   staleZeroRecallDemotion: 0.5,
 };
@@ -266,12 +280,43 @@ export type Signals = {
   /** Episodic-validity score (0–1). Lower = stale or context-incompatible.
    * Default 1.0 (neutral) when no episodic context is available. */
   validity: number;
+  /** Entity-overlap score (0–1). Fraction of named entities in the fact
+   * text that appear in the query. 0 when entity scoring is disabled or
+   * no entities are found. */
+  entityScore: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
 // so "$1,234.56" and "192.168.50.128" survive as single tokens), and single
 // digits. Anything else is treated as a separator.
 const TOKEN_PATTERN = /[a-z]+|\d[\d.,]*\d|\d/g;
+
+/** Pattern for named entities: capitalized tokens, IPs, version strings. */
+const ENTITY_PATTERN =
+  /\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|v?\d+\.\d+\.\d+|[A-Z][A-Za-z0-9-]+)\b/g;
+
+/** Extract named entities from text as a Set of lowercased strings. */
+function extractEntities(text: string): Set<string> {
+  const matches = text.match(ENTITY_PATTERN);
+  if (!matches) return new Set();
+  return new Set(matches.map((m) => m.toLowerCase()));
+}
+
+/**
+ * Compute entity-overlap score: fraction of fact entities that appear in
+ * the query. Returns 0 if either side has no entities.
+ */
+export function entityOverlapScore(queryText: string, factText: string): number {
+  const queryEntities = extractEntities(queryText);
+  if (queryEntities.size === 0) return 0;
+  const factEntities = extractEntities(factText);
+  if (factEntities.size === 0) return 0;
+  let overlap = 0;
+  for (const e of factEntities) {
+    if (queryEntities.has(e)) overlap++;
+  }
+  return factEntities.size > 0 ? overlap / factEntities.size : 0;
+}
 
 export function tokenize(text: string): Set<string> {
   const matches = text.toLowerCase().match(TOKEN_PATTERN) ?? [];
@@ -416,6 +461,8 @@ export function buildCorpusStats(factTexts: ReadonlyArray<string>): CorpusStats 
 
 export function scoreFact(params: {
   queryTokens: Set<string>;
+  /** Raw query text for entity-overlap scoring. Required when useEntityScoring is true. */
+  queryText?: string;
   fact: L2Fact;
   now: number;
   config: ScoringConfig;
@@ -481,6 +528,10 @@ export function scoreFact(params: {
     reliability: params.reliability ?? certaintyToReliability(params.fact.certainty),
     semanticEntropy: params.semanticEntropy ?? params.fact.semanticEntropy ?? 1.0,
     validity: episodicValidity(params.fact, params.now),
+    entityScore:
+      params.config.useEntityScoring && params.queryText
+        ? entityOverlapScore(params.queryText, params.fact.text)
+        : 0,
   };
   if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
     signals.reliability = signals.reliability * params.groundingConfidence;
@@ -496,23 +547,42 @@ export function scoreFact(params: {
  * FSRS promotion path: high-recall facts get longer half-lives; zero-recall
  * facts get a composite-score penalty.
  *
- * Returns 1.0 (no demotion) when:
- * - `recallCount > 0` (fact has been retrieved at least once)
- * - age in days < `staleZeroRecallAgeDays` (fact hasn't been around long enough)
+ * With the usage-redundancy gradient (SF-AMS-inspired), low-recall facts
+ * past the stale threshold get partial demotion proportional to their
+ * recall frequency, rather than the binary `recallCount > 0` check:
+ *   recallCount = 0 → full demotion (factor)
+ *   recallCount = 1–2 → partial demotion (lerp between factor and 1.0)
+ *   recallCount ≥ 3 → no demotion (1.0)
  *
- * Returns `staleZeroRecallDemotion` (default 0.5) otherwise.
+ * This means a fact recalled once or twice is not fully shielded from
+ * staleness pressure — it gets a partial reprieve proportional to its
+ * demonstrated utility.
+ *
+ * Returns 1.0 (no demotion) when:
+ * - age in days < `staleZeroRecallAgeDays` (fact hasn't been around long enough)
+ * - `recallCount >= 3` (enough recall history to be considered stable)
  */
 export function staleDemotionMultiplier(params: {
   recallCount: number;
   ageMs: number;
   config: ScoringConfig;
 }): number {
-  if (params.recallCount > 0) return 1.0;
   const thresholdDays = params.config.staleZeroRecallAgeDays ?? 21;
   const factor = params.config.staleZeroRecallDemotion ?? 0.5;
   if (thresholdDays <= 0 || factor >= 1.0) return 1.0;
   const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
-  return ageDays >= thresholdDays ? factor : 1.0;
+  if (ageDays < thresholdDays) return 1.0;
+
+  // Usage-redundancy gradient: facts with more recall history are
+  // demoted less. recallCount 0 → full demotion, ≥3 → no demotion.
+  if (params.recallCount >= 3) return 1.0;
+  if (params.recallCount <= 0) return factor;
+
+  // Linear interpolation for recallCount 1–2:
+  // recallCount=1 → factor + (1-factor) * (1/3) ≈ factor + 0.33*(1-factor)
+  // recallCount=2 → factor + (1-factor) * (2/3) ≈ factor + 0.67*(1-factor)
+  const t = params.recallCount / 3;
+  return factor + (1 - factor) * t;
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {
@@ -527,7 +597,8 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.goalRelevance * config.weightGoalRelevance +
     signals.reliability * config.weightReliability +
     signals.semanticEntropy * config.weightSemanticEntropy +
-    signals.validity * config.weightValidity
+    signals.validity * config.weightValidity +
+    signals.entityScore * config.weightEntity
   );
 }
 
