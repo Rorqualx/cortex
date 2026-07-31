@@ -152,6 +152,8 @@ export type ConsolidateLongTermTypedOutput = {
 type TypedCandidate = {
   slot: string;
   latest: TypedFact;
+  /** Chunk ID of the L2 chunk that produced `latest`. */
+  latestChunkId: string;
   firstSeenAt: number;
   recallCount: number;
   sourceChunkIds: string[];
@@ -285,6 +287,7 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
         out.set(t.slot, {
           slot: t.slot,
           latest: t,
+          latestChunkId: chunkId,
           firstSeenAt: t.createdAt,
           recallCount: 1,
           sourceChunkIds: [chunkId],
@@ -302,6 +305,7 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
           cur.prior.push({ value: cur.latest.value, createdAt: cur.latest.createdAt });
         }
         cur.latest = t;
+        cur.latestChunkId = chunkId;
       } else if (t.value !== cur.latest.value) {
         cur.prior.push({ value: t.value, createdAt: t.createdAt });
       }
@@ -315,7 +319,7 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     .slice()
     .toSorted((a, b) => a.createdAt - b.createdAt)
     .map((p) => ({ value: p.value, supersededAt: c.latest.createdAt }));
-  return {
+  const fact: LongTermTypedFact = {
     id: `ltt-${randomUUID().slice(0, 8)}`,
     slot: c.slot,
     value: c.latest.value,
@@ -337,6 +341,15 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     sourceSessionId: sessionId,
     sourceModel: modelId ?? null,
   };
+  // Provenance: thread the source span and chunk ID through to long-term.
+  if (sessionId) {
+    fact.provenance = {
+      quote: c.latest.sourceSpan,
+      chunkId: c.latestChunkId,
+      sessionId,
+    };
+  }
+  return fact;
 }
 
 function reaffirm(
@@ -346,7 +359,8 @@ function reaffirm(
   modelId?: string,
 ): LongTermTypedFact {
   const merged = mergeChunkIds(prior.sourceChunkIds, c.sourceChunkIds);
-  return {
+  const effectiveSession = sessionId ?? prior.sourceSessionId;
+  const result: LongTermTypedFact = {
     ...prior,
     confidence: Math.max(prior.confidence, c.latest.confidence),
     firstSeenAt: Math.min(prior.firstSeenAt, c.firstSeenAt),
@@ -359,9 +373,18 @@ function reaffirm(
     supersededBy: null,
     archived: false,
     archivedAt: null,
-    sourceSessionId: sessionId ?? prior.sourceSessionId,
+    sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
   };
+  // Update provenance with the most recent source.
+  if (effectiveSession) {
+    result.provenance = {
+      quote: c.latest.sourceSpan,
+      chunkId: c.latestChunkId,
+      sessionId: effectiveSession,
+    };
+  }
+  return result;
 }
 
 function supersede(
@@ -372,7 +395,8 @@ function supersede(
   modelId?: string,
 ): LongTermTypedFact {
   const merged = mergeChunkIds(prior.sourceChunkIds, c.sourceChunkIds);
-  return {
+  const effectiveSession = sessionId ?? prior.sourceSessionId;
+  const result: LongTermTypedFact = {
     id: prior.id,
     slot: prior.slot,
     value: c.latest.value,
@@ -391,9 +415,18 @@ function supersede(
     archivedAt: null,
     lastAccessedAt: prior.lastAccessedAt,
     volatilityClass: prior.volatilityClass ?? deriveVolatilityClass(c.slot, c.latest.value),
-    sourceSessionId: sessionId ?? prior.sourceSessionId,
+    sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
   };
+  // Update provenance to point at the new value's source.
+  if (effectiveSession) {
+    result.provenance = {
+      quote: c.latest.sourceSpan,
+      chunkId: c.latestChunkId,
+      sessionId: effectiveSession,
+    };
+  }
+  return result;
 }
 
 function archive(fact: LongTermTypedFact, now: number): LongTermTypedFact {

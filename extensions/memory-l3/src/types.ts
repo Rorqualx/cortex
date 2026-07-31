@@ -336,6 +336,25 @@ export type LongTermTypedFact = {
    * Absent on facts created before this feature; null when the model was unknown.
    */
   sourceModel?: string | null;
+
+  /**
+   * Evidence trail: the verbatim source text, chunk, and session that
+   * produced the current `value`. Updated on promotion, reaffirmation, and
+   * supersession to reflect the most recent source. Absent on facts created
+   * before this feature; the `sourceSpan` from the originating `TypedFact`
+   * is the quote.
+   *
+   * Inspired by AskChem's claim-centered retrieval: every atomic fact must
+   * be traceable to its evidence.
+   */
+  provenance?: {
+    /** The verbatim source span from which `value` was extracted. */
+    quote: string;
+    /** The L2 chunk ID containing the source typed fact. */
+    chunkId: string;
+    /** The session ID of the source conversation. */
+    sessionId: string;
+  };
 };
 
 export type LongTermTypedFrontmatter = {
