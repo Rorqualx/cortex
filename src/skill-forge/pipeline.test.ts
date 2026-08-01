@@ -101,8 +101,22 @@ describe("runForgePipeline", () => {
   });
 
   it("reports embedding lane unavailable when no embedding provider resolves", async () => {
-    const result = await runForgePipeline({ env: env(), useEmbedding: true });
-    expect(result.embedding.status).toBe("unavailable");
+    // Inject the resolution: the real resolver reads ambient runtime config, so it
+    // resolved differently per machine and paid a full plugin-graph load (minutes
+    // under Vitest). The lane contract under test is that it reports unavailable
+    // rather than throwing -- not how the provider is discovered.
+    const result = await runForgePipeline({
+      env: env(),
+      useEmbedding: true,
+      resolveEmbeddingProvider: async () => ({
+        status: "unavailable",
+        reason: "no embedding provider configured",
+      }),
+    });
+    expect(result.embedding).toEqual({
+      status: "unavailable",
+      reason: "no embedding provider configured",
+    });
   });
 
   it("runs the llm-replay lane with no judged skills when there are no captures", async () => {

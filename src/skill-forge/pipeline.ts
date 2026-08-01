@@ -31,6 +31,12 @@ export type PipelineRunInput = {
   useLlmReplay?: boolean;
   /** Injectable LLM prose pass forwarded to the distiller (tests); wins over useLlm/agentId. */
   distillProse?: Parameters<typeof distillCandidateToStaging>[0]["distillProse"];
+  /**
+   * Injectable embedding-provider resolution (tests); wins over the runtime-config lookup.
+   * The real resolver reads ambient config and can load the whole plugin graph, so pipeline
+   * tests inject instead of paying that cost and inheriting the host machine's config.
+   */
+  resolveEmbeddingProvider?: typeof tryResolveSkillForgeEmbeddingProvider;
 };
 
 /** Embedding clustering lane outcome. `disabled` unless `useEmbedding` was set. */
@@ -146,9 +152,8 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
   // candidates. Inert (disabled) unless requested or when no provider resolves.
   let embedding: EmbeddingLaneResult = { status: "disabled" };
   if (input.useEmbedding) {
-    const resolution = await tryResolveSkillForgeEmbeddingProvider(
-      input.agentId ? { agentId: input.agentId } : {},
-    );
+    const resolveProvider = input.resolveEmbeddingProvider ?? tryResolveSkillForgeEmbeddingProvider;
+    const resolution = await resolveProvider(input.agentId ? { agentId: input.agentId } : {});
     if (resolution.status === "unavailable") {
       embedding = { status: "unavailable", reason: resolution.reason };
     } else {

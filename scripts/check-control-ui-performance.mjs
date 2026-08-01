@@ -32,10 +32,16 @@ export const CONTROL_UI_STARTUP_JS_GZIP_TOLERANCE_BYTES = 1024;
 // while startup gzip moved only 516.7 -> 541.2 KiB (+4.7%) and the largest JS
 // chunk fell 372 -> 78 KiB. More, smaller parallel chunks is the intended
 // trade; the old 18-request ceiling was calibrated for the pre-resync layout.
+//
+// Raised again for resync step 2 (350 commits, ffec7731a4a -> c3713317b86):
+// upstream web-component and shared-helper code entered the initial graph, so
+// control-ui-foundation split 3 -> 9 chunks (four of them under 3 KiB gzip) and
+// startup gzip moved 542.2 -> 562.1 KiB. No ui/ file changed in that merge --
+// the growth is upstream code reaching the Control UI graph, not fork surface.
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze({
-  startupJsRequests: 24,
+  startupJsRequests: 28,
   startupCssRequests: 1,
-  startupJsGzipBytes: 560 * KIB,
+  startupJsGzipBytes: 576 * KIB,
   startupCssGzipBytes: 78 * KIB,
   largestJsGzipBytes: 380 * KIB,
   largestCssGzipBytes: 78 * KIB,

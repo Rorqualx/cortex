@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 555218,
-  "reason": "2026-07-28 upstream resync step 1 (200 commits, 8d75a6ded6e -> ffec7731a4a): +1073 B startup JS (+0.19%) from upstream code reaching the Control UI graph; recorded on huey (Linux, CI truth). Owner-approved.",
-  "updatedAt": "2026-07-28"
+  "startupJsGzipBytes": 575556,
+  "reason": "2026-07-28 upstream resync step 2 (350 commits, ffec7731a4a -> c3713317b86): +20338 B startup JS (+3.7%) from upstream web-component and shared-helper code entering the Control UI initial graph; the merge changed no ui/ file. Recorded on huey (Linux, CI truth). Owner-approved.",
+  "updatedAt": "2026-08-01"
 }
