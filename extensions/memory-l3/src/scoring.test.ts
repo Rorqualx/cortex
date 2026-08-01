@@ -5,6 +5,7 @@ import {
   composite,
   DEFAULT_FSRS_PARAMS,
   DEFAULT_SCORING_CONFIG,
+  entityOverlapScore,
   episodicValidity,
   fsrsRetrievability,
   jaccard,
@@ -149,6 +150,8 @@ describe("scoreFact + composite", () => {
       weightReliability: 0,
       weightSemanticEntropy: 0,
       weightValidity: 0,
+      weightEntity: 0,
+      useEntityScoring: false,
     };
     const score = composite(
       {
@@ -163,6 +166,7 @@ describe("scoreFact + composite", () => {
         reliability: 0,
         semanticEntropy: 1.0,
         validity: 1.0,
+        entityScore: 0,
       },
       config,
     );
@@ -180,6 +184,7 @@ describe("scoreFact + composite", () => {
         reliability: 0,
         semanticEntropy: 1.0,
         validity: 1.0,
+        entityScore: 0,
       },
       config,
     );
@@ -204,6 +209,8 @@ describe("scoreFact + composite", () => {
       weightReliability: 0,
       weightSemanticEntropy: 0,
       weightValidity: 0,
+      weightEntity: 0,
+      useEntityScoring: false,
     };
     const signals = {
       lexical: 0,
@@ -217,6 +224,7 @@ describe("scoreFact + composite", () => {
       reliability: 0,
       semanticEntropy: 1.0,
       validity: 1.0,
+      entityScore: 0,
     };
     expect(composite(signals, config)).toBe(0);
     expect(composite(signals, { ...config, weightInformationGain: 0.5 })).toBeCloseTo(0.4, 6);
@@ -240,6 +248,8 @@ describe("scoreFact + composite", () => {
       weightReliability: 0,
       weightSemanticEntropy: 0,
       weightValidity: 0,
+      weightEntity: 0,
+      useEntityScoring: false,
     };
     const score = composite(
       {
@@ -254,6 +264,7 @@ describe("scoreFact + composite", () => {
         reliability: 0,
         semanticEntropy: 1.0,
         validity: 1.0,
+        entityScore: 0,
       },
       config,
     );
@@ -471,6 +482,8 @@ describe("buildCorpusStats + BM25", () => {
       weightReliability: 0.3,
       weightSemanticEntropy: 0,
       weightValidity: 0,
+      weightEntity: 0,
+      useEntityScoring: false,
     };
     const signals = {
       lexical: 0,
@@ -484,6 +497,7 @@ describe("buildCorpusStats + BM25", () => {
       reliability: 0.8,
       semanticEntropy: 1.0,
       validity: 1.0,
+      entityScore: 0,
     };
     expect(composite(signals, config)).toBeCloseTo(0.5 * 0.2 + 0.8 * 0.3, 6);
   });
@@ -556,6 +570,8 @@ describe("episodicValidity", () => {
       weightReliability: 0,
       weightSemanticEntropy: 0,
       weightValidity: 0.5,
+      weightEntity: 0,
+      useEntityScoring: false,
     };
     const now = Date.now();
     const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
@@ -816,14 +832,47 @@ describe("scoreFact with drift demotion", () => {
 describe("staleDemotionMultiplier", () => {
   const DAY = 24 * 60 * 60 * 1000;
 
-  it("returns 1.0 when recallCount > 0", () => {
+  it("returns 1.0 when recallCount >= 3 (stable, no demotion)", () => {
     expect(
       staleDemotionMultiplier({
-        recallCount: 1,
+        recallCount: 3,
         ageMs: 999 * DAY,
         config: DEFAULT_SCORING_CONFIG,
       }),
     ).toBe(1.0);
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 5,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+      }),
+    ).toBe(1.0);
+  });
+
+  it("returns partial demotion for recallCount 1 (usage-redundancy gradient)", () => {
+    // recallCount=1, age past threshold, factor=0.5
+    // t = 1/3, result = 0.5 + 0.5*(1/3) ≈ 0.667
+    const result = staleDemotionMultiplier({
+      recallCount: 1,
+      ageMs: 999 * DAY,
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    expect(result).toBeGreaterThan(0.5);
+    expect(result).toBeLessThan(1.0);
+    expect(result).toBeCloseTo(0.5 + 0.5 * (1 / 3), 6);
+  });
+
+  it("returns partial demotion for recallCount 2 (usage-redundancy gradient)", () => {
+    // recallCount=2, age past threshold, factor=0.5
+    // t = 2/3, result = 0.5 + 0.5*(2/3) ≈ 0.833
+    const result = staleDemotionMultiplier({
+      recallCount: 2,
+      ageMs: 999 * DAY,
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    expect(result).toBeGreaterThan(0.5);
+    expect(result).toBeLessThan(1.0);
+    expect(result).toBeCloseTo(0.5 + 0.5 * (2 / 3), 6);
   });
 
   it("returns 1.0 when age is below threshold", () => {
@@ -906,5 +955,97 @@ describe("staleDemotionMultiplier", () => {
         config: DEFAULT_SCORING_CONFIG,
       }),
     ).toBe(0.5);
+  });
+});
+
+describe("entityOverlapScore", () => {
+  it("returns 0 when query has no entities", () => {
+    expect(entityOverlapScore("hello world", "John works at Apple")).toBe(0);
+  });
+
+  it("returns 0 when fact has no entities", () => {
+    expect(entityOverlapScore("Tell me about John", "hello world")).toBe(0);
+  });
+
+  it("returns 1.0 when all fact entities appear in query", () => {
+    // Both have "John" and "Apple"
+    expect(entityOverlapScore("John works at Apple", "John left Apple")).toBe(1);
+  });
+
+  it("returns fraction for partial overlap", () => {
+    // Fact entities: {John, Apple, Seattle}; query has {John}
+    const score = entityOverlapScore("Who is John?", "John moved to Seattle for Apple");
+    expect(score).toBeGreaterThan(0);
+    expect(score).toBeLessThan(1);
+    // 1 of 3 entities overlap
+    expect(score).toBeCloseTo(1 / 3, 1);
+  });
+
+  it("detects IPs and version strings as entities", () => {
+    const score = entityOverlapScore("Check 192.168.50.128", "Server at 192.168.50.128 runs Nginx");
+    expect(score).toBeGreaterThan(0);
+  });
+});
+
+describe("scoreFact with entity scoring", () => {
+  it("entityScore is 0 by default (useEntityScoring=false)", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const fact = {
+      id: "f1",
+      text: "John works at Apple on Project Atlas",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const signals = scoreFact({
+      queryTokens: tokenize("John Apple"),
+      queryText: "Tell me about John at Apple",
+      fact,
+      now: Date.now(),
+      config,
+    });
+    expect(signals.entityScore).toBe(0);
+  });
+
+  it("entityScore is populated when useEntityScoring=true", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, useEntityScoring: true };
+    const fact = {
+      id: "f1",
+      text: "John works at Apple on Project Atlas",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const signals = scoreFact({
+      queryTokens: tokenize("John Apple"),
+      queryText: "Tell me about John at Apple",
+      fact,
+      now: Date.now(),
+      config,
+    });
+    expect(signals.entityScore).toBeGreaterThan(0);
+  });
+
+  it("entityScore contributes to composite score when enabled", () => {
+    const configOff = { ...DEFAULT_SCORING_CONFIG, useEntityScoring: false, weightEntity: 0 };
+    const configOn = { ...DEFAULT_SCORING_CONFIG, useEntityScoring: true };
+    const fact = {
+      id: "f1",
+      text: "John works at Apple on Project Atlas",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const signals = scoreFact({
+      queryTokens: tokenize("John Apple"),
+      queryText: "Tell me about John at Apple",
+      fact,
+      now: Date.now(),
+      config: configOn,
+    });
+    // With entity scoring on, score should be higher
+    const offScore = composite(signals, configOff);
+    const onScore = composite(signals, configOn);
+    expect(onScore).toBeGreaterThan(offScore);
   });
 });

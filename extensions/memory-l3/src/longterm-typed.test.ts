@@ -680,4 +680,175 @@ describe("consolidateLongTermTyped", () => {
       expect(expectedDropped.has(fact.slot)).toBe(false);
     }
   });
+
+  // -----------------------------------------------------------------
+  // Provenance (QW-1: Typed-Fact Provenance Fields)
+  // -----------------------------------------------------------------
+
+  it("sets provenance on promotion with quote, chunkId, and sessionId", async () => {
+    await writeChunkWithTyped(
+      "chunk-prov-1",
+      [
+        {
+          id: "tf-prov-1",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      sessionId: "session-prov-1",
+      modelId: "deepseek/deepseek-v4-pro",
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.provenance).toEqual({
+      quote: "my phone is 555-1234",
+      chunkId: "chunk-prov-1",
+      sessionId: "session-prov-1",
+    });
+  });
+
+  it("leaves provenance unset when sessionId is not provided", async () => {
+    await writeChunkWithTyped(
+      "chunk-noprov",
+      [
+        {
+          id: "tf-noprov",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.provenance).toBeUndefined();
+  });
+
+  it("updates provenance on supersession with the new value's source span", async () => {
+    await writeChunkWithTyped(
+      "chunk-prov-old",
+      [
+        {
+          id: "tf-prov-old",
+          slot: "user:account_balance",
+          value: "500.00",
+          sourceSpan: "balance is 500.00 USD",
+          unit: "USD",
+          confidence: 0.9,
+          createdAt: NOW - 5 * DAY,
+        },
+      ],
+      NOW - 5 * DAY,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 5 * DAY,
+      sessionId: "session-old",
+    });
+
+    await writeChunkWithTyped(
+      "chunk-prov-new",
+      [
+        {
+          id: "tf-prov-new",
+          slot: "user:account_balance",
+          value: "750.00",
+          sourceSpan: "balance is now 750.00 USD",
+          unit: "USD",
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      sessionId: "session-new",
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("750.00");
+    expect(ltt.facts[0]!.provenance).toEqual({
+      quote: "balance is now 750.00 USD",
+      chunkId: "chunk-prov-new",
+      sessionId: "session-new",
+    });
+  });
+
+  it("updates provenance on reaffirmation with the latest source span", async () => {
+    await writeChunkWithTyped(
+      "chunk-reaffirm-old",
+      [
+        {
+          id: "tf-reaffirm-old",
+          slot: "infra:pi_hole_ip",
+          value: "192.168.50.128",
+          sourceSpan: "pi-hole at 192.168.50.128",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 3 * DAY,
+        },
+      ],
+      NOW - 3 * DAY,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 3 * DAY,
+      sessionId: "session-a",
+    });
+
+    await writeChunkWithTyped(
+      "chunk-reaffirm-new",
+      [
+        {
+          id: "tf-reaffirm-new",
+          slot: "infra:pi_hole_ip",
+          value: "192.168.50.128",
+          sourceSpan: "pi-hole still at 192.168.50.128",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      sessionId: "session-b",
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.provenance).toEqual({
+      quote: "pi-hole still at 192.168.50.128",
+      chunkId: "chunk-reaffirm-new",
+      sessionId: "session-b",
+    });
+  });
 });

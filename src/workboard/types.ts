@@ -388,6 +388,20 @@ export type WorkboardResearchMeta = {
   stageLog?: WorkboardResearchStageEntry[];
   /** Operator edited this card; re-sync must preserve status/assignee/nextSteps. */
   userTouched?: boolean;
+  /**
+   * Checkpoint-preservation gate (RSIBench-Data, arXiv:2607.25886):
+   * baseline metric captured before the probe stage ran. When present,
+   * advancing from `probe` to `test` requires `probeResult` to beat this
+   * baseline by ≥ `promotionThresholdDelta` (from skill-forge config).
+   * If the probe doesn't improve, the card walks back to `design`.
+   */
+  probeBaseline?: number;
+  /**
+   * Metric captured after the probe stage ran. Compared against
+   * `probeBaseline` to decide whether to advance to `test` or revert
+   * to `design`.
+   */
+  probeResult?: number;
 };
 
 export type WorkboardMetadata = {

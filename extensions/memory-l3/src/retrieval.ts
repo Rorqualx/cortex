@@ -296,6 +296,23 @@ export async function retrieveTopK(params: {
    * Default true.
    */
   enableSufficientContext?: boolean;
+
+  /**
+   * When true, apply a passage-level information-density reranker to the
+   * scored results before slicing top-K. Facts with higher named-entity
+   * density and query novelty get a small score boost, promoting facts
+   * that carry more actionable information per token. Default false.
+   *
+   * Inspired by RARG (arXiv:2607.24223) — passage-level signals improve
+   * ranking when BM25 alone over-promotes lexically similar but
+   * information-poor facts.
+   */
+  rerankByDensity?: boolean;
+
+  /**
+   * Weight of the density reranker adjustment (0–1). Default 0.15.
+   */
+  rerankDensityWeight?: number;
 }): Promise<RetrievalResult> {
   const topK = Math.max(0, params.topK);
   if (topK === 0) {
@@ -685,6 +702,15 @@ export async function retrieveTopK(params: {
   }
 
   scored.sort((a, b) => b.score - a.score);
+
+  // -----------------------------------------------------------------
+  // Passage-level information-density reranker (RARG-inspired)
+  // -----------------------------------------------------------------
+  // Optionally nudge rankings based on entity density and query novelty.
+  // Conservative multiplicative adjustment — nudges, never inverts.
+  if (params.rerankByDensity) {
+    rerankByInformationDensity(scored, params.query, params.rerankDensityWeight ?? 0.15);
+  }
 
   // -----------------------------------------------------------------
   // Submodular fact packing (arXiv:2607.00725 — budgeted monotone
@@ -1319,6 +1345,99 @@ export function submodularSelect(
   }
 
   return selected;
+}
+
+// ---------------------------------------------------------------------------
+// Passage-level information-density reranker (RARG-inspired, arXiv:2607.24223)
+// ---------------------------------------------------------------------------
+// After BM25 + composite scoring produces a ranked list, this reranker
+// adjusts scores based on two passage-level signals:
+//
+// 1. **Named-entity density** — facts containing more named entities
+//    (capitalized tokens, IPs, version strings) carry more actionable
+//    information per token. A fact with 5 entities is more likely to be
+//    useful than one with none, even at similar BM25 scores.
+//
+// 2. **Query novelty** — facts whose tokens barely overlap with the query
+//    are more likely to add new information rather than parroting back
+//    query terms. This counteracts BM25's bias toward lexical redundancy.
+//
+// The adjustment is multiplicative: score *= (1 + α * density * novelty)
+// where α is `rerankDensityWeight` (default 0.15). This keeps the reranker
+// conservative — it nudges rankings, never inverts them dramatically.
+
+const DENSITY_ENTITY_PATTERN =
+  /\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|v?\d+\.\d+\.\d+|[A-Z][A-Za-z0-9-]+)\b/g;
+
+/**
+ * Count named entities in a fact text using a capitalized-token heuristic.
+ * No NER dependency — runs in O(text.length) with a single regex pass.
+ */
+export function countNamedEntities(text: string): number {
+  const matches = text.match(DENSITY_ENTITY_PATTERN);
+  return matches !== null ? matches.length : 0;
+}
+
+/**
+ * Compute a normalized information-density score (0–1) for a fact.
+ * Combines entity count and query novelty into a single scalar.
+ *
+ * @param factText - The fact's text.
+ * @param queryTokens - Tokenized query for novelty computation.
+ * @returns Density score in [0, 1].
+ */
+export function informationDensity(factText: string, queryTokens: Set<string>): number {
+  const entityCount = countNamedEntities(factText);
+  const factTokens = tokenize(factText);
+
+  // Entity density: entities per token, clamped to [0, 1].
+  // ~1 entity per 5 tokens is already very dense.
+  const tokenCount = Math.max(1, factTokens.size);
+  const density = Math.min(1, entityCount / (tokenCount * 0.2));
+
+  // Novelty: fraction of fact tokens NOT in the query.
+  // 1 = entirely new info, 0 = pure parroting.
+  let novelCount = 0;
+  for (const t of factTokens) {
+    if (!queryTokens.has(t)) {
+      novelCount++;
+    }
+  }
+  const novelty = factTokens.size > 0 ? novelCount / factTokens.size : 0;
+
+  // Geometric mean so both signals must be present for a high score.
+  return Math.sqrt(density * novelty);
+}
+
+/**
+ * Apply the information-density reranker to a sorted list of retrieved facts.
+ * Mutates scores in-place and re-sorts.
+ *
+ * @param results - Scored facts sorted by composite score (descending).
+ * @param query - Original query string (for tokenization).
+ * @param weight - Adjustment weight (0–1). Default 0.15.
+ * @returns The same array, re-sorted with adjusted scores.
+ */
+export function rerankByInformationDensity(
+  results: RetrievedFact[],
+  query: string,
+  weight: number = 0.15,
+): RetrievedFact[] {
+  if (results.length <= 1 || weight <= 0) {
+    return results;
+  }
+  const queryTokens = tokenize(query);
+  if (queryTokens.size === 0) {
+    return results;
+  }
+
+  for (const item of results) {
+    const density = informationDensity(item.fact.text, queryTokens);
+    item.score = item.score * (1 + weight * density);
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  return results;
 }
 
 export function formatMemorySection(
