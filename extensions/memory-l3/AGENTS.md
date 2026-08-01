@@ -161,10 +161,28 @@ is validated.**
 
 | Item                           | Trigger                                                   | Rec           | Timeline |
 | ------------------------------ | --------------------------------------------------------- | ------------- | -------- |
-| sqlite-vec ANN                 | ~10k+ message chunks (in-JS scan > 10ms)                  | Rec 3         | Q3 2026  |
+| sqlite-vec ANN (+ BM25 hybrid) | ~10k+ message chunks (in-JS scan > 10ms)                  | Rec 3         | Q3 2026  |
 | Construction admission control | Epoch build interferes with query latency (p95 > 5s)      | Rec 3, Rec 10 | Q3 2026  |
 | Growth-slope monitoring        | DB > 100MB or per-epoch construction > 30s                | Rec 8, Rec 9  | Q4 2026  |
 | Active compaction              | Marginal per-chunk cost compound rate > 2× over 10 epochs | Rec 8, Rec 9  | Q4 2026  |
+
+### BM25 scale calibration (arXiv:2607.26497)
+
+BM25 overtakes agentic/semantic search at ~10M corpus tokens and leads at every
+larger tier (arXiv:2607.26497). This confirms two design decisions:
+
+1. **The hybrid BM25 + cosine approach is correct** — BM25 should remain the
+   primary ranking signal as the store grows. The `SCORING_PRESETS` in
+   `retrieval.ts` should eventually gain a "large-corpus" preset that shifts BM25
+   weight higher at scale.
+2. **The ANN migration must implement BM25 + ANN combined retrieval, not
+   ANN-only.** Replacing the in-JS cosine scan with sqlite-vec ANN should layer
+   on top of the existing BM25 signal — never replace it. A future "drop BM25,
+   use ANN" optimization would regress at large scale.
+
+The 10M-token crossover is the calibration threshold: below it, semantic and
+lexical signals are roughly equal contributors; above it, BM25 dominance grows.
+Monitor corpus size during growth-slope checks (see deferred table above).
 
 ### Quick wins (recommended for immediate implementation)
 

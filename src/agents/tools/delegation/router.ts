@@ -133,7 +133,19 @@ const TIER_DEFAULT: Record<string, Record<"backbone" | "execution", string>> = {
 /** A provider+model candidate. `provider` is an OpenClaw config provider id. */
 export type Candidate = { provider: string; model: string };
 
-/** Delegation-eligible providers, in priority order (subscription → metered). */
+/**
+ * Delegation-eligible providers, in priority order (subscription → metered).
+ *
+ * ⚠️ Do NOT collapse or dedup providers that appear capability-similar.
+ * arXiv:2607.28308 (MoE coherent overlap) proves that geometrically similar
+ * experts still differ in actual per-query routing: the selected candidate
+ * explains more residual than the strongest unselected rival in every tested
+ * cell. Apparent similarity (e.g. two providers serving the same model family)
+ * does not imply redundancy — routing decisions are context-dependent and the
+ * query prefix narrows the advantage per-query. Every configured provider must
+ * remain reachable in the fallback chain so the router can discover the
+ * per-query winner empirically, not by pre-filtering on apparent overlap.
+ */
 export const PROVIDER_PRIORITY: readonly string[] = ["zai", "kimi", "deepseek", "moonshot"];
 
 /**
@@ -233,6 +245,11 @@ function configuredModels(cfg: OpenClawConfig | undefined, providerId: string): 
  * When `costMap` is provided, providers within the same priority tier are
  * re-ordered by effective cost (cheapest first), with subscription providers
  * (zai, kimi) always ahead of metered (deepseek, moonshot) regardless of cost.
+ *
+ * NOTE: This function must never pre-filter or collapse providers that appear
+ * capability-similar (see PROVIDER_PRIORITY doc for the MoE finding). Every
+ * configured provider stays in the chain; empirical per-query routing — not
+ * geometric similarity — determines the winner (arXiv:2607.28308).
  */
 function orderedProviders(
   cfg: OpenClawConfig | undefined,
