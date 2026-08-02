@@ -48,7 +48,16 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN="${UPSTREAM_MERGE_MAIN:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 WORKTREE="${UPSTREAM_MERGE_WORKTREE:-$MAIN-upstream-nightly}"
-UPSTREAM_REF="${UPSTREAM_REF:-upstream/main}"
+# An explicit env value is the operator's escape hatch and outranks the stage-time
+# pins below; unset means "use the pin, else the live ref".
+UPSTREAM_REF_OVERRIDE="${UPSTREAM_REF:-}"
+BASELINE_REF_OVERRIDE="${BASELINE_REF:-}"
+UPSTREAM_REF="${UPSTREAM_REF_OVERRIDE:-upstream/main}"
+# Baseline main sha the huey proof diffs its error set against. `main` advances
+# beneath an open staging branch most nights (the daily-research cron), and
+# remote-proof rejects a baseline that is no longer an ancestor of the branch, so
+# this is pinned when the merge is staged rather than re-resolved at prove time.
+STAGE_BASELINE_REF="${BASELINE_REF_OVERRIDE:-main}"
 REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node24/bin}"   # upstream needs node>=22.22.3
 LOG="${UPSTREAM_MERGE_LOG:-$HOME/.openclaw/workspace/memory/reports/upstream-merge-nightly.log}"
 # Scratch for the set-comparison plumbing (drift/dropped/ui listings). Overridable
@@ -81,14 +90,136 @@ require_main_clean() {
   fi
 }
 
+# --- stage-time reference pins ----------------------------------------------
+# UPSTREAM_REF is a moving remote-tracking ref, and `main` moves too. Every gate
+# downstream of stage-init re-resolved both at prove time, so an ordinary
+# `git fetch upstream` between staging and proving made the merge=ours export gate
+# diff the staged merge against a FUTURE upstream and name 10 untouched files as
+# dropped exports, while a landed cron commit made the proof reject its own baseline
+# as "not an ancestor". Pin what the merge was actually built from; read it back when
+# proving. Refs rather than a sidecar file: a ref also keeps the pinned upstream
+# commit reachable if upstream force-pushes or prunes it away.
+pin_ref() { printf 'refs/upstream-merge-pin/%s/%s' "$1" "$2"; }
+
+write_stage_pins() {
+  local branch="$1"
+  git -C "$MAIN" update-ref "$(pin_ref "$branch" upstream)" "$2" 2>/dev/null \
+    || log "could not pin upstream ref for $branch"
+  git -C "$MAIN" update-ref "$(pin_ref "$branch" baseline)" "$3" 2>/dev/null \
+    || log "could not pin baseline ref for $branch"
+}
+
+# Repoint UPSTREAM_REF / STAGE_BASELINE_REF at what the staged merge was built from.
+# A branch staged before pinning existed (or staged by hand) has no pins; keep the
+# live refs and SAY so rather than failing — a stale-ref gate failure is confusing,
+# a silent one is worse.
+load_stage_pins() {
+  local branch="$1" up base
+  up="$(git -C "$MAIN" rev-parse --verify -q "$(pin_ref "$branch" upstream)" 2>/dev/null)"
+  base="$(git -C "$MAIN" rev-parse --verify -q "$(pin_ref "$branch" baseline)" 2>/dev/null)"
+  if [ -n "$UPSTREAM_REF_OVERRIDE" ]; then
+    log "UPSTREAM_REF forced by env to $UPSTREAM_REF (ignoring stage pin)"
+  elif [ -n "$up" ]; then
+    UPSTREAM_REF="$up"
+  else
+    log "no upstream pin for $branch — gates compare against the LIVE $UPSTREAM_REF"
+  fi
+  if [ -n "$BASELINE_REF_OVERRIDE" ]; then
+    log "BASELINE_REF forced by env to $STAGE_BASELINE_REF (ignoring stage pin)"
+  elif [ -n "$base" ]; then
+    STAGE_BASELINE_REF="$base"
+  fi
+  log "stage pins: upstream=$UPSTREAM_REF baseline=$STAGE_BASELINE_REF"
+}
+
+# A pin outlives nothing but its branch: once the staging branch ref is gone the
+# merge commit carries the provenance, so drop it and keep the namespace bounded.
+prune_stage_pins() {
+  local ref branch
+  while read -r ref; do
+    [ -n "$ref" ] || continue
+    branch="${ref#refs/upstream-merge-pin/}"; branch="${branch%/upstream}"
+    git -C "$MAIN" rev-parse --verify -q "refs/heads/$branch" >/dev/null 2>&1 && continue
+    git -C "$MAIN" update-ref -d "$(pin_ref "$branch" upstream)" 2>/dev/null || true
+    git -C "$MAIN" update-ref -d "$(pin_ref "$branch" baseline)" 2>/dev/null || true
+  done < <(git -C "$MAIN" for-each-ref --format='%(refname)' refs/upstream-merge-pin/ 2>/dev/null \
+    | grep '/upstream$' || true)
+}
+
+# Resolve the live upstream ref to an immutable sha for the rest of this process, so
+# the merge, both drift reports, the export gate, and the pin all describe one tree.
+freeze_upstream_ref() {
+  local sha; sha="$(git -C "$MAIN" rev-parse --verify -q "${UPSTREAM_REF}^{commit}" 2>/dev/null)"
+  [ -n "$sha" ] || {
+    log "cannot resolve $UPSTREAM_REF"
+    ledger "ERROR reason=upstream-ref-unresolvable ref=$UPSTREAM_REF"
+    exit 2
+  }
+  UPSTREAM_REF="$sha"
+}
+
+# --- worktree lifecycle ------------------------------------------------------
+# A worktree's node_modules is the expensive part of it, and `preflight`
+# (protocol-gen + tsgo) cannot run at all without one. Wipe-and-recreate threw it
+# away on every run, so the nightly could never pass its own gate — that is why the
+# autonomous path never got past preflight. Reset with git instead and keep the deps.
+# Returns non-zero when the tree cannot be reset in place; callers then recreate it.
+reset_worktree_to() {
+  local head="$1"
+  [ -d "$WORKTREE" ] || return 1
+  git -C "$WORKTREE" rev-parse --git-dir >/dev/null 2>&1 || return 1
+  git -C "$WORKTREE" merge --abort 2>/dev/null || true
+  git -C "$WORKTREE" rebase --abort 2>/dev/null || true
+  git -C "$WORKTREE" checkout -f --detach "$head" >/dev/null 2>&1 || return 1
+  git -C "$WORKTREE" reset -q --hard "$head" >/dev/null 2>&1 || return 1
+  # -e node_modules is a gitignore pattern, so it spares the workspace packages'
+  # nested node_modules too. Everything else untracked or ignored goes, leaving the
+  # tree byte-identical to $head plus its installed dependencies.
+  git -C "$WORKTREE" clean -qfdx -e node_modules >/dev/null 2>&1 || true
+  return 0
+}
+
 fresh_worktree() {
+  local head; head="$(git -C "$MAIN" rev-parse HEAD)"
+  reset_worktree_to "$head" && return 0
+  [ -d "$WORKTREE" ] && log "worktree unusable — recreating (dependencies reinstall at preflight)"
   git -C "$MAIN" worktree remove --force "$WORKTREE" 2>/dev/null || true
   rm -rf "$WORKTREE" 2>/dev/null || true
-  git -C "$MAIN" worktree add --detach "$WORKTREE" HEAD >/dev/null 2>&1 \
+  git -C "$MAIN" worktree add --detach "$WORKTREE" "$head" >/dev/null 2>&1 \
     || { log "worktree add failed"; exit 2; }
 }
 
-drop_worktree() { git -C "$MAIN" worktree remove --force "$WORKTREE" 2>/dev/null || true; }
+# Release the worktree after a run WITHOUT deleting it: removing it drops the
+# installed dependencies fresh_worktree exists to preserve. Left detached at main's
+# HEAD and clean, so the operator's `git worktree list` stays honest and the next
+# run starts warm.
+release_worktree() {
+  reset_worktree_to "$(git -C "$MAIN" rev-parse HEAD)" >/dev/null 2>&1 || true
+}
+
+# preflight runs protocol-gen and tsgo inside the worktree; both need node_modules,
+# and the merge itself can move pnpm-lock.yaml. Install only when the lockfile the
+# current node_modules was installed from no longer matches the tree — the stamp
+# lives inside node_modules, so wiping the deps invalidates it automatically.
+ensure_worktree_deps() {
+  local wt="$1"
+  local stamp="$wt/node_modules/.upstream-merge-lock-hash"
+  # Fail closed: an unreadable lockfile means the short-circuit cannot be trusted, so
+  # install rather than silently letting preflight run against whatever is on disk.
+  local want; want="$(git -C "$wt" hash-object pnpm-lock.yaml 2>/dev/null)"
+  if [ -d "$wt/node_modules" ] && [ -n "$want" ] && [ "$want" = "$(cat "$stamp" 2>/dev/null)" ]; then
+    return 0
+  fi
+  log "installing worktree dependencies (lock $want); reruns only when the lockfile moves"
+  if ! (cd "$wt" && CI=1 npm_config_verify_deps_before_run=false \
+    nice -n 19 corepack pnpm install --frozen-lockfile) >/tmp/um-worktree-install.log 2>&1; then
+    log "worktree pnpm install failed (see /tmp/um-worktree-install.log):"
+    tail -n 5 /tmp/um-worktree-install.log >&2 2>/dev/null || true
+    return 1
+  fi
+  printf '%s\n' "$want" > "$stamp" 2>/dev/null || true
+  return 0
+}
 
 # --- fork ownership of ui/ --------------------------------------------------
 # Upstream rearchitected the Control UI into ui/src/{pages,lib,api}/**; this fork
@@ -430,6 +561,9 @@ report_dropped_upstream_files() {
 # Emits: BEHIND / RESIDUAL globals.
 measure() {
   git -C "$MAIN" fetch upstream -q 2>/dev/null || log "fetch upstream failed (using cached)"
+  # Freeze immediately after the fetch: everything from here on (engine measurement,
+  # merge, drift reports, export gate) must describe the same upstream tree.
+  freeze_upstream_ref
   local json
   json="$(node "$MAIN/scripts/upstream-merge-engine.mjs" --upstream "$UPSTREAM_REF" 2>/dev/null)" \
     || { log "shadow engine failed"; ledger "ERROR reason=engine-failed"; exit 2; }
@@ -468,7 +602,7 @@ land_and_deploy() {
     # persistently (not just a mid-run main advance), so surface the real git error.
     log "ff-only land blocked — main intact, deferring:"
     tail -n 5 /tmp/um-land.log >&2 2>/dev/null || true
-    drop_worktree
+    release_worktree
     ledger "DEFER reason=ff-blocked label=$label behind=${BEHIND:-?} ref=$ref (see /tmp/um-land.log)"
     exit 1
   fi
@@ -512,12 +646,12 @@ land_and_deploy() {
   if ! git -C "$MAIN" push origin main >/tmp/um-push.log 2>&1; then
     log "push origin main failed — merge landed LOCAL-ONLY, skipping deploy:"
     tail -n 5 /tmp/um-push.log >&2 2>/dev/null || true
-    drop_worktree
+    release_worktree
     ledger "LAND-LOCAL-ONLY reason=push-failed label=$label main=$landed proof=PASS (see /tmp/um-push.log)"
     echo "UPSTREAM-MERGE LANDED LOCAL-ONLY: main @ $landed but push to origin FAILED; NOT deploying. Push manually, then run scripts/cron-deploy-build.sh."
     exit 1
   fi
-  drop_worktree
+  release_worktree
   ledger "LAND $label behind=${BEHIND:-?} main=$landed proof=PASS"
   echo "UPSTREAM-MERGE LANDED ($label): main @ $landed, Linux proof PASS. Deploying…"
   # Deploy LAST: this build crashes+respawns the gateway (kills this session);
@@ -529,6 +663,10 @@ land_clean() {
   local date; date="$(today)"
   local branch="upstream-auto-merge/$date"
   fresh_worktree
+  # The pre-merge tip is the proof baseline by construction; resolving `main` later
+  # would pick up anything that landed while huey was busy and fail the ancestry check.
+  local baseline_sha; baseline_sha="$(git -C "$WORKTREE" rev-parse HEAD)"
+  [ -n "$BASELINE_REF_OVERRIDE" ] || STAGE_BASELINE_REF="$baseline_sha"
   # Real merge; residual is 0 (measured), so this completes without conflicts.
   # Same rerere scoping as stage_init: this path is only reached when the shadow
   # measurement said zero conflicts, so a rerere replay firing here would mean it
@@ -537,7 +675,7 @@ land_clean() {
     merge --no-ff --no-edit "$UPSTREAM_REF" >/tmp/um-merge.log 2>&1; then
     log "clean merge unexpectedly conflicted — deferring to resolution path"
     git -C "$WORKTREE" merge --abort 2>/dev/null || true
-    drop_worktree
+    release_worktree
     ledger "DEFER reason=clean-merge-conflicted behind=$BEHIND"
     exit 20
   fi
@@ -560,7 +698,7 @@ land_clean() {
   local pre
   if ! pre="$(preflight "$WORKTREE")"; then
     log "clean merge failed local preflight — NOT shipping to huey"
-    drop_worktree
+    release_worktree
     ledger "NO-LAND reason=preflight-failed behind=$BEHIND merge=$merge_sha"
     echo "UPSTREAM-MERGE NO-LAND: clean merge failed local preflight; main untouched."
     printf '%s\n' "$pre"
@@ -570,17 +708,17 @@ land_clean() {
 
   log "clean merge $merge_sha (branch $branch); proving on huey (node24)…"
   local proof rc
-  proof="$(BASELINE_REF=main remote_proof "$branch")"; rc=$?
+  proof="$(remote_proof "$branch")"; rc=$?
   if [ "$rc" = 3 ]; then
     log "proof UNAVAILABLE — deferring, main untouched"
-    drop_worktree
+    release_worktree
     ledger "DEFER reason=proof-unavailable behind=$BEHIND merge=$merge_sha"
     echo "UPSTREAM-MERGE DEFER: clean merge ready but Linux proof unavailable; main untouched."
     exit 3
   fi
   if [ "$rc" != 0 ]; then
     log "proof FAILED — NOT landing"
-    drop_worktree
+    release_worktree
     ledger "NO-LAND reason=proof-failed behind=$BEHIND merge=$merge_sha"
     echo "UPSTREAM-MERGE NO-LAND: clean merge failed Linux proof; main untouched."
     echo "$proof"
@@ -620,8 +758,15 @@ stage_init() {
       ledger "STAGE-RECLAIM stale=$held ahead=$ahead"
     fi
   fi
+  # stage-init is reachable without `route`, so freeze here too rather than trusting
+  # a measurement that may have run hours ago against a different upstream tip.
+  git -C "$MAIN" fetch upstream -q 2>/dev/null || log "fetch upstream failed (using cached)"
+  freeze_upstream_ref
   fresh_worktree
   git -C "$WORKTREE" checkout -B "$branch" >/dev/null 2>&1
+  # The pre-merge tip: the branch's baseline by construction, and the value the huey
+  # proof must diff against no matter what lands on main while resolution is open.
+  local baseline_sha; baseline_sha="$(git -C "$WORKTREE" rev-parse HEAD)"
   # rerere replays cached resolutions from earlier passes; a poisoned entry silently
   # re-lands a bad merge, so this merge always resolves from scratch. Scoped with
   # `-c` on the invocation: linked worktrees share the repository config, so
@@ -633,7 +778,10 @@ stage_init() {
   local ui_dropped; ui_dropped="$(apply_fork_ui_ownership "$WORKTREE")"
   local conflicts; conflicts="$(git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' | wc -l | tr -d ' ')"
   local base; base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
+  write_stage_pins "$branch" "$UPSTREAM_REF" "$baseline_sha"
+  prune_stage_pins
   echo "STAGE-READY worktree=$WORKTREE branch=$branch conflicts=$conflicts (raw=$raw, ui-policy resolved $((raw - conflicts)), dropped $ui_dropped upstream-only ui files)"
+  echo "STAGE-PINS upstream=$UPSTREAM_REF baseline=$baseline_sha (frozen; later gates and the huey proof read these, not the live refs)"
   echo "--- conflict files (resolve in $WORKTREE, then commit, then run: finish-land / stage-finish) ---"
   git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' || true
   echo "--- merge=ours files upstream changed (rebase these onto upstream, re-apply the fork delta) ---"
@@ -642,7 +790,7 @@ stage_init() {
   local dropped_up; dropped_up="$(report_dropped_upstream_files "$WORKTREE" "$base")"
   printf '%s\n' "$dropped_up"
   echo "--- merge base for fork-delta extraction: $base ---"
-  ledger "STAGE-INIT branch=$branch conflicts=$conflicts raw=$raw ui-dropped=$ui_dropped $(printf '%s' "$dropped_up" | sed -n 's/^DROPPED-UPSTREAM-COUNT \([0-9]*\).*/dropped-upstream=\1/p')"
+  ledger "STAGE-INIT branch=$branch upstream=$UPSTREAM_REF baseline=$baseline_sha conflicts=$conflicts raw=$raw ui-dropped=$ui_dropped $(printf '%s' "$dropped_up" | sed -n 's/^DROPPED-UPSTREAM-COUNT \([0-9]*\).*/dropped-upstream=\1/p')"
 }
 
 # Cheap local gate before spending a ~10 minute huey cycle. On 2026-07-25 three
@@ -651,6 +799,14 @@ stage_init() {
 # Runs in the worktree, so it never touches the live tree's dist/.
 preflight() {
   local wt="$1"
+  # Both gates below execute code from the worktree, so an absent or stale
+  # dependency tree does not merely weaken this check — it fails it for a reason
+  # that has nothing to do with the merge.
+  if ! ensure_worktree_deps "$wt"; then
+    echo "PREFLIGHT=FAIL reason=worktree-deps"
+    echo "  protocol-gen and tsgo need node_modules; see /tmp/um-worktree-install.log"
+    return 1
+  fi
   local markers
   # Keep this list aligned with the extensions report_merge_ours_drift treats as
   # code: a stray marker in a .kt or .yml file passes an incomplete scan and then
@@ -743,6 +899,10 @@ resolve_staged_branch() {
   if [ -n "$(git -C "$WORKTREE" status --porcelain --untracked-files=no)" ]; then
     log "worktree has an uncommitted merge — commit the resolution first"; exit 2
   fi
+  # Everything downstream (preflight's export gate, both drift reports, the huey
+  # baseline) must describe the tree this branch was staged against, not whatever
+  # upstream/main and main happen to point at now.
+  load_stage_pins "$branch"
   # Linked worktrees share refs, so $MAIN already sees $branch at the resolved merge HEAD.
   STAGED_BRANCH="$branch"
 }
@@ -760,7 +920,7 @@ prove_staged() {
   printf '%s\n' "$pre"
   log "proving $STAGED_BRANCH on huey (node24)…"
   local proof rc result
-  proof="$(BASELINE_REF=main remote_proof "$STAGED_BRANCH")"; rc=$?
+  proof="$(remote_proof "$STAGED_BRANCH")"; rc=$?
   if [ "$rc" != 0 ]; then
     # Separate "the candidate is red" from "we could not reach the prover", so a
     # transport outage is never read back as a code failure in the ledger.
@@ -785,7 +945,7 @@ stage_finish() {
   resolve_staged_branch "${1:-}"
   prove_staged
   git -C "$MAIN" push -f origin "$STAGED_BRANCH" >/tmp/um-stage-push.log 2>&1 || log "push staging branch failed"
-  drop_worktree
+  release_worktree
   local tip; tip="$(git -C "$MAIN" rev-parse --short "$STAGED_BRANCH")"
   ledger "STAGE-READY-TO-LAND branch=$STAGED_BRANCH tip=$tip proof=PASS"
   echo "STAGE-READY-TO-LAND: $STAGED_BRANCH @ $tip — Linux proof PASS, pushed to origin. main untouched."
@@ -804,8 +964,12 @@ finish_land() {
 }
 
 # remote-proof wrapper (forces node24). Prints proof output on stdout, returns its rc.
+# The assignments prefix an external command, so they are unambiguously exported —
+# a `VAR=x remote_proof ...` prefix on the FUNCTION was not, which is how a
+# hardcoded `BASELINE_REF=main` here silently swallowed every caller's override.
 remote_proof() {
-  REMOTE_NODE_BIN="$REMOTE_NODE_BIN" bash "$MAIN/scripts/remote-proof.sh" "$1"
+  BASELINE_REF="$STAGE_BASELINE_REF" REMOTE_NODE_BIN="$REMOTE_NODE_BIN" \
+    bash "$MAIN/scripts/remote-proof.sh" "$1"
 }
 
 # --- dispatch ----------------------------------------------------------------

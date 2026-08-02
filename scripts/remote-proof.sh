@@ -49,17 +49,17 @@ if ! rsh 'true' 2>/dev/null; then
   exit 3
 fi
 
-# --- 2. Ship the delta as a minimal git bundle (based on origin/main) --------
+# --- 2. Ship the delta as a minimal git bundle (floored at the origin merge-base) --
 git fetch origin -q 2>/dev/null
-BASE="$(git rev-parse origin/main 2>/dev/null)"   # bundle floor (huey gets this from GitHub)
-[ -z "$BASE" ] && { log "cannot resolve origin/main"; exit 2; }
+# Bundle floor: the newest commit huey can already fetch from GitHub itself. Use the
+# merge-base rather than origin/main, so a push to origin beneath an open branch does
+# not wedge the bundle — the range then carries exactly what huey lacks either way.
+BASE="$(git merge-base origin/main "$BRANCH" 2>/dev/null)"
+[ -z "$BASE" ] && { log "no common history between origin/main and $BRANCH"; exit 2; }
 # Baseline = the cherry branch's pre-cherry base (local main), so the diff
 # isolates ONLY the cherries — not unpushed local-main drift.
 BASELINE_REF="$(git rev-parse "${BASELINE_REF:-main}" 2>/dev/null)"
 [ -z "$BASELINE_REF" ] && { log "cannot resolve baseline ref (main)"; exit 2; }
-if ! git merge-base --is-ancestor "$BASE" "$BRANCH" 2>/dev/null; then
-  log "origin/main ($BASE) is not an ancestor of $BRANCH — rebase the cherry branch on origin/main first"; exit 2
-fi
 if ! git merge-base --is-ancestor "$BASELINE_REF" "$BRANCH" 2>/dev/null; then
   log "baseline ($BASELINE_REF) is not an ancestor of $BRANCH — the branch must be cherries on top of main"; exit 2
 fi
@@ -82,7 +82,6 @@ export PATH=$REMOTE_NODE_BIN:\$PATH
 export npm_config_verify_deps_before_run=false
 PROOF_DIR=$PROOF_DIR
 LANES="$LANES"
-BASE=$BASE
 BASELINE_REF=$BASELINE_REF
 
 # Failing test files only. Match vitest's per-file summary line
@@ -102,7 +101,18 @@ git fetch origin -q || { echo 'EXIT=92 (fetch origin)'; exit 92; }
 # --- Baseline (pre-cherry main; cached per sha) ---
 # Fetch the bundle first so BASELINE_REF's objects (unpushed local-main commits)
 # are present on huey, then baseline at the pre-cherry tip to isolate the cherries.
-git fetch "$REMOTE_BUNDLE" "refs/heads/$BRANCH:refs/remotes/proof/$BRANCH" 2>/tmp/rp-fetch.err || { echo 'EXIT=94 (bundle fetch)'; exit 94; }
+# Proof refs are write-once scratch: nothing reads them after the checkout below, and
+# each run rebuilds its own from a bundle. Without the '+' a fetch into an EXISTING
+# ref is rejected as non-fast-forward the moment a branch is amended or re-staged,
+# which wedges that branch behind EXIT=94 until someone deletes the ref on huey by
+# hand (11 had to be cleared that way on 2026-08-01). Prune the others while here: a
+# leftover 'proof/a' also blocks creating 'proof/a/b'.
+for stale in \$(git for-each-ref --format='%(refname)' refs/remotes/proof/ 2>/dev/null); do
+  [ "\$stale" = "refs/remotes/proof/$BRANCH" ] && continue
+  git update-ref -d "\$stale" 2>/dev/null || true
+done
+git fetch "$REMOTE_BUNDLE" "+refs/heads/$BRANCH:refs/remotes/proof/$BRANCH" 2>/tmp/rp-fetch.err \
+  || { echo 'EXIT=94 (bundle fetch)'; sed 's/^/  /' /tmp/rp-fetch.err 2>/dev/null; exit 94; }
 BDIR="\$PROOF_DIR/.proof-baseline-\$BASELINE_REF"
 if [ ! -f "\$BDIR/tsgo.txt" ]; then
   echo "computing baseline for \$BASELINE_REF"
@@ -120,6 +130,13 @@ fi
 
 # --- Candidate (cherry branch) ---
 git checkout -f -B proof-$STAMP proof/$BRANCH -q || { echo 'EXIT=95 (checkout cherry)'; exit 95; }
+# The same accumulation on the local side is unbounded — 23 of these had piled up by
+# 2026-08-01, each pinning a whole merge history. Prune after the checkout so the
+# current branch is HEAD and \`git branch -D\` refuses to delete it.
+for old in \$(git for-each-ref --format='%(refname:short)' 'refs/heads/proof-*' 2>/dev/null); do
+  [ "\$old" = "proof-$STAMP" ] && continue
+  git branch -qD "\$old" 2>/dev/null || true
+done
 rm -rf .artifacts/tsgo-cache
 CI=1 nice -n 19 corepack pnpm install --frozen-lockfile >/tmp/rp-install.log 2>&1 || { echo 'EXIT=96 (install)'; exit 96; }
 BUILD_EXIT=0

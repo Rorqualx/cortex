@@ -1,10 +1,19 @@
-// Behavior coverage for the merge=ours loss reporting in
-// scripts/cron-upstream-merge.sh. These functions decide whether a nightly merge
-// silently discards upstream work, and their failure mode is invisible to every
-// other lane (tsgo type-checks against the stale file that is actually present),
-// so they are exercised against real git merges rather than mocked.
+// Behavior coverage for scripts/cron-upstream-merge.sh: the merge=ours loss
+// reporting, the stage-time reference pins, and the worktree lifecycle. All three
+// fail invisibly to every other lane — tsgo type-checks against whatever stale file
+// is actually present, and a gate that resolved the wrong ref reports a confident,
+// specific, wrong answer — so they run against real git rather than mocks.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,7 +42,13 @@ function git(...args: string[]): string {
  * Source the script (its top-level config is all env-overridable) and call one
  * function, so the assertions cover the shipped code path rather than a copy.
  */
-function callScriptFn(fn: string): { stdout: string; status: number } {
+function callScriptFn(
+  fn: string,
+  env: Record<string, string> = {},
+): { stdout: string; stderr: string; status: number } {
+  // 2>&1 is deliberate for the caller that asks for it: load_stage_pins reports
+  // which ref it resolved on stderr, and "it used the live ref silently" is exactly
+  // the regression these tests exist to catch.
   try {
     const stdout = execFileSync(
       "bash",
@@ -47,14 +62,26 @@ function callScriptFn(fn: string): { stdout: string; status: number } {
           UPSTREAM_REF: "upstream",
           UPSTREAM_MERGE_LOG: join(scratch, "ledger.log"),
           UPSTREAM_MERGE_TMPDIR: scratch,
+          UPSTREAM_MERGE_WORKTREE: join(scratch, "wt"),
+          ...env,
         },
       },
     );
-    return { stdout, status: 0 };
+    return { stdout, stderr: "", status: 0 };
   } catch (err) {
-    const e = err as { stdout?: string; status?: number };
-    return { stdout: e.stdout ?? "", status: e.status ?? 1 };
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    return { stdout: e.stdout ?? "", stderr: e.stderr ?? "", status: e.status ?? 1 };
   }
+}
+
+/** A single commit on main so worktree/pin fixtures have something to point at. */
+function seedMain(): string {
+  writeFileSync(join(repo, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+  writeFileSync(join(repo, ".gitignore"), "node_modules/\ndist/\n");
+  writeFileSync(join(repo, "a.txt"), "a\n");
+  git("add", "-A");
+  git("commit", "-qm", "seed");
+  return git("rev-parse", "HEAD").trim();
 }
 
 /** base -> upstream branch (their edit) + main (our edit), then merge upstream in. */
@@ -439,5 +466,198 @@ describe("check_merge_ours_export_drift", () => {
     const { stdout, status } = callScriptFn(`check_merge_ours_export_drift "${repo}" "${base}"`);
     expect(status).toBe(0);
     expect(stdout).not.toContain("PREFLIGHT=FAIL");
+  });
+});
+
+describe("stage reference pins", () => {
+  // UPSTREAM_REF is a remote-tracking ref and main advances nightly, so both moved
+  // between staging a merge and proving it. Re-resolving them at prove time made the
+  // export gate diff a staged merge against a FUTURE upstream and name ten untouched
+  // files as dropped exports, and made the huey proof reject its own baseline as
+  // "not an ancestor". Neither failure says anything about the merge being judged.
+  function stageThenMove(): { pinnedUpstream: string; pinnedBaseline: string } {
+    const pinnedBaseline = seedMain();
+    git("branch", "-q", "upstream");
+    git("checkout", "-q", "upstream");
+    writeFileSync(join(repo, "up.txt"), "up1\n");
+    git("add", "-A");
+    git("commit", "-qm", "up1");
+    const pinnedUpstream = git("rev-parse", "HEAD").trim();
+    git("checkout", "-q", "main");
+    git("branch", "-q", "resync-staging/2026-08-01", "main");
+    callScriptFn(
+      `write_stage_pins "resync-staging/2026-08-01" "${pinnedUpstream}" "${pinnedBaseline}"`,
+      { UPSTREAM_REF: "" },
+    );
+    // Both live refs move, exactly as a `git fetch upstream` and a landed cron commit do.
+    git("checkout", "-q", "upstream");
+    writeFileSync(join(repo, "up.txt"), "up2\n");
+    git("commit", "-qam", "up2");
+    git("checkout", "-q", "main");
+    writeFileSync(join(repo, "a.txt"), "a2\n");
+    git("commit", "-qam", "main moved");
+    return { pinnedUpstream, pinnedBaseline };
+  }
+
+  it("resolves the refs the merge was staged against, not where they point now", () => {
+    const { pinnedUpstream, pinnedBaseline } = stageThenMove();
+    const { stdout } = callScriptFn(
+      `load_stage_pins "resync-staging/2026-08-01" 2>/dev/null; echo "$UPSTREAM_REF $STAGE_BASELINE_REF"`,
+      { UPSTREAM_REF: "" },
+    );
+    expect(stdout.trim()).toBe(`${pinnedUpstream} ${pinnedBaseline}`);
+    expect(pinnedUpstream).not.toBe(git("rev-parse", "upstream").trim());
+    expect(pinnedBaseline).not.toBe(git("rev-parse", "main").trim());
+  });
+
+  it("still lets an explicit env value override the pin", () => {
+    // The operator's escape hatch. It existed before and was silently swallowed by a
+    // hardcoded `BASELINE_REF=main` at the call site, so this asserts the whole path.
+    stageThenMove();
+    const { stdout } = callScriptFn(
+      `load_stage_pins "resync-staging/2026-08-01" 2>/dev/null; echo "$UPSTREAM_REF $STAGE_BASELINE_REF"`,
+      { UPSTREAM_REF: "cafebabe", BASELINE_REF: "feedface" },
+    );
+    expect(stdout.trim()).toBe("cafebabe feedface");
+  });
+
+  it("says so when a branch has no pins instead of quietly using the live refs", () => {
+    seedMain();
+    const { stdout } = callScriptFn(
+      `load_stage_pins "resync-staging/never-staged" 2>&1; echo "REF=$UPSTREAM_REF"`,
+      { UPSTREAM_REF: "" },
+    );
+    expect(stdout).toContain("no upstream pin");
+    expect(stdout).toContain("REF=upstream/main");
+  });
+
+  it("prunes a pin only once its staging branch is gone", () => {
+    seedMain();
+    git("branch", "-q", "resync-staging/keepme", "main");
+    const head = git("rev-parse", "main").trim();
+    const count = () =>
+      callScriptFn(
+        `prune_stage_pins; git -C "${repo}" for-each-ref refs/upstream-merge-pin/ | wc -l`,
+        { UPSTREAM_REF: "" },
+      ).stdout.trim();
+    callScriptFn(`write_stage_pins "resync-staging/keepme" "${head}" "${head}"`, {
+      UPSTREAM_REF: "",
+    });
+    expect(count()).toBe("2");
+    git("branch", "-qD", "resync-staging/keepme");
+    expect(count()).toBe("0");
+  });
+});
+
+describe("worktree lifecycle", () => {
+  // node_modules is the expensive part of a worktree and preflight (protocol-gen +
+  // tsgo) cannot run without it, but the worktree was wipe-and-recreated on every
+  // run — so the nightly could never pass its own gate. Reset in place instead.
+  const wt = () => join(scratch, "wt");
+
+  function seedWorktree(): void {
+    seedMain();
+    callScriptFn("fresh_worktree");
+    mkdirSync(join(wt(), "node_modules"), { recursive: true });
+    mkdirSync(join(wt(), "packages/x/node_modules"), { recursive: true });
+    mkdirSync(join(wt(), "dist"), { recursive: true });
+    writeFileSync(join(wt(), "node_modules/marker"), "dep\n");
+    writeFileSync(join(wt(), "packages/x/node_modules/marker"), "nested\n");
+    writeFileSync(join(wt(), "dist/junk.js"), "junk\n");
+    writeFileSync(join(wt(), "stray.txt"), "junk\n");
+    writeFileSync(join(wt(), "a.txt"), "locally dirtied\n");
+  }
+
+  it("keeps installed dependencies across a reset but restores everything else", () => {
+    seedWorktree();
+    const before = statSync(join(wt(), "node_modules/marker")).ino;
+    callScriptFn("fresh_worktree");
+    expect(existsSync(join(wt(), "node_modules/marker"))).toBe(true);
+    // The gitignore pattern must spare the workspace packages' nested trees too,
+    // or pnpm's workspace links break and the reinstall cost comes right back.
+    expect(existsSync(join(wt(), "packages/x/node_modules/marker"))).toBe(true);
+    expect(statSync(join(wt(), "node_modules/marker")).ino).toBe(before);
+    expect(existsSync(join(wt(), "dist/junk.js"))).toBe(false);
+    expect(existsSync(join(wt(), "stray.txt"))).toBe(false);
+    expect(readFileSync(join(wt(), "a.txt"), "utf8")).toBe("a\n");
+  });
+
+  it("does not lose committed resolution work parked on a staging branch", () => {
+    seedWorktree();
+    execFileSync("git", ["-C", wt(), "checkout", "-qB", "resync-staging/keepme"], {
+      env: { ...process.env, ...ISOLATED_GIT_ENV },
+    });
+    writeFileSync(join(wt(), "resolved.txt"), "r\n");
+    execFileSync("git", ["-C", wt(), "add", "resolved.txt"], {
+      env: { ...process.env, ...ISOLATED_GIT_ENV },
+    });
+    execFileSync("git", ["-C", wt(), "commit", "-qm", "resolution"], {
+      env: { ...process.env, ...ISOLATED_GIT_ENV },
+    });
+    const kept = git("rev-parse", "resync-staging/keepme").trim();
+    callScriptFn("fresh_worktree");
+    expect(git("rev-parse", "resync-staging/keepme").trim()).toBe(kept);
+  });
+
+  it("releases the worktree warm rather than deleting it", () => {
+    // Deleting it would drop the dependencies the reset exists to preserve, which is
+    // how the previous `worktree remove` defeated the whole point every night.
+    seedWorktree();
+    callScriptFn("release_worktree");
+    expect(existsSync(join(wt(), "node_modules/marker"))).toBe(true);
+    // Clean, so the next run's dirty-tree guard does not SKIP on our own leftovers.
+    const status = execFileSync("git", ["-C", wt(), "status", "--porcelain"], {
+      encoding: "utf8",
+      env: { ...process.env, ...ISOLATED_GIT_ENV },
+    });
+    expect(status.trim()).toBe("");
+  });
+});
+
+describe("ensure_worktree_deps", () => {
+  // Reinstalling on every run costs minutes; never reinstalling proves the merge
+  // against the previous merge's dependency tree. Key on the lockfile.
+  function withStubbedCorepack(fn: string, env: Record<string, string> = {}) {
+    const bin = join(scratch, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "corepack"),
+      `#!/bin/sh\necho called >> "${join(scratch, "corepack.calls")}"\nexit 1\n`,
+      { mode: 0o755 },
+    );
+    const res = callScriptFn(fn, { PATH: `${bin}:${process.env.PATH ?? ""}`, ...env });
+    return { ...res, installed: existsSync(join(scratch, "corepack.calls")) };
+  }
+
+  it("skips the install when the lockfile matches what the deps were built from", () => {
+    seedMain();
+    callScriptFn("fresh_worktree");
+    const wtDir = join(scratch, "wt");
+    mkdirSync(join(wtDir, "node_modules"), { recursive: true });
+    const hash = git("hash-object", join(wtDir, "pnpm-lock.yaml")).trim();
+    writeFileSync(join(wtDir, "node_modules/.upstream-merge-lock-hash"), `${hash}\n`);
+    const res = withStubbedCorepack(`ensure_worktree_deps "${wtDir}"`);
+    expect(res.status).toBe(0);
+    expect(res.installed).toBe(false);
+  });
+
+  it("installs when the merge moved the lockfile, and fails closed when that install fails", () => {
+    seedMain();
+    callScriptFn("fresh_worktree");
+    const wtDir = join(scratch, "wt");
+    mkdirSync(join(wtDir, "node_modules"), { recursive: true });
+    writeFileSync(join(wtDir, "node_modules/.upstream-merge-lock-hash"), "stale\n");
+    const res = withStubbedCorepack(`ensure_worktree_deps "${wtDir}"`);
+    expect(res.installed).toBe(true);
+    // Non-zero matters: preflight turns this into PREFLIGHT=FAIL rather than running
+    // protocol-gen and tsgo against a dependency tree that does not match the merge.
+    expect(res.status).not.toBe(0);
+  });
+
+  it("installs when node_modules is absent entirely", () => {
+    seedMain();
+    callScriptFn("fresh_worktree");
+    const res = withStubbedCorepack(`ensure_worktree_deps "${join(scratch, "wt")}"`);
+    expect(res.installed).toBe(true);
   });
 });
