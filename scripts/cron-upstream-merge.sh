@@ -647,6 +647,18 @@ measure() {
 # the gateway, so it must run only once origin durably holds the merge.
 land_and_deploy() {
   local ref="$1" date="$2" label="$3"
+  # Landing is ff-only against LOCAL main, which succeeds even when origin/main has
+  # moved on — the push at the end is then rejected and the run ends in
+  # LAND-LOCAL-ONLY with main already advanced and the gateway not deployed. Check
+  # before touching main, and re-fetch once in case the ref is merely stale.
+  git -C "$MAIN" fetch origin -q 2>/dev/null || true
+  if ! git -C "$MAIN" merge-base --is-ancestor origin/main "$ref" 2>/dev/null; then
+    log "origin/main is not an ancestor of $ref — refusing to land (push would be rejected after main moved)"
+    release_worktree
+    ledger "DEFER reason=origin-ahead label=$label ref=$ref origin=$(git -C "$MAIN" rev-parse --short origin/main 2>/dev/null)"
+    echo "UPSTREAM-MERGE DEFER: origin/main advanced beneath $ref; rebase the branch on origin/main and re-prove. main untouched."
+    exit 3
+  fi
   git -C "$MAIN" tag -f "main-backup-pre-upstream-merge" main >/dev/null 2>&1
   git -C "$MAIN" tag -f "upstream-merge-$date" main >/dev/null 2>&1
   if ! git -C "$MAIN" merge --ff-only "$ref" >/tmp/um-land.log 2>&1; then
