@@ -25,7 +25,9 @@ describe("createWorkboardChangeEventService", () => {
     const context = {
       config: {},
       stateDir: "/tmp/workboard-change-events-test",
-      gatewayEvents: { emit },
+      // onSessionsChanged became a required member of the gateway-events contract
+      // upstream (#114813); the service ignores it, so an unsubscribe stub is enough.
+      gatewayEvents: { emit, onSessionsChanged: vi.fn(() => () => {}) },
       logger: { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() },
     } satisfies Parameters<typeof service.start>[0];
 
@@ -60,7 +62,7 @@ describe("createWorkboardChangeEventService", () => {
     const context = {
       config: {},
       stateDir: "/tmp/workboard-change-events-test",
-      gatewayEvents: { emit: vi.fn() },
+      gatewayEvents: { emit: vi.fn(), onSessionsChanged: vi.fn(() => () => {}) },
       logger: { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() },
     } satisfies Parameters<typeof service.start>[0];
 
