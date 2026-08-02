@@ -97,6 +97,7 @@ describe("runForgePipeline", () => {
       promotions: [],
       skipped: [],
       embedding: { status: "disabled" },
+      crossover: { generated: 0, candidateIds: [] },
     });
   });
 
