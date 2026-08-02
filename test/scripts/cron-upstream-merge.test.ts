@@ -162,6 +162,76 @@ describe("report_merge_ours_drift", () => {
   });
 });
 
+describe("merge=ours drift gate baseline", () => {
+  // The drift report reads the "ours" side from STAGE_BASELINE_REF, not live `main`.
+  // With `main`, any protected file that a landed cron commit touched after staging
+  // compared unequal, so `[ "$merged" = "$ours" ] || continue` dropped it from the
+  // loss list — silently blinding the one gate built for the class tsgo cannot see.
+  it("follows the pinned baseline rather than whatever main points at", () => {
+    buildForkedMerge({
+      protect: true,
+      ourEdit: "export const kept = 1;\nconst internal = 2;\nconst forkOnly = 3;\n",
+      theirEdit: "export const kept = 1;\nconst internal = 22;\nconst upstreamOnly = 4;\n",
+    });
+    const stagedTip = git("rev-parse", "main").trim();
+    const mergeBase = git("rev-parse", "main~1").trim();
+    const upstreamTip = git("rev-parse", "upstream").trim();
+
+    // Drive it exactly as production does: stage_init writes the pins, load_stage_pins
+    // reads them back into STAGE_OURS_REF. Pinned at the staged tip, merge=ours kept
+    // precisely that blob, so the loss is visible.
+    const br = "resync-staging/pin-test";
+    git("branch", "-q", br, "main");
+    const pinned = callScriptFn(
+      `write_stage_pins "${br}" "${upstreamTip}" "${stagedTip}" 2>/dev/null;` +
+        ` load_stage_pins "${br}" 2>/dev/null; report_merge_ours_drift "${repo}" "${mergeBase}"`,
+      { UPSTREAM_REF: "" },
+    );
+    expect(pinned.stdout).toContain("MERGE-OURS-DRIFT-COUNT 1");
+
+    // Re-pinned anywhere else, the blob no longer matches and the file drops out.
+    // That divergence is the regression under test: if the report ever goes back to
+    // reading live `main`, both assertions collapse to the same value.
+    const mispinned = callScriptFn(
+      `write_stage_pins "${br}" "${upstreamTip}" "${mergeBase}" 2>/dev/null;` +
+        ` load_stage_pins "${br}" 2>/dev/null; report_merge_ours_drift "${repo}" "${mergeBase}"`,
+      { UPSTREAM_REF: "" },
+    );
+    expect(mispinned.stdout).toContain("MERGE-OURS-DRIFT-COUNT 0");
+  });
+});
+
+describe("preflight gate ordering", () => {
+  // The pure-git gates run BEFORE the dependency install. A merge committed with
+  // conflict markers in pnpm-lock.yaml used to kill the install first and surface as
+  // a dependency problem, hiding the marker the next gate names in seconds.
+  it("reports committed conflict markers without needing node_modules", () => {
+    seedMain();
+    writeFileSync(
+      join(repo, "broken.ts"),
+      "<<<<<<< HEAD\nexport const a = 1;\n=======\n>>>>>>> x\n",
+    );
+    git("add", "-A");
+    git("commit", "-qm", "resolution with markers left in");
+    const empty = join(scratch, "nopm");
+    mkdirSync(empty, { recursive: true });
+    const res = callScriptFn(`preflight "${repo}" 2>&1`, { PATH: `${empty}:/usr/bin:/bin` });
+    expect(res.stdout).toContain("PREFLIGHT=FAIL reason=conflict-markers");
+    expect(res.stdout).not.toContain("worktree-deps");
+  });
+
+  it("defers rather than failing when the local dependency install cannot run", () => {
+    // The Mac's inability to install is the premise of the remote-proof design, so a
+    // local install failure is evidence about the machine, not a verdict on the merge.
+    seedMain();
+    const empty = join(scratch, "nopm2");
+    mkdirSync(empty, { recursive: true });
+    const res = callScriptFn(`preflight "${repo}" 2>&1`, { PATH: `${empty}:/usr/bin:/bin` });
+    expect(res.status).toBe(3);
+    expect(res.stdout).toContain("PREFLIGHT=DEFER reason=worktree-deps");
+  });
+});
+
 describe("report_dropped_upstream_files", () => {
   /** Upstream adds a file the fork has never seen; leaves the merge uncommitted. */
   function mergeWithUpstreamNewFile(): string {
@@ -531,6 +601,16 @@ describe("stage reference pins", () => {
     expect(stdout).toContain("REF=upstream/main");
   });
 
+  it("warns when a branch has no baseline pin instead of silently using live main", () => {
+    seedMain();
+    const { stdout } = callScriptFn(
+      `load_stage_pins "resync-staging/never-staged" 2>&1; echo "BASE=$STAGE_BASELINE_REF"`,
+      { UPSTREAM_REF: "" },
+    );
+    expect(stdout).toContain("no baseline pin");
+    expect(stdout).toContain("BASE=main");
+  });
+
   it("prunes a pin only once its staging branch is gone", () => {
     seedMain();
     git("branch", "-q", "resync-staging/keepme", "main");
@@ -617,18 +697,47 @@ describe("worktree lifecycle", () => {
 describe("ensure_worktree_deps", () => {
   // Reinstalling on every run costs minutes; never reinstalling proves the merge
   // against the previous merge's dependency tree. Key on the lockfile.
-  function withStubbedCorepack(fn: string, env: Record<string, string> = {}) {
+  /**
+   * Stub BOTH package managers and record their argv. The usability probe now runs
+   * `corepack pnpm --version` before any install, so keying "did it install?" on the
+   * stub merely being invoked made these assertions vacuous — and leaving pnpm
+   * unstubbed let the fallback shell out to the developer's real pnpm against a
+   * fixture tmpdir.
+   */
+  function withStubbedPackageManagers(fn: string, opts: { corepackWorks?: boolean } = {}) {
     const bin = join(scratch, "bin");
     mkdirSync(bin, { recursive: true });
-    writeFileSync(
-      join(bin, "corepack"),
-      `#!/bin/sh\necho called >> "${join(scratch, "corepack.calls")}"\nexit 1\n`,
-      { mode: 0o755 },
-    );
-    const res = callScriptFn(fn, { PATH: `${bin}:${process.env.PATH ?? ""}`, ...env });
-    return { ...res, installed: existsSync(join(scratch, "corepack.calls")) };
+    for (const name of ["corepack", "pnpm"]) {
+      writeFileSync(
+        join(bin, name),
+        `#!/bin/sh\necho "$@" >> "${join(scratch, `${name}.argv`)}"\n` +
+          (name === "corepack" && opts.corepackWorks === false ? "exit 1\n" : "exit 1\n"),
+        { mode: 0o755 },
+      );
+    }
+    // A working corepack must still answer the probe; only the install fails.
+    if (opts.corepackWorks) {
+      writeFileSync(
+        join(bin, "corepack"),
+        `#!/bin/sh\necho "$@" >> "${join(scratch, "corepack.argv")}"\n` +
+          `case "$*" in *--version*) exit 0 ;; *) exit 1 ;; esac\n`,
+        { mode: 0o755 },
+      );
+    }
+    // /usr/bin and /bin only for git and coreutils — no path to a real pnpm.
+    const res = callScriptFn(fn, { PATH: `${bin}:/usr/bin:/bin` });
+    const argv = (name: string) => {
+      const f = join(scratch, `${name}.argv`);
+      return existsSync(f) ? readFileSync(f, "utf8") : "";
+    };
+    return {
+      ...res,
+      probed: /pnpm --version/.test(argv("corepack")),
+      installed: /(^|\n)install|pnpm install/.test(argv("corepack") + argv("pnpm")),
+      corepackArgv: argv("corepack"),
+      pnpmArgv: argv("pnpm"),
+    };
   }
-
   it("skips the install when the lockfile matches what the deps were built from", () => {
     seedMain();
     callScriptFn("fresh_worktree");
@@ -636,9 +745,13 @@ describe("ensure_worktree_deps", () => {
     mkdirSync(join(wtDir, "node_modules"), { recursive: true });
     const hash = git("hash-object", join(wtDir, "pnpm-lock.yaml")).trim();
     writeFileSync(join(wtDir, "node_modules/.upstream-merge-lock-hash"), `${hash}\n`);
-    const res = withStubbedCorepack(`ensure_worktree_deps "${wtDir}"`);
+    const res = withStubbedPackageManagers(`ensure_worktree_deps "${wtDir}"`);
     expect(res.status).toBe(0);
     expect(res.installed).toBe(false);
+    // Short-circuit means it returns before selecting a manager at all, so not even
+    // the usability probe should have run.
+    expect(res.probed).toBe(false);
+    expect(res.pnpmArgv).toBe("");
   });
 
   it("installs when the merge moved the lockfile, and fails closed when that install fails", () => {
@@ -647,10 +760,12 @@ describe("ensure_worktree_deps", () => {
     const wtDir = join(scratch, "wt");
     mkdirSync(join(wtDir, "node_modules"), { recursive: true });
     writeFileSync(join(wtDir, "node_modules/.upstream-merge-lock-hash"), "stale\n");
-    const res = withStubbedCorepack(`ensure_worktree_deps "${wtDir}"`);
+    const res = withStubbedPackageManagers(`ensure_worktree_deps "${wtDir}"`);
     expect(res.installed).toBe(true);
-    // Non-zero matters: preflight turns this into PREFLIGHT=FAIL rather than running
-    // protocol-gen and tsgo against a dependency tree that does not match the merge.
+    expect(res.pnpmArgv).toContain("install");
+    // Non-zero matters: preflight turns this into a DEFER (or a FAIL when pnpm names
+    // the lockfile) rather than running protocol-gen and tsgo against a dependency
+    // tree that does not match the merge.
     expect(res.status).not.toBe(0);
   });
 
@@ -688,10 +803,23 @@ describe("ensure_worktree_deps", () => {
     expect(res.stdout).toContain("neither corepack nor pnpm is on PATH");
   });
 
+  it("probes corepack for usability and still installs via it when the probe passes", () => {
+    seedMain();
+    callScriptFn("fresh_worktree");
+    const res = withStubbedPackageManagers(`ensure_worktree_deps "${join(scratch, "wt")}"`, {
+      corepackWorks: true,
+    });
+    expect(res.probed).toBe(true);
+    expect(res.corepackArgv).toContain("install");
+    // The probe must not be mistaken for the install: both are corepack invocations,
+    // and keying on "corepack ran" is what made these assertions vacuous before.
+    expect(res.installed).toBe(true);
+  });
+
   it("installs when node_modules is absent entirely", () => {
     seedMain();
     callScriptFn("fresh_worktree");
-    const res = withStubbedCorepack(`ensure_worktree_deps "${join(scratch, "wt")}"`);
+    const res = withStubbedPackageManagers(`ensure_worktree_deps "${join(scratch, "wt")}"`);
     expect(res.installed).toBe(true);
   });
 });

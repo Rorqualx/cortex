@@ -58,6 +58,11 @@ UPSTREAM_REF="${UPSTREAM_REF_OVERRIDE:-upstream/main}"
 # remote-proof rejects a baseline that is no longer an ancestor of the branch, so
 # this is pinned when the merge is staged rather than re-resolved at prove time.
 STAGE_BASELINE_REF="${BASELINE_REF_OVERRIDE:-main}"
+# The ref whose blobs are "what merge=ours kept" — the main tip the branch was staged
+# from. Deliberately NOT tied to BASELINE_REF: that knob re-points the huey proof
+# baseline, and letting it also move this one turned the documented escape hatch into
+# a way to silently empty the drift report and pass the export gate on zero files.
+STAGE_OURS_REF="main"
 REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node24/bin}"   # upstream needs node>=22.22.3
 LOG="${UPSTREAM_MERGE_LOG:-$HOME/.openclaw/workspace/memory/reports/upstream-merge-nightly.log}"
 # Scratch for the set-comparison plumbing (drift/dropped/ui listings). Overridable
@@ -129,6 +134,16 @@ load_stage_pins() {
   elif [ -n "$base" ]; then
     STAGE_BASELINE_REF="$base"
   fi
+  # Independent of the proof-baseline override above: this one must always be the
+  # staged tip when a pin exists.
+  if [ -n "$base" ]; then
+    STAGE_OURS_REF="$base"
+  else
+    # Without this the baseline silently stays the literal `main`, which the drift
+    # gate and the huey proof both resolve live — reproducing the very ancestry
+    # failure the pins exist to prevent, but with no line saying why.
+    log "no baseline pin for $branch — using the LIVE main; if it advanced past this branch, proof will reject the baseline as 'not an ancestor'"
+  fi
   log "stage pins: upstream=$UPSTREAM_REF baseline=$STAGE_BASELINE_REF"
 }
 
@@ -175,7 +190,17 @@ reset_worktree_to() {
   # -e node_modules is a gitignore pattern, so it spares the workspace packages'
   # nested node_modules too. Everything else untracked or ignored goes, leaving the
   # tree byte-identical to $head plus its installed dependencies.
-  git -C "$WORKTREE" clean -qfdx -e node_modules >/dev/null 2>&1 || true
+  # An untracked file git cannot unlink (an interrupted build left a read-only dir)
+  # otherwise survives into the merge, which aborts with "untracked working tree file
+  # would be overwritten" and gets reported as a phantom conflict every night.
+  # Reporting failure alone does NOT help: the recreate path cannot remove what clean
+  # could not either (rm does not chmod), so it fails too and the run dies on
+  # `worktree add` with a bare exit 2. Restore write permission and retry — that is
+  # the only step that actually clears this state unattended.
+  if ! git -C "$WORKTREE" clean -qfdx -e node_modules >/dev/null 2>&1; then
+    chmod -R u+w "$WORKTREE" 2>/dev/null || true
+    git -C "$WORKTREE" clean -qfdx -e node_modules >/dev/null 2>&1 || return 1
+  fi
   return 0
 }
 
@@ -185,8 +210,12 @@ fresh_worktree() {
   [ -d "$WORKTREE" ] && log "worktree unusable — recreating (dependencies reinstall at preflight)"
   git -C "$MAIN" worktree remove --force "$WORKTREE" 2>/dev/null || true
   rm -rf "$WORKTREE" 2>/dev/null || true
-  git -C "$MAIN" worktree add --detach "$WORKTREE" "$head" >/dev/null 2>&1 \
-    || { log "worktree add failed"; exit 2; }
+  git -C "$MAIN" worktree add --detach "$WORKTREE" "$head" >/dev/null 2>&1 || {
+    # Unattended runs are read from the ledger, so this must never abort silently.
+    log "worktree add failed — $WORKTREE could not be reclaimed (check permissions)"
+    ledger "ERROR reason=worktree-unrecoverable path=$WORKTREE"
+    exit 2
+  }
 }
 
 # Release the worktree after a run WITHOUT deleting it: removing it drops the
@@ -214,8 +243,12 @@ ensure_worktree_deps() {
   # huey but is absent on the operator's Mac (pnpm is installed directly), and cron's
   # PATH is narrower still. An unresolvable `corepack` failed the install instantly
   # with "No such file or directory", which reads as a dependency problem.
+  # Probe usability, not mere presence: corepack ships with node but may be disabled,
+  # or have no cached build of the packageManager-pinned pnpm and no network to fetch
+  # one. Selecting it on `command -v` alone meant a broken corepack shadowed a
+  # perfectly good pnpm and failed the run the same way a missing one did.
   local pm
-  if command -v corepack >/dev/null 2>&1; then
+  if command -v corepack >/dev/null 2>&1 && (cd "$wt" && corepack pnpm --version >/dev/null 2>&1); then
     pm="corepack pnpm"
   elif command -v pnpm >/dev/null 2>&1; then
     pm="pnpm"
@@ -299,7 +332,12 @@ report_merge_ours_drift() {
   while read -r f; do
     case "$f" in ui/*) continue ;; *.ts|*.tsx|*.mjs|*.swift|*.kt) ;; *) continue ;; esac
     merged="$(git -C "$wt" rev-parse ":0:$f" 2>/dev/null)" || continue
-    ours="$(git -C "$wt" rev-parse "main:$f" 2>/dev/null)" || continue
+    # STAGE_BASELINE_REF, not `main`: the merge's first parent is the main tip the
+    # branch was STAGED at, and that is what merge=ours kept. Reading live `main`
+    # made every file the nightly landed after staging compare unequal, so
+    # `[ "$merged" = "$ours" ] || continue` silently dropped it from the loss list —
+    # blinding the one gate built for the class tsgo cannot see.
+    ours="$(git -C "$wt" rev-parse "$STAGE_OURS_REF:$f" 2>/dev/null)" || continue
     upstream="$(git -C "$wt" rev-parse "$UPSTREAM_REF:$f" 2>/dev/null)" || continue
     # kept ours AND upstream's version differs => upstream's delta was discarded
     [ "$merged" = "$ours" ] || continue
@@ -680,6 +718,7 @@ land_clean() {
   # The pre-merge tip is the proof baseline by construction; resolving `main` later
   # would pick up anything that landed while huey was busy and fail the ancestry check.
   local baseline_sha; baseline_sha="$(git -C "$WORKTREE" rev-parse HEAD)"
+  STAGE_OURS_REF="$baseline_sha"
   [ -n "$BASELINE_REF_OVERRIDE" ] || STAGE_BASELINE_REF="$baseline_sha"
   # Real merge; residual is 0 (measured), so this completes without conflicts.
   # Same rerere scoping as stage_init: this path is only reached when the shadow
@@ -709,8 +748,17 @@ land_clean() {
   local merge_sha; merge_sha="$(git -C "$WORKTREE" rev-parse HEAD)"
   git -C "$WORKTREE" branch -f "$branch" "$merge_sha" >/dev/null 2>&1
 
-  local pre
-  if ! pre="$(preflight "$WORKTREE")"; then
+  local pre pf_rc
+  pre="$(preflight "$WORKTREE")"; pf_rc=$?
+  if [ "$pf_rc" = 3 ]; then
+    log "local preflight could not run (dependency install) — deferring, main untouched"
+    release_worktree
+    ledger "DEFER reason=preflight-deps behind=$BEHIND merge=$merge_sha"
+    echo "UPSTREAM-MERGE DEFER: clean merge unjudged — local dependency install failed; main untouched."
+    printf '%s\n' "$pre"
+    exit 3
+  fi
+  if [ "$pf_rc" != 0 ]; then
     log "clean merge failed local preflight — NOT shipping to huey"
     release_worktree
     ledger "NO-LAND reason=preflight-failed behind=$BEHIND merge=$merge_sha"
@@ -792,6 +840,7 @@ stage_init() {
   local ui_dropped; ui_dropped="$(apply_fork_ui_ownership "$WORKTREE")"
   local conflicts; conflicts="$(git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' | wc -l | tr -d ' ')"
   local base; base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
+  STAGE_OURS_REF="$baseline_sha"
   write_stage_pins "$branch" "$UPSTREAM_REF" "$baseline_sha"
   prune_stage_pins
   echo "STAGE-READY worktree=$WORKTREE branch=$branch conflicts=$conflicts (raw=$raw, ui-policy resolved $((raw - conflicts)), dropped $ui_dropped upstream-only ui files)"
@@ -813,14 +862,6 @@ stage_init() {
 # Runs in the worktree, so it never touches the live tree's dist/.
 preflight() {
   local wt="$1"
-  # Both gates below execute code from the worktree, so an absent or stale
-  # dependency tree does not merely weaken this check — it fails it for a reason
-  # that has nothing to do with the merge.
-  if ! ensure_worktree_deps "$wt"; then
-    echo "PREFLIGHT=FAIL reason=worktree-deps"
-    echo "  protocol-gen and tsgo need node_modules; see /tmp/um-worktree-install.log"
-    return 1
-  fi
   local markers
   # Keep this list aligned with the extensions report_merge_ours_drift treats as
   # code: a stray marker in a .kt or .yml file passes an incomplete scan and then
@@ -832,9 +873,49 @@ preflight() {
     return 1
   fi
   # Cheaper than protocol-gen and names the owning files, so it runs first; it also
-  # covers the protected files protocol-gen never imports.
-  local pf_base; pf_base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
+  # covers the protected files protocol-gen never imports. Base off the pinned
+  # baseline, not live `main`: once `main` contains the pinned upstream (the clean
+  # auto-land path does exactly that overnight) `merge-base main $UPSTREAM_REF`
+  # collapses to $UPSTREAM_REF itself, the drift diff becomes `X..X` = empty, and the
+  # gate passes without inspecting a single file.
+  local pf_base; pf_base="$(git -C "$MAIN" merge-base "$STAGE_OURS_REF" "$UPSTREAM_REF" 2>/dev/null)"
+  # Once main already contains the pinned upstream (the clean auto-land does this
+  # overnight), merge-base collapses to $UPSTREAM_REF, the drift diff becomes X..X,
+  # and the gate returns 0 having inspected zero files. Refuse rather than pass:
+  # a silently skipped gate is indistinguishable from a clean one.
+  if [ -n "$pf_base" ] && [ "$pf_base" = "$(git -C "$MAIN" rev-parse "$UPSTREAM_REF" 2>/dev/null)" ]; then
+    echo "PREFLIGHT=FAIL reason=degenerate-drift-base ours=$STAGE_OURS_REF upstream=$UPSTREAM_REF"
+    echo "  the merge=ours export gate cannot run: its base collapsed onto upstream, so it"
+    echo "  would inspect zero files. Re-stage so the baseline predates this upstream tip."
+    return 1
+  fi
   check_merge_ours_export_drift "$wt" "$pf_base" || return 1
+  # Everything from here executes code from the worktree, so it needs node_modules.
+  # This sits BELOW the two pure-git gates on purpose: a merge committed with
+  # conflict markers in pnpm-lock.yaml used to kill the install first and get
+  # reported as a dependency problem, hiding the marker the next gate names in
+  # seconds — and it spent a multi-minute install to do it.
+  # rc 3 = DEFER, not FAIL. The Mac's inability to install is the documented premise
+  # of the whole huey harness (see remote-proof.sh), so a local install failure is
+  # evidence about this machine, not a verdict on the merge. Reporting it as
+  # NO-LAND blamed the candidate and buried a green merge; deferring costs a cycle
+  # and says which it was.
+  if ! ensure_worktree_deps "$wt"; then
+    # pnpm names lockfile/manifest disagreement explicitly. That state is PRODUCED BY
+    # THE MERGE (pnpm-lock.yaml is deliberately unprotected), so it is a candidate
+    # defect and must fail, not defer — deferring it re-merges the same tip every
+    # night and main stops advancing with nothing in the ledger saying why.
+    if grep -qE "ERR_PNPM_OUTDATED_LOCKFILE|ERR_PNPM_LOCKFILE_CONFIG_MISMATCH|specifiers in the lockfile don.t match|ERR_PNPM_NO_LOCKFILE" /tmp/um-worktree-install.log 2>/dev/null; then
+      echo "PREFLIGHT=FAIL reason=merged-lockfile-inconsistent"
+      echo "  the merged pnpm-lock.yaml does not match the merged manifests; regenerate it in the worktree:"
+      echo "    (cd $wt && pnpm install --no-frozen-lockfile) && git -C $wt add pnpm-lock.yaml"
+      grep -E "ERR_PNPM|specifiers in the lockfile|mismatched|were removed|were added" /tmp/um-worktree-install.log 2>/dev/null | head -8
+      return 1
+    fi
+    echo "PREFLIGHT=DEFER reason=worktree-deps"
+    echo "  local dependency install failed; the merge is unjudged. See /tmp/um-worktree-install.log"
+    return 3
+  fi
   # The protocol generator actually imports the schema modules, so it catches the
   # dropped-export breakage that merge=ours hides from tsgo entirely.
   if ! (cd "$wt" && node --import tsx scripts/protocol-gen.ts >/tmp/um-preflight-protocol.log 2>&1); then
@@ -924,8 +1005,16 @@ resolve_staged_branch() {
 # Prove $STAGED_BRANCH on huey (node24). Non-green exits with the proof rc; main untouched.
 prove_staged() {
   # Local gate first — a failure here costs seconds, the huey cycle costs ~10 min.
-  local pre
-  if ! pre="$(preflight "$WORKTREE")"; then
+  local pre pf_rc
+  pre="$(preflight "$WORKTREE")"; pf_rc=$?
+  if [ "$pf_rc" = 3 ]; then
+    # Local tooling problem, not a verdict on the branch: keep it resumable and say so.
+    ledger "STAGE-PREFLIGHT branch=$STAGED_BRANCH result=DEFER"
+    echo "STAGE deferred — local preflight could not run (dependency install). Branch kept, main untouched."
+    printf '%s\n' "$pre"
+    exit 3
+  fi
+  if [ "$pf_rc" != 0 ]; then
     ledger "STAGE-PREFLIGHT branch=$STAGED_BRANCH result=FAIL"
     echo "STAGE preflight failed — not shipping to huey. Fix in $WORKTREE, re-commit, re-run."
     printf '%s\n' "$pre"

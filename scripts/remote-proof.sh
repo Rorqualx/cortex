@@ -96,6 +96,13 @@ if [ ! -d "\$PROOF_DIR/.git" ]; then
   git -C "\$PROOF_DIR" remote add upstream $UPSTREAM_URL 2>/dev/null || true
 fi
 cd "\$PROOF_DIR" || { echo 'EXIT=91 (cd)'; exit 91; }
+# \$PROOF_DIR is a single shared checkout: the candidate checkout below rewrites the
+# one working tree, so two overlapping runs make each other's build and tsgo lanes
+# measure the wrong tree — and a PASS computed that way feeds an ff-only land plus a
+# production deploy. A Mac-side poll timeout leaves the remote job running, so overlap
+# is reachable in normal operation. Serialize; do not try to make racing safe.
+exec 9>/tmp/openclaw-proof.lock 2>/dev/null || { echo 'EXIT=97 (cannot open proof lock)'; exit 97; }
+flock -n 9 || { echo 'EXIT=97 (another proof run holds \$PROOF_DIR)'; exit 97; }
 git fetch origin -q || { echo 'EXIT=92 (fetch origin)'; exit 92; }
 
 # --- Baseline (pre-cherry main; cached per sha) ---
@@ -107,12 +114,19 @@ git fetch origin -q || { echo 'EXIT=92 (fetch origin)'; exit 92; }
 # which wedges that branch behind EXIT=94 until someone deletes the ref on huey by
 # hand (11 had to be cleared that way on 2026-08-01). Prune the others while here: a
 # leftover 'proof/a' also blocks creating 'proof/a/b'.
+# Safe to sweep unconditionally now that the lock above serializes runs: nothing else
+# can hold a ref here. It must STAY unconditional — a leftover 'proof/a' blocks
+# CREATING 'proof/a/b', and a landed-only guard pruned 0 of 2 refs in practice.
 for stale in \$(git for-each-ref --format='%(refname)' refs/remotes/proof/ 2>/dev/null); do
   [ "\$stale" = "refs/remotes/proof/$BRANCH" ] && continue
   git update-ref -d "\$stale" 2>/dev/null || true
 done
+# EXIT-DETAIL prefix, not indentation: the Mac-side poller returns only lines matching
+# ^(BUILD_EXIT=|TSGO |NEWFAIL |EXIT-DETAIL |EXIT=), so an indented error was filtered
+# out and the operator saw a bare EXIT=94 — the ssh-and-read-the-log step this was
+# added to remove.
 git fetch "$REMOTE_BUNDLE" "+refs/heads/$BRANCH:refs/remotes/proof/$BRANCH" 2>/tmp/rp-fetch.err \
-  || { echo 'EXIT=94 (bundle fetch)'; sed 's/^/  /' /tmp/rp-fetch.err 2>/dev/null; exit 94; }
+  || { echo 'EXIT=94 (bundle fetch)'; sed 's/^/EXIT-DETAIL /' /tmp/rp-fetch.err 2>/dev/null; exit 94; }
 BDIR="\$PROOF_DIR/.proof-baseline-\$BASELINE_REF"
 if [ ! -f "\$BDIR/tsgo.txt" ]; then
   echo "computing baseline for \$BASELINE_REF"
@@ -170,9 +184,12 @@ elapsed=0
 while [ "$elapsed" -lt "$PROOF_TIMEOUT" ]; do
   MARK="$(rsh "grep -E '^EXIT=' $RLOG 2>/dev/null | tail -1" 2>/dev/null)"
   if [ -n "$MARK" ]; then
-    TAIL="$(rsh "grep -E '^(BUILD_EXIT=|TSGO |NEWFAIL |EXIT=)' $RLOG 2>/dev/null" 2>/dev/null)"
+    TAIL="$(rsh "grep -E '^(BUILD_EXIT=|TSGO |NEWFAIL |EXIT-DETAIL |EXIT=)' $RLOG 2>/dev/null" 2>/dev/null)"
     log "remote result:"; echo "$TAIL" >&2
     CODE="${MARK#EXIT=}"; CODE="${CODE%% *}"
+    # 97 = another run holds the shared proof checkout. Contention, not a red
+    # candidate, so it surfaces as UNAVAILABLE and makes the caller defer.
+    if [ "$CODE" = "97" ]; then echo "PROOF=UNAVAILABLE transport=huey reason=proof-lock-held"; echo "$TAIL"; exit 3; fi
     if [ "$CODE" = "0" ]; then echo "PROOF=PASS transport=huey"; echo "$TAIL"; exit 0
     else echo "PROOF=FAIL transport=huey"; echo "$TAIL"; exit 1; fi
   fi
