@@ -224,6 +224,13 @@ export type RetrievalConfig = {
    * - 'blended': full composite scoring.
    */
   mode: RetrievalMode;
+  /**
+   * When true, apply a post-retrieval critique filter that demotes
+   * stale, low-reliability prose facts before context injection.
+   * Typed facts (slot=value) are atomic and skip the critique.
+   * Default false (opt-in). Inspired by arXiv:2607.28272.
+   */
+  enableMemoryCritique?: boolean;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -234,6 +241,7 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   submodularCoverageWeight: 0.3,
   submodularTokenBudget: null,
   mode: "blended",
+  enableMemoryCritique: false,
 };
 
 export type RetrievedFact = {
@@ -733,6 +741,17 @@ export async function retrieveTopK(params: {
   // Conservative multiplicative adjustment — nudges, never inverts.
   if (params.rerankByDensity) {
     rerankByInformationDensity(scored, params.query, params.rerankDensityWeight ?? 0.15);
+  }
+
+  // -----------------------------------------------------------------
+  // Post-retrieval critique filter (arXiv:2607.28272 — Reconstructive Memory)
+  // -----------------------------------------------------------------
+  // Demotes prose facts that are both epistemically stale (low validity)
+  // and unreliable (low certainty). Typed facts (slot=value) are atomic
+  // and skip the critique — their confidence is already decayed via
+  // access-time decay. Only runs when enableMemoryCritique is true.
+  if (retConfig.enableMemoryCritique) {
+    critiqueStaleFacts(scored);
   }
 
   // -----------------------------------------------------------------
@@ -1463,6 +1482,60 @@ export function rerankByInformationDensity(
   return results;
 }
 
+// ---------------------------------------------------------------------------
+// Post-retrieval critique filter (arXiv:2607.28272 — Reconstructive Memory)
+// ---------------------------------------------------------------------------
+// Retrieved memories can be semantically relevant yet contextually stale.
+// This heuristic-only critique pass demotes prose facts that are both:
+//   1. Episodically stale (validity < CRITIQUE_VALIDITY_FLOOR), AND
+//   2. Epistemically unreliable (reliability < CRITIQUE_RELIABILITY_FLOOR)
+// Typed facts (slot=value) are atomic and skip the critique entirely —
+// their confidence already decays via access-time decay, and they represent
+// canonical values that should not be filtered by heuristics.
+//
+// Demotion is a soft multiplicative penalty, not a hard filter: the fact
+// stays in the list but with a reduced score, so genuinely critical facts
+// can still surface if their composite score is high enough.
+
+const CRITIQUE_VALIDITY_FLOOR = 0.3;
+const CRITIQUE_RELIABILITY_FLOOR = 0.6;
+const CRITIQUE_DEMOTION_FACTOR = 0.5;
+
+/** Tiers that are atomic (slot=value) and skip the critique pass. */
+const CRITIQUE_EXEMPT_TIERS = new Set<string>(["typed", "longterm-typed"]);
+
+/**
+ * Apply a heuristic critique filter to demote stale, unreliable prose facts.
+ * Mutates scores in-place and re-sorts.
+ *
+ * Only applies to prose tiers (L2, longterm, insight). Typed facts and
+ * memory-core hits are exempt.
+ */
+export function critiqueStaleFacts(results: RetrievedFact[]): RetrievedFact[] {
+  if (results.length === 0) {
+    return results;
+  }
+
+  let demoted = 0;
+  for (const item of results) {
+    if (CRITIQUE_EXEMPT_TIERS.has(item.tier)) {
+      continue;
+    }
+    // Demote when BOTH conditions hold: stale episodic context AND low reliability.
+    if (
+      item.signals.validity < CRITIQUE_VALIDITY_FLOOR &&
+      item.signals.reliability < CRITIQUE_RELIABILITY_FLOOR
+    ) {
+      item.score *= CRITIQUE_DEMOTION_FACTOR;
+      demoted++;
+    }
+  }
+
+  if (demoted > 0) {
+    results.sort((a, b) => b.score - a.score);
+  }
+  return results;
+}
 export function formatMemorySection(
   facts: ReadonlyArray<RetrievedFact>,
   options?: { now?: number },
