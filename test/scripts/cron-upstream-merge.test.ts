@@ -654,6 +654,40 @@ describe("ensure_worktree_deps", () => {
     expect(res.status).not.toBe(0);
   });
 
+  it("falls back to pnpm when corepack is not installed", () => {
+    // corepack ships with node on the Linux prover but is absent on the operator's
+    // Mac, and cron's PATH is narrower still. Assuming it failed the install
+    // instantly with "nice: corepack: No such file or directory", which reads as a
+    // dependency problem rather than a missing tool.
+    seedMain();
+    callScriptFn("fresh_worktree");
+    const bin = join(scratch, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "pnpm"),
+      `#!/bin/sh\necho pnpm >> "${join(scratch, "pm.calls")}"\nexit 1\n`,
+      { mode: 0o755 },
+    );
+    // No corepack on this PATH; git and node still resolve from the system dirs.
+    const res = callScriptFn(`ensure_worktree_deps "${join(scratch, "wt")}" 2>&1`, {
+      PATH: `${bin}:/usr/bin:/bin`,
+    });
+    expect(existsSync(join(scratch, "pm.calls"))).toBe(true);
+    expect(res.stdout).toContain("via pnpm");
+  });
+
+  it("reports a missing package manager instead of failing as a dependency error", () => {
+    seedMain();
+    callScriptFn("fresh_worktree");
+    const empty = join(scratch, "emptybin");
+    mkdirSync(empty, { recursive: true });
+    const res = callScriptFn(`ensure_worktree_deps "${join(scratch, "wt")}" 2>&1`, {
+      PATH: `${empty}:/usr/bin:/bin`,
+    });
+    expect(res.status).not.toBe(0);
+    expect(res.stdout).toContain("neither corepack nor pnpm is on PATH");
+  });
+
   it("installs when node_modules is absent entirely", () => {
     seedMain();
     callScriptFn("fresh_worktree");

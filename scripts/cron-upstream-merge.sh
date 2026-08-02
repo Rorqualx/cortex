@@ -210,9 +210,23 @@ ensure_worktree_deps() {
   if [ -d "$wt/node_modules" ] && [ -n "$want" ] && [ "$want" = "$(cat "$stamp" 2>/dev/null)" ]; then
     return 0
   fi
-  log "installing worktree dependencies (lock $want); reruns only when the lockfile moves"
+  # Resolve the package manager rather than assuming corepack: it ships with node on
+  # huey but is absent on the operator's Mac (pnpm is installed directly), and cron's
+  # PATH is narrower still. An unresolvable `corepack` failed the install instantly
+  # with "No such file or directory", which reads as a dependency problem.
+  local pm
+  if command -v corepack >/dev/null 2>&1; then
+    pm="corepack pnpm"
+  elif command -v pnpm >/dev/null 2>&1; then
+    pm="pnpm"
+  else
+    log "neither corepack nor pnpm is on PATH — cannot install worktree dependencies"
+    return 1
+  fi
+  log "installing worktree dependencies (lock $want, via $pm); reruns only when the lockfile moves"
+  # shellcheck disable=SC2086 # $pm is a deliberate two-word command
   if ! (cd "$wt" && CI=1 npm_config_verify_deps_before_run=false \
-    nice -n 19 corepack pnpm install --frozen-lockfile) >/tmp/um-worktree-install.log 2>&1; then
+    nice -n 19 $pm install --frozen-lockfile) >/tmp/um-worktree-install.log 2>&1; then
     log "worktree pnpm install failed (see /tmp/um-worktree-install.log):"
     tail -n 5 /tmp/um-worktree-install.log >&2 2>/dev/null || true
     return 1
