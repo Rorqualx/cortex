@@ -477,6 +477,28 @@ export async function retrieveTopK(params: {
   const corpusStats: CorpusStats | undefined =
     config.weightBm25 > 0 ? buildCorpusStats(items.map((i) => i.fact.text)) : undefined;
 
+  // Corpus-size-aware BM25 weight scaling (arXiv:2607.26497 — BM25 dominates
+  // the Pareto frontier at scale). When the corpus exceeds a configurable
+  // fact-count threshold, scale weightBm25 upward so rare-term lexical
+  // matches dominate over semantic noise. Below the threshold, current
+  // weights are validated and unchanged.
+  let effectiveConfig = config;
+  if (
+    corpusStats &&
+    corpusStats.total > 0 &&
+    config.weightBm25 > 0 &&
+    (config.corpusSizeBm25Threshold ?? 50_000) > 0 &&
+    corpusStats.total >= (config.corpusSizeBm25Threshold ?? 50_000)
+  ) {
+    const scaleFactor = config.corpusSizeBm25ScaleFactor ?? 1.5;
+    if (scaleFactor > 1.0) {
+      effectiveConfig = {
+        ...config,
+        weightBm25: config.weightBm25 * scaleFactor,
+      };
+    }
+  }
+
   // Phase 2: Score all items using composite + tier boosts.
   const scored: RetrievedFact[] = [];
   for (const item of items) {
@@ -484,7 +506,7 @@ export async function retrieveTopK(params: {
       queryTokens,
       fact: item.fact,
       now,
-      config,
+      config: effectiveConfig,
       l3Boost: item.l3Boost,
       corpusStats,
       significant: item.fact.significant,
@@ -505,7 +527,7 @@ export async function retrieveTopK(params: {
       signals.bm25 = 0;
       signals.lexical = 0;
     }
-    const baseScore = composite(signals, config);
+    const baseScore = composite(signals, effectiveConfig);
     const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
     // Stale-utility demotion: facts never retrieved across multiple epochs
     // get their composite score multiplied down to reflect low demonstrated
@@ -583,17 +605,17 @@ export async function retrieveTopK(params: {
           queryTokens,
           fact,
           now,
-          config,
+          config: effectiveConfig,
           l3Boost: 0,
           corpusStats,
           recallCount: Math.max(1, skill.usageCount),
         });
-        const baseScore = composite(signals, config);
+        const baseScore = composite(signals, effectiveConfig);
         const recency = fsrsProceduralRetrievability(skill, now);
         const score =
           baseScore +
-          (signals.lexical > 0 ? config.weightLongTermTierBoost : 0) +
-          recency * config.weightRecency;
+          (signals.lexical > 0 ? effectiveConfig.weightLongTermTierBoost : 0) +
+          recency * effectiveConfig.weightRecency;
         if (score > 0) {
           scored.push({
             fact,
@@ -629,13 +651,14 @@ export async function retrieveTopK(params: {
           queryTokens,
           fact,
           now,
-          config,
+          config: effectiveConfig,
           l3Boost: 0,
           corpusStats,
           recallCount: sf.recallCount,
         });
-        const baseScore = composite(signals, config);
-        const score = signals.lexical > 0 ? baseScore + config.weightLongTermTierBoost : baseScore;
+        const baseScore = composite(signals, effectiveConfig);
+        const score =
+          signals.lexical > 0 ? baseScore + effectiveConfig.weightLongTermTierBoost : baseScore;
         if (score > 0) {
           scored.push({
             fact,

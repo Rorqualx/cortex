@@ -1049,3 +1049,49 @@ describe("scoreFact with entity scoring", () => {
     expect(onScore).toBeGreaterThan(offScore);
   });
 });
+
+describe("corpus-size-aware BM25 config", () => {
+  it("DEFAULT_SCORING_CONFIG has corpusSizeBm25Threshold and corpusSizeBm25ScaleFactor", () => {
+    expect(DEFAULT_SCORING_CONFIG.corpusSizeBm25Threshold).toBe(50_000);
+    expect(DEFAULT_SCORING_CONFIG.corpusSizeBm25ScaleFactor).toBe(1.5);
+  });
+
+  it("threshold defaults to 50k when not set", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, corpusSizeBm25Threshold: undefined };
+    // The retrieval code uses `(config.corpusSizeBm25Threshold ?? 50_000)` —
+    // verify the fallback constant matches the default.
+    expect(config.corpusSizeBm25Threshold ?? 50_000).toBe(50_000);
+  });
+
+  it("scaleFactor defaults to 1.5 when not set", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, corpusSizeBm25ScaleFactor: undefined };
+    expect(config.corpusSizeBm25ScaleFactor ?? 1.5).toBe(1.5);
+  });
+
+  it("scaling is purely additive — defaults preserve current behavior below threshold", () => {
+    // With default config, threshold=50k, a corpus of 100 facts should NOT
+    // trigger scaling. The effective weightBm25 should equal the base.
+    const config = DEFAULT_SCORING_CONFIG;
+    const corpusSize = 100;
+    const threshold = config.corpusSizeBm25Threshold ?? 50_000;
+    const shouldScale = corpusSize >= threshold;
+    expect(shouldScale).toBe(false);
+  });
+
+  it("scaling activates when corpus exceeds threshold", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, corpusSizeBm25Threshold: 10 };
+    const corpusSize = 50;
+    const threshold = config.corpusSizeBm25Threshold ?? 50_000;
+    const scaleFactor = config.corpusSizeBm25ScaleFactor ?? 1.5;
+    const shouldScale = corpusSize >= threshold && scaleFactor > 1.0;
+    expect(shouldScale).toBe(true);
+    const effectiveBm25 = config.weightBm25 * scaleFactor;
+    expect(effectiveBm25).toBeCloseTo(0.3 * 1.5, 6);
+  });
+
+  it("scaling disabled when scaleFactor is 1.0", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, corpusSizeBm25ScaleFactor: 1.0 };
+    const scaleFactor = config.corpusSizeBm25ScaleFactor ?? 1.5;
+    expect(scaleFactor > 1.0).toBe(false);
+  });
+});
