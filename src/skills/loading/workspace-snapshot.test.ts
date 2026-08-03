@@ -118,6 +118,8 @@ describe("buildWorkspaceSkillSnapshot", () => {
     // The refresh check treats a missing promptFormatVersion as stale; without
     // this stamp every turn re-scans skills and re-persists the snapshot.
     expect(snapshot.promptFormatVersion).toBe(WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION);
+  });
+
   it("keeps symlinked compatibility skills out of isolated session snapshots", async () => {
     if (!tempHome) {
       throw new Error("temporary home is unavailable");

@@ -541,7 +541,13 @@ describe("main-session-restart-recovery", () => {
         },
         restartRecoveryDeliveryContext: { channel: "telegram", to: "7814261895" },
         restartRecoveryDeliveryRunId: "drifted-recovery-run",
-        pendingFinalDeliveryContext: { channel: "telegram", to: "7814261895" },
+        pendingFinalDelivery: {
+          kind: "replayable",
+          text: "pending final body",
+          createdAt: 1,
+          context: { channel: "telegram", to: "7814261895" },
+          intentId: "pending-final-intent",
+        },
       },
     });
     await writeTranscript(sessionsDir, sessionId, [{ role: "user", content: "still in nav" }]);
@@ -559,7 +565,14 @@ describe("main-session-restart-recovery", () => {
     // with a fresh id for the resume it is about to dispatch, so assert the
     // drifted claim is gone rather than that the field is empty.
     expect(healed?.restartRecoveryDeliveryRunId).not.toBe("drifted-recovery-run");
-    expect(healed?.pendingFinalDeliveryContext).toBeUndefined();
+    // Only the drifted routing context is cleared. The pending final itself is
+    // still owed to the user, so it must survive the heal and fall back to the
+    // dashboard rather than be dropped with the channel it was addressed to.
+    expect(healed?.pendingFinalDelivery?.context).toBeUndefined();
+    expect(healed?.pendingFinalDelivery).toMatchObject({
+      kind: "replayable",
+      text: "pending final body",
+    });
     // No telegram target remnant on the entry (the peer id survives only inside
     // the unchanged session key, never as a delivery target).
     expect(JSON.stringify(healed)).not.toContain("telegram");
