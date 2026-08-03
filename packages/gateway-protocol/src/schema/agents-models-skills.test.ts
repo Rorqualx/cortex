@@ -20,6 +20,7 @@ import {
   SkillsProposalInspectResultSchema,
   SkillsProposalRequestRevisionResultSchema,
   ToolsEffectiveResultSchema,
+  ToolsInvokeParamsSchema,
 } from "./agents-models-skills.js";
 
 /**

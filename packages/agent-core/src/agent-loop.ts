@@ -3,6 +3,7 @@
 import { EventStream as LlmEventStream } from "@openclaw/ai/event-stream";
 import type {
   AssistantMessage,
+  AssistantMessageEvent,
   Context,
   EventStream,
   ToolResultMessage,
@@ -484,10 +485,12 @@ async function streamAssistantResponse(
       case "toolcall_start":
       case "toolcall_delta":
       case "toolcall_end":
-        // `text_delta` may omit `partial` to avoid retaining a full assistant
-        // message per token; in that case keep the last start/end checkpoint.
-        if (partialMessage && event.partial) {
-          const message = event.partial;
+        // `text_delta` may omit `partial` to avoid shipping a full assistant
+        // message per token. Rebuild the snapshot locally from the delta rather
+        // than skipping the update, or streaming text never reaches the UI on
+        // providers that omit it.
+        if (partialMessage) {
+          const message = resolveAssistantMessageUpdate(event, partialMessage);
           partialMessage = message;
           context.messages[context.messages.length - 1] = message;
           await emit({
@@ -530,6 +533,53 @@ async function streamAssistantResponse(
   }
   await emit({ type: "message_end", message: finalMessage });
   return finalMessage;
+}
+
+type AssistantMessageUpdateEvent = Extract<
+  AssistantMessageEvent,
+  {
+    type:
+      | "text_start"
+      | "text_delta"
+      | "text_end"
+      | "thinking_start"
+      | "thinking_delta"
+      | "thinking_end"
+      | "toolcall_start"
+      | "toolcall_delta"
+      | "toolcall_end";
+  }
+>;
+
+function appendTextDeltaToAssistantMessage(
+  message: AssistantMessage,
+  contentIndex: number,
+  delta: string,
+): AssistantMessage {
+  const content = [...message.content];
+  const currentContent = content[contentIndex];
+  content[contentIndex] =
+    currentContent?.type === "text"
+      ? { ...currentContent, text: currentContent.text + delta }
+      : { type: "text", text: delta };
+  return { ...message, content };
+}
+
+// Providers may ship a full `partial` snapshot per event or omit it to save
+// bandwidth. When it is omitted the delta is the only new information, so the
+// snapshot is rebuilt here; non-text events without a partial carry nothing to
+// apply and keep the previous checkpoint.
+function resolveAssistantMessageUpdate(
+  event: AssistantMessageUpdateEvent,
+  currentMessage: AssistantMessage,
+): AssistantMessage {
+  if ("partial" in event && event.partial) {
+    return event.partial;
+  }
+  if (event.type === "text_delta") {
+    return appendTextDeltaToAssistantMessage(currentMessage, event.contentIndex, event.delta);
+  }
+  return currentMessage;
 }
 
 /**

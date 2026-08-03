@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import { captureFullEnv } from "../../test-utils/env.js";
+import { resolveSshRuntimePaths } from "./ssh-backend.js";
 import type { SandboxConfig } from "./types.js";
 
 const sshMocks = vi.hoisted(() => ({

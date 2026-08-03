@@ -77,7 +77,7 @@ type ScenarioTemplate = {
 const ACT_SCENARIO_BANK: ScenarioTemplate[] = [
   {
     slotPattern: /language|framework|stack|tool/i,
-    prompt: (_slot, value) =>
+    prompt: (_slot, _value) =>
       `I need to write a new utility script that parses JSON files and outputs CSV. What language or tool should I use? Write the first few lines.`,
     keywords: (value) => [value.toLowerCase()],
     antiKeywords: (_value) => [],
@@ -93,7 +93,7 @@ const ACT_SCENARIO_BANK: ScenarioTemplate[] = [
   },
   {
     slotPattern: /favorite|preference|like|prefer/i,
-    prompt: (slot, _value) => `Can you recommend something for me? I'm not sure what to pick.`,
+    prompt: (_slot, _value) => `Can you recommend something for me? I'm not sure what to pick.`,
     keywords: (value) => [value.toLowerCase()],
     antiKeywords: () => [],
     description: (slot) => `Tests whether ${slot} preference appears in recommendations`,

@@ -2,6 +2,7 @@ import * as agentsModelsSkills from "./agents-models-skills.js";
 import * as agentsWorkspace from "./agents-workspace.js";
 import * as artifacts from "./artifacts.js";
 import * as commands from "./commands.js";
+import * as skillWorkshop from "./skill-protocol-schemas.js";
 
 export const AgentSkillProtocolSchemas = {
   AgentKind: agentsModelsSkills.AgentKindSchema,
@@ -65,6 +66,21 @@ export const AgentSkillProtocolSchemas = {
   SkillsSearchResult: agentsModelsSkills.SkillsSearchResultSchema,
   SkillsDetailParams: agentsModelsSkills.SkillsDetailParamsSchema,
   SkillsDetailResult: agentsModelsSkills.SkillsDetailResultSchema,
+  // The gateway registers 11 skills.proposals.* methods (see
+  // src/gateway/server-methods/skills.ts) plus the two history methods, so their
+  // schemas have to be registered here or the public registry disagrees with the
+  // surface the server actually validates against.
+  ...skillWorkshop.SkillWorkshopProtocolSchemas,
+  SkillsProposalInspectParams: agentsModelsSkills.SkillsProposalInspectParamsSchema,
+  SkillsProposalInspectResult: agentsModelsSkills.SkillsProposalInspectResultSchema,
+  SkillsProposalCreateParams: agentsModelsSkills.SkillsProposalCreateParamsSchema,
+  SkillsProposalUpdateParams: agentsModelsSkills.SkillsProposalUpdateParamsSchema,
+  SkillsProposalReviseParams: agentsModelsSkills.SkillsProposalReviseParamsSchema,
+  SkillsProposalRequestRevisionParams: agentsModelsSkills.SkillsProposalRequestRevisionParamsSchema,
+  SkillsProposalRequestRevisionResult: agentsModelsSkills.SkillsProposalRequestRevisionResultSchema,
+  SkillsProposalActionParams: agentsModelsSkills.SkillsProposalActionParamsSchema,
+  SkillsProposalApplyResult: agentsModelsSkills.SkillsProposalApplyResultSchema,
+  SkillsProposalRecordResult: agentsModelsSkills.SkillsProposalRecordResultSchema,
   SkillsSecurityVerdictsParams: agentsModelsSkills.SkillsSecurityVerdictsParamsSchema,
   SkillsSecurityVerdictsResult: agentsModelsSkills.SkillsSecurityVerdictsResultSchema,
   SkillsSkillCardParams: agentsModelsSkills.SkillsSkillCardParamsSchema,

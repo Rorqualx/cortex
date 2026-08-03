@@ -5651,7 +5651,6 @@ describe("subagent registry seam flow", () => {
       mod.markSubagentRunTerminated({
         runId: "run-requester-teardown",
         reason: "manual kill",
-        suppressTaskDelivery: true,
       }),
     ).toBe(1);
 

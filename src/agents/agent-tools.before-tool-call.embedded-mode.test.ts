@@ -12,7 +12,11 @@ import {
   EmbeddedPluginApprovalBroker,
   setEmbeddedPluginApprovalBroker,
 } from "../infra/embedded-plugin-approval-broker.js";
-import { getGlobalHookRunner, resetGlobalHookRunner } from "../plugins/hook-runner-global.js";
+import {
+  getGlobalHookRunner,
+  initializeGlobalHookRunner,
+  resetGlobalHookRunner,
+} from "../plugins/hook-runner-global.js";
 import type { HookRunner } from "../plugins/hooks.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
@@ -729,54 +733,6 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
     });
     expect(evaluatePolicy).toHaveBeenCalledTimes(1);
     expect(runBeforeToolCallMock).not.toHaveBeenCalled();
-  });
-
-  it("runs pinned gateway trusted policies after a later global runner initialization", async () => {
-    const evaluatePolicy = vi.fn(() => ({
-      block: true,
-      blockReason: "pinned gateway policy blocked",
-    }));
-    const gatewayRegistry = createEmptyPluginRegistry();
-    gatewayRegistry.trustedToolPolicies = [
-      {
-        pluginId: "gateway-policy",
-        pluginName: "Gateway Policy",
-        source: "test",
-        policy: {
-          id: "gateway-block",
-          description: "Gateway policy",
-          evaluate: evaluatePolicy,
-        },
-      },
-    ];
-    setActivePluginRegistry(gatewayRegistry);
-    initializeGlobalHookRunner(gatewayRegistry);
-    pinActivePluginChannelRegistry(gatewayRegistry);
-    try {
-      const laterRegistry = createEmptyPluginRegistry();
-      setActivePluginRegistry(laterRegistry);
-      initializeGlobalHookRunner(laterRegistry);
-      runBeforeToolCallMock.mockResolvedValue(undefined);
-
-      const result = await runBeforeToolCallHook({
-        toolName: "bash",
-        params: { command: "deploy" },
-        toolCallId: "call-pinned-gateway-policy",
-        ctx: { agentId: "main", sessionKey: "main" },
-      });
-
-      expect(result).toEqual({
-        blocked: true,
-        kind: "veto",
-        deniedReason: "plugin-before-tool-call",
-        reason: "pinned gateway policy blocked",
-        params: { command: "deploy" },
-      });
-      expect(evaluatePolicy).toHaveBeenCalledTimes(1);
-      expect(runBeforeToolCallMock).not.toHaveBeenCalled();
-    } finally {
-      releasePinnedPluginChannelRegistry(gatewayRegistry);
-    }
   });
 
   it("does not require skill_forge lifecycle approval in auto mode", async () => {

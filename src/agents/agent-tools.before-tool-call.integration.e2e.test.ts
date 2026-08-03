@@ -9,10 +9,7 @@ import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionEntry } from "../config/sessions.js";
-import {
-  replaceSessionEntry,
-  upsertSessionEntry,
-} from "../config/sessions/session-accessor.js";
+import { replaceSessionEntry, upsertSessionEntry } from "../config/sessions/session-accessor.js";
 import {
   onInternalDiagnosticEvent,
   resetDiagnosticEventsForTest,
@@ -38,17 +35,20 @@ import { resetClientVoiceConfirmationStateForTest } from "../talk/client-voice-c
 import * as clientVoiceSession from "../talk/client-voice-session.js";
 import { toClientToolDefinitions, toToolDefinitions } from "./agent-tool-definition-adapter.js";
 import { wrapToolWithAbortSignal } from "./agent-tools.abort.js";
+import { finalizeToolTerminalPresentation } from "./agent-tools.before-tool-call.diagnostics.js";
 import {
   consumeAdjustedParamsForToolCall,
   isToolWrappedWithBeforeToolCallHook,
   resetAdjustedParamsByToolCallIdForTests,
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
+import { normalizeToolParameters } from "./agent-tools.schema.js";
+import type { AnyAgentTool } from "./agent-tools.types.js";
 import { markCodeModeControlTool } from "./code-mode-control-tools.js";
 import { CODE_MODE_EXEC_TOOL_NAME, createCodeModeTools } from "./code-mode.js";
 import { splitSdkTools } from "./embedded-agent-runner/tool-split.js";
-import type { AnyAgentTool } from "./agent-tools.types.js";
 import type { ExtensionContext } from "./sessions/index.js";
+import { setToolTerminalPresentation } from "./tool-terminal-presentation.js";
 
 type BeforeToolCallHandlerMock = ReturnType<typeof vi.fn>;
 

@@ -755,6 +755,12 @@ function createOpenShellBackendSandboxConfig(): CreateSandboxBackendParams["cfg"
     browser: createSandboxBrowserConfig(),
     tools: { allow: ["*"], deny: [] },
     prune: createSandboxPruneConfig(),
+    osSandbox: {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "deny",
+    },
   };
 }
 

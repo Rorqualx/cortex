@@ -74,9 +74,9 @@ describe("agent-steering-queue properties", () => {
                 throw new Error(`unexpected sparse queue snapshot at index ${i}`);
               }
               const prevEnded =
-                prev.payload.endedAt ?? prev.entry.endedAt ?? Number.MAX_SAFE_INTEGER;
+                prev.payload.endedAt ?? prev.entry.execution.endedAt ?? Number.MAX_SAFE_INTEGER;
               const currEnded =
-                curr.payload.endedAt ?? curr.entry.endedAt ?? Number.MAX_SAFE_INTEGER;
+                curr.payload.endedAt ?? curr.entry.execution.endedAt ?? Number.MAX_SAFE_INTEGER;
               expect(currEnded).toBeGreaterThanOrEqual(prevEnded);
             }
           },

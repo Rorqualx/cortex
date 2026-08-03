@@ -161,6 +161,12 @@ function buildConfig(noVncEnabled: boolean): SandboxConfig {
       idleHours: 24,
       maxAgeDays: 7,
     },
+    osSandbox: {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "deny",
+    },
   };
 }
 
