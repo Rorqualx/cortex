@@ -38,6 +38,7 @@ describe("tool-catalog", () => {
       "memory_search",
       "memory_get",
       "memory_reports",
+      "sessions",
       "sessions_list",
       "sessions_history",
       "sessions_send",
@@ -82,6 +83,7 @@ describe("tool-catalog", () => {
   it("includes bundle MCP tools in coding and messaging profile policies", () => {
     expect(requirePolicyAllow("coding").at(-1)).toBe("bundle-mcp");
     expect(requirePolicyAllow("messaging")).toEqual([
+      "sessions",
       "sessions_list",
       "sessions_history",
       "sessions_send",
