@@ -39,6 +39,18 @@ function toolShapeOverlap(a: readonly string[], b: readonly string[]): number {
   return union === 0 ? 0 : intersect / union;
 }
 
+// Only the tool-shape lane carries a capture-dir list and a repetition count;
+// the error-recovery and explicit lanes carry a single `captureDir` and have no
+// occurrence counter. Read both through these so a non-repetition parent keeps
+// its capture dir instead of being silently dropped from the merged candidate.
+function candidateCaptureDirs(candidate: Candidate): string[] {
+  return candidate.lane === "tool-shape" ? candidate.captureDirs : [candidate.captureDir];
+}
+
+function candidateOccurrences(candidate: Candidate): number {
+  return candidate.lane === "tool-shape" ? candidate.occurrences : 1;
+}
+
 /**
  * Merge two tool sequences into a single deduplicated, order-preserving list.
  * Tools from parent A come first, then any novel tools from parent B.
@@ -106,7 +118,9 @@ export function generateCrossoverCandidates(
       if (seen.has(pairKey)) continue;
       seen.add(pairKey);
 
-      const mergedCaptureDirs = [...new Set([...(a.captureDirs ?? []), ...(b.captureDirs ?? [])])];
+      const mergedCaptureDirs = [
+        ...new Set([...candidateCaptureDirs(a), ...candidateCaptureDirs(b)]),
+      ];
 
       const hash = crypto
         .createHash("sha256")
@@ -120,7 +134,7 @@ export function generateCrossoverCandidates(
         toolShapeHash: hash,
         toolSequence: mergedTools,
         captureDirs: mergedCaptureDirs,
-        occurrences: (a.occurrences ?? 1) + (b.occurrences ?? 1),
+        occurrences: candidateOccurrences(a) + candidateOccurrences(b),
         // Average of parents with a small boost for combining complementary capabilities.
         successScore: Math.min(1, ((a.successScore + b.successScore) / 2) * 1.1),
       });
