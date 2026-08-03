@@ -106,6 +106,18 @@ export type ScoringConfig = {
    * Set to 1.0 to disable demotion entirely.
    */
   staleZeroRecallDemotion?: number;
+  /**
+   * Fact count threshold above which BM25 weight is scaled up. Research
+   * (arXiv:2607.26497) shows BM25 overtakes agent-based retrieval at
+   * ~10M tokens (~50k facts at current avg fact length). Below this,
+   * current weights are validated. Default 50000.
+   */
+  corpusSizeBm25Threshold?: number;
+  /**
+   * Multiplier applied to weightBm25 when corpusStats.total exceeds
+   * corpusSizeBm25Threshold. Default 1.5 (50% boost). Set to 1.0 to disable.
+   */
+  corpusSizeBm25ScaleFactor?: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -132,6 +144,8 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   useEntityScoring: false,
   staleZeroRecallAgeDays: 21,
   staleZeroRecallDemotion: 0.5,
+  corpusSizeBm25Threshold: 50_000,
+  corpusSizeBm25ScaleFactor: 1.5,
 };
 
 // ---------------------------------------------------------------------------

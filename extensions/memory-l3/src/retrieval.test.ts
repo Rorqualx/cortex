@@ -4,9 +4,11 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   classifyQueryIntent,
+  critiqueStaleFacts,
   formatMemorySection,
   getIntentScoringPreset,
   retrieveTopK,
+  type RetrievedFact,
 } from "./retrieval.js";
 import { DEFAULT_SCORING_CONFIG } from "./scoring.js";
 import { Storage } from "./storage.js";
@@ -1404,5 +1406,201 @@ describe("REFACT-style adaptive fact compression", () => {
     const proseFact = facts.find((f) => f.fact.dedupKey === "default-1");
     expect(proseFact).toBeDefined();
     expect(proseFact!.fact.text).toBe(longText);
+  });
+});
+
+describe("critiqueStaleFacts", () => {
+  it("demotes stale + unreliable prose facts", () => {
+    const stale: RetrievedFact = {
+      fact: {
+        id: "f1",
+        text: "old tentative claim",
+        importance: 0.3,
+        createdAt: 0,
+        dedupKey: "k:1",
+      },
+      score: 1.0,
+      signals: {
+        lexical: 0.5,
+        bm25: 0,
+        importance: 0.3,
+        recency: 0.1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0.5,
+        semanticEntropy: 1,
+        validity: 0.2,
+        entityScore: 0,
+      },
+      chunkId: "c1",
+      tier: "l2",
+    };
+    const fresh: RetrievedFact = {
+      fact: {
+        id: "f2",
+        text: "confirmed recent fact",
+        importance: 0.8,
+        createdAt: Date.now(),
+        dedupKey: "k:2",
+      },
+      score: 0.9,
+      signals: {
+        lexical: 0.5,
+        bm25: 0,
+        importance: 0.8,
+        recency: 0.9,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 1.0,
+        semanticEntropy: 1,
+        validity: 0.95,
+        entityScore: 0,
+      },
+      chunkId: "c2",
+      tier: "l2",
+    };
+    const results = critiqueStaleFacts([stale, fresh]);
+    // Stale fact should be demoted below fresh fact
+    expect(results[0]!.fact.id).toBe("f2");
+    expect(results[1]!.fact.id).toBe("f1");
+    expect(results[1]!.score).toBeCloseTo(0.5, 6); // 1.0 * 0.5 demotion
+  });
+
+  it("does NOT demote stale facts that are reliable", () => {
+    const stale: RetrievedFact = {
+      fact: {
+        id: "f1",
+        text: "old confirmed fact",
+        importance: 0.8,
+        createdAt: 0,
+        dedupKey: "k:1",
+      },
+      score: 1.0,
+      signals: {
+        lexical: 0.5,
+        bm25: 0,
+        importance: 0.8,
+        recency: 0.1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 1.0,
+        semanticEntropy: 1,
+        validity: 0.2,
+        entityScore: 0,
+      },
+      chunkId: "c1",
+      tier: "l2",
+    };
+    critiqueStaleFacts([stale]);
+    // Reliability is high (1.0) — should NOT be demoted despite low validity
+    expect(stale.score).toBe(1.0);
+  });
+
+  it("does NOT demote reliable facts with low validity", () => {
+    const item: RetrievedFact = {
+      fact: { id: "f1", text: "test", importance: 0.5, createdAt: 0, dedupKey: "k:1" },
+      score: 0.8,
+      signals: {
+        lexical: 0,
+        bm25: 0,
+        importance: 0.5,
+        recency: 0.1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0.9,
+        semanticEntropy: 1,
+        validity: 0.1,
+        entityScore: 0,
+      },
+      chunkId: "c1",
+      tier: "longterm",
+    };
+    critiqueStaleFacts([item]);
+    expect(item.score).toBe(0.8); // unchanged
+  });
+
+  it("skips typed facts entirely", () => {
+    const typed: RetrievedFact = {
+      fact: { id: "f1", text: "slot = value", importance: 0.9, createdAt: 0, dedupKey: "k:1" },
+      score: 1.0,
+      signals: {
+        lexical: 0.5,
+        bm25: 0,
+        importance: 0.9,
+        recency: 0.1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0.1,
+        semanticEntropy: 1,
+        validity: 0.05,
+        entityScore: 0,
+      },
+      chunkId: "c1",
+      tier: "typed",
+    };
+    critiqueStaleFacts([typed]);
+    expect(typed.score).toBe(1.0); // unchanged despite terrible signals
+  });
+
+  it("skips longterm-typed facts entirely", () => {
+    const ltt: RetrievedFact = {
+      fact: { id: "f1", text: "ip = 192.168.1.1", importance: 0.9, createdAt: 0, dedupKey: "k:1" },
+      score: 1.0,
+      signals: {
+        lexical: 0.5,
+        bm25: 0,
+        importance: 0.9,
+        recency: 0.1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0.1,
+        semanticEntropy: 1,
+        validity: 0.05,
+        entityScore: 0,
+      },
+      chunkId: "c1",
+      tier: "longterm-typed",
+    };
+    critiqueStaleFacts([ltt]);
+    expect(ltt.score).toBe(1.0);
+  });
+
+  it("handles empty/single-element arrays gracefully", () => {
+    expect(critiqueStaleFacts([])).toEqual([]);
+    const single: RetrievedFact = {
+      fact: { id: "f1", text: "test", importance: 0.1, createdAt: 0, dedupKey: "k:1" },
+      score: 0.5,
+      signals: {
+        lexical: 0,
+        bm25: 0,
+        importance: 0.1,
+        recency: 0.1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 0.1,
+        semanticEntropy: 1,
+        validity: 0.01,
+        entityScore: 0,
+      },
+      chunkId: "c1",
+      tier: "l2",
+    };
+    critiqueStaleFacts([single]);
+    // Single element should still be demoted
+    expect(single.score).toBeCloseTo(0.25, 6); // 0.5 * 0.5
   });
 });

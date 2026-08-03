@@ -1,5 +1,6 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { generateCrossoverCandidates } from "./crossover.js";
 import { runDetector, writeCandidatesToForge, type Candidate } from "./detector.js";
 import { distillProseBodyWithLlm } from "./distiller-llm.js";
 import {
@@ -37,6 +38,8 @@ export type PipelineRunInput = {
    * tests inject instead of paying that cost and inheriting the host machine's config.
    */
   resolveEmbeddingProvider?: typeof tryResolveSkillForgeEmbeddingProvider;
+  /** Opt-in: generate crossover candidates from high-success pairs (Frontis-MA1 Crossover operator). Default false. */
+  enableCrossover?: boolean;
 };
 
 /** Embedding clustering lane outcome. `disabled` unless `useEmbedding` was set. */
@@ -93,6 +96,8 @@ export type PipelineRunResult = {
   embedding: EmbeddingLaneResult;
   /** LLM replay-gate outcome over drafted skills; present only when useLlmReplay. */
   llmReplay?: LlmReplayLaneResult;
+  /** Crossover candidates generated from high-success pairs (Frontis-MA1). */
+  crossover: { generated: number; candidateIds: string[] };
 };
 
 /** Maps CLI-level useLlm/agentId options onto the distiller's injectable seam. */
@@ -175,6 +180,23 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
     }
   }
 
+  // Crossover operator (Frontis-MA1, arXiv:2607.28568): generates merged
+  // candidates from pairs of high-success candidates with complementary tool
+  // sequences. Opt-in via enableCrossover. Disabled by default.
+  let crossoverResult = { generated: 0, candidateIds: [] as string[] };
+  if (input.enableCrossover && candidates.length >= 2) {
+    const xoverCandidates = generateCrossoverCandidates(candidates);
+    for (const xover of xoverCandidates) {
+      if (!candidates.some((existing) => existing.candidateId === xover.candidateId)) {
+        candidates.push(xover);
+      }
+    }
+    crossoverResult = {
+      generated: xoverCandidates.length,
+      candidateIds: xoverCandidates.map((c) => c.candidateId),
+    };
+  }
+
   const candidateFiles = await writeCandidatesToForge(candidates, env);
   const distillProse = input.distillProse ?? resolveDistillProseOverride(input);
   const drafted: DraftedSkill[] = [];
@@ -237,6 +259,7 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
     promotions,
     skipped,
     embedding,
+    crossover: crossoverResult,
     ...(llmReplay ? { llmReplay } : {}),
   };
 }

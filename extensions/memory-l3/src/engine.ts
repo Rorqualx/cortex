@@ -39,6 +39,7 @@ export type EmbeddingProvider = {
   embedBatch(texts: string[]): Promise<number[][]>;
 };
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
+import { cosineSimilarity } from "./scoring.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
@@ -46,6 +47,19 @@ import type { L3State } from "./types.js";
 
 const ASSEMBLE_TOP_K = 5;
 const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
+
+// ReTopK retrieval cache (arXiv:2607.27692) — session-scoped LRU that reuses
+// retrieval results when a new query's embedding cosine-similarity to a
+// cached query exceeds RETOPK_SIMILARITY_THRESHOLD. Cache is bounded and
+// invalidated on any fact write.
+const RETOPK_MAX_ENTRIES = 10;
+const RETOPK_SIMILARITY_THRESHOLD = 0.92;
+
+type ReTopKCacheEntry = {
+  query: string;
+  embedding: number[];
+  result: string;
+};
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 // G1 generative reflection at the epoch boundary. Off by default — opt-in A/B
@@ -118,6 +132,8 @@ export class HierarchicalL3Engine implements ContextEngine {
   private resolvedEmbeddingProvider: EmbeddingProvider | null | undefined;
   private cachedZaiKey: string | null | undefined;
   private state: L3State | null = null;
+  /** ReTopK session-scoped retrieval cache (bounded LRU). */
+  private retrievalCache: ReTopKCacheEntry[] = [];
 
   constructor(storage: Storage, options?: HierarchicalL3EngineOptions) {
     this.storage = storage;
@@ -216,6 +232,30 @@ export class HierarchicalL3Engine implements ContextEngine {
     if (!prompt || prompt.length === 0) {
       return undefined;
     }
+
+    // Compute query embedding once for both cache-check and retrieval.
+    const queryEmbedding = await this.resolveQueryEmbedding(prompt);
+
+    // ReTopK cache check: if a cached query's embedding cosine exceeds the
+    // threshold, reuse the cached formatted result (arXiv:2607.27692).
+    if (queryEmbedding && this.retrievalCache.length > 0) {
+      for (let i = this.retrievalCache.length - 1; i >= 0; i--) {
+        const entry = this.retrievalCache[i]!;
+        if (
+          entry.embedding.length === queryEmbedding.length &&
+          cosineSimilarity(entry.embedding, queryEmbedding) >= RETOPK_SIMILARITY_THRESHOLD
+        ) {
+          // LRU: move hit to end (most-recently-used).
+          this.retrievalCache.splice(i, 1);
+          this.retrievalCache.push(entry);
+          l3debug(
+            `ReTopK cache hit (sim ≥ ${RETOPK_SIMILARITY_THRESHOLD}) for query: ${prompt.slice(0, 60)}`,
+          );
+          return entry.result;
+        }
+      }
+    }
+
     const top = await retrieveTopK({
       query: prompt,
       storage: this.storage,
@@ -223,12 +263,33 @@ export class HierarchicalL3Engine implements ContextEngine {
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,
-      queryEmbedding: await this.resolveQueryEmbedding(prompt),
+      queryEmbedding,
     });
     if (top.facts.length === 0) {
       return undefined;
     }
-    return formatMemorySection(top.facts, { now: Date.now() });
+    const result = formatMemorySection(top.facts, { now: Date.now() });
+
+    // Populate cache when we have an embedding for similarity comparison.
+    if (queryEmbedding && queryEmbedding.length > 0) {
+      this.retrievalCache.push({ query: prompt, embedding: queryEmbedding, result });
+      // LRU eviction: keep only the most recent RETOPK_MAX_ENTRIES entries.
+      if (this.retrievalCache.length > RETOPK_MAX_ENTRIES) {
+        this.retrievalCache.shift();
+      }
+    }
+
+    return result;
+  }
+
+  /** Invalidate the ReTopK retrieval cache. Call after any fact mutation
+   * (consolidation, promotion, new fact creation) so stale results are
+   * never served. */
+  private invalidateRetrievalCache(): void {
+    if (this.retrievalCache.length > 0) {
+      l3debug(`ReTopK cache invalidated (${this.retrievalCache.length} entries cleared)`);
+      this.retrievalCache = [];
+    }
   }
 
   private resolveMemoryCoreLookup(): MemoryCoreLookup | undefined {
@@ -335,6 +396,8 @@ export class HierarchicalL3Engine implements ContextEngine {
       });
       if (result.chunkId !== null) {
         this.state.compactedMessageCountBySession[params.sessionId] = params.messages.length;
+        // Invalidate ReTopK cache — new facts were persisted.
+        this.invalidateRetrievalCache();
       }
       l3debug(
         `afterTurn(): compaction result chunkId=${result.chunkId} factsAdded=${result.factsAdded} epochId=${result.epochId}`,
@@ -509,6 +572,8 @@ export class HierarchicalL3Engine implements ContextEngine {
       };
     }
     await this.storage.writeState(this.state);
+    // Invalidate ReTopK cache — compaction wrote new facts.
+    this.invalidateRetrievalCache();
     return {
       ok: true,
       compacted: true,

@@ -1,8 +1,11 @@
 // Creates and applies JSON merge-patch updates to config-like objects.
-import { isDeepStrictEqual } from "node:util";
+// Import the guard from its defining package, not the src/utils.js barrel: the
+// Control UI imports this module, and the barrel pulls src/infra/home-dir.js,
+// which throws at module-eval in a browser (no HOME/OPENCLAW_HOME) and aborts
+// the app bundle before openclaw-app registers.
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { isPlainObject } from "../infra/plain-object.js";
 import { isBlockedObjectKey } from "../infra/prototype-keys.js";
-import { isRecord } from "../utils.js";
 
 type PlainObject = Record<string, unknown>;
 
@@ -14,6 +17,39 @@ type MergePatchOptions = {
 
 function cloneUnknown<T>(value: T): T {
   return structuredClone(value);
+}
+
+/**
+ * Structural equality for config values.
+ *
+ * Replaces `node:util`'s `isDeepStrictEqual`: the Control UI imports this
+ * module, and Vite externalizes node builtins for the browser, so touching that
+ * binding throws at import time and takes the whole dashboard down with it.
+ *
+ * Config values are JSON-shaped (primitives, arrays, plain objects, null), so a
+ * structural walk suffices — but it keeps the semantics createMergePatch relies
+ * on: NaN equals NaN, 0 and -0 differ, arrays compare by order and length, and
+ * objects compare by exact key set. Non-JSON values (Date, Map, class
+ * instances) never reach config, and would compare unequal here.
+ */
+function isDeepEqualConfigValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) {
+    return true;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    return a.every((item, index) => isDeepEqualConfigValue(item, b[index]));
+  }
+  if (!isRecord(a) || !isRecord(b)) {
+    return false;
+  }
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) {
+    return false;
+  }
+  return aKeys.every((key) => Object.hasOwn(b, key) && isDeepEqualConfigValue(a[key], b[key]));
 }
 
 /** Builds an RFC-7396-style merge patch between source and target config values. */
@@ -45,7 +81,7 @@ export function createMergePatch(base: unknown, target: unknown): unknown {
       patch[key] = childPatch;
       continue;
     }
-    if (!isDeepStrictEqual(baseValue, targetValue)) {
+    if (!isDeepEqualConfigValue(baseValue, targetValue)) {
       patch[key] = cloneUnknown(targetValue);
     }
   }

@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 #
-# Deterministic test gate for the cron "Validate & Deploy" agent.
+# Deterministic validation gate for the cron "Validate & Deploy" agent.
 #
-# This branch carries pre-existing test failures, so "did the suite pass" is the
-# wrong question. Instead this gate runs the fast unit suite and compares the set
-# of FAILING test files against a committed baseline (scripts/cron-test-baseline.txt).
-# It fails only on NEW failing files — a regression introduced by today's commits —
-# with no model judgment involved.
+# Two phases, both without model judgment:
 #
-#   TESTGATE-PASS (exit 0) -> failures are all within the baseline
-#   TESTGATE-FAIL (exit 1) -> new failing file(s) not in the baseline
+#   1. Typecheck (hard pass/fail). Vitest transpiles without typechecking, so a
+#      commit can be test-green and still break `pnpm build`. This lane is clean
+#      on main, so any error here is new by definition — no baseline needed.
+#   2. Tests (baseline diff). This branch carries pre-existing failures, so "did
+#      the suite pass" is the wrong question; only NEW failing files count,
+#      compared against scripts/cron-test-baseline.txt.
+#
+#   TESTGATE-PASS (exit 0) -> typecheck clean and failures all within the baseline
+#   TESTGATE-FAIL (exit 1) -> typecheck error, or new failing file(s)
 #   exit 2                 -> gate could not run (no results / no baseline)
 #
 # Usage:
 #   bash scripts/cron-test-gate.sh                 # run the gate
 #   bash scripts/cron-test-gate.sh --update-baseline   # record current failures as the baseline
 #
-# Run from the LIVE tree post-merge: tests run from source and never touch dist,
-# so this is safe to run in the live gateway tree.
+# Run from the LIVE tree post-merge: tests and tsgo run from source and never
+# touch dist, so this is safe to run in the live gateway tree.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,7 +29,24 @@ BASELINE="$ROOT/scripts/cron-test-baseline.txt"
 RESULTS="$(mktemp)"
 trap 'rm -f "$RESULTS"' EXIT
 
-echo "Test gate: running unit-fast suite (failures compared to baseline, not pass/fail)..."
+# ── Phase 1: typecheck ────────────────────────────────────────────────────────
+# Gate the exact lane that fails `pnpm build`. On 2026-08-02 a landed commit read
+# fields off a Candidate union member that lacked them; the test gate passed
+# (its tests only built the one lane that had those fields), build:plugin-sdk:dts
+# failed, and main stayed unbuildable for hours. Nothing rebuilds on a schedule,
+# so the break only surfaced when a rebuild under the live gateway turned it into
+# an outage. Skipped for --update-baseline, which must be able to record a
+# baseline even from a red tree.
+if [ "${1:-}" != "--update-baseline" ]; then
+  echo "Validate gate: typechecking the declaration lane that gates pnpm build..."
+  if ! nice -n 19 node scripts/run-tsgo.mjs -p tsconfig.plugin-sdk.dts.json --declaration true; then
+    echo "TESTGATE-FAIL: typecheck failed (build:plugin-sdk:dts) — pnpm build cannot succeed at this commit"
+    exit 1
+  fi
+  echo "Typecheck: clean"
+fi
+
+echo "Validate gate: running unit-fast suite (failures compared to baseline, not pass/fail)..."
 # Exit code is ignored on purpose — pre-existing failures are expected; the JSON
 # reporter gives the deterministic failing-file set we actually compare.
 #

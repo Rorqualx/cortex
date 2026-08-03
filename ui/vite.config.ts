@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import type { Plugin, UserConfig } from "vite";
+import { CONTROL_UI_BROWSER_ALIASES } from "./config/control-ui-browser-aliases.ts";
 import { controlUiCodeSplitting } from "./config/control-ui-chunking.ts";
 import { normalizeControlUiBuildInfo } from "./src/build-info-normalizers.ts";
 import type { ControlUiBuildInfo } from "./src/build-info.ts";
@@ -394,24 +395,23 @@ export function controlUiBrowserOnlySharedModuleAliases(): Plugin {
   // Fork-owned UI layout: the browser redactor lives under src/ui/, not
   // upstream's rearchitected src/lib/. Pointing this at src/lib/ fails the
   // Vite build with UNLOADABLE_DEPENDENCY, which no tsgo lane can catch.
-  const browserRedactPath = path.join(here, "src/ui/browser-redact.ts");
-  const sharedRedactImporters = new Set([
-    path.join(repoRoot, "src/agents/tool-display-common.ts"),
-    path.join(repoRoot, "src/agents/tool-display-exec.ts"),
-    path.join(repoRoot, "src/agents/tool-display.ts"),
-  ]);
+  // The pairs come from CONTROL_UI_BROWSER_ALIASES so the boundary checker
+  // models exactly the swaps this build performs.
+  const aliasesByImporter = new Map<string, Map<string, string>>();
+  for (const alias of CONTROL_UI_BROWSER_ALIASES) {
+    const importerPath = path.join(repoRoot, alias.importer);
+    const bySource = aliasesByImporter.get(importerPath) ?? new Map<string, string>();
+    bySource.set(alias.source, path.join(repoRoot, alias.replacement));
+    aliasesByImporter.set(importerPath, bySource);
+  }
   return {
     name: "control-ui-browser-only-shared-module-aliases",
     enforce: "pre",
     resolveId(source, importer) {
-      if (
-        source === "../logging/redact.js" &&
-        importer &&
-        sharedRedactImporters.has(normalizeViteImporterPath(importer))
-      ) {
-        return browserRedactPath;
+      if (!importer) {
+        return null;
       }
-      return null;
+      return aliasesByImporter.get(normalizeViteImporterPath(importer))?.get(source) ?? null;
     },
   };
 }
