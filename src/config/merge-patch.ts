@@ -1,8 +1,12 @@
 // Creates and applies JSON merge-patch updates to config-like objects.
 import { isDeepStrictEqual } from "node:util";
+// Import the guard from its defining package, not the src/utils.js barrel: the
+// Control UI imports this module, and the barrel pulls src/infra/home-dir.js,
+// which throws at module-eval in a browser (no HOME/OPENCLAW_HOME) and aborts
+// the app bundle before openclaw-app registers.
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { isPlainObject } from "../infra/plain-object.js";
 import { isBlockedObjectKey } from "../infra/prototype-keys.js";
-import { isRecord } from "../utils.js";
 
 type PlainObject = Record<string, unknown>;
 
