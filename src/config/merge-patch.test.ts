@@ -1,6 +1,6 @@
 // Covers JSON merge-patch behavior for config mutations.
 import { describe, expect, it } from "vitest";
-import { applyMergePatch } from "./merge-patch.js";
+import { applyMergePatch, createMergePatch } from "./merge-patch.js";
 
 describe("applyMergePatch", () => {
   function makeAgentListBaseAndPatch() {
@@ -223,5 +223,37 @@ describe("applyMergePatch", () => {
       };
     };
     expect(merged.channels?.telegram?.allowFrom).toEqual(["333"]);
+  });
+});
+
+// createMergePatch decides "did this value change" with a hand-rolled structural
+// walk (node:util's isDeepStrictEqual cannot be imported here — the Control UI
+// bundles this module and Vite externalizes node builtins). Pin the semantics
+// that swap depended on; a looser comparison silently drops real config edits.
+describe("createMergePatch value equality", () => {
+  it("omits unchanged nested arrays and objects", () => {
+    const base = { a: [1, 2, { b: "x" }], c: { d: [true, null] } };
+    const target = { a: [1, 2, { b: "x" }], c: { d: [true, null] } };
+    expect(createMergePatch(base, target)).toEqual({});
+  });
+
+  it("detects array order and length changes", () => {
+    expect(createMergePatch({ a: [1, 2] }, { a: [2, 1] })).toEqual({ a: [2, 1] });
+    expect(createMergePatch({ a: [1, 2] }, { a: [1, 2, 3] })).toEqual({ a: [1, 2, 3] });
+  });
+
+  it("detects an added or removed key at equal key counts", () => {
+    expect(createMergePatch({ a: { x: 1, y: 2 } }, { a: { x: 1, z: 2 } })).toEqual({
+      a: { y: null, z: 2 },
+    });
+  });
+
+  it("treats NaN as unchanged and -0 as a change, matching isDeepStrictEqual", () => {
+    expect(createMergePatch({ a: Number.NaN }, { a: Number.NaN })).toEqual({});
+    expect(createMergePatch({ a: 0 }, { a: -0 })).toEqual({ a: -0 });
+  });
+
+  it("distinguishes null from a missing value", () => {
+    expect(createMergePatch({ a: null }, { a: undefined })).toEqual({ a: undefined });
   });
 });
