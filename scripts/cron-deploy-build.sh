@@ -46,4 +46,4 @@ cd "$ROOT"
 # build-suicide guard (scripts/lib/assert-build-safe.mjs) stands down: this path
 # already waited for quiesce above, and the deploy job's own running marker would
 # otherwise trip the guard's --once check.
-exec env OPENCLAW_DEPLOY_BUILD=1 npm_config_verify_deps_before_run=false node scripts/build-all.mjs
+exec env OPENCLAW_DEPLOY_BUILD=1 CI=1 npm_config_verify_deps_before_run=false node scripts/build-all.mjs

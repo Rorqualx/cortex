@@ -22,12 +22,40 @@ import { runExploreLoop } from "./explore-loop.js";
 import type { HostAuthResolver } from "./host-config.js";
 import { resolveRoute, type DelegationKind } from "./router.js";
 import { runDelegation } from "./run-with-provider.js";
+import { preRouteSafetyCheck, shouldBlock, type SafetyCheckOptions } from "./safety-check.js";
+import { flattenToolSpec } from "./schema-flattener.js";
 import { runSwarmV2Loop } from "./swarm-v2-loop.js";
 import { SYSTEM_PROMPTS, type SystemPromptKey } from "./system-prompts.js";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 8000;
 // OpenClaw config provider ids eligible for delegation overrides.
 const VALID_PROVIDERS: readonly string[] = ["zai", "deepseek", "moonshot", "kimi"];
+
+// Safety pre-check is advisory by default. Set blockOnUnsafe via config when
+// ready to enforce. Disabled for trusted internal tools in single-developer mode.
+const DEFAULT_SAFETY_OPTS: SafetyCheckOptions = { disabled: false, blockOnUnsafe: false };
+
+/**
+ * Run the safety pre-check on a delegation request. Returns null if the
+ * dispatch should proceed, or an error result string if blocked.
+ */
+function checkDelegationSafety(
+  toolName: string,
+  toolDescription: string,
+  task: string,
+  kind: string,
+  schema: unknown,
+): string | null {
+  const opts = DEFAULT_SAFETY_OPTS;
+  if (opts.disabled) return null;
+
+  const flat = flattenToolSpec({ name: toolName, description: toolDescription, schema });
+  const verdict = preRouteSafetyCheck(flat, task, kind, opts);
+  if (shouldBlock(verdict, opts)) {
+    return `Delegation blocked by safety pre-check: ${verdict.safe ? "" : verdict.reason} (rule: ${verdict.safe ? "" : verdict.rule})`;
+  }
+  return null;
+}
 
 export type CreateDelegationToolsOptions = {
   config?: OpenClawConfig | undefined;
@@ -146,8 +174,23 @@ async function runSingleShot(
   params: Record<string, unknown>,
   signal: AbortSignal | undefined,
   ctx: ExecCtx,
+  toolName = `delegate_${kind}`,
+  toolDescription = `Delegate ${kind} task.`,
+  toolSchema?: unknown,
 ): Promise<AgentToolResultText> {
   const task = readStringParam(params, "task", { required: true })!;
+
+  // Flattened-spec safety pre-check (Finding 8, 2026-08-03). Advisory by
+  // default — logs but does not block unless blockOnUnsafe is configured.
+  const safetyBlock = checkDelegationSafety(
+    toolName,
+    toolDescription,
+    task,
+    kind,
+    toolSchema ?? {},
+  );
+  if (safetyBlock) return textResult(safetyBlock, { status: "error", kind });
+
   const contextItems = readStringArrayParam(params, "context");
   const images = readStringArrayParam(params, "images");
   const thinking = (params["thinking"] as boolean | undefined) ?? true;
@@ -214,8 +257,27 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
       max_output_tokens: maxTokensField,
       ...extraParams,
     }),
-    execute: async (_toolCallId, args, signal) =>
-      runSingleShot(kind, promptKey, args as Record<string, unknown>, signal, ctx),
+    execute: async (_toolCallId, args, signal) => {
+      const schema = Type.Object({
+        task: Type.String({ description: "The instruction / prompt." }),
+        context: contextField,
+        thinking: thinkingField,
+        provider: providerField,
+        model: modelField,
+        max_output_tokens: maxTokensField,
+        ...extraParams,
+      });
+      return runSingleShot(
+        kind,
+        promptKey,
+        args as Record<string, unknown>,
+        signal,
+        ctx,
+        name,
+        description,
+        schema,
+      );
+    },
   });
 
   const codeTool = singleShot(
@@ -285,6 +347,25 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
     execute: async (_toolCallId, args, signal) => {
       const params = args as Record<string, unknown>;
       const task = readStringParam(params, "task", { required: true })!;
+
+      const exploreSchema = Type.Object({
+        task: Type.String({ description: "What to find/answer." }),
+        roots: Type.Array(Type.String()),
+        context: contextField,
+        thinking: thinkingField,
+        provider: providerField,
+        model: modelField,
+        max_output_tokens: maxTokensField,
+      });
+      const safetyBlock = checkDelegationSafety(
+        "delegate_explore",
+        "Explore a local codebase with a server-side ReAct loop.",
+        task,
+        "explore",
+        exploreSchema,
+      );
+      if (safetyBlock) return textResult(safetyBlock, { status: "error", kind: "explore" });
+
       const roots = readStringArrayParam(params, "roots") ?? [];
       const contextItems = readStringArrayParam(params, "context");
       const thinking = (params["thinking"] as boolean | undefined) ?? true;
@@ -341,6 +422,25 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
     execute: async (_toolCallId, args, signal) => {
       const params = args as Record<string, unknown>;
       const task = readStringParam(params, "task", { required: true })!;
+
+      const swarmSchema = Type.Object({
+        task: Type.String(),
+        roots: Type.Array(Type.String()),
+        context: contextField,
+        thinking: thinkingField,
+        provider: providerField,
+        model: modelField,
+        max_output_tokens: maxTokensField,
+      });
+      const safetyBlock = checkDelegationSafety(
+        "delegate_swarm",
+        "Run an iterative agent swarm.",
+        task,
+        "swarm",
+        swarmSchema,
+      );
+      if (safetyBlock) return textResult(safetyBlock, { status: "error", kind: "swarm" });
+
       const roots = readStringArrayParam(params, "roots") ?? [];
       const contextItems = readStringArrayParam(params, "context");
       const thinking = (params["thinking"] as boolean | undefined) ?? true;
@@ -390,6 +490,21 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
     execute: async (_toolCallId, args, signal) => {
       const params = args as Record<string, unknown>;
       const question = readStringParam(params, "task", { required: true })!;
+
+      const academicSchema = Type.Object({
+        task: Type.String(),
+        provider: providerField,
+        max_output_tokens: maxTokensField,
+      });
+      const safetyBlock = checkDelegationSafety(
+        "delegate_academic",
+        "Academic deep-research with citation grounding.",
+        question,
+        "academic",
+        academicSchema,
+      );
+      if (safetyBlock) return textResult(safetyBlock, { status: "error", kind: "academic" });
+
       const route = resolveRoute({ kind: "academic", cfg, provider: readProviderOverride(params) });
       const { result, provider, model } = await runDelegation<string>({
         cfg,
