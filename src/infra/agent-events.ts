@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto";
 import type { VerboseLevel } from "../auto-reply/thinking.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { notifyListeners, registerListener } from "../shared/listeners.js";
-import { createAbortError } from "./abort-signal.js";
 import { hasInvalidLifecycleStartTimestamp } from "./agent-event-lifecycle.js";
+import { createAgentRunStaleLifecycleError } from "./agent-lifecycle-error.js";
 import { clearAgentRunUsage, resetAgentRunUsageForTest } from "./agent-run-usage.js";
 
 /** Plan event payload (planning-only retry path). */
@@ -81,6 +81,7 @@ export type AgentEventRuntimePayload = AgentEventPayload & {
   readonly controlUiVisible?: boolean;
   readonly contextClaimId?: string;
   readonly deliverySessionKey?: string;
+  readonly projectSessionLifecycle?: boolean;
 };
 
 /** Per-run metadata used to stamp events and gate Control UI visibility. */
@@ -97,6 +98,8 @@ type AgentRunContext = {
   /** Whether control UI clients should receive chat/agent updates for this run. */
   isControlUiVisible?: boolean;
   projectSessionActive?: boolean;
+  /** Whether lifecycle events may update the shared session row. */
+  projectSessionLifecycle?: boolean;
   /** Active cadence state by job; admission permits one invocation per job. */
   cronRunsByJobId?: Map<string, { pacingEnabled: boolean; nextCheckMs?: number }>;
   /** Timestamp when this context was first registered (for TTL-based cleanup). */
@@ -200,7 +203,7 @@ export function assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration: st
   if (isAgentEventLifecycleGenerationCurrent(lifecycleGeneration)) {
     return;
   }
-  throw createAbortError("Agent run belongs to a stale gateway lifecycle");
+  throw createAgentRunStaleLifecycleError();
 }
 
 /** Captures immutable lifecycle ownership for one admitted execution. */
@@ -279,6 +282,9 @@ export function registerAgentRunContext(runId: string, context: AgentRunContext,
   }
   if (context.projectSessionActive !== undefined) {
     existing.projectSessionActive = context.projectSessionActive;
+  }
+  if (context.projectSessionLifecycle !== undefined) {
+    existing.projectSessionLifecycle = context.projectSessionLifecycle;
   }
   if (context.cronRunsByJobId !== undefined) {
     existing.cronRunsByJobId ??= new Map();
@@ -673,6 +679,12 @@ function enrichAgentEvent(
   if (context?.isControlUiVisible !== undefined) {
     Object.defineProperty(enriched, "controlUiVisible", {
       value: context.isControlUiVisible,
+      enumerable: false,
+    });
+  }
+  if (context?.projectSessionLifecycle !== undefined) {
+    Object.defineProperty(enriched, "projectSessionLifecycle", {
+      value: context.projectSessionLifecycle,
       enumerable: false,
     });
   }

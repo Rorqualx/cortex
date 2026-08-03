@@ -5,7 +5,8 @@
  */
 import path from "node:path";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import { emitDiagnosticEvent } from "../infra/diagnostic-events.js";
+import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
+import { emitDiagnosticEventWithTrustedTraceContext } from "../infra/diagnostic-events.js";
 import {
   type EventSessionRoutingPolicy,
   resolveEventSessionKeyForPolicy,
@@ -158,7 +159,7 @@ export const DEFAULT_PENDING_MAX_OUTPUT = clampWithDefault(
 export const DEFAULT_PATH =
   process.env.PATH ?? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 /** Tail length used in background completion notifications. */
-export const DEFAULT_NOTIFY_TAIL_CHARS = 400;
+const DEFAULT_NOTIFY_TAIL_CHARS = 400;
 const DEFAULT_NOTIFY_SNIPPET_CHARS = 180;
 /** Default time an approval can remain pending. */
 export const DEFAULT_APPROVAL_TIMEOUT_MS = DEFAULT_EXEC_APPROVAL_TIMEOUT_MS;
@@ -230,7 +231,9 @@ function emitExecProcessCompleted(params: {
   target: "host" | "sandbox";
 }): void {
   const exitSignal = normalizeExecExitSignal(params.outcome.exitSignal);
-  emitDiagnosticEvent({
+  // Payload stays untrusted, but the ambient trace context is the OpenClaw run
+  // scope, so exporters may use it to nest the exec span under its run.
+  emitDiagnosticEventWithTrustedTraceContext({
     type: "exec.process.completed",
     target: params.target,
     mode: params.mode,
@@ -344,7 +347,7 @@ function compactNotifyOutput(value: string, maxChars = DEFAULT_NOTIFY_SNIPPET_CH
     return normalized;
   }
   const safe = Math.max(1, maxChars - 1);
-  return `${normalized.slice(0, safe)}…`;
+  return `${truncateUtf16Safe(normalized, safe)}…`;
 }
 
 /** Merges shell-discovered PATH entries into an exec environment. */

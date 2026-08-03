@@ -35,8 +35,8 @@ skill name appears in multiple places, the highest source wins.
 | ----------- | ---------------------- | --------------------------------------- |
 | 1 — highest | Workspace skills       | `<workspace>/skills`                    |
 | 2           | Project agent skills   | `<workspace>/.agents/skills`            |
-| 3           | Personal agent skills  | `~/.agents/skills`                      |
-| 4           | Managed / local skills | `~/.openclaw/skills`                    |
+| 3           | Personal agent skills  | `~/.agents/skills` (default state only) |
+| 4           | Managed / local skills | `<state-dir>/skills`                    |
 | 5           | Bundled skills         | shipped with the install                |
 | 6 — lowest  | Extra directories      | `skills.load.extraDirs` + plugin skills |
 
@@ -78,13 +78,18 @@ files. See [Nodes](/nodes#node-hosted-skills) for pairing and off-switches.
 In multi-agent setups, each agent has its own workspace. Use the path that
 matches your desired visibility:
 
-| Scope          | Path                         | Visible to                  |
-| -------------- | ---------------------------- | --------------------------- |
-| Per-agent      | `<workspace>/skills`         | Only that agent             |
-| Project-agent  | `<workspace>/.agents/skills` | Only that workspace's agent |
-| Personal-agent | `~/.agents/skills`           | All agents on this machine  |
-| Shared managed | `~/.openclaw/skills`         | All agents on this machine  |
-| Extra dirs     | `skills.load.extraDirs`      | All agents on this machine  |
+| Scope          | Path                         | Visible to                     |
+| -------------- | ---------------------------- | ------------------------------ |
+| Per-agent      | `<workspace>/skills`         | Only that agent                |
+| Project-agent  | `<workspace>/.agents/skills` | Only that workspace's agent    |
+| Personal-agent | `~/.agents/skills`           | Agents using the default state |
+| Shared managed | `<state-dir>/skills`         | All agents using that state    |
+| Extra dirs     | `skills.load.extraDirs`      | All agents using that config   |
+
+When `OPENCLAW_STATE_DIR` points somewhere other than the default
+`~/.openclaw`, session skill indexes exclude home-scoped personal or
+compatibility skill roots such as `~/.agents/skills`. Workspace, project,
+bundled, extra, and state-owned managed skills continue to load normally.
 
 ## Agent allowlists
 
@@ -135,6 +140,34 @@ skill overrides them. Gate a plugin skill's own eligibility via
 `metadata.openclaw.requires` in its frontmatter, same as any other skill.
 
 See [Plugins](/tools/plugin) and [Tools](/tools) for the full plugin system.
+
+## Reference a skill in a prompt
+
+Type `$` in the Control UI composer to search the skills available to the
+current agent. Selecting a result inserts its stable command name, for example
+`$release_notes`, without replacing the rest of your message. A prompt can
+reference more than one skill:
+
+```text
+Use $github and $release_notes to summarize this change for the release.
+```
+
+OpenClaw resolves these references against the current agent's eligible,
+user-invocable, model-visible skills and tells the model to read each referenced `SKILL.md`
+before acting. A single message can reference up to eight distinct skills;
+OpenClaw returns a visible error instead of ignoring extra references. The `$`
+form is composable prompt text; `/release_notes ...`
+remains the standalone command form and may use direct tool dispatch when the
+skill declares `command-dispatch: tool`. Common uppercase shell variables such
+as `$HOME`, `$PATH`, and `$EDITOR` remain ordinary text; use lowercase
+`$home`, `$path`, or `$editor` to reference skills with those names.
+
+Skills with `disable-model-invocation: true` stay out of the `$` picker because
+their instructions are intentionally absent from the model's prompt. Invoke
+those explicitly with their standalone slash command instead.
+
+`$` references are interpreted on WebChat/Control UI turns. Other messaging
+channels keep `$name` as ordinary text; use the skill's slash command there.
 
 ## Installing from ClawHub
 

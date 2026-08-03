@@ -13,8 +13,18 @@ import {
   type VaultDeleteParams,
   type VaultListParams,
   type VaultSaveParams,
+  SkillsCuratorStatusParamsSchema,
+  SkillsCuratorActionParamsSchema,
+  SkillsProposalsListParamsSchema,
+  SkillsProposalInspectParamsSchema,
+  SkillsProposalCreateParamsSchema,
+  SkillsProposalUpdateParamsSchema,
+  SkillsProposalReviseParamsSchema,
+  SkillsProposalActionParamsSchema,
+  SkillsProposalEvaluateParamsSchema,
+  SkillsProposalRequestRevisionParamsSchema,
+  SkillsProposalEventsListParamsSchema,
 } from "./schema-modules.js";
-
 import {
   CommandsListParamsSchema,
   ConnectParamsSchema,
@@ -148,6 +158,7 @@ import {
   SessionsReclaimParamsSchema,
   SessionsMessagesSubscribeParamsSchema,
   SessionsMessagesUnsubscribeParamsSchema,
+  SessionsViewerPresenceSetParamsSchema,
   SessionsAbortParamsSchema,
   SessionsPatchParamsSchema,
   SessionsPluginPatchParamsSchema,
@@ -507,6 +518,9 @@ export const validateSessionsMessagesSubscribeParams = lazyCompile(
 export const validateSessionsMessagesUnsubscribeParams = lazyCompile(
   SessionsMessagesUnsubscribeParamsSchema,
 );
+export const validateSessionsViewerPresenceSetParams = lazyCompile(
+  SessionsViewerPresenceSetParamsSchema,
+);
 export const validateSessionsAbortParams = lazyCompile(SessionsAbortParamsSchema);
 export const validateSessionsPatchParams = lazyCompile(SessionsPatchParamsSchema);
 export const validateSessionsPluginPatchParams = lazyCompile(SessionsPluginPatchParamsSchema);
@@ -606,6 +620,21 @@ export const validateModelsAuthLogoutParams = lazyCompile(ModelsAuthLogoutParams
 export const validateModelsAuthStatusParams = lazyCompile(ModelsAuthStatusParamsSchema);
 export const validateModelsListParams = lazyCompile(ModelsListParamsSchema);
 export const validateSkillsStatusParams = lazyCompile(SkillsStatusParamsSchema);
+export const validateSkillsProposalRequestRevisionParams = lazyCompile(
+  SkillsProposalRequestRevisionParamsSchema,
+);
+export const validateSkillsProposalEventsListParams = lazyCompile(
+  SkillsProposalEventsListParamsSchema,
+);
+export const validateSkillsCuratorStatusParams = lazyCompile(SkillsCuratorStatusParamsSchema);
+export const validateSkillsCuratorActionParams = lazyCompile(SkillsCuratorActionParamsSchema);
+export const validateSkillsProposalsListParams = lazyCompile(SkillsProposalsListParamsSchema);
+export const validateSkillsProposalInspectParams = lazyCompile(SkillsProposalInspectParamsSchema);
+export const validateSkillsProposalCreateParams = lazyCompile(SkillsProposalCreateParamsSchema);
+export const validateSkillsProposalUpdateParams = lazyCompile(SkillsProposalUpdateParamsSchema);
+export const validateSkillsProposalReviseParams = lazyCompile(SkillsProposalReviseParamsSchema);
+export const validateSkillsProposalActionParams = lazyCompile(SkillsProposalActionParamsSchema);
+export const validateSkillsProposalEvaluateParams = lazyCompile(SkillsProposalEvaluateParamsSchema);
 export const validateToolsCatalogParams = lazyCompile(ToolsCatalogParamsSchema);
 export const validateToolsEffectiveParams = lazyCompile(ToolsEffectiveParamsSchema);
 export const validateToolsInvokeParams = lazyCompile(ToolsInvokeParamsSchema);
@@ -682,9 +711,7 @@ export const validateWebLoginStartParams = lazyCompile(WebLoginStartParamsSchema
 export const validateWebLoginWaitParams = lazyCompile(WebLoginWaitParamsSchema);
 
 // Fork RPC validators (activity feed + egress vault).
-export const validateActivityListParams = lazyCompile<ActivityListParams>(
-  ActivityListParamsSchema,
-);
+export const validateActivityListParams = lazyCompile<ActivityListParams>(ActivityListParamsSchema);
 export const validateActivitySubscribeParams = lazyCompile<ActivitySubscribeParams>(
   ActivitySubscribeParamsSchema,
 );

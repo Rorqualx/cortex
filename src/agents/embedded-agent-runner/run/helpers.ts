@@ -142,13 +142,12 @@ export function scrubAnthropicRefusalMagic(prompt: string): string {
   );
 }
 
-/** Applies only outer-transport prompt rewrites; native model owners receive the prompt verbatim. */
+/** Anthropic's transport interprets this marker even for native-owned attempts. */
 export function resolveEmbeddedAttemptBasePrompt(params: {
-  nativeModelOwned: boolean;
   provider: string;
   prompt: string;
 }): string {
-  if (params.nativeModelOwned || params.provider !== "anthropic") {
+  if (params.provider !== "anthropic") {
     return params.prompt;
   }
   return scrubAnthropicRefusalMagic(params.prompt);

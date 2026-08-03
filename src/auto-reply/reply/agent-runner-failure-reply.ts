@@ -377,11 +377,7 @@ function supportsChannelCodexLogin(provider: string | null | undefined): boolean
     return false;
   }
   const normalizedProvider = provider.trim().toLowerCase().replace(/_/gu, "-");
-  return (
-    normalizedProvider === "openai" ||
-    normalizedProvider === "codex" ||
-    normalizedProvider === "openai-codex"
-  );
+  return normalizedProvider === "openai" || normalizedProvider === "codex";
 }
 
 export function buildExternalRunFailureReply(

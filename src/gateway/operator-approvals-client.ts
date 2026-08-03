@@ -7,6 +7,7 @@ import {
 } from "../../packages/gateway-protocol/src/client-info.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { loadGatewayTlsRuntime } from "../infra/tls/gateway.js";
+import { createDeferred } from "../shared/deferred.js";
 import { resolveGatewayClientBootstrap } from "./client-bootstrap.js";
 import { startGatewayClientWhenEventLoopReady } from "./client-start-readiness.js";
 import { GatewayClient, type GatewayClientOptions } from "./client.js";
@@ -98,40 +99,20 @@ export async function withOperatorApprovalsGatewayClient<T>(
   },
   run: (client: GatewayClient) => Promise<T>,
 ): Promise<T> {
-  let readySettled = false;
-  let resolveReady!: () => void;
-  let rejectReady!: (err: unknown) => void;
-  const ready = new Promise<void>((resolve, reject) => {
-    resolveReady = resolve;
-    rejectReady = reject;
-  });
-  const markReady = () => {
-    if (readySettled) {
-      return;
-    }
-    readySettled = true;
-    resolveReady();
-  };
-  const failReady = (err: unknown) => {
-    if (readySettled) {
-      return;
-    }
-    readySettled = true;
-    rejectReady(err);
-  };
+  const ready = createDeferred();
 
   const gatewayClient = await createOperatorApprovalsGatewayClient({
     config: params.config,
     gatewayUrl: params.gatewayUrl,
     clientDisplayName: params.clientDisplayName,
     onHelloOk: () => {
-      markReady();
+      ready.resolve();
     },
     onConnectError: (err) => {
-      failReady(err);
+      ready.reject(err);
     },
     onClose: (code, reason) => {
-      failReady(new Error(`gateway closed (${code}): ${reason}`));
+      ready.reject(new Error(`gateway closed (${code}): ${reason}`));
     },
   });
 
@@ -146,7 +127,7 @@ export async function withOperatorApprovalsGatewayClient<T>(
           : "gateway readiness unavailable before approval client start",
       );
     }
-    await ready;
+    await ready.promise;
     return await run(gatewayClient);
   } finally {
     await gatewayClient.stopAndWait().catch(() => {

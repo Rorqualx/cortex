@@ -55,7 +55,7 @@ export type PendingFinalDeliveryPayload = {
   wakeOnDescendantSettle?: boolean;
 };
 
-export type SubagentExecutionState = {
+type SubagentExecutionState = {
   status: "queued" | "running" | "interrupted" | "terminal";
   acceptedAt?: number;
   startedAt?: number;
@@ -203,11 +203,8 @@ export type SubagentRunRecord = {
   /** Monotonic ownership generation within one child session. */
   generation?: number;
   createdAt: number;
-  startedAt?: number;
   sessionStartedAt?: number;
   accumulatedRuntimeMs?: number;
-  endedAt?: number;
-  outcome?: SubagentRunOutcome;
   archiveAtMs?: number;
   cleanupCompletedAt?: number;
   cleanupHandled?: boolean;
@@ -222,7 +219,7 @@ export type SubagentRunRecord = {
   endedReason?: SubagentLifecycleEndedReason;
   pauseReason?: "sessions_yield";
   wakeOnDescendantSettle?: boolean;
-  execution?: SubagentExecutionState;
+  execution: SubagentExecutionState;
   completion?: SubagentCompletionState;
   /** Set after the subagent_ended hook has been emitted successfully once. */
   endedHookEmittedAt?: number;
@@ -277,4 +274,24 @@ export type SubagentRunRecord = {
     /** Approximate token count */
     tokens?: number;
   };
+};
+
+/** Minimal registry shape needed by session-list topology and display reads. */
+export type SubagentRunReadRecord = Pick<
+  SubagentRunRecord,
+  | "runId"
+  | "childSessionKey"
+  | "controllerSessionKey"
+  | "requesterSessionKey"
+  | "model"
+  | "generation"
+  | "createdAt"
+  | "sessionStartedAt"
+  | "accumulatedRuntimeMs"
+  | "runTimeoutSeconds"
+  | "endedReason"
+  | "cleanupCompletedAt"
+  | "delivery"
+> & {
+  execution: Pick<SubagentExecutionState, "startedAt" | "endedAt" | "outcome">;
 };

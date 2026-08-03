@@ -46,6 +46,7 @@ import {
 } from "./provider-local-service.js";
 import {
   buildProviderRequestDispatcherPolicy,
+  getModelProviderMetadataOwners,
   getModelProviderRequestTransport,
   mergeModelProviderRequestOverrides,
   resolveProviderRequestPolicyConfig,
@@ -434,10 +435,10 @@ async function normalizeOpenAISdkStreamContentType(params: {
   });
 }
 
-async function requestBodyHasStreamTrue(
+function requestBodyHasStreamTrue(
   request: Request | undefined,
   init: RequestInit | undefined,
-): Promise<boolean> {
+): boolean {
   const method = request?.method ?? init?.method;
   if (method && method.toUpperCase() !== "POST") {
     return false;
@@ -591,10 +592,12 @@ function resolveModelRequestPolicy(model: Model) {
         }
       : undefined,
   });
+  const providerMetadataOwners = getModelProviderMetadataOwners(model);
   return resolveProviderRequestPolicyConfig({
     provider: model.provider,
     api: model.api,
     baseUrl: model.baseUrl,
+    ...(providerMetadataOwners ? { providerMetadataOwners } : {}),
     capability: "llm",
     transport: "stream",
     request,
@@ -847,7 +850,6 @@ export function buildGuardedModelFetch(
     const baseInit =
       requestInit ??
       (swappedEgress.headers && init ? { ...init, headers: swappedEgress.headers } : init);
-    const synthesizeJsonAsSse = await requestBodyHasStreamTrue(request, baseInit);
     const baseSignal = baseInit?.signal ?? undefined;
     const localServiceSignal = buildModelRequestSignal(baseSignal, requestTimeoutMs);
     const guardedFetchOptions = {
@@ -934,7 +936,11 @@ export function buildGuardedModelFetch(
         headers,
       });
     }
-    if (synthesizeJsonAsSse && options?.sanitizeSse !== false) {
+    const synthesizeJsonAsSse =
+      options?.sanitizeSse !== false &&
+      !/\btext\/event-stream\b/i.test(response.headers.get("content-type") ?? "") &&
+      requestBodyHasStreamTrue(request, baseInit);
+    if (synthesizeJsonAsSse) {
       response = await normalizeOpenAISdkStreamContentType({
         response,
         model,

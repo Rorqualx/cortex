@@ -225,7 +225,6 @@ export const OpenClawSchemaShape = {
           chatSendShortcut: z.union([z.literal("enter"), z.literal("modifier-enter")]).optional(),
           chatFollowUpMode: z.union([z.literal("steer"), z.literal("queue")]).optional(),
           sidebarEntries: z.array(z.string()).optional(),
-          showAdvancedSettings: z.boolean().optional(),
         })
         .optional(),
     })
@@ -372,6 +371,28 @@ export const OpenClawSchemaShape = {
       mappings: z.array(HookMappingSchema).optional(),
       gmail: HooksGmailSchema,
       internal: InternalHooksSchema,
+    })
+    .superRefine((hooks, ctx) => {
+      const hasDefaultSessionKey = hooks.defaultSessionKey?.trim();
+      for (const [index, mapping] of (hooks.mappings ?? []).entries()) {
+        if (!mapping) {
+          continue;
+        }
+        if (
+          (mapping.action ?? "agent") === "agent" &&
+          mapping.sessionMode === "persistent" &&
+          !mapping.sessionKey?.trim() &&
+          !hasDefaultSessionKey &&
+          !mapping.transform
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["mappings", index, "sessionKey"],
+            message:
+              "persistent hook mappings require sessionKey, hooks.defaultSessionKey, or a transform",
+          });
+        }
+      }
     })
     .optional(),
   channels: ChannelsSchema,

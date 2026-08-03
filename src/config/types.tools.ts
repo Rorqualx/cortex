@@ -226,7 +226,7 @@ export type CodeModeConfig =
   | boolean
   | "auto"
   | {
-      /** Enable generic OpenClaw code mode. Default: false. "auto" engages it only for models whose catalog compat flags `codeMode: "preferred"`. */
+      /** Enable generic OpenClaw code mode. Default: "auto", which engages it only for models whose catalog compat flags `codeMode: "preferred"`. */
       enabled?: boolean | "auto";
       /** Guest runtime. Only quickjs-wasi is supported. */
       runtime?: "quickjs-wasi";
@@ -543,6 +543,12 @@ export type ToolsConfig = {
       maxRedirects?: number;
       /** Override User-Agent header for fetch requests. */
       userAgent?: string;
+      /**
+       * Extra request headers sent with direct web_fetch requests. Every value is
+       * treated as sensitive in exposed config. Entries a request cannot carry are
+       * dropped with a warning at request time.
+       */
+      headers?: Record<string, string>;
       /** Use Readability to extract main content (default: true). */
       readability?: boolean;
       /** Route web_fetch through a trusted HTTP(S) env proxy and let the proxy resolve DNS. Enable only when that proxy enforces outbound policy. */

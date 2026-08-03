@@ -24,7 +24,10 @@ import type { CronServiceState, CronWakeMode } from "./state.js";
 import { emit } from "./state.js";
 import { ensureLoaded, persistOrRestore, snapshotStoreForRollback } from "./store.js";
 import { tryFinishCronTaskRunWithoutHistory } from "./task-runs.js";
-import { resolveCronRunScheduleOwnership } from "./timer-outcomes.js";
+import {
+  resolveCronRunScheduleOwnership,
+  resolveCronRunTriggerOwnership,
+} from "./timer-outcomes.js";
 import {
   applyJobResult,
   applyScriptRunResult,
@@ -160,8 +163,17 @@ async function finishPreparedManualRun(
         currentJob: job,
         activeJobMarker: prepared.activeJobMarker,
       });
+      const triggerOwnership = resolveCronRunTriggerOwnership({
+        admittedJob: prepared.admittedJob,
+        currentJob: job,
+        activeJobMarker: prepared.activeJobMarker,
+      });
       const scheduleMode =
-        mode === "force" || scheduleOwnership === "stale" ? "preserve" : "advance";
+        scheduleOwnership === "stale"
+          ? "stale-preserve"
+          : mode === "force"
+            ? "force-preserve"
+            : "advance";
 
       let shouldDelete = false;
       if (coreResult.status === "ok" && coreResult.triggerEval?.fired === false) {
@@ -175,7 +187,7 @@ async function finishPreparedManualRun(
             endedAt,
             triggerEval: coreResult.triggerEval,
           },
-          { scheduleMode },
+          { scheduleMode, triggerOwnership },
         );
       } else {
         shouldDelete = applyJobResult(
@@ -187,7 +199,9 @@ async function finishPreparedManualRun(
             endedAt,
           },
           {
-            scheduleMode,
+            // Stale edits are preserved by scheduleOwnership inside applyJobResult;
+            // only a real forced run may request a force-preserved cadence marker.
+            scheduleMode: scheduleMode === "force-preserve" ? "preserve" : "advance",
             scheduleOwnership,
             scheduleOwnershipAtMs: prepared.scheduleOwnershipAtMs,
           },
@@ -199,9 +213,9 @@ async function finishPreparedManualRun(
             endedAt,
             triggerEval: coreResult.triggerEval,
           },
-          { scheduleOwnership },
+          { scheduleOwnership, triggerOwnership },
         );
-        applyScriptRunResult(job, coreResult);
+        applyScriptRunResult(job, coreResult, { triggerOwnership });
 
         // Stream payloads are event-owned by their batch. Generic recurring
         // error backoff must not synthesize a later run without that batch.

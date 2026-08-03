@@ -110,12 +110,12 @@ const schemaModulesSource = withoutComments(
 const ownerModules = [
   ...schemaModulesSource.matchAll(/^export \* from "\.\/schema\/([^"]+)\.js";$/gmu),
 ].map((match) => match[1]);
-// 51 upstream owner modules plus the three this fork owns (activity, session-row,
+// 52 upstream owner modules plus the three this fork owns (activity, session-row,
 // vault). The exact count is the point: it fails when a module is added without
 // being registered here, which is how a schema module silently escapes the barrel.
 check(
-  ownerModules.length === 54 && new Set(ownerModules).size === ownerModules.length,
-  "schema-modules.ts must contain one unique 54-module owner list",
+  ownerModules.length === 55 && new Set(ownerModules).size === ownerModules.length,
+  "schema-modules.ts must contain one unique 55-module owner list",
 );
 check(
   schemaModulesSource.split("\n").filter(Boolean).length === ownerModules.length,

@@ -187,6 +187,9 @@ export async function resolvePromptBuildHookResult(params: {
     : undefined;
   return {
     systemPrompt: promptBuildResult?.systemPrompt,
+    ...(promptBuildResult?.toolsAllow !== undefined
+      ? { toolsAllow: promptBuildResult.toolsAllow }
+      : {}),
     prependContext: joinPresentTextSegments([
       queuedContext.prependContext,
       turnPrepareResult?.prependContext,

@@ -1,5 +1,5 @@
-// JSONL helpers centralize newline-safe transcript serialization and writes.
-import { appendFileSync, writeFileSync } from "node:fs";
+// JSONL artifact helpers retain only the production batch serializer.
+import { appendFileSync } from "node:fs";
 import fs from "node:fs/promises";
 
 type WriteJsonlFileOptions = {
@@ -8,50 +8,11 @@ type WriteJsonlFileOptions = {
   mode?: number;
 };
 
-/** Serializes one JSONL entry and appends the newline terminator. */
-export function serializeJsonlEntry(entry: unknown): string {
-  return `${serializeJsonlLine(entry)}\n`;
-}
-
-export function serializeJsonlLine(entry: unknown): string {
-  const serialized = JSON.stringify(entry);
-  // JSON.stringify returns undefined when the root value is undefined, a
-  // function, or a symbol. Without this guard the template literal in
-  // serializeJsonlEntry coerces it to the literal string "undefined", which is
-  // not valid JSON and is silently skipped by readers — a fail-silent loss of a
-  // transcript entry. Fail fast instead so the caller fixes the bad value.
-  if (serialized === undefined) {
-    throw new TypeError(
-      `serializeJsonlLine: entry of type ${typeof entry} is not JSON-serializable (JSON.stringify returned undefined)`,
-    );
-  }
-  return serialized;
-}
-
-function serializeJsonlEntries(jsonlEntries: readonly unknown[]): string {
-  return serializeJsonlLines(jsonlEntries.map(serializeJsonlLine));
-}
-
 export function serializeJsonlLines(lines: readonly string[]): string {
   // Transcript readers expect every persisted entry batch to end with a newline.
   return lines.length > 0 ? `${lines.join("\n")}\n` : "";
 }
 
-export function writeJsonlEntriesSync(filePath: string, entries: readonly unknown[]): string {
-  const content = serializeJsonlEntries(entries);
-  writeFileSync(filePath, content, "utf-8");
-  return content;
-}
-
-export function appendSerializedJsonlEntrySync(
-  filePath: string,
-  serializedEntry: string,
-  options?: { prefixNewline?: boolean },
-): string {
-  const content = options?.prefixNewline ? `\n${serializedEntry}` : serializedEntry;
-  appendFileSync(filePath, content, "utf-8");
-  return content;
-}
 export async function writeJsonlLines(
   filePath: string,
   lines: readonly string[],
@@ -66,11 +27,24 @@ export async function writeJsonlLines(
   return content;
 }
 
-// Fork-owned; predates the current merge base so the upstream rebase drops it.
+// Fork-owned: chat branching still appends single entries to a named JSONL
+// artifact, which upstream's SQLite-only transcript path no longer covers.
 export function appendJsonlEntrySync(
   filePath: string,
   entry: unknown,
   options?: { prefixNewline?: boolean },
 ): string {
-  return appendSerializedJsonlEntrySync(filePath, serializeJsonlEntry(entry), options);
+  const serialized = JSON.stringify(entry);
+  // JSON.stringify returns undefined for a root undefined/function/symbol. The
+  // template literal below would write the literal string "undefined", which
+  // readers silently skip — a fail-silent loss of a transcript entry.
+  if (serialized === undefined) {
+    throw new TypeError(
+      `appendJsonlEntrySync: entry of type ${typeof entry} is not JSON-serializable (JSON.stringify returned undefined)`,
+    );
+  }
+  const serializedEntry = `${serialized}\n`;
+  const content = options?.prefixNewline ? `\n${serializedEntry}` : serializedEntry;
+  appendFileSync(filePath, content, "utf-8");
+  return content;
 }

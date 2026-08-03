@@ -87,12 +87,13 @@ async function listenHealthz(): Promise<{ port: number; close: () => Promise<voi
 }
 
 async function requestHealthzAfter(port: number, delayMs: number) {
-  const startedAt = performance.now();
+  const cpuStartedAt = process.threadCpuUsage();
   await new Promise<void>((resolve) => {
     setTimeout(resolve, delayMs);
   });
   const response = await fetch(`http://127.0.0.1:${port}/healthz`);
-  return { elapsedMs: performance.now() - startedAt, response };
+  const cpuUsage = process.threadCpuUsage(cpuStartedAt);
+  return { cpuMs: (cpuUsage.user + cpuUsage.system) / 1_000, response };
 }
 
 afterEach(() => {
@@ -102,7 +103,7 @@ afterEach(() => {
 });
 
 describe("Gateway prepared model runtime startup", () => {
-  it("keeps health probes responsive without executing live provider catalogs", async () => {
+  it("keeps health probes responsive without executing unnecessary provider catalogs", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "openclaw-model-runtime-startup-"));
     const stateDir = path.join(root, "state");
     const workspaceDir = path.join(root, "workspace");
@@ -132,14 +133,15 @@ describe("Gateway prepared model runtime startup", () => {
       },
       agentDir,
     );
-    providerMocks.staticCatalog.mockResolvedValue(providerConfig);
-    providerMocks.liveCatalog.mockImplementation(async () => {
+    const blockEventLoop = async () => {
       const stopAt = performance.now() + 1_500;
       while (performance.now() < stopAt) {
         // Deliberately model synchronous provider/plugin catalog work that starves timers.
       }
       return providerConfig;
-    });
+    };
+    providerMocks.staticCatalog.mockImplementation(blockEventLoop);
+    providerMocks.liveCatalog.mockImplementation(blockEventLoop);
     const healthServer = await listenHealthz();
 
     try {
@@ -162,12 +164,12 @@ describe("Gateway prepared model runtime startup", () => {
             logChannels: { info: vi.fn(), error: vi.fn() },
           });
 
-          const [{ elapsedMs, response }] = await Promise.all([probe, sidecars]);
+          const [{ cpuMs, response }] = await Promise.all([probe, sidecars]);
           expect(response.status).toBe(200);
-          // Allow loaded CI hosts to finish static startup work while keeping the
-          // deliberately blocking live-catalog path well outside the guard.
-          expect(elapsedMs).toBeLessThan(1_000);
-          expect(providerMocks.staticCatalog).toHaveBeenCalled();
+          // Current-thread CPU isolates startup work from runner descheduling. Either provider
+          // hook would consume well beyond this budget while starving health-probe handling.
+          expect(cpuMs).toBeLessThan(1_000);
+          expect(providerMocks.staticCatalog).not.toHaveBeenCalled();
           expect(providerMocks.liveCatalog).not.toHaveBeenCalled();
         },
       );

@@ -54,6 +54,9 @@ export type SkillsLimitsConfig = {
   maxSkillFileBytes?: number;
 };
 
+export type SkillsWorkshopAutonomousMode = "off" | "propose" | "auto";
+
+/** Autonomous and approval settings for generated skill proposals. */
 /** Approval settings for Skill Forge lifecycle actions. */
 export type SkillsForgeConfig = {
   /** Whether skill_forge promote/retire actions need explicit approval. */
@@ -71,8 +74,8 @@ export type SkillsForgeConfig = {
 export type SkillsWorkshopConfig = {
   /** Autonomous Skill Workshop behavior controlled separately from user-prompted proposals. */
   autonomous?: {
-    /** Allow agents to create pending proposals from durable conversation signals. */
-    enabled?: boolean;
+    /** Capture policy for durable conversation signals and substantial completed work. */
+    mode?: SkillsWorkshopAutonomousMode;
   };
   /** Allow Skill Workshop apply to write through trusted skill symlink targets. */
   allowSymlinkTargetWrites?: boolean;

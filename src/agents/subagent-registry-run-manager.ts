@@ -138,24 +138,24 @@ export function markSubagentRunPausedAfterYield(params: {
 }): boolean {
   const { entry } = params;
   let mutated = false;
-  if (typeof params.startedAt === "number" && entry.startedAt !== params.startedAt) {
-    entry.startedAt = params.startedAt;
+  if (typeof params.startedAt === "number" && entry.execution.startedAt !== params.startedAt) {
+    entry.execution = { ...entry.execution, startedAt: params.startedAt };
     if (typeof entry.sessionStartedAt !== "number") {
       entry.sessionStartedAt = params.startedAt;
     }
     mutated = true;
   }
   const endedAt = typeof params.endedAt === "number" ? params.endedAt : (params.now ?? Date.now());
-  if (entry.endedAt !== endedAt) {
-    entry.endedAt = endedAt;
+  if (entry.execution.endedAt !== endedAt) {
+    entry.execution = { ...entry.execution, endedAt: endedAt };
     mutated = true;
   }
   if (entry.pauseReason !== "sessions_yield") {
     entry.pauseReason = "sessions_yield";
     mutated = true;
   }
-  if (entry.outcome !== undefined) {
-    entry.outcome = undefined;
+  if (entry.execution.outcome !== undefined) {
+    entry.execution = { ...entry.execution, outcome: undefined };
     mutated = true;
   }
   if (entry.endedReason !== undefined) {
@@ -289,7 +289,7 @@ export function createSubagentRunManager(params: {
       const scheduledEntry = entry;
       setTimeout(() => {
         const current = params.runs.get(runId);
-        if (!current || current !== scheduledEntry || typeof current.endedAt === "number") {
+        if (!current || current !== scheduledEntry || typeof current.execution.endedAt === "number") {
           return;
         }
         void waitForSubagentCompletion(runId, waitTimeoutMs, scheduledEntry, true);
@@ -347,11 +347,11 @@ export function createSubagentRunManager(params: {
           ? wait.startedAt
           : params.resolveSubagentSessionStartedAt({
               childSessionKey: entry.childSessionKey,
-              notBeforeMs: entry.startedAt ?? entry.createdAt,
+              notBeforeMs: entry.execution.startedAt ?? entry.createdAt,
             });
       const completeAsRunTimeout = async (endedAt?: number, startedAt?: number) => {
         if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
-          entry.startedAt = startedAt;
+          entry.execution = { ...entry.execution, startedAt: startedAt };
           if (typeof entry.sessionStartedAt !== "number") {
             entry.sessionStartedAt = startedAt;
           }
@@ -379,8 +379,8 @@ export function createSubagentRunManager(params: {
           typeof wait.stopReason === "string" ||
           typeof wait.livenessState === "string";
         const now = Date.now();
-        if (observedStartedAt !== undefined && entry.startedAt !== observedStartedAt) {
-          entry.startedAt = observedStartedAt;
+        if (observedStartedAt !== undefined && entry.execution.startedAt !== observedStartedAt) {
+          entry.execution = { ...entry.execution, startedAt: observedStartedAt };
           if (typeof entry.sessionStartedAt !== "number") {
             entry.sessionStartedAt = observedStartedAt;
           }
@@ -394,7 +394,7 @@ export function createSubagentRunManager(params: {
           childSessionKey: entry.childSessionKey,
           fallbackEndedAt:
             typeof wait.endedAt === "number" ? wait.endedAt : (hardRunTimeoutEndedAt ?? now),
-          notBeforeMs: observedStartedAt ?? entry.startedAt ?? entry.createdAt,
+          notBeforeMs: observedStartedAt ?? entry.execution.startedAt ?? entry.createdAt,
         });
         if (completion) {
           const completionStartedAt = observedStartedAt ?? completion.startedAt;
@@ -454,18 +454,18 @@ export function createSubagentRunManager(params: {
       }
       let mutated = false;
       if (typeof observedStartedAt === "number") {
-        entry.startedAt = observedStartedAt;
+        entry.execution = { ...entry.execution, startedAt: observedStartedAt };
         if (typeof entry.sessionStartedAt !== "number") {
           entry.sessionStartedAt = observedStartedAt;
         }
         mutated = true;
       }
       if (typeof wait.endedAt === "number") {
-        entry.endedAt = wait.endedAt;
+        entry.execution = { ...entry.execution, endedAt: wait.endedAt };
         mutated = true;
       }
-      if (!entry.endedAt) {
-        entry.endedAt = Date.now();
+      if (!entry.execution.endedAt) {
+        entry.execution = { ...entry.execution, endedAt: Date.now() };
         mutated = true;
       }
       const rawWaitError = typeof wait.error === "string" ? wait.error : undefined;
@@ -475,11 +475,11 @@ export function createSubagentRunManager(params: {
       const baseOutcome: SubagentRunOutcome =
         waitStatus === "error" ? { status: "error", error: waitError } : { status: "ok" };
       const outcome = withSubagentOutcomeTiming(baseOutcome, {
-        startedAt: entry.startedAt,
-        endedAt: entry.endedAt,
+        startedAt: entry.execution.startedAt,
+        endedAt: entry.execution.endedAt,
       });
-      if (shouldUpdateRunOutcome(entry.outcome, outcome)) {
-        entry.outcome = outcome;
+      if (shouldUpdateRunOutcome(entry.execution.outcome, outcome)) {
+        entry.execution = { ...entry.execution, outcome: outcome };
         mutated = true;
       }
       if (mutated) {
@@ -487,7 +487,7 @@ export function createSubagentRunManager(params: {
       }
       completionForRetry = {
         runId,
-        endedAt: entry.endedAt,
+        endedAt: entry.execution.endedAt,
         outcome,
         reason: waitAborted
           ? SUBAGENT_ENDED_REASON_KILLED
@@ -509,7 +509,7 @@ export function createSubagentRunManager(params: {
       });
       if (
         current &&
-        typeof current.endedAt === "number" &&
+        typeof current.execution.endedAt === "number" &&
         !current.cleanupCompletedAt &&
         current.pauseReason !== "sessions_yield"
       ) {
@@ -566,7 +566,7 @@ export function createSubagentRunManager(params: {
     // If the interrupted run already finished while suppression was active, retry
     // cleanup now so completion output is not lost when restart dispatch fails.
     params.resumedRuns.delete(key);
-    if (typeof entry.endedAt === "number" && !entry.cleanupCompletedAt) {
+    if (typeof entry.execution.endedAt === "number" && !entry.cleanupCompletedAt) {
       params.resumeSubagentRun(key);
     }
     return true;
@@ -624,7 +624,7 @@ export function createSubagentRunManager(params: {
     const accumulatedRuntimeMs =
       getSubagentSessionRuntimeMs(
         source,
-        typeof source.endedAt === "number" ? source.endedAt : now,
+        typeof source.execution.endedAt === "number" ? source.execution.endedAt : now,
       ) ?? 0;
 
     const sourceCompletion = ensureCompletionState(source);
@@ -819,7 +819,7 @@ export function createSubagentRunManager(params: {
       entry.swarmLaunchPending === true;
     const provisionalTerminalBeforeAcceptance =
       entry?.swarmLaunchPending === true &&
-      typeof entry.endedAt === "number" &&
+      typeof entry.execution.endedAt === "number" &&
       entry.collectorCompletion === undefined;
     if (provisionalTerminalBeforeAcceptance) {
       // Cancellation won before Gateway acceptance. The caller must abort the
@@ -843,7 +843,7 @@ export function createSubagentRunManager(params: {
     }
     const acceptedAt = Date.now();
     const previousRunId = entry.runId;
-    const previousStartedAt = entry.startedAt;
+    const previousStartedAt = entry.execution.startedAt;
     const previousSessionStartedAt = entry.sessionStartedAt;
     const previousExecution = entry.execution;
     const previousQueuedLaunch = entry.queuedLaunch;
@@ -883,7 +883,7 @@ export function createSubagentRunManager(params: {
     const lifecycleStartedAt =
       entry.execution?.status === "running" ? entry.execution.startedAt : undefined;
     if (typeof lifecycleStartedAt === "number") {
-      entry.startedAt = lifecycleStartedAt;
+      entry.execution = { ...entry.execution, startedAt: lifecycleStartedAt };
       entry.sessionStartedAt ??= lifecycleStartedAt;
       entry.execution = {
         ...entry.execution,
@@ -892,7 +892,7 @@ export function createSubagentRunManager(params: {
         startedAt: lifecycleStartedAt,
       };
     } else {
-      delete entry.startedAt;
+      delete entry.execution.startedAt;
       delete entry.sessionStartedAt;
       entry.execution = { ...entry.execution, status: "running", acceptedAt };
       delete entry.execution.startedAt;
@@ -916,7 +916,7 @@ export function createSubagentRunManager(params: {
         entry.runId = previousRunId;
         params.runs.set(previousRunId, entry);
       }
-      entry.startedAt = previousStartedAt;
+      entry.execution = { ...entry.execution, startedAt: previousStartedAt };
       entry.sessionStartedAt = previousSessionStartedAt;
       entry.execution = previousExecution;
       entry.queuedLaunch = previousQueuedLaunch;
@@ -955,10 +955,10 @@ export function createSubagentRunManager(params: {
     }
     const snapshot = structuredClone(entry);
     const endedAt = Date.now();
-    entry.endedAt = endedAt;
+    entry.execution = { ...entry.execution, endedAt: endedAt };
     entry.endedReason = SUBAGENT_ENDED_REASON_ERROR;
-    entry.outcome = { status: "error", error, endedAt };
-    entry.execution = { ...entry.execution, status: "terminal", endedAt, outcome: entry.outcome };
+    entry.execution = { ...entry.execution, outcome: { status: "error", error, endedAt } };
+    entry.execution = { ...entry.execution, status: "terminal", endedAt, outcome: entry.execution.outcome };
     entry.queuedLaunch = undefined;
     entry.collectorLaunchCleanupPending = true;
     entry.completion = { required: false, resultText: error, capturedAt: endedAt };
@@ -1002,7 +1002,7 @@ export function createSubagentRunManager(params: {
     if (!entry?.collect) {
       return false;
     }
-    if (typeof entry.endedAt !== "number") {
+    if (typeof entry.execution.endedAt !== "number") {
       return failQueuedSubagentRun(runId, error);
     }
     if (entry.collectorCompletion) {
@@ -1015,13 +1015,13 @@ export function createSubagentRunManager(params: {
     entry.execution = {
       ...entry.execution,
       status: "terminal",
-      endedAt: entry.endedAt,
-      outcome: entry.outcome,
+      endedAt: entry.execution.endedAt,
+      outcome: entry.execution.outcome,
     };
     entry.completion = {
       required: false,
-      resultText: entry.outcome?.status === "error" ? (entry.outcome.error ?? error) : error,
-      capturedAt: entry.endedAt,
+      resultText: entry.execution.outcome?.status === "error" ? (entry.execution.outcome.error ?? error) : error,
+      capturedAt: entry.execution.endedAt,
     };
     updateSwarmCollectorCompletion(entry, params.getRuntimeConfig());
     try {
@@ -1090,14 +1090,14 @@ export function createSubagentRunManager(params: {
       if (!entry) {
         continue;
       }
-      if (typeof entry.endedAt === "number") {
+      if (typeof entry.execution.endedAt === "number") {
         continue;
       }
-      entry.endedAt = now;
-      entry.outcome = withSubagentOutcomeTiming(
+      entry.execution = { ...entry.execution, endedAt: now };
+      entry.execution.outcome = withSubagentOutcomeTiming(
         { status: "error", error: reason },
         {
-          startedAt: entry.startedAt,
+          startedAt: entry.execution.startedAt,
           endedAt: now,
         },
       );

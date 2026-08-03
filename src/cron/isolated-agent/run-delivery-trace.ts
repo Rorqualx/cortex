@@ -1,9 +1,7 @@
 /** Delivery planning, prompt policy, and delivery trace construction for cron runs. */
-import { expandToolGroups, normalizeToolName } from "../../agents/tool-policy.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type {
   SourceDeliveryOutcome,
-  SourceDeliveryPlan,
   SourceDeliveryVisibleDelivery,
 } from "../../infra/outbound/source-delivery-plan.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
@@ -25,7 +23,9 @@ import type {
   CronRunDiagnostics,
 } from "../types.js";
 import { logWarn } from "./run.runtime.js";
-import { resolveCronSourceDeliveryPlan } from "./source-delivery-fallback.js";
+import { expandToolGroups, normalizeToolName } from "../../agents/tool-policy-shared.js";
+import type { SourceDeliveryPlan } from "../../infra/outbound/source-delivery-plan.js";
+import { resolveCronSourceDeliveryPlan } from "./source-delivery-plan.js";
 
 const cronDeliveryRuntimeLoader = createLazyImportLoader(() => import("./run-delivery.runtime.js"));
 const codexNativeWebSearchLoader = createLazyImportLoader(
@@ -155,6 +155,9 @@ export function buildCronDeliveryTrace(params: {
   };
 }
 
+// Fork-owned: the cron prompt only advertises the message tool when the run can
+// actually call it, so an allowlisted run never gets delivery instructions it
+// cannot follow. Upstream rewrote this region and dropped the helper.
 export function canPromptForMessageTool(params: {
   sourceDelivery: SourceDeliveryPlan;
   toolsAllow?: string[];

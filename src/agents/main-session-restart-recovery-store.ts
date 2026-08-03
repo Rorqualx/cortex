@@ -53,7 +53,6 @@ import {
   log,
   MAX_RECOVERY_RETRIES,
   normalizeStringSet,
-  shouldSkipMainRecovery,
 } from "./main-session-restart-recovery-shared.js";
 
 /**
@@ -140,9 +139,29 @@ export async function recoverStore(params: {
   sessionWorkAdmissionHandoffId?: string;
   activeSessionIds?: Iterable<string>;
   activeSessionKeys?: Iterable<string>;
+  lifecycleGeneration?: string;
+  shouldContinue?: () => boolean;
   gatewayRuntime: GatewayRecoveryRuntime;
 }): Promise<{ recovered: number; failed: number; skipped: number }> {
   const result = { recovered: 0, failed: 0, skipped: 0 };
+  const shouldContinue = () => params.shouldContinue?.() !== false;
+  const stopped = () => {
+    if (shouldContinue()) {
+      return false;
+    }
+    result.skipped++;
+    return true;
+  };
+  const resumeIfCurrent = async (resumeParams: Parameters<typeof resumeMainSession>[0]) => {
+    if (!shouldContinue()) {
+      return "skipped" as const;
+    }
+    return await resumeMainSession({
+      ...resumeParams,
+      lifecycleGeneration: params.lifecycleGeneration,
+      shouldContinue: params.shouldContinue,
+    });
+  };
   const providedActiveSessionIds =
     params.activeSessionIds === undefined ? undefined : normalizeStringSet(params.activeSessionIds);
   const providedActiveSessionKeys =
@@ -179,6 +198,9 @@ export async function recoverStore(params: {
   for (const { sessionKey, entry: loadedEntry } of entries.toSorted((a, b) =>
     a.sessionKey.localeCompare(b.sessionKey),
   )) {
+    if (stopped()) {
+      return result;
+    }
     let entry = loadedEntry;
     const agentId = resolveAgentIdFromSessionKey(
       sessionKey,
@@ -187,7 +209,7 @@ export async function recoverStore(params: {
     if (!entry || entry.status !== "running" || entry.abortedLastRun !== true) {
       continue;
     }
-    if (shouldSkipMainRecovery(entry, sessionKey)) {
+    if (!isMainRestartRecoveryCandidate(entry, sessionKey)) {
       result.skipped++;
       continue;
     }
@@ -250,19 +272,26 @@ export async function recoverStore(params: {
       log.warn(`reset drifted webchat routing for restart recovery: ${sessionKey}`);
     }
 
+    if (stopped()) {
+      return result;
+    }
     const observed = await commitMainSessionRecovery({
       command: {
         kind: "observe",
         cycleId: randomUUID(),
-        lifecycleGeneration: getAgentEventLifecycleGeneration(),
+        lifecycleGeneration: params.lifecycleGeneration ?? getAgentEventLifecycleGeneration(),
         sessionKey,
       },
       requireWriteSuccess: true,
+      shouldContinue: params.shouldContinue,
       target: { sessionKey, storePath: params.storePath },
     });
     if (!observed.entry || observed.transition.kind !== "observed") {
       result.skipped++;
       continue;
+    }
+    if (stopped()) {
+      return result;
     }
     entry = observed.entry;
     const recoveryView = observed.transition.view;
@@ -275,6 +304,9 @@ export async function recoverStore(params: {
       continue;
     }
     if (recoveryView.status === "exhausted") {
+      if (stopped()) {
+        return result;
+      }
       const tombstone = await tombstoneMainRestartRecoveryWithNotice({
         cfg: params.cfg,
         entry,
@@ -320,39 +352,8 @@ export async function recoverStore(params: {
         }
       }
     };
-
-    if (
-      requiresRestartRecoveryMessageActionAuthority(entry) &&
-      !hasRestartRecoveryMessageActionAuthority(entry)
-    ) {
-      const disposition = await failUnresumableMainSession({
-        cfg: params.cfg,
-        entry,
-        gatewayRuntime: params.gatewayRuntime,
-        observation: recoveryView.observation,
-        reason: "message-tool-only recovery authority is unavailable",
-        sessionKey,
-        storePath: params.storePath,
-      });
-      result[disposition]++;
-      continue;
-    }
-
-    const expectedRecoverySourceRunId = normalizeOptionalString(
-      entry.restartRecoveryDeliverySourceRunId,
-    );
-    let resumeBlockReason: string | undefined;
-    let resumeSafetyResolved = false;
-    const failBlockedResume = async (): Promise<boolean> => {
-      if (!resumeSafetyResolved) {
-        resumeSafetyResolved = true;
-        resumeBlockReason = resolveRestartRecoveryResumeBlockReason({
-          cfg: params.cfg,
-          entry,
-          sessionKey,
-        });
-      }
-      if (!resumeBlockReason) {
+    const failCurrent = async (reason: string) => {
+      if (stopped()) {
         return false;
       }
       const disposition = await failUnresumableMainSession({
@@ -360,7 +361,7 @@ export async function recoverStore(params: {
         entry,
         gatewayRuntime: params.gatewayRuntime,
         observation: recoveryView.observation,
-        reason: resumeBlockReason,
+        reason,
         sessionKey,
         storePath: params.storePath,
       });
@@ -369,27 +370,66 @@ export async function recoverStore(params: {
     };
 
     if (
-      entry.pendingFinalDelivery === true &&
-      entry.pendingFinalDeliveryText &&
-      entry.restartRecoveryForceSafeTools === true
+      requiresRestartRecoveryMessageActionAuthority(entry) &&
+      !hasRestartRecoveryMessageActionAuthority(entry)
     ) {
-      if (await failBlockedResume()) {
-        continue;
+      if (!(await failCurrent("message-tool-only recovery authority is unavailable"))) {
+        return result;
       }
-      const resumed = await resumeMainSession({
-        canonicalSessionKey: dispatchSessionKey,
+      continue;
+    }
+
+    const expectedRecoverySourceRunId = normalizeOptionalString(
+      entry.restartRecoveryDeliverySourceRunId,
+    );
+    const failBlockedResume = async (): Promise<boolean> => {
+      const resumeBlockReason = resolveRestartRecoveryResumeBlockReason({
         cfg: params.cfg,
         entry,
-        observation: recoveryView.observation,
-        recoveryAttempt: recoveryView.nextAttempt,
-        storePath: params.storePath,
         sessionKey,
-        pendingFinalDeliveryText: entry.pendingFinalDeliveryText,
-        forceRestartSafeTools: true,
-        sessionWorkAdmissionHandoffId: params.sessionWorkAdmissionHandoffId,
-        gatewayRuntime: params.gatewayRuntime,
       });
-      recordResumeResult(resumed);
+      if (!resumeBlockReason) {
+        return false;
+      }
+      if (!shouldContinue()) {
+        return true;
+      }
+      await failCurrent(resumeBlockReason);
+      return true;
+    };
+    const resumeCurrent = async (
+      options: Pick<
+        Parameters<typeof resumeMainSession>[0],
+        "forceCodeModeTools" | "forceRestartSafeTools" | "pendingFinalDeliveryText"
+      > = {},
+    ) => {
+      if (await failBlockedResume()) {
+        return;
+      }
+      recordResumeResult(
+        await resumeIfCurrent({
+          canonicalSessionKey: dispatchSessionKey,
+          cfg: params.cfg,
+          entry,
+          observation: recoveryView.observation,
+          recoveryAttempt: recoveryView.nextAttempt,
+          storePath: params.storePath,
+          sessionKey,
+          sessionWorkAdmissionHandoffId: params.sessionWorkAdmissionHandoffId,
+          gatewayRuntime: params.gatewayRuntime,
+          ...options,
+        }),
+      );
+    };
+
+    if (
+      entry.pendingFinalDelivery?.kind === "replayable" &&
+      entry.restartRecoveryForceSafeTools === true
+    ) {
+      await resumeCurrent({
+        pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
+        forceRestartSafeTools: true,
+      });
       continue;
     }
 
@@ -410,26 +450,16 @@ export async function recoverStore(params: {
         },
       );
     } catch (err) {
-      if (entry.pendingFinalDelivery === true && entry.pendingFinalDeliveryText) {
-        if (await failBlockedResume()) {
-          continue;
-        }
+      if (stopped()) {
+        return result;
+      }
+      if (entry.pendingFinalDelivery?.kind === "replayable") {
         log.warn(
           `transcript unavailable for ${sessionKey}; resuming its durable pending final delivery`,
         );
-        const resumed = await resumeMainSession({
-          canonicalSessionKey: dispatchSessionKey,
-          cfg: params.cfg,
-          entry,
-          observation: recoveryView.observation,
-          recoveryAttempt: recoveryView.nextAttempt,
-          storePath: params.storePath,
-          sessionKey,
-          pendingFinalDeliveryText: entry.pendingFinalDeliveryText,
-          sessionWorkAdmissionHandoffId: params.sessionWorkAdmissionHandoffId,
-          gatewayRuntime: params.gatewayRuntime,
+        await resumeCurrent({
+          pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
         });
-        recordResumeResult(resumed);
         continue;
       }
       log.warn(`failed to read transcript for ${sessionKey}: ${String(err)}`);
@@ -437,24 +467,14 @@ export async function recoverStore(params: {
       continue;
     }
 
-    if (entry.pendingFinalDelivery === true && entry.pendingFinalDeliveryText) {
-      if (await failBlockedResume()) {
-        continue;
-      }
-      const resumed = await resumeMainSession({
-        canonicalSessionKey: dispatchSessionKey,
-        cfg: params.cfg,
-        entry,
-        observation: recoveryView.observation,
-        recoveryAttempt: recoveryView.nextAttempt,
-        storePath: params.storePath,
-        sessionKey,
-        pendingFinalDeliveryText: entry.pendingFinalDeliveryText,
+    if (stopped()) {
+      return result;
+    }
+    if (entry.pendingFinalDelivery?.kind === "replayable") {
+      await resumeCurrent({
+        pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
         forceRestartSafeTools: hasReplaySafeCodeModeCheckpointInCurrentTurn(messages),
-        sessionWorkAdmissionHandoffId: params.sessionWorkAdmissionHandoffId,
-        gatewayRuntime: params.gatewayRuntime,
       });
-      recordResumeResult(resumed);
       continue;
     }
 
@@ -468,6 +488,9 @@ export async function recoverStore(params: {
         ? "transcript"
         : undefined;
     if (completionSource) {
+      if (stopped()) {
+        return result;
+      }
       const reconciliation = await reconcileInterruptedCompletionReport({
         entry,
         source: completionSource,
@@ -497,6 +520,9 @@ export async function recoverStore(params: {
       entry.restartRecoveryDeliveryToolCallId,
     );
     if (resumePolicy.action === "complete") {
+      if (stopped()) {
+        return result;
+      }
       const completion = await markSessionCompletedAfterRecoveryCheckpoint({
         agentId,
         entry,
@@ -517,51 +543,24 @@ export async function recoverStore(params: {
       } else if (completion.outcome === "changed") {
         result.skipped++;
       } else {
-        const disposition = await failUnresumableMainSession({
-          cfg: params.cfg,
-          entry,
-          gatewayRuntime: params.gatewayRuntime,
-          observation: recoveryView.observation,
-          reason: completion.reason,
-          sessionKey,
-          storePath: params.storePath,
-        });
-        result[disposition]++;
+        if (!(await failCurrent(completion.reason))) {
+          return result;
+        }
       }
       continue;
     }
     if (resumePolicy.action === "fail") {
-      const disposition = await failUnresumableMainSession({
-        cfg: params.cfg,
-        entry,
-        gatewayRuntime: params.gatewayRuntime,
-        observation: recoveryView.observation,
-        reason: resumePolicy.reason,
-        sessionKey,
-        storePath: params.storePath,
-      });
-      result[disposition]++;
+      if (!(await failCurrent(resumePolicy.reason))) {
+        return result;
+      }
       continue;
     }
 
-    if (await failBlockedResume()) {
-      continue;
-    }
-    const resumed = await resumeMainSession({
-      canonicalSessionKey: dispatchSessionKey,
-      cfg: params.cfg,
-      entry,
-      observation: recoveryView.observation,
-      recoveryAttempt: recoveryView.nextAttempt,
-      storePath: params.storePath,
-      sessionKey,
-      pendingFinalDeliveryText: entry.pendingFinalDeliveryText,
+    await resumeCurrent({
       forceRestartSafeTools:
         entry.restartRecoveryForceSafeTools === true || resumePolicy.forceRestartSafeTools,
-      sessionWorkAdmissionHandoffId: params.sessionWorkAdmissionHandoffId,
-      gatewayRuntime: params.gatewayRuntime,
+      forceCodeModeTools: resumePolicy.forceCodeModeTools === true,
     });
-    recordResumeResult(resumed);
   }
 
   return result;

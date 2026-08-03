@@ -217,6 +217,7 @@ export function resolveEmbeddedAgentStreamFn(params: {
         authProfileId: params.authProfileId,
         authStorage: params.authStorage,
         providerId: params.model.provider,
+        sessionId: params.sessionId,
         promptCacheKey: params.promptCacheKey,
         onResponse: params.onResponse,
       });
@@ -269,7 +270,11 @@ function wrapEmbeddedAgentStreamFn(
     params.transformContext ?? ((context: Parameters<StreamFn>[1]) => context);
   const mergeRunSignal = (options: Parameters<StreamFn>[2]) => {
     const embeddedOptions = options as EmbeddedStreamOptions | undefined;
-    const signal = embeddedOptions?.signal ?? params.runSignal;
+    const callerSignal = embeddedOptions?.signal;
+    const signal =
+      callerSignal && params.runSignal && callerSignal !== params.runSignal
+        ? AbortSignal.any([callerSignal, params.runSignal])
+        : (callerSignal ?? params.runSignal);
     let merged =
       params.sessionId && !embeddedOptions?.sessionId
         ? { ...embeddedOptions, sessionId: params.sessionId }

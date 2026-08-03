@@ -113,11 +113,6 @@ type RunLivenessAttempt = Pick<
   "lastAssistant" | "replayMetadata" | "terminal"
 >;
 
-const REPLAY_UNSAFE_FALLBACK_METADATA: EmbeddedRunAttemptResult["replayMetadata"] = {
-  hadPotentialSideEffects: true,
-  replaySafe: false,
-};
-
 export function isIncompleteTerminalAssistantTurn(params: {
   hasAssistantVisibleText: boolean;
   hasTerminalOutput?: boolean;
@@ -272,13 +267,6 @@ export function buildAttemptReplayMetadata(
   };
 }
 
-/** Falls back to replay-unsafe metadata when older attempt records lack replay details. */
-export function resolveAttemptReplayMetadata(attempt: {
-  replayMetadata?: EmbeddedRunAttemptResult["replayMetadata"] | null;
-}): EmbeddedRunAttemptResult["replayMetadata"] {
-  return attempt.replayMetadata ?? REPLAY_UNSAFE_FALLBACK_METADATA;
-}
-
 type TerminalAttemptState = Pick<
   EmbeddedRunAttemptResult,
   | "clientToolCalls"
@@ -407,8 +395,7 @@ export function resolveIncompleteTurnPayloadText(params: {
     return null;
   }
 
-  return params.hadPotentialSideEffects ||
-    resolveAttemptReplayMetadata(params.attempt).hadPotentialSideEffects
+  return params.hadPotentialSideEffects || params.attempt.replayMetadata.hadPotentialSideEffects
     ? "⚠️ Agent couldn't generate a response. Note: some tool actions may have already been executed — please verify before retrying."
     : "⚠️ Agent couldn't generate a response. Please try again.";
 }
@@ -467,7 +454,7 @@ export function shouldRetryMissingAssistantTurn(params: {
     return false;
   }
 
-  return !resolveAttemptReplayMetadata(params.attempt).hadPotentialSideEffects;
+  return !params.attempt.replayMetadata.hadPotentialSideEffects;
 }
 
 function joinAssistantTexts(assistantTexts?: readonly string[]): string {
@@ -606,7 +593,7 @@ export function resolveReplayInvalidFlag(params: {
 }): boolean {
   const terminal = projectAgentRunAttemptTerminal(params.attempt.terminal);
   return (
-    !resolveAttemptReplayMetadata(params.attempt).replaySafe ||
+    !params.attempt.replayMetadata.replaySafe ||
     terminal.promptErrorSource === "compaction" ||
     terminal.timedOutDuringCompaction ||
     Boolean(params.incompleteTurnText)
@@ -685,9 +672,8 @@ export function shouldRetrySilentErrorAssistantTurn(params: {
   }
   // Current-attempt evidence avoids blocking on prior committed effects; older
   // harnesses retain the cumulative, fail-closed behavior.
-  const retryReplayMetadata = resolveAttemptReplayMetadata({
-    replayMetadata: params.attempt.currentAttemptReplayMetadata ?? params.attempt.replayMetadata,
-  });
+  const retryReplayMetadata =
+    params.attempt.currentAttemptReplayMetadata ?? params.attempt.replayMetadata;
   if (retryReplayMetadata.hadPotentialSideEffects) {
     return false;
   }
@@ -786,8 +772,7 @@ function shouldSkipNonVisibleTurnRetry(params: {
     params.attempt.didSendDeterministicApprovalPrompt ||
     params.attempt.lastToolError ||
     hasAcceptedSessionSpawn(params.attempt.acceptedSessionSpawns) ||
-    (params.tolerateSideEffects !== true &&
-      resolveAttemptReplayMetadata(params.attempt).hadPotentialSideEffects),
+    (params.tolerateSideEffects !== true && params.attempt.replayMetadata.hadPotentialSideEffects),
   );
 }
 

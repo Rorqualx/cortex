@@ -68,7 +68,7 @@ export type SessionsListResultBase<TDefaults, TRow> = {
   nextOffset?: number | null;
   hasMore?: boolean;
   /** Complete creator facet for the filtered result, independent of pagination. */
-  creators?: Array<{ id: string; label?: string }>;
+  creators?: Array<{ id: string; label?: string; avatarUrl?: string }>;
   defaults: TDefaults;
   sessions: TRow[];
 };

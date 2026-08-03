@@ -39,6 +39,7 @@ import {
   shouldRetrySilentErrorAssistantTurn,
   shouldTreatEmptyAssistantReplyAsSilent,
 } from "./run/incomplete-turn.js";
+import { normalizeEmbeddedRunAttemptResult } from "./run/run-attempt-result.js";
 import type { EmbeddedRunAttemptResult } from "./run/types.js";
 
 const REASONING_ONLY_RETRY_INSTRUCTION =
@@ -49,6 +50,10 @@ const SETTLED_TOOL_TERMINAL_CONTINUATION_INSTRUCTION =
   "The previous assistant turn completed its tool calls but did not produce a user-visible answer. Continue from the current transcript and produce the final user-visible answer now. Do not repeat completed tool calls or restart from scratch.";
 
 let runEmbeddedAgent: typeof import("./run.js").runEmbeddedAgent;
+
+// Cold GitHub-hosted fork runners can spend more than five minutes loading and
+// warming this broad harness before the first test reports progress.
+const COLD_FORK_RUNNER_HOOK_TIMEOUT_MS = 420_000;
 
 function resolveIncompleteTurnPayloadText(
   params: Omit<Parameters<typeof resolveIncompleteTurnPayloadTextCore>[0], "externalAbort"> & {
@@ -64,7 +69,7 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
   beforeAll(async () => {
     ({ runEmbeddedAgent } = await loadRunOverflowCompactionHarness());
     await warmRunOverflowCompactionHarness(runEmbeddedAgent);
-  }, 300_000);
+  }, COLD_FORK_RUNNER_HOOK_TIMEOUT_MS);
 
   beforeEach(() => {
     resetRunOverflowCompactionHarnessMocks();
@@ -521,7 +526,7 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
         toolName: "cron",
         argsHash: "args",
         resultHash: "result",
-        terminalPresentation: "Cron scheduler status.\nEnabled: yes",
+        terminalPresentation: "Automations scheduler status.\nEnabled: yes",
       });
       return makeAttemptResult({
         assistantTexts: [],
@@ -550,7 +555,7 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     expect(result.payloads).toEqual([
       {
         text:
-          "Cron scheduler status.\nEnabled: yes\n\n" +
+          "Automations scheduler status.\nEnabled: yes\n\n" +
           "⚠️ Agent couldn't generate a response. Please try again.",
         isError: true,
       },
@@ -2996,7 +3001,13 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     const attempt = makeAttemptResult();
     delete (attempt as Partial<EmbeddedRunAttemptResult>).replayMetadata;
 
-    expect(resolveReplayInvalidFlag({ attempt })).toBe(true);
+    const normalizedAttempt = normalizeEmbeddedRunAttemptResult(attempt);
+
+    expect(normalizedAttempt.replayMetadata).toEqual({
+      hadPotentialSideEffects: true,
+      replaySafe: false,
+    });
+    expect(resolveReplayInvalidFlag({ attempt: normalizedAttempt })).toBe(true);
   });
 
   it("detects reasoning-only GPT turns from signed thinking blocks", () => {

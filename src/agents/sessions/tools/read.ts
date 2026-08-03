@@ -406,8 +406,12 @@ export function createReadToolDefinition(
               const buffer = await ops.readFile(absolutePath);
               // ENHANCE-OURS: adopt upstream's pluggable decodeText, keep our
               // session-ledger recording (read-before-edit + unchanged-repeat).
-              const textContent =
+              const decodedText =
                 ops.decodeText?.({ buffer, absolutePath }) ?? buffer.toString("utf8");
+              // Upstream strips a leading BOM so offsets/matching never see U+FEFF.
+              const textContent = decodedText.startsWith("\uFEFF")
+                ? decodedText.slice(1)
+                : decodedText;
               // Record this read in the session ledger (powers read-before-edit and
               // the unchanged-repeat annotation). mtime is best-effort: remote/injected
               // ReadOperations backends may not be stat-able, so we degrade to size-only.

@@ -2,18 +2,28 @@
  * Core tool catalog and profile defaults.
  * Drives built-in profile allowlists, group expansion, and UI section metadata
  * for OpenClaw-owned tools.
+ *
+ * This module is bundled into the Control UI via tool-policy-shared. Keep it
+ * pure data + tiny pure functions: a value import of server config/runtime
+ * modules here drags the whole gateway graph into the ui build and breaks it.
  */
 import {
+  AGENTS_WAIT_TOOL_DISPLAY_SUMMARY,
+  ASK_USER_TOOL_DISPLAY_SUMMARY,
   CRON_TOOL_DISPLAY_SUMMARY,
   EXEC_TOOL_DISPLAY_SUMMARY,
   PROCESS_TOOL_DISPLAY_SUMMARY,
   SESSIONS_HISTORY_TOOL_DISPLAY_SUMMARY,
   SESSIONS_LIST_TOOL_DISPLAY_SUMMARY,
+  SESSIONS_SEARCH_TOOL_DISPLAY_SUMMARY,
   SESSIONS_SEND_TOOL_DISPLAY_SUMMARY,
   SESSIONS_SPAWN_TOOL_DISPLAY_SUMMARY,
   SESSION_STATUS_TOOL_DISPLAY_SUMMARY,
+  SPAWN_TASK_TOOL_DISPLAY_SUMMARY,
+  DISMISS_TASK_TOOL_DISPLAY_SUMMARY,
   UPDATE_PLAN_TOOL_DISPLAY_SUMMARY,
 } from "./tool-description-presets.js";
+import { AUTOMATIONS_TOOL_NAME } from "./tools/automations-tool-name.js";
 
 /** Built-in tool profile ids exposed in config and UI. */
 export type ToolProfileId = "minimal" | "coding" | "messaging" | "full";
@@ -183,6 +193,38 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "sessions_search",
+    label: "sessions_search",
+    description: SESSIONS_SEARCH_TOOL_DISPLAY_SUMMARY,
+    sectionId: "sessions",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "conversations_list",
+    label: "conversations_list",
+    description: "List exact external conversation addresses",
+    sectionId: "sessions",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "conversations_send",
+    label: "conversations_send",
+    description: "Send to an exact external conversation",
+    sectionId: "sessions",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "conversations_turn",
+    label: "conversations_turn",
+    description: "Send and wait for a correlated external reply",
+    sectionId: "sessions",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "sessions_send",
     label: "sessions_send",
     description: SESSIONS_SEND_TOOL_DISPLAY_SUMMARY,
@@ -199,6 +241,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "agents_wait",
+    label: "agents_wait",
+    description: AGENTS_WAIT_TOOL_DISPLAY_SUMMARY,
+    sectionId: "sessions",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "sessions_yield",
     label: "sessions_yield",
     description: "End turn to receive sub-agent results",
@@ -209,7 +259,7 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   {
     id: "subagents",
     label: "subagents",
-    description: "Manage sub-agents",
+    description: "Background work: subagents, media gen, automation runs. list/cancel.",
     sectionId: "sessions",
     profiles: ["coding"],
     includeInOpenClawGroup: true,
@@ -220,6 +270,22 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     description: SESSION_STATUS_TOOL_DISPLAY_SUMMARY,
     sectionId: "sessions",
     profiles: ["minimal", "coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "spawn_task",
+    label: "spawn_task",
+    description: SPAWN_TASK_TOOL_DISPLAY_SUMMARY,
+    sectionId: "sessions",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "dismiss_task",
+    label: "dismiss_task",
+    description: DISMISS_TASK_TOOL_DISPLAY_SUMMARY,
+    sectionId: "sessions",
+    profiles: ["coding"],
     includeInOpenClawGroup: true,
   },
   {
@@ -236,6 +302,30 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     description: "Control web browser",
     sectionId: "ui",
     profiles: [],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "screen",
+    label: "screen",
+    description: "Drive operator web UI",
+    sectionId: "ui",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "dashboard",
+    label: "dashboard",
+    description: "Read and arrange the session dashboard",
+    sectionId: "ui",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "terminal",
+    label: "terminal",
+    description: "Own visible gateway terminal",
+    sectionId: "ui",
+    profiles: ["coding"],
     includeInOpenClawGroup: true,
   },
   {
@@ -270,8 +360,8 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
-    id: "cron",
-    label: "cron",
+    id: AUTOMATIONS_TOOL_NAME,
+    label: AUTOMATIONS_TOOL_NAME,
     description: CRON_TOOL_DISPLAY_SUMMARY,
     sectionId: "automation",
     profiles: ["coding"],
@@ -419,6 +509,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     description: UPDATE_PLAN_TOOL_DISPLAY_SUMMARY,
     sectionId: "agents",
     profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "ask_user",
+    label: "ask_user",
+    description: ASK_USER_TOOL_DISPLAY_SUMMARY,
+    sectionId: "agents",
+    profiles: ["coding", "messaging"],
     includeInOpenClawGroup: true,
   },
   {

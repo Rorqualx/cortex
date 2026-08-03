@@ -1,6 +1,5 @@
-/**
- * Sanitizes, extracts, and classifies embedded-agent tool execution results.
- */
+/** Sanitizes, extracts, and classifies embedded-agent tool execution results. */
+import { estimateBase64DecodedBytes } from "@openclaw/media-core/base64";
 import { asOptionalRecord as readRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   normalizeOptionalLowercaseString,
@@ -13,8 +12,15 @@ import { getChannelPlugin, normalizeChannelId } from "../channels/plugins/index.
 import type { ChannelMessageActionName } from "../channels/plugins/types.public.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeTargetForProvider } from "../infra/outbound/target-normalization.js";
-import { normalizeInteractiveReply, normalizeMessagePresentation } from "../interactive/payload.js";
-import { redactSensitiveFieldValue, redactToolPayloadText } from "../logging/redact.js";
+import {
+  normalizeLegacyInteractiveReply,
+  normalizeMessagePresentation,
+} from "../interactive/payload.js";
+import {
+  redactSecrets,
+  redactSensitiveFieldValue,
+  redactToolPayloadText,
+} from "../logging/redact.js";
 import { truncateUtf16Safe } from "../utils.js";
 import { collectTextContentBlocks } from "./content-blocks.js";
 import { isMessagingToolTargetEvidenceAction } from "./embedded-agent-messaging.js";
@@ -23,11 +29,28 @@ import type {
   MessagingToolSourceReplyPayload,
 } from "./embedded-agent-messaging.types.js";
 import { normalizeToolName } from "./tool-policy.js";
+import {
+  isToolResultError,
+  readToolResultDetails,
+  readToolResultStatus,
+} from "./tool-result-error.js";
+import { AUTOMATIONS_TOOL_NAME } from "./tools/automations-tool-name.js";
+
+export { isToolResultError };
 
 const TOOL_RESULT_MAX_CHARS = 8000;
 const TOOL_ERROR_MAX_CHARS = 400;
 const LIVE_EXEC_OUTPUT_MAX_CHARS = 8000;
 const TOOL_DENIAL_ERROR_CODES = ["SYSTEM_RUN_DENIED", "INVALID_REQUEST"] as const;
+const OPAQUE_STRUCTURED_RESULT_FIELDS = new Set(["encrypted_content", "encrypted_stdout"]);
+const SENSITIVE_STRUCTURED_HEADER_FIELDS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "x-auth-token",
+]);
 
 function truncateToolText(text: string): string {
   if (text.length <= TOOL_RESULT_MAX_CHARS) {
@@ -247,7 +270,7 @@ export function sanitizeToolResult(result: unknown): unknown {
     return redactToolPayloadText(result);
   }
   if (Array.isArray(result)) {
-    return redactStringsDeep(result);
+    return redactSecrets(result);
   }
   if (!result || typeof result !== "object") {
     return result;
@@ -265,7 +288,8 @@ export function sanitizeToolResult(result: unknown): unknown {
       const entry = item as Record<string, unknown>;
       if (readStringValue(entry.type) === "image") {
         const data = readStringValue(entry.data);
-        const bytes = data ? data.length : undefined;
+        const existingBytes = typeof entry.bytes === "number" ? entry.bytes : undefined;
+        const bytes = data === undefined ? existingBytes : estimateBase64DecodedBytes(data);
         const cleaned = { ...entry };
         delete cleaned.data;
         return Object.assign({}, cleaned, { bytes, omitted: true });
@@ -275,7 +299,7 @@ export function sanitizeToolResult(result: unknown): unknown {
   }
   // Deep-redact the entire result so any top-level or nested string is
   // protected, not just `details` and text content blocks.
-  const baseline = redactStringsDeep(preCleaned) as Record<string, unknown>;
+  const baseline = redactSecrets(preCleaned);
   const out: Record<string, unknown> = { ...baseline };
   const content = Array.isArray(baseline.content) ? baseline.content : null;
   if (content) {
@@ -293,66 +317,141 @@ export function sanitizeToolResult(result: unknown): unknown {
   return out;
 }
 
+const INLINE_DATA_URI_VALUE_PATTERN =
+  /^data:(?:[a-z][a-z0-9.+-]*\/[a-z0-9.+-]+)?(?:;[a-z0-9.+-]+(?:=[^,;"'\s]+)?)*,/i;
+
+function redactInlineDataUriValue(value: string): string {
+  const trimmed = value.trimStart();
+  if (!INLINE_DATA_URI_VALUE_PATTERN.test(trimmed)) {
+    return value;
+  }
+  return `[inline data URI: ${value.length} chars]`;
+}
+
+function carriesBinaryData(record: Record<string, unknown>): boolean {
+  const type = normalizeOptionalLowercaseString(record.type);
+  if (type === "audio" || type === "image" || type === "base64") {
+    return true;
+  }
+  const mediaType = normalizeOptionalLowercaseString(record.media_type ?? record.mimeType);
+  return (
+    mediaType?.startsWith("image/") === true ||
+    mediaType?.startsWith("audio/") === true ||
+    mediaType?.startsWith("video/") === true ||
+    mediaType === "application/pdf"
+  );
+}
+
+function sanitizeStructuredToolResultValue(
+  value: unknown,
+  key = "",
+  parentCarriesBinaryData = false,
+  seen = new WeakSet<object>(),
+): unknown {
+  if (typeof value === "string") {
+    if (SENSITIVE_STRUCTURED_HEADER_FIELDS.has(key.toLowerCase())) {
+      return "***";
+    }
+    if (key === "blob" || (key === "data" && parentCarriesBinaryData)) {
+      return `[binary omitted: ${value.length} chars]`;
+    }
+    // Claude CLI result blocks carry replay-only ciphertext that is not useful display text.
+    if (OPAQUE_STRUCTURED_RESULT_FIELDS.has(key)) {
+      return `[opaque data omitted: ${value.length} chars]`;
+    }
+    return truncateToolText(redactInlineDataUriValue(redactSensitiveFieldValue(key, value)));
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  if (seen.has(value)) {
+    return "[Circular]";
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    // Keep the owning key so arrays of credentials inherit the same redaction policy.
+    return value.map((item) =>
+      sanitizeStructuredToolResultValue(item, key, parentCarriesBinaryData, seen),
+    );
+  }
+  const record = value as Record<string, unknown>;
+  const hasBinaryData = carriesBinaryData(record);
+  return Object.fromEntries(
+    Object.entries(record).map(([childKey, child]) => [
+      childKey,
+      sanitizeStructuredToolResultValue(child, childKey, hasBinaryData, seen),
+    ]),
+  );
+}
+
+function stringifyStructuredToolResultContent(block: unknown): string | undefined {
+  if (!block || typeof block !== "object") {
+    return undefined;
+  }
+  const record = block as Record<string, unknown>;
+  const type = readStringValue(record.type);
+  if (type === "text" || type === "image" || type === "image_url" || type === "audio") {
+    return undefined;
+  }
+  try {
+    const serialized = JSON.stringify(sanitizeStructuredToolResultValue(record));
+    const redacted = serialized ? redactToolPayloadText(serialized) : serialized;
+    return redacted && redacted !== "{}" ? redacted : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveToolResultContentBlocks(result: object): unknown[] {
+  if (Array.isArray(result)) {
+    return result;
+  }
+  const record = result as Record<string, unknown>;
+  // Typed provider blocks own their `content`; only untyped tool-result envelopes unwrap it.
+  if (readStringValue(record.type)) {
+    return [record];
+  }
+  if (Array.isArray(record.content)) {
+    return record.content;
+  }
+  if (record.content && typeof record.content === "object") {
+    return [record.content];
+  }
+  return [record];
+}
+
 export function extractToolResultText(result: unknown): string | undefined {
+  if (typeof result === "string") {
+    const trimmed = redactToolPayloadText(redactInlineDataUriValue(result)).trim();
+    return trimmed ? truncateToolText(trimmed) : undefined;
+  }
   if (!result || typeof result !== "object") {
     return undefined;
   }
-  const record = result as Record<string, unknown>;
-  const texts = collectTextContentBlocks(record.content)
+  const content = resolveToolResultContentBlocks(result);
+  const texts = collectTextContentBlocks(content)
     .map((item) => {
       const trimmed = item.trim();
       return trimmed ? trimmed : undefined;
     })
     .filter((value): value is string => Boolean(value));
-  if (texts.length === 0) {
+  if (texts.length > 0) {
+    return truncateToolText(texts.join("\n"));
+  }
+  const structuredTexts: string[] = [];
+  for (const item of content) {
+    const structured = stringifyStructuredToolResultContent(item);
+    if (structured) {
+      structuredTexts.push(structured);
+    }
+  }
+  if (structuredTexts.length === 0) {
     return undefined;
   }
-  return texts.join("\n");
-}
-
-// Core tool names that are allowed to emit trusted local media artifacts.
-// Plugin tools must be explicitly passed as trusted run-local names by the caller.
-const TRUSTED_TOOL_RESULT_MEDIA = new Set([
-  "agents_list",
-  "apply_patch",
-  "browser",
-  "canvas",
-  "cron",
-  "edit",
-  "exec",
-  "gateway",
-  "image",
-  "image_generate",
-  "memory_get",
-  "memory_insights",
-  "memory_reports",
-  "memory_search",
-  "message",
-  "music_generate",
-  "nodes",
-  "process",
-  "read",
-  "session_status",
-  "session_awareness",
-  "sessions_history",
-  "sessions_list",
-  "sessions_send",
-  "sessions_spawn",
-  "subagents",
-  "tts",
-  "video_generate",
-  "web_fetch",
-  "web_search",
-  "x_search",
-  "write",
-]);
-const HTTP_URL_RE = /^https?:\/\//i;
-
-export function isCoreToolResultMediaTrustedName(toolName?: string): boolean {
-  if (!toolName) {
-    return false;
-  }
-  return TRUSTED_TOOL_RESULT_MEDIA.has(normalizeToolName(toolName));
+  return truncateToolText(structuredTexts.join("\n"));
 }
 
 function pushUniqueMessagingMediaUrl(urls: string[], seen: Set<string>, value: unknown): void {
@@ -481,7 +580,7 @@ export function extractMessagingToolSourceReplyPayload(
   if (presentation) {
     payload.presentation = presentation;
   }
-  const interactive = normalizeInteractiveReply(sourceReply.interactive);
+  const interactive = normalizeLegacyInteractiveReply(sourceReply.interactive);
   if (interactive) {
     payload.interactive = interactive;
   }
@@ -497,19 +596,47 @@ export function extractMessagingToolSourceReplyPayload(
   return Object.keys(payload).length > 0 ? payload : undefined;
 }
 
-function readToolResultDetails(result: unknown): Record<string, unknown> | undefined {
-  if (!result || typeof result !== "object") {
-    return undefined;
-  }
-  const record = result as Record<string, unknown>;
-  return record.details && typeof record.details === "object" && !Array.isArray(record.details)
-    ? (record.details as Record<string, unknown>)
-    : undefined;
-}
+// Core tool names that are allowed to emit trusted local media artifacts.
+// Plugin tools must be explicitly passed as trusted run-local names by the caller.
+const TRUSTED_TOOL_RESULT_MEDIA = new Set([
+  "agents_list",
+  "apply_patch",
+  "browser",
+  "canvas",
+  AUTOMATIONS_TOOL_NAME,
+  "edit",
+  "exec",
+  "gateway",
+  "image",
+  "image_generate",
+  "memory_get",
+  "memory_search",
+  "message",
+  "music_generate",
+  "nodes",
+  "process",
+  "read",
+  "session_status",
+  "sessions_history",
+  "sessions_list",
+  "sessions_search",
+  "sessions_send",
+  "sessions_spawn",
+  "subagents",
+  "tts",
+  "video_generate",
+  "web_fetch",
+  "web_search",
+  "x_search",
+  "write",
+]);
+const HTTP_URL_RE = /^https?:\/\//i;
 
-function readToolResultStatus(result: unknown): string | undefined {
-  const status = readToolResultDetails(result)?.status;
-  return normalizeOptionalLowercaseString(status);
+function isCoreToolResultMediaTrustedName(toolName?: string): boolean {
+  if (!toolName) {
+    return false;
+  }
+  return TRUSTED_TOOL_RESULT_MEDIA.has(normalizeToolName(toolName));
 }
 
 function isExternalToolResult(result: unknown): boolean {
@@ -723,18 +850,6 @@ export function extractToolResultMediaArtifact(
   return undefined;
 }
 
-export function extractToolResultMediaPaths(result: unknown): string[] {
-  return extractToolResultMediaArtifact(result)?.mediaUrls ?? [];
-}
-
-export function isToolResultError(result: unknown): boolean {
-  const normalized = readToolResultStatus(result);
-  if (!normalized) {
-    return false;
-  }
-  return normalized === "error" || normalized === "timeout";
-}
-
 export function extractToolErrorCode(result: unknown): string | undefined {
   if (!result || typeof result !== "object") {
     return undefined;
@@ -787,6 +902,10 @@ export function extractToolErrorMessage(result: unknown): string | undefined {
   const fromRootStatus = extractErrorField(record);
   if (fromRootStatus) {
     return fromRootStatus;
+  }
+  const status = readToolResultStatus(result);
+  if (status && !isToolResultError(result)) {
+    return undefined;
   }
   return text ? normalizeToolErrorText(text) : undefined;
 }
@@ -909,6 +1028,16 @@ export function extractMessagingToolSend(
   // Provider docking: new provider tools must implement plugin.actions.extractToolSend.
   const action = normalizeOptionalString(args.action) ?? "";
   const accountId = normalizeOptionalString(args.accountId);
+  if (toolName === "conversations_send" || toolName === "conversations_turn") {
+    const conversationRef = normalizeOptionalString(args.conversationRef);
+    return conversationRef
+      ? {
+          tool: toolName,
+          provider: "conversation",
+          to: conversationRef,
+        }
+      : undefined;
+  }
   if (toolName === "message") {
     if (!isMessagingToolTargetEvidenceAction(toolName, args)) {
       return undefined;
@@ -1009,6 +1138,7 @@ export function extractMessagingToolSend(
     : undefined;
 }
 
+/** Reconciles pending send evidence with the provider's successful action result. */
 export function extractMessagingToolSendResult(
   pending: MessagingToolSend,
   result: unknown,
@@ -1047,3 +1177,4 @@ export function extractMessagingToolSendResult(
     threadSuppressed: threadEvidence.threadSuppressed === true ? true : undefined,
   };
 }
+/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

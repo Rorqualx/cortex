@@ -7,16 +7,19 @@ import {
   normalizeTrimmedStringList,
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
+import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { resolveSandboxPath } from "../../agents/sandbox-paths.js";
 import { canonicalizePath } from "../../agents/utils/paths.js";
+import { isDefaultStateDir } from "../../config/paths.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { walkDirectorySync } from "../../infra/fs-safe.js";
 import { resolveOsHomeDir } from "../../infra/home-dir.js";
 import { isPathInside } from "../../infra/path-guards.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveSkillForgeSkillsRoot } from "../../skill-forge/paths.js";
-import { CONFIG_DIR, resolveHomeDir, resolveUserPath } from "../../utils.js";
+import { CONFIG_DIR, resolveConfigDir, resolveUserPath } from "../../utils.js";
 import {
+  isSessionSkillEnabled,
   resolveEffectiveAgentSkillFilter,
   resolveEffectiveAgentSkillsLimits,
 } from "../discovery/agent-filter.js";
@@ -45,11 +48,16 @@ import {
   resolveSkillInvocationPolicy,
   resolveSkillKey,
 } from "./frontmatter.js";
-import { loadSkillsFromDirSafe, readSkillFrontmatterSafe } from "./local-loader.js";
+import {
+  loadSkillsFromDirSafe,
+  readSkillFrontmatterSafe,
+  type LocalSkillLoadDiagnostic,
+} from "./local-loader.js";
 import { resolvePluginSkillDirs } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
 import { formatSkillsForPrompt, type Skill } from "./skill-contract.js";
 import { resolveSkillTelemetrySource } from "./source.js";
+import { resolveAllowedSkillSymlinkTargetRealPaths, tryRealpath } from "./symlink-targets.js";
 
 const fsp = fs.promises;
 const skillsLogger = createSubsystemLogger("skills");
@@ -57,12 +65,11 @@ const SKILL_SOURCE_ORIGIN_RELATIVE_PATH = path.join(".openclaw", "source-origin.
 const MAX_SKILL_SOURCE_ORIGIN_BYTES = 16 * 1024;
 
 /**
- * Replace the user's home directory prefix with `~` in skill file paths
- * to reduce system prompt token usage. Models understand `~` expansion,
- * and the read tool resolves `~` to the home directory.
+ * Replace OS home directory prefixes with `~` in skill file paths to
+ * reduce system prompt token usage while matching host file-tool expansion.
  *
  * Example: `/Users/alice/.bun/.../skills/github/SKILL.md`
- *       → `~/.bun/.../skills/github/SKILL.md`
+ * → `~/.bun/.../skills/github/SKILL.md`
  *
  * Saves ~5–6 tokens per skill path × N skills ≈ 400–600 tokens total.
  */
@@ -79,8 +86,8 @@ function resolveNativeUserHomeDir(): string | undefined {
 }
 
 function resolveCompactHomePrefixes(): string[] {
-  const homes = [resolveHomeDir(), resolveUserHomeDir(), resolveNativeUserHomeDir()].filter(
-    (home): home is string => Boolean(home),
+  const homes = [resolveUserHomeDir(), resolveNativeUserHomeDir()].filter((home): home is string =>
+    Boolean(home),
   );
   const resolvedHomes = homes.map((home) => path.resolve(home));
   const realHomes = resolvedHomes
@@ -94,10 +101,64 @@ function compactSkillPaths(skills: Skill[]): Skill[] {
   if (homes.length === 0) {
     return skills;
   }
+  const preservedRoots = resolvePreservedPromptSkillPathRoots();
+  const tildeRoots = resolvePromptTildeRoots();
   return skills.map((s) => ({
     ...s,
-    filePath: compactHomePath(s.filePath, homes),
+    filePath: shouldPreservePromptSkillPath(s.filePath, preservedRoots, tildeRoots)
+      ? s.filePath
+      : compactHomePath(s.filePath, homes),
   }));
+}
+
+function resolvePreservedPromptSkillPathRoots(): string[] {
+  const configDir = resolveConfigDir();
+  const promptSkillDirs = [
+    path.resolve(configDir, "skills"),
+    path.resolve(configDir, "plugin-skills"),
+  ];
+  const realPromptSkillDirs = promptSkillDirs
+    .map((dir) => tryRealpath(dir))
+    .filter((dir): dir is string => Boolean(dir));
+  return uniqueStrings([...promptSkillDirs, ...realPromptSkillDirs]);
+}
+
+function resolvePromptTildeRoots(): string[] {
+  const nativeHome = resolveNativeUserHomeDir();
+  if (!nativeHome) {
+    return [];
+  }
+  const resolvedNativeHome = path.resolve(nativeHome);
+  if (isContainerStateHomeWherePromptTildeEscapes(resolvedNativeHome)) {
+    return [];
+  }
+  const realNativeHome = tryRealpath(resolvedNativeHome);
+  return uniqueStrings([resolvedNativeHome, ...(realNativeHome ? [realNativeHome] : [])]);
+}
+
+function isContainerStateHomeWherePromptTildeEscapes(home: string): boolean {
+  const configDir = path.resolve(resolveConfigDir());
+  return (
+    home === "/data" &&
+    (configDir === "/data/.openclaw" || isPathInside("/data/.openclaw", configDir))
+  );
+}
+
+function shouldPreservePromptSkillPath(
+  filePath: string,
+  roots: readonly string[],
+  tildeRoots: readonly string[],
+): boolean {
+  const resolvedFilePath = path.resolve(filePath);
+  const isManagedPromptSkillPath = roots.some(
+    (root) => resolvedFilePath === root || isPathInside(root, resolvedFilePath),
+  );
+  if (!isManagedPromptSkillPath) {
+    return false;
+  }
+  return !tildeRoots.some(
+    (root) => resolvedFilePath === root || isPathInside(root, resolvedFilePath),
+  );
 }
 
 function compactHomePath(filePath: string, homes: readonly string[]): string {
@@ -127,27 +188,41 @@ function compactPathForConsoleMessage(filePath: string): string {
   return compactHomePath(filePath, resolveCompactHomePrefixes());
 }
 
+function warnInvalidSkillFrontmatter(source: string, diagnostic: LocalSkillLoadDiagnostic): void {
+  skillsLogger.warn("Skipping skill with invalid frontmatter.", {
+    source,
+    filePath: diagnostic.path,
+    error: diagnostic.message,
+    consoleMessage:
+      `Skipping skill with invalid frontmatter: ` +
+      `file=${compactPathForConsoleMessage(diagnostic.path)} error=${diagnostic.message}`,
+  });
+}
+
 function filterSkillEntries(
   entries: SkillEntry[],
   config?: OpenClawConfig,
   skillFilter?: string[],
+  skillOverrides?: Readonly<Record<string, boolean>>,
   eligibility?: SkillEligibilityContext,
 ): SkillEntry[] {
   const bundledAllowlist = resolveBundledAllowlist(config);
   let filtered = entries.filter((entry) =>
     shouldIncludeSkill({ entry, config, bundledAllowlist, eligibility }),
   );
-  // If skillFilter is provided, only include skills in the filter list.
-  if (skillFilter !== undefined) {
+  if (skillFilter !== undefined || skillOverrides !== undefined) {
     const normalized = normalizeSkillFilter(skillFilter) ?? [];
     const label = normalized.length > 0 ? normalized.join(", ") : "(none)";
     skillsLogger.debug(`Applying skill filter: ${label}`);
-    if (normalized.length > 0) {
-      const allowed = new Set(normalized);
-      filtered = filtered.filter((entry) => allowed.has(entry.skill.name));
-    } else {
-      filtered = [];
-    }
+    const resolvedFilter = skillFilter === undefined ? undefined : normalized;
+    filtered = filtered.filter((entry) =>
+      isSessionSkillEnabled(
+        entry.skill.name,
+        resolvedFilter,
+        skillOverrides,
+        resolveSkillKey(entry.skill, entry),
+      ),
+    );
     skillsLogger.debug(
       `After skill filter: ${filtered.map((entry) => entry.skill.name).join(", ") || "(none)"}`,
     );
@@ -215,10 +290,6 @@ function resolveSkillsLimits(config?: OpenClawConfig, agentId?: string): Resolve
       DEFAULT_MAX_SKILLS_PROMPT_CHARS,
     maxSkillFileBytes: limits?.maxSkillFileBytes ?? DEFAULT_MAX_SKILL_FILE_BYTES,
   };
-}
-
-export function resolveSkillRootScanLimit(config?: OpenClawConfig): number {
-  return config?.skills?.limits?.maxCandidatesPerRoot ?? DEFAULT_MAX_CANDIDATES_PER_ROOT;
 }
 
 function listChildDirectories(
@@ -391,14 +462,6 @@ function hasLoadableSkillFrontmatter(
   return Boolean(name) && Boolean(frontmatter?.description?.trim());
 }
 
-function tryRealpath(filePath: string): string | null {
-  try {
-    return fs.realpathSync(filePath);
-  } catch {
-    return null;
-  }
-}
-
 function isSymlinkPath(filePath: string): boolean {
   try {
     return fs.lstatSync(filePath).isSymbolicLink();
@@ -499,7 +562,7 @@ function resolveContainedSkillPath(params: {
   return null;
 }
 
-export function resolveNestedSkillsRoot(
+function resolveNestedSkillsRoot(
   dir: string,
   opts?: {
     maxEntriesToScan?: number;
@@ -589,6 +652,7 @@ function loadContainedSkillRecords(params: {
     dir: params.skillDir,
     source: params.source,
     maxBytes: params.maxSkillFileBytes,
+    onDiagnostic: (diagnostic) => warnInvalidSkillFrontmatter(params.source, diagnostic),
   });
   const records = unwrapLoadedSkillRecords(loaded).filter(
     (record) => path.resolve(record.skill.baseDir) === expectedBaseDir,
@@ -751,16 +815,6 @@ function resolvePluginSkillRootRealPaths(pluginSkillDirs: readonly string[]): st
   );
 }
 
-function resolveAllowedSymlinkTargetRealPaths(config?: OpenClawConfig): string[] {
-  const rawTargets = config?.skills?.load?.allowSymlinkTargets ?? [];
-  const targetPaths = rawTargets
-    .map((dir) => normalizeOptionalString(dir) ?? "")
-    .filter(Boolean)
-    .map((dir) => tryRealpath(resolveUserPath(dir)))
-    .filter((dir): dir is string => Boolean(dir));
-  return uniqueStrings(targetPaths);
-}
-
 function loadGeneratedPluginSkillRecords(params: {
   pluginSkillsDir: string;
   pluginSkillDirs: readonly string[];
@@ -870,12 +924,12 @@ function loadSkillEntries(
     bundledSkillsDir?: string;
     pluginSkillsDir?: string;
     forgeSkillsDir?: string;
-    includeArchived?: boolean;
     workspaceOnly?: boolean;
+    includeArchived?: boolean;
   },
 ): SkillEntry[] {
   const limits = resolveSkillsLimits(opts?.config, opts?.agentId);
-  const allowedSymlinkTargetRealPaths = resolveAllowedSymlinkTargetRealPaths(opts?.config);
+  const allowedSymlinkTargetRealPaths = resolveAllowedSkillSymlinkTargetRealPaths(opts?.config);
 
   const loadSkills = (params: { dir: string; source: string }): LoadedSkillRecord[] => {
     const rootDir = path.resolve(params.dir);
@@ -1131,10 +1185,6 @@ function loadSkillEntries(
     return loadedSkills;
   };
 
-  // Sandbox/node-scoped loads pass workspaceOnly to list only workspace-materialized
-  // skills. Every machine-level source (bundled, plugin/extra, managed, skill-forge,
-  // personal/project .agents) is empty so remote hosts and sandboxes never inherit
-  // gateway-local skills that cannot execute in their context.
   const workspaceOnly = opts?.workspaceOnly === true;
   const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
   const workspaceSkillsDir = path.resolve(workspaceDir, "skills");
@@ -1203,12 +1253,13 @@ function loadSkillEntries(
   const personalAgentsSkillsDir = osHomeDir
     ? path.resolve(osHomeDir, ".agents", "skills")
     : path.resolve(".agents", "skills");
-  const personalAgentsSkills = workspaceOnly
-    ? []
-    : loadSkills({
-        dir: personalAgentsSkillsDir,
-        source: "agents-skills-personal",
-      });
+  const personalAgentsSkills =
+    workspaceOnly || !isDefaultStateDir()
+      ? []
+      : loadSkills({
+          dir: personalAgentsSkillsDir,
+          source: "agents-skills-personal",
+        });
   const projectAgentsSkillsDir = path.resolve(workspaceDir, ".agents", "skills");
   const projectAgentsSkills = workspaceOnly
     ? []
@@ -1222,10 +1273,6 @@ function loadSkillEntries(
   });
 
   const merged = new Map<string, LoadedSkillRecord>();
-  // Curator-archived skills are excluded from every discovery surface (prompt,
-  // commands, runtime registry, sandbox sync) unless the caller opts in. Filtering
-  // at merge time preserves precedence: an archived record never shadows a live
-  // same-name skill from a lower-precedence source.
   const archivedSkillFiles = opts?.includeArchived ? null : getArchivedSkillFiles();
   const mergeRecord = (record: LoadedSkillRecord) => {
     if (archivedSkillFiles?.has(canonicalizePath(record.skill.filePath))) {
@@ -1233,6 +1280,7 @@ function loadSkillEntries(
     }
     merged.set(record.skill.name, record);
   };
+  // Precedence: extra < bundled < managed < agents-skills-personal < agents-skills-project < workspace
   // Precedence: forge < extra < bundled < managed < agents-skills-personal < agents-skills-project < workspace
   // Forge-promoted skills are auto-generated, so anything user-installed wins.
   for (const record of forgeSkills) {
@@ -1295,6 +1343,12 @@ function loadSkillEntries(
   return skillEntries;
 }
 
+function filterArchivedSkillEntries(entries: SkillEntry[]): SkillEntry[] {
+  // One discovery-level query covers prompts, commands, runtime entries, and sandbox sync.
+  const archivedSkillFiles = getArchivedSkillFiles();
+  return entries.filter((entry) => !archivedSkillFiles.has(canonicalizePath(entry.skill.filePath)));
+}
+
 function escapeXml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -1304,18 +1358,41 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
+const COMPACT_DESCRIPTION_MAX_CHARS = 220;
+const COMPACT_DESCRIPTION_MIN_CHARS = 4;
+
+function truncateSkillDescription(description: string, maxChars: number): string {
+  const normalized = description.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  if (maxChars <= 3) {
+    return truncateUtf16Safe(normalized, maxChars);
+  }
+  return `${truncateUtf16Safe(normalized, maxChars - 3).trimEnd()}...`;
+}
+
 /**
- * Compact skill catalog: name + location only (no description).
- * Used as a fallback when the full format exceeds the char budget,
- * preserving awareness of all skills before resorting to dropping.
+ * Compact skill catalog with descriptions bounded independently from identities.
+ * A zero description budget preserves the previous name/location-only format.
  */
-export function formatSkillsCompact(skills: Skill[]): string {
+export function formatSkillsCompact(
+  skills: Skill[],
+  opts?: { descriptionMaxChars?: number },
+): string {
   if (skills.length === 0) {
     return "";
   }
+  const descriptionMaxChars = Math.max(
+    0,
+    Math.floor(opts?.descriptionMaxChars ?? COMPACT_DESCRIPTION_MAX_CHARS),
+  );
   const lines = [
     "\n\nThe following skills provide specialized instructions for specific tasks.",
-    "Use the read tool to load a skill's file when the task matches its name.",
+    descriptionMaxChars > 0
+      ? "Use the read tool to load a skill's file when the task matches its name or description."
+      : "Use the read tool to load a skill's file when the task matches its name.",
+    "If a skill's <version> differs from a previous turn, re-read its SKILL.md before using it.",
     "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
     "",
     "<available_skills>",
@@ -1323,66 +1400,189 @@ export function formatSkillsCompact(skills: Skill[]): string {
   for (const skill of skills) {
     lines.push("  <skill>");
     lines.push(`    <name>${escapeXml(skill.name)}</name>`);
+    if (descriptionMaxChars > 0) {
+      const description = truncateSkillDescription(skill.description, descriptionMaxChars);
+      if (description) {
+        lines.push(`    <description>${escapeXml(description)}</description>`);
+      }
+    }
     lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
+    if (skill.locationNote) {
+      lines.push(`    <location_note>${escapeXml(skill.locationNote)}</location_note>`);
+    }
+    if (skill.promptVersion) {
+      lines.push(`    <version>${escapeXml(skill.promptVersion)}</version>`);
+    }
     lines.push("  </skill>");
   }
   lines.push("</available_skills>");
   return lines.join("\n");
 }
 
-// Budget reserved for the compact-mode warning line prepended by the caller.
-const COMPACT_WARNING_OVERHEAD = 150;
+type SkillsPromptFormat = { kind: "full" } | { kind: "compact"; descriptionMaxChars: number };
+
+function buildSkillsLimitNote(params: {
+  truncated: boolean;
+  format: SkillsPromptFormat;
+  included: number;
+  total: number;
+}): string {
+  if (params.truncated) {
+    const compactDetails =
+      params.format.kind === "compact"
+        ? ` (compact format, ${params.format.descriptionMaxChars > 0 ? "descriptions shortened" : "descriptions omitted"})`
+        : "";
+    return `⚠️ Skills truncated: included ${params.included} of ${params.total}${compactDetails}. Run \`openclaw skills check\` to audit.`;
+  }
+  if (params.format.kind === "compact") {
+    const compactDetails =
+      params.format.descriptionMaxChars > 0 ? "descriptions shortened" : "descriptions omitted";
+    return `⚠️ Skills catalog using compact format (${compactDetails}). Run \`openclaw skills check\` to audit.`;
+  }
+  return "";
+}
+
+function buildRenderedSkillsPrompt(params: {
+  remoteNote?: string;
+  skills: Skill[];
+  total: number;
+  format: SkillsPromptFormat;
+  includeLimitNote?: boolean;
+}): string {
+  // resolveCodeModeSkills in src/agents/code-mode-skills.ts parses this exact format; update both together.
+  // The production-renderer parity test in src/agents/code-mode.test.ts enforces this coupling.
+  const truncated = params.skills.length < params.total;
+  const limitNote =
+    params.includeLimitNote === false
+      ? ""
+      : buildSkillsLimitNote({
+          truncated,
+          format: params.format,
+          included: params.skills.length,
+          total: params.total,
+        });
+  const catalog =
+    params.format.kind === "compact"
+      ? formatSkillsCompact(params.skills, {
+          descriptionMaxChars: params.format.descriptionMaxChars,
+        })
+      : formatSkillsForPrompt(params.skills);
+  return [params.remoteNote, limitNote, catalog].filter(Boolean).join("\n");
+}
 
 function applySkillsPromptLimits(params: {
   skills: Skill[];
   config?: OpenClawConfig;
   agentId?: string;
-}): {
-  skillsForPrompt: Skill[];
-  truncated: boolean;
-  compact: boolean;
-} {
+  remoteNote?: string;
+}): string {
   const limits = resolveSkillsLimits(params.config, params.agentId);
   const total = params.skills.length;
   const byCount = params.skills.slice(0, Math.max(0, limits.maxSkillsInPrompt));
 
   let skillsForPrompt = byCount;
-  let truncated = total > byCount.length;
-  let compact = false;
 
-  const fitsFull = (skills: Skill[]): boolean =>
-    formatSkillsForPrompt(skills).length <= limits.maxSkillsPromptChars;
+  const renderWithinLimit = (
+    skills: Skill[],
+    format: SkillsPromptFormat,
+    includeLimitNote = true,
+  ): string | undefined => {
+    // Optional context must disappear whole; clipping it could corrupt skill guidance or XML.
+    const remoteNotes = params.remoteNote ? [params.remoteNote, undefined] : [undefined];
+    for (const remoteNote of remoteNotes) {
+      const prompt = buildRenderedSkillsPrompt({
+        remoteNote,
+        skills,
+        total,
+        format,
+        includeLimitNote,
+      });
+      if (prompt.length <= limits.maxSkillsPromptChars) {
+        return prompt;
+      }
+    }
+    return undefined;
+  };
 
-  // Reserve space for the warning line the caller prepends in compact mode.
-  const compactBudget = limits.maxSkillsPromptChars - COMPACT_WARNING_OVERHEAD;
-  const fitsCompact = (skills: Skill[]): boolean =>
-    formatSkillsCompact(skills).length <= compactBudget;
+  const fitsFull = (skills: Skill[], includeLimitNote = true): boolean =>
+    renderWithinLimit(skills, { kind: "full" }, includeLimitNote) !== undefined;
+
+  const fitsCompact = (
+    skills: Skill[],
+    descriptionMaxChars: number,
+    includeLimitNote = true,
+  ): boolean =>
+    renderWithinLimit(skills, { kind: "compact", descriptionMaxChars }, includeLimitNote) !==
+    undefined;
 
   if (!fitsFull(skillsForPrompt)) {
-    // Full format exceeds budget. Try compact (name + location, no description)
-    // to preserve awareness of all skills before dropping any.
-    if (fitsCompact(skillsForPrompt)) {
-      compact = true;
-      // No skills dropped — only format downgraded. Preserve existing truncated state.
-    } else {
-      // Compact still too large — binary search the largest prefix that fits.
-      compact = true;
+    // Identity coverage takes priority over descriptions. Find the same largest
+    // name/location/version prefix as the previous compact format before using
+    // any leftover budget for trigger guidance.
+    if (!fitsCompact(skillsForPrompt, 0)) {
       let lo = 0;
       let hi = skillsForPrompt.length;
       while (lo < hi) {
         const mid = Math.ceil((lo + hi) / 2);
-        if (fitsCompact(skillsForPrompt.slice(0, mid))) {
+        if (fitsCompact(skillsForPrompt.slice(0, mid), 0)) {
           lo = mid;
         } else {
           hi = mid - 1;
         }
       }
       skillsForPrompt = skillsForPrompt.slice(0, lo);
-      truncated = true;
     }
+
+    if (skillsForPrompt.length === 0 && byCount.length > 0) {
+      // Keep complete skill instructions ahead of a notice when only one can fit.
+      const fullWithoutNotice = renderWithinLimit(byCount, { kind: "full" }, false);
+      if (fullWithoutNotice !== undefined) {
+        return fullWithoutNotice;
+      }
+
+      let lo = 0;
+      let hi = byCount.length;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (fitsCompact(byCount.slice(0, mid), 0, false)) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      if (lo > 0) {
+        skillsForPrompt = byCount.slice(0, lo);
+      }
+    }
+
+    const includeLimitNote = fitsCompact(skillsForPrompt, 0);
+    let descriptionMaxChars = 0;
+    if (
+      skillsForPrompt.length > 0 &&
+      fitsCompact(skillsForPrompt, COMPACT_DESCRIPTION_MIN_CHARS, includeLimitNote)
+    ) {
+      let lo = COMPACT_DESCRIPTION_MIN_CHARS;
+      let hi = COMPACT_DESCRIPTION_MAX_CHARS;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (fitsCompact(skillsForPrompt, mid, includeLimitNote)) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      descriptionMaxChars = lo;
+    }
+    return (
+      renderWithinLimit(
+        skillsForPrompt,
+        { kind: "compact", descriptionMaxChars },
+        includeLimitNote,
+      ) ?? ""
+    );
   }
 
-  return { skillsForPrompt, truncated, compact };
+  return renderWithinLimit(skillsForPrompt, { kind: "full" }) ?? "";
 }
 
 export function buildWorkspaceSkillSnapshot(
@@ -1395,18 +1595,17 @@ export function buildWorkspaceSkillSnapshot(
     prompt,
     skills: eligible.map((entry) => ({
       name: entry.skill.name,
-      // Persist the config key so a later degraded-secret run can match this
-      // skill's isolated owner even when it differs from the prompt-facing name.
       skillKey: resolveSkillKey(entry.skill, entry),
       primaryEnv: entry.metadata?.primaryEnv,
       requiredEnv: entry.metadata?.requires?.env?.slice(),
     })),
     ...(skillFilter === undefined ? {} : { skillFilter }),
+    ...(opts?.skillOverrides ? { skillOverrides: opts.skillOverrides } : {}),
+    ...(opts?.eligibility?.nodeSkills
+      ? { nodeSkillsEligibility: opts.eligibility.nodeSkills }
+      : {}),
     resolvedSkills,
     version: opts?.snapshotVersion,
-    // Persisted snapshots must carry the format version: the refresh check in
-    // session-snapshot.ts treats a missing/older value as stale, and omitting
-    // it forced a full skills rescan + snapshot re-persist on every turn.
     promptFormatVersion: WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION,
   };
 }
@@ -1430,6 +1629,7 @@ type WorkspaceSkillBuildOptions = {
   agentId?: string;
   /** If provided, only include skills with these names */
   skillFilter?: string[];
+  skillOverrides?: Record<string, boolean>;
   eligibility?: SkillEligibilityContext;
 };
 
@@ -1454,14 +1654,17 @@ function resolveWorkspaceSkillPromptState(
   resolvedSkills: Skill[];
 } {
   const effectiveSkillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
-  if (effectiveSkillFilter !== undefined && effectiveSkillFilter.length === 0) {
-    return { eligible: [], prompt: "", resolvedSkills: [] };
-  }
-  const skillEntries = opts?.entries ?? loadSkillEntries(workspaceDir, opts);
+  const skillEntries = opts?.entries
+    ? filterArchivedSkillEntries(opts.entries)
+    : mergeRemoteNodeSkillEntries(loadSkillEntries(workspaceDir, opts), {
+        canExec: opts?.eligibility?.nodeSkills?.canExec,
+        node: opts?.eligibility?.nodeSkills?.node,
+      });
   const eligible = filterSkillEntries(
     skillEntries,
     opts?.config,
     effectiveSkillFilter,
+    opts?.skillOverrides,
     opts?.eligibility,
   );
   const promptEntries = filterPromptVisibleSkillEntries(eligible);
@@ -1474,23 +1677,12 @@ function resolveWorkspaceSkillPromptState(
   const promptSkills = compactSkillPaths(resolvedSkills).toSorted((a, b) =>
     a.name.localeCompare(b.name, "en"),
   );
-  const { skillsForPrompt, truncated, compact } = applySkillsPromptLimits({
+  const prompt = applySkillsPromptLimits({
     skills: promptSkills,
     config: opts?.config,
     agentId: opts?.agentId,
-  });
-  const truncationNote = truncated
-    ? `⚠️ Skills truncated: included ${skillsForPrompt.length} of ${resolvedSkills.length}${compact ? " (compact format, descriptions omitted)" : ""}. Run \`openclaw skills check\` to audit.`
-    : compact
-      ? `⚠️ Skills catalog using compact format (descriptions omitted). Run \`openclaw skills check\` to audit.`
-      : "";
-  const prompt = [
     remoteNote,
-    truncationNote,
-    compact ? formatSkillsCompact(skillsForPrompt) : formatSkillsForPrompt(skillsForPrompt),
-  ]
-    .filter(Boolean)
-    .join("\n");
+  });
   return { eligible, prompt, resolvedSkills };
 }
 
@@ -1503,34 +1695,24 @@ export function resolveSkillsPromptForRun(params: {
   eligibility?: SkillEligibilityContext;
 }): string {
   const snapshotPrompt = params.skillsSnapshot?.prompt?.trim();
-  // An empty saved snapshot is authoritative: it deliberately exposes no skills,
-  // so never fall through to rebuilding from current entries.
   if (params.skillsSnapshot && !snapshotPrompt) {
     return "";
   }
+  const snapshotHasLegacySkillIdentity = params.skillsSnapshot?.skills.some(
+    (skill) => !skill.skillKey,
+  );
   if (snapshotPrompt) {
-    // Fail closed whenever a skill whose configured secret was isolated at
-    // startup could surface in the persisted prompt. Leaking a skill whose
-    // secret is broken is a security regression, so we only ever return the
-    // snapshot after proving no unavailable owner is represented.
-    const snapshotHasLegacySkillIdentity = params.skillsSnapshot?.skills.some(
-      (skill) => !skill.skillKey,
-    );
     const snapshotHasUnavailableSkill =
       params.skillsSnapshot?.skills.some((skill) =>
         isSkillSecretOwnerUnavailable(skill.skillKey ?? skill.name),
       ) ||
       (snapshotHasLegacySkillIdentity && hasUnavailableSkillSecretOwners());
-    // Older snapshots predate per-skill config keys and precise catalog markup,
-    // so a degraded run cannot safely filter them: fail closed instead.
     if (
       snapshotHasUnavailableSkill &&
       params.skillsSnapshot?.promptFormatVersion !== WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION
     ) {
       return "";
     }
-    // Ambiguous legacy identities cannot be matched to a specific owner, so any
-    // unavailable skill secret forces a full fail-closed on the snapshot.
     if (snapshotHasLegacySkillIdentity && hasUnavailableSkillSecretOwners()) {
       return "";
     }
@@ -1544,9 +1726,6 @@ export function resolveSkillsPromptForRun(params: {
     if (unavailableNames.size === 0) {
       return snapshotPrompt;
     }
-    // Surgically drop only the unavailable skills' catalog blocks. Any deviation
-    // from the expected single-catalog markup (stray text, duplicate markers,
-    // malformed block) is treated as untrusted and fails closed.
     const catalogOpen = "<available_skills>";
     const catalogClose = "</available_skills>";
     const catalogStart = snapshotPrompt.indexOf(catalogOpen);
@@ -1604,24 +1783,32 @@ export function loadWorkspaceSkillEntries(
     pluginSkillsDir?: string;
     forgeSkillsDir?: string;
     skillFilter?: string[];
+    skillOverrides?: Record<string, boolean>;
     agentId?: string;
     eligibility?: SkillEligibilityContext;
-    includeArchived?: boolean;
     workspaceOnly?: boolean;
+    includeArchived?: boolean;
   },
 ): SkillEntry[] {
-  // Node-hosted skills join the local catalog here so every consumer of the
-  // workspace entry list (snapshots, sandbox sync, sync targets) sees the same
-  // merged set. The merge no-ops unless the caller passes nodeSkills.canExec.
   const entries = mergeRemoteNodeSkillEntries(loadSkillEntries(workspaceDir, opts), {
     canExec: opts?.eligibility?.nodeSkills?.canExec,
     node: opts?.eligibility?.nodeSkills?.node,
   });
   const effectiveSkillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
-  if (effectiveSkillFilter === undefined) {
+  if (
+    effectiveSkillFilter === undefined &&
+    opts?.skillOverrides === undefined &&
+    opts?.eligibility === undefined
+  ) {
     return entries;
   }
-  return filterSkillEntries(entries, opts?.config, effectiveSkillFilter, opts?.eligibility);
+  return filterSkillEntries(
+    entries,
+    opts?.config,
+    effectiveSkillFilter,
+    opts?.skillOverrides,
+    opts?.eligibility,
+  );
 }
 
 export function loadVisibleWorkspaceSkillEntries(
@@ -1631,6 +1818,7 @@ export function loadVisibleWorkspaceSkillEntries(
     managedSkillsDir?: string;
     bundledSkillsDir?: string;
     skillFilter?: string[];
+    skillOverrides?: Record<string, boolean>;
     agentId?: string;
     eligibility?: SkillEligibilityContext;
   },
@@ -1640,7 +1828,13 @@ export function loadVisibleWorkspaceSkillEntries(
     node: opts?.eligibility?.nodeSkills?.node,
   });
   const effectiveSkillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
-  return filterSkillEntries(entries, opts?.config, effectiveSkillFilter, opts?.eligibility);
+  return filterSkillEntries(
+    entries,
+    opts?.config,
+    effectiveSkillFilter,
+    opts?.skillOverrides,
+    opts?.eligibility,
+  );
 }
 
 function resolveUniqueSyncedSkillDirName(base: string, used: Set<string>): string {
@@ -1684,6 +1878,29 @@ function resolveSyncedSkillDestinationPath(params: {
   }).resolved;
 }
 
+async function prepareSyncedSkillsDirectory(targetSkillsDir: string): Promise<void> {
+  let stats: fs.Stats;
+  try {
+    stats = await fsp.lstat(targetSkillsDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+    await fsp.mkdir(targetSkillsDir, { recursive: true });
+    return;
+  }
+
+  if (!stats.isDirectory() || stats.isSymbolicLink()) {
+    await fsp.rm(targetSkillsDir, { recursive: true, force: true });
+    await fsp.mkdir(targetSkillsDir, { recursive: true });
+    return;
+  }
+
+  for (const entry of await fsp.readdir(targetSkillsDir)) {
+    await fsp.rm(path.join(targetSkillsDir, entry), { recursive: true, force: true });
+  }
+}
+
 export async function syncSkillsToWorkspace(params: {
   sourceWorkspaceDir: string;
   targetWorkspaceDir: string;
@@ -1714,8 +1931,7 @@ export async function syncSkillsToWorkspace(params: {
       pluginSkillsDir: params.pluginSkillsDir,
     });
 
-    await fsp.rm(targetSkillsDir, { recursive: true, force: true });
-    await fsp.mkdir(targetSkillsDir, { recursive: true });
+    await prepareSyncedSkillsDirectory(targetSkillsDir);
 
     const usedDirNames = new Set<string>();
     const skillUsagePaths: SkillUsagePath[] = [];
@@ -1739,7 +1955,8 @@ export async function syncSkillsToWorkspace(params: {
         continue;
       }
       try {
-        await fsp.cp(entry.syncSourceDir ?? entry.skill.baseDir, dest, {
+        const syncSourceDir = entry.syncSourceDir ?? entry.skill.baseDir;
+        await fsp.cp(syncSourceDir, dest, {
           recursive: true,
           force: true,
           filter: (src) => {
@@ -1762,21 +1979,21 @@ export async function syncSkillsToWorkspace(params: {
   });
 }
 
-export function filterWorkspaceSkillEntries(
-  entries: SkillEntry[],
-  config?: OpenClawConfig,
-): SkillEntry[] {
-  return filterSkillEntries(entries, config);
-}
-
 export function filterWorkspaceSkillEntriesWithOptions(
   entries: SkillEntry[],
   opts?: {
     config?: OpenClawConfig;
     skillFilter?: string[];
+    skillOverrides?: Record<string, boolean>;
     eligibility?: SkillEligibilityContext;
   },
 ): SkillEntry[] {
-  return filterSkillEntries(entries, opts?.config, opts?.skillFilter, opts?.eligibility);
+  return filterSkillEntries(
+    entries,
+    opts?.config,
+    opts?.skillFilter,
+    opts?.skillOverrides,
+    opts?.eligibility,
+  );
 }
-export { testing as __testing };
+/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

@@ -22,6 +22,10 @@ describe("GATEWAY_EVENTS", () => {
     expect(GATEWAY_EVENTS).toContain("node.presence");
   });
 
+  it("advertises skill invalidation updates", () => {
+    expect(GATEWAY_EVENTS).toContain("skills.changed");
+  });
+
   it("advertises session observer digests", () => {
     expect(GATEWAY_EVENTS).toContain("session.observer");
   });
@@ -144,7 +148,12 @@ describe("listGatewayMethods", () => {
   });
 
   it("advertises Control UI session pull request detection", () => {
-    expect(listGatewayMethods()).toContain("controlUi.sessionPullRequests");
+    expect(listGatewayMethods()).toContain("controlUi.sessionPullRequests.subscribe");
+    expect(GATEWAY_EVENTS).toContain("controlUi.sessionPullRequests.changed");
+  });
+
+  it("advertises explicit session viewer presence", () => {
+    expect(listGatewayMethods()).toContain("sessions.viewers.set");
   });
 
   it("advertises session workspace reveal", () => {
@@ -292,6 +301,17 @@ describe("listGatewayMethods", () => {
         controlPlaneWrite: true,
       });
     }
+  });
+
+  it("classifies proposal evaluation as a control-plane write", () => {
+    const descriptors = createCoreGatewayMethodDescriptors(coreGatewayHandlers);
+
+    expect(
+      descriptors.find((descriptor) => descriptor.name === "skills.proposals.evaluate"),
+    ).toMatchObject({
+      scope: "operator.admin",
+      controlPlaneWrite: true,
+    });
   });
 
   it("wires a dispatchable handler for every core descriptor", () => {
