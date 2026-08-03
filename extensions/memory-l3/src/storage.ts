@@ -89,6 +89,14 @@ CREATE TABLE IF NOT EXISTS l3_edges (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
   data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS l3_hype_queries (
+  fact_id TEXT NOT NULL,
+  query_seq INTEGER NOT NULL,
+  query_text TEXT NOT NULL,
+  embedding TEXT NOT NULL,
+  PRIMARY KEY (fact_id, query_seq)
+);
+CREATE INDEX IF NOT EXISTS l3_hype_queries_fact ON l3_hype_queries (fact_id);
 `;
 
 /**
@@ -502,6 +510,69 @@ export class Storage {
         insert.run(JSON.stringify(edge));
       }
     });
+  }
+
+  // -----------------------------------------------------------------
+  // HyPE query embeddings (Hypothetical Prompt Embeddings)
+  // -----------------------------------------------------------------
+  // Pre-generated hypothetical user queries (2-3 per fact) that would
+  // retrieve each typed fact. At retrieval time, the query matches against
+  // both fact embeddings and HyPE query embeddings, improving recall for
+  // phrasings that differ from how the fact was originally stored.
+
+  /** Write HyPE queries for a specific fact (replaces any existing). */
+  async writeHypeQueries(
+    factId: string,
+    queries: ReadonlyArray<{ text: string; embedding?: number[] }>,
+  ): Promise<void> {
+    const db = this.database();
+    runSqliteImmediateTransactionSync(db, () => {
+      db.prepare("DELETE FROM l3_hype_queries WHERE fact_id = ?").run(factId);
+      const insert = db.prepare(
+        "INSERT OR REPLACE INTO l3_hype_queries (fact_id, query_seq, query_text, embedding) VALUES (?, ?, ?, ?)",
+      );
+      queries.forEach((q, i) => {
+        insert.run(factId, i, q.text, JSON.stringify(q.embedding ?? []));
+      });
+    });
+  }
+
+  /** Read HyPE queries for a specific fact. */
+  async readHypeQueries(
+    factId: string,
+  ): Promise<Array<{ querySeq: number; queryText: string; embedding: number[] }>> {
+    const rows = this.database()
+      .prepare(
+        "SELECT query_seq, query_text, embedding FROM l3_hype_queries WHERE fact_id = ? ORDER BY query_seq",
+      )
+      .all(factId) as Array<{ query_seq: number; query_text: string; embedding: string }>;
+    return rows.map((row) => ({
+      querySeq: row.query_seq,
+      queryText: row.query_text,
+      embedding: parseEmbedding(row.embedding),
+    }));
+  }
+
+  /** Read all HyPE queries (for retrieval-time scan). */
+  async readAllHypeQueries(): Promise<
+    Array<{ factId: string; querySeq: number; queryText: string; embedding: number[] }>
+  > {
+    const rows = this.database()
+      .prepare(
+        "SELECT fact_id, query_seq, query_text, embedding FROM l3_hype_queries ORDER BY fact_id, query_seq",
+      )
+      .all() as Array<{
+      fact_id: string;
+      query_seq: number;
+      query_text: string;
+      embedding: string;
+    }>;
+    return rows.map((row) => ({
+      factId: row.fact_id,
+      querySeq: row.query_seq,
+      queryText: row.query_text,
+      embedding: parseEmbedding(row.embedding),
+    }));
   }
 
   // -----------------------------------------------------------------

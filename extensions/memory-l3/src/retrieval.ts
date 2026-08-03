@@ -9,6 +9,7 @@ import {
   type HebbianEdge,
   DEFAULT_HEBBIAN_CONFIG,
 } from "./hebbian.js";
+import { bestHypeMatch, buildHypeLookup } from "./hype.js";
 import { formatBody } from "./longterm-typed.js";
 import {
   readPromotedSkills,
@@ -481,6 +482,24 @@ export async function retrieveTopK(params: {
   }
   const retrievalSignalMap = new Map(preloadedSignals.map((s) => [s.factId, s]));
 
+  // HyPE lookup: load hypothetical prompt embeddings once for the entire
+  // retrieval pass. Used to boost semantic matching for facts that have
+  // pre-generated hypothetical queries (Finding 9, 2026-08-03).
+  let hypeLookup: Map<
+    string,
+    Array<{ factId: string; querySeq: number; queryText: string; embedding: number[] }>
+  > | null = null;
+  if (params.queryEmbedding) {
+    try {
+      const allHype = await params.storage.readAllHypeQueries();
+      if (allHype.length > 0) {
+        hypeLookup = buildHypeLookup(allHype);
+      }
+    } catch {
+      // HyPE queries unavailable — semantic matching falls back to fact embeddings only.
+    }
+  }
+
   // Build corpus stats from all fact texts for BM25 IDF computation.
   const corpusStats: CorpusStats | undefined =
     config.weightBm25 > 0 ? buildCorpusStats(items.map((i) => i.fact.text)) : undefined;
@@ -527,6 +546,20 @@ export async function retrieveTopK(params: {
       params.queryEmbedding.length === item.embedding.length
     ) {
       signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+    }
+    // HyPE boost: if we have a query embedding and HyPE queries for this fact,
+    // take the max semantic signal across fact embedding + hypothetical queries.
+    // This improves recall for phrasings that differ from how the fact was stored.
+    if (params.queryEmbedding && hypeLookup) {
+      const hypeQueries = hypeLookup.get(item.fact.id);
+      if (hypeQueries && hypeQueries.length > 0) {
+        const hypeSim = bestHypeMatch(
+          params.queryEmbedding,
+          hypeQueries.map((q) => ({ embedding: q.embedding })),
+        );
+        // Take the max of existing semantic and best HyPE match
+        signals.semantic = Math.max(signals.semantic, hypeSim);
+      }
     }
     // Apply retrieval mode: zero out signals not relevant to the selected mode
     if (retConfig.mode === "keyword") {
