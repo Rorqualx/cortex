@@ -1542,8 +1542,8 @@ describe("buildAgentBootstrapSystemPromptSections", () => {
     expect(firstBoundary).toBeGreaterThan(first.indexOf("### Deferred Tool Schemas"));
     expect(first.slice(0, firstBoundary)).toBe(second.slice(0, secondBoundary));
     expect(first.slice(0, firstBoundary)).toContain(toolSchemaDirectoryPrompt);
-    expect(first.slice(firstBoundary)).toContain("Allowlisted senders: +123");
-    expect(second.slice(secondBoundary)).toContain("Allowlisted senders: +456");
+    expect(first.slice(firstBoundary)).toContain("Authorized senders: +123");
+    expect(second.slice(secondBoundary)).toContain("Authorized senders: +456");
   });
 });
 

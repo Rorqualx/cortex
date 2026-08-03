@@ -1072,7 +1072,6 @@ export function buildAgentSystemPrompt(params: {
     nativeCommandGuidanceLines,
     providerSectionOverrides,
     providerStablePrefix,
-    ownerLine,
     reasoningHint,
     reasoningLevel,
     userTimezone,
@@ -1298,7 +1297,6 @@ export function buildAgentSystemPrompt(params: {
             .join("\n")
         : "",
       params.sandboxInfo?.enabled ? "" : "",
-      ...buildUserIdentitySection(ownerLine, isMinimal),
       ...buildTimeSection({
         userTimezone,
       }),
@@ -1343,6 +1341,11 @@ export function buildAgentSystemPrompt(params: {
   });
 
   const lines = [stablePrefix];
+
+  // Owner identity is session-specific: keeping it above the boundary made the
+  // cached prefix differ per owner, so every owner paid a fresh prompt-cache
+  // write on every turn.
+  lines.push(...buildUserIdentitySection(ownerLine, isMinimal));
 
   lines.push(
     ...buildProjectContextSection({
