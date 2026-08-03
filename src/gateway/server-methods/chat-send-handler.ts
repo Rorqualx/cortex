@@ -661,7 +661,7 @@ export async function handleChatSend(
         );
         // Fork: auto-title generation (llmTitle) — fire-and-forget after first turn.
         if (agentRunStarted && storePath && shouldGenerateAutoTitle(entry)) {
-          const finalReplyTexts = deliveredReplies
+          const finalReplyTexts = replyDispatch.deliveredReplies
             .filter((r) => r.kind === "final" && !r.payload.isError)
             .map((r) => r.payload.text?.trim())
             .filter((t): t is string => Boolean(t));

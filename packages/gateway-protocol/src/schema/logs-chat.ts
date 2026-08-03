@@ -1,7 +1,6 @@
 // Gateway Protocol schema module defines protocol validation shapes.
 import type { Static } from "typebox";
 import { Type } from "typebox";
-import { CHAT_HISTORY_MAX_ENTRIES } from "./chat-history-constants.js";
 import { closedObject } from "./closed-object.js";
 import { ChatSendSessionKeyString, InputProvenanceSchema, NonEmptyString } from "./primitives.js";
 

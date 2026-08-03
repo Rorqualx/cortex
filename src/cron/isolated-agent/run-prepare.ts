@@ -4,8 +4,10 @@ import { hasAnyAuthProfileStoreSource } from "../../agents/auth-profiles/source-
 import { findModelInCatalog } from "../../agents/model-catalog-lookup.js";
 import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../../agents/openai-routing.js";
 import { loadAgentRuntimePluginRegistryHandle } from "../../agents/runtime-plugins.js";
+import { normalizeThinkLevel, type ThinkLevel } from "../../auto-reply/thinking.shared.js";
 import { resolveAgentModelPrimaryValue } from "../../config/model-input.js";
 import type { SessionEntry } from "../../config/sessions.js";
+import { formatSqliteSessionFileMarker } from "../../config/sessions/legacy-sqlite-marker.js";
 import { resolveSessionWorkStartError } from "../../config/sessions/lifecycle.js";
 import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -34,8 +36,6 @@ import {
   resolveCronModelSelectionOwner,
   resolveCronThinkingSelection,
 } from "./model-selection.js";
-import { normalizeThinkLevel, type ThinkLevel } from "../../auto-reply/thinking.shared.js";
-import { formatSqliteSessionFileMarker } from "../../config/sessions/legacy-sqlite-marker.js";
 import { buildCronAgentDefaultsConfig, resolveCronActiveRuntimeConfig } from "./run-config.js";
 import { buildCurrentConversationContextBlock } from "./run-current-context.js";
 import {
@@ -250,50 +250,6 @@ export async function prepareCronRunContext(params: {
   const runSessionKey = usesExactRunSession
     ? `${agentSessionKey}:run:${runSessionId}`
     : agentSessionKey;
-  const persistCronSessionRow = async ({
-    storePath,
-    sessionKey,
-    fallbackEntry,
-    resetBoundaryReason,
-    update,
-  }: {
-    storePath: string;
-    sessionKey: string;
-    fallbackEntry: SessionEntry;
-    resetBoundaryReason?: "cron-stale";
-    update: (entry: SessionEntry | undefined) => SessionEntry;
-  }) => {
-    const { applySessionEntryLifecycleMutation, patchSessionEntry } =
-      await loadSessionAccessorRuntime();
-    if (resetBoundaryReason) {
-      await applySessionEntryLifecycleMutation({
-        activeSessionKey: sessionKey,
-        agentId,
-        storePath,
-        upserts: [
-          {
-            sessionKey,
-            resetBoundaryReason,
-            buildEntry: ({ currentEntry }) => update(currentEntry),
-          },
-        ],
-        skipMaintenance: true,
-      });
-      return;
-    }
-    // Guarded replace: the updater sees the freshest persisted row (or
-    // undefined pre-creation) so cron lifecycle claims reject stale owners.
-    await patchSessionEntry(
-      { storePath, sessionKey, agentId },
-      (_entry, context) => update(context.existingEntry),
-      { fallbackEntry, replaceEntry: true },
-    );
-  };
-  const persistSessionEntry = createPersistCronSessionEntry({
-    cronSession,
-    agentSessionKey,
-    persistSessionEntry: persistCronSessionRow,
-  });
   const withRunSession: WithRunSession = (result) => ({
     ...result,
     sessionId: currentRunSessionId(),
@@ -460,42 +416,18 @@ export async function prepareCronRunContext(params: {
     }
   }
 
-  const explicitTimeoutSeconds =
-    input.job.payload.kind === "agentTurn" ? input.job.payload.timeoutSeconds : undefined;
-  const timeoutMs = resolveAgentTimeoutMs({
-    cfg: cfgWithAgentDefaults,
-    overrideSeconds: explicitTimeoutSeconds,
-  });
   // Carry the "this run had an explicit per-run timeout" signal forward.
   // `resolveAgentTimeoutMs` collapses overrideSeconds + the agent default into
   // one number; the LLM idle watchdog at the embedded-runner attempt loses the
   // explicit-vs-default distinction without this companion field, which would
   // otherwise force the implicit 120 s cap whenever the cron payload's
   // `timeoutSeconds` happens to numerically equal `agents.defaults.timeoutSeconds`.
-  const runTimeoutOverrideMs = resolveCronRunTimeoutOverrideMs(explicitTimeoutSeconds);
   const agentPayload = input.job.payload.kind === "agentTurn" ? input.job.payload : null;
-  const configuredProvider = cfgWithAgentDefaults.models?.providers?.[provider];
-  const modelApi =
-    findModelInCatalog(thinkingCatalog, provider, model)?.api ??
-    configuredProvider?.models?.find((candidate) => candidate.id === model)?.api ??
-    configuredProvider?.api;
-  const preflightDiagnostics = await createCronToolsAllowPreflightDiagnostics({
+  const { deliveryRequested, resolvedDelivery, sourceDelivery } = await resolveCronDeliveryContext({
     cfg: cfgWithAgentDefaults,
-    jobId: input.job.id,
-    provider,
-    model,
-    modelApi,
-    agentId: modelOwner.agentId,
-    agentDir: modelOwner.agentDir,
-    sessionKey: agentSessionKey,
-    agentPayload,
+    job: input.job,
+    agentId,
   });
-  const { deliveryPlan, deliveryRequested, resolvedDelivery, sourceDelivery } =
-    await resolveCronDeliveryContext({
-      cfg: cfgWithAgentDefaults,
-      job: input.job,
-      agentId,
-    });
 
   const { formattedTime, timeLine } = resolveCronStyleNow(runtimeCfg, now);
   const originalMessage = resolveCronAgentTurnMessage(input);

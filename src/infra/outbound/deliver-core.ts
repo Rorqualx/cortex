@@ -6,10 +6,7 @@ import type { OutboundMediaAccess } from "../../media/load-options.js";
 import { getOrCreatePromise } from "../../shared/lazy-promise.js";
 import type { DiagnosticMessageDeliveryKind } from "../diagnostic-events.js";
 import { formatErrorMessage } from "../errors.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { throwIfAborted } from "./abort.js";
-import { OUTBOUND_DELIVERY_LOG_SCOPE } from "./deliver-log.js";
-import { createMessageSentEmitter } from "./message-sent-hook.js";
 import { createChannelHandler } from "./deliver-channel.js";
 import type { ChannelHandler, DeliverOutboundPayloadsCoreParams } from "./deliver-contracts.js";
 import { suppressedPayloadOutcome, toOutboundDeliveryError } from "./deliver-hooks.js";
@@ -190,7 +187,6 @@ export async function deliverOutboundPayloadsCore(
       deliveredMirrorPayloads.push(payloadSummary);
     }
   };
-  const hookRunner = getGlobalHookRunner();
   // Canonical session key forwarded to internal lifecycle hooks
   // (`message:sent` event, `message_sending` plugin hook ctx, etc.). Mirror
   // delivery wins because mirror sends are explicitly bound to the mirror's
@@ -200,21 +196,6 @@ export async function deliverOutboundPayloadsCore(
   // fall back to `session.policyKey` here — the policy key describes the
   // delivery target's policy, not the canonical control session, and
   // handing it to plugins that correlate against agent_end would be wrong.
-  const sessionKeyForInternalHooks = params.mirror?.sessionKey ?? params.session?.key;
-  const mirrorIsGroup = params.mirror?.isGroup;
-  const mirrorGroupId = params.mirror?.groupId;
-  const { emitMessageSent, hasMessageSentHooks } = createMessageSentEmitter({
-    hookRunner,
-    channel,
-    to,
-    accountId,
-    cfg,
-    sessionKeyForInternalHooks,
-    isGroup: mirrorIsGroup,
-    groupId: mirrorGroupId,
-    logPrefix: OUTBOUND_DELIVERY_LOG_SCOPE,
-  });
-  const hasMessageSendingHooks = hookRunner?.hasHooks("message_sending") ?? false;
   const diagnosticSessionKey = sessionKeyForDeliveryDiagnostics(params);
   for (const [deliveryPayloadIndex, preparedEntry] of acceptedEntries.entries()) {
     const payloadIndex = preparedEntry.sourceIndex;
