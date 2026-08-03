@@ -115,7 +115,11 @@ const RULES: readonly SafetyRule[] = [
  * @returns Safety verdict — `{ safe: true }` or `{ safe: false, ... }`.
  */
 export function preRouteSafetyCheck(
-  tool: FlattenedTool,
+  // Reserved, not yet read: the rules below scan only the task text. The
+  // flattened tool stays in the signature because every caller already has it
+  // and the rule table is meant to grow tool-scoped patterns; drop the
+  // parameter rather than leave it inert if that does not happen.
+  _tool: FlattenedTool,
   task: string,
   kind: string,
   opts?: SafetyCheckOptions,
