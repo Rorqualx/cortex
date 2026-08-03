@@ -33,6 +33,41 @@ const DEFAULT_REDACT_MODE: RedactSensitiveMode = "tools";
 const DEFAULT_REDACT_MIN_LENGTH = 18;
 const DEFAULT_REDACT_KEEP_START = 6;
 const DEFAULT_REDACT_KEEP_END = 4;
+
+// Live plaintext secret values registered at runtime (e.g. a vault credential
+// the egress tool just injected). These are scrubbed unconditionally — even when
+// pattern redaction is "off" — because an active credential must never reach a
+// log line or transcript regardless of its surrounding text shape.
+const MIN_DYNAMIC_SECRET_LENGTH = 6;
+const DYNAMIC_SECRET_PLACEHOLDER = "[redacted secret]";
+const dynamicSecretValues = new Set<string>();
+
+/** Register a live plaintext value to be scrubbed from all redacted output. */
+export function registerDynamicSecret(value: string): void {
+  if (value.length >= MIN_DYNAMIC_SECRET_LENGTH) {
+    dynamicSecretValues.add(value);
+  }
+}
+
+/** Drop all registered dynamic secrets (test reset / explicit teardown). */
+export function clearDynamicSecrets(): void {
+  dynamicSecretValues.clear();
+}
+
+/** Replace any registered live secret value found in `text` with a placeholder. */
+export function scrubDynamicSecrets(text: string): string {
+  if (!text || dynamicSecretValues.size === 0) {
+    return text;
+  }
+  let out = text;
+  for (const value of dynamicSecretValues) {
+    if (out.includes(value)) {
+      out = out.split(value).join(DYNAMIC_SECRET_PLACEHOLDER);
+    }
+  }
+  return out;
+}
+
 const shellReferencePreservingPatterns = new WeakSet<RegExp>();
 // Patterns whose left-context assertions or complete token can cross a chunk boundary must run
 // against the full string; chunking can invent a `^` boundary or split the secret itself.
@@ -867,7 +902,10 @@ export function redactSensitiveText(text: string, options?: RedactOptions): stri
   if (!text) {
     return text;
   }
-  const exactRedacted = redactRegisteredSecretValues(text, maskToken);
+  // Scrub fork-registered live dynamic secrets first and unconditionally, before
+  // any mode/pattern short-circuit can return the text untouched; then apply the
+  // upstream registered-secret exact redaction on the scrubbed view.
+  const exactRedacted = redactRegisteredSecretValues(scrubDynamicSecrets(text), maskToken);
   const resolvedOptions = options ?? resolveConfigRedaction();
   if (normalizeMode(resolvedOptions.mode) === "off") {
     return exactRedacted;

@@ -267,6 +267,21 @@ export function buildAttemptReplayMetadata(
   };
 }
 
+// Attempt records written before replay metadata existed carry no evidence
+// either way. Treat them as unsafe: a wrong "safe" replays a turn that already
+// sent messages or wrote crons, while a wrong "unsafe" only skips a retry.
+const REPLAY_UNSAFE_FALLBACK_METADATA: EmbeddedRunAttemptResult["replayMetadata"] = {
+  hadPotentialSideEffects: true,
+  replaySafe: false,
+};
+
+/** Falls back to replay-unsafe metadata when older attempt records lack replay details. */
+export function resolveAttemptReplayMetadata(attempt: {
+  replayMetadata?: EmbeddedRunAttemptResult["replayMetadata"] | null;
+}): EmbeddedRunAttemptResult["replayMetadata"] {
+  return attempt.replayMetadata ?? REPLAY_UNSAFE_FALLBACK_METADATA;
+}
+
 type TerminalAttemptState = Pick<
   EmbeddedRunAttemptResult,
   | "clientToolCalls"

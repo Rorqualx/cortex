@@ -24,6 +24,52 @@ import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
 const log = createSubsystemLogger("agents/subagent-registry-completion");
 
+/** Returns true when an outcome carries timing fields. */
+function runOutcomeHasTiming(outcome: SubagentRunOutcome | undefined): boolean {
+  return (
+    Number.isFinite(outcome?.startedAt) ||
+    Number.isFinite(outcome?.endedAt) ||
+    Number.isFinite(outcome?.elapsedMs)
+  );
+}
+
+/** Compares subagent run outcomes, treating missing timing as compatible. */
+function runOutcomesEqual(
+  a: SubagentRunOutcome | undefined,
+  b: SubagentRunOutcome | undefined,
+): boolean {
+  if (!a && !b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  if (a.status !== b.status) {
+    return false;
+  }
+  if (a.status === "error" && b.status === "error") {
+    if ((a.error ?? "") !== (b.error ?? "")) {
+      return false;
+    }
+  }
+  // An outcome recorded before timing was captured must not count as different
+  // from the same outcome with timing, or every run would rewrite itself.
+  if (!runOutcomeHasTiming(a) || !runOutcomeHasTiming(b)) {
+    return true;
+  }
+  return a.startedAt === b.startedAt && a.endedAt === b.endedAt && a.elapsedMs === b.elapsedMs;
+}
+
+/** Returns true when a run outcome update should replace current state. */
+export function shouldUpdateRunOutcome(
+  current: SubagentRunOutcome | undefined,
+  next: SubagentRunOutcome | undefined,
+): boolean {
+  return (
+    !runOutcomesEqual(current, next) || (!runOutcomeHasTiming(current) && runOutcomeHasTiming(next))
+  );
+}
+
 /** Returns the complete task projection only after completion capture has settled. */
 export function resolveFinalizedSubagentTaskState(
   entry: SubagentRunRecord,

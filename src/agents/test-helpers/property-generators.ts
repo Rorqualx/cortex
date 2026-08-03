@@ -142,6 +142,9 @@ export const arbSubagentRunRecord: fc.Arbitrary<SubagentRunRecord> = fc.record({
   task: fc.string({ minLength: 1, maxLength: 200 }),
   cleanup: fc.constantFrom("delete", "keep"),
   createdAt: fc.integer({ min: 0, max: Date.now() }),
+  execution: fc.record({
+    status: fc.constantFrom("queued", "running", "interrupted", "terminal"),
+  }),
 });
 
 /**

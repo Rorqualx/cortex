@@ -1,7 +1,3 @@
-/**
- * Top-level embedded-agent run orchestration entrypoint.
- */
-import { projectAgentRunAttemptTerminal } from "../agent-run-terminal-outcome.js";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
@@ -10,6 +6,7 @@ import { FAST_MODE_AUTO_PROGRESS_KIND, type ReplyPayload } from "../../auto-repl
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { resolveStorePath } from "../../config/sessions.js";
+import { formatSqliteSessionFileMarker } from "../../config/sessions/legacy-sqlite-marker.js";
 import { updateSessionEntry } from "../../config/sessions/session-accessor.js";
 import { ensureContextEnginesInitialized } from "../../context-engine/init.js";
 import {
@@ -49,6 +46,10 @@ import {
   retireSessionMcpRuntime,
   retireSessionMcpRuntimeForSessionKey,
 } from "../agent-bundle-mcp-tools.js";
+/**
+ * Top-level embedded-agent run orchestration entrypoint.
+ */
+import { projectAgentRunAttemptTerminal } from "../agent-run-terminal-outcome.js";
 import {
   resolveAgentExecutionContract,
   resolveAgentDir,
@@ -120,7 +121,7 @@ import { runAgentCleanupStep } from "../run-cleanup-timeout.js";
 import { resolveAgentRunSessionTarget } from "../run-session-target.js";
 import { buildAgentRuntimeAuthPlan } from "../runtime-plan/auth.js";
 import { buildAgentRuntimePlan } from "../runtime-plan/build.js";
-import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
+import { loadAgentRuntimePluginRegistryHandle } from "../runtime-plugins.js";
 import { resolveSessionSuspensionReason, suspendSession } from "../session-suspension.js";
 import { resolveToolLoopDetectionConfig } from "../tool-loop-detection-config.js";
 import { derivePromptTokens, normalizeUsage, type UsageLike } from "../usage.js";
@@ -775,7 +776,10 @@ export async function runEmbeddedAgent(
       }
       startupStages.mark("workspace");
       notifyExecutionPhase("workspace");
-      ensureRuntimePluginsLoaded({
+      // Load the registry handle once at the runtime-plugins stage and carry it
+      // forward: harness selection below needs the same generation, and
+      // rediscovering it there would reload the whole plugin set mid-run.
+      const runtimePluginRegistry = loadAgentRuntimePluginRegistryHandle({
         config: params.config,
         workspaceDir: resolvedWorkspace,
         allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,
@@ -851,6 +855,7 @@ export async function runEmbeddedAgent(
         sessionKey: params.sessionKey,
         agentHarnessRuntimeOverride: params.agentHarnessRuntimeOverride,
         workspaceDir: resolvedWorkspace,
+        pluginRegistry: runtimePluginRegistry,
       });
       const agentHarness = selectAgentHarness({
         provider,
@@ -1429,15 +1434,15 @@ export async function runEmbeddedAgent(
       // sessionFile short-circuits, so real sessions resolve to the exact same value.
       let activeSessionFile =
         params.sessionFile ??
-        (
+        formatSqliteSessionFileMarker(
           await resolveAgentRunSessionTarget({
             agentId: params.agentId,
             config: params.config,
             sessionId: params.sessionId,
             sessionKey: resolvedSessionKey,
             sessionTarget: params.sessionTarget,
-          })
-        ).sessionFile;
+          }),
+        );
       let suppressNextUserMessagePersistence = params.suppressNextUserMessagePersistence ?? false;
       // The embedded agent owns JSONL persistence; this marker lets the outer retry avoid
       // replaying the same inbound channel message after overflow compaction.
@@ -1969,7 +1974,8 @@ export async function runEmbeddedAgent(
             timedOutByRunBudget,
             timedOutDuringToolExecution: attemptTimedOutDuringToolExecution,
           } = projectAgentRunAttemptTerminal(attempt.terminal);
-          const timedOut = attempt.terminal.kind === "timeout" && attempt.terminal.source !== "observation";
+          const timedOut =
+            attempt.terminal.kind === "timeout" && attempt.terminal.source !== "observation";
           const setTerminalLifecycleMeta: NonNullable<typeof attempt.setTerminalLifecycleMeta> = (
             meta,
           ) => {
@@ -2704,8 +2710,7 @@ export async function runEmbeddedAgent(
             // Completion-idle timeouts are timeout outcomes even when the
             // app-server transport is not retryable, or the retry was exhausted.
             shouldSurfaceCodexCompletionTimeout =
-              attempt.codexAppServerFailure?.kind === "turn_completion_idle_timeout" &&
-              timedOut;
+              attempt.codexAppServerFailure?.kind === "turn_completion_idle_timeout" && timedOut;
             if (
               attempt.codexAppServerFailure &&
               !hasRecoverableCodexAppServerTimeoutOutcome &&

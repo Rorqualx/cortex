@@ -43,7 +43,6 @@ import {
 } from "./subagent-registry-run-manager.js";
 import { clearSubagentRunsReadCacheForTest } from "./subagent-registry-state.js";
 import { configureSubagentRegistrySteerRuntime } from "./subagent-registry-steer-runtime.js";
-import type { ensureRuntimePluginsLoaded as ensureRuntimePluginsLoadedFn } from "./runtime-plugins.js";
 import { resolveSubagentTaskForRun } from "./subagent-registry-sweep-kill.js";
 import {
   createSubagentRegistrySweeper,
@@ -425,11 +424,10 @@ const subagentListener = createSubagentRegistryListener({
 
 const subagentRunManager = createSubagentRunManager({
   runs: subagentRuns,
-  getRunsForChildSession: getSubagentRunsForChildSession,
   resumedRuns,
   endedHookInFlightRunIds,
-  ensureRuntimePluginsLoaded: (args: Parameters<typeof ensureRuntimePluginsLoadedFn>[0]) =>
-    subagentRegistryDeps.ensureRuntimePluginsLoaded?.(args),
+  loadAgentRuntimePluginRegistryHandle: (args) =>
+    subagentRegistryDeps.loadAgentRuntimePluginRegistryHandle?.(args),
   persist: persistSubagentRuns,
   persistOrThrow: persistSubagentRunsOrThrow,
   callGateway: async <T>(request: Parameters<typeof callGateway>[0]) => {

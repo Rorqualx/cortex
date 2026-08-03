@@ -82,7 +82,12 @@ function applyWebchatRoutingReset(entry: SessionEntry): void {
   // these BEFORE the session delivery state
   // (resolveRestartRecoveryDeliveryContext), so leaving any of them would still
   // route the [System] continuation / pending final to the drifted channel.
-  entry.pendingFinalDeliveryContext = undefined;
+  // Clear only the routing context, not the whole pending final: a replayable
+  // final still has to be delivered, just to the dashboard rather than the
+  // drifted channel. Dropping the state would lose the message outright.
+  if (entry.pendingFinalDelivery) {
+    entry.pendingFinalDelivery = { ...entry.pendingFinalDelivery, context: undefined };
+  }
   entry.restartRecoveryDeliveryContext = undefined;
   entry.restartRecoveryDeliveryRunId = undefined;
 }

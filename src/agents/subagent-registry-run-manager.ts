@@ -20,7 +20,6 @@ import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import { buildAgentRunTerminalOutcomeFromWaitResult } from "./agent-run-terminal-outcome.js";
 import { removeInternalSessionEffectsTranscript } from "./internal-session-effects.js";
 import { isRecoverableAgentWaitError, waitForAgentRun } from "./run-wait.js";
-import type { ensureRuntimePluginsLoaded as ensureRuntimePluginsLoadedFn } from "./runtime-plugins.js";
 import { type SubagentRunOutcome, withSubagentOutcomeTiming } from "./subagent-announce-output.js";
 import {
   clearDeliveryState,
@@ -231,13 +230,15 @@ export function createSubagentRunManager(params: {
   persistOrThrow(): void;
   callGateway: typeof callGateway;
   getRuntimeConfig: typeof getRuntimeConfig;
-  ensureRuntimePluginsLoaded:
-    | typeof ensureRuntimePluginsLoadedFn
-    | ((args: {
-        config: OpenClawConfig;
-        workspaceDir?: string;
-        allowGatewaySubagentBinding?: boolean;
-      }) => void | Promise<void>);
+  // Mirrors SubagentRegistryDeps.loadAgentRuntimePluginRegistryHandle: the
+  // registry forwards its optional dep here, so the shapes must stay identical.
+  // The returned handle is unused — this call exists to load the plugins the
+  // ended-hook needs before it fires.
+  loadAgentRuntimePluginRegistryHandle: (args: {
+    config: OpenClawConfig;
+    workspaceDir?: string;
+    allowGatewaySubagentBinding?: boolean;
+  }) => unknown;
   ensureListener(): void;
   startSweeper(): void;
   stopSweeper(): void;
@@ -289,7 +290,11 @@ export function createSubagentRunManager(params: {
       const scheduledEntry = entry;
       setTimeout(() => {
         const current = params.runs.get(runId);
-        if (!current || current !== scheduledEntry || typeof current.execution.endedAt === "number") {
+        if (
+          !current ||
+          current !== scheduledEntry ||
+          typeof current.execution.endedAt === "number"
+        ) {
           return;
         }
         void waitForSubagentCompletion(runId, waitTimeoutMs, scheduledEntry, true);
@@ -579,6 +584,7 @@ export function createSubagentRunManager(params: {
     runTimeoutSeconds?: number;
     preserveFrozenResultFallback?: boolean;
     transcriptFile?: string;
+    task?: string;
   }) => {
     const previousRunId = replaceParams.previousRunId.trim();
     const nextRunId = replaceParams.nextRunId.trim();
@@ -628,20 +634,29 @@ export function createSubagentRunManager(params: {
       ) ?? 0;
 
     const sourceCompletion = ensureCompletionState(source);
+    // Prefer the replacement message over the previous run's stale `task`.
+    // Orphan recovery (`recoverOrphanedSubagentSessions` -> `resumeOrphanedSession`
+    // in `subagent-orphan-recovery.ts`) rewraps the persisted `task` after a
+    // gateway restart; keeping stale text would silently re-run the original
+    // instruction and drop the user's steer.
+    const nextTask =
+      typeof replaceParams.task === "string" && replaceParams.task.length > 0
+        ? replaceParams.task
+        : source.task;
     const next: SubagentRunRecord = normalizeSubagentRunState({
       ...source,
       runId: nextRunId,
+      task: nextTask,
       createdAt: now,
-      startedAt: now,
       sessionStartedAt,
       accumulatedRuntimeMs,
-      endedAt: undefined,
       endedReason: undefined,
       pauseReason: undefined,
       endedHookEmittedAt: undefined,
       browserCleanupDispatchedAt: undefined,
       wakeOnDescendantSettle: undefined,
-      outcome: undefined,
+      // Replacing execution wholesale is what clears the previous run's endedAt
+      // and outcome: they live only here, so omitting them resets the row.
       execution: {
         status: "running",
         startedAt: now,
@@ -734,7 +749,6 @@ export function createSubagentRunManager(params: {
       outputSchema: registerParams.outputSchema,
       queuedLaunch: registerParams.queuedLaunch,
       createdAt: now,
-      startedAt: queued ? undefined : now,
       execution: {
         status: queued ? "queued" : "running",
         startedAt: queued ? undefined : now,
@@ -958,7 +972,12 @@ export function createSubagentRunManager(params: {
     entry.execution = { ...entry.execution, endedAt: endedAt };
     entry.endedReason = SUBAGENT_ENDED_REASON_ERROR;
     entry.execution = { ...entry.execution, outcome: { status: "error", error, endedAt } };
-    entry.execution = { ...entry.execution, status: "terminal", endedAt, outcome: entry.execution.outcome };
+    entry.execution = {
+      ...entry.execution,
+      status: "terminal",
+      endedAt,
+      outcome: entry.execution.outcome,
+    };
     entry.queuedLaunch = undefined;
     entry.collectorLaunchCleanupPending = true;
     entry.completion = { required: false, resultText: error, capturedAt: endedAt };
@@ -1020,7 +1039,10 @@ export function createSubagentRunManager(params: {
     };
     entry.completion = {
       required: false,
-      resultText: entry.execution.outcome?.status === "error" ? (entry.execution.outcome.error ?? error) : error,
+      resultText:
+        entry.execution.outcome?.status === "error"
+          ? (entry.execution.outcome.error ?? error)
+          : error,
       capturedAt: entry.execution.endedAt,
     };
     updateSwarmCollectorCompletion(entry, params.getRuntimeConfig());
@@ -1148,7 +1170,7 @@ export function createSubagentRunManager(params: {
         }
         const cfg = params.getRuntimeConfig();
         void Promise.resolve(
-          params.ensureRuntimePluginsLoaded({
+          params.loadAgentRuntimePluginRegistryHandle({
             config: cfg,
             workspaceDir: entry.workspaceDir,
             allowGatewaySubagentBinding: true,

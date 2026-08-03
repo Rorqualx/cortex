@@ -286,7 +286,6 @@ export function stopSubagentsForRequester(params: {
             runId: run.runId,
             childSessionKey: childKey,
             reason: "killed",
-            suppressTaskDelivery: true,
           }) > 0;
 
       if (

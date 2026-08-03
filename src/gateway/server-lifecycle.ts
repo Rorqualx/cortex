@@ -386,7 +386,6 @@ export async function prepareGatewayLifecycle(params: {
       tailscaleCleanup: runtimeState.tailscaleCleanup,
       // Fork activity feed: the close handler releases the recorder subscription.
       activityRecorderUnsub: runtimeState.activityRecorderUnsub,
-      releasePluginRouteRegistry,
       clearSecretsRuntimeSnapshot,
       channelIds,
       stopChannel,

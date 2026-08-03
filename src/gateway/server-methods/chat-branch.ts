@@ -9,12 +9,15 @@
 
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import { uuidv7 } from "../../agents/runtime/index.js";
-import { loadEntriesFromFile, type SessionEntry } from "../../agents/sessions/session-manager.js";
+import type { FileEntry, SessionEntry } from "../../agents/sessions/session-manager.js";
 import {
   restoreFilesToTimestamp,
   type FileRestoreReport,
 } from "../../agents/turn-file-snapshots.js";
-import { appendJsonlEntrySync } from "../../config/sessions/transcript-jsonl.js";
+import {
+  appendTranscriptEventSync,
+  loadTranscriptEventsSync,
+} from "../../config/sessions/session-accessor.js";
 import {
   isSessionTranscriptLeafControl,
   scanSessionTranscriptTree,
@@ -294,17 +297,25 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
   } = params as ChatBranchParams;
   const agentIdOverride = typeof agentId === "string" ? agentId : undefined;
 
-  const { entry } = loadSessionEntry(sessionKey, { agentId: agentIdOverride });
-  const sessionFile = entry?.sessionFile;
-  if (!sessionFile) {
+  const { entry, storePath } = loadSessionEntry(sessionKey, { agentId: agentIdOverride });
+  const sessionId = entry?.sessionId;
+  if (!sessionId) {
     respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "Session not found"));
     return;
   }
+  // Transcripts are SQLite-only; the entry no longer carries a file locator, so
+  // the read/append scope is derived from the session identity instead.
+  const transcriptScope = {
+    agentId: agentIdOverride ?? resolveAgentIdFromSessionKey(sessionKey),
+    sessionId,
+    sessionKey,
+    storePath,
+  };
 
   // Read existing entries
   let entries: SessionEntry[];
   try {
-    entries = loadEntriesFromFile(sessionFile).filter(
+    entries = (loadTranscriptEventsSync(transcriptScope) as FileEntry[]).filter(
       (e): e is SessionEntry => e.type !== "session",
     );
   } catch {
@@ -383,7 +394,10 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
   };
 
   try {
-    appendJsonlEntrySync(sessionFile, branchMarker);
+    // No appendIntent: the marker must keep its own parentId (the branch base).
+    // "active-branch" would rewrite the parent to the current leaf and defeat
+    // the branch.
+    appendTranscriptEventSync(transcriptScope, branchMarker);
   } catch (err) {
     respond(
       false,
@@ -436,18 +450,23 @@ async function handleChatBranchesRequest(opts: GatewayRequestHandlerOptions): Pr
   const { sessionKey, agentId } = params as ChatBranchesParams;
   const agentIdOverride = typeof agentId === "string" ? agentId : undefined;
 
-  const { entry } = loadSessionEntry(sessionKey, { agentId: agentIdOverride });
-  const sessionFile = entry?.sessionFile;
-  if (!sessionFile) {
+  const { entry, storePath } = loadSessionEntry(sessionKey, { agentId: agentIdOverride });
+  const sessionId = entry?.sessionId;
+  if (!sessionId) {
     respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "Session not found"));
     return;
   }
 
   let entries: SessionEntry[];
   try {
-    entries = loadEntriesFromFile(sessionFile).filter(
-      (e): e is SessionEntry => e.type !== "session",
-    );
+    entries = (
+      loadTranscriptEventsSync({
+        agentId: agentIdOverride ?? resolveAgentIdFromSessionKey(sessionKey),
+        sessionId,
+        sessionKey,
+        storePath,
+      }) as FileEntry[]
+    ).filter((e): e is SessionEntry => e.type !== "session");
   } catch {
     respond(
       false,

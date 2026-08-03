@@ -7,7 +7,6 @@ import { loadAgentRuntimePluginRegistryHandle } from "../../agents/runtime-plugi
 import { normalizeThinkLevel, type ThinkLevel } from "../../auto-reply/thinking.shared.js";
 import { resolveAgentModelPrimaryValue } from "../../config/model-input.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import { formatSqliteSessionFileMarker } from "../../config/sessions/legacy-sqlite-marker.js";
 import { resolveSessionWorkStartError } from "../../config/sessions/lifecycle.js";
 import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -239,13 +238,6 @@ export async function prepareCronRunContext(params: {
   }
   const runSessionId = cronSession.sessionEntry.sessionId;
   const currentRunSessionId = () => cronSession.sessionEntry.sessionId ?? runSessionId;
-  if (!cronSession.sessionEntry.sessionFile?.trim()) {
-    cronSession.sessionEntry.sessionFile = formatSqliteSessionFileMarker({
-      agentId,
-      sessionId: runSessionId,
-      storePath: cronSession.storePath,
-    });
-  }
   const usesExactRunSession = usesDetachedRunSession || baseSessionKey.startsWith("cron:");
   const runSessionKey = usesExactRunSession
     ? `${agentSessionKey}:run:${runSessionId}`

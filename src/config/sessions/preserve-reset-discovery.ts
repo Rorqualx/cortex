@@ -4,12 +4,12 @@
 // reuse one implementation without a config/sessions -> gateway import cycle.
 import fs from "node:fs";
 import { logVerbose } from "../../globals.js";
+import { updateSessionStore } from "../../plugin-sdk/session-store-runtime.js";
 import {
   isDashboardSessionKey,
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../../routing/session-key.js";
-import { updateSessionStore } from "../../plugin-sdk/session-store-runtime.js";
 import type { SessionEntry } from "./types.js";
 
 export function extractFirstUserMessageText(messages: unknown[]): string | undefined {
@@ -126,9 +126,10 @@ export async function preserveResetSessionForDiscovery(params: {
       if (existing) {
         return existing;
       }
+      // No transcript locator: sessionFile is retired and stripped on write.
+      // The restored canonicalPath above is resolved from sessionId instead.
       const entry: SessionEntry = {
         sessionId: oldSessionId,
-        sessionFile: canonicalPath,
         updatedAt: oldEntry?.updatedAt ?? Date.now(),
         sessionStartedAt: oldEntry?.sessionStartedAt,
         systemSent: true,
