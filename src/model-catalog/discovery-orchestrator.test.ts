@@ -77,6 +77,34 @@ describe("runProviderModelDiscovery", () => {
     expect(listDiscoveredModels(db, { provider: "zai", status: "active" })).toHaveLength(2);
   });
 
+  it("requests /v1/models for ollama, whose native protocol has no /models", async () => {
+    // api: "ollama" speaks the native protocol for completions, so the configured
+    // baseUrl is the bare host and the OpenAI-compatible catalog sits under /v1.
+    // Sending the default <host>/models returned 404 and a local install with four
+    // models pulled reported only the one declared in config.
+    const { db } = await openTempDb();
+    const seen: string[] = [];
+    const fetchFn = vi.fn(async (url: unknown) => {
+      seen.push(String(url));
+      return modelsResponse(["qwen3.6:27b", "qwen3.5:4b"]);
+    });
+    const report = await runProviderModelDiscovery({
+      provider: "ollama",
+      cfg: cfgWith({ ollama: { baseUrl: "http://localhost:11434", api: "ollama" } }),
+      nowMs: 1000,
+      db,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      // Local Ollama needs no real credential; the runtime supplies a local marker.
+      resolveEndpoint: () => ({
+        baseUrl: "http://localhost:11434",
+        api: "ollama",
+        apiKey: "ollama-local",
+      }),
+    });
+    expect(seen[0]).toBe("http://localhost:11434/v1/models");
+    expect(report).toMatchObject({ provider: "ollama", ok: true });
+  });
+
   it("does not deprecate when the fetch fails", async () => {
     const { db } = await openTempDb();
     await runProviderModelDiscovery({

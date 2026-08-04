@@ -116,6 +116,16 @@ export async function runProviderModelDiscovery(params: {
     return { provider, ok: false, reason: "no configured baseUrl/credentials" };
   }
   const isAnthropic = endpoint.api === "anthropic-messages";
+  // Ollama serves an OpenAI-compatible catalog at GET /v1/models while its native
+  // protocol lives under /api/*. Because `api: "ollama"` speaks that native
+  // protocol for completions, the configured baseUrl is the bare host, so
+  // discovery has to add the prefix itself. Without it the request went to
+  // <host>/models, returned 404, and a local install with four models pulled
+  // reported the single model declared in config.
+  const openAiModelsBaseUrl =
+    endpoint.api === "ollama"
+      ? `${endpoint.baseUrl.trim().replace(/\/+$/u, "")}/v1`
+      : endpoint.baseUrl;
   const fetchResult = isAnthropic
     ? await fetchAnthropicMessagesModels({
         baseUrl: endpoint.baseUrl,
@@ -123,7 +133,7 @@ export async function runProviderModelDiscovery(params: {
         fetchFn: params.fetchFn,
       })
     : await fetchOpenAiCompatibleModels({
-        baseUrl: endpoint.baseUrl,
+        baseUrl: openAiModelsBaseUrl,
         apiKey: endpoint.apiKey,
         fetchFn: params.fetchFn,
       });
