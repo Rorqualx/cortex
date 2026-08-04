@@ -307,17 +307,22 @@ export function findCountLiteralDisagreements({ files, readSource }) {
  * Fork exports upstream does not carry that the merge result lacks:
  * `fork - upstream - merged`.
  *
- * NOT the mirror of check_merge_ours_export_drift. That gate computes
- * `(upstream - base) - merged`, subtracting the base so long-standing fork
- * deletions stay quiet. Subtracting the base here suppresses the fork-loss shape
- * instead of noise: `registerAgentRunContext` sat in base and fork, never in
- * upstream, and the 2026-08-03 merge dropped it — a base subtraction filtered
- * that out and the detector reported a clean tree.
+ * Both subtractions are load-bearing, and each was validated against the
+ * 2026-08-03 merge:
+ *   - `- upstream`: a symbol both sides carry cannot be fork work, so ordinary
+ *     upstream refactors never fire.
+ *   - `- base`: a symbol already at the merge base is upstream's code the fork
+ *     happened to still carry, not fork work. Upstream deleting it later is a
+ *     supersession the merge should adopt. Without this term the detector
+ *     reported `scheduleSubagentOrphanRecovery` and `MAX_ANNOUNCE_RETRY_COUNT`
+ *     as fork losses when upstream had deliberately replaced both (7aaf3023fcc,
+ *     "make subagent restart recovery deterministic") — every residual finding
+ *     on that merge was a false positive.
  *
- * Excluding upstream's own exports is what keeps this quiet. A symbol both sides
- * carry cannot be fork work, so ordinary upstream refactors and adopted upstream
- * deletions never fire; only a symbol that exists solely because the fork wrote
- * it, and is now gone, is reported.
+ * The base term was briefly removed because `registerAgentRunContext` sits in
+ * base and fork but not upstream and looked like a missed loss. It had been
+ * relocated to infra/agent-run-registry.ts, which `mergedExportIndex` already
+ * covers; relocation is that filter's job, not the base term's.
  *
  * Callers pass only files present on the fork side — a file the fork deleted on
  * purpose is not drift.
@@ -332,16 +337,19 @@ export function findForkExportDrift({ files, readSource, mergedExportIndex }) {
       continue;
     }
     const upstreamSource = readSource("upstream", file);
+    const baseSource = readSource("base", file);
     const mergedSource = readSource("merged", file);
     const forkNames = collectExportedNames(forkSource, file);
     const upstreamNames =
       upstreamSource === undefined ? new Set() : collectExportedNames(upstreamSource, file);
+    const baseNames = baseSource === undefined ? new Set() : collectExportedNames(baseSource, file);
     // A file the merge dropped entirely loses every fork export in it, which is a
     // finding rather than a reason to skip: `merged` missing is the worst case.
     const mergedNames =
       mergedSource === undefined ? new Set() : collectExportedNames(mergedSource, file);
     const gone = [...forkNames].filter(
-      (name) => name !== "*" && !upstreamNames.has(name) && !mergedNames.has(name),
+      (name) =>
+        name !== "*" && !upstreamNames.has(name) && !baseNames.has(name) && !mergedNames.has(name),
     );
     // A symbol still exported somewhere in the merged tree moved, it did not
     // vanish. Upstream refactors relocate constantly — it moved the whole run

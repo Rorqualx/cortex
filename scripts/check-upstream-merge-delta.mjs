@@ -210,6 +210,7 @@ async function main() {
     .filter((file) => file && isScannedSource(file));
   const driftContents = new Map();
   for (const [side, ref] of [
+    ["base", options.base],
     ["upstream", options.upstream],
     ["fork", options.fork],
     ["merged", options.merged],

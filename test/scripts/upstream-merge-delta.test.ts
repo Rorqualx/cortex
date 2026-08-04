@@ -217,31 +217,41 @@ describe("findCountLiteralDisagreements", () => {
 describe("findForkExportDrift", () => {
   const file = "src/infra/agent-events.ts";
 
-  const readSides = (sides: Record<"upstream" | "fork" | "merged", string | undefined>) => {
-    return (side: "upstream" | "fork" | "merged") => sides[side];
+  type Sides = Record<"base" | "upstream" | "fork" | "merged", string | undefined>;
+  const readSides = (sides: Partial<Sides>) => {
+    return (side: "base" | "upstream" | "fork" | "merged") => sides[side];
   };
 
-  it("reports a dropped fork-only export that predates the merge base", () => {
-    // registerAgentRunContext sat in base AND fork, never in upstream, and the
-    // merge dropped it. Mirroring the upstream gate's `- base` term filtered
-    // exactly this shape out and the detector reported a clean tree over 13 lost
-    // symbols, so this is the regression test for the detector itself.
+  it("reports a fork-authored export the merge dropped", () => {
     const { findings } = findForkExportDrift({
       files: [file],
       readSource: readSides({
-        fork: "export function registerAgentRunContext() {}\nexport function shared() {}",
+        base: "export function shared() {}",
+        fork: "export function forkOnly() {}\nexport function shared() {}",
         upstream: "export function shared() {}",
         merged: "export function shared() {}",
       }),
     });
     expect(findings).toEqual([
-      {
-        kind: "fork-export-drift",
-        file,
-        symbols: ["registerAgentRunContext"],
-        fileDropped: false,
-      },
+      { kind: "fork-export-drift", file, symbols: ["forkOnly"], fileDropped: false },
     ]);
+  });
+
+  it("does not report an upstream deletion the fork had not adopted", () => {
+    // scheduleSubagentOrphanRecovery sat in base and fork, and upstream deleted it
+    // in 7aaf3023fcc when the deterministic restart-recovery subsystem replaced it.
+    // Adopting that deletion is correct. Without the base term every residual
+    // finding on the 2026-08-03 merge was one of these false positives.
+    const { findings } = findForkExportDrift({
+      files: [file],
+      readSource: readSides({
+        base: "export function scheduleSubagentOrphanRecovery() {}",
+        fork: "export function scheduleSubagentOrphanRecovery() {}",
+        upstream: "",
+        merged: "",
+      }),
+    });
+    expect(findings).toEqual([]);
   });
 
   it("does not report a symbol upstream also carries", () => {

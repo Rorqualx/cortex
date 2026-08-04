@@ -64,5 +64,5 @@ export function findUnresolvedRelativeImports(params: {
 export function findForkExportDrift(params: {
   files: Iterable<string>;
   mergedExportIndex?: Set<string>;
-  readSource: (side: "upstream" | "fork" | "merged", file: string) => string | undefined;
+  readSource: (side: "base" | "upstream" | "fork" | "merged", file: string) => string | undefined;
 }): { findings: ForkExportDriftFinding[]; relocated: string[] };
