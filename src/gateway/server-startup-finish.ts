@@ -82,6 +82,7 @@ export async function finishGatewayStartup(params: {
     startupTrace,
     loadGatewayModelCatalog,
     loadGatewayModelCatalogSnapshot,
+    readPreparedGatewayModelCatalog,
     refreshGatewayHealthSnapshotWithRuntime,
     getRuntimeSnapshot,
     broadcast,
@@ -146,8 +147,6 @@ export async function finishGatewayStartup(params: {
     attachedGatewayExtraHandlers,
     startListening,
     loadStartupPluginsModule,
-    runtimePluginsLoaded,
-    deferredConfiguredChannelPluginIds,
     gatewayPluginConfigAtStart,
     startupActivationSourceConfig,
     defaultWorkspaceDir,
@@ -167,6 +166,7 @@ export async function finishGatewayStartup(params: {
     tailscaleMode,
     tailscaleConfig,
     controlUiBasePath,
+    controlUiRootLifecycle,
     sidecarStartup,
     workerLiveEvents,
     earlyRuntime,
@@ -174,7 +174,6 @@ export async function finishGatewayStartup(params: {
     resolvedAuth,
     preauthConnectionBudget,
     releaseStartupAccountStarts,
-    loadGatewayPluginBootstrapModule,
     cronReconciliation,
     postReadyState,
     cronStartState,
@@ -215,6 +214,7 @@ export async function finishGatewayStartup(params: {
       listSessionPendingApprovals: approvalSessionEvents.replay,
       loadGatewayModelCatalog,
       loadGatewayModelCatalogSnapshot,
+      readPreparedGatewayModelCatalog,
       getHealthCache,
       refreshHealthSnapshot: refreshGatewayHealthSnapshotWithRuntime,
       logHealth,
@@ -293,6 +293,14 @@ export async function finishGatewayStartup(params: {
       broadcastVoiceWakeRoutingChanged,
     });
   });
+  const sessionChangeSidecar = {
+    stop: async () => {
+      const { flushPendingSessionsChangedEvents } =
+        await import("./server-methods/session-change-event.js");
+      flushPendingSessionsChangedEvents(gatewayRequestContext);
+    },
+  };
+  runtimeState.gatewayLifetimeSidecars.push(sessionChangeSidecar);
   pluginGatewayContext.current = gatewayRequestContext;
   const { createGatewayInstanceRuntime } = await import("./server-instance-runtime.js");
   const gatewayInstanceRuntimeLocal = createGatewayInstanceRuntime({
@@ -315,29 +323,6 @@ export async function finishGatewayStartup(params: {
         }
       : () => {},
   );
-
-  if (!minimalTestGateway) {
-    if (runtimePluginsLoaded && deferredConfiguredChannelPluginIds.length > 0) {
-      const { reloadDeferredGatewayPlugins } = await loadGatewayPluginBootstrapModule();
-      const loaded = await startupTrace.measure("gateway.deferred-plugins", () =>
-        reloadDeferredGatewayPlugins({
-          cfg: gatewayPluginConfigAtStart,
-          activationSourceConfig: startupActivationSourceConfig,
-          workspaceDir: defaultWorkspaceDir,
-          log,
-          coreGatewayMethodNames,
-          hostServices: pluginHostServices,
-          baseMethods,
-          pluginIds: startupPluginIds,
-          pluginLookUpTable,
-          logDiagnostics: false,
-          ambientEnvTriggers,
-        }),
-      );
-      replaceAttachedPluginRuntime(loaded);
-      await refreshAttachedGatewayDiscovery(loaded.pluginRegistry);
-    }
-  }
 
   const [{ attachGatewayWsHandlers }, { listPluginNodeCapabilities }] = await startupTrace.measure(
     "gateway.ws-imports",
@@ -418,6 +403,7 @@ export async function finishGatewayStartup(params: {
         log,
       });
       runtimeState.heartbeatRunner = activated.heartbeatRunner;
+      runtimeState.stopOutboundDeliveryRecovery = activated.stopOutboundDeliveryRecovery;
     });
   };
   ({
@@ -430,6 +416,7 @@ export async function finishGatewayStartup(params: {
         startGatewayPostAttachRuntime({
           minimalTestGateway,
           cfgAtStart,
+          getConfig: getRuntimeConfig,
           bindHost,
           bindHosts: httpBindHosts,
           port,
@@ -444,6 +431,7 @@ export async function finishGatewayStartup(params: {
           serviceName: tailscaleConfig.serviceName,
           preserveFunnel: tailscaleConfig.preserveFunnel ?? false,
           controlUiBasePath,
+          controlUiRootLifecycle,
           logTailscale,
           gatewayPluginConfigAtStart,
           activationSourceConfig: startupActivationSourceConfig,
@@ -457,24 +445,22 @@ export async function finishGatewayStartup(params: {
           logHooks,
           logChannels,
           unavailableGatewayMethods,
-          loadStartupPlugins: runtimePluginsLoaded
-            ? undefined
-            : async () => {
-                const { loadGatewayStartupPluginRuntime } = await loadStartupPluginsModule();
-                return loadGatewayStartupPluginRuntime({
-                  cfg: gatewayPluginConfigAtStart,
-                  activationSourceConfig: startupActivationSourceConfig,
-                  workspaceDir: defaultWorkspaceDir,
-                  log,
-                  baseMethods,
-                  coreGatewayMethodNames,
-                  hostServices: pluginHostServices,
-                  startupPluginIds,
-                  pluginLookUpTable,
-                  startupTrace,
-                  ambientEnvTriggers,
-                });
-              },
+          loadStartupPlugins: async () => {
+            const { loadGatewayStartupPluginRuntime } = await loadStartupPluginsModule();
+            return loadGatewayStartupPluginRuntime({
+              cfg: gatewayPluginConfigAtStart,
+              activationSourceConfig: startupActivationSourceConfig,
+              workspaceDir: defaultWorkspaceDir,
+              log,
+              baseMethods,
+              coreGatewayMethodNames,
+              hostServices: pluginHostServices,
+              startupPluginIds,
+              pluginLookUpTable,
+              startupTrace,
+              ambientEnvTriggers,
+            });
+          },
           onStartupPluginsLoading: () => {
             startupState.pendingReason = "startup-sidecars";
           },
@@ -502,9 +488,10 @@ export async function finishGatewayStartup(params: {
             }
           },
           onGatewayLifetimeSidecars: (gatewayLifetimeSidecars) => {
-            runtimeState.gatewayLifetimeSidecars = gatewayLifetimeSidecars;
+            const lifetimeSidecars = [sessionChangeSidecar, ...gatewayLifetimeSidecars];
+            runtimeState.gatewayLifetimeSidecars = lifetimeSidecars;
             stopPostReadySidecarsAfterCloseStarted({
-              postReadySidecars: gatewayLifetimeSidecars,
+              postReadySidecars: lifetimeSidecars,
               closeStarted: lifecycle.closePreludeStarted,
             });
             if (lifecycle.closePreludeStarted) {

@@ -920,6 +920,8 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
       expectRecordFields(mockCallArg(applyExtraParamsToAgentMock, 0, 11), {
         nativeWebSearchPolicyContext: {
           sessionKey: undefined,
+          webSearchEnabled: false,
+          runtimeToolAllowlist: [],
           sandboxToolPolicy: undefined,
           messageProvider: undefined,
           agentAccountId: undefined,

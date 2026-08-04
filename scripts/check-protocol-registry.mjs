@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+import { pathToFileURL } from "node:url";
+import { resolveRepoRoot } from "./lib/repo-root.mjs";
+const repoRoot = resolveRepoRoot(import.meta.url);
 const schemaDir = path.join(repoRoot, "packages/gateway-protocol/src/schema");
 const failures = [];
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
@@ -110,12 +110,14 @@ const schemaModulesSource = withoutComments(
 const ownerModules = [
   ...schemaModulesSource.matchAll(/^export \* from "\.\/schema\/([^"]+)\.js";$/gmu),
 ].map((match) => match[1]);
-// 52 upstream owner modules plus the three this fork owns (activity, session-row,
+// 53 upstream owner modules plus the three this fork owns (activity, session-row,
 // vault). The exact count is the point: it fails when a module is added without
 // being registered here, which is how a schema module silently escapes the barrel.
+// An upstream merge that adds modules must re-measure this rather than take a
+// side: both sides of the 2026-08-03 conflict were stale against the merged tree.
 check(
-  ownerModules.length === 55 && new Set(ownerModules).size === ownerModules.length,
-  "schema-modules.ts must contain one unique 55-module owner list",
+  ownerModules.length === 56 && new Set(ownerModules).size === ownerModules.length,
+  "schema-modules.ts must contain one unique 56-module owner list",
 );
 check(
   schemaModulesSource.split("\n").filter(Boolean).length === ownerModules.length,

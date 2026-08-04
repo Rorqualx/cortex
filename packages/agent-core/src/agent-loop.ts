@@ -877,9 +877,6 @@ async function executeToolCallsParallel(
           executionStarted: false,
           ...(preparation.errorKind ? { errorKind: preparation.errorKind } : {}),
           ...(hideFromChannelProgress ? { hideFromChannelProgress: true } : {}),
-          ...(preparation.resultContentSource
-            ? { resultContentSource: preparation.resultContentSource }
-            : {}),
         },
         toolCall.arguments,
         config,
@@ -1000,13 +997,13 @@ type ImmediateToolCallOutcome = {
   result: AgentToolResult<unknown>;
   isError: boolean;
   errorKind?: "argument-validation";
-  resultContentSource?: ToolResultContentSource;
 };
 
 type ExecutedToolCallOutcome = {
   result: AgentToolResult<unknown>;
   isError: boolean;
   executionStarted: boolean;
+  callerCancelled?: true;
 };
 
 type FinalizedToolCallOutcome = {
@@ -1130,7 +1127,6 @@ async function prepareToolCall(
       kind: "immediate",
       result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
       isError: true,
-      ...(tool.resultContentSource ? { resultContentSource: tool.resultContentSource } : {}),
     };
   }
 
@@ -1143,7 +1139,6 @@ async function prepareToolCall(
       result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
       isError: true,
       errorKind: "argument-validation",
-      ...(tool.resultContentSource ? { resultContentSource: tool.resultContentSource } : {}),
     };
   }
 
@@ -1163,7 +1158,6 @@ async function prepareToolCall(
           kind: "immediate",
           result: createErrorToolResult("Operation aborted"),
           isError: true,
-          ...(tool.resultContentSource ? { resultContentSource: tool.resultContentSource } : {}),
         };
       }
       if (beforeResult?.block) {
@@ -1171,7 +1165,6 @@ async function prepareToolCall(
           kind: "immediate",
           result: createErrorToolResult(beforeResult.reason || "Tool execution was blocked"),
           isError: true,
-          ...(tool.resultContentSource ? { resultContentSource: tool.resultContentSource } : {}),
         };
       }
     }
@@ -1180,7 +1173,6 @@ async function prepareToolCall(
         kind: "immediate",
         result: createErrorToolResult("Operation aborted"),
         isError: true,
-        ...(tool.resultContentSource ? { resultContentSource: tool.resultContentSource } : {}),
       };
     }
     return {
@@ -1194,7 +1186,6 @@ async function prepareToolCall(
       kind: "immediate",
       result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
       isError: true,
-      ...(tool.resultContentSource ? { resultContentSource: tool.resultContentSource } : {}),
     };
   }
 }
@@ -1255,6 +1246,7 @@ async function executePreparedToolCall(
       result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
       isError: true,
       executionStarted: true,
+      ...(signal?.aborted && error === signal.reason ? { callerCancelled: true } : {}),
     };
   } finally {
     acceptingUpdates = false;
@@ -1309,7 +1301,9 @@ async function finalizeExecutedToolCall(
       isError,
       executionStarted: executed.executionStarted,
       ...(prepared.tool.hideFromChannelProgress === true ? { hideFromChannelProgress: true } : {}),
-      ...(prepared.tool.resultContentSource
+      ...(executed.executionStarted &&
+      !executed.callerCancelled &&
+      prepared.tool.resultContentSource
         ? { resultContentSource: prepared.tool.resultContentSource }
         : {}),
     },

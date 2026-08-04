@@ -39,7 +39,6 @@ import {
 } from "./methods/registry.js";
 import { isOperatorScope } from "./operator-scopes.js";
 import { isRoleAuthorizedForMethod, parseGatewayRole } from "./role-policy.js";
-import { NODE_PAIR_GATEWAY_METHODS } from "./server-methods-node-methods.js";
 import { createLazyCoreHandlers, lazyHandlerModule } from "./server-methods/lazy-core-handlers.js";
 import { SKILLS_GATEWAY_METHOD_NAMES } from "./server-methods/skills-method-names.js";
 import type {
@@ -286,6 +285,10 @@ const loadTalkHandlers = lazyHandlerModule(
 const loadTasksHandlers = lazyHandlerModule(
   () => import("./server-methods/tasks.js"),
   (module) => module.tasksHandlers,
+);
+const loadHooksStatusHandlers = lazyHandlerModule(
+  () => import("./server-methods/hooks-status.js"),
+  (module) => module.hooksStatusHandlers,
 );
 const loadTaskSuggestionsHandlers = lazyHandlerModule(
   () => import("./server-methods/task-suggestions.js"),
@@ -676,8 +679,12 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
     loadHandlers: loadUsersHandlers,
   }),
   ...createLazyCoreHandlers({
-    methods: ["tasks.list", "tasks.get", "tasks.cancel"],
+    methods: ["tasks.list", "tasks.get", "tasks.cancel", "tasks.retry", "tasks.dismiss"],
     loadHandlers: loadTasksHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["hooks.status"],
+    loadHandlers: loadHooksStatusHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: [
@@ -830,7 +837,9 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   }),
   ...createLazyCoreHandlers({
     methods: [
-      ...NODE_PAIR_GATEWAY_METHODS,
+      "node.pair.list",
+      "node.pair.approve",
+      "node.pair.reject",
       "node.pair.remove",
       "node.rename",
       "node.list",

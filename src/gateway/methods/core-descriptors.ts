@@ -540,6 +540,14 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "workboard.research.reports", scope: "operator.read", since: "<=2026.7" },
   { name: "workboard.research.sync", scope: "operator.write", since: "<=2026.7" },
   { name: "workboard.research.stage", scope: "operator.write", since: "<=2026.7" },
+  // Upstream 2026.7 handlers (server-methods/{hooks-status,tasks}.ts). This file is
+  // merge=ours, so their upstream descriptors were dropped by the nightly merge while
+  // the handlers came in — and an unclassified handler makes
+  // createCoreGatewayMethodDescriptors throw at startup. Appended last so older
+  // advertised method indices stay stable.
+  { name: "hooks.status", scope: "operator.read", since: "2026.7" },
+  { name: "tasks.retry", scope: "operator.write", since: "2026.7" },
+  { name: "tasks.dismiss", scope: "operator.write", since: "2026.7" },
 ] as const;
 
 const CORE_GATEWAY_METHOD_SPEC_BY_NAME: ReadonlyMap<string, CoreGatewayMethodSpec> = new Map(

@@ -325,8 +325,6 @@ function createInstalledPluginRecordForManifest(
     startup: {
       sidecar: record.activation?.onStartup === true,
       memory: hasPluginKind(record, "memory"),
-      deferConfiguredChannelFullLoadUntilAfterListen:
-        record.startupDeferConfiguredChannelFullLoadUntilAfterListen === true,
       agentHarnesses: [
         ...new Set([...(record.activation?.onAgentHarnesses ?? []), ...record.cliBackends]),
       ].toSorted((left, right) => left.localeCompare(right)),
@@ -429,6 +427,13 @@ describe("bundled plugin metadata", () => {
   it("keeps Slack's doctor contract sidecar on the bundled public surface", () => {
     const slack = listRepoBundledPluginMetadata().find((entry) => entry.dirName === "slack");
     expectArtifactPresence(slack?.publicSurfaceArtifacts, {
+      contains: ["doctor-contract-api.js"],
+    });
+  });
+
+  it("keeps CUA's doctor contract sidecar on the bundled public surface", () => {
+    const cua = listRepoBundledPluginMetadata().find((entry) => entry.dirName === "cua-computer");
+    expectArtifactPresence(cua?.publicSurfaceArtifacts, {
       contains: ["doctor-contract-api.js"],
     });
   });

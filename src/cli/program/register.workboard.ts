@@ -26,7 +26,11 @@ async function formatCards(cards: WorkboardCard[], label: string): Promise<strin
   for (const card of cards) {
     lines.push(
       `  ${card.id}  [${card.status}]  ${card.title}` +
-        (card.metadata?.claim?.ownerId ? `  (claimed by ${card.metadata.claim.ownerId})` : ""),
+        (card.metadata?.claim?.ownerId ? `  (claimed by ${card.metadata.claim.ownerId})` : "") +
+        // list() filters by board only, but the dispatcher skips archived cards
+        // (src/workboard/dispatcher.ts). Without this an archived card shows as
+        // plain `ready` forever and never dispatches, with nothing saying why.
+        (card.metadata?.archivedAt ? "  (archived, excluded from dispatch)" : ""),
     );
   }
   return lines.join("\n");

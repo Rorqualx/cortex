@@ -536,6 +536,12 @@ enum class GatewayMethod(
   WorkboardResearchReports("workboard.research.reports"),
   WorkboardResearchSync("workboard.research.sync"),
   WorkboardResearchStage("workboard.research.stage"),
+  MemorySearch("memory.search"),
+  SkillsProposalsEventsList("skills.proposals.events.list"),
+  SkillsProposalsEvaluate("skills.proposals.evaluate"),
+  HooksStatus("hooks.status"),
+  TasksRetry("tasks.retry"),
+  TasksDismiss("tasks.dismiss"),
 }
 
 enum class GatewayEvent(

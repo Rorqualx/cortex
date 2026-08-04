@@ -425,6 +425,7 @@ const GUIDED_SAFE_ONBOARD_KEYS = new Set([
   "nonInteractive",
   "classic",
   "tui",
+  "skipUi",
 ]);
 
 function wantsClassicInteractiveSetup(opts: OnboardOptions): boolean {

@@ -620,7 +620,7 @@ struct SwiftUIRenderSmokeTests {
 
     @Test @MainActor func rootPromptAlertStackStillPresentsDeepLinkPrompt() async throws {
         let appModel = NodeAppModel()
-        appModel._test_setGatewayConnected(true)
+        appModel.gatewayConnected = true
         let gatewayController = Self.gatewayControllerWithCapturedTLSFingerprint(appModel: appModel)
         let root = Color.clear
             .gatewayTrustPromptAlert()

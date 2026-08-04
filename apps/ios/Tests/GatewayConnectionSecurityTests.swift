@@ -388,7 +388,7 @@ import os
             requestId: "stale-request",
             retryable: true,
             pauseReconnect: true)
-        appModel._test_applyOperatorGatewayConnectionProblem(staleProblem)
+        appModel.applyOperatorGatewayConnectionProblem(staleProblem)
         let controller = GatewayConnectionController(
             appModel: appModel,
             startDiscovery: false,

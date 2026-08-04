@@ -3,7 +3,7 @@ import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "node
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { toErrorObject } from "../../../infra/errors.js";
+import { hasErrnoCode, toErrorObject } from "../../../infra/errors.js";
 import { decodeWindowsTextFileBuffer } from "../../../infra/windows-encoding.js";
 import type { ImageContent, Model, TextContent } from "../../../llm/types.js";
 import {
@@ -115,6 +115,16 @@ function createReadDetails(
   }
   return { kind: "text", content: text };
 }
+
+function normalizeReadError(error: unknown, filePath: string): Error {
+  if (hasErrnoCode(error, "EISDIR")) {
+    return new Error(
+      `Read requires a file path, but ${filePath} is a directory. List the directory, then read a specific file.`,
+    );
+  }
+  return toErrorObject(error, "Non-Error rejection");
+}
+
 interface CompactReadClassification {
   kind: "docs" | "resource" | "skill";
   label: string;
@@ -500,7 +510,7 @@ export function createReadToolDefinition(
           } catch (error: unknown) {
             signal?.removeEventListener("abort", onAbort);
             if (!aborted) {
-              reject(toErrorObject(error, "Non-Error rejection"));
+              reject(normalizeReadError(error, path));
             }
           }
         })();

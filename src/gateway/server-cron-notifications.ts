@@ -15,6 +15,7 @@ import {
   sendCronAnnouncePayloadStrict,
   sendFailureNotificationAnnounce,
 } from "../cron/delivery.js";
+import { retryTransientDirectCronDelivery } from "../cron/isolated-agent/delivery-dispatch-policy.js";
 import type { CronEvent } from "../cron/service.js";
 import { resolveCronDeliverySessionKey } from "../cron/session-target.js";
 import type { CronJob, CronMessageChannel } from "../cron/types.js";
@@ -23,7 +24,7 @@ import { formatErrorMessage } from "../infra/errors.js";
 import { formatZonedTimestamp } from "../infra/format-time/format-datetime.js";
 import { withTimeout } from "../infra/fs-safe.js";
 import { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
-import { SsrFBlockedError } from "../infra/net/ssrf.js";
+import { SsrFBlockedError, type SsrFPolicy } from "../infra/net/ssrf.js";
 import { runWithGatewayIndependentRootWorkAdmission } from "../process/gateway-work-admission.js";
 import { assertSecretOwnerAvailable } from "../secrets/runtime-degraded-state.js";
 
@@ -47,7 +48,7 @@ type CronCompletionAnnounceTarget = {
 
 type CronWebhookTarget = {
   url: string;
-  source: "delivery" | "completionDestination";
+  source: "completionDestination";
 };
 
 type CronFailureAlertParams = {
@@ -55,6 +56,7 @@ type CronFailureAlertParams = {
   logger: CronLogger;
   resolveCronAgent: CronAgentResolver;
   webhookToken?: unknown;
+  ssrfPolicy?: SsrFPolicy;
   job: CronJob;
   text: string;
   runAtMs?: number;
@@ -134,7 +136,7 @@ function redactCommandCronEventForExternalDelivery(evt: CronEvent, job?: CronJob
   return redacted;
 }
 
-/** Resolves direct webhook delivery and completion-destination webhooks. */
+/** Resolves detached completion-destination webhooks. */
 function resolveCronWebhookTargets(params: {
   delivery?: {
     mode?: string;
@@ -144,19 +146,12 @@ function resolveCronWebhookTargets(params: {
 }): CronWebhookTarget[] {
   const targets: CronWebhookTarget[] = [];
   const mode = normalizeOptionalLowercaseString(params.delivery?.mode);
-  if (mode === "webhook") {
-    const url = normalizeHttpWebhookUrl(params.delivery?.to);
-    if (url) {
-      targets.push({ url, source: "delivery" });
-    }
-  }
-
   const completionMode = normalizeOptionalLowercaseString(
     params.delivery?.completionDestination?.mode,
   );
   if (mode === "announce" && completionMode === "webhook") {
     const url = normalizeHttpWebhookUrl(params.delivery?.completionDestination?.to);
-    if (url && targets.every((target) => target.url !== url)) {
+    if (url) {
       targets.push({ url, source: "completionDestination" });
     }
   }
@@ -253,35 +248,45 @@ function buildCronFinishedWebhookPayload(evt: CronEvent) {
   return payload;
 }
 
-/** Posts a cron webhook without throwing back into scheduler completion flow. */
-async function postCronWebhook(params: {
+async function postCronWebhookStrict(params: {
   webhookUrl: string;
   webhookToken?: string;
   payload: unknown;
-  logContext: Record<string, unknown>;
-  blockedLog: string;
-  failedLog: string;
-  logger: CronLogger;
+  ssrfPolicy?: SsrFPolicy;
+  signal?: AbortSignal;
+  deadlineAtMs?: number;
+  onDeliveryAccepted?: () => void;
 }): Promise<void> {
-  const abortController = new AbortController();
-  const deadlineAtMs = Date.now() + CRON_WEBHOOK_TIMEOUT_MS;
+  const remainingMs =
+    params.deadlineAtMs === undefined ? CRON_WEBHOOK_TIMEOUT_MS : params.deadlineAtMs - Date.now();
+  if (remainingMs <= 0) {
+    const error = new Error("cron webhook delivery deadline exceeded");
+    error.name = "TimeoutError";
+    throw error;
+  }
+  const requestTimeoutMs = Math.min(CRON_WEBHOOK_TIMEOUT_MS, remainingMs);
+  const requestDeadlineAtMs = Date.now() + requestTimeoutMs;
+  assertSecretOwnerAvailable("capability", "cron-webhook");
+  const result = await fetchWithSsrFGuard({
+    url: params.webhookUrl,
+    timeoutMs: requestTimeoutMs,
+    policy: params.ssrfPolicy,
+    ...(params.signal ? { signal: params.signal } : {}),
+    init: {
+      method: "POST",
+      headers: buildCronWebhookHeaders(params.webhookToken),
+      body: JSON.stringify(params.payload),
+    },
+  });
+  let accepted = false;
   try {
-    assertSecretOwnerAvailable("capability", "cron-webhook");
-    const result = await fetchWithSsrFGuard({
-      url: params.webhookUrl,
-      timeoutMs: CRON_WEBHOOK_TIMEOUT_MS,
-      init: {
-        method: "POST",
-        headers: buildCronWebhookHeaders(params.webhookToken),
-        body: JSON.stringify(params.payload),
-        signal: abortController.signal,
-      },
-    });
-    try {
-      if (!result.response.ok) {
-        throw new Error(`Webhook request failed with HTTP ${result.response.status}`);
-      }
-    } finally {
+    if (!result.response.ok) {
+      throw new Error(`Webhook request failed with HTTP ${result.response.status}`);
+    }
+    accepted = true;
+    params.onDeliveryAccepted?.();
+  } finally {
+    const cleanup = async () => {
       // Guard release closes the dispatcher, not an unread response stream.
       // Keep response cleanup inside the request deadline; a non-settling
       // stream cancellation must not retain the dispatcher or Gateway root.
@@ -290,13 +295,36 @@ async function postCronWebhook(params: {
         if (cancellation) {
           await withTimeout(
             cancellation,
-            Math.max(1, deadlineAtMs - Date.now()),
+            Math.max(1, requestDeadlineAtMs - Date.now()),
             "cron webhook response cleanup",
           ).catch(() => undefined);
         }
       }
       await result.release();
+    };
+    if (accepted) {
+      // A 2xx acknowledgement is the terminal delivery fact. Cleanup must not
+      // rewrite it after the receiver has accepted the webhook.
+      await cleanup().catch(() => undefined);
+    } else {
+      await cleanup();
     }
+  }
+}
+
+/** Posts a detached cron webhook without throwing back into scheduler completion flow. */
+async function postCronWebhook(params: {
+  webhookUrl: string;
+  webhookToken?: string;
+  payload: unknown;
+  ssrfPolicy?: SsrFPolicy;
+  logContext: Record<string, unknown>;
+  blockedLog: string;
+  failedLog: string;
+  logger: CronLogger;
+}): Promise<void> {
+  try {
+    await postCronWebhookStrict(params);
   } catch (err) {
     if (err instanceof SsrFBlockedError) {
       params.logger.warn(
@@ -318,6 +346,41 @@ async function postCronWebhook(params: {
       );
     }
   }
+}
+
+/** Delivers the primary webhook while the cron run still owns its terminal outcome. */
+export async function sendGatewayCronWebhook(params: {
+  event: CronEvent;
+  job: CronJob;
+  abortSignal?: AbortSignal;
+  deadlineAtMs?: number;
+  webhookToken?: unknown;
+  ssrfPolicy?: SsrFPolicy;
+  onDeliveryAccepted?: () => void;
+}): Promise<void> {
+  const deliveryPlan = resolveCronDeliveryPlan(params.job);
+  const webhookUrl = normalizeHttpWebhookUrl(deliveryPlan.to);
+  if (!webhookUrl) {
+    throw new Error("cron webhook delivery.to must be a valid http(s) URL");
+  }
+  const event = redactCommandCronEventForExternalDelivery(params.event, params.job);
+  await retryTransientDirectCronDelivery({
+    jobId: params.job.id,
+    label: "webhook",
+    ...(params.abortSignal ? { signal: params.abortSignal } : {}),
+    ...(params.deadlineAtMs !== undefined ? { deadlineAtMs: params.deadlineAtMs } : {}),
+    run: () =>
+      postCronWebhookStrict({
+        webhookUrl,
+        webhookToken: normalizeOptionalString(params.webhookToken),
+        ssrfPolicy: params.ssrfPolicy,
+        payload: buildCronFinishedWebhookPayload(event),
+        ...(params.abortSignal ? { signal: params.abortSignal } : {}),
+        ...(params.deadlineAtMs !== undefined ? { deadlineAtMs: params.deadlineAtMs } : {}),
+        ...(params.onDeliveryAccepted ? { onDeliveryAccepted: params.onDeliveryAccepted } : {}),
+      }),
+    shouldRetryError: (error) => !(error instanceof SsrFBlockedError),
+  });
 }
 
 /** Detached sends outlive cron ticks; own roots block mid-delivery suspension snapshots. */
@@ -361,6 +424,7 @@ async function sendGatewayCronFailureAlertUnderAdmission(
       await postCronWebhook({
         webhookUrl,
         webhookToken,
+        ssrfPolicy: params.ssrfPolicy,
         payload: {
           jobId: params.job.id,
           jobName: params.job.name,
@@ -421,6 +485,7 @@ export function dispatchGatewayCronFinishedNotifications(params: {
   logger: CronLogger;
   resolveCronAgent: CronAgentResolver;
   webhookToken?: unknown;
+  ssrfPolicy?: SsrFPolicy;
   globalFailureDestination?: CronFailureDestinationConfig;
 }): void {
   const webhookToken = normalizeOptionalString(params.webhookToken);
@@ -453,6 +518,9 @@ export function dispatchGatewayCronFinishedNotifications(params: {
     );
   }
 
+  // The check above only covers a completionDestination webhook. These two cover the
+  // other ways a configured completion silently reaches nobody: an announce with no
+  // channel/to, and a top-level webhook delivery whose `to` never resolved a target.
   if (params.job?.delivery?.completionDestination?.mode === "announce") {
     const cd = params.job.delivery.completionDestination;
     if (!cd.channel && !cd.to) {
@@ -490,6 +558,7 @@ export function dispatchGatewayCronFinishedNotifications(params: {
           postCronWebhook({
             webhookUrl: webhookTarget.url,
             webhookToken,
+            ssrfPolicy: params.ssrfPolicy,
             payload,
             logContext: { jobId: params.evt.jobId, source: webhookTarget.source },
             blockedLog: "cron: webhook delivery blocked by SSRF guard",
@@ -515,6 +584,7 @@ export function dispatchGatewayCronFinishedNotifications(params: {
     logger: params.logger,
     resolveCronAgent: params.resolveCronAgent,
     webhookToken,
+    ssrfPolicy: params.ssrfPolicy,
     globalFailureDestination: params.globalFailureDestination,
   });
 }
@@ -597,6 +667,7 @@ function dispatchCronFailureDestinationNotifications(params: {
   logger: CronLogger;
   resolveCronAgent: CronAgentResolver;
   webhookToken?: string;
+  ssrfPolicy?: SsrFPolicy;
   globalFailureDestination?: CronFailureDestinationConfig;
 }): void {
   if (params.evt.status !== "error" || !params.job || params.job.delivery?.bestEffort === true) {
@@ -621,6 +692,7 @@ function dispatchCronFailureDestinationNotifications(params: {
             postCronWebhook({
               webhookUrl,
               webhookToken: params.webhookToken,
+              ssrfPolicy: params.ssrfPolicy,
               payload: failurePayload,
               logContext: { jobId: params.evt.jobId },
               blockedLog: "cron: failure destination webhook blocked by SSRF guard",
