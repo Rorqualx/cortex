@@ -114,8 +114,20 @@ export async function loadModelProviders(host: ProvidersHost): Promise<void> {
   }
 }
 
-/** Writes `models.providers.<id>.apiKey` through config.patch. */
-export async function saveProviderApiKey(host: ProvidersHost, provider: string, apiKey: string) {
+/**
+ * Writes `models.providers.<id>.apiKey` through config.patch.
+ *
+ * `reloadConfig` is required for the result to be visible: cards read api-key
+ * presence out of host.configSnapshot, which config.patch does not update in
+ * place. Without it the save succeeded, said so, and the row still read
+ * "no API key" — a success message contradicting the screen.
+ */
+export async function saveProviderApiKey(
+  host: ProvidersHost,
+  provider: string,
+  apiKey: string,
+  reloadConfig?: () => Promise<unknown>,
+) {
   const state = stateOf(host);
   const client = host.client;
   const baseHash = host.configSnapshot?.hash;
@@ -144,6 +156,7 @@ export async function saveProviderApiKey(host: ProvidersHost, provider: string, 
   } finally {
     state.busy = false;
     host.requestUpdate?.();
+    await reloadConfig?.();
     await loadModelProviders(host);
   }
 }
@@ -158,14 +171,19 @@ export async function probeProvider(host: ProvidersHost, provider: string) {
   state.busy = true;
   host.requestUpdate?.();
   try {
+    // ModelsProbeParamsSchema is a closed object taking a SINGULAR `provider`,
+    // and the status lives at the top level of the result, not on results[0].
+    // Both were guessed wrong first time; the schema is the contract.
     const result = await client.request<{
-      results?: Array<{ status?: string; label?: string; message?: string }>;
-    }>("models.probe", { providers: [provider] });
-    const first = result?.results?.[0];
-    const ok = first?.status === "ok";
+      status?: string;
+      error?: string;
+      latencyMs?: number;
+    }>("models.probe", { provider });
+    const ok = result?.status === "ok";
+    const latency = typeof result?.latencyMs === "number" ? ` (${result.latencyMs}ms)` : "";
     state.probe[provider] = {
       ok,
-      text: first?.message ?? first?.label ?? (ok ? "OK" : "No response"),
+      text: ok ? `OK${latency}` : (result?.error ?? result?.status ?? "No response"),
     };
   } catch (err) {
     state.probe[provider] = {

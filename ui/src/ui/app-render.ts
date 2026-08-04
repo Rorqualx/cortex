@@ -2985,7 +2985,9 @@ export function renderApp(state: AppViewState) {
               },
               onSave: () => {
                 const mp = (state.modelProviders ??= createModelProvidersState());
-                void saveProviderApiKey(state, mp.selectedProvider, mp.keyDraft);
+                void saveProviderApiKey(state, mp.selectedProvider, mp.keyDraft, () =>
+                  loadConfig(state),
+                );
               },
               onTest: (provider: string) => void probeProvider(state, provider),
               onRefresh: () => void loadModelProviders(state),
