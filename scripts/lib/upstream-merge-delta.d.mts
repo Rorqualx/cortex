@@ -10,7 +10,22 @@ export type ForkExportDriftFinding = {
   symbols: string[];
   fileDropped: boolean;
 };
+export type CountLiteralDisagreementFinding = {
+  kind: "count-literal-disagreement";
+  file: string;
+  ours: string;
+  theirs: string;
+};
 export type RelativeModuleSpecifier = { specifier: string; line: number };
+/**
+ * Conflict hunks whose sides disagree on a number, i.e. where neither side can be
+ * taken because the literal counts something about the merged tree. Reads worktree
+ * text with conflict markers still present.
+ */
+export function findCountLiteralDisagreements(params: {
+  files: Iterable<string>;
+  readSource: (file: string) => string | undefined;
+}): CountLiteralDisagreementFinding[];
 /**
  * The exported names of a source file. `export * from` records the sentinel `*`.
  */

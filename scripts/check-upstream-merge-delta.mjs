@@ -12,10 +12,13 @@
 // Reads git objects, never the worktree, so it answers for the merge INDEX
 // mid-run (`--merged :0`, the default) and for any historical merge commit.
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { runWithFailedTrailer } from "./lib/failed-trailer.mjs";
 import { resolveRepoRoot } from "./lib/repo-root.mjs";
 import {
   collectExportedNames,
+  findCountLiteralDisagreements,
   findForkExportDrift,
   findUnresolvedRelativeImports,
 } from "./lib/upstream-merge-delta.mjs";
@@ -99,6 +102,10 @@ function parseArgs(argv) {
       options.json = true;
       continue;
     }
+    if (argument === "--conflicts") {
+      options.conflicts = true;
+      continue;
+    }
     const value = argv[index + 1];
     if (argument === "--repo") {
       options.repo = value;
@@ -126,6 +133,43 @@ function objectSpec(ref, file) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const repo = options.repo ?? resolveRepoRoot(import.meta.url);
+
+  // Runs against the unresolved worktree rather than git objects: conflict markers
+  // are the subject, and they exist nowhere else. Needs no refs, so it is checked
+  // before the ref requirement below.
+  if (options.conflicts) {
+    const unmerged = git(repo, ["diff", "--name-only", "--diff-filter=U"])
+      .split("\n")
+      .filter(Boolean);
+    const findings = findCountLiteralDisagreements({
+      files: unmerged,
+      readSource: (file) => {
+        try {
+          return readFileSync(join(repo, file), "utf8");
+        } catch {
+          return undefined;
+        }
+      },
+    });
+    if (options.json) {
+      console.log(JSON.stringify({ unmerged: unmerged.length, findings }, null, 2));
+    } else {
+      for (const finding of findings) {
+        console.log(
+          `  COUNT-DISAGREEMENT ${finding.file}: ours=[${finding.ours}] upstream=[${finding.theirs}]`,
+        );
+      }
+      console.log(
+        `COUNT-DISAGREEMENT-SCAN ${unmerged.length} conflicted files, ${findings.length} hunks where neither side can be taken`,
+      );
+      if (findings.length > 0) {
+        console.log("  Re-measure these against the merged tree; both sides are stale by");
+        console.log("  construction, so picking either one is wrong.");
+      }
+    }
+    return;
+  }
+
   if (!options.base || !options.fork || !options.upstream) {
     throw new Error(
       "--base <merge-base>, --fork <fork tip merged in> and --upstream <upstream ref> are required",

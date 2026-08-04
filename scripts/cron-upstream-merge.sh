@@ -921,6 +921,20 @@ stage_init() {
   echo "STAGE-PINS upstream=$UPSTREAM_REF baseline=$baseline_sha (frozen; later gates and the huey proof read these, not the live refs)"
   echo "--- conflict files (resolve in $WORKTREE, then commit, then run: finish-land / stage-finish) ---"
   git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' || true
+  # Hunks where taking either side is wrong. Runs here because it is the only
+  # window where both sides are still visible in the file.
+  node "$MAIN/scripts/check-upstream-merge-delta.mjs" --repo "$WORKTREE" --conflicts 2>&1 |
+    grep -vE '^COUNT-DISAGREEMENT-SCAN 0 ' || true
+  echo "--- resolution rules (each cost a full cycle on 2026-08-03) ---"
+  echo "  * three-way merges take ours from $STAGE_OURS_REF:<path>, never HEAD: for an"
+  echo "    ordinary (non merge=ours) file HEAD is ALREADY the lossy merge result, so the"
+  echo "    apply reports clean and restores nothing."
+  echo "  * never 'git apply -3' to re-apply a fork delta; it reports success and changes"
+  echo "    nothing. Use 'git merge-file -L ours -L base -L upstream'."
+  echo "  * after every re-apply, grep back a known fork marker. An apply that silently"
+  echo "    no-ops is indistinguishable from one that worked until tsgo runs."
+  echo "  * measure tsgo BEFORE and after each batch. Unattributed fixes hide which"
+  echo "    change helped, and rebase files in provider-before-consumer order."
   echo "--- classified work queue (read-only planner; ui/ resolved by ownership, omitted) ---"
   report_resync_ledger "$baseline_sha"
   echo "--- merge=ours files upstream changed (rebase these onto upstream, re-apply the fork delta) ---"

@@ -240,6 +240,69 @@ export function findUnresolvedRelativeImports({ files, treePaths, inputTreePaths
   return findings;
 }
 
+// Two-digit-plus only. Single digits are array indices, enum ordinals and `+ 1`
+// arithmetic; they disagree constantly and mean nothing. Every real instance of
+// this trap so far has been an inventory count well above 9.
+const COUNT_LITERAL_RE = /\b\d{2,}\b/gu;
+
+function countLiterals(lines) {
+  return [...new Set(lines.join("\n").match(COUNT_LITERAL_RE) ?? [])].toSorted().join(",");
+}
+
+/**
+ * Conflict hunks whose two sides disagree on a number.
+ *
+ * These are the hunks where picking a side is wrong whichever side you pick: the
+ * literal counts something about the MERGED tree, so both inputs are stale by
+ * construction and the value has to be re-measured after resolving. On 2026-08-03
+ * `check-protocol-registry.mjs` offered 55 against upstream's 53 while the merged
+ * tree held 56, and `server-methods-list.test.ts` carried two more.
+ *
+ * Reads worktree text with the conflict markers still in it — between staging and
+ * resolution is the only window where both sides are visible. Tolerates diff3
+ * markers, which add a `|||||||` base section.
+ */
+export function findCountLiteralDisagreements({ files, readSource }) {
+  const findings = [];
+  for (const file of files) {
+    const sourceText = readSource(file);
+    if (sourceText === undefined) {
+      continue;
+    }
+    let side = null;
+    let hunk = null;
+    for (const line of sourceText.split("\n")) {
+      if (line.startsWith("<<<<<<<")) {
+        side = "ours";
+        hunk = { ours: [], base: [], theirs: [] };
+        continue;
+      }
+      if (hunk && line.startsWith("|||||||")) {
+        side = "base";
+        continue;
+      }
+      if (hunk && line.startsWith("=======")) {
+        side = "theirs";
+        continue;
+      }
+      if (hunk && line.startsWith(">>>>>>>")) {
+        const ours = countLiterals(hunk.ours);
+        const theirs = countLiterals(hunk.theirs);
+        if (ours !== "" && theirs !== "" && ours !== theirs) {
+          findings.push({ kind: "count-literal-disagreement", file, ours, theirs });
+        }
+        side = null;
+        hunk = null;
+        continue;
+      }
+      if (hunk && side) {
+        hunk[side].push(line);
+      }
+    }
+  }
+  return findings;
+}
+
 /**
  * Fork exports upstream does not carry that the merge result lacks:
  * `fork - upstream - merged`.

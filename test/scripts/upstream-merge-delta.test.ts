@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectExportedNames,
   collectRelativeModuleSpecifiers,
+  findCountLiteralDisagreements,
   findForkExportDrift,
   findUnresolvedRelativeImports,
   resolutionCandidates,
@@ -148,6 +149,68 @@ describe("findUnresolvedRelativeImports", () => {
         readSource,
       }),
     ).toEqual([]);
+  });
+});
+
+describe("findCountLiteralDisagreements", () => {
+  const conflicted = (ours: string, theirs: string) =>
+    `const a = 1;\n<<<<<<< HEAD\n${ours}\n=======\n${theirs}\n>>>>>>> upstream\n`;
+
+  it("reports a hunk where the two sides carry different counts", () => {
+    // check-protocol-registry.mjs on 2026-08-03: ours 55, upstream 53, merged tree
+    // 56. Taking either side ships a wrong assertion.
+    const findings = findCountLiteralDisagreements({
+      files: ["scripts/check-protocol-registry.mjs"],
+      readSource: sourcesOf({
+        "scripts/check-protocol-registry.mjs": conflicted(
+          "ownerModules.length === 55",
+          "ownerModules.length === 53",
+        ),
+      }),
+    });
+    expect(findings).toEqual([
+      {
+        kind: "count-literal-disagreement",
+        file: "scripts/check-protocol-registry.mjs",
+        ours: "55",
+        theirs: "53",
+      },
+    ]);
+  });
+
+  it("ignores single digits", () => {
+    // Array indices, enum ordinals and `+ 1` disagree constantly and mean nothing.
+    expect(
+      findCountLiteralDisagreements({
+        files: ["a.ts"],
+        readSource: sourcesOf({ "a.ts": conflicted("items[0]", "items[1]") }),
+      }),
+    ).toEqual([]);
+  });
+
+  it("stays quiet when both sides agree on the numbers", () => {
+    expect(
+      findCountLiteralDisagreements({
+        files: ["a.ts"],
+        readSource: sourcesOf({
+          "a.ts": conflicted("const limit = 4096; // fork", "const limit = 4096; // upstream"),
+        }),
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads diff3-style markers, ignoring the base section", () => {
+    // A diff3 base section holding the OLD count must not be mistaken for a side.
+    const findings = findCountLiteralDisagreements({
+      files: ["a.ts"],
+      readSource: sourcesOf({
+        "a.ts":
+          "<<<<<<< ours\nlength === 55\n||||||| base\nlength === 50\n=======\nlength === 53\n>>>>>>> upstream\n",
+      }),
+    });
+    expect(findings).toEqual([
+      { kind: "count-literal-disagreement", file: "a.ts", ours: "55", theirs: "53" },
+    ]);
   });
 });
 

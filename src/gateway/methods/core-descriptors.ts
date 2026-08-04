@@ -614,6 +614,15 @@ export function createCoreGatewayMethodDescriptors(
     specNames.add(spec.name);
     const handler = handlers[spec.name];
     if (!handler) {
+      // A spec with no handler is normal, not a dropped registration: callers pass
+      // coreGatewayHandlers plus runtime-injected extraHandlers, and 47 of these
+      // 389 specs are satisfied only that way (workboard via the plugin,
+      // approval/question/secrets/exec.approval via sidecars). A gateway running
+      // without the workboard plugin must still start, so this cannot be made
+      // symmetric with the throw below, and the two directions are not the same
+      // invariant. Loss of a spec AND its registration together is a merge-drift
+      // problem — see scripts/check-upstream-merge-delta.mjs — not one this
+      // self-consistency check can see.
       continue;
     }
     descriptors.push({
