@@ -1464,6 +1464,39 @@ function createConfigEphemeralState(): ConfigEphemeralState {
 }
 
 const cvs = createConfigEphemeralState();
+// Advanced-field visibility is a viewing preference, not config state, so it
+// lives in localStorage and drives a root class rather than a render prop.
+// Toggling it must not re-render the form: on a section like Models that is
+// thousands of rows, and CSS can hide them for free.
+const ADVANCED_HIDDEN_STORAGE_KEY = "openclaw.config.hideAdvancedFields";
+const ADVANCED_HIDDEN_ROOT_CLASS = "cfg-hide-advanced";
+
+export function advancedFieldsHidden(): boolean {
+  try {
+    // Default OFF. The schema tags most of the Models tree advanced, so defaulting
+    // this on hid the section entirely. Collapsing large blocks is what makes the
+    // page readable; this filter is opt-in decluttering on top of that.
+    return localStorage.getItem(ADVANCED_HIDDEN_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setAdvancedFieldsHidden(hidden: boolean): void {
+  try {
+    localStorage.setItem(ADVANCED_HIDDEN_STORAGE_KEY, hidden ? "1" : "0");
+  } catch {
+    // Private-mode or blocked storage: the class below still applies for this
+    // session, it just will not persist.
+  }
+  document.documentElement.classList.toggle(ADVANCED_HIDDEN_ROOT_CLASS, hidden);
+}
+
+/** Applies the stored preference before first paint of the config view. */
+export function syncAdvancedFieldsClass(): void {
+  document.documentElement.classList.toggle(ADVANCED_HIDDEN_ROOT_CLASS, advancedFieldsHidden());
+}
+
 let lastConfigContextKey: string | null = null;
 let lastFormModeForScroll: ConfigProps["formMode"] | null = null;
 
@@ -1508,6 +1541,7 @@ export function resetConfigViewStateForTests() {
 }
 
 export function renderConfig(props: ConfigProps) {
+  syncAdvancedFieldsClass();
   const showModeToggle = props.showModeToggle ?? false;
   const showRootTab = props.showRootTab ?? true;
   const validity = props.valid == null ? "unknown" : props.valid ? "valid" : "invalid";
@@ -2099,6 +2133,22 @@ export function renderConfig(props: ConfigProps) {
                         </div>`
                       : nothing}
                   </div>
+                  <button
+                    type="button"
+                    class="config-advanced-toggle ${advancedFieldsHidden()
+                      ? ""
+                      : "config-advanced-toggle--active"}"
+                    aria-pressed=${!advancedFieldsHidden()}
+                    title=${advancedFieldsHidden()
+                      ? "Show advanced fields"
+                      : "Hide advanced fields"}
+                    @click=${() => {
+                      setAdvancedFieldsHidden(!advancedFieldsHidden());
+                      requestUpdate();
+                    }}
+                  >
+                    ${advancedFieldsHidden() ? "Show advanced" : "Hide advanced"}
+                  </button>
                   ${props.activeSection === "env"
                     ? html`
                         <button

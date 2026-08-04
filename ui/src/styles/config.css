@@ -389,6 +389,64 @@
   line-height: 1.4;
 }
 
+/* Advanced-field filter. Driven by a root class so toggling costs no re-render;
+   :has() scopes it to the row (or collapsible block) that owns the tag, which
+   keeps a whole advanced sub-object hidden rather than leaving an empty shell. */
+/* Leaf rows only. Collapsible blocks are deliberately NOT hidden even when tagged
+   advanced: most of the Models tree carries that tag, and hiding blocks emptied
+   the entire section — a page with nothing on it is worse than a dense one. The
+   block stays as navigation; its advanced leaf rows go. */
+/* Descendant inside `.settings-row__text` on purpose: toggle rows nest their tags
+   one level deeper (inside the description), so a child combinator missed them.
+   Scoping to the row's OWN text block still prevents a parent row from matching a
+   nested child's tag, since child rows live outside that block. */
+:root.cfg-hide-advanced
+  .settings-row:not(.cfg-object__summary):has(
+    > .settings-row__text .cfg-tags > [data-tag="advanced"]
+  ) {
+  display: none;
+}
+
+.config-advanced-toggle {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  transition:
+    background var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.config-advanced-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.config-advanced-toggle--active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+/* Entry count on a collapsed block, so a closed section still reports its size. */
+.cfg-object__count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .config-sidebar-nav__icon {
   display: flex;
   align-items: center;

@@ -153,12 +153,41 @@ function wrapSensitiveControl(
   return html`<span class="settings-secret">${control}${toggle}</span>`;
 }
 
-function renderTags(tags: string[]): TemplateResult | typeof nothing {
-  if (tags.length === 0) {
+/** Direct child entries of a map/array, for the collapsed-summary count. */
+function countChildEntries(schema: JsonSchema, value: unknown): number {
+  if (Array.isArray(value)) {
+    return value.length;
+  }
+  const additional = schema.additionalProperties;
+  if (!additional || typeof additional !== "object") {
+    return 0;
+  }
+  if (!value || typeof value !== "object") {
+    return 0;
+  }
+  const reserved = new Set(Object.keys(schema.properties ?? {}));
+  return Object.keys(value as Record<string, unknown>).filter((key) => !reserved.has(key)).length;
+}
+
+// `path` drops the tag naming the section you are already inside: every row under
+// Models carried a "models" chip, which is pure repetition on a page that is
+// nothing but model settings. `data-tag` lets CSS hide advanced rows without
+// re-rendering the tree.
+function renderTags(
+  tags: string[],
+  path?: Array<string | number>,
+): TemplateResult | typeof nothing {
+  const section = typeof path?.[0] === "string" ? path[0].toLowerCase() : undefined;
+  const visible = section ? tags.filter((tag) => tag.toLowerCase() !== section) : tags;
+  if (visible.length === 0) {
     return nothing;
   }
   return html`
-    <div class="cfg-tags">${tags.map((tag) => html`<span class="cfg-tag">${tag}</span>`)}</div>
+    <div class="cfg-tags">
+      ${visible.map(
+        (tag) => html`<span class="cfg-tag" data-tag=${tag.toLowerCase()}>${tag}</span>`,
+      )}
+    </div>
   `;
 }
 
@@ -166,6 +195,8 @@ type FieldRowParams = {
   label: unknown;
   help?: unknown;
   tags: string[];
+  /** Used only to drop the tag that repeats the section name. */
+  path?: Array<string | number>;
   showLabel: boolean;
   control: TemplateResult | typeof nothing;
   stacked?: boolean;
@@ -190,7 +221,7 @@ function renderFieldRow(params: FieldRowParams): TemplateResult {
               ${params.help
                 ? html`<span class="settings-row__desc">${params.help}</span>`
                 : nothing}
-              ${renderTags(params.tags)}
+              ${renderTags(params.tags, params.path)}
               ${params.error
                 ? html`<span class="cfg-field__error">${params.error}</span>`
                 : nothing}
@@ -302,6 +333,7 @@ export function renderNode(params: {
         label,
         help,
         tags,
+        path,
         showLabel,
         control: renderSegmentedControl({
           options: literals,
@@ -368,6 +400,7 @@ export function renderNode(params: {
         label,
         help,
         tags,
+        path,
         showLabel,
         control: renderSegmentedControl({
           options,
@@ -407,6 +440,7 @@ export function renderNode(params: {
         label,
         help,
         tags,
+        path,
         showLabel,
         control: renderSettingsToggle({
           checked: displayValue,
@@ -417,7 +451,7 @@ export function renderNode(params: {
       });
     }
     const description =
-      help || tags.length > 0 ? html`${help ?? nothing}${renderTags(tags)}` : undefined;
+      help || tags.length > 0 ? html`${help ?? nothing}${renderTags(tags, path)}` : undefined;
     return renderSettingsToggleRow({
       title: label,
       description,
@@ -561,7 +595,7 @@ function renderTextInput(params: {
       : nothing}
   `;
 
-  return renderFieldRow({ label, help, tags, showLabel, control });
+  return renderFieldRow({ label, help, tags, path, showLabel, control });
 }
 
 function renderNumberInput(params: {
@@ -622,7 +656,7 @@ function renderNumberInput(params: {
     </button>
   `;
 
-  return renderFieldRow({ label, help, tags, showLabel, control });
+  return renderFieldRow({ label, help, tags, path, showLabel, control });
 }
 
 function renderSelect(params: {
@@ -665,7 +699,7 @@ function renderSelect(params: {
     </select>
   `;
 
-  return renderFieldRow({ label, help, tags, showLabel, control });
+  return renderFieldRow({ label, help, tags, path, showLabel, control });
 }
 
 function renderJsonTextareaControl(params: {
@@ -748,6 +782,7 @@ function renderJsonTextarea(params: {
     label,
     help,
     tags,
+    path,
     showLabel,
     stacked: true,
     control: renderJsonTextareaControl({
@@ -760,6 +795,63 @@ function renderJsonTextarea(params: {
       onPatch,
     }),
   });
+}
+
+// Beyond this many rendered descendants an object opens collapsed regardless of
+// depth. Depth alone cannot see subtree size: `models.providers` sits at depth 2
+// and so auto-opened, then expanded 6 providers x 25 models x ~20 advanced fields
+// into one 50,000px section — 1,960 rows in a single scroll. Small nested objects
+// still open, which is what makes shallow sections readable at a glance.
+const AUTO_OPEN_MAX_DESCENDANTS = 24;
+
+/**
+ * Rendered-row estimate for a subtree, counting map/array entries because those
+ * multiply the schema. Bails out as soon as the budget is blown so a huge subtree
+ * costs no more to reject than a small one.
+ */
+function estimateRenderedFields(schema: JsonSchema, value: unknown, budget: number): number {
+  if (budget <= 0) {
+    return 0;
+  }
+  const type = schemaType(schema);
+  if (type === "object") {
+    let total = 0;
+    const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    for (const [key, child] of Object.entries(schema.properties ?? {})) {
+      total += 1 + estimateRenderedFields(child, record[key], budget - total);
+      if (total > budget) {
+        return total;
+      }
+    }
+    // Map entries: every existing key re-renders the whole additionalProperties
+    // schema, which is where the multiplication actually happens.
+    const additional = schema.additionalProperties;
+    if (additional && typeof additional === "object") {
+      const reserved = new Set(Object.keys(schema.properties ?? {}));
+      for (const key of Object.keys(record)) {
+        if (reserved.has(key)) {
+          continue;
+        }
+        total += 1 + estimateRenderedFields(additional, record[key], budget - total);
+        if (total > budget) {
+          return total;
+        }
+      }
+    }
+    return total;
+  }
+  if (type === "array" && schema.items && typeof schema.items === "object") {
+    const items = Array.isArray(value) ? value : [];
+    let total = 0;
+    for (const item of items) {
+      total += 1 + estimateRenderedFields(schema.items, item, budget - total);
+      if (total > budget) {
+        return total;
+      }
+    }
+    return total;
+  }
+  return 0;
 }
 
 function renderObject(params: {
@@ -863,15 +955,27 @@ function renderObject(params: {
     return html`${fields}`;
   }
 
-  // Nested objects get collapsible treatment as an indented sub-block.
+  // Nested objects get collapsible treatment as an indented sub-block. A search
+  // keeps matches expanded; otherwise open only shallow AND small subtrees.
+  const autoOpen =
+    selfMatched ||
+    Boolean(childSearchCriteria && hasSearchCriteria(childSearchCriteria)) ||
+    (path.length <= 2 &&
+      estimateRenderedFields(schema, value, AUTO_OPEN_MAX_DESCENDANTS) <=
+        AUTO_OPEN_MAX_DESCENDANTS);
+  // Entry count on the collapsed summary, so a closed block still says how much
+  // is inside rather than hiding it behind an unlabelled chevron.
+  const entryCount = countChildEntries(schema, value);
+
   return html`
-    <details class="cfg-object cfg-block" ?open=${path.length <= 2}>
+    <details class="cfg-object cfg-block" ?open=${autoOpen}>
       <summary class="settings-row cfg-object__summary">
         <div class="settings-row__text">
           <span class="settings-row__title">${label}</span>
           ${help ? html`<span class="settings-row__desc">${help}</span>` : nothing}
-          ${renderTags(tags)}
+          ${renderTags(tags, path)}
         </div>
+        ${entryCount > 0 ? html`<span class="cfg-object__count">${entryCount}</span>` : nothing}
         <span class="settings-row__chevron cfg-object__chevron">${icons.chevronDown}</span>
       </summary>
       <div class="settings-subrows">${fields}</div>
@@ -935,7 +1039,7 @@ function renderArray(params: {
         <div class="settings-row__text">
           ${showLabel ? html`<span class="settings-row__title">${label}</span>` : nothing}
           ${help ? html`<span class="settings-row__desc">${help}</span>` : nothing}
-          ${renderTags(tags)}
+          ${renderTags(tags, path)}
         </div>
         <div class="settings-row__control">
           <span class="settings-row__value"
