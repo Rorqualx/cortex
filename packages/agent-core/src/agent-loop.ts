@@ -997,6 +997,9 @@ type ImmediateToolCallOutcome = {
   result: AgentToolResult<unknown>;
   isError: boolean;
   errorKind?: "argument-validation";
+  // Fork field: executeToolCallsSequential forwards it into finalizeToolCallOutcome.
+  // The merge dropped it from the type while keeping that reader.
+  resultContentSource?: ToolResultContentSource;
 };
 
 type ExecutedToolCallOutcome = {

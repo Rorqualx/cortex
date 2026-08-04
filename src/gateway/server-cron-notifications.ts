@@ -531,16 +531,17 @@ export function dispatchGatewayCronFinishedNotifications(params: {
     }
   }
 
-  if (
-    !webhookTargets.some((target) => target.source === "delivery") &&
-    params.job?.delivery?.mode === "webhook"
-  ) {
+  // resolveCronWebhookTargets only resolves a completionDestination webhook
+  // (mode "announce" + completionDestination.mode "webhook"), so a top-level
+  // delivery.mode "webhook" now dispatches nowhere at all. Say so rather than
+  // let the run report success having delivered nothing.
+  if (webhookTargets.length === 0 && params.job?.delivery?.mode === "webhook") {
     params.logger.warn(
       {
         jobId: params.evt.jobId,
         deliveryTo: redactOptionalWebhookUrl(params.job.delivery.to),
       },
-      "cron: skipped webhook delivery, delivery.to must be a valid http(s) URL",
+      "cron: skipped webhook delivery, top-level delivery.mode=webhook is not dispatched; use delivery.mode=announce with delivery.completionDestination.mode=webhook",
     );
   }
 
