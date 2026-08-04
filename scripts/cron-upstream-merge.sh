@@ -526,6 +526,68 @@ sorted_export_names() {
   ' | LC_ALL=C sort -u
 }
 
+# Rank the discarded-upstream-work set. report_merge_ours_drift lists every file
+# whose upstream changes the driver threw away, undifferentiated: 24 lines on
+# 2026-08-03, of which only 5 touched the export surface. The other 19 are the
+# documented cost of forking a file, and an unranked list hides the 5 that matter
+# among them.
+#
+# This reports, it never gates. Measured on that merge, every export-adding file
+# had already been rebased and all 17 left open were internal-only — so a coverage
+# gate over the whole set would have manufactured 17 rebases and caught nothing.
+# Churn is how much upstream work each freeze discards, which is what makes an
+# internal-only file worth adopting deliberately rather than by rule.
+report_merge_ours_priority() {
+  local wt="$1" base="$2"
+  [ -s "$UM_TMP/um-merge-ours-drift-code.txt" ] || return 0
+  local f adds churn
+  while read -r f; do
+    # Export names are a TS-family concept; .kt/.swift stay in the drift report.
+    case "$f" in *.ts | *.tsx | *.mjs) ;; *) continue ;; esac
+    adds="$(LC_ALL=C comm -23 \
+      <(sorted_export_names "$wt" "$UPSTREAM_REF:$f") \
+      <(sorted_export_names "$wt" "$STAGE_OURS_REF:$f") | tr '\n' ' ')"
+    churn="$(git -C "$wt" diff --numstat "$base" "$UPSTREAM_REF" -- "$f" 2>/dev/null |
+      awk '{print $1 + $2; exit}')"
+    # Sortable prefix, stripped by the cut below: export-surface files first, then
+    # by how much upstream work the freeze discards.
+    if [ -n "$(printf '%s' "$adds" | tr -d '[:space:]')" ]; then
+      printf '0|%s|  MERGE-OURS-PRIORITY exports churn=%s %s: %s\n' \
+        "${churn:-0}" "${churn:-0}" "$f" "$adds"
+    else
+      printf '1|%s|  MERGE-OURS-PRIORITY internal churn=%s %s\n' "${churn:-0}" "${churn:-0}" "$f"
+    fi
+  done < "$UM_TMP/um-merge-ours-drift-code.txt" | LC_ALL=C sort -t'|' -k1,1 -k2,2nr | cut -d'|' -f3-
+}
+
+# The pre-merge work queue. scripts/resync-ledger.mjs classifies every
+# merge-relevant file from a read-only `git merge-tree` dry run — adopt / keep /
+# auto / keep-ours / relocate / resolve — and tiers the resolve set by risk. It
+# predicted exactly the 25 non-ui conflicts the 2026-08-03 resync then resolved by
+# hand, before anything was staged, and nothing called it.
+#
+# ui/ is fork-owned by policy (apply_fork_ui_ownership), so its 319 entries are
+# resolved by ownership rather than judgment; printing them would bury the code
+# set 13:1. The full ledger keeps them.
+report_resync_ledger() {
+  local head_ref="$1"
+  local md="$UM_TMP/um-resync-ledger.md"
+  if ! node "$MAIN/scripts/resync-ledger.mjs" --upstream "$UPSTREAM_REF" --head "$head_ref" \
+    --md "$md" >/dev/null 2>"$UM_TMP/um-ledger-err.txt"; then
+    # Never skip silently: an unclassified conflict set reads exactly like an empty
+    # one in the stage log, and the operator plans off this.
+    echo "RESYNC-QUEUE skipped (planner failed) — conflict set unclassified"
+    tail -n 3 "$UM_TMP/um-ledger-err.txt" 2>/dev/null
+    return 0
+  fi
+  local queue
+  queue="$(grep -E '^- \[' "$md" 2>/dev/null | grep -vE '^- \[[a-z]+/ui\] ' || true)"
+  if [ -n "$queue" ]; then
+    printf '%s\n' "$queue" | sed 's/^- /  RESYNC-QUEUE /'
+  fi
+  echo "RESYNC-QUEUE-COUNT $(printf '%s' "$queue" | grep -c .) code files need judgment (full ledger: $md)"
+}
+
 # The subset of merge=ours loss that breaks consumers instead of merely aging the
 # file: upstream changed the module's EXPORTED surface and the merge kept our copy,
 # so an upstream-adopted importer resolves against a stale module. tsgo is blind
@@ -859,8 +921,13 @@ stage_init() {
   echo "STAGE-PINS upstream=$UPSTREAM_REF baseline=$baseline_sha (frozen; later gates and the huey proof read these, not the live refs)"
   echo "--- conflict files (resolve in $WORKTREE, then commit, then run: finish-land / stage-finish) ---"
   git -C "$WORKTREE" status --porcelain | grep -E '^(DD|AU|UD|UA|DU|AA|UU)' || true
+  echo "--- classified work queue (read-only planner; ui/ resolved by ownership, omitted) ---"
+  report_resync_ledger "$baseline_sha"
   echo "--- merge=ours files upstream changed (rebase these onto upstream, re-apply the fork delta) ---"
   report_merge_ours_drift "$WORKTREE" "$base"
+  # Ranked view of the same set: the export-surface files are the ones that break
+  # an adopted consumer, and they are invisible in an unranked 24-line list.
+  report_merge_ours_priority "$WORKTREE" "$base"
   echo "--- upstream-new files absent from the merge (tsgo is blind to these) ---"
   local dropped_up; dropped_up="$(report_dropped_upstream_files "$WORKTREE" "$base")"
   printf '%s\n' "$dropped_up"

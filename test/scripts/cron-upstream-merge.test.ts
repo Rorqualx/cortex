@@ -133,6 +133,91 @@ afterEach(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
+/**
+ * Two protected files the fork also edited, so the driver fires on both: upstream
+ * adds an export to one and only changes internals in the other. That is the split
+ * the ranking exists to make visible — on 2026-08-03 the same list held 5 of the
+ * former and 19 of the latter with nothing distinguishing them.
+ */
+function buildRankedForkedMerge() {
+  writeFileSync(join(repo, "surface.ts"), "export const kept = 1;\n");
+  writeFileSync(join(repo, "guts.ts"), "export const kept = 1;\nconst internal = 2;\n");
+  writeFileSync(join(repo, ".gitattributes"), "surface.ts merge=ours\nguts.ts merge=ours\n");
+  git("add", "-A");
+  git("commit", "-qm", "base");
+  git("branch", "upstream");
+
+  git("checkout", "-q", "upstream");
+  writeFileSync(
+    join(repo, "surface.ts"),
+    "export const kept = 1;\nexport const addedUpstream = 9;\n",
+  );
+  writeFileSync(
+    join(repo, "guts.ts"),
+    "export const kept = 1;\nconst internal = 22;\nconst more = 3;\nconst evenMore = 4;\n",
+  );
+  git("commit", "-qam", "upstream edit");
+
+  git("checkout", "-q", "main");
+  writeFileSync(join(repo, "surface.ts"), "export const kept = 1;\nconst forkOnly = 3;\n");
+  writeFileSync(
+    join(repo, "guts.ts"),
+    "export const kept = 1;\nconst internal = 2;\nconst forkOnly = 5;\n",
+  );
+  git("commit", "-qam", "fork edit");
+  try {
+    git("merge", "--no-commit", "--no-ff", "upstream");
+  } catch {
+    /* the ours driver resolves both; the index still holds the merged result */
+  }
+}
+
+describe("report_merge_ours_priority", () => {
+  // The drift report writes the file list this reads, so both run in one shell.
+  const rankedOutput = (base: string) =>
+    callScriptFn(
+      `report_merge_ours_drift "${repo}" "${base}" >/dev/null; report_merge_ours_priority "${repo}" "${base}"`,
+    )
+      .stdout.split("\n")
+      .filter((line) => line.includes("MERGE-OURS-PRIORITY"));
+
+  it("ranks the export-surface file first and names the symbols upstream added", () => {
+    buildRankedForkedMerge();
+    const lines = rankedOutput(git("rev-parse", "main~1").trim());
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("exports");
+    expect(lines[0]).toContain("surface.ts");
+    // The symbol name is the actionable part: it says what an adopted importer
+    // will fail to resolve.
+    expect(lines[0]).toContain("addedUpstream");
+  });
+
+  it("reports an internally-edited file as internal, with its discarded churn", () => {
+    // Claiming an export change here would send the operator rebasing a file whose
+    // freeze is the documented cost of forking it.
+    buildRankedForkedMerge();
+    const lines = rankedOutput(git("rev-parse", "main~1").trim());
+    expect(lines[1]).toContain("internal");
+    expect(lines[1]).toContain("guts.ts");
+    expect(lines[1]).toMatch(/churn=[1-9]/);
+    expect(lines[1]).not.toContain("exports");
+  });
+});
+
+describe("report_resync_ledger", () => {
+  it("says so out loud when the planner cannot run", () => {
+    // UPSTREAM_MERGE_MAIN points at the fixture repo, which has no
+    // scripts/resync-ledger.mjs. An unclassified conflict set must never read like
+    // an empty one: the operator plans the whole merge off this list.
+    seedMain();
+    const { stdout, status } = callScriptFn("report_resync_ledger main");
+    expect(stdout).toContain("RESYNC-QUEUE skipped");
+    expect(stdout).toContain("conflict set unclassified");
+    // Reporting only — a missing planner must not fail the stage.
+    expect(status).toBe(0);
+  });
+});
+
 describe("report_merge_ours_drift", () => {
   it("reports a protected file whose upstream delta the merge discarded", () => {
     buildForkedMerge({
