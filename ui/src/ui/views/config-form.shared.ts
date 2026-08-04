@@ -61,21 +61,62 @@ export function pathKey(path: Array<string | number>): string {
   return path.filter((segment) => typeof segment === "string").join(".");
 }
 
+// Wildcard hints, split into segments and bucketed by segment count, built once
+// per hints object.
+//
+// hintForPath is called for every node of the config VALUE tree — the sensitive
+// scan in hasSensitiveConfigDataInner below walks the whole tree — and it used to
+// call Object.entries(hints) on each miss. That allocated an array of the entire
+// hint map per node and scanned it, so the cost was O(nodes x hints) with one
+// large allocation per node. Against a 2.75 MB uiHints payload that put 14.4 s of
+// self time in this function on a single settings section, in one synchronous
+// task that froze the UI (measured on the Agent Defaults > Models section, which
+// went from ~12 s to interactive).
+//
+// A WeakMap keyed by the hints object keeps this correct when hints are replaced:
+// a new object simply misses and rebuilds, and the old index is collectable.
+const wildcardHintIndexCache = new WeakMap<
+  ConfigUiHints,
+  Map<number, Array<{ segments: string[]; hint: ConfigUiHint }>>
+>();
+
+function wildcardHintIndex(hints: ConfigUiHints) {
+  const cached = wildcardHintIndexCache.get(hints);
+  if (cached) {
+    return cached;
+  }
+  const index = new Map<number, Array<{ segments: string[]; hint: ConfigUiHint }>>();
+  for (const [hintKey, hint] of Object.entries(hints)) {
+    if (!hintKey.includes("*")) {
+      continue;
+    }
+    const segments = hintKey.split(".");
+    const bucket = index.get(segments.length);
+    if (bucket) {
+      bucket.push({ segments, hint });
+    } else {
+      index.set(segments.length, [{ segments, hint }]);
+    }
+  }
+  wildcardHintIndexCache.set(hints, index);
+  return index;
+}
+
 export function hintForPath(path: Array<string | number>, hints: ConfigUiHints) {
   const key = pathKey(path);
   const direct = hints[key];
   if (direct) {
     return direct;
   }
+  // Bucketing by length makes the old per-candidate length check free, and most
+  // paths have no wildcard hints of their depth at all, so this usually returns
+  // without comparing a single segment.
+  const candidates = wildcardHintIndex(hints).get(path.length);
+  if (!candidates) {
+    return undefined;
+  }
   const segments = path.map(String);
-  for (const [hintKey, hint] of Object.entries(hints)) {
-    if (!hintKey.includes("*")) {
-      continue;
-    }
-    const hintSegments = hintKey.split(".");
-    if (hintSegments.length !== segments.length) {
-      continue;
-    }
+  for (const { segments: hintSegments, hint } of candidates) {
     let match = true;
     for (let i = 0; i < segments.length; i += 1) {
       if (hintSegments[i] !== "*" && hintSegments[i] !== segments[i]) {
