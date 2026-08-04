@@ -13,11 +13,8 @@ import {
   resolveContextEngine,
   resolveContextEngineOwnerPluginId,
 } from "../../context-engine/registry.js";
-import {
-  emitAgentItemEvent,
-  emitAgentPlanEvent,
-  registerAgentRunContext,
-} from "../../infra/agent-events.js";
+import { emitAgentItemEvent, emitAgentPlanEvent } from "../../infra/agent-events.js";
+import { registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { freezeDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";

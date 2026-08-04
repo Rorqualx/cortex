@@ -13,15 +13,6 @@ import {
   rotateAgentRunRegistryLifecycleGeneration,
 } from "./agent-run-registry.js";
 
-/** Plan event payload (planning-only retry path). */
-export type AgentPlanEventData = {
-  phase: "update";
-  title: string;
-  explanation?: string;
-  steps?: string[];
-  source?: string;
-};
-
 /** Approval event phase for request/resolution transitions. */
 type AgentApprovalEventPhase = "requested" | "resolved";
 /** Approval status after routing, user action, or delivery failure. */
@@ -200,14 +191,6 @@ export function rotateAgentEventLifecycleGeneration(): string {
     throw new AggregateError(errors, "Failed to retire stale agent lifecycle owners");
   }
   return lifecycleGeneration;
-}
-
-/** Test-only: clears all per-run agent event state so suites start from a clean registry. */
-export function resetAgentRunContextForTest() {
-  const state = getAgentEventState();
-  state.runContextById.clear();
-  state.seqByRun.clear();
-  getAgentRunContextOwners(state).clear();
 }
 
 function enrichAgentEvent(

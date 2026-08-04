@@ -533,9 +533,9 @@ export class SettingsManager {
   }
 
   setPreemptOnSteer(enabled: boolean): void {
-    this.globalSettings.preemptOnSteer = enabled;
-    this.markModified("preemptOnSteer");
-    this.save();
+    this.scopes.global.settings.preemptOnSteer = enabled;
+    this.markModified("global", "preemptOnSteer");
+    this.save("global");
   }
 
   getTheme(): string | undefined {
