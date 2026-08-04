@@ -2,6 +2,15 @@
 // layout through these helpers so pages cannot drift back into bespoke
 // card/pill markup. Styles live in ui/src/styles/settings.css; rules in
 // ui/docs/settings-design.md.
+//
+// The stylesheet is imported HERE rather than from ui/src/styles.css: nothing
+// imported it at all, so all 85 .settings-* rules were absent from every build
+// and each surface using these helpers rendered structurally unstyled (the
+// Channels list was a full-width box with an unconstrained tile icon). Importing
+// it beside the helpers ties the two together, and keeps it in the lazy
+// per-route chunk — at ~5 KiB gzip the global sheet would exceed the 78 KiB
+// startup CSS budget enforced by check-control-ui-performance.
+import "../../styles/settings.css";
 import "@awesome.me/webawesome/dist/components/radio/radio.js";
 import "@awesome.me/webawesome/dist/components/radio-group/radio-group.js";
 import "@awesome.me/webawesome/dist/components/switch/switch.js";
