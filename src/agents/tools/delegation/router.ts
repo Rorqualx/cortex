@@ -201,6 +201,91 @@ const STATIC_MODELS: Record<string, string[]> = {
   moonshot: ["kimi-k2.6", "kimi-k2.5", "moonshot-v1-128k-vision-preview"],
 };
 
+// ---------------------------------------------------------------------------
+// Training-free domain classification (from arXiv research finding #8)
+// ---------------------------------------------------------------------------
+//
+// Lightweight heuristic prompt-domain classifier. No model training needed —
+// token-distribution statistics are sufficient for easy domains (code, math,
+// natural language) and robust against adversarial/mixed-intent prompts.
+// Falls back to "unknown" (no routing effect) when confidence is low.
+
+export type PromptDomain = "code" | "math" | "text" | "unknown";
+
+const DOMAIN_CONFIDENCE_THRESHOLD = 0.55;
+
+// Symbol sets for classification. Counts are compared as ratios against prompt length.
+const CODE_SYMBOLS =
+  /(?:=>|<=|>=|!=|===|==|&&|\|\||\+\+|--|->|<<|>>|\.{3})|[{}()\[\];=:<>\\|+\-*/%]/g;
+const CODE_KEYWORDS =
+  /\b(?:function|class|import|export|const|let|var|return|def|if|else|elif|for|while|try|catch|finally|throw|new|async|await|yield|struct|impl|pub|fn|enum|interface|extends|implements|package|namespace|typedef|sizeof|static|void|int|char|bool|string|float|double|null|undefined|true|false|self|this|super)\b/gi;
+const MATH_NOTATION =
+  /(?:\\sum|\\int|\\frac|\\sqrt|\\partial|\\nabla|\\prod|\\lim|\\infty|\\alpha|\\beta|\\gamma|\\delta|\\theta|\\lambda|\\mu|\\sigma|\\omega|\\cdot|\\leq|\\geq|\\neq|\\approx|\\equiv|\\subset|\\supset|\\in|\\forall|\\exists|\\rightarrow|\\Rightarrow|\\mapsto)/g;
+const MATH_PATTERNS =
+  /(?:\^\d|_\d|\^[a-z]|_[a-z]|\b\d+\s*[*/+\-=]\s*\d+\b|\b\d+x\b|\|\||\bd\b.*\bdx\b)/g;
+const NATURAL_LANGUAGE =
+  /\b(?:the|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|may|might|can|shall|what|which|who|whom|whose|that|this|these|those|a|an|and|or|but|if|because|as|until|while|of|at|by|for|with|about|against|between|into|through|during|before|after|above|below|from|up|down|in|out|on|off|over|under|again|further|then|once)\b/gi;
+
+/**
+ * Classify the domain of a prompt using token-distribution statistics.
+ * Returns the detected domain and a confidence score [0–1].
+ * When no prompt is provided or signals are weak, returns "unknown".
+ */
+export function classifyDomain(prompt: string | undefined): {
+  domain: PromptDomain;
+  confidence: number;
+} {
+  if (!prompt || prompt.trim().length < 20) {
+    return { domain: "unknown", confidence: 0 };
+  }
+  const text = prompt.slice(0, 8_000); // cap classification window
+  const len = Math.max(text.length, 1);
+
+  const codeSymRatio = (text.match(CODE_SYMBOLS) ?? []).length / len;
+  const codeKwRatio = (text.match(CODE_KEYWORDS) ?? []).length / len;
+  const mathNotationRatio = (text.match(MATH_NOTATION) ?? []).length / len;
+  const mathPatternRatio = (text.match(MATH_PATTERNS) ?? []).length / len;
+  const nlRatio = (text.match(NATURAL_LANGUAGE) ?? []).length / len;
+
+  const codeScore = codeSymRatio * 15 + codeKwRatio * 40;
+  const mathScore = mathNotationRatio * 80 + mathPatternRatio * 30;
+  const textScore = nlRatio * 12;
+
+  const maxScore = Math.max(codeScore, mathScore, textScore);
+  if (maxScore < 0.5) {
+    return { domain: "unknown", confidence: 0 };
+  }
+
+  const total = codeScore + mathScore + textScore;
+  const confidence = total > 0 ? maxScore / total : 0;
+
+  let domain: PromptDomain;
+  if (maxScore === codeScore) {
+    domain = "code";
+  } else if (maxScore === mathScore) {
+    domain = "math";
+  } else {
+    domain = "text";
+  }
+
+  return { domain, confidence: Math.min(confidence, 1) };
+}
+
+/**
+ * Determine whether domain classification should override the tier.
+ * Math/reasoning content benefits from backbone capacity even in execution kinds.
+ */
+function effectiveTier(
+  kind: DelegationKind,
+  domain: PromptDomain,
+  confidence: number,
+): "backbone" | "execution" {
+  if (domain === "math" && confidence >= DOMAIN_CONFIDENCE_THRESHOLD) {
+    return "backbone";
+  }
+  return ROLE_TIER[kind];
+}
+
 export type RouteRequest = {
   kind: DelegationKind;
   cfg?: OpenClawConfig | undefined;
@@ -215,6 +300,13 @@ export type RouteRequest = {
    * order (zai → kimi → deepseek → moonshot).
    */
   effectiveCostPerMtok?: Record<string, number> | undefined;
+  /**
+   * Optional: prompt text for training-free domain classification. When provided,
+   * the router classifies the prompt's domain (code/math/text) and may upgrade
+   * an execution-tier kind to backbone for math-heavy prompts. Falls back to
+   * existing config-driven routing when absent or confidence is low.
+   */
+  prompt?: string | undefined;
 };
 
 export type Route = {
@@ -284,7 +376,12 @@ function orderedProviders(
  * 3. Provider default (PREFERRED[default]) — legacy catch-all.
  * 4. First configured model.
  */
-function pickModel(providerId: string, kind: DelegationKind, models: string[]): string {
+function pickModel(
+  providerId: string,
+  kind: DelegationKind,
+  models: string[],
+  tierOverride?: "backbone" | "execution",
+): string {
   // providerId is a dynamic string, so go through the string-keyed view rather
   // than PREFERRED's literal-keyed table.
   const providerPrefs = PREFERRED_BY_PROVIDER[providerId];
@@ -292,7 +389,8 @@ function pickModel(providerId: string, kind: DelegationKind, models: string[]): 
   const explicit = providerPrefs?.[kind];
   if (explicit && models.includes(explicit)) return explicit;
   // 2. Tier-based preference (backbone → strongest, execution → fastest)
-  const tierModel = TIER_DEFAULT[providerId]?.[ROLE_TIER[kind]];
+  const tier = tierOverride ?? ROLE_TIER[kind];
+  const tierModel = TIER_DEFAULT[providerId]?.[tier];
   if (tierModel && models.includes(tierModel)) return tierModel;
   // 3. Provider default
   const def = providerPrefs?.default;
@@ -309,6 +407,11 @@ function pickModel(providerId: string, kind: DelegationKind, models: string[]): 
  */
 export function resolveRoute(req: RouteRequest): Route {
   const costMap = req.effectiveCostPerMtok;
+  // Training-free domain classification: when a prompt is provided, classify
+  // its domain and compute an effective tier override. Math-heavy prompts get
+  // backbone models even for execution kinds (capacity helps reasoning).
+  const { domain, confidence } = classifyDomain(req.prompt);
+  const tierOverride = effectiveTier(req.kind, domain, confidence);
   const providers = orderedProviders(req.cfg, req.provider, costMap);
   const primaryProvider =
     req.provider && providers.includes(req.provider) ? req.provider : providers[0];
@@ -327,7 +430,9 @@ export function resolveRoute(req: RouteRequest): Route {
     const models = configuredModels(req.cfg, provider);
     if (models.length === 0) continue;
     const picked =
-      provider === primaryProvider && req.model ? req.model : pickModel(provider, req.kind, models);
+      provider === primaryProvider && req.model
+        ? req.model
+        : pickModel(provider, req.kind, models, tierOverride);
     push(fast, provider, picked);
     // Same-provider secondary retry, inserted right after the primary so a
     // transient primary failure retries on a sibling before crossing providers.

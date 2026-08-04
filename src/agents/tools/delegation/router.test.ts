@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import {
+  classifyDomain,
   recordProviderError,
   recordProviderLatency,
   resetLatencyState,
@@ -277,5 +278,69 @@ describe("delegation router adaptive latency balancing", () => {
     recordProviderError(first!);
     const reordered = providerOrder("code");
     expect(reordered.indexOf(second!)).toBeLessThan(reordered.indexOf(first!));
+  });
+});
+
+describe("training-free domain classification", () => {
+  it("returns unknown for empty or short prompts", () => {
+    expect(classifyDomain(undefined).domain).toBe("unknown");
+    expect(classifyDomain("").domain).toBe("unknown");
+    expect(classifyDomain("short").domain).toBe("unknown");
+  });
+
+  it("classifies code prompts correctly", () => {
+    const codePrompt = `
+      import { useState } from 'react';
+      export function Counter() {
+        const [count, setCount] = useState(0);
+        return <button onClick={() => setCount(count + 1)}>Count: {count}</button>;
+      }
+    `;
+    const result = classifyDomain(codePrompt);
+    expect(result.domain).toBe("code");
+    expect(result.confidence).toBeGreaterThan(0.5);
+  });
+
+  it("classifies math prompts correctly", () => {
+    const mathPrompt = `
+      Prove that the integral \\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}.
+      Use the substitution y = x^2 and the Gamma function \\Gamma(z) = \\int_0^\\infty t^{z-1} e^{-t} dt.
+      The partial derivative \\partial f / \\partial x must converge.
+    `;
+    const result = classifyDomain(mathPrompt);
+    expect(result.domain).toBe("math");
+    expect(result.confidence).toBeGreaterThan(0.5);
+  });
+
+  it("classifies natural text prompts correctly", () => {
+    const textPrompt = `
+      Please write a summary of the meeting notes from yesterday's discussion.
+      The team talked about the project timeline and what the next steps should
+      be. We need to coordinate with the design team before proceeding further.
+    `;
+    const result = classifyDomain(textPrompt);
+    expect(result.domain).toBe("text");
+    expect(result.confidence).toBeGreaterThan(0.3);
+  });
+
+  it("upgrades execution kind to backbone for math-heavy prompts", () => {
+    const mathPrompt =
+      "Prove that \\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2} using \\Gamma(z) = \\int_0^\\infty t^{z-1} e^{-t} dt and \\partial derivatives.";
+    const codeRoute = resolveRoute({ kind: "code", cfg: FULL });
+    const mathAwareRoute = resolveRoute({ kind: "code", cfg: FULL, prompt: mathPrompt });
+    // Without domain hint: execution tier → glm-4.7
+    expect(codeRoute.primary.model).toBe("glm-4.7");
+    // With math domain: upgraded to backbone → glm-5.1
+    expect(mathAwareRoute.primary.model).toBe("glm-5.1");
+  });
+
+  it("does not change routing when prompt is absent or domain is unknown", () => {
+    const withoutPrompt = resolveRoute({ kind: "code", cfg: FULL });
+    const withTextPrompt = resolveRoute({
+      kind: "code",
+      cfg: FULL,
+      prompt: "Please help me understand the basics of this system.",
+    });
+    expect(withoutPrompt.primary).toEqual(withTextPrompt.primary);
   });
 });
