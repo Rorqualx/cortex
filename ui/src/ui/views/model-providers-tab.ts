@@ -26,13 +26,15 @@ function renderConfiguredCard(
 ): TemplateResult {
   const probe = props.state.probe[card.id];
   const keyed = card.hasConfigApiKey || Boolean(card.apiKey);
+  // Prefer the full-catalog count: a discovery-backed provider declares no
+  // models in config, so card.modelCount is 0 even with a live catalog.
+  const count = props.state.catalogCounts[card.id.toLowerCase()] ?? card.modelCount;
   return html`
     <div class="settings-row">
       <div class="settings-row__text">
         <span class="settings-row__title">${card.displayName}</span>
         <span class="settings-row__desc">
-          ${card.modelCount} ${card.modelCount === 1 ? "model" : "models"} ·
-          ${keyed ? "API key set" : "no API key"}
+          ${count} ${count === 1 ? "model" : "models"} · ${keyed ? "API key set" : "no API key"}
           ${probe ? html` · <em>${probe.ok ? "✓" : "✕"} ${probe.text}</em>` : nothing}
         </span>
       </div>

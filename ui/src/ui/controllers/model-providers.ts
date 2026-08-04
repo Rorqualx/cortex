@@ -22,6 +22,13 @@ export type ModelProvidersState = {
   cards: ModelProviderCard[];
   /** Providers that support an API key and are not configured yet — the dropdown. */
   options: ProviderOption[];
+  /**
+   * Usable model count per provider, from the FULL catalog rather than the
+   * configured subset. A provider on `discovery: "refreshable"` declares no
+   * models in config and gets them from model_catalog_discovered, so the
+   * configured view reports 0 — qwen read "0 models" with 156 live and usable.
+   */
+  catalogCounts: Record<string, number>;
   selectedProvider: string;
   keyDraft: string;
   busy: boolean;
@@ -36,6 +43,7 @@ export function createModelProvidersState(): ModelProvidersState {
     error: null,
     cards: [],
     options: [],
+    catalogCounts: {},
     selectedProvider: "",
     keyDraft: "",
     busy: false,
@@ -106,6 +114,16 @@ export async function loadModelProviders(host: ProvidersHost): Promise<void> {
       costByProvider: null,
     });
     state.options = buildUnconfiguredProviderOptions(allModels, config.providerIds);
+    const counts: Record<string, number> = {};
+    for (const entry of allModels) {
+      const id = String(entry.provider ?? "")
+        .trim()
+        .toLowerCase();
+      if (id) {
+        counts[id] = (counts[id] ?? 0) + 1;
+      }
+    }
+    state.catalogCounts = counts;
   } catch (err) {
     state.error = err instanceof Error ? err.message : String(err);
   } finally {
