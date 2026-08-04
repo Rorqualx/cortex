@@ -58,6 +58,7 @@ import {
   loadModelAuthStatusState,
   type ModelAuthStatusState,
 } from "./controllers/model-auth-status.ts";
+import { loadModelProviders } from "./controllers/model-providers.ts";
 import { loadModels } from "./controllers/models.ts";
 import { loadNodes, type NodesState } from "./controllers/nodes.ts";
 import { loadPresence, type PresenceState } from "./controllers/presence.ts";
@@ -454,6 +455,14 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
             refreshConfigModelCatalog(app),
           ]).finally(() => host.requestUpdate?.());
           await primaryRefresh;
+        }
+        break;
+      case "modelProviders":
+        {
+          // Cards read provider ids and api-key presence out of config, so the
+          // config load has to land before the provider fetch rebuilds them.
+          await loadConfig(app);
+          await loadModelProviders(app as never);
         }
         break;
       case "communications":

@@ -18,6 +18,7 @@ import type { CronModelSuggestionsState, CronState } from "./controllers/cron.ts
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
+import type { ModelProvidersState } from "./controllers/model-providers.ts";
 import type { SkillForgeState } from "./controllers/skill-forge.ts";
 import type {
   ClawHubSearchResult,
@@ -511,6 +512,8 @@ export type AppViewState = ScrollHost &
     healthError: string | null;
     modelAuthStatusLoading: boolean;
     modelAuthStatusResult: ModelAuthStatusResult | null;
+    /** Model Providers tab state (cards, dropdown options, key draft, probe). */
+    modelProviders?: ModelProvidersState;
     modelAuthStatusError: string | null;
     debugLoading: boolean;
     debugStatus: StatusSummary | null;

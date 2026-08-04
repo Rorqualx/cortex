@@ -145,6 +145,12 @@ import {
   updateExecApprovalsFormValue,
 } from "./controllers/exec-approvals.ts";
 import { loadLogs } from "./controllers/logs.ts";
+import {
+  createModelProvidersState,
+  loadModelProviders,
+  probeProvider,
+  saveProviderApiKey,
+} from "./controllers/model-providers.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import {
@@ -201,7 +207,6 @@ import {
 import { resolveAgentArgPath } from "./path-arg.ts";
 import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
 import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
-import "./components/dashboard-header.ts";
 import {
   buildAgentMainSessionKey,
   isSessionKeyTiedToAgent,
@@ -210,6 +215,7 @@ import {
   parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
 } from "./session-key.ts";
+import "./components/dashboard-header.ts";
 import type { PendingEdit } from "./sidebar-content.ts";
 import {
   getLocalAgentAvatarOverride,
@@ -251,10 +257,11 @@ import {
 import { renderDreamingRestartConfirmation } from "./views/dreaming-restart-confirmation.ts";
 import { renderDreaming, type DreamingAgentOption } from "./views/dreaming.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
+import { renderLoginGate } from "./views/login-gate.ts";
 // Self-registering <openclaw-exec-approval> element (upstream modal-queue shape).
 import "./views/exec-approval.ts";
-import { renderLoginGate } from "./views/login-gate.ts";
 import { renderMcp } from "./views/mcp.ts";
+import { renderModelProvidersTab } from "./views/model-providers-tab.ts";
 import { renderOverview } from "./views/overview.ts";
 import { createPanelRefreshStatus, failPanelRefresh } from "./views/panel-refresh-status.ts";
 import { renderPixelAgentsStrip } from "./views/pixel-office.ts";
@@ -2960,6 +2967,30 @@ export function renderApp(state: AppViewState) {
                 ${headerError ? html`<div class="pill danger">${headerError}</div>` : nothing}
               </div>
             </section>`}
+        ${state.tab === "modelProviders"
+          ? renderModelProvidersTab({
+              state: (state.modelProviders ??= createModelProvidersState()),
+              connected: state.connected,
+              canMutate: state.connected,
+              onSelectProvider: (provider: string) => {
+                const mp = (state.modelProviders ??= createModelProvidersState());
+                mp.selectedProvider = provider;
+                mp.notice = null;
+                state.requestUpdate?.();
+              },
+              onKeyDraftChange: (value: string) => {
+                const mp = (state.modelProviders ??= createModelProvidersState());
+                mp.keyDraft = value;
+                state.requestUpdate?.();
+              },
+              onSave: () => {
+                const mp = (state.modelProviders ??= createModelProvidersState());
+                void saveProviderApiKey(state, mp.selectedProvider, mp.keyDraft);
+              },
+              onTest: (provider: string) => void probeProvider(state, provider),
+              onRefresh: () => void loadModelProviders(state),
+            })
+          : nothing}
         ${state.tab === "overview"
           ? renderOverview({
               connected: state.connected,

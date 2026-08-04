@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 575556,
-  "reason": "2026-07-28 upstream resync step 2 (350 commits, ffec7731a4a -> c3713317b86): +20338 B startup JS (+3.7%) from upstream web-component and shared-helper code entering the Control UI initial graph; the merge changed no ui/ file. Recorded on huey (Linux, CI truth). Owner-approved.",
-  "updatedAt": "2026-08-01"
+  "startupJsGzipBytes": 578075,
+  "reason": "2026-08-04: Model Providers tab (controllers/model-providers.ts + views/model-providers-tab.ts) enters the startup graph; +2519 B gzip (+0.4%). The provider data layer and view already shipped in the bundle — only the container and tab wiring are new. Recorded on macOS dev build.",
+  "updatedAt": "2026-08-04"
 }

@@ -51,6 +51,7 @@ export type Tab =
   | "mcp"
   | "infrastructure"
   | "aiAgents"
+  | "modelProviders"
   | "debug"
   | "logs"
   | "dreams";
@@ -65,6 +66,7 @@ export const SETTINGS_TABS = [
   "vault",
   "infrastructure",
   "aiAgents",
+  "modelProviders",
   "debug",
   "logs",
 ] as const satisfies readonly Tab[];
@@ -93,6 +95,7 @@ const TAB_PATHS: Record<Tab, string> = {
   mcp: "/mcp",
   infrastructure: "/infrastructure",
   aiAgents: "/ai-agents",
+  modelProviders: "/settings/model-providers",
   debug: "/debug",
   logs: "/logs",
   dreams: "/dreaming",
@@ -263,6 +266,8 @@ export function iconForTab(tab: Tab): IconName {
       return "globe";
     case "aiAgents":
       return "brain";
+    case "modelProviders":
+      return "plug";
     case "debug":
       return "bug";
     case "logs":
