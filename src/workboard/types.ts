@@ -69,15 +69,6 @@ export const WORKBOARD_LINK_TYPES = [
 ] as const;
 export const WORKBOARD_PROOF_STATUSES = ["passed", "failed", "skipped", "unknown"] as const;
 export const WORKBOARD_TEMPLATE_IDS = ["bugfix", "docs", "release", "pr_review", "plugin"] as const;
-export const WORKBOARD_DIAGNOSTIC_KINDS = [
-  "stranded_ready",
-  "running_without_heartbeat",
-  "blocked_too_long",
-  "repeated_failures",
-  "missing_proof",
-  "orphaned_session",
-] as const;
-export const WORKBOARD_DIAGNOSTIC_SEVERITIES = ["warning", "error", "critical"] as const;
 export const WORKBOARD_NOTIFICATION_KINDS = ["completed", "failed", "stale"] as const;
 export const WORKBOARD_BOARD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 
@@ -95,8 +86,6 @@ export type WorkboardAttemptStatus = (typeof WORKBOARD_ATTEMPT_STATUSES)[number]
 export type WorkboardLinkType = (typeof WORKBOARD_LINK_TYPES)[number];
 export type WorkboardProofStatus = (typeof WORKBOARD_PROOF_STATUSES)[number];
 export type WorkboardTemplateId = (typeof WORKBOARD_TEMPLATE_IDS)[number];
-export type WorkboardDiagnosticKind = (typeof WORKBOARD_DIAGNOSTIC_KINDS)[number];
-export type WorkboardDiagnosticSeverity = (typeof WORKBOARD_DIAGNOSTIC_SEVERITIES)[number];
 export type WorkboardNotificationKind = (typeof WORKBOARD_NOTIFICATION_KINDS)[number];
 
 export type WorkboardExecution = {
@@ -214,17 +203,6 @@ export type WorkboardDiagnosticAction = {
   label: string;
 };
 
-export type WorkboardDiagnostic = {
-  kind: WorkboardDiagnosticKind;
-  severity: WorkboardDiagnosticSeverity;
-  title: string;
-  detail: string;
-  firstSeenAt: number;
-  lastSeenAt: number;
-  count: number;
-  actions: WorkboardDiagnosticAction[];
-};
-
 export type WorkboardNotification = {
   id: string;
   kind: WorkboardNotificationKind;
@@ -334,118 +312,36 @@ export type WorkboardResearchCategory = (typeof WORKBOARD_RESEARCH_CATEGORIES)[n
 export const WORKBOARD_RESEARCH_OUTCOMES = ["implemented", "skipped", "failed"] as const;
 export type WorkboardResearchOutcome = (typeof WORKBOARD_RESEARCH_OUTCOMES)[number];
 
-/**
- * Deterministic lifecycle for architecture / long-horizon cards, advanced one
- * step per cycle by the "Improvement Lab — Deep Pipeline" cron. Quick-wins skip
- * this and go straight to `ready`. When `stage` reaches `implement` the card is
- * flipped to `ready` and the 06:00 Implementation cron lands it like a quick-win.
- */
-export const WORKBOARD_RESEARCH_STAGES = [
-  "research",
-  "rescope",
-  "design",
-  "plan",
-  "probe",
-  "test",
-  "review",
-  "implement",
-] as const;
-export type WorkboardResearchStage = (typeof WORKBOARD_RESEARCH_STAGES)[number];
+// Single definition lives in @openclaw/workboard-contract; re-export rather than
+// keep a near-identical copy that re-clashes on every upstream merge. Imported as
+// well as re-exported because `export ... from` does not bind the names locally,
+// and this file still builds types on top of WorkboardCard/WorkboardMetadata.
+import {
+  WORKBOARD_DIAGNOSTIC_KINDS,
+  WORKBOARD_DIAGNOSTIC_SEVERITIES,
+  WORKBOARD_RESEARCH_STAGES,
+  type WorkboardCard,
+  type WorkboardDiagnostic,
+  type WorkboardDiagnosticKind,
+  type WorkboardDiagnosticSeverity,
+  type WorkboardMetadata,
+  type WorkboardResearchMeta,
+  type WorkboardResearchStage,
+  type WorkboardResearchStageEntry,
+} from "@openclaw/workboard-contract";
 
-/** One recorded stage transition, kept short for /lab display + resumability. */
-export type WorkboardResearchStageEntry = {
-  stage: WorkboardResearchStage;
-  at: number;
-  note?: string;
-};
-
-/**
- * Provenance + tracking for a card ingested from the daily-research pipeline
- * reports (`memory/reports/*.md`). Steady-state runtime only reads this; the
- * ingest writer in `research-ingest.ts` owns it. `userTouched` is set whenever
- * an operator edits the card so re-sync never clobbers manual triage.
- */
-export type WorkboardResearchMeta = {
-  /** Report cycle date the item came from, `YYYY-MM-DD`. */
-  cycleDate: string;
-  /** Per-day item id, e.g. `QW-1`, `ARCH-2`, `F-3`, `WATCH-1`. */
-  itemId: string;
-  category: WorkboardResearchCategory;
-  complexity?: string;
-  risk?: string;
-  sourcePaper?: string;
-  sourceFindingRef?: string;
-  nextSteps?: string[];
-  outcome?: WorkboardResearchOutcome;
-  commit?: string;
-  /**
-   * Deep-pipeline position for architecture / long-horizon cards. Absent for
-   * quick-wins/findings/watch. Once `stageLog` is non-empty the pipeline owns the
-   * card and re-sync preserves its status/stage/notes (see research-ingest.ts).
-   */
-  stage?: WorkboardResearchStage;
-  /** Append-only trail of stage transitions (most recent last). */
-  stageLog?: WorkboardResearchStageEntry[];
-  /** Operator edited this card; re-sync must preserve status/assignee/nextSteps. */
-  userTouched?: boolean;
-  /**
-   * Checkpoint-preservation gate (RSIBench-Data, arXiv:2607.25886):
-   * baseline metric captured before the probe stage ran. When present,
-   * advancing from `probe` to `test` requires `probeResult` to beat this
-   * baseline by ≥ `promotionThresholdDelta` (from skill-forge config).
-   * If the probe doesn't improve, the card walks back to `design`.
-   */
-  probeBaseline?: number;
-  /**
-   * Metric captured after the probe stage ran. Compared against
-   * `probeBaseline` to decide whether to advance to `test` or revert
-   * to `design`.
-   */
-  probeResult?: number;
-};
-
-export type WorkboardMetadata = {
-  attempts?: WorkboardRunAttempt[];
-  comments?: WorkboardComment[];
-  links?: WorkboardLink[];
-  proof?: WorkboardProof[];
-  artifacts?: WorkboardArtifact[];
-  attachments?: WorkboardAttachment[];
-  workerLogs?: WorkboardWorkerLog[];
-  workerProtocol?: WorkboardWorkerProtocol;
-  automation?: WorkboardAutomation;
-  claim?: WorkboardClaim;
-  diagnostics?: WorkboardDiagnostic[];
-  notifications?: WorkboardNotification[];
-  templateId?: WorkboardTemplateId;
-  archivedAt?: number;
-  stale?: WorkboardStaleState;
-  lifecycleStatusSourceUpdatedAt?: number;
-  failureCount?: number;
-  research?: WorkboardResearchMeta;
-};
-
-export type WorkboardCard = {
-  id: string;
-  title: string;
-  notes?: string;
-  status: WorkboardStatus;
-  section?: WorkboardSection;
-  priority: WorkboardPriority;
-  labels: string[];
-  agentId?: string;
-  sessionKey?: string;
-  runId?: string;
-  taskId?: string;
-  sourceUrl?: string;
-  execution?: WorkboardExecution;
-  position: number;
-  createdAt: number;
-  updatedAt: number;
-  startedAt?: number;
-  completedAt?: number;
-  events?: WorkboardEvent[];
-  metadata?: WorkboardMetadata;
+export {
+  WORKBOARD_DIAGNOSTIC_KINDS,
+  WORKBOARD_DIAGNOSTIC_SEVERITIES,
+  WORKBOARD_RESEARCH_STAGES,
+  type WorkboardCard,
+  type WorkboardDiagnostic,
+  type WorkboardDiagnosticKind,
+  type WorkboardDiagnosticSeverity,
+  type WorkboardMetadata,
+  type WorkboardResearchMeta,
+  type WorkboardResearchStage,
+  type WorkboardResearchStageEntry,
 };
 
 export type WorkboardListResult = {

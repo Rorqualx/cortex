@@ -340,6 +340,31 @@ export const WORKBOARD_RESEARCH_OUTCOMES = ["implemented", "skipped", "failed"] 
 export type WorkboardResearchOutcome = (typeof WORKBOARD_RESEARCH_OUTCOMES)[number];
 
 /**
+ * Deep-pipeline stages for architecture / long-horizon cards, advanced one
+ * step per cycle by the "Improvement Lab — Deep Pipeline" cron. Quick-wins skip
+ * this and go straight to `ready`. When `stage` reaches `implement` the card is
+ * flipped to `ready` and the 06:00 Implementation cron lands it like a quick-win.
+ */
+export const WORKBOARD_RESEARCH_STAGES = [
+  "research",
+  "rescope",
+  "design",
+  "plan",
+  "probe",
+  "test",
+  "review",
+  "implement",
+] as const;
+export type WorkboardResearchStage = (typeof WORKBOARD_RESEARCH_STAGES)[number];
+
+/** One recorded stage transition, kept short for /lab display + resumability. */
+export type WorkboardResearchStageEntry = {
+  stage: WorkboardResearchStage;
+  at: number;
+  note?: string;
+};
+
+/**
  * Provenance + tracking for a card ingested from the daily-research pipeline
  * reports (`memory/reports/*.md`). Steady-state runtime only reads this; the
  * ingest writer in `research-ingest.ts` owns it. `userTouched` is set whenever
@@ -358,8 +383,30 @@ export type WorkboardResearchMeta = {
   nextSteps?: string[];
   outcome?: WorkboardResearchOutcome;
   commit?: string;
+  /**
+   * Deep-pipeline position for architecture / long-horizon cards. Absent for
+   * quick-wins/findings/watch. Once `stageLog` is non-empty the pipeline owns the
+   * card and re-sync preserves its status/stage/notes (see research-ingest.ts).
+   */
+  stage?: WorkboardResearchStage;
+  /** Append-only trail of stage transitions (most recent last). */
+  stageLog?: WorkboardResearchStageEntry[];
   /** Operator edited this card; re-sync must preserve status/assignee/nextSteps. */
   userTouched?: boolean;
+  /**
+   * Checkpoint-preservation gate (RSIBench-Data, arXiv:2607.25886):
+   * baseline metric captured before the probe stage ran. When present,
+   * advancing from `probe` to `test` requires `probeResult` to beat this
+   * baseline by >= `promotionThresholdDelta` (from skill-forge config).
+   * If the probe doesn't improve, the card walks back to `design`.
+   */
+  probeBaseline?: number;
+  /**
+   * Metric captured after the probe stage ran. Compared against
+   * `probeBaseline` to decide whether to advance to `test` or revert
+   * to `design`.
+   */
+  probeResult?: number;
 };
 
 export type WorkboardMetadata = {
