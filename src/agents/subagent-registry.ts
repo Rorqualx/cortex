@@ -428,10 +428,10 @@ const subagentListener = createSubagentRegistryListener({
 
 const subagentRunManager = createSubagentRunManager({
   runs: subagentRuns,
+  getRunsForChildSession: getSubagentRunsForChildSession,
   resumedRuns,
-  endedHookInFlightRunIds,
-  loadAgentRuntimePluginRegistryHandle: (args) =>
-    subagentRegistryDeps.loadAgentRuntimePluginRegistryHandle?.(args),
+  clearPendingLifecycleTimeout,
+  resolveSubagentTask: findSubagentTaskForRun,
   persist: persistSubagentRuns,
   persistOrThrow: persistSubagentRunsOrThrow,
   callGateway: async <T>(request: Parameters<typeof callGateway>[0]) => {
