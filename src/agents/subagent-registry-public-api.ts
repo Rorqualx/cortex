@@ -46,6 +46,7 @@ export function createSubagentRegistryPublicApi(config: {
     requesterSessionKey: string;
     leaseId: string;
     now?: number;
+    staleFlagsByRunId?: ReadonlyMap<string, readonly string[]>;
   }) {
     restoreOnce();
     const leased = leasePendingAgentSteeringItemsFromSubagentRuns({ ...params, runs });

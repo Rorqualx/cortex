@@ -418,4 +418,28 @@ describe("agent steering queue", () => {
     const title = leased?.prompt.split("\n").find((line) => line.startsWith("1. "));
     expect(title).toBe(`1. ${"x".repeat(499)}`);
   });
+
+  it("surfaces stale-step flags in the steering prompt when provided", () => {
+    const runs = runMap([makeRun({ runId: "run-1" }), makeRun({ runId: "run-2" })]);
+
+    const staleFlagsByRunId = new Map<string, readonly string[]>([
+      ["run-1", ["step-3: file lookup", "step-4: compilation"]],
+    ]);
+
+    const leased = leasePendingAgentSteeringItemsFromSubagentRuns({
+      runs,
+      requesterSessionKey,
+      leaseId: "lease-stale",
+      now: 5_000,
+      staleFlagsByRunId,
+    });
+
+    expect(leased?.runIds).toEqual(["run-1", "run-2"]);
+    // run-1 has stale flags
+    expect(leased?.prompt).toContain("stale steps: step-3: file lookup, step-4: compilation");
+    expect(leased?.prompt).toContain("skip or re-evaluate these in-flight steps");
+    // run-2 has no stale flags — no stale-steps line
+    const run2Section = leased?.prompt.split("2. ")[1] ?? "";
+    expect(run2Section).not.toContain("stale steps:");
+  });
 });

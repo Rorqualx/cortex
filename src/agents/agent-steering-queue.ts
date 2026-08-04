@@ -27,6 +27,8 @@ type AgentSteeringQueueItem = {
   runId: string;
   entry: SubagentRunRecord;
   payload: PendingFinalDeliveryPayload;
+  /** In-flight tool-plan steps invalidated by this steering item (cooperative stale-flag mechanism). */
+  staleFlags?: readonly string[];
 };
 
 /** A batch of leased subagent completions plus the prompt to inject upstream. */
@@ -95,6 +97,8 @@ export function listPendingAgentSteeringItemsFromSubagentRuns(params: {
   runs: Map<string, SubagentRunRecord>;
   requesterSessionKey: string;
   now?: number;
+  /** Optional stale-step flags keyed by runId, computed by the cooperative-steering preemption path. */
+  staleFlagsByRunId?: ReadonlyMap<string, readonly string[]>;
 }): AgentSteeringQueueItem[] {
   const requesterSessionKey = params.requesterSessionKey.trim();
   if (!requesterSessionKey) {
@@ -118,7 +122,7 @@ export function listPendingAgentSteeringItemsFromSubagentRuns(params: {
     if (delivery.status !== "pending" && delivery.status !== "suspended" && !staleLease) {
       continue;
     }
-    items.push({ runId, entry, payload });
+    items.push({ runId, entry, payload, staleFlags: params.staleFlagsByRunId?.get(runId) });
   }
   return items.toSorted(sortPendingSteeringItems);
 }
@@ -132,17 +136,29 @@ function buildAgentSteeringPromptSection(item: AgentSteeringQueueItem, index: nu
     promptLiteral(payload.childSessionKey) ||
     `subagent ${index + 1}`;
   const resultText = selectResultText(item.entry);
-  return [
+  const lines = [
     `${index + 1}. ${title}`,
     `status: ${promptLiteral(describeOutcome(payload))}`,
     `childSessionKey: ${promptLiteral(payload.childSessionKey)}`,
     `childRunId: ${promptLiteral(payload.childRunId)}`,
+  ];
+  if (item.staleFlags && item.staleFlags.length > 0) {
+    const flags = item.staleFlags
+      .map((f) => promptLiteral(f))
+      .filter(Boolean)
+      .join(", ");
+    if (flags) {
+      lines.push(`stale steps: ${flags} — skip or re-evaluate these in-flight steps`);
+    }
+  }
+  lines.push(
     wrapPromptDataBlock({
       label: "Subagent result",
       text: resultText ?? "No completion text was captured.",
       maxChars: MAX_RESULT_CHARS_PER_ITEM,
     }),
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 function selectPromptBoundedItems(
@@ -184,6 +200,8 @@ export function leasePendingAgentSteeringItemsFromSubagentRuns(params: {
   requesterSessionKey: string;
   leaseId: string;
   now?: number;
+  /** Optional stale-step flags keyed by runId, computed by the cooperative-steering preemption path. */
+  staleFlagsByRunId?: ReadonlyMap<string, readonly string[]>;
 }): LeasedAgentSteeringBatch | undefined {
   const now = params.now ?? Date.now();
   const selection = selectPromptBoundedItems(
@@ -191,6 +209,7 @@ export function leasePendingAgentSteeringItemsFromSubagentRuns(params: {
       runs: params.runs,
       requesterSessionKey: params.requesterSessionKey,
       now,
+      staleFlagsByRunId: params.staleFlagsByRunId,
     }),
   );
   if (!selection) {
