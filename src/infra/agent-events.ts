@@ -355,6 +355,15 @@ export function emitAgentAuditEvent(event: Omit<AgentEventPayload, "seq" | "ts">
   }
 }
 
+/** Plan event payload (planning-only retry path). */
+type AgentPlanEventData = {
+  phase: "update";
+  title: string;
+  explanation?: string;
+  steps?: string[];
+  source?: string;
+};
+
 /** Emits a plan update event on the shared agent event bus. */
 export function emitAgentPlanEvent(params: {
   runId: string;
