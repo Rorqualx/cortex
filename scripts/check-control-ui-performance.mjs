@@ -38,13 +38,37 @@ export const CONTROL_UI_STARTUP_JS_GZIP_TOLERANCE_BYTES = 1024;
 // control-ui-foundation split 3 -> 9 chunks (four of them under 3 KiB gzip) and
 // startup gzip moved 542.2 -> 562.1 KiB. No ui/ file changed in that merge --
 // the growth is upstream code reaching the Control UI graph, not fork surface.
+// CSS ceilings raised 78 -> 128 KiB on 2026-08-04. The 78 KiB value was the
+// pre-resync footprint plus headroom, and importing settings.css (85 rules that
+// had never shipped, so every settings surface rendered unstyled) took startup
+// CSS to 77.4 KiB — 614 bytes of headroom, days at the observed rate.
+//
+// Sized from measured growth of ui/src/styles on main, not picked:
+//   2026-02-01  101 KB   11 files
+//   2026-04-01  252 KB   12 files
+//   2026-06-01  509 KB   18 files
+//   2026-07-01  547 KB   18 files
+//   2026-08-04  795 KB   45 files
+// That is +693 KB in six months. Organic Feb->Jul is ~89 KB source/month; the
+// Jul->Aug step of +248 KB is the 2026-08-03 resync landing 27 new stylesheets.
+// Built CSS compresses at ~11% of source, so organic growth is ~9.8 KiB gzip per
+// month and a resync adds ~27 KiB in one step. 128 KiB leaves ~50 KiB over the
+// current 77.4 KiB, about five months of organic growth or three plus a resync.
+//
+// This is deliberately NOT open-ended: the gate exists to make bundle growth a
+// decision rather than an accident, and doubling it again would hide a 50 KiB
+// regression for months. The better long-term shape is the baseline+tolerance
+// mechanism startupJsGzipBytes already uses (config/control-ui-startup-budget-baseline.json
+// plus --update-baseline --reason), which records each intentional step with a
+// justification instead of buying years of silent headroom. Porting CSS onto it
+// is the follow-up; this raise buys room to do that deliberately.
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze({
   startupJsRequests: 28,
   startupCssRequests: 1,
   startupJsGzipBytes: 576 * KIB,
-  startupCssGzipBytes: 78 * KIB,
+  startupCssGzipBytes: 128 * KIB,
   largestJsGzipBytes: 380 * KIB,
-  largestCssGzipBytes: 78 * KIB,
+  largestCssGzipBytes: 128 * KIB,
 });
 
 function controlUiAssetPathFromUrl(value) {
