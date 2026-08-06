@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { consolidateLongTermTyped, deriveVolatilityClass } from "./longterm-typed.js";
+import {
+  consolidateLongTermTyped,
+  derivePerishability,
+  deriveVolatilityClass,
+} from "./longterm-typed.js";
 import { Storage } from "./storage.js";
 import type { TypedFact } from "./types.js";
 
@@ -1266,5 +1270,164 @@ describe("consolidateLongTermTyped", () => {
     const ltt = await storage.readLongTermTyped();
     expect(ltt.facts[0]!.value).toBe("555-new");
     expect(ltt.facts[0]!.sourceTrust).toBe("agent-inferred");
+  });
+
+  // -----------------------------------------------------------------
+  // QW-1: Per-Fact Perishability Coefficient (ScrubJay-MEM-inspired)
+  // -----------------------------------------------------------------
+
+  it("sets perishability on promotion", async () => {
+    await writeChunkWithTyped(
+      "chunk-perish-1",
+      [
+        {
+          id: "tf-p1",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.perishability).toBeDefined();
+    expect(typeof ltt.facts[0]!.perishability).toBe("number");
+    expect(ltt.facts[0]!.perishability).toBeGreaterThan(0);
+    expect(ltt.facts[0]!.perishability).toBeLessThanOrEqual(1.2);
+  });
+
+  it("assigns lower perishability (more perishable) for volatile slots", async () => {
+    await writeChunkWithTyped(
+      "chunk-perish-vol",
+      [
+        {
+          id: "tf-pv",
+          slot: "infra:api_endpoint",
+          value: "https://api.example.com",
+          sourceSpan: "api at example.com",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await writeChunkWithTyped(
+      "chunk-perish-stab",
+      [
+        {
+          id: "tf-ps",
+          slot: "user:name",
+          value: "Joe",
+          sourceSpan: "I'm Joe",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    const volatileFact = ltt.facts.find((f) => f.slot === "infra:api_endpoint");
+    const stableFact = ltt.facts.find((f) => f.slot === "user:name");
+    expect(volatileFact).toBeDefined();
+    expect(stableFact).toBeDefined();
+    expect(volatileFact!.perishability!).toBeLessThan(stableFact!.perishability!);
+  });
+
+  it("recomputes perishability on supersession", async () => {
+    await writeChunkWithTyped(
+      "chunk-perish-old",
+      [
+        {
+          id: "tf-po",
+          slot: "user:phone",
+          value: "555-old",
+          sourceSpan: "old phone",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 5 * DAY,
+        },
+      ],
+      NOW - 5 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 5 * DAY });
+
+    const ltt1 = await storage.readLongTermTyped();
+    const oldPerishability = ltt1.facts[0]!.perishability;
+
+    await writeChunkWithTyped(
+      "chunk-perish-new",
+      [
+        {
+          id: "tf-pn",
+          slot: "user:phone",
+          value: "555-new",
+          sourceSpan: "new phone",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+
+    const ltt2 = await storage.readLongTermTyped();
+    expect(ltt2.facts[0]!.value).toBe("555-new");
+    expect(ltt2.facts[0]!.perishability).toBeDefined();
+    // Perishability should be recomputed (same slot/trust, so same value)
+    expect(ltt2.facts[0]!.perishability).toBe(oldPerishability);
+  });
+
+  it("derivePerishability returns neutral for default semi-volatile", () => {
+    const pi = derivePerishability({
+      slot: "misc:note",
+      value: "hello",
+      volatilityClass: "semi-volatile",
+      sourceTrust: "user",
+    });
+    // semi-volatile + user: 1.0 + 0.1 = 1.1
+    expect(pi).toBeCloseTo(1.1, 2);
+  });
+
+  it("derivePerishability returns low value for volatile untrusted slot", () => {
+    const pi = derivePerishability({
+      slot: "infra:config_version",
+      value: "v1.2.3",
+      volatilityClass: "volatile",
+      sourceTrust: "untrusted",
+    });
+    // volatile -0.3, perishable slot "version" is volatile token not perishable slot, untrusted -0.15
+    // 1.0 - 0.3 - 0.15 = 0.55
+    expect(pi).toBeLessThan(0.7);
+  });
+
+  it("derivePerishability returns high value for stable user-stated durable slot", () => {
+    const pi = derivePerishability({
+      slot: "user:name",
+      value: "Joe",
+      volatilityClass: "stable",
+      sourceTrust: "user",
+    });
+    // stable +0.2, durable "name" +0.15, user +0.1 = 1.45, clamped to 1.2
+    expect(pi).toBe(1.2);
   });
 });

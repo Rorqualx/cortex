@@ -243,6 +243,12 @@ export function fsrsRetrievability(params: {
    * This is a scoring-time modifier, not a persisted fact attribute.
    */
   driftDemotion?: number;
+  /**
+   * QW-1 (ScrubJay-MEM-inspired): Per-fact perishability coefficient (0..1+).
+   * Lower = more perishable. Applied as: effective decay *= (2 - π),
+   * so π=0.5 doubles decay rate, π=1.0 is neutral. Default 1.0 (neutral).
+   */
+  perishability?: number;
 }): number {
   const fsrs = params.fsrs ?? DEFAULT_FSRS_PARAMS;
   const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
@@ -266,13 +272,19 @@ export function fsrsRetrievability(params: {
   // intent has drifted (set by retrieval callers, not persisted on facts).
   const dd = params.driftDemotion ?? 1.0;
 
-  // R(t) = e^(-(w2 · vc · dd · t) / S) — Ebbinghaus curve with per-fact
-  // stability, where vc accelerates/brakes decay per volatility class:
+  // QW-1: Per-fact perishability coefficient. Lower π = faster decay.
+  // Applied as: decayRate *= (2 - π), so π=0.5 → 1.5× faster, π=1.0 neutral.
+  const pi = params.perishability ?? 1.0;
+  const perishabilityMult = 2 - Math.max(0.2, Math.min(1.2, pi));
+
+  // R(t) = e^(-(w2 · vc · dd · perishabilityMult · t) / S) — Ebbinghaus curve
+  // with per-fact stability, where vc accelerates/brakes decay per volatility class:
   //   stable=0.3 (preferences decay 3× slower)
   //   semi-volatile=1.0 (default)
   //   volatile=2.5 (APIs/configs decay 2.5× faster)
   // and dd further accelerates decay when intent drift is detected.
-  return Math.exp(-(fsrs.w2 * vc * dd * ageDays) / stability);
+  // QW-1: perishabilityMult further adjusts per-fact decay rate.
+  return Math.exp(-(fsrs.w2 * vc * dd * perishabilityMult * ageDays) / stability);
 }
 
 export type Signals = {

@@ -370,6 +370,16 @@ export type LongTermTypedFact = {
    * from user conversation).
    */
   sourceTrust?: SourceTrust;
+
+  /**
+   * QW-1 (ScrubJay-MEM-inspired): Per-fact perishability coefficient
+   * (0..1). Auto-classified at insertion from slot/value keywords and
+   * source-trust. Applied as a per-fact decay multiplier alongside the
+   * existing class-level volatility multiplier in FSRS retrievability.
+   * Lower values = more perishable (faster decay). Default 1.0 (neutral).
+   * Absent on facts created before this feature; readers treat absent as 1.0.
+   */
+  perishability?: number;
 };
 
 /**

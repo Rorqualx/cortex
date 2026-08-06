@@ -143,6 +143,119 @@ export function inferSourceTrust(t: TypedFact): SourceTrust {
   return "untrusted";
 }
 
+// ---------------------------------------------------------------------------
+// QW-1: Per-fact perishability coefficient (ScrubJay-MEM-inspired)
+// ---------------------------------------------------------------------------
+
+/** Perishability modifiers for high-sensitivity slots. These are the slots
+ * whose values change frequently — temporal/financial/operational data. */
+const PERISHABLE_SLOT_FRAGMENTS = [
+  "balance",
+  "uptime",
+  "load",
+  "usage",
+  "count",
+  "total",
+  "current",
+  "temp",
+  "cpu",
+  "memory",
+  "mem",
+  "ram",
+  "disk",
+  "space",
+  "latency",
+  "ping",
+  "status",
+  "state",
+  "health",
+];
+
+/** Slots that are durable — their values rarely change once set. */
+const DURABLE_SLOT_FRAGMENTS = [
+  "name",
+  "birthday",
+  "anniversary",
+  "allergy",
+  "pronoun",
+  "gender",
+  "language",
+  "timezone",
+  "location",
+  "address",
+  "phone",
+  "email",
+];
+
+/**
+ * Derive a per-fact perishability coefficient (0..1) from slot name,
+ * value, volatility class, and source trust.
+ *
+ * Returns 1.0 (neutral) by default. Lower values mean the fact perishes
+ * faster — applied as a multiplier in the FSRS forgetting curve:
+ *   R(t) = exp(-(w2 · vc · dd · (2 - π) · t) / S)
+ * where π is perishability. So π=0.5 doubles the effective decay rate,
+ * π=1.0 leaves it unchanged.
+ *
+ * Heuristic factors:
+ * - Volatile slots → π -= 0.3 (more perishable)
+ * - Stable slots → π += 0.2 (more durable)
+ * - Perishable slot fragments (balance, uptime, etc.) → π -= 0.2
+ * - Durable slot fragments (name, birthday, etc.) → π += 0.15
+ * - Untrusted source → π -= 0.15 (less confident in durability)
+ * - User-stated → π += 0.1 (more durable — user authority)
+ * Clamped to [0.2, 1.2].
+ */
+export function derivePerishability(params: {
+  slot: string;
+  value: string;
+  volatilityClass: VolatilityClass;
+  sourceTrust?: SourceTrust;
+}): number {
+  let pi = 1.0;
+  const lowerSlot = params.slot.toLowerCase();
+  const slotTokens = lowerSlot.split(/[:_-]+/);
+
+  // Volatility class adjustment
+  if (params.volatilityClass === "volatile") {
+    pi -= 0.3;
+  } else if (params.volatilityClass === "stable") {
+    pi += 0.2;
+  }
+
+  // Perishable slot fragments
+  for (const frag of PERISHABLE_SLOT_FRAGMENTS) {
+    if (slotTokens.some((t) => t === frag || t.includes(frag))) {
+      pi -= 0.2;
+      break; // Only apply once
+    }
+  }
+
+  // Durable slot fragments
+  for (const frag of DURABLE_SLOT_FRAGMENTS) {
+    if (slotTokens.some((t) => t === frag || t.includes(frag))) {
+      pi += 0.15;
+      break; // Only apply once
+    }
+  }
+
+  // Source trust adjustment
+  switch (params.sourceTrust) {
+    case "user":
+      pi += 0.1;
+      break;
+    case "untrusted":
+      pi -= 0.15;
+      break;
+    case "web":
+      pi -= 0.05;
+      break;
+    // agent-inferred: no adjustment
+  }
+
+  return Math.max(0.2, Math.min(1.2, Math.round(pi * 100) / 100));
+}
+
 export type LongTermTypedConfig = {
   /**
    * After this many ms without re-confirmation, an active canonical entry
@@ -418,6 +531,13 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     sourceModel: modelId ?? null,
     sourceTrust: inferSourceTrust(c.latest),
   };
+  // QW-1: Compute per-fact perishability from slot/volatility/trust.
+  fact.perishability = derivePerishability({
+    slot: c.slot,
+    value: c.latest.value,
+    volatilityClass: fact.volatilityClass ?? "semi-volatile",
+    sourceTrust: fact.sourceTrust,
+  });
   // Provenance: thread the source span and chunk ID through to long-term.
   if (sessionId) {
     fact.provenance = {
@@ -497,6 +617,13 @@ function supersede(
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceTrust: inferSourceTrust(c.latest),
   };
+  // QW-1: Recompute perishability for the new value.
+  result.perishability = derivePerishability({
+    slot: c.slot,
+    value: c.latest.value,
+    volatilityClass: result.volatilityClass ?? "semi-volatile",
+    sourceTrust: result.sourceTrust,
+  });
   // Update provenance to point at the new value's source.
   if (effectiveSession) {
     result.provenance = {
