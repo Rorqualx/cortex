@@ -851,4 +851,261 @@ describe("consolidateLongTermTyped", () => {
       sessionId: "session-b",
     });
   });
+
+  // -----------------------------------------------------------------
+  // QW-3: Consolidation Skip for Stable Tiers (LeanMem-inspired)
+  // -----------------------------------------------------------------
+
+  it("skips reaffirmation for stable facts that are recently verified with multiple sources", async () => {
+    // Write the same stable fact across 2 chunks to build recallCount=2
+    const oldTime = NOW - 5 * DAY;
+    await writeChunkWithTyped(
+      "chunk-stable-1",
+      [
+        {
+          id: "tf-stable-1",
+          slot: "user:preference_theme",
+          value: "dark",
+          sourceSpan: "I prefer dark theme",
+          unit: null,
+          confidence: 0.95,
+          createdAt: oldTime,
+        },
+      ],
+      oldTime,
+    );
+    await writeChunkWithTyped(
+      "chunk-stable-2",
+      [
+        {
+          id: "tf-stable-2",
+          slot: "user:preference_theme",
+          value: "dark",
+          sourceSpan: "still prefer dark",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    // First consolidation: promotes and establishes recallCount=2
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      sessionId: "session-1",
+    });
+
+    const ltt1 = await storage.readLongTermTyped();
+    expect(ltt1.facts[0]!.volatilityClass).toBe("stable");
+    expect(ltt1.facts[0]!.recallCount).toBe(2);
+    expect(ltt1.facts[0]!.sourceSessionId).toBe("session-1");
+
+    // Second pass: reaffirm with a third chunk from a different session
+    // Since the fact is stable, recallCount > 1, and recently verified,
+    // the consolidation skip should fire — provenance/sessionId unchanged.
+    await writeChunkWithTyped(
+      "chunk-stable-3",
+      [
+        {
+          id: "tf-stable-3",
+          slot: "user:preference_theme",
+          value: "dark",
+          sourceSpan: "dark theme is best",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW + DAY,
+        },
+      ],
+      NOW + DAY,
+    );
+
+    const out = await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW + DAY,
+      sessionId: "session-2",
+    });
+
+    // The skip means the fact was NOT re-processed — no reaffirmedCount bump.
+    // (promotedCount=0, supersededCount=0, reaffirmedCount=0 for this slot)
+    expect(out.reaffirmedCount).toBe(0);
+
+    const ltt2 = await storage.readLongTermTyped();
+    // Session ID should remain from the first pass (skip = no update)
+    expect(ltt2.facts[0]!.sourceSessionId).toBe("session-1");
+  });
+
+  it("does NOT skip when stable fact value changes (supersession still fires)", async () => {
+    const oldTime = NOW - 5 * DAY;
+    await writeChunkWithTyped(
+      "chunk-stable-old",
+      [
+        {
+          id: "tf-so",
+          slot: "user:favorite_color",
+          value: "blue",
+          sourceSpan: "favorite is blue",
+          unit: null,
+          confidence: 0.95,
+          createdAt: oldTime,
+        },
+      ],
+      oldTime,
+    );
+    await writeChunkWithTyped(
+      "chunk-stable-old2",
+      [
+        {
+          id: "tf-so2",
+          slot: "user:favorite_color",
+          value: "blue",
+          sourceSpan: "still blue",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    // Now change the value
+    await writeChunkWithTyped(
+      "chunk-stable-new",
+      [
+        {
+          id: "tf-sn",
+          slot: "user:favorite_color",
+          value: "green",
+          sourceSpan: "now it's green",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW + DAY,
+        },
+      ],
+      NOW + DAY,
+    );
+    const out = await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW + DAY,
+    });
+
+    expect(out.supersededCount).toBe(1);
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("green");
+    expect(ltt.facts[0]!.history).toHaveLength(1);
+  });
+
+  it("does NOT skip stable facts with recallCount === 1 (needs first consolidation)", async () => {
+    await writeChunkWithTyped(
+      "chunk-single",
+      [
+        {
+          id: "tf-single",
+          slot: "user:preference_theme",
+          value: "dark",
+          sourceSpan: "I prefer dark",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    // Second pass with a new chunk — recallCount=1 on the existing fact,
+    // so shouldSkipStableMaintenance returns false and reaffirmation runs.
+    await writeChunkWithTyped(
+      "chunk-single-2",
+      [
+        {
+          id: "tf-single-2",
+          slot: "user:preference_theme",
+          value: "dark",
+          sourceSpan: "still dark",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW + DAY,
+        },
+      ],
+      NOW + DAY,
+    );
+    const out = await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW + DAY,
+    });
+    expect(out.reaffirmedCount).toBe(1);
+  });
+
+  it("skips archival for stable recently-verified facts with no new candidates", async () => {
+    // Create a stable fact with recallCount=2
+    const oldTime = NOW - 40 * DAY;
+    await writeChunkWithTyped(
+      "chunk-stable-archive-1",
+      [
+        {
+          id: "tf-sa1",
+          slot: "user:name",
+          value: "Joe",
+          sourceSpan: "my name is Joe",
+          unit: null,
+          confidence: 0.99,
+          createdAt: oldTime,
+        },
+      ],
+      oldTime,
+    );
+    await writeChunkWithTyped(
+      "chunk-stable-archive-2",
+      [
+        {
+          id: "tf-sa2",
+          slot: "user:name",
+          value: "Joe",
+          sourceSpan: "I'm Joe",
+          unit: null,
+          confidence: 0.99,
+          createdAt: oldTime + DAY,
+          lastVerifiedAt: NOW - 10 * DAY,
+        },
+      ],
+      oldTime + DAY,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: oldTime + DAY,
+    });
+
+    // Delete all chunks — no new candidates will appear
+    for (const token of await storage.listL2ChunkPaths()) {
+      await storage.deleteL2Chunk(token);
+    }
+
+    // Even though lastConfirmedAt is 40+ days old, the stable skip
+    // prevents archival because lastVerifiedAt is only 10 days ago.
+    const out = await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      config: { maxAgeWithoutConfirmMs: 30 * DAY, minRecallCount: 1, maxPromotePerEpoch: 30 },
+    });
+    expect(out.archivedCount).toBe(0);
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.archived).toBe(false);
+  });
 });

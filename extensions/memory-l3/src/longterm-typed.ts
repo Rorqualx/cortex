@@ -134,6 +134,30 @@ export const DEFAULT_LONG_TERM_TYPED_CONFIG: LongTermTypedConfig = {
   maxPromotePerEpoch: 30,
 };
 
+/**
+ * QW-3 (LeanMem-inspired): Age threshold below which stable facts are
+ * skipped during consolidation maintenance. Stable facts (preferences,
+ * names, relationships) don't need regular re-evaluation — they don't
+ * drift. Only re-process if the value changed (supersession) or if the
+ * fact is single-source (recallCount === 1, not yet consolidated).
+ */
+const STABLE_SKIP_AGE_MS = 30 * MS_PER_DAY;
+
+/**
+ * Whether a long-term typed fact is stable enough to skip maintenance.
+ * Returns true when ALL of:
+ * - volatilityClass is "stable"
+ * - recallCount > 1 (already consolidated from multiple sources)
+ * - lastVerifiedAt is within STABLE_SKIP_AGE_MS (recently verified)
+ */
+function shouldSkipStableMaintenance(fact: LongTermTypedFact, now: number): boolean {
+  if (fact.volatilityClass !== "stable") return false;
+  if (fact.recallCount <= 1) return false;
+  const lastVerified = fact.lastVerifiedAt ?? fact.lastConfirmedAt;
+  if (now - lastVerified < STABLE_SKIP_AGE_MS) return true;
+  return false;
+}
+
 export type ConsolidateLongTermTypedOutput = {
   /** Slots that didn't exist in the canonical view and were added. */
   promotedCount: number;
@@ -194,6 +218,16 @@ export async function consolidateLongTermTyped(params: {
       continue;
     }
     const prior = merged.get(candidate.slot);
+    // QW-3: Skip maintenance for stable, recently-verified facts with
+    // multiple sources — UNLESS the value changed (supersession must fire).
+    if (
+      prior &&
+      !prior.archived &&
+      prior.value === candidate.latest.value &&
+      shouldSkipStableMaintenance(prior, params.now)
+    ) {
+      continue;
+    }
     if (!prior) {
       merged.set(candidate.slot, promote(candidate, params.sessionId, params.modelId));
       promotedCount += 1;
@@ -243,6 +277,10 @@ export async function consolidateLongTermTyped(params: {
       continue;
     }
     if (candidates.has(slot)) {
+      continue;
+    }
+    // QW-3: Skip archival check for stable, recently-verified facts.
+    if (shouldSkipStableMaintenance(fact, params.now)) {
       continue;
     }
     const lastActive = fact.lastVerifiedAt ?? fact.lastConfirmedAt;
