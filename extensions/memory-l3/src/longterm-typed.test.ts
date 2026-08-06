@@ -1108,4 +1108,163 @@ describe("consolidateLongTermTyped", () => {
     const ltt = await storage.readLongTermTyped();
     expect(ltt.facts[0]!.archived).toBe(false);
   });
+
+  // -----------------------------------------------------------------
+  // QW-2: Source-Trust Provenance Tag (Memory Provenance Laundering)
+  // -----------------------------------------------------------------
+
+  it("defaults sourceTrust to 'user' when statedBy is absent", async () => {
+    await writeChunkWithTyped(
+      "chunk-trust-default",
+      [
+        {
+          id: "tf-td",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.sourceTrust).toBe("user");
+  });
+
+  it("sets sourceTrust to 'user' when statedBy is 'user'", async () => {
+    await writeChunkWithTyped(
+      "chunk-trust-user",
+      [
+        {
+          id: "tf-tu",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+          statedBy: "user",
+        } as TypedFact,
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.sourceTrust).toBe("user");
+  });
+
+  it("sets sourceTrust to 'web' when statedBy contains web/search patterns", async () => {
+    await writeChunkWithTyped(
+      "chunk-trust-web",
+      [
+        {
+          id: "tf-tw",
+          slot: "infra:public_ip",
+          value: "203.0.113.5",
+          sourceSpan: "IP is 203.0.113.5",
+          unit: null,
+          confidence: 0.7,
+          createdAt: NOW,
+          statedBy: "web-search-tool",
+        } as TypedFact,
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.sourceTrust).toBe("web");
+  });
+
+  it("sets sourceTrust to 'agent-inferred' when statedBy is 'assistant'", async () => {
+    await writeChunkWithTyped(
+      "chunk-trust-agent",
+      [
+        {
+          id: "tf-ta",
+          slot: "infra:estimated_uptime",
+          value: "99.9%",
+          sourceSpan: "estimated uptime is 99.9%",
+          unit: "%",
+          confidence: 0.6,
+          createdAt: NOW,
+          statedBy: "assistant",
+        } as TypedFact,
+      ],
+      NOW,
+    );
+
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.sourceTrust).toBe("agent-inferred");
+  });
+
+  it("updates sourceTrust on supersession with the new source's trust", async () => {
+    // Original fact from user
+    await writeChunkWithTyped(
+      "chunk-trust-supersede-old",
+      [
+        {
+          id: "tf-tso",
+          slot: "user:phone",
+          value: "555-old",
+          sourceSpan: "my old phone",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 5 * DAY,
+          statedBy: "user",
+        } as TypedFact,
+      ],
+      NOW - 5 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 5 * DAY });
+
+    // New fact from assistant
+    await writeChunkWithTyped(
+      "chunk-trust-supersede-new",
+      [
+        {
+          id: "tf-tsn",
+          slot: "user:phone",
+          value: "555-new",
+          sourceSpan: "phone might be 555-new",
+          unit: null,
+          confidence: 0.6,
+          createdAt: NOW,
+          statedBy: "assistant",
+        } as TypedFact,
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("555-new");
+    expect(ltt.facts[0]!.sourceTrust).toBe("agent-inferred");
+  });
 });

@@ -118,6 +118,12 @@ export type TypedFact = {
   participants?: string[];
   /** Time the fact was mentioned / extracted (ms). */
   mentionTime?: number;
+  /**
+   * QW-2: Participant who stated this fact, used to infer sourceTrust.
+   * Typically derived from which role said the source span. Absent on
+   * facts extracted before this feature.
+   */
+  statedBy?: string;
 };
 
 /**
@@ -355,7 +361,25 @@ export type LongTermTypedFact = {
     /** The session ID of the source conversation. */
     sessionId: string;
   };
+
+  /**
+   * QW-2 (Memory Provenance Laundering-inspired): Trust level of the
+   * original information source. Distinguishes user-stated facts from
+   * web-scraped or agent-inferred ones. Absent on facts created before
+   * this feature; readers treat absent as "user" (most facts originate
+   * from user conversation).
+   */
+  sourceTrust?: SourceTrust;
 };
+
+/**
+ * QW-2: Trust classification for L3 typed fact provenance.
+ * - `user`: Stated directly by the user in conversation (highest authority)
+ * - `web`: Extracted from web/tool output (medium authority)
+ * - `agent-inferred`: Synthesized by the agent from context (lower authority)
+ * - `untrusted`: Untrusted source, unknown or explicitly flagged as uncertain
+ */
+export type SourceTrust = "user" | "web" | "agent-inferred" | "untrusted";
 
 export type LongTermTypedFrontmatter = {
   version: 1;

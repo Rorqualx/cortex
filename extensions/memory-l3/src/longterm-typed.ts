@@ -14,6 +14,7 @@ import type { Storage } from "./storage.js";
 import type {
   LongTermTypedFact,
   LongTermTypedFrontmatter,
+  SourceTrust,
   TypedFact,
   VolatilityClass,
 } from "./types.js";
@@ -103,6 +104,43 @@ export function deriveVolatilityClass(slot: string, _value: string): VolatilityC
   }
 
   return "semi-volatile";
+}
+
+// ---------------------------------------------------------------------------
+// QW-2: Source-trust inference from TypedFact metadata
+// ---------------------------------------------------------------------------
+
+/**
+ * Infer a SourceTrust level from a TypedFact's metadata.
+ *
+ * Heuristic:
+ * - `statedBy === "user"` or `"human"` → "user" (highest authority)
+ * - `statedBy` matches tool/web patterns ("web-search", "http-request", "browser") → "web"
+ * - `statedBy === "assistant"` or `"agent"` → "agent-inferred"
+ * - Unknown/absent → defaults to "user" (most typed facts originate from user conversation)
+ */
+export function inferSourceTrust(t: TypedFact): SourceTrust {
+  const statedBy = t.statedBy;
+  if (!statedBy) {
+    return "user"; // Backward compat: most typed facts originate from user conversation
+  }
+  const lower = statedBy.toLowerCase();
+  if (lower === "user" || lower === "human") {
+    return "user";
+  }
+  // Tool/web output patterns
+  const webPatterns = ["web", "search", "http", "browser", "scraper", "url", "fetch"];
+  for (const pattern of webPatterns) {
+    if (lower.includes(pattern)) {
+      return "web";
+    }
+  }
+  // Agent/assistant inferred
+  if (lower === "assistant" || lower === "agent" || lower === "ai" || lower === "model") {
+    return "agent-inferred";
+  }
+  // Unknown source — treat as untrusted
+  return "untrusted";
 }
 
 export type LongTermTypedConfig = {
@@ -378,6 +416,7 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
     sourceSessionId: sessionId,
     sourceModel: modelId ?? null,
+    sourceTrust: inferSourceTrust(c.latest),
   };
   // Provenance: thread the source span and chunk ID through to long-term.
   if (sessionId) {
@@ -413,6 +452,7 @@ function reaffirm(
     archivedAt: null,
     sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
+    sourceTrust: inferSourceTrust(c.latest),
   };
   // Update provenance with the most recent source.
   if (effectiveSession) {
@@ -455,6 +495,7 @@ function supersede(
     volatilityClass: prior.volatilityClass ?? deriveVolatilityClass(c.slot, c.latest.value),
     sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
+    sourceTrust: inferSourceTrust(c.latest),
   };
   // Update provenance to point at the new value's source.
   if (effectiveSession) {
