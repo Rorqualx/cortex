@@ -4,6 +4,26 @@ import type { OpenClawConfig } from "./types.openclaw.js";
 
 const AUTO_LOCAL_MODEL_LEAN_PROVIDER_IDS = new Set(["lmstudio", "ollama"]);
 
+/**
+ * QW-4: Suggested models for constrained nodes (Pi, low-memory devices).
+ * These are candidates the onboarding flow can surface when the user is
+ * setting up a local model daemon on hardware that can't run full-size
+ * models. All are available in GGUF/MLX/ONNX format for Ollama or LMStudio.
+ *
+ * The discovery pipeline probes the local daemon at runtime — this list
+ * is a documentation hint, not a hard dependency.
+ */
+export const SUGGESTED_CONSTRAINED_NODE_MODELS = [
+  {
+    id: "LiquidAI/LFM2.5-2.6B",
+    name: "LiquidAI LFM2.5 2.6B",
+    footprint: "~2.5GB",
+    contextWindow: 131072,
+    notes:
+      "Hybrid conv+attention architecture, agentic RL post-training. Good for Pi 5 / 8GB nodes.",
+  },
+] as const;
+
 /** Returns true only for local runtimes that onboarding can identify without model-name guesses. */
 function shouldAutoEnableLocalModelLean(providerId: string, modelRef: string): boolean {
   const normalizedProviderId = normalizeProviderId(providerId);
