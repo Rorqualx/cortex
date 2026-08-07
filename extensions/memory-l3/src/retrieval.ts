@@ -232,6 +232,22 @@ export type RetrievalConfig = {
    * Default false (opt-in). Inspired by arXiv:2607.28272.
    */
   enableMemoryCritique?: boolean;
+  /**
+   * Number of query-reformulation retry passes when the initial
+   * retrieval top result score is below `reformulationThreshold`.
+   * Each pass generates alternative queries and merges results.
+   * Default 0 (disabled). Set via env or config to enable.
+   *
+   * Inspired by MemCon (arXiv:2607.27517) — iterative retrieval
+   * with query reformulation improves recall on complex queries.
+   */
+  reformulationPasses?: number;
+  /**
+   * Certainty threshold below which reformulation is triggered.
+   * If the top result's composite score is below this value,
+   * alternative queries are attempted. Default 0.4.
+   */
+  reformulationThreshold?: number;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -243,6 +259,8 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   submodularTokenBudget: null,
   mode: "blended",
   enableMemoryCritique: false,
+  reformulationPasses: 0,
+  reformulationThreshold: 0.4,
 };
 
 export type RetrievedFact = {
@@ -264,7 +282,139 @@ export type RetrievalResult = {
   facts: RetrievedFact[];
   /** Gap analysis from Sufficient Context Agent, if enabled. */
   missingInfo?: MissingFact;
+  /** Whether query reformulation was triggered for this retrieval. */
+  reformulated?: boolean;
 };
+
+// ---------------------------------------------------------------------------
+// QW-1: Query Reformulation (MemCon-inspired)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stop words removed during heuristic query reformulation.
+ */
+const QUERY_STOP_WORDS = new Set([
+  "what",
+  "who",
+  "where",
+  "when",
+  "why",
+  "how",
+  "is",
+  "are",
+  "was",
+  "were",
+  "the",
+  "a",
+  "an",
+  "of",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "with",
+  "and",
+  "or",
+  "not",
+  "do",
+  "does",
+  "did",
+  "can",
+  "could",
+  "should",
+  "would",
+  "will",
+  "shall",
+  "may",
+  "might",
+  "must",
+  "about",
+  "tell",
+  "me",
+]);
+
+/**
+ * Generate 2-3 heuristic query reformulations without an LLM call.
+ * Strategies:
+ * 1. **Core terms only** — strip stop words to get the essential content words.
+ * 2. **Broader query** — use only the first 3-4 significant terms for a wider net.
+ * 3. **Conjunction split** — if the query has "and"/"or", split into sub-queries.
+ *
+ * Returns an empty array if the heuristic can't produce useful variants
+ * (e.g., the query is already a single word or all stop words).
+ */
+export function heuristicReformulate(query: string): string[] {
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[^\w:-]/g, ""))
+    .filter(Boolean);
+  const coreTerms = terms.filter((t) => !QUERY_STOP_WORDS.has(t));
+  const variants: string[] = [];
+
+  // Strategy 1: core terms only
+  if (coreTerms.length > 0 && coreTerms.length < terms.length) {
+    variants.push(coreTerms.join(" "));
+  }
+
+  // Strategy 2: broader query (first 3-4 significant terms)
+  if (coreTerms.length > 4) {
+    variants.push(coreTerms.slice(0, 3).join(" "));
+  }
+
+  // Strategy 3: conjunction split
+  const conjunctionPattern = /\s+(?:and|or)\s+/i;
+  if (conjunctionPattern.test(query)) {
+    const parts = query
+      .split(conjunctionPattern)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    // Only add parts that have core terms
+    for (const part of parts) {
+      const partCore = part
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => !QUERY_STOP_WORDS.has(t));
+      if (partCore.length > 0) {
+        variants.push(partCore.join(" "));
+      }
+    }
+  }
+
+  // Deduplicate and limit to 3 variants
+  const unique = [...new Set(variants)].filter((v) => v !== query.toLowerCase().trim());
+  return unique.slice(0, 3);
+}
+
+/**
+ * Generate query reformulations using an LLM caller.
+ * Asks the LLM to produce 2-3 alternative phrasings of the query.
+ * Returns parsed reformulations; empty array on failure.
+ */
+async function llmReformulate(
+  query: string,
+  caller: (params: { systemPrompt: string; userPrompt: string }) => Promise<string>,
+): Promise<string[]> {
+  const systemPrompt =
+    "You are a search query reformulator. Given a user query, generate 2-3 alternative phrasings that might retrieve different relevant documents. Return ONLY the reformulations, one per line, no numbering or bullets.";
+  const userPrompt = `Original query: ${query}\n\nAlternative phrasings:`;
+  try {
+    const response = await caller({ systemPrompt, userPrompt });
+    return response
+      .split("\n")
+      .map((line) =>
+        line
+          .replace(/^\d+[.)]\s*/, "")
+          .replace(/^[\-*]\s*/, "")
+          .trim(),
+      )
+      .filter((line) => line.length > 0)
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
 
 export async function retrieveTopK(params: {
   query: string;
@@ -322,6 +472,12 @@ export async function retrieveTopK(params: {
    * Weight of the density reranker adjustment (0–1). Default 0.15.
    */
   rerankDensityWeight?: number;
+  /**
+   * Optional LLM caller for query reformulation. When provided and
+   * reformulationPasses > 0, the LLM generates alternative query phrasings
+   * to improve recall. If not provided, only heuristic reformulation is used.
+   */
+  llmCaller?: (params: { systemPrompt: string; userPrompt: string }) => Promise<string>;
 }): Promise<RetrievalResult> {
   const topK = Math.max(0, params.topK);
   if (topK === 0) {
@@ -862,6 +1018,108 @@ export async function retrieveTopK(params: {
     }
   }
 
+  // -----------------------------------------------------------------
+  // QW-1: Query reformulation pass (MemCon-inspired)
+  // -----------------------------------------------------------------
+  // When the initial retrieval has low certainty (top result score below
+  // threshold), try reformulated queries to improve recall. Results from
+  // reformulated queries are merged into the candidate pool — only facts
+  // not already in the result set are added, and their score is discounted
+  // to prioritize direct matches.
+  const reformulationPasses =
+    retConfig.reformulationPasses ??
+    (process.env.OPENCLAW_MEMORY_L3_QUERY_REFORMULATION === "1" ? 1 : 0);
+  const reformulationThreshold = retConfig.reformulationThreshold ?? 0.4;
+  let reformulated = false;
+  if (
+    reformulationPasses > 0 &&
+    result.length > 0 &&
+    result[0] &&
+    result[0].score < reformulationThreshold
+  ) {
+    // Gather reformulated queries
+    const reformulations: string[] = [];
+    // Heuristic reformulation (zero-cost)
+    reformulations.push(...heuristicReformulate(params.query));
+    // LLM-based reformulation (optional)
+    if (params.llmCaller && reformulations.length < 3) {
+      const llmVariants = await llmReformulate(params.query, params.llmCaller);
+      for (const v of llmVariants) {
+        if (reformulations.length >= 3) break;
+        reformulations.push(v);
+      }
+    }
+
+    // Re-score with each reformulated query and merge new facts
+    if (reformulations.length > 0) {
+      reformulated = true;
+      const existingKeys = new Set(result.map((r) => r.fact.dedupKey));
+      const newResults: RetrievedFact[] = [];
+
+      for (const reformQuery of reformulations) {
+        const reformTokens = tokenize(reformQuery);
+        if (reformTokens.size === 0) continue;
+
+        // Re-score all items with the reformulated query
+        for (const item of items) {
+          // Skip items already in results
+          if (existingKeys.has(item.fact.dedupKey)) continue;
+
+          const signals = scoreFact({
+            queryTokens: reformTokens,
+            fact: item.fact,
+            now,
+            config: effectiveConfig,
+            l3Boost: item.l3Boost,
+            corpusStats,
+            significant: item.fact.significant,
+            informationGain: item.informationGain,
+          });
+
+          if (
+            params.queryEmbedding &&
+            item.embedding &&
+            params.queryEmbedding.length === item.embedding.length
+          ) {
+            signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+          }
+
+          // Apply same mode filtering as initial pass
+          if (retConfig.mode === "keyword") {
+            signals.semantic = 0;
+          } else if (retConfig.mode === "semantic") {
+            signals.bm25 = 0;
+            signals.lexical = 0;
+          }
+
+          const baseScore = composite(signals, effectiveConfig);
+          const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+          // Discount reformulated hits — they matched an alternative phrasing,
+          // not the original query. 0.7 keeps them relevant but below direct hits.
+          const score = rawScore * 0.7;
+
+          if (score > 0) {
+            newResults.push({
+              fact: item.fact,
+              score,
+              signals,
+              chunkId: item.chunkId,
+              tier: item.tier,
+              contextWindow: item.contextWindow,
+            });
+            existingKeys.add(item.fact.dedupKey);
+          }
+        }
+      }
+
+      // Merge new results into the candidate pool and re-sort
+      if (newResults.length > 0) {
+        result.push(...newResults);
+        result.sort((a, b) => b.score - a.score);
+      }
+    }
+  }
+
   const finalFacts = result.slice(0, topK);
 
   // -----------------------------------------------------------------
@@ -983,7 +1241,7 @@ export async function retrieveTopK(params: {
     retConfig.mode === "routed" ? classifyQueryIntent(params.query) : "synthesis";
   const compressedFacts = compressFactsForResult(finalFacts, intent);
 
-  return { facts: compressedFacts, missingInfo };
+  return { facts: compressedFacts, missingInfo, reformulated };
 }
 
 /**

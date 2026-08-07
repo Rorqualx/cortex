@@ -7,6 +7,7 @@ import {
   critiqueStaleFacts,
   formatMemorySection,
   getIntentScoringPreset,
+  heuristicReformulate,
   retrieveTopK,
   type RetrievedFact,
 } from "./retrieval.js";
@@ -1602,5 +1603,162 @@ describe("critiqueStaleFacts", () => {
     critiqueStaleFacts([single]);
     // Single element should still be demoted
     expect(single.score).toBeCloseTo(0.25, 6); // 0.5 * 0.5
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QW-1: Query Reformulation (heuristic)
+// ---------------------------------------------------------------------------
+describe("heuristicReformulate", () => {
+  it("strips stop words to produce core-terms variant", () => {
+    const variants = heuristicReformulate("what is the API endpoint for the server");
+    expect(variants.length).toBeGreaterThan(0);
+    expect(variants.some((v) => !v.includes("what"))).toBe(true);
+    expect(variants.some((v) => !v.includes("the"))).toBe(true);
+  });
+
+  it("produces a broader variant for long queries", () => {
+    const variants = heuristicReformulate(
+      "how to configure the network settings for docker containers",
+    );
+    // Should include a shorter variant with just first few core terms
+    const broader = variants.find((v) => v.split(" ").length <= 3);
+    expect(broader).toBeDefined();
+  });
+
+  it("splits conjunctions into sub-queries", () => {
+    const variants = heuristicReformulate("database connection settings and redis cache config");
+    // Should contain parts from both sides of "and"
+    expect(variants.some((v) => v.includes("database"))).toBe(true);
+    expect(variants.some((v) => v.includes("redis"))).toBe(true);
+  });
+
+  it("returns empty array for single-word queries", () => {
+    const variants = heuristicReformulate("config");
+    expect(variants).toHaveLength(0);
+  });
+
+  it("does not include the original query as a variant", () => {
+    const variants = heuristicReformulate("what is the project status");
+    expect(variants).not.toContain("what is the project status");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QW-1: Query Reformulation in retrieveTopK
+// ---------------------------------------------------------------------------
+describe("retrieveTopK with query reformulation", () => {
+  it("does not reformulate when result score is high enough", async () => {
+    // Write facts that match the query well → high score
+    await writeChunk("chunk-high-score", [
+      {
+        id: "f1",
+        text: "The project status is on track and progressing well",
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: "status:1",
+      },
+    ]);
+
+    const result = await retrieveTopK({
+      query: "project status",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: {
+        ...({
+          useEpochFirst: false,
+          epochExpandTopN: 3,
+          useSubmodularSelect: false,
+          submodularDiversityWeight: 0.3,
+          submodularCoverageWeight: 0.3,
+          submodularTokenBudget: null,
+          mode: "blended",
+        } as never),
+        reformulationPasses: 1,
+        reformulationThreshold: 0.01, // Very low threshold → never triggers
+      },
+    });
+
+    expect(result.reformulated).toBeFalsy();
+  });
+
+  it("reformulates when result score is below threshold", async () => {
+    // Write facts that DON'T match the query well → low score
+    await writeChunk("chunk-low-score", [
+      {
+        id: "f1",
+        text: "The weather forecast indicates rain tomorrow afternoon",
+        importance: 0.3,
+        createdAt: NOW,
+        dedupKey: "weather:1",
+      },
+    ]);
+
+    // Also write a fact that matches a reformulation (core terms)
+    await writeChunk("chunk-reform-match", [
+      {
+        id: "f2",
+        text: "docker compose network configuration guide",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "docker:1",
+      },
+    ]);
+
+    const result = await retrieveTopK({
+      query: "how to configure docker",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: {
+        ...({
+          useEpochFirst: false,
+          epochExpandTopN: 3,
+          useSubmodularSelect: false,
+          submodularDiversityWeight: 0.3,
+          submodularCoverageWeight: 0.3,
+          submodularTokenBudget: null,
+          mode: "blended",
+        } as never),
+        reformulationPasses: 1,
+        reformulationThreshold: 100, // Very high threshold → always triggers
+      },
+    });
+
+    expect(result.reformulated).toBe(true);
+  });
+
+  it("does not reformulate when reformulationPasses is 0", async () => {
+    await writeChunk("chunk-no-reform", [
+      {
+        id: "f1",
+        text: "random unrelated content",
+        importance: 0.1,
+        createdAt: NOW,
+        dedupKey: "random:1",
+      },
+    ]);
+
+    const result = await retrieveTopK({
+      query: "something completely different",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: {
+        ...({
+          useEpochFirst: false,
+          epochExpandTopN: 3,
+          useSubmodularSelect: false,
+          submodularDiversityWeight: 0.3,
+          submodularCoverageWeight: 0.3,
+          submodularTokenBudget: null,
+          mode: "blended",
+        } as never),
+        reformulationPasses: 0,
+      },
+    });
+
+    expect(result.reformulated).toBeFalsy();
   });
 });
