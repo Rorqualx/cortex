@@ -348,6 +348,152 @@ ${factList}`;
   };
 }
 
+// -----------------------------------------------------------------------
+// QW-3 (DeepSeek-Reasonix-inspired): Prune stale tool outputs before
+// L2 compaction extraction. Large or duplicate tool results dilute fact
+// quality and waste extraction tokens. Guarded behind
+// OPENCLAW_MEMORY_L3_PRUNE_TOOL_OUTPUT=1.
+// -----------------------------------------------------------------------
+
+/**
+ * Maximum character length of a single tool-result message before it becomes
+ * a pruning candidate. Tool outputs shorter than this are kept as-is.
+ */
+const PRUNE_TOOL_OUTPUT_MAX_CHARS = 2000;
+
+/**
+ * Extract text length from a message's content (works for both string and
+ * structured content arrays).
+ */
+function messageTextLength(msg: AgentMessage): number {
+  const content = (msg as { content?: unknown }).content;
+  if (typeof content === "string") {
+    return content.length;
+  }
+  if (Array.isArray(content)) {
+    return content.reduce((sum: number, part) => {
+      if (part && typeof part === "object" && "text" in part) {
+        return sum + String((part as { text: string }).text).length;
+      }
+      return sum;
+    }, 0);
+  }
+  return 0;
+}
+
+/**
+ * Check if a message is a tool-result message.
+ */
+function isToolResultMessage(msg: AgentMessage): boolean {
+  return (msg as { role?: string }).role === "toolResult";
+}
+
+/**
+ * Check if an assistant message contains tool calls.
+ */
+function hasToolCalls(msg: AgentMessage): boolean {
+  const content = (msg as { content?: unknown }).content;
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (part) =>
+      part &&
+      typeof part === "object" &&
+      "type" in part &&
+      (part as { type: string }).type === "toolCall",
+  );
+}
+
+/**
+ * Prune stale, large, or duplicate tool outputs from the message buffer
+ * before extraction. Keeps the first occurrence of each tool output,
+ * prunes large outputs (>PRUNE_TOOL_OUTPUT_MAX_CHARS) that have already
+ * been seen in a prior compaction pass, and always keeps tool errors.
+ *
+ * This is a lossy filter — the facts from these tool outputs were likely
+ * already extracted in prior compaction rounds. The risk of missing a fact
+ * is mitigated by keeping the first occurrence of each tool output.
+ */
+export function pruneStaleToolOutputs(messages: ReadonlyArray<AgentMessage>): AgentMessage[] {
+  const result: AgentMessage[] = [];
+  /** Track toolCallIds we've already seen to detect duplicates. */
+  const seenToolCallIds = new Set<string>();
+  /** Track large tool output hashes to detect near-duplicates. */
+  const seenLargeOutputs = new Set<string>();
+
+  for (const msg of messages) {
+    if (!isToolResultMessage(msg)) {
+      result.push(msg);
+      continue;
+    }
+
+    const toolMsg = msg as unknown as {
+      role: string;
+      toolCallId: string;
+      toolName: string;
+      content: unknown;
+      isError: boolean;
+      timestamp: number;
+    };
+
+    // Always keep tool errors — they carry diagnostic signal.
+    if (toolMsg.isError) {
+      result.push(msg);
+      continue;
+    }
+
+    // Keep first occurrence of each toolCallId.
+    if (!seenToolCallIds.has(toolMsg.toolCallId)) {
+      seenToolCallIds.add(toolMsg.toolCallId);
+      result.push(msg);
+      continue;
+    }
+
+    // Duplicate toolCallId — skip it.
+    l3debug(`pruneStaleToolOutputs: skipping duplicate tool result for ${toolMsg.toolCallId}`);
+  }
+
+  // Second pass: for large tool outputs, check if the content has been seen.
+  // We only prune large outputs that exceed the threshold, and only if a
+  // fingerprint (first 200 chars) matches a prior one.
+  const finalResult: AgentMessage[] = [];
+  for (const msg of result) {
+    if (!isToolResultMessage(msg)) {
+      finalResult.push(msg);
+      continue;
+    }
+
+    const textLen = messageTextLength(msg);
+    if (textLen <= PRUNE_TOOL_OUTPUT_MAX_CHARS) {
+      finalResult.push(msg);
+      continue;
+    }
+
+    // Compute a fingerprint from the first 200 chars of content.
+    const content = (msg as { content?: unknown }).content;
+    let fingerprint = "";
+    if (typeof content === "string") {
+      fingerprint = content.slice(0, 200);
+    } else if (Array.isArray(content)) {
+      fingerprint = content
+        .map((p) =>
+          p && typeof p === "object" && "text" in p ? String((p as { text: string }).text) : "",
+        )
+        .join("")
+        .slice(0, 200);
+    }
+
+    if (seenLargeOutputs.has(fingerprint)) {
+      l3debug(`pruneStaleToolOutputs: pruning large duplicate tool output (${textLen} chars)`);
+      continue;
+    }
+
+    seenLargeOutputs.add(fingerprint);
+    finalResult.push(msg);
+  }
+
+  return finalResult;
+}
+
 export async function compactSession(params: {
   sessionId: string;
   buffer: IngestBuffer;
@@ -389,7 +535,13 @@ export async function compactSession(params: {
    */
   budgetAwareCompaction?: boolean;
 }): Promise<CompactionResult> {
-  const messages = [...params.buffer.peek(params.sessionId)];
+  const rawMessages = [...params.buffer.peek(params.sessionId)];
+  // QW-3: Prune stale/duplicate/large tool outputs before extraction to save
+  // LLM tokens and reduce fact dilution. Gated behind env flag.
+  const messages =
+    process.env.OPENCLAW_MEMORY_L3_PRUNE_TOOL_OUTPUT === "1"
+      ? pruneStaleToolOutputs(rawMessages)
+      : rawMessages;
   const tokensBefore = params.buffer.tokens(params.sessionId);
   if (messages.length === 0) {
     return {

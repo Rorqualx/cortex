@@ -6,6 +6,7 @@ import {
   compactSession,
   applyCategoryBudget,
   applyCategoryBudgetWithOperators,
+  pruneStaleToolOutputs,
 } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
 import type { LlmCaller } from "./llm.js";
@@ -495,5 +496,103 @@ describe("applyCategoryBudgetWithOperators", () => {
     // Both are in different categories, so both survive a small budget.
     const result = await applyCategoryBudgetWithOperators({ facts, maxTokensPerCategory: 10 });
     expect(result).toHaveLength(2);
+  });
+});
+
+// Helper to create a tool-result message for tests
+const toolResultMsg = (toolCallId: string, toolName: string, text: string, isError = false) =>
+  ({
+    role: "toolResult",
+    toolCallId,
+    toolName,
+    content: [{ type: "text", text }],
+    isError,
+    timestamp: 0,
+  }) as never;
+
+const assistantWithToolCall = (toolCallId: string) =>
+  ({
+    role: "assistant",
+    content: [
+      { type: "text", text: "Let me check." },
+      { type: "toolCall", toolCallId, toolName: "read", input: {} },
+    ],
+    api: "anthropic",
+    provider: "anthropic",
+    model: "test",
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: "toolCall",
+    timestamp: 0,
+  }) as never;
+
+describe("pruneStaleToolOutputs", () => {
+  it("keeps non-tool messages unchanged", () => {
+    const msgs = [userMsg("hello"), userMsg("world")];
+    const result = pruneStaleToolOutputs(msgs);
+    expect(result).toHaveLength(2);
+    expect(result).toEqual(msgs);
+  });
+
+  it("keeps the first occurrence of each tool result", () => {
+    const msgs = [
+      userMsg("check the file"),
+      assistantWithToolCall("call-1"),
+      toolResultMsg("call-1", "read", "file content here"),
+    ];
+    const result = pruneStaleToolOutputs(msgs);
+    expect(result).toHaveLength(3);
+  });
+
+  it("prunes duplicate tool results with the same toolCallId", () => {
+    const msgs = [
+      userMsg("check the file"),
+      assistantWithToolCall("call-1"),
+      toolResultMsg("call-1", "read", "file content here"),
+      toolResultMsg("call-1", "read", "file content here"),
+      toolResultMsg("call-1", "read", "file content here"),
+    ];
+    const result = pruneStaleToolOutputs(msgs);
+    expect(result).toHaveLength(3);
+  });
+
+  it("always keeps tool error messages even if duplicate", () => {
+    const msgs = [
+      userMsg("check the file"),
+      assistantWithToolCall("call-1"),
+      toolResultMsg("call-1", "read", "error: not found", true),
+      toolResultMsg("call-1", "read", "error: not found", true),
+    ];
+    const result = pruneStaleToolOutputs(msgs);
+    const toolResults = result.filter((m) => (m as { role?: string }).role === "toolResult");
+    expect(toolResults).toHaveLength(2);
+  });
+
+  it("prunes large duplicate tool outputs with matching fingerprint", () => {
+    const largeText = "x".repeat(2500);
+    const msgs = [
+      userMsg("check"),
+      assistantWithToolCall("call-1"),
+      toolResultMsg("call-1", "read", largeText),
+      assistantWithToolCall("call-2"),
+      toolResultMsg("call-2", "read", largeText),
+    ];
+    const result = pruneStaleToolOutputs(msgs);
+    const toolResults = result.filter((m) => (m as { role?: string }).role === "toolResult");
+    expect(toolResults).toHaveLength(1);
+  });
+
+  it("keeps large tool outputs when they are unique", () => {
+    const largeText1 = "x".repeat(2500);
+    const largeText2 = "y".repeat(2500);
+    const msgs = [
+      userMsg("check"),
+      assistantWithToolCall("call-1"),
+      toolResultMsg("call-1", "read", largeText1),
+      assistantWithToolCall("call-2"),
+      toolResultMsg("call-2", "read", largeText2),
+    ];
+    const result = pruneStaleToolOutputs(msgs);
+    const toolResults = result.filter((m) => (m as { role?: string }).role === "toolResult");
+    expect(toolResults).toHaveLength(2);
   });
 });
