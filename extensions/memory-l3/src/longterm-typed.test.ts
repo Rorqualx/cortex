@@ -686,6 +686,89 @@ describe("consolidateLongTermTyped", () => {
   });
 
   // -----------------------------------------------------------------
+  // QW-2: Retrieval-frequency boost in J-space capacity scoring
+  // -----------------------------------------------------------------
+  it("boosts frequently-retrieved L2 typed facts in J-space capacity cap", async () => {
+    // Create 35 identical-score slots. Pre-populate retrieval signals for
+    // 5 specific L2 typed fact IDs. Those 5 should survive the cap because
+    // their retrieval-hit boost lifts their score above the rest.
+    const totalSlots = 35;
+    const cap = 30;
+    const boostedSlots = new Set([
+      "test:rh_30",
+      "test:rh_31",
+      "test:rh_32",
+      "test:rh_33",
+      "test:rh_34",
+    ]);
+
+    for (let i = 0; i < totalSlots; i++) {
+      const slotName = `test:rh_${i}`;
+      const factId = `tf-rh-${i}`;
+      // Write 2 chunks per slot so recallCount = 2 (meets minRecallCount)
+      for (let r = 0; r < 2; r++) {
+        await writeChunkWithTyped(
+          `chunk-rh-${i}-${r}`,
+          [
+            {
+              id: `${factId}-${r}`,
+              slot: slotName,
+              value: `val_${i}`,
+              sourceSpan: `source ${i}`,
+              unit: null,
+              confidence: 0.7,
+              createdAt: NOW,
+            },
+          ],
+          NOW,
+        );
+      }
+    }
+
+    // Pre-write retrieval signals for the L2 typed fact IDs of boosted slots.
+    // The retrieval signal factId matches the L2 typed fact's id field.
+    const signals = Array.from(boostedSlots).flatMap((slot) => {
+      const i = parseInt(slot.split("_")[1], 10);
+      return [
+        {
+          factId: `tf-rh-${i}-0`,
+          recallCount: 20,
+          lastRecalledAt: NOW,
+          firstRecalledAt: NOW - DAY,
+        },
+        {
+          factId: `tf-rh-${i}-1`,
+          recallCount: 20,
+          lastRecalledAt: NOW,
+          firstRecalledAt: NOW - DAY,
+        },
+      ];
+    });
+    await storage.writeRetrievalSignals(signals);
+
+    const out = await consolidateLongTermTyped({
+      storage,
+      agentId: "test",
+      now: NOW,
+      config: {
+        maxAgeWithoutConfirmMs: 60 * DAY,
+        minRecallCount: 1,
+        maxPromotePerEpoch: cap,
+        retrievalHitBoost: 1.0, // High boost to make the signal dominant
+      },
+    });
+    expect(out.promotedCount).toBe(cap);
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts).toHaveLength(cap);
+
+    // The 5 boosted slots must survive the cap.
+    for (const slot of boostedSlots) {
+      expect(ltt.facts.some((f) => f.slot === slot)).toBe(true);
+    }
+  });
+
+  // -----------------------------------------------------------------
   // Provenance (QW-1: Typed-Fact Provenance Fields)
   // -----------------------------------------------------------------
 

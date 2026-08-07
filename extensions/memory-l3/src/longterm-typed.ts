@@ -277,12 +277,23 @@ export type LongTermTypedConfig = {
    * next epoch — no data loss. Default 30.
    */
   maxPromotePerEpoch: number;
+  /**
+   * Weight of retrieval-frequency signal in J-space promotion scoring.
+   * Facts that are frequently retrieved get a score boost proportional to
+   * their retrieval hit count × this weight. Default 0.1 — a gentle nudge
+   * that breaks ties in favor of demonstrably useful facts without
+   * overwhelming the recallCount × confidence signal.
+   *
+   * Inspired by UniMem's recurrence-frequency principle (arXiv:2607.03190).
+   */
+  retrievalHitBoost?: number;
 };
 
 export const DEFAULT_LONG_TERM_TYPED_CONFIG: LongTermTypedConfig = {
   maxAgeWithoutConfirmMs: 60 * MS_PER_DAY,
   minRecallCount: 1,
   maxPromotePerEpoch: 30,
+  retrievalHitBoost: 0.1,
 };
 
 /**
@@ -334,6 +345,11 @@ type TypedCandidate = {
   sourceChunkIds: string[];
   /** Distinct values seen with timestamps, oldest first, EXCLUDING `latest`. */
   prior: Array<{ value: string; createdAt: number }>;
+  /**
+   * All L2 typed fact IDs observed for this slot across chunks.
+   * Used for retrieval-signal lookup during J-space capacity scoring.
+   */
+  factIds: string[];
 };
 
 /**
@@ -357,12 +373,23 @@ export async function consolidateLongTermTyped(params: {
   const existing = await params.storage.readLongTermTyped();
   const merged = new Map<string, LongTermTypedFact>(existing.facts.map((f) => [f.slot, f]));
 
+  // QW-2 (UniMem recurrence-frequency): read retrieval signals so that facts
+  // with demonstrated retrieval utility get a promotion-score boost in the
+  // J-space capacity cap. Non-fatal — if signals can't be read, the boost is 0.
+  let retrievalHitMap = new Map<string, number>();
+  try {
+    const signals = await params.storage.readRetrievalSignals();
+    retrievalHitMap = new Map(signals.map((s) => [s.factId, s.recallCount]));
+  } catch {
+    // Retrieval signals unavailable — boost defaults to 0.
+  }
+
   let promotedCount = 0;
   let supersededCount = 0;
   let reaffirmedCount = 0;
   let unarchivedCount = 0;
-  /** Slots newly promoted this epoch, for J-space capacity capping. */
-  const newSlotIds: string[] = [];
+  /** Slots newly promoted this epoch, with candidate fact IDs for retrieval-signal lookup. */
+  const newSlotIds: Array<{ slot: string; candidateFactIds: string[] }> = [];
 
   for (const candidate of candidates.values()) {
     if (candidate.recallCount < config.minRecallCount) {
@@ -382,7 +409,10 @@ export async function consolidateLongTermTyped(params: {
     if (!prior) {
       merged.set(candidate.slot, promote(candidate, params.sessionId, params.modelId));
       promotedCount += 1;
-      newSlotIds.push(candidate.slot);
+      newSlotIds.push({
+        slot: candidate.slot,
+        candidateFactIds: candidate.factIds,
+      });
       continue;
     }
     if (prior.value === candidate.latest.value) {
@@ -404,19 +434,32 @@ export async function consolidateLongTermTyped(params: {
 
   // J-space capacity cap: if we promoted more new slots than the verbalizable
   // workspace can hold (~20-40 concepts), keep only the top-N by recallCount *
-  // confidence. Capped candidates remain in L2 and re-surface next epoch.
+  // confidence plus a retrieval-frequency boost. The boost uses retrieval
+  // signals from L2-level typed fact IDs (the candidate's source facts), since
+  // newly promoted facts don't have their own retrieval history yet. Capped
+  // candidates remain in L2 and re-surface next epoch.
+  const retrievalHitBoost = config.retrievalHitBoost ?? 0;
   if (newSlotIds.length > config.maxPromotePerEpoch) {
     const scored = newSlotIds
-      .map((slot) => {
-        const fact = merged.get(slot);
-        const score = fact ? fact.recallCount * fact.confidence : 0;
-        return { slot, score };
+      .map((entry) => {
+        const fact = merged.get(entry.slot);
+        if (!fact) {
+          return { slot: entry.slot, score: 0 };
+        }
+        // Sum retrieval hits across all candidate source fact IDs.
+        // This captures how often the L2 version of this fact was retrieved.
+        const retrievalHits = entry.candidateFactIds.reduce(
+          (sum, fid) => sum + (retrievalHitMap.get(fid) ?? 0),
+          0,
+        );
+        const score = fact.recallCount * fact.confidence + retrievalHits * retrievalHitBoost;
+        return { slot: entry.slot, score };
       })
       .toSorted((a, b) => b.score - a.score);
     const keep = new Set(scored.slice(0, config.maxPromotePerEpoch).map((s) => s.slot));
-    for (const slot of newSlotIds) {
-      if (!keep.has(slot)) {
-        merged.delete(slot);
+    for (const entry of newSlotIds) {
+      if (!keep.has(entry.slot)) {
+        merged.delete(entry.slot);
         promotedCount -= 1;
       }
     }
@@ -481,10 +524,14 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
           recallCount: 1,
           sourceChunkIds: [chunkId],
           prior: [],
+          factIds: [t.id],
         });
         continue;
       }
       cur.recallCount += 1;
+      if (!cur.factIds.includes(t.id)) {
+        cur.factIds.push(t.id);
+      }
       if (!cur.sourceChunkIds.includes(chunkId)) {
         cur.sourceChunkIds.push(chunkId);
       }
