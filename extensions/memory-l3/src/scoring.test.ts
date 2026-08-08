@@ -167,6 +167,7 @@ describe("scoreFact + composite", () => {
         semanticEntropy: 1.0,
         validity: 1.0,
         entityScore: 0,
+        polarityMultiplier: 1.0,
       },
       config,
     );
@@ -185,6 +186,7 @@ describe("scoreFact + composite", () => {
         semanticEntropy: 1.0,
         validity: 1.0,
         entityScore: 0,
+        polarityMultiplier: 1.0,
       },
       config,
     );
@@ -225,6 +227,7 @@ describe("scoreFact + composite", () => {
       semanticEntropy: 1.0,
       validity: 1.0,
       entityScore: 0,
+      polarityMultiplier: 1.0,
     };
     expect(composite(signals, config)).toBe(0);
     expect(composite(signals, { ...config, weightInformationGain: 0.5 })).toBeCloseTo(0.4, 6);
@@ -265,10 +268,82 @@ describe("scoreFact + composite", () => {
         semanticEntropy: 1.0,
         validity: 1.0,
         entityScore: 0,
+        polarityMultiplier: 1.0,
       },
       config,
     );
     expect(score).toBeCloseTo(0.2, 6);
+  });
+
+  // --- MERIT-inspired dual-polarity memory ---
+
+  it("negative polarity applies demotion multiplier to composite score", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const now = Date.now();
+    const base = {
+      id: "f1",
+      text: "user prefers morning standups",
+      importance: 0.5,
+      createdAt: now,
+      dedupKey: "k:1",
+    };
+    const queryTokens = tokenize("morning standups");
+    const neutral = scoreFact({ queryTokens, fact: base, now, config });
+    const negative = scoreFact({
+      queryTokens,
+      fact: { ...base, polarity: "negative" as const },
+      now,
+      config,
+    });
+    const positive = scoreFact({
+      queryTokens,
+      fact: { ...base, polarity: "positive" as const },
+      now,
+      config,
+    });
+    // Neutral and positive get multiplier 1.0 (no change)
+    expect(neutral.polarityMultiplier).toBe(1.0);
+    expect(positive.polarityMultiplier).toBe(1.0);
+    // Negative gets demotion factor (0.5 by default)
+    expect(negative.polarityMultiplier).toBe(0.5);
+    // Composite is halved for negative
+    expect(composite(negative, config)).toBeCloseTo(composite(neutral, config) * 0.5, 6);
+  });
+
+  it("polarity demotion factor is configurable", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, polarityDemotionFactor: 0.1 };
+    const now = Date.now();
+    const fact = {
+      id: "f1",
+      text: "approach X failed with timeout",
+      importance: 0.5,
+      createdAt: now,
+      dedupKey: "k:1",
+      polarity: "negative" as const,
+    };
+    const queryTokens = tokenize("approach X");
+    const signals = scoreFact({ queryTokens, fact, now, config });
+    expect(signals.polarityMultiplier).toBe(0.1);
+  });
+
+  it("absent polarity is treated as neutral (backward compat)", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const now = Date.now();
+    const fact = {
+      id: "f1",
+      text: "some fact",
+      importance: 0.5,
+      createdAt: now,
+      dedupKey: "k:1",
+      // no polarity field
+    };
+    const signals = scoreFact({
+      queryTokens: tokenize("some"),
+      fact,
+      now,
+      config,
+    });
+    expect(signals.polarityMultiplier).toBe(1.0);
   });
 });
 
@@ -498,6 +573,7 @@ describe("buildCorpusStats + BM25", () => {
       semanticEntropy: 1.0,
       validity: 1.0,
       entityScore: 0,
+      polarityMultiplier: 1.0,
     };
     expect(composite(signals, config)).toBeCloseTo(0.5 * 0.2 + 0.8 * 0.3, 6);
   });

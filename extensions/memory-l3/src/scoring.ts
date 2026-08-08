@@ -95,6 +95,13 @@ export type ScoringConfig = {
    */
   useEntityScoring: boolean;
   /**
+   * MERIT-inspired polarity demotion multiplier for negative-polarity facts.
+   * When a fact has `polarity: 'negative'`, its composite score is multiplied
+   * by this value (0–1). Default 0.5 — down-ranks "what didn't work" to 50%
+   * unless the query explicitly seeks past failures. Set to 1.0 to disable.
+   */
+  polarityDemotionFactor: number;
+  /**
    * Age in days beyond which a fact with zero retrieval recallCount is
    * considered stale. The demotion multiplier is then applied to its
    * composite score. Default 21 (≈3 weekly epochs).
@@ -142,6 +149,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weightValidity: 0.05,
   weightEntity: 0.08,
   useEntityScoring: false,
+  polarityDemotionFactor: 0.5,
   staleZeroRecallAgeDays: 21,
   staleZeroRecallDemotion: 0.5,
   corpusSizeBm25Threshold: 50_000,
@@ -310,6 +318,13 @@ export type Signals = {
    * text that appear in the query. 0 when entity scoring is disabled or
    * no entities are found. */
   entityScore: number;
+  /**
+   * Polarity multiplier (0–1). Defaults to 1.0 (neutral). For negative-
+   * polarity facts, this is set to `config.polarityDemotionFactor` (0.5)
+   * to down-rank known-failure approaches. Applied multiplicatively in
+   * `composite()`.
+   */
+  polarityMultiplier: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
@@ -558,6 +573,8 @@ export function scoreFact(params: {
       params.config.useEntityScoring && params.queryText
         ? entityOverlapScore(params.queryText, params.fact.text)
         : 0,
+    polarityMultiplier:
+      params.fact.polarity === "negative" ? params.config.polarityDemotionFactor : 1.0,
   };
   if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
     signals.reliability = signals.reliability * params.groundingConfidence;
@@ -612,7 +629,7 @@ export function staleDemotionMultiplier(params: {
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {
-  return (
+  const weighted =
     signals.lexical * config.weightLexical +
     signals.bm25 * config.weightBm25 +
     signals.importance * config.weightImportance +
@@ -624,8 +641,8 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.reliability * config.weightReliability +
     signals.semanticEntropy * config.weightSemanticEntropy +
     signals.validity * config.weightValidity +
-    signals.entityScore * config.weightEntity
-  );
+    signals.entityScore * config.weightEntity;
+  return weighted * signals.polarityMultiplier;
 }
 
 /** Map fact certainty to a reliability score. */

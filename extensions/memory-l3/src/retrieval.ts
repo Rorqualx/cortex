@@ -1327,6 +1327,7 @@ function longTermAsL2Fact(lt: LongTermFact): L2Fact {
     importance: lt.importance,
     createdAt: lt.lastConfirmedAt,
     dedupKey: lt.dedupKey,
+    polarity: lt.polarity,
   };
 }
 

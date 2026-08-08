@@ -42,6 +42,20 @@ export const INITIAL_L3_STATE: L3State = {
 export type FactCertainty = "tentative" | "confirmed" | "instructional";
 
 /**
+ * Outcome polarity for a fact — MERIT-inspired dual-polarity memory.
+ *
+ * - `positive` = this approach worked, was validated, or succeeded.
+ * - `negative` = this approach failed, was rejected, or caused errors.
+ * - `neutral` = no outcome associated (default for all pre-existing facts).
+ *
+ * During retrieval, negative-polarity facts receive a demotion multiplier
+ * when the query context matches the same task/domain, down-ranking "what
+ * didn't work" unless explicitly querying for past failures. This improves
+ * repair accuracy by avoiding repeating known-bad approaches.
+ */
+export type FactPolarity = "positive" | "negative" | "neutral";
+
+/**
  * A single distilled fact extracted from a chunk of conversation. Importance
  * and dedupKey are used by retrieval scoring and within-chunk dedup.
  */
@@ -81,6 +95,13 @@ export type L2Fact = {
   sessionId?: string;
   /** Distinct participant roles present in the source chunk. */
   participants?: string[];
+  /**
+   * MERIT-inspired outcome polarity (positive/negative/neutral).
+   * Negative facts represent approaches that failed or were rejected.
+   * Absent on facts extracted before this feature; readers treat absent
+   * as `neutral`.
+   */
+  polarity?: FactPolarity;
 };
 
 /**
@@ -250,6 +271,11 @@ export type LongTermFact = {
    * facts that never changed.
    */
   history?: Array<{ text: string; supersededAt: number }>;
+  /**
+   * MERIT-inspired outcome polarity, propagated from L2 extraction.
+   * See {@link FactPolarity}.
+   */
+  polarity?: FactPolarity;
 };
 
 /**
