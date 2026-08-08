@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { resolve as resolvePath } from "node:path";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type {
   AssembleResult,
@@ -54,6 +56,46 @@ const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
 // invalidated on any fact write.
 const RETOPK_MAX_ENTRIES = 10;
 const RETOPK_SIMILARITY_THRESHOLD = 0.92;
+
+/**
+ * Cross-embedding-model calibration map (arXiv:2608.05857-inspired).
+ *
+ * When the embedding provider is swapped, cosine-similarity distributions
+ * shift. The calibration script (`scripts/calibrate-embeddings.ts`) writes
+ * a `threshold_map.json` with a linear regression mapping old thresholds
+ * to new. This function loads that map (if present) and returns the adjusted
+ * threshold for a given old-model threshold. Returns the input unchanged
+ * when no map exists — fully backward-compatible.
+ */
+let cachedThresholdMap: Record<string, number> | null | undefined;
+
+function loadThresholdMap(l3Root: string): Record<string, number> | null {
+  if (cachedThresholdMap !== undefined) return cachedThresholdMap;
+  try {
+    const path = resolvePath(l3Root, "threshold_map.json");
+    const raw = readFileSync(path, "utf-8");
+    const parsed = JSON.parse(raw);
+    cachedThresholdMap = parsed.thresholds ?? null;
+    if (cachedThresholdMap) {
+      l3debug(
+        `loadThresholdMap(): loaded ${Object.keys(cachedThresholdMap).length} threshold mappings from ${path}`,
+      );
+    }
+  } catch {
+    cachedThresholdMap = null;
+  }
+  return cachedThresholdMap;
+}
+
+/** Get the effective ReTopK similarity threshold, adjusted by calibration map if present. */
+function getRetopkThreshold(l3Root: string): number {
+  const map = loadThresholdMap(l3Root);
+  if (map) {
+    const adjusted = map[RETOPK_SIMILARITY_THRESHOLD.toFixed(2)];
+    if (typeof adjusted === "number") return adjusted;
+  }
+  return RETOPK_SIMILARITY_THRESHOLD;
+}
 
 type ReTopKCacheEntry = {
   query: string;
@@ -238,19 +280,18 @@ export class HierarchicalL3Engine implements ContextEngine {
 
     // ReTopK cache check: if a cached query's embedding cosine exceeds the
     // threshold, reuse the cached formatted result (arXiv:2607.27692).
+    const retopkThreshold = getRetopkThreshold(this.storage.root);
     if (queryEmbedding && this.retrievalCache.length > 0) {
       for (let i = this.retrievalCache.length - 1; i >= 0; i--) {
         const entry = this.retrievalCache[i]!;
         if (
           entry.embedding.length === queryEmbedding.length &&
-          cosineSimilarity(entry.embedding, queryEmbedding) >= RETOPK_SIMILARITY_THRESHOLD
+          cosineSimilarity(entry.embedding, queryEmbedding) >= retopkThreshold
         ) {
           // LRU: move hit to end (most-recently-used).
           this.retrievalCache.splice(i, 1);
           this.retrievalCache.push(entry);
-          l3debug(
-            `ReTopK cache hit (sim ≥ ${RETOPK_SIMILARITY_THRESHOLD}) for query: ${prompt.slice(0, 60)}`,
-          );
+          l3debug(`ReTopK cache hit (sim ≥ ${retopkThreshold}) for query: ${prompt.slice(0, 60)}`);
           return entry.result;
         }
       }
