@@ -230,7 +230,7 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=11):
+Rules (PROMPT_VERSION=12):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions.
@@ -285,7 +285,7 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=11-NATIVE):
+Rules (PROMPT_VERSION=12-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional compressed sentence explaining WHY this fact is worth remembering across sessions.

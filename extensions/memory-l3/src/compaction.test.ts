@@ -219,6 +219,54 @@ describe("compactSession", () => {
     expect(doc?.frontmatter.dedupKeys).toEqual(["user_preference:morning_standups"]);
   });
 
+  it("populates deterministic extraction fields on the L2 chunk frontmatter", async () => {
+    buffer.push("s1", {
+      role: "user",
+      content: "Please read /etc/passwd and /tmp/config.yaml",
+      timestamp: 1000,
+    } as never);
+    buffer.push("s1", {
+      role: "assistant",
+      content: [{ type: "text", text: "Let me check." }],
+      timestamp: 2000,
+    } as never);
+    buffer.push("s1", {
+      role: "toolResult",
+      toolCallId: "call-1",
+      toolName: "read",
+      content: [{ type: "text", text: "file content" }],
+      isError: false,
+      timestamp: 3000,
+    } as never);
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({
+        facts: [
+          {
+            text: "user asked to read config files",
+            importance: 0.5,
+            dedupKey: "action:read_config",
+          },
+        ],
+      }),
+    );
+    await storage.ensureLayout();
+    const result = await compactSession({ sessionId: "s1", buffer, storage, caller, state });
+    expect(result.chunkId).not.toBeNull();
+
+    const paths = await storage.listL2ChunkPaths();
+    expect(paths).toHaveLength(1);
+    const doc = await storage.readL2ChunkAtPath(paths[0]!);
+    expect(doc?.frontmatter.deterministic).toBeDefined();
+    expect(doc?.frontmatter.deterministic?.toolNames).toEqual(["read"]);
+    expect(doc?.frontmatter.deterministic?.turnCount).toBe(3);
+    expect(doc?.frontmatter.deterministic?.timeSpan.start).toBe(1000);
+    expect(doc?.frontmatter.deterministic?.timeSpan.end).toBe(3000);
+    // File paths extracted from user message content
+    expect(doc?.frontmatter.deterministic?.filePaths.length).toBeGreaterThanOrEqual(1);
+    expect(doc?.frontmatter.deterministic?.filePaths).toContain("/etc/passwd");
+    expect(doc?.frontmatter.deterministic?.filePaths).toContain("/tmp/config.yaml");
+  });
+
   it("drops facts whose dedupKey is already in a recent chunk", async () => {
     await storage.ensureLayout();
     await storage.writeL2Chunk(
@@ -352,7 +400,7 @@ describe("compactSession", () => {
     });
     expect(caller).toHaveBeenCalledTimes(1);
     const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.systemPrompt;
-    expect(systemPrompt).toContain("PROMPT_VERSION=11-NATIVE");
+    expect(systemPrompt).toContain("PROMPT_VERSION=12-NATIVE");
   });
 
   it("writes the L1 archive with the original messages", async () => {

@@ -22,7 +22,13 @@ import {
 import { cosineSimilarity } from "./scoring.js";
 import { buildMessageChunks, detectTopicBoundaries, splitByBoundaries } from "./segmentation.js";
 import type { Storage } from "./storage.js";
-import type { L2ChunkFrontmatter, L2Fact, L3State, TypedFact } from "./types.js";
+import type {
+  L2ChunkFrontmatter,
+  L2DeterministicExtraction,
+  L2Fact,
+  L3State,
+  TypedFact,
+} from "./types.js";
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 function l3debug(msg: string): void {
@@ -494,6 +500,69 @@ export function pruneStaleToolOutputs(messages: ReadonlyArray<AgentMessage>): Ag
   return finalResult;
 }
 
+// --- Deterministic zero-model extraction (PROMPT_VERSION=12) ---
+
+const FILE_PATH_REGEX = /(?:\/|[A-Za-z]:[\\/])+(?:[\w.-]+[\\/])+[\w.-]+/g;
+
+/**
+ * Extract deterministic metadata from conversation messages without any LLM
+ * call. These structured facts (tool names, file paths, turn count, time span)
+ * serve as cache keys and an auditable complement to inference-tier
+ * extraction.
+ */
+function extractDeterministic(messages: ReadonlyArray<AgentMessage>): L2DeterministicExtraction {
+  const toolNames = new Set<string>();
+  const filePaths = new Set<string>();
+  let firstTs = Number.POSITIVE_INFINITY;
+  let lastTs = 0;
+
+  for (const msg of messages) {
+    const m = msg as {
+      role?: string;
+      toolName?: string;
+      content?: unknown;
+      timestamp?: number;
+    };
+    if (m.role === "toolResult" && typeof m.toolName === "string" && m.toolName) {
+      toolNames.add(m.toolName);
+    }
+    if (typeof m.timestamp === "number" && Number.isFinite(m.timestamp)) {
+      firstTs = Math.min(firstTs, m.timestamp);
+      lastTs = Math.max(lastTs, m.timestamp);
+    }
+    // Extract file paths from text content
+    const text =
+      typeof m.content === "string"
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content
+              .map((c: { text?: string }) => (typeof c?.text === "string" ? c.text : ""))
+              .join("")
+          : "";
+    if (text) {
+      const matches = text.match(FILE_PATH_REGEX);
+      if (matches) {
+        for (const fp of matches) {
+          // Filter out common false positives (version strings, URLs without paths)
+          if (fp.length >= 3 && !fp.includes("://")) {
+            filePaths.add(fp);
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    toolNames: [...toolNames].sort(),
+    filePaths: [...filePaths].sort(),
+    turnCount: messages.length,
+    timeSpan: {
+      start: Number.isFinite(firstTs) ? firstTs : 0,
+      end: lastTs,
+    },
+  };
+}
+
 export async function compactSession(params: {
   sessionId: string;
   buffer: IngestBuffer;
@@ -649,6 +718,11 @@ export async function compactSession(params: {
     }
   }
 
+  // Zero-model deterministic extraction: tool names, file paths, turn count,
+  // time span. Runs alongside the LLM extraction as an auditable complement
+  // and potential cache key (PROMPT_VERSION=12).
+  const deterministic = extractDeterministic(messages);
+
   const frontmatter: L2ChunkFrontmatter = {
     id: chunkId,
     agentId: params.state.agentId,
@@ -667,6 +741,7 @@ export async function compactSession(params: {
     informationGain,
     contextWindow: messages.length,
     topicSegments,
+    deterministic,
   };
 
   await params.storage.writeL2Chunk(

@@ -247,7 +247,7 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=11");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=12");
     expect(call.systemPrompt).toContain("REASONING");
     expect(call.userPrompt).not.toContain("already-known");
   });

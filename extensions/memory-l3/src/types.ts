@@ -148,6 +148,25 @@ export type TypedFact = {
 };
 
 /**
+ * Zero-model deterministic facts extracted directly from message metadata.
+ * No LLM call needed — these are measured from the raw conversation buffer.
+ * Serves as cache keys (skip LLM re-extraction when inputs unchanged) and
+ * as an auditable complement to the inference-tier extraction.
+ *
+ * Added in PROMPT_VERSION=12; absent on chunks written before then.
+ */
+export type L2DeterministicExtraction = {
+  /** Distinct tool names invoked in this chunk's messages. */
+  toolNames: string[];
+  /** File paths referenced in message content (best-effort regex extraction). */
+  filePaths: string[];
+  /** Number of conversation turns (messages) in the compacted slice. */
+  turnCount: number;
+  /** Wall-clock span of the messages in this chunk. */
+  timeSpan: { start: number; end: number };
+};
+
+/**
  * JSON frontmatter persisted on L2 chunk markdown files. The body of the
  * markdown holds a human-readable summary; the structured data lives here.
  */
@@ -203,6 +222,11 @@ export type L2ChunkFrontmatter = {
    * written before v11.
    */
   activeConstraints?: ActiveConstraint[];
+  /**
+   * Zero-model deterministic extraction (tool names, file paths, turn count,
+   * time span). Added in PROMPT_VERSION=12; absent on older chunks.
+   */
+  deterministic?: L2DeterministicExtraction;
 };
 
 /**
