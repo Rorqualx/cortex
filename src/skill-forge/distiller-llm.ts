@@ -13,6 +13,7 @@ Output ONLY the markdown body (no YAML frontmatter, no surrounding code fences).
 - Start with a "## Overview" section (1-2 sentences explaining what this skill enables).
 - Add a "## When to use this skill" section describing the trigger conditions.
 - Add a "## Workflow" section with a numbered list keyed to the captured tool sequence.
+- Add a "## Validation" section with bullet points describing how to confirm the skill worked correctly (e.g., expected output, success criteria).
 - Keep the total body under 1500 characters.
 - Do NOT include "name:" or "description:" frontmatter fields - those are managed externally.
 - Do NOT include personal data, absolute filesystem paths from /Users/, /home/, or workspace dirs.

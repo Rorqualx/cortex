@@ -157,6 +157,21 @@ export type DraftedSkill = {
   description: string;
   /** How the prose body was produced; heuristic drafts keep the TODO marker for a later LLM pass. */
   distillation: "llm" | "heuristic";
+  /**
+   * When this skill should activate (from TencentDB Skill schema).
+   * Absent on heuristic drafts; populated by LLM distillation.
+   */
+  triggerBoundary?: string;
+  /**
+   * Structured execution steps (from TencentDB Skill schema).
+   * Absent on heuristic drafts; populated by LLM distillation.
+   */
+  executionSteps?: string[];
+  /**
+   * What confirms the skill worked (from TencentDB Skill schema).
+   * Absent on heuristic drafts; populated by LLM distillation.
+   */
+  validationRules?: string[];
 };
 
 export async function distillCandidateToStaging(params: {
@@ -187,6 +202,10 @@ export async function distillCandidateToStaging(params: {
     llmResult.status === "ok"
       ? llmBodyWithProvenance(candidate, llmResult)
       : bodyForCandidate(candidate, toolSequence);
+  // Extract structured metadata from the LLM body (suggestions, not gating).
+  // These fields are absent on heuristic drafts.
+  const structured =
+    llmResult.status === "ok" ? extractStructuredFields(llmResult.body) : undefined;
   const skillDir = resolveSkillForgeStagedSkillDir({ name, env });
   await fsp.mkdir(skillDir, { recursive: true });
   const skillMdPath = path.join(skillDir, "SKILL.md");
@@ -198,6 +217,9 @@ export async function distillCandidateToStaging(params: {
     skillMdPath,
     description,
     distillation: llmResult.status === "ok" ? "llm" : "heuristic",
+    ...(structured?.triggerBoundary ? { triggerBoundary: structured.triggerBoundary } : {}),
+    ...(structured?.executionSteps ? { executionSteps: structured.executionSteps } : {}),
+    ...(structured?.validationRules ? { validationRules: structured.validationRules } : {}),
   };
 }
 
@@ -206,4 +228,56 @@ function escapeYamlScalar(value: string): string {
     return `"${value.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`;
   }
   return value;
+}
+
+/**
+ * Extract structured metadata (triggerBoundary, executionSteps, validationRules)
+ * from the LLM-distilled SKILL.md body. These are best-effort suggestions
+ * parsed from standard markdown sections, not gating signals.
+ */
+function extractStructuredFields(body: string): {
+  triggerBoundary?: string;
+  executionSteps?: string[];
+  validationRules?: string[];
+} {
+  const result: {
+    triggerBoundary?: string;
+    executionSteps?: string[];
+    validationRules?: string[];
+  } = {};
+
+  // Extract trigger boundary from "## When to use this skill" section
+  const triggerMatch = body.match(/^##\s+When to use this skill\s*\n([\s\S]*?)(?=\n##\s|$)/mu);
+  if (triggerMatch?.[1]) {
+    const text = triggerMatch[1].trim();
+    if (text) {
+      result.triggerBoundary = text;
+    }
+  }
+
+  // Extract execution steps from "## Workflow" section (numbered list items)
+  const workflowMatch = body.match(/^##\s+Workflow\s*\n([\s\S]*?)(?=\n##\s|$)/mu);
+  if (workflowMatch?.[1]) {
+    const steps = workflowMatch[1]
+      .split("\n")
+      .map((line) => line.replace(/^\s*\d+\.\s*/u, "").trim())
+      .filter((line) => line.length > 0);
+    if (steps.length > 0) {
+      result.executionSteps = steps;
+    }
+  }
+
+  // Extract validation rules from "## Validation" section (bullet list items)
+  const validationMatch = body.match(/^##\s+Validation\s*\n([\s\S]*?)(?=\n##\s|$)/mu);
+  if (validationMatch?.[1]) {
+    const rules = validationMatch[1]
+      .split("\n")
+      .map((line) => line.replace(/^\s*[-*]\s*/u, "").trim())
+      .filter((line) => line.length > 0);
+    if (rules.length > 0) {
+      result.validationRules = rules;
+    }
+  }
+
+  return result;
 }
