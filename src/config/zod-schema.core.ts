@@ -442,6 +442,7 @@ const BUILT_IN_MODEL_PROVIDER_OVERLAY_IDS = new Set([
   "dashscope",
   "deepinfra",
   "deepseek",
+  "ds4",
   "fal",
   "fireworks",
   "github-copilot",

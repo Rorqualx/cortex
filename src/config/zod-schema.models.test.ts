@@ -5,6 +5,7 @@ import { ModelsConfigSchema } from "./zod-schema.core.js";
 describe("ModelsConfigSchema", () => {
   it.each([
     "claude-cli",
+    "ds4",
     "azure-openai-responses",
     "clawrouter",
     "gmi",
