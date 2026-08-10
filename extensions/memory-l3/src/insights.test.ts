@@ -74,8 +74,18 @@ describe("collectMemoryInsights", () => {
         agentId: null,
         lastConsolidatedAt: NOW,
         facts: [
-          fact({ id: "old", firstSeenAt: NOW - 20 * DAY_MS, recallCount: 9 }),
-          fact({ id: "new", firstSeenAt: NOW - 2 * DAY_MS, recallCount: 3 }),
+          fact({
+            id: "old",
+            firstSeenAt: NOW - 20 * DAY_MS,
+            recallCount: 9,
+            sourceChunkIds: ["chunk-a"],
+          }),
+          fact({
+            id: "new",
+            firstSeenAt: NOW - 2 * DAY_MS,
+            recallCount: 3,
+            sourceChunkIds: ["chunk-b", "chunk-c"],
+          }),
           fact({ id: "archived", firstSeenAt: NOW - DAY_MS, archived: true, archivedAt: NOW }),
           fact({ id: "superseded", firstSeenAt: NOW - DAY_MS, supersededBy: "slot-x" }),
         ],
@@ -87,6 +97,9 @@ describe("collectMemoryInsights", () => {
     expect(insights.totals.longTermFacts).toBe(2);
     expect(insights.window.factsPromoted.map((entry) => entry.text)).toEqual(["fact new"]);
     expect(insights.topRecalled.map((entry) => entry.recallCount)).toEqual([9, 3]);
+    // QW-2: provenance via sourceChunkIds is surfaced for traceability
+    expect(insights.window.factsPromoted[0]?.sourceChunkIds).toEqual(["chunk-b", "chunk-c"]);
+    expect(insights.topRecalled[0]?.sourceChunkIds).toEqual(["chunk-a"]);
   });
 
   it("reports typed slot changes within the window with history counts", async () => {

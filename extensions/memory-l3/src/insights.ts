@@ -44,6 +44,7 @@ export type MemoryInsights = {
       importance: number;
       recallCount: number;
       firstSeenAt: number;
+      sourceChunkIds: string[];
     }>;
     typedSlotsChanged: Array<{
       slot: string;
@@ -55,7 +56,12 @@ export type MemoryInsights = {
     epochsCreated: Array<{ id: string; createdAt: number; representativeFactCount: number }>;
     l2Chunks: number;
   };
-  topRecalled: Array<{ text: string; recallCount: number; lastConfirmedAt: number }>;
+  topRecalled: Array<{
+    text: string;
+    recallCount: number;
+    lastConfirmedAt: number;
+    sourceChunkIds: string[];
+  }>;
 };
 
 function clipFactText(text: string): string {
@@ -99,6 +105,7 @@ export async function collectMemoryInsights(params: {
       importance: fact.importance,
       recallCount: fact.recallCount,
       firstSeenAt: fact.firstSeenAt,
+      sourceChunkIds: fact.sourceChunkIds,
     }));
 
   const typedSlotsChanged = activeTyped
@@ -120,6 +127,7 @@ export async function collectMemoryInsights(params: {
       text: clipFactText(fact.text),
       recallCount: fact.recallCount,
       lastConfirmedAt: fact.lastConfirmedAt,
+      sourceChunkIds: fact.sourceChunkIds,
     }));
 
   const epochsCreated: MemoryInsights["window"]["epochsCreated"] = [];
