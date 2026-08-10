@@ -29,6 +29,7 @@ import type {
   L3State,
   TypedFact,
 } from "./types.js";
+import type { FactCertainty } from "./types.js";
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
 function l3debug(msg: string): void {
@@ -45,6 +46,39 @@ export type CompactionResult = {
   messagesIngested: number;
   epochId: string | null;
 };
+
+/**
+ * Certainty rank for conservative propagation during compaction.
+ * Lower rank = weaker certainty. When facts are merged or abstracted,
+ * the result inherits the WEAKEST certainty from its inputs so that
+ * a single tentative fact cannot be laundered to "confirmed" by being
+ * grouped with confirmed facts.
+ */
+const CERTAINTY_RANK: Record<FactCertainty, number> = {
+  tentative: 0,
+  instructional: 1,
+  confirmed: 2,
+};
+
+/**
+ * Return the most conservative (weakest) certainty from a set of facts.
+ * If any input is tentative, the result is tentative. Absent certainty
+ * is treated as "confirmed" (the type-system default for pre-existing facts).
+ */
+function conservativeCertainty(facts: ReadonlyArray<ExtractedFact>): FactCertainty | undefined {
+  if (facts.length === 0) return undefined;
+  let weakest: FactCertainty = "confirmed";
+  let any = false;
+  for (const f of facts) {
+    if (f.certainty) {
+      any = true;
+      if (CERTAINTY_RANK[f.certainty] < CERTAINTY_RANK[weakest]) {
+        weakest = f.certainty;
+      }
+    }
+  }
+  return any ? weakest : undefined;
+}
 
 const RECENT_DEDUP_KEYS_LIMIT = 200;
 const RECENT_CHUNKS_TO_SCAN = 50;
@@ -205,10 +239,14 @@ function mergeOverflowFacts(overflow: ReadonlyArray<ExtractedFact>): ExtractedFa
     // Deduplicate identical texts.
     const uniqueTexts = [...new Set(texts)];
     const mergedText = compactMerge(uniqueTexts);
+    // QW-1: propagate the most conservative certainty from inputs so a
+    // tentative fact can't be laundered to "confirmed" by merging.
+    const mergedCertainty = conservativeCertainty(sorted);
     merged.push({
       ...head,
       text: mergedText,
       reasoning: `merged:${group.length}`,
+      ...(mergedCertainty ? { certainty: mergedCertainty } : {}),
     });
   }
   return merged;
@@ -325,7 +363,12 @@ async function abstractOverflow(
   if (facts.length === 0) return null;
   if (facts.length === 1) return facts[0]!;
 
-  const factList = facts.map((f, i) => `${i + 1}. ${f.text}`).join("\n");
+  const factList = facts
+    .map((f, i) => {
+      const cert = f.certainty ? ` [${f.certainty}]` : "";
+      return `${i + 1}. ${f.text}${cert}`;
+    })
+    .join("\n");
   const prompt = `Compress these facts into a single concise statement that preserves the key information. Output only the statement, no preamble:
 
 ${factList}`;
@@ -334,7 +377,7 @@ ${factList}`;
   try {
     raw = await caller({
       systemPrompt:
-        "You are a fact compressor. Combine multiple related facts into one concise sentence. Output only the combined fact, nothing else.",
+        "You are a fact compressor. Combine multiple related facts into one concise sentence. Output only the combined fact, nothing else. If any source fact is marked [tentative], the combined statement should express appropriate uncertainty (e.g. 'may', 'possibly').",
       userPrompt: prompt,
       thinking: false,
     });
@@ -347,10 +390,14 @@ ${factList}`;
 
   // Use the highest-importance fact as the template.
   const head = [...facts].sort((a, b) => b.importance - a.importance)[0]!;
+  // QW-1: propagate the most conservative certainty from inputs so a
+  // tentative fact can't be laundered to "confirmed" by abstraction.
+  const abstractCertainty = conservativeCertainty(facts);
   return {
     ...head,
     text,
     reasoning: `abstract:${facts.length}`,
+    ...(abstractCertainty ? { certainty: abstractCertainty } : {}),
   };
 }
 

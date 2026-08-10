@@ -12,6 +12,7 @@ import { IngestBuffer } from "./ingest.js";
 import type { LlmCaller } from "./llm.js";
 import { Storage } from "./storage.js";
 import { INITIAL_L3_STATE, type L3State } from "./types.js";
+import type { FactCertainty } from "./types.js";
 
 const userMsg = (text: string) => ({ role: "user", content: text }) as never;
 
@@ -517,7 +518,7 @@ describe("applyCategoryBudgetWithOperators", () => {
   });
 
   it("uses LLM abstraction at high pressure when caller is provided", async () => {
-    // High pressure: 6 facts, tiny budget.
+    // High pressure: 4 facts, tiny budget.
     const facts = [
       { text: "alpha fact one", importance: 0.9, dedupKey: "a:1" },
       { text: "alpha fact two", importance: 0.8, dedupKey: "a:2" },
@@ -534,6 +535,76 @@ describe("applyCategoryBudgetWithOperators", () => {
     // May or may not produce an abstract fact depending on merge behavior,
     // but the result should have fewer facts than the input.
     expect(result.length).toBeLessThan(facts.length);
+  });
+
+  it("QW-1: propagates conservative certainty in merge path", async () => {
+    // Facts with mixed certainty sharing sub-category "sys".
+    const facts = [
+      {
+        text: "alpha system config",
+        importance: 0.9,
+        dedupKey: "a:sys",
+        certainty: "confirmed" as FactCertainty,
+      },
+      {
+        text: "alpha system params",
+        importance: 0.7,
+        dedupKey: "a:sys",
+        certainty: "tentative" as FactCertainty,
+      },
+      {
+        text: "alpha system diag",
+        importance: 0.5,
+        dedupKey: "a:sys",
+        certainty: "confirmed" as FactCertainty,
+      },
+    ];
+    // Budget forces 2 facts to overflow and merge (each ~6 tokens, budget=8
+    // retains only 1, leaving 2 to merge).
+    const result = await applyCategoryBudgetWithOperators({ facts, maxTokensPerCategory: 8 });
+    const mergedFact = result.find((f) => f.reasoning?.startsWith("merged:"));
+    expect(mergedFact).toBeDefined();
+    expect(mergedFact?.certainty).toBe("tentative");
+  });
+
+  it("QW-1: propagates conservative certainty in abstraction path", async () => {
+    const facts = [
+      {
+        text: "alpha fact one",
+        importance: 0.9,
+        dedupKey: "a:1",
+        certainty: "confirmed" as FactCertainty,
+      },
+      {
+        text: "alpha fact two",
+        importance: 0.8,
+        dedupKey: "a:2",
+        certainty: "tentative" as FactCertainty,
+      },
+      {
+        text: "alpha fact three",
+        importance: 0.7,
+        dedupKey: "a:3",
+        certainty: "instructional" as FactCertainty,
+      },
+      {
+        text: "alpha fact four",
+        importance: 0.6,
+        dedupKey: "a:4",
+        certainty: "confirmed" as FactCertainty,
+      },
+    ];
+    const mockCaller: LlmCaller = async () => "alpha facts combined";
+    const result = await applyCategoryBudgetWithOperators({
+      facts,
+      maxTokensPerCategory: 6,
+      caller: mockCaller,
+    });
+    const abstractFact = result.find((f) => f.reasoning?.startsWith("abstract:"));
+    if (abstractFact) {
+      // The abstract fact must carry the weakest certainty (tentative).
+      expect(abstractFact.certainty).toBe("tentative");
+    }
   });
 
   it("applies budget independently per category", async () => {
