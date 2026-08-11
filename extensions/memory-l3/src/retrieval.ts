@@ -24,6 +24,8 @@ import {
   type CorpusStats,
   jaccard,
   type ScoringConfig,
+  rankByScore,
+  rrfFuse,
   scoreFact,
   staleDemotionMultiplier,
   type Signals,
@@ -248,6 +250,19 @@ export type RetrievalConfig = {
    * alternative queries are attempted. Default 0.4.
    */
   reformulationThreshold?: number;
+  /**
+   * QW-1: When true, fuse BM25 and semantic signals via Reciprocal Rank
+   * Fusion (RRF) instead of linear weighting. RRF is rank-based and
+   * parameter-light (only k), making it robust to score-scale differences.
+   * The RRF score replaces the bm25 + semantic contributions in the
+   * composite. Default false.
+   */
+  useRRFFusion?: boolean;
+  /**
+   * QW-1: RRF k parameter. Smaller k gives more weight to top ranks.
+   * Default 60 (standard in the literature).
+   */
+  rrfK?: number;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -261,6 +276,8 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   enableMemoryCritique: false,
   reformulationPasses: 0,
   reformulationThreshold: 0.4,
+  useRRFFusion: false,
+  rrfK: 60,
 };
 
 export type RetrievedFact = {
@@ -686,7 +703,14 @@ export async function retrieveTopK(params: {
   }
 
   // Phase 2: Score all items using composite + tier boosts.
-  const scored: RetrievedFact[] = [];
+  // Two-phase: first collect signals for all items, then optionally apply
+  // RRF fusion before computing final composite scores.
+  type PrescoredItem = {
+    item: ScorableItem;
+    signals: Signals;
+  };
+  const prescored: PrescoredItem[] = [];
+
   for (const item of items) {
     const signals = scoreFact({
       queryTokens,
@@ -728,7 +752,49 @@ export async function retrieveTopK(params: {
       signals.bm25 = 0;
       signals.lexical = 0;
     }
-    const baseScore = composite(signals, effectiveConfig);
+    prescored.push({ item, signals });
+  }
+
+  // QW-1: Reciprocal Rank Fusion — when enabled, fuse BM25 and semantic
+  // rankings via RRF instead of linear weighting. The RRF score replaces
+  // the bm25 + semantic contributions in the composite. Other signals
+  // (importance, recency, reliability, etc.) still apply additively.
+  let rrfScores: Map<string, number> | null = null;
+  if (retConfig.useRRFFusion && prescored.length > 0) {
+    const k = retConfig.rrfK ?? 60;
+    // Build ranked lists from bm25 and semantic signals.
+    const bm25Scores = new Map<string, number>();
+    const semanticScores = new Map<string, number>();
+    for (const ps of prescored) {
+      bm25Scores.set(ps.item.fact.id, ps.signals.bm25);
+      semanticScores.set(ps.item.fact.id, ps.signals.semantic);
+    }
+    const bm25Ranking = rankByScore(bm25Scores);
+    const semanticRanking = rankByScore(semanticScores);
+    rrfScores = rrfFuse([bm25Ranking, semanticRanking], k);
+  }
+
+  const scored: RetrievedFact[] = [];
+  for (const { item, signals } of prescored) {
+    let baseScore: number;
+    if (rrfScores) {
+      // RRF mode: replace bm25 + semantic weighted contributions with the
+      // RRF fused score (normalized to 0-1 range), then add the remaining
+      // signal contributions from the composite.
+      const rrfScore = rrfScores.get(item.fact.id) ?? 0;
+      // Compute composite with bm25 and semantic zeroed out (they're
+      // replaced by RRF), then add RRF as an additive bonus scaled to
+      // the same range as the zeroed contributions.
+      const adjustedSignals: Signals = {
+        ...signals,
+        bm25: 0,
+        semantic: 0,
+      };
+      const zeroedWeights = effectiveConfig.weightBm25 + effectiveConfig.weightSemantic;
+      baseScore = composite(adjustedSignals, effectiveConfig) + rrfScore * zeroedWeights;
+    } else {
+      baseScore = composite(signals, effectiveConfig);
+    }
     const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
     // Stale-utility demotion: facts never retrieved across multiple epochs
     // get their composite score multiplied down to reflect low demonstrated

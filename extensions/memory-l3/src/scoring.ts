@@ -657,6 +657,58 @@ export function composite(signals: Signals, config: ScoringConfig): number {
   return weighted * signals.polarityMultiplier;
 }
 
+// ---------------------------------------------------------------------------
+// Reciprocal Rank Fusion (QW-1)
+// ---------------------------------------------------------------------------
+
+/** Default k for RRF. Small values (10-60) are standard in the literature. */
+export const DEFAULT_RRF_K = 60;
+
+/**
+ * Reciprocal Rank Fusion (RRF) — rank-based fusion of multiple retrieval signals.
+ *
+ * QW-1 (TencentDB arXiv:2608.05366 + SuperLocalMemory 4.0 arXiv:2608.08253):
+ * replaces the fixed-weight linear blend of BM25 + semantic with a
+ * parameter-light rank-based formula:
+ *
+ *   fused(item) = Σ_i  1 / (k + rank_i(item))
+ *
+ * Where rank_i(item) is the item's 1-based rank in signal i's ordering
+ * (1 = best). Items not ranked in a signal get 0 contribution from it.
+ *
+ * Advantages over linear weighting:
+ * - Only one parameter (k), no per-signal weight tuning
+ * - Robust to score-scale differences between signals (rank-based, not score-based)
+ * - Well-established in production retrieval (Elasticsearch, Azure Cognitive Search)
+ *
+ * @param rankedLists - array of arrays, each inner array is item IDs sorted
+ *   by descending score in that signal. E.g. [bm25Ranking, semanticRanking].
+ * @param k - RRF constant (default 60). Smaller k gives more weight to top ranks.
+ * @returns Map<string, number> from item ID to fused RRF score.
+ */
+export function rrfFuse(
+  rankedLists: ReadonlyArray<ReadonlyArray<string>>,
+  k: number = DEFAULT_RRF_K,
+): Map<string, number> {
+  const fused = new Map<string, number>();
+  for (const ranking of rankedLists) {
+    for (let rank = 0; rank < ranking.length; rank++) {
+      const id = ranking[rank]!;
+      const contribution = 1 / (k + rank + 1); // rank is 0-based, RRF uses 1-based
+      fused.set(id, (fused.get(id) ?? 0) + contribution);
+    }
+  }
+  return fused;
+}
+
+/**
+ * Build a ranked list of item IDs from a score map (higher score = better rank).
+ * Ties are broken by insertion order (stable sort).
+ */
+export function rankByScore(scores: Map<string, number>): string[] {
+  return [...scores.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+}
+
 /** Map fact certainty to a reliability score. */
 function certaintyToReliability(certainty: import("./types.js").FactCertainty | undefined): number {
   switch (certainty) {

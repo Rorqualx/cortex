@@ -3,13 +3,16 @@ import {
   bm25Score,
   buildCorpusStats,
   composite,
+  DEFAULT_RRF_K,
   DEFAULT_FSRS_PARAMS,
   DEFAULT_SCORING_CONFIG,
   entityOverlapScore,
   episodicValidity,
   fsrsRetrievability,
   jaccard,
+  rankByScore,
   recencyScore,
+  rrfFuse,
   scoreFact,
   sourceTrustToReliability,
   staleDemotionMultiplier,
@@ -1267,5 +1270,71 @@ describe("QW-4: sourceTrust in scoreFact", () => {
       sourceTrust: "web",
     });
     expect(signalsWeb.reliability).toBe(0.5);
+  });
+});
+
+describe("QW-1: rrfFuse", () => {
+  it("fuses two ranked lists via reciprocal rank formula", () => {
+    // BM25 ranking: A, B, C
+    // Semantic ranking: B, A, C
+    const fused = rrfFuse([
+      ["A", "B", "C"],
+      ["B", "A", "C"],
+    ]);
+    // A: 1/(k+1) + 1/(k+2)
+    // B: 1/(k+2) + 1/(k+1)
+    // C: 1/(k+3) + 1/(k+3)
+    const k = DEFAULT_RRF_K;
+    expect(fused.get("A")).toBeCloseTo(1 / (k + 1) + 1 / (k + 2), 10);
+    expect(fused.get("B")).toBeCloseTo(1 / (k + 2) + 1 / (k + 1), 10);
+    expect(fused.get("C")).toBeCloseTo(1 / (k + 3) + 1 / (k + 3), 10);
+    // A and B should have equal scores (symmetric ranks)
+    expect(fused.get("A")).toBe(fused.get("B"));
+    // C should be lower than A and B
+    expect(fused.get("C")!).toBeLessThan(fused.get("A")!);
+  });
+
+  it("handles items present in only one list", () => {
+    const fused = rrfFuse([
+      ["A", "B"],
+      ["B", "C"],
+    ]);
+    // A: only in list 1 at rank 1
+    expect(fused.get("A")).toBeCloseTo(1 / 61, 10);
+    // B: in both lists
+    expect(fused.get("B")).toBeCloseTo(1 / 62 + 1 / 61, 10);
+    // C: only in list 2 at rank 2
+    expect(fused.get("C")).toBeCloseTo(1 / 62, 10);
+  });
+
+  it("respects custom k parameter", () => {
+    // With k=1, top rank gets much more weight
+    const fusedDefault = rrfFuse([["A", "B"]]);
+    const fusedSmall = rrfFuse([["A", "B"]], 1);
+    // A is rank 1 in the single list
+    expect(fusedDefault.get("A")).toBeCloseTo(1 / 61, 10);
+    expect(fusedSmall.get("A")).toBeCloseTo(1 / 2, 10);
+    expect(fusedSmall.get("A")!).toBeGreaterThan(fusedDefault.get("A")!);
+  });
+
+  it("returns empty map for empty input", () => {
+    const fused = rrfFuse([]);
+    expect(fused.size).toBe(0);
+  });
+});
+
+describe("QW-1: rankByScore", () => {
+  it("ranks items by descending score", () => {
+    const scores = new Map<string, number>([
+      ["A", 0.1],
+      ["B", 0.9],
+      ["C", 0.5],
+    ]);
+    const ranking = rankByScore(scores);
+    expect(ranking).toEqual(["B", "C", "A"]);
+  });
+
+  it("returns empty array for empty map", () => {
+    expect(rankByScore(new Map())).toEqual([]);
   });
 });
