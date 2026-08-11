@@ -538,6 +538,12 @@ export function scoreFact(params: {
    * demoting facts whose source intent has drifted. Not persisted.
    */
   driftDemotion?: number;
+  /**
+   * QW-4: Source trust level for the fact. When present, the reliability
+   * signal is the minimum of certainty-based and trust-based reliability,
+   * so a low-trust source cannot hide behind a high-certainty extraction.
+   */
+  sourceTrust?: import("./types.js").SourceTrust;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -557,6 +563,12 @@ export function scoreFact(params: {
           driftDemotion: params.driftDemotion,
         })
       : recencyScore(ageMs, params.config.recencyHalfLifeDays);
+  // QW-4: When sourceTrust is provided, combine certainty-based and
+  // trust-based reliability conservatively (take the minimum) so a
+  // low-trust source cannot hide behind a high-certainty extraction.
+  const certaintyReliability = params.reliability ?? certaintyToReliability(params.fact.certainty);
+  const trustReliability = sourceTrustToReliability(params.sourceTrust);
+  const combinedReliability = Math.min(certaintyReliability, trustReliability);
   const signals: Signals = {
     lexical,
     bm25,
@@ -566,7 +578,7 @@ export function scoreFact(params: {
     semantic: 0,
     informationGain: params.informationGain ?? 0,
     goalRelevance: params.goalRelevance ?? 0,
-    reliability: params.reliability ?? certaintyToReliability(params.fact.certainty),
+    reliability: combinedReliability,
     semanticEntropy: params.semanticEntropy ?? params.fact.semanticEntropy ?? 1.0,
     validity: episodicValidity(params.fact, params.now),
     entityScore:
@@ -653,6 +665,35 @@ function certaintyToReliability(certainty: import("./types.js").FactCertainty | 
     case "instructional":
       return 0.85;
     case "confirmed":
+    default:
+      return 1.0;
+  }
+}
+
+/**
+ * Map source trust to a reliability score.
+ *
+ * QW-4 (Controlled Memory Interference — arXiv:2608.07622): poisoning is
+ * more sensitive to update-authority cues than to recency. Facts sourced
+ * from the user are most reliable; web-sourced facts carry medium risk of
+ * misinformation; agent-inferred facts are the weakest authority signal;
+ * untrusted facts are explicitly penalised.
+ *
+ * Returns 1.0 (neutral) when sourceTrust is absent — preserves existing
+ * behavior for facts created before this feature.
+ */
+export function sourceTrustToReliability(
+  sourceTrust: import("./types.js").SourceTrust | undefined,
+): number {
+  switch (sourceTrust) {
+    case "user":
+      return 1.0;
+    case "web":
+      return 0.75;
+    case "agent-inferred":
+      return 0.6;
+    case "untrusted":
+      return 0.3;
     default:
       return 1.0;
   }

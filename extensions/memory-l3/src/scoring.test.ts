@@ -10,8 +10,9 @@ import {
   fsrsRetrievability,
   jaccard,
   recencyScore,
-  staleDemotionMultiplier,
   scoreFact,
+  sourceTrustToReliability,
+  staleDemotionMultiplier,
   tokenize,
   volatilityMultiplier,
 } from "./scoring.js";
@@ -1169,5 +1170,102 @@ describe("corpus-size-aware BM25 config", () => {
     const config = { ...DEFAULT_SCORING_CONFIG, corpusSizeBm25ScaleFactor: 1.0 };
     const scaleFactor = config.corpusSizeBm25ScaleFactor ?? 1.5;
     expect(scaleFactor > 1.0).toBe(false);
+  });
+});
+
+describe("QW-4: sourceTrustToReliability", () => {
+  it("maps each SourceTrust level to the expected reliability", () => {
+    expect(sourceTrustToReliability("user")).toBe(1.0);
+    expect(sourceTrustToReliability("web")).toBe(0.75);
+    expect(sourceTrustToReliability("agent-inferred")).toBe(0.6);
+    expect(sourceTrustToReliability("untrusted")).toBe(0.3);
+  });
+
+  it("returns neutral (1.0) for undefined sourceTrust", () => {
+    expect(sourceTrustToReliability(undefined)).toBe(1.0);
+  });
+});
+
+describe("QW-4: sourceTrust in scoreFact", () => {
+  it("combines certainty and sourceTrust conservatively (min)", () => {
+    const queryTokens = tokenize("server ip address");
+    const fact = {
+      id: "f1",
+      text: "server ip address is 192.168.1.1",
+      importance: 0.8,
+      createdAt: Date.now(),
+      dedupKey: "infra:server_ip",
+      // Confirmed certainty = high reliability (1.0)
+      certainty: "confirmed" as const,
+    };
+    // Without sourceTrust: reliability from certainty alone = 1.0
+    const signalsWithout = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    expect(signalsWithout.reliability).toBe(1.0);
+
+    // With untrusted source: reliability clamped to 0.3 (min of 1.0, 0.3)
+    const signalsUntrusted = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+      sourceTrust: "untrusted",
+    });
+    expect(signalsUntrusted.reliability).toBe(0.3);
+
+    // With agent-inferred: reliability = 0.6
+    const signalsAgent = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+      sourceTrust: "agent-inferred",
+    });
+    expect(signalsAgent.reliability).toBe(0.6);
+  });
+
+  it("takes the more conservative of certainty vs trust", () => {
+    const queryTokens = tokenize("project deadline");
+    const fact = {
+      id: "f2",
+      text: "project deadline is next friday",
+      importance: 0.7,
+      createdAt: Date.now(),
+      dedupKey: "project:deadline",
+      // Tentative = 0.5 reliability
+      certainty: "tentative" as const,
+    };
+    // Without sourceTrust: reliability = 0.5 from tentative certainty
+    const signals = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    expect(signals.reliability).toBe(0.5);
+
+    // With user source (1.0): min(0.5, 1.0) = 0.5 — certainty still governs
+    const signalsUser = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+      sourceTrust: "user",
+    });
+    expect(signalsUser.reliability).toBe(0.5);
+
+    // With web source (0.75): min(0.5, 0.75) = 0.5 — certainty still governs
+    const signalsWeb = scoreFact({
+      queryTokens,
+      fact,
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+      sourceTrust: "web",
+    });
+    expect(signalsWeb.reliability).toBe(0.5);
   });
 });

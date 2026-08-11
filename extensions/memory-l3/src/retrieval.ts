@@ -545,6 +545,8 @@ export async function retrieveTopK(params: {
     informationGain?: number;
     /** Number of messages in the buffer that produced this fact (L2 tier only). */
     contextWindow?: number;
+    /** QW-4: Source trust for long-term typed facts. */
+    sourceTrust?: import("./types.js").SourceTrust;
   };
   const items: ScorableItem[] = [];
 
@@ -592,6 +594,7 @@ export async function retrieveTopK(params: {
       tier: "longterm-typed",
       l3Boost: 0,
       tierBoost: config.weightLongTermTierBoost,
+      sourceTrust: ltt.sourceTrust,
     });
   }
 
@@ -694,6 +697,7 @@ export async function retrieveTopK(params: {
       corpusStats,
       significant: item.fact.significant,
       informationGain: item.informationGain,
+      sourceTrust: item.sourceTrust,
     });
     // Add embedding-based semantic signal when both query and fact have vectors
     if (
