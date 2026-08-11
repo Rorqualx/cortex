@@ -263,6 +263,14 @@ export type RetrievalConfig = {
    * Default 60 (standard in the literature).
    */
   rrfK?: number;
+  /**
+   * QW-2: Wall-clock timeout for retrieval scoring in milliseconds.
+   * When set, the scoring loop checks elapsed time and bails out early
+   * if exceeded, returning whatever has been scored so far (sorted).
+   * This prevents retrieval from blocking on large stores or slow embeddings.
+   * Default undefined (no timeout). Set to e.g. 5000 for a 5-second cap.
+   */
+  retrievalTimeoutMs?: number;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -711,7 +719,24 @@ export async function retrieveTopK(params: {
   };
   const prescored: PrescoredItem[] = [];
 
+  // QW-2: Wall-clock deadline for scoring. When set, bail out of the scoring
+  // loop early if the deadline is exceeded. Items not scored are simply
+  // absent from results — partial results are better than blocking.
+  const scoringDeadline =
+    retConfig.retrievalTimeoutMs && retConfig.retrievalTimeoutMs > 0
+      ? Date.now() + retConfig.retrievalTimeoutMs
+      : null;
+
   for (const item of items) {
+    // Check deadline before scoring each item (avoids per-item timer overhead)
+    if (scoringDeadline !== null && Date.now() > scoringDeadline) {
+      if (process.env.OPENCLAW_MEMORY_L3_DEBUG === "1") {
+        console.error(
+          `[memory-l3/retrieval] scoring timeout (${retConfig.retrievalTimeoutMs}ms) reached after ${prescored.length} items`,
+        );
+      }
+      break;
+    }
     const signals = scoreFact({
       queryTokens,
       fact: item.fact,
