@@ -355,6 +355,14 @@ export async function applyCategoryBudgetWithOperators(params: {
 
 /**
  * Use an LLM to abstract a set of overflow facts into a single concise fact.
+ *
+ * QW-3 (certainty-as-labelled-field): the LLM input and output now use
+ * structured JSON with certainty as a separate field rather than inline
+ * bracket notation. Research (arXiv:2608.06953) shows structured fields
+ * survive compression ~15% better than prose qualifiers. The output
+ * certainty is parsed from the LLM response but always clamped by the
+ * conservative (weakest) certainty of the inputs so a tentative fact
+ * can never be laundered to "confirmed".
  */
 async function abstractOverflow(
   facts: ReadonlyArray<ExtractedFact>,
@@ -363,21 +371,27 @@ async function abstractOverflow(
   if (facts.length === 0) return null;
   if (facts.length === 1) return facts[0]!;
 
-  const factList = facts
-    .map((f, i) => {
-      const cert = f.certainty ? ` [${f.certainty}]` : "";
-      return `${i + 1}. ${f.text}${cert}`;
-    })
-    .join("\n");
-  const prompt = `Compress these facts into a single concise statement that preserves the key information. Output only the statement, no preamble:
+  // Structured JSON input: each fact is an object with separate text and
+  // certainty fields, so the model sees certainty as a first-class signal.
+  const structuredFacts = facts.map((f, i) => ({
+    text: f.text,
+    certainty: f.certainty ?? "confirmed",
+  }));
+  const prompt = `Compress these facts into a single concise statement that preserves the key information.
 
-${factList}`;
+Input facts (JSON):
+${JSON.stringify(structuredFacts, null, 2)}
+
+Output strict JSON only: {"text": "the combined statement", "certainty": "tentative|confirmed|instructional"}
+- If any input fact has certainty "tentative", the output certainty must be "tentative".
+- If any input fact has certainty "instructional" (and none are tentative), the output certainty must be "instructional".
+- Otherwise, output "confirmed".`;
 
   let raw: string;
   try {
     raw = await caller({
       systemPrompt:
-        "You are a fact compressor. Combine multiple related facts into one concise sentence. Output only the combined fact, nothing else. If any source fact is marked [tentative], the combined statement should express appropriate uncertainty (e.g. 'may', 'possibly').",
+        "You are a fact compressor. Combine multiple related facts into one concise statement. Output strict JSON with 'text' and 'certainty' fields. The 'certainty' field must be the most conservative (weakest) certainty from the inputs.",
       userPrompt: prompt,
       thinking: false,
     });
@@ -385,19 +399,52 @@ ${factList}`;
     return null;
   }
 
-  const text = raw.trim();
+  // Parse the response: try JSON first, fall back to plain text.
+  let text: string;
+  let llmCertainty: FactCertainty | undefined;
+  try {
+    const parsed = JSON.parse(raw.trim());
+    if (parsed && typeof parsed === "object" && typeof parsed.text === "string") {
+      text = parsed.text.trim();
+      llmCertainty =
+        parsed.certainty === "tentative" ||
+        parsed.certainty === "confirmed" ||
+        parsed.certainty === "instructional"
+          ? parsed.certainty
+          : undefined;
+    } else {
+      text = raw.trim();
+    }
+  } catch {
+    // Non-JSON response — use raw text as fallback.
+    text = raw.trim();
+  }
+
   if (!text || text.length < 5) return null;
 
   // Use the highest-importance fact as the template.
   const head = [...facts].sort((a, b) => b.importance - a.importance)[0]!;
   // QW-1: propagate the most conservative certainty from inputs so a
   // tentative fact can't be laundered to "confirmed" by abstraction.
+  // QW-3: the LLM now returns certainty as a structured field, but we
+  // still clamp to the conservative floor — the LLM cannot upgrade
+  // certainty beyond what the inputs support.
   const abstractCertainty = conservativeCertainty(facts);
+  // If the LLM returned a more conservative certainty than the computed
+  // floor, trust the LLM (it may have detected nuance). If it returned a
+  // less conservative one, use the floor.
+  const finalCertainty =
+    abstractCertainty && llmCertainty
+      ? CERTAINTY_RANK[llmCertainty] < CERTAINTY_RANK[abstractCertainty]
+        ? llmCertainty
+        : abstractCertainty
+      : (abstractCertainty ?? llmCertainty);
+
   return {
     ...head,
     text,
     reasoning: `abstract:${facts.length}`,
-    ...(abstractCertainty ? { certainty: abstractCertainty } : {}),
+    ...(finalCertainty ? { certainty: finalCertainty } : {}),
   };
 }
 

@@ -594,17 +594,104 @@ describe("applyCategoryBudgetWithOperators", () => {
         certainty: "confirmed" as FactCertainty,
       },
     ];
-    const mockCaller: LlmCaller = async () => "alpha facts combined";
+    // QW-3: LLM now returns structured JSON with certainty field.
+    const mockCaller: LlmCaller = async () =>
+      JSON.stringify({ text: "alpha facts combined", certainty: "tentative" });
     const result = await applyCategoryBudgetWithOperators({
       facts,
       maxTokensPerCategory: 6,
       caller: mockCaller,
     });
     const abstractFact = result.find((f) => f.reasoning?.startsWith("abstract:"));
-    if (abstractFact) {
-      // The abstract fact must carry the weakest certainty (tentative).
-      expect(abstractFact.certainty).toBe("tentative");
-    }
+    expect(abstractFact).toBeDefined();
+    // The abstract fact must carry the weakest certainty (tentative).
+    expect(abstractFact?.certainty).toBe("tentative");
+    // QW-3: text should be the LLM's structured text, not raw JSON.
+    expect(abstractFact?.text).toBe("alpha facts combined");
+  });
+
+  it("QW-3: parses structured JSON abstraction output and clamps certainty", async () => {
+    // LLM tries to upgrade certainty to "confirmed" but the overflow
+    // contains a tentative fact — the floor must clamp it back down.
+    // The tentative fact has LOW importance so it lands in the overflow
+    // (the highest-importance fact is retained before overflow is computed).
+    const facts = [
+      {
+        text: "beta fact one",
+        importance: 0.9,
+        dedupKey: "b:1",
+        certainty: "confirmed" as FactCertainty,
+      },
+      {
+        text: "beta fact two",
+        importance: 0.8,
+        dedupKey: "b:2",
+        certainty: "confirmed" as FactCertainty,
+      },
+      {
+        text: "beta fact three",
+        importance: 0.7,
+        dedupKey: "b:3",
+        certainty: "tentative" as FactCertainty,
+      },
+      {
+        text: "beta fact four",
+        importance: 0.6,
+        dedupKey: "b:4",
+        certainty: "confirmed" as FactCertainty,
+      },
+    ];
+    const mockCaller: LlmCaller = async () =>
+      JSON.stringify({ text: "beta facts combined", certainty: "confirmed" });
+    const result = await applyCategoryBudgetWithOperators({
+      facts,
+      maxTokensPerCategory: 6,
+      caller: mockCaller,
+    });
+    const abstractFact = result.find((f) => f.reasoning?.startsWith("abstract:"));
+    expect(abstractFact).toBeDefined();
+    // Certainty must be clamped to tentative (the conservative floor).
+    expect(abstractFact?.certainty).toBe("tentative");
+    expect(abstractFact?.text).toBe("beta facts combined");
+  });
+
+  it("QW-3: falls back to plain text when LLM returns non-JSON", async () => {
+    const facts = [
+      {
+        text: "gamma fact one",
+        importance: 0.9,
+        dedupKey: "c:1",
+        certainty: "confirmed" as FactCertainty,
+      },
+      {
+        text: "gamma fact two",
+        importance: 0.8,
+        dedupKey: "c:2",
+        certainty: "confirmed" as FactCertainty,
+      },
+      {
+        text: "gamma fact three",
+        importance: 0.7,
+        dedupKey: "c:3",
+        certainty: "confirmed" as FactCertainty,
+      },
+      {
+        text: "gamma fact four",
+        importance: 0.6,
+        dedupKey: "c:4",
+        certainty: "confirmed" as FactCertainty,
+      },
+    ];
+    // Non-JSON response — should fall back to plain text.
+    const mockCaller: LlmCaller = async () => "gamma facts plain text combined";
+    const result = await applyCategoryBudgetWithOperators({
+      facts,
+      maxTokensPerCategory: 6,
+      caller: mockCaller,
+    });
+    const abstractFact = result.find((f) => f.reasoning?.startsWith("abstract:"));
+    expect(abstractFact).toBeDefined();
+    expect(abstractFact?.text).toBe("gamma facts plain text combined");
   });
 
   it("applies budget independently per category", async () => {
