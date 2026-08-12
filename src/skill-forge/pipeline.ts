@@ -17,6 +17,7 @@ import { nameCollisionCheck } from "./gate.js";
 import { resolveSkillForgeSessionsDir } from "./paths.js";
 import { promoteStagedSkill, type PromotionResult } from "./promoter.js";
 import { judgeSkillCandidateWithLlm, type LlmReplayGateResult } from "./replay-gate.js";
+import { compressDraftedSkill } from "./skill-compressor.js";
 import { recordSkillCreation } from "./telemetry.js";
 
 export type PipelineRunInput = {
@@ -222,6 +223,10 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
       env,
       ...(distillProse && { distillProse }),
     });
+    // QW-2: Zip-on-Write — compress the drafted skill body to remove
+    // intra-skill redundancy before the promotion gate. Coverage-safe:
+    // skips compression if tool refs or triggers would be lost.
+    await compressDraftedSkill(draft.skillMdPath);
     drafted.push(draft);
     judgeTargets.push({ candidate, draft });
     await recordSkillCreation({ name: draft.name, env });
