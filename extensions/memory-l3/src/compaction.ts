@@ -594,6 +594,133 @@ export function pruneStaleToolOutputs(messages: ReadonlyArray<AgentMessage>): Ag
   return finalResult;
 }
 
+// --- Pre-compaction low-information filter (QW-1: aggressive L1→L2 early compaction) ---
+
+/**
+ * Maximum character length of an assistant message (no tool calls) to be
+ * considered "low-information" and eligible for pre-compaction pruning.
+ * Messages at or below this threshold that also match ack patterns are
+ * dropped before the expensive LLM extraction call.
+ */
+const LOW_INFO_ASSISTANT_MAX_CHARS = 80;
+
+/**
+ * Patterns that identify pure-acknowledgment assistant turns with no
+ * substantive content. These carry no extractable facts.
+ */
+const ACK_PATTERNS: readonly RegExp[] = [
+  /^(?:great?|nice|cool|awesome|perfect|got it|understood|sure|ok(?:ay)?|done|will do|roger|acknowledged|noted|right|exactly|makes sense|sounds good|looks good|agreed)[.!?]?$/i,
+  /^(?:i (?:see|agree|understand|think so too)|that(?:'s| is) (?:right|correct|good|fine|great))[.!?]?$/i,
+  /^(?:thank you|thanks|ty|appreciated?)[.!?]?$/i,
+  /^\+1$/,
+];
+
+/**
+ * Extract plain text from a message for heuristic checks.
+ */
+function extractText(msg: AgentMessage): string {
+  const content = (msg as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((p) =>
+        p && typeof p === "object" && "text" in p ? String((p as { text: string }).text) : "",
+      )
+      .join("");
+  }
+  return "";
+}
+
+/**
+ * Check if an assistant message is a low-information turn: short, no tool
+ * calls, and matches an acknowledgment pattern or is trivially short.
+ */
+function isLowInformationAssistant(msg: AgentMessage): boolean {
+  const role = (msg as { role?: string }).role;
+  if (role !== "assistant") return false;
+  // Any assistant message with tool calls carries actionable signal.
+  if (hasToolCalls(msg)) return false;
+  const text = extractText(msg).trim();
+  if (text.length === 0) return true; // empty assistant turn
+  if (text.length > LOW_INFO_ASSISTANT_MAX_CHARS) return false;
+  // Check ack patterns
+  for (const pattern of ACK_PATTERNS) {
+    if (pattern.test(text)) return true;
+  }
+  // Very short non-ack assistant turns (under 20 chars, no punctuation
+  // suggesting a question or instruction) are also low-signal.
+  if (text.length < 20 && !/[?!]/.test(text)) return true;
+  return false;
+}
+
+/**
+ * Check if a user message is a low-information turn: trivially short with
+ * no actionable content (e.g., "ok", "yes", "continue", standalone emoji).
+ */
+function isLowInformationUser(msg: AgentMessage): boolean {
+  const role = (msg as { role?: string }).role;
+  if (role !== "user") return false;
+  const text = extractText(msg).trim();
+  if (text.length === 0) return true;
+  if (text.length > 30) return false;
+  // Short acknowledgments or continuations with no new information
+  if (
+    /^(?:ok(?:ay)?|sure|yes|no|continue|go ahead|proceed|cool|nice|great|fine|done|next|k|kk|👍|✅|❤️|😂|💯)\.?$/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Pre-compaction heuristic pass: drop low-information messages before the
+ * expensive LLM extraction call. Targets:
+ * - Pure acks / filler ("OK", "Great!", "Thanks")
+ * - Short assistant turns with no tool calls or substantive content
+ * - Trivially short user acknowledgments ("ok", "yes", "continue")
+ *
+ * This is a lossy filter — these messages rarely produce extractable facts.
+ * The risk of missing a fact is negligible because the substantive context
+ * is carried by surrounding messages.
+ *
+ * Gated behind OPENCLAW_MEMORY_L3_PRE_COMPACT_FILTER=1 (default: off).
+ *
+ * Inspired by Marginal Value Estimation (arXiv:2608.08389): early-stage
+ * pruning of low-value content yields disproportionate token savings.
+ */
+export function filterLowInformationMessages(
+  messages: ReadonlyArray<AgentMessage>,
+): AgentMessage[] {
+  const result: AgentMessage[] = [];
+  let dropped = 0;
+
+  for (const msg of messages) {
+    const role = (msg as { role?: string }).role;
+
+    if (role === "assistant" && isLowInformationAssistant(msg)) {
+      dropped++;
+      continue;
+    }
+
+    if (role === "user" && isLowInformationUser(msg)) {
+      dropped++;
+      continue;
+    }
+
+    result.push(msg);
+  }
+
+  if (dropped > 0) {
+    l3debug(
+      `filterLowInformationMessages: dropped ${dropped} low-info messages from ${messages.length} total`,
+    );
+  }
+
+  return result;
+}
+
 // --- Deterministic zero-model extraction (PROMPT_VERSION=12) ---
 
 const FILE_PATH_REGEX = /(?:\/|[A-Za-z]:[\\/])+(?:[\w.-]+[\\/])+[\w.-]+/g;
@@ -701,10 +828,16 @@ export async function compactSession(params: {
   const rawMessages = [...params.buffer.peek(params.sessionId)];
   // QW-3: Prune stale/duplicate/large tool outputs before extraction to save
   // LLM tokens and reduce fact dilution. Gated behind env flag.
-  const messages =
+  const afterToolPrune =
     process.env.OPENCLAW_MEMORY_L3_PRUNE_TOOL_OUTPUT === "1"
       ? pruneStaleToolOutputs(rawMessages)
       : rawMessages;
+  // QW-1: Drop low-information messages (pure acks, short filler) before
+  // the expensive LLM extraction call. Gated behind env flag.
+  const messages =
+    process.env.OPENCLAW_MEMORY_L3_PRE_COMPACT_FILTER === "1"
+      ? filterLowInformationMessages(afterToolPrune)
+      : afterToolPrune;
   const tokensBefore = params.buffer.tokens(params.sessionId);
   if (messages.length === 0) {
     return {

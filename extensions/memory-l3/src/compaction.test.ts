@@ -7,6 +7,7 @@ import {
   applyCategoryBudget,
   applyCategoryBudgetWithOperators,
   pruneStaleToolOutputs,
+  filterLowInformationMessages,
 } from "./compaction.js";
 import { IngestBuffer } from "./ingest.js";
 import type { LlmCaller } from "./llm.js";
@@ -800,5 +801,119 @@ describe("pruneStaleToolOutputs", () => {
     const result = pruneStaleToolOutputs(msgs);
     const toolResults = result.filter((m) => (m as { role?: string }).role === "toolResult");
     expect(toolResults).toHaveLength(2);
+  });
+});
+
+// --- QW-1: filterLowInformationMessages tests ---
+
+const assistantMsg = (text: string) =>
+  ({
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "anthropic",
+    provider: "anthropic",
+    model: "test",
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: "end_turn",
+    timestamp: 0,
+  }) as never;
+
+describe("filterLowInformationMessages", () => {
+  it("returns all messages when none are low-information", () => {
+    const msgs = [
+      userMsg("Please help me configure the server"),
+      assistantMsg("I'll help you configure the server. First, let's check the current setup."),
+      userMsg("The config file is at /etc/nginx/nginx.conf"),
+    ];
+    const result = filterLowInformationMessages(msgs);
+    expect(result).toHaveLength(3);
+  });
+
+  it("drops pure acknowledgment assistant messages", () => {
+    const msgs = [
+      userMsg("I updated the config file"),
+      assistantMsg("Great!"),
+      userMsg("Now it should work"),
+      assistantMsg("Got it."),
+    ];
+    const result = filterLowInformationMessages(msgs);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual(msgs[0]);
+    expect(result[1]).toEqual(msgs[2]);
+  });
+
+  it("drops short user acknowledgments", () => {
+    const msgs = [userMsg("ok"), userMsg("The server is at 192.168.1.1"), userMsg("yes")];
+    const result = filterLowInformationMessages(msgs);
+    expect(result).toHaveLength(1);
+    expect((result[0] as { content: string }).content).toBe("The server is at 192.168.1.1");
+  });
+
+  it("keeps assistant messages with tool calls", () => {
+    const msgs = [
+      userMsg("check the file"),
+      assistantWithToolCall("call-1"),
+      toolResultMsg("call-1", "read", "content"),
+    ];
+    const result = filterLowInformationMessages(msgs);
+    expect(result).toHaveLength(3);
+  });
+
+  it("keeps substantive assistant messages", () => {
+    const longText =
+      "I've analyzed the configuration and found three issues with the nginx setup. " +
+      "The server block is missing a proxy_pass directive, the SSL certificate path is wrong, " +
+      "and the worker_processes setting is too low for the expected load.";
+    const msgs = [userMsg("What did you find?"), assistantMsg(longText)];
+    const result = filterLowInformationMessages(msgs);
+    expect(result).toHaveLength(2);
+  });
+
+  it("keeps user questions even if short", () => {
+    const msgs = [userMsg("Why?")];
+    const result = filterLowInformationMessages(msgs);
+    expect(result).toHaveLength(1);
+  });
+
+  it("drops empty assistant turns", () => {
+    const emptyAssistant = {
+      role: "assistant",
+      content: [],
+      api: "anthropic",
+      provider: "anthropic",
+      model: "test",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      stopReason: "end_turn",
+      timestamp: 0,
+    } as never;
+    const msgs = [userMsg("hello"), emptyAssistant];
+    const result = filterLowInformationMessages(msgs);
+    expect(result).toHaveLength(1);
+  });
+
+  it("handles mixed content arrays in assistant messages", () => {
+    // Assistant message with mixed content but no tool call and ack text
+    const mixedAck = {
+      role: "assistant",
+      content: [{ type: "text", text: "Sure." }],
+      api: "anthropic",
+      provider: "anthropic",
+      model: "test",
+      usage: { inputTokens: 1, outputTokens: 1 },
+      stopReason: "end_turn",
+      timestamp: 0,
+    } as never;
+    const msgs = [userMsg("please proceed"), mixedAck];
+    const result = filterLowInformationMessages(msgs);
+    expect(result).toHaveLength(1);
+  });
+
+  it("does not drop user messages with actionable content", () => {
+    const msgs = [userMsg("Continue with the deployment plan"), userMsg("OK")];
+    const result = filterLowInformationMessages(msgs);
+    // "Continue with the deployment plan" is 33 chars, over the 30-char threshold
+    // "OK" is a pure ack and gets dropped
+    expect(result).toHaveLength(1);
+    expect((result[0] as { content: string }).content).toBe("Continue with the deployment plan");
   });
 });
