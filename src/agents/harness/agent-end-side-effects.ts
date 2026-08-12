@@ -2,12 +2,13 @@ import type { ChatType } from "../../channels/chat-type.js";
 /**
  * Agent-end side effect runner.
  *
- * Harnesses use this to trigger core skill side effects and plugin agent_end
+ * Harnesses use this to trigger skill experience review and plugin agent_end
  * hooks either fire-and-forget or awaited during tests/shutdown. The wrapper is
  * the single seam every harness shares, so per-harness loops never reach for
  * the hook helpers (or any future core agent-end side effect) directly.
  */
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { consumeRunSkillUsage } from "../../skills/runtime/run-usage.js";
 import {
   awaitAgentHarnessAgentEndHook,
   runAgentHarnessAgentEndHook,
@@ -40,12 +41,14 @@ type AgentEndSideEffectsParams = Omit<BaseAgentEndSideEffectsParams, "ctx"> & {
 // Fork: skills/research autocapture was removed (Skill Forge is the only
 // skills pipeline); only the experience-review scheduling side effect remains.
 async function runCoreAgentEndSideEffects(params: AgentEndSideEffectsParams): Promise<void> {
+  const usedSkills = consumeRunSkillUsage(params.ctx.runId);
   try {
     const { scheduleSkillExperienceReview } =
       await import("../../skills/workshop/experience-review-default.js");
     scheduleSkillExperienceReview({
       event: params.event,
       ctx: params.ctx,
+      usedSkills,
       ...(params.ctx.config ? { config: params.ctx.config } : {}),
     });
   } catch (error) {

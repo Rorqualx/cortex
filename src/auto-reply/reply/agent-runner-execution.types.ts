@@ -1,4 +1,5 @@
 import type { runEmbeddedAgent } from "../../agents/embedded-agent.js";
+import type { FailoverReason } from "../../agents/failover/signal.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import type { TemplateContext } from "../templating.js";
 import type { VerboseLevel } from "../thinking.js";
@@ -15,7 +16,7 @@ export type RuntimeFallbackAttempt = {
   provider: string;
   model: string;
   error: string;
-  reason?: string;
+  reason: FailoverReason;
   status?: number;
   code?: string;
 };
@@ -95,6 +96,13 @@ export type AgentTurnParams = {
   shouldEmitToolOutput: () => boolean;
   pendingToolTasks: Set<Promise<void>>;
   resetSessionAfterRoleOrderingConflict: (reason: string) => Promise<boolean>;
+  /**
+   * Confirms the replacement writer owns restart recovery after this session's
+   * transcript writer claim was rebound to it (see isSessionLeaseLoss in
+   * agent-runner-error-handler.ts). Not yet wired by any caller; optional so
+   * the lease-loss branch stays a no-op until a producer confirms ownership
+   * against the latest persisted claim/terminal marker.
+   */
   isHeartbeat: boolean;
   sessionKey?: string;
   runtimePolicySessionKey?: string;
@@ -105,7 +113,6 @@ export type AgentTurnParams = {
   toolProgressDetail?: "explain" | "raw";
   replyMediaContext?: ReplyMediaContext;
   onCompactionNoticePayload?: (payload: ReplyPayload) => Promise<void> | void;
-  confirmRestartRecoveryArmedAfterLeaseLoss?: () => Promise<boolean>;
   isRestartRecoveryArmed?: () => boolean;
 };
 

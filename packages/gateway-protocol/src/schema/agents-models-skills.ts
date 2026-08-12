@@ -252,8 +252,15 @@ export const AgentsFilesSetResultSchema = Type.Object(
 /** Model catalog request with optional visibility scope. */
 export const ModelsListParamsSchema = Type.Object(
   {
+    agentId: Type.Optional(Type.String()),
+    includeProviderCapabilities: Type.Optional(Type.Boolean()),
     view: Type.Optional(
-      Type.Union([Type.Literal("default"), Type.Literal("configured"), Type.Literal("all")]),
+      Type.Union([
+        Type.Literal("default"),
+        Type.Literal("configured"),
+        Type.Literal("provider-config"),
+        Type.Literal("all"),
+      ]),
     ),
   },
   { additionalProperties: false },

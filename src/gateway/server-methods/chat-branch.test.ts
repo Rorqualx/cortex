@@ -7,7 +7,7 @@ import {
   appendTranscriptEventSync,
   appendTranscriptMessage,
   loadTranscriptEventsSync,
-  upsertSessionEntry,
+  upsertSessionEntryCore,
   type SessionTranscriptReadScope,
 } from "../../config/sessions/session-accessor.js";
 import { withEnvAsync } from "../../test-utils/env.js";
@@ -77,7 +77,7 @@ async function withTranscript(
   storePathForTest = path.join(dir, "sessions.json");
   try {
     await withEnvAsync({ OPENCLAW_STATE_DIR: dir }, async () => {
-      await upsertSessionEntry(
+      await upsertSessionEntryCore(
         { agentId: "main", sessionKey: SESSION_KEY, storePath: storePathForTest },
         { sessionId: SESSION_ID, updatedAt: 1 },
       );

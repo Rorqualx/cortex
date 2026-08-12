@@ -12,7 +12,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { sanitizeToolArgs } from "../agents/embedded-agent-subscribe.tools.js";
+import { sanitizeToolArgs } from "../agents/embedded-agent-tool-results.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import { OPENCLAW_SQLITE_BUSY_TIMEOUT_MS } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqliteDir } from "../state/openclaw-state-db.paths.js";

@@ -10,7 +10,7 @@ import {
   expandPolicyWithPluginGroups,
   expandToolGroups,
   normalizeToolList,
-  normalizeToolName,
+  normalizeToolPolicyName as normalizeToolName,
   readToolAllowlistIntersection,
 } from "../../tool-policy.js";
 

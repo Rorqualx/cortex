@@ -40,7 +40,7 @@ import {
   consumePendingToolMediaIntoReply,
   hasAssistantVisibleReply,
   readPendingToolMediaReply,
-} from "./embedded-agent-subscribe.handlers.messages.js";
+} from "./embedded-agent-subscribe.handlers.messages.replies.js";
 import {
   cleanupRunToolStartData,
   handleToolExecutionEnd,
@@ -50,12 +50,9 @@ import type {
   EmbeddedAgentSubscribeContext,
   EmbeddedAgentSubscribeState,
 } from "./embedded-agent-subscribe.handlers.types.js";
-import { isPromiseLike } from "./embedded-agent-subscribe.promise.js";
-import {
-  buildToolLifecycleErrorResult,
-  extractToolResultMediaArtifact,
-  filterToolResultMediaUrls,
-} from "./embedded-agent-subscribe.tools.js";
+import { buildToolLifecycleErrorResult } from "./embedded-agent-tool-results.js";
+import { extractToolResultMediaArtifact, filterToolResultMediaUrls } from "./embedded-agent-tool-media.js";
+import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
 import {
   createThinkingTagStreamState,
@@ -205,6 +202,10 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     acceptedSessionSpawns: [],
     toolMetaById: new Map(),
     toolSummaryById: new Set(),
+    // Live-edit diff progress per in-flight tool call (upstream feature); handler
+    // modules (lifecycle/messages.update/tools.completion/tools.start) key off
+    // this map, so it must exist even in the fork's hand-built state object.
+    liveEditDiffStateById: new Map(),
     itemActiveIds: new Set(),
     itemStartedCount: 0,
     itemCompletedCount: 0,
@@ -1447,6 +1448,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     getAcceptedSessionSpawns: () => state.acceptedSessionSpawns.slice(),
     getLatestMcpAppChannelView: () =>
       state.latestMcpAppChannelView ? { ...state.latestMcpAppChannelView } : undefined,
+    getLatestMcpConnectAction: () => state.latestMcpConnectAction,
     runToolLifecycle: async <T>(toolParams: {
       toolName: string;
       toolCallId: string;

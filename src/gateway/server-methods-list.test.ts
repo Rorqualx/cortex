@@ -66,7 +66,7 @@ describe("listGatewayMethods", () => {
   });
 
   it("appends new methods after model probing without shifting older method indices", () => {
-    expect(listGatewayMethods().slice(-64)).toEqual([
+    expect(listGatewayMethods().slice(-67)).toEqual([
       "models.probe",
       "migrations.memory.plan",
       "migrations.memory.apply",
@@ -131,6 +131,9 @@ describe("listGatewayMethods", () => {
       "hooks.status",
       "tasks.retry",
       "tasks.dismiss",
+      "secrets.store.list",
+      "secrets.store.set",
+      "secrets.store.delete",
     ]);
     const methods = listGatewayMethods();
     expect(methods.indexOf("node.pluginSurface.refresh")).toBe(
@@ -168,6 +171,25 @@ describe("listGatewayMethods", () => {
   it("advertises the versioned activity audit method", () => {
     expect(listGatewayMethods()).toContain("audit.activity.list");
     expect(coreGatewayHandlers["audit.activity.list"]).toBeTypeOf("function");
+  });
+
+  it("keeps deprecated restart preflight compatibility read-only and advertised", () => {
+    const methods = listGatewayMethods();
+    const descriptor = createCoreGatewayMethodDescriptors(coreGatewayHandlers).find(
+      (candidate) => candidate.name === "gateway.restart.preflight",
+    );
+
+    expect(methods).toContain("gateway.restart.preflight");
+    expect(methods.indexOf("gateway.restart.preflight")).toBe(
+      methods.indexOf("gateway.restart.request") - 1,
+    );
+    expect(coreGatewayHandlers["gateway.restart.preflight"]).toBeTypeOf("function");
+    expect(descriptor).toMatchObject({
+      name: "gateway.restart.preflight",
+      scope: "operator.read",
+      since: "<=2026.7",
+    });
+    expect(descriptor?.controlPlaneWrite).toBeUndefined();
   });
 
   it("does not advertise hidden core handlers", () => {

@@ -3,6 +3,7 @@
  * Covers denied prompts, agent-session resume, wait handling, direct fallback,
  * and elevated runtime handoff routing.
  */
+import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./tools/gateway.js", () => ({
@@ -66,12 +67,7 @@ afterEach(() => {
   }
 });
 
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`expected ${label}`);
-  }
-  return value as Record<string, unknown>;
-}
+const requireRecord = createRequireRecord("record", "expected-label");
 
 function requireFirstMockCall(mock: unknown, label: string): unknown[] {
   const call = (mock as { mock?: { calls?: unknown[][] } }).mock?.calls?.[0];
@@ -761,6 +757,38 @@ describe("exec approval followup", () => {
     expectStableDirectDelivery(directParams, "req-no-session");
     expect(callGatewayTool).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      suppressionReason: "cancelled_by_message_sending_hook",
+      expectedMessage: "delivery was suppressed",
+    },
+    {
+      suppressionReason: "adapter_returned_no_identity",
+      expectedMessage: "delivery could not be confirmed",
+    },
+  ] as const)(
+    "rejects direct followup after $suppressionReason",
+    async ({ suppressionReason, expectedMessage }) => {
+      vi.mocked(sendMessage).mockResolvedValueOnce({
+        channel: "discord",
+        to: "123",
+        via: "direct",
+        mediaUrl: null,
+        deliveryStatus: "suppressed",
+        suppressionReason,
+      });
+
+      await expect(
+        sendExecApprovalFollowup({
+          approvalId: `req-${suppressionReason}`,
+          turnSourceChannel: "discord",
+          turnSourceTo: "123",
+          resultText: "Exec finished (gateway id=req-suppressed, code 0)\nall good",
+        }),
+      ).rejects.toThrow(expectedMessage);
+    },
+  );
 
   it("redacts credentials before direct delivery", async () => {
     const secret = "sk-abcdefghijklmnopqrstuvwxyz123456";

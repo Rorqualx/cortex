@@ -6,7 +6,7 @@ import {
   formatSqliteSessionFileMarker,
   parseSqliteSessionFileMarker,
 } from "../config/sessions/legacy-sqlite-marker.js";
-import { listSessionEntries, loadSessionEntry } from "../config/sessions/session-accessor.js";
+import { listSessionEntriesCore, loadSessionEntry } from "../config/sessions/session-accessor.js";
 import { resolveSessionStorePathForScope } from "../config/sessions/session-store-path.js";
 import {
   buildMemoryPromptSection,
@@ -79,7 +79,7 @@ function buildCompactionResultSessionTarget(params: {
         })
       : undefined;
   const markerMatches = marker
-    ? listSessionEntries({
+    ? listSessionEntriesCore({
         agentId: marker.agentId,
         storePath: marker.storePath,
       }).filter(({ entry }) => entry.sessionId === marker.sessionId)
@@ -157,8 +157,8 @@ export async function delegateCompactionToRuntime(
 ): Promise<CompactResult> {
   // Load through the dedicated runtime boundary without introducing another
   // source-level static edge into the embedded runner graph.
-  const { compactEmbeddedAgentSessionDirect } = await loadCompactRuntime();
-  type RuntimeCompactionParams = Parameters<typeof compactEmbeddedAgentSessionDirect>[0];
+  const { compactEmbeddedAgentSessionOnDemand } = await loadCompactRuntime();
+  type RuntimeCompactionParams = Parameters<typeof compactEmbeddedAgentSessionOnDemand>[0];
 
   // runtimeContext carries host-resolved runtime fields set by internal
   // callers. Keep the public delegate keyed by session identity, not by the
@@ -192,7 +192,7 @@ export async function delegateCompactionToRuntime(
             sessionTarget?.storePath ??
             resolveSessionStorePathForScope({ agentId: markerAgentId, sessionKey }),
         });
-  const result = await compactEmbeddedAgentSessionDirect({
+  const result = await compactEmbeddedAgentSessionOnDemand({
     ...runtimeContextParams,
     sessionFile,
     ...(agentId ? { agentId } : {}),

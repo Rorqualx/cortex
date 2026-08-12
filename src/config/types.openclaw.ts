@@ -14,6 +14,7 @@ import type { BrowserConfig } from "./types.browser.js";
 import type { ChannelsConfig } from "./types.channels.js";
 import type { CloudWorkersConfig } from "./types.cloud-workers.js";
 import type { CronConfig } from "./types.cron.js";
+import type { DesktopConfig } from "./types.desktop.js";
 import type { DiscoveryConfig, GatewayConfig, TalkConfig } from "./types.gateway.js";
 import type { HooksConfig } from "./types.hooks.js";
 import type { McpConfig } from "./types.mcp.js";
@@ -233,6 +234,8 @@ export type OpenClawConfig = {
   talk?: TalkConfig;
   /** Gateway server, auth, UI, node-pairing, and dispatch settings. */
   gateway?: GatewayConfig;
+  /** Experimental Labs gate for observing the gateway-host desktop source. */
+  desktop?: DesktopConfig;
   /** Opt-in cloud-worker provider profiles. */
   cloudWorkers?: CloudWorkersConfig;
   /** Memory indexing/search configuration. */

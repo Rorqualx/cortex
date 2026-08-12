@@ -12,6 +12,7 @@ import {
   normalizeReservedToolNames,
   TOOL_NAME_SEPARATOR,
 } from "./agent-bundle-mcp-names.js";
+import { mergeMcpConnectCatalog } from "./agent-bundle-mcp-requester-connect.js";
 import type {
   BundleMcpToolRuntime,
   McpCatalogTool,
@@ -104,6 +105,7 @@ function buildAppToolPolicyProjections(params: {
     return serverOrder || a.toolName.localeCompare(b.toolName);
   });
   for (const tool of appOnlyTools) {
+    const server = params.catalog.servers[tool.serverName];
     const name = buildSafeToolName({
       serverName: tool.safeServerName,
       toolName: tool.toolName,
@@ -127,6 +129,10 @@ function buildAppToolPolicyProjections(params: {
         safeServerName: tool.safeServerName,
         toolName: tool.toolName,
         operation: "tool",
+        codexApproval: {
+          mode: server?.codexApprovalMode ?? "auto",
+          ...(tool.codexAnnotations ? { annotations: tool.codexAnnotations } : {}),
+        },
       },
     });
     tools.push(projection);
@@ -412,6 +418,10 @@ export function buildBundleMcpToolsFromCatalog(params: {
         toolName: tool.toolName,
         operation: "tool",
         ...(tool.deniedBySession ? { deniedBySession: true } : {}),
+        codexApproval: {
+          mode: server?.codexApprovalMode ?? "auto",
+          ...(tool.codexAnnotations ? { annotations: tool.codexAnnotations } : {}),
+        },
       },
     });
     tools.push(agentTool);
@@ -535,10 +545,17 @@ export async function materializeBundleMcpToolsForRun(params: {
   const reservedToolNames = params.reservedToolNames
     ? Array.from(params.reservedToolNames)
     : undefined;
+  const materializedCatalog = mergeMcpConnectCatalog(catalog, params.runtime.requesterConnect);
   const tools = buildBundleMcpToolsFromCatalog({
-    catalog,
+    catalog: materializedCatalog,
     reservedToolNames,
     createExecute: (tool) => async (toolCallId: string, input: unknown) => {
+      if (!Object.hasOwn(catalog.servers, tool.serverName)) {
+        const connect = params.runtime.requesterConnect?.createExecute(tool.serverName);
+        if (connect) {
+          return await connect(toolCallId, input);
+        }
+      }
       params.runtime.markUsed();
       const result = await params.runtime.callTool(tool.serverName, tool.toolName, input);
       const agentResult = toAgentToolResult({
@@ -620,7 +637,7 @@ export async function materializeBundleMcpToolsForRun(params: {
       : undefined,
   });
   const appTools = buildAppToolPolicyProjections({
-    catalog,
+    catalog: materializedCatalog,
     modelTools: tools,
     reservedToolNames,
   });

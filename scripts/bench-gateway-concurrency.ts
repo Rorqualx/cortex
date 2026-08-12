@@ -8,6 +8,7 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
 import { PROTOCOL_VERSION } from "../packages/gateway-protocol/src/version.ts";
+import { asFiniteNumber } from "../packages/normalization-core/src/number-coercion.ts";
 import { applyMockOpenAiModelConfig } from "./e2e/lib/fixtures/mock-openai-config.mjs";
 import { delay, stopChild } from "./lib/gateway-bench-child.ts";
 import { getFreePort } from "./lib/gateway-bench-probes.ts";
@@ -190,7 +191,7 @@ Options:
   --runs <n>         Measured gateway runs (default: ${DEFAULT_RUNS})
   --warmup <n>       Warmup gateway runs (default: ${DEFAULT_WARMUP})
   --cadence-ms <ms>  Probe cadence (default: ${DEFAULT_CADENCE_MS})
-  --timeout-ms <ms>  Whole benchmark cap, excluding probe warmup (default: ${DEFAULT_TIMEOUT_MS})
+  --timeout-ms <ms>  Per-run cap, excluding probe warmup (default: ${DEFAULT_TIMEOUT_MS})
   --entry <path>     Gateway CLI entry file (default: ${DEFAULT_ENTRY})
   --output <path>    Write machine-readable JSON to a file
   --json             Emit machine-readable JSON
@@ -239,11 +240,23 @@ async function requestHttp(params: {
   port: number;
 }): Promise<{ body: string; latencyMs: number; status: number }> {
   const startedAt = performance.now();
-  const timeoutMs = Math.max(
-    1,
-    Math.min(HTTP_TIMEOUT_MS, requireRemainingMs(params.deadlineAt, `requesting ${params.path}`)),
-  );
+  const requestDeadlineAt = Math.min(params.deadlineAt, startedAt + HTTP_TIMEOUT_MS);
+  requireRemainingMs(requestDeadlineAt, `requesting ${params.path}`);
   return await new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (run: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      run();
+    };
+    const fail = (error: Error) =>
+      settle(() => {
+        req.destroy();
+        reject(error);
+      });
     const req = request(
       {
         headers: { accept: params.accept },
@@ -251,7 +264,6 @@ async function requestHttp(params: {
         method: "GET",
         path: params.path,
         port: params.port,
-        timeout: timeoutMs,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -259,28 +271,33 @@ async function requestHttp(params: {
         res.on("data", (chunk: Buffer) => {
           bytes += chunk.length;
           if (bytes > MAX_HTTP_BODY_BYTES) {
-            req.destroy(new Error(`${params.path} response exceeded ${MAX_HTTP_BODY_BYTES} bytes`));
+            fail(new Error(`${params.path} response exceeded ${MAX_HTTP_BODY_BYTES} bytes`));
             return;
           }
           chunks.push(chunk);
         });
-        res.on("end", () => {
-          resolve({
-            body: Buffer.concat(chunks).toString("utf8"),
-            latencyMs: performance.now() - startedAt,
-            status: res.statusCode ?? 0,
-          });
-        });
+        res.once("aborted", () => fail(new Error(`${params.path} response aborted`)));
+        res.once("error", fail);
+        res.once("end", () =>
+          settle(() =>
+            resolve({
+              body: Buffer.concat(chunks).toString("utf8"),
+              latencyMs: performance.now() - startedAt,
+              status: res.statusCode ?? 0,
+            }),
+          ),
+        );
       },
     );
-    req.once("error", reject);
-    req.once("timeout", () => req.destroy(new Error(`${params.path} request timed out`)));
+    req.once("error", fail);
+    // Request/socket timeouts measure inactivity; this timer owns the wall-clock deadline.
+    const timer = setTimeout(
+      () => fail(new Error(`${params.path} request timed out`)),
+      Math.max(1, Math.ceil(remainingMs(requestDeadlineAt))),
+    );
+    timer.unref?.();
     req.end();
   });
-}
-
-function numberOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function describeProbeError(error: unknown): string {
@@ -580,10 +597,10 @@ async function sampleGateway(params: {
       ok: readyz.ok && readyz.status === 200,
       status: readyz.status,
       degraded: typeof eventLoop?.degraded === "boolean" ? eventLoop.degraded : null,
-      degradedSinceMs: numberOrNull(eventLoop?.degradedSinceMs),
-      delayP99Ms: numberOrNull(eventLoop?.delayP99Ms),
-      utilization: numberOrNull(eventLoop?.utilization),
-      cpuCoreRatio: numberOrNull(eventLoop?.cpuCoreRatio),
+      degradedSinceMs: asFiniteNumber(eventLoop?.degradedSinceMs) ?? null,
+      delayP99Ms: asFiniteNumber(eventLoop?.delayP99Ms) ?? null,
+      utilization: asFiniteNumber(eventLoop?.utilization) ?? null,
+      cpuCoreRatio: asFiniteNumber(eventLoop?.cpuCoreRatio) ?? null,
     },
     sessionsList: {
       atMs,
@@ -794,6 +811,35 @@ function summarizeRuns(runs: readonly BenchmarkRun[]) {
   };
 }
 
+async function runBenchmarkSamples(params: {
+  now?: () => number;
+  onProgress?: (message: string) => void;
+  options: CliOptions;
+  runSample?: typeof runGatewaySample;
+}): Promise<BenchmarkRun[]> {
+  const now = params.now ?? performance.now.bind(performance);
+  const runSample = params.runSample ?? runGatewaySample;
+  const runs: BenchmarkRun[] = [];
+  const total = params.options.runs + params.options.warmup;
+  for (let index = 0; index < total; index += 1) {
+    // Each sample gets the same budget so earlier runs cannot shrink later agent waits.
+    // runGatewaySample extends this deadline by its probe warmup before load starts.
+    const deadlineAt = now() + params.options.timeoutMs;
+    const run = await runSample({ ...params.options, deadlineAt });
+    if (index >= params.options.warmup) {
+      runs.push(run);
+      params.onProgress?.(
+        `[bench-gateway-concurrency] run ${runs.length}/${params.options.runs}: turns=${run.turnCount} samples=${run.readyz.length} duration=${run.durationMs.toFixed(1)}ms`,
+      );
+    } else {
+      params.onProgress?.(
+        `[bench-gateway-concurrency] warmup ${index + 1}/${params.options.warmup}: duration=${run.durationMs.toFixed(1)}ms`,
+      );
+    }
+  }
+  return runs;
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (hasHelpFlag(argv)) {
@@ -801,24 +847,7 @@ async function main(): Promise<void> {
     return;
   }
   const options = parseOptions(argv);
-  let deadlineAt = performance.now() + options.timeoutMs;
-  const runs: BenchmarkRun[] = [];
-  const total = options.runs + options.warmup;
-  for (let index = 0; index < total; index += 1) {
-    requireRemainingMs(deadlineAt, "starting gateway run");
-    const run = await runGatewaySample({ ...options, deadlineAt });
-    deadlineAt += run.probeWarmup.durationMs;
-    if (index >= options.warmup) {
-      runs.push(run);
-      console.error(
-        `[bench-gateway-concurrency] run ${runs.length}/${options.runs}: turns=${run.turnCount} samples=${run.readyz.length} duration=${run.durationMs.toFixed(1)}ms`,
-      );
-    } else {
-      console.error(
-        `[bench-gateway-concurrency] warmup ${index + 1}/${options.warmup}: duration=${run.durationMs.toFixed(1)}ms`,
-      );
-    }
-  }
+  const runs = await runBenchmarkSamples({ onProgress: console.error, options });
   const payload = {
     cadenceMs: options.cadenceMs,
     concurrency: options.concurrency,
@@ -841,6 +870,8 @@ export const testing = {
   parseOptions,
   formatProbeFailure,
   formatRunFailure,
+  requestHttp,
+  runBenchmarkSamples,
   runTurn,
   sampleGateway,
   summarizeNumbers,

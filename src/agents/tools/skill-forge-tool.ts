@@ -27,7 +27,7 @@ import type { CaptureResult } from "../../skill-forge/types.js";
 import { stringEnum } from "../schema/typebox.js";
 import {
   asToolParamsRecord,
-  readStringParam,
+  readToolStringParam,
   ToolInputError,
   type AnyAgentTool,
 } from "./common.js";
@@ -82,7 +82,7 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
     parameters: SkillForgeToolSchema,
     execute: async (_toolCallId, args) => {
       const params = asToolParamsRecord(args);
-      const action = readStringParam(params, "action", { required: true });
+      const action = readToolStringParam(params, "action", { required: true });
 
       if (action === "status") {
         return await handleStatus();
@@ -201,7 +201,7 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
   }
 
   async function handleCapture(params: Record<string, unknown>) {
-    const sessionId = readStringParam(params, "session_id", {
+    const sessionId = readToolStringParam(params, "session_id", {
       required: true,
       label: "session_id",
     });
@@ -258,7 +258,7 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
   }
 
   async function handlePromote(params: Record<string, unknown>) {
-    const name = readStringParam(params, "name", { required: true });
+    const name = readToolStringParam(params, "name", { required: true });
     const result: PromotionResult = await promoteStagedSkill({ name });
     if (result.status === "rejected") {
       return {
@@ -283,11 +283,11 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
   }
 
   async function handleRetire(params: Record<string, unknown>) {
-    const name = readStringParam(params, "name");
+    const name = readToolStringParam(params, "name");
     const maxUnusedDays = readMaxUnusedDaysParam(params) ?? DEFAULT_DECAY_POLICY.maxUnusedDays;
 
     if (name) {
-      const reason = readStringParam(params, "reason") ?? "manual retirement";
+      const reason = readToolStringParam(params, "reason") ?? "manual retirement";
       const entry = await recordSkillDemotion({ name, reason });
       return {
         content: [

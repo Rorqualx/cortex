@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { estimateStringChars } from "@openclaw/normalization-core/cjk-chars";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { sliceUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { parseDurationMs } from "../../cli/parse-duration.js";
 import type { AgentContextPruningConfig } from "../../config/types.agent-defaults.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createDedupeCache } from "../../infra/dedupe.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import type { TextContent } from "../../llm/types.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
-import { estimateStringChars } from "../../utils/cjk-chars.js";
 import { compileGlobPatterns, matchesAnyGlobPattern } from "../glob-pattern.js";
-import type { SessionWriteLockAcquireTimeoutConfig } from "../session-write-lock.js";
 import type { AgentMessage } from "../runtime/index.js";
 import { SessionManager } from "../sessions/index.js";
 import { formatFullOutputFooter } from "../sessions/tools/tool-contracts.js";
@@ -795,6 +795,31 @@ function getToolResultProjectionKeys(
   });
 }
 
+/** Drops projections whose source messages no longer exist in canonical session history. */
+export function reconcileToolResultPromptProjectionState(
+  messages: AgentMessage[],
+  projectionState: ToolResultPromptProjectionState,
+): void {
+  const canonicalKeys = new Set(getToolResultProjectionKeys(messages, projectionState));
+  for (const key of [
+    ...projectionState.frozen,
+    ...projectionState.replacements.keys(),
+    ...projectionState.sourceTextByKey.keys(),
+  ]) {
+    if (!canonicalKeys.has(key)) {
+      projectionState.frozen.delete(key);
+      projectionState.replacements.delete(key);
+      projectionState.sourceTextByKey.delete(key);
+    }
+  }
+  const representedBaseKeys = new Set(messages.map(getToolResultProjectionBaseKey));
+  for (const baseKey of projectionState.ambiguousBaseKeys) {
+    if (!representedBaseKeys.has(baseKey)) {
+      projectionState.ambiguousBaseKeys.delete(baseKey);
+    }
+  }
+}
+
 function mergeProjectedToolResultMessage(
   message: AgentMessage,
   projectedMessage: AgentMessage,
@@ -1379,7 +1404,7 @@ export async function truncateOversizedToolResultsInSession(params: {
   sessionKey?: string;
   agentId?: string;
   /** Accepted for caller compatibility; the unified target owns its own lease. */
-  config?: SessionWriteLockAcquireTimeoutConfig;
+  config?: OpenClawConfig;
 }): Promise<{ truncated: boolean; truncatedCount: number; reason?: string }> {
   if (!params.sessionId || !params.sessionKey) {
     return { truncated: false, truncatedCount: 0, reason: "no session identity" };

@@ -101,6 +101,11 @@ const subCliCommandCatalog = defineCommandDescriptorCatalog([
     hasSubcommands: true,
   },
   {
+    name: "connect",
+    description: "Connect this machine to an OpenClaw Gateway as a node",
+    hasSubcommands: false,
+  },
+  {
     name: "worker",
     description: "Run the restricted cloud worker runtime",
     hasSubcommands: false,
@@ -129,6 +134,11 @@ const subCliCommandCatalog = defineCommandDescriptorCatalog([
   {
     name: "tui",
     description: "Open a terminal UI connected to the Gateway",
+    hasSubcommands: false,
+  },
+  {
+    name: "resume",
+    description: "Resume a recent Gateway session in the TUI",
     hasSubcommands: false,
   },
   {
@@ -268,7 +278,7 @@ export const SUB_CLI_DESCRIPTORS = filterPrivateQaItems(
 );
 
 /** Return visible sub-CLI descriptors in help/registration order. */
-export function getSubCliEntries(): ReadonlyArray<SubCliDescriptor> {
+export function getSubCliEntriesCore(): ReadonlyArray<SubCliDescriptor> {
   return filterPrivateQaItems(
     subCliCommandCatalog.getDescriptors(),
     (descriptor) => descriptor.name,

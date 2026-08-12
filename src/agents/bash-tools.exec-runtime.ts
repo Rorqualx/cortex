@@ -58,13 +58,8 @@ import {
   type DeliveryContext,
 } from "../utils/delivery-context.shared.js";
 import { resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
-import {
-  addSession,
-  appendOutput,
-  createSessionSlug,
-  markExited,
-  tail,
-} from "./bash-process-registry.js";
+import { addSession, appendOutput, markExited, tail } from "./bash-process-registry.js";
+import { createSessionSlug } from "./session-slug.js";
 import { renderExecUpdateText } from "./bash-tools.exec-output.js";
 import {
   buildDockerExecArgs,
@@ -203,6 +198,8 @@ export type ExecProcessOutcome =
       noOutputTimedOut?: boolean;
       failureKind: ExecProcessFailureKind;
       reason: string;
+      /** True when OpenClaw's Linux OOM-score wrapper (linux-oom-score.ts) spawned this child. */
+      oomScoreWrapperSelected?: boolean;
     };
 
 /** Live handle returned after an exec process has started. */
@@ -810,6 +807,7 @@ export async function runExecProcess(opts: {
     notifyOnExit: opts.notifyOnExit,
     notifyOnExitEmptySuccess: opts.notifyOnExitEmptySuccess === true,
     exitNotified: false,
+    pendingOutputDropped: false,
     child: undefined,
     stdin: undefined,
     pid: undefined,

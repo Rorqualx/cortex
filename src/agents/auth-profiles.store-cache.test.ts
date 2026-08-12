@@ -7,7 +7,7 @@ import {
   AUTH_STORE_VERSION,
 } from "./auth-profiles/constants.js";
 import {
-  clearRuntimeAuthProfileStoreSnapshots,
+  clearRuntimeAuthProfileStoreSnapshot,
   ensureAuthProfileStore,
   ensureAuthProfileStoreWithoutExternalProfiles,
 } from "./auth-profiles/store.js";
@@ -93,14 +93,14 @@ function writeOAuthStore(agentDir: string, profileId: string, credential: OAuthC
 
 describe("auth profile store cache", () => {
   beforeEach(() => {
-    clearRuntimeAuthProfileStoreSnapshots();
+    clearRuntimeAuthProfileStoreSnapshot();
     mocks.resolveExternalCliAuthProfiles.mockReset();
     mocks.resolveExternalCliAuthProfiles.mockReturnValue([]);
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    clearRuntimeAuthProfileStoreSnapshots();
+    clearRuntimeAuthProfileStoreSnapshot();
   });
 
   function createRuntimeOnlyOverlay(access: string): RuntimeOnlyOverlay {

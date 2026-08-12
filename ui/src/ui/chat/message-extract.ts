@@ -2,7 +2,7 @@
 import { stripInternalRuntimeContext } from "../../../../src/agents/internal-runtime-context.js";
 import { stripInboundMetadata } from "../../../../src/auto-reply/reply/strip-inbound-meta.js";
 import { stripEnvelope } from "../../../../src/shared/chat-envelope.js";
-import { extractAssistantVisibleText as extractSharedAssistantVisibleText } from "../../../../src/shared/chat-message-content.js";
+import { extractAssistantPhaseText as extractSharedAssistantVisibleText } from "../../../../src/shared/chat-message-content.js";
 import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import { stripThinkingTags } from "../strip-thinking-tags.ts";
 

@@ -21,7 +21,7 @@ import {
   queueEmbeddedAgentMessageWithOutcomeAsync,
   resolveActiveEmbeddedRunHandleSessionId,
 } from "./commands-steer.runtime.js";
-import { parseInlineDirectives } from "./directive-handling.parse.js";
+import { parseInlineSessionDirectives } from "./directive-handling.parse.js";
 import { resolveQueueSettings } from "./queue/settings-runtime.js";
 
 /**
@@ -56,7 +56,7 @@ export async function tryFastSteerActiveFollowup(params: {
   if (!activeSessionId || !isEmbeddedAgentRunHandleActive(activeSessionId)) {
     return false;
   }
-  const directives = parseInlineDirectives(params.rawText);
+  const directives = parseInlineSessionDirectives(params.rawText);
   // Inline queue/reset directives change steer-vs-followup semantics; defer to
   // the normal dispatch path rather than guessing the mode here.
   if (directives.hasQueueDirective || directives.queueReset) {

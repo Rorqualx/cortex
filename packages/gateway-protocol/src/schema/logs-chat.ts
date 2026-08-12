@@ -4,6 +4,10 @@ import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
 import { ChatSendSessionKeyString, InputProvenanceSchema, NonEmptyString } from "./primitives.js";
 
+const QUEUE_MODES = ["steer", "followup", "collect", "interrupt"] as const;
+export type QueueMode = (typeof QUEUE_MODES)[number];
+
+
 /** Cursor-based request for the gateway log tail endpoint. */
 export const LogsTailParamsSchema = closedObject({
   cursor: Type.Optional(Type.Integer({ minimum: 0 })),

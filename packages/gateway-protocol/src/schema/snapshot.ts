@@ -2,6 +2,7 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
+import { UpdateAvailableSchema, UpdateScheduleStateSchema } from "./config.js";
 import { NonEmptyString } from "./primitives.js";
 
 /**
@@ -192,6 +193,7 @@ export const HealthSnapshotSchema = closedObject({
           prompt: Type.String(),
           target: Type.String(),
           model: Type.Optional(Type.String()),
+          session: Type.Optional(Type.String()),
           ackMaxChars: Type.Integer({ minimum: 0 }),
         }),
         sessions: HealthSessionSummarySchema,
@@ -234,7 +236,8 @@ export const SnapshotSchema = closedObject({
       Type.Literal("trusted-proxy"),
     ]),
   ),
-  updateAvailable: Type.Optional(UpdateAvailableDataSchema),
+  updateAvailable: Type.Optional(UpdateAvailableSchema),
+  updateSchedule: Type.Optional(UpdateScheduleStateSchema),
 });
 
 // Wire types derive directly from local schema consts so public d.ts graphs never

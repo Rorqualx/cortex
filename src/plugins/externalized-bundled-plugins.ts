@@ -12,6 +12,8 @@ export type ExternalizedBundledPluginBridge = {
   npmSpec?: string;
   /** Version of the bundled package that authored the install hint. */
   packageVersion?: string;
+  /** npm package integrity hash pin for the bridge's exact npm spec, when known. */
+  expectedIntegrity?: string;
   /** ClawHub spec OpenClaw can install when migrating the bundled plugin out. */
   clawhubSpec?: string;
   /** Optional ClawHub base URL for non-default registries. */

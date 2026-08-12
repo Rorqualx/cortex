@@ -2,7 +2,10 @@
  * Tracks prompt-cache snapshot changes for observability diagnostics.
  */
 import crypto from "node:crypto";
-import { estimateStringChars, estimateTokensFromChars } from "../../utils/cjk-chars.js";
+import {
+  estimateStringChars,
+  estimateTokensFromChars,
+} from "@openclaw/normalization-core/cjk-chars";
 import {
   sortPromptCacheToolsByName,
   splitSystemPromptCacheBoundary,

@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 578075,
-  "reason": "2026-08-04: Model Providers tab (controllers/model-providers.ts + views/model-providers-tab.ts) enters the startup graph; +2519 B gzip (+0.4%). The provider data layer and view already shipped in the bundle — only the container and tab wiring are new. Recorded on macOS dev build.",
-  "updatedAt": "2026-08-04"
+  "startupJsGzipBytes": 580201,
+  "reason": "2026-08-12 upstream resync: fork-owned Control UI (Workboard, Skill Forge, Model Providers) startup graph, regenerated from the CI/Linux build at 580201 B gzip. The prior 578075 B was a macOS-local measurement; Linux zlib emits larger streams so baselines must record CI bytes (see check-control-ui-performance.mts). ui/ is unchanged by the merge (fork ownership policy), so this is a baseline regeneration, not a regression.",
+  "updatedAt": "2026-08-12"
 }

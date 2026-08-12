@@ -651,7 +651,7 @@ async function runAgentBasedHookValidation(
   ctx: HookMappingContext,
 ): Promise<HookValidationResult> {
   // Import dynamically to avoid circular dependencies with agent spawning
-  const { spawnSubagentDirect } = await import("../agents/subagent-spawn.js");
+  const { spawnSubagentDirect } = await import("../agents/subagents/spawn/subagent-spawn.js");
 
   // Determine which agent to use for validation
   const validationAgentId = mapping.validationAgentId || mapping.agentId;

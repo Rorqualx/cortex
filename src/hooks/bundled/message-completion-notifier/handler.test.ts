@@ -1,15 +1,15 @@
 // message-completion-notifier tests cover watched-channel filtering and best-effort delivery.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sendDurableMessageBatch } from "../../../channels/message/runtime.js";
+import { sendDurableMessageBatchCore } from "../../../channels/message/runtime.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { createHookEvent } from "../../hooks.js";
 import handler from "./handler.js";
 
 vi.mock("../../../channels/message/runtime.js", () => ({
-  sendDurableMessageBatch: vi.fn().mockResolvedValue(undefined),
+  sendDurableMessageBatchCore: vi.fn().mockResolvedValue(undefined),
 }));
 
-const sendBatch = vi.mocked(sendDurableMessageBatch);
+const sendBatch = vi.mocked(sendDurableMessageBatchCore);
 
 function notifierConfig(entry: Record<string, unknown> | undefined): OpenClawConfig {
   const entries = entry ? { "message-completion-notifier": entry } : {};

@@ -11,7 +11,7 @@ import { splitSystemPromptCacheBoundary } from "@openclaw/ai/internal/shared";
  * (the exact code runEmbeddedAttempt calls), no gateway/provider/session needed.
  */
 import { describe, expect, it } from "vitest";
-import { composeAttemptSystemPrompt } from "./attempt.prompt-helpers.js";
+import { composeAttemptSystemPrompt } from "./attempt-prompt-helpers.js";
 
 const BASE = "You are OpenClaw.\nBe helpful.";
 const MODEL = "anthropic/claude-opus-4-8";

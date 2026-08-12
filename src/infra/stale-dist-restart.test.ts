@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { withTempDir } from "../test-helpers/temp-dir.js";
+import { withTestDir } from "../test-helpers/temp-dir.js";
 import {
   armStaleDistRestartGuard,
   noteStaleDistCandidateError,
@@ -24,7 +24,7 @@ async function withArmedGuard(
     requestRestart: ReturnType<typeof vi.fn>;
   }) => void | Promise<void>,
 ): Promise<void> {
-  await withTempDir({ prefix: "openclaw-stale-dist-" }, async (tmp) => {
+  await withTestDir({ prefix: "openclaw-stale-dist-" }, async (tmp) => {
     const identityPath = path.join(tmp, "build-info.json");
     fs.writeFileSync(identityPath, BOOT_IDENTITY);
     const requestRestart = vi.fn();
@@ -91,7 +91,7 @@ describe("stale dist restart guard", () => {
   });
 
   it("stays disarmed when no identity file resolves at arm time", async () => {
-    await withTempDir({ prefix: "openclaw-stale-dist-" }, async (tmp) => {
+    await withTestDir({ prefix: "openclaw-stale-dist-" }, async (tmp) => {
       const requestRestart = vi.fn();
       const armed = armStaleDistRestartGuard({
         requestRestart,

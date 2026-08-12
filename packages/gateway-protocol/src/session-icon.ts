@@ -1,24 +1,18 @@
+// Session icon parsing/sanitization for Control UI custom session icons
+// (emoji, named, or sanitized inline SVG). The attention-icon id/status
+// concepts moved to session-agent-status.ts when upstream added its own
+// attention-status contract; re-exported here so existing Control UI
+// consumers of this module keep a single import path.
+export {
+  SESSION_AGENT_ATTENTION_ICON_IDS,
+  type SessionAgentAttentionIconId,
+  type SessionAgentStatus,
+} from "./session-agent-status.js";
+
 export type SessionIcon =
   | { kind: "named"; name: string }
   | { kind: "emoji"; emoji: string }
   | { kind: "svg"; svg: string };
-
-export const SESSION_AGENT_ATTENTION_ICON_IDS = [
-  "hand",
-  "key",
-  "alert",
-  "flag",
-  "lock",
-  "hourglass",
-] as const;
-
-export type SessionAgentAttentionIconId = (typeof SESSION_AGENT_ATTENTION_ICON_IDS)[number];
-
-export type SessionAgentStatus = {
-  note: string;
-  expiresAt: number;
-  attention?: SessionAgentAttentionIconId;
-};
 
 export type SessionIconNormalizationResult =
   | { ok: true; value: string }

@@ -3,7 +3,7 @@ import SHARED_TOOL_DISPLAY_JSON from "../../../apps/shared/OpenClawKit/Sources/O
 import {
   defaultTitle,
   formatToolDetailText,
-  normalizeToolName,
+  normalizeToolDisplayName,
   resolveToolVerbAndDetailForArgs,
   type ToolDisplaySpec as ToolDisplaySpecBase,
 } from "../../../src/agents/tool-display-common.js";
@@ -104,7 +104,7 @@ export function resolveToolDisplay(params: {
   meta?: string;
   detailMode?: ToolDetailMode;
 }): ToolDisplay {
-  const name = normalizeToolName(params.name);
+  const name = normalizeToolDisplayName(params.name);
   const key = normalizeLowercaseStringOrEmpty(name);
   const spec = TOOL_MAP[key];
   const icon = (spec?.icon ?? FALLBACK.icon ?? "puzzle") as IconName;
@@ -118,7 +118,7 @@ export function resolveToolDisplay(params: {
     fallbackDetailKeys: FALLBACK.detailKeys,
     detailMode: "first",
     toolDetailMode: params.detailMode,
-    detailCoerce: { includeFalse: true, includeZero: true },
+    detailCoerce: { includeFalsy: true },
   });
   const { verb } = toolDisplayParts;
   let { detail } = toolDisplayParts;

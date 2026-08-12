@@ -2,14 +2,16 @@
 // Keeps server methods and Control UI payloads aligned.
 import type { FastMode } from "@openclaw/normalization-core/string-coerce";
 import type {
+  SessionClassification,
   SessionCreatedActor,
+  SessionPeerKind,
   SessionPlacement,
   SessionRow,
   SessionSharingRole,
   SessionVisibility,
 } from "../../packages/gateway-protocol/src/index.js";
 import type { SessionObserverDigest } from "../../packages/gateway-protocol/src/schema/sessions.js";
-import type { QueueMode } from "../auto-reply/reply/queue/types.js";
+import type { QueueMode } from "../../packages/gateway-protocol/src/schema/logs-chat.js";
 import type { ChatType } from "../channels/chat-type.js";
 import type {
   SessionCompactionCheckpoint,
@@ -86,6 +88,15 @@ export type GatewaySessionRow = {
   category?: string;
   /** Preferred Control UI face for generic session navigation. */
   boardFace?: SessionBoardFace;
+  /** Stable, non-sensitive classification fact set from session-classification.ts. */
+  classification?: SessionClassification;
+  agentId?: string;
+  accountId?: string;
+  peerKind?: SessionPeerKind;
+  isMain?: boolean;
+  // Classification only: this does not change session visibility, sharing,
+  // retention, or authorization semantics.
+  isBackground?: boolean;
   displayName?: string;
   derivedTitle?: string;
   /** Fork: LLM-generated conversation title shown in Control UI lists. */

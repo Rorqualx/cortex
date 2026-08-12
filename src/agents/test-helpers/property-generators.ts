@@ -20,7 +20,7 @@
  */
 
 import * as fc from "fast-check";
-import type { SubagentRunRecord } from "../subagent-registry.types.js";
+import type { SubagentRunRecord } from "../subagents/registry/subagent-registry.types.js";
 
 /**
  * Common tool names for policy testing

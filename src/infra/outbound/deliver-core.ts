@@ -4,7 +4,11 @@ import { payloadRequiresDurablePayloadTransport } from "../../channels/message/c
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { OutboundMediaAccess } from "../../media/load-options.js";
 import { getOrCreatePromise } from "../../shared/lazy-promise.js";
-import type { DiagnosticMessageDeliveryKind } from "../diagnostic-events.js";
+import { diagnosticErrorCategory } from "../diagnostic-error-metadata.js";
+import {
+  emitInternalDiagnosticEvent as emitDiagnosticEvent,
+  type DiagnosticMessageDeliveryKind,
+} from "../diagnostic-events.js";
 import { formatErrorMessage } from "../errors.js";
 import { throwIfAborted } from "./abort.js";
 import { createChannelHandler } from "./deliver-channel.js";
@@ -13,15 +17,11 @@ import { suppressedPayloadOutcome, toOutboundDeliveryError } from "./deliver-hoo
 import {
   buildPayloadSummary,
   deliveryKindForPayload,
-  emitMessageDeliveryCompleted,
-  emitMessageDeliveryError,
-  emitMessageDeliveryStarted,
   maybeNotifyAfterDeliveredPayload,
   maybePinDeliveredMessage,
   normalizeEmptyPayloadForDelivery,
   renderPresentationForDelivery,
   resolveOutboundMediaAccessForSend,
-  sessionKeyForDeliveryDiagnostics,
   stripInternalRuntimeScaffoldingFromPayload,
 } from "./deliver-payload.js";
 import { createDeliveryResultRecorder } from "./deliver-results.js";
@@ -45,6 +45,19 @@ import {
 import { createReplyToDeliveryPolicy } from "./reply-policy.js";
 
 const log = createSubsystemLogger("outbound/deliver");
+
+// Mirror delivery wins because mirror sends are explicitly bound to the mirror's
+// session; otherwise use `session.key`, which by contract equals the agent
+// runtime's `params.sessionKey` for the run that produced the payload (see
+// OutboundSessionContext.key JSDoc). Deliberately never falls back to
+// `session.policyKey` — that describes the delivery target's policy, not the
+// canonical control session, and handing it to plugins that correlate against
+// agent_end would be wrong.
+function sessionKeyForDeliveryDiagnostics(
+  params: Pick<DeliverOutboundPayloadsCoreParams, "mirror" | "session">,
+): string | undefined {
+  return params.mirror?.sessionKey ?? params.session?.key;
+}
 
 export async function deliverOutboundPayloadsCore(
   params: DeliverOutboundPayloadsCoreParams,
@@ -95,6 +108,26 @@ export async function deliverOutboundPayloadsCore(
       onDeliveryResult: reportIdentifiedDeliveryResult,
     });
   const baseHandler = await createHandler([]);
+  let preparedTarget = baseHandler.buildTargetRef({ threadId: params.threadId });
+  const maybeAdoptTargetFromDelivery = (result: OutboundDeliveryResult): void => {
+    if (params.threadId != null || preparedTarget.threadId != null) {
+      return;
+    }
+    const adoptedTarget = baseHandler.adoptTargetFromDelivery?.({ target: preparedTarget, result });
+    if (adoptedTarget?.threadId != null) {
+      // The adapter owns receipt semantics; core only carries its typed target forward.
+      preparedTarget = { ...preparedTarget, threadId: adoptedTarget.threadId };
+    }
+  };
+  const withPreparedTarget = <T extends OutboundMessageSendOverrides>(overrides: T): T =>
+    preparedTarget.threadId == null
+      ? overrides
+      : { ...overrides, threadId: preparedTarget.threadId };
+  const adoptSuccessfulResultsSince = (resultIndex: number): void => {
+    for (const result of results.slice(resultIndex)) {
+      maybeAdoptTargetFromDelivery(result);
+    }
+  };
   const handlerByMediaSources = new Map<string, Promise<ChannelHandler>>();
   const getDeliveryHandler = (mediaSources: readonly string[]): Promise<ChannelHandler> => {
     if (mediaSources.length === 0) {
@@ -146,7 +179,11 @@ export async function deliverOutboundPayloadsCore(
         continue;
       }
       throwIfAborted(abortSignal);
-      await recordIdentifiedDeliveryResult(await sendHandler.sendText(unit.text, unit.overrides));
+      const resultIndex = results.length;
+      await recordIdentifiedDeliveryResult(
+        await sendHandler.sendText(unit.text, withPreparedTarget(unit.overrides)),
+      );
+      adoptSuccessfulResultsSince(resultIndex);
     }
   };
   const acceptedEntries = acceptedPreparedOutboundEntries(preparedBatch);
@@ -222,10 +259,11 @@ export async function deliverOutboundPayloadsCore(
       deliveryStartedAt = Date.now();
       deliveryStarted = true;
       deliveryFinished = false;
-      emitMessageDeliveryStarted({
+      emitDiagnosticEvent({
+        type: "message.delivery.started",
         channel,
         deliveryKind,
-        sessionKey: diagnosticSessionKey,
+        ...(diagnosticSessionKey ? { sessionKey: diagnosticSessionKey } : {}),
       });
     };
     const completeDeliveryDiagnostics = (resultCount: number) => {
@@ -233,12 +271,13 @@ export async function deliverOutboundPayloadsCore(
         return;
       }
       deliveryFinished = true;
-      emitMessageDeliveryCompleted({
+      emitDiagnosticEvent({
+        type: "message.delivery.completed",
         channel,
         deliveryKind,
         durationMs: Date.now() - deliveryStartedAt,
         resultCount,
-        sessionKey: diagnosticSessionKey,
+        ...(diagnosticSessionKey ? { sessionKey: diagnosticSessionKey } : {}),
       });
     };
     const errorDeliveryDiagnostics = (err: unknown) => {
@@ -246,12 +285,13 @@ export async function deliverOutboundPayloadsCore(
         return;
       }
       deliveryFinished = true;
-      emitMessageDeliveryError({
+      emitDiagnosticEvent({
+        type: "message.delivery.error",
         channel,
         deliveryKind,
         durationMs: Date.now() - deliveryStartedAt,
-        error: err,
-        sessionKey: diagnosticSessionKey,
+        errorCategory: diagnosticErrorCategory(err),
+        ...(diagnosticSessionKey ? { sessionKey: diagnosticSessionKey } : {}),
       });
     };
     try {
@@ -310,7 +350,7 @@ export async function deliverOutboundPayloadsCore(
       const sendOverrides: OutboundMessageSendOverrides = {
         replyToId: replyToResolution.replyToId,
         replyToIdSource: replyToResolution.source,
-        ...(params.threadId !== undefined ? { threadId: params.threadId } : {}),
+        ...(preparedTarget.threadId != null ? { threadId: preparedTarget.threadId } : {}),
         ...(effectivePayload.audioAsVoice === true ? { audioAsVoice: true } : {}),
         ...(params.forceDocument !== undefined ? { forceDocument: params.forceDocument } : {}),
       };
@@ -320,7 +360,8 @@ export async function deliverOutboundPayloadsCore(
         applyReplyToConsumption(overrides, {
           consumeImplicitReply: replyToResolution.source === "implicit",
         });
-      const deliveryTarget = deliveryHandler.buildTargetRef({ threadId: sendOverrides.threadId });
+      const deliveryTarget = () =>
+        deliveryHandler.buildTargetRef({ threadId: preparedTarget.threadId });
       if (
         deliveryHandler.sendPayload &&
         payloadRequiresDurablePayloadTransport(effectivePayload, {
@@ -330,9 +371,10 @@ export async function deliverOutboundPayloadsCore(
         const beforeCount = results.length;
         const delivery = await deliveryHandler.sendPayload(
           effectivePayload,
-          applySendReplyToConsumption(sendOverrides),
+          withPreparedTarget(applySendReplyToConsumption(sendOverrides)),
         );
         await recordIdentifiedDeliveryResult(delivery);
+        adoptSuccessfulResultsSince(beforeCount);
         const deliveredResults = results.slice(beforeCount);
         if (deliveredResults.length === 0) {
           completeDeliveryDiagnostics(0);
@@ -358,14 +400,14 @@ export async function deliverOutboundPayloadsCore(
         await maybePinDeliveredMessage({
           handler: deliveryHandler,
           payload: effectivePayload,
-          target: deliveryTarget,
+          target: deliveryTarget(),
           messageId: deliveredResults.find((entry) => entry.messageId)?.messageId,
           gatewayClientScopes: params.gatewayClientScopes,
         });
         await maybeNotifyAfterDeliveredPayload({
           handler: deliveryHandler,
           payload: effectivePayload,
-          target: deliveryTarget,
+          target: deliveryTarget(),
           results: deliveredResults,
         });
         completeDeliveryDiagnostics(deliveredResults.length);
@@ -377,9 +419,10 @@ export async function deliverOutboundPayloadsCore(
           await recordIdentifiedDeliveryResults(
             await deliveryHandler.sendFormattedText(
               payloadSummary.text,
-              applySendReplyToConsumption(sendOverrides),
+              withPreparedTarget(applySendReplyToConsumption(sendOverrides)),
             ),
           );
+          adoptSuccessfulResultsSince(beforeCount);
         } else {
           await sendTextChunks(deliveryHandler, payloadSummary.text, sendOverrides);
         }
@@ -409,14 +452,14 @@ export async function deliverOutboundPayloadsCore(
         await maybePinDeliveredMessage({
           handler: deliveryHandler,
           payload: effectivePayload,
-          target: deliveryTarget,
+          target: deliveryTarget(),
           messageId: pinMessageId,
           gatewayClientScopes: params.gatewayClientScopes,
         });
         await maybeNotifyAfterDeliveredPayload({
           handler: deliveryHandler,
           payload: effectivePayload,
-          target: deliveryTarget,
+          target: deliveryTarget(),
           results: deliveredResults,
         });
         completeDeliveryDiagnostics(deliveredResults.length);
@@ -469,14 +512,14 @@ export async function deliverOutboundPayloadsCore(
         await maybePinDeliveredMessage({
           handler: deliveryHandler,
           payload: effectivePayload,
-          target: deliveryTarget,
+          target: deliveryTarget(),
           messageId: pinMessageId,
           gatewayClientScopes: params.gatewayClientScopes,
         });
         await maybeNotifyAfterDeliveredPayload({
           handler: deliveryHandler,
           payload: effectivePayload,
-          target: deliveryTarget,
+          target: deliveryTarget(),
           results: deliveredResults,
         });
         completeDeliveryDiagnostics(deliveredResults.length);
@@ -497,14 +540,21 @@ export async function deliverOutboundPayloadsCore(
           continue;
         }
         throwIfAborted(abortSignal);
+        const resultIndex = results.length;
         const delivery = deliveryHandler.sendFormattedMedia
           ? await deliveryHandler.sendFormattedMedia(
               unit.caption ?? "",
               unit.mediaUrl,
-              unit.overrides,
+              withPreparedTarget(unit.overrides),
             )
-          : await deliveryHandler.sendMedia(unit.caption ?? "", unit.mediaUrl, unit.overrides);
-        if (await recordIdentifiedDeliveryResult(delivery)) {
+          : await deliveryHandler.sendMedia(
+              unit.caption ?? "",
+              unit.mediaUrl,
+              withPreparedTarget(unit.overrides),
+            );
+        const recorded = await recordIdentifiedDeliveryResult(delivery);
+        adoptSuccessfulResultsSince(resultIndex);
+        if (recorded) {
           firstMessageId ??= delivery.messageId;
           lastMessageId = delivery.messageId;
         }
@@ -533,14 +583,14 @@ export async function deliverOutboundPayloadsCore(
       await maybePinDeliveredMessage({
         handler: deliveryHandler,
         payload: effectivePayload,
-        target: deliveryTarget,
+        target: deliveryTarget(),
         messageId: firstMessageId,
         gatewayClientScopes: params.gatewayClientScopes,
       });
       await maybeNotifyAfterDeliveredPayload({
         handler: deliveryHandler,
         payload: effectivePayload,
-        target: deliveryTarget,
+        target: deliveryTarget(),
         results: deliveredResults,
       });
       completeDeliveryDiagnostics(results.length - beforeCount);

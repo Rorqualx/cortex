@@ -16,7 +16,7 @@ import { Type } from "typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { callGateway } from "../../gateway/call.js";
 import type { AnyAgentTool } from "./common.js";
-import { jsonResult, readStringParam } from "./common.js";
+import { jsonResult, readToolStringParam } from "./common.js";
 
 type GatewayCaller = typeof callGateway;
 
@@ -29,7 +29,7 @@ type WorkboardToolDeps = {
 // both `token` (read by complete/block/heartbeat) and `claimToken` (read by the
 // specify/decompose scope helper) so either store path accepts it.
 function claimParams(params: Record<string, unknown>): Record<string, unknown> {
-  const token = readStringParam(params, "claimToken");
+  const token = readToolStringParam(params, "claimToken");
   return token ? { token, claimToken: token } : {};
 }
 
@@ -76,9 +76,9 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
       const gatewayCall = deps.callGateway ?? callGateway;
-      const boardId = readStringParam(params, "boardId");
-      const status = readStringParam(params, "status");
-      const section = readStringParam(params, "section");
+      const boardId = readToolStringParam(params, "boardId");
+      const status = readToolStringParam(params, "status");
+      const section = readToolStringParam(params, "section");
       try {
         const result = await gatewayCall<{ cards?: Array<Record<string, unknown>> }>({
           method: "workboard.cards.list",
@@ -104,7 +104,7 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
-      return call(deps, "workboard.cards.read", { id: readStringParam(params, "id") });
+      return call(deps, "workboard.cards.read", { id: readToolStringParam(params, "id") });
     },
   };
 
@@ -121,9 +121,9 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
       return call(deps, "workboard.cards.specify", {
-        id: readStringParam(params, "id"),
-        ...(readStringParam(params, "summary")
-          ? { summary: readStringParam(params, "summary") }
+        id: readToolStringParam(params, "id"),
+        ...(readToolStringParam(params, "summary")
+          ? { summary: readToolStringParam(params, "summary") }
           : {}),
         ...claimParams(params),
       });
@@ -145,10 +145,10 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
       return call(deps, "workboard.cards.decompose", {
-        id: readStringParam(params, "id"),
+        id: readToolStringParam(params, "id"),
         children: Array.isArray(params.children) ? params.children : [],
-        ...(readStringParam(params, "summary")
-          ? { summary: readStringParam(params, "summary") }
+        ...(readToolStringParam(params, "summary")
+          ? { summary: readToolStringParam(params, "summary") }
           : {}),
         ...(typeof params.completeParent === "boolean"
           ? { completeParent: params.completeParent }
@@ -171,8 +171,8 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
       return call(deps, "workboard.cards.heartbeat", {
-        id: readStringParam(params, "id"),
-        ...(readStringParam(params, "note") ? { note: readStringParam(params, "note") } : {}),
+        id: readToolStringParam(params, "id"),
+        ...(readToolStringParam(params, "note") ? { note: readToolStringParam(params, "note") } : {}),
         ...claimParams(params),
       });
     },
@@ -191,9 +191,9 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
       return call(deps, "workboard.cards.complete", {
-        id: readStringParam(params, "id"),
-        ...(readStringParam(params, "summary")
-          ? { summary: readStringParam(params, "summary") }
+        id: readToolStringParam(params, "id"),
+        ...(readToolStringParam(params, "summary")
+          ? { summary: readToolStringParam(params, "summary") }
           : {}),
         ...claimParams(params),
       });
@@ -213,8 +213,8 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
       return call(deps, "workboard.cards.block", {
-        id: readStringParam(params, "id"),
-        ...(readStringParam(params, "reason") ? { reason: readStringParam(params, "reason") } : {}),
+        id: readToolStringParam(params, "id"),
+        ...(readToolStringParam(params, "reason") ? { reason: readToolStringParam(params, "reason") } : {}),
         ...claimParams(params),
       });
     },
@@ -237,8 +237,8 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     }),
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
-      const assignee = readStringParam(params, "defaultAssignee");
-      const reportsDir = readStringParam(params, "reportsDir");
+      const assignee = readToolStringParam(params, "defaultAssignee");
+      const reportsDir = readToolStringParam(params, "reportsDir");
       return call(deps, "workboard.research.sync", {
         ...(assignee ? { defaultAssignee: assignee } : {}),
         ...(reportsDir ? { reportsDir } : {}),
@@ -260,10 +260,10 @@ export function createWorkboardTools(deps: WorkboardToolDeps = {}): AnyAgentTool
     }),
     execute: async (_id, args) => {
       const params = args as Record<string, unknown>;
-      const note = readStringParam(params, "note");
+      const note = readToolStringParam(params, "note");
       return call(deps, "workboard.research.stage", {
-        id: readStringParam(params, "id"),
-        stage: readStringParam(params, "stage"),
+        id: readToolStringParam(params, "id"),
+        stage: readToolStringParam(params, "stage"),
         ...(note ? { note } : {}),
       });
     },

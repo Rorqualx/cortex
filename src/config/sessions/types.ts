@@ -7,7 +7,7 @@ import type {
 } from "@openclaw/acp-core/types";
 import { normalizeOptionalString, type FastMode } from "@openclaw/normalization-core/string-coerce";
 import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
-import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-icon.js";
+import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import type { ChatType } from "../../channels/chat-type.js";
 import type { CronScheduledToolPolicy } from "../../cron/scheduled-tool-policy.js";
 import type { ChannelRouteRef } from "../../plugin-sdk/channel-route.js";
@@ -16,6 +16,10 @@ import type { Skill } from "../../skills/loading/skill-contract.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import type { TtsAutoMode } from "../types.tts.js";
 import type { MainRestartRecoveryState } from "./main-session-recovery.types.js";
+import type {
+  PendingDeliveryNoticeState,
+  PendingFinalDeliveryState,
+} from "./pending-final-delivery-types.js";
 import type { SessionRestartRecoveryState } from "./restart-recovery-types.js";
 import type {
   SessionCreatedActor,
@@ -59,11 +63,6 @@ export type SessionDeliveryState =
       origin: SessionOrigin;
     };
 
-type PendingFinalDeliveryState = {
-  createdAt: number;
-  context?: DeliveryContext;
-  intentId?: string;
-} & ({ kind: "replayable"; text: string } | { kind: "transport-only" });
 
 /**
  * Durable transcript-repair record: an assistant final that was delivered to
@@ -161,6 +160,7 @@ export type SessionCompactionCheckpoint = {
   reason: SessionCompactionCheckpointReason;
   tokensBefore?: number;
   tokensAfter?: number;
+  tokensVersion?: typeof SESSION_TOTAL_TOKENS_VERSION;
   summary?: string;
   firstKeptEntryId?: string;
   preCompaction: SessionCompactionTranscriptReference;
@@ -372,8 +372,12 @@ type SessionEntryCore = SessionRestartRecoveryState &
      * creation and cleared together when a plain New Chat detaches the checkout.
      */
     worktree?: { id: string; branch: string; repoRoot: string };
+    /** Project registry id selected when this logical session node was created. */
+    projectId?: string;
     /** Explicit parent session linkage for dashboard-created child sessions. */
     parentSessionKey?: string;
+    /** Exact parent incarnation captured when this child was created. */
+    parentSessionId?: string;
     /** How this session node came to exist; written once and retained across sessionId rotations. */
     createdVia?: SessionCreatedVia;
     /** Actor that caused node creation, with an optional profile, session, or sender id; written once. */
@@ -531,6 +535,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
     outputTokens?: number;
     totalTokens?: number;
     pendingFinalDelivery?: PendingFinalDeliveryState;
+    /** Owed user-visible notice that a final's delivery outcome stayed unknown (settled unknown custody). */
+    pendingDeliveryNotice?: PendingDeliveryNoticeState;
     /**
      * Ordered durable backlog of delivered assistant finals that failed to
      * reach the canonical transcript. Session admission restores each item
@@ -544,6 +550,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
      * totalTokens as stale/unknown for context-utilization displays.
      */
     totalTokensFresh?: boolean;
+    /** Algorithm version stamped alongside totalTokens; unset means legacy/unversioned. */
+    totalTokensVersion?: typeof SESSION_TOTAL_TOKENS_VERSION;
     estimatedCostUsd?: number;
     cacheRead?: number;
     cacheWrite?: number;
@@ -599,6 +607,10 @@ export interface SessionEntry extends SessionEntryCore {}
 
 /** Internal durable fields excluded from public/plugin session projections. */
 export type InternalSessionEntryCore = SessionEntryCore & {
+  /** Run that owns the current non-terminal Gateway lifecycle projection. */
+  lifecycleRunId?: string;
+  /** Run admitted by the session lane; overwritten at admission and checked by transcript writes. */
+  activeWriterRunId?: string;
   mainRestartRecovery?: MainRestartRecoveryState;
 };
 
@@ -929,6 +941,10 @@ export type SessionSystemPromptReport = {
     }>;
   };
 };
+
+// Upstream session token-accounting version tag (grafted from upstream during resync;
+// consumed by session-usage/compaction accounting).
+export const SESSION_TOTAL_TOKENS_VERSION = 1 as const;
 
 export const DEFAULT_RESET_TRIGGER = "/new";
 export const DEFAULT_RESET_TRIGGERS = ["/new", "/reset"];

@@ -1,4 +1,4 @@
-import { sendDurableMessageBatch } from "../../../channels/message/runtime.js";
+import { sendDurableMessageBatchCore } from "../../../channels/message/runtime.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import type { HookHandler } from "../../hooks.js";
@@ -48,7 +48,7 @@ const handler: HookHandler = async (event) => {
   }
 
   try {
-    await sendDurableMessageBatch({
+    await sendDurableMessageBatchCore({
       cfg,
       channel: notifyChannel,
       to: notifyTo,

@@ -292,7 +292,7 @@ function getRenderablePreviewInput(
 
 function formatEditCall(
   args: RenderableEditArgs | undefined,
-  theme: typeof import("../../modes/interactive/theme/theme.js").theme,
+  theme: typeof import("../../modes/interactive/theme/theme.js").interactiveAgentTheme,
 ): string {
   const invalidArg = invalidArgText(theme);
   const rawPath = str(args?.file_path ?? args?.path);
@@ -305,7 +305,7 @@ function formatEditCall(
 function formatEditResult(
   preview: EditPreview | undefined,
   result: EditToolResultLike,
-  theme: typeof import("../../modes/interactive/theme/theme.js").theme,
+  theme: typeof import("../../modes/interactive/theme/theme.js").interactiveAgentTheme,
   isError: boolean,
 ): string | undefined {
   const previewDiff = preview && !("error" in preview) ? preview.diff : undefined;
@@ -332,7 +332,7 @@ function formatEditResult(
 function getEditHeaderBg(
   preview: EditPreview | undefined,
   settledError: boolean | undefined,
-  theme: typeof import("../../modes/interactive/theme/theme.js").theme,
+  theme: typeof import("../../modes/interactive/theme/theme.js").interactiveAgentTheme,
 ): (text: string) => string {
   if (preview) {
     if ("error" in preview) {
@@ -349,7 +349,7 @@ function getEditHeaderBg(
 function buildEditCallComponent(
   component: EditCallRenderComponent,
   args: RenderableEditArgs | undefined,
-  theme: typeof import("../../modes/interactive/theme/theme.js").theme,
+  theme: typeof import("../../modes/interactive/theme/theme.js").interactiveAgentTheme,
 ): EditCallRenderComponent {
   component.setBgFn(getEditHeaderBg(component.preview, component.settledError, theme));
   component.clear();

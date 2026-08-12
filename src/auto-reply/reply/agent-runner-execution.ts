@@ -8,10 +8,10 @@ import { hasOutboundReplyContent } from "openclaw/plugin-sdk/reply-payload";
 import type { ChatRunStartupPhase } from "../../../packages/gateway-protocol/src/index.js";
 import { peekSessionMcpRuntime } from "../../agents/agent-bundle-mcp-manager-api.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-budget.js";
-import {
-  formatRateLimitOrOverloadedErrorCopy,
-  isContextOverflowError,
-} from "../../agents/embedded-agent-helpers.js";
+import { prepareSystemAgentRunAdmission } from "../../agents/admitted-run-context.js";
+import { isContextOverflowError } from "../../agents/embedded-agent-helpers.js";
+import { classifyFailoverReason } from "../../agents/failover/classify.js";
+import { renderRateLimitOrOverloadedCopy } from "../../agents/failover/user-copy.js";
 import type { EmbeddedAgentExecutionPhase } from "../../agents/embedded-agent-runner/execution-phase.js";
 import type { RunEmbeddedAgentParams } from "../../agents/embedded-agent-runner/run/params.js";
 import { runEmbeddedAgent } from "../../agents/embedded-agent.js";
@@ -142,6 +142,17 @@ async function executeAgentTurnInternalWithRetryState(
   };
 
   const runId = params.opts?.runId ?? crypto.randomUUID();
+  // FLAG: no established chat-turn admission producer exists yet (unlike the
+  // memory-flush/system-agent/CLI paths, which each call prepareAgentRunAdmission
+  // with their own ingress facts). Reusing the system-agent boundary here is the
+  // closest local precedent, not a verified ingress classification for a normal
+  // inbound chat turn — revisit before relying on this for audit/security facts.
+  const preparedRunAdmission = prepareSystemAgentRunAdmission(
+    runtimeConfig,
+    runId,
+    effectiveRun.agentId,
+    "auto-reply.turn",
+  );
   const agentTurnTiming = createAgentTurnTimingTracker({
     profilerEnabled: isReplyProfilerEnabled({ config: runtimeConfig }),
   });
@@ -298,6 +309,7 @@ async function executeAgentTurnInternalWithRetryState(
         heartbeatState,
       });
       const cycle = await executeAgentFallbackCycle({
+        preparedRunAdmission,
         turn: params,
         effectiveRun,
         runtimeConfig,
@@ -421,9 +433,19 @@ async function executeAgentTurnInternalWithRetryState(
           (p) => p.isError && hasNonEmptyString(p.text) && !p.text.startsWith("⚠️"),
         )?.text ?? "";
       const errorCandidate = metaErrorMsg || rawErrorPayloadText;
-      const formattedErrorCandidate = errorCandidate
-        ? formatRateLimitOrOverloadedErrorCopy(errorCandidate)
-        : undefined;
+      // Classify the raw error text first: renderRateLimitOrOverloadedCopy needs a
+      // narrowed reason, not a free-form string, so an unrelated failure reason
+      // (or none) falls through with no formatted copy, same as before.
+      const errorCandidateFailoverReason = errorCandidate
+        ? classifyFailoverReason(errorCandidate)
+        : null;
+      const formattedErrorCandidate =
+        errorCandidateFailoverReason === "rate_limit" || errorCandidateFailoverReason === "overloaded"
+          ? renderRateLimitOrOverloadedCopy({
+              reason: errorCandidateFailoverReason,
+              raw: errorCandidate,
+            })
+          : undefined;
       if (formattedErrorCandidate) {
         runResult.payloads = [
           markAgentRunFailureReplyPayload({

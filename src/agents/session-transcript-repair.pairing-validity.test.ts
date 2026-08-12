@@ -9,7 +9,7 @@
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
 import { describe, expect, it, vi } from "vitest";
 import { sanitizeToolCallIdsForCloudCodeAssist } from "../agents/tool-call-id.js";
-import { sanitizeReplayToolCallIdsForStream } from "./embedded-agent-runner/run/attempt.tool-call-normalization.js";
+import { sanitizeReplayToolCallIdsForStream } from "./embedded-agent-runner/run/attempt-tool-call-replay-sanitization.js";
 import {
   isToolUseResultPairingValid,
   sanitizeToolUseResultPairing,

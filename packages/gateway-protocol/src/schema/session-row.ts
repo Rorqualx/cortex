@@ -453,7 +453,10 @@ export const SessionMessageEventSchema = Type.Object(
 // public plugin-sdk declaration graph never pulls in the ProtocolSchemas registry.
 export type GatewaySessionRow = Static<typeof GatewaySessionRowSchema>;
 export type GatewaySessionKind = GatewaySessionRow["kind"];
-export type SessionRunStatus = NonNullable<GatewaySessionRow["status"]>;
+// Named distinctly from sessions-row.ts's SessionRunStatus (same literal union,
+// derived from this file's own GatewaySessionRow) to avoid an ambiguous
+// re-export collision in schema-modules.ts, which wildcard-exports both files.
+export type GatewaySessionRunStatus = NonNullable<GatewaySessionRow["status"]>;
 export type SubagentRunState = NonNullable<GatewaySessionRow["subagentRunState"]>;
 export type SessionCompactionCheckpointPreview = NonNullable<
   GatewaySessionRow["latestCompactionCheckpoint"]

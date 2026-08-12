@@ -47,6 +47,9 @@ function buildBridgeFromPersistedBundledRecord(
     ...(npmSpec ? { npmSpec } : {}),
     ...(clawhubSpec ? { clawhubSpec } : {}),
     ...(record.packageVersion ? { packageVersion: record.packageVersion } : {}),
+    ...(officialInstall?.expectedIntegrity
+      ? { expectedIntegrity: officialInstall.expectedIntegrity }
+      : {}),
     ...(record.enabledByDefault ? { enabledByDefault: true } : {}),
     ...(channelIds.length ? { channelIds } : {}),
   };

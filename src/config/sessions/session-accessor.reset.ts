@@ -12,7 +12,7 @@ import {
   resolveInitializedReplySessionEntry,
 } from "./session-accessor.entry-mutation.js";
 import {
-  listSessionEntries,
+  listSessionEntriesCore,
   listSessionEntriesReadOnly,
   resolveSessionEntryFromStore,
 } from "./session-accessor.entry.js";
@@ -154,7 +154,7 @@ export async function commitReplySessionInitialization(params: {
     storePath: params.storePath,
   });
   const store = Object.fromEntries(
-    listSessionEntries({ agentId: params.agentId, storePath }).map(({ sessionKey, entry }) => [
+    listSessionEntriesCore({ agentId: params.agentId, storePath }).map(({ sessionKey, entry }) => [
       sessionKey,
       entry,
     ]),

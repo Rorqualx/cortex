@@ -25,7 +25,7 @@ export type {
 export type {
   GatewaySessionRow,
   GatewaySessionKind,
-  SessionRunStatus,
+  GatewaySessionRunStatus as SessionRunStatus,
   SubagentRunState,
   SessionCompactionCheckpointPreview,
   GatewayThinkingLevelOption,

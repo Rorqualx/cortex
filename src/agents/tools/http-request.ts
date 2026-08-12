@@ -20,7 +20,7 @@ import {
 } from "../../secrets/vault/store.js";
 import { stringEnum } from "../schema/string-enum.js";
 import type { AnyAgentTool } from "./common.js";
-import { jsonResult, readStringParam } from "./common.js";
+import { jsonResult, readToolStringParam } from "./common.js";
 import {
   type GuardedFetchFn,
   resolveLoginSession,
@@ -152,9 +152,9 @@ export function createHttpRequestTool(options?: {
     parameters: HttpRequestSchema,
     execute: async (_toolCallId, args, signal) => {
       const params = args as Record<string, unknown>;
-      const url = readStringParam(params, "url", { required: true });
-      const method = (readStringParam(params, "method") ?? "GET").toUpperCase();
-      const body = readStringParam(params, "body");
+      const url = readToolStringParam(params, "url", { required: true });
+      const method = (readToolStringParam(params, "method") ?? "GET").toUpperCase();
+      const body = readToolStringParam(params, "body");
       const baseHeaders = readHeaders(params);
       const notes: string[] = [];
 

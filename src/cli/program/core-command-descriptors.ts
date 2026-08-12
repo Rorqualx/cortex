@@ -156,6 +156,8 @@ export function getCoreCliCommandDescriptors(): ReadonlyArray<CoreCliCommandDesc
 export function getCoreCliCommandNames(): string[] {
   return visibleCoreCliCommandDescriptors().map((descriptor) => descriptor.name);
 }
+/** Core-suffixed alias for callers that pull every *Core producer through one naming convention. */
+export { getCoreCliCommandNames as getCoreCliCommandNamesCore };
 
 /** Return core root commands that own child subcommands. */
 export function getCoreCliCommandsWithSubcommands(): string[] {

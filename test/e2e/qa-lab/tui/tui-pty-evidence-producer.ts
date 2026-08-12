@@ -1,5 +1,6 @@
 // Runs allowlisted TUI PTY cases and emits authenticated QA script evidence.
 import { spawn } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,6 +11,7 @@ import {
   type QaEvidenceSummaryJson,
   type QaSeedScenarioWithSource,
 } from "../../../../extensions/qa-lab/api.js";
+import { coerceErrorMessage as formatErrorMessage } from "../../../../scripts/lib/error-format.mts";
 import { createQaScriptEvidenceWriter } from "../runtime/script-evidence.js";
 
 const SOURCE_PATH = "test/e2e/qa-lab/tui/tui-pty-evidence-producer.ts";
@@ -19,8 +21,11 @@ const REPORT_FILENAME = "vitest-report.json";
 const PROOF_MATRIX_FILENAME = "proof-matrix.json";
 const REPORT_FRESHNESS_TOLERANCE_MS = 2_000;
 const MAX_PATTERN_LENGTH = 1_024;
+const BUILT_CLI_REQUIREMENT =
+  "cliMode=built requires readable openclaw.mjs and at least one readable dist/entry.js or dist/entry.mjs";
 
 export const TUI_PTY_TEST_FILE_ALLOWLIST = [
+  "src/tui/tui-pty-harness-assertion-test-support.test.ts",
   "src/tui/tui-pty-harness.e2e.test.ts",
   LOCAL_PTY_TEST_FILE,
   "src/tui/tui-reset-transition-pty.e2e.test.ts",
@@ -33,6 +38,8 @@ export type TuiPtyCase = {
   testFile: AllowedTuiPtyTestFile;
   testNamePattern: string;
 };
+
+export type TuiPtyCliMode = "source" | "built";
 
 export type TuiPtyProducerOptions = {
   artifactBase: string;
@@ -82,10 +89,6 @@ type ProducerDependencies = {
 type ProofMatrixCase = TuiPtyCase & {
   matchedAssertions: string[];
 };
-
-function formatErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function readOptionValue(argv: readonly string[], index: number, option: string) {
   const value = argv[index + 1];
@@ -170,22 +173,31 @@ function readTuiPtyCase(value: unknown, index: number): TuiPtyCase {
     );
   }
   try {
-    new RegExp(testNamePattern);
+    RegExp(testNamePattern);
   } catch (error) {
     throw new Error(
       `execution.config.tuiPtyCases[${index}].testNamePattern is invalid: ${formatErrorMessage(error)}`,
+      { cause: error },
     );
   }
   return { coverageId, testFile, testNamePattern };
 }
 
-export function validateTuiPtyScenario(scenario: QaSeedScenarioWithSource): TuiPtyCase[] {
+export function validateTuiPtyScenario(scenario: QaSeedScenarioWithSource): {
+  cases: TuiPtyCase[];
+  cliMode: TuiPtyCliMode;
+} {
   if (scenario.execution.kind !== "script") {
     throw new Error(`scenario ${scenario.id} must use execution.kind=script`);
   }
   if (scenario.execution.path !== SOURCE_PATH) {
     throw new Error(`scenario ${scenario.id} must execute ${SOURCE_PATH}`);
   }
+  const requireBuiltCli = scenario.execution.config?.requireBuiltCli;
+  if (requireBuiltCli !== undefined && typeof requireBuiltCli !== "boolean") {
+    throw new Error("execution.config.requireBuiltCli must be a boolean when provided");
+  }
+  const cliMode: TuiPtyCliMode = requireBuiltCli === true ? "built" : "source";
   const rawCases = scenario.execution.config?.tuiPtyCases;
   if (!Array.isArray(rawCases) || rawCases.length === 0) {
     throw new Error(`scenario ${scenario.id} must configure a non-empty tuiPtyCases array`);
@@ -225,11 +237,20 @@ export function validateTuiPtyScenario(scenario: QaSeedScenarioWithSource): TuiP
       `scenario ${scenario.id} has primary coverage IDs without TUI PTY cases: ${missingPrimary.join(", ")}`,
     );
   }
-  return cases;
+  const hasNonLocalCase = cases.some(
+    (configuredCase) => configuredCase.testFile !== LOCAL_PTY_TEST_FILE,
+  );
+  if (cliMode === "built" && hasNonLocalCase) {
+    throw new Error(
+      `execution.config.requireBuiltCli=true requires every testFile to be exactly ${LOCAL_PTY_TEST_FILE}`,
+    );
+  }
+  return { cases, cliMode };
 }
 
 export function buildTuiPtyVitestCommand(params: {
   cases: readonly TuiPtyCase[];
+  cliMode: TuiPtyCliMode;
   repoRoot: string;
   reportPath: string;
 }): ProducerCommand {
@@ -243,11 +264,20 @@ export function buildTuiPtyVitestCommand(params: {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     OPENCLAW_BEHAVIOR_EVIDENCE: "1",
+    OPENCLAW_VITEST_FS_MODULE_CACHE_PATH: path.join(
+      path.dirname(params.reportPath),
+      "vitest-fs-module-cache",
+    ),
   };
   if (usesLocalPty) {
     env.OPENCLAW_TUI_PTY_INCLUDE_LOCAL = "1";
   } else {
     delete env.OPENCLAW_TUI_PTY_INCLUDE_LOCAL;
+  }
+  if (params.cliMode === "built") {
+    env.OPENCLAW_TUI_PTY_USE_BUILT_CLI = "1";
+  } else {
+    delete env.OPENCLAW_TUI_PTY_USE_BUILT_CLI;
   }
   return {
     command: process.execPath,
@@ -358,6 +388,34 @@ async function writeJson(filePath: string, value: unknown) {
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function buildProofMatrix(
+  scenarioId: string,
+  cliMode: TuiPtyCliMode,
+  cases: readonly ProofMatrixCase[],
+) {
+  return {
+    schemaVersion: 1,
+    scenarioId,
+    cliMode,
+    generatedAt: new Date().toISOString(),
+    cases,
+  };
+}
+
+async function requireBuiltCliArtifacts(repoRoot: string, cliMode: TuiPtyCliMode) {
+  if (cliMode !== "built") {
+    return;
+  }
+  const [launcher, ...entries] = await Promise.allSettled(
+    ["openclaw.mjs", "dist/entry.js", "dist/entry.mjs"].map((file) =>
+      fs.access(path.join(repoRoot, file), fsConstants.R_OK),
+    ),
+  );
+  if (launcher?.status !== "fulfilled" || !entries.some((entry) => entry.status === "fulfilled")) {
+    throw new Error(BUILT_CLI_REQUIREMENT);
+  }
+}
+
 function sanitizeVitestReport(report: VitestJsonReport, proofCases: readonly ProofMatrixCase[]) {
   const allowedFiles = new Set(proofCases.map((configuredCase) => configuredCase.testFile));
   const testResults = Array.isArray(report.testResults)
@@ -383,15 +441,13 @@ export async function runTuiPtyEvidenceProducer(
       `loaded scenario ${scenario.id} does not match requested scenario ${options.scenarioId}`,
     );
   }
-  const cases = validateTuiPtyScenario(scenario);
+  const { cases, cliMode } = validateTuiPtyScenario(scenario);
   const reportPath = path.join(options.artifactBase, REPORT_FILENAME);
   const proofMatrixPath = path.join(options.artifactBase, PROOF_MATRIX_FILENAME);
   const target = {
     codeRefs: scenario.codeRefs,
     docsRefs: scenario.docsRefs,
     id: scenario.id,
-    primaryCoverageIds: scenario.coverage?.primary ?? [],
-    secondaryCoverageIds: scenario.coverage?.secondary ?? [],
     sourcePath: SOURCE_PATH,
     title: scenario.title,
   };
@@ -404,12 +460,20 @@ export async function runTuiPtyEvidenceProducer(
     target,
   });
   const startedAt = (dependencies.now ?? Date.now)();
+  writer.appendLog(`cliMode=${cliMode}\n`);
   await fs.mkdir(options.artifactBase, { recursive: true });
   await Promise.all([fs.rm(reportPath, { force: true }), fs.rm(proofMatrixPath, { force: true })]);
+  const initialProofCases = cases.map((configuredCase) => ({
+    ...configuredCase,
+    matchedAssertions: [],
+  }));
+  await writeJson(proofMatrixPath, buildProofMatrix(scenario.id, cliMode, initialProofCases));
 
   try {
+    await requireBuiltCliArtifacts(options.repoRoot, cliMode);
     const command = buildTuiPtyVitestCommand({
       cases,
+      cliMode,
       reportPath,
       repoRoot: options.repoRoot,
     });
@@ -447,12 +511,7 @@ export async function runTuiPtyEvidenceProducer(
       repoRoot: options.repoRoot,
     });
     await writeJson(reportPath, sanitizeVitestReport(report, proofCases));
-    await writeJson(proofMatrixPath, {
-      schemaVersion: 1,
-      scenarioId: scenario.id,
-      generatedAt: new Date().toISOString(),
-      cases: proofCases,
-    });
+    await writeJson(proofMatrixPath, buildProofMatrix(scenario.id, cliMode, proofCases));
     return await writer.write({
       artifacts: [
         { kind: "vitest-report", filePath: REPORT_FILENAME },
@@ -466,6 +525,7 @@ export async function runTuiPtyEvidenceProducer(
     const details = formatErrorMessage(error);
     writer.appendLog(`\nfail: ${details}\n`);
     return await writer.write({
+      artifacts: [{ kind: "proof-matrix", filePath: PROOF_MATRIX_FILENAME }],
       details,
       durationMs: Math.max(1, (dependencies.now ?? Date.now)() - startedAt),
       status: "fail",

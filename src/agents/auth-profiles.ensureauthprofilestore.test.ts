@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProviderExternalAuthProfile } from "../plugins/provider-external-auth.types.js";
-import { AUTH_STORE_VERSION, log } from "./auth-profiles/constants.js";
+import { AUTH_STORE_VERSION, authProfilesLog as log } from "./auth-profiles/constants.js";
 import {
-  clearRuntimeAuthProfileStoreSnapshots,
+  clearRuntimeAuthProfileStoreSnapshot,
   ensureAuthProfileStore,
   loadAuthProfileStoreForRuntime,
   saveAuthProfileStore,
@@ -58,7 +58,7 @@ vi.mock("./cli-credentials.js", () => ({
 
 describe("ensureAuthProfileStore", () => {
   afterEach(() => {
-    clearRuntimeAuthProfileStoreSnapshots();
+    clearRuntimeAuthProfileStoreSnapshot();
     resolveExternalAuthProfilesWithPluginsMock.mockReset();
     resolveExternalAuthProfilesWithPluginsMock.mockReturnValue([]);
   });
@@ -89,7 +89,7 @@ describe("ensureAuthProfileStore", () => {
   }
 
   function loadAuthProfile(agentDir: string, profileId: string): AuthProfileCredential {
-    clearRuntimeAuthProfileStoreSnapshots();
+    clearRuntimeAuthProfileStoreSnapshot();
     const store = ensureAuthProfileStore(agentDir);
     const profile = store.profiles[profileId];
     if (!profile) {
@@ -131,7 +131,7 @@ describe("ensureAuthProfileStore", () => {
 
     process.env.OPENCLAW_STATE_DIR = root;
     process.env.OPENCLAW_AGENT_DIR = mainDir;
-    clearRuntimeAuthProfileStoreSnapshots();
+    clearRuntimeAuthProfileStoreSnapshot();
     return { mainDir, agentDir, previousStateDir, previousAgentDir };
   }
 
@@ -368,7 +368,7 @@ describe("ensureAuthProfileStore", () => {
         },
         agentDir,
       );
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = loadAuthProfileStoreForRuntime(agentDir, { readOnly: true });
 
@@ -449,7 +449,7 @@ describe("ensureAuthProfileStore", () => {
         },
         agentDir,
       );
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = loadAuthProfileStoreForRuntime(agentDir, { readOnly: true });
 
@@ -530,7 +530,7 @@ describe("ensureAuthProfileStore", () => {
         },
         agentDir,
       );
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = loadAuthProfileStoreForRuntime(agentDir, { readOnly: true });
 
@@ -594,7 +594,7 @@ describe("ensureAuthProfileStore", () => {
         },
         agentDir,
       );
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = loadAuthProfileStoreForRuntime(agentDir, { readOnly: true });
 
@@ -673,7 +673,7 @@ describe("ensureAuthProfileStore", () => {
         },
         agentDir,
       );
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = loadAuthProfileStoreForRuntime(agentDir, { readOnly: true });
 
@@ -845,7 +845,7 @@ describe("ensureAuthProfileStore", () => {
 
       process.env.OPENCLAW_STATE_DIR = root;
       process.env.OPENCLAW_AGENT_DIR = agentDir;
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = ensureAuthProfileStore(agentDir);
       expectRecordFields(store.profiles["openai:default"], {
@@ -868,7 +868,7 @@ describe("ensureAuthProfileStore", () => {
       expect(persistedProfile).not.toHaveProperty("oauthRef");
       expect(persistedProfile).not.toHaveProperty("idToken");
     } finally {
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
       restoreEnvValue("OPENCLAW_STATE_DIR", previousStateDir);
       restoreAgentDirEnv({ previousAgentDir });
       fs.rmSync(root, { recursive: true, force: true });
@@ -897,7 +897,7 @@ describe("ensureAuthProfileStore", () => {
       ]);
 
       process.env.OPENCLAW_AGENT_DIR = agentDir;
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = ensureAuthProfileStore(agentDir);
       expectRecordFields(store.profiles["demo-provider:external"], {
@@ -909,7 +909,7 @@ describe("ensureAuthProfileStore", () => {
 
       expect(fs.existsSync(path.join(agentDir, "auth-profiles.json"))).toBe(false);
     } finally {
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
       restoreAgentDirEnv({ previousAgentDir });
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -943,7 +943,7 @@ describe("ensureAuthProfileStore", () => {
         "utf8",
       );
       process.env.OPENCLAW_STATE_DIR = stateDir;
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = loadAuthProfileStoreForRuntime(workerAgentDir, { readOnly: true });
 
@@ -953,7 +953,7 @@ describe("ensureAuthProfileStore", () => {
       });
       expect(fs.existsSync(workerStorePath)).toBe(false);
     } finally {
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
       restoreEnvValue("OPENCLAW_STATE_DIR", previousStateDir);
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -989,7 +989,7 @@ describe("ensureAuthProfileStore", () => {
         "utf8",
       );
       process.env.OPENCLAW_STATE_DIR = stateDir;
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
 
       const store = ensureAuthProfileStore(workerAgentDir);
 
@@ -1000,7 +1000,7 @@ describe("ensureAuthProfileStore", () => {
       });
       expect(fs.existsSync(workerStorePath)).toBe(false);
     } finally {
-      clearRuntimeAuthProfileStoreSnapshots();
+      clearRuntimeAuthProfileStoreSnapshot();
       restoreEnvValue("OPENCLAW_STATE_DIR", previousStateDir);
       fs.rmSync(root, { recursive: true, force: true });
     }

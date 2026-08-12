@@ -18,6 +18,7 @@ import {
   CONTROL_PLANE_UPDATE_SENTINEL_META_ENV,
   type ControlPlaneUpdateSentinelMetaFile,
 } from "./update-control-plane-sentinel.js";
+import { applyDevUpdateTargetEnv, type DevUpdateTarget } from "./update-dev-target.js";
 import { MANAGED_SERVICE_UPDATE_HANDOFF_TEMP_PREFIX } from "./update-managed-service-handoff-cleanup.js";
 import type { UpdateRestartSentinelMeta } from "./update-restart-sentinel-payload.js";
 
@@ -587,6 +588,7 @@ type ManagedServiceUpdateHandoffParams = {
   execPath?: string;
   argv1?: string;
   parentPid?: number;
+  devTarget?: DevUpdateTarget;
 };
 
 type StartedManagedServiceUpdateHandoff = {
@@ -917,11 +919,14 @@ async function spawnManagedServiceUpdateHandoff(
     await fs.writeFile(paramsPath, `${JSON.stringify(helperParams, null, 2)}\n`, { mode: 0o600 });
     await fs.writeFile(metaPath, `${JSON.stringify(metaFile, null, 2)}\n`, { mode: 0o600 });
 
-    const env = {
+    const childEnv = {
       ...stripSupervisorHintEnv(params.env ?? process.env),
       [CONTROL_PLANE_UPDATE_SENTINEL_META_ENV]: metaPath,
       OPENCLAW_UPDATE_RUN_HANDOFF: "1",
     };
+    // Dev-channel handoffs pin the detached helper to the announced commit so
+    // a moving upstream branch cannot race the restart onto a different SHA.
+    const env = params.devTarget ? applyDevUpdateTargetEnv(childEnv, params.devTarget) : childEnv;
     const spawnTarget = await resolveHandoffSpawn({
       supervisor: params.supervisor,
       env,

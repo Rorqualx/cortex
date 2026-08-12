@@ -3,6 +3,7 @@ import {
   errorShape,
   missingScopeErrorShape,
 } from "../../packages/gateway-protocol/src/index.js";
+import type { ErrorShape } from "../../packages/gateway-protocol/src/schema/frames.js";
 import {
   gatewayStartupUnavailableDetails,
   GATEWAY_STARTUP_RETRY_AFTER_MS,
@@ -42,9 +43,11 @@ import { isRoleAuthorizedForMethod, parseGatewayRole } from "./role-policy.js";
 import { createLazyCoreHandlers, lazyHandlerModule } from "./server-methods/lazy-core-handlers.js";
 import { SKILLS_GATEWAY_METHOD_NAMES } from "./server-methods/skills-method-names.js";
 import type {
+  GatewayRequestContext,
   GatewayRequestHandler,
   GatewayRequestHandlers,
   GatewayRequestOptions,
+  SessionMutationAuthorization,
 } from "./server-methods/types.js";
 import {
   resolveSessionMutationAuthorization,
@@ -207,8 +210,8 @@ const loadNativeHookRelayHandlers = lazyHandlerModule(
   (module) => module.nativeHookRelayHandlers,
 );
 const loadNodePendingHandlers = lazyHandlerModule(
-  () => import("./server-methods/nodes-pending.js"),
-  (module) => module.nodePendingHandlers,
+  () => import("./server-methods/nodes.pending-work.js"),
+  (module) => module.nodePendingWorkHandlers,
 );
 const loadNodeHandlers = lazyHandlerModule(
   () => import("./server-methods/nodes.js"),
@@ -954,7 +957,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
 };
 
 /** Builds the per-request method registry from core, plugin, and explicit extra handlers. */
-function createRequestGatewayMethodRegistry(
+export function createRequestGatewayMethodRegistry(
   extraHandlers?: GatewayRequestHandlers,
 ): GatewayMethodRegistry {
   // Attached gateway methods must not be shadowed by agent-scoped registry loads.
@@ -995,6 +998,198 @@ function createRequestGatewayMethodRegistry(
     ],
     gatewayPluginRegistry ?? undefined,
   );
+}
+
+// Upstream-shaped standalone authorization/envelope primitives grafted during the upstream
+// resync so new callers (e.g. gateway/agent-turn/internal-facade.ts) can authorize and dispatch
+// a request without going through handleGatewayRequest's respond()-callback control flow.
+// handleGatewayRequest below still inlines the same checks against its own respond()/return
+// shape; that duplication is pre-existing fork drift, not something this graft resolves — a
+// follow-up should fold handleGatewayRequest onto these two functions to remove the duplicate
+// policy.
+/** Authorizes one gateway JSON-RPC-style request without dispatching it. */
+export async function authorizeGatewayRequestPreDispatch(params: {
+  method: string;
+  requestParams: unknown;
+  client: GatewayRequestOptions["client"];
+  context: GatewayRequestContext;
+  methodRegistry: GatewayMethodRegistry;
+}): Promise<{
+  error: ErrorShape | null;
+  sessionMutationAuthorization?: SessionMutationAuthorization;
+}> {
+  const authError = authorizeGatewayMethod(
+    params.method,
+    params.client,
+    params.requestParams,
+    params.methodRegistry,
+  );
+  if (authError) {
+    return { error: authError };
+  }
+  const sessionMutation = resolveSessionMutationAuthorization({
+    client: params.client ?? null,
+    method: params.method,
+    requestParams: params.requestParams,
+    context: params.context,
+  });
+  if (sessionMutation.error) {
+    return { error: sessionMutation.error };
+  }
+  if (
+    params.client?.connect.role === "node" &&
+    (!params.client.connId ||
+      !(await params.context.nodeRegistry.isConnectionCurrentPairingState(params.client.connId)))
+  ) {
+    return {
+      error: errorShape(ErrorCodes.UNAVAILABLE, "node pairing changed before request dispatch", {
+        retryable: true,
+        details: { code: "PAIRING_CHANGED" },
+      }),
+    };
+  }
+  if (params.context.unavailableGatewayMethods?.has(params.method)) {
+    return {
+      error: errorShape(
+        ErrorCodes.UNAVAILABLE,
+        `${params.method} unavailable during gateway startup`,
+        {
+          retryable: true,
+          retryAfterMs: GATEWAY_STARTUP_RETRY_AFTER_MS,
+          details: { ...gatewayStartupUnavailableDetails(), method: params.method },
+        },
+      ),
+    };
+  }
+  return {
+    error: null,
+    ...(sessionMutation.authorization
+      ? { sessionMutationAuthorization: sessionMutation.authorization }
+      : {}),
+  };
+}
+
+type GatewayRequestEnvelopeOptions<T> = Pick<
+  GatewayRequestOptions,
+  "context" | "isWebchatConnect"
+> & {
+  methodRegistry: GatewayMethodRegistry;
+  reject: (error: ReturnType<typeof errorShape>) => T | Promise<T>;
+};
+
+/** Runs admitted Gateway work inside the shared root and plugin request scopes. */
+export async function runWithGatewayRequestEnvelope<T>(
+  method: string,
+  client: GatewayRequestOptions["client"],
+  fn: () => T | Promise<T>,
+  options: GatewayRequestEnvelopeOptions<T>,
+): Promise<T> {
+  const rejectRateLimitedControlPlaneWrite = (): ReturnType<typeof errorShape> | undefined => {
+    if (!options.methodRegistry.isControlPlaneWrite(method)) {
+      return undefined;
+    }
+    const budget = consumeControlPlaneWriteBudget({ client, method });
+    if (budget.allowed) {
+      return undefined;
+    }
+    const actor = resolveControlPlaneActor(client);
+    options.context.logGateway.warn(
+      `control-plane write rate-limited method=${method} ${formatControlPlaneActor(actor)} retryAfterMs=${budget.retryAfterMs} key=${budget.key}`,
+    );
+    return errorShape(
+      ErrorCodes.UNAVAILABLE,
+      `rate limit exceeded for ${method}; retry after ${Math.ceil(budget.retryAfterMs / 1000)}s`,
+      {
+        retryable: true,
+        retryAfterMs: budget.retryAfterMs,
+        details: {
+          method,
+          limit: `${CONTROL_PLANE_RATE_LIMIT_MAX_REQUESTS} per ${CONTROL_PLANE_RATE_LIMIT_WINDOW_MS / 1000}s`,
+        },
+      },
+    );
+  };
+  const isSuspendPrepare = method === "gateway.suspend.prepare";
+  const preAdmissionRateLimitError = isSuspendPrepare
+    ? rejectRateLimitedControlPlaneWrite()
+    : undefined;
+  if (preAdmissionRateLimitError) {
+    // Preparation must stay protected even before it owns the root admission that it closes.
+    return await options.reject(preAdmissionRateLimitError);
+  }
+  const rootWorkAdmission = tryBeginGatewayRootWorkAdmission();
+  if (isSuspendPrepare && rootWorkAdmission && !rootWorkAdmission.ownsRoot) {
+    return await options.reject(
+      errorShape(ErrorCodes.UNAVAILABLE, "gateway suspension cannot begin from a nested request", {
+        retryable: true,
+        retryAfterMs: 1_000,
+        details: { method, reason: "nested-gateway-request" },
+      }),
+    );
+  }
+  if (!rootWorkAdmission && !isGatewayMethodAllowedDuringSuspension(method)) {
+    const restartDraining = isGatewayRestartDraining();
+    return await options.reject(
+      errorShape(
+        ErrorCodes.UNAVAILABLE,
+        `${method} unavailable during gateway ${restartDraining ? "restart" : "suspension"}`,
+        {
+          retryable: true,
+          retryAfterMs: 1_000,
+          details: {
+            method,
+            reason: restartDraining ? "gateway-restarting" : "gateway-suspending",
+            phase: getGatewaySuspendAdmissionPhase(),
+          },
+        },
+      ),
+    );
+  }
+  const postAdmissionRateLimitError = isSuspendPrepare
+    ? undefined
+    : rejectRateLimitedControlPlaneWrite();
+  if (postAdmissionRateLimitError) {
+    // A closed admission must reject first so refused writes do not exhaust the controller's
+    // budget and strand it behind rate limiting after suspension resumes.
+    try {
+      return await options.reject(postAdmissionRateLimitError);
+    } finally {
+      rootWorkAdmission?.release();
+    }
+  }
+  const invokeWithRequestScope = async () => {
+    try {
+      const pluginRegistry =
+        (options.methodRegistry.pluginRegistry as
+          | NonNullable<ReturnType<typeof getActivePluginRegistry>>
+          | undefined) ??
+        getPluginRuntimeGatewayRequestScope()?.pluginRegistry ??
+        getActivePluginRegistry() ??
+        undefined;
+      return await withPluginRuntimeGatewayRequestScope(
+        {
+          context: options.context,
+          client,
+          isWebchatConnect: options.isWebchatConnect,
+          ...(pluginRegistry ? { pluginRegistry } : {}),
+        },
+        fn,
+      );
+    } catch (error) {
+      if (error instanceof SessionMutationAuthorizationChangedError) {
+        return await options.reject(error.error);
+      }
+      throw error;
+    }
+  };
+  if (!rootWorkAdmission) {
+    return await invokeWithRequestScope();
+  }
+  try {
+    return await rootWorkAdmission.run(invokeWithRequestScope);
+  } finally {
+    rootWorkAdmission.release();
+  }
 }
 
 /** Authorizes and dispatches one gateway JSON-RPC-style request. */

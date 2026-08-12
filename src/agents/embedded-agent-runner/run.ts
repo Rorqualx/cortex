@@ -5,7 +5,7 @@ import { sanitizeForLog } from "../../../packages/terminal-core/src/ansi.js";
 import { FAST_MODE_AUTO_PROGRESS_KIND, type ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
-import { resolveStorePath } from "../../config/sessions.js";
+import { resolveSessionStorePathCore } from "../../config/sessions.js";
 import { formatSqliteSessionFileMarker } from "../../config/sessions/legacy-sqlite-marker.js";
 import { updateSessionEntry } from "../../config/sessions/session-accessor.js";
 import { ensureContextEnginesInitialized } from "../../context-engine/init.js";
@@ -53,7 +53,8 @@ import {
   resolveSessionAgentIds,
   resolveAgentWorkspaceDir,
 } from "../agent-scope.js";
-import { resolveProcessToolScopeKey } from "../agent-tools.js";
+import { resolvePreparedRunAdmission } from "../admitted-run-context.js";
+import { resolveProcessToolScopeKey } from "../bash-process-scope.js";
 import {
   type AuthProfileFailureReason,
   type AuthProfileStore,
@@ -65,7 +66,7 @@ import {
 import { resolveExternalCliAuthOverlayScopeFromSelection } from "../auth-profiles/external-cli-auth-selection.js";
 import { listActiveProcessSessionReferences } from "../bash-process-references.js";
 import {
-  resolveSessionKeyForRequest,
+  resolveSessionKeyForRequestCore,
   resolveStoredSessionKeyForSessionId,
 } from "../command/session.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
@@ -152,7 +153,7 @@ import {
   formatEmbeddedRunStageSummary,
   shouldWarnEmbeddedRunStageSummary,
 } from "./run/attempt-stage-timing.js";
-import { forgetPromptBuildDrainCacheForRun } from "./run/attempt.prompt-helpers.js";
+import { forgetPromptBuildDrainCacheForRun } from "./run/attempt-prompt-helpers.js";
 import { createEmbeddedRunAuthController } from "./run/auth-controller.js";
 import { resolveAuthProfileFailureReason } from "./run/auth-profile-failure-policy.js";
 import { runEmbeddedAttemptWithBackend } from "./run/backend.js";
@@ -163,7 +164,7 @@ import { hasEmbeddedRunConfiguredModelFallbacks } from "./run/fallbacks.js";
 import {
   buildErrorAgentMeta,
   buildUsageAgentMetaFields,
-  createCompactionDiagId,
+  createRunRecoveryDiagId,
   isAssistantForModelRef,
   resolveActiveErrorContext,
   resolveFinalAssistantRawText,
@@ -288,7 +289,7 @@ async function resetNoRealConversationTokenSnapshot(params: {
   if (!params.sessionKey) {
     return;
   }
-  const storePath = resolveStorePath(params.config?.session?.store, { agentId: params.agentId });
+  const storePath = resolveSessionStorePathCore(params.config?.session?.store, { agentId: params.agentId });
   try {
     await updateSessionEntry(
       { sessionKey: params.sessionKey, storePath },
@@ -487,7 +488,7 @@ function backfillSessionKey(params: {
           sessionId: params.sessionId,
           agentId: params.agentId,
         })
-      : resolveSessionKeyForRequest({
+      : resolveSessionKeyForRequestCore({
           cfg: params.config,
           sessionId: params.sessionId,
           clone: false,
@@ -989,7 +990,7 @@ export async function runEmbeddedAgent(
               agentId: params.agentId,
               modelId,
               workspaceDir: resolvedWorkspace,
-              userLockedAuthProfileId:
+              userPinnedAuthProfileId:
                 params.authProfileIdSource === "user" ? params.authProfileId : undefined,
             });
       let noExternalAuthStore: AuthProfileStore | undefined;
@@ -1008,7 +1009,7 @@ export async function runEmbeddedAgent(
           modelId,
           workspaceDir: resolvedWorkspace,
           store: noExternalAuthStore,
-          userLockedAuthProfileId:
+          userPinnedAuthProfileId:
             params.authProfileIdSource === "user" ? params.authProfileId : undefined,
         });
       }
@@ -1435,6 +1436,7 @@ export async function runEmbeddedAgent(
           await resolveAgentRunSessionTarget({
             agentId: params.agentId,
             config: params.config,
+            missingSessionKey: "create",
             sessionId: params.sessionId,
             sessionKey: resolvedSessionKey,
             sessionTarget: params.sessionTarget,
@@ -1791,7 +1793,17 @@ export async function runEmbeddedAgent(
           } else {
             parentAbortSignal?.addEventListener("abort", relayParentAbort, { once: true });
           }
+          // Resolves the caller-prepared admission (auto-reply/cron/system-agent callers
+          // already thread preparedRunAdmission/admittedRunContext through params) into the
+          // concrete delegated-authority context the harness-selection host boundary requires.
+          const admittedRunContext = await resolvePreparedRunAdmission({
+            runId: params.runId,
+            runtimeKind: pluginHarnessOwnsTransport ? "plugin-harness" : "embedded",
+            admittedRunContext: params.admittedRunContext,
+            preparedRunAdmission: params.preparedRunAdmission,
+          });
           const rawAttempt = await runEmbeddedAttemptWithBackend({
+            admittedRunContext,
             sessionId: activeSessionId,
             sessionKey: resolvedSessionKey,
             promptCacheKey: params.promptCacheKey,
@@ -2189,7 +2201,7 @@ export async function runEmbeddedAgent(
                 `[timeout-compaction] already attempted timeout compaction ${timeoutCompactionAttempts} time(s); falling through to failover rotation`,
               );
             } else if (tokenUsedRatio > 0.65) {
-              const timeoutDiagId = createCompactionDiagId();
+              const timeoutDiagId = createRunRecoveryDiagId();
               timeoutCompactionAttempts++;
               log.warn(
                 `[timeout-compaction] LLM timed out with high prompt token usage (${Math.round(tokenUsedRatio * 100)}%); ` +
@@ -2330,7 +2342,7 @@ export async function runEmbeddedAgent(
             : null;
 
           if (contextOverflowError) {
-            const overflowDiagId = createCompactionDiagId();
+            const overflowDiagId = createRunRecoveryDiagId();
             const errorText = contextOverflowError.text;
             const msgCount = attempt.messagesSnapshot?.length ?? 0;
             const observedOverflowTokens = extractObservedOverflowTokenCount(errorText);
@@ -2637,7 +2649,7 @@ export async function runEmbeddedAgent(
                   contextTokens: ctxInfo.tokens,
                   usageAccumulator,
                   lastRunPromptUsage,
-                  lastAssistant: sessionLastAssistant,
+                  currentAttemptAssistant: sessionLastAssistant,
                   lastTurnTotal,
                 }),
                 systemPromptReport: attempt.systemPromptReport,
@@ -2670,7 +2682,7 @@ export async function runEmbeddedAgent(
                   contextTokens: ctxInfo.tokens,
                   usageAccumulator,
                   lastRunPromptUsage,
-                  lastAssistant: sessionLastAssistant,
+                  currentAttemptAssistant: sessionLastAssistant,
                   lastTurnTotal,
                 }),
                 systemPromptReport: attempt.systemPromptReport,
@@ -2745,7 +2757,6 @@ export async function runEmbeddedAgent(
                 cfg: params.config,
                 agentDir,
                 sessionId: activeSessionId ?? params.sessionId,
-                laneId: globalLane,
                 reason: resolveSessionSuspensionReason(normalizedPromptFailover.reason),
                 failedProvider: normalizedPromptFailover.provider ?? provider,
                 failedModel: normalizedPromptFailover.model ?? modelId,
@@ -2781,7 +2792,7 @@ export async function runEmbeddedAgent(
                     contextTokens: ctxInfo.tokens,
                     usageAccumulator,
                     lastRunPromptUsage,
-                    lastAssistant: sessionLastAssistant,
+                    currentAttemptAssistant: sessionLastAssistant,
                     lastTurnTotal,
                   }),
                   systemPromptReport: attempt.systemPromptReport,
@@ -2822,7 +2833,7 @@ export async function runEmbeddedAgent(
                     contextTokens: ctxInfo.tokens,
                     usageAccumulator,
                     lastRunPromptUsage,
-                    lastAssistant: sessionLastAssistant,
+                    currentAttemptAssistant: sessionLastAssistant,
                     lastTurnTotal,
                   }),
                   systemPromptReport: attempt.systemPromptReport,
@@ -3127,11 +3138,18 @@ export async function runEmbeddedAgent(
             logAssistantFailoverDecision,
             warn: (message) => log.warn(message),
             maybeMarkAuthProfileFailure,
-            maybeEscalateRateLimitProfileFallback,
             maybeRetrySameModelRateLimit,
             maybeRetrySameModelTransient,
             maybeBackoffBeforeOverloadFailover,
             advanceAuthProfile: advanceAttemptAuthProfile,
+            // Same escalate-then-rotate composition the prompt-side failover branch
+            // above uses directly: the escalation gate may throw a FailoverError to
+            // hand off to model fallback; only past that does the actual profile
+            // rotation run, matching advanceAuthProfile's "did we rotate" contract.
+            advanceRateLimitAuthProfile: async (context) => {
+              maybeEscalateRateLimitProfileFallback(context);
+              return advanceAttemptAuthProfile();
+            },
           });
           overloadProfileRotations = assistantFailoverOutcome.overloadProfileRotations;
           if (assistantFailoverOutcome.action === "retry") {
@@ -3175,7 +3193,6 @@ export async function runEmbeddedAgent(
                 cfg: params.config,
                 agentDir,
                 sessionId: activeSessionId ?? params.sessionId,
-                laneId: globalLane,
                 reason: resolveSessionSuspensionReason(assistantFailoverOutcome.error.reason),
                 failedProvider: assistantFailoverOutcome.error.provider ?? provider,
                 failedModel: assistantFailoverOutcome.error.model ?? modelId,
@@ -3185,7 +3202,7 @@ export async function runEmbeddedAgent(
           }
           const usageMeta = buildUsageAgentMetaFields({
             usageAccumulator,
-            lastAssistantUsage: sessionLastAssistant?.usage as UsageLike | undefined,
+            latestUsage: sessionLastAssistant?.usage as UsageLike | undefined,
             lastRunPromptUsage,
             lastTurnTotal,
           });
@@ -3213,7 +3230,6 @@ export async function runEmbeddedAgent(
 
           const payloads = buildEmbeddedRunPayloads({
             assistantTexts: attempt.assistantTexts,
-            toolMetas: attempt.toolMetas,
             lastAssistant: attempt.lastAssistant,
             currentAssistant: currentAttemptAssistant ?? null,
             lastToolError: attempt.lastToolError,
@@ -3227,7 +3243,6 @@ export async function runEmbeddedAgent(
             thinkingLevel: params.thinkLevel,
             toolResultFormat: resolvedToolResultFormat,
             suppressToolErrorWarnings: params.suppressToolErrorWarnings,
-            inlineToolResultsAllowed: false,
             didSendViaMessagingTool: attempt.didSendViaMessagingTool,
             messagingToolSourceReplyPayloads: attempt.messagingToolSourceReplyPayloads,
             sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,

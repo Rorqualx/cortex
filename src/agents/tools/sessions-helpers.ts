@@ -21,7 +21,7 @@ export {
   shouldResolveSessionIdInput,
 } from "./sessions-resolution.js";
 export {
-  extractAssistantText,
+  extractStoredAssistantText as extractAssistantText,
   sanitizeTextContent,
   stripToolMessages,
 } from "./chat-history-text.js";

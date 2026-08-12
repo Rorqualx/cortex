@@ -20,7 +20,7 @@ import {
   ackLeasedAgentSteeringItemsFromSubagentRuns,
   releaseLeasedAgentSteeringItemsFromSubagentRuns,
 } from "../agent-steering-queue.js";
-import type { SubagentRunRecord } from "../subagent-registry.types.js";
+import type { SubagentRunRecord } from "../subagents/registry/subagent-registry.types.js";
 import { arbUUID, arbTimestamp } from "../test-helpers/property-generators.js";
 
 describe("agent-steering-queue properties", () => {

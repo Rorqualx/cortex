@@ -9,10 +9,10 @@
 import { Type } from "typebox";
 import { getRuntimeConfig } from "../../../config/config.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { resolveApiKeyForProvider } from "../../model-auth.js";
+import { resolveApiKeyForProviderCore } from "../../model-auth.js";
 import {
   readStringArrayParam,
-  readStringParam,
+  readToolStringParam,
   textResult,
   ToolInputError,
   type AnyAgentTool,
@@ -106,7 +106,7 @@ function academicModels(providerId: string): {
 
 /** Maps an explicit provider override (with glm/moonshot aliases) to a config id. */
 function readProviderOverride(params: Record<string, unknown>): string | undefined {
-  const raw = readStringParam(params, "provider");
+  const raw = readToolStringParam(params, "provider");
   if (!raw) return undefined;
   const lower = raw.toLowerCase();
   const alias = lower === "glm" ? "zai" : lower;
@@ -124,7 +124,7 @@ function makeKeyResolver(
   opts: CreateDelegationToolsOptions,
 ): HostAuthResolver {
   return async (providerId: string) => {
-    const auth = await resolveApiKeyForProvider({
+    const auth = await resolveApiKeyForProviderCore({
       provider: providerId,
       cfg,
       ...(opts.agentDir ? { agentDir: opts.agentDir } : {}),
@@ -178,7 +178,7 @@ async function runSingleShot(
   toolDescription = `Delegate ${kind} task.`,
   toolSchema?: unknown,
 ): Promise<AgentToolResultText> {
-  const task = readStringParam(params, "task", { required: true })!;
+  const task = readToolStringParam(params, "task", { required: true })!;
 
   // Flattened-spec safety pre-check (Finding 8, 2026-08-03). Advisory by
   // default — logs but does not block unless blockOnUnsafe is configured.
@@ -200,7 +200,7 @@ async function runSingleShot(
     kind,
     cfg: ctx.cfg,
     provider: readProviderOverride(params),
-    model: readStringParam(params, "model"),
+    model: readToolStringParam(params, "model"),
   });
 
   const { result, provider, model } = await runDelegation<string>({
@@ -346,7 +346,7 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
     }),
     execute: async (_toolCallId, args, signal) => {
       const params = args as Record<string, unknown>;
-      const task = readStringParam(params, "task", { required: true })!;
+      const task = readToolStringParam(params, "task", { required: true })!;
 
       const exploreSchema = Type.Object({
         task: Type.String({ description: "What to find/answer." }),
@@ -375,7 +375,7 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
         kind: "explore",
         cfg,
         provider: readProviderOverride(params),
-        model: readStringParam(params, "model"),
+        model: readToolStringParam(params, "model"),
       });
       const { result, provider, model } = await runDelegation<string>({
         cfg,
@@ -421,7 +421,7 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
     }),
     execute: async (_toolCallId, args, signal) => {
       const params = args as Record<string, unknown>;
-      const task = readStringParam(params, "task", { required: true })!;
+      const task = readToolStringParam(params, "task", { required: true })!;
 
       const swarmSchema = Type.Object({
         task: Type.String(),
@@ -450,7 +450,7 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
         kind: "swarm",
         cfg,
         provider: readProviderOverride(params),
-        model: readStringParam(params, "model"),
+        model: readToolStringParam(params, "model"),
       });
       const { result, provider, model } = await runDelegation<string>({
         cfg,
@@ -489,7 +489,7 @@ export function createDelegationTools(options?: CreateDelegationToolsOptions): A
     }),
     execute: async (_toolCallId, args, signal) => {
       const params = args as Record<string, unknown>;
-      const question = readStringParam(params, "task", { required: true })!;
+      const question = readToolStringParam(params, "task", { required: true })!;
 
       const academicSchema = Type.Object({
         task: Type.String(),

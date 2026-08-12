@@ -10,7 +10,7 @@ import {
   RUNTIME_POSTBUILD_REASON_LABELS,
   STALE_REBUILD_REASONS,
   STALE_RUNTIME_POSTBUILD_REASONS,
-} from "../../scripts/run-node.mjs";
+} from "../../scripts/run-node.mts";
 
 // `auto_build_suppressed_in_service` is the wrapper's OUTPUT reason, never a
 // compute* result, so it is not subject to stale/non-stale classification.

@@ -10,6 +10,7 @@ import type {
 } from "@openclaw/llm-core";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.js";
 import { TranscriptNotContinuableError } from "./errors.js";
+import { attachInternalSyncSteeringGetter, getInternalBeforeToolBatch } from "./internal-hooks.js";
 import { resolveAgentReasoningOption } from "./reasoning.js";
 import { type AgentCoreStreamRuntimeDeps, resolveAgentCoreStreamFn } from "./runtime-deps.js";
 import {
@@ -145,7 +146,7 @@ export interface AgentOptions {
     context: PrepareNextTurnContext,
     signal?: AbortSignal,
   ) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
-  /** Queue drain mode for steering messages injected before the next assistant response. */
+  /** Queue drain mode for steering messages applied before the next unstarted tool or model turn. */
   steeringMode?: QueueMode;
   /** Queue drain mode for follow-up messages injected after the agent would otherwise stop. */
   followUpMode?: QueueMode;
@@ -223,6 +224,7 @@ export class Agent {
   >();
   private readonly steeringQueue: PendingMessageQueue;
   private readonly followUpQueue: PendingMessageQueue;
+  private readonly toolLoopRecoveryState = { criticalToolLoopSeen: false };
 
   public convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
   public transformContext?: (
@@ -339,7 +341,10 @@ export class Agent {
     return this.followUpQueue.mode;
   }
 
-  /** Queue a message to be injected after the current assistant turn finishes. */
+  /**
+   * Queue a message for the active run. Running tools finish, while sequential
+   * tail calls or a parallel batch that has not launched yet are skipped.
+   */
   steer(message: AgentMessage): void {
     this.steeringQueue.enqueue(message);
     if (this.preemptOnSteer) {
@@ -401,6 +406,7 @@ export class Agent {
     this.mutableState.streamingMessage = undefined;
     this.mutableState.pendingToolCalls = new Set<string>();
     this.mutableState.errorMessage = undefined;
+    this.toolLoopRecoveryState.criticalToolLoopSeen = false;
     this.clearFollowUpQueue();
     this.clearSteeringQueue();
   }
@@ -417,6 +423,7 @@ export class Agent {
         "Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.",
       );
     }
+    this.toolLoopRecoveryState.criticalToolLoopSeen = false;
     const messages = this.normalizePromptInput(input, images);
     await this.runPromptMessages(messages);
   }
@@ -510,6 +517,17 @@ export class Agent {
 
   private createLoopConfig(options: { skipInitialSteeringPoll?: boolean } = {}): AgentLoopConfig {
     let skipInitialSteeringPoll = options.skipInitialSteeringPoll === true;
+    const drainSteeringMessages = () => {
+      if (skipInitialSteeringPoll) {
+        skipInitialSteeringPoll = false;
+        return [];
+      }
+      return this.steeringQueue.drain();
+    };
+    const getSteeringMessages = attachInternalSyncSteeringGetter(
+      async () => drainSteeringMessages(),
+      drainSteeringMessages,
+    );
     return {
       model: this.mutableState.model,
       thinkingLevel: this.mutableState.thinkingLevel,
@@ -525,6 +543,8 @@ export class Agent {
       maxRetryDelayMs: this.maxRetryDelayMs,
       toolExecution: this.toolExecution,
       beforeToolCall: this.beforeToolCall,
+      beforeToolBatch: getInternalBeforeToolBatch(this),
+      toolLoopRecoveryState: this.toolLoopRecoveryState,
       resolveDeferredTool: this.resolveDeferredTool,
       afterToolCall: this.afterToolCall,
       afterToolOutcome: this.afterToolOutcome,
@@ -557,13 +577,7 @@ export class Agent {
         }
         return controller.signal;
       },
-      getSteeringMessages: async () => {
-        if (skipInitialSteeringPoll) {
-          skipInitialSteeringPoll = false;
-          return [];
-        }
-        return this.steeringQueue.drain();
-      },
+      getSteeringMessages,
       getFollowUpMessages: async () => this.followUpQueue.drain(),
     };
   }

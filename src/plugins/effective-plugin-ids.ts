@@ -13,7 +13,7 @@ import {
   loadGatewayStartupPluginPlan,
   resolveConfiguredChannelPluginIds,
 } from "./channel-plugin-ids.js";
-import { normalizePluginsConfig } from "./config-state.js";
+import { normalizePluginsConfig, resolveSelectedContextEnginePluginId } from "./config-state.js";
 import { loadManifestMetadataSnapshot } from "./manifest-contract-eligibility.js";
 import { passesManifestOwnerBasePolicy } from "./manifest-owner-policy.js";
 import type { PluginManifestRecord } from "./manifest-registry.js";
@@ -175,6 +175,13 @@ export function resolveEffectivePluginIds(params: {
   });
   const effectiveConfig = autoEnabled.config;
   const ids = new Set(collectExplicitEffectivePluginIds(effectiveConfig));
+  const contextEnginePluginId = resolveSelectedContextEnginePluginId(effectiveConfig);
+  if (contextEnginePluginId) {
+    ids.add(contextEnginePluginId);
+  }
+  // Explicit-slot resolution above only fires when plugins.slots.contextEngine is
+  // set. An unset slot must still effectively enable the fork's preferred default
+  // (memory-l3) so it loads without explicit config.
   for (const pluginId of collectSelectedContextEnginePluginIds(effectiveConfig)) {
     ids.add(pluginId);
   }

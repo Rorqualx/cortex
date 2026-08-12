@@ -1,12 +1,17 @@
 // Vitest ui config wires the ui test shard.
+import type { ViteUserConfig } from "vitest/config";
+// Fork-UI-ownership: does NOT import ui/config/control-ui-locales.ts. That file
+// is upstream-only UI the fork-UI-ownership policy drops; importing it broke
+// every vitest run on this branch until 85c151fc4c5a restored this file.
 import { createScopedVitestConfig } from "./vitest.scoped-config.ts";
 import { jsdomOptimizedDeps } from "./vitest.shared.config.ts";
 import { uiIsolatedTestFiles } from "./vitest.ui-isolated-paths.mjs";
 
+// Explicit nameable return type: inference reaches vite-internal names (TS4058/TS4082).
 export function createUiVitestConfig(
   env?: Record<string, string | undefined>,
   options?: { includePatterns?: string[]; name?: string },
-) {
+): ViteUserConfig {
   const includePatterns = options?.includePatterns ?? ["ui/src/**/*.test.ts"];
   // Isolated files must never enter the shared module graph, including scoped runs.
   const exclude = ["ui/src/**/*.e2e.test.ts", ...uiIsolatedTestFiles];

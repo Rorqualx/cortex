@@ -257,6 +257,9 @@ export function createGatewayBroadcaster(params: {
       }
       return frameBase;
     };
+    const sessionSubscriptionVerified =
+      (opts as { sessionSubscriptionVerified?: boolean } | undefined)
+        ?.sessionSubscriptionVerified === true;
     for (const c of params.clients) {
       if (c.invalidated === true) {
         continue;
@@ -281,6 +284,7 @@ export function createGatewayBroadcaster(params: {
           SESSION_SUBSCRIPTION_EVENTS.has(event));
       if (
         requiresSessionSubscription &&
+        !(isTargeted && sessionSubscriptionVerified) &&
         (!sessionKeys.length ||
           !sessionKeys.some((sessionKey) =>
             params.sessionMessageSubscribers?.get(sessionKey).has(c.connId),

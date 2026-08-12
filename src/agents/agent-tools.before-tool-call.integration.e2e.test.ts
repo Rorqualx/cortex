@@ -9,7 +9,7 @@ import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionEntry } from "../config/sessions.js";
-import { replaceSessionEntry, upsertSessionEntry } from "../config/sessions/session-accessor.js";
+import { replaceSessionEntry, upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import {
   onInternalDiagnosticEvent,
   resetDiagnosticEventsForTest,
@@ -1500,7 +1500,7 @@ describe("before_tool_call adapter and client tool integration", () => {
     ];
     setActivePluginRegistry(registry);
     try {
-      await upsertSessionEntry(
+      await upsertSessionEntryCore(
         { agentId: "main", sessionKey: "agent:main:client", storePath },
         { sessionId: "session-client", updatedAt: Date.now() },
       );

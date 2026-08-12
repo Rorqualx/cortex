@@ -7,17 +7,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
-import { resolveMemoryDreamingWorkspaces } from "openclaw/plugin-sdk/memory-core-host-status";
 import type { PluginDoctorStateMigration } from "openclaw/plugin-sdk/runtime-doctor";
-import {
-  SHARED_STORE_LEGACY_JSON_FILE,
-  readSharedFacts,
-  resolveSharedMemoryDir,
-  writeSharedFacts,
-  type SharedLongTermFact,
-  type SharedStore,
-} from "./src/cross-context.js";
-import { Storage } from "./src/storage.js";
+// `./src/cross-context.js`, `./src/storage.js`, and `memory-core-host-status` all
+// statically reach the memory-host-sdk -> kysely/execa graph. Doctor enumeration
+// cold-loads every plugin's doctor-contract closure, so their VALUE exports are
+// imported dynamically (only inside the async migration code paths below) to keep
+// this module's static import graph free of those heavy runtime deps. Type-only
+// imports are erased at build and stay static.
+import type { SharedLongTermFact, SharedStore } from "./src/cross-context.js";
+import type { Storage } from "./src/storage.js";
 import type {
   Entity,
   L2ChunkFrontmatter,
@@ -64,12 +62,14 @@ async function archiveFile(params: {
 // Migration 1: shared long-term store -> cross-agent SQLite
 // ---------------------------------------------------------------------------
 
-function resolveSharedDir(env: NodeJS.ProcessEnv): string {
+async function resolveSharedDir(env: NodeJS.ProcessEnv): Promise<string> {
+  const { resolveSharedMemoryDir } = await import("./src/cross-context.js");
   const override = env.OPENCLAW_SHARED_MEMORY_DIR;
   return resolveSharedMemoryDir(override && override.length > 0 ? override : undefined);
 }
 
-function sharedJsonPath(sharedDir: string): string {
+async function sharedJsonPath(sharedDir: string): Promise<string> {
+  const { SHARED_STORE_LEGACY_JSON_FILE } = await import("./src/cross-context.js");
   return path.join(sharedDir, SHARED_STORE_LEGACY_JSON_FILE);
 }
 
@@ -82,7 +82,7 @@ const sharedStoreMigration: PluginDoctorStateMigration = {
   id: "memory-l3-shared-store-json-to-sqlite",
   label: "memory-l3 shared long-term store",
   async detectLegacyState(params) {
-    const filePath = sharedJsonPath(resolveSharedDir(params.env));
+    const filePath = await sharedJsonPath(await resolveSharedDir(params.env));
     if (!(await fileExists(filePath))) {
       return null;
     }
@@ -91,8 +91,9 @@ const sharedStoreMigration: PluginDoctorStateMigration = {
   async migrateLegacyState(params) {
     const changes: string[] = [];
     const warnings: string[] = [];
-    const sharedDir = resolveSharedDir(params.env);
-    const filePath = sharedJsonPath(sharedDir);
+    const { readSharedFacts, writeSharedFacts } = await import("./src/cross-context.js");
+    const sharedDir = await resolveSharedDir(params.env);
+    const filePath = await sharedJsonPath(sharedDir);
     if (!(await fileExists(filePath))) {
       return { changes, warnings };
     }
@@ -137,7 +138,10 @@ const ARCHIVED_INDEX_FILES = [
 ];
 
 /** L3 root for each configured agent workspace. */
-function legacyL3Roots(config: OpenClawConfig, env: NodeJS.ProcessEnv): string[] {
+async function legacyL3Roots(config: OpenClawConfig, env: NodeJS.ProcessEnv): Promise<string[]> {
+  const { resolveMemoryDreamingWorkspaces } = await import(
+    "openclaw/plugin-sdk/memory-core-host-status"
+  );
   const seen = new Set<string>();
   const roots: string[] = [];
   for (const entry of resolveMemoryDreamingWorkspaces(config, { env })) {
@@ -309,7 +313,7 @@ const perAgentMigration: PluginDoctorStateMigration = {
   label: "memory-l3 per-agent tiers",
   async detectLegacyState(params) {
     const preview: string[] = [];
-    for (const root of legacyL3Roots(params.config, params.env)) {
+    for (const root of await legacyL3Roots(params.config, params.env)) {
       if (await fileExists(path.join(root, STATE_SENTINEL))) {
         preview.push(`- memory-l3 tiers: ${root} -> ${path.join(root, "l3.sqlite")}`);
       }
@@ -319,7 +323,8 @@ const perAgentMigration: PluginDoctorStateMigration = {
   async migrateLegacyState(params) {
     const changes: string[] = [];
     const warnings: string[] = [];
-    for (const root of legacyL3Roots(params.config, params.env)) {
+    const { Storage } = await import("./src/storage.js");
+    for (const root of await legacyL3Roots(params.config, params.env)) {
       if (!(await fileExists(path.join(root, STATE_SENTINEL)))) {
         continue;
       }

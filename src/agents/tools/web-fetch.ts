@@ -37,14 +37,14 @@ import type { AnyAgentTool } from "./common.js";
 import {
   jsonResult,
   readPositiveIntegerParam,
-  readStringParam,
+  readToolStringParam,
   scheduleToolProgress,
 } from "./common.js";
 import {
   extractBasicHtmlContent,
   htmlToMarkdown,
   markdownToText,
-  truncateText,
+  truncateWebFetchText,
   type ExtractMode,
 } from "./web-fetch-utils.js";
 import {
@@ -338,7 +338,7 @@ function formatWebFetchErrorDetail(params: {
     const withTitle = rendered.title ? `${rendered.title}\n${rendered.text}` : rendered.text;
     text = markdownToText(withTitle);
   }
-  const truncated = truncateText(text.trim(), maxChars);
+  const truncated = truncateWebFetchText(text.trim(), maxChars);
   return truncated.text;
 }
 
@@ -405,7 +405,7 @@ function wrapWebFetchContent(value: string, maxChars: number): WebFetchWrappedCo
     const minimal = includeWarning
       ? wrapWebContent("", "web_fetch")
       : wrapExternalContent("", { source: "web_fetch", includeWarning: false });
-    const truncatedWrapper = truncateText(minimal, maxChars);
+    const truncatedWrapper = truncateWebFetchText(minimal, maxChars);
     return {
       text: truncatedWrapper.text,
       truncated: true,
@@ -414,7 +414,7 @@ function wrapWebFetchContent(value: string, maxChars: number): WebFetchWrappedCo
     };
   }
   const maxInner = Math.max(0, maxChars - wrapperOverhead);
-  let truncated = truncateText(value, maxInner);
+  let truncated = truncateWebFetchText(value, maxInner);
   let wrappedText = includeWarning
     ? wrapWebContent(truncated.text, "web_fetch")
     : wrapExternalContent(truncated.text, { source: "web_fetch", includeWarning: false });
@@ -422,7 +422,7 @@ function wrapWebFetchContent(value: string, maxChars: number): WebFetchWrappedCo
   if (wrappedText.length > maxChars) {
     const excess = wrappedText.length - maxChars;
     const adjustedMaxInner = Math.max(0, maxInner - excess);
-    truncated = truncateText(value, adjustedMaxInner);
+    truncated = truncateWebFetchText(value, adjustedMaxInner);
     wrappedText = includeWarning
       ? wrapWebContent(truncated.text, "web_fetch")
       : wrapExternalContent(truncated.text, { source: "web_fetch", includeWarning: false });
@@ -1034,9 +1034,10 @@ export function createWebFetchTool(options?: {
       };
       const params = args as Record<string, unknown>;
       const url = sanitizeWebFetchUrl(
-        readStringParam(params, "url", { required: true, trim: false }),
+        readToolStringParam(params, "url", { required: true, trim: false }),
       );
-      const extractMode = readStringParam(params, "extractMode") === "text" ? "text" : "markdown";
+      const extractMode =
+        readToolStringParam(params, "extractMode") === "text" ? "text" : "markdown";
       const maxChars = readPositiveIntegerParam(params, "maxChars");
       const maxCharsCap = resolveFetchMaxCharsCap(executionFetch);
       // The progress line is emitted only if the fetch is still pending after

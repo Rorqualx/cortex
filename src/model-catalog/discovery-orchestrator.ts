@@ -9,7 +9,7 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import { normalizeModelCatalogProviderId } from "@openclaw/model-catalog-core/model-catalog-refs";
-import { resolveApiKeyForProvider } from "../agents/model-auth.js";
+import { resolveApiKeyForProviderCore } from "../agents/model-auth.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
 import { upsertProbedServedModels } from "./discovered-store.js";
@@ -74,14 +74,14 @@ export async function resolveDiscoveryEndpoint(
   }
   const api = providerConfig?.api;
   try {
-    const resolved = await resolveApiKeyForProvider({ provider: providerId, cfg });
+    const resolved = await resolveApiKeyForProviderCore({ provider: providerId, cfg });
     const apiKey = resolved.apiKey?.trim();
     if (!apiKey) {
       return null;
     }
     return { baseUrl, apiKey, ...(api ? { api } : {}) };
   } catch {
-    // resolveApiKeyForProvider throws when no credential is found; treat as skip.
+    // resolveApiKeyForProviderCore throws when no credential is found; treat as skip.
     return null;
   }
 }

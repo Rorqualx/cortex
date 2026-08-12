@@ -5,6 +5,7 @@ import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSolidPngBuffer } from "../../test/helpers/image-fixtures.js";
+import { createTestAdmittedRunContext } from "./admitted-run-context.test-support.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { getReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import { createReplyOperation, replyRunRegistry } from "../auto-reply/reply/reply-run-registry.js";
@@ -13,7 +14,7 @@ import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import {
   loadSessionEntry,
   loadTranscriptEvents,
-  upsertSessionEntry,
+  upsertSessionEntryCore,
 } from "../config/sessions/session-accessor.js";
 import { CURRENT_SESSION_VERSION } from "../config/sessions/version.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -208,6 +209,7 @@ function buildPreparedContext(params?: {
       lane: params?.lane,
       executionMode: params?.executionMode,
       allowEmptyAssistantReplyAsSilent: params?.allowEmptyAssistantReplyAsSilent,
+      admittedRunContext: createTestAdmittedRunContext(params?.runId ?? "run-2"),
     },
     started: Date.now(),
     workspaceDir: "/tmp",
@@ -318,7 +320,7 @@ async function seedSqliteSessionEntry(params: {
   sessionFile: string;
   storePath: string;
 }): Promise<void> {
-  await upsertSessionEntry(
+  await upsertSessionEntryCore(
     {
       agentId: "main",
       sessionKey: "agent:main:main",
@@ -2434,13 +2436,12 @@ describe("runCliAgent reliability", () => {
     });
 
     await vi.waitFor(() => {
-      expect(replyRunRegistry.isStreaming("agent:main:main")).toBe(true);
+      expect(replyRunRegistry.isActive("agent:main:main")).toBe(true);
     });
 
     finishRun?.();
     const result = await run;
     expect(result.text).toBe("hello from cli");
-    expect(replyRunRegistry.isStreaming("agent:main:main")).toBe(false);
     operation.complete();
   });
 
@@ -3891,7 +3892,7 @@ describe("runCliAgent reliability", () => {
     const hookRunner = {
       hasHooks: vi.fn((hookName: string) => hookName === "before_agent_run"),
       runBeforeAgentRun: vi.fn(async () => {
-        await upsertSessionEntry(
+        await upsertSessionEntryCore(
           { agentId: "main", sessionKey, storePath },
           { sessionId: "replacement-session", updatedAt: 2 },
         );

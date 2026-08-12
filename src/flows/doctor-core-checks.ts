@@ -5,6 +5,7 @@ import { isExperimentalClawsEnabled } from "../claws/experimental.js";
 import {
   detectLegacyClawdBrowserProfileResidue,
   maybeArchiveLegacyClawdBrowserProfileResidue,
+  maybeRepairOwnedChromeExtensionNativeHosts,
   noteChromeMcpBrowserReadiness,
   type LegacyClawdBrowserProfileResidue,
 } from "../commands/doctor-browser.js";
@@ -15,11 +16,6 @@ import {
   shellCompletionStatusToRepairEffects,
 } from "../commands/doctor-completion.js";
 import {
-  detectStaleSessionLocks,
-  sessionLockToHealthFinding,
-  sessionLockToRepairEffect,
-} from "../commands/doctor-session-locks.js";
-import {
   disableUnavailableSkillsInConfig,
   formatMissingSkillSummary,
 } from "../commands/doctor-skills-core.js";
@@ -28,7 +24,10 @@ import {
   uiProtocolFreshnessIssueToHealthFinding,
   uiProtocolFreshnessIssueToRepairEffects,
 } from "../commands/doctor-ui.js";
-import { collectDisabledCodexPluginRouteIssues } from "../commands/doctor/shared/codex-route-warnings.js";
+import {
+  collectCodexRuntimeCompatibilityWarnings,
+  collectDisabledCodexPluginRouteIssues,
+} from "../commands/doctor/shared/codex-route-warnings.js";
 import { isDefaultInstallIdentity } from "../config/paths.js";
 import type { ConfigValidationIssue, OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveSecretInputRef, type SecretRef } from "../config/types.secrets.js";
@@ -37,6 +36,7 @@ import type { CronJob } from "../cron/types.js";
 import { hasAmbiguousGatewayAuthModeConfig } from "../gateway/auth-mode-policy.js";
 import { resolveGatewayAuthToken } from "../gateway/auth-token-resolution.js";
 import { resolveGatewayAuth } from "../gateway/auth.js";
+import type { PluginMetadataSnapshotScopeRunner } from "../plugins/current-plugin-metadata-snapshot.js";
 import { getSkippedExecRefStaticError } from "../secrets/exec-resolution-policy.js";
 import type { SkillStatusEntry } from "../skills/discovery/status.js";
 import { resolveSkillWorkshopConfig } from "../skills/workshop/config.js";
@@ -89,7 +89,6 @@ const skillForgeStaleStateCheck: HealthCheck = {
   },
 };
 const GATEWAY_SERVICES_EXTRA_CHECK_ID = "core/doctor/gateway-services/extra";
-const SESSION_LOCKS_CHECK_ID = "core/doctor/session-locks";
 const TELEGRAM_GENERAL_TOPIC_CONVERSATIONS_CHECK_ID =
   "core/doctor/telegram-general-topic-conversations";
 const SKILL_WORKSHOP_TOOL_POLICY_CHECK_ID = "core/doctor/skill-workshop-tool-policy";
@@ -156,7 +155,15 @@ async function collectRuntimeToolSchemaFindingsWithRuntime(
   ctx: HealthCheckContext,
 ): Promise<readonly HealthFinding[]> {
   const runtime = await loadDoctorCoreChecksRuntimeModule();
-  return runtime.collectRuntimeToolSchemaFindings(ctx.cfg);
+  const runWithPluginMetadataSnapshot = (
+    ctx as HealthCheckContext & {
+      runWithPluginMetadataSnapshot?: PluginMetadataSnapshotScopeRunner;
+    }
+  ).runWithPluginMetadataSnapshot;
+  return runtime.collectRuntimeToolSchemaFindings(
+    ctx.cfg,
+    runWithPluginMetadataSnapshot ? { runWithPluginMetadataSnapshot } : undefined,
+  );
 }
 
 async function collectProviderCatalogProjectionFindingsWithRuntime(
@@ -548,9 +555,12 @@ const legacyStateCheck: HealthCheck & { readonly defaultEnabled: false } = {
   defaultEnabled: false,
   async detect(ctx) {
     const { detectLegacyStateMigrations } = await import("../commands/doctor-state-migrations.js");
+    const { prepareLegacySessionSurfaces } = await import("../plugins/legacy-session-surfaces.js");
+    const legacySessionSurfaces = prepareLegacySessionSurfaces({ config: ctx.cfg });
     const detected = await detectLegacyStateMigrations({
       cfg: ctx.cfg,
       doctorOnlyStateMigrations: true,
+      legacySessionSurfaces,
     });
     return [
       ...detected.preview.map(
@@ -854,10 +864,10 @@ const legacyCronStoreCheck: SplitHealthCheckInput = {
 const codexSessionRoutesCheck: HealthCheck = {
   id: CODEX_SESSION_ROUTES_CHECK_ID,
   kind: "core",
-  description: "Codex runtime routes have a registered Codex plugin harness before sessions run.",
+  description: "Codex runtime routes are compatible with the configured plugin harness.",
   source: "doctor",
   async detect(ctx) {
-    return collectDisabledCodexPluginRouteIssues(ctx.cfg).map(
+    const disabledPluginFindings = collectDisabledCodexPluginRouteIssues(ctx.cfg, ctx.env).map(
       (issue): HealthFinding => ({
         checkId: CODEX_SESSION_ROUTES_CHECK_ID,
         severity: "warning",
@@ -879,6 +889,15 @@ const codexSessionRoutesCheck: HealthCheck = {
             ].join(" "),
       }),
     );
+    const compatibilityFindings = collectCodexRuntimeCompatibilityWarnings(ctx.cfg, ctx.env).map(
+      (text) =>
+        noteTextToFinding({
+          checkId: CODEX_SESSION_ROUTES_CHECK_ID,
+          severity: "warning",
+          text,
+        }),
+    );
+    return [...disabledPluginFindings, ...compatibilityFindings];
   },
 };
 
@@ -1009,33 +1028,6 @@ function createGatewayDaemonCheck(deps: CoreHealthCheckDeps): SplitHealthCheckIn
   };
 }
 
-const sessionLocksCheck: SplitHealthCheckInput = {
-  id: SESSION_LOCKS_CHECK_ID,
-  kind: "core",
-  description: "Stale session lock files are represented as structured findings.",
-  source: "doctor",
-  defaultEnabled: false,
-  async detect(ctx) {
-    return (await detectStaleSessionLocks({ config: ctx.cfg, env: process.env })).map(
-      sessionLockToHealthFinding,
-    );
-  },
-  async repair(ctx) {
-    const effects = (await detectStaleSessionLocks({ config: ctx.cfg, env: process.env })).map(
-      sessionLockToRepairEffect,
-    );
-    if (ctx.dryRun === true) {
-      return { status: "repaired", changes: [], effects };
-    }
-    return {
-      status: "skipped",
-      reason: "legacy doctor session lock contribution owns cleanup",
-      changes: [],
-      effects,
-    };
-  },
-};
-
 const browserCheck: HealthCheck = {
   id: "core/doctor/browser",
   kind: "core",
@@ -1046,11 +1038,50 @@ const browserCheck: HealthCheck = {
     await noteChromeMcpBrowserReadiness(ctx.cfg, { noteFn: collector.noteFn });
     return collector.findings;
   },
+  async repair(ctx) {
+    if (ctx.dryRun === true) {
+      return {
+        status: "skipped",
+        reason: "native-host repair requires filesystem writes",
+        changes: [],
+      };
+    }
+    const result = await maybeRepairOwnedChromeExtensionNativeHosts();
+    return {
+      ...(result.changes.length === 0 && result.warnings.length > 0
+        ? { status: "failed" as const, reason: result.warnings.join("; ") }
+        : {}),
+      changes: result.changes,
+      warnings: result.warnings,
+    };
+  },
 };
 
 function createSkillsReadinessCheck(
   deps: CoreHealthCheckDeps,
 ): HealthCheck & { readonly defaultEnabled: false } {
+  const detectUnavailableSkills = async (
+    ctx: HealthCheckContext | HealthRepairContext,
+  ): Promise<readonly SkillStatusEntry[]> => {
+    const runWithPluginMetadataSnapshot = (
+      ctx as (HealthCheckContext | HealthRepairContext) & {
+        runWithPluginMetadataSnapshot?: PluginMetadataSnapshotScopeRunner;
+      }
+    ).runWithPluginMetadataSnapshot;
+    const detect = () => deps.detectUnavailableSkills(ctx.cfg);
+    if (!runWithPluginMetadataSnapshot) {
+      return await detect();
+    }
+    const defaultAgentId = resolveDefaultAgentId(ctx.cfg);
+    return await runWithPluginMetadataSnapshot(
+      {
+        config: ctx.cfg,
+        workspaceDir: resolveAgentWorkspaceDir(ctx.cfg, defaultAgentId),
+      },
+      detect,
+    );
+  };
+
   return {
     id: "core/doctor/skills-readiness",
     kind: "core",
@@ -1059,14 +1090,14 @@ function createSkillsReadinessCheck(
     defaultEnabled: false,
     async detect(ctx, scope) {
       const unavailable = filterUnavailableSkillsForScope(
-        await deps.detectUnavailableSkills(ctx.cfg),
+        await detectUnavailableSkills(ctx),
         scope?.paths,
       );
       return unavailable.map(unavailableSkillToFinding);
     },
     async repair(ctx, findings) {
       const unavailable = filterUnavailableSkillsForScope(
-        await deps.detectUnavailableSkills(ctx.cfg),
+        await detectUnavailableSkills(ctx),
         findings.map((finding) => finding.path),
       );
       if (unavailable.length === 0) {
@@ -1306,7 +1337,6 @@ function createConvertedWorkflowChecks(
     legacyCronStoreCheck,
     codexSessionRoutesCheck,
     telegramGeneralTopicConversationsCheck,
-    sessionLocksCheck,
     shellCompletionCheck,
     uiProtocolFreshnessCheck,
     gatewayServicesExtraCheck,

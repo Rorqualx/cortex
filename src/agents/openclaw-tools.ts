@@ -15,12 +15,11 @@ import { isEmbeddedMode } from "../infra/embedded-mode.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../secrets/runtime-state.js";
-import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
+import { getActiveRuntimeWebToolsMetadataFromState as getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
 import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
 import type { SkillWorkshopRunOptions } from "../skills/workshop/types.js";
 import { resolveTranscriptsConfig } from "../transcripts/config.js";
-import { normalizeDeliveryContext } from "../utils/delivery-context.js";
-import type { GatewayMessageChannel } from "../utils/message-channel.js";
+import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentIds } from "./agent-scope.js";
 import {
   type HookContext,
@@ -58,7 +57,12 @@ import {
   createConversationsSendTool,
   createConversationsTurnTool,
 } from "./tools/conversation-tools.js";
-import { createCronTool, type CronCreatorToolAllowlistEntry } from "./tools/cron-tool.js";
+import {
+  createCronTool,
+  type CronCreatorToolAllowlistEntry,
+  type CronToolsAllowCaptureRef,
+} from "./tools/cron-tool.js";
+import type { CronCreatorToolAuthoritySnapshot } from "./tools/cron-tool.types.js";
 import { createDashboardTool } from "./tools/dashboard-tool.js";
 import { createDelegationTools } from "./tools/delegation/tools.js";
 import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
@@ -75,7 +79,7 @@ import { createHttpRequestTool } from "./tools/http-request.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
 import { createMemoryReportsTool } from "./tools/memory-reports.js";
-import { createMessageTool } from "./tools/message-tool.js";
+import { createMessageTool } from "./tools/message-tool-execution.js";
 import { createMobileUiTool } from "./tools/mobile-ui-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
@@ -116,7 +120,7 @@ export function createOpenClawTools(
      * sandbox/policy session key used to construct the tool set.
      */
     runSessionKey?: string;
-    agentChannel?: GatewayMessageChannel;
+    agentChannel?: string;
     runId?: string;
     agentAccountId?: string;
     /** Trusted account used only for Gateway authorization; delivery keeps agentAccountId. */
@@ -142,6 +146,14 @@ export function createOpenClawTools(
     pluginToolDenylist?: string[];
     /** Effective caller tool surface to persist on isolated cron agentTurn jobs. */
     cronCreatorToolAllowlist?: CronCreatorToolAllowlistEntry[];
+    /** Test/diagnostic capture of the effective cron creator tool allowlist actually applied. */
+    cronCreatorToolAllowlistCaptureRef?: CronToolsAllowCaptureRef;
+    /** Attempt-cached authority resolved only when a mutation changes its tool cap. */
+    resolveCronCreatorToolAuthority?: (options?: {
+      signal?: AbortSignal;
+    }) => Promise<CronCreatorToolAuthoritySnapshot>;
+    /** Visible fail-closed reason when a queued local turn cannot retain fresh MCP authority. */
+    cronCreatorAuthorityUnavailableReason?: "queued-local-operator-configured-mcp";
     /** Current channel ID for auto-threading. */
     currentChannelId?: string;
     /** Trusted normalized conversation kind for the active inbound turn. */
@@ -519,6 +531,9 @@ export function createOpenClawTools(
               threadId: options?.currentThreadTs ?? options?.agentThreadId,
             },
             creatorToolAllowlist: options?.cronCreatorToolAllowlist,
+            creatorToolAllowlistCaptureRef: options?.cronCreatorToolAllowlistCaptureRef,
+            resolveCreatorToolAuthority: options?.resolveCronCreatorToolAuthority,
+            creatorAuthorityUnavailableReason: options?.cronCreatorAuthorityUnavailableReason,
             runId: options?.runId,
             ...(options?.cronSelfRemoveOnlyJobId
               ? { selfRemoveOnlyJobId: options.cronSelfRemoveOnlyJobId }
@@ -717,7 +732,9 @@ export function createOpenClawTools(
       onBeforeYield:
         requesterSessionKey && requesterTurnRunId
           ? async () => {
-              const { markRequesterTurnYielded } = await import("./subagent-registry.js");
+              const { markRequesterTurnYielded } = await import(
+                "./subagents/registry/subagent-registry.js"
+              );
               markRequesterTurnYielded({ requesterSessionKey, requesterTurnRunId });
             }
           : undefined,

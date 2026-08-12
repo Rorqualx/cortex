@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // @vitest-environment node
-import { createDeferred } from "../../../src/test-utils/deferred.js";
+import { createDeferredCore as createDeferred } from "../../../src/shared/deferred.js";
 
 type CronRunsLoadStatus = "ok" | "error" | "skipped";
 

@@ -153,7 +153,7 @@ export function resolveEmbeddedAttemptBasePrompt(params: {
   return scrubAnthropicRefusalMagic(params.prompt);
 }
 
-export function createCompactionDiagId(): string {
+export function createRunRecoveryDiagId(): string {
   return `ovf-${Date.now().toString(36)}-${generateSecureToken(4)}`;
 }
 
@@ -162,6 +162,8 @@ const RUN_RETRY_ITERATIONS_PER_PROFILE = 8;
 const MIN_RUN_RETRY_ITERATIONS = 32;
 const MAX_RUN_RETRY_ITERATIONS = 160;
 
+// This per-run bound multiplies whole-turn overload replays in
+// auto-reply/reply/agent-runner-error-handler.ts; keep their product test aligned.
 // Defensive guard for the outer run loop across all retry branches.
 // Fork: agents.defaults/list runRetries config can tune the budget per agent.
 export function resolveMaxRunRetryIterations(
@@ -241,21 +243,41 @@ export function resolveReportedModelRef(params: {
 
 export function resolveLatestCallUsage(params: {
   currentAttemptCandidates: readonly (NormalizedUsage | undefined)[];
-  carriedCandidates: readonly (NormalizedUsage | undefined)[];
+  carriedUsage: NormalizedUsage | undefined;
+  transcriptFallback: NormalizedUsage | undefined;
 }): {
   currentAttempt: NormalizedUsage | undefined;
   latest: NormalizedUsage | undefined;
 } {
   const currentAttempt = params.currentAttemptCandidates.find(hasNonzeroUsage);
+  const carriedUsage = hasNonzeroUsage(params.carriedUsage) ? params.carriedUsage : undefined;
+  const transcriptFallback = hasNonzeroUsage(params.transcriptFallback)
+    ? params.transcriptFallback
+    : undefined;
   return {
     currentAttempt,
-    latest: currentAttempt ?? params.carriedCandidates.find(hasNonzeroUsage),
+    latest: currentAttempt ?? carriedUsage ?? transcriptFallback,
   };
+}
+
+export function normalizeAssistantUsageForContext(
+  assistant: { api?: string; usage?: unknown } | null | undefined,
+): NormalizedUsage | undefined {
+  if (
+    assistant?.api === "cli" &&
+    assistant.usage &&
+    typeof assistant.usage === "object" &&
+    !Array.isArray(assistant.usage) &&
+    (assistant.usage as { contextUsage?: unknown }).contextUsage === undefined
+  ) {
+    return { contextUsage: { state: "unavailable" } };
+  }
+  return normalizeUsage(assistant?.usage as UsageSnapshot | undefined);
 }
 
 export function buildUsageAgentMetaFields(params: {
   usageAccumulator: UsageAccumulator;
-  lastAssistantUsage?: UsageSnapshot | null;
+  latestUsage?: UsageSnapshot | null;
   lastRunPromptUsage: UsageSnapshot | undefined;
   /** Fork: last turn's total wins over the accumulator so a resumed or compacted
    * run reports the turn the user just saw, not the whole-session sum. */
@@ -265,14 +287,14 @@ export function buildUsageAgentMetaFields(params: {
   if (usage && params.lastTurnTotal && params.lastTurnTotal > 0) {
     usage.total = params.lastTurnTotal;
   }
-  const lastAssistantUsage = normalizeUsage(params.lastAssistantUsage as never);
-  const lastCallUsage = hasNonzeroUsage(lastAssistantUsage)
-    ? lastAssistantUsage
+  const latestUsage = normalizeUsage(params.latestUsage as never);
+  const lastCallUsage = hasNonzeroUsage(latestUsage)
+    ? latestUsage
     : hasNonzeroUsage(params.lastRunPromptUsage)
       ? params.lastRunPromptUsage
       : undefined;
   const promptTokens = deriveContextPromptTokens({
-    lastCallUsage: params.lastRunPromptUsage,
+    lastCallUsage,
   });
   return {
     usage,
@@ -295,12 +317,12 @@ export function buildErrorAgentMeta(params: {
   contextTokens?: number;
   usageAccumulator: UsageAccumulator;
   lastRunPromptUsage: UsageSnapshot | undefined;
-  lastAssistant?: { usage?: unknown } | null;
+  currentAttemptAssistant?: { api?: string; usage?: unknown } | null;
   lastTurnTotal?: number;
 }): EmbeddedAgentMeta {
   const usageMeta = buildUsageAgentMetaFields({
     usageAccumulator: params.usageAccumulator,
-    lastAssistantUsage: params.lastAssistant?.usage as UsageSnapshot | undefined,
+    latestUsage: normalizeAssistantUsageForContext(params.currentAttemptAssistant),
     lastRunPromptUsage: params.lastRunPromptUsage,
     lastTurnTotal: params.lastTurnTotal,
   });
