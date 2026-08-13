@@ -6,6 +6,7 @@ import { ErrorShapeSchema } from "./frames.js";
 import { ChatAttachmentsSchema } from "./logs-chat.js";
 import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString, SessionLabelString } from "./primitives.js";
+import { SessionCompactionCheckpointReasonSchema } from "./session-compaction-reason.js";
 import { SessionsCreateParamsSchema } from "./sessions-create.js";
 import { SessionsRecoverParamsSchema, SessionsRecoverResultSchema } from "./sessions-recover.js";
 
@@ -135,14 +136,10 @@ export const SessionsCompanionResetResultSchema = closedObject({
  * schemas are shared by dashboard, CLI, ACP, and gateway RPC callers.
  */
 
-/** Reason a compaction checkpoint was created. */
-// Exported for the fork's session-row wire schemas; upstream keeps it local.
-export const SessionCompactionCheckpointReasonSchema = Type.Union([
-  Type.Literal("manual"),
-  Type.Literal("auto-threshold"),
-  Type.Literal("overflow-retry"),
-  Type.Literal("timeout-retry"),
-]);
+// Imported from a leaf module (above) and re-exported here so the fork-only
+// session-row.ts can source the value from the leaf instead of pulling it out of
+// sessions.ts, which produced a bundler init cycle (TDZ). Upstream keeps this local.
+export { SessionCompactionCheckpointReasonSchema };
 
 /** Start/end event emitted while a session compaction operation runs. */
 export const SessionOperationEventSchema = closedObject({

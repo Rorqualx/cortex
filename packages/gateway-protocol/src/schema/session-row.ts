@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString } from "./primitives.js";
 import { SessionPlacementSchema } from "./session-placement.js";
-import { SessionCompactionCheckpointReasonSchema } from "./sessions.js";
+import { SessionCompactionCheckpointReasonSchema } from "./session-compaction-reason.js";
 
 /**
  * Gateway session row and session event schemas.
