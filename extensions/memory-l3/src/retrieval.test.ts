@@ -1768,4 +1768,61 @@ describe("retrieveTopK with query reformulation", () => {
 
     expect(result.reformulated).toBeFalsy();
   });
+
+  it("trims results to maxInjectedTokens budget", async () => {
+    await writeChunk("chunk-budget", [
+      {
+        id: "f1",
+        text: "alpha budget fact with some detail",
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: "budget:1",
+      },
+      {
+        id: "f2",
+        text: "beta budget fact with some detail",
+        importance: 0.8,
+        createdAt: NOW,
+        dedupKey: "budget:2",
+      },
+      {
+        id: "f3",
+        text: "gamma budget fact with some detail",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "budget:3",
+      },
+      {
+        id: "f4",
+        text: "delta budget fact with some detail that is longer than the rest to consume tokens",
+        importance: 0.6,
+        createdAt: NOW,
+        dedupKey: "budget:4",
+      },
+    ]);
+
+    const result = await retrieveTopK({
+      query: "budget fact",
+      storage,
+      topK: 10,
+      now: NOW,
+      retrievalConfig: {
+        useEpochFirst: false,
+        epochExpandTopN: 3,
+        useSubmodularSelect: false,
+        submodularDiversityWeight: 0.3,
+        submodularCoverageWeight: 0.3,
+        submodularTokenBudget: null,
+        mode: "blended",
+        maxInjectedTokens: 80,
+      },
+    });
+
+    // Budget of 80 tokens, prelude ~60, leaving ~20 for facts.
+    // Each fact ~(35+20)/4 = ~14 tokens. Should fit ~1-2 facts.
+    expect(result.facts.length).toBeLessThan(4);
+    expect(result.facts.length).toBeGreaterThan(0);
+    // Highest-score fact always present
+    expect(result.facts.some((r) => r.fact.dedupKey === "budget:1")).toBe(true);
+  });
 });

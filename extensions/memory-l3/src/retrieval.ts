@@ -271,6 +271,15 @@ export type RetrievalConfig = {
    * Default undefined (no timeout). Set to e.g. 5000 for a 5-second cap.
    */
   retrievalTimeoutMs?: number;
+  /**
+   * Token-budget guard for injected L3 context. When set, the retrieval
+   * result is trimmed from the bottom (lowest-score facts first) so the
+   * estimated formatted token cost stays within budget. Prevents context
+   * flooding — the Information Abundance Paradox shows that injecting too
+   * many facts degrades recall. Default undefined (no cap). Set to e.g.
+   * 2000 for a 2K-token budget.
+   */
+  maxInjectedTokens?: number;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -1336,7 +1345,47 @@ export async function retrieveTopK(params: {
     retConfig.mode === "routed" ? classifyQueryIntent(params.query) : "synthesis";
   const compressedFacts = compressFactsForResult(finalFacts, intent);
 
-  return { facts: compressedFacts, missingInfo, reformulated };
+  // Token-budget guard: trim lowest-score facts to stay within budget.
+  // Prevents the Information Abundance Paradox — flooding context with too
+  // many facts degrades parametric recall. Estimate ~4 chars/token, plus
+  // ~20 chars overhead per fact line (marker, score, age annotation).
+  const maxTokens = retConfig.maxInjectedTokens;
+  const budgetedFacts =
+    maxTokens !== undefined && maxTokens > 0
+      ? trimToTokenBudget(compressedFacts, maxTokens)
+      : compressedFacts;
+
+  return { facts: budgetedFacts, missingInfo, reformulated };
+}
+
+/**
+ * Token-budget trim: removes facts from the bottom (lowest score) until the
+ * estimated formatted token cost fits within budget. Each fact contributes
+ * roughly `(text.length + 20) / 4` tokens (accounting for the line marker,
+ * score, and age annotation added by formatMemorySection).
+ */
+function trimToTokenBudget(facts: RetrievedFact[], maxTokens: number): RetrievedFact[] {
+  if (facts.length === 0) {
+    return facts;
+  }
+  // Preclude overhead from the prelude (~60 tokens).
+  const PRELUDE_TOKENS = 60;
+  let remaining = maxTokens - PRELUDE_TOKENS;
+  if (remaining <= 0) {
+    return [];
+  }
+  // Facts are already sorted by score descending (same order as topK slice).
+  // Greedily pack from the top until we exhaust the budget.
+  const result: RetrievedFact[] = [];
+  for (const rf of facts) {
+    const lineTokens = Math.ceil((rf.fact.text.length + 20) / 4);
+    if (lineTokens > remaining && result.length > 0) {
+      break; // stop when adding this fact would exceed budget
+    }
+    result.push(rf);
+    remaining -= lineTokens;
+  }
+  return result;
 }
 
 /**
