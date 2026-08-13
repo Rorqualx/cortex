@@ -161,10 +161,22 @@ echo "BUILD_EXIT=\$BUILD_EXIT"
 TSGO_REGRESS=0
 for lane in \$LANES; do
   bc=\$(grep -E "^\$lane " "\$BDIR/tsgo.txt" | awk '{print \$2}'); bc=\${bc:-0}
-  cc=\$(corepack pnpm run \$lane 2>&1 | grep -cE "error TS"); rm -rf .artifacts/tsgo-cache
+  # Candidate lanes run right after \`pnpm build\`; its emitted dist/tsbuildinfo can
+  # inflate the FIRST incremental typecheck with transient errors a clean re-run does
+  # not reproduce (2026-08-12: phantom :test counts false-failed a clean merge, wedging
+  # the auto-land gate). Start each lane from a clean cache; confirm any apparent
+  # regression with one more clean run before trusting it — a real type error repeats,
+  # transient inflation does not, so only the disagreeing lane pays the re-run.
+  rm -rf .artifacts/tsgo-cache
+  cc=\$(corepack pnpm run \$lane 2>&1 | grep -cE "error TS")
+  if [ "\$cc" -gt "\$bc" ]; then
+    rm -rf .artifacts/tsgo-cache
+    cc=\$(corepack pnpm run \$lane 2>&1 | grep -cE "error TS")
+  fi
   echo "TSGO \$lane base=\$bc cand=\$cc"
   [ "\$cc" -gt "\$bc" ] && TSGO_REGRESS=1
 done
+rm -rf .artifacts/tsgo-cache
 
 # behavior net-new failing-file diff
 corepack pnpm test:fast >/tmp/rp-test.log 2>&1 || true
