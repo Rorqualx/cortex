@@ -14,6 +14,7 @@ type GatewayModelCatalogConfig = ReturnType<typeof getRuntimeConfig>;
 type LoadPublishedPreparedModelCatalogOwnerSnapshot = (params: {
   agentId?: string;
   agentDir?: string;
+  allowGatewaySubagentBinding?: boolean;
   config: GatewayModelCatalogConfig;
   readOnly?: boolean;
   workspaceDir?: string;
@@ -21,6 +22,11 @@ type LoadPublishedPreparedModelCatalogOwnerSnapshot = (params: {
 type LoadGatewayModelCatalogParams = {
   agentId?: string;
   agentDir?: string;
+  /**
+   * Gateway-owned readers carry the gateway's own publication flag so they resolve the
+   * configured lifecycle owner; flag-less readers stay exact and never borrow it.
+   */
+  allowGatewaySubagentBinding?: boolean;
   getConfig?: () => GatewayModelCatalogConfig;
   loadPublishedPreparedModelCatalogOwnerSnapshot?: LoadPublishedPreparedModelCatalogOwnerSnapshot;
   readOnly?: boolean;
@@ -57,6 +63,9 @@ async function loadGatewayModelCatalogOwnerSnapshot(
     await loadOwner({
       ...(params?.agentId ? { agentId: params.agentId } : {}),
       ...(params?.agentDir ? { agentDir: params.agentDir } : {}),
+      ...(params?.allowGatewaySubagentBinding
+        ? { allowGatewaySubagentBinding: params.allowGatewaySubagentBinding }
+        : {}),
       config: (params?.getConfig ?? getRuntimeConfig)(),
       readOnly: params?.readOnly !== false,
       ...(params?.workspaceDir ? { workspaceDir: params.workspaceDir } : {}),
@@ -92,6 +101,9 @@ export async function readPreparedGatewayModelCatalog(
   return getPreparedModelCatalogSnapshot({
     ...(params?.agentId ? { agentId: params.agentId } : {}),
     ...(params?.agentDir ? { agentDir: params.agentDir } : {}),
+    ...(params?.allowGatewaySubagentBinding
+      ? { allowGatewaySubagentBinding: params.allowGatewaySubagentBinding }
+      : {}),
     config,
     readOnly: true,
     ...(params?.workspaceDir ? { workspaceDir: params.workspaceDir } : {}),

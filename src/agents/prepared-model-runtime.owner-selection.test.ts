@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
+import { loadGatewayModelCatalogSnapshot } from "../gateway/server-model-catalog.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import {
   acquireAgentRunPreparedModelRuntime,
@@ -126,6 +127,36 @@ describe("prepared model runtime owner selection", () => {
     await expect(loadPreparedModelRuntimeSnapshot(request)).rejects.toThrow(
       "prepared model runtime owner was not published",
     );
+  });
+
+  it("reuses the gateway-published owner for read-only reads carrying the binding flag", async () => {
+    // Request-path catalog reads owned by the gateway carry its publication flag; they
+    // must reuse the configured generation instead of publishing an ephemeral owner per
+    // read (a full catalog build each time).
+    mocks.configuredAgentIds = ["default"];
+    const config = retainLegacyDefaultAgentId(
+      { agents: { defaults: { model: "openai/gpt-5.5" }, entries: { default: {} } } },
+      "default",
+    );
+    await refreshPreparedModelRuntimeSnapshots(config, {
+      allowGatewaySubagentBinding: true,
+      catalogMode: "static",
+      gatewayLifecycle: true,
+    });
+    const buildsAfterRefresh = mocks.discoverModels.mock.calls.length;
+    const loadReadOnly = () =>
+      loadGatewayModelCatalogSnapshot({
+        agentId: "default",
+        allowGatewaySubagentBinding: true,
+        getConfig: () => config,
+        readOnly: true,
+      });
+
+    const first = await loadReadOnly();
+    const second = await loadReadOnly();
+
+    expect(second.entries).toBe(first.entries);
+    expect(mocks.discoverModels.mock.calls.length).toBe(buildsAfterRefresh);
   });
 
   it("reuses the configured owner for its prepared plugin harness selections", async () => {

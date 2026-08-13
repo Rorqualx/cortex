@@ -90,6 +90,25 @@ describe("gateway prepared model catalog", () => {
     });
   });
 
+  it("forwards the gateway publication flag to owner resolution", async () => {
+    // Gateway-owned readers must resolve the configured owner published under the
+    // gateway's binding flag; dropping the flag forces a per-request ephemeral rebuild.
+    const config = ownerConfig();
+    const loadPublishedPreparedModelCatalogOwnerSnapshot = vi.fn(async () => ownerSnapshot(config));
+
+    await loadGatewayModelCatalogSnapshot({
+      allowGatewaySubagentBinding: true,
+      getConfig: () => config,
+      loadPublishedPreparedModelCatalogOwnerSnapshot,
+    });
+
+    expect(loadPublishedPreparedModelCatalogOwnerSnapshot).toHaveBeenCalledWith({
+      allowGatewaySubagentBinding: true,
+      config,
+      readOnly: true,
+    });
+  });
+
   it("rejects an ambiguous owner without an authoritative agent identity", async () => {
     const config = {
       agents: {
