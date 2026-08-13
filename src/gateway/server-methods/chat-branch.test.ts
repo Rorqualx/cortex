@@ -18,13 +18,20 @@ const SESSION_KEY = "agent:main:test";
 // Rewritten per fixture: the mocked gateway wrapper only supplies the session
 // identity, while the transcript itself lives in the fixture's SQLite store.
 let storePathForTest = "";
+// When true, the mock returns no entry (simulates a new thread with no session yet)
+let mockSessionMissing = false;
 
 vi.mock("../session-utils.js", () => ({
-  loadSessionEntry: () => ({
-    entry: { sessionId: SESSION_ID },
-    canonicalKey: SESSION_KEY,
-    storePath: storePathForTest,
-  }),
+  loadSessionEntry: () => {
+    if (mockSessionMissing) {
+      return { entry: undefined, canonicalKey: SESSION_KEY, storePath: storePathForTest };
+    }
+    return {
+      entry: { sessionId: SESSION_ID },
+      canonicalKey: SESSION_KEY,
+      storePath: storePathForTest,
+    };
+  },
 }));
 
 const { chatBranchHandlers } = await import("./chat-branch.js");
@@ -309,5 +316,19 @@ describe("chat.branches", () => {
         });
       },
     );
+  });
+
+  it("returns empty branches when session does not exist yet (new thread)", async () => {
+    mockSessionMissing = true;
+    try {
+      const result = await callChatBranches({ sessionKey: SESSION_KEY });
+      expect(result.ok).toBe(true);
+      const payload = result.payload as BranchesPayload;
+      expect(payload.activeLeafId).toBeNull();
+      expect(payload.branches).toEqual([]);
+      expect(payload.activePath).toEqual([]);
+    } finally {
+      mockSessionMissing = false;
+    }
   });
 });

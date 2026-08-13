@@ -452,8 +452,14 @@ async function handleChatBranchesRequest(opts: GatewayRequestHandlerOptions): Pr
 
   const { entry, storePath } = loadSessionEntry(sessionKey, { agentId: agentIdOverride });
   const sessionId = entry?.sessionId;
+  // Session not yet created (new thread with no messages) — return empty branches
   if (!sessionId) {
-    respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "Session not found"));
+    respond(true, {
+      ok: true,
+      activeLeafId: null,
+      branches: [],
+      activePath: [],
+    } satisfies ChatBranchesResult);
     return;
   }
 
