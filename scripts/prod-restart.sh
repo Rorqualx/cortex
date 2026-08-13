@@ -288,7 +288,7 @@ else
   # OPENCLAW_DEPLOY_BUILD=1 stands down the build-suicide guard: we already passed
   # the cron-idle gate (or --force) above, so this sanctioned rebuild must not be
   # refused by a straggler-gateway + stale-marker race.
-  if CI=1 OPENCLAW_DEPLOY_BUILD=1 npm_config_verify_deps_before_run=false node scripts/build-all.mjs; then
+  if CI=1 OPENCLAW_DEPLOY_BUILD=1 npm_config_verify_deps_before_run=false node --import tsx scripts/build-all.mts; then
     log_green "Build completed successfully"
   else
     log_red "Build failed!"
