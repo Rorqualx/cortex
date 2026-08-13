@@ -33,6 +33,8 @@ export function createGatewayNodeSessionRuntime(params: {
   onPairingInvalidated?: NodeRegistryOptions["onPairingInvalidated"];
   // Optional so the fork's server.impl.ts (merge=ours) can keep its
   // { broadcast }-only call shape; upstream-style callers inject registries.
+  // The body defaults them via `?? createSession*SubscriberRegistry()`.
+  onPairingGenerationChanged?: NodeRegistryOptions["onPairingGenerationChanged"];
   sessionEventSubscribers?: SessionEventSubscriberRegistry;
   sessionMessageSubscribers?: SessionMessageSubscriberRegistry;
 }) {
@@ -50,6 +52,7 @@ export function createGatewayNodeSessionRuntime(params: {
         ...change,
         preserveSubscriptions: change.preserveSessionState,
       });
+      params.onPairingGenerationChanged?.(change);
     },
   });
   const nodePresenceTimers = new Map<string, ReturnType<typeof setInterval>>();

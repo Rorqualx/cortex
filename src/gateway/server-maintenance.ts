@@ -19,7 +19,7 @@ import {
   startSkillCollectionMaintenance,
 } from "../skills/workshop/collection-review.js";
 import {
-  abortTrackedChatRunById,
+  abortChatRunById,
   type ChatAbortControllerEntry,
   removeChatAbortControllerEntry,
   type RestartRecoveryCandidate,
@@ -49,6 +49,7 @@ import { hasRegisteredChatRunForSessionKey } from "./server-methods/session-acti
 import { PENDING_CHAT_SEND_DEDUPE_PREFIX, type DedupeEntry } from "./server-shared.js";
 import { formatError } from "./server-utils.js";
 import { setBroadcastHealthUpdate } from "./server/health-state.js";
+import { tryResolveSessionCompatibilityOwnerAgentId } from "./session-request-agent.js";
 
 // Hourly sweep plus a one-day grace bounds orphan storage without racing the
 // stage-before-row-commit window.
@@ -310,7 +311,7 @@ export function startGatewayMaintenanceTimers(params: {
         removeChatAbortControllerEntry(params.chatAbortControllers, runId, entry);
         continue;
       }
-      abortTrackedChatRunById(params, {
+      abortChatRunById(params, {
         runId,
         sessionKey: entry.sessionKey,
         stopReason: "timeout",
@@ -388,12 +389,15 @@ export function startGatewayMaintenanceTimers(params: {
     (async () => {
       const { cleanupManagedOutgoingMediaRecords } = await import("./managed-image-attachments.js");
       return await cleanupManagedOutgoingMediaRecords({
-        hasActiveSessionRun: (sessionKey, agentId) =>
-          hasRegisteredChatRunForSessionKey({
+        hasActiveSessionRun: (sessionKey, agentId) => {
+          const cfg = params.getRuntimeConfig();
+          return hasRegisteredChatRunForSessionKey({
             context: { chatAbortControllers: params.chatAbortControllers },
             sessionKey,
             agentId,
-          }),
+            defaultAgentId: tryResolveSessionCompatibilityOwnerAgentId(cfg, sessionKey),
+          });
+        },
       });
     });
   const managedOutgoingCleanupLoader = createLazyPromiseLoader(async () => {

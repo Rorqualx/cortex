@@ -1027,7 +1027,7 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(instructions).toContain("For progress, set `final=false`.");
-    expect(instructions).toContain("set `final=true`");
+    expect(instructions).toContain("Set `final=true`, or omit it,");
   });
 
   it("keeps durable dynamic tool fingerprints scoped to loading mode", () => {

@@ -1,5 +1,4 @@
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
-import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { clearAgentRunContext } from "../../infra/agent-run-registry.js";
 import { retainGatewayRootWorkAdmissionContinuation } from "../../process/gateway-work-admission.js";
 import {
@@ -10,6 +9,7 @@ import type { UserTurnTranscriptRecorder } from "../../sessions/user-turn-transc
 import { setGatewayDedupeEntry } from "../agent-turn/agent-job.js";
 import { chatAbortMarkerTimestampMs } from "../server-chat-state.js";
 import { persistGatewaySessionLifecycleEvent } from "../session-lifecycle-state.js";
+import { tryResolveSessionCompatibilityOwnerAgentId } from "../session-request-agent.js";
 import { formatForLog } from "../ws-log.js";
 import { buildAbortedChatSendPayload } from "./chat-abort-authorization.js";
 import { broadcastChatError, broadcastChatFinal } from "./chat-broadcast.js";
@@ -296,8 +296,8 @@ export function createChatSendDispatchErrorLifecycle(params: {
         context,
         requestedKey: rawSessionKey,
         canonicalKey: sessionKey,
-        ...(sessionKey === "global" && agentId ? { agentId } : {}),
-        defaultAgentId: resolveDefaultAgentId(cfg),
+        ...(agentId ? { agentId } : {}),
+        defaultAgentId: tryResolveSessionCompatibilityOwnerAgentId(cfg, sessionKey),
       });
       if (hasActiveRun) {
         return;
@@ -305,7 +305,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
       try {
         await persistGatewaySessionLifecycleEvent({
           sessionKey,
-          ...(sessionKey === "global" && agentId ? { agentId } : {}),
+          ...(agentId ? { agentId } : {}),
           event: {
             runId: clientRunId,
             sessionId: dispatchError.sessionId,
