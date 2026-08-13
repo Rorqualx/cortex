@@ -7,6 +7,9 @@ export type LlmCaller = (params: {
   thinking?: boolean;
 }) => Promise<string>;
 
+/** Token-usage callback invoked on each successful LLM call. */
+export type UsageCallback = (usage: { promptTokens: number; completionTokens: number }) => void;
+
 export type GlmCallerConfig = {
   apiKey: string;
   baseUrl?: string;
@@ -27,6 +30,8 @@ export type GlmCallerConfig = {
   // 429s. Reactive backoff alone only kicks in after a failure; this prevents it.
   minIntervalMs?: number;
   sleepImpl?: (ms: number) => Promise<void>;
+  /** Optional token-usage callback fired on each successful API response. */
+  onUsage?: UsageCallback;
 };
 
 export const DEFAULT_GLM_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
@@ -108,7 +113,14 @@ export function createGlmCaller(config: GlmCallerConfig): LlmCaller {
       if (response.ok) {
         const json = (await response.json()) as {
           choices?: Array<{ message?: { content?: string } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
         };
+        if (json.usage && config.onUsage) {
+          config.onUsage({
+            promptTokens: json.usage.prompt_tokens ?? 0,
+            completionTokens: json.usage.completion_tokens ?? 0,
+          });
+        }
         return json.choices?.[0]?.message?.content ?? "";
       }
       const text = await response.text();
@@ -141,6 +153,8 @@ export type AnthropicCallerConfig = {
   maxBackoffMs?: number;
   minIntervalMs?: number;
   sleepImpl?: (ms: number) => Promise<void>;
+  /** Optional token-usage callback fired on each successful API response. */
+  onUsage?: UsageCallback;
 };
 
 // Anthropic /v1/messages caller (e.g. kimi-for-coding via api.kimi.com/coding).
@@ -187,7 +201,14 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
       if (response.ok) {
         const json = (await response.json()) as {
           content?: Array<{ type: string; text?: string }>;
+          usage?: { input_tokens?: number; output_tokens?: number };
         };
+        if (json.usage && config.onUsage) {
+          config.onUsage({
+            promptTokens: json.usage.input_tokens ?? 0,
+            completionTokens: json.usage.output_tokens ?? 0,
+          });
+        }
         const textBlock = json.content?.find((b) => b.type === "text");
         return textBlock?.text ?? "";
       }

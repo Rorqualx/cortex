@@ -51,7 +51,7 @@ import { compactSession } from "../src/compaction.js";
 import type { EmbeddingProvider } from "../src/engine.js";
 import { DEFAULT_HEBBIAN_CONFIG, type HebbianConfig } from "../src/hebbian.js";
 import { IngestBuffer } from "../src/ingest.js";
-import { createAnthropicCaller, createGlmCaller } from "../src/llm.js";
+import { createAnthropicCaller, createGlmCaller, type UsageCallback } from "../src/llm.js";
 import { consolidateLongTermTyped } from "../src/longterm-typed.js";
 import {
   consolidateLongTerm,
@@ -326,6 +326,8 @@ type QResult = {
   answer_in_context: boolean;
   retrieved: number;
   memory_chars: number;
+  /** Token usage for this question (prompt + completion). */
+  token_usage?: { promptTokens: number; completionTokens: number };
   error?: string;
 };
 
@@ -378,9 +380,14 @@ async function runQuestion(
     caller: ReturnType<typeof createGlmCaller>;
     embeddingProvider: EmbeddingProvider | undefined;
     ablation: Ablation;
+    costTracker: { promptTokens: number; completionTokens: number };
   },
 ): Promise<QResult> {
   const work = await mkdtemp(path.join(os.tmpdir(), "lme-eng-"));
+  const tokenBefore = {
+    promptTokens: deps.costTracker.promptTokens,
+    completionTokens: deps.costTracker.completionTokens,
+  };
   try {
     const sessionDates = q.haystack_sessions.map((_, i) =>
       parseHaystackDate(q.haystack_dates?.[i]),
@@ -494,6 +501,10 @@ async function runQuestion(
       answer_in_context: checkAnswerInContext(q.answer, memorySection),
       retrieved: top.facts.length,
       memory_chars: memorySection.length,
+      token_usage: {
+        promptTokens: deps.costTracker.promptTokens - tokenBefore.promptTokens,
+        completionTokens: deps.costTracker.completionTokens - tokenBefore.completionTokens,
+      },
     };
   } finally {
     await rm(work, { recursive: true, force: true });
@@ -554,6 +565,15 @@ async function main(): Promise<void> {
   // Set ZENBRAIN_MIN_INTERVAL_MS=0 to disable pacing when the key is dedicated
   // (e.g. the gateway is paused) so the run isn't throttle-bound to ~1 call/sec.
   const minIntervalMs = Number(process.env.ZENBRAIN_MIN_INTERVAL_MS ?? 1000);
+  // Shared cost tracker — accumulates token usage across all LLM calls in this
+  // run (per arm/seed). Per-question deltas are computed by snapshoting in
+  // runQuestion. JS is single-threaded so the counter is race-free even with
+  // concurrency > 1 (callbacks fire between awaits).
+  const costTracker = { promptTokens: 0, completionTokens: 0 };
+  const onUsage: UsageCallback = (u) => {
+    costTracker.promptTokens += u.promptTokens;
+    costTracker.completionTokens += u.completionTokens;
+  };
   // Optional non-GLM answer model (e.g. kimi via Moonshot) for cross-model
   // robustness: EVAL_LLM_BASE_URL + EVAL_LLM_MODEL + EVAL_LLM_API_KEY. Defaults
   // to the Z.ai/GLM caller. The base URL drives the z.ai-only `thinking` gate.
@@ -569,6 +589,7 @@ async function main(): Promise<void> {
           minIntervalMs,
           maxRetries: 10,
           maxBackoffMs: 60_000,
+          onUsage,
         })
       : createGlmCaller({
           apiKey: evalKey ?? apiKey,
@@ -577,30 +598,40 @@ async function main(): Promise<void> {
           minIntervalMs,
           maxRetries: 10,
           maxBackoffMs: 60_000,
+          onUsage,
         });
   const embeddingProvider = await resolveEmbeddingProvider(ablation.useQueryEmbedding);
 
   const t0 = Date.now();
   const results = await runWithConcurrency(selected, CONCURRENCY, (q) =>
-    runQuestion(q, { apiKey, caller, embeddingProvider, ablation }).catch((e: unknown): QResult => {
-      // Surface swallowed per-question failures; a silent "" answer otherwise
-      // masks code crashes (e.g. a broken ablation path) as judged misses.
-      const err = e instanceof Error ? e : new Error(String(e));
-      console.error(`\n  [error] ${q.question_id}: ${err.stack ?? err.message}`);
-      return {
-        question_id: q.question_id,
-        question_type: q.question_type,
-        hypothesis: "",
-        ground_truth: String(q.answer),
-        exact_hit: false,
-        answer_in_context: false,
-        retrieved: 0,
-        memory_chars: 0,
-        error: err.message,
-      };
-    }),
+    runQuestion(q, { apiKey, caller, embeddingProvider, ablation, costTracker }).catch(
+      (e: unknown): QResult => {
+        // Surface swallowed per-question failures; a silent "" answer otherwise
+        // masks code crashes (e.g. a broken ablation path) as judged misses.
+        const err = e instanceof Error ? e : new Error(String(e));
+        console.error(`\n  [error] ${q.question_id}: ${err.stack ?? err.message}`);
+        return {
+          question_id: q.question_id,
+          question_type: q.question_type,
+          hypothesis: "",
+          ground_truth: String(q.answer),
+          exact_hit: false,
+          answer_in_context: false,
+          retrieved: 0,
+          memory_chars: 0,
+          error: err.message,
+        };
+      },
+    ),
   );
   const elapsedMin = ((Date.now() - t0) / 60000).toFixed(1);
+  const totalPrompt = costTracker.promptTokens;
+  const totalCompletion = costTracker.completionTokens;
+  const totalTokens = totalPrompt + totalCompletion;
+  // Simple cost estimate; override via env. Rates are per-1M tokens.
+  const inputRate = Number(process.env.ZENBRAIN_COST_INPUT_PER_1M ?? 0.5);
+  const outputRate = Number(process.env.ZENBRAIN_COST_OUTPUT_PER_1M ?? 0.5);
+  const estimatedCostUsd = (totalPrompt * inputRate + totalCompletion * outputRate) / 1_000_000;
 
   const byType: Record<string, { total: number; hits: number; aic: number; errors: number }> = {};
   for (const r of results) {
@@ -638,6 +669,9 @@ async function main(): Promise<void> {
   console.log(
     `  wall-clock ${elapsedMin}min · avg facts/q ${avgRetrieved} · avg memory ~${avgMemChars} chars (≈context budget — match across ablations)`,
   );
+  console.log(
+    `  tokens: ${totalTokens} (in ${totalPrompt} / out ${totalCompletion}) · est cost $${estimatedCostUsd.toFixed(4)}`,
+  );
 
   const tag =
     (STRATIFIED ? `stratified${STRATIFIED}` : `${TYPE}-n${selected.length}`) +
@@ -668,6 +702,14 @@ async function main(): Promise<void> {
         avgRetrieved: Number(avgRetrieved),
         avgMemChars,
         wallClockMin: Number(elapsedMin),
+        cost_breakdown: {
+          promptTokens: totalPrompt,
+          completionTokens: totalCompletion,
+          totalTokens,
+          estimatedCostUsd: Number(estimatedCostUsd.toFixed(6)),
+          inputRatePer1M: inputRate,
+          outputRatePer1M: outputRate,
+        },
       },
       null,
       2,
