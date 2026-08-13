@@ -168,6 +168,23 @@ export function flushPendingSessionsChangedEvents(context?: object): void {
   }
 }
 
+// Upstream sessions.recover consumer needs this; grafted back after merge=ours kept the
+// fork's divergent session-change-event.ts and dropped upstream's emitSessionArchived.
+export function emitSessionArchived(
+  context: SessionChangeContext,
+  sessionKey: string | undefined,
+  agentId?: string,
+): void {
+  if (!sessionKey) {
+    return;
+  }
+  emitSessionsChanged(context, {
+    sessionKey,
+    ...(agentId ? { agentId } : {}),
+    reason: "archive",
+  });
+}
+
 export function emitSessionsChanged(context: SessionChangeContext, payload: SessionChangedPayload) {
   // This counter is the sessions.list projection fence: every mutation advances it
   // synchronously, before event coalescing, so work started on an older value is never

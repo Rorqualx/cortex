@@ -41,6 +41,14 @@ export const ModelChoiceSchema = closedObject({
 /** Semantic owner of an agent roster entry. */
 export const AgentKindSchema = Type.Union([Type.Literal("agent"), Type.Literal("system")]);
 
+// Upstream agent-ownership provenance (consumed by snapshot.ts); grafted back after
+// merge=ours kept the fork's divergent agents-models-skills.ts and dropped this export.
+export const AgentOwnershipSchema = Type.Union([
+  Type.Literal("sole"),
+  Type.Literal("legacy"),
+  Type.Literal("explicit"),
+]);
+
 /** Condensed agent record returned by list APIs. */
 export const AgentSummarySchema = closedObject({
   id: NonEmptyString,
@@ -88,6 +96,10 @@ export const AgentsListResultSchema = Type.Object(
     mainKey: NonEmptyString,
     scope: Type.Union([Type.Literal("per-sender"), Type.Literal("global")]),
     agents: Type.Array(AgentSummarySchema),
+    // Upstream multi-agent ownership provenance (agent-via-gateway reads these);
+    // optional, so the fork handler may leave them unset without breaking callers.
+    ownership: Type.Optional(AgentOwnershipSchema),
+    selectionRequired: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

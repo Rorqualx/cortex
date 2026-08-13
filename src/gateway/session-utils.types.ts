@@ -113,6 +113,8 @@ export type GatewaySessionRow = {
   archivedAt?: number;
   archivedBy?: SessionEntry["archivedBy"];
   pinned?: boolean;
+  /** Upstream restart-recovery lifecycle marker; must mirror protocol SessionRow (drift guard below). */
+  restartRecoveryStatus?: "tombstoned";
   pinnedAt?: number;
   icon?: string;
   unread?: boolean;
