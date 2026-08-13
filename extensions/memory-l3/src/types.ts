@@ -430,6 +430,15 @@ export type LongTermTypedFact = {
    * Absent on facts created before this feature; readers treat absent as 1.0.
    */
   perishability?: number;
+
+  /**
+   * QW-3 (Semantica-inspired conflict detection): When this fact's value
+   * replaced a contradictory prior value during supersession, this field
+   * records the prior fact's ID. Absent on facts that were promoted fresh
+   * or reaffirmed with the same value. Readers treat absent as "no conflict".
+   * Surfaced in memory_insights for cross-agent audit.
+   */
+  conflictWith?: string;
 };
 
 /**

@@ -175,6 +175,50 @@ describe("consolidateLongTermTyped", () => {
     expect(ltt.facts[0]!.recallCount).toBe(2);
   });
 
+  it("sets conflictWith flag when a value is superseded by a contradictory one", async () => {
+    await writeChunkWithTyped(
+      "chunk-conf-old",
+      [
+        {
+          id: "tf-conf-old",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my number is 555-1234",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW - 5 * DAY,
+        },
+      ],
+      NOW - 5 * DAY,
+    );
+    // First pass promotes the old value.
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 5 * DAY });
+
+    await writeChunkWithTyped(
+      "chunk-conf-new",
+      [
+        {
+          id: "tf-conf-new",
+          slot: "user:phone",
+          value: "555-9999",
+          sourceSpan: "changed to 555-9999",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    // Second pass supersedes with the new value.
+    const out = await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+    expect(out.supersededCount).toBe(1);
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("555-9999");
+    expect(ltt.facts[0]!.conflictWith).toBeDefined();
+    expect(ltt.facts[0]!.conflictWith).toBe(ltt.facts[0]!.id);
+  });
+
   it("re-affirms when value is identical across chunks (no history entry)", async () => {
     await writeChunkWithTyped(
       "chunk-1",

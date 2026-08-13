@@ -679,6 +679,9 @@ function supersede(
       sessionId: effectiveSession,
     };
   }
+  // QW-3: Flag conflict — the new value contradicts the prior active value.
+  // This is surfaced in memory_insights so cross-agent conflicts are visible.
+  result.conflictWith = prior.id;
   return result;
 }
 
