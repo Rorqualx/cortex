@@ -1,5 +1,6 @@
 // Agent scope tests cover which per-agent fields may flatten into runtime defaults.
 import { describe, expect, it, vi } from "vitest";
+import { getRetainedLegacyDefaultAgentId } from "../config/legacy.default-agent-owner-state.js";
 import { migratePersistedImplicitMainRoster } from "../config/legacy.roster.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
@@ -75,6 +76,38 @@ describe("agent roster resolution", () => {
     expect(cfg.agents?.entries?.ops?.workspace).toBeUndefined();
     expect(resolveAgentWorkspaceDir(cfg, "ops")).toBe("/srv/ops");
     expect(resolveAgentWorkspaceDir(cfg, "research")).toBe("/srv/ops/research");
+  });
+
+  it("resolves the retained legacy owner after the marker is migrated away", () => {
+    // Regression: the load-time roster migration strips the raw default marker but records the
+    // single legacy owner as a retained fact. Generic default-owner callers (cron runs, plugin
+    // prewarm, memory narratives) receive that migrated config; before the fix they threw
+    // AgentSelectionRequiredError on a multi-agent roster that carried exactly one shipped default.
+    const cfg = migratePersistedImplicitMainRoster({
+      agents: { entries: { ops: { default: true }, research: {} } },
+    }).config as OpenClawConfig;
+
+    expect(cfg.agents?.entries?.ops?.default).toBeUndefined();
+    expect(tryResolveSoleAgentId(cfg)).toBeUndefined();
+    expect(tryResolveDefaultAgentId(cfg)).toBe("ops");
+    expect(resolveDefaultAgentId(cfg)).toBe("ops");
+
+    // Clone-safe: gateway runtime paths (channel monitors, prepared model catalog, session lists)
+    // clone the config, dropping the identity-keyed retained-owner WeakMap. Durable
+    // systemAgent.agentId (materialized by the migration) must still resolve the owner — this is
+    // where cron runs threw after the 2026.8.1 upgrade.
+    const cloned = structuredClone(cfg) as OpenClawConfig;
+    expect(getRetainedLegacyDefaultAgentId(cloned)).toBeUndefined();
+    expect(cloned.agents?.defaults?.systemAgent?.agentId).toBe("ops");
+    expect(resolveDefaultAgentId(cloned)).toBe("ops");
+
+    // Fail-closed holds: a multi-agent roster with no marker, no retained owner, and no ambient
+    // owner still throws.
+    const ambiguous: OpenClawConfig = {
+      agents: { entries: { ops: {}, research: {} } },
+    };
+    expect(tryResolveDefaultAgentId(ambiguous)).toBeUndefined();
+    expect(() => resolveDefaultAgentId(ambiguous)).toThrow(AgentSelectionRequiredError);
   });
 
   it("keeps a raw legacy marker owner on the inherited workspace", () => {

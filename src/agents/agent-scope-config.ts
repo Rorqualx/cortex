@@ -209,25 +209,44 @@ function tryResolveRawLegacyDefaultAgentId(cfg: OpenClawConfig): string | undefi
   return marked.length === 1 ? normalizeAgentId(marked[0]!.id) : undefined;
 }
 
-/** Resolves sole/raw legacy owners plus the retained in-process migration owner. */
-export function tryResolveLegacyCompatibilityAgentId(cfg: OpenClawConfig): string | undefined {
-  const retainedAgentId = getRetainedLegacyDefaultAgentId(cfg);
-  return retainedAgentId && listAgentIds(cfg).includes(retainedAgentId)
-    ? retainedAgentId
-    : tryResolveDefaultAgentId(cfg);
+// The H2-1 migration strips the raw default marker and records the single legacy owner in two
+// forms: an in-process retained fact (WeakMap on the config) and the durable materialized ambient
+// owner `agents.defaults.systemAgent.agentId`. Generic default-owner callers receive the migrated
+// config, and gateway runtime paths (channel monitors, prepared model catalog, session lists) clone
+// it — dropping the identity-keyed WeakMap — so resolution falls back to the durable field, the
+// documented owner for ambient system-agent operations. Fail-closed holds: with no retained fact and
+// no configured ambient owner, an ambiguous multi-agent roster still throws.
+function tryResolveRetainedLegacyDefaultAgentId(cfg: OpenClawConfig): string | undefined {
+  const candidate =
+    getRetainedLegacyDefaultAgentId(cfg) ??
+    readStringValue(cfg.agents?.defaults?.systemAgent?.agentId);
+  if (!candidate) {
+    return undefined;
+  }
+  const agentId = normalizeAgentId(candidate);
+  return listAgentIds(cfg).includes(agentId) ? agentId : undefined;
 }
 
-/** @deprecated Use resolveSoleAgentId; accepts raw shipped markers only for input compatibility. */
+/** Resolves sole/raw legacy owners plus the retained in-process migration owner. */
+export function tryResolveLegacyCompatibilityAgentId(cfg: OpenClawConfig): string | undefined {
+  return tryResolveRetainedLegacyDefaultAgentId(cfg) ?? tryResolveDefaultAgentId(cfg);
+}
+
+/** @deprecated Use resolveSoleAgentId; resolves shipped markers plus the retained migration owner. */
 export function resolveDefaultAgentId(
   cfg: OpenClawConfig,
   context?: AgentSelectionContext,
 ): string {
-  return tryResolveRawLegacyDefaultAgentId(cfg) ?? resolveSoleAgentId(cfg, context);
+  return tryResolveDefaultAgentId(cfg) ?? resolveSoleAgentId(cfg, context);
 }
 
-/** @deprecated Use tryResolveSoleAgentId; accepts raw shipped markers only for input compatibility. */
+/** @deprecated Use tryResolveSoleAgentId; resolves shipped markers plus the retained migration owner. */
 export function tryResolveDefaultAgentId(cfg: OpenClawConfig): string | undefined {
-  return tryResolveRawLegacyDefaultAgentId(cfg) ?? tryResolveSoleAgentId(cfg);
+  return (
+    tryResolveRawLegacyDefaultAgentId(cfg) ??
+    tryResolveRetainedLegacyDefaultAgentId(cfg) ??
+    tryResolveSoleAgentId(cfg)
+  );
 }
 
 export function resolveAgentEntry(cfg: OpenClawConfig, agentId: string): AgentEntry | undefined {
