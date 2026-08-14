@@ -47,6 +47,7 @@
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import { compactSession } from "../src/compaction.js";
 import type { EmbeddingProvider } from "../src/engine.js";
 import { DEFAULT_HEBBIAN_CONFIG, type HebbianConfig } from "../src/hebbian.js";
@@ -309,12 +310,19 @@ function parseAnswer(raw: string): string {
 function checkAnswerInContext(answer: string | number, context: string): boolean {
   const normCtx = context.toLowerCase();
   const raw = String(answer).trim().toLowerCase();
-  if (normCtx.includes(raw)) return true;
+  if (normCtx.includes(raw)) {
+    return true;
+  }
   // Normalise "1,234" -> "1234" for numeric answers.
   const stripped = raw.replace(/[,\s]/g, "");
-  if (normCtx.includes(stripped)) return true;
+  if (normCtx.includes(stripped)) {
+    return true;
+  }
   return false;
 }
+
+// Latency rollup helpers live in harness-metrics.ts (importable by tests).
+import { summarizeRetrievalLatency } from "./harness-metrics.js";
 
 type QResult = {
   question_id: string;
@@ -326,6 +334,8 @@ type QResult = {
   answer_in_context: boolean;
   retrieved: number;
   memory_chars: number;
+  /** Wall-clock ms spent inside retrieveTopK for this question (missing on error). */
+  retrieval_ms?: number;
   /** Token usage for this question (prompt + completion). */
   token_usage?: { promptTokens: number; completionTokens: number };
   error?: string;
@@ -471,6 +481,7 @@ async function runQuestion(
       deps.ablation.useQueryEmbedding && deps.embeddingProvider
         ? await deps.embeddingProvider.embed(q.question)
         : undefined;
+    const retrievalStart = Date.now();
     const top = await retrieveTopK({
       query: q.question,
       storage,
@@ -482,6 +493,7 @@ async function runQuestion(
       queryEmbedding,
       skillForgeDir: SKILLFORGE,
     });
+    const retrievalMs = Date.now() - retrievalStart;
     const memorySection = formatMemorySection(top.facts, { now: questionTime });
     const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n</memory>\n\nQuestion: ${q.question}`;
     const rawAnswer = await deps.caller({
@@ -501,6 +513,7 @@ async function runQuestion(
       answer_in_context: checkAnswerInContext(q.answer, memorySection),
       retrieved: top.facts.length,
       memory_chars: memorySection.length,
+      retrieval_ms: retrievalMs,
       token_usage: {
         promptTokens: deps.costTracker.promptTokens - tokenBefore.promptTokens,
         completionTokens: deps.costTracker.completionTokens - tokenBefore.completionTokens,
@@ -663,11 +676,28 @@ async function main(): Promise<void> {
   const aicHits = results.filter((r) => r.answer_in_context).length;
   const avgRetrieved = (results.reduce((s, r) => s + r.retrieved, 0) / results.length).toFixed(1);
   const avgMemChars = Math.round(results.reduce((s, r) => s + r.memory_chars, 0) / results.length);
+  // Retrieval latency (measured questions only — errors skip retrieveTopK).
+  const retrievalMs = results.flatMap((r) =>
+    r.retrieval_ms !== undefined ? [r.retrieval_ms] : [],
+  );
+  const retrievalLatency = summarizeRetrievalLatency(retrievalMs);
+  // Context-token rollup: per-question prompt tokens are the context budget the
+  // answer model actually consumed — the number to match across ablation arms.
+  const promptTokensPerQ = results.flatMap((r) =>
+    r.token_usage ? [r.token_usage.promptTokens] : [],
+  );
+  const avgPromptTokensPerQ =
+    promptTokensPerQ.length > 0
+      ? Math.round(promptTokensPerQ.reduce((s, v) => s + v, 0) / promptTokensPerQ.length)
+      : 0;
   console.log(
     `  ${"OVERALL".padEnd(28)} ${hits}/${results.length} (${Math.round((hits / results.length) * 100)}%)  AIC:${aicHits}/${results.length} (${Math.round((aicHits / results.length) * 100)}%)`,
   );
   console.log(
     `  wall-clock ${elapsedMin}min · avg facts/q ${avgRetrieved} · avg memory ~${avgMemChars} chars (≈context budget — match across ablations)`,
+  );
+  console.log(
+    `  retrieval: p50 ${retrievalLatency.p50}ms · p95 ${retrievalLatency.p95}ms · mean ${retrievalLatency.mean}ms (${retrievalLatency.count}/${results.length} measured) · avg prompt/q ~${avgPromptTokensPerQ} tok`,
   );
   console.log(
     `  tokens: ${totalTokens} (in ${totalPrompt} / out ${totalCompletion}) · est cost $${estimatedCostUsd.toFixed(4)}`,
@@ -701,6 +731,14 @@ async function main(): Promise<void> {
         overall: { hits, aic: aicHits, total: results.length },
         avgRetrieved: Number(avgRetrieved),
         avgMemChars,
+        avgPromptTokensPerQuestion: avgPromptTokensPerQ,
+        retrieval_latency_ms: retrievalLatency,
+        per_question: results.map((r) => ({
+          question_id: r.question_id,
+          retrieval_ms: r.retrieval_ms ?? null,
+          promptTokens: r.token_usage?.promptTokens ?? null,
+          completionTokens: r.token_usage?.completionTokens ?? null,
+        })),
         wallClockMin: Number(elapsedMin),
         cost_breakdown: {
           promptTokens: totalPrompt,
@@ -719,7 +757,13 @@ async function main(): Promise<void> {
   console.log(`Judge:  node extensions/memory-l3/scripts/score-longmemeval.mjs ${hypoPath}`);
 }
 
-main().catch((e: unknown) => {
-  console.error(`FATAL: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
-  process.exitCode = 1;
-});
+// Only run when executed directly (tsx/node script.ts), not when imported (tests).
+const isMain =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMain) {
+  main().catch((e: unknown) => {
+    console.error(`FATAL: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+    process.exitCode = 1;
+  });
+}
