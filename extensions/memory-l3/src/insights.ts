@@ -6,6 +6,7 @@
 import { jsonResult } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
+import { searchL1Archive } from "./insights-search.js";
 import { fsrsRetrievability, DEFAULT_FSRS_PARAMS, DEFAULT_SCORING_CONFIG } from "./scoring.js";
 import { Storage } from "./storage.js";
 
@@ -259,16 +260,39 @@ const MemoryInsightsToolSchema = Type.Object(
   {
     days: Type.Optional(
       Type.Integer({
-        description: "Trend window in days (default 7).",
+        description: "Trend window in days (default 7). Ignored in search mode.",
         minimum: 1,
         maximum: 90,
       }),
     ),
     limit: Type.Optional(
       Type.Integer({
-        description: "Max entries per list (default 10).",
+        description: "Max entries per list / search matches (default 10 trends, 20 search).",
         minimum: 1,
         maximum: 50,
+      }),
+    ),
+    query: Type.Optional(
+      Type.String({
+        description:
+          "SEARCH MODE: lexical keyword query over the raw conversation archive (l1_archive). Provide to search verbatim transcripts instead of trends — the fallback tier when promoted L3 facts are thin or a detail was never promoted.",
+        maxLength: 500,
+      }),
+    ),
+    since: Type.Optional(
+      Type.String({
+        description: "Search mode: only messages at/after this time (ISO 8601 or epoch-ms string).",
+      }),
+    ),
+    until: Type.Optional(
+      Type.String({
+        description:
+          "Search mode: only messages at/before this time (ISO 8601 or epoch-ms string).",
+      }),
+    ),
+    sessionId: Type.Optional(
+      Type.String({
+        description: "Search mode: restrict to one session (matches message or chunk lineage).",
       }),
     ),
   },
@@ -280,7 +304,7 @@ export function createMemoryInsightsTool(ctx: OpenClawPluginToolContext) {
     name: "memory_insights",
     label: "Memory Insights",
     description:
-      "Read-only trends from hierarchical L3 memory: facts promoted recently, typed slots that changed, epochs created, and the most-recalled long-term facts. Use to review what the memory system has been learning.",
+      "Read-only views into hierarchical L3 memory. Default: recent trends (facts promoted, typed slots changed, epochs, most-recalled facts). With `query`: lexical keyword search over the raw conversation archive — use as the fallback tier when L3 facts are thin or the detail was never promoted; narrow with `since`/`until`/`sessionId`. No LLM cost.",
     parameters: MemoryInsightsToolSchema,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       const storage = Storage.fromWorkspace(ctx.workspaceDir);
@@ -289,6 +313,17 @@ export function createMemoryInsightsTool(ctx: OpenClawPluginToolContext) {
       try {
         const days = typeof rawParams.days === "number" ? rawParams.days : undefined;
         const limit = typeof rawParams.limit === "number" ? rawParams.limit : undefined;
+        const query = typeof rawParams.query === "string" ? rawParams.query : undefined;
+        if (query !== undefined) {
+          // Search mode: lexical scan of the append-only L1 archive.
+          const since = typeof rawParams.since === "string" ? rawParams.since : undefined;
+          const until = typeof rawParams.until === "string" ? rawParams.until : undefined;
+          const sessionId =
+            typeof rawParams.sessionId === "string" ? rawParams.sessionId : undefined;
+          return jsonResult(
+            await searchL1Archive({ storage, query, since, until, sessionId, limit }),
+          );
+        }
         return jsonResult(await collectMemoryInsights({ storage, days, limit }));
       } finally {
         storage.close();
