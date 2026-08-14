@@ -285,6 +285,19 @@ async function resolveEmbeddingProvider(enabled: boolean): Promise<EmbeddingProv
   return { embed, embedBatch: (texts) => Promise.all(texts.map(embed)) };
 }
 
+// Linear-interpolation percentile over an ASCENDING-sorted array (0 on empty).
+// Cheap and dependency-free; adequate for latency/token rollups.
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0] ?? 0;
+  const idx = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  const loV = sorted[lo] ?? 0;
+  const hiV = sorted[hi] ?? 0;
+  return loV + (hiV - loV) * (idx - lo);
+}
+
 function parseAnswer(raw: string): string {
   const lines = raw
     .split(/\r?\n/)
@@ -326,6 +339,8 @@ type QResult = {
   answer_in_context: boolean;
   retrieved: number;
   memory_chars: number;
+  /** Retrieval-phase wall-clock latency in ms (retrieveTopK call only). */
+  retrieval_ms?: number;
   /** Token usage for this question (prompt + completion). */
   token_usage?: { promptTokens: number; completionTokens: number };
   error?: string;
@@ -471,6 +486,7 @@ async function runQuestion(
       deps.ablation.useQueryEmbedding && deps.embeddingProvider
         ? await deps.embeddingProvider.embed(q.question)
         : undefined;
+    const retrievalT0 = Date.now();
     const top = await retrieveTopK({
       query: q.question,
       storage,
@@ -482,6 +498,7 @@ async function runQuestion(
       queryEmbedding,
       skillForgeDir: SKILLFORGE,
     });
+    const retrievalMs = Date.now() - retrievalT0;
     const memorySection = formatMemorySection(top.facts, { now: questionTime });
     const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n</memory>\n\nQuestion: ${q.question}`;
     const rawAnswer = await deps.caller({
@@ -501,6 +518,7 @@ async function runQuestion(
       answer_in_context: checkAnswerInContext(q.answer, memorySection),
       retrieved: top.facts.length,
       memory_chars: memorySection.length,
+      retrieval_ms: retrievalMs,
       token_usage: {
         promptTokens: deps.costTracker.promptTokens - tokenBefore.promptTokens,
         completionTokens: deps.costTracker.completionTokens - tokenBefore.completionTokens,
@@ -663,6 +681,19 @@ async function main(): Promise<void> {
   const aicHits = results.filter((r) => r.answer_in_context).length;
   const avgRetrieved = (results.reduce((s, r) => s + r.retrieved, 0) / results.length).toFixed(1);
   const avgMemChars = Math.round(results.reduce((s, r) => s + r.memory_chars, 0) / results.length);
+  // Per-phase retrieval latency + per-question context-token rollup (paper-finding 8):
+  // the measured cost levers (p95 latency gates admission control; context tokens
+  // arm-vs-arm must match for fair ablations) — persisted into the runmeta summary.
+  const retrievalMsSorted = results.map((r) => r.retrieval_ms ?? 0).sort((a, b) => a - b);
+  const contextTokensPerQ = results
+    .filter((r) => r.token_usage)
+    .map((r) => r.token_usage!.promptTokens)
+    .sort((a, b) => a - b);
+  const retrievalP50 = Math.round(percentile(retrievalMsSorted, 50));
+  const retrievalP95 = Math.round(percentile(retrievalMsSorted, 95));
+  const contextMean = Math.round(
+    contextTokensPerQ.reduce((s, v) => s + v, 0) / Math.max(contextTokensPerQ.length, 1),
+  );
   console.log(
     `  ${"OVERALL".padEnd(28)} ${hits}/${results.length} (${Math.round((hits / results.length) * 100)}%)  AIC:${aicHits}/${results.length} (${Math.round((aicHits / results.length) * 100)}%)`,
   );
@@ -671,6 +702,9 @@ async function main(): Promise<void> {
   );
   console.log(
     `  tokens: ${totalTokens} (in ${totalPrompt} / out ${totalCompletion}) · est cost $${estimatedCostUsd.toFixed(4)}`,
+  );
+  console.log(
+    `  retrieval: p50 ${retrievalP50}ms · p95 ${retrievalP95}ms · context tokens/q mean ${contextMean} (p50 ${Math.round(percentile(contextTokensPerQ, 50))} / p95 ${Math.round(percentile(contextTokensPerQ, 95))})`,
   );
 
   const tag =
@@ -702,6 +736,22 @@ async function main(): Promise<void> {
         avgRetrieved: Number(avgRetrieved),
         avgMemChars,
         wallClockMin: Number(elapsedMin),
+        retrievalLatencyMs: {
+          count: retrievalMsSorted.length,
+          p50: retrievalP50,
+          p95: retrievalP95,
+          mean: Math.round(
+            retrievalMsSorted.reduce((s, v) => s + v, 0) / Math.max(retrievalMsSorted.length, 1),
+          ),
+          max: retrievalMsSorted[retrievalMsSorted.length - 1] ?? 0,
+        },
+        contextTokens: {
+          count: contextTokensPerQ.length,
+          promptTotal: contextTokensPerQ.reduce((s, v) => s + v, 0),
+          promptMean: contextMean,
+          promptP50: Math.round(percentile(contextTokensPerQ, 50)),
+          promptP95: Math.round(percentile(contextTokensPerQ, 95)),
+        },
         cost_breakdown: {
           promptTokens: totalPrompt,
           completionTokens: totalCompletion,
