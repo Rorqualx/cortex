@@ -6,6 +6,7 @@
 import { jsonResult } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
+import { searchMemoryArchive } from "./insights-search.js";
 import { fsrsRetrievability, DEFAULT_FSRS_PARAMS, DEFAULT_SCORING_CONFIG } from "./scoring.js";
 import { Storage } from "./storage.js";
 
@@ -255,18 +256,56 @@ export async function collectForgettingCandidates(params: {
   };
 }
 
+/** Accept "YYYY-MM-DD", ISO datetimes, or epoch ms; invalid input is ignored. */
+function parseTimeBound(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? undefined : ms;
+  }
+  return undefined;
+}
+
 const MemoryInsightsToolSchema = Type.Object(
   {
+    query: Type.Optional(
+      Type.String({
+        description:
+          "Keyword query. When set, the tool switches to lexical search over the raw L1 archive (the verbatim transcript tier) instead of trend aggregation — use this fallback when promoted L3 facts are thin or you need exact quotes. Matched messages are returned with chunk, session, timestamp, and score.",
+        minLength: 1,
+        maxLength: 200,
+      }),
+    ),
+    since: Type.Optional(
+      Type.Union([Type.String(), Type.Integer()], {
+        description:
+          'Search mode only: only match messages at/after this time ("YYYY-MM-DD", ISO datetime, or epoch ms).',
+      }),
+    ),
+    until: Type.Optional(
+      Type.Union([Type.String(), Type.Integer()], {
+        description:
+          'Search mode only: only match messages at/before this time ("YYYY-MM-DD", ISO datetime, or epoch ms).',
+      }),
+    ),
+    sessionId: Type.Optional(
+      Type.String({
+        description: "Search mode only: restrict matches to chunks produced by this session.",
+        maxLength: 100,
+      }),
+    ),
     days: Type.Optional(
       Type.Integer({
-        description: "Trend window in days (default 7).",
+        description: "Trend window in days (default 7). Ignored in search mode.",
         minimum: 1,
         maximum: 90,
       }),
     ),
     limit: Type.Optional(
       Type.Integer({
-        description: "Max entries per list (default 10).",
+        description: "Max entries per list, or max search hits (default 10 trends / 20 search).",
         minimum: 1,
         maximum: 50,
       }),
@@ -280,15 +319,27 @@ export function createMemoryInsightsTool(ctx: OpenClawPluginToolContext) {
     name: "memory_insights",
     label: "Memory Insights",
     description:
-      "Read-only trends from hierarchical L3 memory: facts promoted recently, typed slots that changed, epochs created, and the most-recalled long-term facts. Use to review what the memory system has been learning.",
+      "Read-only access to hierarchical L3 memory. Default mode: trends — facts promoted recently, typed slots that changed, epochs created, and the most-recalled long-term facts. Search mode (pass `query`): lexical keyword search over the raw L1 archive transcript with session-aware rank fusion — the fallback when L3 facts are thin or you need verbatim quotes. Use to review or recover what the memory system has seen.",
     parameters: MemoryInsightsToolSchema,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       const storage = Storage.fromWorkspace(ctx.workspaceDir);
       // Close the per-call DB handle so each tool invocation does not leak a
       // SQLite connection + WAL-maintenance timer for the gateway's lifetime.
       try {
-        const days = typeof rawParams.days === "number" ? rawParams.days : undefined;
         const limit = typeof rawParams.limit === "number" ? rawParams.limit : undefined;
+        if (typeof rawParams.query === "string" && rawParams.query.length > 0) {
+          return jsonResult(
+            await searchMemoryArchive({
+              storage,
+              query: rawParams.query,
+              since: parseTimeBound(rawParams.since),
+              until: parseTimeBound(rawParams.until),
+              sessionId: typeof rawParams.sessionId === "string" ? rawParams.sessionId : undefined,
+              limit,
+            }),
+          );
+        }
+        const days = typeof rawParams.days === "number" ? rawParams.days : undefined;
         return jsonResult(await collectMemoryInsights({ storage, days, limit }));
       } finally {
         storage.close();

@@ -207,6 +207,49 @@ export class Storage {
     await fs.appendFile(target, `${JSON.stringify(entry)}\n`, "utf8");
   }
 
+  /** List every L1 archive chunk id (`l1_archive/*.jsonl`), oldest name first. */
+  async listL1ArchiveChunkIds(): Promise<string[]> {
+    let entries: string[];
+    try {
+      entries = await fs.readdir(path.join(this.root, L1_ARCHIVE_DIR));
+    } catch {
+      return []; // No archive dir yet → empty archive.
+    }
+    return entries
+      .filter((name) => name.endsWith(".jsonl"))
+      .map((name) => name.slice(0, -".jsonl".length))
+      .toSorted();
+  }
+
+  /**
+   * Parse the JSONL records of one L1 archive chunk. Malformed lines and
+   * non-object lines are skipped; a missing file yields []. Read-only.
+   */
+  async readL1ArchiveChunk(chunkId: string): Promise<Array<Record<string, unknown>>> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(path.join(this.root, L1_ARCHIVE_DIR, `${chunkId}.jsonl`), "utf8");
+    } catch {
+      return [];
+    }
+    const records: Array<Record<string, unknown>> = [];
+    for (const line of raw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+          records.push(parsed as Record<string, unknown>);
+        }
+      } catch {
+        // Skip malformed archive lines — the archive is append-only best-effort.
+      }
+    }
+    return records;
+  }
+
   // -----------------------------------------------------------------
   // L2 chunks (summary tier) — DB canonical, markdown export
   // -----------------------------------------------------------------
