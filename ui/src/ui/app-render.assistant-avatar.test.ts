@@ -658,7 +658,50 @@ describe("renderApp assistant avatar routing", () => {
     const labels = Array.from(container.querySelectorAll(".sidebar-recent-session__name")).map(
       (node) => node.textContent?.trim(),
     );
-    expect(labels).toEqual(["Main legacy", "Main old"]);
+    // "Main legacy" is the active session ("main"); it is shown by the selector
+    // above the list, so it is excluded here. Its presence would otherwise prove
+    // the bare-"main" key still resolves to the default agent — "Main old"
+    // (agent:main) surviving while "Work new" (agent:work) is filtered proves it.
+    expect(labels).toEqual(["Main old"]);
+  });
+
+  it("excludes the active session from recents so it is not shown twice", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderApp(
+        createState({
+          tab: "chat",
+          sessionKey: "agent:main:dashboard:current",
+          assistantAgentId: "main",
+          agentsList: {
+            defaultId: "main",
+            agents: [{ id: "main", name: "Main" }],
+          } as AppViewState["agentsList"],
+          sessionsResult: {
+            ts: 0,
+            path: "",
+            count: 2,
+            defaults: { modelProvider: null, model: null, contextTokens: null },
+            sessions: [
+              {
+                key: "agent:main:dashboard:current",
+                kind: "direct",
+                label: "Active",
+                updatedAt: 30,
+              },
+              { key: "agent:main:dashboard:other", kind: "direct", label: "Other", updatedAt: 20 },
+            ],
+          } as AppViewState["sessionsResult"],
+        }),
+      ),
+      container,
+    );
+
+    const labels = Array.from(container.querySelectorAll(".sidebar-recent-session__name")).map(
+      (node) => node.textContent?.trim(),
+    );
+    expect(labels).toEqual(["Other"]);
   });
 
   it("uses hello default agent for global sidebar sessions before agent list hydration", () => {

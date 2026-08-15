@@ -208,6 +208,7 @@ import { resolveAgentArgPath } from "./path-arg.ts";
 import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
 import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
 import {
+  areUiSessionKeysEquivalent,
   buildAgentMainSessionKey,
   isSessionKeyTiedToAgent,
   isSubagentSessionKey,
@@ -594,6 +595,9 @@ function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] 
         !isCronSessionKey(row.key) &&
         !isSubagentSessionKey(row.key) &&
         !row.spawnedBy &&
+        // The active thread is already shown by the session selector directly
+        // above this list; listing it again reads as a duplicate recent.
+        !areUiSessionKeysEquivalent(row.key, state.sessionKey) &&
         (!shouldFilterByAgent || isSidebarSessionForSelectedAgent(state, row, selectedAgentId)),
     )
     .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))

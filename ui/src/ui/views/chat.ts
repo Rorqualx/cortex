@@ -604,7 +604,12 @@ function sameChatItemsInput(previous: BuildChatItemsProps, next: BuildChatItemsP
     previous.showToolCalls === next.showToolCalls &&
     previous.searchOpen === next.searchOpen &&
     previous.searchQuery === next.searchQuery &&
-    previous.runStatus === next.runStatus
+    previous.runStatus === next.runStatus &&
+    // Branch navigation updates only these (loadBranches assigns a fresh array
+    // on change); without them the cached items keep the old branch-point
+    // divider and the ◀/▶ counter never moves after a switch.
+    previous.branchPoints === next.branchPoints &&
+    previous.branchActivePath === next.branchActivePath
   );
 }
 
