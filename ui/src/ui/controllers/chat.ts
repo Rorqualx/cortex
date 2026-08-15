@@ -420,7 +420,7 @@ export type ChatState = {
   chatThinkingStream: string | null;
   chatThinkingStreamStartedAt: number | null;
   chatHistoryHasMore: boolean;
-  chatHistoryNextCursor: string | null;
+  chatHistoryNextOffset: number | null;
   chatLoadingEarlier: boolean;
   chatHistoryRenderLimit: number;
   chatHistoryRenderExpanded: boolean;
@@ -455,7 +455,7 @@ export type ChatHistoryResult = {
   sessionInfo?: GatewaySessionRow;
   agentsList?: AgentsListResult;
   hasMore?: boolean;
-  nextCursor?: string;
+  nextOffset?: number;
 };
 
 // Wire-contract union for "chat" gateway events; the single source is
@@ -708,13 +708,13 @@ export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
     !state.client ||
     !state.connected ||
     state.chatLoadingEarlier ||
-    !state.chatHistoryNextCursor
+    state.chatHistoryNextOffset === null
   ) {
     return false;
   }
   state.chatLoadingEarlier = true;
   try {
-    const cursor = state.chatHistoryNextCursor;
+    const offset = state.chatHistoryNextOffset;
     const sessionKey = state.sessionKey;
     const historyVersion = currentChatHistoryVersion(state);
     const requestAgentId = isSelectedGlobalEventSessionKey(sessionKey)
@@ -724,12 +724,12 @@ export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
       sessionKey,
       ...(requestAgentId ? { agentId: requestAgentId } : {}),
       limit: CHAT_HISTORY_REQUEST_LIMIT,
-      cursor,
+      offset,
     });
     // Discard if the session changed or a newer full history load started:
     // a page belongs to the pagination chain of the load that produced its
     // cursor, and applying it would prepend stale messages and regress
-    // chatHistoryNextCursor onto the old chain.
+    // chatHistoryNextOffset onto the old chain.
     if (state.sessionKey !== sessionKey || currentChatHistoryVersion(state) !== historyVersion) {
       return false;
     }
@@ -740,7 +740,7 @@ export async function loadEarlierMessages(state: ChatState): Promise<boolean> {
       state.chatMessages = [...visibleMessages, ...state.chatMessages];
     }
     state.chatHistoryHasMore = res.hasMore === true;
-    state.chatHistoryNextCursor = res.nextCursor ?? null;
+    state.chatHistoryNextOffset = res.nextOffset ?? null;
     return visibleMessages.length > 0;
   } catch (err) {
     setChatError(state, String(err));
@@ -760,7 +760,7 @@ async function drainEarlierMessages(state: ChatState, sessionKey: string): Promi
       state.sessionKey !== sessionKey ||
       currentChatHistoryVersion(state) !== historyVersion ||
       !state.chatHistoryHasMore ||
-      !state.chatHistoryNextCursor
+      state.chatHistoryNextOffset === null
     ) {
       return;
     }
@@ -790,6 +790,12 @@ export async function loadBranches(state: ChatState): Promise<void> {
     return;
   }
   const requestedSessionKey = state.sessionKey;
+  // Forward the selected agent for global session keys, mirroring the history
+  // path; without it the gateway resolves the wrong agent and returns no
+  // branches, so the navigator's dividers never render.
+  const requestAgentId = isSelectedGlobalEventSessionKey(requestedSessionKey)
+    ? resolveSelectedAgentId(state)
+    : undefined;
   try {
     const res = await state.client.request<{
       ok?: boolean;
@@ -799,6 +805,7 @@ export async function loadBranches(state: ChatState): Promise<void> {
       error?: string;
     }>("chat.branches", {
       sessionKey: requestedSessionKey,
+      ...(requestAgentId ? { agentId: requestAgentId } : {}),
     });
     // Drop a response that resolved after the user switched away, so one
     // session's branch dividers never render on another's transcript.
@@ -844,6 +851,11 @@ export async function handleBranchNavigate(
   const targetIndex =
     direction === "next" ? (currentIndex + 1) % count : (currentIndex - 1 + count) % count;
   const targetChildId = branchPoint.childIds[targetIndex];
+  // Same agent scoping as loadBranches: a global session key must carry the
+  // selected agent or the gateway resolves the wrong session for the switch.
+  const requestAgentId = isSelectedGlobalEventSessionKey(state.sessionKey)
+    ? resolveSelectedAgentId(state)
+    : undefined;
   branchNavigateInFlight.add(state);
   try {
     const res = await state.client.request<{
@@ -852,6 +864,7 @@ export async function handleBranchNavigate(
       error?: string;
     }>("chat.branch", {
       sessionKey: state.sessionKey,
+      ...(requestAgentId ? { agentId: requestAgentId } : {}),
       entryId: targetChildId,
       mode: "select",
     });
@@ -964,7 +977,7 @@ async function loadChatHistoryUncached(
     state.chatThinkingLevel = res.sessionInfo?.thinkingLevel ?? res.thinkingLevel ?? null;
     // Track pagination state from server response.
     state.chatHistoryHasMore = res.hasMore === true;
-    state.chatHistoryNextCursor = res.nextCursor ?? null;
+    state.chatHistoryNextOffset = res.nextOffset ?? null;
     state.chatHistoryRenderLimit = CHAT_HISTORY_RENDER_LIMIT;
     state.chatHistoryRenderExpanded = false;
     if (state.chatHistoryHasMore) {

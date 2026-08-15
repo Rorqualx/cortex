@@ -59,7 +59,7 @@ type SessionDefaultsSnapshot = {
 type SessionSwitchHost = AppViewState & {
   chatStreamStartedAt: number | null;
   chatHistoryHasMore: boolean;
-  chatHistoryNextCursor: string | null;
+  chatHistoryNextOffset: number | null;
   chatSideResultTerminalRuns: Set<string>;
   resetChatInputHistoryNavigation(): void;
   resetToolStream(): void;
@@ -283,9 +283,9 @@ function resetChatStateForSessionSwitch(
     (state as unknown as { currentSessionId?: string | null }).currentSessionId = null;
     state.chatMessages = [];
     // Pagination belongs to the previous transcript: a scroll-to-top before the
-    // new session's history applies must not fetch with the old session's cursor.
+    // new session's history applies must not fetch with the old session's offset.
     host.chatHistoryHasMore = false;
-    host.chatHistoryNextCursor = null;
+    host.chatHistoryNextOffset = null;
     state.chatToolMessages = [];
     state.chatStreamSegments = [];
     state.chatThinkingLevel = null;

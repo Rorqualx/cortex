@@ -928,7 +928,7 @@ describe("switchChatSession", () => {
       chatSideResultTerminalRuns: new Set<string>(),
       chatStreamStartedAt: null,
       chatHistoryHasMore: true,
-      chatHistoryNextCursor: "cursor-main",
+      chatHistoryNextOffset: 100,
       sessionsResult: {
         ts: 0,
         path: "",
@@ -957,12 +957,12 @@ describe("switchChatSession", () => {
 
     const host = state as unknown as {
       chatHistoryHasMore: boolean;
-      chatHistoryNextCursor: string | null;
+      chatHistoryNextOffset: number | null;
     };
     // A scroll-to-top before the new session's history applies must not fetch
-    // earlier pages with the previous session's cursor.
+    // earlier pages with the previous session's offset.
     expect(host.chatHistoryHasMore).toBe(false);
-    expect(host.chatHistoryNextCursor).toBeNull();
+    expect(host.chatHistoryNextOffset).toBeNull();
   });
 
   it("waits for the initial history and message subscription when requested", async () => {

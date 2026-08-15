@@ -33,7 +33,7 @@ export type SessionChatRuntime = {
   lastLocalTerminalReconcile: LocalTerminalReconcile | null;
   chatLoading: boolean;
   chatHistoryHasMore: boolean;
-  chatHistoryNextCursor: string | null;
+  chatHistoryNextOffset: number | null;
   currentSessionId: string | null;
   chatSideResult: ChatSideResult | null;
   chatSideResultTerminalRuns: Set<string>;
@@ -69,7 +69,7 @@ export function captureChatRuntime(host: ChatRuntimeHost): SessionChatRuntime {
     lastLocalTerminalReconcile: host.lastLocalTerminalReconcile,
     chatLoading: host.chatLoading,
     chatHistoryHasMore: host.chatHistoryHasMore,
-    chatHistoryNextCursor: host.chatHistoryNextCursor,
+    chatHistoryNextOffset: host.chatHistoryNextOffset,
     currentSessionId: host.currentSessionId,
     chatSideResult: host.chatSideResult,
     chatSideResultTerminalRuns: new Set(host.chatSideResultTerminalRuns),
@@ -98,7 +98,7 @@ export function applyChatRuntime(host: ChatRuntimeHost, runtime: SessionChatRunt
   host.lastLocalTerminalReconcile = runtime.lastLocalTerminalReconcile;
   host.chatLoading = runtime.chatLoading;
   host.chatHistoryHasMore = runtime.chatHistoryHasMore;
-  host.chatHistoryNextCursor = runtime.chatHistoryNextCursor;
+  host.chatHistoryNextOffset = runtime.chatHistoryNextOffset;
   host.currentSessionId = runtime.currentSessionId;
   host.chatSideResult = runtime.chatSideResult;
   host.chatSideResultTerminalRuns = runtime.chatSideResultTerminalRuns;

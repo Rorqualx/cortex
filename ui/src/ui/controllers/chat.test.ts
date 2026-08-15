@@ -8,7 +8,9 @@ import { GatewayRequestError } from "../gateway.ts";
 import {
   abortChatRun,
   editResendRunId,
+  handleBranchNavigate,
   handleChatEvent,
+  loadBranches,
   loadChatHistory,
   loadEarlierMessages,
   requestChatSend,
@@ -25,7 +27,7 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
   return {
     chatAttachments: [],
     chatHistoryHasMore: false,
-    chatHistoryNextCursor: null,
+    chatHistoryNextOffset: null,
     chatHistoryRenderExpanded: false,
     chatHistoryRenderLimit: Number.POSITIVE_INFINITY,
     chatLoading: false,
@@ -3456,13 +3458,13 @@ describe("loadEarlierMessages staleness", () => {
       client: { request } as unknown as ChatState["client"],
       chatMessages: [{ role: "assistant", content: [{ type: "text", text: "latest" }] }],
       chatHistoryHasMore: true,
-      chatHistoryNextCursor: "cursor-1",
+      chatHistoryNextOffset: 100,
       chatLoadingEarlier: false,
       ...overrides,
     });
   }
 
-  it("prepends an earlier page and advances the cursor when nothing changed", async () => {
+  it("prepends an earlier page and advances the offset when nothing changed", async () => {
     const pageRequest = createDeferred<Record<string, unknown>>();
     const request = vi.fn(() => pageRequest.promise);
     const state = createPagedState(request);
@@ -3471,23 +3473,26 @@ describe("loadEarlierMessages staleness", () => {
     pageRequest.resolve({
       messages: [{ role: "user", content: [{ type: "text", text: "earlier ask" }] }],
       hasMore: true,
-      nextCursor: "cursor-2",
+      nextOffset: 200,
     });
     await expect(earlierLoad).resolves.toBe(true);
 
+    // Regression: the earlier-page request must carry the stored offset (not a
+    // "cursor"), or the gateway's closed schema rejects it and history stalls.
+    expect(request).toHaveBeenCalledWith("chat.history", expect.objectContaining({ offset: 100 }));
     expect(state.chatMessages).toEqual([
       { role: "user", content: [{ type: "text", text: "earlier ask" }] },
       { role: "assistant", content: [{ type: "text", text: "latest" }] },
     ]);
-    expect(state.chatHistoryNextCursor).toBe("cursor-2");
+    expect(state.chatHistoryNextOffset).toBe(200);
     expect(state.chatLoadingEarlier).toBe(false);
   });
 
   it("discards an earlier page when a newer history load started mid-flight", async () => {
     const pageRequest = createDeferred<Record<string, unknown>>();
     const reloadRequest = createDeferred<Record<string, unknown>>();
-    const request = vi.fn((_method: string, params?: { cursor?: string }) =>
-      params?.cursor ? pageRequest.promise : reloadRequest.promise,
+    const request = vi.fn((_method: string, params?: { offset?: number }) =>
+      params?.offset !== undefined ? pageRequest.promise : reloadRequest.promise,
     );
     const state = createPagedState(request);
 
@@ -3496,22 +3501,22 @@ describe("loadEarlierMessages staleness", () => {
     reloadRequest.resolve({
       messages: [{ role: "assistant", content: [{ type: "text", text: "fresh latest" }] }],
       hasMore: true,
-      nextCursor: "cursor-fresh",
+      nextOffset: 300,
     });
     await reload;
 
     pageRequest.resolve({
       messages: [{ role: "assistant", content: [{ type: "text", text: "stale earlier" }] }],
       hasMore: true,
-      nextCursor: "cursor-stale-next",
+      nextOffset: 400,
     });
     await expect(earlierLoad).resolves.toBe(false);
 
-    // The stale page must neither prepend nor regress the fresh cursor chain.
+    // The stale page must neither prepend nor regress the fresh offset chain.
     expect(state.chatMessages).toEqual([
       { role: "assistant", content: [{ type: "text", text: "fresh latest" }] },
     ]);
-    expect(state.chatHistoryNextCursor).toBe("cursor-fresh");
+    expect(state.chatHistoryNextOffset).toBe(300);
     expect(state.chatLoadingEarlier).toBe(false);
   });
 
@@ -3531,6 +3536,93 @@ describe("loadEarlierMessages staleness", () => {
     expect(state.chatMessages).toEqual([
       { role: "assistant", content: [{ type: "text", text: "latest" }] },
     ]);
-    expect(state.chatHistoryNextCursor).toBe("cursor-1");
+    expect(state.chatHistoryNextOffset).toBe(100);
+  });
+});
+
+describe("branch navigation agent scope", () => {
+  const globalHello = {
+    type: "hello-ok",
+    protocol: 4,
+    auth: { role: "operator", scopes: [] },
+    snapshot: { sessionDefaults: { defaultAgentId: "ops" } },
+  } as unknown as ChatState["hello"];
+
+  it("forwards the selected agent when loading branches for a global session key", async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, branches: [], activePath: [] });
+    const state = createState({
+      sessionKey: "global",
+      hello: globalHello,
+      client: { request } as unknown as ChatState["client"],
+      connected: true,
+    });
+
+    await loadBranches(state);
+
+    // Without agentId the gateway resolves the wrong agent and returns no
+    // branches, so the navigator's dividers never render.
+    expect(request).toHaveBeenCalledWith(
+      "chat.branches",
+      expect.objectContaining({ sessionKey: "global", agentId: "ops" }),
+    );
+  });
+
+  it("omits agentId for a non-global session key whose agent is derivable", async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, branches: [], activePath: [] });
+    const state = createState({
+      sessionKey: "main",
+      client: { request } as unknown as ChatState["client"],
+      connected: true,
+    });
+
+    await loadBranches(state);
+
+    expect(request).toHaveBeenCalledWith(
+      "chat.branches",
+      expect.not.objectContaining({ agentId: expect.anything() }),
+    );
+  });
+
+  it("forwards the selected agent when switching a branch on a global session key", async () => {
+    const request = vi.fn((method: string) => {
+      if (method === "chat.branch") {
+        return Promise.resolve({ ok: true });
+      }
+      if (method === "chat.branches") {
+        return Promise.resolve({ ok: true, branches: [], activePath: [] });
+      }
+      return Promise.resolve({ messages: [] });
+    });
+    const state = createState({
+      sessionKey: "global",
+      hello: globalHello,
+      client: { request } as unknown as ChatState["client"],
+      connected: true,
+      branchPoints: [
+        {
+          entryId: "bp",
+          parentId: null,
+          childCount: 2,
+          childIds: ["c1", "c2"],
+          activeChildId: "c1",
+          isActive: true,
+          isLeaf: false,
+          timestamp: "t",
+          type: "custom",
+        },
+      ],
+    });
+
+    await handleBranchNavigate(state, "bp", "next");
+
+    expect(request).toHaveBeenCalledWith(
+      "chat.branch",
+      expect.objectContaining({
+        sessionKey: "global",
+        agentId: "ops",
+        entryId: "c2",
+        mode: "select",
+      }),
+    );
   });
 });

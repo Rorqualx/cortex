@@ -1,14 +1,24 @@
 import { state } from "lit/decorators.js";
-import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
+import { t } from "../../i18n/index.ts";
 import { SIDEBAR_NAV_ROUTES, serializeSidebarEntry } from "../app-navigation.ts";
 import { pathForRoute } from "../app-route-paths.ts";
-import { t } from "../../i18n/index.ts";
 import {
   isCronSessionKey,
   resolveChannelSessionInfo,
   resolveSessionDisplayName,
   resolveSessionWorkSubtitle,
 } from "../session-display.ts";
+import {
+  areUiSessionKeysEquivalent,
+  buildAgentMainSessionKey,
+  isAcpSessionKey,
+  isUiGlobalScopeConfigured,
+  normalizeAgentId,
+  parseAgentSessionKey,
+  resolveUiCanonicalMainSessionKey,
+  resolveUiConfiguredMainKey,
+  resolveUiDefaultAgentId,
+} from "../session-key.ts";
 import {
   groupSidebarSessionRows,
   sidebarSectionHasHeader,
@@ -21,22 +31,13 @@ import {
   resolveSessionNavigation,
   searchForSession,
 } from "../sessions/index.ts";
-import {
-  areUiSessionKeysEquivalent,
-  buildAgentMainSessionKey,
-  isAcpSessionKey,
-  isUiGlobalScopeConfigured,
-  normalizeAgentId,
-  parseAgentSessionKey,
-  resolveUiCanonicalMainSessionKey,
-  resolveUiConfiguredMainKey,
-  resolveUiDefaultAgentId,
-} from "../session-key.ts";
 import { reconcileSidebarZone } from "../sidebar-zone.ts";
 import { normalizeOptionalString } from "../string-coerce.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 import {
   adoptedCatalogSessionKeys,
   formatSidebarTimestamp,
+  isAdoptedSessionKey,
 } from "./app-sidebar-session-catalogs.ts";
 import { AppSidebarSessionProjectionElement } from "./app-sidebar-session-projection.ts";
 import { projectSessionTree } from "./app-sidebar-session-tree.ts";
@@ -557,7 +558,7 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarSessi
     if (
       lineageRoot &&
       (lineageAgentId === selected || lineageRouteAgentId === selected) &&
-      !adopted.has(lineageRoot.key) &&
+      !isAdoptedSessionKey(adopted, lineageRoot.key) &&
       !areUiSessionKeysEquivalent(lineageRoot.key, mainSessionKey) &&
       !scopedRootRows.some((row) => row.key === lineageRoot.key)
     ) {
@@ -593,7 +594,7 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarSessi
     // fetched child rows: a catalog-adopted promoted child intentionally
     // renders as its live row inside the Coding catalog, never as a thread.
     return projectSessionTree({
-      roots: orderedRootRows.filter((row) => !adopted.has(row.key)),
+      roots: orderedRootRows.filter((row) => !isAdoptedSessionKey(adopted, row.key)),
       agentRows: rows,
       childRowsByParent: this.childSessionRowsByParent,
       loadingChildKeys: this.loadingChildSessionKeys,

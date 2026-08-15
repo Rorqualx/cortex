@@ -1996,7 +1996,7 @@ async function clearChatHistory(host: ChatHost) {
     host.chatMessages = [];
     host.chatSideResult = null;
     host.chatHistoryHasMore = false;
-    host.chatHistoryNextCursor = null;
+    host.chatHistoryNextOffset = null;
     host.chatLoadingEarlier = false;
     host.chatHistoryRenderLimit = CHAT_HISTORY_RENDER_LIMIT;
     host.chatHistoryRenderExpanded = false;

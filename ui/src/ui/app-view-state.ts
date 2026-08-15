@@ -147,7 +147,7 @@ export type AppViewState = ScrollHost &
     activitySubscribed: boolean;
     chatStreamSegments: Array<{ text: string; ts: number }>;
     chatHistoryHasMore: boolean;
-    chatHistoryNextCursor: string | null;
+    chatHistoryNextOffset: number | null;
     chatLoadingEarlier: boolean;
     chatHistoryRenderLimit: number;
     chatHistoryRenderExpanded: boolean;

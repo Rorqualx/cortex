@@ -315,7 +315,7 @@ export class OpenClawApp extends LitElement {
   @state() agentAvatarUrls: Record<string, string> = {};
   @state() chatThinkingLevel: string | null = null;
   @state() chatHistoryHasMore = false;
-  @state() chatHistoryNextCursor: string | null = null;
+  @state() chatHistoryNextOffset: number | null = null;
   @state() chatLoadingEarlier = false;
   @state() chatHistoryRenderLimit: number = Number.POSITIVE_INFINITY;
   @state() chatHistoryRenderExpanded = false;

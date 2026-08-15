@@ -4,25 +4,23 @@ import type {
   SessionCatalogHost,
   SessionCatalogSession,
 } from "../../../../packages/gateway-protocol/src/index.ts";
-import type { GatewaySessionRow } from "../types.ts";
+import { t } from "../../i18n/index.ts";
+import type { ApplicationNavigationOptions } from "../app-context.ts";
 import type { NavigationRouteId } from "../app-navigation.ts";
 import { pathForRoute } from "../app-route-paths.ts";
-import type { ApplicationNavigationOptions } from "../app-context.ts";
-import { t } from "../../i18n/index.ts";
-import { formatRelativeTimestamp } from "../format.ts";
-import type {
-  CatalogSessionContinuedDetail,
-  CatalogSessionKey,
-} from "../catalog-key.ts";
+import type { CatalogSessionContinuedDetail, CatalogSessionKey } from "../catalog-key.ts";
 import { buildCatalogSessionKey } from "../catalog-key.ts";
 import {
   groupCatalogSessionsByProject,
   type CatalogProjectGrouping,
 } from "../catalog-project-grouping.ts";
-import { searchForSession } from "../sessions/index.ts";
-import type { NewSessionTarget } from "../new-session/location.ts";
-import { shouldHandleNavigationClick } from "./app-sidebar-nav-menus.ts";
+import { formatRelativeTimestamp } from "../format.ts";
 import { icons } from "../icons.ts";
+import type { NewSessionTarget } from "../new-session/location.ts";
+import { normalizeDefaultMainSessionAliasForUi } from "../session-key.ts";
+import { searchForSession } from "../sessions/index.ts";
+import type { GatewaySessionRow } from "../types.ts";
+import { shouldHandleNavigationClick } from "./app-sidebar-nav-menus.ts";
 
 export function formatSidebarTimestamp(timestampMs: number | null | undefined): string {
   const value = formatRelativeTimestamp(timestampMs, { fallback: "" });
@@ -33,19 +31,34 @@ export function formatSidebarTimestamp(timestampMs: number | null | undefined): 
 }
 
 /** Session keys already adopted into OpenClaw sessions; the regular list hides
-    these so each adopted session stays a single selectable catalog row. */
+    these so each adopted session stays a single selectable catalog row. Keys are
+    normalized to their canonical alias so a catalog key and its live-row alias
+    (e.g. "main" vs "agent:<id>:main") collapse to one entry — otherwise the same
+    conversation renders twice, once as a thread and once as the catalog row. */
 export function adoptedCatalogSessionKeys(catalogs: readonly SessionCatalog[]): Set<string> {
   const keys = new Set<string>();
   for (const catalog of catalogs) {
     for (const host of catalog.hosts) {
       for (const session of host.sessions) {
         if (session.sessionKey) {
-          keys.add(session.sessionKey);
+          keys.add(normalizeDefaultMainSessionAliasForUi(session.sessionKey));
         }
       }
     }
   }
   return keys;
+}
+
+/** Alias-aware membership test for the normalized adopted-key set above; callers
+    must route every live-row key through this rather than raw `Set.has`. */
+export function isAdoptedSessionKey(
+  adopted: ReadonlySet<string>,
+  sessionKey: string | undefined | null,
+): boolean {
+  if (!sessionKey) {
+    return false;
+  }
+  return adopted.has(normalizeDefaultMainSessionAliasForUi(sessionKey));
 }
 
 export type CatalogBackingSessionDisplay = {
@@ -155,10 +168,14 @@ function catalogErrorMessages(catalog: SessionCatalog): string[] {
 export function renderSessionCatalogGroups(params: SessionCatalogGroupsParams) {
   // Adopted rows reuse the live session row so activity, unread state, and
   // the session menu behave exactly like the regular list.
+  // Keyed by normalized alias so an adopted catalog session binds to its live
+  // row even when their keys are aliases; a raw-key map would miss the match and
+  // draw a second plain catalog row for the same conversation.
   const liveRowsByKey = new Map<string, GatewaySessionRow>();
   for (const row of params.liveRows) {
-    if (!liveRowsByKey.has(row.key)) {
-      liveRowsByKey.set(row.key, row);
+    const normalizedKey = normalizeDefaultMainSessionAliasForUi(row.key);
+    if (!liveRowsByKey.has(normalizedKey)) {
+      liveRowsByKey.set(normalizedKey, row);
     }
   }
   return params.catalogs.map((catalog) => {
@@ -170,7 +187,9 @@ export function renderSessionCatalogGroups(params: SessionCatalogGroupsParams) {
       host.sessions.map((session) => ({ host, session })),
     );
     const liveRows = rows.flatMap(({ session }) => {
-      const row = session.sessionKey ? liveRowsByKey.get(session.sessionKey) : undefined;
+      const row = session.sessionKey
+        ? liveRowsByKey.get(normalizeDefaultMainSessionAliasForUi(session.sessionKey))
+        : undefined;
       return row ? [row] : [];
     });
     const hasActiveRun = liveRows.some((row) => row.hasActiveRun === true);
@@ -342,7 +361,9 @@ function renderCatalogSessionRow(
     typeof rawTimestamp === "number" && rawTimestamp < 1_000_000_000_000
       ? rawTimestamp * 1000
       : rawTimestamp;
-  const adoptedRow = session.sessionKey ? liveRowsByKey.get(session.sessionKey) : undefined;
+  const adoptedRow = session.sessionKey
+    ? liveRowsByKey.get(normalizeDefaultMainSessionAliasForUi(session.sessionKey))
+    : undefined;
   if (adoptedRow) {
     const label = session.name || session.threadId;
     return params.renderLiveRow(adoptedRow, {

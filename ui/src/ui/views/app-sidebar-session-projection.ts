@@ -1,8 +1,8 @@
 import { state } from "lit/decorators.js";
-import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 import { compareSessionRowsByUpdatedAt } from "../sessions/index.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 import { AppSidebarSessionAttentionElement } from "./app-sidebar-session-attention.ts";
-import { adoptedCatalogSessionKeys } from "./app-sidebar-session-catalogs.ts";
+import { adoptedCatalogSessionKeys, isAdoptedSessionKey } from "./app-sidebar-session-catalogs.ts";
 import { SessionPullRequestIndicatorsController } from "./app-sidebar-session-pr-indicators.ts";
 import type { SidebarRecentSession, SidebarSessionSortMode } from "./app-sidebar-session-types.ts";
 
@@ -60,7 +60,7 @@ export abstract class AppSidebarSessionProjectionElement extends AppSidebarSessi
       ...Object.values(this.sessionRowsByAgent).flat(),
     ];
     for (const row of liveRows) {
-      if (adopted.has(row.key) && !byKey.has(row.key)) {
+      if (isAdoptedSessionKey(adopted, row.key) && !byKey.has(row.key)) {
         byKey.set(row.key, this.projectSidebarSession(row));
       }
     }
