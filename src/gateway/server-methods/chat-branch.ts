@@ -184,6 +184,25 @@ function groupCanonicalChildren(
   return children;
 }
 
+// A branch point is a fork a user can navigate between only when the
+// conversation itself diverges: a real turn (message) or a branch marker that
+// roots an edited/resumed branch. Inline metadata rows (model snapshots,
+// model/thinking changes, labels, session info, prompt errors) are recorded on
+// the active chain and would otherwise read as a spurious second "conversation"
+// — an active heartbeat session accumulates hundreds of model-snapshot forks.
+// Deepest leaf resolution still walks every canonical child; only branch-point
+// fan-out is restricted here.
+function isConversationalBranchNode(node: BranchTreeNode): boolean {
+  const type = entryFieldString(node, "type");
+  if (type === "message" || type === "custom_message") {
+    return true;
+  }
+  if (type === "custom") {
+    return entryFieldString(node, "customType") === "branch_marker";
+  }
+  return false;
+}
+
 /**
  * Resolve the most recently appended entry in a subtree — the tip to resume
  * when re-selecting an existing sibling branch. Falls back to the entry itself
@@ -234,12 +253,13 @@ function resolveBranchPoints(entries: SessionEntry[]): {
 
   const branches: SessionBranchPoint[] = [];
   for (const [parentKey, childNodes] of children) {
-    if (childNodes.length <= 1) {
+    const branchable = childNodes.filter(isConversationalBranchNode);
+    if (branchable.length <= 1) {
       continue;
     }
     const isRoot = parentKey === ROOT_PARENT_KEY;
     const parentNode = isRoot ? undefined : tree.byId.get(parentKey);
-    const ordered = [...childNodes].sort((a, b) => a.index - b.index);
+    const ordered = [...branchable].sort((a, b) => a.index - b.index);
     const childIds = ordered.map((node) => node.id);
     const activeChildId = childIds.find((id) => activePathSet.has(id)) ?? null;
 

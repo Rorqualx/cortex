@@ -318,6 +318,33 @@ describe("chat.branches", () => {
     );
   });
 
+  it("does not treat an inline metadata row (model snapshot) as a navigable branch", async () => {
+    // e2's next real turn (e3) and an inline model-snapshot both parent onto it.
+    // Only e3 is a conversation turn, so this must not read as a 2-way fork —
+    // otherwise heartbeat sessions show hundreds of spurious branch points.
+    await withTranscript(
+      [
+        message("e1", null, "user", "first"),
+        message("e2", "e1", "assistant", "reply"),
+        {
+          type: "custom",
+          customType: "model-snapshot",
+          id: "snap",
+          parentId: "e2",
+          data: { modelId: "deepseek-v4-pro" },
+        },
+        message("e3", "e2", "user", "second"),
+      ],
+      async () => {
+        const result = await callChatBranches({ sessionKey: SESSION_KEY });
+        expect(result.ok).toBe(true);
+        const payload = result.payload as BranchesPayload;
+        expect(payload.activeLeafId).toBe("e3");
+        expect(payload.branches).toEqual([]);
+      },
+    );
+  });
+
   it("returns empty branches when session does not exist yet (new thread)", async () => {
     mockSessionMissing = true;
     try {
