@@ -249,6 +249,7 @@ describe("extractFacts", () => {
     const call = caller.mock.calls[0]![0];
     expect(call.systemPrompt).toContain("PROMPT_VERSION=12");
     expect(call.systemPrompt).toContain("REASONING");
+    expect(call.systemPrompt).toContain("TIMESTAMPS: Preserve dates and times verbatim");
     expect(call.userPrompt).not.toContain("already-known");
   });
 

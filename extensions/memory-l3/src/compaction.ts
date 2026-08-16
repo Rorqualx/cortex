@@ -377,7 +377,7 @@ async function abstractOverflow(
     text: f.text,
     certainty: f.certainty ?? "confirmed",
   }));
-  const prompt = `Compress these facts into a single concise statement that preserves the key information.
+  const prompt = `Compress these facts into a single concise statement that preserves the key information. Preserve dates and times verbatim; do not abbreviate or drop temporal expressions (e.g. "2026-06-21", "9 AM MT", "before Friday's deploy").
 
 Input facts (JSON):
 ${JSON.stringify(structuredFacts, null, 2)}
@@ -391,7 +391,7 @@ Output strict JSON only: {"text": "the combined statement", "certainty": "tentat
   try {
     raw = await caller({
       systemPrompt:
-        "You are a fact compressor. Combine multiple related facts into one concise statement. Output strict JSON with 'text' and 'certainty' fields. The 'certainty' field must be the most conservative (weakest) certainty from the inputs.",
+        "You are a fact compressor. Combine multiple related facts into one concise statement. Output strict JSON with 'text' and 'certainty' fields. The 'certainty' field must be the most conservative (weakest) certainty from the inputs. Preserve dates and times verbatim; do not abbreviate or drop temporal expressions.",
       userPrompt: prompt,
       thinking: false,
     });

@@ -256,6 +256,7 @@ Rules (PROMPT_VERSION=12):
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions.
 - SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
+- TIMESTAMPS: Preserve dates and times verbatim; do not abbreviate or drop temporal expressions. Keep time zones when stated (e.g. "2026-06-21", "9 AM MT", "before Friday's deploy").
 - CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
 - SEMANTIC_ENTROPY: optional float 0.0–1.0 measuring the extractor's confidence that this fact is semantically coherent and well-supported by the source text. Higher = more confident (lower entropy). Default 1.0 when omitted.
 - TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
@@ -311,6 +312,7 @@ Rules (PROMPT_VERSION=12-NATIVE):
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional compressed sentence explaining WHY this fact is worth remembering across sessions.
 - SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
+- TIMESTAMPS: Preserve dates and times verbatim; do not abbreviate or drop temporal expressions, even in compressed notation. Keep time zones when stated (e.g. "2026-06-21", "9 AM MT", "before Friday's deploy").
 - CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
 - SEMANTIC_ENTROPY: optional float 0.0–1.0 measuring the extractor's confidence that this fact is semantically coherent and well-supported by the source text. Higher = more confident (lower entropy). Default 1.0 when omitted.
 - TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.

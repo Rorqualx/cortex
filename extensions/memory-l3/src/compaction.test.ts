@@ -403,6 +403,10 @@ describe("compactSession", () => {
     expect(caller).toHaveBeenCalledTimes(1);
     const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.systemPrompt;
     expect(systemPrompt).toContain("PROMPT_VERSION=12-NATIVE");
+    // QW1 (2026-08-16, arXiv:2608.11775): temporal-preservation clause must
+    // survive the dense/abbreviating native prompt too — abbreviation is
+    // exactly where timestamps die.
+    expect(systemPrompt).toContain("TIMESTAMPS: Preserve dates and times verbatim");
   });
 
   it("writes the L1 archive with the original messages", async () => {
