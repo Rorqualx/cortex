@@ -402,7 +402,9 @@ describe("compactSession", () => {
     });
     expect(caller).toHaveBeenCalledTimes(1);
     const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.systemPrompt;
-    expect(systemPrompt).toContain("PROMPT_VERSION=12-NATIVE");
+    expect(systemPrompt).toContain("PROMPT_VERSION=13-NATIVE");
+    // QW1 (2026-08-16): native dense extraction must preserve temporal expressions.
+    expect(systemPrompt).toContain("TEMPORAL");
   });
 
   it("writes the L1 archive with the original messages", async () => {
@@ -596,8 +598,13 @@ describe("applyCategoryBudgetWithOperators", () => {
       },
     ];
     // QW-3: LLM now returns structured JSON with certainty field.
-    const mockCaller: LlmCaller = async () =>
-      JSON.stringify({ text: "alpha facts combined", certainty: "tentative" });
+    let capturedUserPrompt = "";
+    let capturedSystemPrompt = "";
+    const mockCaller: LlmCaller = async (req) => {
+      capturedUserPrompt = req.userPrompt;
+      capturedSystemPrompt = req.systemPrompt;
+      return JSON.stringify({ text: "alpha facts combined", certainty: "tentative" });
+    };
     const result = await applyCategoryBudgetWithOperators({
       facts,
       maxTokensPerCategory: 6,
@@ -609,6 +616,9 @@ describe("applyCategoryBudgetWithOperators", () => {
     expect(abstractFact?.certainty).toBe("tentative");
     // QW-3: text should be the LLM's structured text, not raw JSON.
     expect(abstractFact?.text).toBe("alpha facts combined");
+    // QW1 (2026-08-16): fact-merge prompt must demand verbatim temporal expressions.
+    expect(capturedUserPrompt).toContain("Preserve dates and times verbatim");
+    expect(capturedSystemPrompt).toContain("never abbreviate or drop temporal expressions");
   });
 
   it("QW-3: parses structured JSON abstraction output and clamps certainty", async () => {
