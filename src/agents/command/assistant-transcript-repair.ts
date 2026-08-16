@@ -33,6 +33,25 @@ const EMPTY_USAGE = {
   },
 } as const;
 
+/**
+ * True when a produced assistant reply must be captured to the repair backlog
+ * because its canonical transcript append was not made durable. This deliberately
+ * fires on the session-rebound path too: skipping the record there silently lost
+ * completed replies (dashboard restart-safe dual-writer split). The record's own
+ * `shouldPersist` fence still declines a genuine session rotation/takeover.
+ */
+export function shouldRecordAssistantReplyRepairRecord(params: {
+  persistedAssistantTranscript: boolean;
+  assistantTranscriptOwned: boolean;
+  suppressVisibleSessionEffects: boolean;
+}): boolean {
+  return (
+    !params.persistedAssistantTranscript &&
+    !params.assistantTranscriptOwned &&
+    !params.suppressVisibleSessionEffects
+  );
+}
+
 /** Records a final whose canonical transcript append failed. */
 export async function persistAssistantTranscriptRepairRecord(params: {
   context: AssistantTranscriptRepairContext;

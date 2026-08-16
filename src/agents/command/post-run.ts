@@ -19,7 +19,10 @@ import { isHeartbeatLifecycleRunKind } from "../bootstrap-mode.js";
 import { persistPendingFinalDeliveryMarker } from "../pending-final-delivery-marker.js";
 import type { AgentRunSessionTarget } from "../run-session-target.js";
 import { throwAgentRunRestartAbortReason } from "../run-termination.js";
-import { persistAssistantTranscriptRepairRecord } from "./assistant-transcript-repair.js";
+import {
+  persistAssistantTranscriptRepairRecord,
+  shouldRecordAssistantReplyRepairRecord,
+} from "./assistant-transcript-repair.js";
 import { persistAgentSession } from "./attempt-execution.shared.js";
 import type { PreparedAgentCommandExecution } from "./prepare.js";
 import type { EmbeddedAgentAttempt } from "./run-embedded-attempt.js";
@@ -185,63 +188,74 @@ export async function finalizeEmbeddedAgentCommand(params: {
       (transcriptPersistenceRunner === undefined &&
         Boolean(result.meta.finalAssistantVisibleText?.trim()));
     let persistedCliTurnTranscript = false;
-    if (
-      !sessionReboundDuringRun &&
-      (transcriptPersistenceRunner === "cli" || embeddedAssistantGapFill)
-    ) {
-      try {
-        const transcriptResult = await attemptExecutionRuntime.persistCliTurnTranscript({
-          body,
-          transcriptBody,
-          result,
-          sessionId: effectiveSessionId,
-          sessionKey: internalSessionTarget?.sessionKey ?? sessionKey ?? effectiveSessionId,
-          sessionEntry: internalSessionTarget?.sessionEntry ?? sessionEntry,
-          sessionStore: params.suppressVisibleSessionEffects ? undefined : sessionStore,
-          storePath: internalSessionTarget?.storePath ?? storePath,
-          sessionAgentId: internalSessionTarget?.agentId ?? sessionAgentId,
-          threadId: params.opts.threadId,
-          sessionCwd: effectiveCwd,
-          config: cfg,
-          embeddedAssistantGapFill,
-          skipAssistantTurn: assistantTranscriptOwned,
-          skipUserTurn:
-            suppressUserTurnPersistence ||
-            userTurnTranscriptRecorder.hasPersisted() ||
-            userTurnTranscriptRecorder.isBlocked(),
-        });
-        sessionReboundDuringRun = transcriptResult.kind === "session-rebound";
-        publishSessionOwnership();
-        if (!internalSessionTarget) {
-          sessionEntry = transcriptResult.sessionEntry;
-        }
-        persistedCliTurnTranscript = transcriptResult.kind === "persisted";
-      } catch (error) {
-        log.warn(
-          `Turn transcript persistence failed for ${sessionKey ?? sessionId}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        if (
-          sessionStore &&
-          sessionKey &&
-          !params.suppressVisibleSessionEffects &&
-          !sessionReboundDuringRun &&
-          !assistantTranscriptOwned
-        ) {
-          await persistAssistantTranscriptRepairRecord({
-            context: {
-              sessionKey: internalSessionTarget?.sessionKey ?? sessionKey ?? effectiveSessionId,
-              sessionEntry: internalSessionTarget?.sessionEntry ?? sessionEntry,
-              sessionStore,
-              storePath: internalSessionTarget?.storePath ?? storePath,
-              sessionAgentId: internalSessionTarget?.agentId ?? sessionAgentId,
-              config: cfg,
-            },
-            replyText: attemptExecutionRuntime.resolveCliTranscriptReplyText(result),
-            provider: result.meta.agentMeta?.provider,
-            model: result.meta.agentMeta?.model,
-            runOwnedSessionId,
+    if (transcriptPersistenceRunner === "cli" || embeddedAssistantGapFill) {
+      // A session rebound detected *during* the run skips the canonical append
+      // (attempting it would only reject); we still fall through to the repair
+      // record below so the reply is never silently dropped.
+      if (!sessionReboundDuringRun) {
+        try {
+          const transcriptResult = await attemptExecutionRuntime.persistCliTurnTranscript({
+            body,
+            transcriptBody,
+            result,
+            sessionId: effectiveSessionId,
+            sessionKey: internalSessionTarget?.sessionKey ?? sessionKey ?? effectiveSessionId,
+            sessionEntry: internalSessionTarget?.sessionEntry ?? sessionEntry,
+            sessionStore: params.suppressVisibleSessionEffects ? undefined : sessionStore,
+            storePath: internalSessionTarget?.storePath ?? storePath,
+            sessionAgentId: internalSessionTarget?.agentId ?? sessionAgentId,
+            threadId: params.opts.threadId,
+            sessionCwd: effectiveCwd,
+            config: cfg,
+            embeddedAssistantGapFill,
+            skipAssistantTurn: assistantTranscriptOwned,
+            skipUserTurn:
+              suppressUserTurnPersistence ||
+              userTurnTranscriptRecorder.hasPersisted() ||
+              userTurnTranscriptRecorder.isBlocked(),
           });
+          sessionReboundDuringRun = transcriptResult.kind === "session-rebound";
+          publishSessionOwnership();
+          if (!internalSessionTarget) {
+            sessionEntry = transcriptResult.sessionEntry;
+          }
+          persistedCliTurnTranscript = transcriptResult.kind === "persisted";
+        } catch (error) {
+          log.warn(
+            `Turn transcript persistence failed for ${sessionKey ?? sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
+      }
+      // Safety net for the doctrine-class silent loss: the reply was produced but
+      // its canonical transcript append was never made durable — skipped by an
+      // in-run session rebound, rejected as session-rebound, or thrown. Record it
+      // to the repair backlog (re-appended on the next turn) so a completed run
+      // never silently loses its assistant reply. This runs on the rebound path
+      // too, unlike before; the repair write is itself fenced on the run-owned
+      // sessionId, so a genuine session rotation/takeover still declines safely.
+      if (
+        sessionStore &&
+        sessionKey &&
+        shouldRecordAssistantReplyRepairRecord({
+          persistedAssistantTranscript: persistedCliTurnTranscript,
+          assistantTranscriptOwned,
+          suppressVisibleSessionEffects: params.suppressVisibleSessionEffects,
+        })
+      ) {
+        await persistAssistantTranscriptRepairRecord({
+          context: {
+            sessionKey: internalSessionTarget?.sessionKey ?? sessionKey ?? effectiveSessionId,
+            sessionEntry: internalSessionTarget?.sessionEntry ?? sessionEntry,
+            sessionStore,
+            storePath: internalSessionTarget?.storePath ?? storePath,
+            sessionAgentId: internalSessionTarget?.agentId ?? sessionAgentId,
+            config: cfg,
+          },
+          replyText: attemptExecutionRuntime.resolveCliTranscriptReplyText(result),
+          provider: result.meta.agentMeta?.provider,
+          model: result.meta.agentMeta?.model,
+          runOwnedSessionId,
+        });
       }
     }
 

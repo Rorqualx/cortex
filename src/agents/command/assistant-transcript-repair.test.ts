@@ -5,6 +5,7 @@ import type { SessionEntry } from "../../config/sessions/types.js";
 import {
   persistAssistantTranscriptRepairRecord,
   repairPendingAssistantTranscriptTurns,
+  shouldRecordAssistantReplyRepairRecord,
 } from "./assistant-transcript-repair.js";
 import type { persistAgentSession } from "./attempt-execution.shared.js";
 
@@ -139,6 +140,60 @@ describe("persistAssistantTranscriptRepairRecord", () => {
 
     expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining("store unavailable"));
   });
+});
+
+describe("shouldRecordAssistantReplyRepairRecord", () => {
+  // Regression: a completed reply whose canonical append did NOT persist (the
+  // session-rebound path most of all) must still be recorded for recovery.
+  // Before the fix this decision lived inside a catch gated on !rebound, so a
+  // rebound silently dropped the reply.
+  const cases: Array<{
+    name: string;
+    input: Parameters<typeof shouldRecordAssistantReplyRepairRecord>[0];
+    expected: boolean;
+  }> = [
+    {
+      name: "records when the append did not persist (rebound/skip/throw)",
+      input: {
+        persistedAssistantTranscript: false,
+        assistantTranscriptOwned: false,
+        suppressVisibleSessionEffects: false,
+      },
+      expected: true,
+    },
+    {
+      name: "skips when the transcript was already persisted",
+      input: {
+        persistedAssistantTranscript: true,
+        assistantTranscriptOwned: false,
+        suppressVisibleSessionEffects: false,
+      },
+      expected: false,
+    },
+    {
+      name: "skips when the delivery mirror owns the assistant transcript",
+      input: {
+        persistedAssistantTranscript: false,
+        assistantTranscriptOwned: true,
+        suppressVisibleSessionEffects: false,
+      },
+      expected: false,
+    },
+    {
+      name: "skips for internal runs with suppressed visible session effects",
+      input: {
+        persistedAssistantTranscript: false,
+        assistantTranscriptOwned: false,
+        suppressVisibleSessionEffects: true,
+      },
+      expected: false,
+    },
+  ];
+  for (const testCase of cases) {
+    it(testCase.name, () => {
+      expect(shouldRecordAssistantReplyRepairRecord(testCase.input)).toBe(testCase.expected);
+    });
+  }
 });
 
 describe("repairPendingAssistantTranscriptTurns", () => {
