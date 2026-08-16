@@ -1118,21 +1118,22 @@ describeControlUiE2e("Control UI mocked Gateway E2E", () => {
         "bedrock/claude-opus-4.5",
       );
 
-      await page
-        .locator('a.sidebar-recent-session[data-session-key="agent:main:session-b"]')
-        .click();
-      await page.locator(".sidebar-recent-session--active").getByText("Session B").waitFor({
-        timeout: 10_000,
-      });
+      // Switch sessions through the sidebar session-switcher dropdown (the
+      // separate recent list was consolidated into this single picker).
+      const switchSession = async (key: string, label: string) => {
+        await page.locator('.sidebar-session-select [data-chat-session-select="true"]').click();
+        await page.locator(`.chat-session-picker__option[data-session-key="${key}"]`).click();
+        await page
+          .locator('.sidebar-session-select [data-chat-session-select="true"]')
+          .filter({ hasText: label })
+          .waitFor({ timeout: 10_000 });
+      };
+
+      await switchSession("agent:main:session-b", "Session B");
       modelSelect = await openModelSelect();
       expect(await modelSelect.getAttribute("data-chat-select-value")).toBe("");
 
-      await page
-        .locator('a.sidebar-recent-session[data-session-key="agent:main:session-a"]')
-        .click();
-      await page.locator(".sidebar-recent-session--active").getByText("Session A").waitFor({
-        timeout: 10_000,
-      });
+      await switchSession("agent:main:session-a", "Session A");
 
       modelSelect = await openModelSelect();
       expect(await modelSelect.getAttribute("data-chat-select-value")).toBe(

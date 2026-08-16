@@ -190,7 +190,6 @@ import { captureSessionToWorkboard, getWorkboardState } from "./controllers/work
 import { getCronJobPayload } from "./cron-payload.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
 import { formatTimeMs } from "./format.ts";
-import { formatRelativeTimestamp } from "./format.ts";
 import { icons } from "./icons.ts";
 import { createLazyView, renderLazyView } from "./lazy-view.ts";
 import {
@@ -206,12 +205,9 @@ import {
 } from "./navigation.ts";
 import { resolveAgentArgPath } from "./path-arg.ts";
 import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
-import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
+import { resolveSessionDisplayName } from "./session-display.ts";
 import {
-  areUiSessionKeysEquivalent,
   buildAgentMainSessionKey,
-  isSessionKeyTiedToAgent,
-  isSubagentSessionKey,
   normalizeAgentId,
   parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
@@ -231,7 +227,6 @@ import type {
   AgentFileEntry,
   CronJob,
   FastMode,
-  GatewaySessionRow,
 } from "./types.ts";
 import { isRenderableControlUiAvatarUrl } from "./views/agents-utils.ts";
 import {
@@ -562,48 +557,6 @@ function resolveMainSessionKeyForState(state: AppViewState): string {
   );
 }
 
-function resolveSidebarSelectedAgentId(state: AppViewState): string {
-  const parsed = parseAgentSessionKey(state.sessionKey);
-  if (parsed) {
-    return normalizeAgentId(parsed.agentId);
-  }
-  const sessionKey = normalizeOptionalString(state.sessionKey)?.toLowerCase();
-  const fallbackAgentId =
-    sessionKey === "global" || sessionKey === "unknown"
-      ? (state.assistantAgentId ?? resolveSidebarDefaultAgentId(state))
-      : resolveSidebarDefaultAgentId(state);
-  return normalizeAgentId(fallbackAgentId);
-}
-
-function isSidebarSessionForSelectedAgent(
-  state: AppViewState,
-  row: GatewaySessionRow,
-  selectedAgentId: string,
-): boolean {
-  return isSessionKeyTiedToAgent(row.key, selectedAgentId, resolveSidebarDefaultAgentId(state));
-}
-
-function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] {
-  const selectedAgentId = resolveSidebarSelectedAgentId(state);
-  const shouldFilterByAgent =
-    normalizeOptionalString(state.sessionKey)?.toLowerCase() !== "unknown";
-  return (state.sessionsResult?.sessions ?? [])
-    .filter(
-      (row) =>
-        row.kind !== "global" &&
-        row.kind !== "unknown" &&
-        !isCronSessionKey(row.key) &&
-        !isSubagentSessionKey(row.key) &&
-        !row.spawnedBy &&
-        // The active thread is already shown by the session selector directly
-        // above this list; listing it again reads as a duplicate recent.
-        !areUiSessionKeysEquivalent(row.key, state.sessionKey) &&
-        (!shouldFilterByAgent || isSidebarSessionForSelectedAgent(state, row, selectedAgentId)),
-    )
-    .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-    .slice(0, 5);
-}
-
 function renderSidebarSessions(state: AppViewState) {
   const collapsed = state.settings.navCollapsed;
   // A new session no longer waits on the active run: switching preserves the
@@ -655,7 +608,8 @@ function renderSidebarSessions(state: AppViewState) {
 
 function renderSidebarChatNavControls(state: AppViewState) {
   const collapsed = state.settings.navCollapsed;
-  const recent = collapsed ? [] : resolveSidebarRecentSessions(state);
+  // Single conversation navigator: the session-switcher dropdown already
+  // searches and paginates every thread, so no separate recent list is shown.
   return html`
     <div class="sidebar-chat-nav-controls">
       <div class="sidebar-session-select ${collapsed ? "sidebar-session-select--collapsed" : ""}">
@@ -665,93 +619,7 @@ function renderSidebarChatNavControls(state: AppViewState) {
           surface: "sidebar",
         })}
       </div>
-      ${collapsed || recent.length === 0
-        ? nothing
-        : html`
-            <div
-              class="sidebar-recent-sessions ${state.settings.recentSessionsCollapsed
-                ? "sidebar-recent-sessions--collapsed"
-                : ""}"
-              aria-label=${t("overview.cards.recentSessions")}
-            >
-              <button
-                class="sidebar-recent-sessions__label"
-                type="button"
-                aria-expanded=${String(!state.settings.recentSessionsCollapsed)}
-                @click=${() => {
-                  const expanding = state.settings.recentSessionsCollapsed;
-                  state.applySettings({
-                    ...state.settings,
-                    recentSessionsCollapsed: !state.settings.recentSessionsCollapsed,
-                  });
-                  // When expanding, scroll the active session into view
-                  if (expanding) {
-                    requestAnimationFrame(() => {
-                      const active = document.querySelector(".sidebar-recent-session--active");
-                      if (active) {
-                        // Optional call: jsdom elements have no scrollIntoView.
-                        active.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
-                      }
-                    });
-                  }
-                }}
-              >
-                <span class="sidebar-recent-sessions__label-text"
-                  >${t("usage.sessions.recentShort")}</span
-                >
-                <span class="sidebar-recent-sessions__chevron"> ${icons.chevronDown} </span>
-              </button>
-              <div class="sidebar-recent-sessions__list">
-                ${recent.map((row) => renderSidebarRecentSession(state, row))}
-              </div>
-            </div>
-          `}
     </div>
-  `;
-}
-
-function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow) {
-  const active = row.key === state.sessionKey;
-  const label =
-    row.goal?.objective?.trim() || row.derivedTitle || resolveSessionDisplayName(row.key, row);
-  const meta = row.updatedAt ? formatRelativeTimestamp(row.updatedAt) : "n/a";
-  const href = `${pathForTab("chat", state.basePath)}?session=${encodeURIComponent(row.key)}`;
-  return html`
-    <a
-      href=${href}
-      class="sidebar-recent-session ${active ? "sidebar-recent-session--active" : ""}"
-      data-session-key=${row.key}
-      title=${`${label} · ${row.key}`}
-      @click=${(event: MouseEvent) => {
-        if (
-          event.defaultPrevented ||
-          event.button !== 0 ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.shiftKey ||
-          event.altKey
-        ) {
-          return;
-        }
-        event.preventDefault();
-        if (row.key !== state.sessionKey) {
-          switchChatSession(state, row.key);
-        }
-        state.setTab("chat" as import("./navigation.ts").Tab);
-      }}
-    >
-      <span class="sidebar-recent-session__dot" aria-hidden="true"></span>
-      <span class="sidebar-recent-session__body">
-        <span class="sidebar-recent-session__name">${label}</span>
-        <span class="sidebar-recent-session__meta">${meta}</span>
-      </span>
-      ${row.hasActiveRun
-        ? html`<span
-            class="sidebar-recent-session__live"
-            aria-label=${t("sessions.sessionDetails.activeRun")}
-          ></span>`
-        : nothing}
-    </a>
   `;
 }
 

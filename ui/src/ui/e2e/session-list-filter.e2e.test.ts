@@ -156,10 +156,18 @@ describeControlUiE2e("Control UI session-list event scope", () => {
     });
 
     await currentPage.goto(`${server?.baseUrl ?? ""}chat`);
-    const sidebarRow = currentPage.locator(
-      `.sidebar-recent-session[data-session-key="${sessionKey}"]`,
-    );
-    await sidebarRow.getByText(sessionLabel, { exact: true }).waitFor({ timeout: 10_000 });
+    // The compact sidebar no longer renders a separate recent list, so wait on
+    // the sidebar's own sessions.list request (includeUnknown) instead of a row.
+    await expect
+      .poll(
+        async () =>
+          (await gateway.getRequests("sessions.list")).some(
+            (request) =>
+              (request.params as { includeUnknown?: unknown } | undefined)?.includeUnknown === true,
+          ),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
     const sidebarRequests = await gateway.getRequests("sessions.list");
     const sidebarParams = sidebarRequests.find(
       (request) =>

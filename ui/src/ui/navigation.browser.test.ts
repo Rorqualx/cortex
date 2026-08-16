@@ -475,61 +475,6 @@ describe("control UI routing", () => {
     ).toBe("false");
   });
 
-  it("shows recent sessions in the sidebar and switches through them", async () => {
-    const app = mountApp("/overview");
-    app.sessionKey = "agent:main:second";
-    app.sessionsResult = createSessionsResult([
-      { key: "global", kind: "global", label: "Global", updatedAt: Date.now() },
-      { key: "unknown", kind: "unknown", label: "Unknown", updatedAt: Date.now() - 10_000 },
-      { key: "cron:daily", kind: "cron", label: "Daily cron", updatedAt: Date.now() - 20_000 },
-      {
-        key: "agent:main:subagent:task",
-        label: "Subagent",
-        spawnedBy: "agent:main:second",
-        updatedAt: Date.now() - 25_000,
-      },
-      { key: "agent:main:first", label: "First workspace", updatedAt: Date.now() - 5 * 60_000 },
-      { key: "agent:main:second", label: "Second workspace", updatedAt: Date.now() - 30_000 },
-    ]) as typeof app.sessionsResult;
-    await app.updateComplete;
-
-    const recent = Array.from(app.querySelectorAll<HTMLAnchorElement>(".sidebar-recent-session"));
-    expect(recent.map((entry) => entry.textContent?.replace(/\s+/g, " ").trim())).toEqual([
-      "Second workspace just now",
-      "First workspace 5m ago",
-    ]);
-
-    const recentSection = expectElement(app, ".sidebar-recent-sessions", HTMLElement);
-    const recentToggle = expectElement(
-      recentSection,
-      ".sidebar-recent-sessions__label",
-      HTMLButtonElement,
-    );
-    expect(recentToggle.getAttribute("aria-expanded")).toBe("true");
-
-    recentToggle.click();
-    await app.updateComplete;
-
-    expect(app.settings.recentSessionsCollapsed).toBe(true);
-    expect(recentToggle.getAttribute("aria-expanded")).toBe("false");
-    expect([...recentSection.classList]).toContain("sidebar-recent-sessions--collapsed");
-
-    recentToggle.click();
-    await app.updateComplete;
-
-    expect(app.settings.recentSessionsCollapsed).toBe(false);
-    expect(recentToggle.getAttribute("aria-expanded")).toBe("true");
-    expect([...recentSection.classList]).not.toContain("sidebar-recent-sessions--collapsed");
-
-    recent[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    await app.updateComplete;
-
-    expect(app.tab).toBe("chat");
-    expect(app.sessionKey).toBe("agent:main:first");
-    expect(window.location.pathname).toBe("/chat");
-    expect(window.location.search).toBe("?session=agent%3Amain%3Afirst");
-  });
-
   it("opens a draft chat session from the sidebar without registering it", async () => {
     const app = mountApp("/overview");
     app.sessionKey = "agent:main:main";
