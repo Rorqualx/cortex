@@ -610,9 +610,15 @@ function renderSidebarChatNavControls(state: AppViewState) {
   const collapsed = state.settings.navCollapsed;
   // Single conversation navigator: the session-switcher dropdown already
   // searches and paginates every thread, so no separate recent list is shown.
+  // It doubles as the Chat nav entry, so carry the active-tab accent styling.
+  const active = state.tab === "chat";
   return html`
     <div class="sidebar-chat-nav-controls">
-      <div class="sidebar-session-select ${collapsed ? "sidebar-session-select--collapsed" : ""}">
+      <div
+        class="sidebar-session-select ${collapsed
+          ? "sidebar-session-select--collapsed"
+          : ""} ${active ? "sidebar-session-select--active" : ""}"
+      >
         ${renderChatSessionSelect(state, switchChatSession, {
           compact: collapsed,
           sessionSwitcherOnly: true,
@@ -2683,9 +2689,13 @@ export function renderApp(state: AppViewState) {
                       <div class="nav-section__items">
                         ${isChannelsGroup
                           ? renderChannelsNavItems(state, navCollapsed)
-                          : group.tabs.map((tab) =>
-                              renderTab(state, tab, { collapsed: navCollapsed }),
-                            )}
+                          : group.label === "chat"
+                            ? // The chat session-switcher below is the single Chat
+                              // entry; the plain nav link would duplicate it.
+                              nothing
+                            : group.tabs.map((tab) =>
+                                renderTab(state, tab, { collapsed: navCollapsed }),
+                              )}
                         ${group.label === "chat" ? renderSidebarChatNavControls(state) : nothing}
                       </div>
                     </section>

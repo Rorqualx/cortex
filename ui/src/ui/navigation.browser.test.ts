@@ -460,8 +460,8 @@ describe("control UI routing", () => {
     });
     await app.updateComplete;
 
-    const chatLink = expectElement(app, 'a.nav-item[href="/chat"]', HTMLAnchorElement);
-    const section = chatLink.closest(".nav-section");
+    const chatControls = expectElement(app, ".sidebar-chat-nav-controls", HTMLElement);
+    const section = chatControls.closest(".nav-section");
     expect(section).toBeInstanceOf(HTMLElement);
     if (!(section instanceof HTMLElement)) {
       throw new Error("Expected chat link to be inside a nav section");
@@ -564,7 +564,13 @@ describe("control UI routing", () => {
     const app = mountApp("/sessions?session=agent:main:subagent:task-123");
     await app.updateComplete;
 
-    const link = expectElement(app, 'a.nav-item[href="/chat"]', HTMLAnchorElement);
+    // The Chat nav entry is the sidebar session-switcher trigger; from another
+    // tab a click navigates to chat (the plain nav link was consolidated away).
+    const link = expectElement(
+      app,
+      '.sidebar-session-select [data-chat-session-select="true"]',
+      HTMLButtonElement,
+    );
     link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
 
     await app.updateComplete;
@@ -595,7 +601,11 @@ describe("control UI routing", () => {
     expect(channelsContentHeader.hasAttribute("inert")).toBe(false);
     expect(channelsContentHeader.hasAttribute("aria-hidden")).toBe(false);
 
-    const chatLink = expectElement(app, 'a.nav-item[href="/chat"]', HTMLAnchorElement);
+    const chatLink = expectElement(
+      app,
+      '.sidebar-session-select [data-chat-session-select="true"]',
+      HTMLButtonElement,
+    );
     chatLink.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
 
     await app.updateComplete;

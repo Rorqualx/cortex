@@ -2195,12 +2195,15 @@ function shouldApplyChatAvatarResult(
   );
 }
 
-function resolveAgentIdForSession(host: ChatHost): string | null {
-  const parsed = parseAgentSessionKey(host.sessionKey);
+export function resolveAgentIdForSession(
+  host: ChatHost,
+  sessionKey: string = host.sessionKey,
+): string | null {
+  const parsed = parseAgentSessionKey(sessionKey);
   if (parsed?.agentId) {
     return parsed.agentId;
   }
-  if (isUiGlobalSessionKey(host.sessionKey)) {
+  if (isUiGlobalSessionKey(sessionKey)) {
     return resolveUiSelectedGlobalAgentId(host) || DEFAULT_AGENT_ID;
   }
   return readHelloDefaultAgentId(host) || DEFAULT_AGENT_ID;

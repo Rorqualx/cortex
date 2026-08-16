@@ -51,6 +51,14 @@ vi.mock("./app-chat.ts", () => ({
   },
   refreshChat: refreshChatMock,
   refreshChatAvatar: refreshChatAvatarMock,
+  resolveAgentIdForSession: (state: unknown, sessionKey?: string) => {
+    const key = sessionKey ?? (state as { sessionKey?: string }).sessionKey ?? "";
+    if (key === "global") {
+      return (state as { assistantAgentId?: string | null }).assistantAgentId ?? "main";
+    }
+    const [, agentId] = key.split(":");
+    return key.startsWith("agent:") && agentId ? agentId : "main";
+  },
 }));
 
 vi.mock("./chat/slash-commands.ts", () => ({
@@ -1040,7 +1048,7 @@ describe("switchChatSession", () => {
     expect(state.sessionKey).toBe("agent:main:review");
   });
 
-  it("refreshes the chat avatar after clearing session-scoped state", async () => {
+  it("clears session-scoped state but skips per-agent refresh on a same-agent switch", async () => {
     const settings = createSettings();
     const state = {
       chatOpenSessionTabs: [],
@@ -1112,11 +1120,10 @@ describe("switchChatSession", () => {
       (state as unknown as { resetChatInputHistoryNavigation: ReturnType<typeof vi.fn> })
         .resetChatInputHistoryNavigation,
     ).toHaveBeenCalled();
-    expect(refreshChatAvatarMock).toHaveBeenCalledWith(state);
-    expect(refreshSlashCommandsMock).toHaveBeenCalledWith({
-      client: undefined,
-      agentId: "main",
-    });
+    // main -> agent:main:test-b is the same agent (main): identity, avatar, and
+    // slash commands are per-agent, so they must NOT re-fetch (the switch-blink fix).
+    expect(refreshChatAvatarMock).not.toHaveBeenCalled();
+    expect(refreshSlashCommandsMock).not.toHaveBeenCalled();
     expect(loadChatHistoryMock).toHaveBeenCalledWith(state);
     expect(syncSelectedSessionMessageSubscriptionMock).toHaveBeenCalledWith(state);
     expect(loadSessionsMock).toHaveBeenCalledWith(state, {
@@ -1220,17 +1227,18 @@ describe("switchChatSession", () => {
     loadChatHistoryMock.mockResolvedValue(undefined);
     loadSessionsMock.mockResolvedValue(undefined);
 
+    // Cross-agent switch onto the plain "main" key so the per-agent refresh runs
+    // and we can assert the target agentId is left undefined, not forced to "main".
+    state.sessionKey = "agent:reviewer:home";
     switchChatSession(state, "main");
     await Promise.resolve();
 
-    expect(
-      (state as unknown as { announceSessionSwitch: ReturnType<typeof vi.fn> })
-        .announceSessionSwitch,
-    ).not.toHaveBeenCalled();
     expect(refreshSlashCommandsMock).toHaveBeenCalledWith({
       client: state.client,
       agentId: undefined,
     });
+    // Crossing agents must still refresh the per-agent header avatar.
+    expect(refreshChatAvatarMock).toHaveBeenCalledWith(state);
   });
 });
 

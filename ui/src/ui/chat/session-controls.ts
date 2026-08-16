@@ -379,6 +379,17 @@ function toggleChatSessionPicker(state: AppViewState, surface: ChatSessionSelect
   openChatSessionPicker(state, surface);
 }
 
+// The sidebar trigger doubles as the Chat nav entry: from another tab a click
+// opens the chat view (like the old nav link); once on chat it toggles the
+// session picker. In-chat surfaces always toggle the picker.
+function activateChatSessionTrigger(state: AppViewState, surface: ChatSessionSelectSurface) {
+  if (surface === "sidebar" && state.tab !== "chat") {
+    state.setTab("chat");
+    return;
+  }
+  toggleChatSessionPicker(state, surface);
+}
+
 function createChatSessionPickerRequestParams(
   state: AppViewState,
   options: { query?: string; offset?: number } = {},
@@ -586,13 +597,16 @@ function resolveChatSessionRow(
 }
 
 function resolveChatSessionPickerResult(state: AppViewState): SessionsListResult | null {
-  if (
-    state.chatSessionPickerResult ||
-    state.chatSessionPickerAppliedQuery ||
-    state.chatSessionPickerOpen
-  ) {
+  // Prefer the picker's own paginated/searched page once it has loaded.
+  if (state.chatSessionPickerResult) {
     return state.chatSessionPickerResult;
   }
+  // A submitted search must not fall back to unfiltered rows; wait for its page.
+  if (state.chatSessionPickerAppliedQuery) {
+    return null;
+  }
+  // Open with no dedicated page yet (or closed): show the already-loaded sidebar
+  // sessions immediately so the popover isn't blank through the first fetch.
   return state.sessionsResult;
 }
 
@@ -675,11 +689,11 @@ function renderChatSessionPicker(params: {
         aria-expanded=${pickerOpen ? "true" : "false"}
         aria-controls=${pickerId}
         ?disabled=${disabled}
-        @click=${() => toggleChatSessionPicker(state, surface)}
+        @click=${() => activateChatSessionTrigger(state, surface)}
         @keydown=${(event: KeyboardEvent) => {
           if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            openChatSessionPicker(state, surface);
+            activateChatSessionTrigger(state, surface);
           }
         }}
       >

@@ -168,6 +168,7 @@ type SettingsAppHost = SettingsHost &
   };
 
 export function applySettings(host: SettingsHost, next: UiSettings) {
+  const previous = host.settings;
   const normalized = {
     ...next,
     textScale: normalizeTextScale(next.textScale),
@@ -178,14 +179,24 @@ export function applySettings(host: SettingsHost, next: UiSettings) {
   };
   host.settings = normalized;
   saveSettings(normalized);
-  syncCustomThemeStyleTag(normalized.customTheme);
+  // These three touch document-root CSS vars / a global <style> tag, forcing a
+  // full-page style recalc. A session switch re-applies settings only to persist
+  // lastActiveSessionKey, so guarding on real change keeps it from flashing the
+  // whole page on every click.
+  if (normalized.customTheme !== previous?.customTheme) {
+    syncCustomThemeStyleTag(normalized.customTheme);
+  }
   if (next.theme !== host.theme || next.themeMode !== host.themeMode) {
     host.theme = next.theme;
     host.themeMode = next.themeMode;
     applyResolvedTheme(host, resolveTheme(next.theme, next.themeMode));
   }
-  applyBorderRadius(normalized.borderRadius);
-  applyTextScale(normalized.textScale);
+  if (normalized.borderRadius !== previous?.borderRadius) {
+    applyBorderRadius(normalized.borderRadius);
+  }
+  if (normalized.textScale !== previous?.textScale) {
+    applyTextScale(normalized.textScale);
+  }
   host.applySessionKey = host.settings.lastActiveSessionKey;
 }
 

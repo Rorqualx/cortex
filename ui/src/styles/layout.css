@@ -719,6 +719,23 @@
   min-width: 0;
 }
 
+/* Active Chat entry: the session-switcher trigger is the sole Chat nav item, so
+   it carries the same accent treatment as .nav-item--active when chat is open. */
+.sidebar-session-select--active .chat-controls__session-trigger {
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--accent-subtle) 88%, var(--bg-elevated) 12%);
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    0 12px 24px color-mix(in srgb, black 10%, transparent);
+}
+
+.sidebar-session-select--active .chat-controls__session-trigger-icon,
+.sidebar-session-select--active .chat-controls__session-trigger-compact-icon {
+  color: var(--accent);
+  opacity: 1;
+}
+
 /* Agent + new-session-model combo at the top of the sidebar. */
 .sidebar-agent-controls {
   display: grid;

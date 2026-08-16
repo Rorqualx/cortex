@@ -5,6 +5,7 @@ import {
   createChatSessionsLoadOverrides,
   refreshChat,
   refreshChatAvatar,
+  resolveAgentIdForSession,
   scopedAgentListParamsForSession,
 } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
@@ -254,10 +255,9 @@ function resetChatStateForSessionSwitch(
   state.activitySubscribed = false;
   state.lastError = null;
   state.chatError = null;
-  state.chatAvatarUrl = null;
-  state.chatAvatarSource = null;
-  state.chatAvatarStatus = null;
-  state.chatAvatarReason = null;
+  // Avatar is per-agent, not per-session: clearing it here made it blink away and
+  // refetch on every same-agent conversation switch. It's now cleared/refetched
+  // only when the switch crosses agents (see switchChatSessionInternal).
   state.realtimeTalkTranscript = null;
   state.resetRealtimeTalkConversation?.();
   state.chatQueue = restoreChatQueueForSession(state, sessionKey);
@@ -748,12 +748,20 @@ function switchChatSessionInternal(
     }
     savePersistedTabs(state.chatOpenSessionTabs, nextSessionKey);
   }
-  void state.loadAssistantIdentity();
-  void refreshChatAvatar(state);
-  void refreshSlashCommands({
-    client: state.client,
-    agentId: parseAgentSessionKey(nextSessionKey)?.agentId,
-  });
+  // Assistant identity, header avatar, and slash commands are per-agent, not
+  // per-session. Re-fetching them on every same-agent conversation switch cleared
+  // and reloaded identical data, blinking the avatar and every message row's
+  // name/avatar on each click. Only refresh when the switch crosses agents.
+  const previousAgentId = resolveAgentIdForSession(state, previousSessionKey);
+  const nextAgentId = resolveAgentIdForSession(state, nextSessionKey);
+  if (previousAgentId !== nextAgentId) {
+    void state.loadAssistantIdentity();
+    void refreshChatAvatar(state);
+    void refreshSlashCommands({
+      client: state.client,
+      agentId: parseAgentSessionKey(nextSessionKey)?.agentId,
+    });
+  }
   syncUrlWithSessionKey(
     state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
     nextSessionKey,

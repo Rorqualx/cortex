@@ -816,16 +816,26 @@ export async function loadBranches(state: ChatState): Promise<void> {
       state.branchPoints = res.branches;
       state.branchActivePath = res.activePath ?? [];
     } else {
-      state.branchPoints = [];
-      state.branchActivePath = [];
+      clearBranchStateIfPresent(state);
     }
   } catch {
     if (state.sessionKey !== requestedSessionKey) {
       return;
     }
-    state.branchPoints = [];
-    state.branchActivePath = [];
+    clearBranchStateIfPresent(state);
   }
+}
+
+// A branch-less conversation already has empty branch state from the session
+// reset; assigning a fresh [] over it busts the chat-items reference cache and
+// repaints the whole transcript for nothing on every switch. Only clear when
+// there is actually something to clear.
+function clearBranchStateIfPresent(state: ChatState): void {
+  if ((state.branchPoints?.length ?? 0) === 0 && (state.branchActivePath?.length ?? 0) === 0) {
+    return;
+  }
+  state.branchPoints = [];
+  state.branchActivePath = [];
 }
 
 export async function handleBranchNavigate(
