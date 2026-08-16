@@ -440,6 +440,13 @@ export class HierarchicalL3Engine implements ContextEngine {
         // Invalidate ReTopK cache — new facts were persisted.
         this.invalidateRetrievalCache();
       }
+      // QW5 (2026-08-16, arXiv:2608.11879): cost-attribution accumulators
+      // for this engine cycle — one l3_metrics row per afterTurn covering
+      // compaction + both long-term consolidation passes.
+      let metricPasses = result.chunkId !== null ? 1 : 0;
+      let metricPromotions = 0;
+      let metricDemotions = 0;
+      let metricMerges = 0;
       l3debug(
         `afterTurn(): compaction result chunkId=${result.chunkId} factsAdded=${result.factsAdded} epochId=${result.epochId}`,
       );
@@ -457,6 +464,10 @@ export class HierarchicalL3Engine implements ContextEngine {
             llm: await this.resolveCaller(),
           });
           this.state.lastConsolidatedAt = now;
+          metricPasses += 1;
+          metricPromotions += lt.promotedCount;
+          metricDemotions += lt.archivedCount;
+          metricMerges += lt.semanticDedupCount;
           l3debug(
             `afterTurn(): consolidation promoted=${lt.promotedCount} reaffirmed=${lt.reaffirmedCount} archived=${lt.archivedCount} unarchived=${lt.unarchivedCount} active=${lt.activeCount} verificationBlocked=${lt.verificationBlocked}`,
           );
@@ -496,11 +507,31 @@ export class HierarchicalL3Engine implements ContextEngine {
             sessionId: params.sessionId,
           });
           typedActivity = ltt.promotedCount + ltt.supersededCount > 0;
+          metricPasses += 1;
+          metricPromotions += ltt.promotedCount;
+          metricDemotions += ltt.supersededCount;
           l3debug(
             `afterTurn(): typed consolidation promoted=${ltt.promotedCount} superseded=${ltt.supersededCount} reaffirmed=${ltt.reaffirmedCount} archived=${ltt.archivedCount} active=${ltt.activeCount}`,
           );
         } catch (typedErr) {
           console.error(`[memory-l3] typed consolidation failed: ${(typedErr as Error).message}`);
+        }
+        // QW5: persist the aggregated cost-attribution row. Failures are
+        // non-fatal — the canonical state writes above already committed.
+        try {
+          await this.storage.recordMetric(
+            {
+              sessionId: params.sessionId,
+              consolidations: metricPasses,
+              promotions: metricPromotions,
+              demotions: metricDemotions,
+              merges: metricMerges,
+              tokensSpent: result.tokensBefore,
+            },
+            now,
+          );
+        } catch (metricErr) {
+          console.error(`[memory-l3] metric recording failed: ${(metricErr as Error).message}`);
         }
         // Cross-brain reconciliation: only fires when typed consolidation
         // produced a new or changed slot — otherwise the prose↔typed

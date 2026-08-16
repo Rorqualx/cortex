@@ -253,6 +253,72 @@ describe("Storage long-term tier I/O", () => {
   });
 });
 
+describe("Storage cost-attribution metrics (QW5 2026-08-16)", () => {
+  it("recordMetric appends rows that readMetrics returns, honoring the since filter", async () => {
+    await storage.ensureLayout();
+    await storage.recordMetric(
+      {
+        sessionId: "session-a",
+        consolidations: 3,
+        promotions: 2,
+        demotions: 1,
+        merges: 4,
+        tokensSpent: 1234,
+      },
+      1_000,
+    );
+    await storage.recordMetric(
+      {
+        sessionId: "session-b",
+        consolidations: 1,
+        promotions: 0,
+        demotions: 0,
+        merges: 0,
+        tokensSpent: 100,
+      },
+      2_000,
+    );
+    const all = await storage.readMetrics();
+    expect(all).toHaveLength(2);
+    expect(all[0]).toMatchObject({
+      sessionId: "session-a",
+      consolidations: 3,
+      promotions: 2,
+      demotions: 1,
+      merges: 4,
+      tokensSpent: 1234,
+      createdAt: 1_000,
+    });
+    const since = await storage.readMetrics(2_000);
+    expect(since).toHaveLength(1);
+    expect(since[0]?.sessionId).toBe("session-b");
+  });
+
+  it("clamps negative counters to zero so callers cannot corrupt aggregates", async () => {
+    await storage.ensureLayout();
+    await storage.recordMetric(
+      {
+        sessionId: "session-c",
+        consolidations: -5,
+        promotions: -1,
+        demotions: -2,
+        merges: -3,
+        tokensSpent: -99,
+      },
+      3_000,
+    );
+    const rows = await storage.readMetrics();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      consolidations: 0,
+      promotions: 0,
+      demotions: 0,
+      merges: 0,
+      tokensSpent: 0,
+    });
+  });
+});
+
 function makeChunk(id: string, createdAt: number): L2ChunkFrontmatter {
   return {
     id,

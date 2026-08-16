@@ -613,6 +613,28 @@ export type RetrievalSignal = {
 };
 
 /**
+ * Cost-attribution metric row (arXiv:2608.11879): one append-only record per
+ * completed engine cycle (compaction + long-term consolidation passes) so the
+ * internal memory cost of serving a session is attributable per session. This
+ * is the evidence base for the Q3-2026-deferred decisions (construction
+ * admission control at p95 > 5s; sqlite-vec ANN at ~10k chunks).
+ */
+export type L3MetricEntry = {
+  /** Session the cycle ran for. */
+  sessionId: string;
+  /** Number of consolidation passes represented by this row (compaction + LT tiers). */
+  consolidations: number;
+  /** Facts promoted to the long-term tiers this cycle (prose + typed). */
+  promotions: number;
+  /** Facts demoted this cycle (archived prose + superseded typed). */
+  demotions: number;
+  /** Near-duplicate facts merged this cycle (semantic dedup / overflow abstraction). */
+  merges: number;
+  /** Best available token-spend proxy for the cycle (compaction input tokens). */
+  tokensSpent: number;
+};
+
+/**
  * Gap analysis result from Sufficient Context Agent. Indicates which
  * fields or entities from the query are missing from the retrieved facts.
  */

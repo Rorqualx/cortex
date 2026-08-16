@@ -27,6 +27,7 @@ import {
   type Entity,
   type TopicLink,
   type RetrievalSignal,
+  type L3MetricEntry,
 } from "./types.js";
 
 const DB_FILENAME = "l3.sqlite";
@@ -97,6 +98,16 @@ CREATE TABLE IF NOT EXISTS l3_hype_queries (
   PRIMARY KEY (fact_id, query_seq)
 );
 CREATE INDEX IF NOT EXISTS l3_hype_queries_fact ON l3_hype_queries (fact_id);
+CREATE TABLE IF NOT EXISTS l3_metrics (
+  session_id TEXT NOT NULL,
+  consolidations INTEGER NOT NULL DEFAULT 0,
+  promotions INTEGER NOT NULL DEFAULT 0,
+  demotions INTEGER NOT NULL DEFAULT 0,
+  merges INTEGER NOT NULL DEFAULT 0,
+  tokens_spent INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS l3_metrics_created ON l3_metrics (created_at, session_id);
 `;
 
 /**
@@ -576,7 +587,63 @@ export class Storage {
   }
 
   // -----------------------------------------------------------------
-  // Internal helpers
+  // Cost-attribution metrics (arXiv:2608.11879) — append-only
+  // -----------------------------------------------------------------
+  // One row per completed engine cycle so per-session memory cost is
+  // attributable. Evidence base for the Q3-2026-deferred decisions:
+  // construction admission control (trigger p95 > 5s) and sqlite-vec ANN
+  // (trigger ~10k chunks).
+
+  /** Append one cost-attribution metric row for a completed engine cycle. */
+  async recordMetric(entry: L3MetricEntry, now: number = Date.now()): Promise<void> {
+    this.database()
+      .prepare(
+        "INSERT INTO l3_metrics (session_id, consolidations, promotions, demotions, merges, tokens_spent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        entry.sessionId,
+        Math.max(0, Math.trunc(entry.consolidations)),
+        Math.max(0, Math.trunc(entry.promotions)),
+        Math.max(0, Math.trunc(entry.demotions)),
+        Math.max(0, Math.trunc(entry.merges)),
+        Math.max(0, Math.trunc(entry.tokensSpent)),
+        now,
+      );
+  }
+
+  /** Read metric rows, optionally restricted to those at/after `sinceMs`. */
+  async readMetrics(sinceMs?: number): Promise<Array<L3MetricEntry & { createdAt: number }>> {
+    const rows = (
+      sinceMs === undefined
+        ? this.database()
+            .prepare(
+              "SELECT session_id, consolidations, promotions, demotions, merges, tokens_spent, created_at FROM l3_metrics ORDER BY created_at",
+            )
+            .all()
+        : this.database()
+            .prepare(
+              "SELECT session_id, consolidations, promotions, demotions, merges, tokens_spent, created_at FROM l3_metrics WHERE created_at >= ? ORDER BY created_at",
+            )
+            .all(sinceMs)
+    ) as Array<{
+      session_id: string;
+      consolidations: number;
+      promotions: number;
+      demotions: number;
+      merges: number;
+      tokens_spent: number;
+      created_at: number;
+    }>;
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      consolidations: row.consolidations,
+      promotions: row.promotions,
+      demotions: row.demotions,
+      merges: row.merges,
+      tokensSpent: row.tokens_spent,
+      createdAt: row.created_at,
+    }));
+  }
   // -----------------------------------------------------------------
 
   private readKv(key: string): string | null {
