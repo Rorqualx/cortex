@@ -189,7 +189,41 @@ type GatewayHostWithLiveUsage = GatewayHost & {
 
 type GatewayHostWithDeferredSessionMessageReload = GatewayHost & {
   pendingSessionMessageReloadSessionKey?: string | null;
+  // Trailing-debounce state: one run finalization persists several transcript
+  // entries back-to-back (final message plus repair/truncation/compaction
+  // updates), each its own uncoalesced session.message event. Reloading per
+  // event repaints the whole transcript several times in a few ms — the blink on
+  // always-active sessions (the agent main session where heartbeats/crons run).
+  coalescedSessionMessageReloadTimer?: ReturnType<typeof setTimeout> | null;
+  coalescedSessionMessageReloadSessionKey?: string | null;
 };
+
+// Long enough to absorb the millisecond-scale burst, short enough to feel instant.
+const SESSION_MESSAGE_RELOAD_COALESCE_MS = 200;
+
+function scheduleCoalescedSessionMessageReload(host: GatewayHost): void {
+  const reloadHost = host as GatewayHostWithDeferredSessionMessageReload;
+  reloadHost.coalescedSessionMessageReloadSessionKey = host.sessionKey;
+  if (reloadHost.coalescedSessionMessageReloadTimer != null) {
+    clearTimeout(reloadHost.coalescedSessionMessageReloadTimer);
+  }
+  reloadHost.coalescedSessionMessageReloadTimer = setTimeout(() => {
+    reloadHost.coalescedSessionMessageReloadTimer = null;
+    const scheduledSessionKey = reloadHost.coalescedSessionMessageReloadSessionKey;
+    reloadHost.coalescedSessionMessageReloadSessionKey = null;
+    // Re-validate at fire time: a run that started meanwhile owns its own reload,
+    // and a switch away discards this one (the new session loads its own history).
+    if (
+      !scheduledSessionKey ||
+      !areUiSessionKeysEquivalent(scheduledSessionKey, host.sessionKey) ||
+      host.chatRunId ||
+      host.chatSending
+    ) {
+      return;
+    }
+    void loadChatHistory(host);
+  }, SESSION_MESSAGE_RELOAD_COALESCE_MS);
+}
 
 type SessionDefaultsSnapshot = {
   defaultAgentId?: string;
@@ -1170,7 +1204,7 @@ function handleSessionMessageGatewayEvent(
     return;
   }
   deferredReloadHost.pendingSessionMessageReloadSessionKey = null;
-  void loadChatHistory(host);
+  scheduleCoalescedSessionMessageReload(host);
 }
 
 function replayDeferredSessionMessageReloadAfterSessionsRefresh(
