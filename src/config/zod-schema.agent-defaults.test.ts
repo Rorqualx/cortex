@@ -250,6 +250,15 @@ describe("agent defaults schema", () => {
     expect(result.experimental?.localModelLean).toBe(true);
   });
 
+  it("accepts experimental.delegationSilentFailureAbort", () => {
+    const result = AgentDefaultsSchema.parse({
+      experimental: {
+        delegationSilentFailureAbort: true,
+      },
+    })!;
+    expect(result.experimental?.delegationSilentFailureAbort).toBe(true);
+  });
+
   it("accepts contextInjection: always", () => {
     const result = AgentDefaultsSchema.parse({ contextInjection: "always" })!;
     expect(result.contextInjection).toBe("always");

@@ -195,6 +195,13 @@ export type AgentDefaultsConfig = {
      * Adds a model call per checked answer. Experimental preview only.
      */
     groundingFaithfulness?: boolean;
+    /**
+     * Opt-in: when a delegated provider call returns a result that fails
+     * verification (silent failure), abort the fallback chain immediately
+     * with a terminal status instead of burning every remaining candidate
+     * on dud outputs. Experimental preview only.
+     */
+    delegationSilentFailureAbort?: boolean;
   };
   /**
    * Agent-visible bootstrap truncation warning mode:

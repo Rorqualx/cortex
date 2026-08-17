@@ -27,23 +27,49 @@ import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 
 const LATENCY_WINDOW_SIZE = 10;
 const LATENCY_MIN_SAMPLES = 3;
-const ERROR_PENALTY_MS = 30_000; // 30s penalty per recent error
+const ERROR_PENALTY_MS = 30_000; // 30s penalty per recent transient error
+// Failure-class weights (strategy-aware delegation, Finding #12): deterministic
+// failures demote harder than transient ones, and silent duds hardest — a dud
+// output looks "fast" to the latency EWMA, so without an extra weight a
+// fast-but-useless provider would float to the front of the fallback chain.
+const PERSISTENT_ERROR_PENALTY_MS = 60_000;
+const SILENT_ERROR_PENALTY_MS = 90_000;
 
 const _latencyHistory = new Map<string, number[]>();
 const _errorCounts = new Map<string, number>();
+const _errorPenaltyMs = new Map<string, number>();
 
-/** Record a successful call latency for a provider. Resets error count. */
+/** Failure class used to weight the per-provider error penalty. */
+export type ProviderFailureClass = "transient" | "persistent" | "silent";
+
+/** Record a successful call latency for a provider. Resets error state. */
 export function recordProviderLatency(provider: string, latencyMs: number): void {
   const history = _latencyHistory.get(provider) ?? [];
   history.push(latencyMs);
   while (history.length > LATENCY_WINDOW_SIZE) history.shift();
   _latencyHistory.set(provider, history);
   _errorCounts.set(provider, 0);
+  _errorPenaltyMs.set(provider, 0);
 }
 
-/** Record a failed call for a provider. Increments error penalty. */
-export function recordProviderError(provider: string): void {
+/**
+ * Record a failed call for a provider. Increments the class-weighted error
+ * penalty (transient < persistent < silent); defaults to the historical
+ * transient weight so existing callers keep their behavior.
+ */
+export function recordProviderError(
+  provider: string,
+  opts?: { failureClass?: ProviderFailureClass },
+): void {
+  const failureClass = opts?.failureClass ?? "transient";
+  const penalty =
+    failureClass === "silent"
+      ? SILENT_ERROR_PENALTY_MS
+      : failureClass === "persistent"
+        ? PERSISTENT_ERROR_PENALTY_MS
+        : ERROR_PENALTY_MS;
   _errorCounts.set(provider, (_errorCounts.get(provider) ?? 0) + 1);
+  _errorPenaltyMs.set(provider, (_errorPenaltyMs.get(provider) ?? 0) + penalty);
 }
 
 /**
@@ -57,22 +83,26 @@ export function recordProviderError(provider: string): void {
 function providerLatencyPenalty(provider: string): number | undefined {
   const history = _latencyHistory.get(provider);
   const errors = _errorCounts.get(provider) ?? 0;
+  // Class-weighted total when present; legacy fallback keeps the historical
+  // uniform weight for state written before the class split.
+  const penalty = _errorPenaltyMs.get(provider) ?? errors * ERROR_PENALTY_MS;
   const hasLatency = (history?.length ?? 0) >= LATENCY_MIN_SAMPLES;
   if (!hasLatency && errors === 0) return undefined;
-  if (!hasLatency) return errors * ERROR_PENALTY_MS;
+  if (!hasLatency) return penalty;
 
   // EWMA with alpha=0.3 — recent samples weighted more
   let ewma = history![0]!;
   for (let i = 1; i < history!.length; i++) {
     ewma = 0.3 * history![i]! + 0.7 * ewma;
   }
-  return ewma + errors * ERROR_PENALTY_MS;
+  return ewma + penalty;
 }
 
 /** Clear all latency state (test-only). */
 export function resetLatencyState(): void {
   _latencyHistory.clear();
   _errorCounts.clear();
+  _errorPenaltyMs.clear();
 }
 
 export type DelegationKind =

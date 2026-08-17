@@ -278,4 +278,21 @@ describe("delegation router adaptive latency balancing", () => {
     const reordered = providerOrder("code");
     expect(reordered.indexOf(second!)).toBeLessThan(reordered.indexOf(first!));
   });
+
+  it("weights error penalties by failure class: silent > persistent > transient", () => {
+    const baseline = providerOrder("code");
+    const [a, b, c] = baseline;
+    // Equal healthy latency baselines so only the error class differs.
+    for (const provider of [a, b, c]) {
+      for (let i = 0; i < 3; i++) {
+        recordProviderLatency(provider!, 100);
+      }
+    }
+    recordProviderError(a!, { failureClass: "silent" }); // 90s
+    recordProviderError(b!, { failureClass: "persistent" }); // 60s
+    recordProviderError(c!); // transient default 30s
+    const order = providerOrder("code");
+    expect(order.indexOf(c!)).toBeLessThan(order.indexOf(b!));
+    expect(order.indexOf(b!)).toBeLessThan(order.indexOf(a!));
+  });
 });

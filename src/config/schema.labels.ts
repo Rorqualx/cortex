@@ -436,6 +436,10 @@ export const FIELD_LABELS: Record<string, string> = {
   "agents.defaults.bootstrapTotalMaxChars": "Bootstrap Total Max Chars",
   "agents.defaults.experimental": "Experimental Agent Flags",
   "agents.defaults.experimental.localModelLean": "Enable Lean Local Model Mode (Experimental)",
+  "agents.defaults.experimental.delegationSilentFailureAbort":
+    "Abort Delegation Fallback on Silent Failure (Experimental)",
+  "agents.entries.*.experimental.delegationSilentFailureAbort":
+    "Agent: Abort Delegation Fallback on Silent Failure (Experimental)",
   "agents.defaults.startupContext": "Startup Context",
   "agents.defaults.startupContext.enabled": "Enable Startup Context",
   "agents.defaults.startupContext.applyOn": "Startup Context Apply On",

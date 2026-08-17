@@ -95,6 +95,7 @@ export const AgentDefaultsSchema = z
       .object({
         localModelLean: z.boolean().optional(),
         groundingFaithfulness: z.boolean().optional(),
+        delegationSilentFailureAbort: z.boolean().optional(),
       })
       .strict()
       .optional(),
