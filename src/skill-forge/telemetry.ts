@@ -4,6 +4,28 @@ import { resolveSkillForgeTelemetryDir } from "./paths.js";
 
 export type SkillStatus = "staged" | "promoted" | "retired";
 
+/**
+ * Outcome of a skill invocation relative to the task it was invoked for
+ * (actual-use precision, cf. skill-pool growth collapsing precision 29.6%→3.3%).
+ * Logged separately from `taskSucceeded` — the two decouple.
+ */
+export type SkillInvocationOutcome = "correct" | "wrong" | "missed";
+
+/** One invoke-time or outcome-stamped usage record (capped ring in `usageLog`). */
+export type SkillUsageRecord = {
+  at: string;
+  /** Snapshot of the skill-pool size at invoke time — the x-axis of the
+   *  precision-vs-pool-size curve. */
+  poolSize?: number;
+  /** Stamped post-run, not at invoke time; absent until known. */
+  taskSucceeded?: boolean;
+  /** Stamped post-run (needs a judge or heuristics; may stay absent). */
+  invocationOutcome?: SkillInvocationOutcome;
+};
+
+/** Cap on per-skill usage records kept (drops oldest first). */
+export const USAGE_LOG_MAX_RECORDS = 200;
+
 export type SkillTelemetryEntry = {
   name: string;
   status: SkillStatus;
@@ -14,6 +36,11 @@ export type SkillTelemetryEntry = {
   usageCount: number;
   lastUsedAt?: string;
   successScore?: number;
+  /** Capped invoke-time records with pool-size snapshots + post-run outcome stamps. */
+  usageLog?: SkillUsageRecord[];
+  lastPoolSize?: number;
+  lastTaskSucceeded?: boolean;
+  lastInvocationOutcome?: SkillInvocationOutcome;
 };
 
 async function ensureTelemetryDir(env: NodeJS.ProcessEnv): Promise<string> {
@@ -122,14 +149,30 @@ export async function recordSkillDemotion(params: {
   return entry;
 }
 
+function appendUsageRecord(
+  entry: SkillTelemetryEntry,
+  record: SkillUsageRecord,
+): SkillTelemetryEntry {
+  const usageLog = [...(entry.usageLog ?? []), record];
+  return {
+    ...entry,
+    usageLog:
+      usageLog.length > USAGE_LOG_MAX_RECORDS
+        ? usageLog.slice(usageLog.length - USAGE_LOG_MAX_RECORDS)
+        : usageLog,
+  };
+}
+
 export async function recordSkillUsage(params: {
   name: string;
   now?: Date;
+  /** Override the pool-size snapshot (tests/backfill); defaults to counting entries. */
+  poolSize?: number;
   env?: NodeJS.ProcessEnv;
 }): Promise<SkillTelemetryEntry> {
   const existing = await readTelemetry({ name: params.name, env: params.env });
   const now = (params.now ?? new Date()).toISOString();
-  const entry: SkillTelemetryEntry = existing
+  const base: SkillTelemetryEntry = existing
     ? { ...existing, usageCount: existing.usageCount + 1, lastUsedAt: now }
     : {
         name: params.name,
@@ -138,8 +181,69 @@ export async function recordSkillUsage(params: {
         usageCount: 1,
         lastUsedAt: now,
       };
-  await writeTelemetry({ entry, env: params.env });
-  return entry;
+  // Pool-size snapshot per usage — the precision-vs-pool-size curve needs this
+  // captured at invoke time. Count after write so the pool includes this skill.
+  const poolSize =
+    params.poolSize ?? (await listTelemetryEntries(params.env ?? process.env)).length;
+  const entry = appendUsageRecord(base, { at: now, poolSize });
+  const stamped: SkillTelemetryEntry = { ...entry, lastPoolSize: poolSize };
+  await writeTelemetry({ entry: stamped, env: params.env });
+  return stamped;
+}
+
+/**
+ * Stamp the post-run outcome onto the most recent usage record still missing
+ * it. Outcome is known only after the run completes, so it is recorded
+ * separately from `recordSkillUsage`: `taskSucceeded` is cheap and unambiguous;
+ * `invocationOutcome` ("correct"/"wrong"/"missed") needs a judge or heuristics
+ * and may arrive later, landing on the same record. Each call stamps the most
+ * recent record that lacks at least one of the provided fields; when every
+ * record already carries them, returns null — never invents a record.
+ */
+export async function recordSkillUsageOutcome(params: {
+  name: string;
+  taskSucceeded?: boolean;
+  invocationOutcome?: SkillInvocationOutcome;
+  env?: NodeJS.ProcessEnv;
+}): Promise<SkillTelemetryEntry | null> {
+  const existing = await readTelemetry({ name: params.name, env: params.env });
+  if (!existing?.usageLog?.length) {
+    return null;
+  }
+  const wanted: Partial<SkillUsageRecord> = {};
+  if (params.taskSucceeded !== undefined) {
+    wanted.taskSucceeded = params.taskSucceeded;
+  }
+  if (params.invocationOutcome !== undefined) {
+    wanted.invocationOutcome = params.invocationOutcome;
+  }
+  if (Object.keys(wanted).length === 0) {
+    return existing;
+  }
+  const usageLog = [...existing.usageLog];
+  for (let i = usageLog.length - 1; i >= 0; i -= 1) {
+    const record = usageLog[i];
+    const missing = Object.fromEntries(
+      Object.entries(wanted).filter(
+        ([field]) => record[field as keyof SkillUsageRecord] === undefined,
+      ),
+    );
+    if (Object.keys(missing).length === 0) {
+      continue;
+    }
+    usageLog[i] = { ...record, ...missing };
+    const entry: SkillTelemetryEntry = {
+      ...existing,
+      usageLog,
+      ...(wanted.taskSucceeded === undefined ? {} : { lastTaskSucceeded: wanted.taskSucceeded }),
+      ...(wanted.invocationOutcome === undefined
+        ? {}
+        : { lastInvocationOutcome: wanted.invocationOutcome }),
+    };
+    await writeTelemetry({ entry, env: params.env });
+    return entry;
+  }
+  return null;
 }
 
 export async function listTelemetryEntries(

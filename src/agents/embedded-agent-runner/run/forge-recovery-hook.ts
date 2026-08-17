@@ -121,7 +121,11 @@ export function installForgeRecoveryHook(params: {
     ((name: string): void => {
       // Inline injection bypasses the SKILL.md read path that normally records
       // usage, so record here; otherwise the decay sweep retires the recovery
-      // skills that are actually firing. Best-effort: never block the result.
+      // skills that are actually firing. Invoke-time only: each call snapshots
+      // the skill-pool size for the precision-vs-pool-size curve. Post-run
+      // outcomes (taskSucceeded / invocationOutcome) are stamped separately via
+      // recordSkillUsageOutcome once the run result is known — never here.
+      // Best-effort: never block the result.
       void recordSkillUsage({ name }).catch(() => {});
     });
 

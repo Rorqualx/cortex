@@ -9,6 +9,8 @@ import {
   recordSkillDemotion,
   recordSkillPromotion,
   recordSkillUsage,
+  recordSkillUsageOutcome,
+  USAGE_LOG_MAX_RECORDS,
 } from "./telemetry.js";
 
 describe("skill-forge telemetry", () => {
@@ -110,5 +112,89 @@ describe("skill-forge telemetry", () => {
 
   it("readTelemetry returns null for unknown skill", async () => {
     expect(await readTelemetry({ name: "missing", env: env() })).toBeNull();
+  });
+
+  it("usage snapshots pool size per invocation (precision-vs-pool-size curve)", async () => {
+    await recordSkillCreation({ name: "pool-a", env: env() });
+    await recordSkillCreation({ name: "pool-b", env: env() });
+    const used = await recordSkillUsage({ name: "pool-a", env: env() });
+    expect(used.usageLog).toEqual([{ at: used.lastUsedAt, poolSize: 2 }]);
+    expect(used.lastPoolSize).toBe(2);
+  });
+
+  it("usage honors an explicit poolSize override and caps the usage log", async () => {
+    const used = await recordSkillUsage({ name: "cap", poolSize: 5, env: env() });
+    for (let i = 0; i < USAGE_LOG_MAX_RECORDS + 3; i += 1) {
+      await recordSkillUsage({
+        name: "cap",
+        now: new Date(Date.parse("2026-05-20T18:00:00Z") + i * 1000),
+        poolSize: 5,
+        env: env(),
+      });
+    }
+    const entry = await readTelemetry({ name: "cap", env: env() });
+    expect(entry?.usageLog?.length).toBe(USAGE_LOG_MAX_RECORDS);
+    expect(entry?.usageLog?.[0].at).not.toBe(used.lastUsedAt);
+  });
+
+  it("recordSkillUsageOutcome stamps the pending record post-run, decoupled fields", async () => {
+    await recordSkillUsage({ name: "outcome", poolSize: 3, env: env() });
+    const stamped = await recordSkillUsageOutcome({
+      name: "outcome",
+      taskSucceeded: true,
+      env: env(),
+    });
+    expect(stamped?.usageLog?.[0]).toEqual({
+      at: stamped?.lastUsedAt,
+      poolSize: 3,
+      taskSucceeded: true,
+    });
+    expect(stamped?.lastTaskSucceeded).toBe(true);
+    expect(stamped?.lastInvocationOutcome).toBeUndefined();
+    // taskSucceeded and invocationOutcome stay decoupled: a later judge stamp
+    // lands on the SAME record (already has taskSucceeded but no outcome).
+    const judged = await recordSkillUsageOutcome({
+      name: "outcome",
+      invocationOutcome: "correct",
+      env: env(),
+    });
+    expect(judged?.usageLog?.[0].invocationOutcome).toBe("correct");
+    expect(judged?.usageLog?.[0].taskSucceeded).toBe(true);
+    expect(judged?.lastInvocationOutcome).toBe("correct");
+  });
+
+  it("recordSkillUsageOutcome drains pending records newest-first, then null", async () => {
+    await recordSkillUsage({ name: "multi", poolSize: 1, env: env() });
+    await recordSkillUsage({ name: "multi", poolSize: 1, env: env() });
+    const stamped = await recordSkillUsageOutcome({
+      name: "multi",
+      taskSucceeded: false,
+      env: env(),
+    });
+    const log = stamped?.usageLog ?? [];
+    expect(log[0].taskSucceeded).toBeUndefined();
+    expect(log[1].taskSucceeded).toBe(false);
+    expect(stamped?.lastTaskSucceeded).toBe(false);
+    // Second outcome drains the remaining pending record…
+    const second = await recordSkillUsageOutcome({
+      name: "multi",
+      taskSucceeded: true,
+      env: env(),
+    });
+    expect(second?.usageLog?.[0].taskSucceeded).toBe(true);
+    // …and with nothing pending a third call is a no-op null — never invents one.
+    expect(
+      await recordSkillUsageOutcome({ name: "multi", taskSucceeded: true, env: env() }),
+    ).toBeNull();
+  });
+
+  it("recordSkillUsageOutcome returns null for unknown skill or empty log", async () => {
+    expect(
+      await recordSkillUsageOutcome({ name: "ghost", taskSucceeded: true, env: env() }),
+    ).toBeNull();
+    await recordSkillCreation({ name: "no-log", env: env() });
+    expect(
+      await recordSkillUsageOutcome({ name: "no-log", taskSucceeded: true, env: env() }),
+    ).toBeNull();
   });
 });
