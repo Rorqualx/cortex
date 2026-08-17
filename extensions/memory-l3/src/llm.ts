@@ -228,6 +228,10 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
   };
 }
 
+// PROMPT_VERSION = 14 — adds CONFLICT rule (TANGLE conflict-preservation): when
+// sources disagree, emit each alternative as a separate tentative/low-confidence
+// fact for the same slot instead of forcing one definitive value; supersession
+// arbitration (conflictWith) happens downstream — extraction must preserve both sides.
 // PROMPT_VERSION = 13 — adds TEMPORAL rule: dates/times preserved verbatim in all
 // extraction variants (Sleeping Agents, arXiv:2608.11775: +0.314 judge accuracy from
 // timestamp preservation alone).
@@ -254,9 +258,10 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=13):
+Rules (PROMPT_VERSION=14):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - TEMPORAL: preserve dates and times verbatim; do not abbreviate or drop temporal expressions (keep "2026-08-16", "9:00 AM MT", "every Tuesday", "last week" exactly as stated) — temporal anchors drive later retrieval.
+- CONFLICT: when sources give conflicting values for the same fact or slot, do NOT force one definitive value — emit each alternative separately: typed facts repeat the slot with each conflicting value at confidence ≤0.5 (each with its own sourceSpan), and the prose fact carries certainty "tentative". Supersession arbitration happens downstream; extraction must preserve all sides of the conflict.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions.
 - SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
@@ -310,9 +315,10 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=13-NATIVE):
+Rules (PROMPT_VERSION=14-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - TEMPORAL: dates and times must stay verbatim even under compression — never abbreviate or drop temporal expressions ("2026-08-16", "9:00 AM MT", "every Tuesday", "last week"); temporal anchors drive later retrieval.
+- CONFLICT: conflicting values for the same slot → emit each alternative separately (same slot, each value, confidence ≤0.5, own sourceSpan; prose certainty "tentative"). Never force one winner — supersession arbitration is downstream.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional compressed sentence explaining WHY this fact is worth remembering across sessions.
 - SIGNIFICANT: set to true when the user explicitly expresses intent to remember. Also true for safety-critical information or repeated facts. Default false.
