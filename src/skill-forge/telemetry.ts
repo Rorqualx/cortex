@@ -223,6 +223,7 @@ export async function recordSkillUsageOutcome(params: {
   const usageLog = [...existing.usageLog];
   for (let i = usageLog.length - 1; i >= 0; i -= 1) {
     const record = usageLog[i];
+    if (!record) continue;
     const missing = Object.fromEntries(
       Object.entries(wanted).filter(
         ([field]) => record[field as keyof SkillUsageRecord] === undefined,
@@ -231,7 +232,7 @@ export async function recordSkillUsageOutcome(params: {
     if (Object.keys(missing).length === 0) {
       continue;
     }
-    usageLog[i] = { ...record, ...missing };
+    usageLog[i] = { ...record, ...missing } as SkillUsageRecord;
     const entry: SkillTelemetryEntry = {
       ...existing,
       usageLog,
