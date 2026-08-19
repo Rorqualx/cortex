@@ -155,7 +155,7 @@ const loadDiagnosticsHandlers = lazyHandlerModule(
 );
 const loadDoctorHandlers = lazyHandlerModule(
   () => import("./server-methods/doctor.js"),
-  (module) => module.doctorHandlers,
+  (module) => module.createDoctorHandlers(),
 );
 const loadEnvironmentsHandlers = lazyHandlerModule(
   () => import("./server-methods/environments.js"),

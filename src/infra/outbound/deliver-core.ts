@@ -80,11 +80,13 @@ export async function deliverOutboundPayloadsCore(
     results,
     onDeliveryResult: params.onDeliveryResult,
   });
+  let activeSourceIndex: number | undefined;
   const resolveMediaAccess = (mediaSources: readonly string[]): OutboundMediaAccess =>
     resolveOutboundMediaAccessForSend(params, channel, mediaSources);
   const createHandler = (mediaSources: readonly string[]) =>
     createChannelHandler({
       cfg,
+      agentId: params.session?.agentId,
       channel,
       to,
       deps,
@@ -103,7 +105,11 @@ export async function deliverOutboundPayloadsCore(
       deliveryQueueId: params.deliveryQueueId,
       preparedMessageId: params.preparedMessageId,
       requiredUnknownSendReconciliation: params.requiredUnknownSendReconciliation,
-      onPlatformSendStart: params.onPlatformSendStart,
+      onPlatformSendStart: async (route) => {
+        // Channel handlers can fan one logical payload into multiple sends.
+        // Carry its source index without polluting the persisted platform route.
+        await params.onPlatformSendStart?.(route, activeSourceIndex);
+      },
       onPlatformSendDispatch: params.onPlatformSendDispatch,
       onDeliveryResult: reportIdentifiedDeliveryResult,
     });
@@ -236,8 +242,10 @@ export async function deliverOutboundPayloadsCore(
   const diagnosticSessionKey = sessionKeyForDeliveryDiagnostics(params);
   for (const [deliveryPayloadIndex, preparedEntry] of acceptedEntries.entries()) {
     const payloadIndex = preparedEntry.sourceIndex;
+    activeSourceIndex = payloadIndex;
     const payload = preparedEntry.payload;
     const payloadResultStartIndex = results.length;
+    let effectivePayload: typeof payload | null | undefined;
     let payloadSummary = buildPayloadSummary(payload);
     const originalMediaCount = preparedEntry.preparedMediaCount;
     let deliveryKind: DiagnosticMessageDeliveryKind = "other";
@@ -314,7 +322,7 @@ export async function deliverOutboundPayloadsCore(
         renderedHandler.normalizePayload
           ? renderedHandler.normalizePayload(renderedPayload)
           : renderedPayload;
-      const effectivePayload = normalizedEffectivePayload
+      effectivePayload = normalizedEffectivePayload
         ? normalizeEmptyPayloadForDelivery(
             stripInternalRuntimeScaffoldingFromPayload(normalizedEffectivePayload),
           )
@@ -599,6 +607,15 @@ export async function deliverOutboundPayloadsCore(
       // results. Keep the results, but never match them to a later payload.
       resetReportedResults();
       const failedPayloadResults = results.slice(payloadResultStartIndex);
+      adoptSuccessfulResultsSince(payloadResultStartIndex);
+      if (effectivePayload && failedPayloadResults.length > 0) {
+        await maybeNotifyAfterDeliveredPayload({
+          handler: await getDeliveryHandler(buildPayloadSummary(effectivePayload).mediaUrls),
+          payload: effectivePayload,
+          target: baseHandler.buildTargetRef({ threadId: preparedTarget.threadId }),
+          results: failedPayloadResults,
+        });
+      }
       recordPayloadOutcome({
         index: payloadIndex,
         status: "failed",

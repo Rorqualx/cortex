@@ -10,12 +10,15 @@ import {
   createBundleMcpToolRuntime,
   materializeBundleMcpToolsForRun,
 } from "./agent-bundle-mcp-materialize.js";
-import type { McpCatalogTool } from "./agent-bundle-mcp-types.js";
-import type { McpToolCatalogDiagnostic } from "./agent-bundle-mcp-types.js";
-import type { SessionMcpRuntime } from "./agent-bundle-mcp-types.js";
+import type {
+  McpCatalogTool,
+  McpToolCatalogDiagnostic,
+  SessionMcpRuntime,
+} from "./agent-bundle-mcp-types.js";
 import { applyEmbeddedAttemptToolsAllow } from "./embedded-agent-runner/run/attempt-tool-construction-plan.js";
 import { getMcpAppViewLease } from "./mcp-ui-resource.js";
 import { testing as mcpUiResourceTesting } from "./mcp-ui-resource.test-support.js";
+import { isToolResultError } from "./tool-result-error.js";
 
 const MCP_APP_RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
 
@@ -97,6 +100,18 @@ function makeToolRuntime(
       },
     dispose: async () => {},
   };
+}
+
+async function executeMcpToolResult(result: CallToolResult) {
+  const runtime = await materializeBundleMcpToolsForRun({
+    runtime: makeToolRuntime({ result }),
+  });
+  return await expectDefined(runtime.tools[0], "runtime.tools[0] test invariant").execute(
+    "call-bundle-probe",
+    {},
+    undefined,
+    undefined,
+  );
 }
 
 describe("createBundleMcpToolRuntime", () => {
@@ -298,46 +313,22 @@ describe("createBundleMcpToolRuntime", () => {
     );
   });
 
-  it("keeps structuredContent visible when MCP tools also return text content", async () => {
-    const runtime = await materializeBundleMcpToolsForRun({
-      runtime: makeToolRuntime({
-        result: {
-          content: [{ type: "text", text: "pong" }],
-          structuredContent: {
-            threadId: "019e6cdb-8e7f-7cb2-891f-9edb689f6fc7",
-            content: "pong",
-          },
-          isError: false,
-        },
-      }),
+  it("preserves recovery text alongside structuredContent", async () => {
+    const result = await executeMcpToolResult({
+      content: [{ type: "text", text: "authentication expired; run login" }],
+      structuredContent: { retryable: true },
+      isError: false,
     });
 
-    const result = await expectDefined(runtime.tools[0], "runtime.tools[0] test invariant").execute(
-      "call-bundle-probe",
-      {},
-      undefined,
-      undefined,
-    );
-
-    expectFencedMcpText(
-      result.content[0],
-      `structuredContent:\n${JSON.stringify(
-        {
-          threadId: "019e6cdb-8e7f-7cb2-891f-9edb689f6fc7",
-          content: "pong",
-        },
-        null,
-        2,
-      )}`,
-    );
-    expect(result.content).toHaveLength(1);
+    // Fork: MCP output is fenced before reaching the model, so both the structured
+    // mirror and the preserved recovery text arrive wrapped in the untrusted-content markers.
+    expect(result.content).toHaveLength(2);
+    expectFencedMcpText(result.content[0], 'structuredContent:\n{\n  "retryable": true\n}');
+    expectFencedMcpText(result.content[1], "authentication expired; run login");
     expect(result.details).toEqual({
       mcpServer: "bundleProbe",
       mcpTool: "bundle_probe",
-      structuredContent: {
-        threadId: "019e6cdb-8e7f-7cb2-891f-9edb689f6fc7",
-        content: "pong",
-      },
+      structuredContent: { retryable: true },
     });
   });
 
@@ -356,7 +347,6 @@ describe("createBundleMcpToolRuntime", () => {
         },
       }),
     });
-
     const result = await expectDefined(runtime.tools[0], "runtime.tools[0] test invariant").execute(
       "call-bundle-probe",
       {},
@@ -373,6 +363,88 @@ describe("createBundleMcpToolRuntime", () => {
       "note[REMOVED_TOOL_DELIMITER]": "ok[REMOVED_TOOL_DELIMITER] done",
       nested: { tag: "[REMOVED_TOOL_DELIMITER]" },
     });
+  });
+
+  it("preserves text and non-text MCP content alongside structuredContent", async () => {
+    const structuredContent = { description: "captured screenshot" };
+    const result = await executeMcpToolResult({
+      content: [
+        { type: "text", text: "captured screenshot" },
+        { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+        {
+          type: "resource_link",
+          uri: "https://example.com/report",
+          name: "report",
+          title: "Report",
+        },
+        { type: "resource", resource: { uri: "memo://one", text: "memo body" } },
+        { type: "audio", data: "AAAA", mimeType: "audio/mpeg" },
+      ],
+      structuredContent,
+    });
+
+    // Fork: every model-facing text block is fenced; the binary image block rides through raw.
+    expect(result.content).toHaveLength(6);
+    expectFencedMcpText(
+      result.content[0],
+      `structuredContent:\n${JSON.stringify(structuredContent, null, 2)}`,
+    );
+    expectFencedMcpText(result.content[1], "captured screenshot");
+    expect(result.content[2]).toEqual({ type: "image", data: "aW1hZ2U=", mimeType: "image/png" });
+    expectFencedMcpText(result.content[3], "[Report] https://example.com/report");
+    expectFencedMcpText(result.content[4], "memo body");
+    expectFencedMcpText(result.content[5], "[audio audio/mpeg]");
+  });
+
+  it("deduplicates exact structured JSON mirrors without dropping near matches", async () => {
+    const structuredContent = { zeta: 2, alpha: 1 };
+    const result = await executeMcpToolResult({
+      content: [
+        { type: "text", text: JSON.stringify(structuredContent, null, 2) },
+        { type: "text", text: 'Result metadata: {"alpha":1,"zeta":2}' },
+      ],
+      structuredContent,
+    });
+
+    // Fork fences each surviving block; the exact structured mirror is still deduped.
+    expect(result.content).toHaveLength(2);
+    expectFencedMcpText(result.content[0], 'structuredContent:\n{\n  "alpha": 1,\n  "zeta": 2\n}');
+    expectFencedMcpText(result.content[1], 'Result metadata: {"alpha":1,"zeta":2}');
+  });
+
+  it("marks isError through the tool-result owner while preserving recovery text", async () => {
+    const result = await executeMcpToolResult({
+      content: [{ type: "text", text: "authentication expired; run login" }],
+      structuredContent: { retryable: true },
+      isError: true,
+    });
+
+    expect(result.content).toHaveLength(2);
+    expectFencedMcpText(result.content[1], "authentication expired; run login");
+    expect(result.details).toMatchObject({
+      status: "error",
+      structuredContent: { retryable: true },
+    });
+    expect(isToolResultError(result)).toBe(true);
+  });
+
+  it("renders structured-only results in deterministic key order", async () => {
+    const result = await executeMcpToolResult({
+      content: [],
+      structuredContent: { zeta: 2, alpha: 1 },
+    });
+
+    expect(result.content).toHaveLength(1);
+    expectFencedMcpText(result.content[0], 'structuredContent:\n{\n  "alpha": 1,\n  "zeta": 2\n}');
+  });
+
+  it("keeps text-only result payload intact through the untrusted-content fence", async () => {
+    const result = await executeMcpToolResult({
+      content: [{ type: "text", text: "plain result" }],
+    });
+
+    expect(result.content).toHaveLength(1);
+    expectFencedMcpText(result.content[0], "plain result");
   });
 
   it("coerces non-text/image MCP tool-result blocks to text (resource_link/resource/audio)", async () => {

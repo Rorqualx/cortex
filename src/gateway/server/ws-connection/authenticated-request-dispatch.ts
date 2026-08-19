@@ -16,6 +16,7 @@ import {
 } from "../../../infra/diagnostic-trace-context.js";
 import { createLazyPromise } from "../../../shared/lazy-runtime.js";
 import { noteStaleDistCandidateError } from "../../../infra/stale-dist-restart.js";
+import { classifyGatewayStaleInstall } from "../../stale-install.js";
 import { formatForLog, logWs } from "../../ws-log.js";
 import type { GatewayWsClient } from "../ws-types.js";
 import type { GatewayWsMessageHandlerParams } from "./message-handler-types.js";
@@ -113,8 +114,17 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
       error?: ErrorShape,
       meta?: Record<string, unknown>,
     ) => {
-      send({ type: "res", id: req.id, ok, payload, error });
-      const unauthorizedRoleError = isUnauthorizedRoleError(error);
+      let responseOk = ok;
+      let responseError = error;
+      const sendResult = send({ type: "res", id: req.id, ok, payload, error });
+      if (sendResult.kind === "serialization") {
+        const detail = formatForLog(sendResult.error);
+        logGateway.error(`response serialization failed method=${req.method}: ${detail}`);
+        responseOk = false;
+        responseError = errorShape(ErrorCodes.UNAVAILABLE, "response serialization failed");
+        send({ type: "res", id: req.id, ok: responseOk, error: responseError });
+      }
+      const unauthorizedRoleError = isUnauthorizedRoleError(responseError);
       let logMeta = meta;
       if (unauthorizedRoleError) {
         const unauthorizedDecision = unauthorizedFloodGuard.registerUnauthorized();
@@ -144,10 +154,10 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
       logWs("out", "res", {
         connId,
         id: req.id,
-        ok,
+        ok: responseOk,
         method: req.method,
-        errorCode: error?.code,
-        errorMessage: error?.message,
+        errorCode: responseError?.code,
+        errorMessage: responseError?.message,
         ...logMeta,
       });
     };
@@ -212,12 +222,14 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
       } catch (err) {
         // Failure diagnostics and responses belong to the same request trace as the handler.
         logGateway.error(`request handler failed: ${formatForLog(err)}`);
-        // Lazy handler imports fail here when dist rotated under this process.
+        // Fork: lazy handler imports fail here when dist rotated under this process;
+        // request one safe gateway restart when the dist generation provably changed.
         noteStaleDistCandidateError(err);
+        const staleInstall = classifyGatewayStaleInstall(err);
         respondWithAuthority(
           false,
           undefined,
-          errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)),
+          staleInstall?.error ?? errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)),
         );
       } finally {
         if (requestController) {

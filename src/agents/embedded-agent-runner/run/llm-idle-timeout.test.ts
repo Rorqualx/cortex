@@ -902,7 +902,6 @@ describe("streamWithIdleTimeout", () => {
       results.push(chunk);
     }
 
-    expect(results).toHaveLength(3);
     expect(results).toEqual(chunks);
   });
 

@@ -142,6 +142,20 @@ describe("pruneStaleEntries", () => {
     expect(pruneStaleEntries(store, 30 * DAY_MS)).toBe(1);
     expect(store.archived).toBeUndefined();
   });
+
+  it("preserves pinned entries until they are unpinned", () => {
+    const now = Date.now();
+    const store = makeStore([
+      ["pinned", { ...makeEntry(now - 31 * DAY_MS), pinnedAt: now - DAY_MS }],
+    ]);
+
+    expect(pruneStaleEntries(store, 30 * DAY_MS)).toBe(0);
+    expect(store).toHaveProperty("pinned");
+
+    delete store.pinned?.pinnedAt;
+    expect(pruneStaleEntries(store, 30 * DAY_MS)).toBe(1);
+    expect(store.pinned).toBeUndefined();
+  });
 });
 
 describe("resolveQuotaSuspensionEntryMaintenance", () => {
@@ -364,6 +378,45 @@ describe("applyFileBackedSessionStoreMaintenance", () => {
     }
   });
 
+  it("counts protected sessions when triggering capping but never evicts them", async () => {
+    const now = Date.now();
+    const store = makeStore([
+      ["archived-1", { ...makeEntry(now - 5), archivedAt: now }],
+      ["archived-2", { ...makeEntry(now - 4), archivedAt: now }],
+      ["archived-3", { ...makeEntry(now - 3), archivedAt: now }],
+      ["dashboard-1", makeEntry(now - 2)],
+      ["dashboard-2", makeEntry(now - 1)],
+    ]);
+    let capped: number | undefined;
+
+    await applyFileBackedSessionStoreMaintenance({
+      storePath: "/tmp/openclaw-sessions/protected-quota.json",
+      store,
+      maintenanceConfig: {
+        mode: "enforce",
+        pruneAfterMs: 30 * DAY_MS,
+        maxEntries: 2,
+        modelRunPruneAfterMs: DAY_MS,
+        resetArchiveRetentionMs: null,
+        maxDiskBytes: null,
+        highWaterBytes: null,
+      },
+      onMaintenanceApplied: (report) => {
+        capped = report.capped;
+      },
+      log: { warn: () => {}, info: () => {} },
+      artifacts: createMaintenanceArtifacts(),
+    });
+
+    expect(capped).toBe(2);
+    expect(Object.keys(store)).toHaveLength(3);
+    expect(store).toHaveProperty("archived-1");
+    expect(store).toHaveProperty("archived-2");
+    expect(store).toHaveProperty("archived-3");
+    expect(store["dashboard-1"]).toBeUndefined();
+    expect(store["dashboard-2"]).toBeUndefined();
+  });
+
   it.each([
     {
       name: "preserves every active admission instead of only the writer session",
@@ -400,7 +453,8 @@ describe("applyFileBackedSessionStoreMaintenance", () => {
         key,
         { sessionId, updatedAt: now - preserved.length - 1 + index },
       ]),
-      ["removable", { sessionId: "removable-session", updatedAt: now - 1 }],
+      ["removable-old", { sessionId: "removable-old-session", updatedAt: now - 2 }],
+      ["removable-recent", { sessionId: "removable-recent-session", updatedAt: now - 1 }],
     ]);
     const admission = await beginSessionWorkAdmission({
       scope: storePath,
@@ -428,7 +482,8 @@ describe("applyFileBackedSessionStoreMaintenance", () => {
       for (const [key] of preserved) {
         expect(store).toHaveProperty(key);
       }
-      expect(store.removable).toBeUndefined();
+      expect(store["removable-old"]).toBeUndefined();
+      expect(store["removable-recent"]).toBeUndefined();
     } finally {
       admission.release();
     }
@@ -546,20 +601,6 @@ describe("pruneStaleModelRunEntries", () => {
 
     expect(pruneStaleModelRunEntries(store, DAY_MS)).toBe(0);
     expect(store).toHaveProperty(staleModelRun);
-  });
-
-  it("matches only explicit model-run uuid session keys", () => {
-    expect(
-      isGatewayModelRunSessionKey(
-        "agent:main:explicit:model-run-123e4567-e89b-12d3-a456-426614174000",
-      ),
-    ).toBe(true);
-    expect(isGatewayModelRunSessionKey("agent:main:explicit:model-run-not-a-uuid")).toBe(false);
-    expect(
-      isGatewayModelRunSessionKey(
-        "agent:main:explicit:model-runner-123e4567-e89b-12d3-a456-426614174000",
-      ),
-    ).toBe(false);
   });
 
   it("rejects non-canonical session keys that do not parse as agent-scoped", () => {

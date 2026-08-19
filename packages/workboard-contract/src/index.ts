@@ -257,6 +257,26 @@ export type WorkboardWorkspaceAccess =
   | { unrestricted: true }
   | { unrestricted: false; roots: string[]; writable: boolean };
 
+type WorkboardLaunchIdentity = {
+  requestedSessionKey: string;
+  provisionalRunId: string;
+  preparedAt: number;
+};
+
+export type WorkboardLaunchState =
+  | (WorkboardLaunchIdentity & { phase: "prepared" })
+  | (WorkboardLaunchIdentity & {
+      phase: "accepted";
+      acceptedAt: number;
+      acceptedSessionKey: string;
+      acceptedRunId?: string;
+    })
+  | (WorkboardLaunchIdentity & {
+      phase: "failed";
+      failedAt: number;
+      reason: string;
+    });
+
 export type WorkboardAutomation = {
   tenant?: string;
   boardId?: string;
@@ -272,6 +292,7 @@ export type WorkboardAutomation = {
   createdCardIds?: string[];
   dispatchCount?: number;
   lastDispatchAt?: number;
+  launch?: WorkboardLaunchState;
 };
 
 export type WorkboardBoardMetadata = {
@@ -280,6 +301,7 @@ export type WorkboardBoardMetadata = {
   description?: string;
   icon?: string;
   color?: string;
+  automationJobId?: string;
   defaultWorkspace?: WorkboardWorkspace;
   orchestration?: WorkboardOrchestrationSettings;
   createdAt: number;
@@ -293,6 +315,7 @@ export type WorkboardBoardSummary = {
   description?: string;
   icon?: string;
   color?: string;
+  automationJobId?: string;
   defaultWorkspace?: WorkboardWorkspace;
   orchestration?: WorkboardOrchestrationSettings;
   total: number;

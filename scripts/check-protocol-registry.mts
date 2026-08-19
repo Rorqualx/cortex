@@ -118,8 +118,8 @@ const ownerModules = [
 // An upstream merge that adds modules must re-measure this rather than take a
 // side: both sides of the 2026-08-03 conflict were stale against the merged tree.
 check(
-  ownerModules.length === 56 && new Set(ownerModules).size === ownerModules.length,
-  "schema-modules.ts must contain one unique 56-module owner list",
+  ownerModules.length === 59 && new Set(ownerModules).size === ownerModules.length,
+  "schema-modules.ts must contain one unique 59-module owner list",
 );
 check(
   schemaModulesSource.split("\n").filter(Boolean).length === ownerModules.length,
@@ -136,32 +136,31 @@ check(
   "schema-types.ts must remain a registry-free schema-modules wrapper",
 );
 
-// Fork-owned: the cortex fork factors the curated public schema allowlist into
-// its own schema-export-registry.ts (wildcard-exported from index.ts) instead of
-// inlining named exports directly in index.ts, so the allowlist-review invariant
-// upstream enforces on index.ts is checked against that file here instead.
+// The curated public schema allowlist lives in its canonical public-schema.ts
+// owner, wildcard-exported from index.ts, so the allowlist-review invariant is
+// checked against that file here.
 const publicIndexSource = read("packages/gateway-protocol/src/index.ts");
+const publicSchemaSource = read("packages/gateway-protocol/src/public-schema.ts");
 check(
-  !publicIndexSource.includes('export * from "./schema-modules.js";'),
-  "index.ts must not expose every schema module export implicitly",
+  publicIndexSource.includes('export * from "./public-schema.js";'),
+  "index.ts must expose the reviewed public schema allowlist",
 );
 check(
-  fs.existsSync(path.join(repoRoot, "packages/gateway-protocol/src/schema-export-registry.ts")),
-  "the fork-owned public schema allowlist file must exist",
-);
-const publicRegistrySource = read("packages/gateway-protocol/src/schema-export-registry.ts");
-check(
-  publicRegistrySource.includes('} from "./schema-modules.js";'),
-  "schema-export-registry.ts must explicitly export the reviewed public schema allowlist",
+  publicSchemaSource.includes('} from "./schema-modules.js";'),
+  "public-schema.ts must explicitly export the reviewed public schema allowlist",
 );
 check(
-  !publicRegistrySource.includes('export * from "./schema-modules.js";'),
-  "schema-export-registry.ts must not expose every schema module export implicitly",
+  !publicSchemaSource.includes('export * from "./schema-modules.js";'),
+  "public-schema.ts must not expose every schema module export implicitly",
+);
+check(
+  !fs.existsSync(path.join(repoRoot, "packages/gateway-protocol/src/schema-export-registry.ts")),
+  "the public schema allowlist must stay in its canonical public-schema owner",
 );
 
 for (const relativePath of [
   "packages/gateway-protocol/src/index.ts",
-  "packages/gateway-protocol/src/schema-export-registry.ts",
+  "packages/gateway-protocol/src/public-schema.ts",
   "packages/gateway-protocol/src/validator-registry.ts",
 ]) {
   check(

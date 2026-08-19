@@ -1,283 +1,96 @@
-# Resync ledger — b9c64142e281..upstream/main
+# Resync Ledger — resync-staging/2026-08-19
 
-- files: 7497 · conflicted: 349
-- categories: keep=782, auto=544, resolve=260, keep-ours=29, adopt=5822, relocate=60
-- conflict types: content=251, modify/delete=60, rename/delete=3, add/add=4, file location=34
+Merge: fork `5657018950c` ← upstream `a3ca8466` (base `e45a9460`, 2063 commits behind).
+75 conflicts. Foundation-first; convergent product decisions DEFERRED to maintainer.
 
-- resolve by tier: low=84, medium=35, high=141
+## Convergent product decisions — MAINTAINER APPROVED "keep-fork on all four" (2026-08-19)
 
-## batch plan (low-risk warm-ups first)
+- **Workboard (22) — RESOLVED keep-fork.** Kept fork's `src/workboard` LLM-loop (40 files); `git rm`'d upstream's 13 `extensions/workboard/*` (fork deleted that plugin) + 9 upstream-only `src/workboard/*` ops files (stage-3-only, would pollute the fork loop).
+- **Agent-loop — PENDING (keep-fork + graft).** `packages/agent-core/src/agent-loop.ts`. Fork rewrote +459/−871; upstream only +28/−16. Keep fork; evaluate whether upstream's small delta is a fix worth grafting.
+- **Codex — PENDING (owner-gated).** `extensions/codex/src/app-server/thread-prompt.ts`. Keep-fork decided, but MUST inspect `../codex` source before finalizing per AGENTS.md.
+- **Skill-workshop — RESOLVED keep-fork-trimmed.** Fork keeps 6 production files, deleted the 3 tests + 1 doc that exercise upstream's fuller version → `git rm`'d those (kept deleted).
 
-- batch 1 [low] apps/ios, docs, extensions — 30 files
-- batch 2 [low] extensions, scripts, src — 30 files
-- batch 3 [low] src, ui — 24 files
-- batch 4 [medium] extensions — 30 files
-- batch 5 [medium] extensions, root — 5 files
-- batch 6 [high] packages, src — 30 files
-- batch 7 [high] src, ui — 30 files
-- batch 8 [high] ui — 30 files
-- batch 9 [high] ui — 30 files
-- batch 10 [high] ui — 21 files
+## Foundation resolutions (cont.)
 
-## resolve (needs judgment)
+| File | Verdict | Note |
+|------|---------|------|
+| `src/gateway/server-core-runtime.ts` | ENHANCE | keep fork `allowGatewaySubagentBinding` loaders + graft upstream `getPluginMetadataSnapshot` |
+| `src/gateway/control-ui-contract.ts` | KEEP-OURS | fork owns Control UI bootstrap config |
+| `src/infra/plugin-approvals.ts` | KEEP-OURS | documented wire-alias pattern |
+| `packages/agent-core/src/agent-loop.ts` | KEEP-OURS+graft | kept fork steering rewrite; grafted upstream's safer `asOptionalRecord` taint extraction + auto-merged `replaceCompactionReplayOwnerContent`; dropped duplicate `SourceEventStream` import + unused `coerceErrorMessage` |
+| `extensions/codex/src/app-server/thread-prompt.ts` | KEEP-OURS (owner-gated) | restored fork version (skill-forge only); auto-merge had created a broken hybrid pulling upstream delegation/harness-reply calls whose source `buildHarnessVisibleReplyGuidance` isn't in the fork. `../codex` inspected; conflict is OpenClaw prompt-composition, not codex protocol |
+| `extensions/zai/{index,index.test,provider-policy-api}.ts` | KEEP-OURS | fork reasoning-effort ladder subsumes upstream version-map; dropped unused upstream imports (reconciler agent) |
 
-- [low/apps/ios] apps/ios/Sources/Design/ChatProTab.swift
-- [low/apps/ios] apps/ios/Sources/Design/CommandCenterTab.swift
-- [low/apps/ios] apps/ios/Sources/Design/RootTabsPhoneControlHub.swift
-- [low/apps/ios] apps/ios/Sources/Design/SettingsProTab.swift
-- [low/apps/ios] apps/ios/Sources/Design/TalkProTab.swift
-- [low/apps/ios] apps/ios/Sources/Onboarding/OnboardingWizardView.swift
-- [low/apps/ios] apps/ios/Sources/RootTabs.swift
-- [low/apps/ios] apps/ios/Tests/RootTabsPresentationTests.swift
-- [low/apps/ios] apps/ios/Tests/RootTabsSidebarRegressionTests.swift
-- [low/apps/ios] apps/ios/Tests/RootTabsSourceGuardTests.swift
-- [low/docs] docs/channels/discord.md
-- [low/docs] docs/cli/daemon.md
-- [low/docs] docs/cli/gateway.md
-- [low/docs] docs/cli/plugins.md
-- [low/docs] docs/cli/skills.md
-- [low/docs] docs/concepts/memory-qmd.md
-- [low/docs] docs/concepts/memory-search.md
-- [low/docs] docs/concepts/system-prompt.md
-- [low/docs] docs/plugins/manifest.md
-- [low/docs] docs/providers/opencode.md
-- [low/docs] docs/tools/acp-agents.md
-- [low/docs] docs/tools/creating-skills.md
-- [low/docs] docs/tools/index.md
-- [low/docs] docs/tools/skill-workshop.md
-- [low/docs] docs/tools/skills-config.md
-- [low/extensions] extensions/discord/src/api.test.ts
-- [low/extensions] extensions/discord/src/internal/rest.test.ts
-- [medium/extensions] extensions/discord/src/internal/rest.ts
-- [medium/extensions] extensions/discord/src/voice-message.ts
-- [medium/extensions] extensions/feishu/src/monitor.comment.ts
-- [medium/extensions] extensions/feishu/src/monitor.ts
-- [medium/extensions] extensions/feishu/src/outbound.ts
-- [low/extensions] extensions/feishu/src/streaming-card.test.ts
-- [medium/extensions] extensions/feishu/src/streaming-card.ts
-- [low/extensions] extensions/imessage/src/actions.test.ts
-- [low/extensions] extensions/inworld/tts.test.ts
-- [medium/extensions] extensions/inworld/tts.ts
-- [low/extensions] extensions/irc/src/client.test.ts
-- [low/extensions] extensions/irc/src/protocol.test.ts
-- [low/extensions] extensions/line/src/bot-handlers.test.ts
-- [medium/extensions] extensions/line/src/card-command.ts
-- [medium/extensions] extensions/line/src/markdown-to-line.ts
-- [low/extensions] extensions/line/src/message-cards.test.ts
-- [low/extensions] extensions/memory-wiki/src/lint.test.ts
-- [low/extensions] extensions/memory-wiki/src/markdown.test.ts
-- [medium/extensions] extensions/memory-wiki/src/markdown.ts
-- [medium/extensions] extensions/msteams/src/monitor-handler.ts
-- [low/extensions] extensions/openai/embedding-batch.test.ts
-- [medium/extensions] extensions/openai/embedding-batch.ts
-- [medium/extensions] extensions/qqbot/skills/qqbot-media/SKILL.md
-- [medium/extensions] extensions/qqbot/src/engine/tools/channel-api.ts
-- [medium/extensions] extensions/qqbot/src/engine/tools/remind-logic.ts
-- [medium/extensions] extensions/telegram/src/bot-handlers.runtime.ts
-- [medium/extensions] extensions/telegram/src/bot-message-context.types.ts
-- [low/extensions] extensions/telegram/src/bot.media.downloads-media-file-path-no-file-download.e2e.test.ts
-- [medium/extensions] extensions/telegram/src/bot/delivery.send.ts
-- [low/extensions] extensions/telegram/src/bot/delivery.test.ts
-- [medium/extensions] extensions/telegram/src/lane-delivery-text-deliverer.ts
-- [low/extensions] extensions/telegram/src/network-errors.test.ts
-- [medium/extensions] extensions/telegram/src/network-errors.ts
-- [medium/extensions] extensions/telegram/src/polling-session.ts
-- [medium/extensions] extensions/telegram/src/send.ts
-- [medium/extensions] extensions/telegram/src/telegram-ingress-worker.runtime.ts
-- [medium/extensions] extensions/telegram/src/webhook.ts
-- [low/extensions] extensions/voice-call/index.test.ts
-- [medium/extensions] extensions/voice-call/index.ts
-- [medium/extensions] extensions/voice-call/src/response-generator.ts
-- [medium/extensions] extensions/workboard/index.ts
-- [medium/extensions] extensions/workboard/src/cli.ts
-- [low/extensions] extensions/workboard/src/command.test.ts
-- [medium/extensions] extensions/workboard/src/command.ts
-- [low/extensions] extensions/workboard/src/dispatcher.test.ts
-- [medium/extensions] extensions/workboard/src/dispatcher.ts
-- [low/extensions] extensions/workboard/src/gateway.test.ts
-- [medium/extensions] extensions/workboard/src/gateway.ts
-- [high/packages] packages/agent-core/src/agent-loop.ts
-- [high/packages] packages/gateway-protocol/src/schema/protocol-schemas.ts
-- [medium/root] package.json
-- [medium/root] pnpm-lock.yaml
-- [medium/root] pnpm-workspace.yaml
-- [medium/root] taxonomy.yaml
-- [low/scripts] scripts/check-gateway-watch-regression.mjs
-- [low/scripts] scripts/plugin-sdk-surface-report.mjs
-- [low/scripts] scripts/proof-telegram-bound.mjs
-- [high/src] src/agents/agent-bundle-mcp-materialize.ts
-- [low/src] src/agents/agent-tools.before-tool-call.embedded-mode.test.ts
-- [high/src] src/agents/auth-profiles/oauth.ts
-- [high/src] src/agents/embedded-agent-runner/result-fallback-classifier.ts
-- [high/src] src/agents/embedded-agent-runner/run/attempt.prompt-helpers.ts
-- [high/src] src/agents/embedded-agent-runner/run/attempt.session-lock.ts
-- [high/src] src/agents/embedded-agent-runner/run/llm-idle-timeout.ts
-- [low/src] src/agents/embedded-agent-runner/usage-accumulator.test.ts
-- [high/src] src/agents/openai-transport-stream.ts
-- [high/src] src/agents/sessions/tools/read.ts
-- [high/src] src/agents/skill-workshop-prompt.ts
-- [high/src] src/agents/subagent-registry-helpers.ts
-- [low/src] src/agents/system-prompt.test.ts
-- [low/src] src/agents/tools/skill-workshop-tool.test.ts
-- [high/src] src/agents/tools/skill-workshop-tool.ts
-- [high/src] src/auto-reply/reply/agent-runner.ts
-- [low/src] src/auto-reply/reply/commands-session.activation.test.ts
-- [low/src] src/auto-reply/reply/dispatch-from-config.reply-dispatch.test.ts
-- [high/src] src/auto-reply/reply/dispatch-from-config.ts
-- [low/src] src/auto-reply/reply/inbound-meta.test.ts
-- [high/src] src/auto-reply/reply/inbound-meta.ts
-- [high/src] src/commands/docs.ts
-- [low/src] src/commands/doctor-auth.profile-health.test.ts
-- [high/src] src/commands/doctor-auth.ts
-- [high/src] src/commands/onboard.ts
-- [low/src] src/commitments/runtime.test.ts
-- [low/src] src/config/sessions/session-accessor.test.ts
-- [high/src] src/config/sessions/session-accessor.ts
-- [high/src] src/context-engine/registry.ts
-- [high/src] src/cron/isolated-agent/run.ts
-- [high/src] src/cron/service/ops.ts
-- [high/src] src/flows/doctor-core-checks.ts
-- [high/src] src/gateway/server-close.ts
-- [high/src] src/gateway/server-maintenance.ts
-- [high/src] src/gateway/server-methods/sessions.ts
-- [high/src] src/gateway/server-runtime-handles.ts
-- [low/src] src/gateway/server-runtime-services.test.ts
-- [high/src] src/gateway/server-runtime-services.ts
-- [high/src] src/gateway/session-reset-service.ts
-- [low/src] src/hooks/internal-hook-types.test.ts
-- [high/src] src/hooks/loader.ts
-- [high/src] src/infra/exec-approvals.ts
-- [high/src] src/infra/heartbeat-runner.ts
-- [low/src] src/infra/session-cost-usage.test.ts
-- [high/src] src/infra/session-cost-usage.ts
-- [low/src] src/llm/utils/oauth/anthropic.test.ts
-- [high/src] src/media-understanding/runner.entries.ts
-- [high/src] src/media-understanding/runner.ts
-- [low/src] src/node-host/invoke-system-run-allowlist.test.ts
-- [high/src] src/plugin-sdk/provider-catalog-live-runtime.ts
-- [high/src] src/security/audit.ts
-- [high/src] src/shared/subagents-format.ts
-- [high/src] src/shared/text/assistant-visible-text.ts
-- [low/src] src/skills/research/autocapture.test.ts
-- [high/src] src/skills/research/autocapture.ts
-- [high/src] src/skills/research/signals.ts
-- [high/src] src/skills/workshop/frontmatter.ts
-- [low/src] src/skills/workshop/service.test.ts
-- [high/src] src/skills/workshop/service.ts
-- [high/src] src/skills/workshop/store.ts
-- [high/src] src/state/openclaw-state-schema.generated.ts
-- [high/src] src/state/openclaw-state-schema.sql
-- [low/src] src/status/status-plugin-health.test.ts
-- [high/src] src/status/status-plugin-health.ts
-- [high/src] src/talk/agent-consult-runtime.ts
-- [low/src] src/tasks/task-registry.test.ts
-- [low/src] src/utils/directive-tags.test.ts
-- [low/src] src/utils/mask-api-key.test.ts
-- [high/src] src/utils/mask-api-key.ts
-- [high/ui] ui/src/components/vault-add-modal.ts
-- [high/ui] ui/src/components/vault-credential-form.ts
-- [high/ui] ui/src/i18n/.i18n/ar.meta.json
-- [high/ui] ui/src/i18n/.i18n/ar.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/de.meta.json
-- [high/ui] ui/src/i18n/.i18n/de.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/es.meta.json
-- [high/ui] ui/src/i18n/.i18n/fa.meta.json
-- [high/ui] ui/src/i18n/.i18n/fa.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/fr.meta.json
-- [high/ui] ui/src/i18n/.i18n/fr.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/hi.meta.json
-- [high/ui] ui/src/i18n/.i18n/hi.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/id.meta.json
-- [high/ui] ui/src/i18n/.i18n/id.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/it.meta.json
-- [high/ui] ui/src/i18n/.i18n/it.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/ja-JP.meta.json
-- [high/ui] ui/src/i18n/.i18n/ko.meta.json
-- [high/ui] ui/src/i18n/.i18n/ko.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/nl.meta.json
-- [high/ui] ui/src/i18n/.i18n/nl.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/pl.meta.json
-- [high/ui] ui/src/i18n/.i18n/pt-BR.meta.json
-- [high/ui] ui/src/i18n/.i18n/pt-BR.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/raw-copy-baseline.json
-- [high/ui] ui/src/i18n/.i18n/ru.meta.json
-- [high/ui] ui/src/i18n/.i18n/ru.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/th.meta.json
-- [high/ui] ui/src/i18n/.i18n/th.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/tr.meta.json
-- [high/ui] ui/src/i18n/.i18n/tr.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/uk.meta.json
-- [high/ui] ui/src/i18n/.i18n/uk.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/vi.meta.json
-- [high/ui] ui/src/i18n/.i18n/vi.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/zh-CN.meta.json
-- [high/ui] ui/src/i18n/.i18n/zh-CN.tm.jsonl
-- [high/ui] ui/src/i18n/.i18n/zh-TW.meta.json
-- [high/ui] ui/src/i18n/.i18n/zh-TW.tm.jsonl
-- [high/ui] ui/src/i18n/locales/ar.ts
-- [high/ui] ui/src/i18n/locales/de.ts
-- [high/ui] ui/src/i18n/locales/en.ts
-- [high/ui] ui/src/i18n/locales/es.ts
-- [high/ui] ui/src/i18n/locales/fa.ts
-- [high/ui] ui/src/i18n/locales/fr.ts
-- [high/ui] ui/src/i18n/locales/hi.ts
-- [high/ui] ui/src/i18n/locales/id.ts
-- [high/ui] ui/src/i18n/locales/it.ts
-- [high/ui] ui/src/i18n/locales/ja-JP.ts
-- [high/ui] ui/src/i18n/locales/ko.ts
-- [high/ui] ui/src/i18n/locales/nl.ts
-- [high/ui] ui/src/i18n/locales/pl.ts
-- [high/ui] ui/src/i18n/locales/pt-BR.ts
-- [high/ui] ui/src/i18n/locales/ru.ts
-- [high/ui] ui/src/i18n/locales/th.ts
-- [high/ui] ui/src/i18n/locales/tr.ts
-- [high/ui] ui/src/i18n/locales/uk.ts
-- [high/ui] ui/src/i18n/locales/vi.ts
-- [high/ui] ui/src/i18n/locales/zh-CN.ts
-- [high/ui] ui/src/i18n/locales/zh-TW.ts
-- [low/ui] ui/src/lib/avatar-lightbox.test.ts
-- [high/ui] ui/src/lib/avatar-lightbox.ts
-- [high/ui] ui/src/lib/avatar/agent-avatar.ts
-- [low/ui] ui/src/lib/avatar/invader.test.ts
-- [high/ui] ui/src/lib/avatar/invader.ts
-- [high/ui] ui/src/lib/channels-modal.ts
-- [high/ui] ui/src/lib/gateway-token.ts
-- [low/ui] ui/src/lib/path-arg.test.ts
-- [high/ui] ui/src/lib/path-arg.ts
-- [low/ui] ui/src/lib/presenter.test.ts
-- [low/ui] ui/src/lib/session-key.test.ts
-- [low/ui] ui/src/lib/stale-chunk-reload.test.ts
-- [high/ui] ui/src/lib/stale-chunk-reload.ts
-- [high/ui] ui/src/main.ts
-- [low/ui] ui/src/pages/channels/config-quick.personal-agents.test.ts
-- [low/ui] ui/src/pages/channels/conversations.test.ts
-- [high/ui] ui/src/pages/channels/conversations.ts
-- [high/ui] ui/src/pages/channels/dreaming-layers.ts
-- [low/ui] ui/src/pages/channels/pixel-office.test.ts
-- [high/ui] ui/src/pages/channels/pixel-office.ts
-- [low/ui] ui/src/pages/channels/project-label.test.ts
-- [high/ui] ui/src/pages/channels/project-label.ts
-- [high/ui] ui/src/pages/channels/rsil.ts
-- [high/ui] ui/src/pages/channels/skill-forge.ts
-- [high/ui] ui/src/pages/channels/vault-view.ts
-- [high/ui] ui/src/pages/chat/activity.ts
-- [high/ui] ui/src/pages/chat/agent-avatars.ts
-- [high/ui] ui/src/pages/chat/chat-tab-bar.ts
-- [high/ui] ui/src/pages/chat/rsil.ts
-- [low/ui] ui/src/pages/chat/session-controls.sidebar-model.test.ts
-- [low/ui] ui/src/pages/chat/session-runtime.test.ts
-- [high/ui] ui/src/pages/chat/session-runtime.ts
-- [high/ui] ui/src/pages/chat/skill-forge.ts
-- [high/ui] ui/src/ui/app-last-active-session.ts
-- [low/ui] ui/src/ui/app-lifecycle.node.test.ts
-- [high/ui] ui/src/ui/app-lifecycle.ts
-- [high/ui] ui/src/ui/app-polling.ts
-- [low/ui] ui/src/ui/app-settings.refresh-active-tab.node.test.ts
-- [low/ui] ui/src/ui/chat-event-reload.test.ts
-- [high/ui] ui/src/ui/chat/run-controls.ts
-- [low/ui] ui/src/ui/chat/tool-expansion-state.test.ts
-- [high/ui] ui/src/ui/chat/tool-expansion-state.ts
-- [high/ui] ui/src/ui/control-ui-performance.ts
-- [high/ui] ui/src/ui/controllers/devices.ts
-- [high/ui] ui/src/ui/lazy-view.ts
-- [high/ui] ui/src/ui/views/overview.ts
+## FLAG (RESOLVED — false alarm)
+- Checked whether `merge=ours` dropped upstream's delegation-guidance/harness-visible-reply. Sources all present in merged tree (`src/agents/delegation-guidance.ts`, `src/auto-reply/source-reply-delivery-mode.ts`, `src/agents/system-prompt-config.ts`); barrel re-exports; `extensions/copilot` consumer intact. No graft needed.
+
+## Native app protocol mirrors (reconciler agent + lead correction)
+
+- `apps/android/.../GatewayProtocol.kt` — ADOPT-UPSTREAM (`.subscribe` + `sessionPreview`); fork's plain entry mirrored an unregistered method.
+- `apps/ios/Tests/SwiftUIRenderSmokeTests.swift` — UNION tests; agent restored fork helper defs (`rootTabsGatewayStateModels` etc.) dropped by a lossy auto-merge.
+- `apps/.../GatewayModels.swift` — mostly union of real fragments (fork approvals + upstream portals). **LEAD CORRECTION:** agent made `AgentsDeleteResult` follow upstream (`removed`/`failed`/`purgeFailed`); provenance shows the FORK deliberately trimmed those (BASE had them, FORK removed them) → corrected the Swift struct to the fork's 3-field shape (`ok`/`agentId`/`removedBindings`) matching the merged TS. Lesson: reconciler ADOPT verdicts on fork-divergent surfaces need lead provenance check.
+
+## Progress: 47/75 resolved. Remaining: src/agents (12), src/gateway (9), misc (9), pnpm-lock. 3 agents in flight.
+
+## Misc singles (reconciler agent + lead verification)
+
+- `src/sessions/user-turn-transcript.ts` — ENHANCE (fork file-target persistence + grafted upstream `confirmPersistedSteerTargetRunId`).
+- `src/auto-reply/reply/commands-steer.runtime.ts` (UD) — KEEP-FORK (fast-steer.ts uses its exports).
+- `src/cron/isolated-agent/run-prepare.ts` — ENHANCE (both fork+upstream imports used).
+- `src/plugin-sdk/test-helpers/plugin-runtime-mock.ts` — KEEP-FORK (`resolveSessionFilePath`).
+- `src/plugins/bundled-plugin-metadata.test.ts` — ENHANCE (kept `harness-guardrails`; dropped `linux-canvas`, upstream renamed→`canvas`).
+- `extensions/memory-l3/index.test.ts` (AA) — KEEP-OURS (fork engine).
+- `docs/docs.json` — nav union (added `custodian-skills`; omitted nonexistent `skill-workshop`).
+- `scripts/check-protocol-registry.mts` — ADOPT-UPSTREAM; **removed orphaned `packages/gateway-protocol/src/schema-export-registry.ts`** (zero importers; upstream `public-schema.ts` wired at index.ts:44).
+- `src/cli/skills-cli.ts` — **ADOPT-UPSTREAM (soft deviation, flagged).** Restores workshop/curator CLI to satisfy auto-merged upstream sibling tests. Coherent since fork keeps skill-workshop tooling (6 prod files); NOT a fork-feature conflict. User may veto → full keep-fork-trim (revert + rm curator/workshop-cache tests).
+
+## Progress: 53/75 resolved. Remaining: src/agents (12), src/gateway (9), pnpm-lock. 2 agents in flight.
+
+## Gateway (reconciler agent + lead cross-file fix)
+
+- `server-model-catalog.ts` / `.test.ts` — ENHANCE (upstream owner-snapshot refactor + fork `allowGatewaySubagentBinding` graft).
+- `server-runtime-services.ts` — ENHANCE (fork return shape + upstream `resolveGatewayContext` param).
+- `server-startup-post-attach.test.ts` — ADOPT-UPSTREAM (dropped fork Gmail-watcher test; upstream consolidated into server-close.test.ts; no fork assertions lost).
+- `chat-send-agent-dispatch.ts` — ENHANCE (both `onAssistantMessagePersisted` fork + `skillWorkshopProposalRevision` upstream).
+- `chat-send-dispatch-errors.ts` — ENHANCE (upstream finalize/cleanup structure + fork session-awareness release).
+- `doctor.ts` — ENHANCE (upstream `createDoctorHandlers` factory + fork `doctor.memory.l3Layers`; dropped dead `doctor.memory-core-runtime.js` import).
+- `authenticated-request-dispatch.ts` — ENHANCE (fork `noteStaleDistCandidateError` + upstream `classifyGatewayStaleInstall`).
+- `server-methods-list.test.ts` — UNION (no-drop, counts verified). **⚠ POST-BUILD TODO: regenerate this golden file from live `listGatewayMethods()`/`listCoreGatewayMethodNames()` — line-merge can't guarantee true registration order.**
+- **LEAD cross-file fix:** `server-methods.ts:158` `module.doctorHandlers` → `module.createDoctorHandlers()` (auto-merged file referenced the renamed export; factory has default runtime param).
+
+## Progress: 62/75 resolved. Remaining: src/agents (12), pnpm-lock. 1 agent in flight.
+
+## src/agents (reconciler agent + lead verification)
+
+- `agent-bundle-mcp-materialize.ts` — ENHANCE (preserved fork untrusted-MCP fencing over upstream's `projectMcpCallToolResult` extraction).
+- `agent-bundle-mcp-tools.materialize.test.ts` — ENHANCE (fenced assertions; agent also adapted 4 auto-merged upstream tests to the fencing invariant).
+- `agent-scope-config.ts` — ENHANCE (fork legacy-compat resolver + grafted upstream's 4 new agent-id resolvers).
+- `btw.ts` — ADOPT converged (removed stale duplicate).
+- `command/post-run.ts` — KEEP-OURS + restored dropped `embeddedAssistantGapFill` decl (lossy auto-merge repair).
+- `embedded-agent-runner/run/llm-idle-timeout.ts` — ENHANCE (kept upstream `abortable`, dropped dup import).
+- `provider-request-config.ts` — ENHANCE (fork `maxConcurrentRequests` + upstream `trustConfiguredBaseUrlOrigin`; dropped fork's `privateNetworkExplicitlyDenied`, zero consumers).
+- `provider-transport-fetch.ts` — ENHANCE (fork `releaseSlot` + upstream `throw remediatedError`).
+- `session-transcript-repair.ts` — KEEP BOTH (distinct fork fast-path + upstream `sanitizeToolUseResultPairingForModel`).
+- `sessions/settings-manager.ts` — ADOPT-UPSTREAM type extraction + **cross-file graft: added fork's `preemptOnSteer?` to new `settings-storage.ts`** (verified line 86).
+- `tools/web-fetch.ts` — ENHANCE (kept fork egress allowlist + SSRF-default merge; dropped 3 derived booleans upstream replaced with whole-object hash).
+- `tools/sessions-list-tool.test.ts` — ADOPT-UPSTREAM (mainSessionKey mock + upstream ownership tests).
+
+## SECURITY verified
+- **MCP fencing**: fork fences untrusted MCP content ONLY in materialize.ts (fork never fenced node-plugin-tools.ts / mcp-content.ts). Agent preserved materialize.ts fencing; node-plugin-tools.ts unchanged = matches fork. No regression.
+- **web-fetch SSRF/egress**: fork allowlist + SSRF-default merge preserved.
+
+## ALL 62 code conflicts resolved (repo-wide marker scan clean). pnpm-lock regenerating. Next: commit → tsgo ladder → regenerate golden method-list → remote-Linux build+behavior+autoreview.
+
+## Progress: 41/75 resolved. Remaining: src/agents (12), src/gateway (9), native-apps (3), misc (9), pnpm-lock (regenerate) — reconciler agents in flight.
+
+## Foundation resolutions
+
+| File | Verdict | Note |
+|------|---------|------|
+| `packages/gateway-protocol/src/schema-modules.ts` | UNION (both additive) | kept fork `sessions-catalog` + upstream `session-github-publication`; both modules exist |
+| `pnpm-workspace.yaml` | KEEP-OURS | `node-llama-cpp: false` — deliberate fork x64/Rosetta deploy fix |
+| `packages/normalization-core/package.json` | ENHANCE-OURS | union build entry points: keep `format.ts`, graft upstream `markdown-plain-text.ts` |
+
+## Derived (regenerate, do not hand-merge)
+
+- `pnpm-lock.yaml` — regenerate via `pnpm install` after package.json/workspace settle.

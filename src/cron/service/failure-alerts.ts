@@ -11,8 +11,14 @@ import { normalizeAnyChannelId } from "../../channels/registry-normalize.js";
 import { resolveTargetPrefixedChannel } from "../../infra/outbound/channel-target-prefix.js";
 import { normalizeTargetForProvider } from "../../infra/outbound/target-normalization.js";
 import { cronFailureDetailLines } from "../failure-notification-text.js";
-import type { CronFailureNotificationDelivery, CronJob, CronMessageChannel } from "../types.js";
+import type {
+  CronFailureNotificationDelivery,
+  CronFailureNotificationDetail,
+  CronJob,
+  CronMessageChannel,
+} from "../types.js";
 import type { CronServiceState, DeferredCronNotifications } from "./state.js";
+import { enqueueCronSystemEvent, requestCronHeartbeat } from "./wake.js";
 
 const DEFAULT_FAILURE_ALERT_AFTER = 2;
 const DEFAULT_FAILURE_ALERT_COOLDOWN_MS = 60 * 60_000; // 1 hour
@@ -160,6 +166,7 @@ function emitFailureAlert(
     job: CronJob;
     error?: string;
     errorReason?: FailoverReason;
+    failureNotificationDetail?: CronFailureNotificationDetail;
     runAtMs?: number;
     consecutiveErrors: number;
     channel: CronMessageChannel;
@@ -182,7 +189,7 @@ function emitFailureAlert(
           ...(errorReason ? [`Cause: ${errorReason}`] : []),
           `${detailLabel}: ${truncateUtf16Safe(params.error?.trim() || "unknown reason", 200)}`,
         ]
-      : cronFailureDetailLines(errorReason);
+      : cronFailureDetailLines(errorReason, params.failureNotificationDetail);
   const text = [
     `Automation "${safeJobName}" ${statusVerb} ${params.consecutiveErrors} times`,
     ...detailLines,
@@ -232,12 +239,16 @@ function emitFailureAlert(
     return;
   }
 
-  state.deps.enqueueSystemEvent(payload.text ?? "", { agentId: params.job.agentId });
+  enqueueCronSystemEvent(state, payload.text ?? "", {
+    agentId: params.job.agentId,
+    sessionKey: params.job.sessionKey,
+  });
   if (params.job.wakeMode === "now") {
-    state.deps.requestHeartbeat({
-      source: "cron",
+    requestCronHeartbeat(state, {
       intent: "immediate",
       reason: `cron:${params.job.id}:failure-alert`,
+      agentId: params.job.agentId,
+      sessionKey: params.job.sessionKey,
     });
   }
 }
@@ -251,6 +262,7 @@ export function maybeEmitFailureAlert(
     status: "error" | "skipped";
     error?: string;
     errorReason?: FailoverReason;
+    failureNotificationDetail?: CronFailureNotificationDetail;
     runAtMs?: number;
     consecutiveCount: number;
     delivery?: "emit" | "record-only";
@@ -296,6 +308,7 @@ export function maybeEmitFailureAlert(
       job,
       error: params.error,
       errorReason: params.errorReason,
+      failureNotificationDetail: params.failureNotificationDetail,
       runAtMs: params.runAtMs,
       consecutiveErrors: params.consecutiveCount,
       channel: alertConfig.channel,

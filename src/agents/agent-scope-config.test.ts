@@ -9,10 +9,15 @@ import {
   listAgentIds,
   resolveAgentConfig,
   resolveAgentWorkspaceDir,
+  resolveAmbientOwnerAgentId,
+  resolveDefaultAgentDir,
   resolveDefaultAgentId,
   resolveSoleAgentId,
+  resolveSystemAgentTargetAgentId,
+  tryResolveAmbientOwnerAgentId,
   tryResolveDefaultAgentId,
   tryResolveSoleAgentId,
+  tryResolveSystemAgentTargetAgentId,
 } from "./agent-scope-config.js";
 
 vi.unmock("./agent-scope-config.js");
@@ -53,6 +58,70 @@ describe("agent roster resolution", () => {
     };
     expect(() => resolveDefaultAgentId(duplicateDefaults)).toThrow(AgentSelectionRequiredError);
     expect(tryResolveDefaultAgentId(duplicateDefaults)).toBeUndefined();
+  });
+
+  it("keeps the generic selection hint free of surface-specific assumptions", () => {
+    expect(() => resolveDefaultAgentId({ agents: { entries: { alpha: {}, beta: {} } } })).toThrow(
+      "Multiple agents are configured, but this operation has no explicit owner. Select an agent explicitly; CLI callers can pass --agent <id>, channels can add a binding, and ambient services can set their agentId target.",
+    );
+  });
+
+  it("requires an explicit system owner when a roster has multiple agents", () => {
+    expect(
+      resolveSystemAgentTargetAgentId({
+        agents: {
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { main: { default: true }, ops: {} },
+        },
+      }),
+    ).toBe("ops");
+    expect(resolveSystemAgentTargetAgentId({ agents: { entries: { ops: {} } } })).toBe("ops");
+    expect(
+      tryResolveSystemAgentTargetAgentId({
+        agents: {
+          defaults: { systemAgent: { agentId: "ops" } },
+          entries: { main: {}, ops: {} },
+        },
+      }),
+    ).toBe("ops");
+    expect(tryResolveSystemAgentTargetAgentId({ agents: { entries: { ops: {} } } })).toBe("ops");
+    expect(
+      tryResolveSystemAgentTargetAgentId({ agents: { entries: { main: {}, ops: {} } } }),
+    ).toBeUndefined();
+    expect(() =>
+      resolveSystemAgentTargetAgentId({
+        agents: { entries: { main: { default: true }, ops: {} } },
+      }),
+    ).toThrow("Set agents.defaults.systemAgent.agentId");
+  });
+
+  it("resolves ambient owners through the system-agent chain", () => {
+    const systemOwnedFleet = {
+      agents: {
+        ownership: "explicit" as const,
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: { agentDir: "/tmp/openclaw-ops-agent" }, research: {} },
+      },
+    } satisfies OpenClawConfig;
+
+    expect(tryResolveAmbientOwnerAgentId(systemOwnedFleet)).toBe("ops");
+    expect(resolveAmbientOwnerAgentId(systemOwnedFleet)).toBe("ops");
+    // Ambient dir resolution is the shared producer behind auth, model, and
+    // doctor surfaces; before the system-agent leg it threw for these rosters.
+    expect(resolveDefaultAgentDir(systemOwnedFleet)).toBe("/tmp/openclaw-ops-agent");
+
+    const ownerlessFleet = {
+      agents: { ownership: "explicit" as const, entries: { ops: {}, research: {} } },
+    } satisfies OpenClawConfig;
+
+    expect(tryResolveAmbientOwnerAgentId(ownerlessFleet)).toBeUndefined();
+    expect(() => resolveAmbientOwnerAgentId(ownerlessFleet)).toThrow(AgentSelectionRequiredError);
+    expect(() =>
+      resolveAmbientOwnerAgentId(ownerlessFleet, {
+        surface: "Talk relay ownership",
+        hint: "Set talk.agentId.",
+      }),
+    ).toThrow("Talk relay ownership");
   });
 
   it("resolves defaults only for the rosterless implicit main agent", () => {
@@ -120,6 +189,17 @@ describe("agent roster resolution", () => {
 
     expect(resolveAgentWorkspaceDir(cfg, "ops")).toBe("/srv/ops");
     expect(resolveAgentWorkspaceDir(cfg, "research")).toBe("/srv/ops/research");
+  });
+
+  it("keeps the implicit default workspace inside an overridden state directory", () => {
+    const stateDir = "/srv/openclaw-scratch";
+
+    expect(
+      resolveAgentWorkspaceDir({}, "main", {
+        HOME: "/home/operator",
+        OPENCLAW_STATE_DIR: stateDir,
+      }),
+    ).toBe(`${stateDir}/workspace`);
   });
 
   it("offers a non-throwing diagnostic lookup for malformed rosters", () => {

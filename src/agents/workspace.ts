@@ -11,11 +11,15 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Minimatch } from "minimatch";
 import { extractFrontmatterBlock } from "../../packages/markdown-core/src/frontmatter.js";
 import type { ChatType } from "../channels/chat-type.js";
-import { openRootFileFollowingParents } from "../infra/boundary-file-read.js";
+import {
+  isRootFileMissingFailure,
+  openRootFileFollowingParents,
+} from "../infra/boundary-file-read.js";
 import { sameFileIdentity, type FileIdentityStat } from "../infra/fs-safe-advanced.js";
 import { FsSafeError, pathExists, root as fsSafeRoot } from "../infra/fs-safe.js";
 import { isPathInside } from "../infra/path-guards.js";
 import { retryAsync } from "../infra/retry.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   CANONICAL_ROOT_MEMORY_FILENAME,
   exactWorkspaceEntryExists,
@@ -100,6 +104,7 @@ const WORKSPACE_ONBOARDING_PROFILE_FILENAMES = [
 const TRANSIENT_WORKSPACE_READ_CODES = new Set(["EAGAIN", "EWOULDBLOCK", "EINTR"]);
 const TRANSIENT_WORKSPACE_READ_ERRNOS = new Set([-11, -4]);
 const TRANSIENT_WORKSPACE_READ_MESSAGE = /Unknown system error -(?:11|4)\b/i;
+const workspaceLogger = createSubsystemLogger("workspace");
 
 const workspaceTemplateCache = new Map<string, Promise<string>>();
 // Git availability is process-stable; cache the probe result, including failure, until restart.
@@ -172,7 +177,6 @@ async function readWorkspaceFileWithGuards(params: {
           absolutePath: params.filePath,
           rootPath: params.workspaceDir,
           boundaryLabel: "workspace root",
-          maxBytes: MAX_WORKSPACE_BOOTSTRAP_FILE_BYTES,
         });
         if (!opened.ok) {
           // Boundary resolution can report transient IO as "validation", while
@@ -214,7 +218,7 @@ async function readWorkspaceFileWithGuards(params: {
   } catch (error) {
     // Non-transient read failure, or transient retries exhausted.
     workspaceFileCache.delete(params.filePath);
-    return { ok: false, reason: "io", error };
+    return { ok: false, reason: error instanceof RangeError ? "validation" : "io", error };
   }
 }
 
@@ -676,7 +680,7 @@ async function workspaceSetupStateHasSurvivalEvidence(params: {
   if (await pathExists(params.bootstrapPath)) {
     return true;
   }
-  if (await hasWorkspaceUserContentEvidence(params.dir)) {
+  if (await workspaceProfileLooksConfigured({ dir: params.dir })) {
     return true;
   }
   const currentState = readCanonicalWorkspaceStateSnapshot(params.dir);
@@ -706,8 +710,11 @@ function readCanonicalWorkspaceStateSnapshot(
   return snapshot;
 }
 
-export async function isWorkspaceSetupCompleted(dir: string): Promise<boolean> {
-  const state = readCanonicalWorkspaceStateSnapshot(dir).setup;
+export async function isWorkspaceSetupCompleted(
+  dir: string,
+  options: OpenClawStateDatabaseOptions = {},
+): Promise<boolean> {
+  const state = readCanonicalWorkspaceStateSnapshot(dir, options).setup;
   return typeof state.setupCompletedAt === "string" && state.setupCompletedAt.trim().length > 0;
 }
 
@@ -1245,8 +1252,24 @@ export async function loadWorkspaceBootstrapFiles(
       };
       setWorkspaceFileSourceIdentity(file, loaded.sourceIdentity);
       result.push(file);
-    } else {
+    } else if (isRootFileMissingFailure(loaded)) {
       result.push({ name: entry.name, path: entry.filePath, missing: true });
+    } else {
+      const fallbackReason = `workspace file could not be read (${loaded.reason})`;
+      const rawReason = loaded.error instanceof Error ? loaded.error.message : fallbackReason;
+      const reason = (rawReason.replaceAll(/\s+/gu, " ").trim() || fallbackReason).slice(0, 300);
+      workspaceLogger.warn("Workspace bootstrap file is unreadable.", {
+        fileName: entry.name,
+        filePath: entry.filePath,
+        reason,
+        consoleMessage: `Workspace bootstrap file is unreadable: file=${entry.filePath} reason=${reason}`,
+      });
+      result.push({
+        name: entry.name,
+        path: entry.filePath,
+        content: `[UNREADABLE: ${reason}]`,
+        missing: false,
+      });
     }
   }
   return result;

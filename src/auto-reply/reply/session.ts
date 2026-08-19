@@ -34,7 +34,11 @@ import {
   loadReplySessionInitializationSnapshot,
 } from "../../config/sessions/session-accessor.js";
 import { sessionEntryForkedFromParent } from "../../config/sessions/session-entry-lineage.js";
-import { buildSessionCreationStamp } from "../../config/sessions/session-entry-provenance.js";
+import {
+  buildSessionCreationStamp,
+  resolveProfileParticipantIdFromSessionCreation,
+  type SessionCreatedActor,
+} from "../../config/sessions/session-entry-provenance.js";
 import { resolveSessionKey } from "../../config/sessions/session-key.js";
 import { resolveSessionStorePathForScope } from "../../config/sessions/session-store-path.js";
 import { resolveMaintenanceConfigFromInput } from "../../config/sessions/store-maintenance.js";
@@ -81,8 +85,9 @@ import {
   interruptSessionWorkAdmissions,
   runExclusiveSessionLifecycleMutation,
 } from "../../sessions/session-lifecycle-admission.js";
-import { recordSessionCreated } from "../../sessions/session-state-events.js";
+import { recordSessionParticipantBestEffort } from "../../sessions/session-participant-recording.js";
 import {
+  recordSessionCreated,
   classifySessionStateActor,
   registerMainSessionGroupWatch,
 } from "../../sessions/session-state-events.js";
@@ -973,6 +978,7 @@ async function initSessionStateAttemptLocked(
     sessionEntry.cacheRead = undefined;
     sessionEntry.cacheWrite = undefined;
     sessionEntry.contextTokens = undefined;
+    sessionEntry.contextTokensSource = undefined;
     sessionEntry.contextBudgetStatus = undefined;
     sessionEntry.goal = undefined;
     // Skills snapshots are prompt/runtime caches. Do not preserve a stale
@@ -1048,6 +1054,35 @@ async function initSessionStateAttemptLocked(
   }
   sessionEntry = committed.sessionEntry;
   sessionId = sessionEntry.sessionId;
+  if (!isSystemEvent && !isInterSession) {
+    const creation = ctx.SessionCreation;
+    const creationActor = creation?.actor;
+    const profileParticipantId = resolveProfileParticipantIdFromSessionCreation(creation);
+    const senderId = normalizeOptionalString(ctx.SenderId);
+    const participant:
+      | { actor: SessionCreatedActor & { id: string }; source: "profile" | "channel" | "agent" }
+      | undefined = profileParticipantId
+      ? { actor: { type: "human", id: profileParticipantId }, source: "profile" }
+      : creationActor?.type === "agent" && creationActor.id
+        ? {
+            actor: { ...creationActor, id: creationActor.id },
+            source: "agent",
+          }
+        : senderId
+          ? { actor: { type: "human", id: senderId }, source: "channel" }
+          : undefined;
+    if (participant) {
+      recordSessionParticipantBestEffort({
+        actor: participant.actor,
+        agentId,
+        sessionKey,
+        source: participant.source,
+        storePath,
+        promptedAt: now,
+        onError: (error) => log.warn("failed to record session participant", { error }),
+      });
+    }
+  }
   clearBootstrapSnapshotOnSessionBoundary({
     boundaryAppended: resetBoundaryAppended,
     sessionKey,
@@ -1063,7 +1098,7 @@ async function initSessionStateAttemptLocked(
       sessionKey,
       agentId,
       entry: sessionEntry,
-      dmScope: ctx.DmScope ?? sessionCfg?.dmScope ?? "main",
+      mainKey,
     });
   }
   const sessionStore = committed.sessionStoreView;
@@ -1150,7 +1185,7 @@ async function initSessionStateAttemptLocked(
         const payload = buildSessionEndHookPayload({
           sessionId: previousSessionEntry.sessionId,
           sessionKey,
-          cfg,
+          agentId,
           reason: previousSessionEndReason,
           sessionFile: previousSessionTranscript.sessionFile,
           transcriptArchived: previousSessionTranscript.transcriptArchived,
@@ -1180,7 +1215,7 @@ async function initSessionStateAttemptLocked(
       const payload = buildSessionStartHookPayload({
         sessionId: effectiveSessionId,
         sessionKey,
-        cfg,
+        agentId,
         resumedFrom: previousSessionEntry?.sessionId,
       });
       void runWithGatewayIndependentRootWorkContinuation(async () => {

@@ -23,6 +23,7 @@ import { startGatewayModelCatalogRefresh } from "./model-catalog-refresh.js";
 import type { GatewayCronReconciliation } from "./server-cron-reconciled.js";
 import type { GatewayCronState } from "./server-cron.js";
 import type { startGatewayMaintenanceTimers } from "./server-maintenance.js";
+import type { GatewayContextResolver } from "./server-methods/types.js";
 import {
   createNoopHeartbeatRunner,
   type GatewayRuntimeServiceLogger,
@@ -205,7 +206,7 @@ function startPendingOutboundDeliveryRecovery(params: {
         return;
       }
       const { drainPendingDeliveriesCore, recoverPendingDeliveries } =
-        await import("../infra/outbound/delivery-queue.js");
+        await import("../infra/outbound/delivery-queue-recovery.js");
       const { deliverOutboundPayloadsInternal } = await import("../infra/outbound/deliver.js");
       if (stopped) {
         return;
@@ -273,6 +274,7 @@ function startPendingSessionDeliveryRuntime(params: {
   deps: import("../cli/deps.types.js").CliDeps;
   log: GatewayRuntimeServiceLogger;
   maxEnqueuedAt: number;
+  resolveGatewayContext?: GatewayContextResolver;
 }): () => void {
   let stopped = false;
   let stopRuntime: (() => void) | undefined;
@@ -295,6 +297,9 @@ function startPendingSessionDeliveryRuntime(params: {
             deps: params.deps,
             entry,
             ...(context.stateDir !== undefined ? { stateDir: context.stateDir } : {}),
+            ...(params.resolveGatewayContext
+              ? { resolveGatewayContext: params.resolveGatewayContext }
+              : {}),
           }),
         log: logRecovery,
         onSettled: settleQueuedSessionDelivery,
@@ -304,6 +309,9 @@ function startPendingSessionDeliveryRuntime(params: {
           deps: params.deps,
           log: logRecovery,
           maxEnqueuedAt: params.maxEnqueuedAt,
+          ...(params.resolveGatewayContext
+            ? { resolveGatewayContext: params.resolveGatewayContext }
+            : {}),
         });
       } finally {
         // Recovery and scheduling are independent safeguards. A transient
@@ -334,6 +342,7 @@ export function activateGatewayScheduledServices(params: {
   startCron?: boolean;
   logCron: { error: (message: string) => void };
   log: GatewayRuntimeServiceLogger;
+  resolveGatewayContext?: GatewayContextResolver;
 }): {
   heartbeatRunner: HeartbeatRunner;
   stopModelCatalogRefresh: () => void;
@@ -369,6 +378,9 @@ export function activateGatewayScheduledServices(params: {
     deps: params.deps,
     log: params.log,
     maxEnqueuedAt: params.sessionDeliveryRecoveryMaxEnqueuedAt,
+    ...(params.resolveGatewayContext
+      ? { resolveGatewayContext: params.resolveGatewayContext }
+      : {}),
   });
   if (params.startCron !== false) {
     startGatewayCronWithLogging({

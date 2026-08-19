@@ -9,6 +9,8 @@ import { IntegrationProtocolSchemas } from "./protocol-schema-fragment-integrati
 import { NodeProtocolSchemas } from "./protocol-schema-fragment-nodes.js";
 import { OperationsProtocolSchemas } from "./protocol-schema-fragment-operations.js";
 import { PluginLifecycleProtocolSchemas } from "./protocol-schema-fragment-plugins-lifecycle.js";
+import { PortalProtocolSchemas } from "./protocol-schema-fragment-portals.js";
+import { ProgressCardProtocolSchemas } from "./protocol-schema-fragment-progress-card.js";
 import { SchedulerProtocolSchemas } from "./protocol-schema-fragment-scheduler.js";
 import { SessionCollaborationProtocolSchemas } from "./protocol-schema-fragment-sessions-collaboration.js";
 import { SessionCoreProtocolSchemas } from "./protocol-schema-fragment-sessions-core.js";
@@ -18,6 +20,7 @@ import { TransportProtocolSchemas } from "./protocol-schema-fragment-transport.j
 /** Public schema registry keyed by stable protocol schema name. */
 export const ProtocolSchemas = composeProtocolSchemaFragments([
   BoardProtocolSchemas,
+  ProgressCardProtocolSchemas,
   TransportProtocolSchemas,
   AgentControlProtocolSchemas,
   NodeProtocolSchemas,
@@ -32,6 +35,7 @@ export const ProtocolSchemas = composeProtocolSchemaFragments([
   ApprovalProtocolSchemas,
   PluginLifecycleProtocolSchemas,
   ForkProtocolSchemas,
+  PortalProtocolSchemas,
 ] as const);
 
 export {

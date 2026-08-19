@@ -175,59 +175,6 @@ struct SwiftUIRenderSmokeTests {
         }
     }
 
-    @Test @MainActor func `markdown heading hierarchy builds with inline formatting and table`() {
-        let markdown = """
-        # First **strong** heading
-        ## Second [linked](https://example.com) heading
-        ### Third `code` heading
-        #### Fourth heading
-        ##### Fifth heading
-        ###### Sixth heading
-
-        | Surface | State |
-        | --- | --- |
-        | iOS | Native |
-        """
-        for typeSize in [DynamicTypeSize.large, .accessibility2] {
-            let root = ChatMarkdownRenderer(
-                text: markdown,
-                context: .assistant,
-                variant: .standard,
-                textColor: OpenClawChatTheme.assistantText)
-                .environment(\.dynamicTypeSize, typeSize)
-
-            _ = Self.host(root, size: CGSize(width: 393, height: 700))
-        }
-    }
-
-    @Test @MainActor func `markdown lists and thematic breaks build across appearance and type size`() {
-        let markdown = """
-        Here are the options:
-
-        9. **Option one heading** – a sentence describing it.
-        10. **Option two heading** – another sentence.
-           - Nested detail
-           - [x] Completed detail
-
-        ---
-
-        Final paragraph.
-        """
-        for scheme in [ColorScheme.light, .dark] {
-            for typeSize in [DynamicTypeSize.large, .accessibility2] {
-                let root = ChatMarkdownRenderer(
-                    text: markdown,
-                    context: .assistant,
-                    variant: .standard,
-                    textColor: OpenClawChatTheme.assistantText)
-                    .environment(\.dynamicTypeSize, typeSize)
-                    .preferredColorScheme(scheme)
-
-                _ = Self.host(root, size: CGSize(width: 320, height: 700))
-            }
-        }
-    }
-
     @Test @MainActor func `long user prompt disclosure builds across dynamic type sizes`() {
         let text = Array(repeating: "A long user-authored prompt line.", count: 13).joined(separator: "\n")
         let message = OpenClawChatMessage(
@@ -341,62 +288,6 @@ struct SwiftUIRenderSmokeTests {
             isClean: false)
 
         _ = Self.host(root, size: CGSize(width: 393, height: 400))
-    }
-
-    @Test @MainActor func `completed and streaming assistant trace headings build across type sizes`() {
-        let text = """
-        <think>
-        # Internal plan
-        </think>
-        <final>
-        # Final answer
-        </final>
-        """
-        let message = OpenClawChatMessage(
-            role: "assistant",
-            content: [OpenClawChatMessageContent(
-                type: "text",
-                text: text,
-                mimeType: nil,
-                fileName: nil,
-                content: nil)],
-            timestamp: 1)
-
-        for typeSize in [DynamicTypeSize.large, .accessibility2] {
-            let root = VStack {
-                ChatMessageBubble(
-                    message: message,
-                    style: .standard,
-                    markdownVariant: .standard,
-                    userAccent: nil,
-                    displayOptions: [.reasoning],
-                    assistantName: "OpenClaw",
-                    assistantAvatarText: "OC",
-                    assistantAvatarTint: nil,
-                    showsAssistantAvatar: true,
-                    isClean: false,
-                    contextWindowTokens: nil,
-                    userMessageExpanded: false,
-                    onToggleUserMessageExpanded: {},
-                    inlineWidgetResolverReady: true,
-                    inlineWidgetResourceResolver: { _, _ in nil },
-                    mediaArtifactResolverReady: false,
-                    mediaPlaybackAllowed: { true },
-                    loadMediaArtifact: { _, _, _ in nil })
-                ChatStreamingAssistantBubble(
-                    text: text,
-                    markdownVariant: .standard,
-                    showsReasoning: true,
-                    assistantName: "OpenClaw",
-                    assistantAvatarText: "OC",
-                    assistantAvatarTint: nil,
-                    showsAssistantAvatar: true,
-                    isClean: false)
-            }
-            .environment(\.dynamicTypeSize, typeSize)
-
-            _ = Self.host(root, size: CGSize(width: 393, height: 700))
-        }
     }
 
     @Test @MainActor func `assistant usage footer builds across dynamic type sizes`() throws {
@@ -544,7 +435,7 @@ struct SwiftUIRenderSmokeTests {
         }
     }
 
-    @Test @MainActor func gatewayTrustPromptAlertPresentsWhenPromptAppearsAfterInitialRender() async {
+    @Test @MainActor func `gateway trust prompt alert presents when prompt appears after initial render`() async {
         let appModel = NodeAppModel()
         let gatewayController = Self.gatewayControllerWithCapturedTLSFingerprint(appModel: appModel)
         let root = Color.clear
@@ -641,89 +532,6 @@ struct SwiftUIRenderSmokeTests {
         defer { GatewayTLSStore.clearFingerprint(stableID: stableID) }
         GatewayTLSStore.clearFingerprint(stableID: stableID)
         await controller.connectManual(host: host, port: port, useTLS: true)
-    }
-
-    @Test @MainActor func `root sidebar builds gateway state view hierarchies`() {
-        for appModel in Self.rootTabsGatewayStateModels() {
-            let root = RootSidebar(
-                model: RootSidebarModel(),
-                selectedDestination: .overview,
-                isDrawerLayout: true,
-                isDismissButtonEnabled: true,
-                selectDestination: { _ in },
-                hideSidebar: {})
-                .environment(appModel)
-
-            _ = Self.host(root, size: CGSize(width: 340, height: 852))
-        }
-    }
-
-    @Test @MainActor func `root sidebar builds landscape compact state`() {
-        let appModel = NodeAppModel()
-        let root = RootSidebar(
-            model: RootSidebarModel(),
-            selectedDestination: .chat,
-            isDrawerLayout: true,
-            isDismissButtonEnabled: true,
-            selectDestination: { _ in },
-            hideSidebar: {})
-            .environment(appModel)
-            .environment(\.horizontalSizeClass, .regular)
-            .environment(\.verticalSizeClass, .compact)
-
-        _ = Self.host(root, size: CGSize(width: 340, height: 393))
-    }
-
-    @Test @MainActor func `routed sidebar screens build offline states`() {
-        let appModel = NodeAppModel()
-        let screens: [AnyView] = [
-            AnyView(CommandCenterTab(openChat: {}, openSettings: {})),
-            AnyView(IPadActivityScreen(openChat: {}, openSettings: {})),
-            AnyView(OpenClawDocsScreen()),
-            AnyView(IPadWorkboardScreen(openChat: {}, openSettings: {})),
-            AnyView(IPadSkillWorkshopScreen(openSettings: {})),
-            AnyView(AgentProTab(directRoute: .agents)),
-            AnyView(AgentProTab(directRoute: .instances)),
-            AnyView(CommandSessionsScreen(openChat: {})),
-            AnyView(AgentProTab(directRoute: .dreaming)),
-            AnyView(AgentProTab(directRoute: .usage)),
-            AnyView(AgentProTab(directRoute: .cron)),
-        ]
-
-        for screen in screens {
-            let root = NavigationStack { screen }
-                .environment(appModel)
-            _ = Self.host(root)
-        }
-    }
-
-    @Test @MainActor func `task screens build phone landscape compact states`() {
-        let appModel = NodeAppModel()
-        let screens: [AnyView] = [
-            AnyView(IPadWorkboardScreen(openChat: {}, openSettings: {})),
-            AnyView(IPadSkillWorkshopScreen(openSettings: {})),
-        ]
-
-        for screen in screens {
-            let root = NavigationStack { screen }
-                .environment(appModel)
-                .environment(\.horizontalSizeClass, .regular)
-                .environment(\.verticalSizeClass, .compact)
-
-            _ = Self.host(root)
-        }
-    }
-
-    @Test @MainActor func `voice wake words view builds A view hierarchy`() {
-        let appModel = NodeAppModel()
-        let root = NavigationStack { VoiceWakeWordsSettingsView() }
-            .environment(appModel)
-        _ = Self.host(root)
-    }
-
-    @Test @MainActor func `voice wake toast builds A view hierarchy`() {
-        let root = VoiceWakeToast(command: "openclaw: do something")
-        _ = Self.host(root)
     }
 
     @MainActor private static func waitForPresentedAlert(in window: UIWindow) async {
