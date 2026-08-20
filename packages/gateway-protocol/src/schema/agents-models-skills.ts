@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
 import { GatewayAgentRuntimeSchema } from "./session-row.js";
 import { NonEmptyString } from "./primitives.js";
+import { GitHubSetupHandleSchema } from "./secrets.js";
 
 /**
  * Agent, model, skill, and tool catalog schemas.
@@ -292,9 +293,20 @@ export const ModelsAuthLogoutParamsSchema = closedObject({
 });
 
 /** Model catalog result. */
+export const ModelCatalogProviderOutcomeSchema = closedObject({
+  provider: NonEmptyString,
+  profileId: Type.Optional(NonEmptyString),
+  status: Type.Union([
+    Type.Literal("ready"),
+    Type.Literal("auth-rejected"),
+    Type.Literal("unavailable"),
+  ]),
+});
+
 export const ModelsListResultSchema = Type.Object(
   {
     models: Type.Array(ModelChoiceSchema),
+    providerOutcomes: Type.Optional(Type.Array(ModelCatalogProviderOutcomeSchema)),
   },
   { additionalProperties: false },
 );
@@ -906,6 +918,14 @@ export const SkillsProposalRequestRevisionResultSchema = Type.Object(
 );
 
 /** Shared approve/reject/quarantine action payload for one proposal. */
+export const SkillsProposalDecisionParamsSchema = closedObject({
+  agentId: Type.Optional(NonEmptyString),
+  proposalId: NonEmptyString,
+  expectedRevisionHash: Sha256String,
+  correlationId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+  reason: Type.Optional(Type.String()),
+});
+
 export const SkillsProposalActionParamsSchema = closedObject({
   agentId: Type.Optional(NonEmptyString),
   proposalId: NonEmptyString,
@@ -1051,6 +1071,72 @@ export const ToolsCatalogParamsSchema = Type.Object(
 );
 
 /** Reads the effective tool set for one session. */
+export const ToolsGitHubStatusParamsSchema = closedObject({
+  agentId: NonEmptyString,
+});
+
+const GitHubIdentitySourceSchema = Type.Union([
+  Type.Literal("system-detected"),
+  Type.Literal("system-configured"),
+  Type.Literal("agent-override"),
+]);
+
+const GitHubAuthorValueSchema = Type.String({ minLength: 1, pattern: "\\S" });
+const GitHubAuthorSchema = closedObject({
+  name: Type.Optional(GitHubAuthorValueSchema),
+  email: Type.Optional(GitHubAuthorValueSchema),
+});
+
+export const ToolsGitHubStatusResultSchema = closedObject({
+  agentId: NonEmptyString,
+  source: GitHubIdentitySourceSchema,
+  credentialState: Type.Union([
+    Type.Literal("available"),
+    Type.Literal("unavailable"),
+    Type.Literal("configured_unavailable"),
+    Type.Literal("unverified"),
+    Type.Literal("rate_limited"),
+  ]),
+  account: Type.Union([
+    closedObject({
+      login: NonEmptyString,
+      avatarUrl: Type.Union([Type.String(), Type.Null()]),
+    }),
+    Type.Null(),
+  ]),
+  gitAuthor: closedObject({
+    name: Type.Union([Type.String(), Type.Null()]),
+    email: Type.Union([Type.String(), Type.Null()]),
+  }),
+  evidence: Type.Union([
+    Type.Literal("github-api"),
+    Type.Literal("none"),
+    Type.Literal("unverified"),
+    Type.Literal("rate-limited"),
+  ]),
+});
+
+const GitHubIdentityScopeSchema = Type.Union([Type.Literal("system"), Type.Literal("agent")]);
+
+export const ToolsGitHubManagedConfigureParamsSchema = closedObject({
+  scope: GitHubIdentityScopeSchema,
+  agentId: NonEmptyString,
+  mode: Type.Literal("managed"),
+  secretName: GitHubSetupHandleSchema,
+  gitAuthor: Type.Optional(GitHubAuthorSchema),
+});
+
+export const ToolsGitHubInheritConfigureParamsSchema = closedObject({
+  scope: GitHubIdentityScopeSchema,
+  agentId: NonEmptyString,
+  mode: Type.Literal("inherit"),
+});
+
+export const ToolsGitHubConfigureParamsSchema = Type.Union([
+  ToolsGitHubManagedConfigureParamsSchema,
+  ToolsGitHubInheritConfigureParamsSchema,
+]);
+
 export const ToolsEffectiveParamsSchema = Type.Object(
   {
     agentId: Type.Optional(NonEmptyString),
@@ -1320,6 +1406,13 @@ export type SkillsProposalEventsListParams = Static<typeof SkillsProposalEventsL
 export type SkillsProposalEventsListResult = Static<typeof SkillsProposalEventsListResultSchema>;
 export type SkillsProposalApplyResult = Static<typeof SkillsProposalApplyResultSchema>;
 export type SkillsProposalRecordResult = Static<typeof SkillsProposalRecordResultSchema>;
+export type ModelCatalogProviderOutcome = Static<typeof ModelCatalogProviderOutcomeSchema>;
+export type SkillsProposalDecisionParams = Static<typeof SkillsProposalDecisionParamsSchema>;
+export type ToolsGitHubStatusParams = Static<typeof ToolsGitHubStatusParamsSchema>;
+export type ToolsGitHubStatusResult = Static<typeof ToolsGitHubStatusResultSchema>;
+export type ToolsGitHubManagedConfigureParams = Static<typeof ToolsGitHubManagedConfigureParamsSchema>;
+export type ToolsGitHubInheritConfigureParams = Static<typeof ToolsGitHubInheritConfigureParamsSchema>;
+export type ToolsGitHubConfigureParams = Static<typeof ToolsGitHubConfigureParamsSchema>;
 export type SkillsCuratorStatusParams = Static<typeof SkillsCuratorStatusParamsSchema>;
 export type SkillsCuratorStatusResult = Static<typeof SkillsCuratorStatusResultSchema>;
 export type SkillsCuratorActionParams = Static<typeof SkillsCuratorActionParamsSchema>;

@@ -8,6 +8,7 @@ import type {
 import { normalizeOptionalString, type FastMode } from "@openclaw/normalization-core/string-coerce";
 import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
+import type { SessionRow } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
 import type { ChatType } from "../../channels/chat-type.js";
 import type { CronScheduledToolPolicy } from "../../cron/scheduled-tool-policy.js";
 import type { ChannelRouteRef } from "../../plugin-sdk/channel-route.js";
@@ -302,7 +303,8 @@ export type RestartRecoveryRun = {
 };
 
 type SessionEntryCore = SessionRestartRecoveryState &
-  SessionEntryProvenance & {
+  SessionEntryProvenance &
+  Pick<SessionRow, "permissionMode" | "sessionRoot"> & {
     /** Collaboration mode. Missing legacy values are equivalent to "shared". */
     visibility?: SessionVisibility;
     /**
@@ -570,6 +572,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
     agentHarnessId?: string;
     fallbackNotice?: FallbackNoticeState;
     contextTokens?: number;
+    /** Origin of the persisted context window; absent on legacy/unproven rows. */
+    contextTokensSource?: "runtime" | "runtime-configured" | "resolved";
     contextBudgetStatus?: SessionContextBudgetStatus;
     compactionCount?: number;
     compactionCheckpoints?: SessionCompactionCheckpoint[];
