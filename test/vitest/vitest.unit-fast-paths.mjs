@@ -133,6 +133,22 @@ export const forcedUnitFastTestFiles = [
   "src/security/fix.test.ts",
   "src/security/scan-paths.test.ts",
   "src/skills/security/scanner.test.ts",
+  // Skill-loading suites vi.mock plugin/manifest modules and drive the process
+  // plugin-metadata snapshot that fork workspace-scoped plugin discovery reads
+  // (resolvePluginMetadataSnapshot). In the shared non-isolated unit worker their
+  // module state leaks between files, so route them to the isolated runner (fresh
+  // module graph per file).
+  "src/skills/loading/agents-directory.test.ts",
+  "src/skills/loading/plugin-skills.test.ts",
+  "src/skills/loading/skill-path-containment.test.ts",
+  "src/skills/loading/skill-root-discovery.test.ts",
+  "src/skills/loading/skills.test.ts",
+  "src/skills/loading/workspace-load.test.ts",
+  "src/skills/loading/workspace-precedence.test.ts",
+  "src/skills/loading/workspace-skill-loader.test.ts",
+  "src/skills/loading/workspace-skill-prompt-resolution.test.ts",
+  "src/skills/loading/workspace-skill-snapshot.test.ts",
+  "src/skills/loading/workspace-skill-sync.runtime.test.ts",
   "src/security/audit-config-include-perms.test.ts",
   "src/realtime-transcription/websocket-session.test.ts",
   "src/routing/resolve-route.test.ts",

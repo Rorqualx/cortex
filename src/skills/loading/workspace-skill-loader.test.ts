@@ -8,12 +8,12 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resetLogger, setLoggerOverride } from "../../logging/logger.js";
 import { loggingState } from "../../logging/state.js";
 import { setCurrentPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata-snapshot.js";
+import { clearCurrentPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata-state.js";
 import { resolveInstalledPluginIndexPolicyHash } from "../../plugins/installed-plugin-index-policy.js";
 import type {
   PluginManifestRecord,
   PluginManifestRegistry,
 } from "../../plugins/manifest-registry.js";
-import { clearPluginMetadataLifecycleCaches } from "../../plugins/plugin-metadata-lifecycle.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.js";
 import { writeSkill, writeWorkspaceSkills } from "../test-support/e2e-test-helpers.js";
 import {
@@ -209,10 +209,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  // Clear both the current snapshot AND the registered process memos (plugin-skills'
-  // pluginSkillDirsMemo), so this test's plugin state cannot leak into sibling
-  // skill-loading tests via resolvePluginSkillDirs' snapshot read.
-  clearPluginMetadataLifecycleCaches();
+  clearCurrentPluginMetadataSnapshot();
   setLoggerOverride(null);
   loggingState.rawConsole = null;
   resetLogger();
