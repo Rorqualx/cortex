@@ -166,6 +166,28 @@ The merge=ours sweep protected production but not fork-diverged TEST files, so t
 
 `src/agents/system-prompt.test.ts` restored to the fork version fails 12 cases (owner-list byte-budget bounding, current-owner-visible, multibyte/hashed owner, credential-collection, alias/button/orchestrator/ACP guidance). Root cause is NOT the merge: `owner-display.ts` (identical fork==upstream) has `resolveOwnerPromptNumbers` (MAX_OWNER_PROMPT_SENDERS + ≤1024-byte budget), but **fork `system-prompt.ts` never calls it** (0 calls; passes owner numbers raw to `buildOwnerIdentityLine`), while **upstream `system-prompt.ts` wires it (2 calls)**. So fork main was already RED on these (un-gated deploy hid it); upstream FIXED it. The merge kept fork's unwired system-prompt.ts and merge=ours dropped upstream's wiring — a dropped upstream security/prompt-budget fix. LEFT AS-IS for the resync (the committed swapped upstream test carries only a `sessionUrl` tsgo error that stays UNDER the core:test baseline → proof-green; fixing it would make it compile and then fail behaviorally). FOLLOW-UP: graft upstream's `resolveOwnerPromptNumbers` wiring into the fork's `system-prompt.ts` as a focused, prompt-reviewed change (it alters the live agent system prompt — deserves its own change + review, not resync-residual bundling).
 
+## Plugin-skill workspace-scope: production FIXED; 1 order-dependent test flake remains (test-infra, not prod)
+
+Restoring the fork's workspace-scoped plugin-skill discovery (`plugin-skills.ts` →
+`resolvePluginMetadataSnapshot(allowWorkspaceScopedCurrent:true)`) is required — `loadPluginMetadataSnapshot`
+is workspace-blind and drops plugin-shipped skills (real prod regression; workspace-load.test.ts). That
+resolver reads the process-current plugin snapshot. In PRODUCTION this is correct and safe (one gateway,
+one consistent snapshot, invalidated on plugin reload). In the FULL `test:fast` suite (vitest `--isolate=false`,
+shared worker + `vi.mock` module duplication across skill-loading test files), it makes the skill-loading
+tests order-sensitive: each test passes standalone and in a local `src/skills/` run (969 green bar 1
+pre-existing), but ONE rotating skill-loading test flakes on huey depending on file order.
+
+- Fixes applied (reduced 3 flaky tests → 1): restored the fork `workspace-skill-loader.test.ts` (test-swap
+  trap: upstream's version dropped the fork's snapshot cleanup); hardened workspace-load/workspace-skill-loader
+  teardowns to `clearPluginMetadataLifecycleCaches()` (snapshot + memos); added a STATICALLY-imported
+  per-file `clearPluginMetadataLifecycleCaches()` to the global afterEach (reaches the mocking tests'
+  duplicated module graph the worker-helper clear, cached on a global symbol, cannot).
+- NOT a production defect: the leak condition (a prior test's different-workspace snapshot) cannot occur in
+  the single-gateway runtime. The fork deploys un-gated; this does not block correctness.
+- FOLLOW-UP options for the maintainer: (a) accept the known flake; (b) run the skill-loading behavior tests
+  in an isolated vitest project (per-file isolation) so the shared-worker module state cannot bleed; (c)
+  investigate the `vi.mock("./plugin-skills.js")` / `manifest-registry.js` module-duplication in these files.
+
 ## FOLLOW-UP: two pre-existing baseline test failures (NOT resync-caused; proof confirms not net-new)
 
 Both fail on main too (un-gated deploy) and sit in sensitive surfaces — left for focused follow-ups rather than risky resync-residual edits:
