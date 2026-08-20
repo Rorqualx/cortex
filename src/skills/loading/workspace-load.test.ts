@@ -8,12 +8,12 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resetLogger, setLoggerOverride } from "../../logging/logger.js";
 import { loggingState } from "../../logging/state.js";
 import { setCurrentPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata-snapshot.js";
-import { clearCurrentPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata-state.js";
 import { resolveInstalledPluginIndexPolicyHash } from "../../plugins/installed-plugin-index-policy.js";
 import type {
   PluginManifestRecord,
   PluginManifestRegistry,
 } from "../../plugins/manifest-registry.js";
+import { clearPluginMetadataLifecycleCaches } from "../../plugins/plugin-metadata-lifecycle.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.js";
 import { writeSkill, writeWorkspaceSkills } from "../test-support/e2e-test-helpers.js";
 import {
@@ -225,7 +225,10 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  clearCurrentPluginMetadataSnapshot();
+  // Clear BOTH the current snapshot and the registered process memos (e.g.
+  // plugin-skills.ts pluginSkillDirsMemo). Clearing only the snapshot leaks this
+  // test's plugin skill dirs into sibling skill-loading tests via that memo.
+  clearPluginMetadataLifecycleCaches();
   setLoggerOverride(null);
   loggingState.rawConsole = null;
   resetLogger();
