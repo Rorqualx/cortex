@@ -12,16 +12,17 @@ Merge: fork `5657018950c` ← upstream `a3ca8466` (base `e45a9460`, 2063 commits
 
 ## Foundation resolutions (cont.)
 
-| File | Verdict | Note |
-|------|---------|------|
-| `src/gateway/server-core-runtime.ts` | ENHANCE | keep fork `allowGatewaySubagentBinding` loaders + graft upstream `getPluginMetadataSnapshot` |
-| `src/gateway/control-ui-contract.ts` | KEEP-OURS | fork owns Control UI bootstrap config |
-| `src/infra/plugin-approvals.ts` | KEEP-OURS | documented wire-alias pattern |
-| `packages/agent-core/src/agent-loop.ts` | KEEP-OURS+graft | kept fork steering rewrite; grafted upstream's safer `asOptionalRecord` taint extraction + auto-merged `replaceCompactionReplayOwnerContent`; dropped duplicate `SourceEventStream` import + unused `coerceErrorMessage` |
-| `extensions/codex/src/app-server/thread-prompt.ts` | KEEP-OURS (owner-gated) | restored fork version (skill-forge only); auto-merge had created a broken hybrid pulling upstream delegation/harness-reply calls whose source `buildHarnessVisibleReplyGuidance` isn't in the fork. `../codex` inspected; conflict is OpenClaw prompt-composition, not codex protocol |
-| `extensions/zai/{index,index.test,provider-policy-api}.ts` | KEEP-OURS | fork reasoning-effort ladder subsumes upstream version-map; dropped unused upstream imports (reconciler agent) |
+| File                                                       | Verdict                 | Note                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/gateway/server-core-runtime.ts`                       | ENHANCE                 | keep fork `allowGatewaySubagentBinding` loaders + graft upstream `getPluginMetadataSnapshot`                                                                                                                                                                                          |
+| `src/gateway/control-ui-contract.ts`                       | KEEP-OURS               | fork owns Control UI bootstrap config                                                                                                                                                                                                                                                 |
+| `src/infra/plugin-approvals.ts`                            | KEEP-OURS               | documented wire-alias pattern                                                                                                                                                                                                                                                         |
+| `packages/agent-core/src/agent-loop.ts`                    | KEEP-OURS+graft         | kept fork steering rewrite; grafted upstream's safer `asOptionalRecord` taint extraction + auto-merged `replaceCompactionReplayOwnerContent`; dropped duplicate `SourceEventStream` import + unused `coerceErrorMessage`                                                              |
+| `extensions/codex/src/app-server/thread-prompt.ts`         | KEEP-OURS (owner-gated) | restored fork version (skill-forge only); auto-merge had created a broken hybrid pulling upstream delegation/harness-reply calls whose source `buildHarnessVisibleReplyGuidance` isn't in the fork. `../codex` inspected; conflict is OpenClaw prompt-composition, not codex protocol |
+| `extensions/zai/{index,index.test,provider-policy-api}.ts` | KEEP-OURS               | fork reasoning-effort ladder subsumes upstream version-map; dropped unused upstream imports (reconciler agent)                                                                                                                                                                        |
 
 ## FLAG (RESOLVED — false alarm)
+
 - Checked whether `merge=ours` dropped upstream's delegation-guidance/harness-visible-reply. Sources all present in merged tree (`src/agents/delegation-guidance.ts`, `src/auto-reply/source-reply-delivery-mode.ts`, `src/agents/system-prompt-config.ts`); barrel re-exports; `extensions/copilot` consumer intact. No graft needed.
 
 ## Native app protocol mirrors (reconciler agent + lead correction)
@@ -76,6 +77,7 @@ Merge: fork `5657018950c` ← upstream `a3ca8466` (base `e45a9460`, 2063 commits
 - `tools/sessions-list-tool.test.ts` — ADOPT-UPSTREAM (mainSessionKey mock + upstream ownership tests).
 
 ## SECURITY verified
+
 - **MCP fencing**: fork fences untrusted MCP content ONLY in materialize.ts (fork never fenced node-plugin-tools.ts / mcp-content.ts). Agent preserved materialize.ts fencing; node-plugin-tools.ts unchanged = matches fork. No regression.
 - **web-fetch SSRF/egress**: fork allowlist + SSRF-default merge preserved.
 
@@ -104,11 +106,13 @@ Merge: fork `5657018950c` ← upstream `a3ca8466` (base `e45a9460`, 2063 commits
 Driven via keystone + cascade grafts of merge=ours silent drops (5 reconciler agents + lead), all verified centrally. Main baseline is 0, so this is a true green.
 
 ## ✅ ALL 7 tsgo lanes: 0 merge-caused errors (committed 9543634f4d5)
+
 - core: 0. extensions: 21 (all pre-existing memory-l3, = main baseline). extensions:test: 33 (pre-existing memory-l3). core:test/test:src/test:ui/test:packages: 2 each (generated ui `virtual-locale.d.ts`/`novnc.d.ts`, untracked, built on UI/i18n gen).
 - Cleared: agent-harness-runtime barrel export drops (delegation-guidance/harness-reply/side-effect-owner/native-compaction), copilot skill-workshop→skill-forge, fork zai test restore.
 - memory-l3 is a KNOWN pre-existing fork-red baseline (fork-only, untouched by merge, identical count on main); NOT a resync regression.
 
 ## REMAINING to land (Definition of Done):
+
 - [ ] TEST-LANE debt from keep-fork reverts: remove leaked upstream `skills-cli.commands.test.ts` (+ any workshop/curator CLI tests) that test the reverted CLI
 - [ ] Regenerate `server-methods-list.test.ts` golden file from live `listGatewayMethods()`
 - [ ] FOLLOW-UP: restore embedded-transcript dedup guard (`readTailAssistantTextFromSessionTranscript` dropped by merge; agent restored only the skipUserTurn half)
@@ -120,12 +124,44 @@ Driven via keystone + cascade grafts of merge=ours silent drops (5 reconciler ag
 
 ## Foundation resolutions
 
-| File | Verdict | Note |
-|------|---------|------|
+| File                                              | Verdict               | Note                                                                                     |
+| ------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------- |
 | `packages/gateway-protocol/src/schema-modules.ts` | UNION (both additive) | kept fork `sessions-catalog` + upstream `session-github-publication`; both modules exist |
-| `pnpm-workspace.yaml` | KEEP-OURS | `node-llama-cpp: false` — deliberate fork x64/Rosetta deploy fix |
-| `packages/normalization-core/package.json` | ENHANCE-OURS | union build entry points: keep `format.ts`, graft upstream `markdown-plain-text.ts` |
+| `pnpm-workspace.yaml`                             | KEEP-OURS             | `node-llama-cpp: false` — deliberate fork x64/Rosetta deploy fix                         |
+| `packages/normalization-core/package.json`        | ENHANCE-OURS          | union build entry points: keep `format.ts`, graft upstream `markdown-plain-text.ts`      |
 
 ## Derived (regenerate, do not hand-merge)
 
 - `pnpm-lock.yaml` — regenerate via `pnpm install` after package.json/workspace settle.
+
+## Phase 2 — remote-proof residuals (huey/Linux, error-set-diff vs main; commit e79d10e6bb7)
+
+Remote-proof (`scripts/remote-proof.sh`) is count-based net-new (`cand>base`). It flagged net-new tsgo in test:ui (1→2) + test:packages (0→2) and a behavior NEWFAIL. Grafting the two dropped ambient decls then UNMASKED further UI type cascades (tsgo fail-fasts a graph on a missing `files` entry). All root-caused:
+
+| Fix                                                                                          | Class                   | Verdict                                                                                                                                   |
+| -------------------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| graft `ui/src/i18n/virtual-locale.d.ts`, `ui/src/types/novnc.d.ts`                           | dropped upstream files  | upstream's new `tsconfig.core.test.shard.json` lists them; merge dropped the files                                                        |
+| `agents-models-skills.ts` `AgentsUpdateParamsSchema.model` → `Union[NonEmpty,Null]`          | keystone graft gap      | upstream "null clears model override" lost when closedObject→Type.Object grafted                                                          |
+| `chat-types.ts` widen ToolCard canvas `surface` +`node_panel`                                | merge-caused type widen | mirror upstream CanvasSurface in canvas-render.ts                                                                                         |
+| `usage-render-details.ts` `injectedChars ?? 0` (×3)                                          | merge-caused nullable   | upstream made injectedChars number\|null                                                                                                  |
+| `config-form.node.ts` items tuple-array narrowing                                            | merge-caused type widen | JsonSchema.items now JsonSchema\|JsonSchema[] (mirror config-form.analyze.ts)                                                             |
+| `icon-loader.ts` → `buildControlUiResourcePath`                                              | canonical-flow          | upstream centralized icon routes; fork constants dropped. Also fixes latent client/server base-path normalizer mismatch                   |
+| `plugin-skills.ts` restore `resolvePluginMetadataSnapshot(allowWorkspaceScopedCurrent:true)` | dropped fork behavior   | merge swapped to workspace-blind `loadPluginMetadataSnapshot` → plugin-shipped skills vanished (workspace-load.test.ts, 2 behavior fails) |
+| `prompt-surface.test.ts` restore fork version                                                | test-swap trap          | merge swapped fork test for upstream's                                                                                                    |
+| `identity-section.test.ts` add `githubIdentity:null`                                         | fixture                 | upstream keystone field on UserProfile                                                                                                    |
+
+## ⚠️ CONVERGENT DECISION (maintainer): cron `restart-recovery-pending` dropped
+
+Fork added a cron skip-reason `restart-recovery-pending` (3 preflight guards in `ops-run-preparation.ts` reading `state.restartRecoveryPending`) that stops cron jobs firing during the gateway restart-recovery window. Upstream's cron rewrite removed the entire substrate (`state.restartRecoveryPending` gone from merged tree; upstream added `disabled`/`invalid-spec` instead). Merge adopted upstream's cron model; the fork guard's producer was already gone, leaving only an orphaned UI `case`. **Resolved: aligned UI to upstream cron model (removed the dead case).** Restoring the guard = re-plumbing a removed field through upstream's rewritten cron state = a feature-restoration FOLLOW-UP, not a merge resolution. Given the fork's cron/restart/deploy fragility, maintainer should decide whether to re-implement the guard on the new substrate.
+
+## ⚠️ LANDING GATE (maintainer): SQLite state schema 7 → 9
+
+Reconciliation adopted upstream's `package.json` `schemaVersions.state: 7→9` (correct — fork must match its adopted runtime). Per AGENTS.md, SQLite schema bumps need explicit acceptance before landing: first post-land restart migrates the LIVE `state/openclaw.sqlite` 7→9 (idempotent named ensures; proof's `test:fast` exercises `state-migrations.*.test.ts`). This fork's state DB has been fragile (corruption + disk-full). Back up state DB before deploy.
+
+## FOLLOW-UP: test-swap trap is broad
+
+The merge=ours sweep protected production but not fork-diverged TEST files, so the merge swapped fork tests for upstream's where fork production was KEPT (3162 candidate files; most are legit — production also upstream). Only the ones that FAIL against kept-fork production matter; the proof (tsgo + behavior) surfaces them. Handled: prompt-surface.test.ts (restored fork test), workspace-load (production fix). NOT resync-caused (pre-existing baseline, left as-is): `edit.test.ts` `statFile` (fork trimmed statFile from EditOperations but kept the shared test). Recommend a bounded follow-up sweep + extend `.gitattributes` protection to fork-diverged tests.
+
+## FOLLOW-UP (high value): fork never wired upstream's owner-list prompt bounding
+
+`src/agents/system-prompt.test.ts` restored to the fork version fails 12 cases (owner-list byte-budget bounding, current-owner-visible, multibyte/hashed owner, credential-collection, alias/button/orchestrator/ACP guidance). Root cause is NOT the merge: `owner-display.ts` (identical fork==upstream) has `resolveOwnerPromptNumbers` (MAX_OWNER_PROMPT_SENDERS + ≤1024-byte budget), but **fork `system-prompt.ts` never calls it** (0 calls; passes owner numbers raw to `buildOwnerIdentityLine`), while **upstream `system-prompt.ts` wires it (2 calls)**. So fork main was already RED on these (un-gated deploy hid it); upstream FIXED it. The merge kept fork's unwired system-prompt.ts and merge=ours dropped upstream's wiring — a dropped upstream security/prompt-budget fix. LEFT AS-IS for the resync (the committed swapped upstream test carries only a `sessionUrl` tsgo error that stays UNDER the core:test baseline → proof-green; fixing it would make it compile and then fail behaviorally). FOLLOW-UP: graft upstream's `resolveOwnerPromptNumbers` wiring into the fork's `system-prompt.ts` as a focused, prompt-reviewed change (it alters the live agent system prompt — deserves its own change + review, not resync-residual bundling).
