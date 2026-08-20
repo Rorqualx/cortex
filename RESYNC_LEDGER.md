@@ -166,7 +166,15 @@ The merge=ours sweep protected production but not fork-diverged TEST files, so t
 
 `src/agents/system-prompt.test.ts` restored to the fork version fails 12 cases (owner-list byte-budget bounding, current-owner-visible, multibyte/hashed owner, credential-collection, alias/button/orchestrator/ACP guidance). Root cause is NOT the merge: `owner-display.ts` (identical fork==upstream) has `resolveOwnerPromptNumbers` (MAX_OWNER_PROMPT_SENDERS + ≤1024-byte budget), but **fork `system-prompt.ts` never calls it** (0 calls; passes owner numbers raw to `buildOwnerIdentityLine`), while **upstream `system-prompt.ts` wires it (2 calls)**. So fork main was already RED on these (un-gated deploy hid it); upstream FIXED it. The merge kept fork's unwired system-prompt.ts and merge=ours dropped upstream's wiring — a dropped upstream security/prompt-budget fix. LEFT AS-IS for the resync (the committed swapped upstream test carries only a `sessionUrl` tsgo error that stays UNDER the core:test baseline → proof-green; fixing it would make it compile and then fail behaviorally). FOLLOW-UP: graft upstream's `resolveOwnerPromptNumbers` wiring into the fork's `system-prompt.ts` as a focused, prompt-reviewed change (it alters the live agent system prompt — deserves its own change + review, not resync-residual bundling).
 
-## Plugin-skill workspace-scope: production FIXED; 1 order-dependent test flake remains (test-infra, not prod)
+## Plugin-skill workspace-scope: production FIXED; test flake RESOLVED (isolated runner)
+
+RESOLVED 2026-08-20: routed the 11 mock-heavy `src/skills/loading/*.test.ts` suites to the unit-fast ISOLATED
+runner via `forcedUnitFastTestFiles` (isolate:true, fresh module graph per file) — the established pattern for
+"stateful tests that mock modules imported by later files." They no longer run in the shared non-isolated
+`test:fast` worker (where their process plugin-metadata state leaked between files). Verified GREEN on both
+Mac and Linux: isolated config 195/195; remote-proof #6 `test:fast` EXIT=0 (0 NEWFAIL). Interim per-test /
+global-afterEach cache-clear hacks reverted; only the routing list + the fork `workspace-skill-loader.test.ts`
+restore (test-swap trap) remain. Historical detail below.
 
 Restoring the fork's workspace-scoped plugin-skill discovery (`plugin-skills.ts` →
 `resolvePluginMetadataSnapshot(allowWorkspaceScopedCurrent:true)`) is required — `loadPluginMetadataSnapshot`
