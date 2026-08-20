@@ -150,13 +150,43 @@ Remote-proof (`scripts/remote-proof.sh`) is count-based net-new (`cand>base`). I
 | `prompt-surface.test.ts` restore fork version                                                | test-swap trap          | merge swapped fork test for upstream's                                                                                                    |
 | `identity-section.test.ts` add `githubIdentity:null`                                         | fixture                 | upstream keystone field on UserProfile                                                                                                    |
 
-## ⚠️ CONVERGENT DECISION (maintainer): cron `restart-recovery-pending` dropped
+## ✅ RESOLVED (was convergent decision): cron `restart-recovery-pending` dropped — NO RE-PLUMB
 
-Fork added a cron skip-reason `restart-recovery-pending` (3 preflight guards in `ops-run-preparation.ts` reading `state.restartRecoveryPending`) that stops cron jobs firing during the gateway restart-recovery window. Upstream's cron rewrite removed the entire substrate (`state.restartRecoveryPending` gone from merged tree; upstream added `disabled`/`invalid-spec` instead). Merge adopted upstream's cron model; the fork guard's producer was already gone, leaving only an orphaned UI `case`. **Resolved: aligned UI to upstream cron model (removed the dead case).** Restoring the guard = re-plumbing a removed field through upstream's rewritten cron state = a feature-restoration FOLLOW-UP, not a merge resolution. Given the fork's cron/restart/deploy fragility, maintainer should decide whether to re-implement the guard on the new substrate.
+Fork carried a cron skip-reason `restart-recovery-pending`: a `state.restartRecoveryPending` field read as a guard in `ops-run-preparation.ts` (237/314/427), `run-admission.ts` (264/326), and `timer-scheduler.ts` (59/151/186/260) to stop cron jobs firing during the gateway restart-recovery window. Upstream's cron rewrite has no such field (upstream parent `a3ca8466`: **0** occurrences) and instead uses `state.stopped` quiescence + `run-recovery.ts` `recomputeUnownedCronSchedules` (receipt-CAS identity) to reclaim unowned schedules after restart. The merge adopted upstream's model.
 
-## ⚠️ LANDING GATE (maintainer): SQLite state schema 7 → 9
+**Provenance verdict — the fork guard was never-armed, test-only scaffolding, so dropping it lost ZERO production behavior.** At fork parent `5657018950c`, `restartRecoveryPending` is declared (`state.ts:281`), initialized `false` (`state.ts:316`), cleared to `false` in one error handler (`timer-notifications.ts:18`), and read by the guards above — but **set to `true` in exactly two places, both test files** (`timer.batch-finalization.test.ts:801`, `timer.regression.test.ts:2505`). No fork production path ever armed it; the guards could never fire. This is the resync provenance rule "feature is test-only at fork-HEAD → the drop is legit," not a lost feature.
 
-Reconciliation adopted upstream's `package.json` `schemaVersions.state: 7→9` (correct — fork must match its adopted runtime). Per AGENTS.md, SQLite schema bumps need explicit acceptance before landing: first post-land restart migrates the LIVE `state/openclaw.sqlite` 7→9 (idempotent named ensures; proof's `test:fast` exercises `state-migrations.*.test.ts`). This fork's state DB has been fragile (corruption + disk-full). Back up state DB before deploy.
+The fork's _actual_ cron-restart safety is script-level and fully intact in the merged tree: `scripts/cron-restart-safe-wait.sh`, `cron-deploy-build.sh`, `cron-deploy-gate.sh`, `cron-deploy-healthcheck.sh` (the deploy-build-waits-for-running-crons quiesce gate). Current tree has **no dangling references** to the removed flag (`grep src/cron` → none; the two ex-arming test files were test-swapped to upstream's versions and reference it 0 times); tsgo `core:test` green. **No maintainer action, no re-plumb.**
+
+## ⚠️ LANDING GATE (maintainer accept + backup): SQLite state schema 7 → 9 — INHERITED, ATOMIC, TESTED
+
+Reconciliation adopted upstream's `package.json` `schemaVersions.state: 7→9` and `OPENCLAW_STATE_SCHEMA_VERSION = 9` (`openclaw-state-db-contract.ts:9`). This is **inherited, not an autonomous agent bump** — it comes with adopting upstream's worker-placement + agent-db-registry runtime; the fork cannot run that code at schema 7. Two forward migrations, both **conditional on the relevant table existing** (`openclaw-state-db-schema-repair.ts:726-731`):
+
+- **v7→v8** `worker-placement-execution-mode-v8` — cloud worker placements → execution-mode claims (only if `worker_session_placements` exists).
+- **v8→v9** `agent-databases-relative-paths-v9` — agent-db registry paths → state-relative storage (only if `agent_databases` exists).
+
+Safety properties (verified in source):
+
+- **Atomic.** Migration runs inside `runSqliteImmediateTransactionSync` (`openclaw-state-db.ts:384-435`) — a crash mid-migration rolls back, never leaves a half-migrated DB.
+- **Automatic at restart.** `repairOpenClawStateDatabaseSchemaIfNeeded` applies it on gateway startup; no separate `doctor --fix` step required for the version bump.
+- **Tested.** The green Linux proof's `test:fast` exercises `state-migrations.*.test.ts`.
+- **One-way door.** After migration the DB is `user_version=9`; the _old_ v7 build will then refuse startup (`preflightOpenClawDatabaseSchemas`: `foundVersion > supported` → `incompatible`). There is **no automatic file-level pre-migration snapshot** on the build+restart deploy path.
+
+Given this fork's state-DB fragility history (corruption 2026-08, disk-full), the maintainer accepts the bump and takes ONE manual backup before the first post-land restart. No auto-backup code added: the migration is already atomic and this is a single-operator manual deploy; a one-line copy is the correct mitigation (Repair Doctrine — no speculative resilience LOC on the hot startup transaction).
+
+**Deploy runbook (gateway DOWN, from the landed checkout):**
+
+```
+# 1. stop the gateway (launchd will respawn on plain `stop`; bootout to hold it down)
+launchctl bootout gui/$(id -u)/ai.openclaw.gateway 2>/dev/null || true
+# 2. snapshot the state DB (consolidate WAL first so the copy is a standalone file)
+sqlite3 ~/.openclaw/state/openclaw.sqlite "PRAGMA wal_checkpoint(TRUNCATE);"
+cp ~/.openclaw/state/openclaw.sqlite ~/.openclaw/state/openclaw.sqlite.pre-v9-$(date +%Y%m%d)
+# 3. build + bootstrap; first boot auto-migrates 7→9 atomically
+#    verify after: sqlite3 ~/.openclaw/state/openclaw.sqlite "PRAGMA user_version;"  → 9
+```
+
+Rollback (only if boot fails): restore the `.pre-v9-*` copy and relaunch the pre-land build. Do **not** open the migrated v9 DB with the old build.
 
 ## FOLLOW-UP: test-swap trap is broad
 
