@@ -84,7 +84,7 @@ function loadThresholdMap(l3Root: string): Record<string, number> | null {
   } catch {
     cachedThresholdMap = null;
   }
-  return cachedThresholdMap;
+  return cachedThresholdMap ?? null;
 }
 
 /** Get the effective ReTopK similarity threshold, adjusted by calibration map if present. */

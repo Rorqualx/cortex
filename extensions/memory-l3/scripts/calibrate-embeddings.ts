@@ -136,12 +136,24 @@ function linearRegression(
   ys: number[],
 ): { slope: number; intercept: number; r2: number } {
   const n = xs.length;
-  if (n === 0) return { slope: 1, intercept: 0, r2: 0 };
-  const sumX = xs.reduce((a, b) => a + b, 0);
-  const sumY = ys.reduce((a, b) => a + b, 0);
-  const sumXY = xs.reduce((acc, x, i) => acc + x * ys[i], 0);
-  const sumX2 = xs.reduce((acc, x) => acc + x * x, 0);
-  const sumY2 = ys.reduce((acc, y) => acc + y * y, 0);
+  if (n === 0 || ys.length !== n) return { slope: 1, intercept: 0, r2: 0 };
+
+  // One bounded pass over the paired samples keeps xs[i]/ys[i] provably in
+  // range (noUncheckedIndexedAccess) and drops the dead sumY2 the old
+  // multi-reduce form carried.
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumX2 = 0;
+  for (let i = 0; i < n; i++) {
+    const x = xs[i];
+    const y = ys[i];
+    if (x === undefined || y === undefined) continue;
+    sumX += x;
+    sumY += y;
+    sumXY += x * y;
+    sumX2 += x * x;
+  }
 
   const denom = n * sumX2 - sumX * sumX;
   const slope = denom === 0 ? 1 : (n * sumXY - sumX * sumY) / denom;
@@ -149,8 +161,15 @@ function linearRegression(
 
   // R²
   const meanY = sumY / n;
-  const ssTot = ys.reduce((acc, y) => acc + (y - meanY) ** 2, 0);
-  const ssRes = ys.reduce((acc, y, i) => acc + (y - (slope * xs[i] + intercept)) ** 2, 0);
+  let ssTot = 0;
+  let ssRes = 0;
+  for (let i = 0; i < n; i++) {
+    const x = xs[i];
+    const y = ys[i];
+    if (x === undefined || y === undefined) continue;
+    ssTot += (y - meanY) ** 2;
+    ssRes += (y - (slope * x + intercept)) ** 2;
+  }
   const r2 = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
 
   return { slope, intercept, r2 };
@@ -163,12 +182,14 @@ async function main() {
   console.log(`[calibrate] Loading facts from ${opts.l3root}...`);
 
   const storage = new Storage(opts.l3root);
-  await storage.init();
+  await storage.ensureLayout();
 
-  // Load L2 chunk facts
-  const chunks = await storage.listL2Chunks();
+  // Load L2 chunk facts — canonical reads come from the DB via chunk tokens.
+  const chunkTokens = await storage.listL2ChunkPaths();
   const allFacts: string[] = [];
-  for (const chunk of chunks) {
+  for (const token of chunkTokens) {
+    const chunk = await storage.readL2ChunkAtPath(token);
+    if (!chunk) continue;
     for (const fact of chunk.frontmatter.facts) {
       allFacts.push(fact.text);
     }
@@ -212,10 +233,12 @@ async function main() {
     return {
       embed: async (text: string) => {
         const { provider } = await adapter.create({ config, model: modelName });
+        if (!provider) throw new Error(`Embedding provider "${providerName}" returned no provider`);
         return provider.embedQuery(text);
       },
       embedBatch: async (texts: string[]) => {
         const { provider } = await adapter.create({ config, model: modelName });
+        if (!provider) throw new Error(`Embedding provider "${providerName}" returned no provider`);
         return provider.embedBatch(texts);
       },
     };
@@ -241,15 +264,24 @@ async function main() {
   const newSims: number[] = [];
 
   for (let i = 0; i < queries.length; i++) {
+    const oldQ = oldQueryEmbeddings[i];
+    const newQ = newQueryEmbeddings[i];
+    const oldF = oldFactEmbeddings[i];
+    const newF = newFactEmbeddings[i];
+    if (!oldQ || !newQ || !oldF || !newF) continue;
+
     // Matching pair (query i → fact i)
-    oldSims.push(cosineSimilarity(oldQueryEmbeddings[i], oldFactEmbeddings[i]));
-    newSims.push(cosineSimilarity(newQueryEmbeddings[i], newFactEmbeddings[i]));
+    oldSims.push(cosineSimilarity(oldQ, oldF));
+    newSims.push(cosineSimilarity(newQ, newF));
 
     // A few non-matching pairs for broader distribution
     const offset = (i + 37) % queries.length; // deterministic pseudo-random offset
     if (offset !== i) {
-      oldSims.push(cosineSimilarity(oldQueryEmbeddings[i], oldFactEmbeddings[offset]));
-      newSims.push(cosineSimilarity(newQueryEmbeddings[i], newFactEmbeddings[offset]));
+      const oldFOff = oldFactEmbeddings[offset];
+      const newFOff = newFactEmbeddings[offset];
+      if (!oldFOff || !newFOff) continue;
+      oldSims.push(cosineSimilarity(oldQ, oldFOff));
+      newSims.push(cosineSimilarity(newQ, newFOff));
     }
   }
 

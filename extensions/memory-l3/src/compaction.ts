@@ -373,7 +373,7 @@ async function abstractOverflow(
 
   // Structured JSON input: each fact is an object with separate text and
   // certainty fields, so the model sees certainty as a first-class signal.
-  const structuredFacts = facts.map((f, i) => ({
+  const structuredFacts = facts.map((f) => ({
     text: f.text,
     certainty: f.certainty ?? "confirmed",
   }));
