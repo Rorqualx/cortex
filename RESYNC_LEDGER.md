@@ -99,6 +99,23 @@ Merge: fork `5657018950c` ← upstream `a3ca8466` (base `e45a9460`, 2063 commits
   - `src/cli/skills-cli.ts` → reverted to fork keep-fork-trim (earlier ADOPT-upstream cascaded missing GATEWAY_SKILLS_*_TIMEOUT_MS + SkillProposalDraftCliOptions). TEST-LANE follow-up: remove leaked upstream `skills-cli.commands.test.ts` that tests the reverted workshop/curator CLI.
 - Parallel reconciler agents grafting remaining clusters: session-ownership feature (owner/participants/avatar + SessionOwnerFacetIdentity), embedded-runner (attempt/compaction types), github-tools runtime (ToolsConfig/AgentToolsConfig).
 
+## ✅ tsgo:core = 0 (277 → 193 → 66 → 53 → 7 → 0). Committed 97da6187d37.
+
+Driven via keystone + cascade grafts of merge=ours silent drops (5 reconciler agents + lead), all verified centrally. Main baseline is 0, so this is a true green.
+
+## ✅ ALL 7 tsgo lanes: 0 merge-caused errors (committed 9543634f4d5)
+- core: 0. extensions: 21 (all pre-existing memory-l3, = main baseline). extensions:test: 33 (pre-existing memory-l3). core:test/test:src/test:ui/test:packages: 2 each (generated ui `virtual-locale.d.ts`/`novnc.d.ts`, untracked, built on UI/i18n gen).
+- Cleared: agent-harness-runtime barrel export drops (delegation-guidance/harness-reply/side-effect-owner/native-compaction), copilot skill-workshop→skill-forge, fork zai test restore.
+- memory-l3 is a KNOWN pre-existing fork-red baseline (fork-only, untouched by merge, identical count on main); NOT a resync regression.
+
+## REMAINING to land (Definition of Done):
+- [ ] TEST-LANE debt from keep-fork reverts: remove leaked upstream `skills-cli.commands.test.ts` (+ any workshop/curator CLI tests) that test the reverted CLI
+- [ ] Regenerate `server-methods-list.test.ts` golden file from live `listGatewayMethods()`
+- [ ] FOLLOW-UP: restore embedded-transcript dedup guard (`readTailAssistantTextFromSessionTranscript` dropped by merge; agent restored only the skipUserTurn half)
+- [ ] `fork-config-snapshot verify` + regenerate baseline
+- [ ] Remote-Linux `pnpm build` + `pnpm test:fast` behavior
+- [ ] `$autoreview` on the full reconciliation diff
+
 ## Progress: 41/75 resolved. Remaining: src/agents (12), src/gateway (9), native-apps (3), misc (9), pnpm-lock (regenerate) — reconciler agents in flight.
 
 ## Foundation resolutions
