@@ -2,9 +2,9 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
-import { GatewayAgentRuntimeSchema } from "./session-row.js";
 import { NonEmptyString } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
+import { GatewayAgentRuntimeSchema } from "./session-row.js";
 
 /**
  * Agent, model, skill, and tool catalog schemas.
@@ -138,7 +138,8 @@ export const AgentsUpdateParamsSchema = Type.Object(
     agentId: NonEmptyString,
     name: Type.Optional(NonEmptyString),
     workspace: Type.Optional(NonEmptyString),
-    model: Type.Optional(NonEmptyString),
+    // null clears the per-agent model override so the agent falls back to the global default.
+    model: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
     emoji: Type.Optional(Type.String()),
     avatar: Type.Optional(Type.String()),
     description: Type.Optional(Type.String()),
@@ -1411,8 +1412,12 @@ export type ModelCatalogProviderOutcome = Static<typeof ModelCatalogProviderOutc
 export type SkillsProposalDecisionParams = Static<typeof SkillsProposalDecisionParamsSchema>;
 export type ToolsGitHubStatusParams = Static<typeof ToolsGitHubStatusParamsSchema>;
 export type ToolsGitHubStatusResult = Static<typeof ToolsGitHubStatusResultSchema>;
-export type ToolsGitHubManagedConfigureParams = Static<typeof ToolsGitHubManagedConfigureParamsSchema>;
-export type ToolsGitHubInheritConfigureParams = Static<typeof ToolsGitHubInheritConfigureParamsSchema>;
+export type ToolsGitHubManagedConfigureParams = Static<
+  typeof ToolsGitHubManagedConfigureParamsSchema
+>;
+export type ToolsGitHubInheritConfigureParams = Static<
+  typeof ToolsGitHubInheritConfigureParamsSchema
+>;
 export type ToolsGitHubConfigureParams = Static<typeof ToolsGitHubConfigureParamsSchema>;
 export type SkillsCuratorStatusParams = Static<typeof SkillsCuratorStatusParamsSchema>;
 export type SkillsCuratorStatusResult = Static<typeof SkillsCuratorStatusResultSchema>;

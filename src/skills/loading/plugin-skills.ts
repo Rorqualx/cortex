@@ -12,7 +12,7 @@ import {
 } from "../../plugins/config-policy.js";
 import { resolveMemorySlotDecision } from "../../plugins/config-state.js";
 import { registerPluginMetadataProcessMemoLifecycleClear } from "../../plugins/plugin-metadata-lifecycle.js";
-import { loadPluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.js";
+import { resolvePluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
 import { hasKind } from "../../plugins/slots.js";
 import { isPathInsideWithRealpath } from "../../security/scan-paths.js";
@@ -51,10 +51,14 @@ export function resolvePluginSkillDirs(params: {
     return [];
   }
   const config = params.config ?? {};
-  const metadataSnapshot = loadPluginMetadataSnapshot({
+  // allowWorkspaceScopedCurrent surfaces plugins installed under the workspace's
+  // .openclaw/extensions so their shipped skills load; loadPluginMetadataSnapshot alone is
+  // workspace-blind and drops plugin-shipped skills (see workspace-load.test.ts).
+  const metadataSnapshot = resolvePluginMetadataSnapshot({
     workspaceDir,
     config,
     env: process.env,
+    allowWorkspaceScopedCurrent: true,
   });
   return resolvePluginSkillDirsFromMetadata({ ...params, metadataSnapshot });
 }

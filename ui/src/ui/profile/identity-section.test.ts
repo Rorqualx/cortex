@@ -16,6 +16,7 @@ const PROFILE: UserProfile = {
   createdAt: 1,
   updatedAt: 2,
   emails: ["ada@example.test", "ada@work.test"],
+  githubIdentity: null,
   hasAvatar: true,
 };
 

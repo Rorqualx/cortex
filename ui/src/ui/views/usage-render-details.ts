@@ -3,14 +3,11 @@ import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 // Control UI view renders usage render details screen content.
 import { html, svg, nothing } from "lit";
 import { formatDurationCompact } from "../../../../src/infra/format-time/format-duration.ts";
-import {
-  renderPanelRefreshStatus,
-  type PanelRefreshStatus,
-} from "./panel-refresh-status.ts";
 import { t } from "../../i18n/index.ts";
 import { formatDateTimeMs, formatMs, formatTimeMs } from "../format.ts";
 import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import { parseToolSummary } from "../usage-helpers.ts";
+import { renderPanelRefreshStatus, type PanelRefreshStatus } from "./panel-refresh-status.ts";
 import { charsToTokens, formatCost, formatTokens } from "./usage-metrics.ts";
 import { renderInsightList } from "./usage-render-overview.ts";
 import type {
@@ -899,7 +896,7 @@ function renderContextPanel(
     contextWeight.tools.listChars + contextWeight.tools.schemaChars,
   );
   const filesTokens = charsToTokens(
-    contextWeight.injectedWorkspaceFiles.reduce((sum, f) => sum + f.injectedChars, 0),
+    contextWeight.injectedWorkspaceFiles.reduce((sum, f) => sum + (f.injectedChars ?? 0), 0),
   );
   const totalContextTokens = systemTokens + skillsTokens + toolsTokens + filesTokens;
 
@@ -916,7 +913,7 @@ function renderContextPanel(
     (a, b) => b.summaryChars + b.schemaChars - (a.summaryChars + a.schemaChars),
   );
   const filesList = contextWeight.injectedWorkspaceFiles.toSorted(
-    (a, b) => b.injectedChars - a.injectedChars,
+    (a, b) => (b.injectedChars ?? 0) - (a.injectedChars ?? 0),
   );
   const defaultLimit = 4;
   const showAll = expanded;
@@ -1061,7 +1058,7 @@ function renderContextPanel(
                         <div class="context-breakdown-item">
                           <span class="mono" title=${f.name}>${f.name}</span>
                           <span class="muted"
-                            >~${formatTokens(charsToTokens(f.injectedChars))}</span
+                            >~${formatTokens(charsToTokens(f.injectedChars ?? 0))}</span
                           >
                         </div>
                       `,

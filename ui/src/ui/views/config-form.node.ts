@@ -841,10 +841,15 @@ function estimateRenderedFields(schema: JsonSchema, value: unknown, budget: numb
     return total;
   }
   if (type === "array" && schema.items && typeof schema.items === "object") {
+    // items may be a tuple schema array; mirror config-form.analyze.ts and use the element schema.
+    const itemsSchema = Array.isArray(schema.items) ? schema.items[0] : schema.items;
+    if (!itemsSchema) {
+      return 0;
+    }
     const items = Array.isArray(value) ? value : [];
     let total = 0;
     for (const item of items) {
-      total += 1 + estimateRenderedFields(schema.items, item, budget - total);
+      total += 1 + estimateRenderedFields(itemsSchema, item, budget - total);
       if (total > budget) {
         return total;
       }

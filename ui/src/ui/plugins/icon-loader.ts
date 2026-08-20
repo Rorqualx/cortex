@@ -1,8 +1,4 @@
-import { normalizeRouteBasePath } from "@openclaw/uirouter";
-import {
-  CONTROL_UI_CATALOG_ICON_PATH_PREFIX,
-  CONTROL_UI_PLUGIN_ICON_PATH_PREFIX,
-} from "../../../../src/gateway/control-ui-contract.js";
+import { buildControlUiResourcePath } from "../../../../src/gateway/control-ui-resource-routes.js";
 import { resolveControlUiAuthCandidates } from "../control-ui-auth.ts";
 
 const ALLOWED_PLUGIN_ICON_MIME_TYPES = new Set(["image/png", "image/svg+xml"]);
@@ -86,13 +82,11 @@ function gatewayIsSameOrigin(gatewayUrl: string): boolean {
 }
 
 function pluginIconRouteUrl(basePath: string, pluginId: string): string {
-  const normalizedBasePath = normalizeRouteBasePath(basePath);
-  return `${normalizedBasePath}${CONTROL_UI_PLUGIN_ICON_PATH_PREFIX}/${encodeURIComponent(pluginId)}`;
+  return buildControlUiResourcePath("pluginIcon", basePath, pluginId);
 }
 
 function catalogIconRouteUrl(basePath: string, iconUrl: string): string {
-  const normalizedBasePath = normalizeRouteBasePath(basePath);
-  return `${normalizedBasePath}${CONTROL_UI_CATALOG_ICON_PATH_PREFIX}/${encodeURIComponent(iconUrl)}`;
+  return buildControlUiResourcePath("catalogIcon", basePath, iconUrl);
 }
 
 function parseSvgNumber(value: string): number | null {

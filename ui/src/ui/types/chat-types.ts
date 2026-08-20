@@ -129,7 +129,8 @@ export type ToolCard = {
   messageId?: string;
   preview?: {
     kind: "canvas";
-    surface: "assistant_message";
+    // node_panel is upstream's second canvas surface; mirror CanvasSurface in src/chat/canvas-render.ts.
+    surface: "assistant_message" | "node_panel";
     render: "url";
     title?: string;
     preferredHeight?: number;
