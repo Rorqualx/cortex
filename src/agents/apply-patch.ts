@@ -118,12 +118,14 @@ const ApplyPatchToolOutputSchema = Type.Object(
 export function createApplyPatchTool(
   options: {
     cwd?: string;
+    root?: string;
     sandbox?: SandboxApplyPatchConfig;
     workspaceOnly?: boolean;
     memoryWriteProvenance?: MemoryWriteProvenanceObserver;
   } = {},
 ): AgentTool<typeof applyPatchSchema, ApplyPatchToolDetails> {
   const cwd = options.cwd ?? process.cwd();
+  const root = options.root ?? cwd;
   const sandbox = options.sandbox;
   const workspaceOnly = options.workspaceOnly !== false;
 
@@ -145,6 +147,7 @@ export function createApplyPatchTool(
 
       const result = await applyPatch(input, {
         cwd,
+        root,
         sandbox,
         workspaceOnly,
         memoryWriteProvenance: options.memoryWriteProvenance,

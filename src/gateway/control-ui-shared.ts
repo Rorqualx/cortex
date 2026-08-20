@@ -6,7 +6,7 @@ import { isAvatarHttpUrl, looksLikeAvatarPath } from "../shared/avatar-policy.js
 const CONTROL_UI_AVATAR_PREFIX = "/avatar";
 
 /** Normalizes a Control UI base path to either "" or a leading-slash path without trailing slash. */
-export function normalizeControlUiBasePath(basePath?: string): string {
+export function normalizeControlUiBasePath(basePath?: string | null): string {
   if (!basePath) {
     return "";
   }

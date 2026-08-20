@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
-import type { AgentsDeleteResult } from "../../packages/gateway-protocol/src/schema/agents-models-skills.js";
 import { listAgentIds, resolveAgentWorkspaceDir } from "../agents/agent-scope-config.js";
 import { resolveDefaultAgentWorkspaceDir } from "../agents/workspace-default.js";
 import {
@@ -28,8 +27,11 @@ type RemovalResult = {
   ok: boolean;
 };
 
-type AgentDeleteRemovedPath = NonNullable<AgentsDeleteResult["removed"]>[number];
-type AgentDeleteFailedPath = NonNullable<AgentsDeleteResult["failed"]>[number];
+// Trash-move outcome shapes are local: the AgentsDeleteResult protocol schema
+// dropped its per-path removed/failed arrays, and this result stays internal to
+// moveToTrash's boolean check.
+type AgentDeleteRemovedPath = { path: string; method: "trash" | "missing" };
+type AgentDeleteFailedPath = { path: string; reason: string };
 type MoveToTrashResult = { removed: AgentDeleteRemovedPath } | { failed: AgentDeleteFailedPath };
 
 type CleanupResolvedPaths = {

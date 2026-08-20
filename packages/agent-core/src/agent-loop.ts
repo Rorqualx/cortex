@@ -12,6 +12,7 @@ import type {
 } from "@openclaw/llm-core";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { TranscriptNotContinuableError } from "./errors.js";
+import { getInternalSyncSteeringGetter } from "./internal-hooks.js";
 import { uuidv7 } from "./harness/session/uuid.js";
 import { resolveAgentReasoningOption } from "./reasoning.js";
 import { type AgentCoreStreamRuntimeDeps, resolveAgentCoreStreamFn } from "./runtime-deps.js";
@@ -43,6 +44,16 @@ import { validateToolArguments } from "./validation.js";
 export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
 
 const EventStreamConstructor: typeof SourceEventStream = LlmEventStream;
+
+function getSteeringAtCheckpoint(
+  config: AgentLoopConfig,
+): AgentMessage[] | Promise<AgentMessage[]> {
+  const callback = config.getSteeringMessages;
+  if (!callback) {
+    return [];
+  }
+  return getInternalSyncSteeringGetter(callback)?.() ?? callback.call(config);
+}
 
 function removeNonExecutableToolCalls(message: AssistantMessage): AssistantMessage {
   if (message.stopReason === "toolUse") {

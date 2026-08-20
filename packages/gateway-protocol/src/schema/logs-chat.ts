@@ -302,3 +302,24 @@ export type ChatSendTimingEvent = Static<typeof ChatSendTimingEventSchema>;
 /** Fork: server-side phase markers for operator chat.send timing diagnostics. */
 export type ChatSendTimingPhase = ChatSendTimingEvent["phase"];
 export type ChatSideResultEvent = Static<typeof ChatSideResultEventSchema>;
+
+/** Bounded forward catch-up response; clients replay `messages` as `session.message`. */
+export const ChatHistoryDeltaResultSchema = closedObject({
+  kind: Type.Literal("delta"),
+  messages: Type.Array(Type.Unknown()),
+  deltaCursor: Type.String(),
+  sessionInfo: Type.Unknown(),
+  agentsList: Type.Optional(Type.Unknown()),
+  metadata: Type.Optional(Type.Unknown()),
+});
+
+/** Normal cursor discontinuity; clients recover with a fresh tail request. */
+export const ChatHistoryResetResultSchema = closedObject({
+  kind: Type.Literal("reset"),
+});
+
+/** Closed cursor outcome union. */
+export const ChatHistoryCursorResultSchema = Type.Union([
+  ChatHistoryDeltaResultSchema,
+  ChatHistoryResetResultSchema,
+]);

@@ -5,13 +5,14 @@
  */
 export {
   createAgentToAgentPolicy,
-  createSessionVisibilityGuard,
   createSessionVisibilityRowChecker,
   resolveEffectiveSessionToolsVisibility,
   resolveSandboxedSessionToolContext,
+  resolveSessionToolAccess,
 } from "./sessions-access.js";
 import { resolveSandboxedSessionToolContext } from "./sessions-access.js";
 export {
+  isExpectedSessionLookupMiss,
   resolveCurrentSessionClientAlias,
   resolveDisplaySessionKey,
   resolveInternalSessionKey,

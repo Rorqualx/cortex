@@ -81,6 +81,24 @@ Merge: fork `5657018950c` ← upstream `a3ca8466` (base `e45a9460`, 2063 commits
 
 ## ALL 62 code conflicts resolved (repo-wide marker scan clean). pnpm-lock regenerating. Next: commit → tsgo ladder → regenerate golden method-list → remote-Linux build+behavior+autoreview.
 
+## VERIFICATION (Phase 2) — merge committed as 85b4da0b451
+
+- **tsgo:core: merged=277 errors, main baseline=0 (clean).** All 277 are merge-caused cascade (NOT a pre-existing red baseline — memory of ~300 was stale; the 2026-07 resync fixed it). Expected Phase-1 tail: "drive foundation to tsgo-green; cascades collapse from a few keystones."
+- **Keystone 1 — `packages/gateway-protocol/src/schema/agents-models-skills.ts`:** heavy-convergent file (fork refactored +593/−461: closedObject→Type.Object + AgentOwnership). `merge=ours` correctly kept the fork refactor but DROPPED upstream's +143 additions: `ToolsGitHub*Schema` (Status/Configure/Managed/Inherit + GitHub identity helper schemas), `SkillsProposalDecisionParamsSchema`, `ModelCatalogProviderOutcomeSchema`. Cascades into public-schema.ts, protocol-schema-fragment-agents-skills.ts, tools-github.ts, github-tool-identity (~40+ errors). FIX: ENHANCE — graft upstream's additions onto the fork's version (all upstream-new, absent at BASE+FORK, no fork conflict). `git apply -3` no-ops; needs manual block extraction or a cleaner 3-way.
+- **Keystone 2 — session entry core types** (`SessionEntryCore`, `InternalSessionEntryCore`, `EmbeddedRunAttemptWithReceiptEvidence`): missing upstream's `contextTokensSource` + `permissionMode` fields → ~30+ TS2551/2561 across sessions/embedded-runner/auto-reply. FIX: graft the fields onto the fork's session entry types.
+- Error TS distribution: 115 TS2339, 32 TS2322, 31 TS2551, 28 TS2353 — all "property missing on type" = keystone-type drops, per skill.
+
+## REMAINING to land: graft 2 keystones → re-run tsgo to green → regenerate server-methods-list golden test → remote-Linux `pnpm build` + `pnpm test:fast` behavior → `$autoreview` on reconciliation diff. Build/tests will NOT pass until cascade driven to green.
+
+## Phase 2 cascade grafts (tsgo:0 drive)
+
+- Keystone 1 (agents-models-skills.ts github/skills schemas) + Keystone 2 (session permissionMode/contextTokensSource/sessionRoot): 277→193. Committed a1ac1ecfe81.
+- **Silent-combination repairs (merge auto-merged upstream into fork files whose support the fork trimmed/removed):**
+  - Workboard (5 files: dispatcher-workspace, persistence-types, store-change-tracker, store-promote, workspace-access) → restored fork versions (had picked up upstream `compensateWorkspaceMutation`/`updateLatestCard` from the removed store-compensation.ts).
+  - `agents.commands.delete.ts` → restored fork (referenced upstream `removed`/`failed`/`purgeFailed`, which the fork trimmed from AgentsDeleteResult).
+  - `src/cli/skills-cli.ts` → reverted to fork keep-fork-trim (earlier ADOPT-upstream cascaded missing GATEWAY_SKILLS_*_TIMEOUT_MS + SkillProposalDraftCliOptions). TEST-LANE follow-up: remove leaked upstream `skills-cli.commands.test.ts` that tests the reverted workshop/curator CLI.
+- Parallel reconciler agents grafting remaining clusters: session-ownership feature (owner/participants/avatar + SessionOwnerFacetIdentity), embedded-runner (attempt/compaction types), github-tools runtime (ToolsConfig/AgentToolsConfig).
+
 ## Progress: 41/75 resolved. Remaining: src/agents (12), src/gateway (9), native-apps (3), misc (9), pnpm-lock (regenerate) — reconciler agents in flight.
 
 ## Foundation resolutions

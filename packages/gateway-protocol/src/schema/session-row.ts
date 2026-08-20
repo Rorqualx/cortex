@@ -32,6 +32,7 @@ export const ChatTypeSchema = Type.Union([
 
 /** Runtime status surfaced for the latest session run. */
 export const SessionRunStatusSchema = Type.Union([
+  Type.Literal("queued"),
   Type.Literal("running"),
   Type.Literal("done"),
   Type.Literal("failed"),

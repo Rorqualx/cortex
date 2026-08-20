@@ -635,7 +635,7 @@ function dispatchCronCompletionAnnounce(params: {
   const deliverySessionKey = resolveCronDeliverySessionKey(job);
 
   for (const target of announceTargets) {
-    void sendFailureNotificationAnnounce(
+    void sendFailureAnnounce(
       params.deps,
       runtimeConfig,
       agentId,

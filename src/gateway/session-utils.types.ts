@@ -4,9 +4,11 @@ import type { FastMode } from "@openclaw/normalization-core/string-coerce";
 import type {
   SessionClassification,
   SessionCreatedActor,
+  SessionOwner,
   SessionPeerKind,
   SessionPlacement,
   SessionRow,
+  SessionRunStatus,
   SessionSharingRole,
   SessionVisibility,
 } from "../../packages/gateway-protocol/src/index.js";
@@ -44,7 +46,6 @@ export type GatewaySessionsDefaults = {
 };
 
 /** Runtime status surfaced for the latest session run. */
-export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout";
 
 type SubagentRunState = "active" | "interrupted" | "historical";
 
@@ -55,6 +56,8 @@ type SessionCompactionCheckpointPreview = Pick<
 
 export type GatewaySessionRow = {
   key: string;
+  permissionMode?: SessionEntry["permissionMode"];
+  sessionRoot?: string;
   /** Additive collaboration state; absent on older gateways. */
   visibility?: SessionVisibility;
   /** Caller-relative role used by Control UI participation controls. */
@@ -79,6 +82,9 @@ export type GatewaySessionRow = {
   subagentControlScope?: SessionEntry["subagentControlScope"];
   createdVia?: SessionEntry["createdVia"];
   createdActor?: SessionCreatedActor;
+  owner?: SessionOwner;
+  participants?: SessionCreatedActor[];
+  participantCount?: number;
   createdAt?: SessionEntry["createdAt"];
   forkSource?: SessionEntry["forkSource"];
   previousSessionId?: SessionEntry["previousSessionId"];
@@ -117,6 +123,7 @@ export type GatewaySessionRow = {
   restartRecoveryStatus?: "tombstoned";
   pinnedAt?: number;
   icon?: string;
+  channelAvatarUrl?: string;
   unread?: boolean;
   lastReadAt?: number;
   agentStatus?: SessionEntry["agentStatus"];

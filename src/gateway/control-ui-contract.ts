@@ -122,37 +122,8 @@ export type ControlUiSessionPullRequestsChanged = {
   sessions: Record<string, ControlUiSessionPullRequestSnapshot>;
 };
 
-/** Runtime config consumed by the browser Control UI during bootstrap. */
-export type ControlUiBootstrapConfig = {
-  basePath: string;
-  assistantName: string;
-  assistantAvatar: string;
-  assistantAvatarSource?: string | null;
-  assistantAvatarStatus?: "none" | "local" | "remote" | "data" | null;
-  assistantAvatarReason?: string | null;
-  assistantAgentId?: string;
-  serverVersion?: string;
-  /**
-   * Git branch of a source-checkout (non-release) gateway install. Omitted for
-   * package installs and mainline (main/master) checkouts so the UI only flags
-   * gateways running unreleased branch code.
-   */
-  devGitBranch?: string;
-  localMediaPreviewRoots?: string[];
-  embedSandbox?: ControlUiEmbedSandboxMode;
-  allowExternalEmbedUrls?: boolean;
-  seamColor?: string;
-  /** Resolved `agents.defaults.timeFormat`; "auto" keeps the browser locale default. */
-  timeFormat?: "auto" | "12" | "24";
-  /** Fork: `gateway.controlUi.chatMessageMaxWidth` CSS width cap for chat bubbles. */
-  chatMessageMaxWidth?: string;
-  /**
-   * Whether the operator terminal surface is enabled (`gateway.terminal.enabled`).
-   * The Control UI hides the terminal entirely when false so a disabled kill
-   * switch removes the surface rather than showing a button that errors on open.
-   */
-  terminalEnabled?: boolean;
-  /** Whether the Labs-gated CLI agents model-picker group is enabled. */
-  cliAgentsEnabled?: boolean;
-  pluginFrameGrants?: ControlUiPluginFrameGrantAck[];
-};
+// `ControlUiBootstrapConfig` (plus `ControlUiEmbedSandboxMode` and
+// `ControlUiPluginFrameGrantAck`) is the canonical browser bootstrap contract in
+// control-ui-bootstrap-contract.ts and reaches gateway callers through the
+// `export *` barrel above; fork-only fields (timeFormat, chatMessageMaxWidth)
+// live on that single definition.

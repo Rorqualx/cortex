@@ -8,13 +8,20 @@ import type {
 import { normalizeOptionalString, type FastMode } from "@openclaw/normalization-core/string-coerce";
 import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
-import type { SessionRow } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+import type {
+  SessionRow,
+  SessionRunStatus,
+} from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
 import type { ChatType } from "../../channels/chat-type.js";
-import type { CronScheduledToolPolicy } from "../../cron/scheduled-tool-policy.js";
+import type {
+  CronScheduledToolCallerOrigin,
+  CronScheduledToolPolicy,
+} from "../../cron/scheduled-tool-policy.js";
 import type { ChannelRouteRef } from "../../plugin-sdk/channel-route.js";
 import type { SessionBoardFace } from "../../shared/session-types.js";
 import type { Skill } from "../../skills/loading/skill-contract.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
+import type { SessionSystemPromptReport } from "./session-system-prompt-report.js";
 import type { TtsAutoMode } from "../types.tts.js";
 import type { MainRestartRecoveryState } from "./main-session-recovery.types.js";
 import type {
@@ -26,6 +33,8 @@ import type {
   SessionCreatedActor,
   SessionCreatedVia,
   SessionEntryProvenance,
+  SessionOwnerAssignment,
+  SessionParticipant,
 } from "./session-entry-provenance.js";
 import type { AgentPatchedSessionModelFallback } from "./session-model-fallback.js";
 
@@ -49,6 +58,7 @@ export type SessionOrigin = {
   to?: string;
   nativeChannelId?: string;
   nativeDirectUserId?: string;
+  avatar?: string;
   accountId?: string;
   threadId?: string | number;
 };
@@ -373,7 +383,13 @@ type SessionEntryCore = SessionRestartRecoveryState &
      * Managed worktree bound to this session; set with spawnedCwd at worktree
      * creation and cleared together when a plain New Chat detaches the checkout.
      */
-    worktree?: { id: string; branch: string; repoRoot: string };
+    worktree?: {
+      id: string;
+      branch: string;
+      repoRoot: string;
+      /** Durable skill workspace prepared when this session runs from a managed worktree. */
+      canonicalWorkspaceDir?: string;
+    };
     /** Project registry id selected when this logical session node was created. */
     projectId?: string;
     /** Explicit parent session linkage for dashboard-created child sessions. */
@@ -384,6 +400,12 @@ type SessionEntryCore = SessionRestartRecoveryState &
     createdVia?: SessionCreatedVia;
     /** Actor that caused node creation, with an optional profile, session, or sender id; written once. */
     createdActor?: SessionCreatedActor;
+    /** Mutable responsibility, projected from SQLite; absent means createdActor owns the session. */
+    owner?: SessionOwnerAssignment;
+    /** Earliest external prompt actors, projected from the participant table. */
+    participants?: SessionParticipant[];
+    /** Total external prompt actors after excluding the effective owner. */
+    participantCount?: number;
     /** Node creation time (ms); unlike sessionStartedAt, survives sessionId rotations. */
     createdAt?: number;
     /** Exact source generation and optional cut entry for an actual transcript-copy fork. */
@@ -437,7 +459,7 @@ type SessionEntryCore = SessionRestartRecoveryState &
     /** Accumulated runtime across subagent follow-up runs, persisted after completion. */
     runtimeMs?: number;
     /** Final persisted subagent run status, used after in-memory run archival. */
-    status?: "running" | "done" | "failed" | "killed" | "timeout";
+    status?: SessionRunStatus;
     /** Compact user-facing reason for the latest failed or timed-out run. */
     lastRunError?: string;
     /**
@@ -468,6 +490,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
       toolsAllowIsDefault?: boolean;
       /** Exact server-stamped authority provenance copied from the owning cron job. */
       scheduledToolPolicy?: CronScheduledToolPolicy;
+      /** Store-private origin paired with an account scheduled-tool policy. */
+      scheduledToolCallerOrigin?: CronScheduledToolCallerOrigin;
       cliSessionBindingFacts?: {
         extraSystemPromptStatic?: string;
         sourceReplyDeliveryMode?: "automatic" | "message_tool_only";
@@ -615,6 +639,8 @@ export type InternalSessionEntryCore = SessionEntryCore & {
   lifecycleRunId?: string;
   /** Run admitted by the session lane; overwritten at admission and checked by transcript writes. */
   activeWriterRunId?: string;
+  /** Private per-generation ownership for the pre-runtime checkout baseline capture. */
+  sessionDiffBaselineCapture?: import("./session-diff-baseline-capture.js").SessionDiffBaselineCapture;
   mainRestartRecovery?: MainRestartRecoveryState;
 };
 
@@ -882,69 +908,10 @@ export type SessionSkillSnapshot = {
   version?: number;
 };
 
-export type SessionSystemPromptReport = {
-  source: "run" | "estimate";
-  generatedAt: number;
-  sessionId?: string;
-  sessionKey?: string;
-  provider?: string;
-  model?: string;
-  workspaceDir?: string;
-  bootstrapMaxChars?: number;
-  bootstrapTotalMaxChars?: number;
-  bootstrapTruncation?: {
-    warningMode?: "off" | "once" | "always";
-    warningShown?: boolean;
-    promptWarningSignature?: string;
-    warningSignaturesSeen?: string[];
-    truncatedFiles?: number;
-    nearLimitFiles?: number;
-    totalNearLimit?: boolean;
-  };
-  sandbox?: {
-    mode?: string;
-    sandboxed?: boolean;
-  };
-  systemPrompt: {
-    chars: number;
-    projectContextChars: number;
-    nonProjectContextChars: number;
-    hash?: string;
-  };
-  currentTurn?: {
-    kind?: "user_request" | "room_event";
-    promptChars: number;
-    runtimeContextChars: number;
-    // Hook prepend/append context sent to the model but absent from the
-    // persisted transcript prompt; consumers add it on top of transcript sums.
-    modelOnlyPromptChars?: number;
-  };
-  injectedWorkspaceFiles: Array<{
-    name: string;
-    path: string;
-    missing: boolean;
-    rawChars: number;
-    injectedChars: number;
-    truncated: boolean;
-  }>;
-  skills: {
-    promptChars: number;
-    hash?: string;
-    entries: Array<{ name: string; blockChars: number }>;
-  };
-  tools: {
-    listChars: number;
-    schemaChars: number;
-    entries: Array<{
-      name: string;
-      summaryChars: number;
-      summaryHash?: string;
-      schemaChars: number;
-      schemaHash?: string;
-      propertiesCount?: number | null;
-    }>;
-  };
-};
+// Canonical report shape (with the injectionStatus native-doc discriminant) lives
+// in session-system-prompt-report.ts; re-export it so callers importing from this
+// barrel see the single upstream definition rather than a drifting duplicate.
+export type { SessionSystemPromptReport } from "./session-system-prompt-report.js";
 
 // Upstream session token-accounting version tag (grafted from upstream during resync;
 // consumed by session-usage/compaction accounting).

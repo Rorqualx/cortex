@@ -84,7 +84,7 @@ function projectMcpCallToolResultContent(result: {
 export function projectMcpCallToolResult(
   result: { content?: unknown; structuredContent?: unknown; isError?: unknown },
   details: Record<string, unknown> = {},
-): AgentToolResult<unknown> {
+): AgentToolResult<Record<string, unknown>> {
   const isError = result.isError === true;
   const content = projectMcpCallToolResultContent(result);
   return {

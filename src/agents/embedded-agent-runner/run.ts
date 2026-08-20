@@ -2246,7 +2246,7 @@ export async function runEmbeddedAgent(
                   ...resolveContextEngineCapabilities({
                     config: params.config,
                     sessionKey: params.sessionKey,
-                    agentId: sessionAgentId,
+                    explicitAgentId: sessionAgentId,
                     contextEnginePluginId: resolveContextEnginePluginId(),
                     purpose: "context-engine.timeout-compaction",
                   }),
@@ -2436,7 +2436,7 @@ export async function runEmbeddedAgent(
                   ...resolveContextEngineCapabilities({
                     config: params.config,
                     sessionKey: params.sessionKey,
-                    agentId: sessionAgentId,
+                    explicitAgentId: sessionAgentId,
                     contextEnginePluginId: resolveContextEnginePluginId(),
                     purpose: "context-engine.overflow-compaction",
                   }),

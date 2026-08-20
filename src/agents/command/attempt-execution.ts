@@ -461,6 +461,7 @@ export async function persistCliTurnTranscript(params: {
   threadId?: string | number;
   sessionCwd: string;
   config: OpenClawConfig;
+  embeddedAssistantGapFill?: boolean;
   skipUserTurn?: boolean;
   skipAssistantTurn?: boolean;
 }): Promise<PersistTextTurnTranscriptResult> {
@@ -468,7 +469,10 @@ export async function persistCliTurnTranscript(params: {
   const replyText = resolveCliTranscriptReplyText(result);
   const provider = result.meta.agentMeta?.provider?.trim() ?? "cli";
   const model = result.meta.agentMeta?.model?.trim() ?? "default";
-  const skipUserTurn = requestedSkipUserTurn === true;
+  // Embedded gap-fill already persisted the user turn via the embedded runner;
+  // skip re-appending it so the fill only records the assistant reply.
+  const gapFill = params.embeddedAssistantGapFill ?? false;
+  const skipUserTurn = gapFill || requestedSkipUserTurn === true;
 
   return await persistTextTurnTranscript({
     ...transcript,

@@ -25,6 +25,7 @@ const SessionsYieldToolSchema = Type.Object({
 export function createSessionsYieldTool(opts?: {
   sessionId?: string;
   claimYield?: () => boolean | Promise<boolean>;
+  onBeforeYield?: () => Promise<void> | void;
   onYield?: (message: string, acknowledgment?: string) => Promise<void> | void;
 }): AnyAgentTool {
   return {
@@ -52,6 +53,7 @@ export function createSessionsYieldTool(opts?: {
           error: NO_PENDING_CHILD_COMPLETION_ERROR,
         });
       }
+      await opts.onBeforeYield?.();
       // The runtime owns the actual pause/end-turn behavior; this tool records intent.
       await opts.onYield(message, acknowledgment);
       return jsonResult({

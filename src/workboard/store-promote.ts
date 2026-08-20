@@ -27,20 +27,21 @@ export class WorkboardPromoteStore extends WorkboardEnrichmentStore {
     scope?: WorkboardMutationScope,
   ): Promise<WorkboardCard> {
     return await this.enqueueMutation(async () => {
-      const result = await this.updateLatestCard(
+      const existing = await this.get(id);
+      if (!existing) {
+        throw new Error(`card not found: ${id}`);
+      }
+      // Operator surfaces omit scope and may override claims. Agent tools pass scope so a
+      // worker cannot move another worker's claimed card between the preflight and this write.
+      assertCanMutateClaimedCard(existing, scope);
+      return await this.updateCard(
         id,
-        (current) => {
-          // Recheck after every cross-host CAS conflict so a worker cannot move
-          // a card claimed between the read and write.
-          assertCanMutateClaimedCard(current, scope);
-          return { status, position };
-        },
+        { status, position },
         {
           allowMetadataDependencyLinks: false,
           enforceStatusHolds: true,
         },
       );
-      return result.card;
     });
   }
 

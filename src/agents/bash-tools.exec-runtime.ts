@@ -428,6 +428,7 @@ export function buildApprovalPendingMessage(params: {
   cwd: string | undefined;
   host: "gateway" | "node";
   nodeId?: string;
+  processContinuationAvailable?: boolean;
 }) {
   let fence = "```";
   while (params.command.includes(fence)) {
@@ -697,6 +698,9 @@ export async function runExecProcess(opts: {
   notifyOnExitEmptySuccess?: boolean;
   scopeKey?: string;
   sessionKey?: string;
+  /** Agent owner frozen when the exec process starts. */
+  agentId?: string;
+  processContinuationAvailable?: boolean;
   /** `session.mainKey` from the runtime config; snapshotted onto the
    *  ProcessSession so background-exit notifications can remap cron-run
    *  keys without an ambient config load. Long-running background exits use
@@ -800,6 +804,7 @@ export async function runExecProcess(opts: {
     command: opts.command,
     scopeKey: opts.scopeKey,
     sessionKey: opts.sessionKey,
+    agentId: opts.agentId,
     mainKey: opts.mainKey,
     sessionScope: opts.sessionScope,
     eventRouting: opts.eventRouting,
@@ -816,8 +821,7 @@ export async function runExecProcess(opts: {
     maxOutputChars: opts.maxOutput,
     pendingMaxOutputChars: opts.pendingMaxOutput,
     totalOutputChars: 0,
-    pendingStdout: [],
-    pendingStderr: [],
+    pendingOutput: [],
     pendingStdoutChars: 0,
     pendingStderrChars: 0,
     aggregated: "",

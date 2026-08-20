@@ -172,6 +172,13 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "quotaSuspension",
   "pendingTranscriptRepair",
   "visibility",
+  "permissionMode",
+  "sessionRoot",
+  "sessionDiffBaselineCapture",
+  "contextTokensSource",
+  "owner",
+  "participants",
+  "participantCount",
 ] as const satisfies ReadonlyArray<
   keyof SessionEntry | "__proto__" | "constructor" | "prototype" | "sessionFile" | "transcriptPath"
 >;

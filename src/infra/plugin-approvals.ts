@@ -37,7 +37,9 @@ export type PluginApprovalRequestPayload = {
 };
 
 /** Timed plugin approval request persisted while awaiting a decision. */
-export type PluginApprovalRequest = WirePluginApprovalRequestedEvent;
+// Wire alias carries id/request/createdAtMs/expiresAtMs; approvalKind is upstream
+// diagnostic metadata readers derive from the payload when absent.
+export type PluginApprovalRequest = WirePluginApprovalRequestedEvent & { approvalKind?: "plugin" };
 
 /** Resolved plugin approval decision plus optional request snapshot. */
 export type PluginApprovalResolved = WirePluginApprovalResolvedEvent;

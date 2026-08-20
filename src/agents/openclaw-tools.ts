@@ -40,7 +40,7 @@ import { applyNodesToolWorkspaceGuard } from "./openclaw-tools.nodes-workspace-g
 import {
   collectPresentOpenClawTools,
   shouldIncludeAskUserToolForOpenClawTools,
-  shouldIncludeUpdatePlanToolForOpenClawTools,
+  shouldIncludeProgressCardToolForOpenClawTools,
 } from "./openclaw-tools.registration.js";
 import { createOpenClawSwarmToolGroups } from "./openclaw-tools.swarm.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
@@ -100,7 +100,7 @@ import { createTaskSuggestionTools } from "./tools/task-suggestion-tools.js";
 import { createTerminalTool } from "./tools/terminal-tool.js";
 import { createTranscriptsTool } from "./tools/transcripts-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
-import { createUpdatePlanTool } from "./tools/update-plan-tool.js";
+import { createProgressCardTool } from "./tools/progress-card-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { createWorkboardTools } from "./tools/workboard-tools.js";
@@ -125,6 +125,19 @@ export function createOpenClawTools(
     agentAccountId?: string;
     /** Trusted account used only for Gateway authorization; delivery keeps agentAccountId. */
     gatewayCallerAccountId?: string;
+    gatewayCallerChannel?: string | null;
+    webFetchHostnameAllowlistRef?: { value?: string[] };
+    runtimeToolAllowlist?: string[];
+    githubPublicationAvailable?: boolean;
+    modelId?: string;
+    modelProvider?: string;
+    modelContextWindowTokens?: number;
+    claimYieldCompletion?: () => boolean | Promise<boolean>;
+    registerRunCleanup?: (cleanup: (reason: string) => Promise<void>) => void;
+    /** True only for explicit server-authored local scheduled provenance. */
+    gatewayCallerLocal?: boolean;
+    /** True only for a validated scheduled tool policy. */
+    gatewayCallerScheduled?: boolean;
     /** Delivery target for topic/thread routing. */
     agentTo?: string;
     /** Thread/topic identifier for routing replies to the originating thread. */
@@ -488,10 +501,16 @@ export function createOpenClawTools(
     });
   const includeSubagentSpawnTool = !embedded || options?.allowGatewaySubagentBinding === true;
   const effectiveCallGateway = embedded ? createEmbeddedCallGateway() : callGateway;
-  const includeUpdatePlanTool = shouldIncludeUpdatePlanToolForOpenClawTools({
+  const progressCardTool = shouldIncludeProgressCardToolForOpenClawTools({
     config: resolvedConfig,
+    agentId: sessionAgentId,
+    agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
     pluginToolDenylist: options?.pluginToolDenylist,
-  });
+  })
+    ? createProgressCardTool({
+        agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+      })
+    : null;
   const includeAskUserTool = shouldIncludeAskUserToolForOpenClawTools({
     config: resolvedConfig,
     agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
@@ -632,7 +651,7 @@ export function createOpenClawTools(
             agentId: sessionAgentId,
           }),
         ]),
-    ...(includeUpdatePlanTool ? [createUpdatePlanTool()] : []),
+    ...(progressCardTool ? [progressCardTool] : []),
     ...swarmToolGroups.structuredOutput,
     ...(includeAskUserTool
       ? [
