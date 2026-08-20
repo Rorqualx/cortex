@@ -591,3 +591,13 @@ export {
   buildSkillForgePromptSection,
   SKILL_FORGE_TOOL_NAME,
 } from "../agents/skill-forge-prompt.js";
+export {
+  buildDelegationGuidanceSection,
+  resolveMainSessionDelegationMode,
+} from "../agents/delegation-guidance.js";
+export { buildHarnessVisibleReplyGuidance } from "../auto-reply/source-reply-delivery-mode.js";
+export { getPluginToolSideEffectOwnerKey } from "../plugins/tools.js";
+export type {
+  AgentHarnessNativeCompaction,
+  AgentHarnessModelCatalogParams,
+} from "../agents/harness/types.js";

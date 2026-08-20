@@ -1,9 +1,9 @@
 import {
   buildDelegationGuidanceSection,
   buildHarnessVisibleReplyGuidance,
-  buildSkillWorkshopPromptSection,
+  buildSkillForgePromptSection,
   resolveMainSessionDelegationMode,
-  SKILL_WORKSHOP_TOOL_NAME,
+  SKILL_FORGE_TOOL_NAME,
   TRANSCRIPT_CREDENTIAL_SAFETY_PROMPT,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
@@ -46,8 +46,8 @@ export function buildCopilotPromptGuidance(params: {
       : undefined;
   const sections = [
     COPILOT_HARNESS_IDENTITY,
-    callableTools.has(SKILL_WORKSHOP_TOOL_NAME)
-      ? buildSkillWorkshopPromptSection().join("\n")
+    callableTools.has(SKILL_FORGE_TOOL_NAME)
+      ? buildSkillForgePromptSection().join("\n")
       : undefined,
     delegationGuidance,
     buildHarnessVisibleReplyGuidance({
