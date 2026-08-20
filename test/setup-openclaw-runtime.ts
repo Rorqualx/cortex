@@ -7,6 +7,7 @@ import type {
 } from "../src/channels/plugins/types.public.js";
 import type { OpenClawConfig } from "../src/config/config.js";
 import type { OutboundSendDeps } from "../src/infra/outbound/deliver.js";
+import { clearPluginMetadataLifecycleCaches } from "../src/plugins/plugin-metadata-lifecycle.js";
 import { createEmptyPluginRegistry } from "../src/plugins/registry-empty.js";
 import type { PluginRegistry } from "../src/plugins/registry.js";
 import { installSharedTestSetup } from "./setup.shared.js";
@@ -382,6 +383,12 @@ afterEach(async () => {
   resetModelsJsonReadyCacheForTest();
   resetPreparedModelRuntimeSnapshotsForTest();
   await installDefaultPluginRegistry();
+  // Statically imported so it resolves to THIS test file's module instance
+  // (mocking tests get a duplicated plugin-metadata graph the worker-helper clear,
+  // cached on a global symbol, cannot reach). Clears the current snapshot + the
+  // registered process memos (plugin-skills' pluginSkillDirsMemo) so plugin state
+  // set by one test cannot leak into the next via resolvePluginSkillDirs.
+  clearPluginMetadataLifecycleCaches();
 });
 
 afterAll(async () => {
