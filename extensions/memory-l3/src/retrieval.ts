@@ -711,7 +711,7 @@ export async function retrieveTopK(params: {
     corpusStats.total >= (config.corpusSizeBm25Threshold ?? 50_000)
   ) {
     const scaleFactor = config.corpusSizeBm25ScaleFactor ?? 1.5;
-    if (scaleFactor > 1.0) {
+    if (scaleFactor > 1) {
       effectiveConfig = {
         ...config,
         weightBm25: config.weightBm25 * scaleFactor,
@@ -1153,7 +1153,9 @@ export async function retrieveTopK(params: {
     if (params.llmCaller && reformulations.length < 3) {
       const llmVariants = await llmReformulate(params.query, params.llmCaller);
       for (const v of llmVariants) {
-        if (reformulations.length >= 3) break;
+        if (reformulations.length >= 3) {
+          break;
+        }
         reformulations.push(v);
       }
     }
@@ -1166,12 +1168,16 @@ export async function retrieveTopK(params: {
 
       for (const reformQuery of reformulations) {
         const reformTokens = tokenize(reformQuery);
-        if (reformTokens.size === 0) continue;
+        if (reformTokens.size === 0) {
+          continue;
+        }
 
         // Re-score all items with the reformulated query
         for (const item of items) {
           // Skip items already in results
-          if (existingKeys.has(item.fact.dedupKey)) continue;
+          if (existingKeys.has(item.fact.dedupKey)) {
+            continue;
+          }
 
           const signals = scoreFact({
             queryTokens: reformTokens,
@@ -1438,7 +1444,9 @@ function compressFactsForResult(facts: RetrievedFact[], intent: QueryIntent): Re
  * than N sentence boundaries, returns it unchanged.
  */
 function truncateToSentences(text: string, maxSentences: number): string {
-  if (maxSentences <= 0) return text;
+  if (maxSentences <= 0) {
+    return text;
+  }
   // Split on sentence boundaries: ., !, ? followed by whitespace or end.
   const sentences: string[] = [];
   let current = "";
@@ -1453,7 +1461,9 @@ function truncateToSentences(text: string, maxSentences: number): string {
       if (sentences.length >= maxSentences) {
         // Check if there's remaining content — if not, text was exactly N sentences.
         const remaining = text.slice(i + 1).trim();
-        if (!remaining) return text;
+        if (!remaining) {
+          return text;
+        }
         truncated = true;
         break;
       }
@@ -1903,7 +1913,7 @@ export function informationDensity(factText: string, queryTokens: Set<string>): 
 export function rerankByInformationDensity(
   results: RetrievedFact[],
   query: string,
-  weight: number = 0.15,
+  weight = 0.15,
 ): RetrievedFact[] {
   if (results.length <= 1 || weight <= 0) {
     return results;
@@ -2044,6 +2054,13 @@ function tierMarker(tier: RetrievalTier): string {
       return "✦";
     case "l2":
       return "·";
+    default: {
+      // RetrievalTier is a closed union; this asserts exhaustiveness so a
+      // newly added tier becomes a compile error here instead of silently
+      // rendering no marker.
+      const unreachable: never = tier;
+      return unreachable;
+    }
   }
 }
 
@@ -2110,7 +2127,7 @@ function extractRequestedFields(query: string): string[] {
 
   // Pattern 1: comma-separated lists ("X, Y, and Z")
   const commaListPattern =
-    /(?:what|show|tell|get|find|list)(?:\s+(?:me|us|the|all))?\s+(?:the\s+)?([a-z][a-z0-9_\-]*\s*(?:,\s*[a-z][a-z0-9_\-]*\s*)+(?:\s+and\s+[a-z][a-z0-9_\-]*)?)/gi;
+    /(?:what|show|tell|get|find|list)(?:\s+(?:me|us|the|all))?\s+(?:the\s+)?([a-z][a-z0-9_-]*\s*(?:,\s*[a-z][a-z0-9_-]*\s*)+(?:\s+and\s+[a-z][a-z0-9_-]*)?)/gi;
   const commaMatch = commaListPattern.exec(query);
   if (commaMatch) {
     const listPart = commaMatch[1] ?? "";
@@ -2124,7 +2141,7 @@ function extractRequestedFields(query: string): string[] {
 
   // Pattern 2: "X and Y" pairs
   const andPattern =
-    /(?:what|show|tell|get|find)(?:\s+(?:me|us|the))?\s+(?:the\s+)?([a-z][a-z0-9_\-]*\s+and\s+[a-z][a-z0-9_\-]*)/gi;
+    /(?:what|show|tell|get|find)(?:\s+(?:me|us|the))?\s+(?:the\s+)?([a-z][a-z0-9_-]*\s+and\s+[a-z][a-z0-9_-]*)/gi;
   const andMatch = andPattern.exec(query);
   if (andMatch && !commaMatch) {
     // Only use this if we didn't already match a comma list
@@ -2134,7 +2151,7 @@ function extractRequestedFields(query: string): string[] {
   }
 
   // Pattern 3: possessive requests ("Joe's phone", "server's IP")
-  const possessivePattern = /([a-z][a-z0-9_\-]*'s\s+[a-z][a-z0-9_\-]+)/gi;
+  const possessivePattern = /([a-z][a-z0-9_-]*'s\s+[a-z][a-z0-9_-]+)/gi;
   for (const match of query.matchAll(possessivePattern)) {
     const field = match[1];
     if (field !== undefined) {

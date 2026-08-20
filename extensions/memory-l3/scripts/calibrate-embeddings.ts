@@ -54,6 +54,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve as resolvePath } from "node:path";
+import { linearRegression } from "../src/calibration-math.js";
 import { cosineSimilarity } from "../src/scoring.js";
 import { Storage } from "../src/storage.js";
 
@@ -127,52 +128,6 @@ function syntheticQuery(factText: string): string {
   // Take first 4-6 significant words
   const n = Math.min(6, Math.max(4, Math.floor(words.length / 2)));
   return words.slice(0, n).join(" ");
-}
-
-// ── Linear Regression ──────────────────────────────────────────────────
-
-function linearRegression(
-  xs: number[],
-  ys: number[],
-): { slope: number; intercept: number; r2: number } {
-  const n = xs.length;
-  if (n === 0 || ys.length !== n) return { slope: 1, intercept: 0, r2: 0 };
-
-  // One bounded pass over the paired samples keeps xs[i]/ys[i] provably in
-  // range (noUncheckedIndexedAccess) and drops the dead sumY2 the old
-  // multi-reduce form carried.
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumX2 = 0;
-  for (let i = 0; i < n; i++) {
-    const x = xs[i];
-    const y = ys[i];
-    if (x === undefined || y === undefined) continue;
-    sumX += x;
-    sumY += y;
-    sumXY += x * y;
-    sumX2 += x * x;
-  }
-
-  const denom = n * sumX2 - sumX * sumX;
-  const slope = denom === 0 ? 1 : (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
-
-  // R²
-  const meanY = sumY / n;
-  let ssTot = 0;
-  let ssRes = 0;
-  for (let i = 0; i < n; i++) {
-    const x = xs[i];
-    const y = ys[i];
-    if (x === undefined || y === undefined) continue;
-    ssTot += (y - meanY) ** 2;
-    ssRes += (y - (slope * x + intercept)) ** 2;
-  }
-  const r2 = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
-
-  return { slope, intercept, r2 };
 }
 
 // ── Main ───────────────────────────────────────────────────────────────
@@ -323,7 +278,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error("[calibrate] Fatal:", err);
   process.exit(1);
 });

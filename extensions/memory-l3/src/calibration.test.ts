@@ -2,33 +2,11 @@ import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { linearRegression } from "./calibration-math.js";
 
-// The threshold map functions are private to engine.ts, so we test the
-// calibration math directly. This mirrors the linearRegression logic
-// from calibrate-embeddings.ts.
-
-function linearRegression(
-  xs: number[],
-  ys: number[],
-): { slope: number; intercept: number; r2: number } {
-  const n = xs.length;
-  if (n === 0) return { slope: 1, intercept: 0, r2: 0 };
-  const sumX = xs.reduce((a, b) => a + b, 0);
-  const sumY = ys.reduce((a, b) => a + b, 0);
-  const sumXY = xs.reduce((acc, x, i) => acc + x * ys[i], 0);
-  const sumX2 = xs.reduce((acc, x) => acc + x * x, 0);
-
-  const denom = n * sumX2 - sumX * sumX;
-  const slope = denom === 0 ? 1 : (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
-
-  const meanY = sumY / n;
-  const ssTot = ys.reduce((acc, y) => acc + (y - meanY) ** 2, 0);
-  const ssRes = ys.reduce((acc, y, i) => acc + (y - (slope * xs[i] + intercept)) ** 2, 0);
-  const r2 = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
-
-  return { slope, intercept, r2 };
-}
+// The threshold map functions are private to engine.ts, so we exercise the
+// shared calibration math (src/calibration-math.ts) directly — the same module
+// the calibration tool (scripts/calibrate-embeddings.ts) uses.
 
 describe("cross-embedding-model calibration", () => {
   it("linearRegression fits a perfect linear relationship", () => {
