@@ -190,6 +190,13 @@ export const icons = {
       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
     </svg>
   `,
+  copyImage: html`
+    <svg viewBox="0 0 24 24">
+      <rect width="14" height="14" x="8" y="8" rx="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+      <circle cx="13" cy="13" r="1" />
+    </svg>
+  `,
   search: html`
     <svg viewBox="0 0 24 24">
       <circle cx="11" cy="11" r="8" />

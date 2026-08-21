@@ -30,6 +30,7 @@ import type {
 } from "../agent-runtime-identity-token.js";
 import type { ChatAbortControllerEntry } from "../chat-abort.js";
 import type { GatewayHotReloadStatus } from "../config-reload-status.types.js";
+import type { GatewayConfigRevisionProjector } from "../config-revision-token.js";
 import type { ScopeUpgradeCoordinator } from "../device-scope-upgrade.js";
 import type { ExecApprovalManager, ExecApprovalRecord } from "../exec-approval-manager.js";
 import type { AuthenticatedGitHubIdentitySync } from "../github-user-identity.js";
@@ -57,6 +58,7 @@ import type { TerminalLaunchResolution } from "../terminal/launch.js";
 import type { TerminalSessionManager } from "../terminal/session-manager.js";
 import type {
   WorkerPlacementDiskSpaceReader,
+  WorkerPlacementRunnerAvailabilityReader,
   WorkerSessionPlacementReader,
 } from "../worker-environments/placement-projector.js";
 import type { WorkerSessionPlacementRetirementService } from "../worker-environments/placement-store.js";
@@ -211,6 +213,7 @@ type GatewaySystemAgentSession = {
 /** Kernel-owned services and state that can be constructed without binding sockets. */
 type GatewayKernelContext = {
   deps: CliDeps;
+  configRevisionProjector: GatewayConfigRevisionProjector;
   cron: GatewayCronServiceContract;
   cronStorePath: string;
   getRuntimeConfig: () => OpenClawConfig;
@@ -372,11 +375,16 @@ type GatewayResidentBridgeContext = {
     Partial<WorkerSessionPlacementRetirementService>;
   /** Process-local health samples fenced to the exact active placement owner. */
   workerPlacementDiskSpaceReader?: WorkerPlacementDiskSpaceReader;
+  /** Process-current paired-device runner proof for active placement projection. */
+  workerPlacementRunnerAvailabilityReader?: WorkerPlacementRunnerAvailabilityReader;
   /** Use-time approval authority validation over the live run/worker owners. */
   validateAgentRuntimeApprovalAuthority?: AgentRuntimeApprovalAuthorityValidator;
   /** One-way local-to-worker dispatch; absent when cloud workers are disabled. */
   workerPlacementDispatchService?: WorkerPlacementDispatchContract;
   githubPublicationService?: import("../github-publication.js").GitHubPublicationCoordinator;
+  githubOAuthService?: ReturnType<
+    typeof import("../github-oauth-lifecycle.js").createGitHubOAuthLifecycle
+  >;
   getRuntimeSnapshot: () => ChannelRuntimeSnapshot;
   getEventLoopHealth?: () => GatewayEventLoopHealth | undefined;
   getConfigReloaderHotReloadStatus?: () => GatewayHotReloadStatus | undefined;

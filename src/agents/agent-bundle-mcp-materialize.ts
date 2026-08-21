@@ -20,10 +20,15 @@ import type {
   McpToolCatalog,
   SessionMcpRuntime,
 } from "./agent-bundle-mcp-types.js";
-import { projectMcpCallToolResult } from "./mcp-content.js";
+import {
+  projectMcpCallToolResult,
+  setMcpCodeModeGuestResult,
+  setMcpCodeModeGuestResultFromAgentResult,
+} from "./mcp-content.js";
 import { isMcpToolAllowed } from "./mcp-tool-filter.js";
 import { buildMcpAppCanvasPayload, fetchMcpAppView } from "./mcp-ui-resource.js";
 import type { AgentToolResult } from "./runtime/index.js";
+import { toToolSearchJsonSafe } from "./tool-search-json.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { sanitizeExternalContentText, wrapExternalContent } from "../security/external-content.js";
 
@@ -157,7 +162,7 @@ function toAgentToolResult(params: {
   const content = projected.content.map((block) =>
     fenceUntrustedMcpBlock(block, params.serverName),
   );
-  const details: Record<string, unknown> = { ...projected.details };
+  const details: Record<string, unknown> = isRecord(projected.details) ? { ...projected.details } : {};
   if (details.structuredContent !== undefined) {
     details.structuredContent = sanitizeMcpStructuredValue(details.structuredContent);
   }
@@ -169,12 +174,25 @@ function toJsonAgentToolResult(params: {
   operation: string;
   value: unknown;
 }): AgentToolResult<unknown> {
-  return {
+  const publicValue = toToolSearchJsonSafe(
+    params.operation === "resources_list" && Array.isArray(params.value)
+      ? { resources: params.value }
+      : params.operation === "prompts_list" && Array.isArray(params.value)
+        ? { prompts: params.value }
+        : params.value,
+  );
+  if (isRecord(publicValue)) {
+    delete publicValue._meta;
+  }
+  const result: AgentToolResult<unknown> = {
     content: [
       {
         type: "text",
         // Fork: fence untrusted server-provided JSON instead of only tagging it.
-        text: fenceUntrustedMcpText(JSON.stringify(params.value, null, 2), params.serverName),
+        // Fence upstream's sanitized publicValue (resources/prompts projection,
+        // _meta stripped), not the raw params.value, so the fence output matches
+        // the code-mode guest result and never leaks _meta.
+        text: fenceUntrustedMcpText(JSON.stringify(publicValue, null, 2), params.serverName),
       },
     ],
     details: {
@@ -182,6 +200,7 @@ function toJsonAgentToolResult(params: {
       mcpOperation: params.operation,
     },
   };
+  return setMcpCodeModeGuestResult(result, publicValue);
 }
 
 function requireStringArg(input: unknown, key: string): string {
@@ -250,6 +269,7 @@ function addMcpUtilityTool(params: {
     description: params.description,
     parameters: normalizeToolParameterSchema(params.parameters as never),
     executionMode: params.executionMode,
+    ...(params.execute ? { resultContentSource: "network" as const } : {}),
     execute:
       params.execute ??
       (async () => {
@@ -341,6 +361,9 @@ export function buildBundleMcpToolsFromCatalog(params: {
       description: tool.description || tool.fallbackDescription,
       parameters: normalizeToolParameterSchema(tool.inputSchema),
       executionMode,
+      ...(params.createExecute && !sessionDeniedOnly
+        ? { resultContentSource: "network" as const }
+        : {}),
       execute:
         (!sessionDeniedOnly ? params.createExecute?.(tool) : undefined) ??
         (async () => {
@@ -494,7 +517,7 @@ export async function materializeBundleMcpToolsForRun(params: {
         if (!Object.hasOwn(catalog.servers, tool.serverName)) {
           const connect = runtime.requesterConnect?.createExecute(tool.serverName);
           if (connect) {
-            return await connect(toolCallId, input);
+            return setMcpCodeModeGuestResultFromAgentResult(await connect(toolCallId, input));
           }
         }
         runtime.markUsed();

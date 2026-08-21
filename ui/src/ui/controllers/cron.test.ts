@@ -43,6 +43,7 @@ function createState(overrides: Partial<CronState> = {}): CronState {
     cronJobsEnabledFilter: "all",
     cronJobsScheduleKindFilter: "all",
     cronJobsLastStatusFilter: "all",
+    cronJobsTriggerFilter: "all",
     cronJobsSortBy: "nextRunAtMs",
     cronJobsSortDir: "asc",
     cronAgentId: null,

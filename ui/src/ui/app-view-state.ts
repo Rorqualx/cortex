@@ -440,6 +440,7 @@ export type AppViewState = ScrollHost &
     | "cronJobsEnabledFilter"
     | "cronJobsScheduleKindFilter"
     | "cronJobsLastStatusFilter"
+    | "cronJobsTriggerFilter"
     | "cronJobsSortBy"
     | "cronJobsSortDir"
     | "cronStatus"

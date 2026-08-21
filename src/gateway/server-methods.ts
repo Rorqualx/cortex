@@ -349,6 +349,28 @@ const loadWizardHandlers = lazyHandlerModule(
   () => import("./server-methods/wizard.js"),
   (module) => module.wizardHandlers,
 );
+// Upstream #118232 handler groups whose descriptors were dropped by the merge=ours
+// resync while the modules landed; wire them so the new descriptors resolve a handler.
+const loadProjectsHandlers = lazyHandlerModule(
+  () => import("./server-methods/projects.js"),
+  (module) => module.projectsHandlers,
+);
+const loadPortalHandlers = lazyHandlerModule(
+  () => import("./server-methods/portals.js"),
+  (module) => module.portalHandlers,
+);
+const loadProgressCardHandlers = lazyHandlerModule(
+  () => import("./server-methods/progress-card.js"),
+  (module) => module.progressCardHandlers,
+);
+const loadToolsGithubHandlers = lazyHandlerModule(
+  () => import("./server-methods/tools-github.js"),
+  (module) => module.toolsGitHubHandlers,
+);
+const loadSessionsGithubHandlers = lazyHandlerModule(
+  () => import("./server-methods/sessions-github.js"),
+  (module) => module.sessionsGitHubHandlers,
+);
 
 function authorizeGatewayMethod(
   method: string,
@@ -516,6 +538,8 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "device.pair.rename",
       "device.token.rotate",
       "device.token.revoke",
+      "device.scopes.requestUpgrade",
+      "device.scopes.waitUpgrade",
     ],
     loadHandlers: loadDeviceHandlers,
   }),
@@ -524,7 +548,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
     loadHandlers: loadDevicePairSetupHandlers,
   }),
   ...createLazyCoreHandlers({
-    methods: ["diagnostics.stability"],
+    methods: ["diagnostics.stability", "diagnostics.lanes"],
     loadHandlers: loadDiagnosticsHandlers,
   }),
   ...createLazyCoreHandlers({
@@ -551,6 +575,10 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "environments.status",
       "environments.create",
       "environments.destroy",
+      "worker.desktop.observe",
+      "worker.desktop.launch",
+      "desktop.observe",
+      "desktop.launch",
     ],
     loadHandlers: loadEnvironmentsHandlers,
   }),
@@ -668,7 +696,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
     loadHandlers: loadTalkHandlers,
   }),
   ...createLazyCoreHandlers({
-    methods: ["audit.list", "audit.activity.list"],
+    methods: ["audit.list", "audit.activity.list", "audit.run.inspect"],
     loadHandlers: loadAuditHandlers,
   }),
   ...createLazyCoreHandlers({
@@ -678,6 +706,8 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "users.linkEmail",
       "users.setDisplayName",
       "users.setAvatar",
+      "users.prefs.get",
+      "users.prefs.set",
     ],
     loadHandlers: loadUsersHandlers,
   }),
@@ -746,6 +776,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "sessions.catalog.read",
       "sessions.catalog.continue",
       "sessions.catalog.archive",
+      "sessions.catalog.startTerminal",
     ],
     loadHandlers: loadSessionCatalogHandlers,
   }),
@@ -807,11 +838,16 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "sessions.get",
       "sessions.compact",
       "sessions.groups.list",
+      "sessions.groups.defaults",
       "sessions.groups.put",
       "sessions.groups.rename",
+      "sessions.groups.update",
       "sessions.groups.delete",
       "sessions.dispatch",
       "sessions.reclaim",
+      "sessions.move",
+      "sessions.patchMany",
+      "sessions.assignOwner",
       "session.visibility.set",
       "session.members.list",
       "session.members.add",
@@ -835,7 +871,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
     loadHandlers: loadSystemHandlers,
   }),
   ...createLazyCoreHandlers({
-    methods: ["update.status", "update.run"],
+    methods: ["update.status", "update.run", "update.hold"],
     loadHandlers: loadUpdateHandlers,
   }),
   ...createLazyCoreHandlers({
@@ -851,6 +887,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "node.pluginSurface.refresh",
       "node.pluginTools.update",
       "node.skills.update",
+      "node.runnerInventory.update",
       "node.pending.pull",
       "node.pending.ack",
       "node.invoke",
@@ -953,6 +990,40 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: ["migrations.memory.plan", "migrations.memory.apply"],
     loadHandlers: loadMigrationsHandlers,
+  }),
+  // Upstream #118232 handler groups restored after the merge=ours resync dropped their
+  // descriptors. Appended so the new tail descriptors resolve a dispatchable handler.
+  ...createLazyCoreHandlers({
+    methods: [
+      "projects.list",
+      "projects.register",
+      "projects.remove",
+      "projects.add",
+      "projects.searchRemote",
+    ],
+    loadHandlers: loadProjectsHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["portal.list", "portal.open", "portal.close"],
+    loadHandlers: loadPortalHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["progressCard.get", "progressCard.put"],
+    loadHandlers: loadProgressCardHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: [
+      "tools.github.status",
+      "tools.github.configure",
+      "tools.github.authorize.start",
+      "tools.github.authorize.poll",
+      "tools.github.authorize.cancel",
+    ],
+    loadHandlers: loadToolsGithubHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["sessions.github.publish"],
+    loadHandlers: loadSessionsGithubHandlers,
   }),
 };
 

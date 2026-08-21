@@ -28,6 +28,7 @@ type GatewayRequestContextClient = GatewayClient & {
 
 type GatewayRequestContextParams = {
   deps: GatewayRequestContext["deps"];
+  configRevisionProjector: GatewayRequestContext["configRevisionProjector"];
   runtimeState: Pick<
     GatewayServerLiveState,
     "cronState" | "controlUiSessionPullRequests" | "sessionViewerPresence"
@@ -82,6 +83,7 @@ type GatewayRequestContextParams = {
   hostDesktopService?: GatewayRequestContext["hostDesktopService"];
   workerSessionPlacementService?: GatewayRequestContext["workerSessionPlacementService"];
   workerPlacementDiskSpaceReader?: GatewayRequestContext["workerPlacementDiskSpaceReader"];
+  workerPlacementRunnerAvailabilityReader?: GatewayRequestContext["workerPlacementRunnerAvailabilityReader"];
   workerPlacementDispatchService?: GatewayRequestContext["workerPlacementDispatchService"];
   githubPublicationService?: GatewayRequestContext["githubPublicationService"];
   validateAgentRuntimeApprovalAuthority: GatewayRequestContext["validateAgentRuntimeApprovalAuthority"];
@@ -170,6 +172,7 @@ export function createGatewayRequestContext(
   const scopeUpgradeCoordinator = new ScopeUpgradeCoordinator();
   const context: GatewayRequestContextWithClientLookup = {
     deps: params.deps,
+    configRevisionProjector: params.configRevisionProjector,
     // Keep cron reads live so config hot reload can swap cron/store state without rebuilding
     // every handler closure that already holds this request context.
     get cron() {
@@ -382,6 +385,9 @@ export function createGatewayRequestContext(
       : {}),
     ...(params.workerPlacementDiskSpaceReader
       ? { workerPlacementDiskSpaceReader: params.workerPlacementDiskSpaceReader }
+      : {}),
+    ...(params.workerPlacementRunnerAvailabilityReader
+      ? { workerPlacementRunnerAvailabilityReader: params.workerPlacementRunnerAvailabilityReader }
       : {}),
     validateAgentRuntimeApprovalAuthority: params.validateAgentRuntimeApprovalAuthority,
     ...(params.workerPlacementDispatchService

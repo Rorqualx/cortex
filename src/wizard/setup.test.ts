@@ -404,7 +404,7 @@ vi.mock("../commands/onboard-custom.js", () => ({
 }));
 
 vi.mock("../commands/health.js", () => ({
-  healthCommand,
+  healthCommandNonExiting: healthCommand,
 }));
 
 vi.mock("../commands/onboard-hooks.js", () => ({
@@ -1014,8 +1014,11 @@ describe("runSetupWizard", () => {
     expect(diskConfig.agents?.defaults?.workspace).toBe("/tmp/conflicting-onboarding-workspace");
   });
 
-  it("seeds interactive remote setup from command flags", async () => {
-    const remoteToken = "REDACTED";
+  it.each([
+    { name: "token", optionKey: "remoteToken", remoteKey: "token" },
+    { name: "password", optionKey: "remotePassword", remoteKey: "password" },
+  ])("seeds interactive remote $name auth from command flags", async ({ optionKey, remoteKey }) => {
+    const remoteCredential = "REDACTED";
     readConfigFileSnapshot.mockResolvedValueOnce({
       path: "/tmp/.openclaw/openclaw.json",
       exists: true,
@@ -1040,29 +1043,39 @@ describe("runSetupWizard", () => {
     const prompter = buildWizardPrompter({});
     const runtime = createRuntime();
 
-    await runSetupWizard(
-      {
-        acceptRisk: true,
-        flow: "advanced",
-        mode: "remote",
-        remoteUrl: " wss://flag.example.com:18789 ",
-        remoteToken: ` ${remoteToken} `,
-      },
-      runtime,
-      prompter,
-    );
+    if (remoteKey === "password") {
+      vi.stubEnv("OPENCLAW_GATEWAY_TOKEN", "ambient-gateway-token");
+    }
+    try {
+      await runSetupWizard(
+        {
+          acceptRisk: true,
+          flow: "advanced",
+          mode: "remote",
+          remoteUrl: " wss://flag.example.com:18789 ",
+          [optionKey]: ` ${remoteCredential} `,
+        },
+        runtime,
+        prompter,
+      );
+    } finally {
+      if (remoteKey === "password") {
+        vi.unstubAllEnvs();
+      }
+    }
 
     expect(probeGatewayReachable).toHaveBeenCalledWith({
       url: "wss://flag.example.com:18789",
-      token: remoteToken,
+      token: remoteKey === "token" ? remoteCredential : undefined,
+      ...(remoteKey === "password" ? { password: remoteCredential } : {}),
     });
     expect(promptRemoteGatewayConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         gateway: expect.objectContaining({
           remote: {
             url: "wss://flag.example.com:18789",
-            token: remoteToken,
-            password: undefined,
+            token: remoteKey === "token" ? remoteCredential : undefined,
+            password: remoteKey === "password" ? remoteCredential : undefined,
           },
         }),
       }),
@@ -1072,7 +1085,7 @@ describe("runSetupWizard", () => {
         edgeAuthOriginUrl: "wss://stored.example.com:18789",
       },
     );
-    expect(runtime.log).not.toHaveBeenCalledWith(expect.stringContaining(remoteToken));
+    expect(runtime.log).not.toHaveBeenCalledWith(expect.stringContaining(remoteCredential));
   });
 
   it("uses the configured remote password for the setup reachability probe", async () => {
@@ -1576,11 +1589,18 @@ describe("runSetupWizard", () => {
     },
   ])("returns to setup mode after an interactive import $label", async ({ error, detail }) => {
     const workspaceDir = await makeCaseDir("import-retry-");
-    listSetupMigrationOptions.mockResolvedValueOnce([{ providerId: "hermes", label: "Hermes" }]);
+    listSetupMigrationOptions.mockResolvedValueOnce([
+      { providerId: "hermes", label: "Import from Hermes" },
+    ]);
     runSetupMigrationImport.mockRejectedValueOnce(error);
-    const setupChoices: Array<"import:hermes" | "quickstart"> = ["import:hermes", "quickstart"];
-    const select = vi.fn(async ({ message }: WizardSelectParams<unknown>) => {
-      if (message === "Setup mode") {
+    const setupChoices: Array<"import" | "quickstart"> = ["import", "quickstart"];
+    const select = vi.fn(async (params: WizardSelectParams<unknown>) => {
+      if (params.message === "Setup mode") {
+        expect(params.options).toEqual([
+          expect.objectContaining({ value: "quickstart", label: "QuickStart (recommended)" }),
+          expect.objectContaining({ value: "advanced", label: "Manual setup" }),
+          expect.objectContaining({ value: "import", label: "Import from another agent" }),
+        ]);
         return setupChoices.shift();
       }
       return "__skip__";
@@ -1609,6 +1629,39 @@ describe("runSetupWizard", () => {
       expect.stringContaining(detail),
       "Existing config detected",
     );
+    expect(finalizeSetupWizard).toHaveBeenCalledOnce();
+  });
+
+  it("returns from the migration picker without restarting setup", async () => {
+    const workspaceDir = await makeCaseDir("import-back-");
+    listSetupMigrationOptions.mockResolvedValueOnce([
+      { providerId: "hermes", label: "Import from Hermes" },
+    ]);
+    runSetupMigrationImport.mockResolvedValueOnce({ kind: "back" });
+    const setupChoices: Array<"import" | "quickstart"> = ["import", "quickstart"];
+    const select = vi.fn(async ({ message }: WizardSelectParams<unknown>) =>
+      message === "Setup mode" ? setupChoices.shift() : "__skip__",
+    );
+
+    await runSetupWizard(
+      {
+        acceptRisk: true,
+        authChoice: "skip",
+        installDaemon: false,
+        skipChannels: true,
+        skipSkills: true,
+        skipSearch: true,
+        skipHealth: true,
+        skipUi: true,
+        workspace: workspaceDir,
+      },
+      createRuntime(),
+      buildWizardPrompter({ select: select as unknown as WizardPrompter["select"] }),
+    );
+
+    expect(select.mock.calls.filter(([params]) => params.message === "Setup mode")).toHaveLength(2);
+    expect(detectSetupMigrationSources).toHaveBeenCalledOnce();
+    expect(runSetupMigrationImport).toHaveBeenCalledOnce();
     expect(finalizeSetupWizard).toHaveBeenCalledOnce();
   });
 
@@ -2424,6 +2477,80 @@ describe("runSetupWizard", () => {
         navigation: { canGoBack: false, canGoForward: false },
       }),
     );
+  });
+
+  it.each([
+    { name: "authenticates a provider", authChoice: "google-api-key" },
+    { name: "skips an optional provider model picker", authChoice: "github-copilot" },
+    { name: "honors a provider-required model picker", authChoice: "ollama" },
+    { name: "configures a custom provider", authChoice: "custom-api-key" },
+    { name: "keeps an explicit skip cold", authChoice: "skip" },
+  ] as const)("$name while keeping the existing model config", async ({ authChoice }) => {
+    const modelSelection = {
+      promptWhenAuthChoiceProvided: true,
+      allowKeepCurrent: authChoice !== "ollama",
+    };
+    if (authChoice === "ollama" || authChoice === "github-copilot") {
+      if (authChoice === "ollama") {
+        promptDefaultModel.mockResolvedValueOnce({ model: "ollama/llama3" });
+      }
+      resolveProviderPluginChoice.mockReturnValue({
+        provider: providerPluginStub({
+          id: authChoice,
+          wizard: { setup: { modelSelection } },
+        }),
+        method: {
+          id: authChoice === "ollama" ? "local" : "device",
+          label: authChoice,
+          kind: "custom",
+          run: vi.fn(async () => ({ profiles: [] })),
+        },
+        wizard: { modelSelection },
+      });
+    }
+    const existingConfig: OpenClawConfig = {
+      agents: {
+        defaults: { model: { primary: "anthropic/sonnet-4.6" } },
+        entries: { main: { default: true } },
+      },
+    };
+    readConfigFileSnapshot.mockImplementation(async () =>
+      configSnapshot(persistedWizardConfigs().at(-1) ?? existingConfig),
+    );
+
+    await runSetupWizard(
+      {
+        acceptRisk: true,
+        authChoice,
+        installDaemon: false,
+        skipChannels: true,
+        skipSkills: true,
+        skipSearch: true,
+        skipHealth: true,
+        skipUi: true,
+      },
+      createRuntime(),
+      buildWizardPrompter({}, { defaultSelect: "keep-model" }),
+    );
+
+    if (authChoice === "ollama") {
+      expect(promptDefaultModel).toHaveBeenCalledWith(
+        expect.objectContaining({ allowKeep: false }),
+      );
+    } else {
+      expect(promptDefaultModel).not.toHaveBeenCalled();
+    }
+    if (authChoice === "custom-api-key") {
+      expect(promptCustomApiConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ setAsPrimary: false }),
+      );
+    } else {
+      expect(prepareAuthChoice).toHaveBeenCalledTimes(authChoice === "skip" ? 0 : 1);
+    }
+    const persistedConfig = persistedWizardConfigs().at(-1);
+    expect(persistedConfig?.agents?.defaults?.model).toEqual({
+      primary: authChoice === "ollama" ? "ollama/llama3" : "anthropic/sonnet-4.6",
+    });
   });
 
   it("prompts for a model during explicit interactive Ollama setup", async () => {

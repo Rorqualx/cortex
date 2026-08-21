@@ -25,6 +25,7 @@ describe("getVisibleCronJobs", () => {
       cronJobs: jobs,
       cronJobsScheduleKindFilter: "all",
       cronJobsLastStatusFilter: "all",
+      cronJobsTriggerFilter: "all",
     });
     expect(visible).toHaveLength(2);
   });
@@ -39,6 +40,7 @@ describe("getVisibleCronJobs", () => {
       cronJobs: jobs,
       cronJobsScheduleKindFilter: "cron",
       cronJobsLastStatusFilter: "all",
+      cronJobsTriggerFilter: "all",
     });
     expect(visible.map((entry) => entry.id)).toEqual(["c"]);
   });
@@ -52,6 +54,7 @@ describe("getVisibleCronJobs", () => {
       cronJobs: jobs,
       cronJobsScheduleKindFilter: "all",
       cronJobsLastStatusFilter: "all",
+      cronJobsTriggerFilter: "all",
     });
     expect(visible.map((entry) => entry.id)).toEqual(["valid"]);
   });
@@ -66,6 +69,7 @@ describe("getVisibleCronJobs", () => {
       cronJobs: jobs,
       cronJobsScheduleKindFilter: "all",
       cronJobsLastStatusFilter: "error",
+      cronJobsTriggerFilter: "all",
     });
     expect(visible.map((entry) => entry.id)).toEqual(["error"]);
   });
@@ -81,11 +85,13 @@ describe("getVisibleCronJobs", () => {
       cronJobs: jobs,
       cronJobsScheduleKindFilter: "all",
       cronJobsLastStatusFilter: "skipped",
+      cronJobsTriggerFilter: "all",
     });
     const unknown = getVisibleCronJobs({
       cronJobs: jobs,
       cronJobsScheduleKindFilter: "all",
       cronJobsLastStatusFilter: "unknown",
+      cronJobsTriggerFilter: "all",
     });
 
     expect(skipped.map((entry) => entry.id)).toEqual(["preferred", "legacy"]);
@@ -111,6 +117,7 @@ describe("getVisibleCronJobs", () => {
       cronJobs: jobs,
       cronJobsScheduleKindFilter: "cron",
       cronJobsLastStatusFilter: "error",
+      cronJobsTriggerFilter: "all",
     });
     expect(visible.map((entry) => entry.id)).toEqual(["b"]);
   });

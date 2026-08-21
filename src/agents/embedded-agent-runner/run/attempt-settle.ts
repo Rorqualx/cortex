@@ -18,7 +18,11 @@ import type { NormalizedUsage } from "../../usage.js";
 import { log } from "../logger.js";
 import type { PromptCacheBreak, PromptCacheChange } from "../prompt-cache-observability.js";
 import { clearActiveEmbeddedRun } from "../runs.js";
-import { joinWithRunLivenessDeadline, RUN_LIVENESS_JOIN_TIMEOUT_MS } from "./abortable.js";
+import {
+  isOpenClawAbortableWrapper,
+  joinWithRunLivenessDeadline,
+  RUN_LIVENESS_JOIN_TIMEOUT_MS,
+} from "./abortable.js";
 import type {
   EmbeddedAttemptExecutionPhaseInput,
   EmbeddedAttemptExecutionState,
@@ -335,6 +339,11 @@ export async function runEmbeddedAttemptSettledPhase(
             source: "yield_cleanup",
           });
         },
+        isRunBudgetTimeoutAbort: (error) =>
+          readTerminal().timedOutByRunBudget &&
+          isOpenClawAbortableWrapper(error) &&
+          error instanceof Error &&
+          error.cause === input.runAbortController.signal.reason,
         readYieldState: input.lifecycle.readYieldState,
         stopAcceptingSteerMessages,
         takePendingMidTurnPrecheckRequest: contextGuards.takePendingMidTurnPrecheckRequest,

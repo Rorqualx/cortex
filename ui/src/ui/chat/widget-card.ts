@@ -130,6 +130,7 @@ const WIDGET_SIZE_MESSAGE_TYPE = "openclaw:widget-size";
 const WIDGET_PROMPT_OFFER_MESSAGE_TYPE = "openclaw:widget-prompt-offer";
 const WIDGET_PROMPT_MESSAGE_TYPE = "openclaw:widget-prompt";
 const WIDGET_PROMPT_HOST_READY_MESSAGE_TYPE = "openclaw:widget-prompt-host-ready";
+const WIDGET_CHAT_HOST_MESSAGE_TYPE = "openclaw:widget-chat-host";
 const WIDGET_FRAME_MIN_HEIGHT = 160;
 const WIDGET_FRAME_MAX_HEIGHT = 1200;
 // Preview frames render inside lit shadow roots, so a document query cannot
@@ -310,6 +311,7 @@ function renderPreviewFrame(params: {
         adoptWidgetPromptPort(frame);
       }
       postWidgetTheme(frame);
+      frame.contentWindow?.postMessage({ type: WIDGET_CHAT_HOST_MESSAGE_TYPE }, "*");
     }
   };
   return keyed(
@@ -389,6 +391,25 @@ function handleWidgetExportAction(
   title: string | undefined,
 ) {
   const value = event.detail.item.value;
+  if (value === "raw-details") {
+    const dropdown = event.currentTarget;
+    const host =
+      dropdown instanceof HTMLElement ? dropdown.closest(".chat-tool-card__widget-host") : null;
+    const toggle = host?.querySelector<HTMLButtonElement>(
+      ".chat-tool-card__widget-raw .chat-tool-card__raw-toggle",
+    );
+    toggle?.click();
+    const label =
+      dropdown instanceof HTMLElement ? dropdown.querySelector("[data-raw-label]") : null;
+    label?.replaceChildren(
+      t(
+        toggle && toggle.getAttribute("aria-expanded") === "true"
+          ? "chat.toolCards.hideRawDetails"
+          : "chat.toolCards.showRawDetails",
+      ),
+    );
+    return;
+  }
   if (value !== "copy" && value !== "download") {
     return;
   }
@@ -407,6 +428,10 @@ function handleWidgetExportAction(
     .then((result) => {
       if (result === "rerender-required") {
         showToast({ message: t("chat.toolCards.widgetExportRerender") });
+      } else if (result === "html") {
+        showToast({ message: t("chat.toolCards.widgetExportHtmlFallback") });
+      } else if (value === "copy") {
+        showToast({ message: t("common.copied") });
       }
     })
     .catch(() => {
@@ -414,8 +439,9 @@ function handleWidgetExportAction(
     });
 }
 
-function renderWidgetActions(preview: ToolPreview) {
-  if (preview.mcpApp || !isInternalCanvasEntryUrl(preview.url)) {
+function renderWidgetActions(preview: ToolPreview, hasRawDetails: boolean) {
+  const canExportImage = !preview.mcpApp && isInternalCanvasEntryUrl(preview.url);
+  if (!canExportImage && !hasRawDetails) {
     return nothing;
   }
   return html`
@@ -435,8 +461,30 @@ function renderWidgetActions(preview: ToolPreview) {
       >
         ${icons.moreHorizontal}
       </button>
-      <wa-dropdown-item value="copy">${t("chat.toolCards.copyToClipboard")}</wa-dropdown-item>
-      <wa-dropdown-item value="download">${t("chat.toolCards.downloadFile")}</wa-dropdown-item>
+      ${canExportImage
+        ? html`
+            <wa-dropdown-item class="session-menu__item" value="copy">
+              <span slot="icon" class="session-menu__icon" aria-hidden="true"
+                >${icons.copyImage}</span
+              >
+              <span class="session-menu__text">${t("chat.toolCards.copyAsImage")}</span>
+            </wa-dropdown-item>
+            <wa-dropdown-item class="session-menu__item" value="download">
+              <span slot="icon" class="session-menu__icon" aria-hidden="true"
+                >${icons.download}</span
+              >
+              <span class="session-menu__text">${t("chat.toolCards.downloadAsImage")}</span>
+            </wa-dropdown-item>
+          `
+        : nothing}
+      ${hasRawDetails
+        ? html`<wa-dropdown-item class="session-menu__item" value="raw-details">
+            <span slot="icon" class="session-menu__icon" aria-hidden="true">${icons.fileText}</span>
+            <span class="session-menu__text" data-raw-label
+              >${t("chat.toolCards.showRawDetails")}</span
+            >
+          </wa-dropdown-item>`
+        : nothing}
     </wa-dropdown>
   `;
 }
@@ -503,7 +551,7 @@ function renderWidgetCard(
         <span class="chat-tool-card__preview-label">${label}</span>
         <div class="chat-tool-card__preview-actions">
           <div data-widget-actions ?hidden=${pinAction === nothing}>${pinAction}</div>
-          ${renderWidgetActions(preview)}
+          ${renderWidgetActions(preview, Boolean(options?.rawText))}
         </div>
       </div>
       <div class="chat-tool-card__preview-panel" data-side="canvas">

@@ -142,6 +142,25 @@ export type WaitFilter = {
   sessionKey?: string;
 };
 
+/** Retained queue boundary reported when a requested cursor can no longer be replayed. */
+export type EventCursorGap = {
+  requested_after_cursor: number;
+  oldest_available_cursor: number;
+};
+
+/** Closed result for one bounded event poll. */
+export type EventPollResult = {
+  events: QueueEvent[];
+  nextCursor: number;
+  gap?: EventCursorGap;
+};
+
+/** Closed result for one event wait, including timeout, close, or cursor-gap outcomes. */
+export type EventWaitResult = {
+  event: QueueEvent | null;
+  gap?: EventCursorGap;
+};
+
 /** Raw MCP notification schema emitted by Claude channel clients for permission prompts. */
 export const ClaudePermissionRequestSchema = z.object({
   method: z.literal("notifications/claude/channel/permission_request"),

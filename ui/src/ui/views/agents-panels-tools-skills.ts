@@ -11,12 +11,6 @@ import type {
   ToolsEffectiveResult,
 } from "../types.ts";
 import {
-  renderSettingsEmpty,
-  renderSettingsRow,
-  renderSettingsSection,
-  renderSettingsToggle,
-} from "./settings-ui.ts";
-import {
   type AgentToolEntry,
   type AgentToolSection,
   isAllowedByPolicy,
@@ -26,6 +20,14 @@ import {
   resolveToolProfile,
   resolveToolSections,
 } from "./agents-utils.ts";
+import type { GitHubIdentityController } from "./github-identity-controller.ts";
+import { renderGitHubIdentity } from "./github-identity-view.ts";
+import {
+  renderSettingsEmpty,
+  renderSettingsRow,
+  renderSettingsSection,
+  renderSettingsToggle,
+} from "./settings-ui.ts";
 import type { SkillGroup } from "./skills-grouping.ts";
 import { groupSkills } from "./skills-grouping.ts";
 import {
@@ -234,6 +236,10 @@ export function renderAgentTools(params: {
   toolsEffectiveResult: ToolsEffectiveResult | null;
   runtimeSessionKey: string;
   runtimeSessionMatchesSelectedAgent: boolean;
+  // Optional: the app shell supplies a synced controller to render the GitHub-identity
+  // authorization panel. Absent until the shell wires it (see port notes); the panel is
+  // simply omitted when not provided.
+  githubIdentity?: GitHubIdentityController;
   onProfileChange: (agentId: string, profile: string | null, clearAllow: boolean) => void;
   onOverridesChange: (agentId: string, alsoAllow: string[], deny: string[]) => void;
   onConfigReload: () => void;
@@ -508,6 +514,7 @@ export function renderAgentTools(params: {
       },
       html`${renderEffectiveToolNotices(params.toolsEffectiveResult)}${runtimeAvailability}`,
     )}
+    ${params.githubIdentity ? renderGitHubIdentity(params.githubIdentity) : nothing}
     ${renderSettingsSection(
       { title: t("agentTools.catalogTitle") },
       html`

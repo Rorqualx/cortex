@@ -1,5 +1,13 @@
 // Control UI module implements model auth helpers behavior.
+import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
+import { resolveUsageProviderId } from "../../../src/infra/provider-usage.shared.js";
 import type { ModelAuthStatusProvider } from "./types.ts";
+
+/** Map credential-runtime aliases onto the provider card/attention identity. */
+export function canonicalModelAuthProviderId(provider: string): string {
+  const normalized = normalizeProviderId(provider);
+  return resolveUsageProviderId(normalized) ?? normalized;
+}
 
 /**
  * True when a provider's auth should be actively monitored on the dashboard.
@@ -24,4 +32,30 @@ export function isMonitoredAuthProvider(p: ModelAuthStatusProvider): boolean {
     return false;
   }
   return p.profiles.some((prof) => prof.type === "oauth" || prof.type === "token");
+}
+
+const AUTH_STATUS_PRIORITY = ["expired", "missing", "expiring", "ok", "static"] as const;
+
+/** Collapse auth aliases before display; Gateway rows retain their auth facts. */
+export function listEffectiveModelAuthProviders(
+  providers: readonly ModelAuthStatusProvider[],
+): ModelAuthStatusProvider[] {
+  const groups = new Map<string, ModelAuthStatusProvider[]>();
+  for (const provider of providers) {
+    const id = canonicalModelAuthProviderId(provider.provider);
+    const group = groups.get(id) ?? [];
+    group.push(provider);
+    groups.set(id, group);
+  }
+  return [...groups].map(([id, group]) => {
+    const selected = group.reduce((worst, candidate) =>
+      AUTH_STATUS_PRIORITY.indexOf(candidate.status) < AUTH_STATUS_PRIORITY.indexOf(worst.status)
+        ? candidate
+        : worst,
+    );
+    return Object.assign({}, selected, {
+      provider: id,
+      profiles: group.flatMap((provider) => provider.profiles),
+    });
+  });
 }

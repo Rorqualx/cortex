@@ -279,6 +279,8 @@ export function renderSettingsSecretInput(props: {
   showLabel: string;
   hideLabel: string;
   toggleLabel: string;
+  ariaLabel?: string;
+  disabled?: boolean;
   onInput: (next: string) => void;
   onToggle: () => void;
 }): TemplateResult {
@@ -289,6 +291,8 @@ export function renderSettingsSecretInput(props: {
         type=${props.visible ? "text" : "password"}
         autocomplete="off"
         spellcheck="false"
+        aria-label=${props.ariaLabel ?? nothing}
+        ?disabled=${props.disabled ?? false}
         .value=${props.value}
         placeholder=${props.placeholder ?? ""}
         @input=${(e: Event) => props.onInput((e.target as HTMLInputElement).value)}

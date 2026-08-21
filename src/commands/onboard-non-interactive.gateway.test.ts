@@ -176,7 +176,7 @@ vi.mock("./onboard-non-interactive/local/daemon-install.js", () => ({
 }));
 
 vi.mock("./health.js", () => ({
-  healthCommand: healthCommandMock,
+  healthCommandNonExiting: healthCommandMock,
 }));
 
 vi.mock("../daemon/service.js", () => ({
@@ -781,56 +781,61 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
     });
   });
 
-  it("emits a daemon-install failure when Linux user systemd is unavailable", async () => {
-    await withStateDir("state-local-daemon-install-json-fail-", async (stateDir) => {
-      installGatewayDaemonNonInteractiveMock.mockResolvedValueOnce({
-        installed: false,
-        skippedReason: "systemd-user-unavailable",
-      });
-
-      const { runtimeWithCapture, readCapturedJson } = createOnboardJsonCaptureRuntime();
-
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", {
-        configurable: true,
-        value: "linux",
-      });
-
-      try {
-        await expectOnboardLocalJsonSetupFailure({
-          runSetup: runNonInteractiveSetup,
-          stateDir,
-          runtime: runtimeWithCapture,
+  it.each([false, true])(
+    "emits a daemon-install failure when Linux user systemd is unavailable (skipHealth: %s)",
+    async (skipHealth) => {
+      await withStateDir("state-local-daemon-install-json-fail-", async (stateDir) => {
+        installGatewayDaemonNonInteractiveMock.mockResolvedValueOnce({
+          installed: false,
+          skippedReason: "systemd-user-unavailable",
         });
-      } finally {
+
+        const { runtimeWithCapture, readCapturedJson } = createOnboardJsonCaptureRuntime();
+
+        const originalPlatform = process.platform;
         Object.defineProperty(process, "platform", {
           configurable: true,
-          value: originalPlatform,
+          value: "linux",
         });
-      }
 
-      const parsed = JSON.parse(readCapturedJson()) as {
-        ok: boolean;
-        phase: string;
-        daemonInstall?: {
-          requested?: boolean;
-          installed?: boolean;
-          skippedReason?: string;
+        try {
+          await expectOnboardLocalJsonSetupFailure({
+            runSetup: (opts, runtimeEnv) =>
+              runNonInteractiveSetup({ ...opts, skipHealth }, runtimeEnv),
+            stateDir,
+            runtime: runtimeWithCapture,
+          });
+        } finally {
+          Object.defineProperty(process, "platform", {
+            configurable: true,
+            value: originalPlatform,
+          });
+        }
+
+        const parsed = JSON.parse(readCapturedJson()) as {
+          ok: boolean;
+          phase: string;
+          daemonInstall?: {
+            requested?: boolean;
+            installed?: boolean;
+            skippedReason?: string;
+          };
+          hints?: string[];
         };
-        hints?: string[];
-      };
-      expect(parsed.ok).toBe(false);
-      expect(parsed.phase).toBe("daemon-install");
-      expect(parsed.daemonInstall).toEqual({
-        requested: true,
-        installed: false,
-        skippedReason: "systemd-user-unavailable",
+        expect(parsed.ok).toBe(false);
+        expect(parsed.phase).toBe("daemon-install");
+        expect(parsed.daemonInstall).toEqual({
+          requested: true,
+          installed: false,
+          skippedReason: "systemd-user-unavailable",
+        });
+        expect(parsed.hints).toContain(
+          "Fix: rerun without `--install-daemon` for one-shot setup, or enable a working user-systemd session and retry.",
+        );
       });
-      expect(parsed.hints).toContain(
-        "Fix: rerun without `--install-daemon` for one-shot setup, or enable a working user-systemd session and retry.",
-      );
-    });
-  }, 60_000);
+    },
+    60_000,
+  );
 
   it("emits structured JSON diagnostics when daemon health fails", async () => {
     await withStateDir("state-local-daemon-health-json-fail-", async (stateDir) => {
@@ -876,6 +881,55 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
       expect(parsed.diagnostics?.service?.runtimeStatus).toBe("running");
       expect(parsed.diagnostics?.service?.pid).toBe(4242);
       expect(parsed.diagnostics?.lastGatewayError).toContain("required secrets are unavailable");
+    });
+  }, 60_000);
+
+  it("emits structured JSON failure when a reachable gateway fails its health check", async () => {
+    await withStateDir("state-local-daemon-health-exit-json-", async (stateDir) => {
+      waitForGatewayReachableMock = vi.fn(async () => ({ ok: true }));
+      healthCommandMock.mockImplementationOnce(async (...args: unknown[]) => {
+        // healthCommand prints its reachable-gateway diagnostic before its
+        // CLI-style exit; the capture runtime must keep it off JSON stdout.
+        // importActual yields the ExitError instance the prod graph sees; the
+        // test file's static import can be a second class instance under Vitest.
+        const { ExitError: RuntimeExitError } =
+          await vi.importActual<typeof import("../runtime.js")>("../runtime.js");
+        const healthRuntime = args[1] as RuntimeEnv;
+        healthRuntime.log("Gateway is reachable.");
+        healthRuntime.log("Gateway credentials rejected.");
+        throw new RuntimeExitError(1);
+      });
+
+      const { runtimeWithCapture, readCapturedJson } = createOnboardJsonCaptureRuntime();
+      await expectOnboardLocalJsonSetupFailure({
+        runSetup: runNonInteractiveSetup,
+        stateDir,
+        runtime: runtimeWithCapture,
+      });
+
+      const parsed = JSON.parse(readCapturedJson()) as {
+        ok: boolean;
+        phase: string;
+        message: string;
+        detail?: string;
+        hints?: string[];
+      };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.phase).toBe("gateway-health");
+      expect(parsed.message).toContain("health check failed");
+      expect(parsed.detail).toContain("Gateway credentials rejected.");
+      expect(parsed.hints).toContain("Run `openclaw health` for full diagnostics.");
+    });
+  }, 60_000);
+
+  it("routes thrown health-check errors through the onboarding failure owner", async () => {
+    await withStateDir("state-local-health-failure-text-", async (stateDir) => {
+      waitForGatewayReachableMock = vi.fn(async () => ({ ok: true }));
+      healthCommandMock.mockRejectedValueOnce(new Error("health request timed out"));
+
+      await expect(
+        runNonInteractiveSetup(createOnboardLocalDaemonOptions(stateDir), runtime),
+      ).rejects.toThrow(/health check failed[\s\S]*health request timed out/);
     });
   }, 60_000);
 

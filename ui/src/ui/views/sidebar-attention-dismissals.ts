@@ -5,6 +5,7 @@ import { normalizeGatewayTokenScope } from "../gateway-scope.ts";
 import { getSafeLocalStorage } from "../../local-storage.ts";
 
 const SIDEBAR_ATTENTION_KINDS = [
+  "updateAvailable",
   "cronFailed",
   "cronOverdue",
   "modelAuthExpired",

@@ -73,7 +73,7 @@ describe("listGatewayMethods", () => {
   });
 
   it("appends new methods after model probing without shifting older method indices", () => {
-    expect(listGatewayMethods().slice(-97)).toEqual([
+    expect(listGatewayMethods().slice(-105)).toEqual([
       "models.probe",
       "migrations.memory.plan",
       "migrations.memory.apply",
@@ -169,8 +169,16 @@ describe("listGatewayMethods", () => {
       "progressCard.put",
       "tools.github.status",
       "tools.github.configure",
+      "tools.github.authorize.start",
+      "tools.github.authorize.poll",
+      "tools.github.authorize.cancel",
       "sessions.github.publish",
       "diagnostics.lanes",
+      "skills.forge.status",
+      "skills.forge.run",
+      "skills.forge.promote",
+      "skills.forge.retire",
+      "skills.forge.telemetry",
     ]);
     const methods = listGatewayMethods();
     expect(methods.indexOf("node.pluginSurface.refresh")).toBe(
@@ -269,7 +277,7 @@ describe("listGatewayMethods", () => {
       "exec.approval.get",
     ]);
     expect(methods).toContain("tts.speak");
-    expect(coreMethods.slice(-104)).toEqual([
+    expect(coreMethods.slice(-112)).toEqual([
       "sessions.catalog.continue",
       "sessions.catalog.archive",
       "approval.get",
@@ -372,8 +380,16 @@ describe("listGatewayMethods", () => {
       "progressCard.put",
       "tools.github.status",
       "tools.github.configure",
+      "tools.github.authorize.start",
+      "tools.github.authorize.poll",
+      "tools.github.authorize.cancel",
       "sessions.github.publish",
       "diagnostics.lanes",
+      "skills.forge.status",
+      "skills.forge.run",
+      "skills.forge.promote",
+      "skills.forge.retire",
+      "skills.forge.telemetry",
     ]);
     expect(methods.indexOf("approval.get")).toBeGreaterThan(methods.indexOf("tts.speak"));
     expect(methods.indexOf("approval.resolve")).toBe(methods.indexOf("approval.get") + 1);

@@ -126,6 +126,7 @@ export const en = {
       complete: "Migration complete. Run `openclaw doctor` next.",
       continuing: "Migration complete. Continuing setup.",
       importFrom: "Import from {source}",
+      importFromAnotherAgent: "Import from another agent",
       includeCredentials: "Import supported auth credentials too?",
       previewTitle: "Migration preview",
       setupModelSeparately: "Set up a model separately",
@@ -1161,6 +1162,8 @@ export const en = {
       outroDashboardLink: "Onboarding complete. Use the dashboard link above to control OpenClaw.",
       outroDashboardOpened:
         "Onboarding complete. Dashboard opened; keep that tab to control OpenClaw.",
+      outroHealthCheckFailed:
+        "Onboarding complete, but the gateway health check failed. Fix the issue above, then verify with {command}.",
       outroSeeded:
         "Onboarding complete. Web UI seeded in the background; open it anytime with the dashboard link above.",
       quickstartNodeRuntime: "QuickStart uses Node for the Gateway service (stable + supported).",

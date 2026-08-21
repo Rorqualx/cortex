@@ -636,6 +636,7 @@ export class OpenClawApp extends LitElement {
     "all";
   @state() cronJobsLastStatusFilter: import("./controllers/cron.js").CronJobsLastStatusFilter =
     "all";
+  @state() cronJobsTriggerFilter: import("./controllers/cron.js").CronJobsTriggerFilter = "all";
   @state() cronJobsSortBy: import("./types.js").CronJobsSortBy = "nextRunAtMs";
   @state() cronJobsSortDir: import("./types.js").CronSortDir = "asc";
   @state() cronStatus: CronStatus | null = null;

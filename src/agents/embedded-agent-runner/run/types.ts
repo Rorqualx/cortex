@@ -296,9 +296,11 @@ export type EmbeddedRunAttemptResult = {
   assistantTranscriptOwned?: boolean;
   toolMetas: Array<{
     toolName: string;
+    toolCallId?: string;
     meta?: string;
     replaySafe?: boolean;
     isError?: boolean;
+    terminate?: boolean;
     asyncStarted?: boolean;
     asyncTaskRunId?: string;
     asyncTaskId?: string;

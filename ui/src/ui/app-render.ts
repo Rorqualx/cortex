@@ -3357,6 +3357,7 @@ export function renderApp(state: AppViewState) {
                     cronJobsEnabledFilter: "all",
                     cronJobsScheduleKindFilter: "all",
                     cronJobsLastStatusFilter: "all",
+                    cronJobsTriggerFilter: "all",
                     cronJobsSortBy: "nextRunAtMs",
                     cronJobsSortDir: "asc",
                   });

@@ -166,6 +166,20 @@ export function parseExecApprovalResolved(payload: unknown): ExecApprovalResolve
   };
 }
 
+export function parseApprovalResolvedEvent(
+  event: string,
+  payload: unknown,
+): ExecApprovalResolved | null {
+  if (
+    event !== "exec.approval.resolved" &&
+    event !== "plugin.approval.resolved" &&
+    event !== "openclaw.approval.resolved"
+  ) {
+    return null;
+  }
+  return parseExecApprovalResolved(payload);
+}
+
 function parsePluginApprovalRequested(payload: unknown): ExecApprovalRequest | null {
   if (!isRecord(payload)) {
     return null;

@@ -52,7 +52,7 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "config.set", scope: "operator.admin", since: "<=2026.7" },
   { name: "config.apply", scope: "operator.admin", since: "<=2026.7", controlPlaneWrite: true },
   { name: "config.patch", scope: "operator.admin", since: "<=2026.7", controlPlaneWrite: true },
-  { name: "config.schema", scope: "operator.admin", since: "<=2026.7" },
+  { name: "config.schema", scope: "operator.read", since: "<=2026.7" },
   { name: "config.schema.lookup", scope: "operator.read", since: "<=2026.7" },
   { name: "exec.approvals.get", scope: "operator.admin", since: "<=2026.7" },
   { name: "exec.approvals.set", scope: "operator.admin", since: "<=2026.7" },
@@ -154,10 +154,11 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   // Read-only git probe, but it accepts arbitrary host paths; keep it at the
   // same bar as starting worktree sessions instead of plain read scope.
   { name: "worktrees.branches", scope: "operator.write", since: "2026.7" },
-  // Arbitrary host-path directory listing backs the new-session folder picker;
-  // same trust bar as sessions.create with an explicit cwd.
-  { name: "fs.listDir", scope: "operator.admin", since: "<=2026.7" },
-  { name: "worktrees.create", scope: "operator.admin", since: "2026.7", controlPlaneWrite: true },
+  // Params-aware: Gateway-local directory listing stays write-scoped, but a nodeId
+  // targets an arbitrary paired host and raises the bar to admin. Policy lives in
+  // method-scopes.ts (resolveDynamicLeastPrivilegeOperatorScopesForMethod).
+  { name: "fs.listDir", scope: "dynamic", since: "<=2026.7" },
+  { name: "worktrees.create", scope: "operator.write", since: "2026.7", controlPlaneWrite: true },
   { name: "worktrees.remove", scope: "operator.admin", since: "2026.7", controlPlaneWrite: true },
   { name: "worktrees.restore", scope: "operator.admin", since: "2026.7", controlPlaneWrite: true },
   { name: "worktrees.gc", scope: "operator.admin", since: "2026.7", controlPlaneWrite: true },
@@ -193,7 +194,6 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "skills.curator.restore", scope: "operator.admin", since: "<=2026.7" },
   { name: "skills.proposals.list", scope: "operator.read", since: "<=2026.7" },
   { name: "skills.proposals.inspect", scope: "operator.read", since: "<=2026.7" },
-  { name: "skills.proposals.events.list", scope: "operator.read", since: "<=2026.7" },
   { name: "skills.proposals.historyStatus", scope: "operator.read", since: "<=2026.7" },
   { name: "skills.proposals.historyScan", scope: "operator.admin", since: "<=2026.7" },
   { name: "skills.proposals.create", scope: "operator.admin", since: "<=2026.7" },
@@ -203,12 +203,6 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "skills.proposals.apply", scope: "operator.admin", since: "<=2026.7" },
   { name: "skills.proposals.reject", scope: "operator.admin", since: "<=2026.7" },
   { name: "skills.proposals.quarantine", scope: "operator.admin", since: "<=2026.7" },
-  {
-    name: "skills.proposals.evaluate",
-    scope: "operator.admin",
-    controlPlaneWrite: true,
-    since: "<=2026.7",
-  },
   { name: "update.status", scope: "operator.admin", since: "<=2026.7" },
   { name: "update.run", scope: "operator.admin", controlPlaneWrite: true, since: "<=2026.7" },
   { name: "voicewake.get", scope: "operator.read", since: "<=2026.7" },
@@ -254,8 +248,10 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "sessions.delete", scope: "dynamic", since: "<=2026.7" },
   { name: "sessions.compact", scope: "operator.admin", since: "<=2026.7" },
   { name: "sessions.groups.list", scope: "operator.read", since: "<=2026.7" },
+  { name: "sessions.groups.defaults", scope: "operator.write", since: "2026.8" },
   { name: "sessions.groups.put", scope: "operator.write", since: "<=2026.7" },
   { name: "sessions.groups.rename", scope: "operator.write", since: "<=2026.7" },
+  { name: "sessions.groups.update", scope: "operator.write", since: "2026.8" },
   { name: "sessions.groups.delete", scope: "operator.write", since: "<=2026.7" },
   { name: "last-heartbeat", scope: "operator.read", since: "<=2026.7" },
   { name: "set-heartbeats", scope: "operator.admin", since: "<=2026.7" },
@@ -278,6 +274,9 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "node.pluginSurface.refresh", scope: "node", since: "<=2026.7" },
   { name: "node.pluginTools.update", scope: "node", since: "<=2026.7" },
   { name: "node.skills.update", scope: "node", since: "<=2026.7" },
+  // Hidden node protocol feature publication; advertise:false keeps it out of the
+  // client method list while still classifying the handler in nodes.read.ts.
+  { name: "node.runnerInventory.update", scope: "node", since: "2026.8", advertise: false },
   { name: "node.pending.drain", scope: "node", since: "<=2026.7" },
   { name: "node.pending.enqueue", scope: "operator.write", since: "<=2026.7" },
   // Params-aware: host-sensitive commands raise direct invocation from write to admin.
@@ -437,16 +436,18 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "approval.get", scope: "operator.approvals", since: "2026.7" },
   { name: "approval.resolve", scope: "operator.approvals", since: "2026.7" },
   { name: "sessions.search", scope: "operator.read", since: "<=2026.7" },
+  // Target-aware placement scope: the handler resolves the operator scope from the
+  // dispatch target (shared/session-method-scopes.ts), so this stays dynamic.
   {
     name: "sessions.dispatch",
-    scope: "operator.admin",
+    scope: "dynamic",
     since: "2026.7",
     startup: true,
     controlPlaneWrite: true,
   },
   {
     name: "sessions.reclaim",
-    scope: "operator.admin",
+    scope: "operator.write",
     since: "2026.7",
     startup: true,
     controlPlaneWrite: true,
@@ -540,6 +541,16 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "workboard.research.reports", scope: "operator.read", since: "<=2026.7" },
   { name: "workboard.research.sync", scope: "operator.write", since: "<=2026.7" },
   { name: "workboard.research.stage", scope: "operator.write", since: "<=2026.7" },
+  // Additive upstream 2026.7 proposal methods. Upstream moved these two out of the
+  // skills block to the tail so older advertised indices stay stable; the fork
+  // matches that ordering here (handlers stay wired via SKILLS_GATEWAY_METHOD_NAMES).
+  { name: "skills.proposals.events.list", scope: "operator.read", since: "2026.7" },
+  {
+    name: "skills.proposals.evaluate",
+    scope: "operator.admin",
+    controlPlaneWrite: true,
+    since: "2026.7",
+  },
   // Upstream 2026.7 handlers (server-methods/{hooks-status,tasks}.ts). This file is
   // merge=ours, so their upstream descriptors were dropped by the nightly merge while
   // the handlers came in — and an unclassified handler makes
@@ -548,6 +559,94 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "hooks.status", scope: "operator.read", since: "2026.7" },
   { name: "tasks.retry", scope: "operator.write", since: "2026.7" },
   { name: "tasks.dismiss", scope: "operator.write", since: "2026.7" },
+  // Upstream #118232 methods (2026.7/2026.8) whose upstream descriptors were dropped
+  // by the merge=ours resync while their handlers came in. Grafted into the fork's
+  // object-literal table in upstream's registration order so advertised indices stay
+  // stable and the dispatcher stops answering "unknown method". Scopes/flags mirror
+  // upstream/main:src/gateway/methods/core-descriptors.ts.
+  { name: "audit.run.inspect", scope: "operator.read", since: "2026.7" },
+  { name: "sessions.patchMany", scope: "dynamic", since: "2026.8" },
+  { name: "update.hold", scope: "operator.admin", since: "2026.8", controlPlaneWrite: true },
+  { name: "sessions.catalog.startTerminal", scope: "operator.admin", since: "2026.8" },
+  { name: "worker.desktop.observe", scope: "operator.admin", since: "2026.8", startup: true },
+  { name: "projects.list", scope: "operator.read", since: "2026.8" },
+  { name: "projects.register", scope: "operator.admin", since: "2026.8" },
+  { name: "projects.remove", scope: "operator.admin", since: "2026.8" },
+  { name: "worker.desktop.launch", scope: "operator.admin", since: "2026.8", startup: true },
+  // Store CRUD is served by the auxiliary secrets surface (server-aux-methods.ts),
+  // so these carry descriptors only; their handlers are injected at server construction.
+  { name: "secrets.store.list", scope: "operator.admin", since: "2026.8" },
+  { name: "secrets.store.set", scope: "operator.admin", since: "2026.8", controlPlaneWrite: true },
+  {
+    name: "secrets.store.delete",
+    scope: "operator.admin",
+    since: "2026.8",
+    controlPlaneWrite: true,
+  },
+  { name: "users.prefs.get", scope: "operator.read", since: "2026.8" },
+  { name: "users.prefs.set", scope: "operator.write", since: "2026.8" },
+  { name: "projects.add", scope: "operator.write", since: "2026.8", controlPlaneWrite: true },
+  { name: "projects.searchRemote", scope: "operator.read", since: "2026.8" },
+  { name: "desktop.observe", scope: "operator.admin", since: "2026.8", startup: true },
+  { name: "desktop.launch", scope: "operator.admin", since: "2026.8", startup: true },
+  { name: "device.scopes.requestUpgrade", scope: "operator.read", since: "2026.8" },
+  { name: "device.scopes.waitUpgrade", scope: "operator.read", since: "2026.8" },
+  { name: "portal.list", scope: "operator.read", since: "2026.8" },
+  { name: "portal.open", scope: "operator.write", since: "2026.8", controlPlaneWrite: true },
+  { name: "portal.close", scope: "operator.write", since: "2026.8", controlPlaneWrite: true },
+  // Target-aware placement scope resolved from the move target, like sessions.dispatch.
+  {
+    name: "sessions.move",
+    scope: "dynamic",
+    since: "2026.8",
+    startup: true,
+    controlPlaneWrite: true,
+  },
+  { name: "sessions.assignOwner", scope: "operator.write", since: "2026.8" },
+  { name: "progressCard.get", scope: "operator.read", since: "2026.8" },
+  { name: "progressCard.put", scope: "operator.write", since: "2026.8" },
+  { name: "tools.github.status", scope: "operator.read", since: "2026.8" },
+  {
+    name: "tools.github.configure",
+    scope: "operator.admin",
+    since: "2026.8",
+    controlPlaneWrite: true,
+  },
+  {
+    name: "tools.github.authorize.start",
+    scope: "operator.admin",
+    since: "2026.8",
+    controlPlaneWrite: true,
+  },
+  {
+    name: "tools.github.authorize.poll",
+    scope: "operator.admin",
+    since: "2026.8",
+    controlPlaneWrite: true,
+  },
+  {
+    name: "tools.github.authorize.cancel",
+    scope: "operator.admin",
+    since: "2026.8",
+    controlPlaneWrite: true,
+  },
+  {
+    name: "sessions.github.publish",
+    scope: "operator.write",
+    since: "2026.8",
+    controlPlaneWrite: true,
+  },
+  { name: "diagnostics.lanes", scope: "operator.read", since: "2026.8" },
+  // Fork SkillForge control surface. Handlers live in server-methods/skills.ts and
+  // wire through SKILLS_GATEWAY_METHOD_NAMES; their descriptors were absent from this
+  // table so listing/authorization never classified them. Appended at the tail so no
+  // existing advertised method index shifts. status/telemetry are read-only probes;
+  // run/promote/retire mutate the forge and require admin.
+  { name: "skills.forge.status", scope: "operator.read", since: "<=2026.7" },
+  { name: "skills.forge.run", scope: "operator.admin", since: "<=2026.7" },
+  { name: "skills.forge.promote", scope: "operator.admin", since: "<=2026.7" },
+  { name: "skills.forge.retire", scope: "operator.admin", since: "<=2026.7" },
+  { name: "skills.forge.telemetry", scope: "operator.read", since: "<=2026.7" },
 ] as const;
 
 const CORE_GATEWAY_METHOD_SPEC_BY_NAME: ReadonlyMap<string, CoreGatewayMethodSpec> = new Map(

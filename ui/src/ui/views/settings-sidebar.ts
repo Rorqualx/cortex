@@ -33,6 +33,7 @@ type SettingsSidebarProps = {
   searchBlockMatches?: readonly SettingsSearchBlock[];
   onExit: () => void;
   onNavigate: (routeId: RouteId, options?: ApplicationNavigationOptions) => void;
+  onOpenApprovals?: () => void;
   onPreload?: (routeId: RouteId) => Promise<void> | void;
   onSearchQueryChange: (query: string) => void;
   preloadTimers: Map<EventTarget, ReturnType<typeof globalThis.setTimeout>>;
@@ -276,6 +277,10 @@ export function renderSettingsSidebar(props: SettingsSidebarProps) {
               `,
             )}
       </nav>
+      <openclaw-sidebar-attention
+        .onNavigate=${props.onNavigate}
+        .onOpenApprovals=${props.onOpenApprovals}
+      ></openclaw-sidebar-attention>
       <openclaw-sidebar-update-card
         .updateAvailable=${props.updateAvailable}
         .updateRunning=${props.updateRunning}

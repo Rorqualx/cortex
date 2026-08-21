@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 580201,
-  "reason": "2026-08-12 upstream resync: fork-owned Control UI (Workboard, Skill Forge, Model Providers) startup graph, regenerated from the CI/Linux build at 580201 B gzip. The prior 578075 B was a macOS-local measurement; Linux zlib emits larger streams so baselines must record CI bytes (see check-control-ui-performance.mts). ui/ is unchanged by the merge (fork ownership policy), so this is a baseline regeneration, not a regression.",
-  "updatedAt": "2026-08-12"
+  "startupJsGzipBytes": 583689,
+  "reason": "2026-08-20 upstream resync (a3ca8466 -> 784a2287): Control UI startup graph regenerated from the CI/Linux build at 583689 B gzip (+3488 B vs the prior 580201 B). The growth is the reconciliation's adopted UI features -- the GitHub-identity authorization panel (ported to ui/src/ui) and the cron automation-condition trigger filter. Under the 589824 B max-committed ceiling. Linux zlib emits larger streams so baselines must record CI bytes (see check-control-ui-performance.mts); this is a baseline regeneration for adopted features, not a regression.",
+  "updatedAt": "2026-08-20"
 }

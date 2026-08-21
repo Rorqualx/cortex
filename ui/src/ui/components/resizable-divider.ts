@@ -3,9 +3,11 @@ import { css, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import { OpenClawLitElement } from "../lit/openclaw-element.ts";
 
+const DRAG_END_EVENTS = ["pointerup", "pointercancel", "blur"] as const;
+
 /**
  * An accessible draggable divider for resizable split views.
- * Dispatches 'resize' events with { splitRatio: number } detail.
+ * Dispatches 'resize' events with the current ratio and 'resize-end' after the interaction.
  */
 class ResizableDivider extends OpenClawLitElement {
   @property({ type: Number }) splitRatio = 0.6;
@@ -16,6 +18,7 @@ class ResizableDivider extends OpenClawLitElement {
   private isDragging = false;
   private startX = 0;
   private startRatio = 0;
+  private dragRatio = 0;
   private activePointerId: number | null = null;
 
   static override styles = css`
@@ -73,8 +76,9 @@ class ResizableDivider extends OpenClawLitElement {
       bottom: -4px;
     }
     :host([orientation="horizontal"])::after {
-      top: 50%;
+      top: var(--resize-handle-line-block, 50%);
       bottom: auto;
+      inset-inline-start: 0;
       left: 0;
       right: 0;
       width: auto;
@@ -129,18 +133,18 @@ class ResizableDivider extends OpenClawLitElement {
     this.startX = e.clientX;
     this.startRatio = this.splitRatio;
     this.classList.add("dragging");
-    this.focus();
     this.capturePointer(e.pointerId);
 
-    document.addEventListener("pointermove", this.handlePointerMove);
-    document.addEventListener("pointerup", this.handlePointerUp);
-    document.addEventListener("pointercancel", this.handlePointerUp);
+    window.addEventListener("pointermove", this.handlePointerMove);
+    for (const type of DRAG_END_EVENTS) {
+      window.addEventListener(type, this.finishDragging);
+    }
 
     e.preventDefault();
   };
 
   private handlePointerMove = (e: PointerEvent) => {
-    if (!this.isDragging) {
+    if (this.activePointerId === null) {
       return;
     }
 
@@ -153,11 +157,7 @@ class ResizableDivider extends OpenClawLitElement {
     const deltaX = e.clientX - this.startX;
     const deltaRatio = deltaX / containerWidth;
 
-    this.emitResize(this.startRatio + deltaRatio);
-  };
-
-  private handlePointerUp = () => {
-    this.stopDragging();
+    this.dragRatio = this.emitResize(this.startRatio + deltaRatio);
   };
 
   private handleKeyDown = (e: KeyboardEvent) => {
@@ -180,26 +180,46 @@ class ResizableDivider extends OpenClawLitElement {
 
     e.preventDefault();
     this.emitResize(nextRatio);
+    this.emitResizeEnd(nextRatio);
+  };
+
+  private readonly finishDragging = () => {
+    if (this.activePointerId !== null) {
+      this.emitResizeEnd(this.dragRatio);
+    }
+    this.stopDragging();
   };
 
   private stopDragging() {
-    if (!this.isDragging) {
+    if (this.activePointerId === null) {
       return;
     }
-    this.isDragging = false;
     this.classList.remove("dragging");
     this.releaseActivePointer();
 
-    document.removeEventListener("pointermove", this.handlePointerMove);
-    document.removeEventListener("pointerup", this.handlePointerUp);
-    document.removeEventListener("pointercancel", this.handlePointerUp);
+    window.removeEventListener("pointermove", this.handlePointerMove);
+    for (const type of DRAG_END_EVENTS) {
+      window.removeEventListener(type, this.finishDragging);
+    }
   }
 
   private emitResize(nextRatio: number) {
     const splitRatio = this.clampRatio(nextRatio);
+    this.setCurrentAriaValue(splitRatio);
     this.dispatchEvent(
       new CustomEvent("resize", {
         detail: { splitRatio },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    return splitRatio;
+  }
+
+  private emitResizeEnd(nextRatio: number) {
+    this.dispatchEvent(
+      new CustomEvent("resize-end", {
+        detail: { splitRatio: this.clampRatio(nextRatio) },
         bubbles: true,
         composed: true,
       }),
@@ -214,6 +234,10 @@ class ResizableDivider extends OpenClawLitElement {
     return Math.round(value * 100);
   }
 
+  private setCurrentAriaValue(value: number) {
+    this.setAttribute("aria-valuenow", String(this.toAriaValue(value)));
+  }
+
   private setStaticAccessibilityAttributes() {
     this.setAttribute("role", "separator");
     this.setAttribute("tabindex", "0");
@@ -221,11 +245,11 @@ class ResizableDivider extends OpenClawLitElement {
   }
 
   private capturePointer(pointerId: number) {
+    this.activePointerId = pointerId;
     if (typeof this.setPointerCapture !== "function") {
       return;
     }
     this.setPointerCapture(pointerId);
-    this.activePointerId = pointerId;
   }
 
   private releaseActivePointer() {

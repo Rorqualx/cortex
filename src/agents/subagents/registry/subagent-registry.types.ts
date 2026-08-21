@@ -142,6 +142,8 @@ export type SubagentCompletionDeliveryState = {
   enqueuedAt?: number;
   deliveredAt?: number;
   announcedAt?: number;
+  /** Exact requester turn and completed child batch that already produced its visible final. */
+  requesterVisibleFinal?: { requesterTurnRunId: string; batchRunIds: string[] };
   lastAttemptAt?: number;
   attemptCount?: number;
   lastError?: string | null;

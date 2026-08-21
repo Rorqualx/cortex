@@ -27,4 +27,9 @@ export const SKILLS_GATEWAY_METHOD_NAMES = [
   "skills.proposals.apply",
   "skills.proposals.reject",
   "skills.proposals.quarantine",
+  "skills.forge.status",
+  "skills.forge.run",
+  "skills.forge.promote",
+  "skills.forge.retire",
+  "skills.forge.telemetry",
 ] as const;

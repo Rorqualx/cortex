@@ -1072,26 +1072,35 @@ export const ToolsCatalogParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
-/** Reads the effective tool set for one session. */
+export const GitHubIdentityScopeSchema = Type.Union([
+  Type.Literal("system"),
+  Type.Literal("agent"),
+]);
+
 export const ToolsGitHubStatusParamsSchema = closedObject({
   agentId: NonEmptyString,
+  selectedScope: GitHubIdentityScopeSchema,
 });
 
-const GitHubIdentitySourceSchema = Type.Union([
+export const GitHubIdentitySourceSchema = Type.Union([
   Type.Literal("system-detected"),
   Type.Literal("system-configured"),
   Type.Literal("agent-override"),
 ]);
 
 const GitHubAuthorValueSchema = Type.String({ minLength: 1, pattern: "\\S" });
-const GitHubAuthorSchema = closedObject({
+export const GitHubAuthorSchema = closedObject({
   name: Type.Optional(GitHubAuthorValueSchema),
   email: Type.Optional(GitHubAuthorValueSchema),
 });
 
-export const ToolsGitHubStatusResultSchema = closedObject({
-  agentId: NonEmptyString,
+export const GitHubIdentityFactsSchema = closedObject({
   source: GitHubIdentitySourceSchema,
+  credentialKind: Type.Union([
+    Type.Literal("native"),
+    Type.Literal("managed-pat"),
+    Type.Literal("managed-oauth"),
+  ]),
   credentialState: Type.Union([
     Type.Literal("available"),
     Type.Literal("unavailable"),
@@ -1102,7 +1111,6 @@ export const ToolsGitHubStatusResultSchema = closedObject({
   account: Type.Union([
     closedObject({
       login: NonEmptyString,
-      avatarUrl: Type.Union([Type.String(), Type.Null()]),
     }),
     Type.Null(),
   ]),
@@ -1116,9 +1124,33 @@ export const ToolsGitHubStatusResultSchema = closedObject({
     Type.Literal("unverified"),
     Type.Literal("rate-limited"),
   ]),
+  accessExpiresAtMs: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  refreshState: Type.Union([
+    Type.Literal("not_applicable"),
+    Type.Literal("available"),
+    Type.Literal("expired"),
+    Type.Literal("unavailable"),
+    Type.Literal("refreshing"),
+    Type.Literal("failed"),
+  ]),
+  oauthScopes: Type.Array(Type.String({ minLength: 1, maxLength: 128, pattern: "\\S" }), {
+    maxItems: 32,
+  }),
+  repositoryGrants: Type.Literal("unknown"),
 });
 
-const GitHubIdentityScopeSchema = Type.Union([Type.Literal("system"), Type.Literal("agent")]);
+export const GitHubSelectedIdentitySchema = closedObject({
+  scope: GitHubIdentityScopeSchema,
+  configured: Type.Boolean(),
+  identity: Type.Union([GitHubIdentityFactsSchema, Type.Null()]),
+});
+
+export const ToolsGitHubStatusResultSchema = closedObject({
+  agentId: NonEmptyString,
+  selectedScope: GitHubIdentityScopeSchema,
+  selected: GitHubSelectedIdentitySchema,
+  effective: GitHubIdentityFactsSchema,
+});
 
 export const ToolsGitHubManagedConfigureParamsSchema = closedObject({
   scope: GitHubIdentityScopeSchema,
@@ -1139,6 +1171,84 @@ export const ToolsGitHubConfigureParamsSchema = Type.Union([
   ToolsGitHubInheritConfigureParamsSchema,
 ]);
 
+const GitHubDeviceRequestIdSchema = Type.String({
+  pattern: "^github-device-[a-f0-9]{32}$",
+});
+
+export const ToolsGitHubAuthorizeStartParamsSchema = closedObject({
+  scope: GitHubIdentityScopeSchema,
+  agentId: NonEmptyString,
+});
+
+export const ToolsGitHubAuthorizeStartResultSchema = closedObject({
+  requestId: GitHubDeviceRequestIdSchema,
+  userCode: Type.String({ pattern: "^[A-Z0-9]{4}-[A-Z0-9]{4}$" }),
+  verificationUri: Type.Literal("https://github.com/login/device"),
+  expiresInMs: Type.Integer({ minimum: 1, maximum: 900_000 }),
+  pollAfterMs: Type.Integer({ minimum: 1_000, maximum: 60_000 }),
+});
+
+export const ToolsGitHubAuthorizePollParamsSchema = closedObject({
+  requestId: GitHubDeviceRequestIdSchema,
+});
+
+export const ToolsGitHubAuthorizePendingResultSchema = closedObject({
+  status: Type.Literal("pending"),
+  retryAfterMs: Type.Integer({ minimum: 1, maximum: 60_000 }),
+});
+
+export const ToolsGitHubAuthorizeSlowDownResultSchema = closedObject({
+  status: Type.Literal("slow_down"),
+  retryAfterMs: Type.Integer({ minimum: 1, maximum: 60_000 }),
+});
+
+export const ToolsGitHubAuthorizeAccessDeniedResultSchema = closedObject({
+  status: Type.Literal("access_denied"),
+});
+
+export const ToolsGitHubAuthorizeExpiredResultSchema = closedObject({
+  status: Type.Literal("expired"),
+});
+
+export const ToolsGitHubAuthorizeIncorrectDeviceCodeResultSchema = closedObject({
+  status: Type.Literal("incorrect_device_code"),
+});
+
+export const ToolsGitHubAuthorizeNetworkErrorResultSchema = closedObject({
+  status: Type.Literal("network_error"),
+  retryAfterMs: Type.Integer({ minimum: 1, maximum: 60_000 }),
+});
+
+export const ToolsGitHubAuthorizeFailedResultSchema = closedObject({
+  status: Type.Literal("failed"),
+  reason: Type.Union([Type.Literal("identity_changed"), Type.Literal("setup_failed")]),
+});
+
+export const ToolsGitHubAuthorizeSuccessResultSchema = closedObject({
+  status: Type.Literal("success"),
+  githubStatus: ToolsGitHubStatusResultSchema,
+});
+
+export const ToolsGitHubAuthorizePollResultSchema = Type.Union([
+  ToolsGitHubAuthorizePendingResultSchema,
+  ToolsGitHubAuthorizeSlowDownResultSchema,
+  ToolsGitHubAuthorizeAccessDeniedResultSchema,
+  ToolsGitHubAuthorizeExpiredResultSchema,
+  ToolsGitHubAuthorizeIncorrectDeviceCodeResultSchema,
+  ToolsGitHubAuthorizeNetworkErrorResultSchema,
+  ToolsGitHubAuthorizeFailedResultSchema,
+  ToolsGitHubAuthorizeSuccessResultSchema,
+]);
+
+export const ToolsGitHubAuthorizeCancelParamsSchema = closedObject({
+  requestId: GitHubDeviceRequestIdSchema,
+});
+
+export const ToolsGitHubAuthorizeCancelResultSchema = closedObject({
+  cancelled: Type.Boolean(),
+});
+
+/** Reads the effective tool set for one session. */
 export const ToolsEffectiveParamsSchema = Type.Object(
   {
     agentId: Type.Optional(NonEmptyString),
@@ -1410,6 +1520,8 @@ export type SkillsProposalApplyResult = Static<typeof SkillsProposalApplyResultS
 export type SkillsProposalRecordResult = Static<typeof SkillsProposalRecordResultSchema>;
 export type ModelCatalogProviderOutcome = Static<typeof ModelCatalogProviderOutcomeSchema>;
 export type SkillsProposalDecisionParams = Static<typeof SkillsProposalDecisionParamsSchema>;
+export type GitHubIdentityFacts = Static<typeof GitHubIdentityFactsSchema>;
+export type GitHubSelectedIdentity = Static<typeof GitHubSelectedIdentitySchema>;
 export type ToolsGitHubStatusParams = Static<typeof ToolsGitHubStatusParamsSchema>;
 export type ToolsGitHubStatusResult = Static<typeof ToolsGitHubStatusResultSchema>;
 export type ToolsGitHubManagedConfigureParams = Static<
@@ -1419,6 +1531,16 @@ export type ToolsGitHubInheritConfigureParams = Static<
   typeof ToolsGitHubInheritConfigureParamsSchema
 >;
 export type ToolsGitHubConfigureParams = Static<typeof ToolsGitHubConfigureParamsSchema>;
+export type ToolsGitHubAuthorizeStartParams = Static<typeof ToolsGitHubAuthorizeStartParamsSchema>;
+export type ToolsGitHubAuthorizeStartResult = Static<typeof ToolsGitHubAuthorizeStartResultSchema>;
+export type ToolsGitHubAuthorizePollParams = Static<typeof ToolsGitHubAuthorizePollParamsSchema>;
+export type ToolsGitHubAuthorizePollResult = Static<typeof ToolsGitHubAuthorizePollResultSchema>;
+export type ToolsGitHubAuthorizeCancelParams = Static<
+  typeof ToolsGitHubAuthorizeCancelParamsSchema
+>;
+export type ToolsGitHubAuthorizeCancelResult = Static<
+  typeof ToolsGitHubAuthorizeCancelResultSchema
+>;
 export type SkillsCuratorStatusParams = Static<typeof SkillsCuratorStatusParamsSchema>;
 export type SkillsCuratorStatusResult = Static<typeof SkillsCuratorStatusResultSchema>;
 export type SkillsCuratorActionParams = Static<typeof SkillsCuratorActionParamsSchema>;

@@ -1,6 +1,7 @@
 // Control UI type declarations define types contracts.
 export type UpdateAvailable = import("../../../src/infra/update-startup.js").UpdateAvailable;
 import type { CronJobBase } from "../../../src/cron/types-shared.js";
+import type { CronTrigger } from "../../../src/cron/types.js";
 import type { ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
 import type {
   GatewayAgentRuntime,
@@ -30,6 +31,14 @@ export type {
   ActivityEventMetrics,
   ActivityCursor,
   ActivityListResult,
+} from "../../../packages/gateway-protocol/src/index.js";
+// GitHub-identity authorization UI consumes these result contracts by their
+// protocol names; the schema owns their shape (agents-models-skills schema).
+export type {
+  GitHubIdentityFacts,
+  ToolsGitHubStatusResult,
+  ToolsGitHubAuthorizeStartResult,
+  ToolsGitHubAuthorizePollResult,
 } from "../../../packages/gateway-protocol/src/index.js";
 
 export type ChannelsStatusSnapshot = {
@@ -572,6 +581,7 @@ export type CronJob = CronJobBase<
   CronFailureAlert | false
 > & {
   state?: CronJobState;
+  trigger?: CronTrigger;
 };
 
 export type CronStatus = {

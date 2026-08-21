@@ -26,7 +26,7 @@ describe("widget-card", () => {
     expect(canvas.querySelector('button[aria-label="Widget actions"]')).not.toBeNull();
     expect(
       Array.from(canvas.querySelectorAll("wa-dropdown-item"), (item) => item.textContent?.trim()),
-    ).toEqual(["Copy to clipboard", "Download file"]);
+    ).toEqual(["Copy as image", "Download as image"]);
 
     const app = document.createElement("div");
     render(
@@ -47,6 +47,44 @@ describe("widget-card", () => {
     expect(app.querySelector("mcp-app-view")).not.toBeNull();
     expect(app.querySelector("iframe")).toBeNull();
     expect(app.querySelector('button[aria-label="Widget actions"]')).toBeNull();
+
+    render(
+      renderToolPreview(
+        {
+          kind: "canvas",
+          surface: "assistant_message",
+          render: "url",
+          title: "App",
+          preferredHeight: 480,
+          mcpApp: { viewId: "view-dispatch" },
+        },
+        "chat_message",
+        { sessionKey: "agent:main:main", rawText: "raw app payload" },
+      ),
+      app,
+    );
+    expect(app.querySelector('button[aria-label="Widget actions"]')).not.toBeNull();
+    expect(
+      Array.from(app.querySelectorAll("wa-dropdown-item"), (item) => item.textContent?.trim()),
+    ).toEqual(["Show raw details"]);
+
+    const external = document.createElement("div");
+    render(
+      renderToolPreview(
+        {
+          kind: "canvas",
+          surface: "assistant_message",
+          render: "url",
+          url: "https://example.test/widget",
+        },
+        "chat_message",
+        { allowExternalEmbedUrls: true, rawText: "external raw payload" },
+      ),
+      external,
+    );
+    expect(
+      Array.from(external.querySelectorAll("wa-dropdown-item"), (item) => item.textContent?.trim()),
+    ).toEqual(["Show raw details"]);
 
     const unknown = document.createElement("div");
     render(renderToolPreview({ kind: "unknown" } as never, "chat_message"), unknown);
@@ -87,7 +125,6 @@ describe("widget-card", () => {
       ),
       canvas,
     );
-
     canvas.querySelector<HTMLButtonElement>("[data-pin-widget]")?.click();
     await vi.waitFor(() => {
       expect(pinWidget).toHaveBeenCalledWith({

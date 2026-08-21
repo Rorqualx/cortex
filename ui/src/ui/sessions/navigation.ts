@@ -240,9 +240,7 @@ export function filterVisibleSessionRows(
       row.kind !== "unknown" &&
       (options.showCron === true || !isCronSessionKey(row.key)) &&
       !isSubagentSessionKey(row.key) &&
-      !row.spawnedBy &&
-      (!options.filterByAgent ||
-        isSessionKeyTiedToAgent(row.key, options.agentId, options.defaultAgentId))
+      !row.spawnedBy
     );
   });
 }

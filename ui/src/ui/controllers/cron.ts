@@ -51,6 +51,7 @@ export type CronFieldErrors = Partial<Record<CronFieldKey, string>>;
 
 export type CronJobsScheduleKindFilter = "all" | "at" | "every" | "cron";
 export type CronJobsLastStatusFilter = "all" | CronRunStatus | "unknown";
+export type CronJobsTriggerFilter = "all" | "conditional" | "unconditional";
 export type CronRunsLoadStatus = "ok" | "error" | "skipped";
 
 export type CronState = {
@@ -72,6 +73,7 @@ export type CronState = {
   cronJobsEnabledFilter: CronJobsEnabledFilter;
   cronJobsScheduleKindFilter: CronJobsScheduleKindFilter;
   cronJobsLastStatusFilter: CronJobsLastStatusFilter;
+  cronJobsTriggerFilter: CronJobsTriggerFilter;
   cronJobsSortBy: CronJobsSortBy;
   cronJobsSortDir: CronSortDir;
   cronAgentId: string | null;
@@ -132,6 +134,7 @@ export function createInitialCronState(
     cronJobsEnabledFilter: "all",
     cronJobsScheduleKindFilter: "all",
     cronJobsLastStatusFilter: "all",
+    cronJobsTriggerFilter: "all",
     cronJobsSortBy: "nextRunAtMs",
     cronJobsSortDir: "asc",
     cronAgentId: null,
@@ -391,6 +394,7 @@ export async function loadCronJobsPage(
         ? {
             scheduleKind: state.cronJobsScheduleKindFilter,
             lastRunStatus: state.cronJobsLastStatusFilter,
+            trigger: state.cronJobsTriggerFilter,
           }
         : {}),
       sortBy: state.cronJobsSortBy,
@@ -436,6 +440,7 @@ export function updateCronJobsFilter(
       | "cronJobsEnabledFilter"
       | "cronJobsScheduleKindFilter"
       | "cronJobsLastStatusFilter"
+      | "cronJobsTriggerFilter"
       | "cronJobsSortBy"
       | "cronJobsSortDir"
     >
@@ -448,12 +453,16 @@ export function updateCronJobsFilter(
   state.cronJobsScheduleKindFilter =
     patch.cronJobsScheduleKindFilter ?? state.cronJobsScheduleKindFilter;
   state.cronJobsLastStatusFilter = patch.cronJobsLastStatusFilter ?? state.cronJobsLastStatusFilter;
+  state.cronJobsTriggerFilter = patch.cronJobsTriggerFilter ?? state.cronJobsTriggerFilter;
   state.cronJobsSortBy = patch.cronJobsSortBy ?? state.cronJobsSortBy;
   state.cronJobsSortDir = patch.cronJobsSortDir ?? state.cronJobsSortDir;
 }
 
 export function getVisibleCronJobs(
-  state: Pick<CronState, "cronJobs" | "cronJobsScheduleKindFilter" | "cronJobsLastStatusFilter">,
+  state: Pick<
+    CronState,
+    "cronJobs" | "cronJobsScheduleKindFilter" | "cronJobsLastStatusFilter" | "cronJobsTriggerFilter"
+  >,
 ): CronJob[] {
   return state.cronJobs.filter((job) => {
     const scheduleKind = resolveCronJobScheduleKind(job);
@@ -470,6 +479,12 @@ export function getVisibleCronJobs(
       state.cronJobsLastStatusFilter !== "all" &&
       resolveCronJobLastRunStatus(job) !== state.cronJobsLastStatusFilter
     ) {
+      return false;
+    }
+    if (state.cronJobsTriggerFilter === "conditional" && !job.trigger) {
+      return false;
+    }
+    if (state.cronJobsTriggerFilter === "unconditional" && job.trigger) {
       return false;
     }
     return true;

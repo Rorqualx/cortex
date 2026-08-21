@@ -72,7 +72,10 @@ async function maybeDeleteAgentThroughGateway(params: {
       requiredMethods: ["agents.delete"],
     });
   } catch (error) {
-    if (isGatewayTransportError(error) || isGatewayCredentialsRequiredError(error)) {
+    if (
+      (isGatewayTransportError(error) && error.kind === "closed" && error.code === undefined) ||
+      isGatewayCredentialsRequiredError(error)
+    ) {
       return null;
     }
     throw error;
