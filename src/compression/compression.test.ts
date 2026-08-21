@@ -28,6 +28,7 @@ import { compressLogOutput } from "./log-compressor.js";
 import { scoreItem, buildFieldStats, findConstantFields } from "./scoring.js";
 import { compressSearchResults } from "./search-compressor.js";
 import { crushJsonArray } from "./smart-crusher.js";
+import { hasTemporalAnchor } from "./temporal.js";
 import { enforceTokenBudget, estimateTokens } from "./token-budget-enforcer.js";
 import type { CompressionConfig } from "./types.js";
 
@@ -155,6 +156,85 @@ describe("scoring", () => {
 
     const constants = findConstantFields(stats);
     expect(constants).toEqual(["constant"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Temporal anchors (F8 residual: dates/times must survive compression)
+// ---------------------------------------------------------------------------
+
+describe("temporal anchors", () => {
+  it("detects ISO dates, slash dates, clock times, and month names", () => {
+    expect(hasTemporalAnchor("deployed 2026-08-20")).toBe(true);
+    expect(hasTemporalAnchor("at 2026-08-20T09:30:00Z we saw it")).toBe(true);
+    expect(hasTemporalAnchor("release 2026/08/20")).toBe(true);
+    expect(hasTemporalAnchor("due 08/20/2026")).toBe(true);
+    expect(hasTemporalAnchor("standup at 09:30")).toBe(true);
+    expect(hasTemporalAnchor("shipped Aug 20")).toBe(true);
+    expect(hasTemporalAnchor("on 20 August")).toBe(true);
+  });
+
+  it("does not match plain text", () => {
+    expect(hasTemporalAnchor("")).toBe(false);
+    expect(hasTemporalAnchor("Match at line 3")).toBe(false);
+    expect(hasTemporalAnchor("row 12 of 40 items")).toBe(false);
+    expect(hasTemporalAnchor("version 1.2.3")).toBe(false);
+  });
+
+  it("scores items with temporal anchors above structurally identical plain items", () => {
+    // Identical field stats (fully unique note field), same position — only the
+    // temporal anchor differs, so the lift must be exactly its weight (0.1).
+    const buildStats = () => {
+      const m = new Map<string, { unique: number; total: number }>();
+      m.set("note", { unique: 4, total: 4 });
+      return m;
+    };
+    const plainScore = scoreItem({ note: "beta" }, 1, 4, buildStats());
+    const datedScore = scoreItem({ note: "2026-08-20T09:30:00Z" }, 1, 4, buildStats());
+    expect(datedScore).toBeGreaterThan(plainScore);
+    expect(datedScore - plainScore).toBeCloseTo(0.1, 5);
+  });
+
+  it("keeps temporal-anchor items when sampling a JSON array", () => {
+    const items = [];
+    for (let i = 0; i < 40; i++) {
+      items.push({
+        name: "review record",
+        note: i === 20 ? "audit flagged 2026-08-20T09:30:00Z" : "pending review of module payload",
+      });
+    }
+    const result = crushJsonArray(JSON.stringify(items, null, 2), 16, 0.3);
+    expect(result.compressed).toBe(true);
+    expect(result.content).toContain("audit flagged");
+  });
+
+  it("prefers keeping temporal-anchor messages when trimming to budget", () => {
+    const filler = "x".repeat(1000);
+    const messages: AgentMessage[] = [
+      {
+        role: "assistant" as const,
+        content: `dated deploy note 2026-08-20T09:30:00Z ${filler}`,
+      } as unknown as AgentMessage,
+      {
+        role: "assistant" as const,
+        content: `plain filler one ${filler}`,
+      } as unknown as AgentMessage,
+      {
+        role: "assistant" as const,
+        content: `plain filler two ${filler}`,
+      } as unknown as AgentMessage,
+      { role: "assistant" as const, content: "short plain note" } as unknown as AgentMessage,
+      { role: "user" as const, content: "summarize" } as unknown as AgentMessage,
+    ];
+    // Without the temporal bonus the oldest message (idx 0) would be dropped
+    // first; with it, the plain idx-1 message is dropped instead.
+    const result = enforceTokenBudget(messages, 600, DEFAULT_COMPRESSION_CONFIG);
+    const text = JSON.stringify(result);
+    expect(text).toContain("dated deploy note");
+    expect(text).toContain("plain filler two");
+    expect(text).not.toContain("plain filler one");
   });
 });
 

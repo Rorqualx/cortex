@@ -1,13 +1,18 @@
 /**
  * Importance scoring for JSON array items.
  *
- * Each item is scored on three dimensions:
+ * Each item is scored on four dimensions:
  *   1. Error signals  — does it contain error/exception keywords?
  *   2. Uniqueness     — how many unique values does it carry vs. the dataset?
  *   3. Position       — start and end items are more informative than the middle.
+ *   4. Temporal anchor — does it carry dates/times? Temporal grounding drives
+ *      later retrieval, so anchored items are preferentially retained when
+ *      sampling (deterministic counterpart of the memory-l3 temporal rule).
  *
  * Scores are normalised to [0, 1].
  */
+
+import { hasTemporalAnchor } from "./temporal.js";
 
 const ERROR_KEYWORDS = [
   "error",
@@ -55,6 +60,12 @@ export function scoreItem(
   });
   const errorScore = hasError ? 1 : 0;
 
+  // 2b. Temporal anchor (0 or 1) — items carrying explicit dates/times are
+  //     preferentially retained when sampling (temporal grounding survives
+  //     compression and drives later retrieval).
+  const hasTemporal = values.some((v) => typeof v === "string" && hasTemporalAnchor(v));
+  const temporalScore = hasTemporal ? 1 : 0;
+
   // 2. Uniqueness (0–1) — fraction of this item's fields that have low-unique-ratio
   //    Items with high-entropy fields are more informative to keep.
   let uniquenessSum = 0;
@@ -73,8 +84,9 @@ export function scoreItem(
   // 3. Positional score (0–1)
   const posScore = positionalScore(index, total);
 
-  // Weighted combination: errors dominate, then uniqueness, then position
-  return 0.45 * errorScore + 0.35 * uniquenessScore + 0.2 * posScore;
+  // Weighted combination: errors dominate, then uniqueness, then position,
+  // with a small temporal-anchor preference.
+  return 0.45 * errorScore + 0.3 * uniquenessScore + 0.15 * posScore + 0.1 * temporalScore;
 }
 
 /**
