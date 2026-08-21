@@ -28,6 +28,7 @@ import { compressLogOutput } from "./log-compressor.js";
 import { scoreItem, buildFieldStats, findConstantFields } from "./scoring.js";
 import { compressSearchResults } from "./search-compressor.js";
 import { crushJsonArray } from "./smart-crusher.js";
+import { buildTimeRangeLine, extractTimestamps } from "./temporal.js";
 import { enforceTokenBudget, estimateTokens } from "./token-budget-enforcer.js";
 import type { CompressionConfig } from "./types.js";
 
@@ -110,6 +111,29 @@ function generateDiff(additionLines: number, removalLines: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Temporal helpers
+// ---------------------------------------------------------------------------
+
+describe("temporal helpers", () => {
+  it("extracts ISO timestamps in order of appearance", () => {
+    const content = "2026-08-21T10:00:00 start\nmid 2026-08-21 10:30:00\nend 2026-08-21T10:45:12Z";
+    expect(extractTimestamps(content)).toEqual([
+      "2026-08-21T10:00:00",
+      "2026-08-21 10:30:00",
+      "2026-08-21T10:45:12Z",
+    ]);
+  });
+
+  it("builds a range line only for 2+ distinct timestamps", () => {
+    expect(buildTimeRangeLine(["2026-08-21T10:00:00"])).toBeNull();
+    expect(buildTimeRangeLine(["2026-08-21T10:00:00", "2026-08-21T10:00:00"])).toBeNull();
+    expect(buildTimeRangeLine(["2026-08-21T10:00:00", "2026-08-21T11:00:00"])).toBe(
+      "[time range of full output: 2026-08-21T10:00:00 .. 2026-08-21T11:00:00]",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Scoring
 // ---------------------------------------------------------------------------
 
@@ -187,6 +211,25 @@ describe("SmartCrusher", () => {
     expect(parsed._stats).toBeDefined();
     expect(parsed._stats.total).toBe(200);
     expect(parsed._stats.showing).toBeLessThanOrEqual(20);
+  });
+
+  it("records timeRange in _stats when items carry timestamps", () => {
+    const items = [];
+    for (let i = 0; i < 60; i++) {
+      const ts = `2026-08-21T10:${String(i).padStart(2, "0")}:00`;
+      items.push({ timestamp: ts, message: `event ${i}` });
+    }
+    const result = crushJsonArray(JSON.stringify(items), 10, 0.3);
+    expect(result.compressed).toBe(true);
+    const parsed = JSON.parse(result.content);
+    expect(parsed._stats.timeRange).toEqual(["2026-08-21T10:00:00", "2026-08-21T10:59:00"]);
+  });
+
+  it("omits timeRange when items have no timestamp field", () => {
+    const input = generateJsonArray(200);
+    const result = crushJsonArray(input, 20, 0.3);
+    const parsed = JSON.parse(result.content);
+    expect(parsed._stats.timeRange).toBeUndefined();
   });
 
   it("factors out constant fields", () => {
@@ -292,6 +335,15 @@ describe("LogCompressor", () => {
     const result = compressLogOutput(input, 0.3);
     expect(result.compressed).toBe(true);
     expect(result.contentType).toBe("log");
+  });
+
+  it("preserves time range of elided lines", () => {
+    const input = generateLogOutput(60);
+    const result = compressLogOutput(input, 0.3);
+    expect(result.compressed).toBe(true);
+    expect(result.content).toContain(
+      "[time range of full output: 2026-06-06T12:00:00 .. 2026-06-06T12:00:59]",
+    );
   });
 
   it("keeps error lines", () => {

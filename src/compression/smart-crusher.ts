@@ -1,4 +1,5 @@
 import { buildFieldStats, findConstantFields, scoreItem } from "./scoring.js";
+import { fieldTimeRange, findTimestampField } from "./temporal.js";
 /**
  * SmartCrusher — JSON array statistical sampling compressor.
  *
@@ -116,6 +117,11 @@ export function crushJsonArray(
     ? new Set(objectItems.map((item) => String(item[fileField] ?? ""))).size
     : undefined;
 
+  // Temporal preservation: sampled-out items may have carried the extremes of
+  // the time span — record the full range in _stats so it survives sampling.
+  const timeField = findTimestampField(objectItems);
+  const timeRange = timeField ? fieldTimeRange(objectItems, timeField) : null;
+
   // Build output
   const output: Record<string, unknown> = {};
   if (Object.keys(header).length > 0) {
@@ -125,6 +131,7 @@ export function crushJsonArray(
     total: objectItems.length,
     ...(errorCount > 0 ? { errors: errorCount } : {}),
     ...(uniqueFiles ? { files: uniqueFiles } : {}),
+    ...(timeRange ? { timeRange } : {}),
     showing: compactItems.length,
   };
   output.items = compactItems;

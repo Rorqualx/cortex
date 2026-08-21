@@ -1,3 +1,4 @@
+import { buildTimeRangeLine, extractTimestamps } from "./temporal.js";
 /**
  * LogCompressor — pattern clustering for build/test/log output.
  *
@@ -96,7 +97,14 @@ export function compressLogOutput(content: string, targetRatio: number): Compres
     }
   }
 
-  const compressed = result.join("\n");
+  let compressed = result.join("\n");
+
+  // Temporal preservation: elided lines may have carried timestamps — leave a
+  // time-range anchor so the span of the full log survives compression.
+  const timeRange = buildTimeRangeLine(extractTimestamps(content));
+  if (timeRange) {
+    compressed += `\n${timeRange}`;
+  }
 
   if (compressed.length >= originalChars * 0.7) {
     return passthrough;

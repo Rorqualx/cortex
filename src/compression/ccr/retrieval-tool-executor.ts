@@ -43,7 +43,8 @@ export function createCCRRetrieveTool(store: CCRStore | undefined): CcrRetrieveT
     name: CCR_RETRIEVE_TOOL_NAME,
     description:
       "Retrieve original uncompressed data from the context compression cache. " +
-      "Use when compressed tool output lacks the detail you need. " +
+      "Use when compressed tool output lacks the detail you need — including exact dates/times " +
+      "elided by compression (compressed output only keeps a time-range anchor). " +
       "The hash key is provided in the compression marker (e.g., 'Retrieve: hash=abc123'). " +
       "Optionally provide a query to filter results by keywords.",
     parameters: {
