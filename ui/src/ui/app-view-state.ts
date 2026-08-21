@@ -112,6 +112,11 @@ export type AppViewState = ScrollHost &
     chatSessionMessageSubscriptionKey?: string | null;
     chatSessionMessageSubscriptionRequestedKey?: string | null;
     chatLoading: boolean;
+    // Epoch ms when chat.history was last successfully applied (stamped by
+    // loadChatHistoryUncached on ChatState, the same runtime object). The
+    // coalesced session.message reload skips while this is fresh, and the
+    // session-switch reset clears it — see scheduleCoalescedSessionMessageReload.
+    chatHistoryLastAppliedAt?: number;
     // chatSending stays true for the whole active run (it drives the thinking
     // indicator). chatSendsInFlight counts only in-flight chat.send RPCs, so it
     // is the correct signal for "mid-send window" navigation guards — an active

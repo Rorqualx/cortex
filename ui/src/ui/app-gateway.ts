@@ -228,8 +228,9 @@ function scheduleCoalescedSessionMessageReload(host: GatewayHost): void {
     }
     // Skip when the session switch's own loadChatHistory just finished — the
     // transcript is already fresh and reloading would flash the whole view.
-    const historyAppliedAt = (host as { chatHistoryLastAppliedAt?: number })
-      .chatHistoryLastAppliedAt;
+    // No cast: GatewayHost intersects ChatState, so the host object is the same
+    // one loadChatHistoryUncached stamps when chat.history is applied.
+    const historyAppliedAt = host.chatHistoryLastAppliedAt;
     if (historyAppliedAt && Date.now() - historyAppliedAt < SESSION_MESSAGE_RELOAD_FRESHNESS_MS) {
       return;
     }
