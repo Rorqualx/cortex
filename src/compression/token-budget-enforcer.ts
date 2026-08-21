@@ -12,10 +12,13 @@
  *  - Error presence — messages with errors/stack traces score higher
  *  - Tool-result density — tool results have medium base priority
  *  - Forward references — messages referenced by later messages score higher
+ *  - Temporal anchors — messages carrying explicit dates/times score higher
+ *    (temporal grounding is hard to reconstruct and drives later retrieval)
  *
  * Rough token estimate: 1 token ≈ 4 chars (English text average).
  */
 import type { AgentMessage } from "../agents/runtime/index.js";
+import { hasTemporalAnchor } from "./temporal.js";
 import type { CompressionConfig } from "./types.js";
 
 const CHARS_PER_TOKEN = 4;
@@ -98,6 +101,27 @@ function buildForwardReferenceIndex(messages: AgentMessage[]): Set<number> {
 }
 
 /**
+ * Extract the concatenated text of a message (string content or text parts).
+ */
+function extractMessageText(msg: AgentMessage): string {
+  if ("content" in msg && msg.content) {
+    if (typeof msg.content === "string") {
+      return msg.content;
+    }
+    if (Array.isArray(msg.content)) {
+      return msg.content
+        .map((p: unknown) =>
+          typeof p === "object" && p !== null && "text" in p
+            ? String((p as { text: string }).text)
+            : "",
+        )
+        .join(" ");
+    }
+  }
+  return "";
+}
+
+/**
  * Score a message for retention priority. Higher = more important to keep.
  */
 function scoreMessageForRetention(
@@ -117,6 +141,8 @@ function scoreMessageForRetention(
     score += 15;
   }
 
+  const text = extractMessageText(msg);
+
   // Role-based scoring
   const role = msg.role;
   if (role === "user") {
@@ -132,25 +158,17 @@ function scoreMessageForRetention(
     }
 
     // Check for error content
-    if ("content" in msg && msg.content) {
-      const text =
-        typeof msg.content === "string"
-          ? msg.content
-          : Array.isArray(msg.content)
-            ? msg.content
-                .map((p: unknown) =>
-                  typeof p === "object" && p !== null && "text" in p
-                    ? String((p as { text: string }).text)
-                    : "",
-                )
-                .join(" ")
-            : "";
-      if (/error|exception|fail|fatal/i.test(text)) {
-        score += 25;
-      }
+    if (/error|exception|fail|fatal/i.test(text)) {
+      score += 25;
     }
   } else if (role === "assistant") {
     score += 40;
+  }
+
+  // Temporal-anchor bonus: explicit dates/times in message content are hard to
+  // reconstruct later — prefer keeping them at the margin (F8 residual).
+  if (hasTemporalAnchor(text)) {
+    score += 10;
   }
 
   return score;
