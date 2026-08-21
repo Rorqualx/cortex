@@ -7,7 +7,7 @@ import {
   openOpenClawStateDatabase,
 } from "../state/openclaw-state-db.js";
 import { createTrackedTempDirs } from "../test-utils/tracked-temp-dirs.js";
-import { listDiscoveredModels } from "./discovered-store.js";
+import { listDiscoveredModels, listSilentUpgrades } from "./discovered-store.js";
 import { listRefreshableProviders, runProviderModelDiscovery } from "./discovery-orchestrator.js";
 
 const tempDirs = createTrackedTempDirs();
@@ -125,5 +125,50 @@ describe("runProviderModelDiscovery", () => {
     });
     expect(report.ok).toBe(false);
     expect(listDiscoveredModels(db, { provider: "zai", status: "active" })).toHaveLength(1);
+  });
+
+  it("records alias→snapshot upgrade links even when /models lists the snapshot id", async () => {
+    // Silent point-update scenario (QW2 2026-08-21): the stable alias
+    // deepseek-v4-flash is answered with the snapshot id
+    // DeepSeek-V4-Flash-0731, and /models happens to also list the snapshot id.
+    // The upgrade link must still be recorded so doctor --fix sees a
+    // distinguishable served id instead of collapsing both onto the alias.
+    const { db } = await openTempDb();
+    const fetchFn = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      if (u.endsWith("/chat/completions")) {
+        return new Response(JSON.stringify({ model: "DeepSeek-V4-Flash-0731" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return modelsResponse(["deepseek-v4-flash", "DeepSeek-V4-Flash-0731"]);
+    });
+    const report = await runProviderModelDiscovery({
+      provider: "deepseek",
+      cfg: cfgWith({
+        deepseek: {
+          baseUrl: "https://api.deepseek.com",
+          models: [{ id: "deepseek-v4-flash" }],
+        },
+      }),
+      nowMs: 1000,
+      db,
+      probeServed: true,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      resolveEndpoint: () => ({ baseUrl: "https://api.deepseek.com", apiKey: "***" }),
+    });
+    // Both /models ids reconciled; the snapshot id was not "new" (it was listed).
+    expect(report).toMatchObject({ provider: "deepseek", ok: true });
+    expect(report.ok ? report.added : []).toEqual(["deepseek-v4-flash", "DeepSeek-V4-Flash-0731"]);
+    expect(report.probedAdded).toBeUndefined();
+    // But the alias→snapshot link is recorded on the served row.
+    expect(listSilentUpgrades(db, "deepseek")).toEqual([
+      { provider: "deepseek", from: "deepseek-v4-flash", to: "DeepSeek-V4-Flash-0731" },
+    ]);
+    // The snapshot row keeps its /models source (probe never downgrades it).
+    const rows = listDiscoveredModels(db, { provider: "deepseek" });
+    const snapshotRow = rows.find((r) => r.modelId === "DeepSeek-V4-Flash-0731");
+    expect(snapshotRow?.source).toBe("models");
   });
 });

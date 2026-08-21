@@ -144,6 +144,8 @@ export async function runProviderModelDiscovery(params: {
     (fetchResult.ok ? fetchResult.models.map((m) => m.modelId) : []).map((id) => id.toLowerCase()),
   );
   const newServed: string[] = [];
+  // served (lowercased) -> original-casing served id, for persistence.
+  const servedCasing = new Map<string, string>();
   // served (lowercased) -> requested ids that were silently served as it (upgrades).
   const upgradeFromByServed = new Map<string, Set<string>>();
   if (params.probeServed) {
@@ -154,20 +156,23 @@ export async function runProviderModelDiscovery(params: {
       protocol: probeProtocolForApi(endpoint.api),
       ...(params.fetchFn ? { fetchFn: params.fetchFn } : {}),
     });
-    const seen = new Set<string>();
     for (const { requested, served } of observations) {
       const key = served.toLowerCase();
-      if (!key || liveSet.has(key)) {
+      if (!key) {
         continue;
       }
-      if (!seen.has(key)) {
-        seen.add(key);
+      if (!servedCasing.has(key)) {
+        servedCasing.set(key, served);
+      }
+      if (!liveSet.has(key) && !newServed.some((id) => id.toLowerCase() === key)) {
         newServed.push(served);
       }
       if (requested.toLowerCase() !== key) {
         // A requested id that the provider answered with a different served id =
-        // a silent upgrade (e.g. glm-5.1 served as glm-5.2). Record the link so
-        // doctor --fix can repoint pins/aliases off the superseded id.
+        // a silent upgrade (e.g. glm-5.1 served as glm-5.2, or the stable alias
+        // deepseek-v4-flash answered with the snapshot id DeepSeek-V4-Flash-0731).
+        // Record the link even when /models also lists the served id — the
+        // snapshot identity must reach doctor --fix as a distinguishable ID.
         const from = upgradeFromByServed.get(key) ?? new Set<string>();
         from.add(requested);
         upgradeFromByServed.set(key, from);
@@ -177,19 +182,21 @@ export async function runProviderModelDiscovery(params: {
 
   const apply = (db: DatabaseSync): ReconcileResult => {
     const result = reconcileProviderModels(db, { provider, fetchResult, nowMs: params.nowMs });
-    if (newServed.length > 0) {
-      upsertProbedServedModels(
-        db,
-        provider,
-        newServed.map((id) => {
-          const upgradedFrom = [...(upgradeFromByServed.get(id.toLowerCase()) ?? [])];
-          return {
-            modelId: id,
-            raw: { id, via: "probe", ...(upgradedFrom.length > 0 ? { upgradedFrom } : {}) },
-          };
-        }),
-        params.nowMs,
-      );
+    // Persist probe observations: unlisted served ids become probe rows, and
+    // alias→served upgrade links are stamped onto the served row even when that
+    // row came from /models (source stays "models"; raw_json carries the link,
+    // which listSilentUpgrades reads regardless of source).
+    const upserts = [...servedCasing.entries()]
+      .filter(([key]) => !liveSet.has(key) || upgradeFromByServed.has(key))
+      .map(([key, id]) => {
+        const upgradedFrom = [...(upgradeFromByServed.get(key) ?? [])];
+        return {
+          modelId: id,
+          raw: { id, via: "probe", ...(upgradedFrom.length > 0 ? { upgradedFrom } : {}) },
+        };
+      });
+    if (upserts.length > 0) {
+      upsertProbedServedModels(db, provider, upserts, params.nowMs);
     }
     return result;
   };

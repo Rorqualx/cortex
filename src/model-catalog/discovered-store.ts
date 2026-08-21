@@ -170,16 +170,17 @@ export function upsertActiveDiscoveredModels(
 export type SilentModelUpgrade = { provider: string; from: string; to: string };
 
 /**
- * Reads silent upgrades recorded by the served-model probe: probe rows whose
+ * Reads silent upgrades recorded by the served-model probe: rows whose
  * `raw_json.upgradedFrom` lists requested ids the provider answered with a
  * different served id. Used by doctor --fix to repoint pins/aliases off the
- * superseded id onto the served one.
+ * superseded id onto the served one. Links are scanned regardless of row
+ * source: a served id that /models also lists keeps source="models", but its
+ * raw_json still carries the probe-stamped upgrade link (snapshot identity).
  */
 export function listSilentUpgrades(db: DatabaseSync, provider?: string): SilentModelUpgrade[] {
   let query = getDiscoveredStoreKysely(db)
     .selectFrom("model_catalog_discovered")
-    .select(["provider", "model_id", "raw_json"])
-    .where("source", "=", "probe");
+    .select(["provider", "model_id", "raw_json"]);
   const normalizedProvider = provider ? normalizeModelCatalogProviderId(provider) : undefined;
   if (normalizedProvider) {
     query = query.where("provider", "=", normalizedProvider);

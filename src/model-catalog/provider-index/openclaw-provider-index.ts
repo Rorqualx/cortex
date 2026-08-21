@@ -71,6 +71,18 @@ export const OPENCLAW_PROVIDER_INDEX = {
             contextWindow: 1000000,
           },
           {
+            // Experimental vision-input variant of V4 Flash. Capability-flagged
+            // only — deliberately NOT added to delegation router defaults or
+            // priority chains, so nothing auto-routes to an exp model.
+            id: "deepseek-v4-flash-vision-exp",
+            name: "DeepSeek V4 Flash Vision (Experimental)",
+            input: ["text", "image"],
+            reasoning: true,
+            contextWindow: 1000000,
+            status: "preview",
+            statusReason: "Experimental vision variant; snapshot-pinned experimental release.",
+          },
+          {
             id: "deepseek-v4-pro",
             name: "DeepSeek V4 Pro",
             input: ["text"],
