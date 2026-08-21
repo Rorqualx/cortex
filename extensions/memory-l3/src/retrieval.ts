@@ -512,6 +512,20 @@ export async function retrieveTopK(params: {
    * to improve recall. If not provided, only heuristic reformulation is used.
    */
   llmCaller?: (params: { systemPrompt: string; userPrompt: string }) => Promise<string>;
+  /**
+   * QW3 (ArborMem-inspired): session-scoped first retrieval pass. When
+   * provided, L2/typed facts attributed to these session ids form the first
+   * candidate pass (a pre-filter on the Phase-1 collection — not a new
+   * retrieval path); facts with NO session attribution (long-term tiers,
+   * insights) always participate because they are cross-session by
+   * construction. Falls back to the full collection when the scoped set is
+   * smaller than `minScopedItems` (default 3), so recall can only improve.
+   */
+  sessionScope?: {
+    sessionIds: string[];
+    /** Minimum scoped candidates to keep the scoped pass. Default 3. */
+    minScopedItems?: number;
+  };
 }): Promise<RetrievalResult> {
   const topK = Math.max(0, params.topK);
   if (topK === 0) {
@@ -665,6 +679,27 @@ export async function retrieveTopK(params: {
     });
   }
 
+  // QW3 session-scoped first pass (ArborMem-inspired): when the caller scopes
+  // retrieval to a session lineage (resumed conversation), prefer that
+  // lineage's L2/typed facts in the first pass. Facts with no session
+  // attribution (long-term tiers, insights) always stay. Falls back to the
+  // full collection when the scoped set is below the floor — recall can only
+  // improve over the unscoped path.
+  let effectiveItems: ScorableItem[] = items;
+  if (params.sessionScope && params.sessionScope.sessionIds.length > 0) {
+    const scopeSet = new Set(params.sessionScope.sessionIds);
+    const scopedCount = items.reduce(
+      (n, i) => n + (i.fact.sessionId !== undefined && scopeSet.has(i.fact.sessionId) ? 1 : 0),
+      0,
+    );
+    const floor = params.sessionScope.minScopedItems ?? 3;
+    if (scopedCount >= floor) {
+      effectiveItems = items.filter(
+        (i) => i.fact.sessionId === undefined || scopeSet.has(i.fact.sessionId),
+      );
+    }
+  }
+
   // Pre-load retrieval signals for stale-utility demotion (RMM-inspired).
   // Reused later for post-retrieval signal recording to avoid a second read.
   let preloadedSignals: RetrievalSignal[] = [];
@@ -695,7 +730,7 @@ export async function retrieveTopK(params: {
 
   // Build corpus stats from all fact texts for BM25 IDF computation.
   const corpusStats: CorpusStats | undefined =
-    config.weightBm25 > 0 ? buildCorpusStats(items.map((i) => i.fact.text)) : undefined;
+    config.weightBm25 > 0 ? buildCorpusStats(effectiveItems.map((i) => i.fact.text)) : undefined;
 
   // Corpus-size-aware BM25 weight scaling (arXiv:2607.26497 — BM25 dominates
   // the Pareto frontier at scale). When the corpus exceeds a configurable
@@ -736,7 +771,7 @@ export async function retrieveTopK(params: {
       ? Date.now() + retConfig.retrievalTimeoutMs
       : null;
 
-  for (const item of items) {
+  for (const item of effectiveItems) {
     // Check deadline before scoring each item (avoids per-item timer overhead)
     if (scoringDeadline !== null && Date.now() > scoringDeadline) {
       if (process.env.OPENCLAW_MEMORY_L3_DEBUG === "1") {
@@ -1172,8 +1207,8 @@ export async function retrieveTopK(params: {
           continue;
         }
 
-        // Re-score all items with the reformulated query
-        for (const item of items) {
+        // Re-score items with the reformulated query (scoped set when active)
+        for (const item of effectiveItems) {
           // Skip items already in results
           if (existingKeys.has(item.fact.dedupKey)) {
             continue;

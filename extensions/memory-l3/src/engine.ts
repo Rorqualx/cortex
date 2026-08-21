@@ -176,6 +176,12 @@ export class HierarchicalL3Engine implements ContextEngine {
   private state: L3State | null = null;
   /** ReTopK session-scoped retrieval cache (bounded LRU). */
   private retrievalCache: ReTopKCacheEntry[] = [];
+  /** Session ids whose first assemble() this engine instance has seen.
+   * Used to detect resume: a session with existing compacted history whose
+   * first assemble arrives in this engine instance is a resumed conversation
+   * (gateway restart or agent switch) and gets a session-scoped first
+   * retrieval pass (QW3 2026-08-21). */
+  private assembledSessionIds = new Set<string>();
 
   constructor(storage: Storage, options?: HierarchicalL3EngineOptions) {
     this.storage = storage;
@@ -250,6 +256,18 @@ export class HierarchicalL3Engine implements ContextEngine {
     l3debug(
       `assemble(): sessionId=${params.sessionId} messages.length=${params.messages.length} prompt.length=${params.prompt?.length ?? 0}`,
     );
+    // QW3 resume detection: first assemble for a session that already has
+    // compacted history = resumed conversation → prefer that session's own
+    // facts in the first retrieval pass. Later turns in the same run are
+    // unscoped so cross-session recall stays intact.
+    const isResume =
+      (this.state?.compactedMessageCountBySession[params.sessionId] ?? 0) > 0 &&
+      !this.assembledSessionIds.has(params.sessionId);
+    if (this.assembledSessionIds.size > 1_000) {
+      this.assembledSessionIds.clear(); // bound memory on long-lived engines
+    }
+    this.assembledSessionIds.add(params.sessionId);
+    const sessionScope = isResume ? { sessionIds: [params.sessionId] } : undefined;
     const window =
       params.tokenBudget && params.tokenBudget > 0
         ? selectSlidingWindow({
@@ -261,7 +279,7 @@ export class HierarchicalL3Engine implements ContextEngine {
             estimatedTokens: estimateTotalTokens(params.messages),
           };
 
-    const systemPromptAddition = await this.buildMemorySection(params.prompt);
+    const systemPromptAddition = await this.buildMemorySection(params.prompt, sessionScope);
 
     return {
       messages: window.selected,
@@ -270,10 +288,18 @@ export class HierarchicalL3Engine implements ContextEngine {
     };
   }
 
-  private async buildMemorySection(prompt: string | undefined): Promise<string | undefined> {
+  private async buildMemorySection(
+    prompt: string | undefined,
+    sessionScope?: { sessionIds: string[] },
+  ): Promise<string | undefined> {
     if (!prompt || prompt.length === 0) {
       return undefined;
     }
+
+    // Scoped (resume) passes skip the ReTopK cache in both directions: a
+    // cached scoped result must not be served to other sessions, and a
+    // scoped result must not poison the global cache.
+    const cacheEligible = sessionScope === undefined;
 
     // Compute query embedding once for both cache-check and retrieval.
     const queryEmbedding = await this.resolveQueryEmbedding(prompt);
@@ -281,7 +307,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     // ReTopK cache check: if a cached query's embedding cosine exceeds the
     // threshold, reuse the cached formatted result (arXiv:2607.27692).
     const retopkThreshold = getRetopkThreshold(this.storage.root);
-    if (queryEmbedding && this.retrievalCache.length > 0) {
+    if (cacheEligible && queryEmbedding && this.retrievalCache.length > 0) {
       for (let i = this.retrievalCache.length - 1; i >= 0; i--) {
         const entry = this.retrievalCache[i]!;
         if (
@@ -305,6 +331,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,
       queryEmbedding,
+      ...(sessionScope ? { sessionScope } : {}),
     });
     if (top.facts.length === 0) {
       return undefined;
@@ -312,7 +339,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     const result = formatMemorySection(top.facts, { now: Date.now() });
 
     // Populate cache when we have an embedding for similarity comparison.
-    if (queryEmbedding && queryEmbedding.length > 0) {
+    if (cacheEligible && queryEmbedding && queryEmbedding.length > 0) {
       this.retrievalCache.push({ query: prompt, embedding: queryEmbedding, result });
       // LRU eviction: keep only the most recent RETOPK_MAX_ENTRIES entries.
       if (this.retrievalCache.length > RETOPK_MAX_ENTRIES) {

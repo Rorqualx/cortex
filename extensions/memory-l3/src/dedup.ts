@@ -36,7 +36,7 @@ export function dropAlreadyKnown(
 export function liftToL2Fact(
   fact: ExtractedFact,
   createdAt: number,
-  options?: { forceSignificant?: boolean },
+  options?: { forceSignificant?: boolean; sessionId?: string },
 ): L2Fact {
   // Failure-avoidance facts get automatic significance so FSRS gives them
   // 2.7× slower decay — mistakes should persist longer than trivia.
@@ -52,5 +52,8 @@ export function liftToL2Fact(
     significant,
     certainty: fact.certainty,
     semanticEntropy: fact.semanticEntropy,
+    // Session attribution enables branch/session-scoped first-pass retrieval
+    // (QW3 2026-08-21); readers treat absent as unattributed.
+    sessionId: options?.sessionId,
   };
 }

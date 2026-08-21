@@ -1826,3 +1826,130 @@ describe("retrieveTopK with query reformulation", () => {
     expect(result.facts.some((r) => r.fact.dedupKey === "budget:1")).toBe(true);
   });
 });
+
+describe("retrieveTopK session-scoped first pass (QW3)", () => {
+  const scopedFacts: L2ChunkFrontmatter["facts"] = [
+    {
+      id: "sf-1",
+      text: "greenhouse depth is twelve feet",
+      importance: 0.7,
+      createdAt: NOW,
+      dedupKey: "greenhouse:depth",
+      sessionId: "session-resumed",
+    },
+    {
+      id: "sf-2",
+      text: "greenhouse berm slope forty degrees",
+      importance: 0.7,
+      createdAt: NOW,
+      dedupKey: "greenhouse:berm",
+      sessionId: "session-resumed",
+    },
+    {
+      id: "sf-3",
+      text: "greenhouse glazing twin-wall polycarbonate",
+      importance: 0.7,
+      createdAt: NOW,
+      dedupKey: "greenhouse:glazing",
+      sessionId: "session-resumed",
+    },
+  ];
+  const otherSessionFacts: L2ChunkFrontmatter["facts"] = [
+    {
+      id: "of-1",
+      text: "greenhouse budget was exceeded in spring",
+      importance: 0.9,
+      createdAt: NOW,
+      dedupKey: "greenhouse:budget",
+      sessionId: "session-other",
+    },
+  ];
+
+  it("scopes the first pass to the requested session lineage", async () => {
+    await writeChunk("chunk-scoped", scopedFacts);
+    await writeChunk("chunk-other", otherSessionFacts);
+
+    const { facts } = await retrieveTopK({
+      query: "greenhouse",
+      storage,
+      topK: 5,
+      now: NOW,
+      sessionScope: { sessionIds: ["session-resumed"] },
+    });
+
+    expect(facts.length).toBeGreaterThan(0);
+    // Other-session facts are excluded from the scoped first pass.
+    expect(facts.some((r) => r.fact.dedupKey === "greenhouse:budget")).toBe(false);
+    // Scoped facts are present.
+    expect(facts.some((r) => r.fact.dedupKey === "greenhouse:depth")).toBe(true);
+  });
+
+  it("keeps unattributed facts (long-term tiers) in the scoped pass", async () => {
+    await writeChunk("chunk-scoped", scopedFacts);
+    await writeChunk("chunk-other", otherSessionFacts);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-1",
+            text: "greenhouse project uses passive solar design",
+            dedupKey: "greenhouse:passive-solar",
+            importance: 0.8,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 2,
+            sourceChunkIds: ["chunk-a", "chunk-b"],
+            archived: false,
+            archivedAt: null,
+          },
+        ],
+      },
+      "",
+    );
+
+    const { facts } = await retrieveTopK({
+      query: "greenhouse passive solar",
+      storage,
+      topK: 5,
+      now: NOW,
+      sessionScope: { sessionIds: ["session-resumed"] },
+    });
+
+    // Unattributed long-term fact still participates under scope.
+    expect(facts.some((r) => r.fact.dedupKey === "greenhouse:passive-solar")).toBe(true);
+  });
+
+  it("falls back to the global collection when the scoped set is below the floor", async () => {
+    // Only ONE scoped fact — below the default floor of 3.
+    await writeChunk("chunk-sparse", [scopedFacts[0]!]);
+    await writeChunk("chunk-other", otherSessionFacts);
+
+    const { facts } = await retrieveTopK({
+      query: "greenhouse budget",
+      storage,
+      topK: 5,
+      now: NOW,
+      sessionScope: { sessionIds: ["session-resumed"] },
+    });
+
+    // Fallback: the other session's fact is recallable again.
+    expect(facts.some((r) => r.fact.dedupKey === "greenhouse:budget")).toBe(true);
+  });
+
+  it("is a no-op without sessionScope (cross-session recall intact)", async () => {
+    await writeChunk("chunk-scoped", scopedFacts);
+    await writeChunk("chunk-other", otherSessionFacts);
+
+    const { facts } = await retrieveTopK({
+      query: "greenhouse budget",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+
+    expect(facts.some((r) => r.fact.dedupKey === "greenhouse:budget")).toBe(true);
+  });
+});

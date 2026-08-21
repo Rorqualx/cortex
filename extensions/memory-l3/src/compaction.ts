@@ -901,7 +901,10 @@ export async function compactSession(params: {
   const chunkId = nextChunkId(params.state);
   const intentShift = params.buffer.hasIntentShift(params.sessionId);
   const facts: L2Fact[] = budgeted.map((f) =>
-    liftToL2Fact(f, now, intentShift ? { forceSignificant: true } : undefined),
+    liftToL2Fact(f, now, {
+      ...(intentShift ? { forceSignificant: true } : undefined),
+      sessionId: params.sessionId,
+    }),
   );
   const typedFacts: TypedFact[] = groundedTyped.map((t) =>
     liftToTypedFact(t, now, {
