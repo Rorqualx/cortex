@@ -68,3 +68,13 @@ describe("SKILL_FORGE_LLM_DISTILLER_SYSTEM", () => {
     expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/script/iu);
   });
 });
+
+describe("distiller anti-failure-mode constraints (QW4)", () => {
+  it("forbids converting validation checklists into mandatory workflow steps", () => {
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/do NOT convert the Validation checklist/iu);
+  });
+
+  it("forbids converting construction recipes into mandatory workflow steps", () => {
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/construction\/setup recipe/iu);
+  });
+});

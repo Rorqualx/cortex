@@ -40,6 +40,15 @@ export type GateVerdict = {
   status: "pass" | "fail";
   reasons: string[];
   /**
+   * Non-blocking lint warnings (skill still passes). Currently populated by
+   * the distillation lint — structural signals that the distilled body
+   * converted a validation checklist or a one-off construction recipe into
+   * mandatory workflow steps, the two dominant skill-induced failure modes
+   * (distillation study: 67 excessive-verification + 30 heavy-pipeline).
+   * False positives are acceptable here: they inform, never block.
+   */
+  warnings?: string[];
+  /**
    * Tri-facet quality scores computed from available signals during gating.
    * utility ← session-success-score, robustness ← replay-gate pass rate,
    * safety ← security scan findings. Present even when status is "pass"
@@ -268,6 +277,73 @@ export function llmReplayGateStub(): never {
   throw new Error(LLM_REPLAY_TODO);
 }
 
+// ---------------------------------------------------------------------------
+// Distillation lint (QW4 2026-08-21)
+// ---------------------------------------------------------------------------
+
+// All patterns are linear (no nested/overlapping quantifiers) — ReDoS-safe
+// per the SkillSpector lesson (rework-queue RW-3).
+const VERIFY_STEP_RE = /\b(?:verify|validate|confirm|double-check|assert)\b/iu;
+const CONSTRUCTION_STEP_RE =
+  /\b(?:install|npm install|pnpm install|pip install|brew install|apt(?:-get)? install|clone|bootstrap|scaffold|set up|setup)\b/iu;
+
+/** Extract the numbered steps of the "## Workflow" section (if present). */
+function workflowSteps(body: string): string[] {
+  const steps: string[] = [];
+  let inWorkflow = false;
+  for (const raw of body.split("\n")) {
+    const header = raw.match(/^##\s+(\S[^\r\n]*)\s*$/u);
+    if (header) {
+      inWorkflow = header[1]?.trim().toLowerCase() === "workflow";
+      continue;
+    }
+    if (!inWorkflow) {
+      continue;
+    }
+    const trimmed = raw.trim();
+    if (/^\d+[.)]\s+/u.test(trimmed)) {
+      steps.push(trimmed.replace(/^\d+[.)]\s+/u, ""));
+    }
+  }
+  return steps;
+}
+
+/**
+ * Lint a distilled SKILL.md body for the two dominant skill-induced failure
+ * modes. Returns warnings (never blocks promotion):
+ *
+ * 1. excessive-verification — the Validation checklist was converted into
+ *    mandatory per-step verification inside the Workflow (distillation
+ *    study: 67 cases). Signal: ≥2 workflow steps are verify-flavored AND
+ *    they make up ≥40% of the workflow.
+ * 2. heavy-pipeline — a one-off construction/setup recipe became mandatory
+ *    workflow steps (30 cases). Signal: ≥3 workflow steps AND ≥50% of them
+ *    are install/setup flavored.
+ *
+ * Both signals are deliberately conservative; a false positive costs only a
+ * warning string.
+ */
+export function distillationLint(body: string): string[] {
+  const steps = workflowSteps(body);
+  if (steps.length < 2) {
+    return [];
+  }
+  const warnings: string[] = [];
+  const verifySteps = steps.filter((step) => VERIFY_STEP_RE.test(step));
+  if (verifySteps.length >= 2 && verifySteps.length / steps.length >= 0.4) {
+    warnings.push(
+      `excessive-verification: ${verifySteps.length}/${steps.length} workflow steps are verify/validate flavored — keep validation in the "## Validation" section as optional diagnostics, not mandatory workflow steps`,
+    );
+  }
+  const constructionSteps = steps.filter((step) => CONSTRUCTION_STEP_RE.test(step));
+  if (steps.length >= 3 && constructionSteps.length / steps.length >= 0.5) {
+    warnings.push(
+      `heavy-pipeline: ${constructionSteps.length}/${steps.length} workflow steps are install/setup flavored — one-off construction recipes should be preconditions or a setup note, not mandatory steps of the reusable workflow`,
+    );
+  }
+  return warnings;
+}
+
 export async function evaluateGate(params: {
   skillDir: string;
   name: string;
@@ -317,9 +393,22 @@ export async function evaluateGate(params: {
     return { ...validation, qualityFacets: facets };
   }
 
+  // Distillation lint: non-blocking structural warnings on the distilled body.
+  // Read failures just mean no lint — the validation above already enforced
+  // SKILL.md presence/shape.
+  let lintWarnings: string[] = [];
+  try {
+    const skillMd = await fsp.readFile(path.join(params.skillDir, "SKILL.md"), "utf8");
+    const body = skillMd.match(/^---\n([\s\S]+?)\n---\n([\s\S]*)$/u)?.[2] ?? "";
+    lintWarnings = distillationLint(body);
+  } catch {
+    // unreadable — skip lint
+  }
+  const warningsField = lintWarnings.length > 0 ? { warnings: lintWarnings } : {};
+
   const collision = await nameCollisionCheck({ name: params.name, env: params.env });
   if (collision.status === "fail") {
-    return { ...collision, qualityFacets: facets };
+    return { ...collision, ...warningsField, qualityFacets: facets };
   }
 
   // If minFacets thresholds are specified, check each facet.
@@ -348,6 +437,7 @@ export async function evaluateGate(params: {
   return {
     status: reasons.length === 0 ? "pass" : "fail",
     reasons,
+    ...warningsField,
     qualityFacets: facets,
   };
 }

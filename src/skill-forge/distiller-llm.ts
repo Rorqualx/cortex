@@ -14,6 +14,8 @@ Output ONLY the markdown body (no YAML frontmatter, no surrounding code fences).
 - Add a "## When to use this skill" section describing the trigger conditions.
 - Add a "## Workflow" section with a numbered list keyed to the captured tool sequence.
 - Add a "## Validation" section with bullet points describing how to confirm the skill worked correctly (e.g., expected output, success criteria).
+- The "## Workflow" lists the REUSABLE core only. Do NOT convert the Validation checklist into mandatory per-step verify/confirm steps — validation belongs solely in the "## Validation" section as optional diagnostics.
+- Do NOT convert one-off construction/setup recipe steps (installs, clones, scaffolding) into mandatory workflow steps; mention them as preconditions in "## When to use this skill" instead.
 - Keep the total body under 1500 characters.
 - Do NOT include "name:" or "description:" frontmatter fields - those are managed externally.
 - Do NOT include personal data, absolute filesystem paths from /Users/, /home/, or workspace dirs.

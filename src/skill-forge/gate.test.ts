@@ -262,3 +262,93 @@ describe("evaluateGate", () => {
     expect(verdict.reasons.some((r) => r.includes("[security]"))).toBe(true);
   });
 });
+
+describe("distillationLint (QW4)", () => {
+  const lintBody = (workflow: string, extra = "") =>
+    `## Overview\n\nA skill body long enough to clear the gate minimum with plenty of margin for the structural checks below.\n\n## Workflow\n\n${workflow}\n\n## Validation\n\n- Output matches expectation.\n\n${extra}`;
+
+  it("flags excessive-verification workflows without failing the gate", async () => {
+    const stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-gate-lint1-"));
+    try {
+      const staged = path.join(stateDir, "skill-forge", "skills", "_staging", "candidate");
+      await fsp.mkdir(staged, { recursive: true });
+      await fsp.writeFile(
+        path.join(staged, "SKILL.md"),
+        `---\nname: candidate\ndescription: A valid description.\n---\n\n${lintBody(
+          [
+            "1. Run the build step.",
+            "2. Verify the build output.",
+            "3. Validate the results file.",
+            "4. Confirm the exit code.",
+            "5. Check the log tail.",
+          ].join("\n"),
+        )}\n`,
+        "utf8",
+      );
+      const verdict = await evaluateGate({
+        skillDir: staged,
+        name: "candidate",
+        env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
+      });
+      expect(verdict.status).toBe("pass");
+      expect(verdict.warnings?.some((w) => w.startsWith("excessive-verification"))).toBe(true);
+    } finally {
+      await fsp.rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  it("flags heavy-pipeline workflows without failing the gate", async () => {
+    const stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-gate-lint2-"));
+    try {
+      const staged = path.join(stateDir, "skill-forge", "skills", "_staging", "candidate");
+      await fsp.mkdir(staged, { recursive: true });
+      await fsp.writeFile(
+        path.join(staged, "SKILL.md"),
+        `---\nname: candidate\ndescription: A valid description.\n---\n\n${lintBody(
+          [
+            "1. Clone the upstream repository.",
+            "2. Install the dependencies with npm.",
+            "3. Set up the local config file.",
+            "4. Bootstrap the database.",
+          ].join("\n"),
+        )}\n`,
+        "utf8",
+      );
+      const verdict = await evaluateGate({
+        skillDir: staged,
+        name: "candidate",
+        env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
+      });
+      expect(verdict.status).toBe("pass");
+      expect(verdict.warnings?.some((w) => w.startsWith("heavy-pipeline"))).toBe(true);
+    } finally {
+      await fsp.rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not warn on a clean reusable workflow", async () => {
+    const stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-gate-lint3-"));
+    try {
+      const staged = path.join(stateDir, "skill-forge", "skills", "_staging", "candidate");
+      await fsp.mkdir(staged, { recursive: true });
+      await fsp.writeFile(
+        path.join(staged, "SKILL.md"),
+        `---\nname: candidate\ndescription: A valid description.\n---\n\n${lintBody(
+          ["1. Read the target file.", "2. Apply the transformation.", "3. Write the result."].join(
+            "\n",
+          ),
+        )}\n`,
+        "utf8",
+      );
+      const verdict = await evaluateGate({
+        skillDir: staged,
+        name: "candidate",
+        env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
+      });
+      expect(verdict.status).toBe("pass");
+      expect(verdict.warnings ?? []).toHaveLength(0);
+    } finally {
+      await fsp.rm(stateDir, { recursive: true, force: true });
+    }
+  });
+});
