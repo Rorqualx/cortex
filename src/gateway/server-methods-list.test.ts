@@ -73,7 +73,7 @@ describe("listGatewayMethods", () => {
   });
 
   it("appends new methods after model probing without shifting older method indices", () => {
-    expect(listGatewayMethods().slice(-105)).toEqual([
+    expect(listGatewayMethods().slice(-107)).toEqual([
       "models.probe",
       "migrations.memory.plan",
       "migrations.memory.apply",
@@ -179,6 +179,8 @@ describe("listGatewayMethods", () => {
       "skills.forge.promote",
       "skills.forge.retire",
       "skills.forge.telemetry",
+      "sessions.recover",
+      "controlUi.sessionPreview",
     ]);
     const methods = listGatewayMethods();
     expect(methods.indexOf("node.pluginSurface.refresh")).toBe(
@@ -277,7 +279,7 @@ describe("listGatewayMethods", () => {
       "exec.approval.get",
     ]);
     expect(methods).toContain("tts.speak");
-    expect(coreMethods.slice(-112)).toEqual([
+    expect(coreMethods.slice(-115)).toEqual([
       "sessions.catalog.continue",
       "sessions.catalog.archive",
       "approval.get",
@@ -390,6 +392,9 @@ describe("listGatewayMethods", () => {
       "skills.forge.promote",
       "skills.forge.retire",
       "skills.forge.telemetry",
+      "sessions.recover",
+      "controlUi.sessionPreview",
+      "device.pair.setupStatus",
     ]);
     expect(methods.indexOf("approval.get")).toBeGreaterThan(methods.indexOf("tts.speak"));
     expect(methods.indexOf("approval.resolve")).toBe(methods.indexOf("approval.get") + 1);

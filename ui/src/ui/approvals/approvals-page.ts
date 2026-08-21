@@ -11,18 +11,19 @@ import type {
   ApprovalTerminalReason,
   TerminalApprovalSnapshot,
 } from "../../../../packages/gateway-protocol/src/schema/approvals.js";
-import type { GatewayBrowserClient } from "../gateway.ts";
-import { titleForRoute } from "../app-navigation.ts";
+import { i18n, t } from "../../i18n/index.ts";
+import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
+import { SubscriptionsController } from "../../lit/subscriptions-controller.ts";
 import {
   applicationContext,
   type ApplicationContext,
   type ApplicationGatewaySnapshot,
 } from "../app-context.ts";
+import { titleForRoute } from "../app-navigation.ts";
+import { parseApprovalResolvedEvent } from "../controllers/exec-approval.ts";
+import type { GatewayBrowserClient } from "../gateway.ts";
 import { renderSettingsPage } from "../views/settings-ui.ts";
 import { renderSettingsWorkspace } from "../views/settings-workspace.ts";
-import { i18n, t } from "../../i18n/index.ts";
-import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
-import { SubscriptionsController } from "../../lit/subscriptions-controller.ts";
 
 const APPROVAL_HISTORY_PAGE_SIZE = 50;
 
@@ -150,8 +151,6 @@ class ApprovalsPage extends OpenClawLightDomElement {
         if (
           this.gatewaySource !== gateway ||
           this.context.gateway !== gateway ||
-          !this.approvalsAccess ||
-          !readGatewayOperatorAccess(gateway.snapshot).canReviewApprovals ||
           !parseApprovalResolvedEvent(event.event, event.payload)
         ) {
           return;

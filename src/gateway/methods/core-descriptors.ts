@@ -647,6 +647,14 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "skills.forge.promote", scope: "operator.admin", since: "<=2026.7" },
   { name: "skills.forge.retire", scope: "operator.admin", since: "<=2026.7" },
   { name: "skills.forge.telemetry", scope: "operator.read", since: "<=2026.7" },
+  // Upstream 2026.8 methods the merge=ours resync dropped from this table while
+  // grafting their siblings back; their handlers already ship in the merged tree
+  // (sessions-recover.ts, control-ui.ts, device-pair-setup.ts). Re-appended at the
+  // tail so no existing advertised method index shifts. setupStatus stays
+  // unadvertised to match its setupCode sibling.
+  { name: "sessions.recover", scope: "operator.write", since: "2026.8", startup: true },
+  { name: "controlUi.sessionPreview", scope: "operator.read", since: "2026.8" },
+  { name: "device.pair.setupStatus", scope: "operator.admin", since: "2026.8", advertise: false },
 ] as const;
 
 const CORE_GATEWAY_METHOD_SPEC_BY_NAME: ReadonlyMap<string, CoreGatewayMethodSpec> = new Map(

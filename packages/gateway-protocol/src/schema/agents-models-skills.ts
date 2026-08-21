@@ -910,13 +910,16 @@ export const SkillsProposalRequestRevisionParamsSchema = closedObject({
 /** Chat-run acknowledgement returned after queueing a Skill Workshop revision request. */
 export const SkillsProposalRequestRevisionResultSchema = Type.Object(
   {
-    schema: Type.Literal("openclaw.skills.skill-card.v1"),
-    skillKey: NonEmptyString,
-    path: NonEmptyString,
-    sizeBytes: Type.Integer({ minimum: 0 }),
-    content: Type.String(),
+    runId: NonEmptyString,
+    status: Type.Union([
+      Type.Literal("started"),
+      Type.Literal("in_flight"),
+      Type.Literal("ok"),
+      Type.Literal("timeout"),
+      Type.Literal("error"),
+    ]),
   },
-  { additionalProperties: false },
+  { additionalProperties: true },
 );
 
 /** Shared approve/reject/quarantine action payload for one proposal. */

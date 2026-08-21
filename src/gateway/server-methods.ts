@@ -16,6 +16,7 @@ import {
 import {
   getGatewaySuspendAdmissionPhase,
   isGatewayRestartDraining,
+  tryBeginGatewayPreparedRestartRootWorkAdmission,
   tryBeginGatewayRootWorkAdmission,
 } from "../process/gateway-work-admission.js";
 import { formatControlPlaneActor, resolveControlPlaneActor } from "./control-plane-audit.js";
@@ -40,7 +41,9 @@ import {
 } from "./methods/registry.js";
 import { isOperatorScope } from "./operator-scopes.js";
 import { isRoleAuthorizedForMethod, parseGatewayRole } from "./role-policy.js";
+import { authenticatedProfileUnavailableError } from "./server-methods/gateway-client-identity.js";
 import { createLazyCoreHandlers, lazyHandlerModule } from "./server-methods/lazy-core-handlers.js";
+import { isTargetedNonSafeGatewayRestartRequest } from "./server-methods/restart-request.js";
 import { SKILLS_GATEWAY_METHOD_NAMES } from "./server-methods/skills-method-names.js";
 import type {
   GatewayRequestContext,
@@ -49,6 +52,7 @@ import type {
   GatewayRequestOptions,
   SessionMutationAuthorization,
 } from "./server-methods/types.js";
+import { resolveDirectIncognitoTargets } from "./session-sharing-target-input.js";
 import {
   resolveSessionMutationAuthorization,
   SessionMutationAuthorizationChangedError,
@@ -148,6 +152,10 @@ const loadDeviceHandlers = lazyHandlerModule(
 const loadDevicePairSetupHandlers = lazyHandlerModule(
   () => import("./server-methods/device-pair-setup.js"),
   (module) => module.devicePairSetupHandlers,
+);
+const loadSessionsRecoverHandlers = lazyHandlerModule(
+  () => import("./server-methods/sessions-recover.js"),
+  (module) => module.sessionRecoverHandlers,
 );
 const loadDiagnosticsHandlers = lazyHandlerModule(
   () => import("./server-methods/diagnostics.js"),
@@ -544,15 +552,23 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
     loadHandlers: loadDeviceHandlers,
   }),
   ...createLazyCoreHandlers({
-    methods: ["device.pair.setupCode"],
+    methods: ["device.pair.setupCode", "device.pair.setupStatus"],
     loadHandlers: loadDevicePairSetupHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["sessions.recover"],
+    loadHandlers: loadSessionsRecoverHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: ["diagnostics.stability", "diagnostics.lanes"],
     loadHandlers: loadDiagnosticsHandlers,
   }),
   ...createLazyCoreHandlers({
-    methods: ["controlUi.githubPreview", "controlUi.sessionPullRequests.subscribe"],
+    methods: [
+      "controlUi.githubPreview",
+      "controlUi.sessionPreview",
+      "controlUi.sessionPullRequests.subscribe",
+    ],
     loadHandlers: loadControlUiHandlers,
   }),
   ...createLazyCoreHandlers({
@@ -1078,6 +1094,35 @@ export function createRequestGatewayMethodRegistry(
 // shape; that duplication is pre-existing fork drift, not something this graft resolves — a
 // follow-up should fold handleGatewayRequest onto these two functions to remove the duplicate
 // policy.
+// GitHub-backed connections receive hello before remote account resolution, so a
+// profile-owned method must resolve its authenticated profile at this single router
+// fence before session authorization or handler work. Grafted from upstream; the
+// merge=ours resync kept the fork's pre-fence dispatch while adopting the GitHub-identity
+// feature this protects, so both dispatch paths below must cross it or a GitHub-backed
+// connection could invoke profile-owned methods without an established profile.
+async function authorizeAuthenticatedProfileForMethod(params: {
+  client: GatewayRequestOptions["client"];
+  method: string;
+  requestParams: unknown;
+  methodRegistry: GatewayMethodRegistry;
+}): Promise<ErrorShape | null> {
+  const sync = params.client?.authenticatedGitHubIdentitySync;
+  const requiresProfile =
+    params.methodRegistry.requiresAuthenticatedProfile(params.method) ||
+    resolveDirectIncognitoTargets(params.method, params.requestParams).length > 0;
+  if (!sync || !requiresProfile || params.client?.authenticatedUserProfile?.profileId.trim()) {
+    return null;
+  }
+  try {
+    await sync();
+  } catch {
+    return authenticatedProfileUnavailableError();
+  }
+  return params.client?.authenticatedUserProfile?.profileId.trim()
+    ? null
+    : authenticatedProfileUnavailableError();
+}
+
 /** Authorizes one gateway JSON-RPC-style request without dispatching it. */
 export async function authorizeGatewayRequestPreDispatch(params: {
   method: string;
@@ -1097,6 +1142,10 @@ export async function authorizeGatewayRequestPreDispatch(params: {
   );
   if (authError) {
     return { error: authError };
+  }
+  const profileError = await authorizeAuthenticatedProfileForMethod(params);
+  if (profileError) {
+    return { error: profileError };
   }
   const sessionMutation = resolveSessionMutationAuthorization({
     client: params.client ?? null,
@@ -1145,6 +1194,9 @@ type GatewayRequestEnvelopeOptions<T> = Pick<
   "context" | "isWebchatConnect"
 > & {
   methodRegistry: GatewayMethodRegistry;
+  // Prepared-restart admission needs the request params to recognize a targeted
+  // non-safe gateway.restart.request when ordinary root-work admission is closed.
+  requestParams?: unknown;
   reject: (error: ReturnType<typeof errorShape>) => T | Promise<T>;
 };
 
@@ -1188,7 +1240,12 @@ export async function runWithGatewayRequestEnvelope<T>(
     // Preparation must stay protected even before it owns the root admission that it closes.
     return await options.reject(preAdmissionRateLimitError);
   }
-  const rootWorkAdmission = tryBeginGatewayRootWorkAdmission();
+  const rootWorkAdmission =
+    tryBeginGatewayRootWorkAdmission() ??
+    (method === "gateway.restart.request" &&
+    isTargetedNonSafeGatewayRestartRequest(options.requestParams)
+      ? tryBeginGatewayPreparedRestartRootWorkAdmission()
+      : null);
   if (isSuspendPrepare && rootWorkAdmission && !rootWorkAdmission.ownsRoot) {
     return await options.reject(
       errorShape(ErrorCodes.UNAVAILABLE, "gateway suspension cannot begin from a nested request", {
@@ -1281,6 +1338,16 @@ export async function handleGatewayRequest(
     respond(false, undefined, authError);
     return;
   }
+  const profileError = await authorizeAuthenticatedProfileForMethod({
+    client,
+    method: req.method,
+    requestParams: req.params,
+    methodRegistry,
+  });
+  if (profileError) {
+    respond(false, undefined, profileError);
+    return;
+  }
   const sessionMutation = resolveSessionMutationAuthorization({
     client: client ?? null,
     method: req.method,
@@ -1363,7 +1430,11 @@ export async function handleGatewayRequest(
     );
     return;
   }
-  const rootWorkAdmission = tryBeginGatewayRootWorkAdmission();
+  const rootWorkAdmission =
+    tryBeginGatewayRootWorkAdmission() ??
+    (req.method === "gateway.restart.request" && isTargetedNonSafeGatewayRestartRequest(req.params)
+      ? tryBeginGatewayPreparedRestartRootWorkAdmission()
+      : null);
   if (
     req.method === "gateway.suspend.prepare" &&
     rootWorkAdmission &&

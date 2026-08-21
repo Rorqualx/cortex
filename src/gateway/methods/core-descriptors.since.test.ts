@@ -27,6 +27,7 @@ const TRAIN_2026_7_METHODS = [
   "terminal.attach",
   "terminal.list",
   "terminal.upload",
+  "terminal.text",
   "worktrees.list",
   "worktrees.branches",
   "worktrees.create",

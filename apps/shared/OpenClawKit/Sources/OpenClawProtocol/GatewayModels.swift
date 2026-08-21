@@ -13975,7 +13975,7 @@ public struct AgentsUpdateParams: Codable, Sendable {
     public let agentid: String
     public let name: String?
     public let workspace: String?
-    public let modelvalue: String?
+    public let modelvalue: AnyCodable?
     public var model: String? { modelvalue?.value as? String }
     public let emoji: String?
     public let avatar: String?
