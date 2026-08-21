@@ -228,6 +228,11 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
   };
 }
 
+// PROMPT_VERSION = 15 — adds TEMPORAL_SPAN + AFFECT on typed facts (FTA-style
+// first-class temporal + affect grounding): temporalSpan carries the verbatim
+// time expression anchoring a value; affect grades emotional intensity 0–1.
+// Both are additive optional fields, ignored by promotion scoring (neutrality
+// tested in longterm-typed.test.ts).
 // PROMPT_VERSION = 14 — adds CONFLICT rule (TANGLE conflict-preservation): when
 // sources disagree, emit each alternative as a separate tentative/low-confidence
 // fact for the same slot instead of forcing one definitive value; supersession
@@ -240,7 +245,7 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
 // v8 added CERTAINTY tagging so consolidation can hold tentative observations to higher promotion bars.
 // v7 added DECISIONS and ACTIONS co-emission. v6 added SIGNIFICANT.
 // v5 added REASONING. v4 co-emitted prose + typed.
-const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract three complementary kinds of information:
+export const EXTRACT_SYSTEM_PROMPT = `You are a memory extraction assistant. Read the conversation chunk and extract three complementary kinds of information:
 
 1. PROSE FACTS — durable LLM-distilled units of information for future recall.
 2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
@@ -258,7 +263,7 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=14):
+Rules (PROMPT_VERSION=15):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - TEMPORAL: preserve dates and times verbatim; do not abbreviate or drop temporal expressions (keep "2026-08-16", "9:00 AM MT", "every Tuesday", "last week" exactly as stated) — temporal anchors drive later retrieval.
 - CONFLICT: when sources give conflicting values for the same fact or slot, do NOT force one definitive value — emit each alternative separately: typed facts repeat the slot with each conflicting value at confidence ≤0.5 (each with its own sourceSpan), and the prose fact carries certainty "tentative". Supersession arbitration happens downstream; extraction must preserve all sides of the conflict.
@@ -268,6 +273,8 @@ Rules (PROMPT_VERSION=14):
 - CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
 - SEMANTIC_ENTROPY: optional float 0.0–1.0 measuring the extractor's confidence that this fact is semantically coherent and well-supported by the source text. Higher = more confident (lower entropy). Default 1.0 when omitted.
 - TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
+- TEMPORAL_SPAN: when a typed fact's value is anchored to an explicit time expression in the source, add "temporalSpan" with that expression verbatim (e.g. "2026-08-16", "every Tuesday", "Q3 2026"). Omit the field entirely when no explicit temporal anchor exists — never invent one.
+- AFFECT: add "affect" as a graded 0.0-1.0 emotional intensity for the fact. 0.3+ only when the user expressed real emotion (excitement, frustration, urgency); 0.7+ reserved for explicit emotional emphasis ("I love", "this is critical to me"). Omit for neutral facts.
 - DECISIONS: emit when a clear decision, conclusion, or agreement was reached (including implicit ones like "let's go with X"). Each must have:
   - text: what was decided.
   - maker: "user", "agent", or "both".
@@ -290,7 +297,7 @@ Schema:
     { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional", "semantic_entropy": 1.0 }
   ],
   "typedFacts": [
-    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
+    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9, "temporalSpan": "optional verbatim time anchor", "affect": 0.0 }
   ],
   "decisions": [
     { "text": "what was decided", "maker": "user|agent|both", "confidence": 0.9, "sourceSpan": "verbatim context" }
@@ -305,7 +312,7 @@ Schema:
 
 If nothing to emit, output: { "facts": [], "typedFacts": [], "decisions": [], "actions": [], "activeConstraints": [] }`;
 
-const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Read the conversation chunk and extract three complementary kinds of information in a dense, model-native format optimized for token efficiency:
+export const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Read the conversation chunk and extract three complementary kinds of information in a dense, model-native format optimized for token efficiency:
 
 1. PROSE FACTS — compressed, token-efficient units. Drop articles, filler words, and redundant connectors. Abbreviate common words where meaning is preserved. Preserve exact entities (names, numbers, dates, IDs, paths, versions, URLs) verbatim. Use compact notation: e.g., "usr:morning_standups=9AM" instead of full sentences.
 2. TYPED FACTS — verbatim precise values that must be remembered EXACTLY.
@@ -315,7 +322,7 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=14-NATIVE):
+Rules (PROMPT_VERSION=15-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - TEMPORAL: dates and times must stay verbatim even under compression — never abbreviate or drop temporal expressions ("2026-08-16", "9:00 AM MT", "every Tuesday", "last week"); temporal anchors drive later retrieval.
 - CONFLICT: conflicting values for the same slot → emit each alternative separately (same slot, each value, confidence ≤0.5, own sourceSpan; prose certainty "tentative"). Never force one winner — supersession arbitration is downstream.
@@ -325,6 +332,8 @@ Rules (PROMPT_VERSION=14-NATIVE):
 - CERTAINTY: "confirmed" when the user directly stated or verified the fact; "tentative" for inferences, speculation, or single unverified observations; "instructional" for explicit directives about future behavior ("always X", "never Y"). Default "confirmed".
 - SEMANTIC_ENTROPY: optional float 0.0–1.0 measuring the extractor's confidence that this fact is semantically coherent and well-supported by the source text. Higher = more confident (lower entropy). Default 1.0 when omitted.
 - TYPED FACTS: emit only when a precise verbatim value appears. Each typed fact must include slot, value, sourceSpan, unit (or null), confidence. Skip when no verbatim values.
+- TEMPORAL_SPAN: when a typed fact's value is anchored to an explicit time expression in the source, add "temporalSpan" with that expression verbatim (e.g. "2026-08-16", "every Tuesday", "Q3 2026"). Omit the field entirely when no explicit temporal anchor exists — never invent one.
+- AFFECT: add "affect" as a graded 0.0-1.0 emotional intensity for the fact. 0.3+ only when the user expressed real emotion (excitement, frustration, urgency); 0.7+ reserved for explicit emotional emphasis ("I love", "this is critical to me"). Omit for neutral facts.
 - DECISIONS: emit when a clear decision, conclusion, or agreement was reached. Each must have:
   - text: compressed description of what was decided.
   - maker: "user", "agent", or "both".
@@ -347,7 +356,7 @@ Schema:
     { "text": "string", "importance": 0.0..1.0, "dedupKey": "kebab:case", "reasoning": "optional string", "significant": false, "certainty": "tentative|confirmed|instructional", "semantic_entropy": 1.0 }
   ],
   "typedFacts": [
-    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9 }
+    { "slot": "kebab:case", "value": "verbatim", "sourceSpan": "context with value inside", "unit": null, "confidence": 0.9, "temporalSpan": "optional verbatim time anchor", "affect": 0.0 }
   ],
   "decisions": [
     { "text": "what was decided", "maker": "user|agent|both", "confidence": 0.9, "sourceSpan": "verbatim context" }
@@ -382,6 +391,10 @@ export type ExtractedTypedFact = {
   sourceSpan: string;
   unit: string | null;
   confidence: number;
+  /** QW5 (PROMPT_VERSION=15): verbatim temporal anchor of the value, if any. */
+  temporalSpan?: string;
+  /** QW5 (PROMPT_VERSION=15): graded emotional intensity 0–1, if any. */
+  affect?: number;
 };
 
 export type ExtractResult = {
@@ -589,12 +602,17 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
     }
     const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
     const unit = typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null;
+    // QW5: tolerate optional temporalSpan / affect (PROMPT_VERSION=15).
+    const temporalSpanRaw = typeof o.temporalSpan === "string" ? o.temporalSpan.trim() : "";
+    const affectRaw = typeof o.affect === "number" ? o.affect : undefined;
     out.push({
       slot,
       value: valueRaw,
       sourceSpan: spanRaw,
       unit,
       confidence: Math.max(0, Math.min(1, confidenceRaw)),
+      ...(temporalSpanRaw.length > 0 ? { temporalSpan: temporalSpanRaw } : {}),
+      ...(affectRaw !== undefined ? { affect: Math.max(0, Math.min(1, affectRaw)) } : {}),
     });
   }
   return out;

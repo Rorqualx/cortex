@@ -402,7 +402,7 @@ describe("compactSession", () => {
     });
     expect(caller).toHaveBeenCalledTimes(1);
     const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.systemPrompt;
-    expect(systemPrompt).toContain("PROMPT_VERSION=14-NATIVE");
+    expect(systemPrompt).toContain("PROMPT_VERSION=15-NATIVE");
     // QW1 (2026-08-16): native dense extraction must preserve temporal expressions.
     expect(systemPrompt).toContain("TEMPORAL");
     // QW2 (2026-08-17): TANGLE conflict-preservation guard.

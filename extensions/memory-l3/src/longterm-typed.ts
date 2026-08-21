@@ -577,6 +577,9 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     sourceSessionId: sessionId,
     sourceModel: modelId ?? null,
     sourceTrust: inferSourceTrust(c.latest),
+    // QW5: carry first-class temporal + affect grounding from the latest emission.
+    temporalSpan: c.latest.temporalSpan,
+    affect: c.latest.affect,
   };
   // QW-1: Compute per-fact perishability from slot/volatility/trust.
   fact.perishability = derivePerishability({
@@ -620,6 +623,9 @@ function reaffirm(
     sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceTrust: inferSourceTrust(c.latest),
+    // QW5: refresh temporal + affect grounding on reaffirmation.
+    temporalSpan: c.latest.temporalSpan,
+    affect: c.latest.affect,
   };
   // Update provenance with the most recent source.
   if (effectiveSession) {
@@ -663,6 +669,9 @@ function supersede(
     sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceTrust: inferSourceTrust(c.latest),
+    // QW5: refresh temporal + affect grounding on reaffirmation.
+    temporalSpan: c.latest.temporalSpan,
+    affect: c.latest.affect,
   };
   // QW-1: Recompute perishability for the new value.
   result.perishability = derivePerishability({

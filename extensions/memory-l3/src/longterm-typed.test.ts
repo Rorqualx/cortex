@@ -1558,3 +1558,85 @@ describe("consolidateLongTermTyped", () => {
     expect(pi).toBe(1.2);
   });
 });
+
+describe("QW5: temporalSpan + affect carry + scoring neutrality", () => {
+  it("carries temporalSpan and affect through promotion", async () => {
+    await writeChunkWithTyped(
+      "chunk-000000-q5a",
+      [
+        {
+          id: "tf-q5",
+          slot: "schedule:standup",
+          value: "9:00 AM MT",
+          sourceSpan: "standup every Tuesday at 9:00 AM MT",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+          temporalSpan: "every Tuesday",
+          affect: 0.4,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.temporalSpan).toBe("every Tuesday");
+    expect(ltt.facts[0]!.affect).toBe(0.4);
+  });
+
+  it("keeps promotion scoring neutral to the new fields", async () => {
+    // Same slot/value/confidence consolidated in two independent stores; the
+    // only difference is the presence of QW5 annotations. Every scoring-relevant
+    // output must match exactly.
+    const mkStorage = () => {
+      const dir = mkdtempSync(path.join(os.tmpdir(), "l3-q5-neutral-"));
+      return new Storage(path.join(dir, ".openclaw", "l3"));
+    };
+    const base = {
+      slot: "user:phone",
+      value: "555-1234",
+      sourceSpan: "my number is 555-1234",
+      unit: null as string | null,
+      confidence: 0.8,
+      createdAt: NOW,
+    };
+    const plainStore = mkStorage();
+    const annotatedStore = mkStorage();
+    try {
+      for (const [store, extra] of [
+        [plainStore, {}],
+        [annotatedStore, { temporalSpan: "since 2024", affect: 0.9 }],
+      ] as const) {
+        await store.writeL2Chunk(
+          {
+            id: "chunk-000000-q5n",
+            agentId: "j-rorqual",
+            startTurnIndex: 0,
+            endTurnIndex: 1,
+            createdAt: NOW,
+            facts: [],
+            typedFacts: [{ id: "tf-q5-n", ...base, ...extra }],
+            dedupKeys: [],
+          },
+          "",
+        );
+        await consolidateLongTermTyped({ storage: store, agentId: "j-rorqual", now: NOW });
+      }
+      const [plainFact] = (await plainStore.readLongTermTyped()).facts;
+      const [annotatedFact] = (await annotatedStore.readLongTermTyped()).facts;
+      expect(plainFact && annotatedFact).toBeTruthy();
+      // Promotion/decay-relevant outputs must be identical.
+      expect(annotatedFact!.confidence).toBe(plainFact!.confidence);
+      expect(annotatedFact!.volatilityClass).toBe(plainFact!.volatilityClass);
+      expect(annotatedFact!.recallCount).toBe(plainFact!.recallCount);
+      expect(annotatedFact!.perishability).toEqual(plainFact!.perishability);
+      expect(annotatedFact!.sourceTrust).toEqual(plainFact!.sourceTrust);
+      // And the annotations themselves carried through.
+      expect(annotatedFact!.temporalSpan).toBe("since 2024");
+      expect(plainFact!.temporalSpan).toBeUndefined();
+    } finally {
+      rmSync(path.dirname(path.dirname(plainStore.root)), { recursive: true, force: true });
+      rmSync(path.dirname(path.dirname(annotatedStore.root)), { recursive: true, force: true });
+    }
+  });
+});

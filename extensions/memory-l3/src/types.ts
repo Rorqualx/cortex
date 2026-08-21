@@ -145,6 +145,21 @@ export type TypedFact = {
    * facts extracted before this feature.
    */
   statedBy?: string;
+  /**
+   * QW5 (FTA-style, PROMPT_VERSION=15): verbatim temporal grounding span
+   * from the source text ("2026-08-16", "every Tuesday", "Q3 2026").
+   * Absent when the fact carries no explicit temporal anchor; readers
+   * treat absent as unanchored. Not read by promotion scoring.
+   */
+  temporalSpan?: string;
+  /**
+   * QW5 (FTA-style, PROMPT_VERSION=15): graded affect intensity 0–1
+   * (0.3+ only for real expressed emotion, 0.7+ for explicit emphasis).
+   * Complements the boolean `significant` flag with a graded signal.
+   * Absent on facts extracted before PROMPT_VERSION=15; readers treat
+   * absent as neutral. Not read by promotion scoring.
+   */
+  affect?: number;
 };
 
 /**
@@ -392,6 +407,18 @@ export type LongTermTypedFact = {
    * Absent on facts created before this feature; null when the model was unknown.
    */
   sourceModel?: string | null;
+  /**
+   * QW5 (FTA-style, PROMPT_VERSION=15): verbatim temporal grounding span of
+   * the most recent emission ("2026-08-16", "every Tuesday"). Refreshed on
+   * reaffirm. Not read by promotion/decay scoring.
+   */
+  temporalSpan?: string;
+  /**
+   * QW5 (FTA-style, PROMPT_VERSION=15): graded affect intensity 0–1 of the
+   * most recent emission. Refreshed on reaffirm. Not read by promotion/decay
+   * scoring.
+   */
+  affect?: number;
 
   /**
    * Evidence trail: the verbatim source text, chunk, and session that

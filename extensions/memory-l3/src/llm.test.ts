@@ -3,6 +3,8 @@ import {
   createGlmCaller,
   DEFAULT_GLM_BASE_URL,
   DEFAULT_GLM_MODEL,
+  EXTRACT_SYSTEM_PROMPT,
+  EXTRACT_SYSTEM_PROMPT_NATIVE,
   extractFacts,
   parseExtractResponse,
   parseJsonResponse,
@@ -247,7 +249,7 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=14");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=15");
     // QW1 (2026-08-16): extraction prompts must demand verbatim temporal expressions.
     expect(call.systemPrompt).toContain("TEMPORAL");
     // QW2 (2026-08-17): TANGLE conflict-preservation guard.
@@ -406,5 +408,46 @@ describe("createGlmCaller", () => {
     const result = await caller({ systemPrompt: "s", userPrompt: "u" });
     expect(result).toBe("ok");
     expect(slept).toEqual([2000]);
+  });
+});
+
+describe("QW5: temporalSpan + affect on typed facts (PROMPT_VERSION=15)", () => {
+  it("parses temporalSpan and clamps affect on typed facts", () => {
+    const raw = JSON.stringify({
+      facts: [],
+      typedFacts: [
+        {
+          slot: "schedule:standup",
+          value: "9:00 AM MT",
+          sourceSpan: "standup is every Tuesday at 9:00 AM MT",
+          unit: null,
+          confidence: 0.9,
+          temporalSpan: "every Tuesday",
+          affect: 1.7,
+        },
+        {
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my number is 555-1234",
+          unit: null,
+          confidence: 0.8,
+        },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.typedFacts[0]!.temporalSpan).toBe("every Tuesday");
+    expect(result.typedFacts[0]!.affect).toBe(1); // clamped
+    // Omitted fields stay absent — never invented.
+    expect(result.typedFacts[1]!.temporalSpan).toBeUndefined();
+    expect(result.typedFacts[1]!.affect).toBeUndefined();
+  });
+
+  it("documents TEMPORAL_SPAN and AFFECT rules in both extraction prompts", () => {
+    expect(EXTRACT_SYSTEM_PROMPT).toMatch(/TEMPORAL_SPAN:/u);
+    expect(EXTRACT_SYSTEM_PROMPT).toMatch(/AFFECT:/u);
+    expect(EXTRACT_SYSTEM_PROMPT).toMatch(/PROMPT_VERSION=15\)/u);
+    expect(EXTRACT_SYSTEM_PROMPT_NATIVE).toMatch(/TEMPORAL_SPAN:/u);
+    expect(EXTRACT_SYSTEM_PROMPT_NATIVE).toMatch(/AFFECT:/u);
+    expect(EXTRACT_SYSTEM_PROMPT_NATIVE).toMatch(/PROMPT_VERSION=15-NATIVE\)/u);
   });
 });

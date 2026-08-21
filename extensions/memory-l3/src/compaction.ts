@@ -1118,6 +1118,9 @@ function liftToTypedFact(
     sessionId: episodic?.sessionId,
     participants: episodic?.participants,
     mentionTime: episodic?.mentionTime,
+    // QW5 (PROMPT_VERSION=15): first-class temporal + affect grounding.
+    temporalSpan: extracted.temporalSpan,
+    affect: extracted.affect,
   };
 }
 
