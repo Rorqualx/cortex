@@ -69,6 +69,25 @@
               "maxTokensField": "max_tokens",
               "codeMode": "preferred"
             }
+          },
+          {
+            "id": "deepseek-v4-flash-vision-exp",
+            "name": "DeepSeek V4 Flash Vision (Experimental)",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "status": "preview",
+            "contextWindow": 1000000,
+            "maxTokens": 384000,
+            "cost": {
+              "input": 0.14,
+              "output": 0.28,
+              "cacheRead": 0.0028,
+              "cacheWrite": 0
+            },
+            "compat": {
+              "supportsUsageInStreaming": true,
+              "maxTokensField": "max_tokens"
+            }
           }
         ]
       }

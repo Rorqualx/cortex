@@ -78,6 +78,14 @@ export const OPENCLAW_PROVIDER_INDEX = {
             contextWindow: 1000000,
           },
           {
+            id: "deepseek-v4-flash-vision-exp",
+            name: "DeepSeek V4 Flash Vision (Experimental)",
+            input: ["text", "image"],
+            reasoning: true,
+            contextWindow: 1000000,
+            status: "preview",
+          },
+          {
             id: "deepseek-chat",
             name: "DeepSeek Chat",
             input: ["text"],

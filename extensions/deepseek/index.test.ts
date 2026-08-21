@@ -200,6 +200,7 @@ describe("deepseek provider plugin", () => {
     expect(catalogProvider.models?.map((model) => model.id)).toEqual([
       "deepseek-v4-flash",
       "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
     ]);
     const flashModel = catalogProvider.models?.find((model) => model.id === "deepseek-v4-flash");
     expect(flashModel?.reasoning).toBe(true);
@@ -228,6 +229,14 @@ describe("deepseek provider plugin", () => {
         contextWindow: 1_000_000,
         maxTokens: 384_000,
         cost: { input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0 },
+      },
+      // Experimental vision variant: mirrors flash pricing until DeepSeek
+      // publishes dedicated exp pricing; capability-flagged (input: image),
+      // never default-routed (defaultModel stays deepseek-v4-pro).
+      "deepseek-v4-flash-vision-exp": {
+        contextWindow: 1_000_000,
+        maxTokens: 384_000,
+        cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
       },
     });
   });
