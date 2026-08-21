@@ -107,6 +107,36 @@ describe("discovered-store", () => {
     ]);
   });
 
+  it("reads silent upgrades from models-sourced rows too", async () => {
+    // When /models also lists the served id, reconcile writes it as source="models"
+    // and the probe stamps the upgrade link into raw_json on conflict. The link
+    // must remain visible to doctor --fix regardless of row source.
+    const { db } = await openTempDb();
+    upsertActiveDiscoveredModels(
+      db,
+      "deepseek",
+      [{ modelId: "DeepSeek-V4-Flash-0731", raw: { id: "DeepSeek-V4-Flash-0731" } }],
+      1000,
+    );
+    upsertProbedServedModels(
+      db,
+      "deepseek",
+      [
+        {
+          modelId: "DeepSeek-V4-Flash-0731",
+          raw: { id: "DeepSeek-V4-Flash-0731", via: "probe", upgradedFrom: ["deepseek-v4-flash"] },
+        },
+      ],
+      2000,
+    );
+    const rows = listDiscoveredModels(db, { provider: "deepseek" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.source).toBe("models"); // probe never downgrades source
+    expect(listSilentUpgrades(db, "deepseek")).toEqual([
+      { provider: "deepseek", from: "deepseek-v4-flash", to: "DeepSeek-V4-Flash-0731" },
+    ]);
+  });
+
   it("scopes provider and status filters", async () => {
     const { db } = await openTempDb();
     upsertActiveDiscoveredModels(db, "zai", [{ modelId: "glm-5", raw: {} }], 1000);

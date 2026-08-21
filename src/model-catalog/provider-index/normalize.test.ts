@@ -186,9 +186,19 @@ describe("OpenClaw provider index", () => {
       })),
     ).toEqual([
       { id: "deepseek-v4-flash", reasoning: true, contextWindow: 1000000 },
+      { id: "deepseek-v4-flash-vision-exp", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-v4-pro", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-chat", reasoning: undefined, contextWindow: 1000000 },
       { id: "deepseek-reasoner", reasoning: true, contextWindow: 1000000 },
     ]);
+    // Experimental vision variant is capability-flagged (image input, preview
+    // status) and deliberately absent from any default routing chain.
+    const visionExp = index.providers.deepseek?.previewCatalog?.models.find(
+      (model) => model.id === "deepseek-v4-flash-vision-exp",
+    );
+    expect(visionExp).toMatchObject({
+      input: ["text", "image"],
+      status: "preview",
+    });
   });
 });
