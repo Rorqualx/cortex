@@ -255,6 +255,7 @@ function resetChatStateForSessionSwitch(
   state.activitySubscribed = false;
   state.lastError = null;
   state.chatError = null;
+  state.chatHistoryLastAppliedAt = undefined;
   // Avatar is per-agent, not per-session: clearing it here made it blink away and
   // refetch on every same-agent conversation switch. It's now cleared/refetched
   // only when the switch crosses agents (see switchChatSessionInternal).

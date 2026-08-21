@@ -200,6 +200,11 @@ type GatewayHostWithDeferredSessionMessageReload = GatewayHost & {
 
 // Long enough to absorb the millisecond-scale burst, short enough to feel instant.
 const SESSION_MESSAGE_RELOAD_COALESCE_MS = 200;
+// Skip the coalesced reload when history was applied very recently (e.g. by a
+// session switch). Active sessions emit session.message events as soon as the
+// subscription lands; reloading on top of the switch's own loadChatHistory
+// causes a visible double/triple repaint.
+const SESSION_MESSAGE_RELOAD_FRESHNESS_MS = 2_000;
 
 function scheduleCoalescedSessionMessageReload(host: GatewayHost): void {
   const reloadHost = host as GatewayHostWithDeferredSessionMessageReload;
@@ -219,6 +224,13 @@ function scheduleCoalescedSessionMessageReload(host: GatewayHost): void {
       host.chatRunId ||
       host.chatSending
     ) {
+      return;
+    }
+    // Skip when the session switch's own loadChatHistory just finished — the
+    // transcript is already fresh and reloading would flash the whole view.
+    const historyAppliedAt = (host as { chatHistoryLastAppliedAt?: number })
+      .chatHistoryLastAppliedAt;
+    if (historyAppliedAt && Date.now() - historyAppliedAt < SESSION_MESSAGE_RELOAD_FRESHNESS_MS) {
       return;
     }
     void loadChatHistory(host);

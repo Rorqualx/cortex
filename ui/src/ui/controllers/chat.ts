@@ -441,6 +441,8 @@ export type ChatState = {
   // Written by run-lifecycle terminal reconcile; delta handling reads it to keep a
   // late delta from re-opening a stream the user already saw finish.
   lastLocalTerminalReconcile?: LocalTerminalReconcile | null;
+  /** Epoch ms when chat.history was last successfully applied. Guards redundant reloads. */
+  chatHistoryLastAppliedAt?: number;
 };
 
 type ChatAgentsListSnapshot = Partial<Omit<AgentsListResult, "agents">> & {
@@ -1081,6 +1083,7 @@ async function loadChatHistoryUncached(
       visibleMessageCount: visibleMessages.length,
       resetStream,
     });
+    state.chatHistoryLastAppliedAt = Date.now();
     return res;
   } catch (err) {
     if (!shouldApplyChatHistoryResult(state, requestVersion, sessionKey, requestAgentId)) {
