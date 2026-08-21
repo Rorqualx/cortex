@@ -716,22 +716,15 @@ export async function startGatewayCoreRuntime(input: {
     getAttachedGatewayMethodRegistry: () => attachedGatewayMethodRegistry,
     replaceAttachedPluginRuntime,
     refreshAttachedGatewayDiscovery,
-    // Gateway startup publishes configured owners under its own subagent-binding flag,
-    // and owner resolution treats that flag as exact. Request-path readers owned by this
-    // gateway carry the same flag so they reuse the published generation; without it every
-    // request would rebuild and discard a full ephemeral catalog (seconds on large registries).
-    loadGatewayModelCatalog: (
-      params?: Parameters<typeof loadGatewayModelCatalog>[0],
-    ): ReturnType<typeof loadGatewayModelCatalog> =>
-      loadGatewayModelCatalog({ ...params, allowGatewaySubagentBinding: true }),
-    loadGatewayModelCatalogSnapshot: (
-      params?: Parameters<typeof loadGatewayModelCatalogSnapshot>[0],
-    ): ReturnType<typeof loadGatewayModelCatalogSnapshot> =>
-      loadGatewayModelCatalogSnapshot({ ...params, allowGatewaySubagentBinding: true }),
-    readPreparedGatewayModelCatalog: (
-      params?: Parameters<typeof readPreparedGatewayModelCatalog>[0],
-    ): ReturnType<typeof readPreparedGatewayModelCatalog> =>
-      readPreparedGatewayModelCatalog({ ...params, allowGatewaySubagentBinding: true }),
+    // Model catalog loaders pass through UNWRAPPED on purpose. Prepared-owner private
+    // access (server-model-catalog-auth.ts) is keyed by loader function identity, and the
+    // kernel registers exactly the instances it receives here. Wrapping them stranded the
+    // request context with unregistered clones, failing closed every models.authStatus /
+    // models.list prepared read (2026-08-21 outage). The gateway ownership flag is stamped
+    // on the kernel loaders themselves, so pass-through preserves both the flag and identity.
+    loadGatewayModelCatalog,
+    loadGatewayModelCatalogSnapshot,
+    readPreparedGatewayModelCatalog,
     getPluginMetadataSnapshot: () => currentPluginMetadataSnapshot,
   };
 }

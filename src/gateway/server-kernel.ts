@@ -72,17 +72,26 @@ const getChannelRuntime = createLazyRuntimeModule(() =>
   ),
 );
 
-const loadGatewayModelCatalog: LoadGatewayModelCatalog = async (...args) => {
+// Gateway startup publishes configured model-runtime owners under its own
+// allowGatewaySubagentBinding flag, and owner resolution treats that flag as exact.
+// These request-path readers carry the flag so gateway-owned reads reuse the published
+// generation instead of rebuilding an ephemeral catalog per request (seconds on large
+// registries). The flag is stamped here, on the registered instances themselves, and
+// never by wrapping downstream: prepared-owner private access is keyed by loader
+// function identity (registerGatewayModelCatalogPrivateAccess below), and the request
+// context must receive exactly these instances (startGatewayCoreRuntime passes them
+// through unchanged) or every prepared read fails closed.
+const loadGatewayModelCatalog: LoadGatewayModelCatalog = async (params) => {
   const mod = await loadGatewayModelCatalogModule();
-  return mod.loadGatewayModelCatalog(...args);
+  return mod.loadGatewayModelCatalog({ ...params, allowGatewaySubagentBinding: true });
 };
-const loadGatewayModelCatalogSnapshot: LoadGatewayModelCatalogSnapshot = async (...args) => {
+const loadGatewayModelCatalogSnapshot: LoadGatewayModelCatalogSnapshot = async (params) => {
   const mod = await loadGatewayModelCatalogModule();
-  return mod.loadGatewayModelCatalogSnapshot(...args);
+  return mod.loadGatewayModelCatalogSnapshot({ ...params, allowGatewaySubagentBinding: true });
 };
-const readPreparedGatewayModelCatalog: ReadPreparedGatewayModelCatalog = async (...args) => {
+const readPreparedGatewayModelCatalog: ReadPreparedGatewayModelCatalog = async (params) => {
   const mod = await loadGatewayModelCatalogModule();
-  return mod.readPreparedGatewayModelCatalog(...args);
+  return mod.readPreparedGatewayModelCatalog({ ...params, allowGatewaySubagentBinding: true });
 };
 const loadPreparedGatewayModelCatalogSnapshot: LoadPreparedGatewayModelCatalogSnapshot = async (
   ...args
