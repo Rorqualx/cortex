@@ -117,3 +117,31 @@ Ran the unit behavior suite on the Linux build. Four files surfaced failures; ea
 - [ ] `$autoreview` on reconciliation diff — **maintainer gate** (harness rejects merge commits: parents>2; run against the squashed/land diff at PR time)
 - [ ] Deferred follow-up: upstream `intentionalTermination` hardening (remove `run/types.ts` `toolMeta.toolCallId?/terminate?` alongside)
 - [ ] Fork follow-ups (NOT resync scope): secret-state vault classification; realtime-session-policy stale 6→9 tool assertion
+
+## Pre-land autoreview (claude-fable-5 engine — codex CLI absent) + remediation
+
+Ran autoreview on the reconciliation surface (134 hand-touched files materialized as a
+non-merge commit off the upstream parent; the harness rejects merge commits). It caught
+**6 real P0 regressions tsgo + behavior tests both missed** — exactly the class the skill
+warns about, including a security regression:
+
+- **F4 (security):** merge=ours dropped upstream's `authorizeAuthenticatedProfileForMethod`
+  fence while the fork adopted the GitHub-identity feature it protects. Re-grafted into both
+  `authorizeGatewayRequestPreDispatch` and the inlined `handleGatewayRequest` (all deps present).
+- **F2:** the method-registration graft missed `sessions.recover`, `controlUi.sessionPreview`,
+  `device.pair.setupStatus` (handlers already shipped). Re-added specs + routing; golden
+  method-list/since snapshots updated (+2 advertised, +3 core).
+- **F5:** prepared-restart root-work-admission fallback dropped; `gateway.restart.request` is
+  NOT on the suspension allowlist, so a targeted restart during drain would wedge. Restored in
+  both admission sites + `requestParams` on the envelope options.
+- **F3:** `SkillsProposalRequestRevisionResultSchema` mis-merged to the skill-card shape;
+  restored the `{runId,status}` ack shape.
+- **F1:** `GatewayModels.swift` `modelvalue` → `AnyCodable?` (latent fork inconsistency).
+- **F6:** `approvals-page.ts` import `parseApprovalResolvedEvent`; drop two fork-nonexistent
+  guard terms.
+- Pathfinder: also fixed a pre-existing baseline — `terminal.text` missing from the test's
+  2026.7 release-train list.
+
+Fix commit `34e84fbf` (+103/-15 prod). Verified: tsgo core/test:ui/test:packages = 0;
+126 behavior tests green (auth fence, suspension-admission, method-list, release-train).
+**Re-autoreview on the fix commit: CLEAN — no accepted/actionable findings, "patch is correct."**
