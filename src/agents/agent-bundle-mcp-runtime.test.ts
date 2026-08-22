@@ -1486,7 +1486,18 @@ describe("session MCP runtime", () => {
         "materialized MCP tool test invariant",
       ).execute("call-structured-content", {}, undefined, undefined);
 
-      expect(result.content).toEqual([
+      // Fork hardening fences MCP text through the external-content sanitizer.
+      // Strip fence wrapper for comparison; canonical content is the expected value.
+      const unwrapFencedContent = (value: string) =>
+        value
+          .replace(
+            /<<<EXTERNAL_UNTRUSTED_CONTENT id="[0-9a-f]{16}">>>\nSource: MCP tool\nFrom: capture\n---\n/g,
+            "",
+          )
+          .replace(/<<<END_EXTERNAL_UNTRUSTED_CONTENT id="[0-9a-f]{16}">>>\n?/g, "")
+          .trim();
+
+      const expected = [
         {
           type: "text",
           text: `structuredContent:\n${JSON.stringify(structuredContent, null, 2)}`,
@@ -1496,7 +1507,20 @@ describe("session MCP runtime", () => {
         { type: "text", text: "[Report] https://example.com/report" },
         { type: "text", text: "memo body" },
         { type: "text", text: "[audio audio/mpeg]" },
-      ]);
+      ];
+
+      // Unwrap fenced content for comparison; non-text items pass through unchanged.
+      expect(result.content.length).toBe(expected.length);
+      for (let i = 0; i < expected.length; i++) {
+        const actualItem = result.content[i];
+        const expectedItem = expected[i];
+        expect(actualItem.type).toBe(expectedItem.type);
+        if (actualItem.type === "text" && expectedItem.type === "text") {
+          expect(unwrapFencedContent(actualItem.text ?? "")).toBe(expectedItem.text ?? "");
+        } else {
+          expect(actualItem).toEqual(expectedItem);
+        }
+      }
       await waitForFileText(logPath, "recv tools/call", LIST_TOOLS_SERVER_LOG_TIMEOUT_MS);
     } finally {
       await runtime.dispose();
