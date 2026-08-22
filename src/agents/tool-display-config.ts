@@ -234,6 +234,10 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
           label: "camera clip",
           detailKeys: ["node", "nodeId", "facing", "duration", "durationMs"],
         },
+        camera_ptz: {
+          label: "camera PTZ",
+          detailKeys: ["ptzOperation", "node", "nodeId", "deviceId"],
+        },
         screen_record: {
           label: "screen record",
           detailKeys: ["node", "nodeId", "duration", "durationMs", "fps", "screenIndex"],
@@ -592,6 +596,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Image",
       detailKeys: ["path", "paths", "url", "urls", "prompt", "model"],
     },
+    view_image: {
+      emoji: "🖼️",
+      title: "View Image",
+      detailKeys: ["path", "paths", "url", "urls", "prompt", "model"],
+    },
     image_generate: {
       emoji: "🎨",
       title: "Image Generation",
@@ -647,11 +656,8 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "PDF",
       detailKeys: ["path", "paths", "url", "urls", "prompt", "pageRange", "model"],
     },
-    sessions_yield: {
-      emoji: "⏸️",
-      title: "Yield",
-      detailKeys: ["message"],
-    },
+    // Private resume context stays out of rendered tool status (upstream intent).
+    sessions_yield: { emoji: "⏸️", title: "Yield" },
     tts: {
       emoji: "🔊",
       title: "TTS",

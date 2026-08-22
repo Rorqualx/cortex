@@ -22,7 +22,7 @@ function requirePolicyAllow(profile: Parameters<typeof resolveCoreToolProfilePol
 }
 
 describe("tool-catalog", () => {
-  it("includes code_execution, web_search, x_search, web_fetch, and update_plan in the coding profile policy", () => {
+  it("includes code_execution, web_search, x_search, web_fetch, and progress_card in the coding profile policy", () => {
     const policy = requireCoreToolProfilePolicy("coding");
     expect(policy.allow).toEqual([
       "read",
@@ -70,7 +70,7 @@ describe("tool-catalog", () => {
       "get_goal",
       "create_goal",
       "update_goal",
-      "update_plan",
+      "progress_card",
       "ask_user",
       "skill_forge",
       "skill_workshop",

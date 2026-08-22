@@ -136,24 +136,38 @@ describe("Tool Search MCP failures", () => {
       id: target.name,
       args: {},
     });
-    expect(wrappedResult.details).toMatchObject({
-      tool: { name: target.name },
-      result: directResult,
-      status: "failed",
-    });
+    // Fork hardening fences MCP text through the external-content sanitizer, and each
+    // wrap stamps a fresh random fence id — the deferred projection re-stamps ids
+    // relative to the direct result. Normalize fence ids before deep comparisons;
+    // fence presence and failure propagation stay asserted.
+    const normalizeFenceIds = (value: string) =>
+      value
+        .replace(/id=\\?"[0-9a-f]{16}\\?"/g, 'id=\\"normalized\\"')
+        .replace(
+          /\[\[MARKER_SANITIZED\]\]/g,
+          '<<<EXTERNAL_UNTRUSTED_CONTENT id=\\"normalized\\">>>',
+        )
+        .replace(
+          /\[\[END_MARKER_SANITIZED\]\]/g,
+          '<<<END_EXTERNAL_UNTRUSTED_CONTENT id=\\"normalized\\">>>',
+        );
     const wrappedDetails = wrappedResult.details as {
-      tool: unknown;
+      tool: { name?: string } & Record<string, unknown>;
       result: unknown;
       status: unknown;
     };
-    expect(wrappedResult.content).toEqual([
-      {
-        type: "text",
-        text: expect.stringContaining(
-          JSON.stringify({ tool: wrappedDetails.tool, result: wrappedDetails.result }, null, 2),
-        ),
-      },
-    ]);
+    expect(wrappedDetails.tool).toMatchObject({ name: target.name });
+    expect(wrappedDetails.status).toBe("failed");
+    expect(normalizeFenceIds(JSON.stringify(wrappedDetails.result))).toBe(
+      normalizeFenceIds(JSON.stringify(directResult)),
+    );
+    expect(
+      normalizeFenceIds(String((wrappedResult.content as Array<{ text?: string }>)[0]?.text ?? "")),
+    ).toContain(
+      normalizeFenceIds(
+        JSON.stringify({ tool: wrappedDetails.tool, result: wrappedDetails.result }, null, 2),
+      ),
+    );
     expect(wrappedResult.content[0]).toMatchObject({
       text: expect.stringContaining("EXTERNAL_UNTRUSTED_CONTENT"),
     });
