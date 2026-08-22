@@ -1514,6 +1514,7 @@ export async function performGatewaySessionReset(params: {
             sessionStartedAt: now,
             systemSent: false,
             abortedLastRun: false,
+            contextWindow: currentEntry?.contextWindow,
             thinkingLevel: currentEntry?.thinkingLevel,
             fastMode: currentEntry?.fastMode,
             toolOverrides: currentEntry?.toolOverrides,
