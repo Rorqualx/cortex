@@ -49,6 +49,12 @@ CREATE TABLE IF NOT EXISTS grounding_daily (
   pre_confidence REAL,
   post_confidence REAL,
   PRIMARY KEY (day, agent_id)
+);
+CREATE TABLE IF NOT EXISTS reacquisition_daily (
+  day TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  retrieval_calls INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, agent_id)
 );`;
 
 // Single-slot per-path handle cache; lifecycle-owned for the process.
@@ -217,4 +223,120 @@ export function closeGroundingMetricsStoreForTest(): void {
     }
   }
   cachedDatabases.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Compression reacquisition telemetry (arXiv:2608.16370-inspired)
+// ---------------------------------------------------------------------------
+
+/**
+ * Retrieval-type tools whose post-compression usage signals REACQUISITION:
+ * the agent re-fetching context the 5-phase compression pipeline dropped.
+ * Task-completion metrics hide this cost; these counters expose it.
+ */
+export const RETRIEVAL_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "memory_search",
+  "memory_get",
+  "memory_insights",
+  "read",
+]);
+
+export type ReacquisitionMetricsSummary = {
+  fromDay: string;
+  totalRetrievalCalls: number;
+  /** Days flagged as reacquisition surges (post-compression re-fetch spikes). */
+  surges: number;
+  byDay: Array<{
+    day: string;
+    agentId: string;
+    retrievalCalls: number;
+    /** True when this day's calls exceed surgeFactor × trailing prior-day mean. */
+    surge: boolean;
+  }>;
+};
+
+/**
+ * Count one tool invocation toward reacquisition telemetry. No-op for
+ * non-retrieval tools, so a dispatcher can call it unconditionally next to
+ * its audit hook without filtering at the call site.
+ */
+export function recordRetrievalToolCall(params: {
+  agentId: string;
+  toolName: string;
+  now?: number;
+  dir?: string;
+}): void {
+  if (!RETRIEVAL_TOOL_NAMES.has(params.toolName)) {
+    return;
+  }
+  const db = openDb(params.dir);
+  const day = localDay(params.now ?? Date.now());
+  const stmt = db.prepare(
+    `INSERT INTO reacquisition_daily (day, agent_id, retrieval_calls)
+     VALUES (?, ?, 1)
+     ON CONFLICT(day, agent_id) DO UPDATE SET retrieval_calls = retrieval_calls + 1`,
+  );
+  stmt.run(day, params.agentId);
+}
+
+/**
+ * Aggregate reacquisition counters and flag post-compression surges: a day
+ * whose retrieval-call count exceeds `surgeFactor` × the trailing mean of
+ * that agent's prior days (up to `trailingDays`), once the baseline has at
+ * least `minBaseline` calls. Baseline gating avoids flagging noise on tiny
+ * early volumes. Read-only; safe to call from dashboards or crons.
+ */
+export function summarizeReacquisitionMetrics(params: {
+  fromDay: string;
+  dir?: string;
+  /** Surge multiplier over the trailing mean. Default 1.5. */
+  surgeFactor?: number;
+  /** Trailing days used for the baseline mean. Default 3. */
+  trailingDays?: number;
+  /** Minimum trailing-mean calls before a surge can be flagged. Default 5. */
+  minBaseline?: number;
+}): ReacquisitionMetricsSummary {
+  const db = openDb(params.dir);
+  const surgeFactor = params.surgeFactor ?? 1.5;
+  const trailingDays = params.trailingDays ?? 3;
+  const minBaseline = params.minBaseline ?? 5;
+  const rows = db
+    .prepare(
+      `SELECT day, agent_id, retrieval_calls FROM reacquisition_daily
+       WHERE day >= ? ORDER BY day, agent_id`,
+    )
+    .all(params.fromDay) as Array<{
+    day: string;
+    agent_id: string;
+    retrieval_calls: number | bigint;
+  }>;
+
+  // Per-agent trailing window of counts (chronological within agent).
+  const history = new Map<string, number[]>();
+  const summary: ReacquisitionMetricsSummary = {
+    fromDay: params.fromDay,
+    totalRetrievalCalls: 0,
+    surges: 0,
+    byDay: [],
+  };
+  for (const row of rows) {
+    const calls = toNumber(row.retrieval_calls);
+    const prior = history.get(row.agent_id) ?? [];
+    const window = prior.slice(-trailingDays);
+    const trailingMean = window.length > 0 ? window.reduce((a, b) => a + b, 0) / window.length : 0;
+    const surge = trailingMean >= minBaseline && calls > trailingMean * surgeFactor;
+    summary.totalRetrievalCalls += calls;
+    if (surge) {
+      summary.surges += 1;
+    }
+    summary.byDay.push({
+      day: row.day,
+      agentId: row.agent_id,
+      retrievalCalls: calls,
+      surge,
+    });
+    prior.push(calls);
+    history.set(row.agent_id, prior);
+  }
+  return summary;
 }
