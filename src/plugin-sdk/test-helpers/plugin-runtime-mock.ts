@@ -1046,6 +1046,7 @@ export function createPluginRuntimeMock(overrides: DeepPartial<PluginRuntime> = 
     nodes: {
       list: vi.fn(async () => ({ nodes: [] })),
       invoke: vi.fn(),
+      openDuplex: vi.fn(),
     },
   };
 

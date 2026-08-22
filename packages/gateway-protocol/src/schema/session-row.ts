@@ -95,6 +95,21 @@ export const GatewayAgentRuntimeSchema = Type.Object(
   {
     id: Type.String(),
     fallback: Type.Optional(Type.Union([Type.Literal("openclaw"), Type.Literal("none")])),
+    // Upstream #127xxx device placement: worker-side dispatch metadata. The fork
+    // carries the worker-environments placement runtime, so the field stays in the
+    // protocol even though the fork's cloud-placement siblings are not adopted.
+    devicePlacement: Type.Optional(
+      Type.Object(
+        {
+          requiredNodeCommands: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), {
+            maxItems: 32,
+            uniqueItems: true,
+          }),
+          consumesWorkerSlot: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     source: Type.Union([
       Type.Literal("env"),
       Type.Literal("agent"),

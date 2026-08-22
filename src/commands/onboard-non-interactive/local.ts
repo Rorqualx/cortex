@@ -4,6 +4,7 @@
  * This entrypoint applies config changes, optionally installs the gateway
  * daemon, verifies health, and emits machine-readable setup output.
  */
+import { listAgentEntries } from "../../agents/agent-scope-config.js";
 import { formatCliCommand } from "../../cli/command-format.js";
 import { resolveGatewayPort } from "../../config/config.js";
 import { logConfigUpdated } from "../../config/logging.js";
@@ -16,6 +17,7 @@ import { DEFAULT_GATEWAY_DAEMON_RUNTIME } from "../daemon-runtime.js";
 import {
   ensureOnboardingAgentWorkspace,
   resolveOnboardingAgentTarget,
+  resolveOnboardingSetupTarget,
 } from "../onboard-agent-target.js";
 import {
   applyLocalSetupWorkspaceConfig,
@@ -138,7 +140,6 @@ async function resolveGatewayHealthProbeToken(
   const resolved = await resolveGatewayAuthToken({
     cfg: nextConfig,
     env: process.env,
-    envFallback: "no-secret-ref",
     unresolvedReasonStyle: "detailed",
   });
   const probeAuth: { token?: string; unresolvedRefReason?: string } = {};
@@ -177,7 +178,6 @@ export async function runNonInteractiveLocalSetup(params: {
 }) {
   const { opts, runtime, baseConfig, baseHash } = params;
   const mode = "local" as const;
-  const preCreationAgentId = resolveOnboardingAgentTarget(baseConfig).agentId;
 
   const requestedWorkspaceDir = resolveNonInteractiveWorkspaceDir({
     opts,
@@ -206,7 +206,12 @@ export async function runNonInteractiveLocalSetup(params: {
   }
   // Workspace defaults are already staged above; provider discovery must use
   // that requested owner before first-agent creation is allowed to write.
-  const authTarget = resolveOnboardingAgentTarget(nextConfig, preCreationAgentId);
+  const authTarget = resolveOnboardingSetupTarget(
+    nextConfig,
+    opts.agentName && listAgentEntries(baseConfig).length === 0
+      ? { name: opts.agentName, workspaceDir }
+      : undefined,
+  );
 
   const inferredAuthChoice = opts.authChoice
     ? undefined

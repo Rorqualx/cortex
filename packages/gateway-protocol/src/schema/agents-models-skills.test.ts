@@ -22,6 +22,7 @@ import {
   ToolsEffectiveResultSchema,
   ToolsInvokeParamsSchema,
 } from "./agents-models-skills.js";
+import { GatewayAgentRuntimeSchema } from "./session-row.js";
 
 /**
  * Schema regression tests for agent metadata, skills, and effective
@@ -512,5 +513,57 @@ describe("SkillsDetailResultSchema", () => {
     };
 
     expect(Value.Check(SkillsDetailResultSchema, result)).toBe(true);
+  });
+});
+
+describe("GatewayAgentRuntimeSchema devicePlacement", () => {
+  it("accepts a valid device placement", () => {
+    expect(
+      Value.Check(GatewayAgentRuntimeSchema, {
+        id: "codex",
+        fallback: "openclaw",
+        devicePlacement: {
+          requiredNodeCommands: ["runtime.exec-server.v1"],
+          consumesWorkerSlot: false,
+        },
+        source: "model",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a device placement missing consumesWorkerSlot", () => {
+    expect(
+      Value.Check(GatewayAgentRuntimeSchema, {
+        id: "codex",
+        devicePlacement: { requiredNodeCommands: ["runtime.exec-server.v1"] },
+        source: "model",
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects oversized node commands", () => {
+    expect(
+      Value.Check(GatewayAgentRuntimeSchema, {
+        id: "codex",
+        devicePlacement: {
+          requiredNodeCommands: ["x".repeat(129)],
+          consumesWorkerSlot: false,
+        },
+        source: "model",
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects more than 32 node commands", () => {
+    expect(
+      Value.Check(GatewayAgentRuntimeSchema, {
+        id: "codex",
+        devicePlacement: {
+          requiredNodeCommands: Array.from({ length: 33 }, (_, index) => `runtime.${index}.v1`),
+          consumesWorkerSlot: false,
+        },
+        source: "model",
+      }),
+    ).toBe(false);
   });
 });

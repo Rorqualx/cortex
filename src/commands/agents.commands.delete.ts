@@ -21,15 +21,16 @@ import {
   purgeAgentSessionStoreEntries,
   resolveSessionTranscriptsDirForAgent,
 } from "../config/sessions.js";
+import { withLocalAgentCronJobsRemoved } from "../cron/local-service.js";
 import {
   callGateway,
   isGatewayCredentialsRequiredError,
   isGatewayTransportError,
 } from "../gateway/call.js";
+import { beginAgentDeletion } from "../agents/agent-lifecycle-registry.js";
+import { withAgentExecApprovalsRemoved } from "../infra/exec-approvals.js";
 import { LEGACY_IMPLICIT_AGENT_ID, normalizeAgentId } from "../routing/session-key.js";
-import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
-import { defaultRuntime } from "../runtime.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
+import { defaultRuntime, type RuntimeEnv, writeRuntimeJson } from "../runtime.js";import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { createClackPrompter } from "../wizard/clack-prompter.js";
 import { createQuietRuntime } from "./agents.command-shared.js";
 import { findAgentEntryIndex, listAgentEntries, pruneAgentConfig } from "./agents.config.js";
@@ -49,7 +50,10 @@ type AgentsDeleteGatewayResult = {
   removed?: Array<{ path: string; method: "trash" | "missing" }>;
   failed?: Array<{ path: string; reason: string }>;
 };
-
+type AgentDeleteGatewayAttempt =
+  | { kind: "deleted"; result: AgentsDeleteGatewayResult }
+  | { kind: "fallback-unreachable" }
+  | { kind: "fallback-credentials-required" };
 function logClearedOwnerRefs(runtime: RuntimeEnv, clearedOwnerRefs: readonly string[]): void {
   if (clearedOwnerRefs.length > 0) {
     runtime.log(`Cleared owner references: ${clearedOwnerRefs.join(", ")}`);
@@ -59,10 +63,9 @@ function logClearedOwnerRefs(runtime: RuntimeEnv, clearedOwnerRefs: readonly str
 async function maybeDeleteAgentThroughGateway(params: {
   agentId: string;
   deleteFiles: boolean;
-}): Promise<AgentsDeleteGatewayResult | null> {
+}): Promise<AgentDeleteGatewayAttempt> {
   try {
-    return await callGateway<AgentsDeleteGatewayResult>({
-      method: "agents.delete",
+    const result = await callGateway<AgentsDeleteGatewayResult>({      method: "agents.delete",
       params: {
         agentId: params.agentId,
         deleteFiles: params.deleteFiles,
@@ -71,12 +74,13 @@ async function maybeDeleteAgentThroughGateway(params: {
       clientName: GATEWAY_CLIENT_NAMES.CLI,
       requiredMethods: ["agents.delete"],
     });
+    return { kind: "deleted", result };
   } catch (error) {
-    if (
-      (isGatewayTransportError(error) && error.kind === "closed" && error.code === undefined) ||
-      isGatewayCredentialsRequiredError(error)
-    ) {
-      return null;
+    if (isGatewayTransportError(error) && error.kind === "closed" && error.code === undefined) {
+      return { kind: "fallback-unreachable" };
+    }
+    if (isGatewayCredentialsRequiredError(error)) {
+      return { kind: "fallback-credentials-required" };
     }
     throw error;
   }
@@ -157,14 +161,14 @@ export async function agentsDeleteCommand(
   const sessionsDir = resolveSessionTranscriptsDirForAgent(agentId);
   const result = pruneAgentConfig(cfg, agentId);
 
-  const gatewayResult = await maybeDeleteAgentThroughGateway({
+  const gatewayAttempt = await maybeDeleteAgentThroughGateway({
     agentId,
     deleteFiles: true,
   });
-  if (gatewayResult) {
+  if (gatewayAttempt.kind === "deleted") {
+    const gatewayResult = gatewayAttempt.result;
     const workspaceSharedWith = findOverlappingWorkspaceAgentIds(cfg, agentId, workspaceDir);
-    const workspaceRetained = workspaceSharedWith.length > 0;
-    if (opts.json) {
+    const workspaceRetained = workspaceSharedWith.length > 0;    if (opts.json) {
       writeRuntimeJson(runtime, {
         agentId,
         workspace: workspaceDir,
@@ -192,17 +196,39 @@ export async function agentsDeleteCommand(
     return;
   }
 
-  await replaceConfigFile({
-    nextConfig: result.config,
-    ...(baseHash !== undefined ? { baseHash } : {}),
-    writeOptions: {
-      allowedAgentRosterRemovals: [agentId],
-      ...(opts.json ? { skipOutputLogs: true } : {}),
-    },
+  const deletion = beginAgentDeletion({
+    agentId,
+    agentDir,
+    workspaceDir,
+    sessionsDir,
+    deleteFiles: true,
   });
-  if (!opts.json) {
-    logConfigUpdated(runtime);
-  }
+  try {
+    const commitRoster = async () =>
+      await withAgentExecApprovalsRemoved(agentId, async () => {
+        await replaceConfigFile({
+          nextConfig: result.config,
+          ...(baseHash !== undefined ? { baseHash } : {}),
+          writeOptions: {
+            allowedAgentRosterRemovals: [agentId],
+            ...(opts.json ? { skipOutputLogs: true } : {}),
+          },
+        });
+        if (!opts.json) {
+          logConfigUpdated(runtime);
+        }
+      });
+    if (gatewayAttempt.kind === "fallback-unreachable") {
+      await withLocalAgentCronJobsRemoved(agentId, () => cfg, commitRoster);
+    } else {
+      // Credential resolution fails before transport, so a live scheduler may still own the store.
+      await commitRoster();
+    }
+    deletion.commit();
+  } catch (error) {
+    deletion.rollback();
+    throw error;
+  }  }
 
   // Purge session store entries for this agent so orphaned sessions cannot be targeted (#65524).
   await purgeAgentSessionStoreEntries(cfg, agentId);
@@ -250,9 +276,16 @@ export async function agentsDeleteCommand(
       removedBindings: result.removedBindings,
       removedAllow: result.removedAllow,
       clearedOwnerRefs: result.clearedOwnerRefs.length > 0 ? result.clearedOwnerRefs : undefined,
-    });
+      ...(gatewayAttempt.kind === "fallback-credentials-required"
+        ? { cronCleanupSkipped: true }
+        : {}),    });
   } else {
     runtime.log(`Deleted agent: ${agentId}`);
     logClearedOwnerRefs(runtime, result.clearedOwnerRefs);
+  }
+  if (gatewayAttempt.kind === "fallback-credentials-required") {
+    runtime.error(
+      `Warning: cron cleanup was skipped for deleted agent "${agentId}" because the Gateway could not be authenticated; scheduled jobs may remain.`,
+    );
   }
 }

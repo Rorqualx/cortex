@@ -74,10 +74,8 @@ type ResolveTelegramGroupConfig = (
 };
 
 type ResolveGroupActivation = (params: {
-  chatId: string | number;
   agentId?: string;
-  messageThreadId?: number;
-  sessionKey?: string;
+  sessionKey: string;
   cfg: OpenClawConfig;
 }) => boolean | undefined;
 

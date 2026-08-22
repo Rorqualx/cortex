@@ -50,14 +50,13 @@ export function resolvePluginSkillDirs(params: {
     });
     return [];
   }
-  const config = params.config ?? {};
-  // allowWorkspaceScopedCurrent surfaces plugins installed under the workspace's
-  // .openclaw/extensions so their shipped skills load; loadPluginMetadataSnapshot alone is
-  // workspace-blind and drops plugin-shipped skills (see workspace-load.test.ts).
   const metadataSnapshot = resolvePluginMetadataSnapshot({
     workspaceDir,
-    config,
+    config: params.config,
     env: process.env,
+    // allowWorkspaceScopedCurrent surfaces plugins installed under the workspace's
+    // .openclaw/extensions so their shipped skills load; the snapshot resolver alone is
+    // workspace-blind and drops plugin-shipped skills (see workspace-load.test.ts).
     allowWorkspaceScopedCurrent: true,
   });
   return resolvePluginSkillDirsFromMetadata({ ...params, metadataSnapshot });

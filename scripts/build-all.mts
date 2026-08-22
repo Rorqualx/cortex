@@ -311,21 +311,6 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
     },
   },
   tsxStep("check-plugin-sdk-exports", "scripts/check-plugin-sdk-exports.mts"),
-  tsxStep("copy-hook-metadata", "scripts/copy-hook-metadata.ts"),
-  {
-    // Fork-only: copies export-html templates consumed by src/auto-reply/reply/export-html.
-    label: "copy-export-html-templates",
-    kind: "node",
-    args: ["--experimental-strip-types", "scripts/copy-export-html-templates.ts"],
-    cache: {
-      inputs: [
-        "scripts/copy-export-html-templates.ts",
-        "scripts/lib/copy-assets.ts",
-        "src/auto-reply/reply/export-html",
-      ],
-      outputs: ["dist/export-html"],
-    },
-  },
   {
     label: "ui:build",
     kind: "pnpm",
@@ -368,8 +353,6 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "build:plugin-sdk:dts",
     "write-plugin-sdk-entry-dts",
     "check-plugin-sdk-exports",
-    "copy-hook-metadata",
-    "copy-export-html-templates",
     "ui:build",
     "write-build-info",
     "write-cli-startup-metadata",
@@ -387,8 +370,6 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "build:plugin-sdk:dts",
     "write-plugin-sdk-entry-dts",
     "check-plugin-sdk-exports",
-    "copy-hook-metadata",
-    "copy-export-html-templates",
     "ui:build",
     "write-build-info",
     "write-cli-startup-metadata",

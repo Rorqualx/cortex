@@ -1175,6 +1175,8 @@ export function runAgentAttempt(params: {
     agentHarnessId: embeddedAgentHarnessOverride,
     modelSelectionLocked: !isRawModelRun && params.sessionEntry?.modelSelectionLocked === true,
     agentHarnessRuntimeOverride: embeddedAgentHarnessOverride,
+    agentHarnessRuntimePreparationHint:
+      agentHarnessPolicy.runtimeSource !== "implicit" ? agentHarnessPolicy.runtime : undefined,
     skillsSnapshot: params.skillsSnapshot,
     prompt: embeddedModelPrompt,
     transcriptPrompt: embeddedPersistencePrompt,

@@ -1,4 +1,5 @@
 import type {
+  GatewayAgentRuntime as ProtocolGatewayAgentRuntime,
   SessionCreatedActor,
   SessionsAssignOwnerParams,
 } from "../../packages/gateway-protocol/src/index.js";
@@ -23,6 +24,7 @@ export type GatewayAgentModel = {
 export type GatewayAgentRuntime = {
   id: string;
   fallback?: "openclaw" | "none";
+  devicePlacement?: ProtocolGatewayAgentRuntime["devicePlacement"];
   source:
     | "env"
     | "agent"

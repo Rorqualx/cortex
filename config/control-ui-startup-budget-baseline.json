@@ -1,5 +1,5 @@
 {
   "startupJsGzipBytes": 583689,
-  "reason": "2026-08-20 upstream resync (a3ca8466 -> 784a2287): Control UI startup graph regenerated from the CI/Linux build at 583689 B gzip (+3488 B vs the prior 580201 B). The growth is the reconciliation's adopted UI features -- the GitHub-identity authorization panel (ported to ui/src/ui) and the cron automation-condition trigger filter. Under the 589824 B max-committed ceiling. Linux zlib emits larger streams so baselines must record CI bytes (see check-control-ui-performance.mts); this is a baseline regeneration for adopted features, not a regression.",
-  "updatedAt": "2026-08-20"
+  "reason": "2026-08-22 upstream resync (784a2287 -> 70c2be7e): baseline kept at 583689 B. Upstream's ratchet consumption (#127749, #127754 streamed-markdown highlighting, 345049 B) is ui/-only and was dropped wholesale by fork ui ownership, so the fork's startup graph is unchanged from the 2026-08-20 measurement. Regenerate on a Linux build if CI's perf check reports drift.",
+  "updatedAt": "2026-08-22"
 }

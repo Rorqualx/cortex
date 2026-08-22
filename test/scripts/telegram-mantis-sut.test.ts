@@ -186,20 +186,34 @@ describe("Telegram Mantis SUT", () => {
     }
   });
 
-  it("tests default Telegram delivery without forcing native reply mode", () => {
+  it("lets the proof agent patch the complete ephemeral gateway config", () => {
     const outputDir = tempDirs.make("telegram-mantis-config-");
     const { configPath } = writeSutConfig({
+      configPatch: {
+        channels: {
+          telegram: {
+            apiRoot: "https://example.invalid",
+            botToken: "not-the-sut-token",
+            streaming: { mode: "partial" },
+          },
+        },
+        session: { sendPolicy: { default: "deny" } },
+      },
       gatewayPort: 19_879,
       groupId: "-100123456789",
+      mockHost: "mock-openai",
       mockPort: 19_882,
       outputDir,
       testerId: "12345",
     });
 
-    const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as {
-      channels: { telegram: Record<string, unknown> };
-    };
-    expect(config.channels.telegram.apiRoot).toBe("http://telegram-api-proxy:8080");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    expect(config.channels.telegram.apiRoot).toBe("https://example.invalid");
+    expect(config.channels.telegram.botToken).toBe("not-the-sut-token");
+    expect(config.channels.telegram.streaming).toEqual({ mode: "partial" });
     expect(config.channels.telegram).not.toHaveProperty("replyToMode");
+    expect(config.commands.ownerAllowFrom).toEqual(["telegram:12345"]);
+    expect(config.models.providers.openai.baseUrl).toBe("http://mock-openai:19882/v1");
+    expect(config.session.sendPolicy).toEqual({ default: "deny" });
   });
 });
