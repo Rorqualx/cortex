@@ -63,9 +63,30 @@ Reconciliation *judgment* this session: +67 / -4 (all additive type grafts + 2 r
 Full branch vs main non-ui/non-test: +39737 / -14277 — this is the adopted **upstream** delta
 (438 commits, already reviewed upstream), not fork-authored surface.
 
-## Linux proof (huey, Node 24)
+## +5 top-up (443 total) — 2026-08-22 later
 
-`scripts/remote-proof.sh` — build + `test:fast`, baseline-diffed against main. [in progress]
+Folded in 5 more upstream commits (`5ddf381..` tip). ui/ by policy (8 dropped). One
+non-ui conflict:
+- `control-ui-bootstrap-contract.ts`: keep-both — fork `timeFormat`/`chatMessageMaxWidth`
+  + upstream #127711 `environment?: ControlUiEnvironment`. The feature's config schema
+  (`zod-schema.gateway`, `types.gateway`, help/hints/labels) + `control-ui.ts` producer
+  auto-merged and consume the field, so it is load-bearing; UI consumer is fork-owned
+  (degrades gracefully via the HTML env attribute). tsgo all lanes clean/baseline.
+
+## Linux proof (huey, Node 24) — `scripts/remote-proof.sh`
+
+First run (tip e6668) caught two Linux-only signals the Mac can't:
+1. **Build fail — control-ui startup JS gzip 585538 B** > 583689 baseline+tolerance, under
+   the 589824 B hard ceiling. ui/ == main, so growth is non-ui runtime bundled into the
+   startup path (gateway-protocol schema additions + 438-commit package delta). **Bumped
+   the baseline to 585538 B** (documented step; sanctioned `--update-baseline` mechanism).
+2. **NEWFAIL `audit-event-writer.test.ts` — environmental flake, NOT merge-caused.** The
+   prod file + test are byte-identical to main; the failing subtest is a timing-bound
+   "nonblocking under a held write lock" assertion; it passes 3/3 locally and passed in
+   the proof's own main-baseline phase; the candidate failed once under post-build
+   contention. All 7 tsgo lanes matched baseline on Linux (base==cand).
+
+Re-proof on the +5 tip (baseline bump applied) — [in progress].
 
 ## Fork follow-ups (NOT resync scope)
 
