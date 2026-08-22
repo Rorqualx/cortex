@@ -85,6 +85,196 @@ export type ParallelSamplingBaseline = {
   beatsBaseline: boolean;
 };
 
+/**
+ * Variance-hardened gate over the controlled-budget evaluation protocol
+ * (arXiv:2608.18066: un-hardened promotion gates pass noise). A skill must
+ * clear FOUR bars, not just the mean delta:
+ *   1. pass-rate floor — treatment success rate ≥ minTreatmentPassRate;
+ *   2. baseline delta  — treatment − baseline > promotionThresholdDelta;
+ *   3. variance ceiling — across seeded shuffles of session order, the
+ *      variance of bucket success rates stays ≤ maxBucketRateVariance
+ *      (order-clustered wins — a skill that only helps one contiguous run
+ *      of sessions — blow this up);
+ *   4. leave-one-out stability — dropping ANY single treatment session must
+ *      still leave treatment > baseline (one lucky session cannot carry the
+ *      promotion).
+ * Pure + deterministic (seeded mulberry32 PRNG) so it is unit-testable.
+ */
+export type SessionOutcome = { sessionId: string; success: boolean };
+
+export type SamplingBaselineGateResult = {
+  sampleCount: number;
+  baselineSuccessRate: number;
+  treatmentSuccessRate: number;
+  promotionThresholdDelta: number;
+  beatsBaseline: boolean;
+  /** Bar 1: treatment rate at or above the pass-rate floor. */
+  passRateFloorMet: boolean;
+  /** Bar 3: shuffled-bucket rate variance (population variance). */
+  bucketRateVariance: number;
+  varianceCeilingMet: boolean;
+  /** Bar 4: every leave-one-out treatment rate still beats baseline. */
+  leaveOneOutStable: boolean;
+  status: "pass" | "fail";
+  reasons: string[];
+};
+
+export const DEFAULT_SAMPLING_GATE_CONFIG = {
+  /** Treatment must succeed at least half the sampled sessions. */
+  minTreatmentPassRate: 0.5,
+  /** Max population variance of shuffled bucket success rates. */
+  maxBucketRateVariance: 0.15,
+  /** Buckets per shuffled ordering. */
+  shuffleBuckets: 3,
+  /** Shuffled orderings evaluated (different seeds). */
+  shuffleSeeds: 5,
+} as const;
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function populationVariance(values: readonly number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  return values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+}
+
+function shuffledOrder<T>(items: readonly T[], rand: () => number): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = out[i] as T;
+    out[i] = out[j] as T;
+    out[j] = tmp;
+  }
+  return out;
+}
+
+function successRate(samples: readonly SessionOutcome[]): number {
+  if (samples.length === 0) {
+    return 0;
+  }
+  return samples.filter((s) => s.success).length / samples.length;
+}
+
+export function evaluateSamplingBaselineGate(params: {
+  baseline: readonly SessionOutcome[];
+  treatment: readonly SessionOutcome[];
+  promotionThresholdDelta: number;
+  minTreatmentPassRate?: number;
+  maxBucketRateVariance?: number;
+  shuffleBuckets?: number;
+  shuffleSeeds?: number;
+}): SamplingBaselineGateResult {
+  const minTreatmentPassRate =
+    params.minTreatmentPassRate ?? DEFAULT_SAMPLING_GATE_CONFIG.minTreatmentPassRate;
+  const maxBucketRateVariance =
+    params.maxBucketRateVariance ?? DEFAULT_SAMPLING_GATE_CONFIG.maxBucketRateVariance;
+  const shuffleBuckets = params.shuffleBuckets ?? DEFAULT_SAMPLING_GATE_CONFIG.shuffleBuckets;
+  const shuffleSeeds = params.shuffleSeeds ?? DEFAULT_SAMPLING_GATE_CONFIG.shuffleSeeds;
+  const baselineRate = successRate(params.baseline);
+  const treatmentRate = successRate(params.treatment);
+  const reasons: string[] = [];
+
+  if (params.baseline.length === 0 || params.treatment.length === 0) {
+    return {
+      sampleCount: params.treatment.length,
+      baselineSuccessRate: baselineRate,
+      treatmentSuccessRate: treatmentRate,
+      promotionThresholdDelta: params.promotionThresholdDelta,
+      beatsBaseline: false,
+      passRateFloorMet: false,
+      bucketRateVariance: 0,
+      varianceCeilingMet: false,
+      leaveOneOutStable: false,
+      status: "fail",
+      reasons: ["empty baseline or treatment sample set"],
+    };
+  }
+
+  // Bar 1: pass-rate floor.
+  const passRateFloorMet = treatmentRate >= minTreatmentPassRate;
+  if (!passRateFloorMet) {
+    reasons.push(
+      `treatment pass rate ${treatmentRate.toFixed(2)} below floor ${minTreatmentPassRate}`,
+    );
+  }
+
+  // Bar 2: baseline delta.
+  const beatsBaseline = treatmentRate - baselineRate > params.promotionThresholdDelta;
+  if (!beatsBaseline) {
+    reasons.push(
+      `treatment-baseline delta ${(treatmentRate - baselineRate).toFixed(2)} does not exceed threshold ${params.promotionThresholdDelta}`,
+    );
+  }
+
+  // Bar 3: variance ceiling across seeded shuffles of session order. Each
+  // shuffle splits the treatment outcomes into contiguous buckets; a skill
+  // whose wins cluster in a run of sessions yields wildly uneven bucket rates.
+  const bucketCount = Math.max(1, Math.min(shuffleBuckets, params.treatment.length));
+  const bucketRates: number[] = [];
+  for (let seed = 0; seed < shuffleSeeds; seed += 1) {
+    const order = shuffledOrder(params.treatment, mulberry32(seed));
+    const bucketSize = Math.ceil(order.length / bucketCount);
+    for (let b = 0; b < bucketCount; b += 1) {
+      const bucket = order.slice(b * bucketSize, (b + 1) * bucketSize);
+      if (bucket.length > 0) {
+        bucketRates.push(successRate(bucket));
+      }
+    }
+  }
+  const bucketRateVariance = populationVariance(bucketRates);
+  const varianceCeilingMet = bucketRateVariance <= maxBucketRateVariance;
+  if (!varianceCeilingMet) {
+    reasons.push(
+      `shuffled-bucket rate variance ${bucketRateVariance.toFixed(3)} exceeds ceiling ${maxBucketRateVariance}`,
+    );
+  }
+
+  // Bar 4: leave-one-out stability — dropping any single session must keep
+  // treatment strictly above baseline.
+  let leaveOneOutStable = true;
+  if (params.treatment.length < 2) {
+    leaveOneOutStable = false;
+    reasons.push("fewer than 2 treatment sessions — leave-one-out stability unprovable");
+  } else {
+    for (let i = 0; i < params.treatment.length; i += 1) {
+      const rest = params.treatment.filter((_, idx) => idx !== i);
+      if (successRate(rest) <= baselineRate) {
+        leaveOneOutStable = false;
+        reasons.push(
+          `leave-one-out: dropping session ${params.treatment[i]?.sessionId} drops treatment to/below baseline`,
+        );
+        break;
+      }
+    }
+  }
+
+  const pass = *** && beatsBaseline && varianceCeilingMet && leaveOneOutStable;
+  return {
+    sampleCount: params.treatment.length,
+    baselineSuccessRate: baselineRate,
+    treatmentSuccessRate: treatmentRate,
+    promotionThresholdDelta: params.promotionThresholdDelta,
+    beatsBaseline,
+    passRateFloorMet,
+    bucketRateVariance,
+    varianceCeilingMet,
+    leaveOneOutStable,
+    status: pass ? "pass" : "fail",
+    reasons: pass ? [] : reasons,
+  };
+}
+
 export type PipelineRunResult = {
   scannedCaptureDirs: number;
   candidates: Candidate[];
