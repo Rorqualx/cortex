@@ -46,6 +46,18 @@ const seedLongterm = (fs: LongTermFact[]): Promise<string> =>
 const enabled: ReflectionConfig = { enabled: true, maxFacts: 30, maxInsights: 5, maxStored: 50 };
 
 describe("generateInsights", () => {
+  it("instructs the reflector to preserve temporal expressions verbatim", async () => {
+    const calls: Array<{ systemPrompt: string }> = [];
+    const caller: LlmCaller = vi.fn(async (req) => {
+      calls.push(req as { systemPrompt: string });
+      return JSON.stringify({ insights: [] });
+    });
+    await generateInsights({ facts, caller, now: NOW, maxInsights: 5 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.systemPrompt).toContain("Preserve dates and times verbatim");
+    expect(calls[0]?.systemPrompt).toContain("temporal anchors drive later retrieval");
+  });
+
   it("keeps provenance-grounded insights and drops hallucinated citations", async () => {
     const caller: LlmCaller = vi.fn(async () =>
       JSON.stringify({

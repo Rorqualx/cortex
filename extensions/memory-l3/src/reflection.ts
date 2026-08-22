@@ -38,6 +38,7 @@ Rules:
 - Emit AT MOST {MAX} insights. Fewer is better. Only emit when an insight genuinely abstracts across multiple facts.
 - Each insight MUST cite the KEYS of the facts it draws on (2+ keys preferred). Use the exact KEY strings.
 - Never restate a single fact. Never invent facts not supported by the inputs.
+- Preserve dates and times verbatim; do not abbreviate or drop temporal expressions from the input facts — temporal anchors drive later retrieval.
 - importance is 0..1: how durable/useful the insight is.
 
 Output strict JSON only, no prose:
