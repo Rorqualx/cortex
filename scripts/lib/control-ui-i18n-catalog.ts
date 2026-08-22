@@ -20,35 +20,31 @@ export async function loadControlUiLocaleCatalog(
   return module[exportName] ?? null;
 }
 
+// The fork folds agent strings directly into en.ts (see en-agents.ts, composed
+// inline), so the only separately registered English catalog is the lazy
+// session-placement surface. Merge en.ts with that register catalog.
 export async function loadControlUiSourceCatalog(
   sourceLocalePath: string,
-  activitySourceLocalePath: string,
   sessionPlacementSourceLocalePath: string,
 ): Promise<TranslationMap> {
   const source = await loadControlUiLocaleCatalog(sourceLocalePath, "en");
-  const activitySource = (
-    await importControlUiLocaleModule<{
-      registerActivityEnglish: { catalog: TranslationMap };
-    }>(activitySourceLocalePath)
-  ).registerActivityEnglish.catalog;
   const sessionPlacementSource = (
     await importControlUiLocaleModule<{
       registerSessionPlacementEnglish: { catalog: TranslationMap };
     }>(sessionPlacementSourceLocalePath)
   ).registerSessionPlacementEnglish.catalog;
-  if (!source || !activitySource || !sessionPlacementSource) {
+  if (!source || !sessionPlacementSource) {
     throw new Error("Control UI English source catalogs are incomplete");
   }
-  return mergeControlUiTranslationMaps(source, activitySource, sessionPlacementSource);
+  return mergeControlUiTranslationMaps(source, sessionPlacementSource);
 }
 
 export async function readControlUiSourceCatalog(
   sourceLocalePath: string,
-  activitySourceLocalePath: string,
   sessionPlacementSourceLocalePath: string,
 ): Promise<string> {
   const sources = await Promise.all(
-    [sourceLocalePath, activitySourceLocalePath, sessionPlacementSourceLocalePath].map((filePath) =>
+    [sourceLocalePath, sessionPlacementSourceLocalePath].map((filePath) =>
       readFile(filePath, "utf8"),
     ),
   );

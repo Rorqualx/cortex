@@ -27,12 +27,11 @@ type RawCopyBaseline = {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const I18N_ASSETS_DIR = path.join(ROOT, "ui", "src", "i18n", ".i18n");
-const SOURCE_DIRS = [
-  path.join(ROOT, "ui", "src", "app"),
-  path.join(ROOT, "ui", "src", "components"),
-  path.join(ROOT, "ui", "src", "lib"),
-  path.join(ROOT, "ui", "src", "pages"),
-] as const;
+// The fork consolidates its Control UI source under ui/src/ui (upstream's
+// app/components/lib/pages split does not exist here). Scanning that single
+// root keeps i18n locale catalogs, styles, and type declarations out of the
+// raw-copy baseline the same way upstream's dir list did.
+const SOURCE_DIRS = [path.join(ROOT, "ui", "src", "ui")] as const;
 const BASELINE_PATH = path.join(I18N_ASSETS_DIR, "raw-copy-baseline.json");
 const BASELINE_VERSION = 1;
 const INTERPOLATION_MARKER = "\u0000";
