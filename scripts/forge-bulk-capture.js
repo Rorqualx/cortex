@@ -2,7 +2,8 @@
 import crypto from "node:crypto";
 /**
  * Bulk-capture session transcripts into Skill Forge sessions directory.
- * Reads .jsonl transcripts, extracts tool call/error events, and writes
+ * Reads .jsonl transcripts (and .zst-compressed archives left by the nightly
+ * session prune pass), extracts tool call/error events, and writes
  * them as forge-capturable event bundles.
  *
  * Usage: node scripts/forge-bulk-capture.js [--dry-run]
@@ -10,6 +11,7 @@ import crypto from "node:crypto";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 
 const SESSIONS_DIR = path.join(os.homedir(), ".openclaw", "agents", "main", "sessions");
 const FORGE_DIR = path.join(os.homedir(), ".openclaw", "skill-forge", "sessions");
@@ -103,7 +105,7 @@ async function main() {
   const entries = await fsp.readdir(SESSIONS_DIR);
   const sessionFiles = entries.filter(
     (e) =>
-      e.endsWith(".jsonl") &&
+      (e.endsWith(".jsonl") || e.endsWith(".zst")) &&
       !e.includes("trajectory") &&
       !e.includes(".reset.") &&
       !e.includes(".bak"),
@@ -126,7 +128,9 @@ async function main() {
   let already = 0;
 
   for (const file of sessionFiles) {
-    const sessionId = file.replace(".jsonl", "");
+    // Plain transcripts: <id>.jsonl. Archived transcripts (post-prune):
+    // <id>.jsonl.deleted.<ts>.<hash>.zst — session id is the prefix before .jsonl
+    const sessionId = file.replace(/\.jsonl.*$/, "");
     const sessionFile = path.join(SESSIONS_DIR, file);
 
     // Check if already captured (match by session ID prefix)
@@ -140,7 +144,12 @@ async function main() {
     // Read and parse
     let content;
     try {
-      content = await fsp.readFile(sessionFile, "utf8");
+      const raw = await fsp.readFile(sessionFile);
+      content = (
+        file.endsWith(".zst")
+          ? zlib.zstdDecompressSync(raw, { maxOutputLength: 512 * 1024 * 1024 })
+          : raw
+      ).toString("utf8");
     } catch {
       skipped++;
       continue;
