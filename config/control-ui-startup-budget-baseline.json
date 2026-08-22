@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 583689,
-  "reason": "2026-08-22 upstream resync (784a2287 -> 70c2be7e): baseline kept at 583689 B. Upstream's ratchet consumption (#127749, #127754 streamed-markdown highlighting, 345049 B) is ui/-only and was dropped wholesale by fork ui ownership, so the fork's startup graph is unchanged from the 2026-08-20 measurement. Regenerate on a Linux build if CI's perf check reports drift.",
+  "startupJsGzipBytes": 585538,
+  "reason": "2026-08-22 upstream resync (784a2287 -> 5ddf381, 438+ commits): Linux build measured 585538 B, +1849 B over the prior 583689 B. ui/ is byte-identical to main (fork ui ownership), so the growth is non-ui runtime the startup bundle imports (gateway-protocol schema additions incl. GatewayContextWindowOptionSchema #127951, and package changes across the 438-commit delta). Under the 589824 B (576 KiB) hard ceiling. Measured on huey Node 24.",
   "updatedAt": "2026-08-22"
 }
