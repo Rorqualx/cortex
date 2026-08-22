@@ -14,7 +14,20 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { runWithFailedTrailer } from "./lib/failed-trailer.mjs";
+// Inlined from scripts/lib/failed-trailer.mjs, which upstream deleted in the
+// TypeScript migration (#121005); a plain .mjs cannot import the migrated .mts.
+// Keeps wrapper failures visible even when preceding diagnostics are truncated.
+async function runWithFailedTrailer(tool, run, log = console.error) {
+  try {
+    await run();
+  } catch (error) {
+    log(error);
+    process.exitCode = 1;
+  }
+  if (typeof process.exitCode === "number" && process.exitCode !== 0) {
+    log(`[${tool}] FAILED (exit ${process.exitCode})`);
+  }
+}
 import { resolveRepoRoot } from "./lib/repo-root.mjs";
 import {
   collectExportedNames,
