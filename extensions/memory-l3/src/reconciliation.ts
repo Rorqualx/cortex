@@ -24,6 +24,10 @@ export type ReconcileOutput = {
   newlyMarkedStale: number;
   /** Prose facts that had a supersededBy mark cleared this pass. */
   unmarkedNowAgreed: number;
+  /** Prose facts marked stale by deterministic supersession ground truth
+   * (superseded typed value still present in prose text) rather than by an
+   * LLM verdict. Absent when zero for log-shape stability. */
+  deterministicStale?: number;
 };
 
 const RECONCILE_SYSTEM_PROMPT = `You are a memory reconciler. Compare prose facts (LLM-distilled, possibly outdated) to typed facts (verbatim values, current). When a prose fact contradicts a typed fact, the prose fact is STALE — typed values are canonical.
@@ -48,6 +52,54 @@ type Decision = {
   verdict: "stale" | "agreed";
   supersededBy: string | null;
 };
+
+/**
+ * Deterministic typed-supersession ground truth (StateMem-inspired).
+ *
+ * When a typed slot's value was superseded (non-empty `history`), any active
+ * prose fact that still contains the OLD value verbatim — and not the new
+ * one — is provably stale, no LLM verdict required. This is the explicit
+ * ground truth `reconcileCrossBrain` was missing: its LLM pass can only
+ * guess at contradictions, while this check follows directly from the typed
+ * supersession trail written by `supersede()` in `longterm-typed.ts`.
+ *
+ * Conservative gates (false positives suppress valid facts, so we gate hard):
+ * - old value must be ≥3 chars (skip trivial fragments like "v2"->"v3" noise)
+ * - skipped when the old value is a substring of the current value
+ *   (e.g. "1.2.3" → "1.2.34": containment is ambiguous)
+ * - skipped when the prose fact contains BOTH old and new values (it is
+ *   narrating the change, not asserting the stale value as current)
+ * - containment is case-sensitive verbatim `includes` (typed values are
+ *   verbatim by construction)
+ *
+ * Returns prose-fact-id → superseding typed slot.
+ */
+export function detectSupersededValueStaleness(
+  proseFacts: ReadonlyArray<LongTermFact>,
+  typedFacts: ReadonlyArray<LongTermTypedFact>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const typed of typedFacts) {
+    if (typed.archived || typed.history.length === 0) {
+      continue;
+    }
+    for (const h of typed.history) {
+      const oldValue = h.value.trim();
+      if (oldValue.length < 3 || typed.value.includes(oldValue)) {
+        continue;
+      }
+      for (const prose of proseFacts) {
+        if (prose.archived || out.has(prose.id)) {
+          continue;
+        }
+        if (prose.text.includes(oldValue) && !prose.text.includes(typed.value)) {
+          out.set(prose.id, typed.slot);
+        }
+      }
+    }
+  }
+  return out;
+}
 
 /**
  * Run a cross-brain reconciliation pass. Idempotent — if no LLM verdicts
@@ -86,12 +138,26 @@ export async function reconcileCrossBrain(params: {
   const validIds = new Set(activeProse.map((f) => f.id));
   const validSlots = new Set(activeTyped.map((t) => t.slot));
   const decisions = parseDecisions(raw, validIds, validSlots);
+  // Deterministic supersession ground truth outranks LLM verdicts: a prose
+  // fact that still carries a superseded typed value is stale regardless of
+  // what the reconciler LLM says, and an LLM "agreed" cannot clear it.
+  const deterministicStale = detectSupersededValueStaleness(activeProse, activeTyped);
 
   let newlyMarkedStale = 0;
   let unmarkedNowAgreed = 0;
   const updatedFacts = longterm.facts.map((fact) => {
     if (fact.archived) {
       return fact;
+    }
+    const detSlot = deterministicStale.get(fact.id);
+    if (detSlot !== undefined) {
+      if (fact.supersededBy === detSlot) {
+        return fact;
+      }
+      if (fact.supersededBy === null) {
+        newlyMarkedStale += 1;
+      }
+      return { ...fact, supersededBy: detSlot };
     }
     const decision = decisions.get(fact.id);
     if (!decision) {
@@ -136,6 +202,7 @@ export async function reconcileCrossBrain(params: {
     typedFactsConsidered: activeTyped.length,
     newlyMarkedStale,
     unmarkedNowAgreed,
+    ...(deterministicStale.size > 0 ? { deterministicStale: deterministicStale.size } : {}),
   };
 }
 

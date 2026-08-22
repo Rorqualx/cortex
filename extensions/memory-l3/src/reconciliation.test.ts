@@ -3,7 +3,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmCaller } from "./llm.js";
-import { reconcileCrossBrain, reconcileProseInterference } from "./reconciliation.js";
+import {
+  detectSupersededValueStaleness,
+  reconcileCrossBrain,
+  reconcileProseInterference,
+} from "./reconciliation.js";
 import { Storage } from "./storage.js";
 import type { LongTermFact, LongTermTypedFact } from "./types.js";
 
@@ -67,6 +71,102 @@ const writeFixture = async (
     "",
   );
 };
+
+describe("detectSupersededValueStaleness — deterministic typed-supersession ground truth", () => {
+  it("marks prose containing a superseded typed value, even when the LLM says agreed", async () => {
+    await writeFixture(
+      [proseFact({ id: "lt-bal", text: "balance is around $500" })],
+      [
+        typedFact({
+          slot: "user:account_balance",
+          value: "750.00",
+          unit: "USD",
+          history: [{ value: "500", supersededAt: NOW }],
+        }),
+      ],
+    );
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({ decisions: [{ factId: "lt-bal", verdict: "agreed" }] }),
+    );
+    const out = await reconcileCrossBrain({
+      storage,
+      caller,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+    expect(out.newlyMarkedStale).toBe(1);
+    expect(out.deterministicStale).toBe(1);
+    const stored = await storage.readLongTerm();
+    expect(stored.facts.find((f) => f.id === "lt-bal")?.supersededBy).toBe("user:account_balance");
+  });
+
+  it("does not fire when the old value is a substring of the current value", async () => {
+    await writeFixture(
+      [proseFact({ id: "lt-ver", text: "running version 1.2.3 in production" })],
+      [
+        typedFact({
+          slot: "infra:version",
+          value: "1.2.34",
+          history: [{ value: "1.2.3", supersededAt: NOW }],
+        }),
+      ],
+    );
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({ decisions: [{ factId: "lt-ver", verdict: "agreed" }] }),
+    );
+    const out = await reconcileCrossBrain({
+      storage,
+      caller,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+    expect(out.newlyMarkedStale).toBe(0);
+    expect(out.deterministicStale).toBeUndefined();
+    const stored = await storage.readLongTerm();
+    expect(stored.facts.find((f) => f.id === "lt-ver")?.supersededBy).toBeNull();
+  });
+
+  it("does not fire when prose narrates both old and new values", async () => {
+    await writeFixture(
+      [proseFact({ id: "lt-bal", text: "balance moved from $500 to $750.00 last week" })],
+      [
+        typedFact({
+          slot: "user:account_balance",
+          value: "750.00",
+          unit: "USD",
+          history: [{ value: "500", supersededAt: NOW }],
+        }),
+      ],
+    );
+    const caller: LlmCaller = vi.fn(async () =>
+      JSON.stringify({ decisions: [{ factId: "lt-bal", verdict: "agreed" }] }),
+    );
+    const out = await reconcileCrossBrain({
+      storage,
+      caller,
+      agentId: "j-rorqual",
+      now: NOW,
+    });
+    expect(out.newlyMarkedStale).toBe(0);
+    expect(out.unmarkedNowAgreed).toBe(0);
+    const stored = await storage.readLongTerm();
+    expect(stored.facts.find((f) => f.id === "lt-bal")?.supersededBy).toBeNull();
+  });
+
+  it("ignores superseded values shorter than 3 characters", () => {
+    const stale = detectSupersededValueStaleness(
+      [proseFact({ id: "lt-p", text: "channel is set to #a for alerts" })],
+      [
+        typedFact({
+          slot: "chat:channel",
+          value: "#b",
+          history: [{ value: "#a", supersededAt: NOW }],
+        }),
+      ],
+    );
+    expect(stale.size).toBe(0);
+  });
+});
 
 describe("reconcileCrossBrain", () => {
   it("returns zero counts and no LLM call when typed tier is empty", async () => {

@@ -548,7 +548,7 @@ export class HierarchicalL3Engine implements ContextEngine {
               now,
             });
             l3debug(
-              `afterTurn(): reconcile prose=${rec.proseFactsConsidered} typed=${rec.typedFactsConsidered} newlyStale=${rec.newlyMarkedStale} unmarked=${rec.unmarkedNowAgreed}`,
+              `afterTurn(): reconcile prose=${rec.proseFactsConsidered} typed=${rec.typedFactsConsidered} newlyStale=${rec.newlyMarkedStale} unmarked=${rec.unmarkedNowAgreed} detStale=${rec.deterministicStale ?? 0}`,
             );
           } catch (recErr) {
             console.error(
