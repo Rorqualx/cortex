@@ -147,3 +147,134 @@ describe("planReassignments", () => {
     expect(plan.unresolved).toEqual([bindings[1], bindings[3]]);
   });
 });
+
+// DeepSeek ships silent same-name date-suffixed upgrades: a pinned
+// `deepseek-v4-flash` vanishes from /models and re-appears as
+// `-0731`/`-0813` builds. These tests pin the doctor repair path's behavior
+// for that exact shape (regression guard for the 0731/0813 rotation).
+describe("DeepSeek silent date-suffixed upgrades", () => {
+  const deepseekCandidates: ReplacementCandidate[] = [
+    {
+      provider: "deepseek",
+      id: "deepseek-v4-flash-0731",
+      reasoning: false,
+      contextWindow: 128_000,
+    },
+    {
+      provider: "deepseek",
+      id: "deepseek-v4-flash-0813",
+      reasoning: false,
+      contextWindow: 128_000,
+    },
+    { provider: "deepseek", id: "deepseek-v4-pro", reasoning: true, contextWindow: 200_000 },
+  ];
+
+  it("rewrites a vanished base pin to the nearest date-suffixed sibling, not clear", () => {
+    const decisions = buildReplacementDecisions({
+      deprecated: [{ provider: "deepseek", modelId: "deepseek-v4-flash" }],
+      candidates: deepseekCandidates,
+      deprecatedMeta: new Map([
+        [
+          "deepseek/deepseek-v4-flash",
+          {
+            provider: "deepseek",
+            id: "deepseek-v4-flash",
+            reasoning: false,
+            contextWindow: 128_000,
+          },
+        ],
+      ]),
+    });
+    // Same capability profile → reasoning parity + context closeness tie;
+    // deterministic id tie-break picks the earlier date-suffixed build.
+    expect(decisions).toEqual([
+      {
+        provider: "deepseek",
+        deprecatedModelId: "deepseek-v4-flash",
+        replacementModelId: "deepseek-v4-flash-0731",
+      },
+    ]);
+
+    const bindings: ModelBinding[] = [
+      {
+        kind: "cron-model",
+        jobId: "j-web",
+        ref: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+      },
+    ];
+    const plan = planReassignments({ bindings, replacements: decisions });
+    expect(plan.actions).toEqual([
+      {
+        binding: bindings[0],
+        outcome: "rewrite",
+        replacementModelId: "deepseek-v4-flash-0731",
+      },
+    ]);
+    expect(plan.unresolved).toEqual([]);
+  });
+
+  it("rewrites an old dated build to the surviving newer dated build (0731 → 0813)", () => {
+    const decisions = buildReplacementDecisions({
+      deprecated: [{ provider: "deepseek", modelId: "deepseek-v4-flash-0731" }],
+      candidates: deepseekCandidates.filter((c) => c.id !== "deepseek-v4-flash-0731"),
+      deprecatedMeta: new Map([
+        [
+          "deepseek/deepseek-v4-flash-0731",
+          {
+            provider: "deepseek",
+            id: "deepseek-v4-flash-0731",
+            reasoning: false,
+            contextWindow: 128_000,
+          },
+        ],
+      ]),
+    });
+    expect(decisions[0]?.replacementModelId).toBe("deepseek-v4-flash-0813");
+  });
+
+  it("matches date-suffixed deprecated ids case-insensitively through the planner", () => {
+    const bindings: ModelBinding[] = [
+      {
+        kind: "agent-model",
+        agentId: "duckie",
+        sessionKey: "default",
+        ref: { provider: "DeepSeek", modelId: " DeepSeek-V4-Flash-0731 " },
+      },
+    ];
+    const plan = planReassignments({
+      bindings,
+      replacements: [
+        {
+          provider: "deepseek",
+          deprecatedModelId: "deepseek-v4-flash-0731",
+          replacementModelId: "deepseek-v4-flash-0813",
+        },
+      ],
+    });
+    expect(plan.actions).toEqual([
+      {
+        binding: bindings[0],
+        outcome: "rewrite",
+        replacementModelId: "deepseek-v4-flash-0813",
+      },
+    ]);
+  });
+
+  it("clears the pin when a date-suffixed build vanishes with no sibling survivor", () => {
+    const decisions = buildReplacementDecisions({
+      deprecated: [{ provider: "deepseek", modelId: "deepseek-v4-flash-0813" }],
+      candidates: [{ provider: "openai", id: "gpt-x" }],
+    });
+    expect(decisions[0]?.replacementModelId).toBeNull();
+    const bindings: ModelBinding[] = [
+      {
+        kind: "alias",
+        alias: "flash",
+        ref: { provider: "deepseek", modelId: "deepseek-v4-flash-0813" },
+      },
+    ];
+    const plan = planReassignments({ bindings, replacements: decisions });
+    expect(plan.actions).toEqual([{ binding: bindings[0], outcome: "clear" }]);
+    expect(plan.unresolved).toEqual([bindings[0]]);
+  });
+});
