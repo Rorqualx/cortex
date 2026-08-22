@@ -13,6 +13,8 @@ export interface Skill {
   readContent?: string;
   filePath: string;
   baseDir: string;
+  /** Deterministic marker for the SKILL.md content rendered as <version>. */
+  promptVersion?: string;
   sourceInfo: SourceInfo;
   disableModelInvocation: boolean;
   // Preserve legacy source reads while keeping the canonical upstream shape.

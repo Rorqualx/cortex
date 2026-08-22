@@ -138,10 +138,11 @@ export const systemHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    // env fallback is allowed by default under the upstream resolver redesign
+    // (envFallback omitted); the fork's prior explicit "always" is the default now.
     const resolved = await resolveGatewayAuthToken({
       cfg: context.getRuntimeConfig(),
       env: process.env,
-      envFallback: "always",
     });
     const reveal = Boolean(resolved.token) && !resolved.secretRefConfigured;
     respond(
