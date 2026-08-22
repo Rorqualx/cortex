@@ -14,6 +14,13 @@ import { GatewayAgentRuntimeSchema } from "./session-row.js";
  * shared by gateway RPC, CLI, and UI clients.
  */
 
+/** Selectable context-window option (e.g. Claude CLI 200K/1M), mirrors thinkingLevels. */
+const GatewayContextWindowOptionSchema = closedObject({
+  id: NonEmptyString,
+  label: NonEmptyString,
+  contextWindow: Type.Integer({ minimum: 1 }),
+});
+
 /** Model option shown in selectors and model catalog results. */
 export const ModelChoiceSchema = closedObject({
   id: NonEmptyString,
@@ -23,6 +30,8 @@ export const ModelChoiceSchema = closedObject({
   tags: Type.Optional(Type.Array(NonEmptyString)),
   available: Type.Optional(Type.Boolean()),
   contextWindow: Type.Optional(Type.Integer({ minimum: 1 })),
+  contextWindows: Type.Optional(Type.Array(GatewayContextWindowOptionSchema)),
+  contextWindowDefault: Type.Optional(NonEmptyString),
   reasoning: Type.Optional(Type.Boolean()),
   supportsTools: Type.Optional(Type.Boolean()),
   agentRuntime: Type.Optional(GatewayAgentRuntimeSchema),
