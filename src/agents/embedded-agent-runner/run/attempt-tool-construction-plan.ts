@@ -63,7 +63,7 @@ const OPENCLAW_TOOL_FACTORY_NAMES = new Set([
   "transcripts",
   "tts",
   "update_goal",
-  "update_plan",
+  "progress_card",
   "dismiss_task",
   "video_generate",
   "web_fetch",

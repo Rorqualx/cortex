@@ -1,5 +1,6 @@
 // Core gateway method descriptors keep handler names, auth scopes, startup availability, and write policy in one table.
 import type { OperatorScope } from "../operator-scopes.js";
+import { isSessionProfileDependentMethod } from "../session-sharing-target-input.js";
 import {
   DYNAMIC_GATEWAY_METHOD_SCOPE,
   NODE_GATEWAY_METHOD_SCOPE,
@@ -18,6 +19,45 @@ type CoreGatewayMethodSpec = {
 };
 
 type CoreGatewayMethodMetadata = Pick<CoreGatewayMethodSpec, "name" | "scope" | "since">;
+
+// Profile-dependence classification grafted from upstream (resync 2026-08-20 dropped it
+// with the table restructure): methods reading/mutating durable user/session ownership
+// require an attached authenticated profile before dispatch (registry.requiresAuthenticatedProfile
+// -> authorizeAuthenticatedProfileForMethod). Keep verbatim with upstream so fork-added
+// methods classify by the same prefix rules.
+const PROFILE_DEPENDENT_CORE_METHODS = new Set([
+  "agent.wait",
+  "ui.command",
+  "users.linkEmail",
+  "users.setAvatar",
+  "users.setDisplayName",
+]);
+const PROFILE_DEPENDENT_CORE_PREFIXES = [
+  "artifacts.",
+  "chat.",
+  "conversations.",
+  "controlUi.session",
+  "mcp.app.",
+  "openclaw.approval.",
+  "openclaw.chat",
+  "progressCard.",
+  "projects.",
+  "secrets.",
+  "session.",
+  "sessions.",
+  "taskSuggestions.",
+  "tasks.",
+  "terminal.",
+  "users.prefs.",
+] as const;
+
+function isCoreGatewayMethodProfileDependent(method: string): boolean {
+  return (
+    isSessionProfileDependentMethod(method) ||
+    PROFILE_DEPENDENT_CORE_METHODS.has(method) ||
+    PROFILE_DEPENDENT_CORE_PREFIXES.some((prefix) => method.startsWith(prefix))
+  );
+}
 
 // This is the canonical core method policy table: every core handler must appear here so
 // listing, authorization, startup availability, and write throttling stay in sync.
@@ -737,6 +777,10 @@ export function createCoreGatewayMethodDescriptors(
       handler,
       owner: { kind: "core", area: "gateway" },
       scope: spec.scope,
+      // Registry defaults core methods to "independent"; profile-dependent methods must
+      // say "required" so dispatch waits for immutable profile attachment (pending-profile
+      // authorization tests enforce this fail-closed).
+      ...(isCoreGatewayMethodProfileDependent(spec.name) ? { profileAccess: "required" } : {}),
       ...(spec.since ? { since: spec.since } : {}),
       ...(spec.advertise === false ? { advertise: false } : {}),
       ...(spec.startup === true ? { startup: "unavailable-until-sidecars" } : {}),

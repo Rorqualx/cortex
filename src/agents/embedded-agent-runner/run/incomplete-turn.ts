@@ -1178,23 +1178,23 @@ function normalizePlanningToolMetas(
 }
 
 function countPlanOnlyToolMetas(toolMetas?: PlanningOnlyAttempt["toolMetas"]): number {
-  return normalizePlanningToolMetas(toolMetas).filter((entry) => entry.toolName === "update_plan")
+  return normalizePlanningToolMetas(toolMetas).filter((entry) => entry.toolName === "progress_card")
     .length;
 }
 
 function countNonPlanToolCalls(toolMetas?: PlanningOnlyAttempt["toolMetas"]): number {
-  return normalizePlanningToolMetas(toolMetas).filter((entry) => entry.toolName !== "update_plan")
+  return normalizePlanningToolMetas(toolMetas).filter((entry) => entry.toolName !== "progress_card")
     .length;
 }
 
 function hasNonPlanToolActivity(toolMetas?: PlanningOnlyAttempt["toolMetas"]): boolean {
-  return normalizePlanningToolMetas(toolMetas).some((entry) => entry.toolName !== "update_plan");
+  return normalizePlanningToolMetas(toolMetas).some((entry) => entry.toolName !== "progress_card");
 }
 
 function hasSingleRetrySafeNonPlanTool(toolMetas?: PlanningOnlyAttempt["toolMetas"]): boolean {
   const nonPlanToolNames = normalizePlanningToolMetas(toolMetas)
     .map((entry) => normalizeLowercaseStringOrEmpty(entry.toolName))
-    .filter((toolName) => toolName && toolName !== "update_plan");
+    .filter((toolName) => toolName && toolName !== "progress_card");
   return (
     nonPlanToolNames.length === 1 &&
     SINGLE_ACTION_RETRY_SAFE_TOOL_NAMES.has(nonPlanToolNames[0] ?? "")
