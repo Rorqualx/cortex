@@ -1,5 +1,6 @@
 // Implements agent deletion with gateway delegation and local cleanup fallback.
 import { findOverlappingWorkspaceAgentIds } from "../agents/agent-delete-safety.js";
+import { beginAgentDeletion } from "../agents/agent-lifecycle-registry.js";
 import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
@@ -27,15 +28,15 @@ import {
   isGatewayCredentialsRequiredError,
   isGatewayTransportError,
 } from "../gateway/call.js";
-import { beginAgentDeletion } from "../agents/agent-lifecycle-registry.js";
 import { withAgentExecApprovalsRemoved } from "../infra/exec-approvals.js";
 import { LEGACY_IMPLICIT_AGENT_ID, normalizeAgentId } from "../routing/session-key.js";
-import { defaultRuntime, type RuntimeEnv, writeRuntimeJson } from "../runtime.js";import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
+import { defaultRuntime, type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { createClackPrompter } from "../wizard/clack-prompter.js";
 import { createQuietRuntime } from "./agents.command-shared.js";
 import { findAgentEntryIndex, listAgentEntries, pruneAgentConfig } from "./agents.config.js";
-import { requireValidConfigFileSnapshot } from "./config-validation.js";
 import { moveToTrash } from "./cleanup-utils.js";
+import { requireValidConfigFileSnapshot } from "./config-validation.js";
 
 type AgentsDeleteOptions = {
   id: string;
@@ -65,7 +66,8 @@ async function maybeDeleteAgentThroughGateway(params: {
   deleteFiles: boolean;
 }): Promise<AgentDeleteGatewayAttempt> {
   try {
-    const result = await callGateway<AgentsDeleteGatewayResult>({      method: "agents.delete",
+    const result = await callGateway<AgentsDeleteGatewayResult>({
+      method: "agents.delete",
       params: {
         agentId: params.agentId,
         deleteFiles: params.deleteFiles,
@@ -168,7 +170,8 @@ export async function agentsDeleteCommand(
   if (gatewayAttempt.kind === "deleted") {
     const gatewayResult = gatewayAttempt.result;
     const workspaceSharedWith = findOverlappingWorkspaceAgentIds(cfg, agentId, workspaceDir);
-    const workspaceRetained = workspaceSharedWith.length > 0;    if (opts.json) {
+    const workspaceRetained = workspaceSharedWith.length > 0;
+    if (opts.json) {
       writeRuntimeJson(runtime, {
         agentId,
         workspace: workspaceDir,
@@ -228,7 +231,7 @@ export async function agentsDeleteCommand(
   } catch (error) {
     deletion.rollback();
     throw error;
-  }  }
+  }
 
   // Purge session store entries for this agent so orphaned sessions cannot be targeted (#65524).
   await purgeAgentSessionStoreEntries(cfg, agentId);
@@ -278,7 +281,8 @@ export async function agentsDeleteCommand(
       clearedOwnerRefs: result.clearedOwnerRefs.length > 0 ? result.clearedOwnerRefs : undefined,
       ...(gatewayAttempt.kind === "fallback-credentials-required"
         ? { cronCleanupSkipped: true }
-        : {}),    });
+        : {}),
+    });
   } else {
     runtime.log(`Deleted agent: ${agentId}`);
     logClearedOwnerRefs(runtime, result.clearedOwnerRefs);
