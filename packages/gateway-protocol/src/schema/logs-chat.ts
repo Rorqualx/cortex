@@ -323,3 +323,9 @@ export const ChatHistoryCursorResultSchema = Type.Union([
   ChatHistoryDeltaResultSchema,
   ChatHistoryResetResultSchema,
 ]);
+
+// Static type exports (upstream #128018) consumed by protocol clients + tests.
+export type ChatHistoryParams = Static<typeof ChatHistoryParamsSchema>;
+export type ChatHistoryDeltaResult = Static<typeof ChatHistoryDeltaResultSchema>;
+export type ChatHistoryResetResult = Static<typeof ChatHistoryResetResultSchema>;
+export type ChatHistoryCursorResult = Static<typeof ChatHistoryCursorResultSchema>;
