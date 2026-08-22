@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-08-20T04:22:17.118Z",
-  "branch": "resync-staging/2026-08-19",
-  "headSha": "e79d10e6bb70e818027ee31cc30cfc07f03dd4b7",
+  "timestamp": "2026-08-22T21:20:24.008Z",
+  "branch": "resync-staging/2026-08-22",
+  "headSha": "fe4a80e7aaa78b545ab420f2d623f99beed86b7a",
   "files": {
     ".gitattributes": {
       "hash": "197f3778ee124670dcc211f4b3490e1936269e8083ec96614321f2ea70e48bdc",
@@ -276,7 +276,7 @@
       "jsonKeys": null
     },
     "tsconfig.json": {
-      "hash": "eacbe71243d82eeb4eb5c40aecb4b73b1eb58bc942972f034e8972302806f334",
+      "hash": "643a376015683fbb659bef88215957e1a7102b802ac762c386a4af4cd30dbc01",
       "jsonKeys": [
         "compilerOptions",
         "include",
@@ -292,8 +292,8 @@
       "jsonKeys": null
     },
     "package.json": {
-      "hash": "5203eadaa3307d9161d5108e5a63def952bcdd8a23845c57c283401f4919609c",
-      "pkgSectionsHash": "ecd489e056e99bcab1f0894952c1ed6ec02c19a7b3045320deea0e611c9f7d69"
+      "hash": "ee5ac594dbb7db401e9ab898971e36531210a14e400ebe387435fffd57ed6591",
+      "pkgSectionsHash": "308227da94d5889b6f42727aa0a2a6fa2d611b6d8d042c60ebbabaf01ca47206"
     },
     "src/config/schema.ts": {
       "hash": "331d16fa6363651d860ce82e2a70dee44d71d73657830951669ad80f47ab20d5"
