@@ -617,6 +617,10 @@ export class OpenClawApp extends LitElement {
   usageQueryDebounceTimer: number | null = null;
 
   @state() cronLoading = false;
+  // Internal bookkeeping for the cron tab's live monitor background poll; deliberately
+  // non-reactive (nothing renders from it — the Refresh button must not flip on ticks;
+  // the controller calls requestHostUpdate when a render is actually needed).
+  cronBackgroundRefreshing = false;
   @state() cronQuickCreateOpen = false;
   @state() cronQuickCreateStep: import("./views/cron-quick-create.ts").CronQuickCreateStep = "what";
   @state() cronQuickCreateDraft:
