@@ -1006,6 +1006,15 @@ export async function compactSession(params: {
     await params.storage.appendL1Archive(chunkId, message);
   }
 
+  // Chunk→session sidecar so archive search can attribute raw replay turns
+  // (l1_archive stores bare messages). Best-effort: absent rows simply mean
+  // session filters can't apply to this chunk.
+  try {
+    await params.storage.recordChunkSession(chunkId, params.sessionId, now);
+  } catch {
+    // Non-fatal — the archive lines are already written.
+  }
+
   // Build and store message-level embedding chunks for raw conversation
   // retrieval. Non-fatal: failures just mean no message-level index.
   if (params.embeddingProvider && messages.length >= 4) {

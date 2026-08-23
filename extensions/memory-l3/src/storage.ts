@@ -121,6 +121,11 @@ CREATE TABLE IF NOT EXISTS l3_reacquisition_events (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS l3_reacquisition_created ON l3_reacquisition_events (created_at);
+CREATE TABLE IF NOT EXISTS l3_chunk_sessions (
+  chunk_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 `;
 
 /**
@@ -229,6 +234,31 @@ export class Storage {
     const target = path.join(this.root, L1_ARCHIVE_DIR, `${chunkId}.jsonl`);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.appendFile(target, `${JSON.stringify(entry)}\n`, "utf8");
+  }
+
+  /**
+   * Record which session triggered the compaction that produced a chunk.
+   * Sidecar for the raw l1_archive replay files (which store bare messages
+   * with no session attribution) — consumed by archive search.
+   */
+  async recordChunkSession(chunkId: string, sessionId: string, createdAt: number): Promise<void> {
+    this.database()
+      .prepare(
+        "INSERT OR REPLACE INTO l3_chunk_sessions (chunk_id, session_id, created_at) VALUES (?, ?, ?)",
+      )
+      .run(chunkId, sessionId, createdAt);
+  }
+
+  /** Read the chunk→session sidecar map (chunks written before it exists are absent). */
+  async readChunkSessions(): Promise<Map<string, { sessionId: string; createdAt: number }>> {
+    const rows = this.database()
+      .prepare("SELECT chunk_id, session_id, created_at FROM l3_chunk_sessions")
+      .all() as Array<{ chunk_id: string; session_id: string; created_at: number }>;
+    const map = new Map<string, { sessionId: string; createdAt: number }>();
+    for (const row of rows) {
+      map.set(row.chunk_id, { sessionId: row.session_id, createdAt: row.created_at });
+    }
+    return map;
   }
 
   // -----------------------------------------------------------------

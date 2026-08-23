@@ -6,6 +6,7 @@
 import { jsonResult } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
+import { searchArchive } from "./archive-search.js";
 import { fsrsRetrievability, DEFAULT_FSRS_PARAMS, DEFAULT_SCORING_CONFIG } from "./scoring.js";
 import { Storage } from "./storage.js";
 
@@ -331,6 +332,81 @@ export function createForgettingCandidatesTool(ctx: OpenClawPluginToolContext) {
         const threshold = typeof rawParams.threshold === "number" ? rawParams.threshold : undefined;
         const limit = typeof rawParams.limit === "number" ? rawParams.limit : undefined;
         return jsonResult(await collectForgettingCandidates({ storage, threshold, limit }));
+      } finally {
+        storage.close();
+      }
+    },
+  };
+}
+
+const ArchiveSearchToolSchema = Type.Object(
+  {
+    query: Type.String({
+      description: "Lexical query (BM25) over raw archived turns.",
+      minLength: 1,
+    }),
+    session_hint: Type.Optional(
+      Type.String({
+        description:
+          "Substring match on the session id that produced the chunks (best-effort: chunks compacted before session attribution existed cannot match).",
+      }),
+    ),
+    before: Type.Optional(
+      Type.Integer({ description: "Unix ms — only turns at or before this time." }),
+    ),
+    after: Type.Optional(
+      Type.Integer({ description: "Unix ms — only turns at or after this time." }),
+    ),
+    skip_session_ids: Type.Optional(
+      Type.Array(Type.String(), {
+        description: "Exact session ids whose chunks should be excluded.",
+      }),
+    ),
+    limit: Type.Optional(
+      Type.Integer({
+        description: "Max hits to return (default 10).",
+        minimum: 1,
+        maximum: 50,
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export function createArchiveSearchTool(ctx: OpenClawPluginToolContext) {
+  return {
+    name: "memory_archive_search",
+    label: "Memory Archive Search",
+    description:
+      "Read-only lexical (BM25) search over the raw l1_archive turn log — the verbatim conversation before any summarization. Use to recover exact details (commands, numbers, file paths) that consolidation may have dropped. Returns matched turns with chunk/session/time context; iterate keywords to narrow.",
+    parameters: ArchiveSearchToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      const storage = Storage.fromWorkspace(ctx.workspaceDir);
+      try {
+        const str = (key: string): string | undefined => {
+          const value = rawParams[key];
+          return typeof value === "string" && value.length > 0 ? value : undefined;
+        };
+        const num = (key: string): number | undefined => {
+          const value = rawParams[key];
+          return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+        };
+        const skip = Array.isArray(rawParams.skip_session_ids)
+          ? (rawParams.skip_session_ids as unknown[]).filter(
+              (entry): entry is string => typeof entry === "string",
+            )
+          : undefined;
+        return jsonResult(
+          await searchArchive({
+            storage,
+            query: String(rawParams.query ?? ""),
+            sessionHint: str("session_hint"),
+            before: num("before"),
+            after: num("after"),
+            skipSessionIds: skip,
+            limit: num("limit"),
+          }),
+        );
       } finally {
         storage.close();
       }
