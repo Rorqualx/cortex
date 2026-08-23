@@ -230,6 +230,7 @@ export const HealthSnapshotSchema = closedObject({
 /** Default session routing keys included in initial gateway snapshots. */
 export const SessionDefaultsSchema = closedObject({
   defaultAgentId: NonEmptyString,
+  modelConfigured: Type.Optional(Type.Boolean()),
   ownership: Type.Optional(AgentOwnershipSchema),
   selectionRequired: Type.Optional(Type.Boolean()),
   mainKey: NonEmptyString,

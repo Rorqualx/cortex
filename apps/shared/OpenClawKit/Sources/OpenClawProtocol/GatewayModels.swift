@@ -1810,6 +1810,20 @@ public struct McpAppViewExpiredErrorDetails: Codable, Sendable {
     }
 }
 
+public struct OutboundDeliveryQueuedErrorDetails: Codable, Sendable {
+    public let code: String
+
+    public init(
+        code: String)
+    {
+        self.code = code
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+    }
+}
+
 public struct SkillProposalRevisionChangedErrorDetails: Codable, Sendable {
     public let code: String
     public let expectedrevisionhash: String
@@ -13241,6 +13255,28 @@ public struct TalkSessionCancelOutputParams: Codable, Sendable {
     }
 }
 
+public struct TalkSessionCancelOutputResult: Codable, Sendable {
+    public let ok: Bool
+    public let status: AnyCodable?
+    public let turnid: String?
+
+    public init(
+        ok: Bool,
+        status: AnyCodable? = nil,
+        turnid: String? = nil)
+    {
+        self.ok = ok
+        self.status = status
+        self.turnid = turnid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case status
+        case turnid = "turnId"
+    }
+}
+
 public struct TalkSessionCreateParams: Codable, Sendable {
     public let sessionkey: String?
     public let spawnedby: String?
@@ -23670,6 +23706,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
     case cronJobNotFound(CronJobNotFoundErrorDetails)
     case missingScope(MissingScopeErrorDetails)
     case mcpAppViewExpired(McpAppViewExpiredErrorDetails)
+    case outboundDeliveryQueued(OutboundDeliveryQueuedErrorDetails)
     case userPrefsLimitExceeded(UserPrefsLimitExceededErrorDetails)
     case skillProposalRevisionChanged(SkillProposalRevisionChangedErrorDetails)
     case projectCloneFailed(ProjectCloneErrorDetails)
@@ -23691,6 +23728,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
         case .cronJobNotFound(let value): value.code
         case .missingScope(let value): value.code
         case .mcpAppViewExpired(let value): value.code
+        case .outboundDeliveryQueued(let value): value.code
         case .userPrefsLimitExceeded(let value): value.code
         case .skillProposalRevisionChanged(let value): value.code
         case .projectCloneFailed(let value): value.code
@@ -23720,6 +23758,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
         case "CRON_JOB_NOT_FOUND": self = try .cronJobNotFound(CronJobNotFoundErrorDetails(from: decoder))
         case "MISSING_SCOPE": self = try .missingScope(MissingScopeErrorDetails(from: decoder))
         case "MCP_APP_VIEW_EXPIRED": self = try .mcpAppViewExpired(McpAppViewExpiredErrorDetails(from: decoder))
+        case "OUTBOUND_DELIVERY_QUEUED": self = try .outboundDeliveryQueued(OutboundDeliveryQueuedErrorDetails(from: decoder))
         case "USER_PREFS_LIMIT_EXCEEDED": self = try .userPrefsLimitExceeded(UserPrefsLimitExceededErrorDetails(from: decoder))
         case "SKILL_PROPOSAL_REVISION_CHANGED": self = try .skillProposalRevisionChanged(SkillProposalRevisionChangedErrorDetails(from: decoder))
         case "PROJECT_CLONE_FAILED": self = try .projectCloneFailed(ProjectCloneErrorDetails(from: decoder))
@@ -23739,6 +23778,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
         case .cronJobNotFound(let value): try value.encode(to: encoder)
         case .missingScope(let value): try value.encode(to: encoder)
         case .mcpAppViewExpired(let value): try value.encode(to: encoder)
+        case .outboundDeliveryQueued(let value): try value.encode(to: encoder)
         case .userPrefsLimitExceeded(let value): try value.encode(to: encoder)
         case .skillProposalRevisionChanged(let value): try value.encode(to: encoder)
         case .projectCloneFailed(let value): try value.encode(to: encoder)
