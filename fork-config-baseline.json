@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-08-22T21:20:24.008Z",
-  "branch": "resync-staging/2026-08-22",
-  "headSha": "fe4a80e7aaa78b545ab420f2d623f99beed86b7a",
+  "timestamp": "2026-08-23T01:41:48.668Z",
+  "branch": "main",
+  "headSha": "b590dbe890b1bf3e6e11c9c49aee3002eae0232e",
   "files": {
     ".gitattributes": {
       "hash": "197f3778ee124670dcc211f4b3490e1936269e8083ec96614321f2ea70e48bdc",
