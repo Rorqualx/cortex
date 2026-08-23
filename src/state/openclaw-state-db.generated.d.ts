@@ -1605,7 +1605,7 @@ export interface VaultSession {
   name: string;
   token_cipher: string;
   token_iv: string;
-  token_tag: string
+  token_tag: string;
 }
 
 export interface VoicewakeRoutingConfig {
