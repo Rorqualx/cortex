@@ -51,6 +51,10 @@ import type {
   EmbeddedAgentSubscribeState,
 } from "./embedded-agent-subscribe.handlers.types.js";
 import { buildToolLifecycleErrorResult } from "./embedded-agent-tool-results.js";
+import {
+  consumeTrustedToolNoStartError,
+  registerTrustedToolNoStartError,
+} from "./tool-result-error.js";
 import { extractToolResultMediaArtifact, filterToolResultMediaUrls } from "./embedded-agent-tool-media.js";
 import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
@@ -1467,10 +1471,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       } as never);
       // Upstream #c3ec166: the tool signals when its real implementation begins, so
       // executionStarted reflects whether work actually ran (vs a preflight/preparer
-      // failure before start) instead of being hardcoded true. Deferred follow-up:
-      // upstream's fuller repair-provenance rewrite of handleToolExecutionEnd
-      // (terminal.executionStarted return + trustedNoStart re-registration) is an
-      // interleaved change over the fork's kept-ours mutation-tracking cluster.
+      // failure before start) instead of being hardcoded true.
       let executionStarted = false;
       const onImplementationStart = () => {
         executionStarted = true;
@@ -1488,7 +1489,13 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
         } as never);
         return result;
       } catch (error) {
-        await handleToolExecutionEnd(ctx, {
+        // Consume any trusted-no-start tag before the terminal handler runs, then
+        // re-register it only if the tool genuinely never started (terminal confirms
+        // executionStarted false). Keeps the fork's code-mode preflight error
+        // classification (before-tool-call.wrapper / code-mode-bridge / code-mode-state)
+        // correct: a tool that started must not keep a stale no-start flag.
+        const trustedNoStart = consumeTrustedToolNoStartError(error);
+        const terminal = await handleToolExecutionEnd(ctx, {
           type: "tool_execution_end",
           toolName: toolParams.toolName,
           toolCallId: toolParams.toolCallId,
@@ -1497,6 +1504,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           result: buildToolLifecycleErrorResult(error),
           hideFromChannelProgress: toolParams.hideFromChannelProgress,
         } as never);
+        if (trustedNoStart && !terminal.executionStarted) {
+          registerTrustedToolNoStartError(error);
+        }
         throw error;
       }
     },
