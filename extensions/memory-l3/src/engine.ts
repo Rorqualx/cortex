@@ -40,6 +40,12 @@ export type EmbeddingProvider = {
   /** Compute embeddings for multiple texts in a batch. */
   embedBatch(texts: string[]): Promise<number[][]>;
 };
+import {
+  evaluateReacquisition,
+  REACQUISITION_WINDOW_MESSAGES,
+  windowStats,
+  type ReacquisitionMarker,
+} from "./reacquisition.js";
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { cosineSimilarity } from "./scoring.js";
 import { selectSlidingWindow } from "./sliding-window.js";
@@ -176,6 +182,13 @@ export class HierarchicalL3Engine implements ContextEngine {
   private state: L3State | null = null;
   /** ReTopK session-scoped retrieval cache (bounded LRU). */
   private retrievalCache: ReTopKCacheEntry[] = [];
+  /**
+   * Reacquisition telemetry markers (QW2 2026-08-23): one per session,
+   * latest compaction wins. In-memory by design — telemetry is best-effort
+   * and a restart simply drops unmeasured boundaries; measured outcomes are
+   * durable in l3_reacquisition_events.
+   */
+  private reacquisitionMarkers = new Map<string, ReacquisitionMarker>();
 
   constructor(storage: Storage, options?: HierarchicalL3EngineOptions) {
     this.storage = storage;
@@ -367,6 +380,65 @@ export class HierarchicalL3Engine implements ContextEngine {
     };
   }
 
+  /**
+   * Reacquisition telemetry (QW2 2026-08-23): once a compaction boundary has
+   * REACQUISITION_WINDOW_MESSAGES more messages behind it, compare tool-call
+   * rates across the boundary, persist the outcome, and clear the marker.
+   * Best-effort — failures log and drop the marker rather than disturb the
+   * turn path. Session truncation (cursor beyond the live array) invalidates
+   * the marker.
+   */
+  private async maybeEvaluateReacquisition(
+    sessionId: string,
+    messages: AgentMessage[],
+  ): Promise<void> {
+    const marker = this.reacquisitionMarkers.get(sessionId);
+    if (!marker) {
+      return;
+    }
+    if (marker.cursor > messages.length) {
+      // Session restarted/truncated — the boundary no longer maps to history.
+      this.reacquisitionMarkers.delete(sessionId);
+      return;
+    }
+    if (messages.length < marker.cursor + REACQUISITION_WINDOW_MESSAGES) {
+      return;
+    }
+    const after = windowStats(
+      messages.slice(marker.cursor, marker.cursor + REACQUISITION_WINDOW_MESSAGES),
+    );
+    const outcome = evaluateReacquisition(marker.before, after);
+    this.reacquisitionMarkers.delete(sessionId);
+    try {
+      await this.storage.recordReacquisitionEvent(
+        {
+          sessionId,
+          compactionAt: marker.compactedAt,
+          cursorMessages: marker.cursor,
+          beforeRate: outcome.before.toolCallRate,
+          afterRate: outcome.after.toolCallRate,
+          ratio: outcome.ratio,
+          spike: outcome.spike,
+          beforeToolCalls: outcome.before.toolCalls,
+          afterToolCalls: outcome.after.toolCalls,
+        },
+        Date.now(),
+      );
+      l3debug(
+        `reacquisition: sessionId=${sessionId} cursor=${marker.cursor} beforeRate=${outcome.before.toolCallRate.toFixed(2)} afterRate=${outcome.after.toolCallRate.toFixed(2)} ratio=${outcome.ratio === null ? "inf" : outcome.ratio.toFixed(2)} spike=${outcome.spike}`,
+      );
+      if (outcome.spike) {
+        // Signal only — no behavior change by design. Consumers (doom-loop
+        // guard wiring, retention tuning) read l3_reacquisition_events.
+        console.error(
+          `[memory-l3] reacquisition_spike: sessionId=${sessionId} toolCallRate ${outcome.before.toolCallRate.toFixed(2)} → ${outcome.after.toolCallRate.toFixed(2)} after compaction (calls ${outcome.before.toolCalls} → ${outcome.after.toolCalls})`,
+        );
+      }
+    } catch (err) {
+      console.error(`[memory-l3] reacquisition telemetry failed: ${(err as Error).message}`);
+    }
+  }
+
   async afterTurn(params: {
     sessionId: string;
     sessionKey?: string;
@@ -391,6 +463,10 @@ export class HierarchicalL3Engine implements ContextEngine {
     if (params.isHeartbeat || !this.state) {
       return;
     }
+
+    // Reacquisition telemetry first — measurement must not depend on whether
+    // this turn itself triggers compaction.
+    await this.maybeEvaluateReacquisition(params.sessionId, params.messages);
 
     // OpenClaw's runtime hands us the full session message array each turn
     // and never invokes ingest/ingestBatch separately. Pull the tail we
@@ -439,6 +515,19 @@ export class HierarchicalL3Engine implements ContextEngine {
         this.state.compactedMessageCountBySession[params.sessionId] = params.messages.length;
         // Invalidate ReTopK cache — new facts were persisted.
         this.invalidateRetrievalCache();
+        // Reacquisition telemetry: mark the compaction boundary with the
+        // pre-boundary tool-call window so later turns can be compared
+        // against it. Latest boundary wins if the window hasn't filled yet.
+        this.reacquisitionMarkers.set(params.sessionId, {
+          sessionId: params.sessionId,
+          cursor: params.messages.length,
+          before: windowStats(
+            params.messages.slice(
+              Math.max(0, params.messages.length - REACQUISITION_WINDOW_MESSAGES),
+            ),
+          ),
+          compactedAt: now,
+        });
       }
       // QW5 (2026-08-16, arXiv:2608.11879): cost-attribution accumulators
       // for this engine cycle — one l3_metrics row per afterTurn covering

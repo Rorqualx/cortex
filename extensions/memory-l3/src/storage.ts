@@ -108,6 +108,19 @@ CREATE TABLE IF NOT EXISTS l3_metrics (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS l3_metrics_created ON l3_metrics (created_at, session_id);
+CREATE TABLE IF NOT EXISTS l3_reacquisition_events (
+  session_id TEXT NOT NULL,
+  compaction_at INTEGER NOT NULL,
+  cursor_messages INTEGER NOT NULL,
+  before_rate REAL NOT NULL,
+  after_rate REAL NOT NULL,
+  ratio REAL,
+  spike INTEGER NOT NULL,
+  before_tool_calls INTEGER NOT NULL,
+  after_tool_calls INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS l3_reacquisition_created ON l3_reacquisition_events (created_at);
 `;
 
 /**
@@ -641,6 +654,93 @@ export class Storage {
       demotions: row.demotions,
       merges: row.merges,
       tokensSpent: row.tokens_spent,
+      createdAt: row.created_at,
+    }));
+  }
+
+  // -----------------------------------------------------------------
+  // Reacquisition telemetry (2026-08-23 QW2, finding 7) — append-only
+  // -----------------------------------------------------------------
+  // One row per measured compaction boundary: tool-call rate before vs
+  // after. Makes the hidden cost of compression observable before any
+  // retention-policy change rides on it.
+
+  /** Append one reacquisition measurement for a compaction boundary. */
+  async recordReacquisitionEvent(
+    entry: {
+      sessionId: string;
+      compactionAt: number;
+      cursorMessages: number;
+      beforeRate: number;
+      afterRate: number;
+      ratio: number | null;
+      spike: boolean;
+      beforeToolCalls: number;
+      afterToolCalls: number;
+    },
+    now: number = Date.now(),
+  ): Promise<void> {
+    this.database()
+      .prepare(
+        "INSERT INTO l3_reacquisition_events (session_id, compaction_at, cursor_messages, before_rate, after_rate, ratio, spike, before_tool_calls, after_tool_calls, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        entry.sessionId,
+        entry.compactionAt,
+        Math.max(0, Math.trunc(entry.cursorMessages)),
+        entry.beforeRate,
+        entry.afterRate,
+        entry.ratio,
+        entry.spike ? 1 : 0,
+        Math.max(0, Math.trunc(entry.beforeToolCalls)),
+        Math.max(0, Math.trunc(entry.afterToolCalls)),
+        now,
+      );
+  }
+
+  /** Read reacquisition rows, optionally restricted to those at/after `sinceMs`. */
+  async readReacquisitionEvents(sinceMs?: number): Promise<
+    Array<{
+      sessionId: string;
+      compactionAt: number;
+      cursorMessages: number;
+      beforeRate: number;
+      afterRate: number;
+      ratio: number | null;
+      spike: boolean;
+      beforeToolCalls: number;
+      afterToolCalls: number;
+      createdAt: number;
+    }>
+  > {
+    const sql =
+      "SELECT session_id, compaction_at, cursor_messages, before_rate, after_rate, ratio, spike, before_tool_calls, after_tool_calls, created_at FROM l3_reacquisition_events";
+    const rows = (
+      sinceMs === undefined
+        ? this.database().prepare(`${sql} ORDER BY created_at`).all()
+        : this.database().prepare(`${sql} WHERE created_at >= ? ORDER BY created_at`).all(sinceMs)
+    ) as Array<{
+      session_id: string;
+      compaction_at: number;
+      cursor_messages: number;
+      before_rate: number;
+      after_rate: number;
+      ratio: number | null;
+      spike: number;
+      before_tool_calls: number;
+      after_tool_calls: number;
+      created_at: number;
+    }>;
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      compactionAt: row.compaction_at,
+      cursorMessages: row.cursor_messages,
+      beforeRate: row.before_rate,
+      afterRate: row.after_rate,
+      ratio: row.ratio,
+      spike: row.spike === 1,
+      beforeToolCalls: row.before_tool_calls,
+      afterToolCalls: row.after_tool_calls,
       createdAt: row.created_at,
     }));
   }
