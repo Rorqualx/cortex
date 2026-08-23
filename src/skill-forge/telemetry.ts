@@ -41,6 +41,21 @@ export type SkillTelemetryEntry = {
   lastPoolSize?: number;
   lastTaskSucceeded?: boolean;
   lastInvocationOutcome?: SkillInvocationOutcome;
+  /**
+   * Multi-run replay-judge agreement snapshot (QW3 2026-08-23): stamped on the
+   * card when the promotion lane runs k judge replays. Variance is Bernoulli
+   * p(1-p) over the pass indicator — low variance + high passRate = stable
+   * promotion signal; high variance = judge disagreement worth a human look.
+   */
+  replayAgreement?: {
+    runs: number;
+    passRate: number;
+    agreement: number;
+    variance: number;
+    provider: string;
+    modelId: string;
+    recordedAt: string;
+  };
 };
 
 async function ensureTelemetryDir(env: NodeJS.ProcessEnv): Promise<string> {
@@ -100,15 +115,28 @@ export async function recordSkillPromotion(params: {
   now?: Date;
   env?: NodeJS.ProcessEnv;
   successScore?: number;
+  /** Multi-run replay agreement stats to stamp on the card (see SkillTelemetryEntry). */
+  replayAgreement?: {
+    runs: number;
+    passRate: number;
+    agreement: number;
+    variance: number;
+    provider: string;
+    modelId: string;
+  };
 }): Promise<SkillTelemetryEntry> {
   const existing = await readTelemetry({ name: params.name, env: params.env });
   const now = (params.now ?? new Date()).toISOString();
+  const replayAgreement = params.replayAgreement
+    ? { ...params.replayAgreement, recordedAt: now }
+    : existing?.replayAgreement;
   const entry: SkillTelemetryEntry = existing
     ? {
         ...existing,
         status: "promoted",
         promotedAt: now,
         successScore: params.successScore ?? existing.successScore,
+        ...(replayAgreement ? { replayAgreement } : {}),
       }
     : {
         name: params.name,
@@ -117,6 +145,7 @@ export async function recordSkillPromotion(params: {
         promotedAt: now,
         usageCount: 0,
         successScore: params.successScore,
+        ...(replayAgreement ? { replayAgreement } : {}),
       };
   await writeTelemetry({ entry, env: params.env });
   return entry;

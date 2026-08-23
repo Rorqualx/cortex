@@ -16,9 +16,13 @@ import { tryResolveSkillForgeEmbeddingProvider } from "./embedding-provider.js";
 import { nameCollisionCheck } from "./gate.js";
 import { resolveSkillForgeSessionsDir } from "./paths.js";
 import { promoteStagedSkill, type PromotionResult } from "./promoter.js";
-import { judgeSkillCandidateWithLlm, type LlmReplayGateResult } from "./replay-gate.js";
+import {
+  judgeSkillCandidateWithLlmAgreement,
+  type LlmReplayGateResult,
+  type ReplayAgreementResult,
+} from "./replay-gate.js";
 import { compressDraftedSkill } from "./skill-compressor.js";
-import { recordSkillCreation } from "./telemetry.js";
+import { recordSkillCreation, recordSkillPromotion } from "./telemetry.js";
 
 export type PipelineRunInput = {
   captureDirs?: string[];
@@ -52,7 +56,7 @@ export type EmbeddingLaneResult =
 /** LLM replay-gate outcome over the drafted skills (present only when `useLlmReplay`). */
 export type LlmReplayLaneResult = {
   status: "ran";
-  judged: Array<{ name: string; gate: LlmReplayGateResult }>;
+  judged: Array<{ name: string; gate: LlmReplayGateResult | ReplayAgreementResult }>;
 };
 
 /**
@@ -243,15 +247,37 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
   // gating promotion (promotion already ran above via the strict frontmatter gate).
   let llmReplay: LlmReplayLaneResult | undefined;
   if (input.useLlmReplay) {
-    const judged: Array<{ name: string; gate: LlmReplayGateResult }> = [];
+    // Multi-run agreement (QW3 2026-08-23): k judge runs per skill (default 3,
+    // env-tunable via OPENCLAW_SKILL_FORGE_REPLAY_RUNS). The pass rate feeds
+    // the gate's robustness facet; variance is stamped on the telemetry card
+    // so promotion decisions can weigh judge stability.
+    const judged: Array<{ name: string; gate: LlmReplayGateResult | ReplayAgreementResult }> = [];
     for (const target of judgeTargets) {
       const draftedBody = await readDraftedBody(target.draft);
-      const gate = await judgeSkillCandidateWithLlm({
+      const gate = await judgeSkillCandidateWithLlmAgreement({
         candidate: target.candidate,
         draftedBody,
         ...(input.agentId ? { agentId: input.agentId } : {}),
       });
       judged.push({ name: target.draft.name, gate });
+      if (gate.status === "ran") {
+        try {
+          await recordSkillPromotion({
+            name: target.draft.name,
+            env,
+            replayAgreement: {
+              runs: gate.stats.runs,
+              passRate: gate.stats.passRate,
+              agreement: gate.stats.agreement,
+              variance: gate.stats.variance,
+              provider: gate.provider,
+              modelId: gate.modelId,
+            },
+          });
+        } catch {
+          // Telemetry is best-effort — the lane result below carries the same data.
+        }
+      }
     }
     llmReplay = { status: "ran", judged };
   }
