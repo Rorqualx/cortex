@@ -786,10 +786,19 @@ land_and_deploy() {
   fi
   release_worktree
   ledger "LAND $label behind=${BEHIND:-?} main=$landed proof=PASS"
-  echo "UPSTREAM-MERGE LANDED ($label): main @ $landed, Linux proof PASS. Deploying…"
-  # Deploy LAST: this build crashes+respawns the gateway (kills this session);
-  # a detached health watcher records the outcome. main is already durable on origin.
-  exec bash "$MAIN/scripts/cron-deploy-build.sh"
+  # Deploy DETACHED, not `exec`. exec replaced this tick with the deploy, so when the
+  # build crashed+respawned the gateway the successful land was recorded as a bogus
+  # error receipt (timeout / "Gateway shutting down") — firing false failure alerts,
+  # driving consecutive_errors up, and leaving running_at_ms stale when the crash
+  # killed the replaced process. macOS has no setsid; nohup+disown backgrounds the
+  # deploy, reparented to launchd on this tick's exit, so it survives both this exit
+  # and the gateway crash it triggers. main is already durable on origin; the deploy's
+  # own quiesce gate now sees this job finished and proceeds.
+  nohup bash "$MAIN/scripts/cron-deploy-build.sh" </dev/null >/tmp/um-deploy.log 2>&1 &
+  disown 2>/dev/null || true
+  ledger "DEPLOY-DISPATCHED main=$landed (detached; /tmp/um-deploy.log)"
+  echo "UPSTREAM-MERGE LANDED ($label): main @ $landed, Linux proof PASS. Deploy dispatched (detached)."
+  exit 0
 }
 
 land_clean() {
