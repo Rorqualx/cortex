@@ -128,18 +128,30 @@ done
 git fetch "$REMOTE_BUNDLE" "+refs/heads/$BRANCH:refs/remotes/proof/$BRANCH" 2>/tmp/rp-fetch.err \
   || { echo 'EXIT=94 (bundle fetch)'; sed 's/^/EXIT-DETAIL /' /tmp/rp-fetch.err 2>/dev/null; exit 94; }
 BDIR="\$PROOF_DIR/.proof-baseline-\$BASELINE_REF"
-if [ ! -f "\$BDIR/tsgo.txt" ]; then
+# The cache is valid ONLY when tsgo.txt has one line per lane AND testfail.txt exists.
+# A baseline run killed mid-loop (e.g. the Mac poller was stopped) used to leave a
+# PARTIAL tsgo.txt that the bare `-f` check happily reused — the missing test lanes
+# then defaulted to 0 and false-failed every candidate against this main sha (poisoned
+# 2026-08-22, breaking the hourly cron's proof). Publish tsgo.txt LAST via atomic mv so
+# an interrupted recompute leaves no valid-looking cache.
+LANE_COUNT=\$(echo \$LANES | wc -w)
+if [ ! -f "\$BDIR/tsgo.txt" ] || [ ! -f "\$BDIR/testfail.txt" ] \
+   || [ "\$(wc -l < "\$BDIR/tsgo.txt" 2>/dev/null | tr -d ' ')" != "\$LANE_COUNT" ]; then
   echo "computing baseline for \$BASELINE_REF"
+  rm -rf "\$BDIR"
   git checkout -f -B baseline-tmp "\$BASELINE_REF" -q 2>/dev/null || { echo 'EXIT=93b (baseline checkout)'; exit 93; }
   rm -rf .artifacts/tsgo-cache; mkdir -p "\$BDIR"
   CI=1 nice -n 19 corepack pnpm install --frozen-lockfile >/tmp/rp-base-install.log 2>&1 || { echo 'EXIT=93 (base install)'; exit 93; }
-  : > "\$BDIR/tsgo.txt"
+  : > "\$BDIR/tsgo.txt.tmp"
   for lane in \$LANES; do
-    c=\$(corepack pnpm run \$lane 2>&1 | grep -cE "error TS"); echo "\$lane \$c" >> "\$BDIR/tsgo.txt"
+    c=\$(corepack pnpm run \$lane 2>&1 | grep -cE "error TS"); echo "\$lane \$c" >> "\$BDIR/tsgo.txt.tmp"
     rm -rf .artifacts/tsgo-cache
   done
   corepack pnpm test:fast >/tmp/rp-base-test.log 2>&1 || true
   fail_files /tmp/rp-base-test.log > "\$BDIR/testfail.txt"
+  # Atomic publish: tsgo.txt appears only after every lane + test:fast finished, so a
+  # killed recompute cannot leave a partial-but-present cache.
+  mv "\$BDIR/tsgo.txt.tmp" "\$BDIR/tsgo.txt"
 fi
 
 # --- Candidate (cherry branch) ---
