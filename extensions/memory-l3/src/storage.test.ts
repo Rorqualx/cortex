@@ -359,6 +359,67 @@ describe("Storage cost-attribution metrics (QW5 2026-08-16)", () => {
   });
 });
 
+describe("Storage L1 archive search", () => {
+  it("finds BM25 hits across chunk files with session, temporal, and skip filters", async () => {
+    await storage.ensureLayout();
+    await storage.appendL1Archive("chunk-alpha", {
+      role: "user",
+      content: "pi-hole dns runs at 192.168.50.128",
+      timestamp: 1_000,
+    });
+    await storage.appendL1Archive("chunk-alpha", {
+      role: "toolResult",
+      toolCallId: "t1",
+      toolName: "read",
+      content: [{ type: "text", text: "unbound config for the dns server" }],
+      isError: false,
+      timestamp: 1_100,
+    });
+    await storage.appendL1Archive("chunk-beta", {
+      role: "user",
+      content: "lunch plans, totally unrelated topic",
+      timestamp: 2_000,
+    });
+
+    const base = await storage.searchL1Archive({ query: "pi-hole 192.168.50.128" });
+    expect(base.scannedFiles).toBe(2);
+    expect(base.scannedTurns).toBe(3);
+    expect(base.capped).toBe(false);
+    expect(base.hits.length).toBeGreaterThan(0);
+    expect(base.hits[0]).toMatchObject({
+      chunkId: "chunk-alpha",
+      role: "user",
+      timestamp: 1_000,
+    });
+    expect(base.hits[0]?.snippet).toContain("192.168.50.128");
+
+    const hinted = await storage.searchL1Archive({ query: "dns", sessionHint: "beta" });
+    expect(hinted.scannedFiles).toBe(1);
+    expect(hinted.scannedTurns).toBe(1);
+    expect(hinted.hits).toHaveLength(0);
+
+    const skipped = await storage.searchL1Archive({
+      query: "pi-hole 192.168.50.128",
+      skipSessionIds: ["chunk-alpha"],
+    });
+    expect(skipped.scannedFiles).toBe(1);
+    expect(skipped.hits).toHaveLength(0);
+
+    const after = await storage.searchL1Archive({ query: "lunch plans", afterMs: 1_500 });
+    expect(after.scannedTurns).toBe(1);
+    expect(after.hits[0]?.chunkId).toBe("chunk-beta");
+
+    const capped = await storage.searchL1Archive({ query: "dns", maxTurns: 1 });
+    expect(capped.capped).toBe(true);
+    expect(capped.scannedTurns).toBe(1);
+  });
+
+  it("returns an empty result when the archive does not exist", async () => {
+    const empty = await storage.searchL1Archive({ query: "anything" });
+    expect(empty).toMatchObject({ scannedTurns: 0, scannedFiles: 0, capped: false, hits: [] });
+  });
+});
+
 function makeChunk(id: string, createdAt: number): L2ChunkFrontmatter {
   return {
     id,

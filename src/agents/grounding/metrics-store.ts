@@ -238,6 +238,7 @@ export const RETRIEVAL_TOOL_NAMES: ReadonlySet<string> = new Set([
   "memory_search",
   "memory_get",
   "memory_insights",
+  "memory_archive_search",
   "read",
 ]);
 

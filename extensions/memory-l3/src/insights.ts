@@ -297,6 +297,88 @@ export function createMemoryInsightsTool(ctx: OpenClawPluginToolContext) {
   };
 }
 
+const ArchiveSearchToolSchema = Type.Object(
+  {
+    query: Type.String({
+      description:
+        "Search keywords (BM25). Iterate with more specific terms if the first pass misses.",
+      minLength: 1,
+      maxLength: 400,
+    }),
+    session_hint: Type.Optional(
+      Type.String({
+        description: "Substring filter on the archive chunk id (session context token).",
+        maxLength: 200,
+      }),
+    ),
+    before: Type.Optional(
+      Type.Union([Type.String(), Type.Integer()], {
+        description: "Only turns at/before this time (ISO 8601 string or epoch ms).",
+      }),
+    ),
+    after: Type.Optional(
+      Type.Union([Type.String(), Type.Integer()], {
+        description: "Only turns at/after this time (ISO 8601 string or epoch ms).",
+      }),
+    ),
+    skip_session_ids: Type.Optional(
+      Type.Array(Type.String(), {
+        description: "Archive chunk ids whose turns should be excluded.",
+        maxItems: 50,
+      }),
+    ),
+    limit: Type.Optional(
+      Type.Integer({ description: "Max hits to return (default 10).", minimum: 1, maximum: 20 }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+function parseTimeParam(value: unknown, label: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  throw new Error(`${label} must be an ISO 8601 string or epoch milliseconds`);
+}
+
+/**
+ * Raw-archive search (ReFind finding 3, 2026-08-23): lexical BM25 over the
+ * append-only L1 turn archive, complementing the distilled L2/L3 tiers —
+ * details compaction dropped stay findable. Read-only.
+ */
+export function createArchiveSearchTool(ctx: OpenClawPluginToolContext) {
+  return {
+    name: "memory_archive_search",
+    label: "Memory Archive Search",
+    description:
+      "Read-only BM25 keyword search over the raw L1 turn archive (pre-compaction conversation turns). Use when distilled memory lacks a detail: exact strings, IDs, IPs, code snippets that compaction may have dropped. Returns matched turns with chunk (session) and time context; refine with session_hint / before / after.",
+    parameters: ArchiveSearchToolSchema,
+    execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
+      const storage = Storage.fromWorkspace(ctx.workspaceDir);
+      try {
+        const query = typeof rawParams.query === "string" ? rawParams.query : "";
+        const result = await storage.searchL1Archive({
+          query,
+          sessionHint:
+            typeof rawParams.session_hint === "string" ? rawParams.session_hint : undefined,
+          beforeMs: parseTimeParam(rawParams.before, "before"),
+          afterMs: parseTimeParam(rawParams.after, "after"),
+          skipSessionIds: Array.isArray(rawParams.skip_session_ids)
+            ? rawParams.skip_session_ids.filter((id): id is string => typeof id === "string")
+            : undefined,
+          limit: typeof rawParams.limit === "number" ? rawParams.limit : undefined,
+        });
+        return jsonResult(result);
+      } finally {
+        storage.close();
+      }
+    },
+  };
+}
+
 const ForgettingCandidatesToolSchema = Type.Object(
   {
     threshold: Type.Optional(

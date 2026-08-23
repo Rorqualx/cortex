@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { createInterface } from "node:readline";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import {
   closeMemorySqliteWalMaintenance,
@@ -11,6 +13,7 @@ import {
   requireNodeSqlite,
 } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import { runSqliteImmediateTransactionSync } from "openclaw/plugin-sdk/sqlite-runtime";
+import { bm25Score, buildCorpusStats, tokenize } from "./scoring.js";
 import {
   type FrontmatterDocument,
   INITIAL_INSIGHT_FRONTMATTER,
@@ -29,6 +32,7 @@ import {
   type RetrievalSignal,
   type L3MetricEntry,
   type L3CompactionEventEntry,
+  type ArchiveSearchResult,
 } from "./types.js";
 
 const DB_FILENAME = "l3.sqlite";
@@ -230,6 +234,112 @@ export class Storage {
     const target = path.join(this.root, L1_ARCHIVE_DIR, `${chunkId}.jsonl`);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.appendFile(target, `${JSON.stringify(entry)}\n`, "utf8");
+  }
+
+  /**
+   * Lexical (BM25) search over the raw L1 turn archive (ReFind finding 3,
+   * 2026-08-23). Read-only hedge against consolidation loss: searches the
+   * append-only `l1_archive/*.jsonl` turns directly instead of the distilled
+   * L2/L3 tiers, so details compaction dropped are still findable. Each file
+   * is one compaction chunk; `chunkId` doubles as the session-context token.
+   * Turns scanned are capped (`maxTurns`) so a large archive bounds cost.
+   */
+  async searchL1Archive(params: {
+    query: string;
+    sessionHint?: string;
+    afterMs?: number;
+    beforeMs?: number;
+    skipSessionIds?: string[];
+    limit?: number;
+    maxTurns?: number;
+  }): Promise<ArchiveSearchResult> {
+    const limit = Math.max(1, Math.min(50, params.limit ?? 10));
+    const maxTurns = Math.max(1, Math.min(50_000, params.maxTurns ?? 20_000));
+    const skip = new Set(params.skipSessionIds ?? []);
+    const result: ArchiveSearchResult = {
+      query: params.query,
+      scannedTurns: 0,
+      scannedFiles: 0,
+      capped: false,
+      hits: [],
+    };
+    const archiveDir = path.join(this.root, L1_ARCHIVE_DIR);
+    let names: string[];
+    try {
+      names = (await fs.readdir(archiveDir)).filter((n) => n.endsWith(".jsonl")).sort();
+    } catch {
+      return result;
+    }
+    const collected: Array<{
+      chunkId: string;
+      line: number;
+      role: string;
+      timestamp?: number;
+      text: string;
+    }> = [];
+    outer: for (const name of names) {
+      const chunkId = name.replace(/\.jsonl$/, "");
+      if (skip.has(chunkId)) continue;
+      if (params.sessionHint && !chunkId.includes(params.sessionHint)) continue;
+      result.scannedFiles += 1;
+      const reader = createInterface({
+        input: createReadStream(path.join(archiveDir, name), "utf8"),
+        crlfDelay: Infinity,
+      });
+      let line = 0;
+      try {
+        for await (const raw of reader) {
+          line += 1;
+          const trimmed = raw.trim();
+          if (trimmed.length === 0) continue;
+          let msg: unknown;
+          try {
+            msg = JSON.parse(trimmed);
+          } catch {
+            continue;
+          }
+          const record = msg as { role?: unknown; timestamp?: unknown };
+          if (typeof record.timestamp === "number") {
+            if (params.afterMs !== undefined && record.timestamp < params.afterMs) continue;
+            if (params.beforeMs !== undefined && record.timestamp > params.beforeMs) continue;
+          }
+          const text = archiveMessageToText(msg);
+          if (text.length === 0) continue;
+          collected.push({
+            chunkId,
+            line,
+            role: typeof record.role === "string" ? record.role : "unknown",
+            timestamp: typeof record.timestamp === "number" ? record.timestamp : undefined,
+            text,
+          });
+          if (collected.length >= maxTurns) {
+            result.capped = true;
+            break outer;
+          }
+        }
+      } finally {
+        reader.close();
+      }
+    }
+    result.scannedTurns = collected.length;
+    if (collected.length === 0) return result;
+    const corpusStats = buildCorpusStats(collected.map((t) => t.text));
+    const queryTokens = tokenize(params.query);
+    if (queryTokens.size === 0) return result;
+    result.hits = collected
+      .map((turn) => ({ turn, score: bm25Score(queryTokens, turn.text, corpusStats) }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ turn, score }) => ({
+        chunkId: turn.chunkId,
+        line: turn.line,
+        role: turn.role,
+        timestamp: turn.timestamp,
+        score: Math.round(score * 1e4) / 1e4,
+        snippet: turn.text.length > 240 ? `${turn.text.slice(0, 240)}…` : turn.text,
+      }));
+    return result;
   }
 
   // -----------------------------------------------------------------
@@ -867,6 +977,43 @@ async function atomicWriteFile(target: string, contents: string): Promise<void> 
  */
 function markdownBody(body: string): string {
   return `${body.trimEnd()}\n`;
+}
+
+/**
+ * Best-effort searchable text for one archived L1 turn (an AgentMessage JSON
+ * record). Text blocks contribute their text; tool calls contribute the tool
+ * name + arguments; tool results contribute the tool name + text blocks.
+ * Structural JSON is deliberately NOT stringified — schema keys would pollute
+ * lexical scoring.
+ */
+function archiveMessageToText(msg: unknown): string {
+  if (typeof msg !== "object" || msg === null) return "";
+  const record = msg as {
+    role?: unknown;
+    content?: unknown;
+    toolName?: unknown;
+  };
+  const parts: string[] = [];
+  if (typeof record.toolName === "string") parts.push(record.toolName);
+  const content = record.content;
+  if (typeof content === "string") {
+    parts.push(content);
+  } else if (Array.isArray(content)) {
+    for (const block of content) {
+      if (typeof block !== "object" || block === null) continue;
+      const b = block as { type?: unknown; text?: unknown; name?: unknown; arguments?: unknown };
+      if (typeof b.text === "string" && b.text.length > 0) {
+        parts.push(b.text);
+      } else if (b.type === "toolCall" && typeof b.name === "string") {
+        try {
+          parts.push(`${b.name} ${JSON.stringify(b.arguments ?? {})}`);
+        } catch {
+          parts.push(b.name);
+        }
+      }
+    }
+  }
+  return parts.join(" ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
 /** Extract the chunk/epoch id from a list token (export path) or bare id. */

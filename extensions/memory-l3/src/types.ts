@@ -667,6 +667,30 @@ export type L3CompactionEventEntry = {
 };
 
 /**
+ * Raw-archive lexical search (ReFind finding 3, 2026-08-23): BM25 hits over
+ * the append-only L1 turn archive (`l1_archive/*.jsonl`). One file per
+ * compaction chunk; `chunkId` is the session-context token. Snippets are
+ * clipped to keep results compact.
+ */
+export type ArchiveSearchResult = {
+  query: string;
+  /** Turns actually scanned (subject to the maxTurns cap). */
+  scannedTurns: number;
+  /** Archive files whose turns passed the session filters. */
+  scannedFiles: number;
+  /** True when the maxTurns cap stopped the scan early. */
+  capped: boolean;
+  hits: Array<{
+    chunkId: string;
+    line: number;
+    role: string;
+    timestamp?: number;
+    score: number;
+    snippet: string;
+  }>;
+};
+
+/**
  * Gap analysis result from Sufficient Context Agent. Indicates which
  * fields or entities from the query are missing from the retrieved facts.
  */
