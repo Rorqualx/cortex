@@ -183,3 +183,144 @@ describe("parseLlmJudgeResponse — process-quality rationales", () => {
     expect(result.rationale).toMatch(/verification/u);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Multi-run replay agreement (QW3 2026-08-23)
+// ---------------------------------------------------------------------------
+
+import type { Candidate } from "./detector.js";
+import {
+  computeReplayAgreement,
+  judgeSkillCandidateWithLlmAgreement,
+  resolveReplayRuns,
+  DEFAULT_REPLAY_RUNS,
+  type LlmReplayGateResult,
+} from "./replay-gate.js";
+
+describe("resolveReplayRuns", () => {
+  it("defaults to 3 runs", () => {
+    expect(resolveReplayRuns(undefined, {})).toBe(DEFAULT_REPLAY_RUNS);
+  });
+  it("honors the env override", () => {
+    expect(resolveReplayRuns(undefined, { OPENCLAW_SKILL_FORGE_REPLAY_RUNS: "5" })).toBe(5);
+  });
+  it("explicit param wins over env and clamps to [1,5]", () => {
+    expect(resolveReplayRuns(2, { OPENCLAW_SKILL_FORGE_REPLAY_RUNS: "5" })).toBe(2);
+    expect(resolveReplayRuns(99, {})).toBe(5);
+    expect(resolveReplayRuns(0, {})).toBe(1);
+    expect(resolveReplayRuns(Number.NaN, {})).toBe(3);
+  });
+});
+
+describe("computeReplayAgreement", () => {
+  it("computes modal verdict, agreement, pass rate, and variance", () => {
+    const stats = computeReplayAgreement(["SAFE_USEFUL", "SAFE_USEFUL", "UNSAFE_OR_HARMFUL"]);
+    expect(stats).toMatchObject({
+      runs: 3,
+      modalVerdict: "SAFE_USEFUL",
+      agreement: 2 / 3,
+      passRate: 2 / 3,
+    });
+    expect(stats.variance).toBeCloseTo((2 / 3) * (1 / 3), 12);
+  });
+  it("unanimous safe verdicts give agreement 1 and variance 0", () => {
+    const stats = computeReplayAgreement(["SAFE_NEUTRAL", "SAFE_NEUTRAL", "SAFE_NEUTRAL"]);
+    expect(stats.agreement).toBe(1);
+    expect(stats.passRate).toBe(1);
+    expect(stats.variance).toBe(0);
+  });
+  it("split verdicts maximize variance", () => {
+    const stats = computeReplayAgreement(["SAFE_USEFUL", "UNSAFE_OR_HARMFUL"]);
+    expect(stats.passRate).toBe(0.5);
+    expect(stats.variance).toBeCloseTo(0.25);
+  });
+  it("empty input is a zeroed neutral", () => {
+    expect(computeReplayAgreement([])).toEqual({
+      runs: 0,
+      modalVerdict: "SAFE_NEUTRAL",
+      agreement: 0,
+      passRate: 0,
+      variance: 0,
+    });
+  });
+});
+
+const fakeCandidate = {
+  lane: "tool",
+  candidateId: "c-1",
+  toolSequence: ["read"],
+} as unknown as Candidate;
+
+function ranJudge(
+  verdicts: string[],
+): typeof import("./replay-gate.js").judgeSkillCandidateWithLlm {
+  let call = 0;
+  return async () => {
+    const verdict = verdicts[Math.min(call, verdicts.length - 1)] ?? "SAFE_NEUTRAL";
+    call += 1;
+    const result: LlmReplayGateResult = {
+      status: "ran",
+      verdict: verdict as never,
+      rationale: `fake ${call}`,
+      provider: "fake",
+      modelId: "fake-model",
+    };
+    return result;
+  };
+}
+
+describe("judgeSkillCandidateWithLlmAgreement", () => {
+  it("aggregates k judge runs into agreement stats", async () => {
+    const result = await judgeSkillCandidateWithLlmAgreement(
+      { candidate: fakeCandidate, draftedBody: "body", runs: 3 },
+      ranJudge(["SAFE_USEFUL", "SAFE_USEFUL", "SAFE_NEUTRAL"]),
+    );
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") throw new Error("unreachable");
+    expect(result.stats.runs).toBe(3);
+    expect(result.stats.passRate).toBe(1);
+    expect(result.stats.agreement).toBeCloseTo(2 / 3);
+    expect(result.verdicts).toEqual(["SAFE_USEFUL", "SAFE_USEFUL", "SAFE_NEUTRAL"]);
+    expect(result.provider).toBe("fake");
+  });
+
+  it("propagates an immediate skip on the first run", async () => {
+    const skip: LlmReplayGateResult = { status: "skipped", reason: "no config" };
+    const result = await judgeSkillCandidateWithLlmAgreement(
+      { candidate: fakeCandidate, draftedBody: "body" },
+      async () => skip,
+    );
+    expect(result).toEqual({ status: "skipped", reason: "no config" });
+  });
+
+  it("aggregates over successful runs when some fail", async () => {
+    let call = 0;
+    const mixed = async (): Promise<LlmReplayGateResult> => {
+      call += 1;
+      if (call === 2) return { status: "failed", reason: "transient" };
+      return {
+        status: "ran",
+        verdict: "SAFE_USEFUL",
+        rationale: "ok",
+        provider: "p",
+        modelId: "m",
+      };
+    };
+    const result = await judgeSkillCandidateWithLlmAgreement(
+      { candidate: fakeCandidate, draftedBody: "body", runs: 3 },
+      mixed,
+    );
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") throw new Error("unreachable");
+    expect(result.stats.runs).toBe(2);
+    expect(result.stats.passRate).toBe(1);
+  });
+
+  it("fails when every run fails", async () => {
+    const result = await judgeSkillCandidateWithLlmAgreement(
+      { candidate: fakeCandidate, draftedBody: "body", runs: 2 },
+      async () => ({ status: "failed", reason: "down" }),
+    );
+    expect(result).toEqual({ status: "failed", reason: "down" });
+  });
+});

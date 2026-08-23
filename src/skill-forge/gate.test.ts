@@ -237,6 +237,31 @@ describe("evaluateGate", () => {
     expect(verdict.qualityFacets).toBeDefined();
     expect(verdict.qualityFacets!.safety).toBe(1);
     expect(verdict.qualityFacets!.utility).toBe(0.5);
+    // Robustness stays neutral when no replay pass rate is threaded.
+    expect(verdict.qualityFacets!.robustness).toBe(0.5);
+  });
+
+  it("threads the replay pass rate into the robustness facet", async () => {
+    await fsp.writeFile(path.join(stagedSkillDir, "SKILL.md"), validSkill("candidate"), "utf8");
+    const verdict = await evaluateGate({
+      skillDir: stagedSkillDir,
+      name: "candidate",
+      env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
+      robustness: 2 / 3,
+    });
+    expect(verdict.status).toBe("pass");
+    expect(verdict.qualityFacets!.robustness).toBeCloseTo(2 / 3);
+  });
+
+  it("clamps an out-of-range robustness input into [0,1]", async () => {
+    await fsp.writeFile(path.join(stagedSkillDir, "SKILL.md"), validSkill("candidate"), "utf8");
+    const verdict = await evaluateGate({
+      skillDir: stagedSkillDir,
+      name: "candidate",
+      env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
+      robustness: 1.7,
+    });
+    expect(verdict.qualityFacets!.robustness).toBe(1);
   });
 
   it("short-circuits on validation failure", async () => {

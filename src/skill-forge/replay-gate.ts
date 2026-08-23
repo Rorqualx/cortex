@@ -225,3 +225,148 @@ export async function judgeSkillCandidateWithLlm(params: {
     ...(parsed.overfittingRisk ? { overfittingRisk: parsed.overfittingRisk } : {}),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Multi-run replay agreement (2026-08-23 QW3, finding 5)
+// ---------------------------------------------------------------------------
+
+/** Default number of judge runs per promotion decision (k). */
+export const DEFAULT_REPLAY_RUNS = 3;
+/** Upper clamp for k — beyond this the cost dominates the variance estimate. */
+export const MAX_REPLAY_RUNS = 5;
+
+/**
+ * Resolve the replay-run count: explicit param wins, then the
+ * OPENCLAW_SKILL_FORGE_REPLAY_RUNS env override, then the default. Clamped to
+ * [1, MAX_REPLAY_RUNS] so cost stays bounded.
+ */
+export function resolveReplayRuns(explicit?: number, env: NodeJS.ProcessEnv = process.env): number {
+  const raw = explicit ?? Number.parseInt(env.OPENCLAW_SKILL_FORGE_REPLAY_RUNS ?? "", 10);
+  if (!Number.isFinite(raw)) {
+    return DEFAULT_REPLAY_RUNS;
+  }
+  return Math.min(MAX_REPLAY_RUNS, Math.max(1, Math.trunc(raw)));
+}
+
+/** Pure agreement statistics over a set of judge verdicts. */
+export type ReplayAgreementStats = {
+  /** Number of verdicts the stats cover. */
+  runs: number;
+  /** Most common verdict (ties break toward the safer/lower-ordered verdict). */
+  modalVerdict: LlmJudgeVerdict;
+  /** Share of runs matching the modal verdict (0-1). */
+  agreement: number;
+  /** Share of runs that judged the skill safe to promote (SAFE_*), 0-1. */
+  passRate: number;
+  /** Bernoulli variance of the pass indicator, p(1-p). */
+  variance: number;
+};
+
+/** Compute modal verdict, agreement, pass rate, and variance over verdicts. */
+export function computeReplayAgreement(
+  verdicts: ReadonlyArray<LlmJudgeVerdict>,
+): ReplayAgreementStats {
+  const runs = verdicts.length;
+  if (runs === 0) {
+    return {
+      runs: 0,
+      modalVerdict: "SAFE_NEUTRAL",
+      agreement: 0,
+      passRate: 0,
+      variance: 0,
+    };
+  }
+  const counts = new Map<LlmJudgeVerdict, number>();
+  for (const verdict of verdicts) {
+    counts.set(verdict, (counts.get(verdict) ?? 0) + 1);
+  }
+  // Ties break toward the earlier token in VERDICT_TOKENS order, which ranks
+  // SAFE_USEFUL first — but for gating what matters is passRate, not the mode.
+  let modalVerdict: LlmJudgeVerdict = verdicts[0] as LlmJudgeVerdict;
+  let modalCount = 0;
+  for (const token of VERDICT_TOKENS) {
+    const count = counts.get(token) ?? 0;
+    if (count > modalCount) {
+      modalVerdict = token;
+      modalCount = count;
+    }
+  }
+  const passes = (counts.get("SAFE_USEFUL") ?? 0) + (counts.get("SAFE_NEUTRAL") ?? 0);
+  const passRate = passes / runs;
+  return {
+    runs,
+    modalVerdict,
+    agreement: modalCount / runs,
+    passRate,
+    variance: passRate * (1 - passRate),
+  };
+}
+
+/** Multi-run judge outcome with agreement statistics. */
+export type ReplayAgreementResult =
+  | {
+      status: "ran";
+      stats: ReplayAgreementStats;
+      verdicts: LlmJudgeVerdict[];
+      rationales: string[];
+      provider: string;
+      modelId: string;
+    }
+  | { status: "skipped"; reason: string }
+  | { status: "failed"; reason: string };
+
+/**
+ * Run the LLM replay judge k times and aggregate agreement statistics. A skip
+ * on the first run propagates immediately (config/model unavailable — k more
+ * calls would fail identically); later skips are ignored, and a failed run
+ * only fails the aggregate when no run succeeded.
+ */
+export async function judgeSkillCandidateWithLlmAgreement(
+  params: {
+    candidate: Candidate;
+    draftedBody: string;
+    agentId?: string;
+    runs?: number;
+  },
+  runJudge: typeof judgeSkillCandidateWithLlm = judgeSkillCandidateWithLlm,
+): Promise<ReplayAgreementResult> {
+  const runs = resolveReplayRuns(params.runs);
+  const verdicts: LlmJudgeVerdict[] = [];
+  const rationales: string[] = [];
+  let provider = "";
+  let modelId = "";
+  for (let attempt = 0; attempt < runs; attempt++) {
+    const result = await runJudge({
+      candidate: params.candidate,
+      draftedBody: params.draftedBody,
+      ...(params.agentId ? { agentId: params.agentId } : {}),
+    });
+    if (result.status === "skipped") {
+      if (verdicts.length === 0 && attempt === 0) {
+        return { status: "skipped", reason: result.reason };
+      }
+      continue;
+    }
+    if (result.status === "failed") {
+      if (verdicts.length === 0 && attempt === runs - 1) {
+        return { status: "failed", reason: result.reason };
+      }
+      continue;
+    }
+    provider = result.provider;
+    modelId = result.modelId;
+    verdicts.push(result.verdict);
+    rationales.push(result.rationale);
+  }
+  if (verdicts.length === 0) {
+    return { status: "failed", reason: "all judge runs skipped or failed" };
+  }
+  return {
+    status: "ran",
+    stats: computeReplayAgreement(verdicts),
+    verdicts,
+    rationales,
+    provider,
+    modelId,
+  };
+}

@@ -268,11 +268,22 @@ export function llmReplayGateStub(): never {
   throw new Error(LLM_REPLAY_TODO);
 }
 
+/** Clamp to [0,1]; guards facet inputs sourced from external signals. */
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
 export async function evaluateGate(params: {
   skillDir: string;
   name: string;
   successScore?: number;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Replay-gate pass rate (0-1) from the multi-run agreement judge
+   * (judgeSkillCandidateWithLlmAgreement). Omitted → neutral 0.5 so legacy
+   * callers keep the pre-integration default.
+   */
+  robustness?: number;
   /**
    * Optional per-facet minimum thresholds. When any computed facet falls below
    * its threshold, the gate fails even when all other checks pass. Omit to
@@ -289,9 +300,9 @@ export async function evaluateGate(params: {
     // default to 0.5 (neutral). Sanity-cap at 1.0 since success scores above 1
     // are clamped for the facet.
     utility: Math.min(1, params.successScore ?? 0.5),
-    // Robustness: not computed yet (replay-gate is a separate lane). Default to
-    // 0.5 (neutral) until the LLM-replay-gate integration threads a pass rate.
-    robustness: 0.5,
+    // Robustness: replay-gate pass rate across k judge runs (multi-run
+    // agreement). Neutral 0.5 when no replay data is threaded in.
+    robustness: clamp01(params.robustness ?? 0.5),
     // Safety: 1.0 when no critical findings; scales down as criticals increase.
     // Each critical finding subtracts 0.25, floor at 0.
     safety: hasCriticalFindings
