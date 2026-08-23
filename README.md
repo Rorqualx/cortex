@@ -96,57 +96,6 @@ Works with npm, pnpm, or bun.
         </picture>
       </a>
     </td>
-New install? Start here: [Getting started](https://docs.openclaw.ai/start/getting-started)
-
-Preferred setup: run `openclaw onboard` in your terminal.
-OpenClaw Onboard guides you step by step through setting up the gateway, workspace, channels, and skills. It is the recommended CLI setup path and works on **macOS, Linux, and Windows**.
-Windows desktop users can start with the native [Windows Hub](https://docs.openclaw.ai/platforms/windows) companion app for setup, tray status, chat, node mode, and local MCP mode.
-Works with npm, pnpm, or bun.
-
-## Sponsors
-
-<table>
-  <tr>
-    <td align="center" width="16.66%">
-      <a href="https://openai.com/">
-        <picture>
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/openai-light.svg">
-          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/openai.svg" alt="OpenAI" height="28">
-        </picture>
-      </a>
-    </td>
-    <td align="center" width="16.66%">
-      <a href="https://github.com/">
-        <picture>
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/github-light.svg">
-          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/github.svg" alt="GitHub" height="28">
-        </picture>
-      </a>
-    </td>
-    <td align="center" width="16.66%">
-      <a href="https://www.nvidia.com/">
-        <picture>
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/nvidia.svg">
-          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/nvidia-dark.svg" alt="NVIDIA" height="28">
-        </picture>
-      </a>
-    </td>
-    <td align="center" width="16.66%">
-      <a href="https://vercel.com/">
-        <picture>
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/vercel-light.svg">
-          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/vercel.svg" alt="Vercel" height="24">
-        </picture>
-      </a>
-    </td>
-    <td align="center" width="16.66%">
-      <a href="https://blacksmith.sh/">
-        <picture>
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/blacksmith-light.svg">
-          <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/sponsors/blacksmith.svg" alt="Blacksmith" height="28">
-        </picture>
-      </a>
-    </td>
     <td align="center" width="16.66%">
       <a href="https://www.convex.dev/">
         <picture>

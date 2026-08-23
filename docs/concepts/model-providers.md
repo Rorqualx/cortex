@@ -158,7 +158,9 @@ Anthropic staff told us OpenClaw-style Claude CLI usage is allowed again, so Ope
   agents: {
     defaults: {
       model: { primary: "openai/gpt-5.5" },
-      agentRuntime: { id: "codex" },
+      models: {
+        "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
+      },
     },
   },
 }
@@ -376,7 +378,7 @@ Kimi Coding uses Moonshot AI's Anthropic-compatible endpoint:
 - Auth: `KIMI_API_KEY`
 - Example model: `kimi/kimi-code`
 
-```json5
+```json5 validate=false
 {
   env: { KIMI_API_KEY: "sk-..." },
   agents: {

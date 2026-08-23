@@ -257,7 +257,7 @@ plugins.
     | Command | Description |
     | --- | --- |
     | `/skill <name> [input]` | Run a skill by name |
-    | `/learn [request]` | Draft one reviewable skill from the current conversation or named sources through [Skill Workshop](/tools/skill-workshop) |
+    | `/learn [request]` | Draft one reviewable skill from the current conversation or named sources through [Skill Forge](/tools/self-learning) |
     | `/loop [interval] <prompt>` | Owner-only. Repeat a prompt in this conversation; omit the interval for self-paced checks |
     | `/loop status` | Owner-only. List loops bound to this conversation |
     | `/loop stop [name]` | Owner-only. Stop matching loops bound to this conversation |
