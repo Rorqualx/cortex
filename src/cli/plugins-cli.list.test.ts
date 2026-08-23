@@ -935,7 +935,7 @@ describe("plugins cli list", () => {
     );
 
     expect(runtimeErrors.at(-1)).toContain(
-      "Skill Workshop is built into OpenClaw, not a plugin; configure it under skills.workshop.",
+      "Skill Workshop is built into OpenClaw, not a plugin; configure it under skills.forge.",
     );
     expect(workshopMocks.detectToolPolicyDiagnostic).toHaveBeenCalledWith({
       config,

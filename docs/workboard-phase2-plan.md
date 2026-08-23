@@ -1,5 +1,7 @@
 # Phase 2: Deep Integration — Expanded Plan
 
+<!-- markdownlint-disable MD024 -- phased plan intentionally repeats Steps/Current state/Target subheadings per section -->
+
 ## 2.1 Merge SQLite into Core DB
 
 ### Pattern
@@ -46,13 +48,16 @@ UI imports `api.ts` explicitly, no message routing.
 ### Steps
 
 1. Create `src/workboard/api.ts`:
+
    ```ts
    export async function wbListCards(store, { boardId, status, section, limit, offset });
    export async function wbCreateCard(store, params);
    // ... all 30 methods as named exports
    ```
+
 2. Update `src/ui/controllers/workboard.ts` — import from `api.ts` instead of calling gateway RPC
 3. Add workboard gateway methods to `src/gateway/methods/core-descriptors.ts`:
+
    ```ts
    {
      name: "workboard.cards.list",
@@ -60,6 +65,7 @@ UI imports `api.ts` explicitly, no message routing.
      handler: (params) => wbListCards(workboardStore, params),
    }
    ```
+
 4. Delete `src/workboard/gateway.ts`
 
 ### UI call sites to update (find from Phase 1 exploration)
@@ -108,12 +114,14 @@ Dispatcher calls `spawnSubagentDirect(params, context)` directly.
 
 1. In `src/workboard/dispatcher.ts`, import `spawnSubagentDirect` from `../../agents/subagent-spawn.js`
 2. Build `SpawnSubagentContext` from the dispatch context:
+
    ```ts
    const ctx: SpawnSubagentContext = {
      agentSessionKey: ownerSessionKey,
      workspaceDir: card.workspaceDir,
    };
    ```
+
 3. Map dispatcher params to `SpawnSubagentParams`:
    - `message` → `task`
    - `sessionKey` → `taskName`
@@ -158,6 +166,7 @@ Core CLI uses `CoreCommandDescriptor` pattern from `src/cli/program/command-regi
 ### Steps
 
 1. Create `src/cli/commands/workboard.ts` following core pattern:
+
    ```ts
    export const workboardCommand: CoreCommandDescriptor = {
      name: "workboard",
@@ -165,12 +174,15 @@ Core CLI uses `CoreCommandDescriptor` pattern from `src/cli/program/command-regi
      load: () => import("./workboard-handler.js"),
    };
    ```
+
 2. Move CLI logic from `src/workboard/cli.ts` → `src/cli/commands/workboard-handler.ts`
 3. Register in `command-registry-core.ts`:
+
    ```ts
    import { workboardCommand } from "../commands/workboard.js";
    CORE_COMMAND_DESCRIPTORS.push(workboardCommand);
    ```
+
 4. Delete `src/workboard/cli.ts`
 
 ---
@@ -180,16 +192,20 @@ Core CLI uses `CoreCommandDescriptor` pattern from `src/cli/program/command-regi
 ### Steps
 
 1. Add `workboard: boolean` to core config schema:
+
    ```ts
    // src/config/schema.ts (or types.openclaw.ts)
    features?: {
      workboard?: boolean;  // default: true
    };
    ```
+
 2. At module initialization, check config:
+
    ```ts
    if (config.features?.workboard === false) return;
    ```
+
 3. DB tables created regardless (idempotent CREATE TABLE IF NOT EXISTS)
 4. Tools not registered when disabled
 

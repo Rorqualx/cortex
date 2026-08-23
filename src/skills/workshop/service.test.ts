@@ -270,7 +270,7 @@ describe("skill workshop proposals", () => {
       const config = {
         skills: {
           load: { allowSymlinkTargets: [targetSkillsDir] },
-          workshop: { allowSymlinkTargetWrites: true },
+          forge: { allowSymlinkTargetWrites: true },
         },
       };
       await expect(
@@ -335,7 +335,7 @@ describe("skill workshop proposals", () => {
       const config = {
         skills: {
           load: { allowSymlinkTargets: [targetSkillsDir] },
-          workshop: { allowSymlinkTargetWrites: true },
+          forge: { allowSymlinkTargetWrites: true },
         },
       };
       const proposal = await proposeCreateSkill({
@@ -1112,7 +1112,7 @@ describe("skill workshop proposals", () => {
       const config = {
         skills: {
           load: { allowSymlinkTargets: [targetSkillsDir] },
-          workshop: { allowSymlinkTargetWrites: true },
+          forge: { allowSymlinkTargetWrites: true },
         },
       };
       const proposal = await proposeCreateSkill({
@@ -1163,7 +1163,7 @@ describe("skill workshop proposals", () => {
       const config = {
         skills: {
           load: { allowSymlinkTargets: [targetSkillsDir] },
-          workshop: { allowSymlinkTargetWrites: true },
+          forge: { allowSymlinkTargetWrites: true },
         },
       };
       const configDir = await tempDirs.make("openclaw-workshop-recovery-env-config-");
@@ -1445,7 +1445,7 @@ describe("skill workshop proposals", () => {
 
   it("enforces configured proposal limits before writing proposal state", async () => {
     const workspaceDir = await makeWorkspace();
-    const limitedConfig = { skills: { workshop: { maxPending: 1, maxSkillBytes: 1024 } } };
+    const limitedConfig = { skills: { forge: { maxPending: 1, maxSkillBytes: 1024 } } };
     const first = await proposeCreateSkill({
       workspaceDir,
       config: limitedConfig,
@@ -1496,7 +1496,7 @@ describe("skill workshop proposals", () => {
 
     const revision = await proposeCreateSkill({
       workspaceDir,
-      config: { skills: { workshop: { maxSkillBytes: 2000 } } },
+      config: { skills: { forge: { maxSkillBytes: 2000 } } },
       name: "Limited Revision",
       description: "Limited revision",
       content: "# Limited Revision\n",

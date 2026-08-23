@@ -35,7 +35,7 @@ async function seedLiveSkill(
 ): Promise<void> {
   const fullTool = createSkillWorkshopTool({
     workspaceDir,
-    config: { skills: { workshop: { approvalPolicy: "auto" } } },
+    config: { skills: { forge: { approvalPolicy: "auto" } } },
   });
   const created = await fullTool.execute("seed-create", {
     action: "create",
@@ -56,7 +56,7 @@ describe("skill_workshop review mode", () => {
     const proposalMutationBudget: SkillWorkshopProposalMutationBudget = { remaining: 1 };
     const tool = createSkillWorkshopTool({
       workspaceDir,
-      config: { skills: { workshop: { approvalPolicy: "auto" } } },
+      config: { skills: { forge: { approvalPolicy: "auto" } } },
       proposalOnly: true,
       proposalMutationBudget,
     });

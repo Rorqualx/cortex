@@ -247,7 +247,7 @@ export async function runPluginsInspectCommand(
         workshopEnabled: true,
       });
       const lines = [
-        "Skill Workshop is built into OpenClaw, not a plugin; configure it under skills.workshop.",
+        "Skill Workshop is built into OpenClaw, not a plugin; configure it under skills.forge.",
       ];
       if (diagnostic) {
         lines.push(diagnostic.message);

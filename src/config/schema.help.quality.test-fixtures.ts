@@ -338,7 +338,7 @@ export const TARGET_KEYS = [
 export const ENUM_EXPECTATIONS: Record<string, string[]> = {
   "session.groupScope": ['"main"', '"per-group"'],
   "bindings[].session.groupScope": ['"main"', '"per-group"'],
-  "skills.workshop.autonomous.mode": ['"off"', '"propose"', '"auto"'],
+  "skills.forge.autonomous.mode": ['"off"', '"propose"', '"auto"'],
   "memory.citations": ['"auto"', '"on"', '"off"'],
   "models.mode": ['"merge"', '"replace"'],
   "models.providers.*.auth": ['"api-key"', '"token"', '"oauth"', '"aws-sdk"'],
@@ -486,7 +486,7 @@ export const FINAL_BACKLOG_TARGET_KEYS = [
   "skills.load.allowSymlinkTargets",
   "skills.load.extraDirs",
   "skills.load.watch",
-  "skills.workshop.allowSymlinkTargetWrites",
+  "skills.forge.allowSymlinkTargetWrites",
   "ui.assistant.avatar",
   "ui.assistant.name",
   "ui.seamColor",

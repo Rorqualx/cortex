@@ -1814,5 +1814,13 @@
   {
     "source": "macOS widget panel",
     "target": "macOS 小组件面板"
+  },
+  {
+    "source": "Subagents",
+    "target": "子智能体"
+  },
+  {
+    "source": "Embedding",
+    "target": "嵌入"
   }
 ]

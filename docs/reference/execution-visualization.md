@@ -210,6 +210,5 @@ const traceGroups = events.reduce((acc, e) => {
 
 ## See Also
 
-- [Agent Events](/agent-events) - Agent event streaming infrastructure
 - [Compaction](/compaction) - Session compaction process
-- [Subagent Spawning](/subagent-spawning) - Subagent spawn lifecycle
+- [Subagents](/tools/subagents) - Subagent spawn lifecycle

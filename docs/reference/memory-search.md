@@ -8,13 +8,14 @@ Memory search enables agents to find relevant past conversations based on semant
 
 ## Configuration
 
-Enable transcript embeddings in your OpenClaw config:
+Enable memory search embeddings in your OpenClaw config:
 
 ```json
 {
-  "transcripts": {
-    "embeddings": {
+  "memory": {
+    "search": {
       "enabled": true,
+      "provider": "openai",
       "model": "text-embedding-3-small"
     }
   }
@@ -23,7 +24,8 @@ Enable transcript embeddings in your OpenClaw config:
 
 **Options:**
 
-- `enabled`: Enable/disable embedding generation (default: `false`)
+- `enabled`: Enable/disable memory search embeddings (default: `false`)
+- `provider`: Embedding provider id (for example `"openai"`)
 - `model`: Embedding model to use (default: `"text-embedding-3-small"`)
 
 ## Memory Search Tool
@@ -103,6 +105,6 @@ For normalized embedding vectors, this is effectively the dot product.
 
 ## See Also
 
-- [Transcripts](/transcripts) - Transcript capture and storage
+- [Transcripts](/cli/transcripts) - Transcript capture and storage
 - [Compaction](/compaction) - Session compaction process
-- [Embedding Providers](/embedding-providers) - Configuring embedding providers
+- [Embedding](/gateway/embedding) - Configuring embedding providers

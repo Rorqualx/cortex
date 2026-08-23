@@ -247,7 +247,7 @@ publish and sync.
     roots whose resolved realpath stays inside the configured root, unless
     `skills.load.allowSymlinkTargets` explicitly trusts a target root.
     Skill Workshop writes through those trusted targets only when
-    `skills.workshop.allowSymlinkTargetWrites` is enabled.
+    `skills.forge.allowSymlinkTargetWrites` is enabled.
     Managed `~/.openclaw/skills` and personal `~/.agents/skills` may contain
     symlinked skill folders, but every `SKILL.md` realpath must still stay
     inside its resolved skill directory.
@@ -590,7 +590,7 @@ aligned.
     for intentional symlinked layouts where a skill
     root symlink points outside the configured root, for example
     `<workspace>/skills/manager -> ~/Projects/manager/skills`.
-    Enable `skills.workshop.allowSymlinkTargetWrites` only when Skill Workshop
+    Enable `skills.forge.allowSymlinkTargetWrites` only when Skill Forge
     should also apply proposals through those trusted symlinked paths.
 
   </Accordion>

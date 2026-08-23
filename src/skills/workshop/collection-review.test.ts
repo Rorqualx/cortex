@@ -102,7 +102,7 @@ describe("skill collection review", () => {
             },
           ],
         },
-        skills: { workshop: { autonomous: { mode: "auto" } } },
+        skills: { forge: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
       onError,
@@ -166,7 +166,7 @@ describe("skill collection review", () => {
     await runScheduledSkillCollectionReviews({
       config: {
         agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-        skills: { workshop: { autonomous: { mode: "auto" } } },
+        skills: { forge: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
       onError,
@@ -328,7 +328,7 @@ describe("skill collection review", () => {
         },
         skills: {
           entries: { disabled: { enabled: false } },
-          workshop: { autonomous: { mode: "auto" } },
+          forge: { autonomous: { mode: "auto" } },
         },
       },
       env: testState.env,
@@ -365,7 +365,7 @@ describe("skill collection review", () => {
           agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
           skills: {
             load: { allowSymlinkTargets: [path.join(targetSkillsDir, "skills")] },
-            workshop: { autonomous: { mode: "auto" } },
+            forge: { autonomous: { mode: "auto" } },
           },
         },
         env: testState.env,
@@ -406,7 +406,7 @@ describe("skill collection review", () => {
     });
     const config = {
       agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-      skills: { workshop: { autonomous: { mode: "auto" as const } } },
+      skills: { forge: { autonomous: { mode: "auto" as const } } },
     };
 
     const onError = vi.fn();
@@ -484,7 +484,7 @@ describe("skill collection review", () => {
             { id: "beta-agent", workspace: workspaceDir, skills: ["beta"] },
           ],
         },
-        skills: { workshop: { autonomous: { mode: "auto" } } },
+        skills: { forge: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
     });
@@ -530,7 +530,7 @@ describe("skill collection review", () => {
             },
           ],
         },
-        skills: { workshop: { autonomous: { mode: "auto" } } },
+        skills: { forge: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
       onError,
@@ -570,7 +570,7 @@ describe("skill collection review", () => {
             },
           ],
         },
-        skills: { workshop: { autonomous: { mode: "auto" } } },
+        skills: { forge: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
       onError,
@@ -626,7 +626,7 @@ describe("skill collection review", () => {
     });
     const config = {
       agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-      skills: { workshop: { autonomous: { mode: "auto" as const } } },
+      skills: { forge: { autonomous: { mode: "auto" as const } } },
     };
     const first = runScheduledSkillCollectionReviews({ config, env: testState.env });
     await started;
@@ -694,7 +694,7 @@ describe("skill collection review", () => {
             { id: "healthy", workspace: healthyWorkspace },
           ],
         },
-        skills: { workshop: { autonomous: { mode: "auto" } } },
+        skills: { forge: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
       onError,
@@ -719,7 +719,7 @@ describe("skill collection review", () => {
     const params = {
       config: {
         agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-        skills: { workshop: { autonomous: { mode: "auto" as const } } },
+        skills: { forge: { autonomous: { mode: "auto" as const } } },
       },
       env: testState.env,
       onError,
@@ -752,7 +752,7 @@ describe("skill collection review", () => {
     await runScheduledSkillCollectionReviews({
       config: {
         agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-        skills: { workshop: { autonomous: { mode: "auto" } } },
+        skills: { forge: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
       onError,

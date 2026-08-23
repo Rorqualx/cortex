@@ -1185,6 +1185,33 @@ if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
 fi
 
 cmd="${1:-route}"
+
+# Singleton for huey-proof paths. A tick's proof cycle (baseline+candidate on huey)
+# runs ~40-50min, longer than the hourly cadence, so the scheduler can launch a fresh
+# invocation while the previous one is still proving. Concurrent runs then collide on
+# huey's PROOF_DIR lock (remote-proof EXIT=97) and burn the cycle. Skip this tick when
+# a previous huey-using invocation still holds the lock; reclaim only when the recorded
+# holder pid is dead. measure/stage-init are local-only and never take the lock.
+case "$cmd" in
+  route | finish-land | stage-finish)
+    UM_LOCK_DIR="/tmp/openclaw-upstream-merge.lock.d"
+    if ! mkdir "$UM_LOCK_DIR" 2>/dev/null; then
+      um_holder="$(cat "$UM_LOCK_DIR/pid" 2>/dev/null || true)"
+      if [ -n "$um_holder" ] && kill -0 "$um_holder" 2>/dev/null; then
+        echo "UPSTREAM-MERGE SKIP: invocation pid=$um_holder still running; deferring this $cmd tick."
+        exit 0
+      fi
+      echo "UPSTREAM-MERGE: reclaiming stale lock (holder pid=${um_holder:-none} not alive)"
+      rm -rf "$UM_LOCK_DIR"
+      mkdir "$UM_LOCK_DIR" 2>/dev/null || {
+        echo "UPSTREAM-MERGE SKIP: lock race; deferring this $cmd tick."
+        exit 0
+      }
+    fi
+    printf '%s\n' "$$" >"$UM_LOCK_DIR/pid"
+    trap 'rm -rf "$UM_LOCK_DIR"' EXIT
+    ;;
+esac
 case "$cmd" in
   route)
     require_main_clean

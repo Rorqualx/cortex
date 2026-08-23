@@ -69,7 +69,7 @@ describe("skill collection review gateway admission", () => {
     await runScheduledSkillCollectionReviews({
       config: {
         agents: { list: [{ id: "main", default: true, workspace: workspaceDir }] },
-        skills: { workshop: { autonomous: { mode: "auto" } } },
+        skills: { forge: { autonomous: { mode: "auto" } } },
       },
       env: testState.env,
       onError,

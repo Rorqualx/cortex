@@ -151,7 +151,7 @@ describe("config help copy quality", () => {
   }
 
   it("describes auto-mode collection mutation", () => {
-    const help = requireHelp("skills.workshop.autonomous.mode");
+    const help = requireHelp("skills.forge.autonomous.mode");
     expect(help).toContain("daily");
     expect(help).toContain("rewrite or drop");
   });

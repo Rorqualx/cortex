@@ -10,7 +10,7 @@ sidebarTitle: "Self-learning"
 
 Self-learning turns corrections and successful work into reusable skills. Skills
 are the durable unit: they hold procedures that future sessions can discover and
-follow. Every learned skill flows through [Skill Workshop](/tools/skill-workshop),
+follow. Every learned skill flows through Skill Forge,
 the same governed proposal, scan, apply, and lifecycle path used for explicit
 skill authoring.
 
@@ -114,9 +114,9 @@ The reviewer should abstain for:
 Set the mode with the CLI:
 
 ```bash
-openclaw config set skills.workshop.autonomous.mode auto
-openclaw config set skills.workshop.autonomous.mode propose
-openclaw config set skills.workshop.autonomous.mode off
+openclaw config set skills.forge.autonomous.mode auto
+openclaw config set skills.forge.autonomous.mode propose
+openclaw config set skills.forge.autonomous.mode off
 ```
 
 Or edit `~/.openclaw/openclaw.json`:
@@ -124,7 +124,7 @@ Or edit `~/.openclaw/openclaw.json`:
 ```json5
 {
   skills: {
-    workshop: {
+    forge: {
       autonomous: {
         mode: "auto",
       },
@@ -272,13 +272,13 @@ result pending regardless of autonomous mode.
 
 ## Configuration reference
 
-| Setting                                    | Default  | Effect                                                                                                                   |
-| ------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `skills.workshop.autonomous.mode`          | `"auto"` | Chooses capture behavior; `auto` also enables daily collection review.                                                   |
-| `skills.workshop.approvalPolicy`           | `"auto"` | Controls prompts for normal agent-initiated lifecycle calls. It never expands the isolated reviewer tool surface.        |
-| `skills.workshop.maxPending`               | `50`     | Caps pending and quarantined proposals per workspace.                                                                    |
-| `skills.workshop.maxSkillBytes`            | `40000`  | Caps proposal body size in bytes.                                                                                        |
-| `skills.workshop.allowSymlinkTargetWrites` | `false`  | Allows apply through explicitly trusted workspace skill symlinks. Capture itself does not widen the trusted target list. |
+| Setting                                 | Default  | Effect                                                                                                                   |
+| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `skills.forge.autonomous.mode`          | `"auto"` | Chooses capture behavior; `auto` also enables daily collection review.                                                   |
+| `skills.forge.approvalPolicy`           | `"auto"` | Controls prompts for normal agent-initiated lifecycle calls. It never expands the isolated reviewer tool surface.        |
+| `skills.forge.maxPending`               | `50`     | Caps pending and quarantined proposals per workspace.                                                                    |
+| `skills.forge.maxSkillBytes`            | `40000`  | Caps proposal body size in bytes.                                                                                        |
+| `skills.forge.allowSymlinkTargetWrites` | `false`  | Allows apply through explicitly trusted workspace skill symlinks. Capture itself does not widen the trusted target list. |
 
 See [Skills config](/tools/skills-config#workshop-skills-workshop) for ranges and
 the complete `skills.*` schema.
@@ -289,7 +289,7 @@ the complete `skills.*` schema.
 
 Check the following:
 
-1. `skills.workshop.autonomous.mode` is `propose` or `auto` in the active Gateway
+1. `skills.forge.autonomous.mode` is `propose` or `auto` in the active Gateway
    config.
 2. The turn reached at least 10 model iterations without ending in a provider or
    prompt error.
@@ -326,15 +326,14 @@ Switch to `propose` to review every capture, or `off` to disable autonomous
 capture:
 
 ```bash
-openclaw config set skills.workshop.autonomous.mode propose
-openclaw config set skills.workshop.autonomous.mode off
+openclaw config set skills.forge.autonomous.mode propose
+openclaw config set skills.forge.autonomous.mode off
 ```
 
 Existing proposals and applied skills remain visible after the mode changes.
 
 ## Related
 
-- [Skill Workshop](/tools/skill-workshop) for proposal lifecycle and storage
 - [Creating skills](/tools/creating-skills) for hand-authored skills
 - [Skills config](/tools/skills-config) for every `skills.*` setting
 - [Skills CLI](/cli/skills) for Workshop commands

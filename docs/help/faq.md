@@ -187,25 +187,23 @@ lives on the [First-run FAQ](/help/faq-first-run).
     ```json5
     {
       agents: {
-        list: [
-          {
-            id: "coder",
+        entries: {
+          coder: {
             model: "xiaomi/mimo-v2.5-pro",
             thinkingDefault: "high",
             params: { temperature: 0.1 },
           },
-          {
-            id: "chat",
+          chat: {
             model: "xiaomi/mimo-v2.5-pro",
             thinkingDefault: "off",
             params: { temperature: 0.8 },
           },
-        ],
+        },
       },
     }
     ```
 
-    Put shared per-model defaults in `agents.defaults.models["provider/model"].params`, then put agent-specific overrides in flat `agents.list[].params`. Do not define separate nested `agents.list[].models["provider/model"].params` entries for the same model; `agents.list[].models` is for per-agent model catalog and runtime overrides.
+    Put shared per-model defaults in `agents.defaults.models["provider/model"].params`, then put agent-specific overrides in flat `agents.entries.*.params`. Do not define separate nested `agents.entries.*.models["provider/model"].params` entries for the same model; `agents.entries.*.models` is for per-agent model catalog and runtime overrides.
 
     See [Cron jobs](/automation/cron-jobs), [Multi-Agent Routing](/concepts/multi-agent), [Configuration](/gateway/config-agents), and [Slash commands](/tools/slash-commands).
 
@@ -650,13 +648,12 @@ lives on the [First-run FAQ](/help/faq-first-run).
     ```json5
     {
       agents: {
-        list: [
-          {
-            id: "main",
+        entries: {
+          main: {
             bootstrapMaxChars: 50000,
             bootstrapTotalMaxChars: 300000,
           },
-        ],
+        },
       },
     }
     ```
@@ -1130,7 +1127,7 @@ lives on the [First-run FAQ](/help/faq-first-run).
 
     You can also define inline env vars in config (applied only if missing from the process env):
 
-    ```json5
+    ```json5 validate=false
     {
       env: {
         OPENROUTER_API_KEY: "sk-or-...",
@@ -1202,7 +1199,7 @@ lives on the [First-run FAQ](/help/faq-first-run).
   </Accordion>
 
   <Accordion title="Do sessions reset automatically if I never send /new?">
-    Sessions can expire after `session.idleMinutes`, but this is **disabled by default** (default **0**).
+    Sessions can expire after `session.reset.idleMinutes`, but this is **disabled by default** (default **0**).
     Set it to a positive value to enable idle expiry. When enabled, the **next**
     message after the idle period starts a fresh session id for that chat key.
     This does not delete transcripts - it just starts a new session.
@@ -1210,7 +1207,9 @@ lives on the [First-run FAQ](/help/faq-first-run).
     ```json5
     {
       session: {
-        idleMinutes: 240,
+        reset: {
+          idleMinutes: 240,
+        },
       },
     }
     ```

@@ -38,7 +38,7 @@ afterAll(async () => {
 
 const CONFIG = {
   skills: {
-    workshop: {
+    forge: {
       autonomous: {
         mode: "propose" as const,
       },

@@ -66,7 +66,7 @@ describe("experience review auto apply", () => {
         modelProviderId: "openai",
         modelId: "gpt-test",
       },
-      config: { skills: { workshop: { autonomous: { mode: "auto" } } } },
+      config: { skills: { forge: { autonomous: { mode: "auto" } } } },
       transcript: "[user]\nRecover the deployment workflow.",
       modelIterations: 10,
     };
@@ -99,7 +99,7 @@ describe("experience review auto apply", () => {
     const skillDir = path.join(canonicalWorkspaceDir, "skills", "deployment-preflight");
     const seedTool = createSkillWorkshopTool({
       workspaceDir: canonicalWorkspaceDir,
-      config: { skills: { workshop: { approvalPolicy: "auto" } } },
+      config: { skills: { forge: { approvalPolicy: "auto" } } },
     });
     const seeded = await seedTool.execute("seed-create", {
       action: "create",
@@ -150,7 +150,7 @@ describe("experience review auto apply", () => {
       },
       config: {
         agents: { list: [{ id: "main", default: true, workspace: canonicalWorkspaceDir }] },
-        skills: { workshop: { autonomous: { mode: "auto" as const } } },
+        skills: { forge: { autonomous: { mode: "auto" as const } } },
       },
       transcript: "[user]\nRefine the deployment workflow.",
       modelIterations: 10,
@@ -191,7 +191,7 @@ describe("experience review auto apply", () => {
     const workspaceDir = await tempDirs.make("openclaw-experience-auto-apply-extend-");
     const seedTool = createSkillWorkshopTool({
       workspaceDir,
-      config: { skills: { workshop: { approvalPolicy: "auto" } } },
+      config: { skills: { forge: { approvalPolicy: "auto" } } },
     });
     const seeded = await seedTool.execute("seed-create", {
       action: "create",
@@ -234,7 +234,7 @@ describe("experience review auto apply", () => {
         modelProviderId: "openai",
         modelId: "gpt-test",
       },
-      config: { skills: { workshop: { autonomous: { mode: "auto" } } } },
+      config: { skills: { forge: { autonomous: { mode: "auto" } } } },
       transcript: "[user]\nRefine the deployment workflow.",
       modelIterations: 10,
     };
@@ -273,7 +273,7 @@ describe("experience review auto apply", () => {
         modelProviderId: "openai",
         modelId: "gpt-test",
       },
-      config: { skills: { workshop: { autonomous: { mode: "propose" } } } },
+      config: { skills: { forge: { autonomous: { mode: "propose" } } } },
       transcript: "[user]\nRecover the deployment workflow.",
       modelIterations: 10,
     };
@@ -323,14 +323,14 @@ describe("experience review auto apply", () => {
         modelProviderId: "openai",
         modelId: "gpt-test",
       },
-      config: { skills: { workshop: { autonomous: { mode: "auto" } } } },
+      config: { skills: { forge: { autonomous: { mode: "auto" } } } },
       transcript: "[user]\nRecover the deployment workflow.",
       modelIterations: 10,
     };
 
     await runSkillExperienceReview(candidate, {
       getCurrentConfig: () => ({
-        skills: { workshop: { autonomous: { mode: "propose" } } },
+        skills: { forge: { autonomous: { mode: "propose" } } },
       }),
     });
 
@@ -365,7 +365,7 @@ describe("experience review auto apply", () => {
       });
       return {};
     });
-    const config = { skills: { workshop: { autonomous: { mode: "auto" as const } } } };
+    const config = { skills: { forge: { autonomous: { mode: "auto" as const } } } };
 
     await runSkillExperienceReview(
       {
