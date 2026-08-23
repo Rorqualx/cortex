@@ -4489,6 +4489,13 @@ export const en: TranslationMap = {
       no: "No",
       yes: "Yes",
     },
+    running: {
+      title: "Running now",
+      subtitle: "Automations executing in real time.",
+      none: "No automations running right now.",
+      for: "running for {elapsed}",
+      count: "{count} running",
+    },
     jobList: {
       allJobs: "All automations",
       disabled: "Disabled",

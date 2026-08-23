@@ -445,9 +445,47 @@ function loadConfigSchemaAfterPrimary(
   );
 }
 
+// Live "Running now" cron monitor. While the Automations tab is open, poll the
+// cheap running-state RPCs so the strip reflects starts/finishes and ticks the
+// elapsed counter without an operator refresh. Only the cron tab arms it; every
+// other tab switch tears it down (see refreshActiveTab), so it never polls in
+// the background. 5s granularity is ample for jobs that run for minutes/hours.
+const CRON_MONITOR_POLL_MS = 5000;
+let cronMonitorTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopCronMonitor() {
+  if (cronMonitorTimer !== null) {
+    clearInterval(cronMonitorTimer);
+    cronMonitorTimer = null;
+  }
+}
+
+function startCronMonitor(host: SettingsHost) {
+  stopCronMonitor();
+  const app = host as unknown as SettingsAppHost;
+  cronMonitorTimer = setInterval(() => {
+    // The operator navigated away between ticks (a race the tab-switch teardown
+    // can't cover if this fires first): stop rather than poll the wrong tab.
+    if (host.tab !== "cron") {
+      stopCronMonitor();
+      return;
+    }
+    // Background poll: refreshes job rows (each carries state.runningAtMs, which
+    // feeds the "Running now" strip) without flipping the Refresh button's loading
+    // state or the error banner. Rejections are swallowed — this runs every tick,
+    // so an unhandled rejection would repeat; a failed poll just skips one refresh
+    // and the strip keeps the last-known jobs until the next tick succeeds.
+    void loadCronJobsPage(app, { tableFilters: true, background: true })
+      .catch(() => undefined)
+      .finally(() => host.requestUpdate?.());
+  }, CRON_MONITOR_POLL_MS);
+}
+
 export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?: boolean }) {
   const app = host as unknown as SettingsAppHost;
   const refreshRun = beginControlUiRefresh(host, host.tab);
+  // Any tab switch leaves the cron monitor's watch scope; the cron case re-arms.
+  stopCronMonitor();
   try {
     switch (host.tab) {
       case "config":
@@ -531,6 +569,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         break;
       case "cron":
         await loadCron(host);
+        startCronMonitor(host);
         break;
       case "skills":
         await loadAgents(app);
