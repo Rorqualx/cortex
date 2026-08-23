@@ -10,6 +10,8 @@ Re-integrate a big upstream delta (hundreds–thousands of commits) into the `co
 **Use when:** the fork is far behind `upstream/main` and you need a full catch-up.
 **Don't use for:** cherry-picking one upstream fix (just `git cherry-pick`), or routine fork work.
 
+> **Autonomous/hourly cron resolution: read `docs/refactor/upstream-resync-cron-playbook.md` FIRST.** It carries the fork-specific operational specifics this skill omits — exact hourly workflow + commands, the tsgo lane baseline table (validate by error-set diff, not exit codes), and the hard-won gotchas (huey audit-writer 3000ms flake, control-ui startup-JS budget bump, stale huey proof flock, x64-node deploy, ~90–150s boot, post-land committer→git-commit fix). It supersedes stale memory where they conflict.
+
 This is a _re-integration project, not a fast-forward_. Plan for multiple passes with the maintainer in the loop on convergent product decisions. Do everything on an isolated worktree/branch; never touch `main` or the live gateway until the maintainer lands.
 
 ---
