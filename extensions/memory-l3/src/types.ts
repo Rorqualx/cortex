@@ -635,6 +635,38 @@ export type L3MetricEntry = {
 };
 
 /**
+ * Reacquisition telemetry row (ReFind finding 7, 2026-08-23): one record per
+ * after-turn compaction event, capturing the tool-call rate immediately before
+ * the compaction and (filled at the session's next compaction event) the rate
+ * after it. A post-compaction tool-call rate spike is the measurable cost of
+ * context loss — the agent re-fetching/re-deriving information compaction
+ * threw away. Detection is deliberately raw call-rate deltas only; no behavior
+ * changes key off this signal yet.
+ */
+export type L3CompactionEventEntry = {
+  /** Auto-increment row id (present on rows read back from storage). */
+  eventId?: number;
+  /** Session the compaction ran for. */
+  sessionId: string;
+  /** Message-array length at event time (session-scoped cursor). */
+  messageCursor: number;
+  /** Compaction input tokens (cost proxy for the event). */
+  tokensBefore: number;
+  /** Number of messages inspected for the before-window. */
+  messagesBefore: number;
+  /** Executed tool calls (tool-result messages) in the before-window. */
+  toolCallsBefore: number;
+  /** Messages observed after the event (set at the next event). */
+  messagesAfter?: number;
+  /** Executed tool calls after the event (set at the next event). */
+  toolCallsAfter?: number;
+  /** True when the after-rate exceeded the before-rate by the spike ratio. */
+  reacquisitionSpike?: boolean;
+  /** Row creation time (ms epoch). */
+  createdAt: number;
+};
+
+/**
  * Gap analysis result from Sufficient Context Agent. Indicates which
  * fields or entities from the query are missing from the retrieved facts.
  */

@@ -50,6 +50,22 @@ import type { L3State } from "./types.js";
 const ASSEMBLE_TOP_K = 5;
 const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
 
+// Reacquisition telemetry (ReFind finding 7, 2026-08-23): window of messages
+// inspected for per-message tool-call rates around each after-turn compaction,
+// and the before→after rate multiplier that counts as a reacquisition spike.
+// Detection only — nothing keys off the signal yet.
+const REACQUISITION_WINDOW_MESSAGES = 20;
+const REACQUISITION_SPIKE_RATIO = 1.5;
+
+/** Count executed tool calls (tool-result messages) in a message slice. */
+function countToolResults(messages: readonly AgentMessage[]): number {
+  let count = 0;
+  for (const message of messages) {
+    if (message.role === "toolResult") count += 1;
+  }
+  return count;
+}
+
 // ReTopK retrieval cache (arXiv:2607.27692) — session-scoped LRU that reuses
 // retrieval results when a new query's embedding cosine-similarity to a
 // cached query exceeds RETOPK_SIMILARITY_THRESHOLD. Cache is bounded and
@@ -439,6 +455,48 @@ export class HierarchicalL3Engine implements ContextEngine {
         this.state.compactedMessageCountBySession[params.sessionId] = params.messages.length;
         // Invalidate ReTopK cache — new facts were persisted.
         this.invalidateRetrievalCache();
+        // Reacquisition telemetry (finding 7): record the compaction event with
+        // the pre-compaction tool-call rate, and back-fill the previous open
+        // event for this session with its post-compaction rate + spike verdict.
+        // Failures are non-fatal — telemetry must never break compaction.
+        try {
+          const cursor = params.messages.length;
+          const open = await this.storage.readOpenCompactionEvent(params.sessionId);
+          if (open && open.eventId !== undefined && cursor > open.messageCursor) {
+            const afterMessages = params.messages.slice(open.messageCursor, cursor);
+            const toolCallsAfter = countToolResults(afterMessages);
+            const beforeRate = open.toolCallsBefore / Math.max(1, open.messagesBefore);
+            const afterRate = toolCallsAfter / Math.max(1, afterMessages.length);
+            const spike = toolCallsAfter > 0 && afterRate > beforeRate * REACQUISITION_SPIKE_RATIO;
+            await this.storage.completeCompactionEvent(
+              open.eventId,
+              afterMessages.length,
+              toolCallsAfter,
+              spike,
+            );
+            if (spike) {
+              l3debug(
+                `afterTurn(): reacquisition_spike sessionId=${params.sessionId} beforeRate=${beforeRate.toFixed(3)} afterRate=${afterRate.toFixed(3)} toolCalls=${toolCallsAfter}/${afterMessages.length}`,
+              );
+            }
+          }
+          const beforeWindow = params.messages.slice(
+            Math.max(0, cursor - REACQUISITION_WINDOW_MESSAGES),
+            cursor,
+          );
+          await this.storage.recordCompactionEvent({
+            sessionId: params.sessionId,
+            messageCursor: cursor,
+            tokensBefore: result.tokensBefore,
+            messagesBefore: beforeWindow.length,
+            toolCallsBefore: countToolResults(beforeWindow),
+            createdAt: now,
+          });
+        } catch (reacqErr) {
+          console.error(
+            `[memory-l3] reacquisition telemetry failed: ${(reacqErr as Error).message}`,
+          );
+        }
       }
       // QW5 (2026-08-16, arXiv:2608.11879): cost-attribution accumulators
       // for this engine cycle — one l3_metrics row per afterTurn covering

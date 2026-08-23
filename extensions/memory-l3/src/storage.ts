@@ -28,6 +28,7 @@ import {
   type TopicLink,
   type RetrievalSignal,
   type L3MetricEntry,
+  type L3CompactionEventEntry,
 } from "./types.js";
 
 const DB_FILENAME = "l3.sqlite";
@@ -108,6 +109,19 @@ CREATE TABLE IF NOT EXISTS l3_metrics (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS l3_metrics_created ON l3_metrics (created_at, session_id);
+CREATE TABLE IF NOT EXISTS l3_compaction_events (
+  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  message_cursor INTEGER NOT NULL,
+  tokens_before INTEGER NOT NULL DEFAULT 0,
+  messages_before INTEGER NOT NULL DEFAULT 0,
+  tool_calls_before INTEGER NOT NULL DEFAULT 0,
+  messages_after INTEGER,
+  tool_calls_after INTEGER,
+  reacquisition_spike INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS l3_compaction_events_session ON l3_compaction_events (session_id, created_at);
 `;
 
 /**
@@ -641,6 +655,135 @@ export class Storage {
       demotions: row.demotions,
       merges: row.merges,
       tokensSpent: row.tokens_spent,
+      createdAt: row.created_at,
+    }));
+  }
+
+  // -----------------------------------------------------------------
+  // Reacquisition telemetry (ReFind finding 7, 2026-08-23) — one row per
+  // after-turn compaction event; the after-window stats are back-filled at
+  // the session's next event so before/after tool-call rates join on one row.
+  // -----------------------------------------------------------------
+
+  /** Append one compaction-event row (before-window stats only). */
+  async recordCompactionEvent(
+    entry: Omit<
+      L3CompactionEventEntry,
+      "messagesAfter" | "toolCallsAfter" | "reacquisitionSpike" | "createdAt"
+    > & {
+      createdAt?: number;
+    },
+  ): Promise<number> {
+    const info = this.database()
+      .prepare(
+        "INSERT INTO l3_compaction_events (session_id, message_cursor, tokens_before, messages_before, tool_calls_before, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        entry.sessionId,
+        Math.max(0, Math.trunc(entry.messageCursor)),
+        Math.max(0, Math.trunc(entry.tokensBefore)),
+        Math.max(0, Math.trunc(entry.messagesBefore)),
+        Math.max(0, Math.trunc(entry.toolCallsBefore)),
+        entry.createdAt ?? Date.now(),
+      );
+    return Number(info.lastInsertRowid);
+  }
+
+  /**
+   * Latest compaction event for a session whose after-window stats are still
+   * open (null when none exists). Used to back-fill at the next event.
+   */
+  async readOpenCompactionEvent(sessionId: string): Promise<L3CompactionEventEntry | null> {
+    const row = this.database()
+      .prepare(
+        "SELECT event_id, session_id, message_cursor, tokens_before, messages_before, tool_calls_before, messages_after, tool_calls_after, reacquisition_spike, created_at FROM l3_compaction_events WHERE session_id = ? AND tool_calls_after IS NULL ORDER BY event_id DESC LIMIT 1",
+      )
+      .get(sessionId) as
+      | {
+          event_id: number;
+          session_id: string;
+          message_cursor: number;
+          tokens_before: number;
+          messages_before: number;
+          tool_calls_before: number;
+          messages_after: number | null;
+          tool_calls_after: number | null;
+          reacquisition_spike: number | null;
+          created_at: number;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      eventId: row.event_id,
+      sessionId: row.session_id,
+      messageCursor: row.message_cursor,
+      tokensBefore: row.tokens_before,
+      messagesBefore: row.messages_before,
+      toolCallsBefore: row.tool_calls_before,
+      messagesAfter: row.messages_after ?? undefined,
+      toolCallsAfter: row.tool_calls_after ?? undefined,
+      reacquisitionSpike:
+        row.reacquisition_spike === null ? undefined : row.reacquisition_spike === 1,
+      createdAt: row.created_at,
+    };
+  }
+
+  /** Back-fill the after-window stats (and spike verdict) on an open event row. */
+  async completeCompactionEvent(
+    eventId: number,
+    messagesAfter: number,
+    toolCallsAfter: number,
+    reacquisitionSpike: boolean,
+  ): Promise<void> {
+    this.database()
+      .prepare(
+        "UPDATE l3_compaction_events SET messages_after = ?, tool_calls_after = ?, reacquisition_spike = ? WHERE event_id = ?",
+      )
+      .run(
+        Math.max(0, Math.trunc(messagesAfter)),
+        Math.max(0, Math.trunc(toolCallsAfter)),
+        reacquisitionSpike ? 1 : 0,
+        eventId,
+      );
+  }
+
+  /** Read compaction-event rows, optionally restricted to those at/after `sinceMs`. */
+  async readCompactionEvents(sinceMs?: number): Promise<L3CompactionEventEntry[]> {
+    const rows = (
+      sinceMs === undefined
+        ? this.database()
+            .prepare(
+              "SELECT event_id, session_id, message_cursor, tokens_before, messages_before, tool_calls_before, messages_after, tool_calls_after, reacquisition_spike, created_at FROM l3_compaction_events ORDER BY event_id",
+            )
+            .all()
+        : this.database()
+            .prepare(
+              "SELECT event_id, session_id, message_cursor, tokens_before, messages_before, tool_calls_before, messages_after, tool_calls_after, reacquisition_spike, created_at FROM l3_compaction_events WHERE created_at >= ? ORDER BY event_id",
+            )
+            .all(sinceMs)
+    ) as Array<{
+      event_id: number;
+      session_id: string;
+      message_cursor: number;
+      tokens_before: number;
+      messages_before: number;
+      tool_calls_before: number;
+      messages_after: number | null;
+      tool_calls_after: number | null;
+      reacquisition_spike: number | null;
+      created_at: number;
+    }>;
+    return rows.map((row) => ({
+      eventId: row.event_id,
+      sessionId: row.session_id,
+      messageCursor: row.message_cursor,
+      tokensBefore: row.tokens_before,
+      messagesBefore: row.messages_before,
+      toolCallsBefore: row.tool_calls_before,
+      messagesAfter: row.messages_after ?? undefined,
+      toolCallsAfter: row.tool_calls_after ?? undefined,
+      reacquisitionSpike:
+        row.reacquisition_spike === null ? undefined : row.reacquisition_spike === 1,
       createdAt: row.created_at,
     }));
   }

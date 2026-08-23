@@ -317,6 +317,46 @@ describe("Storage cost-attribution metrics (QW5 2026-08-16)", () => {
       tokensSpent: 0,
     });
   });
+
+  it("records compaction events and back-fills after-window stats with spike verdicts", async () => {
+    await storage.ensureLayout();
+    const eventId = await storage.recordCompactionEvent({
+      sessionId: "session-a",
+      messageCursor: 40,
+      tokensBefore: 4200,
+      messagesBefore: 20,
+      toolCallsBefore: 2,
+      createdAt: 1_000,
+    });
+    // Open event: after-window stats are still undefined.
+    const open = await storage.readOpenCompactionEvent("session-a");
+    expect(open).toMatchObject({
+      eventId,
+      sessionId: "session-a",
+      messageCursor: 40,
+      toolCallsBefore: 2,
+      messagesAfter: undefined,
+      toolCallsAfter: undefined,
+      reacquisitionSpike: undefined,
+    });
+    // Other sessions do not see it.
+    expect(await storage.readOpenCompactionEvent("session-b")).toBeNull();
+    // beforeRate = 2/20 = 0.1; after: 8 calls / 10 messages = 0.8 > 0.15 → spike.
+    await storage.completeCompactionEvent(eventId, 10, 8, true);
+    // Completed events are no longer open.
+    expect(await storage.readOpenCompactionEvent("session-a")).toBeNull();
+    const rows = await storage.readCompactionEvents();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      sessionId: "session-a",
+      messagesAfter: 10,
+      toolCallsAfter: 8,
+      reacquisitionSpike: true,
+      createdAt: 1_000,
+    });
+    const since = await storage.readCompactionEvents(2_000);
+    expect(since).toHaveLength(0);
+  });
 });
 
 function makeChunk(id: string, createdAt: number): L2ChunkFrontmatter {
