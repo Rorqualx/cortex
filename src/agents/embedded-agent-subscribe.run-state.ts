@@ -90,6 +90,7 @@ export function createEmbeddedAgentSubscribeState(
     pendingToolMediaAttachments: initialPendingToolMedia.attachments,
     pendingToolMediaTrustByUrl: initialPendingToolMedia.trustByUrl,
     pendingToolAudioAsVoice: false,
+    pendingToolMediaDeliveryFailed: false,
     hasToolMediaBlockReply: false,
     visibleBlockReplyCount: 0,
     pendingAssistantReplyDirectives: undefined,

@@ -1,3 +1,4 @@
+import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 /**
  * Subscribes to embedded-agent sessions and streams formatted replies/events.
  */
@@ -50,14 +51,12 @@ import type {
   EmbeddedAgentSubscribeContext,
   EmbeddedAgentSubscribeState,
 } from "./embedded-agent-subscribe.handlers.types.js";
-import { buildToolLifecycleErrorResult } from "./embedded-agent-tool-results.js";
-import {
-  consumeTrustedToolNoStartError,
-  registerTrustedToolNoStartError,
-} from "./tool-result-error.js";
-import { extractToolResultMediaArtifact, filterToolResultMediaUrls } from "./embedded-agent-tool-media.js";
-import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
+import {
+  extractToolResultMediaArtifact,
+  filterToolResultMediaUrls,
+} from "./embedded-agent-tool-media.js";
+import { buildToolLifecycleErrorResult } from "./embedded-agent-tool-results.js";
 import {
   createThinkingTagStreamState,
   stripDowngradedToolCallText,
@@ -68,6 +67,10 @@ import { hasGeneratedMediaCompletionEvent } from "./internal-event-contract.js";
 import type { AgentInternalEvent } from "./internal-events.js";
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
+import {
+  consumeTrustedToolNoStartError,
+  registerTrustedToolNoStartError,
+} from "./tool-result-error.js";
 import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
 const STREAM_STRIPPED_BLOCK_TAG_NAMES = [
@@ -278,6 +281,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     pendingToolMediaAttachments: initialPendingToolMedia.attachments,
     pendingToolMediaTrustByUrl: initialPendingToolMedia.trustByUrl,
     pendingToolAudioAsVoice: false,
+    pendingToolMediaDeliveryFailed: false,
     hasToolMediaBlockReply: false,
     visibleBlockReplyCount: 0,
     pendingAssistantReplyDirectives: undefined,
@@ -1328,6 +1332,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     state.pendingToolMediaAttachments = [];
     state.pendingToolMediaTrustByUrl.clear();
     state.pendingToolAudioAsVoice = false;
+    state.pendingToolMediaDeliveryFailed = false;
     state.visibleBlockReplyCount = 0;
     state.deferBlockReplyDelivery = typeof params.onBeforeTerminalDelivery === "function";
     clearDeferredAssistantEvents();
