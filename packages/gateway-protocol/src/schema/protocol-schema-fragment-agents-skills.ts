@@ -93,6 +93,10 @@ export const AgentSkillProtocolSchemas = {
   SkillsSearchResult: agentsModelsSkills.SkillsSearchResultSchema,
   SkillsDetailParams: agentsModelsSkills.SkillsDetailParamsSchema,
   SkillsDetailResult: agentsModelsSkills.SkillsDetailResultSchema,
+  SkillsCuratorActionParams: agentsModelsSkills.SkillsCuratorActionParamsSchema,
+  SkillsCuratorActionResult: agentsModelsSkills.SkillsCuratorActionResultSchema,
+  SkillsCuratorStatusParams: agentsModelsSkills.SkillsCuratorStatusParamsSchema,
+  SkillsCuratorStatusResult: agentsModelsSkills.SkillsCuratorStatusResultSchema,
   // The gateway registers 11 skills.proposals.* methods (see
   // src/gateway/server-methods/skills.ts) plus the two history methods, so their
   // schemas have to be registered here or the public registry disagrees with the
