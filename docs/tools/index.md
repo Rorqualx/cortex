@@ -22,17 +22,17 @@ group membership, provider restrictions, and configuration fields, use
 For most agents, start with the built-in tool categories, then adjust policy
 only when the agent should see fewer tools or needs explicit host access.
 
-| If you need to...                            | Use this first                                 | Then read                                                                                                    |
-| -------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Let an agent act with existing capabilities  | [Built-in tools](#built-in-tool-categories)    | [Tool categories](#built-in-tool-categories)                                                                 |
-| Control what an agent can call               | [Tool policy](#configure-access-and-approvals) | [Tools and custom providers](/gateway/config-tools)                                                          |
+| If you need to...                            | Use this first                                 | Then read                                                                                                     |
+| -------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Let an agent act with existing capabilities  | [Built-in tools](#built-in-tool-categories)    | [Tool categories](#built-in-tool-categories)                                                                  |
+| Control what an agent can call               | [Tool policy](#configure-access-and-approvals) | [Tools and custom providers](/gateway/config-tools)                                                           |
 | Teach an agent a workflow                    | [Skills](#choose-tools-skills-or-plugins)      | [Skills](/tools/skills), [Creating skills](/tools/creating-skills), and [Self-learning](/tools/self-learning) |
-| Add a new integration or runtime surface     | [Plugins](#extend-capabilities)                | [Plugins](/tools/plugin) and [Build plugins](/plugins/building-plugins)                                      |
-| Run work later or in the background          | [Automation](/automation)                      | [Automation overview](/automation)                                                                           |
-| Coordinate multiple agents or harnesses      | [Sub-agents](/tools/subagents)                 | [ACP agents](/tools/acp-agents) and [Agent send](/tools/agent-send)                                          |
-| Orchestrate concurrent agents from code      | [Swarm](/tools/swarm)                          | [Code Mode](/tools/code-mode) and [Sub-agents](/tools/subagents)                                             |
-| Search a large OpenClaw tool catalog         | [Tool Search](/tools/tool-search)              | [Tool Search](/tools/tool-search)                                                                            |
-| Combine several tools in one compact program | [Code Mode](/tools/code-mode)                  | [Code Mode](/tools/code-mode)                                                                                |
+| Add a new integration or runtime surface     | [Plugins](#extend-capabilities)                | [Plugins](/tools/plugin) and [Build plugins](/plugins/building-plugins)                                       |
+| Run work later or in the background          | [Automation](/automation)                      | [Automation overview](/automation)                                                                            |
+| Coordinate multiple agents or harnesses      | [Sub-agents](/tools/subagents)                 | [ACP agents](/tools/acp-agents) and [Agent send](/tools/agent-send)                                           |
+| Orchestrate concurrent agents from code      | [Swarm](/tools/swarm)                          | [Code Mode](/tools/code-mode) and [Sub-agents](/tools/subagents)                                              |
+| Search a large OpenClaw tool catalog         | [Tool Search](/tools/tool-search)              | [Tool Search](/tools/tool-search)                                                                             |
+| Combine several tools in one compact program | [Code Mode](/tools/code-mode)                  | [Code Mode](/tools/code-mode)                                                                                 |
 
 ## Choose tools, skills, or plugins
 
