@@ -220,7 +220,7 @@ describe("skill collection reconciliation", () => {
       const config = {
         skills: {
           load: { allowSymlinkTargets: [targetSkillsDir] },
-          workshop: { allowSymlinkTargetWrites: true },
+          forge: { allowSymlinkTargetWrites: true },
         },
       };
 
@@ -253,7 +253,7 @@ describe("skill collection reconciliation", () => {
       const config = {
         skills: {
           load: { allowSymlinkTargets: [targetSkillsDir] },
-          workshop: { allowSymlinkTargetWrites: true },
+          forge: { allowSymlinkTargetWrites: true },
         },
       };
 

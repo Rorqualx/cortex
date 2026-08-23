@@ -69,7 +69,7 @@ function candidate(
           },
         },
       },
-      skills: { workshop: { autonomous: { mode: "propose" } } },
+      skills: { forge: { autonomous: { mode: "propose" } } },
       // Only the OpenAI provider plugin is needed. A cold unrestricted load
       // compiles all bundled extensions and runs provider discovery inside the
       // review lane, which can exceed the lane's no-progress watchdog.

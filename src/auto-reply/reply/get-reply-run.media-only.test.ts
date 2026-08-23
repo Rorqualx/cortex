@@ -2342,7 +2342,7 @@ describe("runPreparedReply media-only handling", () => {
           session: {},
           channels: {},
           agents: { defaults: {} },
-          skills: { workshop: { autonomous: { mode: "off" } } },
+          skills: { forge: { autonomous: { mode: "off" } } },
         },
         isNewSession: false,
         sessionId: "session-goal-interrupt",

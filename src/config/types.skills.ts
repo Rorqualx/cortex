@@ -56,8 +56,7 @@ export type SkillsLimitsConfig = {
 
 export type SkillsWorkshopAutonomousMode = "off" | "propose" | "auto";
 
-/** Autonomous and approval settings for generated skill proposals. */
-/** Approval settings for Skill Forge lifecycle actions. */
+/** Skill Forge config (interactive/autonomous skill proposal + lifecycle pipeline). */
 export type SkillsForgeConfig = {
   /** Whether skill_forge promote/retire actions need explicit approval. */
   approvalPolicy?: "pending" | "auto";
@@ -68,19 +67,13 @@ export type SkillsForgeConfig = {
    * unloading the skills.
    */
   autoInvoke?: boolean;
-};
-
-/** Skill Workshop config (interactive/autonomous skill proposal pipeline). */
-export type SkillsWorkshopConfig = {
-  /** Autonomous Skill Workshop behavior controlled separately from user-prompted proposals. */
+  /** Autonomous Skill Forge behavior controlled separately from user-prompted proposals. */
   autonomous?: {
     /** Capture policy for durable conversation signals and substantial completed work. */
     mode?: SkillsWorkshopAutonomousMode;
   };
-  /** Allow Skill Workshop apply to write through trusted skill symlink targets. */
+  /** Allow Skill Forge apply to write through trusted skill symlink targets. */
   allowSymlinkTargetWrites?: boolean;
-  /** Whether proposal lifecycle actions need explicit approval. */
-  approvalPolicy?: "pending" | "auto";
   /** Maximum pending/quarantined proposals retained per workspace. */
   maxPending?: number;
   /** Maximum generated skill proposal size in bytes. */
@@ -95,6 +88,5 @@ export type SkillsConfig = {
   install?: SkillsInstallConfig;
   limits?: SkillsLimitsConfig;
   forge?: SkillsForgeConfig;
-  workshop?: SkillsWorkshopConfig;
   entries?: Record<string, SkillConfig>;
 };

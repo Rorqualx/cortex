@@ -17,7 +17,7 @@ const tempDirs = createTrackedTempDirs();
 let testState: OpenClawTestState;
 const pendingApprovalConfig = {
   skills: {
-    workshop: {
+    forge: {
       approvalPolicy: "pending" as const,
     },
   },
@@ -218,7 +218,7 @@ describe("resolveSkillWorkshopToolApproval", () => {
   it("uses runtime config when lifecycle hook config is absent", async () => {
     setRuntimeConfigSnapshot({
       skills: {
-        workshop: {
+        forge: {
           approvalPolicy: "auto",
         },
       },
@@ -260,7 +260,7 @@ describe("resolveSkillWorkshopToolApproval", () => {
   it("keeps explicit lifecycle hook config ahead of runtime config", async () => {
     setRuntimeConfigSnapshot({
       skills: {
-        workshop: {
+        forge: {
           approvalPolicy: "auto",
         },
       },
@@ -271,7 +271,7 @@ describe("resolveSkillWorkshopToolApproval", () => {
       toolParams: { action: "reject", proposal_id: "weather-20260530-a1b2c3d4e5" },
       config: {
         skills: {
-          workshop: {
+          forge: {
             approvalPolicy: "pending",
           },
         },

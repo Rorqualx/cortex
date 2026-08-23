@@ -22,7 +22,7 @@ describe("core/doctor/skill-workshop-tool-policy", () => {
       mode: "doctor",
       runtime,
       cfg: {
-        skills: { workshop: { autonomous: { mode: "propose" } } },
+        skills: { forge: { autonomous: { mode: "propose" } } },
         tools: { profile: "messaging" },
       },
     });
@@ -39,7 +39,7 @@ describe("core/doctor/skill-workshop-tool-policy", () => {
 
   it("checks every explicit-roster agent without turning selection into a health error", async () => {
     const cfg: OpenClawConfig = {
-      skills: { workshop: { autonomous: { mode: "propose" } } },
+      skills: { forge: { autonomous: { mode: "propose" } } },
       agents: {
         ownership: "explicit",
         defaults: { systemAgent: { agentId: "main" } },
@@ -94,7 +94,7 @@ describe("core/doctor/skill-workshop-tool-policy", () => {
       runtime,
       cfg: {
         ...cfg,
-        skills: { workshop: { autonomous: { mode: "propose" } } },
+        skills: { forge: { autonomous: { mode: "propose" } } },
       },
     });
 
@@ -107,7 +107,7 @@ describe("core/doctor/skill-workshop-tool-policy", () => {
         mode: "doctor",
         runtime,
         cfg: {
-          skills: { workshop: { autonomous: { mode: "off" } } },
+          skills: { forge: { autonomous: { mode: "off" } } },
           tools: { profile: "messaging" },
         },
       }),

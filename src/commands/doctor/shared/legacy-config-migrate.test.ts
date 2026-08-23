@@ -4782,12 +4782,12 @@ describe("legacy model compat migrate", () => {
 });
 
 describe("legacy skills workshop migrate", () => {
-  it("moves approvalPolicy to skills.forge and drops retired workshop keys", () => {
+  it("moves workshop settings to skills.forge and drops retired workshop keys", () => {
     const res = migrateLegacyConfigForTest({
       skills: {
         workshop: {
           approvalPolicy: "auto",
-          autonomous: { enabled: true },
+          autonomous: { mode: "propose" },
           maxPending: 10,
           maxSkillBytes: 2048,
         },
@@ -4795,10 +4795,15 @@ describe("legacy skills workshop migrate", () => {
     });
 
     expect(res.config?.skills).toEqual({
-      forge: { approvalPolicy: "auto" },
+      forge: {
+        approvalPolicy: "auto",
+        maxPending: 10,
+        maxSkillBytes: 2048,
+        autonomous: { mode: "propose" },
+      },
     });
     expect(res.changes).toStrictEqual([
-      "Moved skills.workshop.approvalPolicy → skills.forge.approvalPolicy.",
+      "Moved skills.workshop settings → skills.forge.",
       "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
     ]);
   });

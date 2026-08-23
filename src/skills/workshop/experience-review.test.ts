@@ -76,7 +76,7 @@ function completedRun(
     },
     config: {
       skills: {
-        workshop: {
+        forge: {
           autonomous: { mode: options.mode ?? "propose" },
         },
       },
@@ -486,7 +486,7 @@ describe("skill experience review scheduler", () => {
     const runReview = vi.fn().mockResolvedValue(undefined);
     const prepareReview = vi.fn(async (candidate) =>
       prepareSkillExperienceReviewCandidate(candidate, {
-        skills: { workshop: { autonomous: { mode: "propose" } } },
+        skills: { forge: { autonomous: { mode: "propose" } } },
         tools: { deny: ["skill_workshop"] },
       }),
     );
@@ -515,7 +515,7 @@ describe("skill experience review scheduler", () => {
     };
     await expect(
       prepareSkillExperienceReviewCandidate(candidate, {
-        skills: { workshop: { autonomous: { mode: "propose" } } },
+        skills: { forge: { autonomous: { mode: "propose" } } },
         channels: {
           whatsapp: {
             groups: { "safe-room": { tools: { deny: ["skill_workshop"] } } },
@@ -534,7 +534,7 @@ describe("skill experience review scheduler", () => {
           modelIterations: 10,
         },
         {
-          skills: { workshop: { autonomous: { mode: "propose" } } },
+          skills: { forge: { autonomous: { mode: "propose" } } },
           agents: { defaults: { sandbox: { mode: "non-main" } } },
         },
       ),

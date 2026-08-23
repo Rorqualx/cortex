@@ -46,7 +46,11 @@ function readApprovalPolicy(value: unknown, fallback: SkillWorkshopConfig["appro
 }
 
 export function resolveSkillWorkshopConfig(config?: OpenClawConfig): SkillWorkshopConfig {
-  const raw = asNullableRecord(config?.skills?.workshop) ?? {};
+  // Canonical key is skills.forge — Skill Workshop was renamed to Skill Forge; skills.workshop
+  // is retired and repaired to skills.forge by the doctor migration. Reading the retired path
+  // silently returns defaults (strict validation rejects skills.workshop), so operator forge
+  // settings must be read from skills.forge to take effect.
+  const raw = asNullableRecord(config?.skills?.forge) ?? {};
   const autonomous = asNullableRecord(raw.autonomous) ?? {};
   return {
     autonomous: {

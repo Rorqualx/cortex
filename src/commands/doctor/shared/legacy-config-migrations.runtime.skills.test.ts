@@ -9,27 +9,69 @@ function migrate(raw: Record<string, unknown>) {
   return { raw, changes };
 }
 
-describe("Skill Workshop autonomy config migration", () => {
-  it.each([
-    { enabled: true, mode: "propose" },
-    { enabled: false, mode: "off" },
-  ] as const)("maps enabled=$enabled to $mode", ({ enabled, mode }) => {
+describe("skills.workshop -> skills.forge migration", () => {
+  it("carries every retired workshop setting onto skills.forge and drops workshop", () => {
     const result = migrate({
-      skills: { workshop: { autonomous: { enabled } } },
+      skills: {
+        workshop: {
+          autonomous: { mode: "propose" },
+          approvalPolicy: "pending",
+          allowSymlinkTargetWrites: true,
+          maxPending: 7,
+          maxSkillBytes: 12_345,
+        },
+      },
     });
 
     expect(result.raw).toEqual({
-      skills: { workshop: { autonomous: { mode } } },
+      skills: {
+        forge: {
+          autonomous: { mode: "propose" },
+          approvalPolicy: "pending",
+          allowSymlinkTargetWrites: true,
+          maxPending: 7,
+          maxSkillBytes: 12_345,
+        },
+      },
     });
     expect(result.changes).toEqual([
-      `Mapped skills.workshop.autonomous.enabled to mode: "${mode}".`,
+      "Moved skills.workshop settings → skills.forge.",
+      "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
     ]);
   });
 
-  it("leaves an absent legacy key absent so the new auto default applies", () => {
-    const result = migrate({ skills: { workshop: { autonomous: {} } } });
+  it("keeps existing forge settings and never overwrites them from workshop", () => {
+    const result = migrate({
+      skills: {
+        forge: { approvalPolicy: "auto", autonomous: { mode: "off" } },
+        workshop: { approvalPolicy: "pending", autonomous: { mode: "propose" }, maxPending: 9 },
+      },
+    });
 
-    expect(result.raw).toEqual({ skills: { workshop: { autonomous: {} } } });
+    expect(result.raw).toEqual({
+      skills: {
+        forge: { approvalPolicy: "auto", autonomous: { mode: "off" }, maxPending: 9 },
+      },
+    });
+    expect(result.changes).toEqual([
+      "Moved skills.workshop settings → skills.forge.",
+      "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
+    ]);
+  });
+
+  it("removes an empty retired workshop block without inventing forge settings", () => {
+    const result = migrate({ skills: { workshop: {} } });
+
+    expect(result.raw).toEqual({ skills: {} });
+    expect(result.changes).toEqual([
+      "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
+    ]);
+  });
+
+  it("leaves config without a workshop block untouched", () => {
+    const result = migrate({ skills: { forge: { approvalPolicy: "auto" } } });
+
+    expect(result.raw).toEqual({ skills: { forge: { approvalPolicy: "auto" } } });
     expect(result.changes).toEqual([]);
   });
 });

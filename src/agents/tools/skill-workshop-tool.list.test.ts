@@ -117,7 +117,7 @@ describe("skill_workshop list", () => {
     const workspaceDir = await tempDirs.make("openclaw-skill-workshop-list-");
     const tool = createSkillWorkshopTool({
       workspaceDir,
-      config: { skills: { workshop: { maxPending: 200 } } },
+      config: { skills: { forge: { maxPending: 200 } } },
       agentId: "main",
       env: testState.env,
     });

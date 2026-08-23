@@ -649,7 +649,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
         sessionKey: "main",
         config: {
           skills: {
-            workshop: {
+            forge: {
               approvalPolicy: "pending",
             },
           },
@@ -693,7 +693,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
         sessionKey: "main",
         config: {
           skills: {
-            workshop: {
+            forge: {
               approvalPolicy: "pending",
             },
           },
@@ -841,7 +841,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
     (hookRunner.hasHooks as ReturnType<typeof vi.fn>).mockReturnValue(false);
     setRuntimeConfigSnapshot({
       skills: {
-        workshop: {
+        forge: {
           approvalPolicy: "pending",
         },
       },
