@@ -1455,7 +1455,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       args: unknown;
       replaySafe?: boolean;
       hideFromChannelProgress?: boolean;
-      execute: () => Promise<T>;
+      execute: (onImplementationStart: () => void) => Promise<T>;
     }): Promise<T> => {
       await handleToolExecutionStart(ctx, {
         type: "tool_execution_start",
@@ -1465,14 +1465,24 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
         replaySafe: toolParams.replaySafe,
         hideFromChannelProgress: toolParams.hideFromChannelProgress,
       } as never);
+      // Upstream #c3ec166: the tool signals when its real implementation begins, so
+      // executionStarted reflects whether work actually ran (vs a preflight/preparer
+      // failure before start) instead of being hardcoded true. Deferred follow-up:
+      // upstream's fuller repair-provenance rewrite of handleToolExecutionEnd
+      // (terminal.executionStarted return + trustedNoStart re-registration) is an
+      // interleaved change over the fork's kept-ours mutation-tracking cluster.
+      let executionStarted = false;
+      const onImplementationStart = () => {
+        executionStarted = true;
+      };
       try {
-        const result = await toolParams.execute();
+        const result = await toolParams.execute(onImplementationStart);
         await handleToolExecutionEnd(ctx, {
           type: "tool_execution_end",
           toolName: toolParams.toolName,
           toolCallId: toolParams.toolCallId,
           isError: false,
-          executionStarted: true,
+          executionStarted,
           result,
           hideFromChannelProgress: toolParams.hideFromChannelProgress,
         } as never);
@@ -1483,7 +1493,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           toolName: toolParams.toolName,
           toolCallId: toolParams.toolCallId,
           isError: true,
-          executionStarted: true,
+          executionStarted,
           result: buildToolLifecycleErrorResult(error),
           hideFromChannelProgress: toolParams.hideFromChannelProgress,
         } as never);
