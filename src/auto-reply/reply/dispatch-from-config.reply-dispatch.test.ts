@@ -246,12 +246,7 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
 
     const result = await dispatchReplyFromConfig({
       ctx: createHookCtx(),
-      cfg: {
-        ...emptyConfig,
-        session: {
-          sendPolicy: { default: "deny" },
-        },
-      },
+      cfg: { ...emptyConfig, session: { sendPolicy: { default: "deny" } } },
       dispatcher: createDispatcher(),
       replyResolver: async () => ({ text: "model reply" }),
     });
