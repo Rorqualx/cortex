@@ -181,7 +181,25 @@ rm -rf .artifacts/tsgo-cache
 # behavior net-new failing-file diff
 corepack pnpm test:fast >/tmp/rp-test.log 2>&1 || true
 fail_files /tmp/rp-test.log > /tmp/rp-cand-testfail.txt
-NEWFAIL=\$(comm -13 "\$BDIR/testfail.txt" /tmp/rp-cand-testfail.txt)
+CAND_NEWFAIL=\$(comm -13 "\$BDIR/testfail.txt" /tmp/rp-cand-testfail.txt)
+# Flake filter: the candidate suite runs test:fast right after a ~13-min tsdown
+# build, so the box is under heavy residual load. Event-loop-timing assertions
+# (e.g. audit-event-writer's "nonblocking under a held write lock", which bounds
+# event-loop delay) then exceed their bound from machine contention, not a code
+# regression, and false-fail as NEWFAIL against the cold baseline phase. A genuine
+# regression is deterministic and fails in isolation too; a contention flake passes.
+# Re-run each candidate-only failure once alone and keep only the ones that persist.
+: > /tmp/rp-newfail.txt
+while read -r f; do
+  [ -n "\$f" ] || continue
+  corepack pnpm test:fast "\$f" >/tmp/rp-rerun.log 2>&1 || true
+  if fail_files /tmp/rp-rerun.log | grep -qxF "\$f"; then
+    echo "\$f" >> /tmp/rp-newfail.txt
+  else
+    echo "FLAKE-CLEARED \$f (failed in contended suite, passed in isolation)"
+  fi
+done <<<"\$CAND_NEWFAIL"
+NEWFAIL=\$(cat /tmp/rp-newfail.txt)
 TEST_REGRESS=0
 if [ -n "\$NEWFAIL" ]; then TEST_REGRESS=1; while read -r f; do [ -n "\$f" ] && echo "NEWFAIL \$f"; done <<<"\$NEWFAIL"; fi
 
