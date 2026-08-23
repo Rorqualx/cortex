@@ -28,6 +28,7 @@ function createState(overrides: Partial<CronState> = {}): CronState {
     client: null,
     connected: true,
     cronLoading: false,
+    cronBackgroundRefreshing: false,
     cronQuickCreateOpen: false,
     cronQuickCreateStep: "what",
     cronQuickCreateDraft: null,
@@ -183,6 +184,86 @@ describe("cron controller", () => {
 
     expect(request).toHaveBeenCalledWith("models.list", { view: "configured" });
     expect(state.cronModelSuggestions).toEqual(["a-model", "z-model"]);
+  });
+
+  it("background poll refreshes running jobs without flipping the visible loading state", async () => {
+    // The cron tab's live monitor polls loadCronJobsPage(background:true) every few
+    // seconds. It must refresh job rows (which carry state.runningAtMs for the
+    // "Running now" strip) without flashing the Refresh button's loading state or
+    // clobbering the error banner — otherwise the whole page pulses on every tick.
+    let resolveList: (value: unknown) => void = () => {};
+    const listPending = new Promise((resolve) => {
+      resolveList = resolve;
+    });
+    const request = vi.fn((method: string) =>
+      method === "cron.list" ? listPending : Promise.resolve({}),
+    );
+    const state = createState({
+      client: { request } as unknown as CronState["client"],
+      cronError: "stale error the operator still needs to see",
+    });
+    const runningJob: CronJob = {
+      id: "job-run",
+      name: "Nightly build",
+      enabled: true,
+      createdAtMs: 0,
+      updatedAtMs: 0,
+      schedule: { kind: "every", everyMs: 3_600_000 },
+      sessionTarget: "isolated",
+      wakeMode: "next-heartbeat",
+      payload: { kind: "agentTurn", message: "go", timeoutSeconds: 30 },
+      state: { runningAtMs: 111 },
+    };
+
+    const pending = loadCronJobsPage(state, { background: true });
+    // Mid-flight: the user-facing loading flag stays down; only the internal
+    // background marker is raised so a concurrent manual load still serializes.
+    expect(state.cronLoading).toBe(false);
+    expect(state.cronBackgroundRefreshing).toBe(true);
+
+    resolveList({ jobs: [runningJob], total: 1, hasMore: false, nextOffset: null });
+    await pending;
+
+    expect(state.cronLoading).toBe(false);
+    expect(state.cronBackgroundRefreshing).toBe(false);
+    expect(state.cronJobs).toHaveLength(1);
+    expect(state.cronJobs[0]?.state?.runningAtMs).toBe(111);
+    // A background poll never clears an existing error banner.
+    expect(state.cronError).toBe("stale error the operator still needs to see");
+  });
+
+  it("background poll re-fetches every already-loaded page instead of collapsing to page 1", async () => {
+    // The operator expanded the list via "Load more" (10 rows loaded, page size 5).
+    // A background tick must request all 10 rows at offset 0, not just the first
+    // page, or the visible list would shrink back every few seconds.
+    const request = vi.fn(async () => ({
+      jobs: [],
+      total: 10,
+      hasMore: false,
+      nextOffset: null,
+    }));
+    const state = createState({
+      client: { request } as unknown as CronState["client"],
+      cronJobsLimit: 5,
+      cronJobs: Array.from({ length: 10 }, (_unused, i) => ({
+        id: `job-${i}`,
+        name: `Job ${i}`,
+        enabled: true,
+        createdAtMs: 0,
+        updatedAtMs: 0,
+        schedule: { kind: "every", everyMs: 3_600_000 },
+        sessionTarget: "isolated",
+        wakeMode: "next-heartbeat",
+        payload: { kind: "agentTurn", message: "go", timeoutSeconds: 30 },
+        state: {},
+      })) as CronJob[],
+    });
+
+    await loadCronJobsPage(state, { background: true });
+
+    const call = findRequestCall(request.mock.calls, "cron.list");
+    expect(requestPayload(call).limit).toBe(10);
+    expect(requestPayload(call).offset).toBe(0);
   });
 
   it("normalizes stale announce mode when session/payload no longer support announce", () => {

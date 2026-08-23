@@ -46,4 +46,17 @@ cd "$ROOT"
 # build-suicide guard (scripts/lib/assert-build-safe.mjs) stands down: this path
 # already waited for quiesce above, and the deploy job's own running marker would
 # otherwise trip the guard's --once check.
-exec env OPENCLAW_DEPLOY_BUILD=1 CI=1 npm_config_verify_deps_before_run=false node --import tsx scripts/build-all.mts
+env OPENCLAW_DEPLOY_BUILD=1 CI=1 npm_config_verify_deps_before_run=false node --import tsx scripts/build-all.mts
+build_rc=$?
+
+# The tsdown phases clean dist/ (outDir: "dist"), which races/wipes the ui:build
+# output, leaving dist/control-ui empty. The gateway caches its control-ui root at
+# boot, so a wiped UI is a persistent 503 that the build's crash-relaunch cannot
+# clear on its own. Rebuild the UI if it was wiped, then bounce the gateway once more
+# so it boots with the assets present. (prod-restart.sh guards the same way.)
+if [ ! -f "$ROOT/dist/control-ui/index.html" ]; then
+  echo "==> control-ui wiped by the build; rebuilding + bouncing the gateway to clear the cached empty root..."
+  (cd "$ROOT" && CI=1 npm_config_verify_deps_before_run=false pnpm ui:build) || true
+  launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true
+fi
+exit "$build_rc"

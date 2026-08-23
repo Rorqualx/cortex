@@ -360,6 +360,67 @@ function renderFieldLabel(text: string, required = false) {
   </span>`;
 }
 
+// Live "running for" label. Coarse (h/m or m/s) because the auto-refresh tick that
+// re-renders this is on a several-second cadence, not per-second.
+function formatRunningElapsed(runningAtMs: number): string {
+  const totalSec = Math.max(0, Math.floor((Date.now() - runningAtMs) / 1000));
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+// Real-time monitor of currently-executing automations, between the summary strip and
+// the job list. Sourced from job.state.runningAtMs on the loaded jobs page; the cron
+// tab auto-refreshes while active so this reflects live start/finish + elapsed.
+function renderCronRunning(props: CronProps) {
+  const running = props.jobs.filter(
+    (job) => typeof job.state?.runningAtMs === "number" && (job.state.runningAtMs ?? 0) > 0,
+  );
+  const hasRunning = running.length > 0;
+  return html`
+    <section class="card cron-running-strip">
+      <div class="cron-running-strip__head">
+        <div>
+          <div class="card-title cron-running-strip__title">
+            <span
+              class=${`cron-live-dot ${hasRunning ? "cron-live-dot--on" : "cron-live-dot--idle"}`}
+              aria-hidden="true"
+            ></span>
+            ${t("cron.running.title")}
+          </div>
+          <div class="card-sub">${t("cron.running.subtitle")}</div>
+        </div>
+        <div class="muted">${t("cron.running.count", { count: String(running.length) })}</div>
+      </div>
+      ${hasRunning
+        ? html`
+            <div class="cron-running-list">
+              ${running.map(
+                (job) => html`
+                  <div class="cron-running-item">
+                    <span class="cron-live-dot cron-live-dot--on" aria-hidden="true"></span>
+                    <div class="cron-running-item__main">
+                      <div class="cron-running-item__name">${job.name}</div>
+                      <div class="cron-running-item__sched muted">${formatCronSchedule(job)}</div>
+                    </div>
+                    <div class="cron-running-item__elapsed">
+                      ${t("cron.running.for", {
+                        elapsed: formatRunningElapsed(job.state?.runningAtMs ?? Date.now()),
+                      })}
+                    </div>
+                  </div>
+                `,
+              )}
+            </div>
+          `
+        : html`<div class="cron-running-empty muted">${t("cron.running.none")}</div>`}
+    </section>
+  `;
+}
+
 export function renderCron(props: CronProps) {
   const isEditing = Boolean(props.editingJobId);
   const payloadLocked = props.form.payloadLocked;
@@ -461,6 +522,8 @@ export function renderCron(props: CronProps) {
         ${props.error ? html`<span class="muted">${props.error}</span>` : nothing}
       </div>
     </section>
+
+    ${renderCronRunning(props)}
 
     <section class=${`cron-workspace ${formCollapsed ? "cron-workspace--form-collapsed" : ""}`}>
       <div class="cron-workspace-main">

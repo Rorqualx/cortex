@@ -58,6 +58,10 @@ export type CronState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
   cronLoading: boolean;
+  // Set only by the cron tab's live monitor's background poll. Kept distinct from
+  // cronLoading so an auto-refresh does not flip the Refresh button to
+  // "Refreshing…"/disabled every tick, while still serializing against manual loads.
+  cronBackgroundRefreshing: boolean;
   cronQuickCreateOpen: boolean;
   cronQuickCreateStep: import("../views/cron-quick-create.ts").CronQuickCreateStep;
   cronQuickCreateDraft: import("../views/cron-quick-create.ts").CronQuickCreateDraft | null;
@@ -119,6 +123,7 @@ export function createInitialCronState(
     client: snapshot.client ?? null,
     connected: snapshot.connected ?? false,
     cronLoading: false,
+    cronBackgroundRefreshing: false,
     cronQuickCreateOpen: false,
     cronQuickCreateStep: "what",
     cronQuickCreateDraft: null,
@@ -359,14 +364,17 @@ async function drainPendingCronJobsReload(state: CronState) {
 
 export async function loadCronJobsPage(
   state: CronState,
-  opts?: { append?: boolean; tableFilters?: boolean },
+  opts?: { append?: boolean; tableFilters?: boolean; background?: boolean },
 ) {
   if (!state.client || !state.connected) {
     return;
   }
   const append = opts?.append === true;
-  if (state.cronLoading || state.cronJobsLoadingMore) {
-    if (!append) {
+  const background = opts?.background === true;
+  if (state.cronLoading || state.cronJobsLoadingMore || state.cronBackgroundRefreshing) {
+    // A background tick that collides with an in-flight load just skips: the next
+    // tick retries. Only user-initiated full reloads queue a pending refresh.
+    if (!append && !background) {
       state.cronJobsReloadPending = true;
       state.cronJobsReloadPendingTableFilters = opts?.tableFilters === true;
     }
@@ -377,16 +385,29 @@ export async function loadCronJobsPage(
   }
   if (append) {
     state.cronJobsLoadingMore = true;
+  } else if (background) {
+    state.cronBackgroundRefreshing = true;
   } else {
     state.cronLoading = true;
   }
-  state.cronError = null;
+  // A background poll never touches the error banner: it neither clears a real
+  // error the operator needs to see nor flashes one on a transient poll failure.
+  if (!background) {
+    state.cronError = null;
+  }
   try {
     const offset = append ? Math.max(0, state.cronJobsNextOffset ?? state.cronJobs.length) : 0;
+    // A background poll refreshes in place, so it must re-fetch every row the
+    // operator has already revealed via "Load more" — otherwise each tick would
+    // collapse an expanded list back to the first page (and hide running jobs on
+    // later pages from the "Running now" strip).
+    const limit = background
+      ? Math.max(state.cronJobsLimit, state.cronJobs.length)
+      : state.cronJobsLimit;
     const res = await state.client.request<CronJobsListResult>("cron.list", {
       ...(state.cronAgentId ? { agentId: state.cronAgentId } : {}),
       includeDisabled: state.cronJobsEnabledFilter === "all",
-      limit: state.cronJobsLimit,
+      limit,
       offset,
       query: state.cronJobsQuery.trim() || undefined,
       enabled: state.cronJobsEnabledFilter,
@@ -420,10 +441,14 @@ export async function loadCronJobsPage(
       clearCronEditState(state);
     }
   } catch (err) {
-    state.cronError = String(err);
+    if (!background) {
+      state.cronError = String(err);
+    }
   } finally {
     if (append) {
       state.cronJobsLoadingMore = false;
+    } else if (background) {
+      state.cronBackgroundRefreshing = false;
     } else {
       state.cronLoading = false;
     }
