@@ -735,7 +735,12 @@ land_and_deploy() {
   # Regenerate the fork-config baseline for the new main and commit it.
   node "$MAIN/scripts/fork-config-snapshot.mjs" generate >/dev/null 2>&1 || true
   if [ -n "$(git -C "$MAIN" status --porcelain fork-config-baseline.json)" ]; then
-    "$MAIN/scripts/committer" "chore(resync): regenerate fork-config baseline after nightly upstream merge ($date)" fork-config-baseline.json >/dev/null 2>&1 || true
+    # scripts/committer was removed upstream (00a5db443aa); commit directly so the
+    # regenerated baseline is not left uncommitted — a dirty tree makes the next
+    # (now hourly) run SKIP on require_main_clean.
+    git -C "$MAIN" add fork-config-baseline.json >/dev/null 2>&1 &&
+      git -C "$MAIN" commit -q --no-verify \
+        -m "chore(resync): regenerate fork-config baseline after upstream merge ($date)" >/dev/null 2>&1 || true
   fi
   # Same problem, different artifacts: a merge can take bundle outputs that do not
   # match the sources it merged, and every later build then re-dirties the tree —
@@ -755,7 +760,9 @@ land_and_deploy() {
     # shellcheck disable=SC2086 # word splitting is the intent: one arg per path
     if [ -n "$(git -C "$MAIN" status --porcelain -- $asset_paths)" ]; then
       # shellcheck disable=SC2086
-      "$MAIN/scripts/committer" "chore(resync): refresh generated plugin bundle artifacts after nightly upstream merge ($date)" $asset_paths >/dev/null 2>&1 || true
+      git -C "$MAIN" add $asset_paths >/dev/null 2>&1 &&
+        git -C "$MAIN" commit -q --no-verify \
+          -m "chore(resync): refresh generated plugin bundle artifacts after upstream merge ($date)" >/dev/null 2>&1 || true
     fi
   else
     # Restore rather than merely decline to commit: the generator may have crashed
