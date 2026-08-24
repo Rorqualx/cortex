@@ -332,7 +332,7 @@ describe("resolveEmbeddedAttemptToolConstructionPlan", () => {
       },
     );
     expectConstructionPlan(
-      resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow: ["update_plan"] }),
+      resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow: ["progress_card"] }),
       {
         coding: {
           includeBaseCodingTools: false,

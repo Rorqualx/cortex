@@ -171,7 +171,14 @@ with tempfile.TemporaryDirectory() as root:
     )
     pid_file.write_text(json.dumps({"pid": terminal.pid, "pgid": terminal.pid, "socket": socket_path}))
     pid_file.chmod(0o600)
-    os.waitid(os.P_PID, terminal.pid, os.WEXITED | os.WNOWAIT)
+    if hasattr(os, "waitid"):
+        os.waitid(os.P_PID, terminal.pid, os.WEXITED | os.WNOWAIT)
+    else:
+        # macOS has no os.waitid; block until the short-lived "pass" child exits so
+        # cleanup runs against a dead process. wait() reaps it (unlike WNOWAIT), so
+        # the pid is freed here rather than held as a zombie -- running_process_command_line
+        # still reports it gone, and sub-second pid reuse in a test is not a concern.
+        terminal.wait(timeout=10)
     try:
         module.command_terminate_observer(terminate_args)
         terminal_marker_removed = not pid_file.exists()
