@@ -393,12 +393,32 @@ export function isClientToolNameConflictError(err: unknown): err is Error {
   return err instanceof Error && err.message.startsWith(CLIENT_TOOL_NAME_CONFLICT_PREFIX);
 }
 
+/** Sorts tools by name in code-unit order for deterministic serialization. */
+function sortToolsByName<T extends { name?: string; function?: { name?: string } }>(
+  tools: T[],
+): T[] {
+  // `.map()` preserves input array order, so tool blocks serialize in whatever
+  // order the caller assembled the tools — identical tool subsets built from
+  // different sources produced different prompt tool blocks and missed
+  // provider-side prompt-prefix cache hits. Sorting at this boundary makes the
+  // serialized tool list a pure function of the tool set. Array#sort is stable,
+  // and duplicate names are rejected elsewhere (client-tool conflict checks),
+  // so the result is fully deterministic.
+  const nameOf = (tool: T): string =>
+    (tool.function ? (tool.function.name ?? "") : (tool.name ?? "")) || "";
+  return [...tools].sort((a, b) => {
+    const an = nameOf(a);
+    const bn = nameOf(b);
+    return an < bn ? -1 : an > bn ? 1 : 0;
+  });
+}
+
 /** Convert executable agent tools into session definitions with hook handling. */
 export function toToolDefinitions(
   tools: AnyAgentTool[],
   hookContext?: HookContext,
 ): ToolDefinition[] {
-  return tools.map((tool) => {
+  return sortToolsByName(tools).map((tool) => {
     const name = tool.name || "tool";
     const normalizedName = normalizeToolPolicyName(name);
     const beforeHookWrapped = isToolWrappedWithBeforeToolCallHook(tool);
@@ -614,7 +634,7 @@ export function toClientToolDefinitions(
   onClientToolCall?: ClientToolCallRecorder,
   hookContext?: HookContext,
 ): ToolDefinition[] {
-  return tools.map((tool) => {
+  return sortToolsByName(tools).map((tool) => {
     const func = tool.function;
     const definition = {
       name: func.name,

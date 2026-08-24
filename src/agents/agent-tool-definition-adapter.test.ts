@@ -347,6 +347,23 @@ describe("agent tool definition adapter", () => {
     expect(prepareBeforeToolCallParams).toHaveBeenCalledOnce();
     expect(execute).toHaveBeenCalledOnce();
   });
+
+  it("serializes agent tool definitions in deterministic name order regardless of input order", () => {
+    // Prompt-prefix cache determinism (analysis 2026-08-24, finding 5):
+    // identical tool subsets assembled from different sources must serialize
+    // identically, so the tool list order must be a pure function of the set.
+    const make = (name: string): AgentTool => ({
+      name,
+      label: name,
+      description: `${name} tool`,
+      parameters: Type.Object({}),
+      execute: async () => ({ status: "ok" }),
+    });
+    const forward = ["alpha", "beta", "gamma"].map(make);
+    const shuffled = [make("gamma"), make("alpha"), make("beta")];
+    expect(toToolDefinitions(forward).map((d) => d.name)).toEqual(["alpha", "beta", "gamma"]);
+    expect(toToolDefinitions(shuffled).map((d) => d.name)).toEqual(["alpha", "beta", "gamma"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -387,7 +404,9 @@ describe("toClientToolDefinitions – param coercion", () => {
         completed.push({ id, name, params });
       },
     });
-    const [search, lookup] = defs;
+    // Definitions are name-sorted (deterministic serialization); resolve by name.
+    const search = defs.find((d) => d.name === "search");
+    const lookup = defs.find((d) => d.name === "lookup");
     if (!search || !lookup) {
       throw new Error("missing client tool definition");
     }
@@ -538,5 +557,14 @@ describe("client tool name conflict checks", () => {
     expect(err.message).toBe(`${CLIENT_TOOL_NAME_CONFLICT_PREFIX} exec, Web_Search`);
     expect(isClientToolNameConflictError(err)).toBe(true);
     expect(isClientToolNameConflictError(new Error("other failure"))).toBe(false);
+  });
+
+  it("serializes client tool definitions in deterministic name order regardless of input order", () => {
+    // Prompt-prefix cache determinism (analysis 2026-08-24, finding 5): the
+    // client-tool half of the merged tool list must also be a pure function of
+    // the tool set, not of the client's declaration order.
+    expect(
+      toClientToolDefinitions([makeClientTool("zulu"), makeClientTool("alpha")]).map((d) => d.name),
+    ).toEqual(["alpha", "zulu"]);
   });
 });
