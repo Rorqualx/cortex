@@ -18,6 +18,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/cron-archive.sh
 source "$SCRIPT_DIR/lib/cron-archive.sh"
+# shellcheck source=scripts/lib/main-commit-lock.sh
+source "$SCRIPT_DIR/lib/main-commit-lock.sh"
 
 MAIN="/Users/joederas/Documents/Cline/code/claudy/openclaw"
 cd "$MAIN" || { echo "MERGE-ABORT: main tree missing"; exit 2; }
@@ -44,6 +46,20 @@ if [ "$cur" != "main" ]; then
   cron_unmerged_report "$MAIN"
   exit 2
 fi
+
+# Serialize every local-main mutation below (merge + archive drain/prune) against the
+# upstream-merge land and cron-sync's push via the shared main-commit lock, so a
+# concurrent land cannot advance main out from under this merge (and vice-versa). Wait
+# a land out rather than skipping: this cron's work should still land, just after the
+# in-flight writer releases. If it cannot acquire in time, preserve and skip — the next
+# cycle retries. (cron-work is already durable on its branch; nothing is lost here.)
+if ! main_lock_acquire 300; then
+  preserve_cron_work "MERGE-DEFER: main-commit lock held past 300s (a land is in flight);"
+  cron_unmerged_report "$MAIN"
+  echo "MERGE-STOP: could not acquire the main-commit lock; deploy will not build."
+  exit 4
+fi
+trap 'main_lock_release' EXIT
 
 # Merge today's cron-work FIRST (before any recovery), so a failure leaves main intact.
 merged_today=0

@@ -46,6 +46,8 @@ set -uo pipefail
 # second machine, or a CI invocation works without editing this file; keep an env
 # override matching the other knobs below.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/main-commit-lock.sh
+source "$SCRIPT_DIR/lib/main-commit-lock.sh"
 MAIN="${UPSTREAM_MERGE_MAIN:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 WORKTREE="${UPSTREAM_MERGE_WORKTREE:-$MAIN-upstream-merge}"
 # An explicit env value is the operator's escape hatch and outranks the stage-time
@@ -69,6 +71,9 @@ LOG="${UPSTREAM_MERGE_LOG:-$HOME/.openclaw/workspace/memory/reports/upstream-mer
 # so a test run cannot clobber a concurrent run's intermediate files, and vice
 # versa. Operator-facing logs keep their fixed /tmp paths; these are internal.
 UM_TMP="${UPSTREAM_MERGE_TMPDIR:-/tmp}"
+# Set by apply_batch_cap to the full first-parent distance when a landing is capped to a
+# bounded batch (empty otherwise), so route can report the true backlog behind the batch.
+TRUE_BEHIND=""
 export REMOTE_NODE_BIN
 
 cd "$MAIN" || { echo "MERGE-ABORT: main tree missing"; exit 2; }
@@ -171,6 +176,37 @@ freeze_upstream_ref() {
     exit 2
   }
   UPSTREAM_REF="$sha"
+}
+
+# Bounded-batch target selection. When the fork is far behind, merging the full upstream
+# tip in one shot produces a residual too large to resolve + land before a sibling cron
+# commit drifts main and ff-blocks it — the cron "falling behind" that never converges.
+# When far behind, retarget UPSTREAM_REF from the full tip to an intermediate commit at
+# most UPSTREAM_MERGE_BATCH_MAX first-parent commits ahead of the merge base, so ONE
+# landing stays small and its residual stays resolvable; each later tick advances the
+# next batch until caught up. First-parent commits are the only valid land boundaries —
+# an intermediate first-parent commit is a real past state of upstream/main, so merging
+# it is a strict, well-defined prefix of the full merge (ancestor of the tip, descendant
+# of the base). Sets TRUE_BEHIND to the full first-parent distance for reporting; returns
+# 0 iff it retargeted (caller re-measures against the batch), 1 otherwise. Set
+# UPSTREAM_MERGE_BATCH_MAX=0 (or non-numeric) to disable batching and always take the tip.
+apply_batch_cap() {
+  local cap="${UPSTREAM_MERGE_BATCH_MAX:-40}"
+  case "$cap" in ''|*[!0-9]*|0) return 1 ;; esac
+  local base; base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
+  [ -n "$base" ] || return 1
+  local behind_fp; behind_fp="$(git -C "$MAIN" rev-list --count --first-parent "${base}..${UPSTREAM_REF}" 2>/dev/null || echo 0)"
+  case "$behind_fp" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$behind_fp" -gt "$cap" ] || return 1
+  local target; target="$(git -C "$MAIN" rev-list --first-parent --reverse "${base}..${UPSTREAM_REF}" 2>/dev/null | sed -n "${cap}p")"
+  [ -n "$target" ] || return 1
+  # Set only on an actual retarget so route's "(bounded batch)" log suffix never appears
+  # on a conflicted-but-not-batched run (behind_fp <= cap leaves TRUE_BEHIND empty).
+  TRUE_BEHIND="$behind_fp"
+  log "bounded-batch: $behind_fp first-parent commits behind > cap $cap; targeting $target (advance $cap this landing)"
+  ledger "BATCH behind_fp=$behind_fp cap=$cap target=$target full_tip=$UPSTREAM_REF"
+  UPSTREAM_REF="$target"
+  return 0
 }
 
 # --- worktree lifecycle ------------------------------------------------------
@@ -673,21 +709,19 @@ report_dropped_upstream_files() {
 
 # Measure the post-driver residual via the shadow engine (read-only; own worktree).
 # Emits: BEHIND / RESIDUAL globals.
-measure() {
-  git -C "$MAIN" fetch upstream -q 2>/dev/null || log "fetch upstream failed (using cached)"
-  # Freeze immediately after the fetch: everything from here on (engine measurement,
-  # merge, drift reports, export gate) must describe the same upstream tree.
-  freeze_upstream_ref
+# Run the shadow merge engine against the current UPSTREAM_REF and set BEHIND /
+# RESIDUAL / RESIDUAL_JSON. Fail closed on a non-numeric measurement — empty, or the
+# literal "undefined" that String(JSON.parse(...).behind) prints when the field is
+# absent (error payload). Otherwise an empty/`undefined` BEHIND is read as
+# `${BEHIND:-0}`==0 in route and silently reports UP-TO-DATE, or garbage flows into
+# routing. Extracted so the batch path below can re-measure against a bounded target.
+run_shadow_engine() {
   local json
   json="$(node "$MAIN/scripts/upstream-merge-engine.mjs" --upstream "$UPSTREAM_REF" 2>/dev/null)" \
     || { log "shadow engine failed"; ledger "ERROR reason=engine-failed"; exit 2; }
   BEHIND="$(printf '%s' "$json"  | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0,"utf8")).behind))')"
   RESIDUAL="$(printf '%s' "$json" | node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(0,"utf8")).residualConflicts))')"
   RESIDUAL_JSON="$json"
-  # Fail closed on a non-numeric measurement — empty, or the literal "undefined"
-  # that String(JSON.parse(...).behind) prints when the field is absent (error
-  # payload). Otherwise an empty/`undefined` BEHIND is read as `${BEHIND:-0}`==0 in
-  # route and silently reports UP-TO-DATE, or garbage flows into routing.
   for v in "$BEHIND" "$RESIDUAL"; do
     case "$v" in
       ''|*[!0-9]*)
@@ -697,6 +731,23 @@ measure() {
         ;;
     esac
   done
+}
+
+measure() {
+  git -C "$MAIN" fetch upstream -q 2>/dev/null || log "fetch upstream failed (using cached)"
+  # Freeze immediately after the fetch: everything from here on (engine measurement,
+  # merge, drift reports, export gate) must describe the same upstream tree.
+  freeze_upstream_ref
+  run_shadow_engine
+  # Bounded-batch: only a CONFLICTED delta needs splitting — a clean full merge lands at
+  # any size via land_clean, and a prefix of a clean merge is itself clean, so batching a
+  # zero-residual tip could never help. When the full tip conflicts AND we are far behind,
+  # retarget to a bounded first-parent batch and re-measure, so route lands/hands off a
+  # small batch this tick; the next tick advances the rest. A batch that turns out clean
+  # (residual 0) auto-lands via land_clean and the fork chips forward on its own.
+  if [ "${RESIDUAL:-0}" != 0 ] && apply_batch_cap; then
+    run_shadow_engine
+  fi
 }
 
 # --- clean auto-land path ---------------------------------------------------
@@ -709,6 +760,19 @@ measure() {
 # the gateway, so it must run only once origin durably holds the merge.
 land_and_deploy() {
   local ref="$1" date="$2" label="$3"
+  # Hold the shared main-commit lock across the ENTIRE land (re-fetch, ancestor check,
+  # ff-only, baseline/asset commits, push) so a sibling cron (cron-merge-to-main) cannot
+  # advance local main between the ff-only and the push — which would make the push
+  # non-fast-forward and strand the merge LOCAL-ONLY. Released by the dispatch EXIT trap
+  # on every exit path below. A sibling merge in flight is short; wait it out rather than
+  # discarding a proof-green land. If it will not free up, DEFER — the branch is durable
+  # on origin and the next tick re-proves + lands.
+  if ! main_lock_acquire 300; then
+    release_worktree
+    ledger "DEFER reason=main-lock-timeout label=$label ref=$ref"
+    echo "UPSTREAM-MERGE DEFER: main-commit lock held past 300s (a sibling main write is in flight); main untouched, branch preserved."
+    exit 3
+  fi
   # Landing is ff-only against LOCAL main, which succeeds even when origin/main has
   # moved on — the push at the end is then rejected and the run ends in
   # LAND-LOCAL-ONLY with main already advanced and the gateway not deployed. Check
@@ -947,6 +1011,10 @@ stage_init() {
   # a measurement that may have run hours ago against a different upstream tip.
   git -C "$MAIN" fetch upstream -q 2>/dev/null || log "fetch upstream failed (using cached)"
   freeze_upstream_ref
+  # Same bounded-batch target as route (stage-init is only reached on residual>0). The
+  # stage pins written below freeze this target, so the whole staged cycle — merge,
+  # resolution, huey proof, finish-land — operates on one bounded batch, not the full tip.
+  apply_batch_cap || true
   fresh_worktree
   git -C "$WORKTREE" checkout -B "$branch" >/dev/null 2>&1
   # The pre-merge tip: the branch's baseline by construction, and the value the huey
@@ -1283,7 +1351,10 @@ case "$cmd" in
       }
     fi
     printf '%s\n' "$$" >"$UM_LOCK_DIR/pid"
-    trap 'rm -rf "$UM_LOCK_DIR"' EXIT
+    # main_lock_release is pid-guarded — a no-op unless land_and_deploy acquired the
+    # shared main-commit lock in this process — so it is safe to fold in here and
+    # covers every land_and_deploy exit path without a second (overwriting) EXIT trap.
+    trap 'rm -rf "$UM_LOCK_DIR"; main_lock_release' EXIT
     ;;
 esac
 case "$cmd" in
@@ -1293,10 +1364,12 @@ case "$cmd" in
     # before staging, so this cycle stages from a main in sync with origin and the
     # ff-only land is not blocked by drift that piled up while the last land was slow.
     # Fail-soft: a failed sync never blocks the merge cycle (absorb_local_main still
-    # recovers a mid-cycle drift at land time).
-    SYNC_CALLER=route bash "$MAIN/scripts/cron-sync-main-to-origin.sh" || true
+    # recovers a mid-cycle drift at land time). The sync serializes on the shared
+    # main-commit lock, which route does not hold here (pre-measure), so it is not
+    # self-blocked — no caller exemption needed.
+    bash "$MAIN/scripts/cron-sync-main-to-origin.sh" || true
     measure
-    log "behind=$BEHIND residual=$RESIDUAL"
+    log "behind=$BEHIND residual=$RESIDUAL${TRUE_BEHIND:+ (bounded batch; $TRUE_BEHIND first-parent commits behind full tip)}"
     if [ "${BEHIND:-0}" = 0 ]; then
       ledger "UP-TO-DATE"
       echo "UPSTREAM-MERGE UP-TO-DATE: main is current with $UPSTREAM_REF."

@@ -22,6 +22,9 @@
 #       1 = push failed or diverged (reported, main untouched).
 set -uo pipefail
 
+# shellcheck source=scripts/lib/main-commit-lock.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/main-commit-lock.sh"
+
 MAIN="${SYNC_MAIN_TREE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$MAIN" || { echo "MAIN-SYNC-ABORT: main tree missing"; exit 1; }
 
@@ -35,21 +38,21 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   log "main has uncommitted tracked changes (a cron is mid-commit) — skip"; exit 0
 fi
 
-# Never race a SEPARATE upstream-merge land/route (it will push), or a deploy build
-# (rewriting dist/ and about to bounce the gateway). pgrep the exact scripts.
-#
-# Caller exemption: when `cron-upstream-merge.sh route` calls this synchronously it sets
-# SYNC_CALLER=route, and the only process matching the pgrep below is that caller itself
-# — which holds the upstream-merge singleton lock and has NOT staged/landed yet (the safe
-# pre-stage window). Without the exemption the guard would match its own parent and make
-# the route-time sync an unconditional no-op.
-if [ "${SYNC_CALLER:-}" != "route" ] &&
-  pgrep -f 'cron-upstream-merge\.sh (finish-land|route)' >/dev/null 2>&1; then
-  log "upstream-merge land/route in progress — skip this sync tick"; exit 0
-fi
+# A deploy build is rewriting dist/ and about to bounce the gateway; skip so a sync tick
+# never competes with the restart (the push itself is harmless to the build).
 if pgrep -f 'cron-deploy-build\.sh|build-all\.mts' >/dev/null 2>&1; then
   log "deploy build in progress — skip this sync tick"; exit 0
 fi
+# Serialize this push against the upstream-merge land and cron-merge-to-main via the
+# shared main-commit lock: without it, sync's `push origin main` can race the land's push
+# and reject it, stranding a proof-green merge LOCAL-ONLY. Short wait then skip — sync is
+# periodic and idempotent, so the next tick pushes whatever is current. This supersedes
+# the old pgrep-for-land guard and its SYNC_CALLER=route self-match exemption: when route
+# calls this synchronously it is pre-measure and holds no main lock, so acquire succeeds.
+if ! main_lock_acquire 30; then
+  log "main-commit lock held (a land/merge is in flight) — skip this sync tick"; exit 0
+fi
+trap 'main_lock_release' EXIT
 
 git fetch origin -q 2>/dev/null || { log "fetch origin failed"; exit 1; }
 local_sha="$(git rev-parse main)"
