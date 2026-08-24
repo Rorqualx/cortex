@@ -8989,6 +8989,7 @@ public struct SessionWorktreeInfo: Codable, Sendable {
 
 public struct SessionsCreateParams: Codable, Sendable {
     public let key: String?
+    public let idempotencykey: String?
     public let agentid: String?
     public let label: String?
     public let category: String?
@@ -9017,6 +9018,7 @@ public struct SessionsCreateParams: Codable, Sendable {
 
     public init(
         key: String? = nil,
+        idempotencykey: String? = nil,
         agentid: String? = nil,
         label: String? = nil,
         category: String? = nil,
@@ -9044,6 +9046,7 @@ public struct SessionsCreateParams: Codable, Sendable {
         cwd: String? = nil)
     {
         self.key = key
+        self.idempotencykey = idempotencykey
         self.agentid = agentid
         self.label = label
         self.category = category
@@ -9073,6 +9076,7 @@ public struct SessionsCreateParams: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case key
+        case idempotencykey = "idempotencyKey"
         case agentid = "agentId"
         case label
         case category

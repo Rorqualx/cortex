@@ -77,6 +77,22 @@ const journalState = (launchId) => {
   }
 };
 const record = (entry) => fs.appendFileSync(commandLog, JSON.stringify(entry) + "\n");
+const waitForRunningJournal = async (container) => {
+  let journal;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    journal = journalState(launchIdFor(container));
+    const persisted = journal?.container_json && JSON.parse(journal.container_json);
+    if (
+      journal?.state === "running" &&
+      persisted?.containerId === container.id &&
+      persisted?.engineTarget === expectedEngineTarget
+    ) {
+      return journal;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return journal;
+};
 const releaseAfterMarker = (marker, operation) => {
   const markerPath = path.join(engineRoot, marker);
   if (!fs.existsSync(markerPath)) {
@@ -131,7 +147,7 @@ if (command === "version") {
     let descriptor = "";
     for await (const chunk of process.stdin) descriptor += chunk;
     const container = readContainer(args.at(-1));
-    const journal = journalState(launchIdFor(container));
+    const journal = await waitForRunningJournal(container);
     record({ argv: args, journal });
     const persisted = journal?.container_json && JSON.parse(journal.container_json);
     if (
@@ -354,6 +370,13 @@ async function waitForTerminal(
   return await supervisor.status(launchId);
 }
 
+async function waitForWorkerStarted(workspaceDir: string): Promise<void> {
+  await vi.waitFor(
+    () => expect(fs.existsSync(path.join(workspaceDir, "worker-started"))).toBe(true),
+    { timeout: 5_000 },
+  );
+}
+
 function claimFixtureLaunch(
   fixture: ReturnType<typeof containerFixture>,
   launchId: string,
@@ -557,9 +580,7 @@ describe("node worker supervisor container isolation", () => {
 
       try {
         const running = await fixture.supervisor.launch(input, endpoint);
-        await vi.waitFor(() =>
-          expect(fs.existsSync(path.join(fixture.workspaceDir, "worker-started"))).toBe(true),
-        );
+        await waitForWorkerStarted(fixture.workspaceDir);
         if (operation === "cancel") {
           await fixture.supervisor.cancel(testNodeWorkerLaunchIdentity(input));
         } else {

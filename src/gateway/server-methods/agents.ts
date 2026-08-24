@@ -106,7 +106,7 @@ import {
   isConfiguredAgent,
   updateAgentConfigEntry,
 } from "./agents-config-mutations.js";
-import { loadOptionalServerMethodModelCatalogSnapshot } from "./optional-model-catalog.js";
+import { readPreparedServerMethodModelCatalog } from "./optional-model-catalog.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 
 // Derived from the canonical workspace list so retiring a bootstrap file cannot
@@ -1006,13 +1006,22 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
 
     const cfg = context.getRuntimeConfig();
-    const modelCatalog = await loadOptionalServerMethodModelCatalogSnapshot(context, "agents.list", {
-      logOnceKey: "agents.list",
-    });
-    const result = listAgentsForGateway(cfg, modelCatalog?.entries, {
-      includeSystem: hasGatewayClientCap(client?.connect.caps, GATEWAY_CLIENT_CAPS.AGENT_KIND),
-    });
-    respond(true, result, undefined);
+    const modelCatalogByAgentId = new Map(
+      await Promise.all(
+        listAgentIds(cfg).map(
+          async (agentId) =>
+            [agentId, await readPreparedServerMethodModelCatalog(context, { agentId })] as const,
+        ),
+      ),
+    );
+    respond(
+      true,
+      listAgentsForGateway(cfg, undefined, {
+        modelCatalogByAgentId,
+        includeSystem: hasGatewayClientCap(client?.connect.caps, GATEWAY_CLIENT_CAPS.AGENT_KIND),
+      }),
+      undefined,
+    );
   },
   "agents.create": async ({ params, respond }) => {
     if (!validateAgentsCreateParams(params)) {

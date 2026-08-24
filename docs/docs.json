@@ -1326,6 +1326,7 @@
                   "plugins/workboard",
                   "plugins/webhooks",
                   "plugins/admin-http-rpc",
+              "plugins/geolocation",
                   "plugins/beam",
                   "plugins/voice-call",
                   "plugins/vault",

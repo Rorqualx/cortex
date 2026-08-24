@@ -1822,5 +1822,17 @@
   {
     "source": "Embedding",
     "target": "嵌入"
+  },
+  {
+    "source": "Geolocation plugin",
+    "target": "地理位置插件"
+  },
+  {
+    "source": "Trusted proxy auth",
+    "target": "受信任代理认证"
+  },
+  {
+    "source": "geolocation",
+    "target": "geolocation"
   }
 ]
