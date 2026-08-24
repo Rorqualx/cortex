@@ -350,7 +350,6 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "plugins:assets:copy",
     "runtime-postbuild",
     "build-stamp",
-    "runtime-postbuild-stamp",
     "build:plugin-sdk:dts",
     "write-plugin-sdk-entry-dts",
     "check-plugin-sdk-exports",
@@ -358,6 +357,18 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "write-build-info",
     "write-cli-startup-metadata",
     "write-cli-compat",
+    // runtime-postbuild-stamp MUST be last for the deploy profile. Writing
+    // dist/.runtime-postbuildstamp is the trigger the rebuild-restart WatchPaths
+    // job (~/.openclaw/restart-gateway-on-rebuild.sh) fires on — it `launchctl
+    // stop`s the gateway. Emitted before ui:build (its old position), that stop
+    // (a) respawned the gateway onto a dist whose control-ui tsdown had wiped but
+    // ui:build had not yet rebuilt — a persistent boot-cached 503 — and (b) killed
+    // the still-running build-all itself, a descendant of the gateway launchd job
+    // that nohup/disown does not escape, so ui:build never completed. Last, the
+    // restart fires only once every artifact incl. control-ui exists, and cannot
+    // stop its own build. Other profiles keep it grouped with runtime-postbuild
+    // (they have no ui:build and are not deploy-restart triggers).
+    "runtime-postbuild-stamp",
   ],
   ciArtifacts: [
     "plugins:assets:build",
@@ -427,10 +438,14 @@ const FULL_RUNTIME_ONLY_STEPS = [
   "plugins:assets:copy",
   "runtime-postbuild",
   "build-stamp",
-  "runtime-postbuild-stamp",
   "ui:build",
   "write-build-info",
   "write-cli-startup-metadata",
+  // Same ordering contract as the `full` profile: runtime-postbuild-stamp is the
+  // deploy restart trigger, so it must follow ui:build (and every other artifact)
+  // or the rebuild-restart watcher stops the gateway onto wiped control-ui and
+  // kills the in-flight build. This is the skip-dts variant of `full`.
+  "runtime-postbuild-stamp",
 ];
 
 export const BUILD_ALL_PROFILE_STEP_ENV: Record<string, Record<string, NodeJS.ProcessEnv>> = {
