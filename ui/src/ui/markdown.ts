@@ -574,7 +574,11 @@ md.core.ruler.after("linkify", "linkify-cjk-trim", (state) => {
       const cjkTail = displayText.slice(cjkIdx);
       // Rebuild href by preserving the scheme prefix that linkify added but
       // display text omits (e.g. "mailto:" for emails, "http://" for www links).
-      const href = token.attrGet("href") ?? "";
+      // Root workspace hoists markdown-it@15 (bundled types widen attrGet to
+      // string | number | null) while the ui runtime stays on markdown-it@14,
+      // whose attrGet only ever returns string | null. Coerce so the widened
+      // declared type satisfies v14 string-method call sites unchanged.
+      const href = String(token.attrGet("href") ?? "");
       const prefixLen = href.indexOf(displayText);
       const hrefPrefix = prefixLen > 0 ? href.slice(0, prefixLen) : "";
       token.attrSet("href", hrefPrefix + trimmedDisplay);
@@ -618,7 +622,7 @@ md.core.ruler.after("github-task-lists", "task-list-allowlist", (state) => {
     if (!listItem || listItem.type !== "list_item_open") {
       continue;
     }
-    const cls = listItem.attrGet("class") ?? "";
+    const cls = String(listItem.attrGet("class") ?? "");
     if (!cls.includes("task-list-item")) {
       continue;
     }
@@ -657,7 +661,7 @@ md.renderer.rules.image = (tokens, idx) => {
   if (!token) {
     return "";
   }
-  const src = token.attrGet("src")?.trim() ?? "";
+  const src = String(token.attrGet("src") ?? "").trim();
   // Use token.content which preserves raw markdown formatting (e.g. **bold**)
   // to match original marked.js behavior.
   const alt = normalizeMarkdownImageLabel(token.content);
