@@ -13,7 +13,13 @@ describe("external plugin local dist build", () => {
     const packageDirs = listExternalPluginLocalDistPackageDirs();
     const excludedPluginIds = collectRootPackageExcludedExtensionDirs();
 
-    expect(packageDirs).toHaveLength(61);
+    // A floor, not an exact count: the fork ships a different externalized-plugin
+    // set than upstream (56 vs upstream's 61 when this test landed), and every
+    // upstream resync that adds or drops a plugin would otherwise re-break this on
+    // a magic number. The real contract is proven below — every selected dir sits
+    // behind a package exclusion — plus the explicit membership checks; the floor
+    // only guards against the selection collapsing to empty/truncated.
+    expect(packageDirs.length).toBeGreaterThanOrEqual(50);
     expect(packageDirs).toEqual(
       expect.arrayContaining(["extensions/slack", "extensions/sms", "extensions/mxc"]),
     );

@@ -153,7 +153,7 @@ fi
 
 # ── Check for in-flight cron runs ──────────────────────────────────────
 # Killing the gateway also kills every running cron job (research scans,
-# skill-forge, the nightly upstream-merge). Refuse to restart while any cron
+# skill-forge, the upstream-merge cron). Refuse to restart while any cron
 # job is in-flight unless forced. assert_cron_idle reads the persisted
 # runningAtMs marker, so it works here in the detached restart process.
 # Source defensively: a missing guard lib must not brick this recovery tool.

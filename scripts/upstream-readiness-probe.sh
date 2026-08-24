@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Nightly upstream-sync readiness probe (Phase 4 self-monitoring).
+# Upstream-sync readiness probe (Phase 4 self-monitoring).
 #
 # Runs the SHADOW merge engine (real merge in a throwaway worktree, measured and
 # aborted — never lands), appends a dated metrics line to a workspace trend log,
 # and prints a one-line summary for cron delivery. The `residual` count is the
 # autonomy gauge: it should trend DOWN as the supervised resync seeds rerere and
-# fork features are re-homed; when it reaches ~0 a nightly merge could land
+# fork features are re-homed; when it reaches ~0 an autonomous merge could land
 # autonomously. Read-only: this never commits, builds, or deploys.
 set -uo pipefail
 

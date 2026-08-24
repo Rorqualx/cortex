@@ -55,10 +55,18 @@ echo "Validate gate: running unit-fast suite (failures compared to baseline, not
 # the gateway mid-run (cron job recorded "interrupted by gateway restart" with no
 # deploy). Cap workers low and de-prioritize CPU so the live gateway survives the
 # gate; the gate is latency-tolerant, the gateway is not.
+#
+# `dot` reporter alongside `json` is load-bearing, not cosmetic: run-vitest.mjs
+# terminates a run that emits nothing for DEFAULT_VITEST_NO_OUTPUT_TIMEOUT_MS
+# (120s), and the json reporter writes only its final file — silent the whole run.
+# With workers capped at 2 the suite runs silently well past 120s, so a json-only
+# invocation was killed before writing $RESULTS, surfacing as the "no test results
+# produced (runner error)" failure below. dot emits a mark per finished file on the
+# child's stdout, resetting the watchdog while keeping it able to catch a real hang.
 CI=1 OPENCLAW_VITEST_MAX_WORKERS="${CRON_GATE_VITEST_WORKERS:-2}" \
   nice -n 19 node scripts/run-vitest.mjs run \
   --config test/vitest/vitest.unit-fast.config.ts \
-  --reporter=json --outputFile="$RESULTS" >/dev/null 2>&1 || true
+  --reporter=dot --reporter=json --outputFile="$RESULTS" >/dev/null 2>&1 || true
 
 [ -s "$RESULTS" ] || { echo "TESTGATE-FAIL: no test results produced (runner error)"; exit 2; }
 

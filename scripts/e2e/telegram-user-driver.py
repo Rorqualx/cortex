@@ -4,6 +4,7 @@ import argparse
 import atexit
 import base64
 import ctypes
+import errno
 import json
 import os
 import secrets
@@ -35,19 +36,35 @@ def read_json(path):
 
 
 def open_contained_file(root, relative):
-    """Opens a file under root, descending one component at a time from an open directory
-    descriptor so no symlink can be traversed and no directory can be swapped mid-walk.
-    Anchoring on descriptors is what keeps containment true without Linux-only /proc paths."""
-    parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        *directories, name = relative.parts
-        for directory in directories:
-            child = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    """Opens a file under root while refusing to traverse any symlinked component, so
+    no symlink can redirect the walk out of root.
+
+    Where os.open supports dir_fd (Linux) each component is opened from its parent's
+    descriptor, which additionally defeats a concurrent mid-walk directory swap.
+    macOS does not implement dir_fd for os.open (os.supports_dir_fd excludes it), so
+    there the same no-symlink guarantee is kept by rejecting symlinked components and
+    opening the final path O_NOFOLLOW. That path-based variant cannot defend against a
+    concurrent swap between the check and the open, which is acceptable for this test
+    driver; without the fallback resolve_media raises NotImplementedError on macOS."""
+    *directories, name = relative.parts
+    if os.open in os.supports_dir_fd:
+        parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for directory in directories:
+                child = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                os.close(parent)
+                parent = child
+            return os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+        finally:
             os.close(parent)
-            parent = child
-        return os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
-    finally:
-        os.close(parent)
+    current = Path(root)
+    for directory in directories:
+        current = current / directory
+        if current.is_symlink():
+            raise OSError(errno.ELOOP, "symlinked path component rejected", str(current))
+        if not current.is_dir():
+            raise NotADirectoryError(errno.ENOTDIR, "not a directory", str(current))
+    return os.open(current / name, os.O_RDONLY | os.O_NOFOLLOW)
 
 
 def write_json_private(path, data):
