@@ -236,7 +236,7 @@ describe("cron controller", () => {
     // The operator expanded the list via "Load more" (10 rows loaded, page size 5).
     // A background tick must request all 10 rows at offset 0, not just the first
     // page, or the visible list would shrink back every few seconds.
-    const request = vi.fn(async (_method: string, _payload?: unknown) => ({
+    const request = vi.fn(async () => ({
       jobs: [],
       total: 10,
       hasMore: false,

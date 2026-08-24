@@ -349,6 +349,7 @@ export async function resolveEmbeddedRunTerminal(input: {
           externalAbort: externalAbort || signalOwnedInterruption,
           timedOut: terminalTimedOut,
           hadPotentialSideEffects: input.replayState.hadPotentialSideEffects,
+          terminalAuthFailure: input,
           attempt,
         });
   const incompleteTurnFallbackSafe = Boolean(

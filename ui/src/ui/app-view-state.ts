@@ -430,7 +430,6 @@ export type AppViewState = ScrollHost &
   } & Pick<
     CronState,
     | "cronLoading"
-    | "cronBackgroundRefreshing"
     | "cronQuickCreateOpen"
     | "cronQuickCreateStep"
     | "cronQuickCreateDraft"

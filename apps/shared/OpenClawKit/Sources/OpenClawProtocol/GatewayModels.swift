@@ -1521,6 +1521,7 @@ public struct PresenceEntry: Codable, Sendable {
     public let platform: String?
     public let devicefamily: String?
     public let modelidentifier: String?
+    public let timezone: String?
     public let mode: String?
     public let lastinputseconds: Int?
     public let reason: String?
@@ -1541,6 +1542,7 @@ public struct PresenceEntry: Codable, Sendable {
         platform: String? = nil,
         devicefamily: String? = nil,
         modelidentifier: String? = nil,
+        timezone: String? = nil,
         mode: String? = nil,
         lastinputseconds: Int? = nil,
         reason: String? = nil,
@@ -1560,6 +1562,7 @@ public struct PresenceEntry: Codable, Sendable {
         self.platform = platform
         self.devicefamily = devicefamily
         self.modelidentifier = modelidentifier
+        self.timezone = timezone
         self.mode = mode
         self.lastinputseconds = lastinputseconds
         self.reason = reason
@@ -1581,6 +1584,7 @@ public struct PresenceEntry: Codable, Sendable {
         case platform
         case devicefamily = "deviceFamily"
         case modelidentifier = "modelIdentifier"
+        case timezone = "timeZone"
         case mode
         case lastinputseconds = "lastInputSeconds"
         case reason
