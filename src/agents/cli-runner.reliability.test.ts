@@ -55,7 +55,6 @@ import {
   requestHeartbeatMock,
   supervisorSpawnMock,
 } from "./cli-runner.test-support.js";
-import { resetClaudeLiveSessionsForTest } from "./cli-runner/claude-live-session.test-support.js";
 import { executePreparedCliRun } from "./cli-runner/execute.js";
 import {
   resolveCliNoOutputTimeoutMs,
@@ -238,6 +237,7 @@ function buildPreparedContext(params?: {
     systemPrompt: "You are a helpful assistant.",
     systemPromptReport: {} as PreparedCliRunContext["systemPromptReport"],
     bootstrapPromptWarningLines: [],
+    claudeSkillsPluginArgs: [],
     ...(params?.openClawHistoryPrompt
       ? { openClawHistoryPrompt: params.openClawHistoryPrompt }
       : {}),
@@ -372,7 +372,6 @@ describe("runCliAgent reliability", () => {
     vi.unstubAllEnvs();
     sessionFileEnvSnapshot?.restore();
     sessionFileEnvSnapshot = undefined;
-    resetClaudeLiveSessionsForTest();
     resetDiagnosticEventsForTest();
     cliBackendsTesting.resetDepsForTest();
     vi.useRealTimers();

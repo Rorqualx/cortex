@@ -64,6 +64,7 @@ export function createToolTerminalObserver(
         toolName: observation.toolName,
         ...(observation.meta ? { meta: observation.meta } : {}),
         ...observation.failure,
+        executionStarted,
         mutatingAction,
         ...(observation.ownerMutation ? { ownerKey: observation.ownerMutation.ownerKey } : {}),
         ...(mutatingAction && mutation.actionFingerprint

@@ -40,6 +40,7 @@ function formatToolErrorWarningText(params: {
   includeDetails: boolean;
   useMarkdown: boolean;
 }): string {
+  const failureVerb = params.lastToolError.executionStarted === false ? "blocked" : "failed";
   const terminalDiagnostic = params.lastToolError.terminalDiagnostic;
   if (terminalDiagnostic?.kind === "process") {
     const toolLabel = formatToolAggregate(
@@ -76,8 +77,8 @@ function formatToolErrorWarningText(params: {
     const errorSuffix =
       includeError && params.lastToolError.error ? `: ${params.lastToolError.error}` : "";
     return subject
-      ? `⚠️ ${toolLabel} failed: ${subject}${conciseExitSuffix}${errorSuffix}`
-      : `⚠️ ${toolLabel} failed${conciseExitSuffix}${errorSuffix}`;
+      ? `⚠️ ${toolLabel} ${failureVerb}: ${subject}${conciseExitSuffix}${errorSuffix}`
+      : `⚠️ ${toolLabel} ${failureVerb}${conciseExitSuffix}${errorSuffix}`;
   }
 
   const toolSummary = formatToolAggregate(
@@ -87,7 +88,7 @@ function formatToolErrorWarningText(params: {
   );
   const errorSuffix =
     includeError && params.lastToolError.error ? `: ${params.lastToolError.error}` : "";
-  return `⚠️ ${toolSummary} failed${errorSuffix}`;
+  return `⚠️ ${toolSummary} ${failureVerb}${errorSuffix}`;
 }
 
 function formatExecLikeFailureSubject(meta: string | undefined, markdown: boolean): string {

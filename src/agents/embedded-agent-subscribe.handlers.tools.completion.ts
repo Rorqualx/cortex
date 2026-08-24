@@ -241,6 +241,7 @@ export async function handleToolExecutionEnd(
   });
   ctx.state.lastToolError = terminal.lastToolError;
   ctx.state.lastToolRecovery = terminal.lastToolRecovery;
+  const terminalErrorStatus = terminal.executionStarted ? "failed" : "blocked";
   const toolErrorSummary = ctx.state.lastToolError
     ? summarizeToolValidationError(ctx.state.lastToolError)
     : undefined;
@@ -441,7 +442,7 @@ export async function handleToolExecutionEnd(
     phase: "end",
     kind: "tool",
     title: buildToolItemTitle(toolName, meta),
-    status: isToolError ? "failed" : "completed",
+    status: isToolError ? terminalErrorStatus : "completed",
     name: toolName,
     meta,
     commandBearing: callSummary.commandBearing,
@@ -536,7 +537,7 @@ export async function handleToolExecutionEnd(
       const output = extractLiveExecOutput(eventResult);
       const rawOutput = extractExecOutput(sanitizedResult);
       const commandStatus =
-        execDetails?.status === "failed" || isToolError ? "failed" : "completed";
+        execDetails?.status === "failed" || isToolError ? terminalErrorStatus : "completed";
       emitTrackedItemEvent(ctx, {
         itemId: commandItemId,
         phase: "end",
@@ -562,7 +563,11 @@ export async function handleToolExecutionEnd(
         ...(output ? { output } : {}),
         status: commandStatus,
         ...(execDetails && "exitCode" in execDetails ? { exitCode: execDetails.exitCode } : {}),
-        ...(execDetails && "durationMs" in execDetails
+        ...(execDetails &&
+        "durationMs" in execDetails &&
+        typeof execDetails.durationMs === "number" &&
+        Number.isFinite(execDetails.durationMs) &&
+        execDetails.durationMs >= 0
           ? { durationMs: execDetails.durationMs }
           : {}),
         ...(execDetails && "cwd" in execDetails && typeof execDetails.cwd === "string"

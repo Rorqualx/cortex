@@ -39,7 +39,6 @@ import {
 export { scheduleGatewayIdleTask, type GatewayIdleTaskHandle } from "./server-idle-task.js";
 export {
   startGatewayChannelHealthMonitor,
-  startGatewayRuntimeServices,
   type GatewayChannelManager,
 } from "./server-runtime-startup-services.js";
 

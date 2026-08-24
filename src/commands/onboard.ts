@@ -379,6 +379,7 @@ async function validateResetAuthChoice(params: {
         allowProfile: params.resetScope === "config",
         required: false,
         secretInputMode: params.opts.secretInputMode,
+        json: params.opts.json,
       });
       if (params.opts.customApiKey?.trim() && !customCredential) {
         return false;
@@ -449,6 +450,7 @@ async function validateResetAuthChoice(params: {
           workspaceDir: params.workspaceDir,
           allowProfile: input.allowProfile === false ? false : params.resetScope === "config",
           secretInputMode: params.opts.secretInputMode,
+          json: params.opts.json,
         }),
     });
     if (!valid) {

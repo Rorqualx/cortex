@@ -1057,6 +1057,11 @@ export interface NodeHostConfig {
   version: number;
 }
 
+export interface NodeWorkerLaunchContainers {
+  container_json: string | null;
+  launch_id: string;
+}
+
 export interface NodeWorkerLaunches {
   completed_at_ms: number | null;
   created_at_ms: number;
@@ -1984,6 +1989,7 @@ export interface DB {
   model_catalog_remote: ModelCatalogRemote;
   native_hook_relay_bridges: NativeHookRelayBridges;
   node_host_config: NodeHostConfig;
+  node_worker_launch_containers: NodeWorkerLaunchContainers;
   node_worker_launches: NodeWorkerLaunches;
   official_external_plugin_catalog_snapshots: OfficialExternalPluginCatalogSnapshots;
   onboarding_recommendations: OnboardingRecommendations;

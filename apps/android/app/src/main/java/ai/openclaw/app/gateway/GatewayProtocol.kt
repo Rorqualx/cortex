@@ -488,6 +488,7 @@ enum class GatewayMethod(
   UsersLinkEmail("users.linkEmail"),
   UsersSetDisplayName("users.setDisplayName"),
   UsersSetAvatar("users.setAvatar"),
+  UsersSetRole("users.setRole"),
   TasksList("tasks.list"),
   TasksGet("tasks.get"),
   TasksCancel("tasks.cancel"),

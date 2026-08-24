@@ -31,6 +31,7 @@ const PROFILE_DEPENDENT_CORE_METHODS = new Set([
   "users.linkEmail",
   "users.setAvatar",
   "users.setDisplayName",
+  "users.setRole",
 ]);
 const PROFILE_DEPENDENT_CORE_PREFIXES = [
   "artifacts.",
@@ -181,6 +182,7 @@ const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "users.linkEmail", scope: "operator.admin", since: "<=2026.7" },
   { name: "users.setDisplayName", scope: "operator.write", since: "<=2026.7" },
   { name: "users.setAvatar", scope: "operator.write", since: "<=2026.7" },
+  { name: "users.setRole", scope: "operator.admin", since: "2026.8" },
   { name: "tasks.list", scope: "operator.read", since: "<=2026.7" },
   { name: "tasks.get", scope: "operator.read", since: "<=2026.7" },
   { name: "tasks.cancel", scope: "operator.write", since: "<=2026.7" },
