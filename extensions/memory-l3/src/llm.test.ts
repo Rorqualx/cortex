@@ -247,9 +247,12 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=14");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=15");
     // QW1 (2026-08-16): extraction prompts must demand verbatim temporal expressions.
     expect(call.systemPrompt).toContain("TEMPORAL");
+    // QW3 (2026-08-24): MCB persist/verify policy guard — unambiguous durable facts only.
+    expect(call.systemPrompt).toContain("PERSIST");
+    expect(call.systemPrompt).toContain("verification bar");
     // QW2 (2026-08-17): TANGLE conflict-preservation guard.
     expect(call.systemPrompt).toContain("CONFLICT");
     expect(call.systemPrompt).toContain("REASONING");
