@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Phase 3 — hybrid merge-gated nightly upstream sync for the cortex fork.
+# Phase 3 — hybrid merge-gated (hourly) upstream sync for the cortex fork.
 #
 # Replaces the OOM-prone per-commit cherry-pick classifier
 # (scripts/upstream-divergence-report.mjs) with the REAL `git merge upstream/main`
@@ -23,7 +23,7 @@
 # Subcommands:
 #   route                 fetch + measure + route (default). clean path lands+deploys inline.
 #   measure               fetch + measure only; print decision JSON. Read-only.
-#   stage-init <date>     create nightly worktree + resync-staging/<date>, start the merge,
+#   stage-init <date>     create the merge worktree + resync-staging/<date>, start the merge,
 #                         print the residual conflict list for the agent to resolve.
 #   stage-finish <date>   after the agent resolved+committed in the worktree: prove on huey,
 #                         push the branch, print the one-line land command. Never touches main.
@@ -47,7 +47,7 @@ set -uo pipefail
 # override matching the other knobs below.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN="${UPSTREAM_MERGE_MAIN:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-WORKTREE="${UPSTREAM_MERGE_WORKTREE:-$MAIN-upstream-nightly}"
+WORKTREE="${UPSTREAM_MERGE_WORKTREE:-$MAIN-upstream-merge}"
 # An explicit env value is the operator's escape hatch and outranks the stage-time
 # pins below; unset means "use the pin, else the live ref".
 UPSTREAM_REF_OVERRIDE="${UPSTREAM_REF:-}"
@@ -64,9 +64,9 @@ STAGE_BASELINE_REF="${BASELINE_REF_OVERRIDE:-main}"
 # a way to silently empty the drift report and pass the export gate on zero files.
 STAGE_OURS_REF="main"
 REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node24/bin}"   # upstream needs node>=22.22.3
-LOG="${UPSTREAM_MERGE_LOG:-$HOME/.openclaw/workspace/memory/reports/upstream-merge-nightly.log}"
+LOG="${UPSTREAM_MERGE_LOG:-$HOME/.openclaw/workspace/memory/reports/upstream-merge.log}"
 # Scratch for the set-comparison plumbing (drift/dropped/ui listings). Overridable
-# so a test run cannot clobber a concurrent nightly's intermediate files, and vice
+# so a test run cannot clobber a concurrent run's intermediate files, and vice
 # versa. Operator-facing logs keep their fixed /tmp paths; these are internal.
 UM_TMP="${UPSTREAM_MERGE_TMPDIR:-/tmp}"
 export REMOTE_NODE_BIN
@@ -79,7 +79,7 @@ today() { date +%Y-%m-%d; }
 log()   { echo "[upstream-merge] $*" >&2; }
 ledger(){ echo "$(stamp) $*" >>"$LOG" 2>/dev/null || true; }
 
-# The nightly must run from a clean main checkout; if the live tree is parked on a
+# The run must start from a clean main checkout; if the live tree is parked on a
 # resync/other branch (operator work), do nothing — never merge into their branch.
 require_main_clean() {
   local cur; cur="$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)"
@@ -176,7 +176,7 @@ freeze_upstream_ref() {
 # --- worktree lifecycle ------------------------------------------------------
 # A worktree's node_modules is the expensive part of it, and `preflight`
 # (protocol-gen + tsgo) cannot run at all without one. Wipe-and-recreate threw it
-# away on every run, so the nightly could never pass its own gate — that is why the
+# away on every run, so the run could never pass its own gate — that is why the
 # autonomous path never got past preflight. Reset with git instead and keep the deps.
 # Returns non-zero when the tree cannot be reset in place; callers then recreate it.
 reset_worktree_to() {
@@ -334,7 +334,7 @@ report_merge_ours_drift() {
     merged="$(git -C "$wt" rev-parse ":0:$f" 2>/dev/null)" || continue
     # STAGE_BASELINE_REF, not `main`: the merge's first parent is the main tip the
     # branch was STAGED at, and that is what merge=ours kept. Reading live `main`
-    # made every file the nightly landed after staging compare unequal, so
+    # made every file the run landed after staging compare unequal, so
     # `[ "$merged" = "$ours" ] || continue` silently dropped it from the loss list —
     # blinding the one gate built for the class tsgo cannot see.
     ours="$(git -C "$wt" rev-parse "$STAGE_OURS_REF:$f" 2>/dev/null)" || continue

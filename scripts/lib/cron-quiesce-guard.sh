@@ -2,7 +2,7 @@
 #
 # Shared cron-quiesce gate for gateway-restarting scripts (restart-mac.sh,
 # prod-restart.sh, ...). Killing or rebuilding the gateway also kills every
-# in-flight cron run (research scans, skill-forge, the nightly upstream-merge /
+# in-flight cron run (research scans, skill-forge, the upstream-merge cron /
 # Implementation jobs), so callers must refuse to restart while a cron job is
 # running unless explicitly forced.
 #

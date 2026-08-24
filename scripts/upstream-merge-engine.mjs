@@ -4,7 +4,7 @@
 // Runs the REAL `git merge upstream/main` in a throwaway worktree with rerere and
 // the merge=ours driver active, measures the RESIDUAL conflict surface (the files
 // that still need judgment after auto-resolution), and reports. It is the autonomy
-// readiness gauge: residual -> 0 means a nightly merge could land autonomously.
+// readiness gauge: residual -> 0 means an autonomous merge could land.
 //
 // HARD SAFETY INVARIANTS (this build has no land path at all):
 //   - operates ONLY inside a throwaway worktree it creates; refuses to touch the
@@ -124,7 +124,7 @@ function main() {
       residualByArea,
       residualStillProtected: residualProtected,
       rerereUnresolved: rerereRemaining.length,
-      // Readiness: 0 residual => a nightly merge could land without human judgment.
+      // Readiness: 0 residual => an autonomous merge could land without human judgment.
       autonomousMergeReady: residualCount === 0,
     };
   } finally {

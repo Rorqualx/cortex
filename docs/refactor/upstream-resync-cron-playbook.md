@@ -10,7 +10,7 @@ Environment invariants (verified 2026-08-22, `/Users/joederas/Documents/Cline/co
 
 - `origin` = `github.com/Rorqualx/cortex.git` · `upstream` = `github.com/openclaw/openclaw.git`
 - `main` IS the production deploy trunk (live gateway runs from `dist/`; commit+build+restart = deploy).
-- Nightly/hourly worktree: `../openclaw-upstream-nightly` (`$MAIN-upstream-nightly`), branch `resync-staging/<date>`.
+- Merge worktree: `../openclaw-upstream-merge` (`$MAIN-upstream-merge`), branch `resync-staging/<date>`.
 - huey Linux prover: `joe@192.168.50.185`, Node 24 at `/home/joe/node24/bin` (NOT node22 — 22.19.0 fails install; upstream needs ≥22.22.3).
 - `merge.ours.driver=true` is set (verified) — without it every `merge=ours` is a silent no-op.
 - `.gitattributes` carries **257** `merge=ours` globs.
@@ -44,7 +44,7 @@ and prints: the non-ui conflict list, the classified work queue (`resync-ledger.
 drift report (ranked, export-surface first), the dropped-upstream-files report, and the merge base.
 If a same-day branch already has commits it prints `STAGE-RESUME`/`STAGE-RECLAIM` instead — resume, don't restage.
 
-**Step 1 — resolve in the worktree `../openclaw-upstream-nightly`.** Edit-only; do not run git/tsgo from subagents (index races). Reconcile **NON-ui** conflicts in foundation order (protocol/packages → config+sessions/state → agents core+runner → gateway/infra/cron → channels+plugin-sdk → core features → extensions). ui/ is already resolved by policy (§3). Apply §2 rubric per hunk.
+**Step 1 — resolve in the worktree `../openclaw-upstream-merge`.** Edit-only; do not run git/tsgo from subagents (index races). Reconcile **NON-ui** conflicts in foundation order (protocol/packages → config+sessions/state → agents core+runner → gateway/infra/cron → channels+plugin-sdk → core features → extensions). ui/ is already resolved by policy (§3). Apply §2 rubric per hunk.
 
 - 3-way "take ours" must read `git show <STAGE_OURS_REF>:<path>`, **never HEAD** (HEAD is already the lossy merge result → an apply reports clean and restores nothing). `STAGE_OURS_REF` is the pinned baseline (printed as `STAGE-PINS baseline=...`).
 - Re-apply a fork delta with `git merge-file -q -L ours -L base -L upstream ours base upstream` — **never `git apply -3` mid-merge** (index holds the merge=ours result → `does not match index`, 0/N applied, reads as N phantom conflicts).
@@ -249,7 +249,7 @@ Before landing, run `$autoreview` on the **reconciliation judgment diff** (not t
 ```
 bash scripts/cron-upstream-merge.sh measure                 # read-only decision JSON
 bash scripts/cron-upstream-merge.sh stage-init [date]       # stage + reports + pins
-#   ...resolve in ../openclaw-upstream-nightly, commit...
+#   ...resolve in ../openclaw-upstream-merge, commit...
 bash scripts/cron-upstream-merge.sh finish-land [date]      # prove + ff-land + deploy (autonomous)
 bash scripts/cron-upstream-merge.sh stage-finish [date]     # prove + push + STOP (product-collision)
 REMOTE_NODE_BIN=/home/joe/node24/bin bash scripts/remote-proof.sh <branch>   # manual proof
@@ -258,7 +258,7 @@ node --import tsx scripts/protocol-gen.ts                   # catches dropped pr
 rm -rf .artifacts/tsgo-cache && node scripts/run-tsgo.mjs -p tsconfig.core.json
 ```
 
-Run log (not git-tracked): `~/.openclaw/workspace/memory/reports/upstream-merge-nightly.log`.
+Run log (not git-tracked): `~/.openclaw/workspace/memory/reports/upstream-merge.log`.
 
 ```
 
@@ -266,6 +266,6 @@ CONTRADICTIONS / STALE FACTS found while writing (verify before trusting older n
 - `verifyDepsBeforeRun: false` is COMMITTED in pnpm-workspace.yaml (line 126) — the older memory's "add it then `git checkout` to revert, never commit" is stale.
 - `startupJsGzipBytes` baseline is 585538 (not 583689/580201 from older ledgers).
 - `scripts/committer` (called by cron `land_and_deploy` for baseline/asset auto-commits, `|| true`-guarded) does NOT exist in the tree — those auto-commit steps silently no-op; verify/replace before relying on post-land baseline auto-commit.
-- `cron-upstream-merge.sh` schedule: nightly memory says `0 11 * * *`; task states it now runs HOURLY — trust the live cron config.
+- `cron-upstream-merge.sh` schedule: runs hourly (`every 1h`); cron name `upstream-merge` — trust the live cron config.
 - Deploy scripts now invoke `node --import tsx scripts/build-all.mts` (not `build-all.mjs`).
 ```
