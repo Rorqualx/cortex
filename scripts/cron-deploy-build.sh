@@ -54,9 +54,26 @@ build_rc=$?
 # boot, so a wiped UI is a persistent 503 that the build's crash-relaunch cannot
 # clear on its own. Rebuild the UI if it was wiped, then bounce the gateway once more
 # so it boots with the assets present. (prod-restart.sh guards the same way.)
+#
+# Verify + retry rather than a fire-and-forget `pnpm ui:build || true`: ui:build
+# wipes dist/control-ui via vite emptyOutDir at the START, so an interrupted or
+# failed single attempt leaves NO index.html — and an unchecked rebuild then
+# bounced the gateway onto that empty root, which is how the dashboard stayed 503
+# across deploys. Only bounce after the assets are confirmed present; if two
+# attempts still fail, leave the gateway on the current dist and warn loudly rather
+# than kickstart it onto a known-empty root.
 if [ ! -f "$ROOT/dist/control-ui/index.html" ]; then
-  echo "==> control-ui wiped by the build; rebuilding + bouncing the gateway to clear the cached empty root..."
-  (cd "$ROOT" && CI=1 npm_config_verify_deps_before_run=false pnpm ui:build) || true
-  launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true
+  echo "==> control-ui wiped by the build; rebuilding before the final bounce..."
+  for attempt in 1 2; do
+    (cd "$ROOT" && CI=1 npm_config_verify_deps_before_run=false pnpm ui:build) || true
+    [ -f "$ROOT/dist/control-ui/index.html" ] && break
+    echo "==> ui:build attempt $attempt left control-ui empty (interrupted emptyOutDir?)."
+  done
+  if [ -f "$ROOT/dist/control-ui/index.html" ]; then
+    echo "==> control-ui restored; bouncing the gateway to clear the cached empty root..."
+    launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true
+  else
+    echo "DEPLOY-WARN: control-ui still missing after 2 rebuilds; NOT bouncing onto an empty root. Dashboard stays on the current dist; fix pnpm ui:build." >&2
+  fi
 fi
 exit "$build_rc"
