@@ -1473,6 +1473,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
         args: toolParams.args,
         replaySafe: toolParams.replaySafe,
         hideFromChannelProgress: toolParams.hideFromChannelProgress,
+        lifecycleProvenance: "nested",
       } as never);
       // Upstream #c3ec166: the tool signals when its real implementation begins, so
       // executionStarted reflects whether work actually ran (vs a preflight/preparer
