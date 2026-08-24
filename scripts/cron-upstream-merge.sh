@@ -892,22 +892,55 @@ stage_init() {
   # of main, or an unreadable linkage (rev-list fails -> "refuse"), refuse the wipe:
   # a same-day `checkout -B` would reset the branch ref and orphan the commits
   # (reflog-only recovery). Tradeoff: edited-but-uncommitted work isn't guarded here.
-  if [ -d "$WORKTREE" ]; then
-    local ahead; ahead="$(git -C "$WORKTREE" rev-list --count main..HEAD 2>/dev/null || echo refuse)"
-    local held; held="$(git -C "$WORKTREE" symbolic-ref --short HEAD 2>/dev/null || echo '')"
-    if [ "$ahead" != 0 ] && [ "$held" = "$branch" ]; then
-      log "worktree $WORKTREE already holds today's resolution ($branch, ahead=$ahead) — resume it instead of restaging"
-      ledger "STAGE-RESUME branch=$branch ahead=$ahead"
-      echo "STAGE-RESUME worktree=$WORKTREE branch=$branch ahead=$ahead"
-      return 0
+  # Resume off the branch REF, not the worktree's checked-out branch. A DEFER
+  # (ff-block, proof-unavailable) runs release_worktree, which resets the worktree to
+  # main's HEAD — so the committed resolution survives only on refs/heads/$branch. The
+  # old guard keyed on the worktree's symbolic-ref, so after a DEFER the next tick saw a
+  # detached worktree, fell through to `checkout -B $branch` below, and reset the branch
+  # to main — orphaning the resolution and forcing a fresh, larger re-merge (the loop
+  # that regrew residual 57 -> 109 across a day). Resume the ref; never restage over it.
+  local branch_ahead; branch_ahead="$(git -C "$MAIN" rev-list --count "main..$branch" 2>/dev/null || echo 0)"
+  case "$branch_ahead" in ''|*[!0-9]*) branch_ahead=0 ;; esac
+  if [ "$branch_ahead" -gt 0 ]; then
+    # Re-attach the worktree to the branch WITHOUT re-merging: the branch's frozen pins
+    # define its upstream target, and re-merging a newer upstream is what grows the
+    # residual. The agent resolves the remaining frozen residual; finish-land re-proves
+    # and lands (prove_staged absorbs any main drift first).
+    local reattached=0
+    if [ -d "$WORKTREE" ] && git -C "$WORKTREE" rev-parse --git-dir >/dev/null 2>&1; then
+      git -C "$WORKTREE" merge --abort 2>/dev/null || true
+      git -C "$WORKTREE" rebase --abort 2>/dev/null || true
+      git -C "$WORKTREE" checkout -f "$branch" >/dev/null 2>&1 && reattached=1
     fi
-    # A previous night's staging branch that never landed must not deadlock the
-    # nightly: 2026-07-23 and 07-24 each left one behind, and 07-25's committed
-    # resolution would have blocked tonight's run entirely. The branch ref keeps
-    # the commits reachable, so only the worktree is reclaimed.
-    if [ "$ahead" != 0 ]; then
-      log "reclaiming stale worktree from '$held' (ahead=$ahead); branch ref keeps those commits"
-      ledger "STAGE-RECLAIM stale=$held ahead=$ahead"
+    if [ "$reattached" != 1 ]; then
+      # Worktree unusable/detached: recreate it ON the branch (never main) so the
+      # commits stay referenced. Only if that also fails do we refuse — restaging here
+      # would `checkout -B` the branch onto main and orphan proven work.
+      git -C "$MAIN" worktree remove --force "$WORKTREE" 2>/dev/null || true
+      rm -rf "$WORKTREE" 2>/dev/null || true
+      git -C "$MAIN" worktree add "$WORKTREE" "$branch" >/dev/null 2>&1 && reattached=1
+    fi
+    if [ "$reattached" != 1 ]; then
+      ledger "STAGE-ABORT branch=$branch ahead=$branch_ahead reason=cannot-reattach"
+      echo "STAGE-ABORT: $branch holds resolution (ahead=$branch_ahead) but its worktree cannot be attached; refusing to restage and orphan the work. Inspect $WORKTREE."
+      exit 2
+    fi
+    load_stage_pins "$branch"
+    log "resuming $branch off its ref (ahead=$branch_ahead, frozen target); worktree re-attached"
+    ledger "STAGE-RESUME branch=$branch ahead=$branch_ahead"
+    echo "STAGE-RESUME worktree=$WORKTREE branch=$branch ahead=$branch_ahead"
+    return 0
+  fi
+  # A stale prior-day branch (a different name) parked in the worktree must not deadlock
+  # the run: 2026-07-23/24/25 each left one behind. Reclaim only the worktree; its branch
+  # ref keeps those commits reachable for a manual land.
+  if [ -d "$WORKTREE" ]; then
+    local held; held="$(git -C "$WORKTREE" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    local held_ahead; held_ahead="$(git -C "$WORKTREE" rev-list --count main..HEAD 2>/dev/null || echo 0)"
+    case "$held_ahead" in ''|*[!0-9]*) held_ahead=0 ;; esac
+    if [ "$held_ahead" -gt 0 ] && [ "$held" != "$branch" ]; then
+      log "reclaiming stale worktree from '$held' (ahead=$held_ahead); branch ref keeps those commits"
+      ledger "STAGE-RECLAIM stale=$held ahead=$held_ahead"
     fi
   fi
   # stage-init is reachable without `route`, so freeze here too rather than trusting
@@ -1111,8 +1144,40 @@ resolve_staged_branch() {
   STAGED_BRANCH="$branch"
 }
 
+# Merge current local main into the staged branch so it contains any commit a sibling
+# cron (daily-research, skill-forge) landed on main between stage and now. Without it the
+# ff-only land in land_and_deploy diverges from local main and DEFERs (ff-blocked), and
+# that DEFER's release_worktree then orphans the resolution on the next stage_init — the
+# loop that regrew residual 57 -> 109 across a day of cycles. The sibling commits are
+# orthogonal to the resync (different files), so the merge is normally trivial; a real
+# conflict means a sibling touched a resync file and needs reconciliation. Returns 1 on
+# conflict (merge aborted), 0 when the branch already contains main or merged clean.
+absorb_local_main() {
+  local main_sha; main_sha="$(git -C "$MAIN" rev-parse main 2>/dev/null)"
+  [ -n "$main_sha" ] || return 0
+  if git -C "$MAIN" merge-base --is-ancestor "$main_sha" "$STAGED_BRANCH" 2>/dev/null; then
+    return 0
+  fi
+  log "local main ($main_sha) advanced beyond $STAGED_BRANCH since staging; absorbing before proof"
+  if git -C "$WORKTREE" merge --no-ff --no-edit "$main_sha" >/tmp/um-absorb.log 2>&1; then
+    log "absorbed local main into $STAGED_BRANCH (proof + land now cover it)"
+    return 0
+  fi
+  git -C "$WORKTREE" merge --abort 2>/dev/null || true
+  return 1
+}
+
 # Prove $STAGED_BRANCH on huey (node24). Non-green exits with the proof rc; main untouched.
 prove_staged() {
+  # Land against a branch that already contains current local main, so a sibling cron's
+  # commit cannot ff-block the land after a ~10min proof, and the proof covers exactly
+  # the tree we land. Absorb before preflight so a conflict fails cheap.
+  if ! absorb_local_main; then
+    ledger "STAGE-PROOF branch=$STAGED_BRANCH result=FAIL reason=main-absorb-conflict"
+    echo "STAGE deferred — a sibling cron commit on main conflicts with the resolution; reconcile in $WORKTREE, re-commit, re-run."
+    tail -n 5 /tmp/um-absorb.log 2>/dev/null
+    exit 1
+  fi
   # Local gate first — a failure here costs seconds, the huey cycle costs ~10 min.
   local pre pf_rc
   pre="$(preflight "$WORKTREE")"; pf_rc=$?
