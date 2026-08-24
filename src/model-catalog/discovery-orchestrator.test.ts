@@ -171,4 +171,105 @@ describe("runProviderModelDiscovery", () => {
     const snapshotRow = rows.find((r) => r.modelId === "DeepSeek-V4-Flash-0731");
     expect(snapshotRow?.source).toBe("models");
   });
+
+  it("silent alias bumps produce no deprecations (no reassignment trigger)", async () => {
+    // Verification (2026-08-24, analysis QW-1): a silent point-update — alias
+    // deepseek-v4-flash answered with DeepSeek-V4-Flash-0731 while /models still
+    // lists the alias — must NOT deprecate anything. Deprecation is what arms
+    // doctor's model-pin reassignment; a silent bump alone must stay inert so
+    // pins keep riding the stable alias until the provider truly drops it.
+    const { db } = await openTempDb();
+    const fetchFn = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      if (u.endsWith("/chat/completions")) {
+        return new Response(JSON.stringify({ model: "DeepSeek-V4-Flash-0731" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      // /models lists the alias (and the base pro line), never the snapshot id.
+      return modelsResponse(["deepseek-v4-flash", "deepseek-v4-pro"]);
+    });
+    const run = () =>
+      runProviderModelDiscovery({
+        provider: "deepseek",
+        cfg: cfgWith({
+          deepseek: {
+            baseUrl: "https://api.deepseek.com",
+            models: [{ id: "deepseek-v4-flash" }],
+          },
+        }),
+        nowMs: 1000,
+        db,
+        probeServed: true,
+        fetchFn: fetchFn as unknown as typeof fetch,
+        resolveEndpoint: () => ({ baseUrl: "https://api.deepseek.com", apiKey: "***" }),
+      });
+    const first = await run();
+    expect(first).toMatchObject({ ok: true, deprecated: [] });
+    // The unlisted snapshot id lands as a probe-sourced active row, not a
+    // deprecation.
+    expect(first.probedAdded).toEqual(["DeepSeek-V4-Flash-0731"]);
+    // Steady state: a repeat run with the same shape still deprecates nothing.
+    const second = await run();
+    expect(second).toMatchObject({ ok: true, deprecated: [] });
+    expect(listDiscoveredModels(db, { provider: "deepseek", status: "deprecated" })).toEqual([]);
+    expect(listSilentUpgrades(db, "deepseek")).toEqual([
+      { provider: "deepseek", from: "deepseek-v4-flash", to: "DeepSeek-V4-Flash-0731" },
+    ]);
+  });
+
+  it("picks up a served-but-unlisted config-declared model via the probe", async () => {
+    // Verification (2026-08-24, analysis QW-1): deepseek-v4-flash-vision-exp is
+    // served but absent from /models. It is declared in config, so the probe
+    // candidate list (config ids preferred over /models ids) requests it; the
+    // provider echoes the id back. The observation must surface as probedAdded
+    // with a probe-sourced active row that later /models refreshes never
+    // vanish-deprecate (reconcile only deprecates source=="models" rows).
+    const { db } = await openTempDb();
+    const requested: string[] = [];
+    const fetchFn = vi.fn(async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      if (u.endsWith("/chat/completions")) {
+        const body = JSON.parse(String((init as { body?: string }).body ?? "{}"));
+        requested.push(String(body.model));
+        return new Response(JSON.stringify({ model: body.model }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return modelsResponse(["deepseek-v4-flash", "deepseek-v4-pro"]);
+    });
+    const run = () =>
+      runProviderModelDiscovery({
+        provider: "deepseek",
+        cfg: cfgWith({
+          deepseek: {
+            baseUrl: "https://api.deepseek.com",
+            models: [{ id: "deepseek-v4-flash" }, { id: "deepseek-v4-flash-vision-exp" }],
+          },
+        }),
+        nowMs: 1000,
+        db,
+        probeServed: true,
+        fetchFn: fetchFn as unknown as typeof fetch,
+        resolveEndpoint: () => ({ baseUrl: "https://api.deepseek.com", apiKey: "***" }),
+      });
+    const first = await run();
+    // Only config ids were probed (config list wins over the /models list).
+    expect(requested).toEqual(["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"]);
+    expect(first.probedAdded).toEqual(["deepseek-v4-flash-vision-exp"]);
+    const visionRow = listDiscoveredModels(db, { provider: "deepseek" }).find(
+      (r) => r.modelId === "deepseek-v4-flash-vision-exp",
+    );
+    expect(visionRow?.source).toBe("probe");
+    expect(visionRow?.status).toBe("active");
+    // A later refresh (models list unchanged) keeps the probe row active.
+    await run();
+    const after = listDiscoveredModels(db, { provider: "deepseek" }).find(
+      (r) => r.modelId === "deepseek-v4-flash-vision-exp",
+    );
+    expect(after?.status).toBe("active");
+    expect(listDiscoveredModels(db, { provider: "deepseek", status: "deprecated" })).toEqual([]);
+  });
 });
