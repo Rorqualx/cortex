@@ -1289,6 +1289,12 @@ esac
 case "$cmd" in
   route)
     require_main_clean
+    # Push accumulated sibling-cron commits (daily-research, forge, ...) to origin
+    # before staging, so this cycle stages from a main in sync with origin and the
+    # ff-only land is not blocked by drift that piled up while the last land was slow.
+    # Fail-soft: a failed sync never blocks the merge cycle (absorb_local_main still
+    # recovers a mid-cycle drift at land time).
+    SYNC_CALLER=route bash "$MAIN/scripts/cron-sync-main-to-origin.sh" || true
     measure
     log "behind=$BEHIND residual=$RESIDUAL"
     if [ "${BEHIND:-0}" = 0 ]; then
