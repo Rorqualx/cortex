@@ -12,6 +12,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const HOME = os.homedir();
 const ORACLE_PATH = "/tmp/longmemeval/oracle.json";
@@ -44,6 +45,70 @@ After your yes/no verdict, also score the model response on four dimensions (0-1
 Output one extra line after your verdict with the four scores in this exact format:
 Scores: F=<faithfulness> C=<completeness> FC=<consistency> CL=<clarity>
 Example: Scores: F=8 C=6 FC=9 CL=7`;
+
+// ── Temporal-expression preservation metric ───────────────────────────────────
+// Deterministic (no extra judge call): extracts temporal expressions from the
+// gold answer and counts how many survive verbatim (case/whitespace-normalized)
+// in the model response. Measures the downstream effect of the TEMPORAL guard
+// carried by the extraction/compaction/reflection prompts against the recall
+// baseline (QW2, 2026-08-25). Mirrors the anchor categories that guard names:
+// ISO dates, month-name dates, clock times, weekday recurrences, relative
+// references, and durations.
+
+const TEMPORAL_EXPRESSION_PATTERNS = [
+  /\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?/gi,
+  /\b(?:jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:,\s*\d{4})?/gi,
+  /\b\d{1,2}\s+(?:jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4}\b/gi,
+  /\b\d{1,2}:\d{2}\s?(?:am|pm)\b/gi,
+  /\b(?:[01]?\d|2[0-3]):[0-5]\d\b/g,
+  /\bevery\s+(?:mon|tues|wednes|thurs|fri|satur|sun)day\b/gi,
+  /\b(?:last|next)\s+(?:week|month|year|weekend|mon|tues|wednes|thurs|fri|satur|sun)(?:day)?s?\b/gi,
+  /\b(?:yesterday|tomorrow|today|tonight)\b/gi,
+  /\b\d+(?:\.\d+)?\s+(?:day|week|month|year)s?\b/gi,
+];
+
+function normalizeTemporalExpression(expr) {
+  return String(expr)
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[.,;:]+$/u, "")
+    .trim();
+}
+
+export function extractTemporalExpressions(text) {
+  const raw = String(text ?? "");
+  const found = new Set();
+  for (const pattern of TEMPORAL_EXPRESSION_PATTERNS) {
+    pattern.lastIndex = 0;
+    let m;
+    while ((m = pattern.exec(raw)) !== null) {
+      const normalized = normalizeTemporalExpression(m[0]);
+      if (normalized) {
+        found.add(normalized);
+      }
+    }
+  }
+  return [...found];
+}
+
+export function countTemporalPreserved(answer, response) {
+  const anchors = extractTemporalExpressions(answer);
+  if (anchors.length === 0) {
+    return { total: 0, preserved: 0 };
+  }
+  const haystack = String(response ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  let preserved = 0;
+  for (const anchor of anchors) {
+    if (haystack.includes(anchor)) {
+      preserved += 1;
+    }
+  }
+  return { total: anchors.length, preserved };
+}
+
+// ── End temporal preservation helpers ─────────────────────────────────────
 
 // Verbatim prompt templates from LongMemEval's evaluate_qa.py.
 const TEMPLATES = {
@@ -290,6 +355,11 @@ async function main() {
       verdict,
       raw_judge_output: raw.slice(0, 80),
     };
+    const temporal = countTemporalPreserved(t.oracle.answer ?? "", t.hyp.hypothesis ?? "");
+    if (temporal.total > 0) {
+      result.temporal_total = temporal.total;
+      result.temporal_preserved = temporal.preserved;
+    }
     if (doDimensionScoring) {
       const dimScores = parseDimensionScores(raw);
       if (dimScores) {
@@ -332,6 +402,17 @@ async function main() {
   if (unparseable > 0) {
     console.log(`  unparseable verdicts: ${unparseable}`);
   }
+  const temporalVerdicts = verdicts.filter((v) => typeof v.temporal_total === "number");
+  if (temporalVerdicts.length > 0) {
+    const tTotal = temporalVerdicts.reduce((s, v) => s + v.temporal_total, 0);
+    const tPres = temporalVerdicts.reduce((s, v) => s + v.temporal_preserved, 0);
+    const tPct = tTotal > 0 ? Math.round((tPres / tTotal) * 100) : 0;
+    // "N of M" wording on purpose: optimize-weights.ts parses `type hits/total (pct%)`
+    // lines from this output, so this line must not match that shape.
+    console.log(
+      `  temporal expressions preserved: ${tPres} of ${tTotal} across ${temporalVerdicts.length} answers (${tPct}%)`,
+    );
+  }
   console.log(`  wall-clock: ${elapsedMin} min`);
 
   if (doDimensionScoring) {
@@ -360,7 +441,11 @@ async function main() {
   console.log(`\nWrote ${outPath}`);
 }
 
-main().catch((e) => {
-  console.error(`FATAL: ${e.message}`);
-  process.exitCode = 1;
-});
+// Entry-point guard: importing this module (e.g. from unit tests) must not run
+// the judge; only a direct `node score-longmemeval.mjs` invocation does.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(`FATAL: ${e.message}`);
+    process.exitCode = 1;
+  });
+}
