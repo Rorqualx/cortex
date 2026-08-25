@@ -32,6 +32,45 @@ restore_plugin_manifests() {
   printf '%s' "$n"
 }
 
+# ---- Single-flight deploy lock -----------------------------------------------------------
+# ONE dist-mutating operation at a time. The deploy build, the healthcheck rebuild, and the
+# one-time release migration all rewrite or clone dist/; overlapping them races the bytes and
+# is the suspected cause of a release cloned one chunk short (the migration's boot
+# ERR_MODULE_NOT_FOUND). All three share THIS lock so there is one holder, not three ad-hoc
+# mkdir locks that drift. DEPLOY_LOCK_HOLDER/DEPLOY_LOCK_AGE are set on a failed acquire for
+# the caller's message.
+DEPLOY_LOCK_DIR="${DEPLOY_LOCK_DIR:-/tmp/openclaw-deploy-build.lock.d}"
+DEPLOY_LOCK_HOLDER=""
+DEPLOY_LOCK_AGE=0
+
+# try_acquire_deploy_lock — take the lock, reclaiming it from a dead holder or one held
+# >90min (a SIGKILL before release, or a hung tsdown). Records our pid. Returns 0 on acquire,
+# 1 when a live holder owns it. Installs NO trap — the caller owns cleanup (release_deploy_lock).
+try_acquire_deploy_lock() {
+  if mkdir "$DEPLOY_LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" >"$DEPLOY_LOCK_DIR/pid"
+    return 0
+  fi
+  DEPLOY_LOCK_HOLDER="$(cat "$DEPLOY_LOCK_DIR/pid" 2>/dev/null || true)"
+  DEPLOY_LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$DEPLOY_LOCK_DIR" 2>/dev/null || echo 0) ))
+  if [ -n "$DEPLOY_LOCK_HOLDER" ] && kill -0 "$DEPLOY_LOCK_HOLDER" 2>/dev/null && [ "$DEPLOY_LOCK_AGE" -lt 5400 ]; then
+    return 1
+  fi
+  echo "==> reclaiming deploy lock (holder pid=${DEPLOY_LOCK_HOLDER:-none}, age=${DEPLOY_LOCK_AGE}s: dead pid or hung >90min)"
+  rm -rf "$DEPLOY_LOCK_DIR"
+  if mkdir "$DEPLOY_LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" >"$DEPLOY_LOCK_DIR/pid"
+    return 0
+  fi
+  return 1
+}
+
+# release_deploy_lock — drop the lock only if WE hold it (pid match), so a reclaim by another
+# holder after ours went stale is never clobbered by our EXIT trap.
+release_deploy_lock() {
+  [ "$(cat "$DEPLOY_LOCK_DIR/pid" 2>/dev/null || true)" = "$$" ] && rm -rf "$DEPLOY_LOCK_DIR" 2>/dev/null || true
+}
+
 # build_dist_and_repair <root> — run the bundle build, then repair any dist artifacts it
 # dropped (plugin manifests, control-ui) so $root/dist is a COMPLETE build. Returns the
 # build's own exit code and sets DEPLOY_DIST_REPAIRED=1 iff a repair was needed. Does NOT

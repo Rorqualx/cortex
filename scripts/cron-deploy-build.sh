@@ -49,25 +49,16 @@ dispatch_healthcheck() {
 }
 bounce_gateway() { launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true; }
 
-# Single-flight: only ONE deploy build runs at a time. Two triggers — a land's detached
-# cron-deploy-build.sh and the scheduled "Validate & Deploy" cron — otherwise race dist/.
-# Acquire BEFORE anything else; a colliding trigger SKIPS (it ships current main). Stale
-# locks (a SIGKILL before the EXIT trap) are reclaimed on a dead holder pid, plus a 90min
-# age backstop so a hung/orphaned tsdown can't deadlock every future deploy.
-DEPLOY_LOCK_DIR="${DEPLOY_LOCK_DIR:-/tmp/openclaw-deploy-build.lock.d}"
-if ! mkdir "$DEPLOY_LOCK_DIR" 2>/dev/null; then
-  deploy_holder="$(cat "$DEPLOY_LOCK_DIR/pid" 2>/dev/null || true)"
-  lock_age=$(( $(date +%s) - $(stat -f %m "$DEPLOY_LOCK_DIR" 2>/dev/null || echo 0) ))
-  if [ -n "$deploy_holder" ] && kill -0 "$deploy_holder" 2>/dev/null && [ "$lock_age" -lt 5400 ]; then
-    echo "DEPLOY-SKIP: another deploy build (pid=$deploy_holder, held ${lock_age}s) is in progress; it ships current main. Skipping this trigger."
-    exit 0
-  fi
-  echo "==> reclaiming deploy lock (holder pid=${deploy_holder:-none}, age=${lock_age}s: dead pid or hung >90min)"
-  rm -rf "$DEPLOY_LOCK_DIR"
-  mkdir "$DEPLOY_LOCK_DIR" 2>/dev/null || { echo "DEPLOY-SKIP: deploy lock race; skipping this trigger."; exit 0; }
+# Single-flight: only ONE dist-mutating op at a time (this deploy, a healthcheck rebuild, or
+# the release migration) — the deploy's two triggers (a land's detached cron-deploy-build.sh
+# and the scheduled "Validate & Deploy" cron) plus those siblings otherwise race dist/.
+# Acquire BEFORE anything else; a colliding trigger SKIPS (it ships current main). Shared
+# helper reclaims a dead holder / >90min hang. See deploy-build-core.sh.
+if ! try_acquire_deploy_lock; then
+  echo "DEPLOY-SKIP: another dist-mutating op (pid=${DEPLOY_LOCK_HOLDER:-?}, held ${DEPLOY_LOCK_AGE}s) is in progress; it ships current main. Skipping this trigger."
+  exit 0
 fi
-printf '%s\n' "$$" >"$DEPLOY_LOCK_DIR/pid"
-trap 'rm -rf "$DEPLOY_LOCK_DIR"' EXIT
+trap 'release_deploy_lock' EXIT
 
 if deploy_is_migrated "$ROOT"; then
   echo "==> Deploy mode: ATOMIC SWAP (serving $(basename "$(deploy_serving_release "$ROOT")"))"

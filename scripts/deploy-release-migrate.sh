@@ -150,6 +150,7 @@ PLIST_BAK=""
 CONFIG_BAK=""
 rel=""
 migrate_cleanup() {
+  release_deploy_lock   # always drop the deploy lock, whether we committed or rolled back
   [ "$MIGRATE_DONE" = 1 ] && return 0
   log "migration did not commit — undoing partial state (back to serving dist/)"
   [ -n "$PLIST_BAK" ] && [ -f "$PLIST_BAK" ] && cp "$PLIST_BAK" "$PLIST" 2>/dev/null || true
@@ -160,13 +161,28 @@ migrate_cleanup() {
 }
 trap migrate_cleanup EXIT
 
+# Serialize against deploy builds / healthcheck rebuilds — all mutate or clone dist, and an
+# overlap can seed a release cloned one chunk short (the ERR_MODULE_NOT_FOUND that failed the
+# first migration attempts). Wait up to ~10min for an in-flight build, then abort leaving
+# production untouched (still serving dist/); rerun when idle.
+migrate_waited=0
+until try_acquire_deploy_lock; do
+  [ "$migrate_waited" -ge 600 ] && die "a deploy build (pid=${DEPLOY_LOCK_HOLDER:-?}) has held the deploy lock >10min; aborting migration — rerun when idle"
+  log "waiting for an in-flight deploy build to finish (pid=${DEPLOY_LOCK_HOLDER:-?}, ${migrate_waited}s)…"
+  sleep 15
+  migrate_waited=$((migrate_waited + 15))
+done
+
 log "seeding first release from current dist"
 mkdir -p "$ROOT/dist.releases"
 # Ensure dist has its plugin manifests BEFORE cloning (restore operates on the repo root,
 # not a release dir), so the seeded release is complete.
 restore_plugin_manifests "$ROOT" >/dev/null 2>&1 || true
 rel="$ROOT/dist.releases/r-$(date +%s)-$$"
-cp -cR "$ROOT/dist" "$rel" 2>/dev/null || cp -R "$ROOT/dist" "$rel" || die "could not clone dist into $rel"
+# clone_dist_to verifies the seeded release is COMPLETE (file count == dist), retrying and
+# falling back to ditto — the migration's original failure was a release cloned one chunk
+# short, which boots ERR_MODULE_NOT_FOUND. A verified clone is the whole point of the seed.
+clone_dist_to "$ROOT" "$rel" || die "could not make a complete clone of dist into $rel"
 [ -f "$rel/control-ui/index.html" ] || die "seeded release missing control-ui — aborting before any infra change"
 ln -sfn "$rel" "$ROOT/dist.current" || die "could not create dist.current symlink"
 log "dist.current -> $rel"
