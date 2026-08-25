@@ -3,7 +3,6 @@ import {
   HEARTBEAT_RESPONSE_TOOL_NAME,
   normalizeHeartbeatToolResponse,
 } from "../auto-reply/heartbeat-tool-response.js";
-import { parseSessionThreadInfoFast } from "../config/sessions/thread-info.js";
 import {
   emitAgentActivityEvent,
   type AgentCommandOutputEventData,
@@ -284,8 +283,7 @@ export async function handleToolExecutionEnd(
         config: ctx.params.config,
         currentChannelId: ctx.params.currentChannelId,
         currentMessagingTarget: ctx.params.currentMessagingTarget,
-        currentThreadId:
-          ctx.params.currentThreadId ?? parseSessionThreadInfoFast(ctx.params.sessionKey).threadId,
+        currentThreadId: ctx.params.currentThreadId,
         currentMessageId: ctx.params.currentMessageId,
         replyToMode: ctx.params.replyToMode,
         hasRepliedRef: startData?.hasRepliedRef,
@@ -313,8 +311,7 @@ export async function handleToolExecutionEnd(
         currentAccountId: ctx.params.currentAccountId,
         currentChannelId: ctx.params.currentChannelId,
         currentMessagingTarget: ctx.params.currentMessagingTarget,
-        currentThreadId:
-          ctx.params.currentThreadId ?? parseSessionThreadInfoFast(ctx.params.sessionKey).threadId,
+        currentThreadId: ctx.params.currentThreadId,
         sessionKey: ctx.params.sessionKey,
         deliveredPayload: extractionResult,
       }),
