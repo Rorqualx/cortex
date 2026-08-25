@@ -13,6 +13,7 @@ import {
   installContextEngineLoopHook,
   installToolResultContextGuard,
   markTranscriptPromptText,
+  resolveRetrievalBreadthFromMessages,
 } from "./tool-result-context-guard.js";
 import { estimateToolResultTextChars } from "./tool-result-text-budget.js";
 
@@ -1384,6 +1385,49 @@ describe("installContextEngineLoopHook", () => {
     const retryResult = await callTransform(agent, withNew);
     expect(retryResult).toBe(compactedView);
     expect(engine.assemble).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes retrievalBreadth=narrow to assemble when re-assembling mid tool-loop", async () => {
+    const agent = makeGuardableAgent();
+    const engine = makeMockEngine();
+    installHook(agent, engine, 1);
+
+    const messages = [makeUser("first"), makeToolResult("call_1", "result")];
+    await callTransform(agent, messages);
+
+    expect(engine.assemble).toHaveBeenCalledTimes(1);
+    const assembleParams = recordMockArg(engine.assemble);
+    expect(assembleParams?.retrievalBreadth).toBe("narrow");
+  });
+
+  it("passes retrievalBreadth=full when the transcript tail is not a tool result", async () => {
+    const agent = makeGuardableAgent();
+    const engine = makeMockEngine();
+    installHook(agent, engine, 1);
+
+    const messages = [makeToolResult("call_1", "result"), makeUser("follow-up")];
+    await callTransform(agent, messages);
+
+    expect(engine.assemble).toHaveBeenCalledTimes(1);
+    const assembleParams = recordMockArg(engine.assemble);
+    expect(assembleParams?.retrievalBreadth).toBe("full");
+  });
+});
+
+describe("resolveRetrievalBreadthFromMessages", () => {
+  it("returns narrow when the last message is a tool result", () => {
+    expect(resolveRetrievalBreadthFromMessages([makeUser("q"), makeToolResult("c1", "r")])).toBe(
+      "narrow",
+    );
+  });
+
+  it("returns full when the last message is a user or assistant message", () => {
+    expect(resolveRetrievalBreadthFromMessages([makeUser("q")])).toBe("full");
+    expect(resolveRetrievalBreadthFromMessages([makeUser("q"), makeAssistant("a")])).toBe("full");
+  });
+
+  it("returns full for an empty message list", () => {
+    expect(resolveRetrievalBreadthFromMessages([])).toBe("full");
   });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

@@ -464,6 +464,13 @@ export interface ContextEngine {
     model?: string;
     /** The incoming user prompt for this turn (useful for retrieval-oriented engines). */
     prompt?: string;
+    /** Regime-aware retrieval breadth (arXiv:2608.15008). "narrow" when the
+     *  runtime is re-assembling mid tool-loop — broad memory injection pulls
+     *  attention off action-critical context; "full" (default) for initial
+     *  assembly and answer synthesis. Memory-injecting engines SHOULD reduce
+     *  recall breadth (e.g. top-k) for "narrow"; ignoring the field entirely
+     *  is always safe. */
+    retrievalBreadth?: "narrow" | "full";
     runtimeSettings?: ContextEngineRuntimeSettings;
     runtimeContext?: ContextEngineRuntimeContext;
   }): Promise<AssembleResult>;

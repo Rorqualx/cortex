@@ -304,6 +304,21 @@ function toMidTurnPrecheckRequest(
 }
 
 /**
+ * Regime-aware retrieval breadth for an assemble call (QW4 2026-08-25,
+ * arXiv:2608.15008). Mid-tool-loop re-assembly (transcript tail is a tool
+ * result) narrows memory recall so action-critical context stays salient;
+ * everything else keeps full breadth. Exported for tests.
+ */
+export function resolveRetrievalBreadthFromMessages(
+  messages: readonly AgentMessage[],
+): "narrow" | "full" {
+  const last = messages[messages.length - 1];
+  return last !== undefined && (last as { role?: unknown }).role === "toolResult"
+    ? "narrow"
+    : "full";
+}
+
+/**
  * Per-iteration `afterTurn` + `assemble` wrapper for sessions where
  * the context engine owns compaction. Lets the engine compact inside
  * a long tool loop instead of only at end of attempt.
@@ -431,6 +446,7 @@ export function installContextEngineLoopHook(params: {
         tokenBudget,
         model: modelId,
         runtimeSettings: params.runtimeSettings,
+        retrievalBreadth: resolveRetrievalBreadthFromMessages(providerMessages),
       });
       signal?.throwIfAborted();
       if (assembled && Array.isArray(assembled.messages)) {

@@ -48,7 +48,18 @@ import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State } from "./types.js";
 
 const ASSEMBLE_TOP_K = 5;
+// Regime-aware breadth (arXiv:2608.15008): mid-tool-loop assemblies inject
+// fewer memories so action-critical context stays salient; the initial
+// (pre-prompt) assembly keeps full recall. Final-synthesis detection is not
+// possible at the pre-call assemble seam — the substrate router (A3) owns
+// the fuller policy.
+const ASSEMBLE_TOP_K_NARROW = 3;
 const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
+
+/** Resolve the retrieval top-k for an assemble call's breadth regime. */
+export function resolveAssembleTopK(breadth: "narrow" | "full" | undefined): number {
+  return breadth === "narrow" ? ASSEMBLE_TOP_K_NARROW : ASSEMBLE_TOP_K;
+}
 
 // ReTopK retrieval cache (arXiv:2607.27692) — session-scoped LRU that reuses
 // retrieval results when a new query's embedding cosine-similarity to a
@@ -101,6 +112,9 @@ type ReTopKCacheEntry = {
   query: string;
   embedding: number[];
   result: string;
+  /** Breadth regime the result was retrieved under — a narrow hit must not
+   *  serve a full lookup (and vice versa) even for near-identical queries. */
+  breadth: "narrow" | "full";
 };
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
@@ -246,6 +260,11 @@ export class HierarchicalL3Engine implements ContextEngine {
     messages: AgentMessage[];
     tokenBudget?: number;
     prompt?: string;
+    /** Regime-aware retrieval breadth (QW4 2026-08-25, arXiv:2608.15008):
+     *  "narrow" (mid-tool-loop) trims injected memory recall so
+     *  action-critical context stays salient; "full"/undefined keeps the
+     *  default. See ContextEngine.assemble in src/context-engine/types.ts. */
+    retrievalBreadth?: "narrow" | "full";
   }): Promise<AssembleResult> {
     l3debug(
       `assemble(): sessionId=${params.sessionId} messages.length=${params.messages.length} prompt.length=${params.prompt?.length ?? 0}`,
@@ -261,7 +280,10 @@ export class HierarchicalL3Engine implements ContextEngine {
             estimatedTokens: estimateTotalTokens(params.messages),
           };
 
-    const systemPromptAddition = await this.buildMemorySection(params.prompt);
+    const systemPromptAddition = await this.buildMemorySection(
+      params.prompt,
+      params.retrievalBreadth,
+    );
 
     return {
       messages: window.selected,
@@ -270,21 +292,27 @@ export class HierarchicalL3Engine implements ContextEngine {
     };
   }
 
-  private async buildMemorySection(prompt: string | undefined): Promise<string | undefined> {
+  private async buildMemorySection(
+    prompt: string | undefined,
+    breadth?: "narrow" | "full",
+  ): Promise<string | undefined> {
     if (!prompt || prompt.length === 0) {
       return undefined;
     }
 
     // Compute query embedding once for both cache-check and retrieval.
     const queryEmbedding = await this.resolveQueryEmbedding(prompt);
+    const effectiveBreadth: "narrow" | "full" = breadth ?? "full";
 
     // ReTopK cache check: if a cached query's embedding cosine exceeds the
     // threshold, reuse the cached formatted result (arXiv:2607.27692).
+    // Breadth must match — a narrow result must not serve a full lookup.
     const retopkThreshold = getRetopkThreshold(this.storage.root);
     if (queryEmbedding && this.retrievalCache.length > 0) {
       for (let i = this.retrievalCache.length - 1; i >= 0; i--) {
         const entry = this.retrievalCache[i]!;
         if (
+          entry.breadth === effectiveBreadth &&
           entry.embedding.length === queryEmbedding.length &&
           cosineSimilarity(entry.embedding, queryEmbedding) >= retopkThreshold
         ) {
@@ -300,7 +328,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     const top = await retrieveTopK({
       query: prompt,
       storage: this.storage,
-      topK: ASSEMBLE_TOP_K,
+      topK: resolveAssembleTopK(effectiveBreadth),
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,
@@ -313,7 +341,12 @@ export class HierarchicalL3Engine implements ContextEngine {
 
     // Populate cache when we have an embedding for similarity comparison.
     if (queryEmbedding && queryEmbedding.length > 0) {
-      this.retrievalCache.push({ query: prompt, embedding: queryEmbedding, result });
+      this.retrievalCache.push({
+        query: prompt,
+        embedding: queryEmbedding,
+        result,
+        breadth: effectiveBreadth,
+      });
       // LRU eviction: keep only the most recent RETOPK_MAX_ENTRIES entries.
       if (this.retrievalCache.length > RETOPK_MAX_ENTRIES) {
         this.retrievalCache.shift();
