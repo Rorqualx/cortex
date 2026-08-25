@@ -93,3 +93,34 @@ Re-proof on the +5 tip (baseline bump applied) — [in progress].
 1. `agent-bundle-mcp-runtime.test.ts` — 7 strict-null / `ImageContent|TextContent.text` errors on **main baseline** (new since 08-20; main's own drift). Small, bounded test-only fix.
 2. `system-prompt.test.ts` sessionUrl — long-standing baseline (per 08-20 ledger).
 3. Carried from 08-20: memory-wiki → `memory-tool-contract` migration; port desired upstream ui features to fork `ui/src/ui`; secret-state vault classification; realtime-session-policy 6→9 tool assertion.
+
+## 2026-08-24 (late) — upstream aec1cd40 (23 commits)
+
+Behind=23, raw conflicts 63 (61 ui/ → fork-ownership policy; 59 upstream-only ui files dropped).
+Non-ui work: 2 conflicts + 1 merge=ours drift file.
+
+- `src/commands/models/refresh.ts` — **KEEP-OURS**. Fork rewrote the command around the
+  discovery-orchestrator (per-provider live /models polling, `--provider`, discovered snapshot);
+  upstream's only base→head delta is #128981 wrapping `refreshRemoteModelCatalog` failures in
+  `ExpectedCliError` — a path the fork command no longer has (failures are per-provider report
+  data, rendered in human + JSON output). Restored fork version byte-identical from the pinned
+  baseline. Fork module `remote-refresh.ts` itself untouched (still available to its other callers).
+- `src/commands/models/refresh.test.ts` — **KEEP-OURS**. Fork tests cover the fork feature;
+  upstream's #128981 tests exercise the hosted-catalog body this fork replaced (fork header comment
+  documents the same verdict from a prior pass). Dropped the silently-combined upstream
+  `ExpectedCliError` import (unused → not fork-committed).
+- `src/agents/cli-runner.reliability.test.ts` — **ADOPT-UPSTREAM + port 3 fork-only tests.**
+  merge=ours had frozen a pre-#121589 snapshot: fork file lacked 13 upstream tests (incl. tonight's
+  #128732 pair + #121589 format-sweep coverage) while ALL relevant production modules
+  (cli-runner.ts, execute/reliability/helpers/types, cli-run-recovery, failover-error,
+  cli-session, reply-run-registry, cli-backend.types) are byte-identical fork↔upstream — the
+  divergence was pure stale-reconciliation drift, not fork intent (no fork-authored commit ever
+  touched the file; full-history shows only upstream commits + resync merges). Rebased onto
+  upstream and ported the 3 fork-only tests (`keeps non-capture live-session artifacts through
+  fresh recovery retry`, `reports CLI reply backends as streaming until the managed run finishes`,
+  `lets configured agent default timeouts lift the default resume no-output ceiling`) onto
+  upstream's helper infra (+`replyRunRegistry` import). Supersedes the 62da85d hand-patch
+  (claude-live-session import removal + claudeSkillsPluginArgs) — upstream's file already has both.
+
+Derived files regenerated in worktree: pnpm-lock (install clean), kysely-types, protocol-gen
+(+swift unchanged, +kotlin regenerated) — all exit 0. No product-collision found → finish-land.
