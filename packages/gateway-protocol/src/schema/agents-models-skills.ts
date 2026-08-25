@@ -195,6 +195,32 @@ export const AgentsDeleteResultSchema = Type.Object(
     ok: Type.Literal(true),
     agentId: NonEmptyString,
     removedBindings: Type.Integer({ minimum: 0 }),
+    // Upstream offline-delete cleanup (#129017) reports per-path outcomes; the
+    // agents.delete CLI reads these when the gateway delegates file removal.
+    // Optional, so the fork handler may leave them unset without breaking callers.
+    removed: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            path: NonEmptyString,
+            method: Type.Union([Type.Literal("trash"), Type.Literal("missing")]),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+    failed: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            path: NonEmptyString,
+            reason: NonEmptyString,
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+    purgeFailed: Type.Optional(Type.Literal(true)),
   },
   { additionalProperties: false },
 );

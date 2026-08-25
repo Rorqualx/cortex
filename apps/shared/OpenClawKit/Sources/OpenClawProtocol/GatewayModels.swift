@@ -13773,21 +13773,33 @@ public struct AgentsDeleteResult: Codable, Sendable {
     public let ok: Bool
     public let agentid: String
     public let removedbindings: Int
+    public let removed: [[String: AnyCodable]]?
+    public let failed: [[String: AnyCodable]]?
+    public let purgefailed: Bool?
 
     public init(
         ok: Bool,
         agentid: String,
-        removedbindings: Int)
+        removedbindings: Int,
+        removed: [[String: AnyCodable]]? = nil,
+        failed: [[String: AnyCodable]]? = nil,
+        purgefailed: Bool? = nil)
     {
         self.ok = ok
         self.agentid = agentid
         self.removedbindings = removedbindings
+        self.removed = removed
+        self.failed = failed
+        self.purgefailed = purgefailed
     }
 
     private enum CodingKeys: String, CodingKey {
         case ok
         case agentid = "agentId"
         case removedbindings = "removedBindings"
+        case removed
+        case failed
+        case purgefailed = "purgeFailed"
     }
 }
 
