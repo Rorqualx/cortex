@@ -1229,6 +1229,18 @@ absorb_local_main() {
   log "local main ($main_sha) advanced beyond $STAGED_BRANCH since staging; absorbing before proof"
   if git -C "$WORKTREE" merge --no-ff --no-edit "$main_sha" >/tmp/um-absorb.log 2>&1; then
     log "absorbed local main into $STAGED_BRANCH (proof + land now cover it)"
+    # The absorbed main is part of the candidate now, so the huey proof baseline
+    # must follow it. A sibling-cron commit that ships a new baseline tsgo error
+    # otherwise reads as NET-NEW on every proof of this branch until restage
+    # (2026-08-25: daily-research added score-longmemeval.test.ts whose TS7016
+    # wedged the proof at base=22 vs cand=23 on a set-identical merge). Respect
+    # an explicit BASELINE_REF env override; write the pin too so a resumed run
+    # reloads the post-absorb baseline instead of the stale stage-time one.
+    if [ -z "$BASELINE_REF_OVERRIDE" ]; then
+      STAGE_BASELINE_REF="$main_sha"
+      write_stage_pins "$STAGED_BRANCH" "$UPSTREAM_REF" "$main_sha"
+      log "re-pinned proof baseline to absorbed main ($main_sha)"
+    fi
     return 0
   fi
   git -C "$WORKTREE" merge --abort 2>/dev/null || true
