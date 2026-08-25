@@ -309,6 +309,24 @@ export type RetrievedFact = {
 };
 
 /**
+ * Ranking comparator for retrieved facts: composite score first, then event
+ * time (QW3 2026-08-25, arXiv:2608.16303 finding 3). When scores tie, prefer
+ * the fact whose underlying *event* is more recent — `eventTime` when the
+ * extractor captured it, storage time otherwise. Score semantics are
+ * unchanged; only equal-score ordering is affected. Without this, ties fall
+ * back to insertion order, which is arbitrary across tiers.
+ */
+export function compareRetrievedFacts(a: RetrievedFact, b: RetrievedFact): number {
+  const byScore = b.score - a.score;
+  if (byScore !== 0) {
+    return byScore;
+  }
+  const aTime = a.fact.eventTime ?? a.fact.createdAt;
+  const bTime = b.fact.eventTime ?? b.fact.createdAt;
+  return aTime === bTime ? 0 : bTime - aTime;
+}
+
+/**
  * Result from Sufficient Context Agent: includes retrieved facts plus
  * optional gap analysis and suggested follow-up queries.
  */
@@ -983,7 +1001,7 @@ export async function retrieveTopK(params: {
   // Record which facts were retrieved so consolidation can adjust
   // importance based on retrieval frequency. Non-fatal — signal
   // recording failure must not block retrieval.
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort(compareRetrievedFacts);
   const topForSignals = scored.slice(0, topK);
   try {
     if (topForSignals.length > 0) {
@@ -1027,7 +1045,7 @@ export async function retrieveTopK(params: {
     }
   }
 
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort(compareRetrievedFacts);
 
   // -----------------------------------------------------------------
   // Passage-level information-density reranker (RARG-inspired)
@@ -1120,7 +1138,7 @@ export async function retrieveTopK(params: {
         }
       }
       // Re-sort after message chunk expansion
-      result.sort((a, b) => b.score - a.score);
+      result.sort(compareRetrievedFacts);
     } catch {
       // Message chunk search failed — return fact-based results as-is
     }
@@ -1229,7 +1247,7 @@ export async function retrieveTopK(params: {
       // Merge new results into the candidate pool and re-sort
       if (newResults.length > 0) {
         result.push(...newResults);
-        result.sort((a, b) => b.score - a.score);
+        result.sort(compareRetrievedFacts);
       }
     }
   }
@@ -1928,7 +1946,7 @@ export function rerankByInformationDensity(
     item.score = item.score * (1 + weight * density);
   }
 
-  results.sort((a, b) => b.score - a.score);
+  results.sort(compareRetrievedFacts);
   return results;
 }
 
@@ -1982,7 +2000,7 @@ export function critiqueStaleFacts(results: RetrievedFact[]): RetrievedFact[] {
   }
 
   if (demoted > 0) {
-    results.sort((a, b) => b.score - a.score);
+    results.sort(compareRetrievedFacts);
   }
   return results;
 }

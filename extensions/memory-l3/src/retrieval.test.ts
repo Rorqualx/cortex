@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   classifyQueryIntent,
+  compareRetrievedFacts,
   critiqueStaleFacts,
   formatMemorySection,
   getIntentScoringPreset,
@@ -1824,5 +1825,70 @@ describe("retrieveTopK with query reformulation", () => {
     expect(result.facts.length).toBeGreaterThan(0);
     // Highest-score fact always present
     expect(result.facts.some((r) => r.fact.dedupKey === "budget:1")).toBe(true);
+  });
+});
+
+describe("compareRetrievedFacts", () => {
+  const baseSignals = {
+    lexical: 0.5,
+    bm25: 0,
+    importance: 0.5,
+    recency: 1,
+    l3Boost: 0,
+    semantic: 0,
+    informationGain: 0,
+    goalRelevance: 0,
+    reliability: 1,
+    semanticEntropy: 1,
+    validity: 1,
+    entityScore: 0,
+    polarityMultiplier: 1,
+  };
+  const item = (
+    id: string,
+    score: number,
+    createdAt: number,
+    eventTime?: number,
+  ): RetrievedFact => ({
+    fact: {
+      id,
+      text: `fact ${id}`,
+      importance: 0.5,
+      createdAt,
+      dedupKey: `k:${id}`,
+      eventTime,
+    },
+    score,
+    signals: baseSignals,
+    chunkId: "c1",
+    tier: "l2",
+  });
+
+  it("orders strictly by score when scores differ", () => {
+    const low = item("a", 0.4, 1000);
+    const high = item("b", 0.9, 2000);
+    expect([low, high].sort(compareRetrievedFacts)[0]?.fact.id).toBe("b");
+  });
+
+  it("breaks score ties by eventTime, most recent event first", () => {
+    const olderEvent = item("a", 0.7, NOW, NOW - 10 * 24 * 3600 * 1000);
+    const newerEvent = item("b", 0.7, NOW - 5 * 24 * 3600 * 1000, NOW - 1000);
+    // Same storage recency ordering would put "a" first (later createdAt),
+    // but "b"'s *event* is far more recent — event time must win the tie.
+    expect([olderEvent, newerEvent].sort(compareRetrievedFacts)[0]?.fact.id).toBe("b");
+  });
+
+  it("falls back to createdAt when eventTime is absent on one side", () => {
+    const noEvent = item("a", 0.7, NOW - 30 * 24 * 3600 * 1000);
+    const withOldEvent = item("b", 0.7, NOW, NOW - 90 * 24 * 3600 * 1000);
+    // "b" has an eventTime but it is 90 days old; "a" has no eventTime so its
+    // stand-in is createdAt (30 days old) — "a" wins.
+    expect([noEvent, withOldEvent].sort(compareRetrievedFacts)[0]?.fact.id).toBe("a");
+  });
+
+  it("returns 0 for identical score and time anchors (stable ordering)", () => {
+    const a = item("a", 0.5, 1000, 1000);
+    const b = item("b", 0.5, 1000, 1000);
+    expect(compareRetrievedFacts(a, b)).toBe(0);
   });
 });
