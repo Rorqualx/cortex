@@ -61,7 +61,7 @@ fi
 trap 'release_deploy_lock' EXIT
 
 if deploy_is_migrated "$ROOT"; then
-  echo "==> Deploy mode: ATOMIC SWAP (serving $(basename "$(deploy_serving_release "$ROOT")"))"
+  echo "==> Deploy mode: ATOMIC SWAP (serving $(basename "$(dirname "$(deploy_serving_release "$ROOT")")"))"
   # Build is gateway-safe (writes scratch dist, not the serving release) — no quiesce.
   build_dist_and_repair "$ROOT"
   build_rc=$?

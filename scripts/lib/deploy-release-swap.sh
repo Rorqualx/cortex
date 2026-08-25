@@ -4,10 +4,20 @@
 # gateway and a failed build never ships.
 #
 # Layout (all under the repo root, all gitignored like dist itself):
-#   dist                    real dir — the build's scratch/output target (unchanged; the
-#                           build cleans + rewrites it every run)
-#   dist.releases/r-<epoch> promoted releases (clones of dist taken at promote time)
-#   dist.current            symlink -> dist.releases/r-<active>  (what the gateway serves)
+#   dist                      real dir — the build's scratch/output target (unchanged; the
+#                             build cleans + rewrites it every run)
+#   dist.releases/r-<epoch>/dist  promoted releases (verified clones of dist at promote time)
+#   dist.current              symlink -> dist.releases/r-<active>/dist  (what the gateway serves)
+#
+# Why each release is served from an INNER `dist/` dir (dist.releases/r-<id>/dist), not the
+# release dir itself: the packaged runtime finds its own root by locating the "/dist/" path
+# segment in its module path (fileURLToPath(import.meta.url)) — that is how it resolves the
+# SQLite read-only worker, the control-ui root, plugin entrypoints, session archive workers,
+# etc. (~10 core files, e.g. src/infra/runtime-worker-url.ts). A release served from
+# ".../dist.releases/r-<id>/" has NO "/dist/" segment ("dist.releases" != "dist"), so those
+# resolvers fall through and the gateway crash-loops with ERR_MODULE_NOT_FOUND on the worker.
+# Serving from ".../dist.releases/r-<id>/dist/" restores a real "/dist/" segment, so the
+# whole runtime resolves with zero core changes.
 #
 # The gateway is launched as dist.current/index.js; Node realpaths the symlink at load, so
 # a RUNNING gateway is pinned to its release dir and is unaffected when dist.current is
@@ -38,6 +48,7 @@ clone_dist_to() {
   local root="$1" dest="$2" want got attempt
   want="$(find "$root/dist" -type f 2>/dev/null | wc -l | tr -d ' ')"
   [ "${want:-0}" -gt 0 ] || return 1
+  mkdir -p "$(dirname "$dest")" 2>/dev/null || true   # dest may be <base>/dist with <base> new
   for attempt in 1 2; do
     rm -rf "$dest" 2>/dev/null || true
     cp -cR "$root/dist" "$dest" 2>/dev/null || true
@@ -78,18 +89,21 @@ promote_release() {
     return 1
   fi
   mkdir -p "$root/dist.releases" 2>/dev/null || true
-  # PID-suffixed so a deploy promote and a concurrent healthcheck-recovery promote in the
-  # same second cannot target the same release dir.
-  local rel="$root/dist.releases/r-$(date +%s)-$$"
+  # PID-suffixed base so a deploy promote and a concurrent healthcheck-recovery promote in
+  # the same second cannot target the same release. Served dir is the INNER dist/ (see header
+  # — keeps a "/dist/" segment in the runtime path so worker/asset resolution works).
+  local base="$root/dist.releases/r-$(date +%s)-$$"
+  local rel="$base/dist"
   # clone_dist_to verifies the clone is complete (file count == dist) and falls back from the
   # instant APFS clonefile to ditto if it is short — an incomplete release boots
   # ERR_MODULE_NOT_FOUND on the missing chunk and must never go live.
   if ! clone_dist_to "$root" "$rel"; then
+    rm -rf "$base" 2>/dev/null || true
     echo "REFUSE-PROMOTE: could not make a complete clone of dist into $rel" >&2
     return 1
   fi
   if ! _deploy_repoint_current "$root" "$rel"; then
-    rm -rf "$rel" 2>/dev/null || true
+    rm -rf "$base" 2>/dev/null || true
     echo "REFUSE-PROMOTE: could not repoint dist.current" >&2
     return 1
   fi
@@ -101,28 +115,29 @@ promote_release() {
 # current one (instant recovery to the last-good build). Echoes the release, or fails if
 # there is no previous release. Does NOT bounce — the caller bounces.
 rollback_release() {
-  local root="$1" cur r found=0 prev=""
-  cur="$(deploy_serving_release "$root")"
-  # Releases newest-first by mtime; the predecessor is the one immediately AFTER the
-  # current in that order (the next-older). Selecting "newest that isn't current" would
+  local root="$1" curbase b found=0 prevrel=""
+  # dist.current -> <base>/dist; select in base space, then repoint at the predecessor's
+  # inner dist/. Releases newest-first by mtime; the predecessor is the base immediately
+  # AFTER the current one (the next-older). Selecting "newest that isn't current" would
   # oscillate between the two newest instead of stepping back in time.
-  for r in $(ls -dt "$root"/dist.releases/r-* 2>/dev/null); do
-    if [ "$found" = 1 ]; then prev="$r"; break; fi
-    [ "$r" = "$cur" ] && found=1
+  curbase="$(dirname "$(deploy_serving_release "$root")")"
+  for b in $(ls -dt "$root"/dist.releases/r-* 2>/dev/null); do
+    if [ "$found" = 1 ]; then prevrel="$b/dist"; break; fi
+    [ "$b" = "$curbase" ] && found=1
   done
-  [ -n "$prev" ] || { echo "no previous release to roll back to" >&2; return 1; }
-  _deploy_repoint_current "$root" "$prev" || return 1
-  echo "$prev"
+  [ -n "$prevrel" ] && [ -d "$prevrel" ] || { echo "no previous release to roll back to" >&2; return 1; }
+  _deploy_repoint_current "$root" "$prevrel" || return 1
+  echo "$prevrel"
 }
 
 # prune_releases <root> [keep] — keep the newest <keep> releases (current always kept),
 # remove older ones. Never removes the release dist.current points at.
 prune_releases() {
-  local root="$1" keep="${2:-4}" cur r i=0
-  cur="$(deploy_serving_release "$root")"
-  for r in $(ls -dt "$root"/dist.releases/r-* 2>/dev/null); do
-    [ "$r" = "$cur" ] && continue
+  local root="$1" keep="${2:-4}" curbase b i=0
+  curbase="$(dirname "$(deploy_serving_release "$root")")"
+  for b in $(ls -dt "$root"/dist.releases/r-* 2>/dev/null); do
+    [ "$b" = "$curbase" ] && continue
     i=$((i + 1))
-    [ "$i" -ge "$keep" ] && rm -rf "$r" 2>/dev/null || true
+    [ "$i" -ge "$keep" ] && rm -rf "$b" 2>/dev/null || true
   done
 }
