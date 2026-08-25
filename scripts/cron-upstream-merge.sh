@@ -1340,6 +1340,37 @@ fi
 
 cmd="${1:-route}"
 
+# finish-land runs a ~75min huey proof poll + ff-land — longer than the ~80min lifetime of the
+# cron agent's exec-session that launches it, whose reaper then kills the poll before it can
+# land (observed: proof green on huey, but no land, so the upstream backlog kept growing). Re-
+# exec detached into its own session (parent=init) via python double-fork+setsid — macOS has no
+# setsid(1) — so the land completes reaper-free while the launching agent returns immediately.
+# The daemon (UM_DAEMONIZED=1) acquires the singleton lock below. Opt out with UM_NO_DAEMON=1
+# (manual foreground / tests). ONLY finish-land daemonizes: route and stage-finish return output
+# the agent consumes synchronously (route: exit 20 + RESIDUAL_JSON; stage-finish: ff commands).
+if [ "$cmd" = "finish-land" ] && [ "${UM_DAEMONIZED:-}" != 1 ] && [ "${UM_NO_DAEMON:-}" != 1 ]; then
+  _um_daemon_log="/tmp/um-finish-land-daemon.log"
+  # The first-fork parent exits 0 as soon as the grandchild is detached, so python3 returns
+  # ~immediately on success; if python3 itself cannot launch, fall through to a foreground run
+  # (reaper-exposed, but a land attempt beats silently skipping it).
+  if UM_DAEMONIZED=1 python3 - "$_um_daemon_log" "$0" "$@" <<'PY'; then
+import os, sys
+log, argv = sys.argv[1], sys.argv[2:]
+if os.fork() > 0: os._exit(0)          # launcher returns to the agent immediately
+os.setsid()                            # new session — detach from the exec-session + tty
+if os.fork() > 0: os._exit(0)          # not a session leader (never reattaches a tty)
+fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+devnull = os.open(os.devnull, os.O_RDONLY)
+os.dup2(devnull, 0)                     # daemon has no tty; give ssh/children a real /dev/null stdin
+os.dup2(fd, 1); os.dup2(fd, 2)
+os.execvp("bash", ["bash"] + argv)     # re-run this script; UM_DAEMONIZED=1 skips this block
+PY
+    echo "UPSTREAM-MERGE: finish-land re-launched detached (reaper-immune); log=$_um_daemon_log"
+    exit 0
+  fi
+  echo "UPSTREAM-MERGE: WARN could not daemonize (python3 launch failed); running finish-land in foreground (reaper-exposed)" >&2
+fi
+
 # Singleton for huey-proof paths. A tick's proof cycle (baseline+candidate on huey)
 # runs ~40-50min, longer than the hourly cadence, so the scheduler can launch a fresh
 # invocation while the previous one is still proving. Concurrent runs then collide on

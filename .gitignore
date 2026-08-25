@@ -5,6 +5,11 @@ docker-compose.override.yml
 docker-compose.extra.yml
 docker-compose.sandbox.yml
 dist
+# Atomic-swap deploy layout (scripts/lib/deploy-release-swap.sh): dist.current is a symlink
+# to the active release; dist.releases/r-<id>/dist are promoted clones. Deploy-host artifacts
+# (like `dist` above). Untracked, they made the tree dirty and caused upstream-merge cron SKIPs.
+dist.current
+dist.releases/
 dist-runtime/
 dist-sea/
 pnpm-lock.yaml
