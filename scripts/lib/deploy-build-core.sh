@@ -32,15 +32,18 @@ restore_plugin_manifests() {
   printf '%s' "$n"
 }
 
-# run_deploy_build_step <root> — run the in-place bundle build, then repair any dist
-# artifacts it dropped (plugin manifests, control-ui) and bounce ONCE if a repair was
-# needed so the gateway boots on the complete dist instead of crash-looping or serving a
-# cached empty root. Returns the build's own exit code (the caller decides what to do
-# with a failed build). Does NOT quiesce, lock, or dispatch a health watcher — that is
-# the deploy wrapper's job; recovery reuses just this core.
-run_deploy_build_step() {
+# build_dist_and_repair <root> — run the bundle build, then repair any dist artifacts it
+# dropped (plugin manifests, control-ui) so $root/dist is a COMPLETE build. Returns the
+# build's own exit code and sets DEPLOY_DIST_REPAIRED=1 iff a repair was needed. Does NOT
+# bounce, promote, quiesce, lock, or dispatch a health watcher — the caller decides how to
+# activate the result (legacy in-place bounce, or clone+swap promote). In the migrated
+# release layout the build writes the scratch `dist` dir, NOT the serving release, so it no
+# longer crashes the running gateway; in legacy mode it still rewrites the live dist.
+DEPLOY_DIST_REPAIRED=0
+build_dist_and_repair() {
   local root="$1"
-  echo "==> Building (this crashes the gateway; launchd relaunches on the fresh dist = deploy complete)..."
+  DEPLOY_DIST_REPAIRED=0
+  echo "==> Building the bundle into dist/ ..."
   rm -f "$HOME/.openclaw/update-check.json"
   # Build the bundle directly instead of `pnpm build` so pnpm 11's verify-deps pre-run
   # install does not fire (it can wedge for minutes and re-runs native postinstalls that
@@ -51,28 +54,20 @@ run_deploy_build_step() {
 
   local restored
   restored="$(restore_plugin_manifests "$root")"
-  [ "$restored" -gt 0 ] && echo "==> restored $restored dropped plugin manifest(s) after the build"
+  [ "$restored" -gt 0 ] && { echo "==> restored $restored dropped plugin manifest(s) after the build"; DEPLOY_DIST_REPAIRED=1; }
 
   # control-ui verify + retry rather than a fire-and-forget rebuild: ui:build wipes
   # dist/control-ui via emptyOutDir at the START, so an interrupted attempt leaves NO
   # index.html — only treat it as fixed once the assets are confirmed present.
-  local ui_fixed=0
   if [ ! -f "$root/dist/control-ui/index.html" ]; then
     echo "==> control-ui wiped by the build; rebuilding..."
     local attempt
     for attempt in 1 2; do
       (cd "$root" && CI=1 npm_config_verify_deps_before_run=false pnpm ui:build) || true
-      [ -f "$root/dist/control-ui/index.html" ] && { ui_fixed=1; break; }
+      [ -f "$root/dist/control-ui/index.html" ] && { DEPLOY_DIST_REPAIRED=1; break; }
       echo "==> ui:build attempt $attempt left control-ui empty (interrupted emptyOutDir?)."
     done
-    [ "$ui_fixed" = 1 ] || echo "DEPLOY-WARN: control-ui still missing after 2 rebuilds; NOT bouncing onto an empty root. Fix pnpm ui:build." >&2
-  fi
-
-  # Bounce once if we repaired dist so the gateway boots on the complete dist. If nothing
-  # was dropped, the build's own crash-relaunch already booted the fresh dist.
-  if [ "$restored" -gt 0 ] || [ "$ui_fixed" = 1 ]; then
-    echo "==> repaired dist; bouncing the gateway to boot on the complete dist..."
-    launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true
+    [ -f "$root/dist/control-ui/index.html" ] || echo "DEPLOY-WARN: control-ui still missing after 2 rebuilds; fix pnpm ui:build." >&2
   fi
   return "$build_rc"
 }
