@@ -31,7 +31,8 @@ import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
 /** Coarse session category used by session list/status tools. */
-export type SessionKind = "main" | "group" | "cron" | "hook" | "node" | "other";
+export const SESSION_LIST_KINDS = ["main", "group", "cron", "hook", "node", "other"] as const;
+export type SessionKind = (typeof SESSION_LIST_KINDS)[number];
 
 /** Delivery target metadata attached to session rows. */
 export type SessionListDeliveryContext = {
