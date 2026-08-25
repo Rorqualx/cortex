@@ -47,8 +47,20 @@ wait_gateway_up() {
 }
 reload_gateway() {
   launchctl bootout "gui/$UID_N/$GW" 2>/dev/null || true
-  sleep 2
-  launchctl bootstrap "gui/$UID_N" "$PLIST" 2>/dev/null || launchctl kickstart -k "gui/$UID_N/$GW" 2>/dev/null || true
+  # bootout is ASYNC and the gateway drains for ~2-3s; a fixed `sleep 2` lets bootstrap
+  # race the still-tearing-down job, which fails and leaves the gateway DOWN (the migration
+  # boot-verify then times out). Wait until the job is actually unloaded, then bootstrap
+  # with retries while launchd settles.
+  local i=0
+  while launchctl print "gui/$UID_N/$GW" >/dev/null 2>&1 && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
+  local j=0
+  while [ "$j" -lt 6 ]; do
+    launchctl bootstrap "gui/$UID_N" "$PLIST" 2>/dev/null && return 0
+    launchctl print "gui/$UID_N/$GW" >/dev/null 2>&1 && return 0 # already loaded = success
+    sleep 2
+    j=$((j + 1))
+  done
+  launchctl kickstart -k "gui/$UID_N/$GW" 2>/dev/null || true # last resort
 }
 
 # Rewrite the plist ProgramArguments entry that ends in /dist/index.js to /dist.current/…
@@ -181,6 +193,7 @@ cp "$PLIST_BAK" "$PLIST"
 cp "$CONFIG_BAK" "$CONFIG"
 [ -f "$WATCHER_PLIST.pre-atomic-swap.bak" ] && mv -f "$WATCHER_PLIST.pre-atomic-swap.bak" "$WATCHER_PLIST" 2>/dev/null || true
 rm -f "$ROOT/dist.current" 2>/dev/null || true
+[ -n "$rel" ] && rm -rf "$rel" 2>/dev/null || true
 reload_gateway
 MIGRATE_DONE=1
 wait_gateway_up && die "migration failed and was rolled back — gateway serving dist/ again; investigate" \
