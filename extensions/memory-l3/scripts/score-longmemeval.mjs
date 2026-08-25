@@ -12,6 +12,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const HOME = os.homedir();
 const ORACLE_PATH = "/tmp/longmemeval/oracle.json";
@@ -109,7 +110,76 @@ export function computeWeightedComposite(scores) {
   return weight > 0 ? total / weight : 0;
 }
 
-// ── End dimension scoring helpers ─────────────────────────────────────────
+// ── Temporal-expression preservation metric ─────────────────────────────
+// Deterministic complement to the yes/no verdict: measures how often temporal
+// expressions from the gold answer survive into the model response. Grounded
+// in the TEMPORAL extraction guard (PROMPT_VERSION=13, arXiv:2608.11775:
+// +0.314 judge accuracy from timestamp preservation alone) — this makes the
+// guard's effect measurable against the recall baseline. Zero API cost.
+// Disable with LONGMEMEVAL_TEMPORAL_METRIC=0.
+
+const TEMPORAL_PATTERNS = [
+  // ISO dates: 2026-08-16
+  /\b\d{4}-\d{2}-\d{2}\b/g,
+  // Month-name dates: August 25, 2026 / Aug 25 / 25 August 2026
+  /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\b/gi,
+  /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+\d{4})?\b/gi,
+  // Clock times: 9:00 AM / 14:30 / 9am
+  /\b\d{1,2}:\d{2}\s*(?:am|pm)?\b/gi,
+  /\b\d{1,2}\s*(?:am|pm)\b/gi,
+  // Recurrences and relatives: every Tuesday / last week / next month
+  /\bevery\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year|day)\b/gi,
+  /\b(?:last|next|this)\s+(?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
+  /\b(?:yesterday|tomorrow|today)\b/gi,
+];
+
+/** Extract verbatim temporal expressions (span-deduped across patterns). */
+export function extractTemporalExpressions(text) {
+  const source = String(text ?? "");
+  const spans = [];
+  for (const re of TEMPORAL_PATTERNS) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(source)) !== null) {
+      const start = m.index;
+      const end = start + m[0].length;
+      // Later patterns must not re-count a span an earlier pattern claimed
+      // (e.g. "9:00 AM" matches both the clock-time and bare-am/pm patterns).
+      if (!spans.some(([s, e]) => start < e && end > s)) {
+        spans.push([start, end]);
+      }
+    }
+  }
+  return spans.map(([s, e]) => source.slice(s, e));
+}
+
+function normalizeTemporalText(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Preservation of the gold answer's temporal expressions in the response.
+ * Returns null when the answer carries no temporal expression (nothing to
+ * preserve); otherwise { preserved, total } counting verbatim containment.
+ */
+export function computeTemporalPreservation(answer, response) {
+  const exprs = extractTemporalExpressions(normalizeTemporalText(answer));
+  if (exprs.length === 0) {
+    return null;
+  }
+  const haystack = normalizeTemporalText(response);
+  let preserved = 0;
+  for (const expr of exprs) {
+    if (haystack.includes(expr)) {
+      preserved += 1;
+    }
+  }
+  return { preserved, total: exprs.length };
+}
+
+// ── End temporal preservation helpers ─────────────────────────────────────
 
 async function resolveZaiKey() {
   const fromEnv = process.env.ZAI_API_KEY ?? process.env.Z_AI_API_KEY;
@@ -273,6 +343,10 @@ async function main() {
       "Dimension scoring: enabled (faithfulness×0.35 + completeness×0.35 + factualConsistency×0.15 + clarity×0.15)",
     );
   }
+  const doTemporalMetric = process.env.LONGMEMEVAL_TEMPORAL_METRIC !== "0";
+  if (doTemporalMetric) {
+    console.log("Temporal preservation metric: enabled (deterministic, no extra judge calls)");
+  }
 
   const t0 = Date.now();
   const verdicts = await runWithConcurrency(tasks, CONCURRENCY, async (t) => {
@@ -295,6 +369,12 @@ async function main() {
       if (dimScores) {
         result.dimension_scores = dimScores;
         result.dimension_composite = computeWeightedComposite(dimScores);
+      }
+    }
+    if (doTemporalMetric) {
+      const temporal = computeTemporalPreservation(t.oracle.answer, t.hyp.hypothesis ?? "");
+      if (temporal) {
+        result.temporal_preservation = temporal;
       }
     }
     return result;
@@ -355,12 +435,48 @@ async function main() {
     }
   }
 
+  if (doTemporalMetric) {
+    const temporalVerdicts = verdicts.filter((v) => v.temporal_preservation);
+    if (temporalVerdicts.length > 0) {
+      const preserved = temporalVerdicts.reduce((s, v) => s + v.temporal_preservation.preserved, 0);
+      const total = temporalVerdicts.reduce((s, v) => s + v.temporal_preservation.total, 0);
+      const fully = temporalVerdicts.filter(
+        (v) => v.temporal_preservation.preserved === v.temporal_preservation.total,
+      ).length;
+      const pct = total > 0 ? Math.round((preserved / total) * 100) : 0;
+      // Format is deliberately NOT `token N/N (P%)` so optimize-weights.ts's
+      // per-type stdout parser cannot pick it up as a question type.
+      console.log(
+        `  temporal-expr preservation: ${preserved} of ${total} expressions (${pct}%), ` +
+          `${fully} of ${temporalVerdicts.length} answers fully preserved`,
+      );
+    } else {
+      console.log(`  temporal-expr preservation: no temporal expressions in gold answers`);
+    }
+  }
+
   const outPath = `${hypArg}.eval-${JUDGE_MODEL}.jsonl`;
   await writeFile(outPath, verdicts.map((v) => JSON.stringify(v)).join("\n") + "\n");
   console.log(`\nWrote ${outPath}`);
 }
 
-main().catch((e) => {
-  console.error(`FATAL: ${e.message}`);
-  process.exitCode = 1;
-});
+// CLI guard: helpers above are imported by tests; only run the judge when
+// executed directly.
+const isDirectRun = (() => {
+  const entry = process.argv[1];
+  if (!entry) {
+    return false;
+  }
+  try {
+    return path.resolve(entry) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectRun) {
+  main().catch((e) => {
+    console.error(`FATAL: ${e.message}`);
+    process.exitCode = 1;
+  });
+}
