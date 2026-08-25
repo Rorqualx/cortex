@@ -20477,6 +20477,7 @@ public struct UpdateRunParams: Codable, Sendable {
     public let continuationmessage: String?
     public let restartdelayms: Int?
     public let timeoutms: Int?
+    public let target: [String: AnyCodable]?
 
     public init(
         sessionkey: String? = nil,
@@ -20484,7 +20485,8 @@ public struct UpdateRunParams: Codable, Sendable {
         note: String? = nil,
         continuationmessage: String? = nil,
         restartdelayms: Int? = nil,
-        timeoutms: Int? = nil)
+        timeoutms: Int? = nil,
+        target: [String: AnyCodable]? = nil)
     {
         self.sessionkey = sessionkey
         self.deliverycontext = deliverycontext
@@ -20492,6 +20494,7 @@ public struct UpdateRunParams: Codable, Sendable {
         self.continuationmessage = continuationmessage
         self.restartdelayms = restartdelayms
         self.timeoutms = timeoutms
+        self.target = target
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -20501,6 +20504,7 @@ public struct UpdateRunParams: Codable, Sendable {
         case continuationmessage = "continuationMessage"
         case restartdelayms = "restartDelayMs"
         case timeoutms = "timeoutMs"
+        case target
     }
 }
 

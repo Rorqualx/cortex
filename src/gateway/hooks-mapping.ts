@@ -54,6 +54,7 @@ type HookMappingContext = {
 type HookAction =
   | {
       kind: "wake";
+      mappingId: string;
       text: string;
       mode: "now" | "next-heartbeat";
       agentId?: string;
@@ -62,6 +63,7 @@ type HookAction =
     }
   | {
       kind: "agent";
+      mappingId: string;
       message: string;
       name?: string;
       agentId?: string;
@@ -288,6 +290,7 @@ function buildActionFromMapping(
       ok: true,
       action: {
         kind: "wake",
+        mappingId: mapping.id,
         text,
         mode: mapping.wakeMode ?? "now",
         agentId: mapping.agentId,
@@ -301,6 +304,7 @@ function buildActionFromMapping(
     ok: true,
     action: {
       kind: "agent",
+      mappingId: mapping.id,
       message,
       name: renderOptional(mapping.name, ctx),
       agentId: mapping.agentId,
@@ -334,6 +338,7 @@ function mergeAction(
     const mode = override.mode === "next-heartbeat" ? "next-heartbeat" : (baseWake?.mode ?? "now");
     return validateAction({
       kind: "wake",
+      mappingId: base.mappingId,
       text,
       mode,
       agentId: override.agentId ?? baseWake?.agentId,
@@ -348,6 +353,7 @@ function mergeAction(
     override.wakeMode === "next-heartbeat" ? "next-heartbeat" : (baseAgent?.wakeMode ?? "now");
   return validateAction({
     kind: "agent",
+    mappingId: base.mappingId,
     message,
     wakeMode,
     name: override.name ?? baseAgent?.name,
