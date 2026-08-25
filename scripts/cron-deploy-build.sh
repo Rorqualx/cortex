@@ -2,74 +2,102 @@
 #
 # FINAL deploy action for the "Validate & Deploy" cron pipeline.
 #
-# The in-place `pnpm build` rewrites dist/ and crashes the live gateway; launchd
-# relaunches it on the fresh dist — so the build IS the deploy. Because that crash
-# kills every OTHER in-flight cron run (research scans, skill-forge, the nightly
-# upstream-merge job), this wrapper first WAITS until no other cron job is running,
-# then launches the detached health watcher, then builds. Folding the quiesce gate
-# into the build step (instead of trusting the agent to run it) makes the safety
-# structural, not advisory.
+# Two modes, chosen by whether the atomic release layout is installed
+# (scripts/deploy-release-migrate.sh; dist.current is a symlink):
 #
-# Exit 3 = deferred (other cron jobs were still running past the wait window); the
-#          gateway is left untouched and the deploy should be retried later.
+#   MIGRATED (atomic swap): the build writes the scratch `dist` dir, NOT the release the
+#   gateway serves, so it never crashes the running gateway. We build, verify, and ONLY
+#   on success clone dist into a new release + atomically repoint dist.current + bounce.
+#   A failed or incomplete build never promotes, so the live gateway keeps serving the
+#   last-good release — a build failure is no longer an outage. The expensive build runs
+#   WITHOUT the quiesce gate (it is gateway-safe); only the instant promote+bounce is
+#   quiesced, so crons run through the build.
+#
+#   LEGACY (pre-migration): the in-place `pnpm build` rewrites the live dist and crashes
+#   the gateway; launchd relaunches on the fresh dist — the build IS the deploy. That
+#   crash kills every other in-flight cron, so we quiesce first, then build.
+#
+# Exit 3 = deferred (other cron jobs still running past the wait window; gateway intact).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/deploy-build-core.sh
+source "$ROOT/scripts/lib/deploy-build-core.sh"
+# shellcheck source=scripts/lib/deploy-release-swap.sh
+source "$ROOT/scripts/lib/deploy-release-swap.sh"
 
-# The "Validate & Deploy" cron job id. It is itself marked running while this
-# wrapper executes, so it must be excluded from the quiesce check — otherwise the
-# gate would always see one running job (itself) and never proceed. This is the
-# one job that is allowed to trigger the restart.
+# The "Validate & Deploy" cron job id — excluded from the quiesce check (it is itself
+# marked running while this wrapper executes) and the one job allowed to trigger a restart.
 DEPLOY_JOB_ID="${DEPLOY_CRON_JOB_ID:-9d1cec60-4db3-4c7c-a0da-447b7bcf26ce}"
 QUIESCE_TIMEOUT="${QUIESCE_TIMEOUT:-1800}"
 
-# Single-flight: only ONE deploy build may run at a time. Two triggers — a land's
-# detached cron-deploy-build.sh (from land_and_deploy) and the scheduled "Validate &
-# Deploy" cron — can otherwise run build-all concurrently, and their tsdown emptyOutDir
-# passes race on dist/: the recurring wiped-control-ui 503, plus a half-built/corrupt
-# dist the gateway then boots. The quiesce gate below only waits on TRACKED cron jobs
-# (cron_jobs.running_at_ms); a detached deploy build is not one, so it needs its own
-# process lock. Acquire it BEFORE quiesce so even a quiesce-waiting deploy blocks a
-# second trigger. A deploy in progress already ships current main, so a colliding
-# trigger SKIPS (exit 0) rather than queueing — the next scheduled deploy or land picks
-# up any newer commits. Stale locks (the build-crash / watcher `launchctl stop` can
-# SIGKILL the holder before its EXIT trap fires) are reclaimed on a dead holder pid.
-DEPLOY_LOCK_DIR="${DEPLOY_LOCK_DIR:-/tmp/openclaw-deploy-build.lock.d}"
-if ! mkdir "$DEPLOY_LOCK_DIR" 2>/dev/null; then
-  deploy_holder="$(cat "$DEPLOY_LOCK_DIR/pid" 2>/dev/null || true)"
-  # Age backstop: a legit deploy holds the lock for at most quiesce (≤30min) + build
-  # (~10min). Reclaim a much older one even if its pid still looks alive — a hung or
-  # orphaned tsdown (playbook §5: ~8.5GB, orphaned bundlers that don't exit) would
-  # otherwise deadlock every future deploy. 90min is far above any real hold, so this
-  # never reclaims a live legit build, only a stuck one.
-  lock_age=$(( $(date +%s) - $(stat -f %m "$DEPLOY_LOCK_DIR" 2>/dev/null || echo 0) ))
-  if [ -n "$deploy_holder" ] && kill -0 "$deploy_holder" 2>/dev/null && [ "$lock_age" -lt 5400 ]; then
-    echo "DEPLOY-SKIP: another deploy build (pid=$deploy_holder, held ${lock_age}s) is in progress; it ships current main. Skipping this trigger."
-    exit 0
+quiesce() {
+  echo "==> Quiesce: waiting for other cron jobs to finish before the gateway bounce..."
+  if ! bash "$ROOT/scripts/cron-restart-safe-wait.sh" --self "$DEPLOY_JOB_ID" --timeout "$QUIESCE_TIMEOUT"; then
+    echo "DEPLOY-DEFER: other cron job(s) still running after ${QUIESCE_TIMEOUT}s; NOT bouncing."
+    echo "DEPLOY-DEFER: gateway left intact — re-run the deploy once the board is idle."
+    return 1
   fi
-  echo "==> reclaiming deploy lock (holder pid=${deploy_holder:-none}, age=${lock_age}s: dead pid or hung >90min)"
-  rm -rf "$DEPLOY_LOCK_DIR"
-  mkdir "$DEPLOY_LOCK_DIR" 2>/dev/null || { echo "DEPLOY-SKIP: deploy lock race; skipping this trigger."; exit 0; }
+}
+dispatch_healthcheck() {
+  # Detached so it survives the bounce, waits for the relaunch, and records + auto-recovers.
+  # ${1+"$@"}: expand args only when there is at least one — a bare "$@" with no args is an
+  # unbound-variable error under `set -u` on macOS system bash 3.2, which (backgrounded with
+  # output discarded) would silently kill the legacy-mode dispatch and lose the watcher.
+  echo "==> Launching detached post-deploy health watcher..."
+  nohup env ${1+"$@"} bash "$ROOT/scripts/cron-deploy-healthcheck.sh" >/dev/null 2>&1 &
+}
+bounce_gateway() { launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true; }
+
+# Single-flight: only ONE dist-mutating op at a time (this deploy, a healthcheck rebuild, or
+# the release migration) — the deploy's two triggers (a land's detached cron-deploy-build.sh
+# and the scheduled "Validate & Deploy" cron) plus those siblings otherwise race dist/.
+# Acquire BEFORE anything else; a colliding trigger SKIPS (it ships current main). Shared
+# helper reclaims a dead holder / >90min hang. See deploy-build-core.sh.
+if ! try_acquire_deploy_lock; then
+  echo "DEPLOY-SKIP: another dist-mutating op (pid=${DEPLOY_LOCK_HOLDER:-?}, held ${DEPLOY_LOCK_AGE}s) is in progress; it ships current main. Skipping this trigger."
+  exit 0
 fi
-printf '%s\n' "$$" >"$DEPLOY_LOCK_DIR/pid"
-trap 'rm -rf "$DEPLOY_LOCK_DIR"' EXIT
+trap 'release_deploy_lock' EXIT
 
-echo "==> Quiesce: waiting for other cron jobs to finish before the restarting build..."
-if ! bash "$ROOT/scripts/cron-restart-safe-wait.sh" --self "$DEPLOY_JOB_ID" --timeout "$QUIESCE_TIMEOUT"; then
-  echo "DEPLOY-DEFER: other cron job(s) still running after ${QUIESCE_TIMEOUT}s; NOT building."
-  echo "DEPLOY-DEFER: gateway left intact — re-run the deploy once the board is idle."
-  exit 3
+if deploy_is_migrated "$ROOT"; then
+  echo "==> Deploy mode: ATOMIC SWAP (serving $(basename "$(deploy_serving_release "$ROOT")"))"
+  # Build is gateway-safe (writes scratch dist, not the serving release) — no quiesce.
+  build_dist_and_repair "$ROOT"
+  build_rc=$?
+  if [ "$build_rc" != 0 ] || ! deploy_dist_complete "$ROOT"; then
+    # A 0 build rc but incomplete dist (e.g. ui:build failed twice) still shipped nothing —
+    # force a nonzero exit so the cron/land caller sees failure and retries/alerts.
+    [ "$build_rc" = 0 ] && build_rc=1
+    echo "DEPLOY-ABORT: build failed or dist incomplete (exit $build_rc); NOT promoting. Gateway still serves the last-good release — no outage."
+    command -v osascript >/dev/null 2>&1 && osascript -e 'display notification "Deploy build FAILED — gateway kept on last-good release (no promote)" with title "OpenClaw cron"' >/dev/null 2>&1 || true
+    exit "$build_rc"
+  fi
+  # Only the instant promote+bounce disrupts the gateway — quiesce just for that.
+  quiesce || exit 3
+  new_rel="$(promote_release "$ROOT")" || { echo "DEPLOY-ABORT: promote refused; gateway unchanged."; exit 1; }
+  # Dispatch the watcher AFTER promote and IMMEDIATELY before the bounce, so it captures
+  # the pre-bounce pid and assesses the NEW release the bounce brings up. Dispatching
+  # earlier (before quiesce) would let it assess the still-up old gateway, record HEALTHY
+  # for a swap that had not happened, and — if quiesce deferred or promote refused — roll
+  # the live symlink back for no reason. SKIP_BUILD_WAIT: the build already finished.
+  echo "==> Promoted $(basename "$new_rel"); bouncing gateway onto it..."
+  dispatch_healthcheck CRON_HEALTHCHECK_SKIP_BUILD_WAIT=1
+  bounce_gateway
+  echo "DEPLOY-OK: atomic swap complete — gateway now serves $(basename "$new_rel")."
+  exit 0
 fi
 
-# Health watcher must be detached so it survives the build-crash, waits for the
-# launchd relaunch, and records HEALTHY/UNHEALTHY for the 08:00 briefing.
-echo "==> Launching detached post-deploy health watcher..."
-nohup bash "$ROOT/scripts/cron-deploy-healthcheck.sh" >/dev/null 2>&1 &
-
-# Build + repair dist (dropped plugin manifests, wiped control-ui) + bounce-if-repaired
-# via the shared core, so the deploy and the post-deploy auto-recovery use one canonical
-# path. run_deploy_build_step returns the build's own exit code.
-# shellcheck source=scripts/lib/deploy-build-core.sh
-source "$ROOT/scripts/lib/deploy-build-core.sh"
-run_deploy_build_step "$ROOT"
-exit $?
+# --- LEGACY (pre-migration) in-place deploy ---------------------------------
+echo "==> Deploy mode: LEGACY in-place (run scripts/deploy-release-migrate.sh to enable atomic swap)"
+quiesce || exit 3
+dispatch_healthcheck
+build_dist_and_repair "$ROOT"
+build_rc=$?
+# The in-place build crashed the gateway; bounce once if we repaired dist so it boots on
+# the complete dist rather than crash-looping / serving a cached empty root.
+if [ "$DEPLOY_DIST_REPAIRED" = 1 ]; then
+  echo "==> repaired dist; bouncing the gateway to boot on the complete dist..."
+  bounce_gateway
+fi
+exit "$build_rc"

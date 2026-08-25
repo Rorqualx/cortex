@@ -33,6 +33,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/lib/deploy-build-core.sh
 source "$ROOT/scripts/lib/deploy-build-core.sh"
+# shellcheck source=scripts/lib/deploy-release-swap.sh
+source "$ROOT/scripts/lib/deploy-release-swap.sh"
 
 TIMEOUT="${CRON_HEALTHCHECK_TIMEOUT:-240}"
 INTERVAL="${CRON_HEALTHCHECK_INTERVAL:-10}"
@@ -99,6 +101,9 @@ gateway_pid() { launchctl list 2>/dev/null | awk '$3=="ai.openclaw.gateway"{prin
 # dispatched) and then finish, so dist is stable and the pre-deploy gateway is dead
 # before we assess. If the build never appears within the grace window, proceed.
 wait_build_done() {
+  # In atomic-swap mode the build finishes BEFORE we are dispatched (only the promote
+  # bounce follows), so there is no build to wait for — the deploy sets this to skip it.
+  [ -n "${CRON_HEALTHCHECK_SKIP_BUILD_WAIT:-}" ] && return 0
   local grace=$(( $(date +%s) + 30 ))
   while ! pgrep -f 'build-all\.mts' >/dev/null 2>&1 && [ "$(date +%s)" -lt "$grace" ]; do sleep 2; done
   local dl=$(( $(date +%s) + TIMEOUT ))
@@ -165,32 +170,57 @@ trap 'rm -f "$probe"; rm -rf "$LOCK"' EXIT
 
 method=""
 
-# Ladder step 1 — restore dropped plugin manifests (the exit-78 crash-loop cause) and
-# bounce onto the completed dist. Cheap and safe; fixes the most common failure mode.
-snapshot_log_pos
-restored="$(restore_plugin_manifests "$ROOT")"
-log "recovery step 1: restored $restored missing plugin manifest(s); bouncing gateway"
-pre_pid="$(gateway_pid)"
-bounce_gateway
-wait_for_boot "$pre_pid" || true
-if rpc_up && [ -z "$(plugin_failures)" ]; then
-  method="manifest-restore (restored $restored)"
-fi
-
-# Ladder step 2 — still degraded: a plugin bundle itself is broken (often a dep the
-# resync bumped but the deploy built against stale node_modules). Sync deps to the lock,
-# then one clean rebuild via the shared core (which restores manifests + control-ui and
-# bounces). run_deploy_build_step crashes the gateway; this detached script survives it.
-if [ -z "$method" ]; then
-  log "recovery step 2: manifest-restore insufficient — syncing deps + one clean rebuild"
-  (cd "$ROOT" && CI=1 npm_config_verify_deps_before_run=false pnpm install) >/tmp/deploy-selfheal-install.log 2>&1 ||
-    log "pnpm install failed (see /tmp/deploy-selfheal-install.log) — rebuilding against current deps anyway"
+if deploy_is_migrated "$ROOT"; then
+  # Step 1 — instant rollback to the previous release: the just-promoted one boots bad,
+  # so revert the symlink to the last-good release (no rebuild). Safest, fastest recovery.
   snapshot_log_pos
   pre_pid="$(gateway_pid)"
-  run_deploy_build_step "$ROOT" >/tmp/deploy-selfheal-build.log 2>&1 || true
+  if rolled="$(rollback_release "$ROOT" 2>/dev/null)"; then
+    log "recovery step 1 (migrated): rolled back to $(basename "$rolled"); bouncing"
+    bounce_gateway
+    wait_for_boot "$pre_pid" || true
+    rpc_up && [ -z "$(plugin_failures)" ] && method="rollback to $(basename "$rolled")"
+  else
+    log "recovery step 1 (migrated): no previous release to roll back to"
+  fi
+  # Step 2 — still bad (or nothing to roll back to): sync deps, rebuild, promote the fresh
+  # build. promote refuses an incomplete dist, so a broken rebuild never becomes live.
+  if [ -z "$method" ]; then
+    log "recovery step 2 (migrated): syncing deps + clean rebuild + promote"
+    (cd "$ROOT" && CI=1 npm_config_verify_deps_before_run=false pnpm install) >/tmp/deploy-selfheal-install.log 2>&1 ||
+      log "pnpm install failed (see /tmp/deploy-selfheal-install.log) — rebuilding against current deps anyway"
+    build_dist_and_repair "$ROOT" >/tmp/deploy-selfheal-build.log 2>&1 || true
+    snapshot_log_pos
+    pre_pid="$(gateway_pid)"
+    if new_rel="$(promote_release "$ROOT" 2>/tmp/deploy-selfheal-promote.log)"; then
+      bounce_gateway
+      wait_for_boot "$pre_pid" || true
+      rpc_up && [ -z "$(plugin_failures)" ] && method="deps+rebuild ($(basename "$new_rel"))"
+    else
+      log "recovery step 2 (migrated): promote refused (see /tmp/deploy-selfheal-promote.log)"
+    fi
+  fi
+else
+  # LEGACY in-place recovery.
+  # Step 1 — restore dropped plugin manifests (the exit-78 crash-loop cause) + bounce.
+  snapshot_log_pos
+  restored="$(restore_plugin_manifests "$ROOT")"
+  log "recovery step 1 (legacy): restored $restored missing plugin manifest(s); bouncing gateway"
+  pre_pid="$(gateway_pid)"
+  bounce_gateway
   wait_for_boot "$pre_pid" || true
-  if rpc_up && [ -z "$(plugin_failures)" ]; then
-    method="deps+rebuild"
+  rpc_up && [ -z "$(plugin_failures)" ] && method="manifest-restore (restored $restored)"
+  # Step 2 — sync deps + one clean in-place rebuild + bounce.
+  if [ -z "$method" ]; then
+    log "recovery step 2 (legacy): manifest-restore insufficient — syncing deps + clean rebuild"
+    (cd "$ROOT" && CI=1 npm_config_verify_deps_before_run=false pnpm install) >/tmp/deploy-selfheal-install.log 2>&1 ||
+      log "pnpm install failed (see /tmp/deploy-selfheal-install.log) — rebuilding against current deps anyway"
+    snapshot_log_pos
+    pre_pid="$(gateway_pid)"
+    build_dist_and_repair "$ROOT" >/tmp/deploy-selfheal-build.log 2>&1 || true
+    bounce_gateway
+    wait_for_boot "$pre_pid" || true
+    rpc_up && [ -z "$(plugin_failures)" ] && method="deps+rebuild"
   fi
 fi
 
