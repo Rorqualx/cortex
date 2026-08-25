@@ -5,7 +5,8 @@
 # dir without touching the running gateway and atomically promote on success.
 #
 # It:
-#   1. Clones the current dist into dist.releases/r-<epoch> and creates dist.current -> it.
+#   1. Clones the current dist into dist.releases/r-<epoch>/dist and points dist.current -> it
+#      (inner dist/ so the served realpath keeps a "/dist/" segment — see deploy-release-swap.sh).
 #   2. Repoints the gateway launchd service (dist/index.js -> dist.current/index.js) and
 #      the control-ui root config at dist.current (timestamped backups kept).
 #   3. Retires the rebuild-restart watcher (the staged deploy owns the bounce now).
@@ -149,6 +150,7 @@ MIGRATE_DONE=0
 PLIST_BAK=""
 CONFIG_BAK=""
 rel=""
+relbase=""
 migrate_cleanup() {
   release_deploy_lock   # always drop the deploy lock, whether we committed or rolled back
   [ "$MIGRATE_DONE" = 1 ] && return 0
@@ -157,7 +159,7 @@ migrate_cleanup() {
   [ -n "$CONFIG_BAK" ] && [ -f "$CONFIG_BAK" ] && cp "$CONFIG_BAK" "$CONFIG" 2>/dev/null || true
   [ -f "$WATCHER_PLIST.pre-atomic-swap.bak" ] && mv -f "$WATCHER_PLIST.pre-atomic-swap.bak" "$WATCHER_PLIST" 2>/dev/null || true
   rm -f "$ROOT/dist.current" 2>/dev/null || true
-  [ -n "$rel" ] && rm -rf "$rel" 2>/dev/null || true
+  [ -n "$relbase" ] && rm -rf "$relbase" 2>/dev/null || true
 }
 trap migrate_cleanup EXIT
 
@@ -178,10 +180,10 @@ mkdir -p "$ROOT/dist.releases"
 # Ensure dist has its plugin manifests BEFORE cloning (restore operates on the repo root,
 # not a release dir), so the seeded release is complete.
 restore_plugin_manifests "$ROOT" >/dev/null 2>&1 || true
-rel="$ROOT/dist.releases/r-$(date +%s)-$$"
+relbase="$ROOT/dist.releases/r-$(date +%s)-$$"
+rel="$relbase/dist"   # inner dist/ — keeps a "/dist/" segment in the served realpath
 # clone_dist_to verifies the seeded release is COMPLETE (file count == dist), retrying and
-# falling back to ditto — the migration's original failure was a release cloned one chunk
-# short, which boots ERR_MODULE_NOT_FOUND. A verified clone is the whole point of the seed.
+# falling back to ditto — a release cloned one chunk short boots ERR_MODULE_NOT_FOUND.
 clone_dist_to "$ROOT" "$rel" || die "could not make a complete clone of dist into $rel"
 [ -f "$rel/control-ui/index.html" ] || die "seeded release missing control-ui — aborting before any infra change"
 ln -sfn "$rel" "$ROOT/dist.current" || die "could not create dist.current symlink"
@@ -206,7 +208,7 @@ log "reloading gateway onto dist.current (one migration bounce)…"
 reload_gateway
 if wait_gateway_up; then
   MIGRATE_DONE=1
-  log "MIGRATED — gateway healthy, serving via dist.current -> $(basename "$rel") ($HEALTH_URL 200)"
+  log "MIGRATED — gateway healthy, serving via dist.current -> $(basename "$relbase")/dist ($HEALTH_URL 200)"
   exit 0
 fi
 
@@ -217,7 +219,7 @@ cp "$PLIST_BAK" "$PLIST"
 cp "$CONFIG_BAK" "$CONFIG"
 [ -f "$WATCHER_PLIST.pre-atomic-swap.bak" ] && mv -f "$WATCHER_PLIST.pre-atomic-swap.bak" "$WATCHER_PLIST" 2>/dev/null || true
 rm -f "$ROOT/dist.current" 2>/dev/null || true
-[ -n "$rel" ] && rm -rf "$rel" 2>/dev/null || true
+[ -n "$relbase" ] && rm -rf "$relbase" 2>/dev/null || true
 reload_gateway
 MIGRATE_DONE=1
 wait_gateway_up && die "migration failed and was rolled back — gateway serving dist/ again; investigate" \
