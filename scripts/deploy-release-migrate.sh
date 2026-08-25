@@ -53,14 +53,17 @@ reload_gateway() {
   # with retries while launchd settles.
   local i=0
   while launchctl print "gui/$UID_N/$GW" >/dev/null 2>&1 && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
-  local j=0
+  local j=0 llog="/tmp/openclaw-migrate-launchctl.log"
+  : >"$llog" 2>/dev/null || true
   while [ "$j" -lt 6 ]; do
-    launchctl bootstrap "gui/$UID_N" "$PLIST" 2>/dev/null && return 0
-    launchctl print "gui/$UID_N/$GW" >/dev/null 2>&1 && return 0 # already loaded = success
+    if launchctl bootstrap "gui/$UID_N" "$PLIST" >>"$llog" 2>&1; then echo "bootstrap ok (attempt $((j + 1)))" >>"$llog"; return 0; fi
+    echo "bootstrap attempt $((j + 1)) failed (rc=$?)" >>"$llog"
+    launchctl print "gui/$UID_N/$GW" >/dev/null 2>&1 && { echo "job already loaded; treating as bootstrapped" >>"$llog"; return 0; }
     sleep 2
     j=$((j + 1))
   done
-  launchctl kickstart -k "gui/$UID_N/$GW" 2>/dev/null || true # last resort
+  echo "all bootstrap attempts failed; kickstart -k last resort" >>"$llog"
+  launchctl kickstart -k "gui/$UID_N/$GW" 2>/dev/null || true
 }
 
 # Rewrite the plist ProgramArguments entry that ends in /dist/index.js to /dist.current/…
@@ -79,6 +82,11 @@ for i, a in enumerate(args):
         args[i] = f"{root}/{want}/index.js"
         changed = True
 d["ProgramArguments"] = args
+# Capture stderr for the dist.current attempt so an early crash (before the app logger,
+# normally sent to /dev/null) is visible for diagnosis. The rollback restores the backup
+# plist (StandardErrorPath back to /dev/null), so this only applies while migrated.
+if want == "dist.current":
+    d["StandardErrorPath"] = "/tmp/openclaw-gateway-boot-stderr.log"
 with open(plist_path, "wb") as f:
     plistlib.dump(d, f)
 print("changed" if changed else "no-entry-found")
