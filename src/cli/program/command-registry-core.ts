@@ -85,7 +85,7 @@ const coreEntrySpecs: readonly CommandGroupDescriptorSpec<
         exportName: "registerAuditCommand",
       },
       {
-        commandNames: ["doctor", "dashboard", "reset", "uninstall"],
+        commandNames: ["doctor", "triage", "dashboard", "reset", "uninstall"],
         loadModule: () => import("./register.maintenance.js"),
         exportName: "registerMaintenanceCommands",
       },

@@ -630,7 +630,7 @@ extensions/line/src/monitor-durable.ts	1
 extensions/line/src/monitor.ts	1
 extensions/line/src/outbound.ts	6
 extensions/line/src/rich-menu.ts	1
-extensions/line/src/send.ts	2
+extensions/line/src/send.ts	1
 extensions/line/src/setup-core.ts	1
 extensions/line/src/webhook-spool.ts	4
 extensions/line/src/webhook-utils.ts	1
@@ -2657,7 +2657,7 @@ src/commands/tasks.ts	2
 src/commands/telemetry-exporter-summary.ts	3
 src/commands/test-runtime-config-helpers.ts	3
 src/config/agent-dirs.ts	1
-src/config/allowed-values.ts	2
+src/config/allowed-values.ts	1
 src/config/bundled-channel-config-metadata.generated.ts	1
 src/config/channel-alias-migration.ts	2
 src/config/channel-capabilities.ts	2
