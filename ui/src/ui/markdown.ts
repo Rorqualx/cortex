@@ -407,8 +407,11 @@ md.linkify.set({ fuzzyLink: false });
 // filenames while preserving expected behavior for "www.example.com".
 // GFM spec: valid domain = alphanumeric/underscore/hyphen segments separated
 // by periods, at least one period, no underscores in last two segments.
+// Explicit param types: @types/markdown-it 14.2.0 dropped the contextual types
+// for linkify plugin callbacks (upstream adapted its own ui tree; this fork-owned
+// copy types them inline against linkify-it's Validate/Match signatures).
 md.linkify.add("www", {
-  validate(text, pos) {
+  validate(text: string, pos: number) {
     const tail = text.slice(pos);
     // Match: . followed by domain and optional path, matching marked.js behavior.
     // Stops at whitespace, < (HTML tag boundary), or CJK characters (RFC 3986:
@@ -511,7 +514,7 @@ md.linkify.add("www", {
     }
     return len;
   },
-  normalize(match) {
+  normalize(match: { url: string }) {
     match.url = "http://" + match.url;
   },
 });
