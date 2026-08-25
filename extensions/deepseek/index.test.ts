@@ -348,6 +348,18 @@ describe("deepseek provider plugin", () => {
       } as never)?.levels.map((level) => level.id),
     ).toEqual(expectedV4Levels);
     expect(
+      resolveThinkingProfile({
+        provider: "deepseek",
+        modelId: "deepseek-v4-flash-vision-exp",
+      } as never)?.levels.map((level) => level.id),
+    ).toEqual(expectedV4Levels);
+    expect(
+      resolveThinkingProfile({
+        provider: "deepseek",
+        modelId: "deepseek-v4-flash-vision-exp",
+      } as never)?.defaultLevel,
+    ).toBe("high");
+    expect(
       resolveThinkingProfile({ provider: "deepseek", modelId: "deepseek-chat" } as never),
     ).toBe(undefined);
     expect(

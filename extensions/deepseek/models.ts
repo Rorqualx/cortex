@@ -14,7 +14,15 @@ export const DEEPSEEK_MODEL_CATALOG: ModelDefinitionConfig[] = DEEPSEEK_MANIFEST
   }),
 );
 
-const DEEPSEEK_V4_MODEL_IDS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"]);
+const DEEPSEEK_V4_MODEL_IDS = new Set([
+  "deepseek-v4-flash",
+  "deepseek-v4-pro",
+  // Snapshot-pinned experimental vision variant of V4 Flash. Served under
+  // the same V4 API surface (reasoning_effort ladder + reasoning_content
+  // replay), so it must resolve the same V4 predicates — otherwise a harvested
+  // pin would silently lose its thinking profile and stream patching.
+  "deepseek-v4-flash-vision-exp",
+]);
 
 export function isDeepSeekV4ModelId(modelId: string): boolean {
   return DEEPSEEK_V4_MODEL_IDS.has(modelId.toLowerCase());
