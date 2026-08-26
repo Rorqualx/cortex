@@ -35,6 +35,7 @@ import {
   type OperatorApprovalLifecycleEvent,
 } from "./exec-approval-manager.js";
 import { createLazyHandler } from "./lazy-handler.js";
+import type { CronStandingGrantMintSpec } from "./operator-approval-standing-grants.js";
 import { listCoreGatewayMethodNames } from "./methods/core-descriptors.js";
 import {
   closeOrphanedOperatorApprovals,
@@ -71,6 +72,8 @@ export function createGatewayAuxHandlers(
     onApprovalLifecycle?: (event: OperatorApprovalLifecycleEvent) => void;
     onAgentRunAuthorityClosed?: (authority: AgentRunDelegatedAuthority) => void;
     validateAgentRuntimeDelegatedAuthority?: (authority: AgentRuntimeDelegatedAuthority) => boolean;
+    /** Abort-wins guard: a tombstoned run must not mint standing authority. */
+    hasRunAbortMarker?: (runId: string) => boolean;
     chatAbortControllers?: Map<string, ChatAbortControllerEntry>;
     registerWorkerTurnClaimClosedHandler?: (
       handler: (claim: WorkerSessionTurnClaim) => void,
@@ -90,12 +93,14 @@ export function createGatewayAuxHandlers(
   const createApprovalManager = <TPayload>(
     approvalKind: "exec" | "plugin" | "system-agent",
     resolveAllowedDecisions: (request: TPayload) => readonly ExecApprovalDecision[],
+    resolveStandingGrantMint?: (request: TPayload) => CronStandingGrantMintSpec | null,
   ) =>
     new ExecApprovalManager<TPayload>({
       approvalKind,
       persistence: approvalPersistence,
       resolveAudienceSessionKeys: resolveApprovalSessionAudienceWithFallback,
       resolveAllowedDecisions,
+      ...(resolveStandingGrantMint ? { resolveStandingGrantMint } : {}),
       onLifecycle: params.onApprovalLifecycle,
       ...(params.validateAgentRuntimeDelegatedAuthority
         ? {
@@ -110,6 +115,25 @@ export function createGatewayAuxHandlers(
   const execApprovalManager = createApprovalManager<ExecApprovalRequestPayload>(
     "exec",
     resolveExecApprovalRequestAllowedDecisions,
+    (request) => {
+      const source = request.cronExecutionSource;
+      const operationBinding = request.cronOperationBinding?.trim();
+      const agentId = request.agentId?.trim();
+      if (!source || !operationBinding || !agentId) {
+        return null;
+      }
+      // Abort-wins: the abort owner tombstones the run before sweeping its
+      // approvals, so a raced allow-always must not mint standing authority.
+      if (request.runId && params.hasRunAbortMarker?.(request.runId) === true) {
+        return null;
+      }
+      return {
+        agentId,
+        cronJobId: source.jobId,
+        jobConfigRevision: source.jobConfigRevision,
+        operationBinding,
+      };
+    },
   );
   const execApprovalForwarder = createExecApprovalForwarder();
   const execApprovalIosPushDelivery = createExecApprovalIosPushDelivery({ log: params.log });

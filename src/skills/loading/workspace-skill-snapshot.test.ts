@@ -19,7 +19,7 @@ import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";
 import { buildSkillSnapshot } from "./workspace-skill-prompt.js";
 
 vi.mock("./plugin-skills.js", () => ({
-  resolvePluginSkillDirs: () => [],
+  resolvePluginSkillRoots: () => [],
 }));
 
 const fixtureSuite = createFixtureSuite("openclaw-skills-snapshot-suite-");

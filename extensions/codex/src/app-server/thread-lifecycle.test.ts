@@ -1444,6 +1444,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1591,6 +1592,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.multi_agent": false,
       "features.standalone_web_search": false,
       web_search: "cached",
@@ -1721,6 +1723,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1745,6 +1748,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1805,6 +1809,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1885,6 +1890,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -1920,6 +1926,7 @@ describe("Codex app-server native code mode config", () => {
       "features.goals": false,
       "tools.update_plan.enabled": false,
       "features.apply_patch_streaming_events": true,
+      suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
       web_search: "cached",
     });
@@ -2124,6 +2131,7 @@ describe("Codex app-server turn params", () => {
         "features.goals": false,
         "tools.update_plan.enabled": false,
         "features.apply_patch_streaming_events": true,
+        suppress_unstable_features_warning: true,
         "features.standalone_web_search": false,
         web_search: "cached",
       },
