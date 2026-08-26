@@ -35,7 +35,6 @@ import type {
   SkillUsagePath,
 } from "../types.js";
 import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";
-import { getArchivedSkillFiles } from "../workshop/curator.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
 import {
   hasUnavailableSkillSecretOwners,
@@ -1277,11 +1276,9 @@ function loadSkillEntries(
   });
 
   const merged = new Map<string, LoadedSkillRecord>();
-  const archivedSkillFiles = opts?.includeArchived ? null : getArchivedSkillFiles();
+  // Upstream #129769 retired skill_lifecycle archives (schema 10): archived skills
+  // return to the active collection, so there is never an archived set to exclude.
   const mergeRecord = (record: LoadedSkillRecord) => {
-    if (archivedSkillFiles?.has(canonicalizePath(record.skill.filePath))) {
-      return;
-    }
     merged.set(record.skill.name, record);
   };
   // Precedence: extra < bundled < managed < agents-skills-personal < agents-skills-project < workspace
@@ -1348,9 +1345,8 @@ function loadSkillEntries(
 }
 
 function filterArchivedSkillEntries(entries: SkillEntry[]): SkillEntry[] {
-  // One discovery-level query covers prompts, commands, runtime entries, and sandbox sync.
-  const archivedSkillFiles = getArchivedSkillFiles();
-  return entries.filter((entry) => !archivedSkillFiles.has(canonicalizePath(entry.skill.filePath)));
+  // Upstream #129769 retired skill_lifecycle archives (schema 10); nothing is excluded.
+  return entries;
 }
 
 function escapeXml(str: string): string {

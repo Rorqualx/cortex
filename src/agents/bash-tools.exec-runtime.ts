@@ -59,15 +59,10 @@ import {
 } from "../utils/delivery-context.shared.js";
 import { resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
 import { addSession, appendOutput, markExited, tail } from "./bash-process-registry.js";
-import { createSessionSlug } from "./session-slug.js";
 import { renderExecUpdateText } from "./bash-tools.exec-output.js";
-import {
-  buildDockerExecArgs,
-  chunkString,
-  clampWithDefault,
-  readEnvInt,
-} from "./bash-tools.shared.js";
+import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
 import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
+import { createSessionSlug } from "./session-slug.js";
 import { maybeWrapCommandWithShellSnapshot } from "./shell-snapshot.js";
 import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
 
@@ -299,9 +294,23 @@ export function resolveExecTarget(params: {
   requestedTarget?: ExecTarget | null;
   elevatedRequested: boolean;
   sandboxAvailable: boolean;
+  sandboxRequired?: boolean;
 }) {
-  const configuredTarget = params.configuredTarget ?? "auto";
+  const sandboxRequired = params.sandboxRequired === true;
+  if (sandboxRequired && !params.sandboxAvailable) {
+    throw new Error("This session requires a sandbox, but its sandbox runtime is unavailable.");
+  }
+  if (sandboxRequired && params.elevatedRequested) {
+    throw new Error("Elevated execution is unavailable because this session requires a sandbox.");
+  }
+  // Session isolation outranks every agent, session, and request-scoped host preference.
+  const configuredTarget = sandboxRequired ? "auto" : (params.configuredTarget ?? "auto");
   const requestedTarget = params.requestedTarget ?? null;
+  if (sandboxRequired && (requestedTarget === "gateway" || requestedTarget === "node")) {
+    throw new Error(
+      `exec host not allowed (requested ${renderExecTargetLabel(requestedTarget)}; this session requires a sandbox).`,
+    );
+  }
   if (
     requestedTarget &&
     !isRequestedExecTargetAllowed({
@@ -946,7 +955,10 @@ export async function runExecProcess(opts: {
         stdinMode: "pipe-open";
       } = await (async () => {
     if (opts.sandbox) {
-      const backendExecSpec = await opts.sandbox.buildExecSpec?.({
+      if (!opts.sandbox.buildExecSpec) {
+        throw new Error("sandbox backend does not provide buildExecSpec");
+      }
+      const backendExecSpec = await opts.sandbox.buildExecSpec({
         command: execCommand,
         workdir: opts.containerWorkdir ?? opts.sandbox.containerWorkdir,
         env: shellRuntimeEnv,
@@ -955,20 +967,9 @@ export async function runExecProcess(opts: {
       sandboxFinalizeToken = backendExecSpec?.finalizeToken;
       return {
         mode: "child" as const,
-        argv: backendExecSpec?.argv ?? [
-          "docker",
-          ...buildDockerExecArgs({
-            containerName: opts.sandbox.containerName,
-            command: execCommand,
-            workdir: opts.containerWorkdir ?? opts.sandbox.containerWorkdir,
-            env: shellRuntimeEnv,
-            tty: opts.usePty,
-          }),
-        ],
-        env: backendExecSpec?.env ?? process.env,
-        stdinMode:
-          backendExecSpec?.stdinMode ??
-          (opts.usePty ? ("pipe-open" as const) : ("pipe-closed" as const)),
+        argv: backendExecSpec.argv,
+        env: backendExecSpec.env,
+        stdinMode: backendExecSpec.stdinMode,
       };
     }
     // --- OS-level sandboxing (Seatbelt on macOS) when no Docker sandbox ---

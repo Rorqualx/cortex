@@ -12,6 +12,7 @@ import {
   ModelsProbeResultSchema,
   SkillProposalEvaluationSchema,
   SkillProposalLifecycleEventSchema,
+  SkillsCuratorStatusResultSchema,
   SkillsDetailResultSchema,
   SkillsProposalEvaluateParamsSchema,
   SkillsProposalEvaluateResultSchema,
@@ -29,6 +30,17 @@ import { GatewayAgentRuntimeSchema } from "./session-row.js";
  * tool catalogs. These payloads are UI-facing but also consumed by runtime
  * guards, so the fixtures exercise strictness at the public gateway boundary.
  */
+
+function expectSchemaCases(schema: import("typebox").TSchema, expected: boolean, values: readonly unknown[]) {
+  for (const value of values) {
+    expect(Value.Check(schema, value)).toBe(expected);
+  }
+}
+
+const expectAccepted = (schema: import("typebox").TSchema, ...values: readonly unknown[]) =>
+  expectSchemaCases(schema, true, values);
+const expectRejected = (schema: import("typebox").TSchema, ...values: readonly unknown[]) =>
+  expectSchemaCases(schema, false, values);
 
 /** Minimal effective-tools result used by strict notice tests. */
 function toolsEffectiveResult() {
@@ -270,6 +282,46 @@ describe("SkillsProposalInspectResultSchema", () => {
         content: result.content,
       }),
     ).toBe(true);
+  });
+});
+
+describe("SkillsCuratorStatusResultSchema", () => {
+  it("accepts typed collection and experience outcomes while rejecting invalid review records", () => {
+    const legacyResult = {
+      lastAttemptAtMs: 100,
+      lastSuccessAtMs: 101,
+      lastError: null,
+      counts: { active: 1, stale: 0, archived: 0 },
+      skills: [],
+      overlaps: [],
+    };
+    const result = {
+      ...legacyResult,
+      collectionReview: {
+        workspace: { attemptedAtMs: 100, succeededAtMs: 101 },
+      },
+      experienceReview: {
+        workspace: {
+          attemptedAtMs: 102,
+          outcome: "proposed",
+          proposalId: "proposal-1",
+          usage: { inputTokens: 40, cachedInputTokens: 20, outputTokens: 10 },
+        },
+      },
+    };
+
+    expectAccepted(SkillsCuratorStatusResultSchema, result, legacyResult);
+    expectRejected(
+      SkillsCuratorStatusResultSchema,
+      {
+        ...result,
+        collectionReview: { workspace: { attemptedAtMs: 100, unexpected: true } },
+      },
+      {
+        ...result,
+        experienceReview: { workspace: { attemptedAtMs: 102, outcome: "archived" } },
+      },
+    );
   });
 });
 
