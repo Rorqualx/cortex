@@ -3414,4 +3414,95 @@ describe("agentLoop thinking state", () => {
     expect(observedReasoning).toEqual(expected);
   });
 });
+describe("public runner context isolation", () => {
+  function createAssistantReplyStream(): ReturnType<StreamFn> {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      stream.push({
+        type: "done",
+        reason: "stop",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "new reply" }],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: TEST_USAGE,
+          stopReason: "stop",
+          timestamp: 2,
+        },
+      });
+      stream.end();
+    });
+    return stream;
+  }
+
+  async function expectCallerMessagesUnchanged(
+    context: AgentContext,
+    run: (emit: (event: AgentEvent) => void) => Promise<AgentMessage[]>,
+  ): Promise<void> {
+    const originalMessages = context.messages;
+    const originalSnapshot = structuredClone(context.messages);
+    const events: AgentEvent[] = [];
+
+    const messages = await run((event) => {
+      events.push(event);
+    });
+
+    expect(context.messages).toBe(originalMessages);
+    expect(context.messages).toEqual(originalSnapshot);
+    expect(messages).toEqual([
+      expect.objectContaining({
+        role: "assistant",
+        content: [{ type: "text", text: "new reply" }],
+      }),
+    ]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "message_end",
+          message: expect.objectContaining({
+            role: "assistant",
+            content: [{ type: "text", text: "new reply" }],
+          }),
+        }),
+      ]),
+    );
+  }
+
+  it("keeps caller messages isolated for empty-prompt runs", async () => {
+    const context: AgentContext = {
+      systemPrompt: "",
+      messages: [{ role: "user", content: "existing prompt", timestamp: 1 }],
+    };
+
+    await expectCallerMessagesUnchanged(context, (emit) =>
+      runAgentLoop([], context, config, emit, undefined, async () => createAssistantReplyStream()),
+    );
+  });
+
+  it("keeps caller messages isolated for continuations", async () => {
+    const context: AgentContext = {
+      systemPrompt: "",
+      messages: [
+        {
+          role: "toolResult",
+          toolCallId: "call-ready",
+          toolName: "read",
+          content: [{ type: "text", text: "ready" }],
+          details: {},
+          isError: false,
+          timestamp: 1,
+        },
+      ],
+    };
+
+    await expectCallerMessagesUnchanged(context, (emit) =>
+      runAgentLoopContinue(context, config, emit, undefined, async () =>
+        createAssistantReplyStream(),
+      ),
+    );
+  });
+});
+
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

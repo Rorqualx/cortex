@@ -200,7 +200,10 @@ export async function runAgentLoopContinue(
   }
 
   const newMessages: AgentMessage[] = [];
-  const currentContext: AgentContext = { ...context };
+  // Isolate the caller's messages array: runLoop appends turn output to
+  // currentContext.messages, which must never alias the caller's array
+  // (upstream #129293).
+  const currentContext: AgentContext = { ...context, messages: [...context.messages] };
 
   await emit({ type: "agent_start" });
   await emit({ type: "turn_start" });

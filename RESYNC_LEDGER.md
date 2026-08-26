@@ -124,3 +124,54 @@ Non-ui work: 2 conflicts + 1 merge=ours drift file.
 
 Derived files regenerated in worktree: pnpm-lock (install clean), kysely-types, protocol-gen
 (+swift unchanged, +kotlin regenerated) — all exit 0. No product-collision found → finish-land.
+
+## 2026-08-26 — upstream 2f17d11e901 (bounded batch, 80 of 248)
+
+Behind=80 (bounded), raw conflicts 68 (59 ui/ → fork-ownership policy; 56 upstream-only ui files dropped).
+Non-ui work: 9 conflicts + 3 merge=ours drift files.
+
+- `packages/agent-core/src/agent-loop.ts` — **KEEP-OURS + ENHANCE-OURS graft.** Upstream #129293
+  restructured the loop (ToolBatchContext, runAgentLoopCore extraction). Fork keeps its steering
+  loop wholesale (08-20 precedent: fork steering vs upstream loop restructure). Grafted the one-line
+  caller-messages-array isolation into `runAgentLoopContinue` (`{ ...context, messages:
+  [...context.messages] }`) — the behavioral substance of #129293; both new isolation tests pass
+  against the fork loop. The #129293 ToolBatchContext restructure (incl. commit-failure settle
+  semantics) is DEFERRED as fork follow-up.
+- `packages/agent-core/src/agent-loop.test.ts` — fork file (== base) + upstream's new
+  "public runner context isolation" describe appended (2 tests, pass with the graft). Upstream's
+  settle-semantics test ("keeps Agent active until started parallel work settles…") NOT adopted —
+  tests the deferred #129293 restructure. NOTE: "does not launch prepared tools when the admission
+  commit fails" + the full-file hang are PRE-EXISTING on main (verified against a temp worktree at
+  276809575d0: same assertion failure, same hang) — not merge-caused.
+- `src/cli/skills-cli.ts` — **KEEP-OURS + graft.** Fork de-workshopped file (f8300651e88) kept;
+  grafted upstream #129802's `canFallbackToImplicitLocalGateway` gate into
+  `loadGatewaySkillsStatusReport`'s catch (remote-gateway failures now surface instead of silently
+  falling back to workspace status). Workshop/curator hunks (5,6) kept fork (Skill Forge is the
+  only pipeline). Unused upstream imports (resolveGatewayPort etc.) not adopted.
+- `src/cli/program/register.subclis-core.ts` — **KEEP-OURS.** Upstream #129351's
+  `defineImportedSubCliGroups` tuple dedup is redundant with the fork's
+  `defineImportedProgramCommandGroupSpecs` (load-bearing across command-registry-core,
+  command-group-descriptors, register.subclis). Kept fork incl. vault + skill-forge entries.
+- `extensions/workboard/src/{dispatcher,dispatcher.test,lifecycle-sync.test}.ts` — **KEEP-OURS
+  (deletion honored).** Fork deleted extensions/workboard/ (deprecated, replaced by core
+  src/workboard/); upstream modified 3 files in the deleted dir → git rm. Standing fork policy.
+- `extensions/qa-lab/src/*.cleanup.test.ts` ×2 — **KEEP-OURS.** Fork's
+  `smokeArtifactPath: "crabline-fake-provider-smoke.json"` field (fork crabline infra) kept.
+- `config/control-ui-startup-budget-baseline.json` — **KEEP-OURS** (585538; upstream's 340901
+  measures their rearchitected UI — irrelevant to fork ui ownership). COUNT-DISAGREEMENT noted;
+  huey build measures; bump only if over 585538 (ceiling 589824).
+
+merge=ours drift (rebased onto upstream via merge-file, fork delta re-applied):
+- `src/agents/sessions/tools/bash.ts` — clean 3-way: upstream's
+  `createCommandTerminationController`/`forceKillAfterDelay` termination + fork's
+  session-awareness exec-guard, `resolveBashTimeoutMs` returns-undefined behavior,
+  `toLintErrorObject`, exported types.
+- `src/agents/bash-tools.exec-runtime.ts` — upstream's `ExecProcessPreflightError` export +
+  `beforeSpawn` preflight hook restored (adopted consumers exec-host-gateway.ts/exec-run.ts import
+  them); guards inserted before primary spawn (covers pty+child) and PTY-fallback retry; fork's
+  exec-host supervisor spawn fields (runId/backendId/scopeKey), onUpdate, sandbox paths preserved.
+- `src/agents/tool-display-config.ts` — upstream `displayAction()` compaction adopted; fork's
+  canvas actions (eval/snapshot/a2ui_push/a2ui_reset) re-expressed in compacted form; upstream's
+  github_publish/github_identity_status/sessions entries RESTORED (dropped from fork display config
+  by earlier resync rebase cf38ae4e9a6 while the tools remain registered — collateral, superset
+  adopt). Fork's message-tool actions and memory_reports entry intact.

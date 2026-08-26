@@ -73,6 +73,19 @@ import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
 
 export { execSchema } from "./bash-tools.schemas.js";
 
+export class ExecProcessPreflightError extends Error {
+  constructor(readonly result: AgentToolResult<ExecToolDetails>) {
+    super("exec denied by final preflight");
+  }
+
+  static unwrap(error: unknown): AgentToolResult<ExecToolDetails> {
+    if (error instanceof ExecProcessPreflightError) {
+      return error.result;
+    }
+    throw error;
+  }
+}
+
 const SMKX = "\x1b[?1h";
 const RMKX = "\x1b[?1l";
 
@@ -720,6 +733,8 @@ export async function runExecProcess(opts: {
   /** Observes the settled outcome before listeners are notified. */
   onSettledBeforeNotify?: (outcome: ExecProcessOutcome) => void;
   onUpdate?: (partialResult: AgentToolResult<ExecToolDetails>) => void;
+  /** Revalidates authorization after async preparation, immediately before each spawn attempt. */
+  beforeSpawn?: () => Promise<AgentToolResult<ExecToolDetails> | undefined>;
 }): Promise<ExecProcessHandle> {
   const startedAt = Date.now();
   const sessionId = createSessionSlug();
@@ -1023,6 +1038,13 @@ export async function runExecProcess(opts: {
     handleStdout(chunk);
   };
 
+  const assertPreSpawnAuthorized = async () => {
+    const denied = await opts.beforeSpawn?.();
+    if (denied) {
+      throw new ExecProcessPreflightError(denied);
+    }
+  };
+
   try {
     const spawnBase = {
       runId: sessionId,
@@ -1036,6 +1058,9 @@ export async function runExecProcess(opts: {
       onStdout: onSupervisorStdout,
       onStderr: handleStderr,
     };
+    // Revalidate authorization after async preparation, immediately before the
+    // first spawn attempt (upstream pre-spawn preflight).
+    await assertPreSpawnAuthorized();
     managedRun =
       spawnSpec.mode === "pty"
         ? await supervisor.spawn({
@@ -1058,6 +1083,7 @@ export async function runExecProcess(opts: {
       opts.warnings.push(warning);
       usingPty = false;
       try {
+        await assertPreSpawnAuthorized();
         managedRun = await supervisor.spawn({
           runId: sessionId,
           sessionId: opts.sessionKey?.trim() || sessionId,

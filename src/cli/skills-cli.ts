@@ -39,6 +39,7 @@ import {
 import { CONFIG_DIR } from "../utils.js";
 import { resolveClawHubRiskAcknowledgementCliOptions } from "./clawhub-risk-acknowledgement.js";
 import { resolveOptionFromCommand, runCommandWithRuntime } from "./cli-utils.js";
+import { canFallbackToImplicitLocalGateway } from "./gateway-rpc.js";
 import { parseStrictPositiveIntOption } from "./program/helpers.js";
 import { setCommandJsonMode } from "./program/json-mode.js";
 import { formatSkillInfo, formatSkillsCheck, formatSkillsList } from "./skills-cli.format.js";
@@ -151,7 +152,22 @@ async function loadGatewaySkillsStatusReport(
       clientName: GATEWAY_CLIENT_NAMES.CLI,
       mode: GATEWAY_CLIENT_MODES.CLI,
     });
-  } catch {
+  } catch (error) {
+    // Upstream #129802: only fall back to workspace-computed status when the
+    // error is fallback-eligible (credentials required / RPC unavailable /
+    // legacy gateway) and the target is the implicit local gateway; a real
+    // remote-gateway failure must surface instead of silently showing
+    // workspace-only status.
+    if (
+      !(await canFallbackToImplicitLocalGateway({
+        config: resolved.config,
+        error,
+        legacyMethod: "skills.status",
+        legacyAgentId: true,
+      }))
+    ) {
+      throw error;
+    }
     return null;
   }
 }
