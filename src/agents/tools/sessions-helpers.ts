@@ -6,6 +6,8 @@
 export {
   createAgentToAgentPolicy,
   createSessionVisibilityRowChecker,
+  formatSessionToolAccessDenial,
+  recordSessionToolActionFact,
   resolveEffectiveSessionToolsVisibility,
   resolveSandboxedSessionToolContext,
   resolveSessionToolAccess,

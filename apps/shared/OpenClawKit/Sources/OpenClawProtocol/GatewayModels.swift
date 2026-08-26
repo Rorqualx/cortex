@@ -6901,6 +6901,32 @@ public struct SessionMember: Codable, Sendable {
     }
 }
 
+public struct SessionMemberEvidence: Codable, Sendable {
+    public let identityid: String
+    public let addedby: String?
+    public let addedbystate: String?
+    public let addedat: Int
+
+    public init(
+        identityid: String,
+        addedby: String? = nil,
+        addedbystate: String? = nil,
+        addedat: Int)
+    {
+        self.identityid = identityid
+        self.addedby = addedby
+        self.addedbystate = addedbystate
+        self.addedat = addedat
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case identityid = "identityId"
+        case addedby = "addedBy"
+        case addedbystate = "addedByState"
+        case addedat = "addedAt"
+    }
+}
+
 public struct SessionMembersListResult: Codable, Sendable {
     public let sessionkey: String
     public let owner: SessionSharingIdentity?
@@ -6913,6 +6939,40 @@ public struct SessionMembersListResult: Codable, Sendable {
         sessionkey: String,
         owner: SessionSharingIdentity? = nil,
         members: [SessionMember],
+        identities: [SessionSharingIdentity],
+        role: SessionSharingRole,
+        allowedvisibilities: [SessionVisibility])
+    {
+        self.sessionkey = sessionkey
+        self.owner = owner
+        self.members = members
+        self.identities = identities
+        self.role = role
+        self.allowedvisibilities = allowedvisibilities
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionkey = "sessionKey"
+        case owner
+        case members
+        case identities
+        case role
+        case allowedvisibilities = "allowedVisibilities"
+    }
+}
+
+public struct SessionMembersListEvidenceResult: Codable, Sendable {
+    public let sessionkey: String
+    public let owner: SessionSharingIdentity?
+    public let members: [SessionMemberEvidence]
+    public let identities: [SessionSharingIdentity]
+    public let role: SessionSharingRole
+    public let allowedvisibilities: [SessionVisibility]
+
+    public init(
+        sessionkey: String,
+        owner: SessionSharingIdentity? = nil,
+        members: [SessionMemberEvidence],
         identities: [SessionSharingIdentity],
         role: SessionSharingRole,
         allowedvisibilities: [SessionVisibility])
@@ -7033,6 +7093,44 @@ public struct SessionSharingEvent: Codable, Sendable {
         case sessionkey = "sessionKey"
         case agentid = "agentId"
         case actor
+        case visibility
+        case identityid = "identityId"
+        case ts
+    }
+}
+
+public struct SessionSharingEvidenceEvent: Codable, Sendable {
+    public let action: SessionSharingAction
+    public let sessionkey: String
+    public let agentid: String
+    public let actorstate: String?
+    public let visibility: SessionVisibility?
+    public let identityid: String?
+    public let ts: Int
+
+    public init(
+        action: SessionSharingAction,
+        sessionkey: String,
+        agentid: String,
+        actorstate: String? = nil,
+        visibility: SessionVisibility? = nil,
+        identityid: String? = nil,
+        ts: Int)
+    {
+        self.action = action
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.actorstate = actorstate
+        self.visibility = visibility
+        self.identityid = identityid
+        self.ts = ts
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case action
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case actorstate = "actorState"
         case visibility
         case identityid = "identityId"
         case ts
@@ -18390,6 +18488,50 @@ public struct QuestionOption: Codable, Sendable {
     }
 }
 
+public struct QuestionSecretStoreBinding: Codable, Sendable {
+    public let name: String
+    public let kind: AnyCodable
+    public let allowedhosts: [String]?
+    public let reason: String?
+
+    public init(
+        name: String,
+        kind: AnyCodable,
+        allowedhosts: [String]? = nil,
+        reason: String? = nil)
+    {
+        self.name = name
+        self.kind = kind
+        self.allowedhosts = allowedhosts
+        self.reason = reason
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case kind
+        case allowedhosts = "allowedHosts"
+        case reason
+    }
+}
+
+public struct QuestionSecretStoreExisting: Codable, Sendable {
+    public let updatedatms: Int
+    public let updatedby: String?
+
+    public init(
+        updatedatms: Int,
+        updatedby: String? = nil)
+    {
+        self.updatedatms = updatedatms
+        self.updatedby = updatedby
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case updatedatms = "updatedAtMs"
+        case updatedby = "updatedBy"
+    }
+}
+
 public struct Question: Codable, Sendable {
     public let questionid: String
     public let header: String
@@ -18398,6 +18540,8 @@ public struct Question: Codable, Sendable {
     public let multiselect: Bool?
     public let isother: Bool?
     public let issecret: Bool?
+    public let secretstore: QuestionSecretStoreBinding?
+    public let secretstoreexisting: QuestionSecretStoreExisting?
 
     public init(
         questionid: String,
@@ -18406,7 +18550,9 @@ public struct Question: Codable, Sendable {
         options: [QuestionOption],
         multiselect: Bool? = nil,
         isother: Bool? = nil,
-        issecret: Bool? = nil)
+        issecret: Bool? = nil,
+        secretstore: QuestionSecretStoreBinding? = nil,
+        secretstoreexisting: QuestionSecretStoreExisting? = nil)
     {
         self.questionid = questionid
         self.header = header
@@ -18415,6 +18561,8 @@ public struct Question: Codable, Sendable {
         self.multiselect = multiselect
         self.isother = isother
         self.issecret = issecret
+        self.secretstore = secretstore
+        self.secretstoreexisting = secretstoreexisting
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -18425,6 +18573,8 @@ public struct Question: Codable, Sendable {
         case multiselect = "multiSelect"
         case isother = "isOther"
         case issecret = "isSecret"
+        case secretstore = "secretStore"
+        case secretstoreexisting = "secretStoreExisting"
     }
 }
 
@@ -18436,6 +18586,7 @@ public struct QuestionRequestQuestion: Codable, Sendable {
     public let multiselect: Bool?
     public let isother: Bool?
     public let issecret: Bool?
+    public let secretstore: QuestionSecretStoreBinding?
 
     public init(
         questionid: String,
@@ -18444,7 +18595,8 @@ public struct QuestionRequestQuestion: Codable, Sendable {
         options: [QuestionOption],
         multiselect: Bool? = nil,
         isother: Bool? = nil,
-        issecret: Bool? = nil)
+        issecret: Bool? = nil,
+        secretstore: QuestionSecretStoreBinding? = nil)
     {
         self.questionid = questionid
         self.header = header
@@ -18453,6 +18605,7 @@ public struct QuestionRequestQuestion: Codable, Sendable {
         self.multiselect = multiselect
         self.isother = isother
         self.issecret = issecret
+        self.secretstore = secretstore
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -18463,6 +18616,7 @@ public struct QuestionRequestQuestion: Codable, Sendable {
         case multiselect = "multiSelect"
         case isother = "isOther"
         case issecret = "isSecret"
+        case secretstore = "secretStore"
     }
 }
 

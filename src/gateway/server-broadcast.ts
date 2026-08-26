@@ -91,6 +91,7 @@ const EVENT_SCOPE_GUARDS: Record<string, string[]> = {
   "session.observer": [READ_SCOPE],
   "session.operation": [READ_SCOPE],
   "session.sharing": [READ_SCOPE],
+  "session.sharing.evidence": [READ_SCOPE],
   "session.suggestion": [READ_SCOPE],
   "session.typing": [READ_SCOPE],
   "session.tool": [READ_SCOPE],
