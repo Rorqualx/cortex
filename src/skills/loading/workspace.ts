@@ -53,7 +53,7 @@ import {
   readSkillFrontmatterSafe,
   type LocalSkillLoadDiagnostic,
 } from "./local-loader.js";
-import { resolvePluginSkillDirs } from "./plugin-skills.js";
+import { resolvePluginSkillRoots } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
 import { formatSkillsForPromptCore, type Skill } from "./skill-contract.js";
 import { resolveSkillTelemetrySource } from "./source.js";
@@ -1194,13 +1194,17 @@ function loadSkillEntries(
   const pluginSkillsDir = opts?.pluginSkillsDir ?? path.join(CONFIG_DIR, "plugin-skills");
   const extraDirsRaw = workspaceOnly ? [] : (opts?.config?.skills?.load?.extraDirs ?? []);
   const extraDirs = normalizeTrimmedStringList(extraDirsRaw);
-  const pluginSkillDirs = workspaceOnly
+  // cortex fork: upstream evolved resolvePluginSkillDirs into
+  // resolvePluginSkillRoots (dir + hardlink policy). Our loader consumes
+  // plain dirs; derive them from the roots.
+  const pluginSkillRoots = workspaceOnly
     ? []
-    : resolvePluginSkillDirs({
+    : resolvePluginSkillRoots({
         workspaceDir,
         config: opts?.config,
         pluginSkillsDir,
       });
+  const pluginSkillDirs = pluginSkillRoots.map((root) => root.dir);
   const mergedExtraDirs = [...extraDirs, ...pluginSkillDirs];
 
   const bundledSkills = bundledSkillsDir
