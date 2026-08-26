@@ -191,13 +191,13 @@ freeze_upstream_ref() {
 # 0 iff it retargeted (caller re-measures against the batch), 1 otherwise. Set
 # UPSTREAM_MERGE_BATCH_MAX=0 (or non-numeric) to disable batching and always take the tip.
 apply_batch_cap() {
-  # Default 80 (raised from 40 2026-08-25 to catch up a ~186-commit backlog). Measured: one
-  # land closes ~cap commits in a ~2h cycle (the ~75min huey proof dominates and is fixed
-  # regardless of batch size), so cap≈80 closes ~43/hr vs upstream's ~16/hr baseline (net
-  # +27/hr, clears overnight with burst margin). cap=40 nets only ~+5/hr and treads water on
-  # bursts. Larger caps grow the per-cycle conflict set + the loss when a proof fails; 80 keeps
-  # residual resolvable (recent 40-batches had ~1-2 real conflicts). Lower back toward 40 once
-  # caught up. Set UPSTREAM_MERGE_BATCH_MAX in the env to override without editing.
+  # Default 80 (standing default since 2026-08-25; was 40). Measured: one land closes ~cap
+  # commits in a ~2h cycle (the ~75min huey proof dominates and is fixed regardless of batch
+  # size), so cap≈80 closes ~43/hr vs upstream's ~16/hr baseline (net +27/hr) and stays ahead
+  # even during bursts — cap=40 closed only ~21/hr and treads water. 80-commit batches were
+  # proven to resolve + prove + land cleanly (recent batches: ~1-2 real conflicts under the
+  # ui-drop policy). Going much higher grows the per-cycle conflict set + the loss when a proof
+  # fails, so 80 is the balance point. Set UPSTREAM_MERGE_BATCH_MAX in the env to override.
   local cap="${UPSTREAM_MERGE_BATCH_MAX:-80}"
   case "$cap" in ''|*[!0-9]*|0) return 1 ;; esac
   local base; base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
