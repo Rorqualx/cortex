@@ -47,6 +47,7 @@ import {
   type WorkboardWorkspace,
 } from "@openclaw/workboard-contract";
 import { resolveNonNegativeIntegerOption } from "openclaw/plugin-sdk/number-runtime";
+import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
 import { isRecord, normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 // Re-exported so store-card-helpers.ts/store-core.ts/store-workflow.ts can pull every
 // board-field normalizer (this module's own helpers plus this SDK primitive) from one seam.
@@ -270,6 +271,13 @@ export function normalizeBoundedString(
     throw new Error(`${fieldName} must be ${maxLength} characters or fewer.`);
   }
   return normalized;
+}
+
+export function capText(value: string | undefined, max: number): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value.length <= max ? value : `${truncateUtf16Safe(value, Math.max(0, max - 1))}…`;
 }
 
 export function normalizeStatus(value: unknown, fallback: WorkboardStatus): WorkboardStatus {
@@ -948,7 +956,7 @@ function normalizeNotification(value: unknown): WorkboardNotification | null {
     : undefined;
   const createdAt = normalizeTimestamp(record.createdAt, Date.now());
   const sequence = normalizeTimestamp(record.sequence, 0) || undefined;
-  const message = normalizeBoundedString(record.message, undefined, 240, "notification message");
+  const message = capText(normalizeOptionalString(record.message), 240);
   if (!kind || !message) {
     return null;
   }

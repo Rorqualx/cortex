@@ -12,7 +12,6 @@ import { safeEqualSecret } from "openclaw/plugin-sdk/security-runtime";
 import {
   appendEvent,
   assertCanMutateClaimedCard,
-  capText,
   cardChildIds,
   cardParentIds,
   cardRunId,
@@ -44,6 +43,7 @@ import type {
 } from "./store-inputs.js";
 import {
   appendCompletionProof,
+  capText,
   clearDiagnostics,
   deriveChildIdempotencyKey,
   normalizeArtifact,
