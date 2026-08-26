@@ -131,6 +131,7 @@ export type GatewaySessionRow = {
   channelAvatarUrl?: string;
   unread?: boolean;
   lastReadAt?: number;
+  markedUnreadAt?: number;
   agentStatus?: SessionEntry["agentStatus"];
   observerDigest?: Pick<
     SessionObserverDigest,
