@@ -53,8 +53,20 @@ type BuildCacheStep = { label: string; env?: NodeJS.ProcessEnv; cache?: BuildCac
 
 export type BuildAllStep = BuildCacheStep &
   (
-    | { kind: "pnpm"; args?: never; pnpmArgs: string[]; windowsNodeOptions?: string }
-    | { kind?: "node"; args: string[]; pnpmArgs?: never; windowsNodeOptions?: string }
+    | {
+        kind: "pnpm";
+        args?: never;
+        pnpmArgs: string[];
+        windowsNodeOptions?: string;
+        nodeOptions?: string;
+      }
+    | {
+        kind?: "node";
+        args: string[];
+        pnpmArgs?: never;
+        windowsNodeOptions?: string;
+        nodeOptions?: string;
+      }
   );
 
 type BuildAllTiming = { label: string; durationMs: number; status: string };
@@ -314,6 +326,10 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
     env: {
       OPENCLAW_PLUGIN_SDK_CANONICAL_DTS: "1",
     },
+    // The entry-dts writer materialises the whole plugin-sdk declaration graph in
+    // memory; upstream growth (2026-08-26 batch) pushed it past Node's ~4GB default
+    // heap on Linux (huey proof OOM at 4068MB). 8192MB matches the Windows build floor.
+    nodeOptions: `--max-old-space-size=${WINDOWS_BUILD_MAX_OLD_SPACE_MB}`,
     cache: {
       env: PLUGIN_SDK_ENTRY_DTS_CACHE_ENV,
       inputs: PLUGIN_SDK_ENTRY_DTS_CACHE_INPUTS,
@@ -664,21 +680,28 @@ export function resolveBuildAllTsdownPlan(
   };
 }
 
-function resolveStepEnv(step: BuildAllStep, env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
-  const stepEnv = step.env ? Object.assign({}, env, step.env) : env;
-  if (platform !== "win32" || !step.windowsNodeOptions) {
-    return stepEnv;
-  }
-  const currentNodeOptions = stepEnv.NODE_OPTIONS?.trim() ?? "";
-  if (currentNodeOptions.includes(step.windowsNodeOptions)) {
-    return stepEnv;
+function mergeNodeOptions(env: NodeJS.ProcessEnv, addition: string): NodeJS.ProcessEnv {
+  const currentNodeOptions = env.NODE_OPTIONS?.trim() ?? "";
+  if (currentNodeOptions.includes(addition)) {
+    return env;
   }
   return {
-    ...stepEnv,
-    NODE_OPTIONS: currentNodeOptions
-      ? `${currentNodeOptions} ${step.windowsNodeOptions}`
-      : step.windowsNodeOptions,
+    ...env,
+    NODE_OPTIONS: currentNodeOptions ? `${currentNodeOptions} ${addition}` : addition,
   };
+}
+
+function resolveStepEnv(step: BuildAllStep, env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
+  const stepEnv = step.env ? Object.assign({}, env, step.env) : env;
+  // Cross-platform per-step node flags (e.g. --max-old-space-size): heap-hungry
+  // dts phases OOM Node's ~4GB default on Linux proof/CI hosts (huey 2026-08-26:
+  // write-plugin-sdk-entry-dts OOM'd at 4068MB after upstream DTS-surface growth).
+  // Applied first so step.windowsNodeOptions can still extend it on win32.
+  const withNodeOptions = step.nodeOptions ? mergeNodeOptions(stepEnv, step.nodeOptions) : stepEnv;
+  if (platform !== "win32" || !step.windowsNodeOptions) {
+    return withNodeOptions;
+  }
+  return mergeNodeOptions(withNodeOptions, step.windowsNodeOptions);
 }
 
 export function resolveBuildAllStep(step: BuildAllStep, params: BuildAllStepParams = {}) {

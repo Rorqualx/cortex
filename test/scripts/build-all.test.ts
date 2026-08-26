@@ -225,7 +225,11 @@ describe("resolveBuildAllStep", () => {
     {
       label: "write-plugin-sdk-entry-dts",
       scriptPath: "scripts/write-plugin-sdk-entry-dts.ts",
-      expectedEnv: { FOO: "bar", OPENCLAW_PLUGIN_SDK_CANONICAL_DTS: "1" },
+      expectedEnv: {
+        FOO: "bar",
+        OPENCLAW_PLUGIN_SDK_CANONICAL_DTS: "1",
+        NODE_OPTIONS: "--max-old-space-size=8192",
+      },
     },
     {
       label: "write-build-info",
@@ -253,6 +257,26 @@ describe("resolveBuildAllStep", () => {
         env: expectedEnv,
       },
     });
+  });
+
+  it("merges step nodeOptions into NODE_OPTIONS on every platform and preserves an inherited value", () => {
+    const step = getBuildAllStep("write-plugin-sdk-entry-dts");
+
+    const linuxResult = resolveBuildAllStep(step, {
+      platform: "linux",
+      nodeExecPath: "/custom/node",
+      env: { NODE_OPTIONS: "--disable-warning=DEP011" },
+    });
+    expect(linuxResult.options.env.NODE_OPTIONS).toBe(
+      "--disable-warning=DEP011 --max-old-space-size=8192",
+    );
+
+    const again = resolveBuildAllStep(step, {
+      platform: "linux",
+      nodeExecPath: "/custom/node",
+      env: { NODE_OPTIONS: "--max-old-space-size=8192" },
+    });
+    expect(again.options.env.NODE_OPTIONS).toBe("--max-old-space-size=8192");
   });
 
   it("can route pnpm script steps through direct node entrypoints", () => {

@@ -71,6 +71,13 @@ function createOpenShellBackendSandboxConfig(): CreateSandboxBackendParams["cfg"
     browser: createSandboxBrowserConfig(),
     tools: { allow: ["*"], deny: [] },
     prune: createSandboxPruneConfig(),
+    // Fork: SandboxConfig requires the os-sandbox policy block (absent upstream).
+    osSandbox: {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "deny",
+    },
   };
 }
 

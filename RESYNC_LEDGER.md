@@ -23,10 +23,10 @@ dropped in the top-up merge.)
 
 ## Top-up conflicts (20 commits) — reconciled this session
 
-| File | Verdict | Notes |
-| --- | --- | --- |
-| `packages/gateway-protocol/src/sessions-patch-result.ts` | ENHANCE-OURS | Keep fork `session-row.js` `GatewayAgentRuntime` import (upstream relocated it to `agents-models-skills.js`); graft upstream #127951 `contextWindow`/`contextWindows` optional fields so the result stays a superset. |
-| `scripts/build-all.mts` | KEEP-BOTH (additive) | Fork `WINDOWS_BUILD_MAX_OLD_SPACE_MB` + `PLUGIN_SDK_DTS_CACHE_INPUTS` and upstream #128007 `RUN_NODE_SKIP_DTS_BUILD_ENV` are independent consts, each consumed once — not a union-trap. |
+| File                                                     | Verdict              | Notes                                                                                                                                                                                                                 |
+| -------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/gateway-protocol/src/sessions-patch-result.ts` | ENHANCE-OURS         | Keep fork `session-row.js` `GatewayAgentRuntime` import (upstream relocated it to `agents-models-skills.js`); graft upstream #127951 `contextWindow`/`contextWindows` optional fields so the result stays a superset. |
+| `scripts/build-all.mts`                                  | KEEP-BOTH (additive) | Fork `WINDOWS_BUILD_MAX_OLD_SPACE_MB` + `PLUGIN_SDK_DTS_CACHE_INPUTS` and upstream #128007 `RUN_NODE_SKIP_DTS_BUILD_ENV` are independent consts, each consumed once — not a union-trap.                               |
 
 ## Keystone graft — upstream #127951 (context-window switch)
 
@@ -50,6 +50,7 @@ ResetResult/CursorResult`). tsgo:test:packages 4 → 0. (commit `fe4a80e7aaa`)
 ## Verification (Mac) — zero merge-caused failures
 
 7 tsgo lanes (cache cleared):
+
 - **core 0** ✓ · **extensions 0** ✓ · **test:packages 0** ✓ · **test:ui 0** ✓
 - **core:test 8** / **test:src 8** — proven main-identical baseline (7 `agent-bundle-mcp-runtime.test.ts` strict-null + 1 `system-prompt.test.ts` sessionUrl); ran `tsgo:core:test` on `main` → identical 8. Not merge-caused.
 - **extensions:test 22** — memory-l3 `Signals` baseline; memory-l3 untouched by the merge.
@@ -59,7 +60,7 @@ ResetResult/CursorResult`). tsgo:test:packages 4 → 0. (commit `fe4a80e7aaa`)
 
 ## Production LOC
 
-Reconciliation *judgment* this session: +67 / -4 (all additive type grafts + 2 resolutions).
+Reconciliation _judgment_ this session: +67 / -4 (all additive type grafts + 2 resolutions).
 Full branch vs main non-ui/non-test: +39737 / -14277 — this is the adopted **upstream** delta
 (438 commits, already reviewed upstream), not fork-authored surface.
 
@@ -67,15 +68,17 @@ Full branch vs main non-ui/non-test: +39737 / -14277 — this is the adopted **u
 
 Folded in 5 more upstream commits (`5ddf381..` tip). ui/ by policy (8 dropped). One
 non-ui conflict:
+
 - `control-ui-bootstrap-contract.ts`: keep-both — fork `timeFormat`/`chatMessageMaxWidth`
-  + upstream #127711 `environment?: ControlUiEnvironment`. The feature's config schema
-  (`zod-schema.gateway`, `types.gateway`, help/hints/labels) + `control-ui.ts` producer
-  auto-merged and consume the field, so it is load-bearing; UI consumer is fork-owned
-  (degrades gracefully via the HTML env attribute). tsgo all lanes clean/baseline.
+  - upstream #127711 `environment?: ControlUiEnvironment`. The feature's config schema
+    (`zod-schema.gateway`, `types.gateway`, help/hints/labels) + `control-ui.ts` producer
+    auto-merged and consume the field, so it is load-bearing; UI consumer is fork-owned
+    (degrades gracefully via the HTML env attribute). tsgo all lanes clean/baseline.
 
 ## Linux proof (huey, Node 24) — `scripts/remote-proof.sh`
 
 First run (tip e6668) caught two Linux-only signals the Mac can't:
+
 1. **Build fail — control-ui startup JS gzip 585538 B** > 583689 baseline+tolerance, under
    the 589824 B hard ceiling. ui/ == main, so growth is non-ui runtime bundled into the
    startup path (gateway-protocol schema additions + 438-commit package delta). **Bumped
@@ -117,7 +120,7 @@ Non-ui work: 2 conflicts + 1 merge=ours drift file.
   divergence was pure stale-reconciliation drift, not fork intent (no fork-authored commit ever
   touched the file; full-history shows only upstream commits + resync merges). Rebased onto
   upstream and ported the 3 fork-only tests (`keeps non-capture live-session artifacts through
-  fresh recovery retry`, `reports CLI reply backends as streaming until the managed run finishes`,
+fresh recovery retry`, `reports CLI reply backends as streaming until the managed run finishes`,
   `lets configured agent default timeouts lift the default resume no-output ceiling`) onto
   upstream's helper infra (+`replyRunRegistry` import). Supersedes the 62da85d hand-patch
   (claude-live-session import removal + claudeSkillsPluginArgs) — upstream's file already has both.
@@ -134,7 +137,7 @@ Non-ui work: 9 conflicts + 3 merge=ours drift files.
   restructured the loop (ToolBatchContext, runAgentLoopCore extraction). Fork keeps its steering
   loop wholesale (08-20 precedent: fork steering vs upstream loop restructure). Grafted the one-line
   caller-messages-array isolation into `runAgentLoopContinue` (`{ ...context, messages:
-  [...context.messages] }`) — the behavioral substance of #129293; both new isolation tests pass
+[...context.messages] }`) — the behavioral substance of #129293; both new isolation tests pass
   against the fork loop. The #129293 ToolBatchContext restructure (incl. commit-failure settle
   semantics) is DEFERRED as fork follow-up.
 - `packages/agent-core/src/agent-loop.test.ts` — fork file (== base) + upstream's new
@@ -162,6 +165,7 @@ Non-ui work: 9 conflicts + 3 merge=ours drift files.
   huey build measures; bump only if over 585538 (ceiling 589824).
 
 merge=ours drift (rebased onto upstream via merge-file, fork delta re-applied):
+
 - `src/agents/sessions/tools/bash.ts` — clean 3-way: upstream's
   `createCommandTerminationController`/`forceKillAfterDelay` termination + fork's
   session-awareness exec-guard, `resolveBashTimeoutMs` returns-undefined behavior,
@@ -175,3 +179,26 @@ merge=ours drift (rebased onto upstream via merge-file, fork delta re-applied):
   github_publish/github_identity_status/sessions entries RESTORED (dropped from fork display config
   by earlier resync rebase cf38ae4e9a6 while the tools remain registered — collateral, superset
   adopt). Fork's message-tool actions and memory_reports entry intact.
+
+## 2026-08-26 (evening continuation) — proof-failure fixes (attempt 2)
+
+First finish-land (11:05Z) proof FAILED rc=1 on two counts; both fixed on the staged branch:
+
+- **BUILD_EXIT=1 — `write-plugin-sdk-entry-dts` OOM'd** on huey (Node 24 default ~4GB heap;
+  Mark-Compact 4068MB → allocation failure). Upstream's 80-commit batch grew the plugin-sdk
+  DTS surface past the default. Validated on huey directly: with
+  `--max-old-space-size=8192` the phase completes in 1:27 at **5.42GB peak RSS**.
+  Fix: cross-platform `nodeOptions` step field in `scripts/build-all.mts` (applies on every
+  platform, unlike win32-only `windowsNodeOptions`; merge logic extracted to
+  `mergeNodeOptions`), set to `--max-old-space-size=8192` (= `WINDOWS_BUILD_MAX_OLD_SPACE_MB`)
+  on the entry-dts step. Upstream has the same win32-only gap (no fix to adopt). Tests:
+  updated the tsx-step expectedEnv + new merge test (51 pass; the 7 step-list failures in
+  build-all.test.ts are PRE-EXISTING on main 276809575d0 — verified in a baseline worktree).
+- **tsgo:extensions:test 24 vs baseline 23** — net-new was exactly one:
+  `extensions/openshell/src/backend.remote-seed.test.ts` TS2741 (upstream-new file #129809,
+  adopted wholesale; its config literal lacks the fork-required `SandboxConfig.osSandbox`).
+  ENHANCE-OURS: added the fork idiom (`enabled:false/extraWritableRoots/extraProtectedMetadata/
+network:"deny"` — same as backend.exec-workdir.test.ts) to the upstream test. ext:test now 23
+  = baseline (memory-l3 only). Scoped vitest: 2/2 pass.
+
+No product-collision. finish-land attempt 2.
