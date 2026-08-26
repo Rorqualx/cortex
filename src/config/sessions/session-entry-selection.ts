@@ -1,5 +1,5 @@
-import { hasSessionAutoModelFallbackProvenance } from "./model-override-provenance.js";
 import { resolveSessionAuthProfileOverrideSource } from "./auth-profile-override-provenance.js";
+import { hasSessionActiveAutoModelFallback } from "./model-override-provenance.js";
 import type { SessionPatchProjectionSnapshot } from "./session-accessor.types.js";
 import type { InternalSessionEntry, SessionEntry } from "./types.js";
 
@@ -69,34 +69,29 @@ export function inheritSessionSelection(
   // override, omit the model fields (and the model-derived contextTokens
   // budget) so the new session resolves to the agent default. See
   // model-override-provenance + resolveSessionModelRef.
-  const isUserModelOverride =
-    Boolean(parentEntry.providerOverride?.trim() && parentEntry.modelOverride?.trim()) &&
-    parentEntry.modelOverrideSource !== "auto" &&
-    !(
-      parentEntry.modelOverrideSource === undefined &&
-      hasSessionAutoModelFallbackProvenance(parentEntry)
-    );
   const authProfileOverrideSource = resolveSessionAuthProfileOverrideSource(parentEntry);
+  const inheritModelSelection = !hasSessionActiveAutoModelFallback(parentEntry);
+  const inheritAuthProfile = inheritModelSelection || authProfileOverrideSource === "user";
   return {
-    ...(isUserModelOverride
-      ? {
-          ...(parentEntry.providerOverride
-            ? { providerOverride: parentEntry.providerOverride }
-            : {}),
-          ...(parentEntry.modelOverride ? { modelOverride: parentEntry.modelOverride } : {}),
-          ...(parentEntry.modelOverrideSource
-            ? { modelOverrideSource: parentEntry.modelOverrideSource }
-            : {}),
-          ...(typeof parentEntry.contextTokens === "number"
-            ? { contextTokens: parentEntry.contextTokens }
-            : {}),
-        }
+    ...(inheritModelSelection && parentEntry.providerOverride
+      ? { providerOverride: parentEntry.providerOverride }
       : {}),
-    ...(parentEntry.modelOverrideRouteResolution
+    ...(inheritModelSelection && parentEntry.modelOverride
+      ? { modelOverride: parentEntry.modelOverride }
+      : {}),
+    ...(inheritModelSelection && parentEntry.modelOverrideSource
+      ? { modelOverrideSource: parentEntry.modelOverrideSource }
+      : {}),
+    ...(inheritModelSelection && parentEntry.modelOverrideRouteResolution
       ? { modelOverrideRouteResolution: parentEntry.modelOverrideRouteResolution }
       : {}),
-    ...(parentEntry.agentRuntimeOverride
+    ...(inheritModelSelection && parentEntry.agentRuntimeOverride
       ? { agentRuntimeOverride: parentEntry.agentRuntimeOverride }
+      : {}),
+    ...(inheritModelSelection &&
+    (parentEntry.providerOverride || parentEntry.modelOverride) &&
+    typeof parentEntry.contextTokens === "number"
+      ? { contextTokens: parentEntry.contextTokens }
       : {}),
     ...(parentEntry.contextWindow ? { contextWindow: parentEntry.contextWindow } : {}),
     ...(parentEntry.thinkingLevel ? { thinkingLevel: parentEntry.thinkingLevel } : {}),
@@ -106,10 +101,10 @@ export function inheritSessionSelection(
     ...(parentEntry.traceLevel ? { traceLevel: parentEntry.traceLevel } : {}),
     ...(parentEntry.reasoningLevel ? { reasoningLevel: parentEntry.reasoningLevel } : {}),
     ...(parentEntry.elevatedLevel ? { elevatedLevel: parentEntry.elevatedLevel } : {}),
-    ...(authProfileOverrideSource && parentEntry.authProfileOverride
+    ...(inheritAuthProfile && authProfileOverrideSource && parentEntry.authProfileOverride
       ? { authProfileOverride: parentEntry.authProfileOverride }
       : {}),
-    ...(authProfileOverrideSource ? { authProfileOverrideSource } : {}),
+    ...(inheritAuthProfile && authProfileOverrideSource ? { authProfileOverrideSource } : {}),
   };
 }
 

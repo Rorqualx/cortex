@@ -93,6 +93,7 @@ const mediaGenerationYieldLog = createSubsystemLogger("agents/tools/media-genera
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
 export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentTool[] {
   const resolvedConfig = options?.config;
+  const sessionConfig = options?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
   const activeProjectKeys = options?.preparedModelRuntime?.activeProjectKeys ?? [];
   const runtimeSnapshot = getActiveSecretsRuntimeConfigSnapshot();
   const availabilityConfig = selectApplicableRuntimeConfig({
@@ -401,7 +402,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
           createSessionsTool({
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
             sandboxed: options?.sandboxed,
-            config: resolvedConfig,
+            config: sessionConfig,
           }),
           createScreenTool({
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
@@ -559,7 +560,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
             agentSessionKey: options?.agentSessionKey,
             agentChannel: options?.agentChannel,
             sandboxed: options?.sandboxed,
-            config: resolvedConfig,
+            config: sessionConfig,
           }),
         ]),
     ...(includeSubagentSpawnTool
@@ -606,12 +607,13 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     }),
     createSubagentsTool({
       agentSessionKey: options?.agentSessionKey,
-      config: resolvedConfig,
+      agentId: sessionAgentId,
+      config: sessionConfig,
     }),
     createSessionStatusTool({
       agentSessionKey: options?.agentSessionKey,
       runSessionKey: options?.runSessionKey,
-      config: resolvedConfig,
+      config: sessionConfig,
       sandboxed: options?.sandboxed,
       activeModelProvider: options?.modelProvider,
       activeModelId: options?.modelId,

@@ -202,3 +202,42 @@ network:"deny"` — same as backend.exec-workdir.test.ts) to the upstream test. 
   = baseline (memory-l3 only). Scoped vitest: 2/2 pass.
 
 No product-collision. finish-land attempt 2.
+
+## 2026-08-26 (third batch, 11:37 MT) — upstream 2e50bdf9fbb, 80 commits
+
+Baseline 1c8b2d38fab (includes this morning's land). residual=113 (111 ui policy-resolved);
+2 conflicts + 3 merge=ours drift. No product-collision.
+
+- `src/config/sessions/session-entry-selection.ts` — CONVERGENT SAME-FEATURE: both sides
+  wired the fork's own model-override-provenance module (identical in both trees). Adopted
+  upstream's structure (`inheritModelSelection`/`inheritAuthProfile` — gates provider/model/
+  source/routeResolution/agentRuntime/authProfile, uses the refined self-origin-aware
+  `hasSessionActiveAutoModelFallback`) + grafted fork-only bits: the user-intent comment and
+  `contextTokens` inheritance gated on a CARRIED pick (upstream's gate alone would ride a
+  runtime-resolved budget into new sessions — fork test case 4 forbids). Dropped fork's
+  `isUserModelOverride` const + its import (superseded). sessions.model-inheritance.test 5/5.
+- `test/scripts/build-external-plugin-local-dist.test.ts` — COUNT-DISAGREEMENT resolved
+  KEEP-OURS: floor(≥50) + membership contract (fork policy vs upstream magic 63); merged
+  tree selects 58 incl. upstream's new diffs/diffs-language-pack members. Comment numbers
+  refreshed (58 vs 63). 3/3 pass.
+- `src/agents/openclaw-tools.ts` (merge=ours drift) — rebased onto upstream via merge-file;
+  2 conflicts: (1) KEEP-FORK architecture (`effectiveCallGateway`/`includeSubagentSpawnTool`;
+  upstream's `sessionLookupToolOptions` block dead in fork structure — fork ships own
+  sessions-list-tool); (2) ADOPT-UPSTREAM `agentId: sessionAgentId, config: sessionConfig` —
+  agentId drop was prior-resync collateral (subagents-tool.ts has 0 fork commits, still
+  consumes opts.agentId). Upstream's sessionConfig const auto-merged (5 uses). No orphan
+  imports (callAgentToolGatewayRequest/resolveControlUiSessionLinkBase unreferenced).
+- `src/agents/transcript-policy.test.ts` (merge=ours drift) — rebased onto upstream,
+  merge-file clean (disjoint hunks): fork mock-spy + claude guards + upstream github-copilot
+  modelApi rework. 44/45 pass; the 1 failure ("preserves thinking blocks … unowned Anthropic
+  transport fallback") PRE-EXISTS at main 1c8b2d38 (verified: fork main's own test file fails
+  identically against fork-main-identical production; production + replay-helpers unchanged
+  by this merge) — fork follow-up, not resync scope, no NEWFAIL.
+- `src/gateway/server-methods/session-change-event.ts` (merge=ours drift) — KEEP-OURS
+  CITED: upstream's entire delta is the buildGatewaySessionEventFields→Snapshot rename of a
+  call the fork's wire-pinned hand-rolled projection (`satisfies SessionsChangedEvent`)
+  removed; both builders exist in merged session-event-payload.ts (fork had 0 delta there,
+  merged == upstream, snapshot wraps eventFields); all 7 fork imports verified present in
+  merged tree; gateway-protocol index.ts unchanged from fork main.
+- Derived: pnpm install clean (lockfile unchanged by batch), kysely .mts regen no-op
+  (script renamed .mjs→.mts upstream #121005), protocol-gen/swift/kotlin clean.
