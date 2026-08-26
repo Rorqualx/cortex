@@ -107,6 +107,12 @@ export type MessageSentHookContext = {
   cfg?: OpenClawConfig;
 };
 
+export type MessageSentHookEvent = InternalHookEvent & {
+  type: "message";
+  action: "sent";
+  context: MessageSentHookContext;
+};
+
 type MessageEnrichedBodyHookContext = {
   /** Sender identifier (e.g., phone number, user ID) */
   from?: string;
@@ -397,5 +403,28 @@ export function isSessionPatchEvent(event: InternalHookEvent): event is SessionP
     context.cfg !== null &&
     typeof context.sessionEntry === "object" &&
     context.sessionEntry !== null
+  );
+}
+
+function hasBooleanContextField<T extends Record<string, unknown>>(
+  context: Partial<T>,
+  key: keyof T,
+): boolean {
+  return typeof context[key] === "boolean";
+}
+
+export function isMessageSentEvent(event: InternalHookEvent): event is MessageSentHookEvent {
+  if (!isHookEventTypeAndAction(event, "message", "sent")) {
+    return false;
+  }
+  const context = getHookContext<MessageSentHookContext>(event);
+  if (!context) {
+    return false;
+  }
+  return (
+    hasStringContextField(context, "to") &&
+    hasStringContextField(context, "content") &&
+    hasStringContextField(context, "channelId") &&
+    hasBooleanContextField(context, "success")
   );
 }
