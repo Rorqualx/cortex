@@ -573,6 +573,12 @@ export function createOpenClawTools(
                 createTerminalTool({
                   agentId: sessionAgentId,
                   agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+                  sessionId: options?.sessionId,
+                  config: resolvedConfig,
+                  execSession: options?.execSession,
+                  execOverrides: options?.execOverrides,
+                  runId: options?.runId,
+                  approvalReviewerDeviceIds: options?.approvalReviewerDeviceIds,
                 }),
               ]),
         ]),
