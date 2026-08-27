@@ -2,96 +2,27 @@
  * Plans which core, bundle MCP, and bundle LSP tools an attempt should build.
  */
 import { TOOL_NAME_SEPARATOR } from "../../agent-bundle-mcp-names.js";
-import type { OpenClawCodingToolConstructionPlan } from "../../core-tool-factory-descriptors.js";
+import {
+  type CoreToolFactoryFamily,
+  type OpenClawCodingToolConstructionPlan,
+  listCoreToolFactoryDescriptors,
+  resolveCoreToolFactoryFamily,
+} from "../../core-tool-factory-descriptors.js";
 import { mayMatchGlobWithPrefix } from "../../glob-pattern.js";
-import { isToolAllowedByPolicyName } from "../../tool-policy-match.js";
+import {
+  isRuntimeToolAllowed,
+  isRuntimeToolAllowedForConstruction,
+} from "../../tool-policy-match.js";
 import {
   attachToolAllowlistIntersection,
   buildPluginToolGroups,
   expandPolicyWithPluginGroups,
+  expandShippedCoreToolPolicyNames,
   expandToolGroups,
   normalizeToolList,
-  normalizeToolPolicyName as normalizeToolName,
+  normalizeToolPolicyName,
   readToolAllowlistIntersection,
 } from "../../tool-policy.js";
-
-const BASE_CODING_TOOL_FACTORY_NAMES = new Set(["edit", "read", "write"]);
-
-const SHELL_CODING_TOOL_FACTORY_NAMES = new Set(["apply_patch", "exec", "process"]);
-
-// Names here must be emitted directly by createOpenClawTools(). Catalog entries
-// backed by plugin registration, such as browser/x_search/code_execution, stay
-// out of this set so narrow allowlists still materialize plugin tools.
-const OPENCLAW_TOOL_FACTORY_NAMES = new Set([
-  "agents_list",
-  "agents_wait",
-  "ask_user",
-  "openclaw",
-  "canvas",
-  "computer",
-  "conversations_list",
-  "conversations_send",
-  "conversations_turn",
-  "cron",
-  "automations",
-  "dashboard",
-  "gateway",
-  "get_goal",
-  "heartbeat_respond",
-  "heartbeat_response",
-  "image",
-  "image_generate",
-  "message",
-  "mobile_ui",
-  "music_generate",
-  "nodes",
-  "pdf",
-  "session_status",
-  "show_widget",
-  "sessions",
-  "sessions_history",
-  "sessions_list",
-  "sessions_search",
-  "sessions_send",
-  "sessions_spawn",
-  "sessions_yield",
-  "structured_output",
-  "skill_workshop",
-  "suggest_task",
-  "create_goal",
-  "subagents",
-  "terminal",
-  "transcripts",
-  "tts",
-  "update_goal",
-  "progress_card",
-  "dismiss_task",
-  "video_generate",
-  "web_fetch",
-  "web_search",
-  // Fork-owned tools
-  "delegate_academic",
-  "delegate_code",
-  "delegate_explore",
-  "delegate_generic",
-  "delegate_plan",
-  "delegate_research",
-  "delegate_review",
-  "delegate_swarm",
-  "delegate_vision",
-  "memory_reports",
-  "session_awareness",
-  "skill_forge",
-  "workboard_block",
-  "workboard_complete",
-  "workboard_decompose",
-  "workboard_heartbeat",
-  "workboard_list",
-  "workboard_read",
-  "workboard_research_stage",
-  "workboard_research_sync",
-  "workboard_specify",
-]);
 
 const ALL_CODING_TOOL_CONSTRUCTION_PLAN: OpenClawCodingToolConstructionPlan = {
   includeBaseCodingTools: true,
@@ -121,17 +52,7 @@ function isBundleMcpAllowlistName(normalized: string): boolean {
 }
 
 function hasWildcardToolAllowlist(toolsAllow: string[]): boolean {
-  return toolsAllow.some((entry) => normalizeToolName(entry) === "*");
-}
-
-function isKnownLocalCodingToolName(normalized: string): boolean {
-  // Unknown non-bundle names are treated as plugin tools so installed plugin
-  // catalog entries still materialize under narrow allowlists.
-  return (
-    BASE_CODING_TOOL_FACTORY_NAMES.has(normalized) ||
-    SHELL_CODING_TOOL_FACTORY_NAMES.has(normalized) ||
-    OPENCLAW_TOOL_FACTORY_NAMES.has(normalized)
-  );
+  return toolsAllow.some((entry) => normalizeToolPolicyName(entry) === "*");
 }
 
 /**
@@ -162,15 +83,14 @@ export function applyEmbeddedAttemptToolsAllow<T extends { name: string }>(
       : undefined;
     const policy = pluginGroups
       ? expandPolicyWithPluginGroups({ allow: restriction }, pluginGroups)
-      : { allow: restriction };
-    return currentTools.filter((tool) => isToolAllowedByPolicyName(tool.name, policy));
+      : { allow: expandShippedCoreToolPolicyNames(restriction) };
+    return currentTools.filter((tool) => isRuntimeToolAllowed(tool.name, policy?.allow));
   }, tools);
 }
 
 /**
- * Adds the message tool to a narrowed allowlist when the caller must support
- * forced source-reply delivery. Wildcard and undefined allowlists already cover
- * message, while an empty allowlist becomes message-only.
+ * Adds host-required tools to a narrowed runtime allowlist. Wildcard and
+ * undefined allowlists already cover every required tool.
  */
 export function mergeForcedEmbeddedAttemptToolsAllow(
   toolsAllow: string[] | undefined,
@@ -186,8 +106,8 @@ export function mergeForcedEmbeddedAttemptToolsAllow(
   if (required.length === 0) {
     return toolsAllow;
   }
-  const normalized = new Set(toolsAllow.map((entry) => normalizeToolName(entry)));
-  const missing = required.filter((name) => !normalized.has(normalizeToolName(name)));
+  const normalized = new Set(toolsAllow.map((entry) => normalizeToolPolicyName(entry)));
+  const missing = required.filter((name) => !normalized.has(normalizeToolPolicyName(name)));
   if (missing.length === 0) {
     return toolsAllow;
   }
@@ -207,25 +127,47 @@ function resolveCodingToolConstructionPlanForAllowlist(
   if (!toolsAllow) {
     return cloneCodingToolConstructionPlan(ALL_CODING_TOOL_CONSTRUCTION_PLAN);
   }
-  if (toolsAllow.length === 0) {
+  const restrictions = readToolAllowlistIntersection(toolsAllow);
+  if (!restrictions && toolsAllow.length === 0) {
     return cloneCodingToolConstructionPlan(NO_CODING_TOOL_CONSTRUCTION_PLAN);
   }
-  if (hasWildcardToolAllowlist(toolsAllow)) {
+  if (!restrictions && hasWildcardToolAllowlist(toolsAllow)) {
     return cloneCodingToolConstructionPlan(ALL_CODING_TOOL_CONSTRUCTION_PLAN);
   }
-  const expanded = expandToolGroups(toolsAllow);
+  const constructionEntries = restrictions?.flat() ?? toolsAllow;
+  const expanded = expandToolGroups(expandShippedCoreToolPolicyNames(constructionEntries));
   const normalized = normalizeToolList(expanded);
-  const includeBaseCodingTools = normalized.some((name) =>
-    BASE_CODING_TOOL_FACTORY_NAMES.has(name),
+  const constructionRestrictions = restrictions ?? [toolsAllow];
+  // Construct every family containing a tool that the final runtime policy can retain.
+  // Otherwise a valid glob can survive filtering after its factory was never run.
+  const coreFamilies = new Set<CoreToolFactoryFamily>(
+    listCoreToolFactoryDescriptors()
+      .filter(({ name }) =>
+        constructionRestrictions.every(
+          (restriction) =>
+            restriction.length > 0 &&
+            isRuntimeToolAllowedForConstruction(
+              name,
+              expandShippedCoreToolPolicyNames(restriction),
+            ),
+        ),
+      )
+      .map(({ family }) => family),
   );
-  const includeShellTools = normalized.some((name) => SHELL_CODING_TOOL_FACTORY_NAMES.has(name));
-  const includeOpenClawTools = normalized.some((name) => OPENCLAW_TOOL_FACTORY_NAMES.has(name));
-  const includePluginTools = normalized.some(
-    (name) =>
-      name === "group:plugins" ||
-      // Plugin ids/tool names are not known to this local factory list at build time.
-      (!isBundleMcpAllowlistName(name) && !isKnownLocalCodingToolName(name)),
-  );
+  let includePluginTools = false;
+  for (const name of normalized) {
+    const family = resolveCoreToolFactoryFamily(name);
+    if (family) {
+      continue;
+    }
+    // Plugin ids/tool names are not known to the local factory catalog.
+    if (!isBundleMcpAllowlistName(name)) {
+      includePluginTools = true;
+    }
+  }
+  const includeBaseCodingTools = coreFamilies.has("base-coding");
+  const includeShellTools = coreFamilies.has("shell");
+  const includeOpenClawTools = coreFamilies.has("openclaw");
   // Channel delivery tools are constructed through plugin-capable runtime setup.
   const includeChannelTools = includePluginTools;
 
@@ -309,7 +251,12 @@ function shouldCreateBundleRuntimeForAttempt(
   if (hasWildcardToolAllowlist(params.toolsAllow)) {
     return true;
   }
-  return matchesAllowlist(params.toolsAllow.map(normalizeToolName));
+  return matchesAllowlist(params.toolsAllow.map(normalizeToolPolicyName));
+}
+
+/** Returns whether the allowlist requires any built-in coding/OpenClaw tools. */
+export function shouldBuildCoreCodingToolsForAllowlist(toolsAllow?: string[]): boolean {
+  return resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow }).includeCoreTools;
 }
 
 /**
@@ -317,11 +264,6 @@ function shouldCreateBundleRuntimeForAttempt(
  * runtime creation follows explicit bundle/plugin names or globs that can reach
  * a configured server namespace. Final tool policy remains authoritative.
  */
-/** Returns whether the allowlist requires any built-in coding/OpenClaw tools. */
-export function shouldBuildCoreCodingToolsForAllowlist(toolsAllow?: string[]): boolean {
-  return resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow }).includeCoreTools;
-}
-
 export function shouldCreateBundleMcpRuntimeForAttempt(params: {
   toolsEnabled: boolean;
   disableTools?: boolean;
@@ -340,7 +282,8 @@ export function shouldCreateBundleMcpRuntimeForAttempt(params: {
       (params.resolveConfiguredMcpNamespaces?.() ?? []).some((namespace) =>
         globs.some((glob) => mayMatchGlobWithPrefix(glob, namespace.toLowerCase())),
       )
-    );  });
+    );
+  });
 }
 
 /**
@@ -355,4 +298,5 @@ export function shouldCreateBundleLspRuntimeForAttempt(params: {
 }): boolean {
   return shouldCreateBundleRuntimeForAttempt(params, (names) =>
     names.some((name) => name.startsWith("lsp_")),
-  );}
+  );
+}
