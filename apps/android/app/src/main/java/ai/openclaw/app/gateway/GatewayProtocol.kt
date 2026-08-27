@@ -788,6 +788,7 @@ enum class GatewayMethod(
   SessionsGithubPublish("sessions.github.publish"),
   DiagnosticsLanes("diagnostics.lanes"),
   SessionMembersListEvidence("session.members.listEvidence"),
+  PluginsInspect("plugins.inspect"),
   ActivityList("activity.list"),
   ActivitySubscribe("activity.subscribe"),
   ActivityUnsubscribe("activity.unsubscribe"),

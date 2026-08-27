@@ -609,7 +609,7 @@ export async function emitToolResultOutput(params: {
     });
     ctx.state.lastToolError = terminal.lastToolError;
     ctx.state.lastToolRecovery = terminal.lastToolRecovery;
-    ctx.state.deterministicApprovalPromptSent = false;
+    // A later delivery failure does not undo an already delivered pending prompt.
   };
   const hasStructuredMedia = Boolean(
     result &&
@@ -656,7 +656,7 @@ export async function emitToolResultOutput(params: {
     if (!ctx.params.onToolResult) {
       return;
     }
-    ctx.state.deterministicApprovalPromptPending = true;
+    // Setup notices are progress, not pending prompts that replace the final answer.
     try {
       const { buildExecApprovalUnavailableReplyPayload } = await loadExecApprovalReply();
       await ctx.params.onToolResult?.(
@@ -671,11 +671,8 @@ export async function emitToolResultOutput(params: {
           nodeId: approvalUnavailable.nodeId,
         }),
       );
-      ctx.state.deterministicApprovalPromptSent = true;
     } catch (error) {
       recordApprovalPromptDeliveryFailure(error);
-    } finally {
-      ctx.state.deterministicApprovalPromptPending = false;
     }
     return;
   }

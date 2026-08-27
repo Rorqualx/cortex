@@ -3,6 +3,7 @@
  */
 import { TOOL_NAME_SEPARATOR } from "../../agent-bundle-mcp-names.js";
 import type { OpenClawCodingToolConstructionPlan } from "../../core-tool-factory-descriptors.js";
+import { mayMatchGlobWithPrefix } from "../../glob-pattern.js";
 import { isToolAllowedByPolicyName } from "../../tool-policy-match.js";
 import {
   attachToolAllowlistIntersection,
@@ -117,10 +118,6 @@ function cloneCodingToolConstructionPlan(
 function isBundleMcpAllowlistName(normalized: string): boolean {
   // Bundle MCP tools use the synthetic bundle name or `bundle__tool` separator form.
   return normalized === "bundle-mcp" || normalized.includes(TOOL_NAME_SEPARATOR);
-}
-
-function isPluginGroupAllowlistName(normalized: string): boolean {
-  return normalized === "group:plugins";
 }
 
 function hasWildcardToolAllowlist(toolsAllow: string[]): boolean {
@@ -292,21 +289,14 @@ export function resolveEmbeddedAttemptToolConstructionPlan(params: {
   };
 }
 
-/** Returns whether the allowlist requires any built-in coding/OpenClaw tools. */
-export function shouldBuildCoreCodingToolsForAllowlist(toolsAllow?: string[]): boolean {
-  return resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow }).includeCoreTools;
-}
-
-/**
- * Decides whether the bundled MCP runtime is needed for this attempt. Bundle
- * runtime creation follows explicit bundle/plugin allowlist names rather than
- * generic local tool names.
- */
-export function shouldCreateBundleMcpRuntimeForAttempt(params: {
-  toolsEnabled: boolean;
-  disableTools?: boolean;
-  toolsAllow?: string[];
-}): boolean {
+function shouldCreateBundleRuntimeForAttempt(
+  params: {
+    toolsEnabled: boolean;
+    disableTools?: boolean;
+    toolsAllow?: string[];
+  },
+  matchesAllowlist: (normalizedToolNames: string[]) => boolean,
+): boolean {
   if (!params.toolsEnabled || params.disableTools === true) {
     return false;
   }
@@ -319,10 +309,38 @@ export function shouldCreateBundleMcpRuntimeForAttempt(params: {
   if (hasWildcardToolAllowlist(params.toolsAllow)) {
     return true;
   }
-  return params.toolsAllow.some((toolName) => {
-    const normalized = normalizeToolName(toolName);
-    return isBundleMcpAllowlistName(normalized) || isPluginGroupAllowlistName(normalized);
-  });
+  return matchesAllowlist(params.toolsAllow.map(normalizeToolName));
+}
+
+/**
+ * Decides whether the bundled MCP runtime is needed for this attempt. Bundle
+ * runtime creation follows explicit bundle/plugin names or globs that can reach
+ * a configured server namespace. Final tool policy remains authoritative.
+ */
+/** Returns whether the allowlist requires any built-in coding/OpenClaw tools. */
+export function shouldBuildCoreCodingToolsForAllowlist(toolsAllow?: string[]): boolean {
+  return resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow }).includeCoreTools;
+}
+
+export function shouldCreateBundleMcpRuntimeForAttempt(params: {
+  toolsEnabled: boolean;
+  disableTools?: boolean;
+  toolsAllow?: string[];
+  resolveConfiguredMcpNamespaces?: () => string[];
+}): boolean {
+  return shouldCreateBundleRuntimeForAttempt(params, (names) => {
+    if (names.some((name) => isBundleMcpAllowlistName(name) || name === "group:plugins")) {
+      return true;
+    }
+    // Discovery can start all enabled static servers, even if a later glob
+    // constraint matches no tool. Only final full-name policy grants tools.
+    const globs = names.filter((name) => name.includes("*"));
+    return (
+      globs.length > 0 &&
+      (params.resolveConfiguredMcpNamespaces?.() ?? []).some((namespace) =>
+        globs.some((glob) => mayMatchGlobWithPrefix(glob, namespace.toLowerCase())),
+      )
+    );  });
 }
 
 /**
@@ -335,20 +353,6 @@ export function shouldCreateBundleLspRuntimeForAttempt(params: {
   disableTools?: boolean;
   toolsAllow?: string[];
 }): boolean {
-  if (!params.toolsEnabled || params.disableTools === true) {
-    return false;
-  }
-  if (!params.toolsAllow) {
-    return true;
-  }
-  if (params.toolsAllow.length === 0) {
-    return false;
-  }
-  if (hasWildcardToolAllowlist(params.toolsAllow)) {
-    return true;
-  }
-  return params.toolsAllow.some((toolName) => {
-    const normalized = normalizeToolName(toolName);
-    return normalized.startsWith("lsp_");
-  });
-}
+  return shouldCreateBundleRuntimeForAttempt(params, (names) =>
+    names.some((name) => name.startsWith("lsp_")),
+  );}

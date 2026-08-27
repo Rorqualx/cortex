@@ -1,6 +1,7 @@
 import type { EmbeddedAgentExecutionPhase } from "../agents/embedded-agent-runner/execution-phase.js";
 /** Cron scheduling, delivery, diagnostics, and store data contracts. */
 import type { FailoverReason } from "../agents/failover/signal.js";
+import type { NormalizeReplySkipReason } from "../auto-reply/reply/normalize-reply.js";
 import type { ChannelId } from "../channels/plugins/types.public.js";
 import type { SessionCreatedActor } from "../config/sessions/session-entry-provenance.js";
 import type { HookExternalContentSource } from "../security/external-content.js";
@@ -159,6 +160,7 @@ export type CronResolvedDeliveryState = {
   delivered?: boolean;
   status: CronDeliveryStatus;
   error?: string;
+  deliverySuppressionReason?: NormalizeReplySkipReason;
   failureNotification: CronFailureNotificationDelivery;
 };
 
@@ -467,6 +469,8 @@ export type CronJobState = {
   lastDeliveryStatus?: CronDeliveryStatus;
   /** Delivery-specific error text when available. */
   lastDeliveryError?: string;
+  /** Intentional non-delivery reason for the last run, when recorded by the dispatcher. */
+  deliverySuppressionReason?: NormalizeReplySkipReason;
   /** Whether the last run's output was delivered to the target channel. */
   lastDelivered?: boolean;
   /** Whether the last failed run's failure notification was delivered to the target channel. */
@@ -477,7 +481,7 @@ export type CronJobState = {
   lastFailureNotificationDeliveryError?: string;
 };
 
-export type CronTrigger = {
+type CronTrigger = {
   script: string;
   once?: boolean;
 };

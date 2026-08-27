@@ -646,6 +646,7 @@ const CORE_GATEWAY_METHOD_SPECS = [
   // Evidence-aware member projection is additive so legacy method indices and
   // its required `addedBy` response contract remain unchanged.
   ["session.members.listEvidence", "sessions-sharing", "operator.read", "2026.8"],
+  ["plugins.inspect", "plugins", "operator.read", "2026.8"],
   // Fork (cortex) handler groups. "activity", "vault", and "chat-branch" have
   // loaders in CORE_GATEWAY_HANDLER_MODULES; skills.forge.* ships in the skills
   // family module; workboard.* is injected by the auxiliary gateway surface

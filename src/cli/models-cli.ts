@@ -295,10 +295,12 @@ export function registerModelsCli(program: Command) {
     .description("Poll providers' live /models and update the discovered catalog")
     .option("--provider <id>", "Refresh a single provider (overrides refreshable opt-in)")
     .option("--json", "Output JSON", false)
-    .action(async (opts) => {
-      await withModelsRuntime(async ({ defaultRuntime }) => {
+    .action(async (opts, command: Command) => {
+      const runtime = await loadModelsRuntime();
+      runtime.rejectAgentScopedModelCommand(command, "refresh");
+      await runtime.runModelsCommand(async () => {
         const { modelsRefreshCommand } = await import("../commands/models/refresh.js");
-        await modelsRefreshCommand(opts, defaultRuntime);
+        await modelsRefreshCommand(opts, runtime.defaultRuntime);
       });
     });
 
