@@ -832,7 +832,7 @@ land_and_deploy() {
   # check would read as a valid regeneration and then land AND deploy. A failed
   # generator must leave the tree alone; the next run's dirty-tree SKIP is the
   # cheap failure, committing garbage is not.
-  if (cd "$MAIN" && node scripts/bundled-plugin-assets.mjs --phase build) >/tmp/um-assets.log 2>&1; then
+  if (cd "$MAIN" && node --import ./scripts/tsx.mjs scripts/bundled-plugin-assets.mts --phase build) >/tmp/um-assets.log 2>&1; then
     # shellcheck disable=SC2086 # word splitting is the intent: one arg per path
     if [ -n "$(git -C "$MAIN" status --porcelain -- $asset_paths)" ]; then
       # shellcheck disable=SC2086
