@@ -3,6 +3,11 @@
  *
  * Keeps list/send/status tools aligned on rows, visibility context, and compact kind/channel labels.
  */
+import {
+  createAgentToAgentPolicy,
+  resolveEffectiveSessionToolsVisibility,
+  resolveSandboxedSessionToolContext,
+} from "./sessions-access.js";
 export {
   createAgentToAgentPolicy,
   createSessionVisibilityRowChecker,
@@ -12,7 +17,6 @@ export {
   resolveSandboxedSessionToolContext,
   resolveSessionToolAccess,
 } from "./sessions-access.js";
-import { resolveSandboxedSessionToolContext } from "./sessions-access.js";
 export {
   isExpectedSessionLookupMiss,
   resolveCurrentSessionClientAlias,
@@ -106,6 +110,11 @@ export function resolveSessionToolContext(opts?: {
   const cfg = opts?.config ?? getRuntimeConfig();
   return {
     cfg,
+    a2aPolicy: createAgentToAgentPolicy(cfg),
+    sessionVisibility: resolveEffectiveSessionToolsVisibility({
+      cfg,
+      sandboxed: opts?.sandboxed === true,
+    }),
     ...resolveSandboxedSessionToolContext({
       cfg,
       agentSessionKey: opts?.agentSessionKey,

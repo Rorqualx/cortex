@@ -5223,6 +5223,7 @@ public struct SessionsListParams: Codable, Sendable {
     public let boardface: AnyCodable?
     public let creatorid: String?
     public let ownerid: String?
+    public let ownerfirst: Bool?
     public let involvingme: Bool?
     public let spawnedby: String?
     public let agentid: String?
@@ -5244,6 +5245,7 @@ public struct SessionsListParams: Codable, Sendable {
         boardface: AnyCodable? = nil,
         creatorid: String? = nil,
         ownerid: String? = nil,
+        ownerfirst: Bool? = nil,
         involvingme: Bool? = nil,
         spawnedby: String? = nil,
         agentid: String? = nil,
@@ -5264,6 +5266,7 @@ public struct SessionsListParams: Codable, Sendable {
         self.boardface = boardface
         self.creatorid = creatorid
         self.ownerid = ownerid
+        self.ownerfirst = ownerfirst
         self.involvingme = involvingme
         self.spawnedby = spawnedby
         self.agentid = agentid
@@ -5286,6 +5289,7 @@ public struct SessionsListParams: Codable, Sendable {
         case boardface = "boardFace"
         case creatorid = "creatorId"
         case ownerid = "ownerId"
+        case ownerfirst = "ownerFirst"
         case involvingme = "involvingMe"
         case spawnedby = "spawnedBy"
         case agentid = "agentId"
@@ -6326,6 +6330,7 @@ public struct SessionRow: Codable, Sendable {
     public let estimatedcostusd: Double?
     public let model: String?
     public let modelprovider: String?
+    public let modeloverridesource: AnyCodable?
     public let tooloverrides: [String: AnyCodable]?
 
     public init(
@@ -6398,6 +6403,7 @@ public struct SessionRow: Codable, Sendable {
         estimatedcostusd: Double? = nil,
         model: String? = nil,
         modelprovider: String? = nil,
+        modeloverridesource: AnyCodable? = nil,
         tooloverrides: [String: AnyCodable]? = nil)
     {
         self.key = key
@@ -6469,6 +6475,7 @@ public struct SessionRow: Codable, Sendable {
         self.estimatedcostusd = estimatedcostusd
         self.model = model
         self.modelprovider = modelprovider
+        self.modeloverridesource = modeloverridesource
         self.tooloverrides = tooloverrides
     }
 
@@ -6542,6 +6549,7 @@ public struct SessionRow: Codable, Sendable {
         case estimatedcostusd = "estimatedCostUsd"
         case model
         case modelprovider = "modelProvider"
+        case modeloverridesource = "modelOverrideSource"
         case tooloverrides = "toolOverrides"
     }
 }
