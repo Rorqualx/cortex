@@ -59,7 +59,9 @@ export async function tryResolveSkillForgeEmbeddingProvider(
             headers: memorySearch.remote.headers,
           }
         : undefined,
-      outputDimensionality: memorySearch.outputDimensionality,
+      ...(typeof memorySearch.outputDimensionality === "number"
+        ? { dimensions: memorySearch.outputDimensionality }
+        : {}),
     });
   } catch (error) {
     return {
@@ -80,6 +82,6 @@ export async function tryResolveSkillForgeEmbeddingProvider(
     status: "ok",
     providerId: provider.id,
     model: provider.model,
-    embed: async (text: string) => provider.embedQuery(text),
+    embed: async (text: string) => provider.embed(text, { inputType: "query" }),
   };
 }

@@ -41,6 +41,10 @@ const PROFILE_DEPENDENT_CORE_METHODS = new Set([
   "users.setAvatar",
   "users.setDisplayName",
   "users.setRole",
+  // talk.config projects the caller's profile accent; without this gate a
+  // client asking during the post-hello GitHub identity sync window would get
+  // the gateway-wide accent instead. Profile-less clients pass through.
+  "talk.config",
 ]);
 const PROFILE_DEPENDENT_CORE_PREFIXES = [
   "artifacts.",

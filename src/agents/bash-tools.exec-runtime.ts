@@ -385,6 +385,19 @@ export function applyShellPath(env: Record<string, string>, shellPath?: string |
   }
 }
 
+/** Notifications need start-time routing, but completed logs must not retain
+ * it, including when a task callback or notification throws (upstream 8c293c1). */
+function stripSettledSessionRouting(session: ProcessSession): void {
+  delete session.sessionKey;
+  delete session.agentId;
+  delete session.mainKey;
+  delete session.sessionScope;
+  delete session.eventRouting;
+  delete session.notifyDeliveryContext;
+  delete session.notifyOnExit;
+  delete session.notifyOnExitEmptySuccess;
+}
+
 function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "failed") {
   if (!session.backgrounded || !session.notifyOnExit || session.exitNotified) {
     return;
@@ -1102,7 +1115,11 @@ export async function runExecProcess(opts: {
         });
       } catch (retryErr) {
         markExited(session, null, null, "failed");
-        maybeNotifyOnExit(session, "failed");
+        try {
+          maybeNotifyOnExit(session, "failed");
+        } finally {
+          stripSettledSessionRouting(session);
+        }
         await finalizeSandboxExec({ status: "failed", exitCode: null, timedOut: false }).catch(
           (finalizeErr: unknown) => {
             logWarn(`exec: sandbox finalize after spawn failure failed (${String(finalizeErr)}).`);
@@ -1123,7 +1140,11 @@ export async function runExecProcess(opts: {
       }
     } else {
       markExited(session, null, null, "failed");
-      maybeNotifyOnExit(session, "failed");
+      try {
+        maybeNotifyOnExit(session, "failed");
+      } finally {
+        stripSettledSessionRouting(session);
+      }
       await finalizeSandboxExec({ status: "failed", exitCode: null, timedOut: false }).catch(
         (finalizeErr: unknown) => {
           logWarn(`exec: sandbox finalize after spawn failure failed (${String(finalizeErr)}).`);
@@ -1163,7 +1184,11 @@ export async function runExecProcess(opts: {
       });
 
       markExited(session, exit.exitCode, exit.exitSignal, outcome.status, exit.reason);
-      maybeNotifyOnExit(session, outcome.status);
+      try {
+        maybeNotifyOnExit(session, outcome.status);
+      } finally {
+        stripSettledSessionRouting(session);
+      }
       if (!session.child && session.stdin) {
         session.stdin.destroyed = true;
       }
@@ -1185,7 +1210,11 @@ export async function runExecProcess(opts: {
     .catch((err: unknown): ExecProcessOutcome => {
       updatesDisabled = true;
       markExited(session, null, null, "failed");
-      maybeNotifyOnExit(session, "failed");
+      try {
+        maybeNotifyOnExit(session, "failed");
+      } finally {
+        stripSettledSessionRouting(session);
+      }
       sshTempFileCleanup?.();
       const outcome = buildExecRuntimeErrorOutcome({
         error: err,

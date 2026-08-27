@@ -98,9 +98,12 @@ export type {
   AgentHarnessSessionForkFailureCode,
   AgentHarnessSessionForkParams,
   AgentHarnessSessionForkResult,
+  AgentHarnessSessionDeletionParams,
+  AgentHarnessSessionDeletionMutation,
   AgentHarnessSupport,
   AgentHarnessSupportContext,
 } from "../agents/harness/types.js";
+export { prepareAgentRuntimeAuth } from "../agents/runtime-plan/prepare-auth.js";
 export {
   AgentHarnessPreflightError,
   AgentHarnessSessionSupersededError,

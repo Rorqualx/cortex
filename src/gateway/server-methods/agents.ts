@@ -22,7 +22,10 @@ import {
   validateAgentsUpdateParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { createAgent } from "../../agents/agent-create.js";
-import { findOverlappingWorkspaceAgentIds } from "../../agents/agent-delete-safety.js";
+import {
+  findOverlappingWorkspaceAgentIds,
+  isInheritedAuthStoreOwner,
+} from "../../agents/agent-delete-safety.js";
 import {
   isPathOwnedByAnotherRegisteredAgent,
   normalizeAgentDirRegistryPath,
@@ -1257,6 +1260,18 @@ export const agentsHandlers: GatewayRequestHandlers = {
         false,
         undefined,
         errorShape(ErrorCodes.INVALID_REQUEST, `"${LEGACY_IMPLICIT_AGENT_ID}" cannot be deleted`),
+      );
+      return;
+    }
+    if (isInheritedAuthStoreOwner(cfg, agentId)) {
+      // Deleting the inherited-auth store owner first destroys the shared store.
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `Agent "${agentId}" owns inherited credentials through agents.defaults.authInheritance.agentId and cannot be deleted. Relocate those credentials, then re-point or remove that binding before retrying.`,
+        ),
       );
       return;
     }

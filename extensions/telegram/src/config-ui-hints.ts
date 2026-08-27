@@ -67,6 +67,10 @@ export const telegramChannelConfigUiHints = {
   groups: {
     order: -50,
   },
+  joinIntro: {
+    label: "Telegram Group Join Introduction",
+    help: "Send one room-aware introduction when the bot joins an allowed group or supergroup (default: true). Telegram cannot provide message history from before the bot joined.",
+  },
   richMessages: {
     label: "Telegram Rich Messages",
     help: "Opt into Bot API 10.2 rich text sends and edits, including native tables and rich media. Default: false because some current Telegram clients render these messages as unsupported.",

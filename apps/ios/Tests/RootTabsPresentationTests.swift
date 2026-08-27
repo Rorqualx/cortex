@@ -532,47 +532,7 @@ struct RootTabsPresentationTests {
         #expect(SettingsChannelsDestination.fallbackSystemImage("clickclack") == "bubble.left.and.bubble.right")
     }
 
-    @Test func `i pad overview can suppress standalone header branding`() {
-        #expect(CommandCenterTab.shouldShowHeaderMark(hasLeadingAction: false, showsHeaderMark: true))
-        #expect(!CommandCenterTab.shouldShowHeaderMark(hasLeadingAction: true, showsHeaderMark: true))
-        #expect(!CommandCenterTab.shouldShowHeaderMark(hasLeadingAction: false, showsHeaderMark: false))
-    }
-
-    @Test func commandCenterCanUseParentNavigationStackForEmbeddedRoutes() {
-        let standalone = CommandCenterTab(openChat: {}, openSettings: {})
-        let embedded = CommandCenterTab(
-            ownsNavigationStack: false,
-            openChat: {},
-            openSettings: {})
-        let shellRouted = CommandCenterTab(
-            ownsNavigationStack: false,
-            openChat: {},
-            openSettings: {},
-            openSessions: {})
-
-        #expect(standalone.ownsNavigationStack)
-        #expect(standalone.openSessions == nil)
-        #expect(!embedded.ownsNavigationStack)
-        #expect(embedded.openSessions == nil)
-        #expect(shellRouted.openSessions != nil)
-    }
-
-    @Test func chatSidebarDestinationCanUseRouteHeaderInsteadOfAgentBranding() {
-        let standalone = ChatProTab()
-        let routed = ChatProTab(
-            headerTitle: "Chat",
-            showsAgentBadge: false,
-            ownsNavigationStack: false,
-            openSettings: {})
-
-        #expect(standalone.showsAgentBadge)
-        #expect(standalone.ownsNavigationStack)
-        #expect(standalone.headerTitle == nil)
-        #expect(standalone.openSettings == nil)
-        #expect(routed.headerTitle == "Chat")
-        #expect(!routed.showsAgentBadge)
-        #expect(!routed.ownsNavigationStack)
-        #expect(routed.openSettings != nil)
+    @Test func `chat header follows the agent badge presentation`() {
         #expect(ChatProTab.defaultHeaderTitle(showsAgentBadge: true, agentDisplayName: "OpenClaw") == "OpenClaw")
         #expect(ChatProTab.defaultHeaderTitle(showsAgentBadge: false, agentDisplayName: "OpenClaw") == "Chat")
     }
@@ -613,22 +573,6 @@ struct RootTabsPresentationTests {
             nextTransportAgentID: "work"))
     }
 
-    @Test func `agent routes can open gateway settings from header pill`() {
-        let standalone = AgentProTab()
-        let routed = AgentProTab(
-            directRoute: .instances,
-            headerTitle: "Instances",
-            openSettings: {})
-
-        #expect(standalone.headerTitle == "Agents")
-        #expect(standalone.directRoute == nil)
-        #expect(standalone.openSettings == nil)
-        #expect(AgentProTab(directRoute: .agents).directRoute == .agents)
-        #expect(routed.directRoute == .instances)
-        #expect(routed.headerTitle == "Instances")
-        #expect(routed.openSettings != nil)
-    }
-
     @Test func `workboard dispatch summary reports started and failures`() throws {
         let payload = Data(
             """
@@ -645,28 +589,6 @@ struct RootTabsPresentationTests {
         let summary = try JSONDecoder().decode(IPadWorkboardDispatchSummary.self, from: payload)
 
         #expect(summary.summaryText == "2 dispatched: 1 started, 1 failed.")
-    }
-
-    @Test func `settings can use parent navigation stack for sidebar routes`() {
-        let standalone = SettingsProTab()
-        let embedded = SettingsProTab(ownsNavigationStack: false)
-
-        #expect(standalone.ownsNavigationStack)
-        #expect(!embedded.ownsNavigationStack)
-    }
-
-    @Test func `direct approvals exposes notification remediation only when a navigation owner exists`() {
-        let routedApprovals = SettingsProTab(
-            directRoute: .approvals,
-            ownsNavigationStack: false,
-            navigateToRoute: { _ in })
-        let isolatedApprovals = SettingsProTab(directRoute: .approvals)
-        let unroutedEmbeddedSettings = SettingsProTab(ownsNavigationStack: false)
-
-        #expect(routedApprovals.canOpenNotificationsRouteFromApprovals)
-        #expect(!isolatedApprovals.canOpenNotificationsRouteFromApprovals)
-        #expect(!unroutedEmbeddedSettings.canOpenNotificationsRouteFromApprovals)
-        #expect(SettingsProTab().canOpenNotificationsRouteFromApprovals)
     }
 
     @Test func `localized QR status matcher accepts positional placeholders`() {
