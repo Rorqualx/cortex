@@ -99,6 +99,8 @@ export const PluginApprovalRequestPayloadSchema = Type.Object(
       ]),
     ),
     // Owner-declared blast-radius facts; display-only, never authorization.
+    // Nullable union matches the infra payload type (scope?: ApprovalScope | null)
+    // and the fork wire style; dts size stays bounded via the named registry alias.
     scope: Type.Optional(Type.Union([ApprovalScopeSchema, Type.Null()])),
     toolName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     toolCallId: Type.Optional(Type.Union([Type.String(), Type.Null()])),

@@ -7,10 +7,22 @@ type UnionToIntersection<Value> = (Value extends unknown ? (value: Value) => voi
   ? Intersection
   : never;
 
+/**
+ * Named alias for the composed registry type. Fork note (2026-08-26 upstream
+ * resync): the cortex fork registers extra fragments (board, progress-card,
+ * fork plugin-approval events, portals) upstream does not ship, and upstream's
+ * approval-scope additions pushed the inferred `ProtocolSchemas` const over the
+ * dts serializer's size limit (TS7056, build-red/tsgo-green). Declaring the
+ * composed type through this named alias lets the .d.ts emit reference it by
+ * name instead of inlining the full structural intersection.
+ */
+export type ComposedProtocolSchemas<Fragments extends readonly ProtocolSchemaFragment[]> =
+  UnionToIntersection<Fragments[number]>;
+
 /** Compose explicitly ordered owner fragments without replacing their schema objects. */
 export function composeProtocolSchemaFragments<
   const Fragments extends readonly ProtocolSchemaFragment[],
->(fragments: Fragments): UnionToIntersection<Fragments[number]> {
+>(fragments: Fragments): ComposedProtocolSchemas<Fragments> {
   const registry: Record<string, TSchema> = {};
   for (const fragment of fragments) {
     for (const [key, schema] of Object.entries(fragment)) {
@@ -20,5 +32,5 @@ export function composeProtocolSchemaFragments<
       registry[key] = schema;
     }
   }
-  return registry as UnionToIntersection<Fragments[number]>;
+  return registry as ComposedProtocolSchemas<Fragments>;
 }
