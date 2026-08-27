@@ -1,3 +1,4 @@
+import dns from "node:dns/promises";
 import http from "node:http";
 import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +7,16 @@ import { invokeNodeWorkerPortalStream } from "./portal-stream-command.js";
 
 const TICKET = "a".repeat(48);
 const cleanups: Array<() => Promise<void>> = [];
+
+// The transport reaches loopback servers through a "localhost" connect target
+// with autoSelectFamily. Some Linux resolver stacks (the huey proof box's
+// node24/glibc) resolve localhost to IPv4 only, so a ::1-bound server is
+// unreachable by design there — keep the ::1 case only where the resolver can
+// produce an IPv6 localhost address.
+const localhostHasIpv6 = await dns
+  .lookup("localhost", { all: true })
+  .then((rows) => rows.some((row) => row.family === 6))
+  .catch(() => false);
 
 async function listenGateway(
   onConnection: (ws: WebSocket, request: http.IncomingMessage) => void,
@@ -73,7 +84,7 @@ describe("node worker portal stream command", () => {
 
   it.each([
     ["127.0.0.1", ""],
-    ["::1", ""],
+    ...(localhostHasIpv6 ? ([["::1", ""]] as const) : []),
     ["127.0.0.1", "/openclaw-gw"],
     ["127.0.0.1", "/openclaw-gw/"],
   ])(

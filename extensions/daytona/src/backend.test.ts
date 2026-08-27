@@ -181,6 +181,14 @@ function createBackendSandboxConfig(
     browser: createSandboxBrowserConfig(),
     tools: { allow: ["*"], deny: [] },
     prune: createSandboxPruneConfig(),
+    // Fork-required field (upstream test literal predates the fork's OS-sandbox
+    // policy; disabled here to match the fork idiom in src/agents/sandbox tests).
+    osSandbox: {
+      enabled: false,
+      extraWritableRoots: [],
+      extraProtectedMetadata: [],
+      network: "deny",
+    },
     ...overrides,
   };
 }

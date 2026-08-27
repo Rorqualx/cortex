@@ -36,7 +36,10 @@ describe("before-tool-call network execution error boundary", () => {
   it.each([undefined, false])(
     "preserves post-compaction protection when loop detection is %s",
     async (enabled) => {
-      const guard = createPostCompactionLoopGuard({ enabled: enabled !== false });
+      // Fork call form: the fork's guard keeps a config-first signature
+      // (config drives windowSize via types.tools.ts; upstream's single-object
+      // form is the same { enabled } option as the fork's second parameter).
+      const guard = createPostCompactionLoopGuard(undefined, { enabled: enabled !== false });
       guard.armPostCompaction();
       const verdicts: boolean[] = [];
       const source = createFailingTool({ error: new Error("same network failure"), network: true });

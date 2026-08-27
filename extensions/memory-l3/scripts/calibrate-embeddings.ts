@@ -189,7 +189,9 @@ async function main() {
       embed: async (text: string) => {
         const { provider } = await adapter.create({ config, model: modelName });
         if (!provider) throw new Error(`Embedding provider "${providerName}" returned no provider`);
-        return provider.embedQuery(text);
+        // Canonical EmbeddingProvider API: queries ride inputType: "query"
+        // (the pre-canonical embedQuery API was removed upstream).
+        return await provider.embed(text, { inputType: "query" });
       },
       embedBatch: async (texts: string[]) => {
         const { provider } = await adapter.create({ config, model: modelName });

@@ -724,10 +724,11 @@ export class HierarchicalL3Engine implements ContextEngine {
         this.resolvedEmbeddingProvider = null;
         return undefined;
       }
-      // Wrap the core MemoryEmbeddingProvider (embedQuery/embedBatch)
-      // as our local EmbeddingProvider type (embed/embedBatch).
+      // Wrap the core EmbeddingProvider as our local EmbeddingProvider type;
+      // queries ride the canonical inputType: "query" flag (the pre-canonical
+      // embedQuery API was removed upstream with the MemoryEmbeddingProvider alias).
       const wrapped: EmbeddingProvider = {
-        embed: (text: string) => provider.embedQuery(text),
+        embed: async (text: string) => await provider.embed(text, { inputType: "query" }),
         embedBatch: (texts: string[]) => provider.embedBatch(texts),
       };
       this.resolvedEmbeddingProvider = wrapped;
