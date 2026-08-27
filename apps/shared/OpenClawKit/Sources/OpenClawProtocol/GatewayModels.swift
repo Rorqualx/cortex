@@ -22844,6 +22844,7 @@ public struct PluginApprovalRequestPayload: Codable, Sendable {
     public let description: String
     public let detail: AnyCodable?
     public let severity: AnyCodable?
+    public let scope: AnyCodable?
     public let toolname: AnyCodable?
     public let toolcallid: AnyCodable?
     public let alloweddecisions: AnyCodable?
@@ -22861,6 +22862,7 @@ public struct PluginApprovalRequestPayload: Codable, Sendable {
         description: String,
         detail: AnyCodable? = nil,
         severity: AnyCodable? = nil,
+        scope: AnyCodable? = nil,
         toolname: AnyCodable? = nil,
         toolcallid: AnyCodable? = nil,
         alloweddecisions: AnyCodable? = nil,
@@ -22877,6 +22879,7 @@ public struct PluginApprovalRequestPayload: Codable, Sendable {
         self.description = description
         self.detail = detail
         self.severity = severity
+        self.scope = scope
         self.toolname = toolname
         self.toolcallid = toolcallid
         self.alloweddecisions = alloweddecisions
@@ -22895,6 +22898,7 @@ public struct PluginApprovalRequestPayload: Codable, Sendable {
         case description
         case detail
         case severity
+        case scope
         case toolname = "toolName"
         case toolcallid = "toolCallId"
         case alloweddecisions = "allowedDecisions"

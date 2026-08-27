@@ -98,6 +98,8 @@ export const PluginApprovalRequestPayloadSchema = Type.Object(
         Type.Null(),
       ]),
     ),
+    // Owner-declared blast-radius facts; display-only, never authorization.
+    scope: Type.Optional(Type.Union([ApprovalScopeSchema, Type.Null()])),
     toolName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     toolCallId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     // Immutable keeps the schema-derived fields `readonly`, matching the
