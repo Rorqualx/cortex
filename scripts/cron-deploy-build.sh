@@ -31,7 +31,7 @@ source "$ROOT/scripts/lib/deploy-release-swap.sh"
 # a restart. Deploy was decoupled on 2026-08-26 from both the hourly upstream-merge land and the
 # 7am research "Validate & Deploy" job (9d1cec60, now push-only); the midnight cron owns deploy
 # now and sets DEPLOY_CRON_JOB_ID explicitly, so this default only covers a manual UM_DEPLOY=1 land.
-DEPLOY_JOB_ID="${DEPLOY_CRON_JOB_ID:-9a206be3-dec8-4c81-8f63-22a2c7cdfd1d}"
+DEPLOY_JOB_ID="${DEPLOY_CRON_JOB_ID:-0b091d30-ac0a-4305-8ab5-d1585dfa1dd6}"
 QUIESCE_TIMEOUT="${QUIESCE_TIMEOUT:-1800}"
 
 quiesce() {
