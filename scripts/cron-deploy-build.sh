@@ -26,9 +26,12 @@ source "$ROOT/scripts/lib/deploy-build-core.sh"
 # shellcheck source=scripts/lib/deploy-release-swap.sh
 source "$ROOT/scripts/lib/deploy-release-swap.sh"
 
-# The "Validate & Deploy" cron job id — excluded from the quiesce check (it is itself
-# marked running while this wrapper executes) and the one job allowed to trigger a restart.
-DEPLOY_JOB_ID="${DEPLOY_CRON_JOB_ID:-9d1cec60-4db3-4c7c-a0da-447b7bcf26ce}"
+# The daily "Midnight Deploy" cron job id — excluded from the quiesce check (it is the job
+# that triggers this wrapper and is briefly marked running) and the one job allowed to trigger
+# a restart. Deploy was decoupled on 2026-08-26 from both the hourly upstream-merge land and the
+# 7am research "Validate & Deploy" job (9d1cec60, now push-only); the midnight cron owns deploy
+# now and sets DEPLOY_CRON_JOB_ID explicitly, so this default only covers a manual UM_DEPLOY=1 land.
+DEPLOY_JOB_ID="${DEPLOY_CRON_JOB_ID:-9a206be3-dec8-4c81-8f63-22a2c7cdfd1d}"
 QUIESCE_TIMEOUT="${QUIESCE_TIMEOUT:-1800}"
 
 quiesce() {
