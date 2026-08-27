@@ -9,7 +9,9 @@
 #
 # Routing (see the `route` subcommand):
 #   up-to-date        behind==0                     -> report, done. main untouched.
-#   clean-landable    residual==0 AND Linux proof ✓ -> land main + deploy (deterministic).
+#   clean-landable    residual==0 AND Linux proof ✓ -> land main + push (deterministic).
+#                                                      Deploy is decoupled: a separate daily
+#                                                      midnight cron deploys accumulated main.
 #   needs-resolution  residual>0                    -> exit 20; the calling agent stages a
 #                                                      resync-staging/<date> branch, resolves
 #                                                      the bounded residual (openclaw-upstream-resync
@@ -21,13 +23,15 @@
 # node>=22.22.3; huey's default node22 is 22.19.0 and fails install).
 #
 # Subcommands:
-#   route                 fetch + measure + route (default). clean path lands+deploys inline.
+#   route                 fetch + measure + route (default). clean path lands + pushes; deploy
+#                         is deferred to the daily midnight deploy cron (UM_DEPLOY=1 to force).
 #   measure               fetch + measure only; print decision JSON. Read-only.
 #   stage-init <date>     create the merge worktree + resync-staging/<date>, start the merge,
 #                         print the residual conflict list for the agent to resolve.
 #   stage-finish <date>   after the agent resolved+committed in the worktree: prove on huey,
 #                         push the branch, print the one-line land command. Never touches main.
-#   finish-land <date>    same, but lands ff-only into main + deploys on green proof.
+#   finish-land <date>    same, but lands ff-only into main + pushes on green proof. Deploy is
+#                         deferred to the daily midnight deploy cron (UM_DEPLOY=1 to force).
 #
 # Two policies keep the residual bounded and honest (both learned the hard way on
 # the 2026-07-22..25 runs, which never landed anything):
@@ -191,14 +195,15 @@ freeze_upstream_ref() {
 # 0 iff it retargeted (caller re-measures against the batch), 1 otherwise. Set
 # UPSTREAM_MERGE_BATCH_MAX=0 (or non-numeric) to disable batching and always take the tip.
 apply_batch_cap() {
-  # Default 80 (standing default since 2026-08-25; was 40). Measured: one land closes ~cap
+  # Default 160 (standing default since 2026-08-26; was 80, was 40). One land closes ~cap
   # commits in a ~2h cycle (the ~75min huey proof dominates and is fixed regardless of batch
-  # size), so cap≈80 closes ~43/hr vs upstream's ~16/hr baseline (net +27/hr) and stays ahead
-  # even during bursts — cap=40 closed only ~21/hr and treads water. 80-commit batches were
-  # proven to resolve + prove + land cleanly (recent batches: ~1-2 real conflicts under the
-  # ui-drop policy). Going much higher grows the per-cycle conflict set + the loss when a proof
-  # fails, so 80 is the balance point. Set UPSTREAM_MERGE_BATCH_MAX in the env to override.
-  local cap="${UPSTREAM_MERGE_BATCH_MAX:-80}"
+  # size), so a bigger batch closes more per proof. Since deploy is now decoupled to the daily
+  # midnight cron (see land_and_deploy / UM_DEPLOY), a land no longer pays the deploy-crash tax
+  # per tick and the session survives to report, so the batch can safely double: cap=160 closes
+  # ~80/hr vs upstream's ~16/hr baseline and drains a backlog roughly twice as fast as cap=80.
+  # Going much higher grows the per-cycle conflict set + the loss when a proof fails, so 160 is
+  # the new balance point. Set UPSTREAM_MERGE_BATCH_MAX in the env to override.
+  local cap="${UPSTREAM_MERGE_BATCH_MAX:-160}"
   case "$cap" in ''|*[!0-9]*|0) return 1 ;; esac
   local base; base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
   [ -n "$base" ] || return 1
@@ -857,6 +862,18 @@ land_and_deploy() {
   fi
   release_worktree
   ledger "LAND $label behind=${BEHIND:-?} main=$landed proof=PASS"
+  # Deploy is DECOUPLED from landing (2026-08-26). The hourly merge cron only commits +
+  # pushes to origin/main so it can drain a large backlog without paying the deploy tax
+  # every tick; a separate daily "midnight deploy" command cron builds whatever main has
+  # accumulated and does the one atomic-swap promote+bounce. Landing does NOT change the
+  # release the gateway serves (atomic-swap serves dist.current, which only promote_release
+  # moves), so deferring deploy is safe even across a gateway restart. UM_DEPLOY=1 forces the
+  # old inline deploy for a manual land that must ship immediately.
+  if [ "${UM_DEPLOY:-0}" != 1 ]; then
+    ledger "LAND-NO-DEPLOY main=$landed (deploy deferred to daily midnight cron)"
+    echo "UPSTREAM-MERGE LANDED ($label): main @ $landed, Linux proof PASS, pushed to origin. Deploy deferred to the daily midnight deploy cron."
+    exit 0
+  fi
   # Deploy DETACHED, not `exec`. exec replaced this tick with the deploy, so when the
   # build crashed+respawned the gateway the successful land was recorded as a bogus
   # error receipt (timeout / "Gateway shutting down") — firing false failure alerts,
