@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 585538,
-  "reason": "2026-08-22 upstream resync (784a2287 -> 5ddf381, 438+ commits): Linux build measured 585538 B, +1849 B over the prior 583689 B. ui/ is byte-identical to main (fork ui ownership), so the growth is non-ui runtime the startup bundle imports (gateway-protocol schema additions incl. GatewayContextWindowOptionSchema #127951, and package changes across the 438-commit delta). Under the 589824 B (576 KiB) hard ceiling. Measured on huey Node 24.",
-  "updatedAt": "2026-08-22"
+  "startupJsGzipBytes": 587154,
+  "reason": "2026-08-26 upstream resync batch 2 (5ddf381 -> 38966da): Linux build measured 587154 B, +1616 B over the prior 585538 B. ui/ is byte-identical to main (fork ui ownership), so the growth is non-ui runtime the startup bundle imports — chiefly the approval-scope field grafted into gateway-protocol's plugin-approvals wire schema (846da810) plus shared package changes across the batch delta. Under the 589824 B (576 KiB) hard ceiling. Measured on huey Node 24.",
+  "updatedAt": "2026-08-26"
 }
