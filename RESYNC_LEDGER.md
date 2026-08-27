@@ -241,3 +241,35 @@ Baseline 1c8b2d38fab (includes this morning's land). residual=113 (111 ui policy
   merged tree; gateway-protocol index.ts unchanged from fork main.
 - Derived: pnpm install clean (lockfile unchanged by batch), kysely .mts regen no-op
   (script renamed .mjs→.mts upstream #121005), protocol-gen/swift/kotlin clean.
+
+## 2026-08-27 (batch 6 resume, 02:36 MT cron) — upstream 8c293c1ae1c, 160 commits
+
+Resumed resync-staging/2026-08-27 after proof failure. The 00:36 MT run resolved 9
+conflicts + drift, committed merge 6fff299f688, preflight PASS — but huey proof
+FAILED (EXIT=1, surfaced at 08:36Z after a Mac-poller timeout red herring):
+extensions 0→3, core:test 9→10, extensions:test 23→38, test:src 9→10,
+NEWFAIL portal-stream-command.test.ts. Preflight gates only tsgo:core — the red
+lanes were invisible locally. Fixes (all verified: 7 lanes = baseline 0/0/9/23/9/0/0):
+
+- extensions/ollama/src/embedding-provider.ts: ADOPT-UPSTREAM shim wholesale (13 lines;
+  dropped fork's stale 416-line pre-canonical copy — zero human commits, resync-era
+  collateral only). Kills old-API OllamaEmbeddingProvider (embedQuery) that upstream's
+  memory-embedding-adapter.ts + both ollama test suites (upstream-identical) reject.
+  Fork cache-key fix (7d430fa8f98 outputDimensionality-on-client) verified CONVERGED in
+  upstream's runtime.ts (client.outputDimensionality → adapter cacheKeyData).
+- extensions/memory-l3/src/engine.ts + scripts/calibrate-embeddings.ts: port
+  embedQuery→embed(text, {inputType:"query"}) (canonical API; upstream removed
+  MemoryEmbeddingProvider's embedQuery with the EmbeddingProvider alias).
+- extensions/daytona backend.test.ts + backend.e2e.test.ts: ENHANCE-OURS — fork-required
+  SandboxConfig.osSandbox idiom added to upstream-new literals (same as 08-26 openshell
+  fix). Note: 2 daytona fs-bridge tests fail on macOS pre-edit (Linux proof passes them).
+- src/agents/agent-tools.before-tool-call.network-error.test.ts: KEEP-FORK guard
+  signature — upstream test's 1-param call adapted to fork's (config, {enabled}) form;
+  config-first drives windowSize from types.tools.ts (production callers all 2-param).
+- src/node-host/portal-stream-command.test.ts: ::1 case GUARDED on resolver capability.
+  Root cause (proved live): huey node24/glibc resolves localhost → IPv4 ONLY
+  (dns.lookup all:true → [127.0.0.1]); Mac resolves ::1 first. autoSelectFamily does
+  NOT fall back on ECONNREFUSED (tested node24 ± TryAllAddresses). Transport code is
+  upstream-identical — environment resolver difference, so the case now runs only where
+  localhost resolves v6. Portal suite 11/11 on Mac (guard true).
+  No product-collision. finish-land.
