@@ -736,6 +736,8 @@ export async function runExecProcess(opts: {
   /** Agent owner frozen when the exec process starts. */
   agentId?: string;
   processContinuationAvailable?: boolean;
+  /** Cancels startup only; background process lifetime belongs to the supervisor. */
+  startupSignal?: AbortSignal;
   /** `session.mainKey` from the runtime config; snapshotted onto the
    *  ProcessSession so background-exit notifications can remap cron-run
    *  keys without an ambient config load. Long-running background exits use
@@ -1053,13 +1055,17 @@ export async function runExecProcess(opts: {
   };
 
   const assertPreSpawnAuthorized = async () => {
+    opts.startupSignal?.throwIfAborted();
     const denied = await opts.beforeSpawn?.();
+    opts.startupSignal?.throwIfAborted();
     if (denied) {
       throw new ExecProcessPreflightError(denied);
     }
   };
 
   try {
+    // Abort before any spawn work if startup was cancelled while preparing.
+    opts.startupSignal?.throwIfAborted();
     const spawnBase = {
       runId: sessionId,
       sessionId: opts.sessionKey?.trim() || sessionId,
@@ -1075,6 +1081,8 @@ export async function runExecProcess(opts: {
     // Revalidate authorization after async preparation, immediately before the
     // first spawn attempt (upstream pre-spawn preflight).
     await assertPreSpawnAuthorized();
+    // No await between the final cancellation check and supervisor admission.
+    opts.startupSignal?.throwIfAborted();
     managedRun =
       spawnSpec.mode === "pty"
         ? await supervisor.spawn({
@@ -1089,6 +1097,8 @@ export async function runExecProcess(opts: {
             stdinMode: spawnSpec.stdinMode,
           });
   } catch (err) {
+    // Startup cancellation is terminal: rethrow instead of retrying without PTY.
+    opts.startupSignal?.throwIfAborted();
     if (spawnSpec.mode === "pty") {
       const warning = `Warning: PTY spawn failed (${String(err)}); retrying without PTY for \`${opts.command}\`.`;
       logWarn(
@@ -1098,6 +1108,8 @@ export async function runExecProcess(opts: {
       usingPty = false;
       try {
         await assertPreSpawnAuthorized();
+        // No await between the final cancellation check and supervisor admission.
+        opts.startupSignal?.throwIfAborted();
         managedRun = await supervisor.spawn({
           runId: sessionId,
           sessionId: opts.sessionKey?.trim() || sessionId,

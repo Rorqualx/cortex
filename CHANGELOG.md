@@ -69,6 +69,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- **Android settings:** keep form fields and actions reachable above the keyboard, and respect bottom system insets without duplicating navigation padding.
 - Codex image attachments: decode mixed-case `file://` URLs as local image paths while preserving existing file URL validation and platform behavior. (#121611) Thanks @sunlit-deng.
 
 - **Control UI agent files:** keep confirmed saves and file metadata intact when older reads or list refreshes finish later, preserve newer drafts, and rebuild invalidated file lists without losing the open editor.
@@ -340,6 +341,7 @@ Docs: https://docs.openclaw.ai
 - **Remote browser reliability:** bound persistent Playwright tab enumeration by the existing remote CDP timeout budget and retire timed-out connection attempts so late completions cannot restore a stuck connection. (#80147, #58968) Thanks @HemantSudarshan and @KeaneYan.
 - **Browser tab adoption:** preserve the prior implicit tab and stable aliases when new MCP, Playwright, or CDP targets fail final safety validation, abort after creation, or cannot be rediscovered; validate labels before creating tabs and limit managed cleanup to adopted targets. (#105301) Thanks @hugenshen.
 - **Browser snapshots:** preserve slash-only control names and keep ref-looking page text from retaining truncated refs or misplacing child frames. Fixes #130571.
+- **Browser refs:** keep unnamed and overlong-named controls distinct from ordinary named controls to prevent wrong-target actions, and initialize raw ARIA DOM markers in their owning CDP session.
 - **Browser attachment downloads:** return managed URL, filename, and path metadata when direct Playwright navigation starts an attachment download, while validating final URLs before saving bytes and preserving single-owner explicit downloads. (#48045, #89416) Thanks @zhangguiping-xydt.
 - **Browser action downloads:** return managed URL, filename, and path metadata when agent actions trigger downloads, while preserving explicit ownership, validating final URLs before saving bytes, and quarantining policy-denied tabs without closing them. (#93250, #93307) Thanks @sunlit-deng.
 - **Managed browser cookie persistence:** initialize new isolated macOS headless profiles with a non-interactive encryption key while preserving existing profile keys, and close Chromium through CDP before bounded signal fallback so persistent logins survive graceful browser and Gateway restarts. (#96704, #98284) Thanks @TurboTheTurtle.
