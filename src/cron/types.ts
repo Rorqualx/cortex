@@ -481,7 +481,9 @@ export type CronJobState = {
   lastFailureNotificationDeliveryError?: string;
 };
 
-type CronTrigger = {
+// fork delta: upstream made CronTrigger module-private when its UI stopped importing
+// it; the fork-owned ui/src/ui/types.ts still consumes it, so keep the export.
+export type CronTrigger = {
   script: string;
   once?: boolean;
 };

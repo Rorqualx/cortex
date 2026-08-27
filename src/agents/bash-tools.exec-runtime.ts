@@ -1115,6 +1115,12 @@ export async function runExecProcess(opts: {
         });
       } catch (retryErr) {
         markExited(session, null, null, "failed");
+        const outcome = buildExecRuntimeErrorOutcome({
+          error: retryErr,
+          aggregated: session.aggregated.trim(),
+          durationMs: Date.now() - startedAt,
+        });
+        opts.onSettledBeforeNotify?.(outcome);
         try {
           maybeNotifyOnExit(session, "failed");
         } finally {
@@ -1128,11 +1134,7 @@ export async function runExecProcess(opts: {
         emitExecProcessCompleted({
           command: opts.command,
           mode: "child",
-          outcome: buildExecRuntimeErrorOutcome({
-            error: retryErr,
-            aggregated: session.aggregated.trim(),
-            durationMs: Date.now() - startedAt,
-          }),
+          outcome,
           sessionKey: opts.sessionKey,
           target: diagnosticTarget,
         });
@@ -1140,6 +1142,12 @@ export async function runExecProcess(opts: {
       }
     } else {
       markExited(session, null, null, "failed");
+      const outcome = buildExecRuntimeErrorOutcome({
+        error: err,
+        aggregated: session.aggregated.trim(),
+        durationMs: Date.now() - startedAt,
+      });
+      opts.onSettledBeforeNotify?.(outcome);
       try {
         maybeNotifyOnExit(session, "failed");
       } finally {
@@ -1153,11 +1161,7 @@ export async function runExecProcess(opts: {
       emitExecProcessCompleted({
         command: opts.command,
         mode: spawnSpec.mode,
-        outcome: buildExecRuntimeErrorOutcome({
-          error: err,
-          aggregated: session.aggregated.trim(),
-          durationMs: Date.now() - startedAt,
-        }),
+        outcome,
         sessionKey: opts.sessionKey,
         target: diagnosticTarget,
       });
@@ -1184,6 +1188,7 @@ export async function runExecProcess(opts: {
       });
 
       markExited(session, exit.exitCode, exit.exitSignal, outcome.status, exit.reason);
+      opts.onSettledBeforeNotify?.(outcome);
       try {
         maybeNotifyOnExit(session, outcome.status);
       } finally {
@@ -1210,17 +1215,18 @@ export async function runExecProcess(opts: {
     .catch((err: unknown): ExecProcessOutcome => {
       updatesDisabled = true;
       markExited(session, null, null, "failed");
+      const outcome = buildExecRuntimeErrorOutcome({
+        error: err,
+        aggregated: session.aggregated.trim(),
+        durationMs: Date.now() - startedAt,
+      });
+      opts.onSettledBeforeNotify?.(outcome);
       try {
         maybeNotifyOnExit(session, "failed");
       } finally {
         stripSettledSessionRouting(session);
       }
       sshTempFileCleanup?.();
-      const outcome = buildExecRuntimeErrorOutcome({
-        error: err,
-        aggregated: session.aggregated.trim(),
-        durationMs: Date.now() - startedAt,
-      });
       emitExecProcessCompleted({
         command: opts.command,
         mode: usingPty ? "pty" : "child",
