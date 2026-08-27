@@ -229,6 +229,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
         pluginId: "test-plugin",
         title: "Needs approval",
         description: "Test approval request",
+        scope: { kind: "external-post", target: "git‮hub", visibility: "public" },
         severity: "info",
         timeoutBehavior: "allow",
         onResolution,
@@ -244,6 +245,11 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
     });
     await vi.waitFor(() => {
       expect(broker.listPending()).toHaveLength(1);
+    });
+    expect(broker.listPending()[0]?.request.scope).toEqual({
+      kind: "external-post",
+      target: "git\\u{202E}hub",
+      visibility: "public",
     });
 
     broker.stop(new Error("local TUI stopped"));

@@ -37,6 +37,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "parentSessionKey",
   "parentSessionId",
   "projectId",
+  "pendingProjectGitUrl",
   "createdVia",
   "createdActor",
   "sandbox",
