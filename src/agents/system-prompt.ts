@@ -976,7 +976,6 @@ export function buildAgentSystemPrompt(params: {
 
   const hasGateway = availableTools.has("gateway");
   const hasOpenClaw = availableTools.has("openclaw");
-  const messageToolAvailable = availableTools.has("message");
   const hasAutomations = availableTools.has(AUTOMATIONS_TOOL_NAME);
   const readToolName = resolveToolName("read");
   const execToolName = resolveToolName("exec");
