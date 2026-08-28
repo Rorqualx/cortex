@@ -27,7 +27,6 @@ describe("external plugin local dist build", () => {
         "extensions/slack",
         "extensions/sms",
         "extensions/mxc",
-        "extensions/daytona",
       ]),
     );
     expect(packageDirs).not.toContain("extensions/whatsapp");

@@ -1023,6 +1023,8 @@ export function buildAgentSystemPrompt(params: {
   const threadBoundAcpSpawnEnabled = runtimeCapabilitiesLower.has("threadbound-acp-spawn");
   const promptMode = params.promptMode ?? "full";
   const isMinimal = promptMode === "minimal" || promptMode === "none";
+  const includeToolGuidance =
+    !isMinimal || availableTools.size > 0 || promptSurface === "cli_backend";
   const subagentDelegationMode = normalizeSubagentDelegationMode(params.subagentDelegationMode);
   const proactiveSubagentOrchestration = params.proactiveSubagentOrchestration === true;
   const sourceMessageToolOnly = params.sourceReplyDeliveryMode === "message_tool_only";
@@ -1167,19 +1169,23 @@ export function buildAgentSystemPrompt(params: {
     const lines = [
       "You are a personal assistant running inside OpenClaw.",
       "",
-      "## Tooling",
-      "Tools policy-filtered. Names case-sensitive; call exact.",
-      toolLines.length > 0
-        ? toolLines.join("\n")
-        : buildOpenClawToolFallbackText({
-            surface: promptSurface,
-            execToolName,
-            processToolName,
-          }),
-      ...(toolSchemaDirectoryPrompt
-        ? ["", "### Deferred Tool Schemas", toolSchemaDirectoryPrompt]
+      ...(includeToolGuidance
+        ? [
+            "## Tooling",
+            "Tools policy-filtered. Names case-sensitive; call exact.",
+            toolLines.length > 0
+              ? toolLines.join("\n")
+              : buildOpenClawToolFallbackText({
+                  surface: promptSurface,
+                  execToolName,
+                  processToolName,
+                }),
+            ...(toolSchemaDirectoryPrompt
+              ? ["", "### Deferred Tool Schemas", toolSchemaDirectoryPrompt]
+              : []),
+            "The AGENTS.md Tools section guides usage; it never grants availability.",
+          ]
         : []),
-      "The AGENTS.md Tools section guides usage; it never grants availability.",
       ...(renderOpenClawToolWorkflowHints
         ? [
             `Long wait: no rapid poll. Use ${execToolName} yieldMs or ${processToolName}(poll, timeout=<ms>).`,
@@ -1250,19 +1256,21 @@ export function buildAgentSystemPrompt(params: {
         override: providerSectionOverrides.interaction_style,
         fallback: [],
       }),
-      ...buildOverridablePromptSection({
-        override: providerSectionOverrides.tool_call_style,
-        fallback: [
-          "## Tool Call Style",
-          "Routine low-risk: call silently.",
-          "Narrate only complex, sensitive/destructive, or requested steps.",
-          "First-class tool exists: use it; never ask user for equivalent CLI/slash.",
-          "/approve is user command; never execute via shell/tool.",
-          "allow-once = one command. Another elevated command needs fresh /approve.",
-          "Approval preview: exact full command/script, including chains/multiline. Keep preview separate from /approve; never use script as approval id/slug.",
-          "",
-        ],
-      }),
+      ...(includeToolGuidance
+        ? buildOverridablePromptSection({
+            override: providerSectionOverrides.tool_call_style,
+            fallback: [
+              "## Tool Call Style",
+              "Routine low-risk: call silently.",
+              "Narrate only complex, sensitive/destructive, or requested steps.",
+              "First-class tool exists: use it; never ask user for equivalent CLI/slash.",
+              "/approve is user command; never execute via shell/tool.",
+              "allow-once = one command. Another elevated command needs fresh /approve.",
+              "Approval preview: exact full command/script, including chains/multiline. Keep preview separate from /approve; never use script as approval id/slug.",
+              "",
+            ],
+          })
+        : []),
       ...buildOverridablePromptSection({
         override: providerSectionOverrides.execution_bias,
         fallback: buildExecutionBiasSection({

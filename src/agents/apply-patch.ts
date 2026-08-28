@@ -361,13 +361,13 @@ async function assertPatchParentPath(rawFilePath: string, options: ApplyPatchOpt
   if (!parent || parent === ".") {
     return;
   }
-  await assertSandboxPath({
+  const checked = await assertSandboxPath({
     filePath: parent,
     cwd: options.cwd,
     root: options.cwd,
   });
   await assertNoExistingParentAliases({
-    parentPath: resolvePathFromInput(parent, options.cwd),
+    parentPath: checked.resolved,
     rootPath: options.cwd,
   });
 }

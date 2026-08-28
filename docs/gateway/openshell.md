@@ -421,8 +421,9 @@ Workspace synchronization excludes `.git`, `hooks`, and `git-hooks` in both
 directions. Repository credentials, history, and trusted hook code remain on
 the OpenClaw Gateway host instead of being copied into an untrusted sandbox.
 
-Mirror synchronization never copies symlinks into either workspace. Existing
-host symlinks remain intact at every depth, along with their parent directories,
+Mirror synchronization never copies entries it cannot represent, such as
+symlinks, FIFOs, or Unix sockets, into either workspace. Existing host entries
+of those types remain intact at every depth, along with their parent directories,
 even if the sandbox deletes those directories or replaces them with files.
 Remote replacements that conflict with these preserved host paths are ignored;
 ordinary files and directories still receive remote changes and deletions.
@@ -437,8 +438,8 @@ Custom images used with the OpenClaw filesystem bridge must provide:
 
 - `/bin/sh`
 - `sleep` for the persistent sandbox main process on current OpenShell releases
-- `python3` or `python` for pinned write, edit, rename, and remove operations
-- GNU-compatible `stat` and `find`
+- `python3` for pinned remote filesystem reads and mutations
+- GNU-compatible `stat` (`-c`), `readlink` (`-f`), and `find`
 - standard `mkdir`, `mv`, `rm`, and `rmdir` utilities
 
 When the agent workspace differs from the sandbox workspace, the sandbox user

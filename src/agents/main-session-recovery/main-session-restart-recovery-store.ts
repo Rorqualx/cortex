@@ -28,6 +28,7 @@ import {
   listActiveEmbeddedRunSessionKeys,
 } from "../embedded-agent-runner/run-state.js";
 import {
+  getMainSessionRecoveryRetryCount,
   isMainRestartRecoveryAggregateTerminalOnly,
   isMainRestartRecoveryCandidate,
 } from "./main-session-recovery-state.js";
@@ -107,7 +108,7 @@ function pendingFinalRecoveryAction(
     return "complete";
   }
   const owners = deliveries.map(({ id }) => findDeliveryIntentOwner(id, stateDir));
-  if (owners.some((owner) => owner?.status === "pending")) {
+  if (owners.some((owner) => owner?.status === "pending" || owner?.settlementPending)) {
     return "defer";
   }
   if (
@@ -156,6 +157,7 @@ async function completePendingFinalRecoveryWithNotice(
         pendingFinalDelivery: undefined,
         ...(pending?.context &&
         pending.intentId &&
+        current.pendingDeliveryNotice?.intentId !== pending.intentId &&
         (!current.pendingDeliveryNotice ||
           current.pendingDeliveryNotice.createdAt <= pending.createdAt)
           ? {
@@ -472,8 +474,8 @@ export async function recoverStore(params: {
           storePath: params.storePath,
         });
         if (
-          current?.mainRestartRecovery?.chargedAttempts === MAX_RECOVERY_RETRIES &&
-          !current.mainRestartRecovery.reservation
+          getMainSessionRecoveryRetryCount(current?.mainRestartRecovery) === MAX_RECOVERY_RETRIES &&
+          !current?.mainRestartRecovery?.reservation
         ) {
           params.onExhaustedTarget?.({
             canonicalSessionKey: dispatchSessionKey,
