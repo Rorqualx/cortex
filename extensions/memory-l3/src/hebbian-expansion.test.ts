@@ -83,3 +83,67 @@ describe("Hebbian expansion (G4 pattern completion)", () => {
     expect(completed!.score).toBeLessThan(hit!.score);
   });
 });
+
+// F8 (2026-08-28): definition-pull regression — when a kept referent's
+// definition fact is edge-linked to a strong hit, pattern completion must
+// surface the definition chunk. This is the verification half of the
+// dangling-reference finding: the soft mechanism should already cover the
+// "referent kept, definition dropped" failure mode, so a regression here
+// is the trigger to build a hard definition-pull.
+describe("Hebbian expansion (F8 definition pull)", () => {
+  const NOW2 = Date.UTC(2026, 7, 28, 12, 0, 0);
+  let defRoot: string;
+  let defStorage: Storage;
+
+  beforeEach(async () => {
+    defRoot = mkdtempSync(path.join(os.tmpdir(), "memory-l3-hebdef-"));
+    defStorage = new Storage(path.join(defRoot, ".openclaw", "l3"));
+    await defStorage.writeL2Chunk(
+      {
+        id: "chunk-def",
+        agentId: "a",
+        startTurnIndex: 0,
+        endTurnIndex: 1,
+        createdAt: NOW2,
+        facts: [
+          {
+            id: "fd-usage",
+            text: "QMD compression was enabled on the gateway",
+            importance: 0.8,
+            createdAt: NOW2,
+            dedupKey: "infra:qmd-enabled",
+          },
+          {
+            id: "fd-def",
+            text: "QMD = query metadata dedup cache (definition)",
+            importance: 0.5,
+            createdAt: NOW2,
+            dedupKey: "glossary:qmd",
+          },
+        ],
+        dedupKeys: ["infra:qmd-enabled", "glossary:qmd"],
+      },
+      "body",
+    );
+    await defStorage.writeEdgeMap([{ a: "glossary:qmd", b: "infra:qmd-enabled", weight: 4 }]);
+  });
+
+  afterEach(() => {
+    rmSync(defRoot, { recursive: true, force: true });
+  });
+
+  it("pulls the edge-linked definition for a kept referent", async () => {
+    const res = await retrieveTopK({
+      query: "is QMD compression enabled on the gateway",
+      storage: defStorage,
+      topK: 1,
+      now: NOW2,
+      hebbianConfig: { ...DEFAULT_HEBBIAN_CONFIG, expandTopN: 1 },
+    });
+    const hit = res.facts.find((f) => f.fact.dedupKey === "infra:qmd-enabled");
+    const definition = res.facts.find((f) => f.fact.dedupKey === "glossary:qmd");
+    expect(hit).toBeDefined();
+    expect(definition).toBeDefined();
+    expect(definition!.score).toBeLessThan(hit!.score);
+  });
+});
