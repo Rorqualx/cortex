@@ -1,13 +1,13 @@
 // Control UI view renders usage metrics screen content.
 import { html } from "lit";
+import { t } from "../../i18n/index.ts";
+import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
+import { renderSettingsSection } from "./settings-ui.ts";
 import {
   buildUsageAggregateTail,
   mergeUsageDailyLatency,
   mergeUsageLatency,
-} from "../../../../src/shared/usage-aggregates.js";
-import { renderSettingsSection } from "./settings-ui.ts";
-import { t } from "../../i18n/index.ts";
-import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
+} from "./usage-aggregate-helpers.ts";
 import type { UsageSessionEntry, UsageTotals, UsageAggregates } from "./usageTypes.ts";
 
 const CHARS_PER_TOKEN = 4;
