@@ -1063,6 +1063,7 @@
                 "group": "Guides",
                 "pages": [
                   "start/openclaw",
+                  "start/teams",
                   "start/wizard-cli-reference",
                   "start/wizard-cli-automation"
                 ]

@@ -3055,7 +3055,7 @@ NODE
     expect(action).toContain("docs_only=false");
     expect(action).toContain("docs_changed=false");
     expect(action).toContain("test/fixtures/*)");
-    expect(action).toContain("docs/* | *.md | *.mdx)");
+    expect(action).toContain("docs/* | *.md | *.mdx | config/markdownlint*.jsonc)");
   });
 
   it("bounds matrix fan-out for runner-registration pressure", () => {
@@ -5717,6 +5717,28 @@ server.listen(0, "127.0.0.1", () => {
       "${{ needs.preflight.outputs.diff_head_revision }}",
     );
     expect(ensureHeadStep.with["fetch-ref"]).toContain("refs/pull/{0}/merge");
+
+    for (const revision of ["base", "head"]) {
+      const step = additionalJob.steps.find(
+        (step: WorkflowStep) => step.name === `Ensure Plugin SDK API diff ${revision} commit`,
+      );
+      for (const [eventName, group, eligible] of [
+        ["pull_request", "plugin-sdk-api-diff", false],
+        ["push", "plugin-sdk-api-diff", false],
+        ["workflow_dispatch", "plugin-sdk-api-diff", true],
+        ["workflow_dispatch", "boundaries", false],
+      ] as const) {
+        expect(
+          evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+            eventName,
+            matrix: { group },
+            repository: "openclaw/openclaw",
+            runAttempt: 1,
+          }),
+          `${revision} preparation for ${eventName}/${group}`,
+        ).toBe(eligible);
+      }
+    }
 
     const runStep = additionalJob.steps.find(
       (step: WorkflowStep) => step.name === "Run additional check shard",

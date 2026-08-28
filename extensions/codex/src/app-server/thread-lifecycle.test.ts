@@ -1959,6 +1959,14 @@ describe("Codex app-server native code mode config", () => {
 });
 
 describe("Codex app-server turn input image sanitizing", () => {
+  const excludedTmpStart = {
+    args: [
+      "-csandbox_workspace_write.exclude_tmpdir_env_var=true",
+      "-csandbox_workspace_write.exclude_slash_tmp=true",
+      "app-server",
+    ],
+  };
+
   it.each([
     {
       name: "separate",
@@ -1968,8 +1976,7 @@ describe("Codex app-server turn input image sanitizing", () => {
         "--config",
         "sandbox_workspace_write.exclude_slash_tmp=true",
       ],
-      tmpdir: true,
-      slashTmp: true,
+      excluded: true,
     },
     {
       name: "attached short",
@@ -1977,8 +1984,7 @@ describe("Codex app-server turn input image sanitizing", () => {
         "-csandbox_workspace_write.exclude_tmpdir_env_var=true",
         "-c=sandbox_workspace_write.exclude_slash_tmp=true",
       ],
-      tmpdir: true,
-      slashTmp: true,
+      excluded: true,
     },
     {
       name: "mixed last true",
@@ -1987,8 +1993,7 @@ describe("Codex app-server turn input image sanitizing", () => {
         "-csandbox_workspace_write.exclude_tmpdir_env_var=true",
         "--config=sandbox_workspace_write.exclude_slash_tmp=true",
       ],
-      tmpdir: true,
-      slashTmp: true,
+      excluded: true,
     },
     {
       name: "mixed last false",
@@ -1999,8 +2004,7 @@ describe("Codex app-server turn input image sanitizing", () => {
         "--config=sandbox_workspace_write.exclude_slash_tmp=true",
         "-c=sandbox_workspace_write.exclude_slash_tmp=false",
       ],
-      tmpdir: false,
-      slashTmp: false,
+      excluded: false,
     },
     {
       name: "commented true across separate and attached forms",
@@ -2012,8 +2016,7 @@ describe("Codex app-server turn input image sanitizing", () => {
         "sandbox_workspace_write.exclude_slash_tmp = false # earlier",
         "-c=sandbox_workspace_write.exclude_slash_tmp = true # exclusion retained",
       ],
-      tmpdir: true,
-      slashTmp: true,
+      excluded: true,
     },
     {
       name: "commented false wins last",
@@ -2024,8 +2027,7 @@ describe("Codex app-server turn input image sanitizing", () => {
         "--config=sandbox_workspace_write.exclude_slash_tmp=true",
         "-csandbox_workspace_write.exclude_slash_tmp=false # explicit last value",
       ],
-      tmpdir: false,
-      slashTmp: false,
+      excluded: false,
     },
     {
       name: "quoted booleans remain strings",
@@ -2033,8 +2035,7 @@ describe("Codex app-server turn input image sanitizing", () => {
         '-csandbox_workspace_write.exclude_tmpdir_env_var="true" # not a boolean',
         "--config=sandbox_workspace_write.exclude_slash_tmp='true' # not a boolean",
       ],
-      tmpdir: false,
-      slashTmp: false,
+      excluded: false,
     },
     {
       name: "option value and terminator",
@@ -2044,12 +2045,11 @@ describe("Codex app-server turn input image sanitizing", () => {
         "--",
         "--config=sandbox_workspace_write.exclude_slash_tmp=true",
       ],
-      tmpdir: false,
-      slashTmp: false,
+      excluded: false,
     },
   ])(
     "carries native workspace temporary-root overrides into turn policy: $name",
-    ({ args, tmpdir, slashTmp }) => {
+    ({ args, excluded }) => {
       const request = buildTurnStartParams(createAttemptParams({ provider: "openai" }), {
         threadId: "thread-1",
         cwd: "/tmp/qa/workspace",
@@ -2062,8 +2062,8 @@ describe("Codex app-server turn input image sanitizing", () => {
         type: "workspaceWrite",
         writableRoots: ["/tmp/qa/workspace"],
         networkAccess: false,
-        excludeTmpdirEnvVar: tmpdir,
-        excludeSlashTmp: slashTmp,
+        excludeTmpdirEnvVar: excluded,
+        excludeSlashTmp: excluded,
       });
     },
   );
@@ -2090,13 +2090,7 @@ describe("Codex app-server turn input image sanitizing", () => {
       cwd: "/repo",
       appServer: {
         ...createAppServerOptions(),
-        start: {
-          args: [
-            "-csandbox_workspace_write.exclude_tmpdir_env_var=true",
-            "-csandbox_workspace_write.exclude_slash_tmp=true",
-            "app-server",
-          ],
-        },
+        start: excludedTmpStart,
       } as never,
       sandboxPolicy: {
         type: "workspaceWrite",
@@ -2122,13 +2116,7 @@ describe("Codex app-server turn input image sanitizing", () => {
       cwd: "/repo",
       appServer: {
         ...createNetworkProxyAppServerOptions(),
-        start: {
-          args: [
-            "-csandbox_workspace_write.exclude_tmpdir_env_var=true",
-            "-csandbox_workspace_write.exclude_slash_tmp=true",
-            "app-server",
-          ],
-        },
+        start: excludedTmpStart,
       } as never,
     });
 
@@ -2142,13 +2130,7 @@ describe("Codex app-server turn input image sanitizing", () => {
       cwd: "/repo",
       appServer: {
         ...createNetworkProxyAppServerOptions(),
-        start: {
-          args: [
-            "-csandbox_workspace_write.exclude_tmpdir_env_var=true",
-            "-csandbox_workspace_write.exclude_slash_tmp=true",
-            "app-server",
-          ],
-        },
+        start: excludedTmpStart,
       } as never,
       sandboxPolicy: {
         type: "externalSandbox",
