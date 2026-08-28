@@ -164,17 +164,31 @@ export async function runAgentLoop(
   streamFn?: StreamFn,
   runtime?: AgentCoreStreamRuntimeDeps,
 ): Promise<AgentMessage[]> {
-  const newMessages: AgentMessage[] = [...prompts];
-  const currentContext: AgentContext = {
-    ...context,
-    messages: [...context.messages, ...prompts],
-  };
+  const newMessages: AgentMessage[] = [];
+  // Isolate the caller's messages array: runLoop appends turn output to
+  // currentContext.messages, which must never alias the caller's array
+  // (upstream #129293).
+  const currentContext: AgentContext = { ...context, messages: [...context.messages] };
 
   await emit({ type: "agent_start" });
   await emit({ type: "turn_start" });
   for (const prompt of prompts) {
+    if (config.consumeQueuedMessageCancellation?.(prompt)) {
+      continue;
+    }
     await emit({ type: "message_start", message: prompt });
+    if (config.consumeQueuedMessageCancellation?.(prompt)) {
+      continue;
+    }
     await emit({ type: "message_end", message: prompt });
+    currentContext.messages.push(prompt);
+    newMessages.push(prompt);
+  }
+  if (prompts.length > 0 && newMessages.length === 0) {
+    // A drained queue batch can be cancelled while turn_start listeners settle.
+    // Close without a provider call so cancelled input cannot become an empty continuation.
+    await emit({ type: "agent_end", messages: [] });
+    return [];
   }
 
   await runLoop(currentContext, newMessages, config, signal, emit, streamFn, runtime);
@@ -308,14 +322,29 @@ async function runLoop(
 
       // Process pending messages (inject before next assistant response)
       if (pendingMessages.length > 0) {
-        for (const message of pendingMessages) {
+        const messagesToInject = pendingMessages;
+        let injectedMessage = false;
+        pendingMessages = [];
+        for (const message of messagesToInject) {
+          if (config.consumeQueuedMessageCancellation?.(message)) {
+            continue;
+          }
+          await emit({ type: "message_start", message });
+          if (config.consumeQueuedMessageCancellation?.(message)) {
+            continue;
+          }
           if (message.role === "user") {
             turnTainted = false;
           }
-          await emit({ type: "message_start", message });
           await emit({ type: "message_end", message });
           currentContext.messages.push(message);
           newMessages.push(message);
+          injectedMessage = true;
+        }
+        if (!injectedMessage && !hasMoreToolCalls) {
+          // The entire drained batch was cancelled before transcript commit.
+          // Re-evaluate the loop instead of issuing an empty provider continuation.
+          continue;
         }
       }
 

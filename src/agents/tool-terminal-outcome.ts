@@ -6,6 +6,7 @@ import {
 } from "./agent-tools.before-tool-call.state.js";
 import { extractApplyPatchTargets } from "./apply-patch-targets.js";
 import type { EmbeddedRunAttemptParams } from "./embedded-agent-runner/run/types.js";
+import { buildToolEffectReceipt } from "./tool-effect-receipt.js";
 import { createToolErrorState } from "./tool-error-state.js";
 import type { ToolErrorSummary, ToolRecoverySummary } from "./tool-error-summary.js";
 import type { FileTarget } from "./tool-mutation.js";
@@ -55,7 +56,7 @@ export function createToolTerminalObserver(
     const fileTargets =
       extractPatchFileTargets(observation.toolName, executedArguments) ??
       (mutation.fileTarget ? [mutation.fileTarget] : undefined);
-
+    const replaySafe = observation.replaySafe ?? mutation.replaySafe;
     let lastToolError: ToolErrorSummary | undefined;
     let lastToolRecovery: ToolRecoverySummary | undefined;
     if (observation.outcome === "failure") {
@@ -96,7 +97,13 @@ export function createToolTerminalObserver(
       ...(lastToolRecovery ? { lastToolRecovery } : {}),
       executionStarted,
       ...(executedArguments ? { executedArguments } : {}),
-      sideEffectEvidence: executionStarted && !mutation.replaySafe,
+      sideEffectEvidence: executionStarted && !replaySafe,
+      effectReceipt: buildToolEffectReceipt({
+        executionStarted,
+        mutatingAction: mutation.mutatingAction,
+        replaySafe,
+        outcome: observation.outcome,
+      }),
     };
   };
 }

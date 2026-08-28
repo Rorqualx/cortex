@@ -67,10 +67,8 @@ import { hasGeneratedMediaCompletionEvent } from "./internal-event-contract.js";
 import type { AgentInternalEvent } from "./internal-events.js";
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
-import {
-  consumeTrustedToolNoStartError,
-  registerTrustedToolNoStartError,
-} from "./tool-result-error.js";
+import { registerToolEffectReceipt } from "./tool-effect-receipt.js";
+import { consumeTrustedToolNoStartError } from "./tool-result-error.js";
 import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
 const STREAM_STRIPPED_BLOCK_TAG_NAMES = [
@@ -1486,7 +1484,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       };
       try {
         const result = await toolParams.execute(onImplementationStart);
-        await handleToolExecutionEnd(ctx, {
+        const terminal = await handleToolExecutionEnd(ctx, {
           type: "tool_execution_end",
           toolName: toolParams.toolName,
           toolCallId: toolParams.toolCallId,
@@ -1495,18 +1493,16 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           result,
           hideFromChannelProgress: toolParams.hideFromChannelProgress,
         } as never);
-        return result;
+        return registerToolEffectReceipt(result, terminal.effectReceipt);
       } catch (error) {
         // Consume any trusted-no-start tag before the terminal handler runs, then
-        // re-register it so the fork's code-mode preflight classification
-        // (before-tool-call.wrapper / code-mode-bridge / code-mode-state) stays
-        // correct. Upstream #131007: the no-start proof is operation-owned and
-        // survives generic implementation entry — a host-policy denial must not
-        // be reclassified as a mid-execution failure (which triggered read-only
-        // recovery), so relay the tag whenever it was consumed; replacements
-        // cannot inherit it.
+        // relay it as a not_started effect receipt so the fork's code-mode preflight
+        // classification (before-tool-call.wrapper / code-mode-bridge / code-mode-state)
+        // stays correct. Upstream #131007: the no-start proof is operation-owned and
+        // survives generic implementation entry — a host-policy denial must not be
+        // reclassified as a mid-execution failure; replacements cannot inherit it.
         const trustedNoStart = consumeTrustedToolNoStartError(error);
-        await handleToolExecutionEnd(ctx, {
+        const terminal = await handleToolExecutionEnd(ctx, {
           type: "tool_execution_end",
           toolName: toolParams.toolName,
           toolCallId: toolParams.toolCallId,
@@ -1515,10 +1511,10 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           result: buildToolLifecycleErrorResult(error),
           hideFromChannelProgress: toolParams.hideFromChannelProgress,
         } as never);
-        if (trustedNoStart) {
-          registerTrustedToolNoStartError(error);
-        }
-        throw error;
+        const receipt = trustedNoStart
+          ? ({ state: "not_started" } as const)
+          : terminal.effectReceipt;
+        throw registerToolEffectReceipt(error, receipt);
       }
     },
     unsubscribe,

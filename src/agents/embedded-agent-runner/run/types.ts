@@ -29,6 +29,7 @@ import type { AgentRuntimeModelAttempt, AgentRuntimePlan } from "../../runtime-p
 import type { AgentMessage } from "../../runtime/index.js";
 import type { SandboxContext } from "../../sandbox/types.js";
 import type { AuthStorage, ModelRegistry } from "../../sessions/index.js";
+import type { ToolEffectReceipt } from "../../tool-effect-receipt.js";
 import type { ToolErrorSummary, ToolRecoverySummary } from "../../tool-error-summary.js";
 import type { NormalizedUsage } from "../../usage.js";
 import type { EmbeddedRunReplayMetadata, EmbeddedRunReplayState } from "../replay-state.js";
@@ -71,6 +72,8 @@ type EmbeddedRunAttemptToolTerminalObservation = {
   arguments?: unknown;
   meta?: string;
   executionStarted?: boolean;
+  /** Exact-instance replay classification resolved by the host tool catalog. */
+  replaySafe?: boolean;
   outcome: "success" | "failure";
   failure?: Omit<
     ToolErrorSummary,
@@ -95,6 +98,7 @@ type EmbeddedRunAttemptToolTerminalResolution = {
   executionStarted: boolean;
   executedArguments?: Record<string, unknown>;
   sideEffectEvidence: boolean;
+  effectReceipt: ToolEffectReceipt;
 };
 
 type EmbeddedRunAttemptToolTerminalObserver = (
