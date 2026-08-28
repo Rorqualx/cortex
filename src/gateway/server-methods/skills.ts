@@ -103,7 +103,6 @@ function installClawHubSkillDeduped(params: ClawHubInstallParams): Promise<ClawH
     params.slug,
     params.version ?? null,
     params.force ?? false,
-    params.acknowledgeClawHubRisk ?? false,
   ]);
   const active = clawHubInstallsInFlight.get(key);
   if (active) {
@@ -798,14 +797,12 @@ export const skillsHandlers: GatewayRequestHandlers = {
         slug: string;
         version?: string;
         force?: boolean;
-        acknowledgeClawHubRisk?: boolean;
       };
       const result = await installClawHubSkillDeduped({
         workspaceDir: workspaceDirRaw,
         slug: p.slug,
         version: p.version,
         force: Boolean(p.force),
-        ...(p.acknowledgeClawHubRisk ? { acknowledgeClawHubRisk: true } : {}),
         logger: context.logGateway,
         config: cfg,
       });
@@ -900,7 +897,6 @@ export const skillsHandlers: GatewayRequestHandlers = {
         slug?: string;
         all?: boolean;
         force?: boolean;
-        acknowledgeClawHubRisk?: boolean;
       };
       if (!p.slug && !p.all) {
         respond(
@@ -930,7 +926,6 @@ export const skillsHandlers: GatewayRequestHandlers = {
         workspaceDir: resolved.workspaceDir,
         slug: p.slug,
         ...(p.force ? { force: true } : {}),
-        ...(p.acknowledgeClawHubRisk ? { acknowledgeClawHubRisk: true } : {}),
         logger: context.logGateway,
         config: resolved.cfg,
       });

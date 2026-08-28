@@ -94,6 +94,8 @@ const EDIT_MISMATCH_HINT_LIMIT = 800;
  * Override these to delegate file editing to remote systems (for example SSH).
  */
 export interface EditOperations {
+  /** Resolve the physical identity used to order this backend's file operations. */
+  resolveQueueKey?: (absolutePath: string, signal?: AbortSignal) => string | Promise<string>;
   /** Read file contents as a Buffer */
   readFile: (absolutePath: string) => Promise<Buffer>;
   /** Write content to a file */
@@ -526,7 +528,7 @@ export function createEditToolDefinition(
             throw normalizedError;
           }
         },
-        { toolName: "edit" },
+        { toolName: "edit", resolveQueueKey: ops.resolveQueueKey, signal },
       );
     },
     renderCall(args, theme, context) {

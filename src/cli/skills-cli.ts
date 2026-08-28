@@ -37,9 +37,10 @@ import {
   isSkillSourceInstallSpec,
 } from "../skills/lifecycle/source-install.js";
 import { CONFIG_DIR } from "../utils.js";
-import { resolveClawHubRiskAcknowledgementCliOptions } from "./clawhub-risk-acknowledgement.js";
+import { resolveClawHubInstallConfirmation } from "./clawhub-install-confirmation.js";
 import { resolveOptionFromCommand, runCommandWithRuntime } from "./cli-utils.js";
 import { canFallbackToImplicitLocalGateway } from "./gateway-rpc.js";
+import { resolveInstallPolicyWarningAcknowledgementCliOptions } from "./install-policy-warning-acknowledgement.js";
 import { parseStrictPositiveIntOption } from "./program/helpers.js";
 import { setCommandJsonMode } from "./program/json-mode.js";
 import { formatSkillInfo, formatSkillsCheck, formatSkillsList } from "./skills-cli.format.js";
@@ -59,20 +60,6 @@ type ResolvedClawHubSkillVerificationTarget = Extract<
   Awaited<ReturnType<typeof resolveClawHubSkillVerificationTarget>>,
   { ok: true }
 >;
-
-function resolveSkillClawHubRiskOptions(
-  acknowledgeClawHubRisk: boolean,
-  action: "installing" | "updating",
-) {
-  const riskOptions = resolveClawHubRiskAcknowledgementCliOptions({
-    acknowledgeClawHubRisk,
-    action,
-  });
-  return {
-    ...(riskOptions.acknowledgeClawHubRisk ? { acknowledgeClawHubRisk: true } : {}),
-    ...(riskOptions.onClawHubRisk ? { onClawHubRisk: riskOptions.onClawHubRisk } : {}),
-  };
-}
 
 function formatSkillWarning(message: string): string {
   return message.includes("╭─") ? message : theme.warn(message);
@@ -339,8 +326,8 @@ export function registerSkillsCli(program: Command) {
       false,
     )
     .option(
-      "--acknowledge-clawhub-risk",
-      "Acknowledge ClawHub release trust warnings without prompting",
+      "--acknowledge-install-policy-warning",
+      "Acknowledge security.installPolicy warnings without prompting; blocks and failures remain terminal",
       false,
     )
     .option("--global", "Install into the shared managed skills directory", false)
@@ -357,8 +344,7 @@ export function registerSkillsCli(program: Command) {
           version?: string;
           force?: boolean;
           forceInstall?: boolean;
-          acknowledgeClawhubRisk?: boolean;
-          acknowledgeClawHubRisk?: boolean;
+          acknowledgeInstallPolicyWarning?: boolean;
           global?: boolean;
           agent?: string;
           as?: string;
@@ -366,10 +352,11 @@ export function registerSkillsCli(program: Command) {
         command: Command,
       ) => {
         try {
-          const workspaceDir = resolveClawHubTargetWorkspaceDir(command, opts);
-          if (!workspaceDir) {
+          const target = resolveClawHubTargetWorkspace(command, opts);
+          if (!target) {
             return;
           }
+          const { config, workspaceDir } = target;
           if (slug.trim().startsWith("skills-sh/")) {
             defaultRuntime.error(`Invalid skills.sh skill reference: ${slug}`);
             defaultRuntime.exit(1);
@@ -379,8 +366,6 @@ export function registerSkillsCli(program: Command) {
             const clawHubOnlyOption = [
               opts.version && "--version",
               opts.forceInstall && "--force-install",
-              (opts.acknowledgeClawhubRisk === true || opts.acknowledgeClawHubRisk === true) &&
-                "--acknowledge-clawhub-risk",
             ].find(Boolean);
             if (clawHubOnlyOption) {
               defaultRuntime.error(
@@ -426,11 +411,12 @@ export function registerSkillsCli(program: Command) {
             slug,
             version: opts.version,
             force: Boolean(opts.force),
+            config,
+            ...resolveInstallPolicyWarningAcknowledgementCliOptions({
+              acknowledgeInstallPolicyWarning: opts.acknowledgeInstallPolicyWarning,
+            }),
             ...(opts.forceInstall ? { forceInstall: true } : {}),
-            ...resolveSkillClawHubRiskOptions(
-              opts.acknowledgeClawhubRisk === true || opts.acknowledgeClawHubRisk === true,
-              "installing",
-            ),
+            confirmInstall: resolveClawHubInstallConfirmation(),
             logger: {
               info: (message) => defaultRuntime.log(message),
               warn: (message) => defaultRuntime.log(formatSkillWarning(message)),
@@ -463,8 +449,8 @@ export function registerSkillsCli(program: Command) {
       false,
     )
     .option(
-      "--acknowledge-clawhub-risk",
-      "Acknowledge ClawHub release trust warnings without prompting",
+      "--acknowledge-install-policy-warning",
+      "Acknowledge security.installPolicy warnings without prompting; blocks and failures remain terminal",
       false,
     )
     .option("--global", "Update skills in the shared managed skills directory", false)
@@ -476,8 +462,7 @@ export function registerSkillsCli(program: Command) {
           all?: boolean;
           force?: boolean;
           forceInstall?: boolean;
-          acknowledgeClawhubRisk?: boolean;
-          acknowledgeClawHubRisk?: boolean;
+          acknowledgeInstallPolicyWarning?: boolean;
           global?: boolean;
           agent?: string;
         },
@@ -508,10 +493,9 @@ export function registerSkillsCli(program: Command) {
             slug,
             ...(opts.force ? { force: true } : {}),
             ...(opts.forceInstall ? { forceInstall: true } : {}),
-            ...resolveSkillClawHubRiskOptions(
-              opts.acknowledgeClawhubRisk === true || opts.acknowledgeClawHubRisk === true,
-              "updating",
-            ),
+            ...resolveInstallPolicyWarningAcknowledgementCliOptions({
+              acknowledgeInstallPolicyWarning: opts.acknowledgeInstallPolicyWarning,
+            }),
             logger: {
               info: (message) => defaultRuntime.log(message),
               warn: (message) => defaultRuntime.log(formatSkillWarning(message)),

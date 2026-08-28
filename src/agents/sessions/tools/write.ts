@@ -38,6 +38,8 @@ export type { WriteToolInput } from "./tool-contracts.js";
  * Override these to delegate file writing to remote systems (for example SSH).
  */
 export interface WriteOperations {
+  /** Resolve the physical identity used to order this backend's file operations. */
+  resolveQueueKey?: (absolutePath: string, signal?: AbortSignal) => string | Promise<string>;
   /** Write content to a file */
   writeFile: (absolutePath: string, content: string) => Promise<void>;
   /** Create directory recursively */
@@ -450,7 +452,7 @@ export function createWriteToolDefinition(
             throw error;
           }
         },
-        { toolName: "write" },
+        { toolName: "write", resolveQueueKey: ops.resolveQueueKey, signal },
       );
     },
     renderCall(args, theme, context) {
