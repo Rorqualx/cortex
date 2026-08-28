@@ -3,6 +3,9 @@ import { isProtocolRecord } from "./protocol-value-normalization.js";
 /** Structured ClawHub trust details carried in gateway error payloads. */
 export const ClawHubTrustErrorCodes = {
   SECURITY_UNAVAILABLE: "clawhub_security_unavailable",
+  // Fork: upstream removed this code in #131233 (security audit replaces risk
+  // acknowledgement); the fork-owned Control UI still parses it. Re-added for ui compat.
+  RISK_ACKNOWLEDGEMENT_REQUIRED: "clawhub_risk_acknowledgement_required",
   DOWNLOAD_BLOCKED: "clawhub_download_blocked",
 } as const;
 
@@ -21,6 +24,7 @@ function normalizeNonEmptyString(value: unknown): string | undefined {
 export function isClawHubTrustErrorCode(value: unknown): value is ClawHubTrustErrorCode {
   return (
     value === ClawHubTrustErrorCodes.SECURITY_UNAVAILABLE ||
+    value === ClawHubTrustErrorCodes.RISK_ACKNOWLEDGEMENT_REQUIRED ||
     value === ClawHubTrustErrorCodes.DOWNLOAD_BLOCKED
   );
 }

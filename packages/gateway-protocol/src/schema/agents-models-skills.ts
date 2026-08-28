@@ -479,6 +479,9 @@ export const SkillsInstallParamsSchema = Type.Union([
       slug: NonEmptyString,
       version: Type.Optional(NonEmptyString),
       force: Type.Optional(Type.Boolean()),
+      // Fork: upstream removed this in #131233 (security audit replaces risk
+      // acknowledgement); fork-owned Control UI still sends it. Re-admitted for ui compat.
+      acknowledgeClawHubRisk: Type.Optional(Type.Boolean()),
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1000 })),
     },
     { additionalProperties: false },

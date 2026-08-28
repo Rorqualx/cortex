@@ -300,6 +300,9 @@ export const PluginsInstallParamsSchema = Type.Union([
     source: Type.Literal("clawhub"),
     packageName: NonEmptyString,
     version: Type.Optional(NonEmptyString),
+    // Fork: upstream removed this in #131233 (security audit replaces risk
+    // acknowledgement); fork-owned Control UI still sends it. Re-admitted for ui compat.
+    acknowledgeClawHubRisk: Type.Optional(Type.Boolean()),
     acknowledgeInstallPolicyWarning: Type.Optional(Type.Literal(true)),
     acknowledgeCapabilities: Type.Optional(PluginCapabilityAcknowledgmentSchema),
   }),
