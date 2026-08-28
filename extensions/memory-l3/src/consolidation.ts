@@ -12,12 +12,14 @@ export type VerificationConfig = {
     coverage: number;
     preservation: number;
     faithfulness: number;
+    /** Optional temporal axis (dates/times retained verbatim). Defaults to 0.7. */
+    temporal?: number;
   };
 };
 
 export const DEFAULT_VERIFICATION_CONFIG: VerificationConfig = {
   enabled: false,
-  thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7 },
+  thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7, temporal: 0.7 },
 };
 
 export type ConsolidationConfig = {
@@ -250,6 +252,7 @@ export async function runVerificationGate(params: {
   }
 
   const scores = parseVerificationResponse(raw, params.candidates.length);
+  const temporalThreshold = params.config.thresholds.temporal ?? 0.7;
   const passed: ConsolidationCandidate[] = [];
   const blocked: ConsolidationCandidate[] = [];
   for (let i = 0; i < params.candidates.length; i++) {
@@ -261,7 +264,8 @@ export async function runVerificationGate(params: {
     if (
       s.coverage >= params.config.thresholds.coverage &&
       s.preservation >= params.config.thresholds.preservation &&
-      s.faithfulness >= params.config.thresholds.faithfulness
+      s.faithfulness >= params.config.thresholds.faithfulness &&
+      s.temporal >= temporalThreshold
     ) {
       passed.push(candidate);
     } else {
@@ -279,12 +283,14 @@ function buildVerificationPrompt(
   }>,
 ): string {
   const lines: string[] = [
-    "Verify each consolidation candidate below on three axes:",
+    "Verify each consolidation candidate below on four axes:",
     "1. Coverage (0-1): did the consolidated text capture ALL relevant information from the source facts?",
     "2. Preservation (0-1): if a prior long-term fact exists, was nothing lost compared to it? (1.0 if no prior)",
     "3. Faithfulness (0-1): are there any hallucinations or unsupported claims in the consolidated text?",
+    "4. Temporal (0-1): are all dates, times, and durations from the source facts retained verbatim, with no abbreviation, rounding, or drift? (1.0 if the source facts contain no dates or times)",
     "",
-    "Respond with a JSON object: { results: [{ coverage: number, preservation: number, faithfulness: number }] }",
+    "Respond with a JSON object: { results: [{ coverage: number, preservation: number, faithfulness: number, temporal: number }] }",
+    ,
     "The results array must match the candidate order below.",
     "",
   ];
@@ -312,7 +318,7 @@ function buildVerificationPrompt(
 }
 
 const VERIFICATION_SYSTEM_PROMPT =
-  "You are a memory-quality verifier. Score each consolidation candidate on three axes (coverage, preservation, faithfulness) from 0 to 1. Be strict: any hallucination or missing information should score below 0.7. Output valid JSON only.";
+  "You are a memory-quality verifier. Score each consolidation candidate on four axes (coverage, preservation, faithfulness, temporal) from 0 to 1. Temporal measures whether every date/time expression from the source facts survives verbatim. Be strict: any hallucination, missing information, or mangled date should score below 0.7. Output valid JSON only.";
 
 function parseVerificationResponse(
   raw: string,
@@ -321,16 +327,22 @@ function parseVerificationResponse(
   coverage: number;
   preservation: number;
   faithfulness: number;
+  temporal: number;
 }> {
   try {
     const parsed = JSON.parse(raw.trim().replace(/^```json\s*|\s*```$/g, "")) as unknown;
     if (!parsed || typeof parsed !== "object") return fillDefaults(expectedCount);
     const obj = parsed as { results?: unknown };
     if (!Array.isArray(obj.results)) return fillDefaults(expectedCount);
-    const out: Array<{ coverage: number; preservation: number; faithfulness: number }> = [];
+    const out: Array<{
+      coverage: number;
+      preservation: number;
+      faithfulness: number;
+      temporal: number;
+    }> = [];
     for (const item of obj.results) {
       if (!item || typeof item !== "object") {
-        out.push({ coverage: 1, preservation: 1, faithfulness: 1 });
+        out.push({ coverage: 1, preservation: 1, faithfulness: 1, temporal: 1 });
         continue;
       }
       const i = item as Record<string, unknown>;
@@ -338,11 +350,12 @@ function parseVerificationResponse(
         coverage: typeof i.coverage === "number" ? clamp01(i.coverage) : 1,
         preservation: typeof i.preservation === "number" ? clamp01(i.preservation) : 1,
         faithfulness: typeof i.faithfulness === "number" ? clamp01(i.faithfulness) : 1,
+        temporal: typeof i.temporal === "number" ? clamp01(i.temporal) : 1,
       });
     }
     // Pad if too short
     while (out.length < expectedCount) {
-      out.push({ coverage: 1, preservation: 1, faithfulness: 1 });
+      out.push({ coverage: 1, preservation: 1, faithfulness: 1, temporal: 1 });
     }
     return out.slice(0, expectedCount);
   } catch {
@@ -352,8 +365,13 @@ function parseVerificationResponse(
 
 function fillDefaults(
   n: number,
-): Array<{ coverage: number; preservation: number; faithfulness: number }> {
-  return Array.from({ length: n }, () => ({ coverage: 1, preservation: 1, faithfulness: 1 }));
+): Array<{ coverage: number; preservation: number; faithfulness: number; temporal: number }> {
+  return Array.from({ length: n }, () => ({
+    coverage: 1,
+    preservation: 1,
+    faithfulness: 1,
+    temporal: 1,
+  }));
 }
 
 function clamp01(v: number): number {
