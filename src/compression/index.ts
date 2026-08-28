@@ -26,6 +26,7 @@ import { danglingReferenceStats } from "./dangling-metric.js";
 import { enforceTokenBudget } from "./token-budget-enforcer.js";
 import type { CompressionConfig, CompressionResult, CompressionStats } from "./types.js";
 import { DEFAULT_COMPRESSION_CONFIG } from "./types.js";
+import { applyVerbatimGuard } from "./verbatim-guard.js";
 
 export type { CompressionConfig, CompressionResult, CompressionStats };
 export { DEFAULT_COMPRESSION_CONFIG };
@@ -144,6 +145,11 @@ function compressToolResults(
     }
 
     let finalContent = compressed.content;
+
+    // F3 extractive-span guard: deterministic pass that re-attaches unique
+    // verbatim-critical spans (paths, hex/ioctl constants, config keys,
+    // versioned identifiers) the compressor dropped while paraphrasing.
+    finalContent = applyVerbatimGuard(textContent, finalContent);
 
     // Stage 2b: CCR — store original and add retrieval marker
     if (ccrStore && config.ccr.enabled) {
