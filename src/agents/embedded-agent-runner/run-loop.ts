@@ -32,7 +32,7 @@ import { prepareAndDispatchEmbeddedRunAttempt } from "./run/attempt-dispatch-pre
 import { normalizeEmbeddedRunAttempt } from "./run/attempt-normalization.js";
 import { forgetPromptBuildDrainCacheForRun } from "./run/attempt-prompt-helpers.js";
 import { recoverEmbeddedRunAttempt } from "./run/attempt-recovery.js";
-import { createMcpAttemptCarryover } from "./run/attempt-result.js";
+import { createAttemptCarryover } from "./run/attempt-result.js";
 import { activateCodeModeReconciliation } from "./run/code-mode-reconciliation.js";
 import { hasCodexAppServerRecoveryRetryBudget } from "./run/codex-app-server-recovery.js";
 import { createEmbeddedRunCompactionRuntime } from "./run/compaction-runtime.js";
@@ -312,7 +312,7 @@ export async function runPreparedEmbeddedLoop(
     });
     let authRetryPending = false;
     let accumulatedReplayState = createEmbeddedRunReplayState();
-    const mcpAttemptCarryover = createMcpAttemptCarryover();
+    const attemptCarryover = createAttemptCarryover();
     while (true) {
       refreshPreparedRuntimeSnapshot();
       if (isRunRetryBudgetExhausted(runRetryBudget)) {
@@ -339,8 +339,7 @@ export async function runPreparedEmbeddedLoop(
           agentMeta: buildErrorAgentMeta({
             sessionId: sessionPromptState.sessionId,
             sessionFile: sessionPromptState.sessionFile,
-            provider,
-            model: model.id,
+            ...(attemptCarryover.modelAttempt ?? { provider, model: model.id }),
             ...outerContextTokenMeta,
             usageAccumulator,
             lastRunPromptUsage,
@@ -396,7 +395,7 @@ export async function runPreparedEmbeddedLoop(
       }
       startupStagesEmitted = dispatch.startupStagesEmitted;
       const { dispatchedAttempt, runtimePlan } = dispatch;
-      mcpAttemptCarryover.apply(dispatchedAttempt.rawAttempt);
+      attemptCarryover.apply(dispatchedAttempt.rawAttempt);
       const normalizedAttempt = await normalizeEmbeddedRunAttempt({
         runInput: admittedRunInput,
         preparedRuntime,

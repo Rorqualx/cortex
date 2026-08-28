@@ -7,6 +7,12 @@ import { ChatSendSessionKeyString, InputProvenanceSchema, NonEmptyString } from 
 const QUEUE_MODES = ["steer", "followup", "collect", "interrupt"] as const;
 export type QueueMode = (typeof QUEUE_MODES)[number];
 
+export const ChatSendIntentSchema = closedObject({
+  kind: Type.Literal("session-goal-start"),
+  version: Type.Literal(1),
+  issuedAtMs: Type.Integer({ minimum: 0 }),
+});
+export type ChatSendIntent = Static<typeof ChatSendIntentSchema>;
 
 /** Cursor-based request for the gateway log tail endpoint. */
 export const LogsTailParamsSchema = closedObject({
@@ -122,6 +128,7 @@ export const ChatSendParamsSchema = closedObject({
   agentId: Type.Optional(NonEmptyString),
   sessionId: Type.Optional(NonEmptyString),
   message: Type.String(),
+  intent: Type.Optional(ChatSendIntentSchema),
   thinking: Type.Optional(Type.String()),
   fastMode: Type.Optional(Type.Union([Type.Boolean(), Type.Literal("auto")])),
   // One-turn override for auto fast-mode cutoff seconds.

@@ -1498,12 +1498,15 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
         return result;
       } catch (error) {
         // Consume any trusted-no-start tag before the terminal handler runs, then
-        // re-register it only if the tool genuinely never started (terminal confirms
-        // executionStarted false). Keeps the fork's code-mode preflight error
-        // classification (before-tool-call.wrapper / code-mode-bridge / code-mode-state)
-        // correct: a tool that started must not keep a stale no-start flag.
+        // re-register it so the fork's code-mode preflight classification
+        // (before-tool-call.wrapper / code-mode-bridge / code-mode-state) stays
+        // correct. Upstream #131007: the no-start proof is operation-owned and
+        // survives generic implementation entry — a host-policy denial must not
+        // be reclassified as a mid-execution failure (which triggered read-only
+        // recovery), so relay the tag whenever it was consumed; replacements
+        // cannot inherit it.
         const trustedNoStart = consumeTrustedToolNoStartError(error);
-        const terminal = await handleToolExecutionEnd(ctx, {
+        await handleToolExecutionEnd(ctx, {
           type: "tool_execution_end",
           toolName: toolParams.toolName,
           toolCallId: toolParams.toolCallId,
@@ -1512,7 +1515,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
           result: buildToolLifecycleErrorResult(error),
           hideFromChannelProgress: toolParams.hideFromChannelProgress,
         } as never);
-        if (trustedNoStart && !terminal.executionStarted) {
+        if (trustedNoStart) {
           registerTrustedToolNoStartError(error);
         }
         throw error;

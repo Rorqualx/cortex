@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { build } from "tsdown";
+import { discoverDeclarationSources } from "./lib/declaration-source-index.mts";
 import {
   buildPluginSdkEntrySources,
   pluginSdkEntrypoints,
@@ -89,12 +90,16 @@ const flatDeclarationEntrypoints = shouldBuildPrivateQaEntries
 const flatDeclarationEntrypointSet = new Set(flatDeclarationEntrypoints);
 
 try {
+  const entry = buildPluginSdkEntrySources(flatDeclarationEntrypoints);
+  const tsconfig = "tsconfig.plugin-sdk.dts.json";
+  const files = discoverDeclarationSources(tsconfig, Object.values(entry));
   await build({
     clean: true,
     config: false,
     deps: { neverBundle: (id) => isBareImportSpecifier(id) },
-    dts: true,
-    entry: buildPluginSdkEntrySources(flatDeclarationEntrypoints),
+    // Eager reuse checks source root membership, including transitive emit requests.
+    dts: { emitDtsOnly: true, eager: true, tsconfigRaw: { files, include: [] } },
+    entry,
     failOnWarn: false,
     fixedExtension: false,
     format: "esm",
@@ -103,9 +108,14 @@ try {
     outExtensions: () => ({ js: ".js", dts: ".d.ts" }),
     platform: "node",
     report: false,
-    tsconfig: "tsconfig.plugin-sdk.dts.json",
+    tsconfig,
   });
 
+  for (const name of flatDeclarationEntrypoints) {
+    if (!fs.existsSync(path.join(flatDeclarationTempDir, `${name}.d.ts`))) {
+      throw new Error(`Missing plugin SDK declaration: ${name}.d.ts`);
+    }
+  }
   removeExistingFlatDeclarations(distPluginSdkDir);
   copyFlatDeclarations(flatDeclarationTempDir, distPluginSdkDir);
 } finally {

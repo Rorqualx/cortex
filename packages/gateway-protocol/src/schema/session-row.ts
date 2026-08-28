@@ -1,6 +1,7 @@
 // Gateway Protocol schema module defines protocol validation shapes.
 import type { Static } from "typebox";
 import { Type } from "typebox";
+import { SessionGoalSchema } from "./sessions-goal.js";
 import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString } from "./primitives.js";
 import { SessionPlacementSchema } from "./session-placement.js";
@@ -47,39 +48,10 @@ export const SubagentRunStateSchema = Type.Union([
   Type.Literal("historical"),
 ]);
 
-/** Lifecycle status of a session goal. */
-export const SessionGoalStatusSchema = Type.Union([
-  Type.Literal("active"),
-  Type.Literal("paused"),
-  Type.Literal("blocked"),
-  Type.Literal("usage_limited"),
-  Type.Literal("budget_limited"),
-  Type.Literal("complete"),
-]);
-
-/** Operator-defined goal tracked against token usage for a session. */
-export const SessionGoalSchema = Type.Object(
-  {
-    schemaVersion: Type.Literal(1),
-    id: NonEmptyString,
-    objective: Type.String(),
-    status: SessionGoalStatusSchema,
-    createdAt: Type.Number(),
-    updatedAt: Type.Number(),
-    tokenStart: Type.Number(),
-    tokenStartFresh: Type.Optional(Type.Boolean()),
-    tokensUsed: Type.Number(),
-    tokenBudget: Type.Optional(Type.Number()),
-    continuationTurns: Type.Number(),
-    lastStatusNote: Type.Optional(Type.String()),
-    pausedAt: Type.Optional(Type.Number()),
-    blockedAt: Type.Optional(Type.Number()),
-    completedAt: Type.Optional(Type.Number()),
-    usageLimitedAt: Type.Optional(Type.Number()),
-    budgetLimitedAt: Type.Optional(Type.Number()),
-  },
-  { additionalProperties: false },
-);
+// SessionGoal wire shapes moved upstream to schema/sessions-goal.ts (single source);
+// re-exported here so fork consumers importing from session-row keep resolving.
+export { SessionGoalSchema } from "./sessions-goal.js";
+export type { SessionGoal, SessionGoalStatus } from "./sessions-goal.js";
 
 /** One selectable thinking level for the session's current model. */
 export const GatewayThinkingLevelOptionSchema = Type.Object(
@@ -479,7 +451,6 @@ export type SessionCompactionCheckpointPreview = NonNullable<
 >;
 export type GatewayThinkingLevelOption = NonNullable<GatewaySessionRow["thinkingLevels"]>[number];
 export type GatewaySessionsDefaults = Static<typeof GatewaySessionsDefaultsSchema>;
-export type SessionGoal = Static<typeof SessionGoalSchema>;
 export type GatewayAgentRuntime = Static<typeof GatewayAgentRuntimeSchema>;
 export type DeliveryContext = Static<typeof DeliveryContextSchema>;
 export type SessionsListResult = Static<typeof SessionsListResultSchema>;

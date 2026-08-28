@@ -116,7 +116,6 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
   const {
     activeRunScopeKey,
     agentId,
-    backingSessionId,
     cfg,
     clientRunId,
     entry,
@@ -161,7 +160,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
     context,
     runId: clientRunId,
     controller: activeRunAbort.controller,
-    sessionId: backingSessionId ?? clientRunId,
+    sessionId: admittedSessionId,
     sessionKey,
     agentId: selectedAgent.agentId,
     ownerConnId: client?.connId,
@@ -320,6 +319,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                   ? {
                       expectedExistingSessionId: admittedSessionId,
                       pinExpectedExistingSession: true,
+                      newlyCreatedSessionId: admission.initialSessionEntry?.sessionId,
                     }
                   : entry?.sessionId
                     ? { expectedExistingSessionId: entry.sessionId }

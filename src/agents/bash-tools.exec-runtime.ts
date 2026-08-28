@@ -65,6 +65,7 @@ import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
 import { createSessionSlug } from "./session-slug.js";
 import { maybeWrapCommandWithShellSnapshot } from "./shell-snapshot.js";
 import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
+import { registerTrustedToolNoStartError } from "./tool-result-error.js";
 
 export { execSchema } from "./bash-tools.schemas.js";
 
@@ -298,17 +299,23 @@ export function resolveExecTarget(params: {
 }) {
   const sandboxRequired = params.sandboxRequired === true;
   if (sandboxRequired && !params.sandboxAvailable) {
-    throw new Error("This session requires a sandbox, but its sandbox runtime is unavailable.");
+    throw registerTrustedToolNoStartError(
+      new Error("This session requires a sandbox, but its sandbox runtime is unavailable."),
+    );
   }
   if (sandboxRequired && params.elevatedRequested) {
-    throw new Error("Elevated execution is unavailable because this session requires a sandbox.");
+    throw registerTrustedToolNoStartError(
+      new Error("Elevated execution is unavailable because this session requires a sandbox."),
+    );
   }
   // Session isolation outranks every agent, session, and request-scoped host preference.
   const configuredTarget = sandboxRequired ? "auto" : (params.configuredTarget ?? "auto");
   const requestedTarget = params.requestedTarget ?? null;
   if (sandboxRequired && (requestedTarget === "gateway" || requestedTarget === "node")) {
-    throw new Error(
-      `exec host not allowed (requested ${renderExecTargetLabel(requestedTarget)}; this session requires a sandbox).`,
+    throw registerTrustedToolNoStartError(
+      new Error(
+        `exec host not allowed (requested ${renderExecTargetLabel(requestedTarget)}; this session requires a sandbox).`,
+      ),
     );
   }
   if (
@@ -330,10 +337,12 @@ export function resolveExecTarget(params: {
             : [renderExecTargetLabel(requestedTarget), "auto"],
       ),
     ).join(" or ");
-    throw new Error(
-      `exec host not allowed (requested ${renderExecTargetLabel(requestedTarget)}; ` +
-        `configured host is ${renderExecTargetLabel(configuredTarget)}; ` +
-        `set tools.exec.host=${allowedConfig} to allow this override).`,
+    throw registerTrustedToolNoStartError(
+      new Error(
+        `exec host not allowed (requested ${renderExecTargetLabel(requestedTarget)}; ` +
+          `configured host is ${renderExecTargetLabel(configuredTarget)}; ` +
+          `set tools.exec.host=${allowedConfig} to allow this override).`,
+      ),
     );
   }
   const selectedTarget = requestedTarget ?? configuredTarget;
