@@ -22,9 +22,11 @@ import { ContextTracker } from "./ccr/context-tracker.js";
 import { buildCompressionMarker } from "./ccr/retrieval-tool.js";
 import { CCRStore } from "./ccr/store.js";
 import { routeAndCompress } from "./content-router.js";
+import { danglingReferenceStats } from "./dangling-metric.js";
 import { enforceTokenBudget } from "./token-budget-enforcer.js";
 import type { CompressionConfig, CompressionResult, CompressionStats } from "./types.js";
 import { DEFAULT_COMPRESSION_CONFIG } from "./types.js";
+import { applyVerbatimGuard } from "./verbatim-guard.js";
 
 export type { CompressionConfig, CompressionResult, CompressionStats };
 export { DEFAULT_COMPRESSION_CONFIG };
@@ -96,10 +98,21 @@ function compressToolResults(
   ccrStore?: CCRStore,
   contextTracker?: ContextTracker,
 ): { messages: AgentMessage[]; stats: CompressionStats; ccrHashes: string[] } {
-  const byType: Record<string, { count: number; savingsPercent: number }> = {};
+  const byType: Record<
+    string,
+    {
+      count: number;
+      savingsPercent: number;
+      danglingRate?: number;
+    }
+  > = {};
   let messagesCompressed = 0;
   let totalSavingsChars = 0;
   let totalOriginalChars = 0;
+  // F8 dangling-reference metric: aggregate referent survival across every
+  // compressed message so the pipeline reports one comparable number.
+  let totalReferents = 0;
+  let totalDangling = 0;
   const ccrHashes: string[] = [];
 
   const result: AgentMessage[] = [];
@@ -132,6 +145,11 @@ function compressToolResults(
     }
 
     let finalContent = compressed.content;
+
+    // F3 extractive-span guard: deterministic pass that re-attaches unique
+    // verbatim-critical spans (paths, hex/ioctl constants, config keys,
+    // versioned identifiers) the compressor dropped while paraphrasing.
+    finalContent = applyVerbatimGuard(textContent, finalContent);
 
     // Stage 2b: CCR — store original and add retrieval marker
     if (ccrStore && config.ccr.enabled) {
@@ -181,6 +199,12 @@ function compressToolResults(
     byType[type].savingsPercent = Math.round(
       ((compressed.charsBefore - compressed.charsAfter) / compressed.charsBefore) * 100,
     );
+
+    // F8: per-type dangling-reference rate (referents that lost their anchor).
+    const dangling = danglingReferenceStats(textContent, finalContent);
+    totalReferents += dangling.referentCount;
+    totalDangling += dangling.danglingCount;
+    byType[type].danglingRate = dangling.referentCount > 0 ? dangling.rate : 0;
   }
 
   const totalSavingsPercent =
@@ -192,6 +216,9 @@ function compressToolResults(
       messagesCompressed,
       totalSavingsPercent,
       byType,
+      // F8: aggregate referent-survival rate across compressed messages.
+      danglingReferenceRate:
+        totalReferents > 0 ? Math.round((totalDangling / totalReferents) * 100) / 100 : 0,
     },
     ccrHashes,
   };

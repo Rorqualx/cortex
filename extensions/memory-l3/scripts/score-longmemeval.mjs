@@ -307,6 +307,27 @@ async function main() {
   console.log(`Judge: ${JUDGE_MODEL}`);
   console.log(`Concurrency: ${CONCURRENCY}`);
 
+  // Echo the run manifest (sibling of the hypothesis file) so scored numbers
+  // are always printed next to the configuration that produced them.
+  const tagMatch = /hypothesis-(.+)\.jsonl$/.exec(hypArg);
+  if (tagMatch) {
+    const manifestPath = path.join(path.dirname(hypArg), `manifest-${tagMatch[1]}.json`);
+    try {
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const echo = {
+        readerModel: manifest.readerModel,
+        embedModel: manifest.embedModel,
+        reAskBudget: manifest.reAskBudget,
+        promptVersion: manifest.promptVersion,
+        timestamp: manifest.timestamp,
+        filterTag: manifest.filterTag,
+      };
+      console.log(`Manifest: ${JSON.stringify(echo)}`);
+    } catch {
+      console.log(`Manifest: (none found at ${manifestPath})`);
+    }
+  }
+
   const hypLines = (await readFile(hypArg, "utf8")).split("\n").filter(Boolean);
   const hypotheses = hypLines.map((l) => JSON.parse(l));
   const oracle = JSON.parse(await readFile(ORACLE_PATH, "utf8"));

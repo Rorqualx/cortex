@@ -11,6 +11,12 @@
 // Defaults: 5 questions, single-session-user (smallest subset), concurrency=1.
 // --stratified=30 runs N questions per type (6 types × N), overrides --type/--limit.
 // --native uses the dense, token-efficient compaction prompt (A/B test mode).
+// --reader-model=M overrides the reader LLM (default glm-5.2).
+// --re-ask-budget=N re-prompts the reader up to N extra times when the reply has
+//   no parseable Answer line (default 0 — single-shot, matches historical runs).
+// Every run writes a sibling manifest-<tag>.json recording reader model, embed
+// model, re-ask budget, prompt version, and selection — run-to-run comparability
+// for the headline recall number depends on it.
 
 import { readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
@@ -31,6 +37,8 @@ const CONCURRENCY = Number.parseInt(argVal("concurrency") ?? "1", 10);
 const TOP_K = 20;
 const LEXICAL_ONLY = args.includes("--lexical-only");
 const NATIVE = args.includes("--native");
+const READER_MODEL = argVal("reader-model") ?? "glm-5.2";
+const RE_ASK_BUDGET = Number.parseInt(argVal("re-ask-budget") ?? "0", 10);
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const EMBED_MODEL = process.env.EMBED_MODEL ?? "nomic-embed-text";
 const RRF_K = 60;
@@ -238,7 +246,7 @@ async function callGlm({ apiKey, systemPrompt, userPrompt }) {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: "glm-5.2",
+      model: READER_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -505,7 +513,22 @@ async function runQuestion({ apiKey, question }) {
   const rawAnswer = (await callGlm({ apiKey, systemPrompt: ANSWER_SYSTEM_PROMPT, userPrompt }))
     .replace(/^```[\s\S]*?\n|```$/g, "")
     .trim();
-  const hypothesis = parseHypothesis(rawAnswer);
+  let hypothesis = parseHypothesis(rawAnswer);
+  // Re-ask budget: when the reply has no parseable Answer line, re-prompt up
+  // to RE_ASK_BUDGET extra times. Default 0 keeps historical single-shot runs.
+  let reAsksUsed = 0;
+  while (!hypothesis && reAsksUsed < RE_ASK_BUDGET) {
+    reAsksUsed += 1;
+    const reAskPrompt =
+      userPrompt +
+      "\n\nYour previous reply had no parseable Answer line. Reply again; the last line must be `Answer: <bare answer>`.";
+    const retryRaw = (
+      await callGlm({ apiKey, systemPrompt: ANSWER_SYSTEM_PROMPT, userPrompt: reAskPrompt })
+    )
+      .replace(/^```[\s\S]*?\n|```$/g, "")
+      .trim();
+    hypothesis = parseHypothesis(retryRaw);
+  }
 
   return {
     question_id: question.question_id,
@@ -513,6 +536,7 @@ async function runQuestion({ apiKey, question }) {
     facts_extracted: allFacts.length,
     typed_extracted: allTyped.length,
     top_k_used: top.length,
+    re_asks_used: reAsksUsed,
   };
 }
 
@@ -661,6 +685,25 @@ async function main() {
       .join("\n") + "\n",
   );
   console.log(`\nWrote ${outPath}`);
+
+  // Run manifest: everything a future run needs to be comparable to this one.
+  const manifest = {
+    timestamp: new Date().toISOString(),
+    readerModel: READER_MODEL,
+    embedModel: EMBED_MODEL,
+    reAskBudget: RE_ASK_BUDGET,
+    promptVersion: NATIVE ? "4-NATIVE" : "4",
+    filterTag: tag,
+    selection: STRATIFIED !== null ? { stratified: STRATIFIED } : { type: TYPE, limit: LIMIT },
+    concurrency: CONCURRENCY,
+    topK: TOP_K,
+    lexicalOnly: LEXICAL_ONLY,
+    native: NATIVE,
+    questionCount: results.length,
+  };
+  const manifestPath = `/tmp/longmemeval/manifest-${tag}.json`;
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+  console.log(`Wrote ${manifestPath}`);
 }
 
 main().catch((e) => {

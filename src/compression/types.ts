@@ -61,7 +61,19 @@ export const DEFAULT_COMPRESSION_CONFIG: CompressionConfig = {
 export type CompressionStats = {
   messagesCompressed: number;
   totalSavingsPercent: number;
-  byType: Record<string, { count: number; savingsPercent: number }>;
+  byType: Record<
+    string,
+    {
+      count: number;
+      savingsPercent: number;
+      /** F8: fraction of source referents (entities/defined terms) that lost
+       * their last textual anchor in this compressor type's output. */
+      danglingRate?: number;
+    }
+  >;
+  /** F8: aggregate dangling-reference rate across all compressed messages.
+   * High values are the trigger for a hard definition-pull mechanism. */
+  danglingReferenceRate?: number;
 };
 
 export type CompressionResult = {

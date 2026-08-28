@@ -837,5 +837,59 @@ describe("ConvMemory v3 safety invariants", () => {
       expect(result.passed.length).toBe(1);
       expect(result.blockedCount).toBe(0);
     });
+
+    it("blocks a candidate whose temporal score falls below threshold", async () => {
+      await writeChunk(
+        "chunk-000000-a",
+        [fact("f1", "trip on 2026-05-01", 0.9, NOW, "topic:trip")],
+        NOW,
+      );
+      const candidates = await selectPromotable(storage, {
+        ...DEFAULT_CONSOLIDATION_CONFIG,
+        minRecallCount: 1,
+        minDayspanMs: 0,
+      });
+      const llm = (async () =>
+        JSON.stringify({
+          results: [{ coverage: 1, preservation: 1, faithfulness: 1, temporal: 0.2 }],
+        })) as unknown as import("./llm.js").LlmCaller;
+      const result = await runVerificationGate({
+        candidates,
+        storage,
+        priorFacts: new Map(),
+        llm,
+        config: {
+          enabled: true,
+          thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7, temporal: 0.7 },
+        },
+      });
+      expect(result.passed.length).toBe(0);
+      expect(result.blockedCount).toBe(1);
+    });
+
+    it("tolerates absent temporal score (legacy verifier responses pass)", async () => {
+      await writeChunk("chunk-000000-a", [fact("f1", "test fact", 0.9, NOW, "topic:test")], NOW);
+      const candidates = await selectPromotable(storage, {
+        ...DEFAULT_CONSOLIDATION_CONFIG,
+        minRecallCount: 1,
+        minDayspanMs: 0,
+      });
+      const llm = (async () =>
+        JSON.stringify({
+          results: [{ coverage: 1, preservation: 1, faithfulness: 1 }],
+        })) as unknown as import("./llm.js").LlmCaller;
+      const result = await runVerificationGate({
+        candidates,
+        storage,
+        priorFacts: new Map(),
+        llm,
+        config: {
+          enabled: true,
+          thresholds: { coverage: 0.7, preservation: 0.7, faithfulness: 0.7 },
+        },
+      });
+      expect(result.passed.length).toBe(1);
+      expect(result.blockedCount).toBe(0);
+    });
   });
 });

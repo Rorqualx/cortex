@@ -48,7 +48,22 @@ import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State } from "./types.js";
 
 const ASSEMBLE_TOP_K = 5;
+const ASSEMBLE_TOP_K_MIN = 3;
 const AFTER_TURN_COMPACTION_THRESHOLD_TOKENS = 4000;
+
+/**
+ * Pressure-adaptive recall volume (F9, PACE-style budgeting): scale the number
+ * of injected L3 facts with current context-token pressure. At zero pressure
+ * (roomy context) keep the full baseline topK; as the window fills, trim
+ * linearly toward the minimum so memory injection never crowds out the
+ * conversation. `pressure` is estimatedTokens / tokenBudget, clamped to [0,1];
+ * callers without a budget signal pass 0 (baseline behavior).
+ */
+export function pressureAdaptiveTopK(pressure: number): number {
+  const p = Number.isFinite(pressure) ? Math.max(0, Math.min(1, pressure)) : 0;
+  const scaled = Math.round(ASSEMBLE_TOP_K - p * (ASSEMBLE_TOP_K - ASSEMBLE_TOP_K_MIN));
+  return Math.max(ASSEMBLE_TOP_K_MIN, Math.min(ASSEMBLE_TOP_K, scaled));
+}
 
 // ReTopK retrieval cache (arXiv:2607.27692) — session-scoped LRU that reuses
 // retrieval results when a new query's embedding cosine-similarity to a
@@ -261,7 +276,12 @@ export class HierarchicalL3Engine implements ContextEngine {
             estimatedTokens: estimateTotalTokens(params.messages),
           };
 
-    const systemPromptAddition = await this.buildMemorySection(params.prompt);
+    const systemPromptAddition = await this.buildMemorySection(
+      params.prompt,
+      params.tokenBudget && params.tokenBudget > 0
+        ? Math.min(1, window.estimatedTokens / params.tokenBudget)
+        : 0,
+    );
 
     return {
       messages: window.selected,
@@ -270,7 +290,10 @@ export class HierarchicalL3Engine implements ContextEngine {
     };
   }
 
-  private async buildMemorySection(prompt: string | undefined): Promise<string | undefined> {
+  private async buildMemorySection(
+    prompt: string | undefined,
+    tokenPressure = 0,
+  ): Promise<string | undefined> {
     if (!prompt || prompt.length === 0) {
       return undefined;
     }
@@ -300,7 +323,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     const top = await retrieveTopK({
       query: prompt,
       storage: this.storage,
-      topK: ASSEMBLE_TOP_K,
+      topK: pressureAdaptiveTopK(tokenPressure),
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,

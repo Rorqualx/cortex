@@ -564,6 +564,14 @@ describe("compressAssembledContext", () => {
     expect(result.messages.length).toBe(4);
     expect(result.stats.messagesCompressed).toBe(1);
     expect(result.charsAfter).toBeLessThan(result.charsBefore);
+    // F8: dangling-reference metric is reported (number in [0,1]).
+    expect(typeof result.stats.danglingReferenceRate).toBe("number");
+    expect(result.stats.danglingReferenceRate ?? 0).toBeGreaterThanOrEqual(0);
+    expect(result.stats.danglingReferenceRate ?? 0).toBeLessThanOrEqual(1);
+    for (const typeStats of Object.values(result.stats.byType)) {
+      expect(typeStats.danglingRate ?? 0).toBeGreaterThanOrEqual(0);
+      expect(typeStats.danglingRate ?? 0).toBeLessThanOrEqual(1);
+    }
   });
 
   it("does not compress user or system messages", async () => {
