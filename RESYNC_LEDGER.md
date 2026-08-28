@@ -294,3 +294,25 @@ src/cron/isolated-agent/run-prepare.ts — missing `loadCronModelPreflightRuntim
   reassignment `if`) — the gate now lives inside the policy, so the local const
   is dropped (TS6133 confirmed).
 - tsgo:core 3→0 after fix (clean cache, full lane).
+
+## 2026-08-28 (resume, 04:40 MT cron) — rebooted-proof retry + net-new core:test fix
+
+huey rebooted ~09:18Z mid-proof (uptime 1:04 at 10:22Z, /tmp wiped) → the 5400s poller
+timed out at 10:00Z and read as STAGE-PROOF FAIL; environmental, not merge-caused
+(install+build had already run clean). Re-proof on the same tip: build clean, tsgo:core
+0=0, tsgo:extensions 0=0, but tsgo:core:test base=9 cand=12 → 3 net-new TS2304.
+
+- src/agents/agent-tools.before-tool-call.integration.e2e.test.ts: the merge adopted
+  upstream's new code-mode/catalog e2e block (+182 lines) but lost upstream's two
+  import lines (this test was fork-trimmed 2560→1836 lines pre-merge; the resolution
+  dropped them). Grafted verbatim from pinned upstream 8d51e415d6a: `import type {
+OpenClawConfig } from "../config/config.js"` (resolves through the fork's
+  config→types→types.openclaw re-export chain) and
+  `import { createToolSearchCatalogRef, registerHeadlessToolSearchCatalog } from
+"./tool-search.js"` (tool-search.ts re-exports both from tool-search-catalog.ts).
+  ADOPT-UPSTREAM; no fork delta in the region (fork never touched the import block).
+- Verified: tsgo:core:test error-set == baseline 9 exactly (positions shifted only by
+  the +182 adopted lines); imports-only change, no dup-decl risk.
+- WART (follow-up, not merge): remote-proof.sh:78 prints "-f: command not found" before
+  launch; harmless (heredoc write + launch both succeed). Also finish-land daemon log
+  accumulates across runs. Fix post-land.
