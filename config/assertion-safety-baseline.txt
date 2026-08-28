@@ -54,7 +54,7 @@ extensions/browser/src/browser-tool-binding.ts	3
 extensions/browser/src/browser-tool-session-tabs.ts	3
 extensions/browser/src/browser-tool.actions.ts	14
 extensions/browser/src/browser-tool.snapshot.ts	2
-extensions/browser/src/browser-tool.ts	18
+extensions/browser/src/browser-tool.ts	14
 extensions/browser/src/browser/bridge-server.ts	3
 extensions/browser/src/browser/cdp-page-session.ts	3
 extensions/browser/src/browser/cdp-proxy-bypass.ts	1
@@ -1533,7 +1533,7 @@ packages/ai/src/transports/openai-responses-compact-request.ts	2
 packages/ai/src/transports/openai-responses-continuation.ts	2
 packages/ai/src/transports/openai-responses-contracts.ts	1
 packages/ai/src/transports/openai-responses-debug.ts	12
-packages/ai/src/transports/openai-responses-params-internal.ts	12
+packages/ai/src/transports/openai-responses-params-internal.ts	11
 packages/ai/src/transports/openai-responses-payload-policy.ts	3
 packages/ai/src/transports/openai-responses-prompt-observer-internal.ts	2
 packages/ai/src/transports/openai-responses-replay-internal.ts	11
@@ -4189,7 +4189,6 @@ ui/src/pages/skill-workshop/skill-workshop-page.ts	1
 ui/src/pages/skill-workshop/view.ts	1
 ui/src/pages/skills/view.ts	3
 ui/src/pages/usage/heatmap.ts	1
-ui/src/pages/usage/usage-page.ts	1
 ui/src/pages/usage/view-details.ts	7
 ui/src/pages/usage/view-overview.ts	3
 ui/src/pages/usage/view.ts	5
