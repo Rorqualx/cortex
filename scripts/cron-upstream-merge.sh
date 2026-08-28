@@ -195,15 +195,16 @@ freeze_upstream_ref() {
 # 0 iff it retargeted (caller re-measures against the batch), 1 otherwise. Set
 # UPSTREAM_MERGE_BATCH_MAX=0 (or non-numeric) to disable batching and always take the tip.
 apply_batch_cap() {
-  # Default 160 (standing default since 2026-08-26; was 80, was 40). One land closes ~cap
-  # commits in a ~2h cycle (the ~75min huey proof dominates and is fixed regardless of batch
-  # size), so a bigger batch closes more per proof. Since deploy is now decoupled to the daily
-  # midnight cron (see land_and_deploy / UM_DEPLOY), a land no longer pays the deploy-crash tax
-  # per tick and the session survives to report, so the batch can safely double: cap=160 closes
-  # ~80/hr vs upstream's ~16/hr baseline and drains a backlog roughly twice as fast as cap=80.
-  # Going much higher grows the per-cycle conflict set + the loss when a proof fails, so 160 is
-  # the new balance point. Set UPSTREAM_MERGE_BATCH_MAX in the env to override.
-  local cap="${UPSTREAM_MERGE_BATCH_MAX:-160}"
+  # Default 200 (standing default since 2026-08-27; was 160, 80, 40). One land closes ~cap
+  # commits per proof cycle (the huey proof dominates and is fixed regardless of batch size),
+  # so a bigger batch closes more per proof. Deploy is decoupled to the daily midnight cron
+  # (see land_and_deploy / UM_DEPLOY), so a land pays no per-tick deploy-crash tax and the
+  # session survives to report. The pairing move for cap=200 is the 12h job timeout (was 2h):
+  # the hours, not the commit count, are the slack, so a full-backlog resolve + proof + fix
+  # cycle is not clock-bound and a big batch can drain most backlogs in one land. Going much
+  # higher grows the per-cycle conflict set + the loss when a proof fails, so 200 is the
+  # balance point. Set UPSTREAM_MERGE_BATCH_MAX in the env to override.
+  local cap="${UPSTREAM_MERGE_BATCH_MAX:-200}"
   case "$cap" in ''|*[!0-9]*|0) return 1 ;; esac
   local base; base="$(git -C "$MAIN" merge-base main "$UPSTREAM_REF" 2>/dev/null)"
   [ -n "$base" ] || return 1
