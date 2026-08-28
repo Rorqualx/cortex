@@ -299,8 +299,7 @@ export async function prepareCronRunContext(params: {
     (resolvedModelSelection.modelSource === "default" ||
       resolvedModelSelection.modelSource === "agent");
 
-  const modelPreflightRuntime = await loadCronModelPreflightRuntime();
-  const preflightCandidates = resolveCronPreflightCandidates({
+  const preflight = await resolveCronPreflight({
     cfg: cfgWithAgentDefaults,
     job: input.job,
     agentId: modelOwner.agentId,
@@ -309,61 +308,24 @@ export async function prepareCronRunContext(params: {
     useSubagentFallbacks,
     inheritDefaultFallbacksForAgentStringModel,
   });
-  let selectedPreflightCandidate: { provider: string; model: string } | undefined;
-  let selectedPreflightCandidateIndex = -1;
-  let firstUnavailablePreflight:
-    | Awaited<ReturnType<typeof modelPreflightRuntime.preflightCronModelProvider>>
-    | undefined;
-  for (const [index, candidate] of preflightCandidates.entries()) {
-    const candidatePreflight = await modelPreflightRuntime.preflightCronModelProvider({
-      cfg: cfgWithAgentDefaults,
-      provider: candidate.provider,
-      model: candidate.model,
-    });
-    if (candidatePreflight.status === "available") {
-      selectedPreflightCandidate = candidate;
-      selectedPreflightCandidateIndex = index;
-      break;
-    }
-    firstUnavailablePreflight ??= candidatePreflight;
-  }
-  if (!selectedPreflightCandidate && firstUnavailablePreflight?.status === "unavailable") {
-    logWarn(`[cron:${input.job.id}] ${firstUnavailablePreflight.reason}`);
+  if (!preflight.ok) {
+    logWarn(`[cron:${input.job.id}] ${preflight.reason}`);
     return {
       ok: false,
       result: withRunSession({
         status: "skipped",
-        error: firstUnavailablePreflight.reason,
-        diagnostics: createCronRunDiagnosticsFromError(
-          "model-preflight",
-          firstUnavailablePreflight.reason,
-          {
-            severity: "warn",
-          },
-        ),
+        error: preflight.reason,
+        diagnostics: createCronRunDiagnosticsFromError("model-preflight", preflight.reason, {
+          severity: "warn",
+        }),
         provider,
         model,
       }),
     };
   }
-  const modelFallbacksOverride =
-    selectedPreflightCandidate &&
-    (selectedPreflightCandidate.provider !== provider || selectedPreflightCandidate.model !== model)
-      ? preflightCandidates
-          .slice(selectedPreflightCandidateIndex + 1)
-          .map((candidate) => `${candidate.provider}/${candidate.model}`)
-      : undefined;
   // When preflight skips the first local candidate, trim the fallback chain so
   // execution starts at the reachable provider and only falls forward from it.
-  if (selectedPreflightCandidate && modelFallbacksOverride) {
-    if (firstUnavailablePreflight?.status === "unavailable") {
-      logWarn(
-        `[cron:${input.job.id}] ${firstUnavailablePreflight.reason}; continuing with fallback ${selectedPreflightCandidate.provider}/${selectedPreflightCandidate.model}.`,
-      );
-    }
-    provider = selectedPreflightCandidate.provider;
-    model = selectedPreflightCandidate.model;
-  }
+  ({ provider, model } = preflight);
 
   const hooksGmailThinking = isGmailHook
     ? normalizeThinkLevel(runtimeCfg.hooks?.gmail?.thinking)

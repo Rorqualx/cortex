@@ -273,3 +273,24 @@ lanes were invisible locally. Fixes (all verified: 7 lanes = baseline 0/0/9/23/9
   upstream-identical — environment resolver difference, so the case now runs only where
   localhost resolves v6. Portal suite 11/11 on Mac (guard true).
   No product-collision. finish-land.
+
+## 2026-08-28 (resume, 02:18 MT cron) — upstream 8d51e415d6a, 164 commits
+
+STAGE-RESUME off resync-staging/2026-08-28 (merge b77e5776b5a committed by the
+07:20Z run; ui-policy applied; two preflight FAILs outstanding: tsgo:core=3 all in
+src/cron/isolated-agent/run-prepare.ts — missing `loadCronModelPreflightRuntime` /
+`resolveCronPreflightCandidates`).
+
+- src/cron/isolated-agent/run-prepare.ts: ADOPT-UPSTREAM — upstream #131353
+  extracted the inline preflight loop + lazy loader into `resolveCronPreflight`
+  (run-fallback-policy.ts). The fork's 247-line duplicate block (first of two
+  call sites, added since merge-base f40f90727c8) kept its semantics (early-exit
+  skipped result w/ model-preflight diagnostics + provider/model) but now
+  delegates the loop to the policy — mirroring how the merge had already migrated
+  the second call site. Provenance: symbol absent from upstream tip, present at
+  base; fork never touched run-prepare-runtime.ts (delta empty) → not a fork
+  symbol, an upstream-moved one; re-point, don't resurrect. Block-1's
+  `modelFallbacksOverride` was gate-only in the baseline (read once in the
+  reassignment `if`) — the gate now lives inside the policy, so the local const
+  is dropped (TS6133 confirmed).
+- tsgo:core 3→0 after fix (clean cache, full lane).
