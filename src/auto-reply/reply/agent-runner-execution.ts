@@ -13,6 +13,10 @@ import { isContextOverflowError } from "../../agents/embedded-agent-helpers.js";
 import { classifyFailoverReason } from "../../agents/failover/classify.js";
 import { renderRateLimitOrOverloadedCopy } from "../../agents/failover/user-copy.js";
 import type { EmbeddedAgentExecutionPhase } from "../../agents/embedded-agent-runner/execution-phase.js";
+import {
+  createDeferredEmbeddedRunLifecycleManager,
+  type DeferredEmbeddedRunLifecycleManager,
+} from "../../agents/embedded-agent-runner/run/deferred-lifecycle-owner.js";
 import type { RunEmbeddedAgentParams } from "../../agents/embedded-agent-runner/run/params.js";
 import { runEmbeddedAgent } from "../../agents/embedded-agent.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
@@ -103,6 +107,8 @@ async function executeAgentTurnInternalWithRetryState(
   commitTerminalOutcome: () => void,
   overloadRetryState: OverloadRetryState,
   commitMcpAppModelContext: () => void,
+  runId: string,
+  deferredLifecycle: DeferredEmbeddedRunLifecycleManager,
 ): Promise<AgentTurnInternalResult> {
   const heartbeatState = { didLogStrip: false };
   let autoCompactionCount = 0;
@@ -142,7 +148,6 @@ async function executeAgentTurnInternalWithRetryState(
     liveModelSwitchRuntimeEntry = { agentRuntimeOverride: err.agentRuntimeOverride };
   };
 
-  const runId = params.opts?.runId ?? crypto.randomUUID();
   // FLAG: no established chat-turn admission producer exists yet (unlike the
   // memory-flush/system-agent/CLI paths, which each call prepareAgentRunAdmission
   // with their own ingress facts). Reusing the system-agent boundary here is the
@@ -279,6 +284,7 @@ async function executeAgentTurnInternalWithRetryState(
   const consumeTransientHttpRetry = () => transientHttpRetriesRemaining-- > 0;
   let liveModelSwitchRetries = 0;
   const fallbackCycleState: AgentFallbackCycleState = {
+    deferredLifecycle,
     lifecycleGeneration,
     autoCompactionCount,
     attemptedRuntimeProvider: fallbackProvider,
@@ -316,7 +322,7 @@ async function executeAgentTurnInternalWithRetryState(
         runtimeConfig,
         liveModelSwitchRuntimeEntry,
         runId,
-        runAbortSignal: params.replyOperation?.abortSignal ?? params.opts?.abortSignal,
+        runAbortSignal: fallbackCycleState.deferredLifecycle.signal,
         currentTurnImages,
         state: fallbackCycleState,
         presentation,
@@ -504,14 +510,25 @@ async function executeAgentTurnInternal(
     noticeSent: false,
     completed: false,
   };
+  const runId = params.opts?.runId ?? crypto.randomUUID();
+  const deferredLifecycle = createDeferredEmbeddedRunLifecycleManager({
+    runId,
+    sessionId: params.followupRun.run.sessionId,
+    sessionKey: params.sessionKey,
+    sessionFile: params.followupRun.run.sessionFile,
+    abortSignal: params.replyOperation?.abortSignal ?? params.opts?.abortSignal,
+  });
   try {
     return await executeAgentTurnInternalWithRetryState(
       params,
       commitTerminalOutcome,
       overloadRetryState,
       commitMcpAppModelContext,
+      runId,
+      deferredLifecycle,
     );
   } finally {
+    await deferredLifecycle.complete();
     await cancelOverloadRetryNotice(overloadRetryState);
   }
 }

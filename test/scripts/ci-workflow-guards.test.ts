@@ -5860,13 +5860,13 @@ server.listen(0, "127.0.0.1", () => {
   });
 
   it.each([
-    [".github/workflows/mantis-discord-smoke.yml"],
-    [".github/workflows/plugin-clawhub-release.yml"],
-  ])("bounds %s git fetches", (workflowPath) => {
+    [".github/workflows/mantis-discord-smoke.yml", 2],
+    [".github/workflows/plugin-clawhub-release.yml", 3],
+  ])("bounds %s git fetches", (workflowPath, expectedFetchCount) => {
     const source = readFileSync(workflowPath, "utf8");
     const gitFetchLines = source.split("\n").filter((line) => line.includes("git fetch"));
 
-    expect(gitFetchLines, workflowPath).toHaveLength(2);
+    expect(gitFetchLines, workflowPath).toHaveLength(expectedFetchCount);
     expect(
       gitFetchLines.every((line) =>
         line.trimStart().startsWith("timeout --signal=TERM --kill-after=10s 120s git fetch"),
@@ -10356,8 +10356,12 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(sparseCheckoutPaths).toEqual([
       "scripts/full-release-validation-state.mjs",
       "scripts/full-release-validation-policy.mjs",
+      "scripts/full-release-candidate-contract.mjs",
       "scripts/release-ci-summary.mjs",
+      "scripts/lib/canonical-json.mjs",
       "scripts/lib/plain-gh.mjs",
+      "scripts/lib/record-shared.mjs",
+      "scripts/lib/upgrade-survivor-policy.mjs",
     ]);
     for (const sparsePath of sparseCheckoutPaths) {
       expect({ sparsePath, exists: existsSync(sparsePath) }).toEqual({
