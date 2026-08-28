@@ -316,3 +316,27 @@ OpenClawConfig } from "../config/config.js"` (resolves through the fork's
 - WART (follow-up, not merge): remote-proof.sh:78 prints "-f: command not found" before
   launch; harmless (heredoc write + launch both succeed). Also finish-land daemon log
   accumulates across runs. Fix post-land.
+
+## 2026-08-28 (resume, 05:19 MT cron) — extensions:test 5 net-new = orphaned daytona tests
+
+Proof of 9a979db8587 (launched 10:43Z by prior run, still in flight when this run
+started): build 0, core 0/0, extensions 0/0, core:test 9/9, extensions:test
+base=23 cand=28 → 5 net-new TS2307, test:src 9/9. Reproduced locally in the
+worktree (28) — error-set: 5× daytona backend/backend.e2e TS2307 cannot find
+'./backend.js'/'./client.js'/'./config.js'.
+
+Root cause: upstream d7b0e07f4ca (#130996) reverted the entire Daytona cloud
+sandbox plugin. The merge commit deleted 13/15 daytona files (2485 lines), but
+backend.test.ts + backend.e2e.test.ts survived — the fork had modified them
+(08-26 ENHANCE-OURS osSandbox literals) → modify/delete resolved keep-ours →
+orphaned tests importing deleted modules.
+
+- extensions/daytona/src/{backend,backend.e2e}.test.ts: ADOPT-UPSTREAM —
+  deleted, completing the revert. Fork delta (osSandbox literals) was test-only
+  for an upstream-authored plugin now reverted upstream; fork never touched
+  daytona source (history: only 3a5cb3847c7). Not enabled in live openclaw.json;
+  no non-doc references outside extensions/daytona. Ledger note: the 08-26
+  daytona ENHANCE-OURS verdict is now MOOT (plugin reverted).
+- Verified: tsgo:extensions:test worktree 28→23 == huey base 23 exactly
+  (error-set minus the 5). No other orphan pattern (extensions 0/0, test:src
+  9/9).
