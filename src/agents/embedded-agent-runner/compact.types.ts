@@ -38,6 +38,8 @@ export type CompactEmbeddedAgentSessionParams = {
   clientCaps?: string[];
   chatType?: ChatType;
   agentAccountId?: string;
+  /** Raw peer observed by the inbound routing owner, before identity linking. */
+  conversationRoutePeerId?: string;
   currentChannelId?: string;
   currentThreadTs?: string;
   currentMessageId?: string | number;

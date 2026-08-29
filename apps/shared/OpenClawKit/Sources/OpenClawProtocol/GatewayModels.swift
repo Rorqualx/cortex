@@ -18098,6 +18098,7 @@ public struct PendingApprovalSnapshot: Codable, Sendable {
     public let expiresatms: Int
     public let presentation: ApprovalPresentation
     public let status: String
+    public let sourcesessionkey: String?
 
     public init(
         id: String,
@@ -18105,7 +18106,8 @@ public struct PendingApprovalSnapshot: Codable, Sendable {
         createdatms: Int,
         expiresatms: Int,
         presentation: ApprovalPresentation,
-        status: String)
+        status: String,
+        sourcesessionkey: String? = nil)
     {
         self.id = id
         self.urlpath = urlpath
@@ -18113,6 +18115,7 @@ public struct PendingApprovalSnapshot: Codable, Sendable {
         self.expiresatms = expiresatms
         self.presentation = presentation
         self.status = status
+        self.sourcesessionkey = sourcesessionkey
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -18122,6 +18125,7 @@ public struct PendingApprovalSnapshot: Codable, Sendable {
         case expiresatms = "expiresAtMs"
         case presentation
         case status
+        case sourcesessionkey = "sourceSessionKey"
     }
 }
 

@@ -10509,6 +10509,7 @@ struct ChatViewModelTests {
         #expect(await MainActor.run { vm.fastModeSelectionID } == OpenClawChatViewModel.inheritedThinkingSelectionID)
         #expect(await MainActor.run { vm.sessions.first?.fastMode } == nil)
         #expect(await MainActor.run { vm.sessions.first?.effectiveFastMode } == .on)
+        #expect(await MainActor.run { vm.fastModeIsEnabled })
 
         await MainActor.run { vm.selectVerboseLevel("full") }
         await vm.waitForPendingSessionSettings(in: "main")
@@ -10582,6 +10583,7 @@ struct ChatViewModelTests {
         try await loadAndWaitBootstrap(vm: vm, sessionId: "sess-main")
 
         #expect(await MainActor.run { vm.fastModeSelectionID } == "off")
+        #expect(await MainActor.run { !vm.fastModeIsEnabled })
     }
 
     @Test func `stale fast rollback cannot mutate replacement agent target`() async throws {

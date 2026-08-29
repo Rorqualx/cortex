@@ -206,6 +206,7 @@ export type EmbeddedAgentRunMeta = {
     kind:
       | "context_overflow"
       | "compaction_failure"
+      | "compaction_replay_refresh_required"
       | "role_ordering"
       | "image_size"
       | "retry_limit"

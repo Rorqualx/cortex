@@ -366,3 +366,44 @@ tool install was a broken placeholder (native binary postinstall never ran) —
 repaired via node .tools/pnpm/12.0.0/node_modules/pnpm/install.js. Lockfile
 still v9.0; install clean, no lockfile rewrite. pnpm-workspace.yaml adds
 minimumReleaseAgeStrict: true (upstream, auto-merged).
+
+## 2026-08-28 evening run — upstream 59dad71c..cddb4db8 (behind=47, raw=130, ui-policy resolved 124)
+
+Conflicts resolved (6) + merge=ours drift (2):
+
+- src/agents/tools/web-fetch.ts — ENHANCE-OURS. Upstream: abort hardening
+  (throwIfFetchAborted x5, provider execute signal, cache-publish-after-guard,
+  extracted fetchWebPayload). Fork: egress allowlist (loadPolicy/evaluateWebPolicy,
+  webEgressBlockedError) + mergeSsrFPolicies. Resolution: kept upstream's
+  structure incl. extraction; fork egress pre-check stays in runWebFetch;
+  fetchWebPayload takes its own loadPolicy() snapshot (hash-cached) for the
+  post-redirect re-check — upstream's extraction moved that check out of
+  runWebFetch's scope; merged ssrfPolicy threaded via fetchWebPayload({...params,
+  ssrfPolicy}) so the guarded fetch (policy: ssrfPolicy ?? params.ssrfPolicy) and
+  cache discriminator both see it. No union: each declaration exists once.
+- git-hooks/pre-commit — ADOPT-UPSTREAM (thin wrapper execs
+  guard-staged-content.mjs). Fork's bash-3.2/`--` hardening PORTED into the new
+  scripts/pre-commit/format-staged.sh (empty-restage_files guard + `--` before
+  "${format_files[@]}" for oxfmt).
+- .agents/skills/telegram-e2e-userbot/scripts/user-driver.py — ADOPT-UPSTREAM.
+  Upstream renamed scripts/e2e/telegram-user-driver.py → skill dir + rewrote
+  (1091 lines); open_contained_file deleted upstream entirely, so the fork's
+  macOS port of it is moot. Took upstream blob at new path.
+- test/scripts/telegram-user-credential.test.ts + telegram-user-observer.test.ts
+  — ADOPT-UPSTREAM (accept deletion). Subjects (scripts/e2e/telegram-user-*
+  suite, mantis lanes) all moved to the skill dir; the two tests were the only
+  survivors still referencing the deleted scripts. Fork deltas on them (TS cast
+  fix; os.waitid macOS fallback) are moot — new suite has no waitid/dir_fd
+  hazards (verified by grep).
+- config/control-ui-startup-budget-baseline.json — KEEP-OURS (main's 587154 B;
+  upstream's 344714 B measures its rearchitected ui/ this fork does not ship).
+  Same verdict as this morning's run; huey proof re-measures and bumps if needed.
+- merge=ours drift src/agents/embedded-agent-runner/compact.types.ts — GRAFT:
+  upstream added conversationRoutePeerId?: string; 10+ adopted consumers
+  (compaction-runtime-context, run params, auto-reply) reference it. Added field.
+- merge=ours drift src/agents/system-prompt.ts — GRAFT: upstream's 3
+  sessions_spawn wording hunks (context:"isolated" guidance). Adopted upstream
+  system-prompt.test.ts:917/1541/1546 asserts the NEW strings — without the
+  graft behavior tests fail on huey. Kept fork's plain-string structure at the
+  acpSpawnRuntimeEnabled branch (fork dropped the agents_list conditional
+  earlier), wording updated.
