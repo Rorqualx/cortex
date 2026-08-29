@@ -44,6 +44,7 @@ const EVENT_SCOPE_GUARDS: Record<string, string[]> = {
   agent: [READ_SCOPE],
   "activity.event": [READ_SCOPE],
   chat: [READ_SCOPE],
+  "chat.metadata.changed": [READ_SCOPE],
   "board.changed": [READ_SCOPE],
   "board.command": [READ_SCOPE],
   "progressCard.changed": [READ_SCOPE],

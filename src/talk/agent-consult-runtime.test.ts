@@ -400,7 +400,11 @@ describe("realtime voice agent consult runtime", () => {
     async (parentAgentId) => {
       const { runtime, runEmbeddedAgent, sessionStore } = createAgentRuntime();
       const spawnedBy = `agent:${parentAgentId}:main`;
-      const createdActor = { type: "human" as const, id: "profile-required" };
+      const createdActor = {
+        type: "human" as const,
+        source: "profile" as const,
+        id: "profile-required",
+      };
       sessionStore[spawnedBy] = {
         sessionId: "parent-session",
         createdActor,
@@ -632,7 +636,7 @@ describe("realtime voice agent consult runtime", () => {
       sessionId: "parent-session",
       sessionFile: testTempPath("parent.jsonl"),
       totalTokens: 100,
-      createdActor: { type: "human", id: "profile-required" },
+      createdActor: { type: "human", source: "profile", id: "profile-required" },
       sandbox: "required",
       updatedAt: 1,
     };
@@ -719,7 +723,7 @@ describe("realtime voice agent consult runtime", () => {
       spawnedBy: "agent:main:main",
       forkedFromParent: true,
       createdVia: "talk",
-      createdActor: { type: "human", id: "profile-required" },
+      createdActor: { type: "human", source: "profile", id: "profile-required" },
       sandbox: "required",
       createdAt: forkedEntry.createdAt,
       updatedAt: forkedEntry.updatedAt,

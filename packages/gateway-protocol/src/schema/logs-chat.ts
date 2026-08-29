@@ -46,9 +46,16 @@ export const ChatHistoryParamsSchema = closedObject({
   maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 500_000 })),
 });
 
-/** Lightweight chat metadata request; optional agent scope keeps selector state explicit. */
+/** Lightweight metadata; session scope preserves the persisted auth-profile selection. */
 export const ChatMetadataParamsSchema = closedObject({
   agentId: Type.Optional(NonEmptyString),
+  sessionKey: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description:
+        "Read the authorized session's persisted auth-profile selection instead of neutral agent metadata.",
+    }),
+  ),
 });
 
 /** Batched purpose-title request for tool calls rendered in the Control UI. */

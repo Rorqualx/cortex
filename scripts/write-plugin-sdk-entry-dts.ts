@@ -1,6 +1,5 @@
-// Write Plugin Sdk Entry Dts script supports OpenClaw repository automation.
+// CI artifacts use the same SDK declaration partitions as full/package builds.
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { build } from "tsdown";
 import { discoverDeclarationSources } from "./lib/declaration-source-index.mts";
@@ -67,15 +66,8 @@ function removeExistingFlatDeclarations(outDir: string): void {
     if (!entry.isFile() || !entry.name.endsWith(".d.ts")) {
       continue;
     }
-    fs.rmSync(path.join(outDir, entry.name), { force: true });
-  }
-}
-
-function copyFlatDeclarations(fromDir: string, toDir: string): void {
-  fs.mkdirSync(toDir, { recursive: true });
-  for (const entry of fs.readdirSync(fromDir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".d.ts")) {
-      continue;
+    if (!required.length) {
+      throw new Error("Canonical SDK declaration selection is empty");
     }
     fs.copyFileSync(path.join(fromDir, entry.name), path.join(toDir, entry.name));
   }
@@ -158,7 +150,3 @@ for (const entry of pluginSdkEntrypoints) {
   fs.mkdirSync(path.dirname(runtimeOut), { recursive: true });
   fs.writeFileSync(runtimeOut, runtimeShim, "utf8");
 }
-
-const stampPath = path.join(process.cwd(), "dist/plugin-sdk/.boundary-entry-shims.stamp");
-fs.mkdirSync(path.dirname(stampPath), { recursive: true });
-fs.writeFileSync(stampPath, `${new Date().toISOString()}\n`, "utf8");

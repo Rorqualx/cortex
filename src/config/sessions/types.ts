@@ -34,6 +34,7 @@ import type {
 import type { SessionRestartRecoveryState } from "./restart-recovery-types.js";
 import type {
   SessionCreatedActor,
+  SessionActor,
   SessionCreatedVia,
   SessionEntryProvenance,
   SessionOwnerAssignment,
@@ -334,7 +335,7 @@ type SessionEntryCore = SessionRestartRecoveryState &
     /** Timestamp (ms) when the session was archived from active session lists. */
     archivedAt?: number;
     /** Actor that archived the session; cleared when the session is restored. */
-    archivedBy?: SessionCreatedActor;
+    archivedBy?: SessionActor;
     /** Timestamp (ms) when the session was pinned for quick access. */
     pinnedAt?: number;
     /** Custom sidebar icon in the format accepted by the gateway protocol session-icon helper. */
