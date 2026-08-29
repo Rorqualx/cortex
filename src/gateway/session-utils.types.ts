@@ -129,6 +129,8 @@ export type GatewaySessionRow = {
   restartRecoveryStatus?: "tombstoned";
   pinnedAt?: number;
   icon?: string;
+  /** Named sidebar tint (SESSION_COLOR_IDS). */
+  color?: string;
   channelAvatarUrl?: string;
   unread?: boolean;
   lastReadAt?: number;

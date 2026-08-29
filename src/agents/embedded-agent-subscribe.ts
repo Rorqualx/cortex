@@ -34,6 +34,10 @@ import {
 } from "./embedded-agent-runner/replay-state.js";
 import { consumeEmbeddedToolReceipt } from "./embedded-agent-runner/tool-send-receipts.js";
 import type { EmbeddedRunLivenessState } from "./embedded-agent-runner/types.js";
+import {
+  createUsageAccumulator,
+  mergeUsageIntoAccumulator,
+} from "./embedded-agent-runner/usage-accumulator.js";
 import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
 import { createEmbeddedAgentSessionEventHandler } from "./embedded-agent-subscribe.handlers.js";
 import {
@@ -67,6 +71,7 @@ import { hasGeneratedMediaCompletionEvent } from "./internal-event-contract.js";
 import type { AgentInternalEvent } from "./internal-events.js";
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
+import { setSessionModelUsageSink } from "./sessions/session-model-usage.js";
 import { registerToolEffectReceipt } from "./tool-effect-receipt.js";
 import { consumeTrustedToolNoStartError } from "./tool-result-error.js";
 import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
@@ -200,100 +205,8 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
   const canShowReasoning = params.thinkingLevel !== "off";
   const toolResultFormat = params.toolResultFormat ?? "markdown";
   const useMarkdown = toolResultFormat === "markdown";
-  const initialPendingToolMedia = collectPendingMediaFromInternalEvents(params.internalEvents);
-  const state: EmbeddedAgentSubscribeState = {
-    assistantTexts: [],
-    toolMetas: [],
-    acceptedSessionSpawns: [],
-    toolMetaById: new Map(),
-    toolSummaryById: new Set(),
-    // Live-edit diff progress per in-flight tool call (upstream feature); handler
-    // modules (lifecycle/messages.update/tools.completion/tools.start) key off
-    // this map, so it must exist even in the fork's hand-built state object.
-    liveEditDiffStateById: new Map(),
-    itemActiveIds: new Set(),
-    itemStartedCount: 0,
-    itemCompletedCount: 0,
-    assistantTurnCount: 0,
-    lastToolError: undefined,
-    blockReplyBreak: params.blockReplyBreak ?? "text_end",
-    reasoningMode,
-    includeReasoning: reasoningMode === "on" && canShowReasoning,
-    shouldEmitPartialReplies: !(reasoningMode === "on" && !params.onBlockReply),
-    streamReasoning:
-      reasoningMode === "stream" &&
-      canShowReasoning &&
-      typeof params.onReasoningStream === "function",
-    deltaBuffer: "",
-    thinkingTagStream: createThinkingTagStreamState(),
-    blockBuffer: "",
-    // Track if a streamed chunk opened a <think> block (stateful across chunks).
-    blockState: { thinking: false, final: false, inlineCode: createInlineCodeState() },
-    partialBlockState: { thinking: false, final: false, inlineCode: createInlineCodeState() },
-    lastStreamedAssistant: undefined,
-    lastStreamedAssistantCleaned: undefined,
-    emittedAssistantUpdate: false,
-    lastStreamedReasoning: undefined,
-    lastBlockReplyText: undefined,
-    lastDeliveredBlockReplyText: undefined,
-    deferBlockReplyDelivery: typeof params.onBeforeTerminalDelivery === "function",
-    deferredBlockReplies: [],
-    deferredAssistantEvents: [],
-    toolExecutionSinceLastBlockReply: false,
-    reasoningStreamOpen: false,
-    assistantMessageIndex: 0,
-    lastAssistantStreamItemId: undefined,
-    lastAssistantTextMessageIndex: -1,
-    lastAssistantTextNormalized: undefined,
-    lastAssistantTextTrimmed: undefined,
-    assistantTextBaseline: 0,
-    suppressBlockChunks: false, // Avoid late chunk inserts after final text merge.
-    lastReasoningSent: undefined,
-    pendingAssistantUsage: undefined,
-    assistantUsageCommitted: false,
-    compactionInFlight: false,
-    lastCompactionTokensAfter: undefined,
-    pendingCompactionRetry: 0,
-    compactionRetryResolve: undefined,
-    compactionRetryReject: undefined,
-    compactionRetryPromise: null,
-    unsubscribed: false,
-    replayState: createEmbeddedRunReplayState(params.initialReplayState),
-    livenessState: "working",
-    hadDeterministicSideEffect: false,
-    pendingEventChain: null,
-    messagingToolSentTexts: [],
-    messagingToolSentTextsNormalized: [],
-    currentSourceMessagingToolSentTextsNormalized: [],
-    currentSourceMessagingToolHeldPartial: undefined,
-    messagingToolSentTargets: [],
-    heartbeatToolResponse: undefined,
-    messagingToolSentMediaUrls: [],
-    messagingToolSourceReplyPayloads: [],
-    messageToolOnlySourceReplyDelivered: false,
-    pendingMessagingTexts: new Map(),
-    pendingMessagingTargets: new Map(),
-    successfulCronAdds: 0,
-    pendingMessagingMediaUrls: new Map(),
-    pendingToolMediaUrls: initialPendingToolMedia.mediaUrls,
-    pendingToolMediaAttachments: initialPendingToolMedia.attachments,
-    pendingToolMediaTrustByUrl: initialPendingToolMedia.trustByUrl,
-    pendingToolAudioAsVoice: false,
-    pendingToolMediaDeliveryFailed: false,
-    hasToolMediaBlockReply: false,
-    visibleBlockReplyCount: 0,
-    pendingAssistantReplyDirectives: undefined,
-    deterministicApprovalPromptPending: false,
-    deterministicApprovalPromptSent: false,
-  };
-  const usageTotals = {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    reasoningTokens: 0,
-    total: 0,
-  };
+  const state: EmbeddedAgentSubscribeState = createEmbeddedAgentSubscribeState(params);
+  const usageTotals = createUsageAccumulator();
   let lastAssistantUsage: ReturnType<typeof normalizeUsage>;
   let compactionCount = 0;
   let currentAttemptAssistant: AssistantMessage | undefined;
@@ -697,15 +610,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       return;
     }
     const usage = state.pendingAssistantUsage;
-    usageTotals.input += usage.input ?? 0;
-    usageTotals.output += usage.output ?? 0;
-    usageTotals.cacheRead += usage.cacheRead ?? 0;
-    usageTotals.cacheWrite += usage.cacheWrite ?? 0;
-    usageTotals.reasoningTokens += usage.reasoningTokens ?? 0;
-    const usageTotal =
-      usage.total ??
-      (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-    usageTotals.total += usageTotal;
+    mergeUsageIntoAccumulator(usageTotals, usage);
     // A terminal abort may report zeros after several completed model calls.
     // Retain the latest committed nonzero call so context accounting stays exact.
     lastAssistantUsage = { ...usage };
@@ -736,6 +641,14 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       return;
     }
     state.pendingAssistantUsage = usage;
+  };
+  const recordModelUsage = (usageLike: UsageLike) => {
+    const usage = normalizeUsage(usageLike);
+    if (!hasNonzeroUsage(usage)) {
+      return;
+    }
+    mergeUsageIntoAccumulator(usageTotals, usage);
+    emitRunUsage(usage.output ?? 0);
   };
   const getUsageTotals = () => {
     const hasUsage =
@@ -1412,6 +1325,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
   };
 
   const sessionUnsubscribe = params.session.subscribe(createEmbeddedAgentSessionEventHandler(ctx));
+  setSessionModelUsageSink(params.session.sessionManager, recordModelUsage);
 
   const unsubscribe = () => {
     if (state.unsubscribed) {
@@ -1444,6 +1358,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
         log.warn(`unsubscribe: compaction abort failed runId=${params.runId} err=${String(err)}`);
       }
     }
+    setSessionModelUsageSink(params.session.sessionManager, null);
     sessionUnsubscribe();
   };
 
