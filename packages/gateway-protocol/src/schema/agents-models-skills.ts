@@ -42,6 +42,7 @@ export const ModelChoiceSchema = closedObject({
   contextWindows: Type.Optional(Type.Array(GatewayContextWindowOptionSchema)),
   contextWindowDefault: Type.Optional(NonEmptyString),
   reasoning: Type.Optional(Type.Boolean()),
+  effectiveFastMode: Type.Optional(Type.Union([Type.Boolean(), Type.Literal("auto")])),
   supportsTools: Type.Optional(Type.Boolean()),
   agentRuntime: Type.Optional(GatewayAgentRuntimeSchema),
   apiKeySupported: Type.Optional(Type.Boolean()),

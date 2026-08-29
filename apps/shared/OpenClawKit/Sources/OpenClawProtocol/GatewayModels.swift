@@ -9361,6 +9361,7 @@ public struct SessionsCreateParams: Codable, Sendable {
     public let model: String?
     public let contextwindow: String?
     public let thinkinglevel: String?
+    public let fastmode: AnyCodable?
     public let permissionmode: SessionPermissionMode?
     public let tooloverrides: [String: AnyCodable]?
     public let incognito: Bool?
@@ -9392,6 +9393,7 @@ public struct SessionsCreateParams: Codable, Sendable {
         model: String? = nil,
         contextwindow: String? = nil,
         thinkinglevel: String? = nil,
+        fastmode: AnyCodable? = nil,
         permissionmode: SessionPermissionMode? = nil,
         tooloverrides: [String: AnyCodable]? = nil,
         incognito: Bool? = nil,
@@ -9422,6 +9424,7 @@ public struct SessionsCreateParams: Codable, Sendable {
         self.model = model
         self.contextwindow = contextwindow
         self.thinkinglevel = thinkinglevel
+        self.fastmode = fastmode
         self.permissionmode = permissionmode
         self.tooloverrides = tooloverrides
         self.incognito = incognito
@@ -9454,6 +9457,7 @@ public struct SessionsCreateParams: Codable, Sendable {
         case model
         case contextwindow = "contextWindow"
         case thinkinglevel = "thinkingLevel"
+        case fastmode = "fastMode"
         case permissionmode = "permissionMode"
         case tooloverrides = "toolOverrides"
         case incognito
@@ -14753,6 +14757,7 @@ public struct ModelChoice: Codable, Sendable {
     public let contextwindows: [[String: AnyCodable]]?
     public let contextwindowdefault: String?
     public let reasoning: Bool?
+    public let effectivefastmode: AnyCodable?
     public let supportstools: Bool?
     public let agentruntime: GatewayAgentRuntime?
     public let apikeysupported: Bool?
@@ -14771,6 +14776,7 @@ public struct ModelChoice: Codable, Sendable {
         contextwindows: [[String: AnyCodable]]? = nil,
         contextwindowdefault: String? = nil,
         reasoning: Bool? = nil,
+        effectivefastmode: AnyCodable? = nil,
         supportstools: Bool? = nil,
         agentruntime: GatewayAgentRuntime? = nil,
         apikeysupported: Bool? = nil,
@@ -14788,6 +14794,7 @@ public struct ModelChoice: Codable, Sendable {
         self.contextwindows = contextwindows
         self.contextwindowdefault = contextwindowdefault
         self.reasoning = reasoning
+        self.effectivefastmode = effectivefastmode
         self.supportstools = supportstools
         self.agentruntime = agentruntime
         self.apikeysupported = apikeysupported
@@ -14807,6 +14814,7 @@ public struct ModelChoice: Codable, Sendable {
         case contextwindows = "contextWindows"
         case contextwindowdefault = "contextWindowDefault"
         case reasoning
+        case effectivefastmode = "effectiveFastMode"
         case supportstools = "supportsTools"
         case agentruntime = "agentRuntime"
         case apikeysupported = "apiKeySupported"
