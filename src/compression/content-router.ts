@@ -1,4 +1,6 @@
 import { compressDiffOutput } from "./diff-compressor.js";
+import { estimateEntropy } from "./entropy-estimator.js";
+import type { EntropyBucket } from "./entropy-estimator.js";
 import { compressLogOutput } from "./log-compressor.js";
 import { compressSearchResults } from "./search-compressor.js";
 import { crushJsonArray } from "./smart-crusher.js";
@@ -15,48 +17,89 @@ import { crushJsonArray } from "./smart-crusher.js";
 import type { CompressorOutput, CompressionConfig } from "./types.js";
 
 /**
- * Route content to the appropriate compressor based on type detection.
+ * ARCH-3 bucket-specific compression ratios (fraction of content kept):
+ *   low    — information-dense (ttur > 0.6)       → keep 70%
+ *   medium — standard (0.3 < ttur ≤ 0.6)           → keep 30% (global default)
+ *   high   — repetitive (ttur ≤ 0.3)               → keep 15%
  */
-export function routeAndCompress(content: string, config: CompressionConfig): CompressorOutput {
+export const BUCKET_RATIOS: Record<EntropyBucket, number> = {
+  low: 0.7,
+  medium: 0.3,
+  high: 0.15,
+};
+
+/**
+ * Route content to the appropriate compressor based on type detection.
+ *
+ * `ratioOverride` is the composition seam shared with plan-protection
+ * (ARCH-2): an explicit override always beats the entropy bucket, which in
+ * turn beats the global `config.targetRatio` — deterministic precedence
+ * `ratioOverride ?? BUCKET_RATIOS[bucket] ?? config.targetRatio`.
+ */
+export function routeAndCompress(
+  content: string,
+  config: CompressionConfig,
+  ratioOverride?: number,
+): CompressorOutput {
   const contentType = detectContentType(content);
 
+  // ARCH-3 entropy-guided budget (opt-in). Disabled ⇒ effectiveRatio stays
+  // the global targetRatio and no entropyBucket is attached (byte parity).
+  let effectiveRatio = config.targetRatio;
+  let entropyBucket: EntropyBucket | undefined;
+  if (config.entropyGuidedBudget) {
+    const estimate = estimateEntropy(content);
+    entropyBucket = estimate.bucket;
+    effectiveRatio = ratioOverride ?? BUCKET_RATIOS[estimate.bucket] ?? config.targetRatio;
+  }
+
+  let output: CompressorOutput | undefined;
   switch (contentType) {
     case "json_array":
       if (!config.enabledTypes.jsonArrays) {
         break;
       }
-      return crushJsonArray(content, config.maxArrayItems, config.targetRatio);
+      output = crushJsonArray(content, config.maxArrayItems, effectiveRatio);
+      break;
 
     case "search":
       if (!config.enabledTypes.searchResults) {
         break;
       }
-      return compressSearchResults(content, config.targetRatio);
+      output = compressSearchResults(content, effectiveRatio);
+      break;
 
     case "diff":
       if (!config.enabledTypes.diffs) {
         break;
       }
-      return compressDiffOutput(content, config.targetRatio);
+      output = compressDiffOutput(content, effectiveRatio);
+      break;
 
     case "log":
       if (!config.enabledTypes.logs) {
         break;
       }
-      return compressLogOutput(content, config.targetRatio);
+      output = compressLogOutput(content, effectiveRatio);
+      break;
 
     case "passthrough":
     default:
       break;
   }
 
-  return {
+  const result: CompressorOutput = output ?? {
     content,
     compressed: false,
     charsBefore: content.length,
     charsAfter: content.length,
     contentType: "passthrough",
   };
+
+  if (entropyBucket !== undefined) {
+    return { ...result, entropyBucket };
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

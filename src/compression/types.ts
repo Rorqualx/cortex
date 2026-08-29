@@ -6,6 +6,7 @@
  * through untouched.
  */
 import type { AgentMessage } from "../agents/runtime/index.js";
+import type { EntropyBucket } from "./entropy-estimator.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -18,6 +19,9 @@ export type CompressionConfig = {
   minContentChars: number;
   /** Target compression ratio. 0.3 = keep 30% of content. Default: 0.3. */
   targetRatio: number;
+  /** ARCH-3: use entropy-guided per-message budget allocation (TTUR buckets)
+   * instead of the single global targetRatio. Default: false. */
+  entropyGuidedBudget: boolean;
   /** Maximum items to keep in any JSON array. Default: 20. */
   maxArrayItems: number;
   /** Content types to compress. */
@@ -40,6 +44,7 @@ export const DEFAULT_COMPRESSION_CONFIG: CompressionConfig = {
   enabled: false,
   minContentChars: 800,
   targetRatio: 0.3,
+  entropyGuidedBudget: false,
   maxArrayItems: 20,
   enabledTypes: {
     jsonArrays: true,
@@ -74,6 +79,13 @@ export type CompressionStats = {
   /** F8: aggregate dangling-reference rate across all compressed messages.
    * High values are the trigger for a hard definition-pull mechanism. */
   danglingReferenceRate?: number;
+  /** ARCH-3: per-entropy-bucket compression stats, present only when
+   * entropyGuidedBudget is enabled. avgRatio is the achieved keep-ratio
+   * (charsAfter/charsBefore) averaged over the bucket's messages. */
+  byEntropyBucket?: Record<
+    EntropyBucket,
+    { count: number; avgRatio: number; savingsPercent: number }
+  >;
 };
 
 export type CompressionResult = {
@@ -98,6 +110,10 @@ export type CompressorOutput = {
   charsAfter: number;
   /** Detected content type (json_array, search, log, diff, passthrough). */
   contentType: string;
+  /** ARCH-3: entropy bucket of this content, set only when
+   * entropyGuidedBudget is enabled (single estimation pass, threaded
+   * from the router so stats never re-estimate). */
+  entropyBucket?: EntropyBucket;
 };
 
 // ---------------------------------------------------------------------------

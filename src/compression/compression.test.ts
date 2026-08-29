@@ -15,9 +15,9 @@
  *  - ContextTracker (cross-turn relevance detection)
  *  - CCR integration with pipeline
  */
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import type { AgentMessage } from "../agents/runtime/index.js";
-import { routeAndCompress } from "./content-router.js";
+import { routeAndCompress, BUCKET_RATIOS } from "./content-router.js";
 import { compressDiffOutput } from "./diff-compressor.js";
 import {
   compressAssembledContext,
@@ -31,6 +31,15 @@ import { crushJsonArray } from "./smart-crusher.js";
 import { hasTemporalAnchor } from "./temporal.js";
 import { enforceTokenBudget, estimateTokens } from "./token-budget-enforcer.js";
 import type { CompressionConfig } from "./types.js";
+
+// ARCH-3: spy on the estimator module so the single-estimation-pass guard
+// (manifest 5.2) can count calls through the real router path. The mock
+// delegates to the actual implementation — behavior is unchanged.
+vi.mock("./entropy-estimator.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./entropy-estimator.js")>();
+  return { ...actual, estimateEntropy: vi.fn(actual.estimateEntropy) };
+});
+import { estimateEntropy } from "./entropy-estimator.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -108,6 +117,115 @@ function generateDiff(additionLines: number, removalLines: number): string {
   }
   lines.push(" context line 3");
   return lines.join("\n");
+}
+
+/** Generate a repetitive, low-information log (ARCH-3 high bucket, ttur ≈ 0.2). */
+function generateRepetitiveLog(lineCount: number): string {
+  const lines: string[] = [];
+  for (let i = 1; i <= lineCount; i++) {
+    lines.push(`INFO Processing request ${i} completed`);
+  }
+  return lines.join("\n");
+}
+
+/** Generate a lexically diverse log — nearly every token unique (low bucket). */
+function generateDiverseLog(lineCount: number): string {
+  const vocab = [
+    "gateway booted quietly",
+    "telegram channel attached",
+    "memory consolidation finished",
+    "workboard dispatcher idle",
+    "research scan queued",
+    "sandbox policy verified",
+    "vault credentials rotated",
+    "retrieval scoring rebalanced",
+    "forge telemetry uploaded",
+    "session tree pruned",
+    "pipeline drafted buckets",
+    "heartbeats scheduled nightly",
+    "cron jobs reconciled",
+    "plugin skills indexed",
+    "node heartbeat received",
+    "model routing updated",
+    "context engine assembled",
+    "dreaming reports filed",
+    "epoch boundary closed",
+    "audit ledger signed",
+    "stream watcher drained",
+    "delegation race resolved",
+  ];
+  const lines: string[] = [];
+  for (let i = 0; i < lineCount; i++) {
+    lines.push(`marker_${i} INFO ${vocab[i % vocab.length]} batch_${(i * 3) % 89}`);
+  }
+  return lines.join("\n");
+}
+
+/** Generate a lexically diverse JSON array of objects (low bucket, ttur > 0.6). */
+function generateDiverseJsonArray(count: number): string {
+  const vocab = [
+    "kraken",
+    "smuggler",
+    "onion",
+    "voyage",
+    "ledger",
+    "blockade",
+    "sailor",
+    "harbor",
+    "anchor",
+    "tide",
+    "galley",
+    "cargo",
+    "mutiny",
+    "compass",
+    "reef",
+    "lagoon",
+    "helm",
+    "bosun",
+    "quartermaster",
+    "figurehead",
+    "spyglass",
+    "chartroom",
+  ];
+  const items: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < count; i++) {
+    const note: string[] = [];
+    for (let k = 0; k < 10; k++) {
+      note.push(`${vocab[(i + k) % vocab.length]}_${(i * 7 + k) % 97}`);
+    }
+    items.push({ id: i, service: `svc_${(i * 13) % 997}`, note: note.join(" ") });
+  }
+  return JSON.stringify(items, null, 2);
+}
+
+/** Build a toolResult message carrying a single text block. */
+function toolResultMsg(id: string, text: string): AgentMessage {
+  return {
+    role: "toolResult" as const,
+    toolCallId: id,
+    toolName: "exec",
+    content: [{ type: "text" as const, text }],
+    isError: false,
+    timestamp: Date.now(),
+  } as unknown as AgentMessage;
+}
+
+/** Extract the text of a message's content (string or text-block array). */
+function extractText(msg: AgentMessage | undefined): string {
+  const content = (msg as { content?: unknown } | undefined)?.content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((part) =>
+        typeof part === "object" && part !== null && "text" in part
+          ? String((part as { text: string }).text)
+          : "",
+      )
+      .join("\n");
+  }
+  return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +610,100 @@ describe("ContentRouter", () => {
     const result = routeAndCompress(input, disabledConfig);
     expect(result.compressed).toBe(false);
   });
+
+  // -------------------------------------------------------------------------
+  // ARCH-3: entropy-guided budget (manifest §3 + review R2 guard 7.1)
+  // -------------------------------------------------------------------------
+
+  it("entropy-guided: repetitive log keeps ≤ 20% of original chars (high bucket)", () => {
+    // 3.1 — high bucket (ttur ≈ 0.2) → ratio 0.15: keeps ≤ 20% of the
+    // uncompressed original, and strictly less than the global-0.3 baseline.
+    const input = generateRepetitiveLog(400);
+    const result = routeAndCompress(input, makeConfig({ entropyGuidedBudget: true }));
+    expect(result.entropyBucket).toBe("high");
+    expect(result.compressed).toBe(true);
+    expect(result.charsAfter).toBeLessThanOrEqual(0.2 * input.length);
+    const baseline = routeAndCompress(input, makeConfig());
+    expect(baseline.compressed).toBe(true);
+    expect(result.charsAfter).toBeLessThan(baseline.charsAfter);
+  });
+
+  it("entropy-guided: diverse log keeps ≥ 60% of original chars (low bucket)", () => {
+    // 3.2 — low bucket (ttur > 0.6) → ratio 0.7 → sampler keeps every line
+    // (compressor returns passthrough at ≥ 70% — content preserved intact).
+    const input = generateDiverseLog(20);
+    const result = routeAndCompress(input, makeConfig({ entropyGuidedBudget: true }));
+    expect(result.entropyBucket).toBe("low");
+    expect(result.charsAfter).toBeGreaterThanOrEqual(0.6 * input.length);
+    const baseline = routeAndCompress(input, makeConfig());
+    expect(result.charsAfter).toBeGreaterThan(baseline.charsAfter);
+  });
+
+  it("disabled → identical output to pre-change router (global 0.3 parity)", () => {
+    // 3.3 — entropyGuidedBudget off: the router is byte-identical to calling
+    // the compressor directly with the global ratio, and attaches no bucket.
+    const input = generateRepetitiveLog(100);
+    const config = makeConfig();
+    const result = routeAndCompress(input, config);
+    const direct = compressLogOutput(input, config.targetRatio);
+    expect(result.content).toBe(direct.content);
+    expect(result.compressed).toBe(direct.compressed);
+    expect(result.charsBefore).toBe(direct.charsBefore);
+    expect(result.charsAfter).toBe(direct.charsAfter);
+    expect("entropyBucket" in result).toBe(false);
+  });
+
+  it("explicit ratioOverride beats bucket ratio", () => {
+    // 3.4 — override 0.8 on high-bucket content keeps ≥ 75% where the bucket
+    // alone keeps ≤ 20% (composition seam with ARCH-2 plan protection).
+    const input = generateRepetitiveLog(400);
+    const config = makeConfig({ entropyGuidedBudget: true });
+    const overridden = routeAndCompress(input, config, 0.8);
+    expect(overridden.entropyBucket).toBe("high");
+    expect(overridden.charsAfter).toBeGreaterThanOrEqual(0.75 * input.length);
+    const bucketOnly = routeAndCompress(input, config);
+    expect(bucketOnly.charsAfter).toBeLessThan(0.75 * input.length);
+    // Low-bucket diverse content honors the override identically.
+    const diverse = generateDiverseLog(20);
+    const lowOverridden = routeAndCompress(diverse, config, 0.8);
+    expect(lowOverridden.entropyBucket).toBe("low");
+    expect(lowOverridden.charsAfter).toBeGreaterThanOrEqual(0.75 * diverse.length);
+  });
+
+  it("BUCKET_RATIOS exported as { low: 0.7, medium: 0.3, high: 0.15 }", () => {
+    // 3.5 — pin the contract table
+    expect(BUCKET_RATIOS).toEqual({ low: 0.7, medium: 0.3, high: 0.15 });
+  });
+
+  it("high-bucket repetitive content with occasional ISO-dated lines retains the dated lines", () => {
+    // 7.1 (review R2) — temporal-anchor retention composes with the aggressive
+    // high-bucket ratio. The temporal axis lives in the smart-crusher sampling
+    // path (scoreItem temporal weight), so the dated lines are carried by a
+    // repetitive JSON array — see implementation report for the localization
+    // note on the manifest's "log" wording.
+    const items: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < 38; i++) {
+      items.push({ status: "queued", worker: "build-agent", attempt: 1 });
+    }
+    items.splice(19, 0, {
+      status: "queued",
+      worker: "build-agent",
+      attempt: 1,
+      anchoredAt: "2026-08-29T06:15:00Z",
+    });
+    items.splice(9, 0, {
+      status: "queued",
+      worker: "build-agent",
+      attempt: 1,
+      anchoredAt: "2026-08-21T05:00:00Z",
+    });
+    const input = JSON.stringify(items, null, 2);
+    const result = routeAndCompress(input, makeConfig({ entropyGuidedBudget: true }));
+    expect(result.entropyBucket).toBe("high");
+    expect(result.compressed).toBe(true);
+    expect(result.content).toContain("2026-08-29T06:15:00Z");
+    expect(result.content).toContain("2026-08-21T05:00:00Z");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -531,6 +743,27 @@ describe("TokenBudgetEnforcer", () => {
     // The last user message should survive; the oversized tool result is dropped.
     expect(result.some((m) => m.role === "user")).toBe(true);
     expect(result.length).toBeLessThan(messages.length);
+  });
+
+  it("enforceTokenBudget behavior unchanged under entropyGuidedBudget", () => {
+    // 6.1 — ARCH-3 must not touch the enforcer (design alternative #4):
+    // identical eviction output regardless of the entropy flag.
+    const messages: AgentMessage[] = [
+      {
+        role: "toolResult" as const,
+        toolCallId: "1",
+        toolName: "read",
+        content: [{ type: "text" as const, text: "x".repeat(10000) }],
+        isError: false,
+        timestamp: Date.now(),
+      } as unknown as AgentMessage,
+      { role: "user" as const, content: "what did you find?" } as unknown as AgentMessage,
+    ];
+    const entropyOn = makeConfig({ entropyGuidedBudget: true });
+    const entropyOff = makeConfig();
+    expect(enforceTokenBudget(messages, 100, entropyOn)).toEqual(
+      enforceTokenBudget(messages, 100, entropyOff),
+    );
   });
 });
 
@@ -612,6 +845,75 @@ describe("compressAssembledContext", () => {
     const result = await compressAssembledContext(messages, config);
     expect(result.stats.messagesCompressed).toBe(0);
   });
+
+  // -------------------------------------------------------------------------
+  // ARCH-3: entropy-guided budget in the pipeline (manifest §4 + §5)
+  // -------------------------------------------------------------------------
+
+  it("entropy-guided stats: byEntropyBucket threaded from the router (single pass)", async () => {
+    // 4.1 + 4.2 — CompressorOutput.entropyBucket feeds per-bucket stats on a
+    // mixed batch (both buckets present, all three fields numeric); 5.2 —
+    // exactly one estimation per message (router computes, stats reuse).
+    vi.mocked(estimateEntropy).mockClear();
+    const repetitiveLog = generateRepetitiveLog(400);
+    const diverseJson = generateDiverseJsonArray(40);
+    const messages = [toolResultMsg("t1", repetitiveLog), toolResultMsg("t2", diverseJson)];
+    const result = await compressAssembledContext(
+      messages,
+      makeConfig({ minContentChars: 100, entropyGuidedBudget: true }),
+    );
+    const high = result.stats.byEntropyBucket?.high;
+    const low = result.stats.byEntropyBucket?.low;
+    expect(high?.count).toBe(1);
+    expect(low?.count).toBe(1);
+    expect(typeof high?.avgRatio).toBe("number");
+    expect(typeof high?.savingsPercent).toBe("number");
+    expect(typeof low?.avgRatio).toBe("number");
+    expect(typeof low?.savingsPercent).toBe("number");
+    expect(estimateEntropy).toHaveBeenCalledTimes(2);
+  });
+
+  it("entropy-guided: no byEntropyBucket key when disabled", async () => {
+    // 4.3 — parity: the stats key stays absent with entropyGuidedBudget off.
+    const messages = [toolResultMsg("t1", generateRepetitiveLog(400))];
+    const result = await compressAssembledContext(messages, makeConfig({ minContentChars: 100 }));
+    expect(result.stats.messagesCompressed).toBe(1);
+    expect("byEntropyBucket" in result.stats).toBe(false);
+  });
+
+  it("entropy-guided: repetitive log compressed harder than diverse content", async () => {
+    // 5.1 — relative keep-ratio comparison on the same mixed batch.
+    const repetitiveLog = generateRepetitiveLog(400);
+    const diverseJson = generateDiverseJsonArray(40);
+    const messages = [toolResultMsg("t1", repetitiveLog), toolResultMsg("t2", diverseJson)];
+    const result = await compressAssembledContext(
+      messages,
+      makeConfig({ minContentChars: 100, entropyGuidedBudget: true }),
+    );
+    const logKeep = extractText(result.messages[0]).length / repetitiveLog.length;
+    const jsonKeep = extractText(result.messages[1]).length / diverseJson.length;
+    expect(logKeep).toBeLessThan(jsonKeep);
+  });
+
+  it("entropyGuidedBudget: false → byte-identical to field-omitted run (parity)", async () => {
+    // 5.3 — explicit false and omitted field produce identical pipelines;
+    // router-level parity vs the pre-change compressor is pinned in 3.3.
+    const messages = [
+      toolResultMsg("t1", generateRepetitiveLog(200)),
+      toolResultMsg("t2", generateJsonArray(200)),
+    ];
+    const explicitOff = await compressAssembledContext(
+      messages,
+      makeConfig({ minContentChars: 100 }),
+    );
+    const omitted = await compressAssembledContext(
+      messages,
+      resolveCompressionConfig({ enabled: true, minContentChars: 100 }),
+    );
+    expect(omitted.messages).toEqual(explicitOff.messages);
+    expect(omitted.stats).toEqual(explicitOff.stats);
+    expect("byEntropyBucket" in omitted.stats).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -641,6 +943,24 @@ describe("resolveCompressionConfig", () => {
     expect(config.ccr.enabled).toBe(true);
     expect(config.ccr.maxEntries).toBe(500);
     expect(config.ccr.ttlSeconds).toBe(3600); // default
+  });
+
+  // -------------------------------------------------------------------------
+  // ARCH-3: entropyGuidedBudget resolution (manifest §2)
+  // -------------------------------------------------------------------------
+
+  it("entropyGuidedBudget absent → false", () => {
+    const config = resolveCompressionConfig({ enabled: true });
+    expect(config.entropyGuidedBudget).toBe(false);
+  });
+
+  it("entropyGuidedBudget: true resolves true", () => {
+    const config = resolveCompressionConfig({ enabled: true, entropyGuidedBudget: true });
+    expect(config.entropyGuidedBudget).toBe(true);
+  });
+
+  it("default config deep-equal safe for existing assertions", () => {
+    expect(resolveCompressionConfig()).toEqual(DEFAULT_COMPRESSION_CONFIG);
   });
 });
 

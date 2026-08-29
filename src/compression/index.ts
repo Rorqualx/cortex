@@ -23,6 +23,7 @@ import { buildCompressionMarker } from "./ccr/retrieval-tool.js";
 import { CCRStore } from "./ccr/store.js";
 import { routeAndCompress } from "./content-router.js";
 import { danglingReferenceStats } from "./dangling-metric.js";
+import type { EntropyBucket } from "./entropy-estimator.js";
 import { enforceTokenBudget } from "./token-budget-enforcer.js";
 import type { CompressionConfig, CompressionResult, CompressionStats } from "./types.js";
 import { DEFAULT_COMPRESSION_CONFIG } from "./types.js";
@@ -114,6 +115,10 @@ function compressToolResults(
   let totalReferents = 0;
   let totalDangling = 0;
   const ccrHashes: string[] = [];
+  // ARCH-3: per-entropy-bucket accumulators (single estimation pass — the
+  // router threads `entropyBucket` back via CompressorOutput; we never
+  // re-estimate here).
+  const entropyAcc = new Map<EntropyBucket, { before: number; after: number; count: number }>();
 
   const result: AgentMessage[] = [];
 
@@ -205,10 +210,35 @@ function compressToolResults(
     totalReferents += dangling.referentCount;
     totalDangling += dangling.danglingCount;
     byType[type].danglingRate = dangling.referentCount > 0 ? dangling.rate : 0;
+
+    // ARCH-3: per-bucket stats from the router-threaded estimate.
+    if (config.entropyGuidedBudget && compressed.entropyBucket) {
+      const bucket = compressed.entropyBucket;
+      const acc = entropyAcc.get(bucket) ?? { before: 0, after: 0, count: 0 };
+      acc.before += compressed.charsBefore;
+      acc.after += compressed.charsAfter;
+      acc.count++;
+      entropyAcc.set(bucket, acc);
+    }
   }
 
   const totalSavingsPercent =
     totalOriginalChars > 0 ? Math.round((totalSavingsChars / totalOriginalChars) * 100) : 0;
+
+  // ARCH-3: byEntropyBucket is present only when entropyGuidedBudget ran and
+  // compressed at least one message (key stays absent when disabled — parity).
+  let byEntropyBucket: CompressionStats["byEntropyBucket"];
+  if (config.entropyGuidedBudget && entropyAcc.size > 0) {
+    byEntropyBucket = {};
+    for (const [bucket, acc] of entropyAcc) {
+      byEntropyBucket[bucket] = {
+        count: acc.count,
+        avgRatio: acc.before > 0 ? Math.round((acc.after / acc.before) * 100) / 100 : 0,
+        savingsPercent:
+          acc.before > 0 ? Math.round(((acc.before - acc.after) / acc.before) * 100) : 0,
+      };
+    }
+  }
 
   return {
     messages: result,
@@ -219,6 +249,7 @@ function compressToolResults(
       // F8: aggregate referent-survival rate across compressed messages.
       danglingReferenceRate:
         totalReferents > 0 ? Math.round((totalDangling / totalReferents) * 100) / 100 : 0,
+      ...(byEntropyBucket ? { byEntropyBucket } : {}),
     },
     ccrHashes,
   };
@@ -310,6 +341,8 @@ export function resolveCompressionConfig(
     enabled: userConfig.enabled ?? DEFAULT_COMPRESSION_CONFIG.enabled,
     minContentChars: userConfig.minContentChars ?? DEFAULT_COMPRESSION_CONFIG.minContentChars,
     targetRatio: userConfig.targetRatio ?? DEFAULT_COMPRESSION_CONFIG.targetRatio,
+    entropyGuidedBudget:
+      userConfig.entropyGuidedBudget ?? DEFAULT_COMPRESSION_CONFIG.entropyGuidedBudget,
     maxArrayItems: userConfig.maxArrayItems ?? DEFAULT_COMPRESSION_CONFIG.maxArrayItems,
     enabledTypes: {
       jsonArrays:
