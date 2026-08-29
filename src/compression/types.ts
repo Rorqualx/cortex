@@ -82,9 +82,8 @@ export type CompressionStats = {
   /** ARCH-3: per-entropy-bucket compression stats, present only when
    * entropyGuidedBudget is enabled. avgRatio is the achieved keep-ratio
    * (charsAfter/charsBefore) averaged over the bucket's messages. */
-  byEntropyBucket?: Record<
-    EntropyBucket,
-    { count: number; avgRatio: number; savingsPercent: number }
+  byEntropyBucket?: Partial<
+    Record<EntropyBucket, { count: number; avgRatio: number; savingsPercent: number }>
   >;
 };
 
