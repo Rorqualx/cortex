@@ -2,7 +2,6 @@ import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 /**
  * Subscribes to embedded-agent sessions and streams formatted replies/events.
  */
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { InlineCodeState } from "../../packages/markdown-core/src/code-spans.js";
 import {
   buildCodeSpanIndex,
@@ -28,10 +27,7 @@ import {
 } from "./embedded-agent-helpers.js";
 import type { BlockReplyPayload } from "./embedded-agent-payloads.js";
 import { hasCommittedMessagingToolDeliveryEvidence } from "./embedded-agent-runner/delivery-evidence.js";
-import {
-  createEmbeddedRunReplayState,
-  mergeEmbeddedRunReplayState,
-} from "./embedded-agent-runner/replay-state.js";
+import { mergeEmbeddedRunReplayState } from "./embedded-agent-runner/replay-state.js";
 import { consumeEmbeddedToolReceipt } from "./embedded-agent-runner/tool-send-receipts.js";
 import type { EmbeddedRunLivenessState } from "./embedded-agent-runner/types.js";
 import {
@@ -55,6 +51,7 @@ import type {
   EmbeddedAgentSubscribeContext,
   EmbeddedAgentSubscribeState,
 } from "./embedded-agent-subscribe.handlers.types.js";
+import { createEmbeddedAgentSubscribeState } from "./embedded-agent-subscribe.run-state.js";
 import type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
 import {
   extractToolResultMediaArtifact,
@@ -66,9 +63,6 @@ import {
   stripDowngradedToolCallText,
   THINKING_TAG_SCAN_RE,
 } from "./embedded-agent-utils.js";
-import { mediaUrlsFromGeneratedAttachments } from "./generated-attachments.js";
-import { hasGeneratedMediaCompletionEvent } from "./internal-event-contract.js";
-import type { AgentInternalEvent } from "./internal-events.js";
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
 import { setSessionModelUsageSink } from "./sessions/session-model-usage.js";
@@ -146,63 +140,10 @@ function splitTrailingFenceFragment(
   };
 }
 
-function collectPendingMediaFromInternalEvents(
-  events: SubscribeEmbeddedAgentSessionParams["internalEvents"],
-): {
-  mediaUrls: string[];
-  attachments: NonNullable<AgentInternalEvent["attachments"]>;
-  trustByUrl: Map<string, boolean>;
-} {
-  if (!events?.length) {
-    return { mediaUrls: [], attachments: [], trustByUrl: new Map() };
-  }
-  const pending: string[] = [];
-  const attachments: NonNullable<AgentInternalEvent["attachments"]> = [];
-  const indexByUrl = new Map<string, number>();
-  const trustedByUrl = new Map<string, boolean>();
-  for (const event of events) {
-    const generatedMediaEvent = hasGeneratedMediaCompletionEvent([event]);
-    const attachmentByUrl = new Map(
-      (event.attachments ?? []).flatMap((attachment) => {
-        const reference = normalizeOptionalString(
-          attachment.path ?? attachment.url ?? attachment.mediaUrl ?? attachment.filePath,
-        );
-        return reference ? [[reference, attachment] as const] : [];
-      }),
-    );
-    const mediaUrls = [
-      ...(Array.isArray(event.mediaUrls) ? event.mediaUrls : []),
-      ...mediaUrlsFromGeneratedAttachments(event.attachments),
-    ];
-    for (const mediaUrl of mediaUrls) {
-      const normalized = normalizeOptionalString(mediaUrl) ?? "";
-      if (!normalized) {
-        continue;
-      }
-      const metadata = attachmentByUrl.get(normalized);
-      const existingIndex = indexByUrl.get(normalized);
-      if (existingIndex !== undefined) {
-        trustedByUrl.set(normalized, trustedByUrl.get(normalized) === true || generatedMediaEvent);
-        if (metadata && Object.keys(attachments[existingIndex] ?? {}).length === 0) {
-          attachments[existingIndex] = metadata;
-        }
-        continue;
-      }
-      indexByUrl.set(normalized, pending.length);
-      trustedByUrl.set(normalized, generatedMediaEvent);
-      pending.push(normalized);
-      attachments.push(metadata ?? {});
-    }
-  }
-  return { mediaUrls: pending, attachments, trustByUrl: trustedByUrl };
-}
-
 export type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
 
 export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSessionParams) {
   const log = resolveEmbeddedAgentSessionLogger(params.messageChannel);
-  const reasoningMode = params.reasoningMode ?? "off";
-  const canShowReasoning = params.thinkingLevel !== "off";
   const toolResultFormat = params.toolResultFormat ?? "markdown";
   const useMarkdown = toolResultFormat === "markdown";
   const state: EmbeddedAgentSubscribeState = createEmbeddedAgentSubscribeState(params);
