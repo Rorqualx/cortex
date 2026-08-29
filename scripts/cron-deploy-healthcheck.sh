@@ -17,17 +17,20 @@
 #      (silent-failure: dashboard works, telegram is dead).
 #
 # On UNHEALTHY, auto-recovery (CRON_HEALTHCHECK_RECOVER=1, the default) runs a bounded
-# ladder — restore dropped plugin manifests + bounce, then (if still degraded) sync deps
-# + one clean rebuild — mirroring the manual repair the outage required. Single-flight so
-# two overlapping deploys cannot recover at once. Set CRON_HEALTHCHECK_RECOVER=0 for
-# detect-and-alert-only.
+# ladder — step 0: a boot that refuses readiness for an offline state migration is healed
+# by holding the gateway down and running `doctor --fix` (rollback/rebuild cannot escape
+# that class); then restore dropped plugin manifests + bounce, then (if still degraded)
+# sync deps + one clean rebuild — mirroring the manual repair the outages required.
+# Single-flight so two overlapping deploys cannot recover at once. Set
+# CRON_HEALTHCHECK_RECOVER=0 for detect-and-alert-only.
 #
 # Writes HEALTHY / RECOVERED / UNHEALTHY to memory/reports/deploy-health-YYYY-MM-DD.md
 # (the 08:00 briefing reads it). Exit 0 healthy or recovered, 1 unhealthy.
 #
 # Env (testing): CRON_HEALTHCHECK_TIMEOUT, CRON_HEALTHCHECK_INTERVAL,
 #   CRON_HEALTHCHECK_URL, CRON_HEALTHCHECK_REPORT, CRON_HEALTHCHECK_NO_NOTIFY,
-#   CRON_HEALTHCHECK_RECOVER, CRON_HEALTHCHECK_RUNTIME_LOG_DIR.
+#   CRON_HEALTHCHECK_RECOVER, CRON_HEALTHCHECK_RUNTIME_LOG_DIR,
+#   CRON_HEALTHCHECK_BOOT_STDERR, CRON_HEALTHCHECK_GATEWAY_PLIST.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -41,6 +44,10 @@ INTERVAL="${CRON_HEALTHCHECK_INTERVAL:-10}"
 REPORT="${CRON_HEALTHCHECK_REPORT:-$ROOT/memory/reports/deploy-health-$(date +%F).md}"
 RUNTIME_LOG_DIR="${CRON_HEALTHCHECK_RUNTIME_LOG_DIR:-/tmp/openclaw}"
 RECOVER="${CRON_HEALTHCHECK_RECOVER:-1}"
+# launchd StandardErrorPath for the gateway service — where a startup-migration refusal
+# (console.error before ExitError) lands. Keep aligned with the ai.openclaw.gateway plist.
+BOOT_STDERR="${CRON_HEALTHCHECK_BOOT_STDERR:-/tmp/openclaw-gateway-boot-stderr.log}"
+GATEWAY_PLIST="${CRON_HEALTHCHECK_GATEWAY_PLIST:-$HOME/Library/LaunchAgents/ai.openclaw.gateway.plist}"
 URL_ARG=()
 [ -n "${CRON_HEALTHCHECK_URL:-}" ] && URL_ARG=(--url "$CRON_HEALTHCHECK_URL")
 mkdir -p "$(dirname "$REPORT")" 2>/dev/null || true
@@ -97,6 +104,39 @@ print(json.loads(raw[i:]).get('version','') if i>=0 else '')" 2>/dev/null || tru
 bounce_gateway() { launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true; }
 gateway_pid() { launchctl list 2>/dev/null | awk '$3=="ai.openclaw.gateway"{print $1}'; }
 
+# Boot-stderr position tracking, parallel to snapshot_log_pos: the launchd stderr file
+# accumulates every boot, so a startup-migration refusal from THIS deploy's boot is only
+# the bytes written since the assess-time snapshot (stale earlier-boot refusals must not
+# read as the current cause after a recovery bounce).
+BOOT_OFF=0
+snapshot_boot_stderr_pos() {
+  BOOT_OFF=0
+  [ -f "$BOOT_STDERR" ] && BOOT_OFF="$(wc -c <"$BOOT_STDERR" 2>/dev/null || echo 0)"
+}
+# True when this deploy's boot refused readiness because a startup state migration needs
+# offline `doctor --fix` (stopped-writer) maintenance. Rollback and rebuild cannot escape
+# this class — every release built after the migration landed carries the same requirement,
+# and neither of those rungs runs doctor --fix. Refusal string is owned by
+# doctor-startup-migration-refusal.ts (formatStartupMigrationFailure).
+boot_needs_offline_migration() {
+  [ -f "$BOOT_STDERR" ] || return 1
+  tail -c "+$((BOOT_OFF + 1))" "$BOOT_STDERR" 2>/dev/null |
+    grep -q "refusing to report the gateway ready"
+}
+# Run the offline migration with the gateway held DOWN: doctor --fix demands stopped
+# writers, so bootout first to stop launchd KeepAlive from respawning a writer mid-migration,
+# then bootstrap the service back. Returns doctor's own exit code (0 only when it succeeded).
+run_offline_doctor_fix() {
+  launchctl bootout "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true
+  local dl=$(( $(date +%s) + 30 ))
+  while [ -n "$(gateway_pid)" ] && [ "$(date +%s)" -lt "$dl" ]; do sleep 1; done
+  node "$ROOT/openclaw.mjs" doctor --fix >/tmp/deploy-selfheal-doctor.log 2>&1
+  local rc=$?
+  launchctl bootstrap "gui/$(id -u)" "$GATEWAY_PLIST" 2>/dev/null || bounce_gateway
+  [ "$rc" = 0 ] || log "recovery step 0: doctor --fix exited $rc (see /tmp/deploy-selfheal-doctor.log)"
+  return "$rc"
+}
+
 # Wait for the in-parallel deploy build to start (it launches just after we are
 # dispatched) and then finish, so dist is stable and the pre-deploy gateway is dead
 # before we assess. If the build never appears within the grace window, proceed.
@@ -133,6 +173,7 @@ wait_for_boot() {
 # initialize" line is only ever emitted by a boot that reaches plugin init (a complete
 # dist), never by the mid-build partial-dist crashes, so those do not pollute the scan.
 snapshot_log_pos
+snapshot_boot_stderr_pos
 old_pid="$(gateway_pid)"
 wait_build_done
 wait_for_boot "$old_pid" || true
@@ -170,7 +211,21 @@ trap 'rm -f "$probe"; rm -rf "$LOCK"' EXIT
 
 method=""
 
-if deploy_is_migrated "$ROOT"; then
+# Step 0 (deploy-mode-agnostic) — a startup state migration that needs offline `doctor
+# --fix` maintenance makes the boot refuse readiness (the 2026-08-29 outage class). The
+# rollback and rebuild rungs below cannot escape it: every release built after the
+# migration landed carries the same requirement, and neither runs doctor --fix. So when
+# the boot shows that refusal, run the offline migration first with the gateway held down.
+if boot_needs_offline_migration; then
+  log "recovery step 0: startup-migration refusal detected; running offline doctor --fix"
+  pre_pid="$(gateway_pid)"
+  if run_offline_doctor_fix; then
+    wait_for_boot "$pre_pid" || true
+    rpc_up && [ -z "$(plugin_failures)" ] && method="offline doctor --fix"
+  fi
+fi
+
+if [ -z "$method" ] && deploy_is_migrated "$ROOT"; then
   # Step 1 — instant rollback to the previous release: the just-promoted one boots bad,
   # so revert the symlink to the last-good release (no rebuild). Safest, fastest recovery.
   snapshot_log_pos
@@ -200,7 +255,7 @@ if deploy_is_migrated "$ROOT"; then
       log "recovery step 2 (migrated): promote refused (see /tmp/deploy-selfheal-promote.log)"
     fi
   fi
-else
+elif [ -z "$method" ]; then
   # LEGACY in-place recovery.
   # Step 1 — restore dropped plugin manifests (the exit-78 crash-loop cause) + bounce.
   snapshot_log_pos
@@ -233,7 +288,7 @@ if [ -n "$method" ]; then
 fi
 
 fails2="$(plugin_failures)"
-report "UNHEALTHY-UNRECOVERABLE — auto-recovery (manifest-restore, then deps+rebuild) did not heal it. Was: $problem.${fails2:+ Still: $fails2.} Investigate immediately (see /tmp/deploy-selfheal-*.log)."
+report "UNHEALTHY-UNRECOVERABLE — auto-recovery (offline doctor --fix if migration-refused, rollback/manifest-restore, then deps+rebuild) did not heal it. Was: $problem.${fails2:+ Still: $fails2.} Investigate immediately (see /tmp/deploy-selfheal-*.log)."
 alert "Deploy UNHEALTHY — auto-recovery FAILED, manual fix needed"
 log "HEALTHCHECK-FAIL-UNRECOVERABLE: $problem${fails2:+ / still $fails2}"
 exit 1
