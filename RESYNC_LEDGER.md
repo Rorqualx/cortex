@@ -340,3 +340,29 @@ orphaned tests importing deleted modules.
 - Verified: tsgo:extensions:test worktree 28→23 == huey base 23 exactly
   (error-set minus the 5). No other orphan pattern (extensions 0/0, test:src
   9/9).
+
+## 2026-08-28 (18:50 MT cron) — behind=31, raw=18 all-ui conflicts (policy-resolved); 2 merge=ours drift grafts
+
+Upstream 79bdd1b022, base f804cdf4, fork a9ed8f9. All 18 raw conflicts in ui/ —
+apply_fork_ui_ownership resolved them wholesale (14 upstream-only ui files
+dropped); 0 residual code conflicts, 0 dropped upstream-new files. Work =
+2 merge=ours drift files:
+
+- src/agents/bash-tools.exec-runtime.ts (churn=3): ENHANCE-OURS — grafted
+  upstream's resolveExecTarget fix (requestedTarget === "auto" → null) into the
+  fork rewrite; ExecTarget includes "auto" (exec-approvals-core.ts:9) so the
+  comparison type-checks. Fork line was byte-identical to upstream's pre-fix
+  line, so the graft is exact.
+- src/infra/tsdown-config.test.ts (churn=17): ENHANCE-OURS — upstream added
+  minify?: unknown field + "minifies only the sealed deploy worker" test;
+  tsdown.config.ts auto-merged upstream's workerDeployBuildConfig minify
+  (codegen/compress/mangle keepNames) so the kept-ours test was silently
+  missing the new coverage. Grafted both hunks; fork test already has
+  entryKeys/requireUnifiedDistGraph helpers; entries verified present in
+  merged tsdown.config.ts (worker/worker :189, rsync-receiver :224, minify :211).
+
+Also: upstream bumped packageManager pin pnpm 11.22.0 → 12.0.0; local corepack
+tool install was a broken placeholder (native binary postinstall never ran) —
+repaired via node .tools/pnpm/12.0.0/node_modules/pnpm/install.js. Lockfile
+still v9.0; install clean, no lockfile rewrite. pnpm-workspace.yaml adds
+minimumReleaseAgeStrict: true (upstream, auto-merged).

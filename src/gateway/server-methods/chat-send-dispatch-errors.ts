@@ -91,6 +91,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
   >;
   context: GatewayRequestContext;
   isQueuedFollowupEnqueued: () => boolean;
+  isReplyDispatchRun?: () => boolean;
   persistUserTurnTranscript: () => Promise<unknown>;
   session: Pick<
     PreparedChatSendSession,
@@ -237,9 +238,9 @@ export function createChatSendDispatchErrorLifecycle(params: {
         startedAt: activeRunAbort.entry?.startedAtMs ?? now,
       };
     }
-    if (!agentTerminalPersistenceOwnedAtDispatchReject) {
-      // The lifecycle owner may have already cached its authoritative
-      // terminal; a late dispatch error must not replace that replay result.
+    if (!agentTerminalPersistenceOwnedAtDispatchReject || params.isReplyDispatchRun?.()) {
+      // Native lifecycle owns its replay result; dispatched runtimes leave
+      // failure projection to this owner, including transcript-write failures.
       const error = errorShape(ErrorCodes.UNAVAILABLE, errorMessage);
       setGatewayDedupeEntry({
         dedupe: context.dedupe,
@@ -274,7 +275,12 @@ export function createChatSendDispatchErrorLifecycle(params: {
     readLedger.clearSession(sessionKey);
     if (!dispatchError) {
       cleanupAdmittedRun();
+      // Reply-dispatch lifecycle events deliberately retain these until delivery settles.
       clearAgentRunContext(clientRunId, lifecycleGeneration);
+      if (params.isReplyDispatchRun?.()) {
+        context.chatRunState.clearRun(clientRunId);
+        context.agentRunSeq.delete(clientRunId);
+      }
       context.removeChatRun(clientRunId, clientRunId, sessionKey);
       return;
     }

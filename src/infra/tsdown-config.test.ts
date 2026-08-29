@@ -17,6 +17,7 @@ type TsdownConfigEntry = {
   };
   entry?: Record<string, string> | string[];
   inputOptions?: TsdownInputOptions;
+  minify?: unknown;
   outputOptions?: TsdownOutputOptions;
   outDir?: string;
   plugins?: Array<{ name?: string }>;
@@ -116,6 +117,22 @@ function readAgentModelDiscoveryCacheSource(): string {
 }
 
 describe("tsdown config", () => {
+  it("minifies only the sealed deploy worker while preserving runtime names", () => {
+    const configs = asConfigArray(tsdownConfig);
+    const deployWorker = configs.find((config) => entryKeys(config).includes("worker/worker"));
+    const rsyncReceiver = configs.find((config) =>
+      entryKeys(config).includes("worker/workspace-rsync-receiver"),
+    );
+
+    expect(deployWorker?.minify).toEqual({
+      codegen: true,
+      compress: true,
+      mangle: { keepNames: true },
+    });
+    expect(rsyncReceiver?.minify).toBeUndefined();
+    expect(requireUnifiedDistGraph().minify).toBeUndefined();
+  });
+
   it.each([
     {
       exportName: "OPENCLAW_STATE_SCHEMA_SQL",
