@@ -104,23 +104,22 @@ print(json.loads(raw[i:]).get('version','') if i>=0 else '')" 2>/dev/null || tru
 bounce_gateway() { launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true; }
 gateway_pid() { launchctl list 2>/dev/null | awk '$3=="ai.openclaw.gateway"{print $1}'; }
 
-# Boot-stderr position tracking, parallel to snapshot_log_pos: the launchd stderr file
-# accumulates every boot, so a startup-migration refusal from THIS deploy's boot is only
-# the bytes written since the assess-time snapshot (stale earlier-boot refusals must not
-# read as the current cause after a recovery bounce).
-BOOT_OFF=0
-snapshot_boot_stderr_pos() {
-  BOOT_OFF=0
-  [ -f "$BOOT_STDERR" ] && BOOT_OFF="$(wc -c <"$BOOT_STDERR" 2>/dev/null || echo 0)"
-}
-# True when this deploy's boot refused readiness because a startup state migration needs
-# offline `doctor --fix` (stopped-writer) maintenance. Rollback and rebuild cannot escape
-# this class — every release built after the migration landed carries the same requirement,
-# and neither of those rungs runs doctor --fix. Refusal string is owned by
+# True when the crash-looping boot is refusing readiness because a startup state migration
+# needs offline `doctor --fix` (stopped-writer) maintenance. Rollback and rebuild cannot
+# escape this class — every release built after the migration landed carries the same
+# requirement, and neither of those rungs runs doctor --fix. Refusal string is owned by
 # doctor-startup-migration-refusal.ts (formatStartupMigrationFailure).
+#
+# Scans the recent tail rather than a byte offset captured before the bounce: a crash-loop
+# reprints the refusal on every boot attempt, so it is always near the end, whereas an
+# offset scan is defeated by launchd stderr truncation/rotation and respawn throttling (the
+# 2026-08-30 miss — offset-based detection returned false and the migration went unhealed).
+# We only reach here with RPC down, so a refusal in the tail is the live cause; a false
+# positive merely runs an idempotent doctor --fix before the other rungs still run.
+BOOT_REFUSAL_TAIL_LINES=400
 boot_needs_offline_migration() {
   [ -f "$BOOT_STDERR" ] || return 1
-  tail -c "+$((BOOT_OFF + 1))" "$BOOT_STDERR" 2>/dev/null |
+  tail -n "$BOOT_REFUSAL_TAIL_LINES" "$BOOT_STDERR" 2>/dev/null |
     grep -q "refusing to report the gateway ready"
 }
 # Run the offline migration with the gateway held DOWN: doctor --fix demands stopped
@@ -173,7 +172,6 @@ wait_for_boot() {
 # initialize" line is only ever emitted by a boot that reaches plugin init (a complete
 # dist), never by the mid-build partial-dist crashes, so those do not pollute the scan.
 snapshot_log_pos
-snapshot_boot_stderr_pos
 old_pid="$(gateway_pid)"
 wait_build_done
 wait_for_boot "$old_pid" || true
