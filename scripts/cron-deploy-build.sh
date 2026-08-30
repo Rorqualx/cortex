@@ -50,7 +50,14 @@ dispatch_healthcheck() {
   echo "==> Launching detached post-deploy health watcher..."
   nohup env ${1+"$@"} bash "$ROOT/scripts/cron-deploy-healthcheck.sh" >/dev/null 2>&1 &
 }
-bounce_gateway() { launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true; }
+# kickstart -k bounces a LOADED service; after an offline-migration bootout the service is
+# unloaded, so fall back to bootstrap to bring it back. bootstrap on an already-loaded service
+# is a harmless no-op, keeping this safe for both the normal bounce and the post-migration bring-up.
+bounce_gateway() {
+  launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null ||
+    launchctl bootstrap "gui/$(id -u)" "${OPENCLAW_GATEWAY_PLIST:-$HOME/Library/LaunchAgents/ai.openclaw.gateway.plist}" 2>/dev/null ||
+    true
+}
 
 # Single-flight: only ONE dist-mutating op at a time (this deploy, a healthcheck rebuild, or
 # the release migration) — the deploy's two triggers (a land's detached cron-deploy-build.sh
@@ -79,12 +86,23 @@ if deploy_is_migrated "$ROOT"; then
   # Only the instant promote+bounce disrupts the gateway — quiesce just for that.
   quiesce || exit 3
   new_rel="$(promote_release "$ROOT")" || { echo "DEPLOY-ABORT: promote refused; gateway unchanged."; exit 1; }
-  # Dispatch the watcher AFTER promote and IMMEDIATELY before the bounce, so it captures
-  # the pre-bounce pid and assesses the NEW release the bounce brings up. Dispatching
-  # earlier (before quiesce) would let it assess the still-up old gateway, record HEALTHY
-  # for a swap that had not happened, and — if quiesce deferred or promote refused — roll
-  # the live symlink back for no reason. SKIP_BUILD_WAIT: the build already finished.
-  echo "==> Promoted $(basename "$new_rel"); bouncing gateway onto it..."
+  # Proactive schema migration: if the new release's agent-DB schema is ahead of any on-disk
+  # agent DB, the boot fail-closes on a stopped-writer migration and crash-loops (the recurring
+  # midnight-deploy outage). Nothing else runs that migration, so do it offline HERE — before the
+  # new release ever serves — so the bounce comes up clean. Runs only when actually behind
+  # (agent_schema_migration_pending), so the common no-migration deploy keeps its instant bounce.
+  # doctor --fix leaves the gateway down; bounce_gateway's bootstrap fallback brings it back.
+  if agent_schema_migration_pending "$ROOT"; then
+    echo "==> Promoted $(basename "$new_rel"); agent DB schema is behind it — migrating offline (doctor --fix) before serving..."
+    run_offline_agent_migration "$ROOT" ||
+      echo "DEPLOY-WARN: offline agent migration exited nonzero (see /tmp/deploy-agent-migration.log); healthcheck step-0 is the safety net."
+  else
+    echo "==> Promoted $(basename "$new_rel"); no agent-schema migration needed — bouncing gateway onto it..."
+  fi
+  # Dispatch the watcher AFTER any migration and IMMEDIATELY before the bounce, so it captures
+  # the pre-bounce pid and assesses the NEW release the bounce brings up. Dispatching earlier
+  # would let it assess the still-up old gateway (or time its 240s window across the migration).
+  # SKIP_BUILD_WAIT: the build already finished.
   dispatch_healthcheck CRON_HEALTHCHECK_SKIP_BUILD_WAIT=1
   bounce_gateway
   echo "DEPLOY-OK: atomic swap complete — gateway now serves $(basename "$new_rel")."

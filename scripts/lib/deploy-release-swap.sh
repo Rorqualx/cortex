@@ -130,6 +130,60 @@ rollback_release() {
   echo "$prevrel"
 }
 
+# --- offline agent-schema migration (stopped-writer `doctor --fix`) ---------
+# The agent-DB identity/schema migration (src/state/openclaw-agent-db-schema.ts ensureAgentSchema)
+# requires stopped-writer maintenance and fires exactly when an agent DB's SQLite user_version is
+# below OPENCLAW_AGENT_SCHEMA_VERSION. The gateway boot fail-closes on it ("requires stopped-writer
+# maintenance ... run openclaw doctor --fix") and crash-loops, and NOTHING else in the deploy runs
+# that migration — so a schema-bearing release must migrate offline before it serves (the recurring
+# 2026-08-29/08-30 midnight-deploy outage). Shared by the proactive deploy path and the
+# healthcheck's reactive step-0.
+DEPLOY_GATEWAY_LABEL="gui/$(id -u)/ai.openclaw.gateway"
+
+# deployed_agent_schema_version <root> — the OPENCLAW_AGENT_SCHEMA_VERSION the release expects.
+# The deploy builds dist from the checkout, so the source literal IS the deployed target (dist is
+# minified/hard to parse); read it there. Echoes the integer, or nothing when unreadable.
+deployed_agent_schema_version() {
+  grep -oE 'OPENCLAW_AGENT_SCHEMA_VERSION = [0-9]+' \
+    "$1/src/state/openclaw-agent-db-contract.ts" 2>/dev/null | grep -oE '[0-9]+' | head -1
+}
+
+# agent_schema_migration_pending <root> — true when any on-disk agent DB is BELOW the deployed
+# schema version, i.e. exactly the `userVersion < targetVersion` condition under which
+# ensureAgentSchema demands the stopped-writer lease and boot refuses. Read-only PRAGMA reads are
+# safe against the still-running gateway (WAL allows concurrent readers). Fail SAFE: on any
+# uncertainty (no target, no sqlite3, unreadable DB) return true so the offline path runs rather
+# than risk a crash-loop.
+agent_schema_migration_pending() {
+  local root="$1" target db v
+  target="$(deployed_agent_schema_version "$root")"
+  [ -n "$target" ] || return 0
+  command -v sqlite3 >/dev/null 2>&1 || return 0
+  local agents_dir="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}/agents"
+  for db in "$agents_dir"/*/agent/openclaw-agent.sqlite; do
+    [ -f "$db" ] || continue
+    v="$(sqlite3 "$db" 'PRAGMA user_version;' 2>/dev/null)"
+    [ -n "$v" ] || return 0
+    [ "$v" -lt "$target" ] 2>/dev/null && return 0
+  done
+  return 1
+}
+
+# run_offline_agent_migration <root> — hold the gateway DOWN and run `doctor --fix` so the
+# stopped-writer migration completes; leaves the gateway down (the caller brings it up, e.g. via
+# bounce_gateway's bootstrap fallback, then verifies). bootout stops launchd KeepAlive from
+# respawning a writer mid-migration. `doctor --fix` (= --repair) applies without prompting, so it
+# never blocks in a detached deploy. Returns doctor's exit code.
+run_offline_agent_migration() {
+  local root="$1" rc dl
+  launchctl bootout "$DEPLOY_GATEWAY_LABEL" 2>/dev/null || true
+  dl=$(( $(date +%s) + 30 ))
+  while launchctl print "$DEPLOY_GATEWAY_LABEL" >/dev/null 2>&1 && [ "$(date +%s)" -lt "$dl" ]; do sleep 1; done
+  node "$root/openclaw.mjs" doctor --fix >/tmp/deploy-agent-migration.log 2>&1
+  rc=$?
+  return "$rc"
+}
+
 # prune_releases <root> [keep] — keep the newest <keep> releases (current always kept),
 # remove older ones. Never removes the release dist.current points at.
 prune_releases() {

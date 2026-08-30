@@ -101,7 +101,13 @@ raw=open('$probe').read(); i=raw.find('{')
 print(json.loads(raw[i:]).get('version','') if i>=0 else '')" 2>/dev/null || true
 }
 
-bounce_gateway() { launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true; }
+# kickstart -k bounces a LOADED service; after an offline-migration bootout the service is
+# unloaded, so fall back to bootstrap. bootstrap on an already-loaded service is a harmless no-op.
+bounce_gateway() {
+  launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null ||
+    launchctl bootstrap "gui/$(id -u)" "$GATEWAY_PLIST" 2>/dev/null ||
+    true
+}
 gateway_pid() { launchctl list 2>/dev/null | awk '$3=="ai.openclaw.gateway"{print $1}'; }
 
 # True when the crash-looping boot is refusing readiness because a startup state migration
@@ -122,19 +128,10 @@ boot_needs_offline_migration() {
   tail -n "$BOOT_REFUSAL_TAIL_LINES" "$BOOT_STDERR" 2>/dev/null |
     grep -q "refusing to report the gateway ready"
 }
-# Run the offline migration with the gateway held DOWN: doctor --fix demands stopped
-# writers, so bootout first to stop launchd KeepAlive from respawning a writer mid-migration,
-# then bootstrap the service back. Returns doctor's own exit code (0 only when it succeeded).
-run_offline_doctor_fix() {
-  launchctl bootout "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null || true
-  local dl=$(( $(date +%s) + 30 ))
-  while [ -n "$(gateway_pid)" ] && [ "$(date +%s)" -lt "$dl" ]; do sleep 1; done
-  node "$ROOT/openclaw.mjs" doctor --fix >/tmp/deploy-selfheal-doctor.log 2>&1
-  local rc=$?
-  launchctl bootstrap "gui/$(id -u)" "$GATEWAY_PLIST" 2>/dev/null || bounce_gateway
-  [ "$rc" = 0 ] || log "recovery step 0: doctor --fix exited $rc (see /tmp/deploy-selfheal-doctor.log)"
-  return "$rc"
-}
+# The offline migration itself (bootout -> doctor --fix, gateway left down) is the shared
+# run_offline_agent_migration from deploy-release-swap.sh; step 0 brings the gateway back via
+# bounce_gateway (bootstrap fallback) and verifies. Same implementation the proactive deploy path
+# uses, so reactive and proactive recovery cannot drift.
 
 # Wait for the in-parallel deploy build to start (it launches just after we are
 # dispatched) and then finish, so dist is stable and the pre-deploy gateway is dead
@@ -217,10 +214,11 @@ method=""
 if boot_needs_offline_migration; then
   log "recovery step 0: startup-migration refusal detected; running offline doctor --fix"
   pre_pid="$(gateway_pid)"
-  if run_offline_doctor_fix; then
-    wait_for_boot "$pre_pid" || true
-    rpc_up && [ -z "$(plugin_failures)" ] && method="offline doctor --fix"
-  fi
+  run_offline_agent_migration "$ROOT" ||
+    log "recovery step 0: doctor --fix exited nonzero (see /tmp/deploy-agent-migration.log)"
+  bounce_gateway
+  wait_for_boot "$pre_pid" || true
+  rpc_up && [ -z "$(plugin_failures)" ] && method="offline doctor --fix"
 fi
 
 if [ -z "$method" ] && deploy_is_migrated "$ROOT"; then
