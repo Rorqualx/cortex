@@ -1997,7 +1997,11 @@ export function formatMemorySection(
   const lines = facts.map((r) => {
     const marker = tierMarker(r.tier);
     const age = now !== undefined ? ` ${formatRelativeAge(now - r.fact.createdAt)}` : "";
-    return `- ${marker} [${r.score.toFixed(2)}]${age} ${r.fact.text}`;
+    // Provenance: short source-session tag so the model can tell which
+    // recalls share an origin (and weigh same-session clusters accordingly).
+    // Last 6 chars only — full session ids would bloat every line.
+    const src = r.fact.sessionId ? ` src=${r.fact.sessionId.slice(-6)}` : "";
+    return `- ${marker} [${r.score.toFixed(2)}]${age}${src} ${r.fact.text}`;
   });
   // Guidance prelude: tells the agent how to use the facts. Stays passive
   // ("draw on these"), respects the agent's own answer style — no hard rules
@@ -2007,7 +2011,7 @@ export function formatMemorySection(
   // event ordering ("which came first") or durations ("how long ago"), the
   // answer lives in the fact text itself, not in the recall annotation.
   const prelude =
-    "Draw on these recalled facts when relevant. The (Nd ago) annotation shows when each fact was *noted*, not when the event happened — use it only to break ties between two facts that directly contradict (e.g. balance is X vs balance is Y, prefer the more recent recall). For questions about event ordering, durations, or dates, the answer lives in the fact text itself.";
+    "Draw on these recalled facts when relevant. The (Nd ago) annotation shows when each fact was *noted*, not when the event happened — use it only to break ties between two facts that directly contradict (e.g. balance is X vs balance is Y, prefer the more recent recall). For questions about event ordering, durations, or dates, the answer lives in the fact text itself. The `src=` tag (when present) is the short id of the session that produced the fact — recalls sharing a `src` came from the same origin session.";
   return `## Memory (hierarchical-l3)\n${prelude}\n\n${lines.join("\n")}`;
 }
 
