@@ -17,6 +17,7 @@ import { logVerbose } from "../../globals.js";
 import { isFastTestRuntimeEnv } from "../../infra/env.js";
 import { clearCommandLane, getQueueSize } from "../../process/command-queue.js";
 import { interruptSessionWorkAdmissions } from "../../sessions/session-lifecycle-admission.js";
+import { queueSteeringPreemptCapture } from "../../skill-forge/steering-capture.js";
 import { resolveCommandTurnTargetSessionKey } from "../command-turn-context.js";
 import {
   formatThinkingLevels,
@@ -388,6 +389,19 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
     } as const;
   }
   const visibleTurnPreemptsHeartbeat = heartbeatPreemption === "drained";
+  if (visibleTurnPreemptsHeartbeat && rawActiveSessionIdForInterrupt) {
+    // Steering-delta capture (daily-research 2026-08-30 QW-C): the moment a
+    // visible turn redirects an in-flight heartbeat run is high-signal data
+    // for skill distillation. Queue a throttled, best-effort forge capture —
+    // never blocks or throws into the reply path.
+    queueSteeringPreemptCapture({
+      sessionId: rawActiveSessionIdForInterrupt,
+      sessionFile: preparedSessionState.sessionFile,
+      sessionKey,
+      workspaceDir: context.workspaceDir,
+      debug: (message) => logVerbose(message),
+    });
+  }
   if (
     activeRunQueueMode === "interrupt" &&
     !isRoomEvent &&

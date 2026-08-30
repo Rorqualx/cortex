@@ -1,7 +1,12 @@
 export const FORGE_SCHEMA = "openclaw-skill-forge" as const;
 export const FORGE_SCHEMA_VERSION = 1 as const;
 
-export type CaptureTrigger = "manual" | "session-end" | "subagent-end" | "explicit-instruction";
+export type CaptureTrigger =
+  | "manual"
+  | "session-end"
+  | "subagent-end"
+  | "explicit-instruction"
+  | "steering-preempt";
 
 export type SkillForgeCaptureManifest = {
   forgeSchema: typeof FORGE_SCHEMA;
