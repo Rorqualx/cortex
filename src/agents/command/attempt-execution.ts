@@ -1220,10 +1220,7 @@ export function runAgentAttempt(params: {
   const embeddedPersistencePrompt = params.opts.gitCoauthorAttribution
     ? (continuationTranscriptBody ?? effectivePrompt)
     : continuationTranscriptBody;
-  const embeddedRunBase: Omit<
-    RunEmbeddedAgentInternalParams,
-    "compactionCountOwner" | "onCompactionAccounting"
-  > = {
+  const embeddedRunParams: RunEmbeddedAgentInternalParams = {
     preparedRunAdmission: params.preparedRunAdmission,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
@@ -1340,6 +1337,7 @@ export function runAgentAttempt(params: {
     contextEngineLogicalTurnLease: params.contextEngineLogicalTurnLease,
     onContextEngineTurnCandidate: params.onContextEngineTurnCandidate,
     onUserMessagePersisted: params.onUserMessagePersisted,
+    onCompactionAccounting: params.onCompactionAccounting,
     onSuccessfulAuthProfile: params.onSuccessfulAuthProfile
       ? (successfulProfileId) =>
           params.onSuccessfulAuthProfile?.({
@@ -1361,13 +1359,6 @@ export function runAgentAttempt(params: {
     bootstrapPromptWarningSignaturesSeen,
     bootstrapPromptWarningSignature,
   };
-  const embeddedRunParams: RunEmbeddedAgentInternalParams = params.onCompactionAccounting
-    ? {
-        ...embeddedRunBase,
-        compactionCountOwner: "caller",
-        onCompactionAccounting: params.onCompactionAccounting,
-      }
-    : embeddedRunBase;
   setChannelSourceTurnId(embeddedRunParams, readChannelSourceTurnId(params.runContext));
   setChannelSourceTurnSameThreadRequired(
     embeddedRunParams,

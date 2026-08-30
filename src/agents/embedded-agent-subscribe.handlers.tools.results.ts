@@ -677,7 +677,6 @@ export async function emitToolResultOutput(params: {
     return;
   }
 
-  const outputText = extractToolResultText(sanitizedResult);
   const mediaReply = isToolError ? undefined : extractToolResultMediaArtifact(result);
   const mediaUrls = mediaReply
     ? filterToolResultMediaUrls(
@@ -696,6 +695,7 @@ export async function emitToolResultOutput(params: {
       builtinToolNames: ctx.builtinToolNames,
     }) && ctx.shouldEmitToolOutput();
   if (shouldEmitOutput) {
+    const outputText = extractToolResultText(sanitizedResult);
     if (outputText) {
       ctx.emitToolOutput(rawToolName, meta, outputText, hasStructuredMedia ? undefined : result);
     }
