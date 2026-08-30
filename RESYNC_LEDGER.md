@@ -407,3 +407,24 @@ Conflicts resolved (6) + merge=ours drift (2):
   graft behavior tests fail on huey. Kept fork's plain-string structure at the
   acpSpawnRuntimeEnabled branch (fork dropped the agents_list conditional
   earlier), wording updated.
+
+## 2026-08-30 (upstream 46c1eef6, behind=88, raw=260 → ui-policy 257, code=3+1 drift)
+
+- src/agents/embedded-agent-runner/run/payloads.ts — ADOPT-UPSTREAM (#133264 perf:
+  reuse assistant/reply payload prep; removed redundant shouldSuppressRawErrorText
+  filter — upstream's payloads.errors.test.ts unchanged and green, suppression now
+  lives in the directive-preparation path) + GRAFT fork delta (lastToolRecovery
+  success reply, hasUserFacingAssistantReply/ErrorReply/FailureAcknowledgement
+  split feeding fork buildFailureWarning, heartbeat early-return guard, widened
+  suppressToolErrorWarnings type). One hand-resolved hunk: upstream answerTexts
+  ternary + preparedAnswerDirectives, fork's renamed declaration (errorText
+  awareness lives in hasUserFacingErrorReply). No union: suppression machinery
+  fully dropped, 0 stale refs.
+- src/cli/skills-cli.curator.test.ts / skills-cli.workshop.test.ts — KEEP-OURS
+  deletion (f8300651e88 "remove Skill Workshop — Skill Forge is the only skills
+  pipeline"; upstream churn was 5-6 incidental lines). Ledger-documented product
+  decision, not a collision.
+- merge=ours drift src/cron/isolated-agent.model-preflight.test.ts — GRAFT: clean
+  3-way union (merge-file exit 0); upstream's resolveSessionAuthSelectionMock +
+  auth-profile config hunks + fork's fallback-passthrough test rewrite coexist
+  (disjoint tests; mockRunCronFallbackPassthrough exists in harness at base/fork/upstream).
