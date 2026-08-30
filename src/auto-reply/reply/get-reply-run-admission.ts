@@ -388,6 +388,23 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
     } as const;
   }
   const visibleTurnPreemptsHeartbeat = heartbeatPreemption === "drained";
+  if (visibleTurnPreemptsHeartbeat) {
+    // QW-C (2026-08-30): a visible turn just steered away an in-flight
+    // heartbeat/background run — queue that trajectory delta into the skill
+    // forge capture pipeline (throttled per session per hour, fire-and-forget;
+    // capture must never block or break the reply admission path).
+    try {
+      const { queueSteeringPreemptCapture } = await import("../../skill-forge/steering-capture.js");
+      queueSteeringPreemptCapture({
+        sessionId: rawActiveSessionIdForInterrupt,
+        sessionFile: preparedSessionState.sessionFile,
+        workspaceDir: sessionEntry?.worktree?.canonicalWorkspaceDir ?? context.workspaceDir,
+        ...(sessionKey ? { sessionKey } : {}),
+      });
+    } catch {
+      // Fire-and-forget: module load or queueing failures are non-fatal.
+    }
+  }
   if (
     activeRunQueueMode === "interrupt" &&
     !isRoomEvent &&
