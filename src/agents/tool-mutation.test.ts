@@ -313,7 +313,7 @@ describe("tool mutation helpers", () => {
     (dialogAction) => {
       expect(
         buildToolMutationState("computer", { action: "browser_dialog", dialogAction }),
-      ).toEqual({
+      ).toMatchObject({
         mutatingAction: dialogAction !== "inspect",
         replaySafe: dialogAction === "inspect",
       });
@@ -322,8 +322,10 @@ describe("tool mutation helpers", () => {
 
   it("preserves declared side effects for a computer observation", () => {
     expect(
-      buildToolMutationState("computer", { action: "list_windows" }, { ownerKey: "plugin-owner" }),
-    ).toEqual({ mutatingAction: true, replaySafe: false });
+      buildToolMutationState("computer", { action: "list_windows" }, undefined, {
+        ownerKey: "plugin-owner",
+      }),
+    ).toMatchObject({ mutatingAction: true, replaySafe: false });
   });
 
   it("classifies mobile UI observation as replay-safe and act as mutating", () => {

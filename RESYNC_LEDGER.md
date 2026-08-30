@@ -428,3 +428,18 @@ Conflicts resolved (6) + merge=ours drift (2):
   3-way union (merge-file exit 0); upstream's resolveSessionAuthSelectionMock +
   auth-profile config hunks + fork's fallback-passthrough test rewrite coexist
   (disjoint tests; mockRunCronFallbackPassthrough exists in harness at base/fork/upstream).
+
+### 2026-08-30 fix commit (post-proof tsgo:test:src +1)
+
+- src/agents/tool-mutation.test.ts — upstream #133188 adopted its tests against the
+  FORK's 4-param buildToolMutationState(tool, args, meta?, options?) superset
+  (fork f830-era fingerprint recovery work; upstream is 3-param). Fixed call shape
+  (options as 4th arg, matching fork prod callers like tool-terminal-outcome.ts:51)
+  and asserted via toMatchObject (fork convention for owner-keyed calls — the fork
+  return is a superset with ownerKey/actionFingerprint). tsgo:test:src 9→8.
+- src/agents/embedded-agent-runner/run/attempt.code-mode-reconciliation.test.ts —
+  "inspects a partial mutation… replay fence" FAILS AT BASELINE (proven: huey run at
+  404928fdbb3 reproduces; live main too). Pre-existing fork-main breakage in the
+  steering-loop/preparer interplay (attempt-stream-prepare consults the preparer; this
+  test mocks subscribe away), NOT merge-caused; not net-new → proof gate unaffected.
+  Fork follow-up, not resync scope.
