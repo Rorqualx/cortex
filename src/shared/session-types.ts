@@ -2,6 +2,7 @@ import type {
   GatewayAgentRuntime as ProtocolGatewayAgentRuntime,
   SessionCreatedActor,
   SessionPerson,
+  SessionPermissionMode,
   SessionsAssignOwnerParams,
 } from "../../packages/gateway-protocol/src/index.js";
 
@@ -73,6 +74,8 @@ export type GatewayAgentRow = {
   thinkingLevels?: GatewayThinkingLevelOption[];
   thinkingOptions?: string[];
   thinkingDefault?: string;
+  /** Configured posture label only; never an authorization decision. */
+  defaultPermissionMode?: SessionPermissionMode;
 };
 
 /** Generic base for paged session-list responses. */

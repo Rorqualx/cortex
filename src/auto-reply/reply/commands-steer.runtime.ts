@@ -5,5 +5,5 @@ export {
   isEmbeddedAgentRunHandleActive,
   queueEmbeddedAgentMessageWithOutcomeAsync,
   resolveActiveEmbeddedRunHandleSessionId,
-  resolveActiveEmbeddedRunSessionId,
 } from "../../agents/embedded-agent-runner/runs.js";
+export { resolveActiveEmbeddedRunSessionId } from "../../agents/embedded-agent-runner/active-run-projections.js";

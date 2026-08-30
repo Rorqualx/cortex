@@ -21,6 +21,7 @@ import type {
   CodexBundleMcpThreadConfig,
   LoadCodexBundleMcpThreadConfigParams,
 } from "../agents/codex-mcp-config.types.js";
+import { resolveActiveEmbeddedRunSessionId } from "../agents/embedded-agent-runner/active-run-projections.js";
 import type {
   EmbeddedRunAttemptParams as CoreEmbeddedRunAttemptParams,
   EmbeddedRunAttemptResult,
@@ -30,7 +31,6 @@ import {
   abortEmbeddedAgentRun,
   clearActiveEmbeddedRun,
   queueEmbeddedAgentMessageWithOutcome,
-  resolveActiveEmbeddedRunSessionId,
   setActiveEmbeddedRun,
   type AbortAndDrainEmbeddedAgentRunResult,
   type EmbeddedAgentQueueMessageOptions,
@@ -117,7 +117,6 @@ export const agentHarnessAttemptTerminal = {
 };
 export { projectAgentHarnessTranscriptMessageForDisplay } from "../agents/harness/transcript-visibility.js";
 export { fingerprintResolvedAuthProfileCredential } from "../agents/execution-auth-binding.js";
-export { TRANSCRIPT_CREDENTIAL_SAFETY_PROMPT } from "../agents/transcript-credential-safety.js";
 export type {
   AgentHarnessUserInputAnswers,
   AgentHarnessUserInputOption,
@@ -256,6 +255,8 @@ export const agentHarnessStructuredInput = Object.freeze({
   run: runStructuredInput,
   snapshot: snapshotStructuredInput,
 });
+export { normalizeQuestionTimeoutSeconds } from "../agents/tools/ask-user-tool-normalization.js";
+export { buildCredentialSafetyPrompt } from "../agents/transcript-credential-safety.js";
 export { resolveAttemptFsWorkspaceOnly } from "../agents/embedded-agent-runner/run/attempt-prompt-helpers.js";
 export { resolveAttemptSpawnWorkspaceDir } from "../agents/embedded-agent-runner/run/attempt-thread-helpers.js";
 export { buildEmbeddedAttemptToolRunContext } from "../agents/embedded-agent-runner/run/attempt-tool-run-context.js";

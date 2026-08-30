@@ -5,6 +5,7 @@ import { closedObject } from "./closed-object.js";
 import { NonEmptyString } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
 import { GatewayAgentRuntimeSchema } from "./session-row.js";
+import { SessionPermissionModeSchema } from "./sessions-row.js";
 
 /**
  * Agent, model, skill, and tool catalog schemas.
@@ -105,6 +106,8 @@ export const AgentSummarySchema = closedObject({
   ),
   thinkingOptions: Type.Optional(Type.Array(NonEmptyString)),
   thinkingDefault: Type.Optional(NonEmptyString),
+  // Configured posture for display only, never an authorization decision.
+  defaultPermissionMode: Type.Optional(SessionPermissionModeSchema),
 });
 
 /** Empty request payload for listing configured agents. */

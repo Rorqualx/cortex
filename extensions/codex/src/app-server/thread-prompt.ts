@@ -1,7 +1,7 @@
 import {
+  buildCredentialSafetyPrompt,
   buildSkillForgePromptSection,
   SKILL_FORGE_TOOL_NAME,
-  TRANSCRIPT_CREDENTIAL_SAFETY_PROMPT,
   type EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { listRegisteredPluginAgentPromptGuidance } from "openclaw/plugin-sdk/plugin-runtime";
@@ -21,6 +21,7 @@ export function buildDeveloperInstructions(
 ): string {
   const deferredToolNames = new Set<string>();
   let hasSkillForge = false;
+  let secretsToolName: string | undefined;
   let hasSessionsSpawn = false;
   let hasSessionsYield = false;
   let hasSeenDirectNamespace = false;
@@ -37,6 +38,9 @@ export function buildDeveloperInstructions(
       const name = tool.name.trim();
       if (tool.deferLoading === true && name) {
         deferredToolNames.add(name);
+      }
+      if (name === "secrets" && params.disableTools !== true) {
+        secretsToolName ??= spec.type === "namespace" ? `${spec.name}.${name}` : name;
       }
       hasSkillForge ||= name === SKILL_FORGE_TOOL_NAME;
       hasSessionsSpawn ||= name === "sessions_spawn";
@@ -77,7 +81,7 @@ export function buildDeveloperInstructions(
       ? "When a native child's result belongs in a later turn, end the current turn with `openclaw_direct.sessions_yield`; the completion arrives as the next model-visible input. Use native `wait_agent` only for an intentional same-turn wait when the immediate next step is blocked on the child. Never loop-poll for native child completion."
       : undefined,
     buildVisibleReplyInstruction(params, messageToolAvailable),
-    TRANSCRIPT_CREDENTIAL_SAFETY_PROMPT,
+    buildCredentialSafetyPrompt(secretsToolName),
     nativeCommandGuidance,
     params.extraSystemPrompt,
   ];
