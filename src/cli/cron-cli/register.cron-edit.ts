@@ -229,6 +229,9 @@ export function registerCronEditCommand(cron: Command) {
           if (opts.keepAfterRun) {
             patch.deleteAfterRun = false;
           }
+          if (opts.skipMissedRuns) {
+            patch.skipMissedRuns = true;
+          }
           if (typeof opts.session === "string") {
             patch.sessionTarget = sessionTarget;
           }

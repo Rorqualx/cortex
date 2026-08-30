@@ -410,6 +410,7 @@ export function registerCronAddCommand(cron: Command) {
                 ? {}
                 : { enabled: !opts.disabled }),
               deleteAfterRun: opts.deleteAfterRun ? true : opts.keepAfterRun ? false : undefined,
+              ...(opts.skipMissedRuns ? { skipMissedRuns: true } : {}),
               agentId,
               sessionKey,
               schedule,

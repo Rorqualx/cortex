@@ -509,6 +509,17 @@ export function normalizeCronJobInput(
     }
   }
 
+  if ("skipMissedRuns" in base) {
+    // Default off — only persist the opt-in so job_json stays byte-light and an explicit
+    // false through a patch clears it.
+    const skip = parseBoolean(base.skipMissedRuns);
+    if (skip === true) {
+      next.skipMissedRuns = true;
+    } else {
+      delete next.skipMissedRuns;
+    }
+  }
+
   if ("sessionTarget" in base) {
     const normalized = normalizeSessionTarget(base.sessionTarget);
     if (normalized) {

@@ -67,6 +67,14 @@ export function isRunnableJob(params: {
   if (hasActiveCronRun(job)) {
     return false;
   }
+  // skipMissedRuns: a freshness-sensitive cron (e.g. a daily pipeline stage) must not replay a
+  // slot missed while the gateway was down — a stale, out-of-order run is worse than skipping
+  // the day. Only the startup catch-up pass sets allowCronMissedRunByLastRun, so normal on-time
+  // firing is unaffected; excluding the job here leaves the missed slot to the maintenance
+  // recompute, which advances nextRunAtMs to the next future occurrence.
+  if (params.allowCronMissedRunByLastRun && job.schedule.kind === "cron" && job.skipMissedRuns) {
+    return false;
+  }
   const next = job.state.nextRunAtMs;
   // A recorded startup deferral also owns the missed-slot path across restarts.
   // Keep their dominant no-due path ahead of run-history normalization.

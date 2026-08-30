@@ -14,6 +14,11 @@ export function registerCronMutationOptions(command: Command, mode: "add" | "edi
       false,
     )
     .option("--keep-after-run", "Keep one-shot job after it succeeds", false)
+    .option(
+      "--skip-missed-runs",
+      "Skip runs missed while the gateway was down; only the next on-schedule run fires (freshness-sensitive jobs)",
+      create ? false : undefined,
+    )
     .option("--agent <id>", "Agent id for this job")
     .option("--session <target>", "Session target (main|isolated|current|session:<id>)")
     .option("--session-key <key>", "Session key for job routing")

@@ -527,6 +527,13 @@ export type CronJob = CronJobBase<
 > & {
   declarationKey?: string;
   displayName?: string;
+  /**
+   * When true, a slot missed while the gateway was down is NOT replayed on restart: the
+   * startup catch-up pass skips it and the next on-schedule run fires instead. For
+   * freshness-sensitive jobs (e.g. a daily research-pipeline stage) where replaying a stale,
+   * out-of-order slot is worse than skipping the day. Default off = normal catch-up.
+   */
+  skipMissedRuns?: boolean;
   owner?: {
     agentId?: string;
     sessionKey?: string;
