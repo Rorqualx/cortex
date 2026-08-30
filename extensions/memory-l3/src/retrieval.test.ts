@@ -220,6 +220,68 @@ describe("formatMemorySection", () => {
     expect(result).toContain("[0.85] morning standups preferred");
   });
 
+  it("renders short-form source-session provenance when sessionId is known", () => {
+    const result = formatMemorySection([
+      {
+        fact: {
+          id: "f-src",
+          text: "balance is X",
+          importance: 0.7,
+          createdAt: NOW,
+          dedupKey: "k:src",
+          sessionId: "agent:main:session:cafe12345678",
+        },
+        score: 0.85,
+        signals: {
+          lexical: 1,
+          bm25: 0,
+          importance: 0.7,
+          recency: 1,
+          l3Boost: 0,
+          semantic: 0,
+          informationGain: 0,
+          goalRelevance: 0,
+          reliability: 1,
+          semanticEntropy: 1,
+          validity: 1,
+        },
+        chunkId: "chunk-1",
+        tier: "l2",
+      },
+      {
+        fact: {
+          id: "f-nosrc",
+          text: "balance is Y",
+          importance: 0.6,
+          createdAt: NOW,
+          dedupKey: "k:nosrc",
+        },
+        score: 0.5,
+        signals: {
+          lexical: 1,
+          bm25: 0,
+          importance: 0.6,
+          recency: 1,
+          l3Boost: 0,
+          semantic: 0,
+          informationGain: 0,
+          goalRelevance: 0,
+          reliability: 1,
+          semanticEntropy: 1,
+          validity: 1,
+        },
+        chunkId: "chunk-2",
+        tier: "l2",
+      },
+    ]);
+    // Last 6 chars of the session id, no full uuid in the model-visible line.
+    expect(result).toContain("[0.85] src=345678 balance is X");
+    expect(result).not.toContain("agent:main:session:cafe12345678");
+    // Facts without a sessionId render exactly as before — no dangling src=.
+    expect(result).toContain("[0.50] balance is Y");
+    expect(result).not.toMatch(/balance is Y.*src=/);
+  });
+
   it("uses ★ marker for long-term hits and · for L2 hits", () => {
     const result = formatMemorySection([
       {

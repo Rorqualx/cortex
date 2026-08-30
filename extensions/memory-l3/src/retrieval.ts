@@ -1997,7 +1997,11 @@ export function formatMemorySection(
   const lines = facts.map((r) => {
     const marker = tierMarker(r.tier);
     const age = now !== undefined ? ` ${formatRelativeAge(now - r.fact.createdAt)}` : "";
-    return `- ${marker} [${r.score.toFixed(2)}]${age} ${r.fact.text}`;
+    // Short-form session provenance: last 6 chars of the source session id so
+    // the model can distinguish facts from different sessions without burning
+    // tokens on the full uuid. Only rendered when sessionId is known.
+    const src = r.fact.sessionId ? ` src=${r.fact.sessionId.slice(-6)}` : "";
+    return `- ${marker} [${r.score.toFixed(2)}]${age}${src} ${r.fact.text}`;
   });
   // Guidance prelude: tells the agent how to use the facts. Stays passive
   // ("draw on these"), respects the agent's own answer style — no hard rules
