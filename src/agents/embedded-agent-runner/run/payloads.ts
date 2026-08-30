@@ -164,6 +164,7 @@ export function buildEmbeddedRunPayloads(params: {
   agentId?: string;
   runId?: string;
   runAborted?: boolean;
+  runStopReason?: string;
   deferAssistantTimeoutError?: boolean;
   didSendDeterministicApprovalPrompt?: boolean;
   heartbeatToolResponse?: HeartbeatToolResponse;
@@ -443,16 +444,21 @@ export function buildEmbeddedRunPayloads(params: {
   if (params.lastToolError) {
     // Surface mutating failures unless the assistant explicitly acknowledged the failed action.
     // Otherwise, keep the previous behavior and only surface non-recoverable failures when no reply exists.
-    const failureWarning = buildFailureWarning({
-      lastToolError: params.lastToolError,
-      hasUserFacingReply: hasUserFacingAssistantReply,
-      hasUserFacingErrorReply,
-      hasUserFacingFailureAcknowledgement,
-      suppressToolErrors: Boolean(params.config?.messages?.suppressToolErrors),
-      suppressToolErrorWarnings: params.suppressToolErrorWarnings,
-      verboseLevel: params.verboseLevel,
-      useMarkdown,
-    });
+    // A restart intentionally aborts the active tool while the Gateway takes over.
+    // Keep that lifecycle status independent from tool-error suppression.
+    const isRestartStatus = params.runStopReason === "restart";
+    const failureWarning = isRestartStatus
+      ? { text: "Gateway restarting…", nonTerminalToolErrorWarning: false }
+      : buildFailureWarning({
+          lastToolError: params.lastToolError,
+          hasUserFacingReply: hasUserFacingAssistantReply,
+          hasUserFacingErrorReply,
+          hasUserFacingFailureAcknowledgement,
+          suppressToolErrors: Boolean(params.config?.messages?.suppressToolErrors),
+          suppressToolErrorWarnings: params.suppressToolErrorWarnings,
+          verboseLevel: params.verboseLevel,
+          useMarkdown,
+        });
     if (failureWarning) {
       const normalizedWarning = normalizeTextForComparison(failureWarning.text);
       const duplicateWarning = normalizedWarning
@@ -467,9 +473,13 @@ export function buildEmbeddedRunPayloads(params: {
       if (!duplicateWarning) {
         replyItems.push({
           text: failureWarning.text,
-          isError: true,
-          nonTerminalToolErrorWarning:
-            hasUserFacingAssistantReply && failureWarning.nonTerminalToolErrorWarning,
+          ...(!isRestartStatus
+            ? {
+                isError: true,
+                nonTerminalToolErrorWarning:
+                  hasUserFacingAssistantReply && failureWarning.nonTerminalToolErrorWarning,
+              }
+            : {}),
         });
       }
     }

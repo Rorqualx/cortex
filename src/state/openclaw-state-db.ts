@@ -34,6 +34,8 @@ import {
   type SqliteTransactionOptions,
 } from "../infra/sqlite-transaction.js";
 import { readSqliteUserVersion } from "../infra/sqlite-user-version.js";
+import { withStateSchemaFence } from "../infra/state-database-coordinator.js";
+import { backfillVaultAuthKinds } from "./openclaw-state-db-legacy-backfills.js";
 import { migrateLegacyCronRunLogsToTaskRuns } from "../infra/state-migrations.cron-run-logs.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { VERSION } from "../version.js";
@@ -70,7 +72,6 @@ import {
 import { openUnpublishedStateDatabase } from "./openclaw-state-db-open.js";
 import * as operatorApprovalMigration from "./openclaw-state-db-operator-approval-migration.js";
 import { ensureOpenClawStatePermissions } from "./openclaw-state-db-permissions.js";
-import { backfillVaultAuthKinds } from "./openclaw-state-db-legacy-backfills.js";
 import {
   ensureAdditiveStateColumns,
   ensureFirstUseAdditiveStateColumnsForStrictMigration,
@@ -147,7 +148,7 @@ function executeCanonicalStateSchema(
   database.exec(getOpenClawStateRuntimeSchema(options));
 }
 
-function repairOpenClawStateDatabaseSchemaWithWriteAccess(
+function repairStateSchema(
   pathname: string,
   env: NodeJS.ProcessEnv,
 ): {
@@ -316,7 +317,7 @@ export function repairOpenClawStateDatabaseSchema(options: OpenClawStateDatabase
   return runWithOpenClawStateWriteAccess(
     { databasePath: pathname, env },
     "state schema repair",
-    () => repairOpenClawStateDatabaseSchemaWithWriteAccess(pathname, env),
+    () => withStateSchemaFence({ databasePath: pathname }, () => repairStateSchema(pathname, env)),
   );
 }
 
@@ -358,7 +359,7 @@ export function repairOpenClawStateDatabaseSchemaIfNeeded(
     "state schema repair preflight/repair",
     () =>
       needsOpenClawStateDatabaseSchemaRepair(pathname)
-        ? repairOpenClawStateDatabaseSchemaWithWriteAccess(pathname, env)
+        ? withStateSchemaFence({ databasePath: pathname }, () => repairStateSchema(pathname, env))
         : { changes: [], warnings: [] },
   );
 }
@@ -380,112 +381,117 @@ function ensureSchema(
     // Preserve the existing transactional repair and its diagnostics for drift or corruption.
   }
 
-  const now = Date.now();
-  const kysely = getNodeSqliteKysely<OpenClawStateMetadataDatabase>(db);
-  db.exec("PRAGMA foreign_keys = OFF;"); // Rebuilding referenced tables requires this before BEGIN.
-  try {
-    runSqliteImmediateTransactionSync(
-      db,
-      () => {
-        // Recheck ownership after BEGIN IMMEDIATE to exclude a concurrent external claim.
-        assertOpenClawStateWriteAllowed({ database: db, databasePath: pathname, env });
-        assertSupportedSchemaVersion(db, pathname);
-        // Native bootstrap admission is advisory until this transaction owns the
-        // write. Never migrate state initialized or occupied by a concurrent owner.
-        if (initializeNativeOnly && !isUninitializedNativeStartupDatabase(db)) {
-          return [];
-        }
-        const previousVersion = readSqliteUserVersion(db);
-        if (previousVersion === OPENCLAW_STATE_SCHEMA_VERSION) {
-          verifyAndRepairCanonicalSqliteIndexes(db, pathname, OPENCLAW_STATE_SCHEMA_SQL, {
-            allowMissingColumns: true,
-            validateAfterRepair: () => assertCurrentStateRuntimeSchema(db, pathname),
-          });
-          ensureAdditiveStateColumns(db);
-          assertCurrentStateRuntimeSchema(db, pathname);
-        } else {
-          openClawStateMigrationAssertions.get(previousVersion)?.(db, { pathname });
-        }
-        dropLegacyStateTables(db);
-        const retirementMessages = retirements.runRetiredStateTableMigrations(db, previousVersion);
-        migrateSingletonStateFoldInV12(db, previousVersion);
-        migrateWorkerPlacementExecutionModeSchema(db, previousVersion);
-        const pathMigration: AgentPathSummary = migrateAgentPaths(db, previousVersion, pathname);
-        ensureAdditiveStateColumns(db);
-        migrateJsonCanonicalWideRowsV13(db, previousVersion);
-        migrateCronCreatorNamespaces(db, previousVersion);
-        migrateConversationBindingTargets(db, previousVersion);
-        sessionWatchMigration.migrateSessionWatchCursorProvenance(db);
-        assertCanonicalStateSchemaShape(db, pathname);
-        executeCanonicalStateSchema(db, {
-          includeVersionLazyAdditiveTables: previousVersion !== OPENCLAW_STATE_SCHEMA_VERSION,
-        });
-        migrateLegacyCronRunLogsToTaskRuns(db);
-        if (previousVersion < OPENCLAW_STATE_STRICT_SCHEMA_VERSION) {
-          repairLegacyGatewayRestartHandoffsForStrictMigration(db);
-          ensureFirstUseAdditiveStateColumnsForStrictMigration(db);
-          migrateSqliteSchemaToStrictInTransaction(
+  withStateSchemaFence({ databasePath: pathname }, () => {
+    const now = Date.now();
+    const kysely = getNodeSqliteKysely<OpenClawStateMetadataDatabase>(db);
+    db.exec("PRAGMA foreign_keys = OFF;"); // Rebuilding referenced tables requires this before BEGIN.
+    try {
+      runSqliteImmediateTransactionSync(
+        db,
+        () => {
+          // Recheck ownership after BEGIN IMMEDIATE to exclude a concurrent external claim.
+          assertOpenClawStateWriteAllowed({ database: db, databasePath: pathname, env });
+          assertSupportedSchemaVersion(db, pathname);
+          // Native bootstrap admission is advisory until this transaction owns the
+          // write. Never migrate state initialized or occupied by a concurrent owner.
+          if (initializeNativeOnly && !isUninitializedNativeStartupDatabase(db)) {
+            return [];
+          }
+          const previousVersion = readSqliteUserVersion(db);
+          if (previousVersion === OPENCLAW_STATE_SCHEMA_VERSION) {
+            verifyAndRepairCanonicalSqliteIndexes(db, pathname, OPENCLAW_STATE_SCHEMA_SQL, {
+              allowMissingColumns: true,
+              validateAfterRepair: () => assertCurrentStateRuntimeSchema(db, pathname),
+            });
+            ensureAdditiveStateColumns(db);
+            assertCurrentStateRuntimeSchema(db, pathname);
+          } else {
+            openClawStateMigrationAssertions.get(previousVersion)?.(db, { pathname });
+          }
+          dropLegacyStateTables(db);
+          const retirementMessages = retirements.runRetiredStateTableMigrations(
             db,
-            getOpenClawStateRuntimeSchema({
-              includeVersionLazyAdditiveTables: previousVersion !== OPENCLAW_STATE_SCHEMA_VERSION,
-            }),
-            { databaseLabel: pathname },
+            previousVersion,
           );
-        }
-        repairCanonicalSqliteIndexes(db, pathname, OPENCLAW_STATE_SCHEMA_SQL, {
-          verifyPhysicalIntegrity: false,
-        });
-        // Fork: once, after the schema is canonical — re-encrypt pre-auth_kind
-        // vault rows into the canonical auth_kind/auth_config_json shape.
-        backfillVaultAuthKinds(db, env);
-        db.exec(`PRAGMA user_version = ${OPENCLAW_STATE_SCHEMA_VERSION};`);
-        executeSqliteQuerySync(
-          db,
-          kysely
-            .insertInto("schema_meta")
-            .values({
-              meta_key: "primary",
-              role: "global",
-              schema_version: OPENCLAW_STATE_SCHEMA_VERSION,
-              agent_id: null,
-              app_version: VERSION,
-              created_at: now,
-              updated_at: now,
-            })
-            .onConflict((conflict) =>
-              conflict
-                .column("meta_key")
-                .doUpdateSet({
-                  role: "global",
-                  schema_version: OPENCLAW_STATE_SCHEMA_VERSION,
-                  agent_id: null,
-                  app_version: VERSION,
-                  updated_at: now,
-                })
-                // updated_at tracks schema metadata changes; unconditional bumps dirty every
-                // open and defeat no-change backup detection.
-                .where((eb) =>
-                  eb.or([
-                    eb("schema_meta.schema_version", "!=", OPENCLAW_STATE_SCHEMA_VERSION),
-                    eb("schema_meta.app_version", "!=", VERSION),
-                    eb("schema_meta.role", "!=", "global"),
-                  ]),
-                ),
-            ),
-        );
-        assertOpenClawStateDatabaseForMaintenance(db, { pathname });
-        warnAgentPathMigration(stateDbLog, pathMigration, pathname);
-        return retirementMessages;
-      },
-      {
-        busyTimeoutMs,
-        databaseLabel: pathname,
-        operationLabel: "state.schema.ensure",
-      },
-    ).forEach(retirements.logRetiredStateTableMigration);
-  } finally {
-    db.exec("PRAGMA foreign_keys = ON;");
-  }
+          migrateSingletonStateFoldInV12(db, previousVersion);
+          migrateWorkerPlacementExecutionModeSchema(db, previousVersion);
+          const pathMigration: AgentPathSummary = migrateAgentPaths(db, previousVersion, pathname);
+          ensureAdditiveStateColumns(db);
+          migrateJsonCanonicalWideRowsV13(db, previousVersion);
+          migrateCronCreatorNamespaces(db, previousVersion);
+          migrateConversationBindingTargets(db, previousVersion);
+          sessionWatchMigration.migrateSessionWatchCursorProvenance(db);
+          assertCanonicalStateSchemaShape(db, pathname);
+          executeCanonicalStateSchema(db, {
+            includeVersionLazyAdditiveTables: previousVersion !== OPENCLAW_STATE_SCHEMA_VERSION,
+          });
+          migrateLegacyCronRunLogsToTaskRuns(db);
+          if (previousVersion < OPENCLAW_STATE_STRICT_SCHEMA_VERSION) {
+            repairLegacyGatewayRestartHandoffsForStrictMigration(db);
+            ensureFirstUseAdditiveStateColumnsForStrictMigration(db);
+            migrateSqliteSchemaToStrictInTransaction(
+              db,
+              getOpenClawStateRuntimeSchema({
+                includeVersionLazyAdditiveTables: previousVersion !== OPENCLAW_STATE_SCHEMA_VERSION,
+              }),
+              { databaseLabel: pathname },
+            );
+          }
+          repairCanonicalSqliteIndexes(db, pathname, OPENCLAW_STATE_SCHEMA_SQL, {
+            verifyPhysicalIntegrity: false,
+          });
+          // Fork: once, after the schema is canonical — re-encrypt pre-auth_kind
+          // vault rows into the canonical auth_kind/auth_config_json shape.
+          backfillVaultAuthKinds(db, env);
+          db.exec(`PRAGMA user_version = ${OPENCLAW_STATE_SCHEMA_VERSION};`);
+          executeSqliteQuerySync(
+            db,
+            kysely
+              .insertInto("schema_meta")
+              .values({
+                meta_key: "primary",
+                role: "global",
+                schema_version: OPENCLAW_STATE_SCHEMA_VERSION,
+                agent_id: null,
+                app_version: VERSION,
+                created_at: now,
+                updated_at: now,
+              })
+              .onConflict((conflict) =>
+                conflict
+                  .column("meta_key")
+                  .doUpdateSet({
+                    role: "global",
+                    schema_version: OPENCLAW_STATE_SCHEMA_VERSION,
+                    agent_id: null,
+                    app_version: VERSION,
+                    updated_at: now,
+                  })
+                  // updated_at tracks schema metadata changes; unconditional bumps dirty every
+                  // open and defeat no-change backup detection.
+                  .where((eb) =>
+                    eb.or([
+                      eb("schema_meta.schema_version", "!=", OPENCLAW_STATE_SCHEMA_VERSION),
+                      eb("schema_meta.app_version", "!=", VERSION),
+                      eb("schema_meta.role", "!=", "global"),
+                    ]),
+                  ),
+              ),
+          );
+          assertOpenClawStateDatabaseForMaintenance(db, { pathname });
+          warnAgentPathMigration(stateDbLog, pathMigration, pathname);
+          return retirementMessages;
+        },
+        {
+          busyTimeoutMs,
+          databaseLabel: pathname,
+          operationLabel: "state.schema.ensure",
+        },
+      ).forEach(retirements.logRetiredStateTableMigration);
+    } finally {
+      db.exec("PRAGMA foreign_keys = ON;");
+    }
+  });
 }
 
 /** Bootstrap fresh/native-only state canonically before startup checkpoint access. */

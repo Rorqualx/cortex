@@ -26,7 +26,7 @@ import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel-constants.
 import {
   listActiveEmbeddedRunSessionIds,
   listActiveEmbeddedRunSessionKeys,
-} from "../embedded-agent-runner/run-state.js";
+} from "../embedded-agent-runner/active-run-projections.js";
 import {
   getMainSessionRecoveryRetryCount,
   isMainRestartRecoveryAggregateTerminalOnly,

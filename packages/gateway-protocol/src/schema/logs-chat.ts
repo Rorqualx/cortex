@@ -28,6 +28,7 @@ export const LogsTailResultSchema = closedObject({
   size: Type.Integer({ minimum: 0 }),
   lines: Type.Array(Type.String()),
   truncated: Type.Optional(Type.Boolean()),
+  skippedBytes: Type.Optional(Type.Integer({ minimum: 0 })),
   reset: Type.Optional(Type.Boolean()),
 });
 

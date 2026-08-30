@@ -19,6 +19,10 @@ import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import { resolvePreferredSessionKeyForSessionIdMatches } from "../sessions/session-id-resolution.js";
 import { createLazyRuntimeModule } from "../shared/lazy-runtime.js";
+import {
+  isRuntimeCompactionDelegate,
+  markRuntimeCompactionDelegate,
+} from "./compaction-watchdog.js";
 import type {
   ContextEngine,
   CompactResult,
@@ -242,6 +246,11 @@ export async function delegateCompactionToRuntime(
       : undefined,
   };
 }
+
+markRuntimeCompactionDelegate(delegateCompactionToRuntime);
+
+/** True only for the canonical bridge whose runtime owns the compaction watchdog. */
+export { isRuntimeCompactionDelegate };
 
 /**
  * Build a context-engine-ready systemPromptAddition from the active memory

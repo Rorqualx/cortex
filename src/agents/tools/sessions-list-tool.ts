@@ -12,7 +12,7 @@ import { SessionRunStatusSchema } from "../../../packages/gateway-protocol/src/s
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { callGateway } from "../../gateway/call.js";
-import { readSessionTitleFieldsFromTranscriptAsync } from "../../gateway/session-transcript-title-reader.js";
+import { readSessionTitleFieldsFromTranscript } from "../../gateway/session-transcript-title-reader.js";
 import { deriveSessionTitle } from "../../gateway/session-utils.js";
 import { isIncognitoSessionKey, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { getSessionStateVersions } from "../../sessions/session-state-events.js";
@@ -221,7 +221,6 @@ export function createSessionsListTool(opts?: {
       const titleTargets: Array<{
         row: SessionListRow;
         titleEntry: SessionEntry;
-        sessionEntry: { sessionFile?: string; sessionId: string };
         sessionId: string;
         sessionKey: string;
         agentId: string;
@@ -286,8 +285,6 @@ export function createSessionsListTool(opts?: {
         });
 
         const sessionId = readStringValue(entry.sessionId);
-        const sessionFileRaw = (entry as { sessionFile?: unknown }).sessionFile;
-        const sessionFile = readStringValue(sessionFileRaw);
         const resolvedAgentId = resolveAgentIdFromSessionKey(key, defaultAgentId);
         // Version lookup keys on the store-owning agent (gateway row agentId), not the
         // key-derived agent: bare "global" keys parse to the default agent id.
@@ -370,10 +367,6 @@ export function createSessionsListTool(opts?: {
               subject: readStringValue((entry as { subject?: unknown }).subject),
               updatedAt: typeof row.updatedAt === "number" ? row.updatedAt : 0,
             },
-            sessionEntry: {
-              sessionId,
-              ...(sessionFile ? { sessionFile } : {}),
-            },
             sessionId,
             sessionKey: resolveInternalSessionKey({
               key,
@@ -394,29 +387,20 @@ export function createSessionsListTool(opts?: {
         rows.push(row);
       }
 
-      if (titleTargets.length > 0) {
-        await pMap(
-          titleTargets,
-          async (target) => {
-            const fields = await readSessionTitleFieldsFromTranscriptAsync({
-              agentId: target.agentId,
-              sessionEntry: target.sessionEntry,
-              sessionId: target.sessionId,
-              sessionKey: target.sessionKey,
-              storePath,
-            });
-            if (includeDerivedTitles && !target.row.derivedTitle) {
-              target.row.derivedTitle = deriveSessionTitle(
-                target.titleEntry,
-                fields.firstUserMessage,
-              );
-            }
-            if (includeLastMessage && fields.lastMessagePreview) {
-              target.row.lastMessagePreview = fields.lastMessagePreview;
-            }
-          },
-          { concurrency: 4, stopOnError: true },
-        );
+      for (const target of titleTargets) {
+        const fields = readSessionTitleFieldsFromTranscript({
+          agentId: target.agentId,
+          sessionEntry: target.titleEntry,
+          sessionId: target.sessionId,
+          sessionKey: target.sessionKey,
+          storePath,
+        });
+        if (includeDerivedTitles && !target.row.derivedTitle) {
+          target.row.derivedTitle = deriveSessionTitle(target.titleEntry, fields.firstUserMessage);
+        }
+        if (includeLastMessage && fields.lastMessagePreview) {
+          target.row.lastMessagePreview = fields.lastMessagePreview;
+        }
       }
 
       if (messageLimit > 0 && historyTargets.length > 0) {

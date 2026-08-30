@@ -42,11 +42,8 @@ import {
   hasAssistantVisibleReply,
   readPendingToolMediaReply,
 } from "./embedded-agent-subscribe.handlers.messages.replies.js";
-import {
-  cleanupRunToolStartData,
-  handleToolExecutionEnd,
-  handleToolExecutionStart,
-} from "./embedded-agent-subscribe.handlers.tools.js";
+import { cleanupRunToolStartData } from "./embedded-agent-subscribe.handlers.tools.js";
+import { createEmbeddedToolLifecycleRunner } from "./embedded-agent-subscribe.tool-lifecycle.js";
 import type {
   EmbeddedAgentSubscribeContext,
   EmbeddedAgentSubscribeState,
@@ -57,7 +54,6 @@ import {
   extractToolResultMediaArtifact,
   filterToolResultMediaUrls,
 } from "./embedded-agent-tool-media.js";
-import { buildToolLifecycleErrorResult } from "./embedded-agent-tool-results.js";
 import {
   createThinkingTagStreamState,
   stripDowngradedToolCallText,
@@ -66,8 +62,6 @@ import {
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
 import { setSessionModelUsageSink } from "./sessions/session-model-usage.js";
-import { registerToolEffectReceipt } from "./tool-effect-receipt.js";
-import { consumeTrustedToolNoStartError } from "./tool-result-error.js";
 import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
 const STREAM_STRIPPED_BLOCK_TAG_NAMES = [
@@ -1314,65 +1308,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     getLatestMcpAppChannelView: () =>
       state.latestMcpAppChannelView ? { ...state.latestMcpAppChannelView } : undefined,
     getLatestMcpConnectAction: () => state.latestMcpConnectAction,
-    runToolLifecycle: async <T>(toolParams: {
-      toolName: string;
-      toolCallId: string;
-      args: unknown;
-      replaySafe?: boolean;
-      hideFromChannelProgress?: boolean;
-      execute: (onImplementationStart: () => void) => Promise<T>;
-    }): Promise<T> => {
-      await handleToolExecutionStart(ctx, {
-        type: "tool_execution_start",
-        toolName: toolParams.toolName,
-        toolCallId: toolParams.toolCallId,
-        args: toolParams.args,
-        replaySafe: toolParams.replaySafe,
-        hideFromChannelProgress: toolParams.hideFromChannelProgress,
-        lifecycleProvenance: "nested",
-      } as never);
-      // Upstream #c3ec166: the tool signals when its real implementation begins, so
-      // executionStarted reflects whether work actually ran (vs a preflight/preparer
-      // failure before start) instead of being hardcoded true.
-      let executionStarted = false;
-      const onImplementationStart = () => {
-        executionStarted = true;
-      };
-      try {
-        const result = await toolParams.execute(onImplementationStart);
-        const terminal = await handleToolExecutionEnd(ctx, {
-          type: "tool_execution_end",
-          toolName: toolParams.toolName,
-          toolCallId: toolParams.toolCallId,
-          isError: false,
-          executionStarted,
-          result,
-          hideFromChannelProgress: toolParams.hideFromChannelProgress,
-        } as never);
-        return registerToolEffectReceipt(result, terminal.effectReceipt);
-      } catch (error) {
-        // Consume any trusted-no-start tag before the terminal handler runs, then
-        // relay it as a not_started effect receipt so the fork's code-mode preflight
-        // classification (before-tool-call.wrapper / code-mode-bridge / code-mode-state)
-        // stays correct. Upstream #131007: the no-start proof is operation-owned and
-        // survives generic implementation entry — a host-policy denial must not be
-        // reclassified as a mid-execution failure; replacements cannot inherit it.
-        const trustedNoStart = consumeTrustedToolNoStartError(error);
-        const terminal = await handleToolExecutionEnd(ctx, {
-          type: "tool_execution_end",
-          toolName: toolParams.toolName,
-          toolCallId: toolParams.toolCallId,
-          isError: true,
-          executionStarted,
-          result: buildToolLifecycleErrorResult(error),
-          hideFromChannelProgress: toolParams.hideFromChannelProgress,
-        } as never);
-        const receipt = trustedNoStart
-          ? ({ state: "not_started" } as const)
-          : terminal.effectReceipt;
-        throw registerToolEffectReceipt(error, receipt);
-      }
-    },
+    runToolLifecycle: createEmbeddedToolLifecycleRunner(ctx),
     unsubscribe,
     setTerminalLifecycleMeta: (meta: {
       replayInvalid?: boolean;
