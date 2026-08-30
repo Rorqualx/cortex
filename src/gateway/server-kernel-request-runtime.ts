@@ -126,6 +126,8 @@ export async function prepareGatewayKernelRequestRuntime(params: {
       runtimeState,
       sessionCompanion,
       getRuntimeConfig,
+      isConfigReloadSettled: () =>
+        !lifecycle.closePreludeStarted && runtimeState.configReloader.isConfigReloadSettled(),
       getGatewayMethodRegistry: getAttachedGatewayMethodRegistry,
       gatewayTlsFingerprint: gatewayTls.enabled ? gatewayTls.fingerprintSha256 : undefined,
       sessionObserver,

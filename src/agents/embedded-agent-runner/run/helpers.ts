@@ -283,7 +283,7 @@ export function buildUsageAgentMetaFields(params: {
   /** Fork: last turn's total wins over the accumulator so a resumed or compacted
    * run reports the turn the user just saw, not the whole-session sum. */
   lastTurnTotal?: number;
-}): Pick<EmbeddedAgentMeta, "usage" | "lastCallUsage" | "promptTokens"> {
+}): Pick<EmbeddedAgentMeta, "usage" | "lastCallUsage" | "promptTokens" | "costUsd"> {
   const usage = toNormalizedUsage(params.usageAccumulator);
   if (usage && params.lastTurnTotal && params.lastTurnTotal > 0) {
     usage.total = params.lastTurnTotal;
@@ -301,6 +301,7 @@ export function buildUsageAgentMetaFields(params: {
     usage,
     lastCallUsage,
     promptTokens,
+    ...(usage?.cost ? { costUsd: usage.cost.total } : {}),
   };
 }
 
@@ -339,6 +340,7 @@ export function buildErrorAgentMeta(params: {
     ...(usageMeta.usage ? { usage: usageMeta.usage } : {}),
     ...(usageMeta.lastCallUsage ? { lastCallUsage: usageMeta.lastCallUsage } : {}),
     ...(usageMeta.promptTokens ? { promptTokens: usageMeta.promptTokens } : {}),
+    ...(usageMeta.costUsd !== undefined ? { costUsd: usageMeta.costUsd } : {}),
   };
 }
 

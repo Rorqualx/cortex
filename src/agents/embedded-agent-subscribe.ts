@@ -33,6 +33,7 @@ import type { EmbeddedRunLivenessState } from "./embedded-agent-runner/types.js"
 import {
   createUsageAccumulator,
   mergeUsageIntoAccumulator,
+  toNormalizedUsage,
 } from "./embedded-agent-runner/usage-accumulator.js";
 import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
 import { createEmbeddedAgentSessionEventHandler } from "./embedded-agent-subscribe.handlers.js";
@@ -62,7 +63,7 @@ import {
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
 import { setSessionModelUsageSink } from "./sessions/session-model-usage.js";
-import { hasNonzeroUsage, normalizeUsage, type UsageLike } from "./usage.js";
+import { hasNonzeroUsage, hasObservedModelUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
 const STREAM_STRIPPED_BLOCK_TAG_NAMES = [
   "final",
@@ -508,7 +509,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     }
     for (const candidate of candidates) {
       const usage = normalizeUsage((candidate ?? undefined) as UsageLike | undefined);
-      if (hasNonzeroUsage(usage)) {
+      if (hasObservedModelUsage(usage)) {
         return usage;
       }
     }
@@ -546,26 +547,30 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     }
     const usage = state.pendingAssistantUsage;
     mergeUsageIntoAccumulator(usageTotals, usage);
-    // A terminal abort may report zeros after several completed model calls.
-    // Retain the latest committed nonzero call so context accounting stays exact.
-    lastAssistantUsage = { ...usage };
     state.assistantUsageCommitted = true;
-    emitRunUsage(usage.output ?? 0);
-    // Live context counter: session rows only refresh after the run ends, so
-    // Control UI needs a per-call usage event to update its badge mid-run.
-    // promptTokens mirrors session totalTokens semantics (context occupancy).
-    emitAgentEvent({
-      runId: params.runId,
-      stream: "usage",
-      data: {
-        input: usage.input ?? 0,
-        output: usage.output ?? 0,
-        cacheRead: usage.cacheRead ?? 0,
-        cacheWrite: usage.cacheWrite ?? 0,
-        promptTokens: (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0),
-        runTotalTokens: usageTotals.total,
-      },
-    });
+    // A terminal abort may report zeros after several completed model calls;
+    // billing alone cannot replace the latest prompt snapshot or invent output
+    // tokens. Retain the latest committed nonzero call so context accounting
+    // stays exact.
+    if (hasNonzeroUsage(usage)) {
+      lastAssistantUsage = { ...usage };
+      emitRunUsage(usage.output ?? 0);
+      // Live context counter: session rows only refresh after the run ends, so
+      // Control UI needs a per-call usage event to update its badge mid-run.
+      // promptTokens mirrors session totalTokens semantics (context occupancy).
+      emitAgentEvent({
+        runId: params.runId,
+        stream: "usage",
+        data: {
+          input: usage.input ?? 0,
+          output: usage.output ?? 0,
+          cacheRead: usage.cacheRead ?? 0,
+          cacheWrite: usage.cacheWrite ?? 0,
+          promptTokens: (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0),
+          runTotalTokens: usageTotals.total,
+        },
+      });
+    }
   };
   const recordAssistantUsage = (usageLike: unknown) => {
     if (state.assistantUsageCommitted) {
@@ -575,38 +580,30 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     if (!usage) {
       return;
     }
-    state.pendingAssistantUsage = usage;
+    const pending = state.pendingAssistantUsage;
+    const cost = usage.cost;
+    const next = pending && !hasNonzeroUsage(usage) ? { ...pending, cost } : usage;
+    // Within one call, billing may arrive separately from token counters and
+    // remains authoritative when a later snapshot carries only a catalog estimate.
+    if (
+      pending?.cost?.totalOrigin === "provider-billed" &&
+      cost?.totalOrigin !== "provider-billed"
+    ) {
+      next.cost = pending.cost;
+    }
+    state.pendingAssistantUsage = next;
   };
   const recordModelUsage = (usageLike: UsageLike) => {
-    const usage = normalizeUsage(usageLike);
-    if (!hasNonzeroUsage(usage)) {
+    const usage = resolveAssistantUsage(usageLike);
+    if (!usage) {
       return;
     }
     mergeUsageIntoAccumulator(usageTotals, usage);
-    emitRunUsage(usage.output ?? 0);
-  };
-  const getUsageTotals = () => {
-    const hasUsage =
-      usageTotals.input > 0 ||
-      usageTotals.output > 0 ||
-      usageTotals.cacheRead > 0 ||
-      usageTotals.cacheWrite > 0 ||
-      usageTotals.reasoningTokens > 0 ||
-      usageTotals.total > 0;
-    if (!hasUsage) {
-      return undefined;
+    if (hasNonzeroUsage(usage)) {
+      emitRunUsage(usage.output ?? 0);
     }
-    const derivedTotal =
-      usageTotals.input + usageTotals.output + usageTotals.cacheRead + usageTotals.cacheWrite;
-    return {
-      input: usageTotals.input || undefined,
-      output: usageTotals.output || undefined,
-      cacheRead: usageTotals.cacheRead || undefined,
-      cacheWrite: usageTotals.cacheWrite || undefined,
-      ...(usageTotals.reasoningTokens > 0 ? { reasoningTokens: usageTotals.reasoningTokens } : {}),
-      total: usageTotals.total || derivedTotal || undefined,
-    };
   };
+  const getUsageTotals = () => toNormalizedUsage(usageTotals);
   const getLastAssistantUsage = () => normalizeUsage(lastAssistantUsage);
   const incrementCompactionCount = () => {
     compactionCount += 1;
