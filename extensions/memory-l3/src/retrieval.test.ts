@@ -632,6 +632,77 @@ describe("retrieveTopK typed-fact tier", () => {
     expect(result).toContain("when each fact was *noted*");
   });
 
+  it("appends a short src= provenance tag for facts carrying a sessionId", () => {
+    const result = formatMemorySection(
+      [
+        {
+          fact: {
+            id: "f-src",
+            text: "deploys happen at 07:00",
+            importance: 0.7,
+            createdAt: NOW,
+            dedupKey: "k:src",
+            sessionId: "agent:main:cron:74212f7a-d41a-4104-a538-bee6a3a9c59f",
+          },
+          score: 0.8,
+          signals: {
+            lexical: 0.5,
+            bm25: 0,
+            importance: 0.7,
+            recency: 1,
+            l3Boost: 0,
+            semantic: 0,
+            informationGain: 0,
+            goalRelevance: 0,
+            reliability: 1,
+            semanticEntropy: 1,
+            validity: 1,
+          },
+          chunkId: "chunk-1",
+          tier: "l2",
+        },
+      ],
+      { now: NOW },
+    );
+    // Last 6 chars of the sessionId, rendered as metadata on the line.
+    expect(result).toContain("[0.80] (today) src=a9c59f deploys happen at 07:00");
+    // The prelude explains the tag.
+    expect(result).toContain("`src=` tag");
+  });
+
+  it("omits the src tag entirely when no sessionId is present", () => {
+    const result = formatMemorySection([
+      {
+        fact: {
+          id: "f-nosrc",
+          text: "no provenance here",
+          importance: 0.7,
+          createdAt: NOW,
+          dedupKey: "k:nosrc",
+        },
+        score: 0.8,
+        signals: {
+          lexical: 1,
+          bm25: 0,
+          importance: 0.7,
+          recency: 1,
+          l3Boost: 0,
+          semantic: 0,
+          informationGain: 0,
+          goalRelevance: 0,
+          reliability: 1,
+          semanticEntropy: 1,
+          validity: 1,
+        },
+        chunkId: "chunk-1",
+        tier: "l2",
+      },
+    ]);
+    expect(result).toContain("[0.80] no provenance here");
+    // No src suffix on the bullet itself (the prelude's `src=` mention doesn't count).
+    expect(result).not.toContain("no provenance here src=");
+  });
+
   it("renders typed-fact hits with the ■ marker in formatMemorySection", () => {
     const result = formatMemorySection([
       {
