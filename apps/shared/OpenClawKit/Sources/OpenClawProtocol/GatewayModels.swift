@@ -20800,6 +20800,7 @@ public struct ChatHistoryParams: Codable, Sendable {
     public let agentid: String?
     public let limit: Int?
     public let offset: Int?
+    public let pendingbefore: Int?
     public let messageid: String?
     public let sessionid: String?
     public let maxchars: Int?
@@ -20809,6 +20810,7 @@ public struct ChatHistoryParams: Codable, Sendable {
         agentid: String? = nil,
         limit: Int? = nil,
         offset: Int? = nil,
+        pendingbefore: Int? = nil,
         messageid: String? = nil,
         sessionid: String? = nil,
         maxchars: Int? = nil)
@@ -20817,6 +20819,7 @@ public struct ChatHistoryParams: Codable, Sendable {
         self.agentid = agentid
         self.limit = limit
         self.offset = offset
+        self.pendingbefore = pendingbefore
         self.messageid = messageid
         self.sessionid = sessionid
         self.maxchars = maxchars
@@ -20827,6 +20830,7 @@ public struct ChatHistoryParams: Codable, Sendable {
         case agentid = "agentId"
         case limit
         case offset
+        case pendingbefore = "pendingBefore"
         case messageid = "messageId"
         case sessionid = "sessionId"
         case maxchars = "maxChars"
@@ -20841,6 +20845,7 @@ public struct ChatHistoryDeltaResult: Codable, Sendable {
     public let agentslist: AnyCodable?
     public let inflightrun: AnyCodable?
     public let metadata: AnyCodable?
+    public let pendinginputs: [String: AnyCodable]?
 
     public init(
         kind: String,
@@ -20849,7 +20854,8 @@ public struct ChatHistoryDeltaResult: Codable, Sendable {
         sessioninfo: AnyCodable,
         agentslist: AnyCodable? = nil,
         inflightrun: AnyCodable? = nil,
-        metadata: AnyCodable? = nil)
+        metadata: AnyCodable? = nil,
+        pendinginputs: [String: AnyCodable]? = nil)
     {
         self.kind = kind
         self.messages = messages
@@ -20858,6 +20864,7 @@ public struct ChatHistoryDeltaResult: Codable, Sendable {
         self.agentslist = agentslist
         self.inflightrun = inflightrun
         self.metadata = metadata
+        self.pendinginputs = pendinginputs
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -20868,6 +20875,7 @@ public struct ChatHistoryDeltaResult: Codable, Sendable {
         case agentslist = "agentsList"
         case inflightrun = "inFlightRun"
         case metadata
+        case pendinginputs = "pendingInputs"
     }
 }
 

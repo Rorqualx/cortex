@@ -185,7 +185,6 @@ export function buildEmbeddedRunPayloads(params: {
     deliveredSourceReplyViaMessageTool,
     explicitFinalSourceReply,
     completedSourceReplyViaMessageTool,
-    hasDeferredHostFinalPayload,
   } = buildSourceReplyPayloadState({
     payloads: params.messagingToolSourceReplyPayloads,
     sentTargets: params.messagingToolSentTargets,
@@ -204,12 +203,10 @@ export function buildEmbeddedRunPayloads(params: {
   const suppressAssistantArtifacts =
     params.heartbeatToolResponse !== undefined ||
     params.didSendDeterministicApprovalPrompt === true ||
-    hasDeferredHostFinalPayload ||
     (params.sourceReplyDeliveryMode === "message_tool_only" && hasSourceReplyPayload) ||
     deliveredSourceReplyViaMessageTool;
   const suppressFailureArtifacts =
     params.didSendDeterministicApprovalPrompt === true ||
-    hasDeferredHostFinalPayload ||
     (params.sourceReplyDeliveryMode === "message_tool_only" && completedSourceReplyViaMessageTool);
   const nonEmptyAssistantTexts = params.assistantTexts
     .map((text) => sanitizeAssistantVisibleStreamText(text))
@@ -390,7 +387,6 @@ export function buildEmbeddedRunPayloads(params: {
         ).filter((text) => !shouldSuppressRawErrorText(text));
   let hasUserFacingAssistantReply =
     completedSourceReplyViaMessageTool ||
-    hasDeferredHostFinalPayload ||
     params.heartbeatToolResponse?.notify === true;
   const hasUserFacingErrorReply = replyItems.some((item) => item.isError === true);
   let hasUserFacingFailureAcknowledgement =
@@ -484,13 +480,9 @@ export function buildEmbeddedRunPayloads(params: {
   const hasAudioAsVoiceTag = replyItems.some((item) => item.audioAsVoice);
   return replyItems
     .map((item) => {
-      const payload: ReplyPayload = item.hostFinalDeferredPayload
-        ? markReplyPayloadForSourceSuppressionDelivery(
-            Object.assign({}, item.hostFinalDeferredPayload),
-          )
-        : copyReplyPayloadMetadata(item, {
-            text: normalizeOptionalString(item.text),
-          });
+      const payload: ReplyPayload = copyReplyPayloadMetadata(item, {
+        text: normalizeOptionalString(item.text),
+      });
       const mediaUrl = item.mediaUrl ?? item.media?.[0];
       if (mediaUrl) {
         payload.mediaUrl = mediaUrl;
@@ -530,7 +522,6 @@ export function buildEmbeddedRunPayloads(params: {
       if (
         !item.isError &&
         !item.isReasoning &&
-        !item.hostFinalDeferredPayload &&
         (params.assistantMessageIndex !== undefined || params.assistantTranscriptOwned === true)
       ) {
         setReplyPayloadMetadata(payload, {

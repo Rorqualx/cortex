@@ -188,9 +188,6 @@ export async function runEmbeddedAttemptSettledPhase(
     stopAcceptingSteerMessages,
     getBeforeAgentFinalizeRevisionReason,
     getBeforeAgentFinalizeRevisionEntryId,
-    getBeforeAgentFinalizeRevisionDisableTools,
-    getBeforeAgentFinalizeRevisionAccepted,
-    getBeforeAgentFinalizeDiscarded,
   } = preparedStream;
   const { unsubscribe, waitForPendingEvents } = subscription;
   const { getRunAbortDeadlineAtMs, clearTimers: clearAttemptTimeoutTimers } = attemptTimeout;
@@ -382,12 +379,8 @@ export async function runEmbeddedAttemptSettledPhase(
     });
     const beforeAgentFinalizeRevisionReason = getBeforeAgentFinalizeRevisionReason();
     const beforeAgentFinalizeRevisionEntryId = getBeforeAgentFinalizeRevisionEntryId();
-    const beforeAgentFinalizeDiscarded = getBeforeAgentFinalizeDiscarded();
     let rewoundBeforeAgentFinalizeRevision = false;
-    if (
-      (beforeAgentFinalizeRevisionReason || beforeAgentFinalizeDiscarded) &&
-      beforeAgentFinalizeRevisionEntryId
-    ) {
+    if (beforeAgentFinalizeRevisionReason && beforeAgentFinalizeRevisionEntryId) {
       await input.sessionLock.withOwnedTranscriptWrite(() => {
         const rejectedEntry = sessionManager.getEntry(beforeAgentFinalizeRevisionEntryId);
         if (rejectedEntry?.type !== "message" || rejectedEntry.message.role !== "assistant") {
@@ -404,17 +397,6 @@ export async function runEmbeddedAttemptSettledPhase(
         });
         rewoundBeforeAgentFinalizeRevision = true;
       });
-      const onRevisionAccepted = getBeforeAgentFinalizeRevisionAccepted();
-      if (onRevisionAccepted) {
-        try {
-          await onRevisionAccepted();
-        } catch (error) {
-          log.warn(
-            `turn-local revision acceptance cleanup failed after transcript rewind; ` +
-              `continuing revision runId=${attempt.runId} sessionId=${attempt.sessionId}: ${String(error)}`,
-          );
-        }
-      }
     }
     let settledStream: Awaited<ReturnType<typeof settleEmbeddedAttemptStream>>;
     try {
@@ -439,9 +421,7 @@ export async function runEmbeddedAttemptSettledPhase(
           state: streamSettleState,
           runAbortDeadlineAtMs: getRunAbortDeadlineAtMs(),
           shouldFlushForContextEngine: Boolean(
-            input.activeContextEngine &&
-            !getBeforeAgentFinalizeRevisionReason() &&
-            !getBeforeAgentFinalizeDiscarded(),
+            input.activeContextEngine && !getBeforeAgentFinalizeRevisionReason(),
           ),
           subscription,
           readLifecycleState: () => {
@@ -498,10 +478,7 @@ export async function runEmbeddedAttemptSettledPhase(
         source: "observation",
       });
     }
-    const settledMessagesSnapshot = rewoundBeforeAgentFinalizeRevision
-      ? sanitizeCompactionReplayMessages(sessionManager.buildSessionContext().messages)
-      : settledStream.messagesSnapshot;
-    messagesSnapshot = settledMessagesSnapshot;
+    messagesSnapshot = settledStream.messagesSnapshot;
     sessionIdUsed = settledStream.sessionIdUsed;
     lastAssistant = settledStream.lastAssistant;
     currentAttemptAssistant = settledStream.currentAttemptAssistant;
@@ -547,17 +524,13 @@ export async function runEmbeddedAttemptSettledPhase(
         yieldAborted,
         sessionIdUsed: settledStream.sessionIdUsed,
         sessionFileUsed,
-        messagesSnapshot: settledMessagesSnapshot,
+        messagesSnapshot: settledStream.messagesSnapshot,
         nestedToolActivities,
         prePromptMessageCount: sessionRuntimeState.prePromptMessageCount,
         contextEngineAfterTurnCheckpoint: contextGuards.getAfterTurnCheckpoint(),
         lastCallUsage: settledStream.lastCallUsage,
         promptCache: settledStream.promptCache,
         ...(beforeAgentFinalizeRevisionReason ? { beforeAgentFinalizeRevisionReason } : {}),
-        ...(beforeAgentFinalizeRevisionReason && getBeforeAgentFinalizeRevisionDisableTools()
-          ? { beforeAgentFinalizeRevisionDisableTools: true as const }
-          : {}),
-        ...(beforeAgentFinalizeDiscarded ? { beforeAgentFinalizeDiscarded: true as const } : {}),
         compactionOccurredThisAttempt: settledStream.compactionOccurredThisAttempt,
       },
     });
@@ -630,10 +603,6 @@ export async function runEmbeddedAttemptSettledPhase(
       finalPromptText,
       messagesSnapshot,
       ...(beforeAgentFinalizeRevisionReason ? { beforeAgentFinalizeRevisionReason } : {}),
-      ...(beforeAgentFinalizeRevisionReason && getBeforeAgentFinalizeRevisionDisableTools()
-        ? { beforeAgentFinalizeRevisionDisableTools: true as const }
-        : {}),
-      ...(getBeforeAgentFinalizeDiscarded() ? { beforeAgentFinalizeDiscarded: true as const } : {}),
       lastAssistant,
       currentAttemptAssistant,
       currentAttemptCompletedAssistant,

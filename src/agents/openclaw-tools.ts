@@ -285,7 +285,6 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
         sandboxWorkspaceMediaReadAllowed: options?.sandboxWorkspaceMediaReadAllowed,
         requireExplicitTarget: options?.requireExplicitMessageTarget,
         sourceReplyDeliveryMode: options?.sourceReplyDeliveryMode,
-        deferSourceMessageToolDelivery: options?.deferSourceMessageToolDelivery,
         sourceReplyOnly: options?.sourceReplyOnly,
         inboundEventKind: options?.inboundEventKind,
         requesterSenderId: options?.requesterSenderId ?? undefined,

@@ -1337,14 +1337,25 @@ export interface VaultSession {
   token_tag: string;
 }
 
+export interface WebPushApprovalDeliveries {
+  approval_id: string;
+  device_id: string;
+  prepared_at_ms: number;
+  subscription_id: string;
+  user_profile_id: string | null;
+}
+
 export interface WebPushSubscriptions {
   auth: string;
   created_at_ms: number;
+  device_id: string | null;
   endpoint: string;
   endpoint_hash: string;
   p256dh: string;
+  preferences_json: string | null;
   subscription_id: string;
   updated_at_ms: number;
+  user_profile_id: string | null;
 }
 
 export interface WorkboardBoards {
@@ -1700,6 +1711,7 @@ export interface DB {
   vault_secret: VaultSecret;
   vault_secret_grant: VaultSecretGrant;
   vault_session: VaultSession;
+  web_push_approval_deliveries: WebPushApprovalDeliveries;
   web_push_subscriptions: WebPushSubscriptions;
   workboard_boards: WorkboardBoards;
   workboard_card_attachments: WorkboardCardAttachments;

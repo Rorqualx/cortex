@@ -10,6 +10,8 @@ import type {
   VaultListParams,
   VaultSaveParams,
   WebPushSubscribeParams,
+  WebPushPreferencesGetParams,
+  WebPushPreferencesSetParams,
   WebPushTestParams,
   WebPushUnsubscribeParams,
   WebPushVapidPublicKeyParams,
@@ -201,6 +203,12 @@ export const validateWebPushUnsubscribeParams = compile<WebPushUnsubscribeParams
   S.WebPushUnsubscribeParamsSchema,
 );
 export const validateWebPushTestParams = compile<WebPushTestParams>(S.WebPushTestParamsSchema);
+export const validateWebPushPreferencesGetParams = compile<WebPushPreferencesGetParams>(
+  S.WebPushPreferencesGetParamsSchema,
+);
+export const validateWebPushPreferencesSetParams = compile<WebPushPreferencesSetParams>(
+  S.WebPushPreferencesSetParamsSchema,
+);
 export const validateSecretsResolveParams = compile(S.SecretsResolveParamsSchema);
 export const validateSecretsResolveResult = compile(S.SecretsResolveResultSchema);
 export const validateSecretsStoreListParams = compile(S.SecretsStoreListParamsSchema);
