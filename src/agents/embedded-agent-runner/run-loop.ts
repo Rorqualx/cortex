@@ -637,6 +637,7 @@ export async function runPreparedEmbeddedLoop(
         replayState: accumulatedReplayState,
         activePromptPersisted: sessionPromptState.activePrompt.persisted,
         activateInternalPrompt: sessionPromptState.activateInternalPrompt,
+        markOwnedTranscriptRetry: sessionPromptState.markOwnedTranscriptRetry,
         setSuppressNextUserMessagePersistence: (value) => {
           sessionPromptState.suppressNextUserMessagePersistence = value;
         },
