@@ -26,7 +26,7 @@ function sampleUpload(overrides: Record<string, unknown> = {}): BeamUploadFixtur
 }
 
 const writeClient = () => ({ clientIp: "127.0.0.1", scopes: ["operator.write"] });
-const mainControlUiTarget = () => ({ agentId: "main" });
+const rootControlUiBasePath = () => undefined;
 
 function memoryStore(): BeamStore & { values: Map<string, BeamStoredSession> } {
   const values = new Map<string, BeamStoredSession>();
@@ -181,7 +181,7 @@ describe("Beam receiver", () => {
         store,
         now: () => now,
         resolveClient: writeClient,
-        resolveControlUiTarget: mainControlUiTarget,
+        resolveControlUiBasePath: rootControlUiBasePath,
       }),
     );
     const first = await fetch(endpoint, {
@@ -193,7 +193,7 @@ describe("Beam receiver", () => {
     expect(await first.json()).toEqual({
       ok: true,
       beamId: "0123456789abcdef0123456789abcdef",
-      url: "/chat/main?catalog=beam&host=gateway&thread=0123456789abcdef0123456789abcdef",
+      url: "/beam/0123456789ab",
     });
     expect(store.values.get("0123456789abcdef0123456789abcdef")).toMatchObject({
       createdAt: 100,
@@ -213,16 +213,13 @@ describe("Beam receiver", () => {
     });
   });
 
-  it("returns a catalog URL beneath a nested base path for the configured default agent", async () => {
+  it("returns a Beam share URL beneath a nested Control UI base path", async () => {
     const store = memoryStore();
     const endpoint = await serve(
       createBeamRequestHandler({
         store,
         resolveClient: writeClient,
-        resolveControlUiTarget: () => ({
-          agentId: "research",
-          basePath: "/admin/openclaw/",
-        }),
+        resolveControlUiBasePath: () => "/admin/openclaw/",
       }),
     );
     const response = await fetch(endpoint, {
@@ -235,7 +232,7 @@ describe("Beam receiver", () => {
     expect(await response.json()).toEqual({
       ok: true,
       beamId: "0123456789abcdef0123456789abcdef",
-      url: "/admin/openclaw/chat/research?catalog=beam&host=gateway&thread=0123456789abcdef0123456789abcdef",
+      url: "/admin/openclaw/beam/0123456789ab",
     });
   });
 
@@ -245,7 +242,7 @@ describe("Beam receiver", () => {
       createBeamRequestHandler({
         store,
         resolveClient: () => ({ clientIp: "127.0.0.1", scopes: ["operator.read"] }),
-        resolveControlUiTarget: mainControlUiTarget,
+        resolveControlUiBasePath: rootControlUiBasePath,
       }),
     );
     const response = await fetch(endpoint, {
@@ -265,7 +262,7 @@ describe("Beam receiver", () => {
       createBeamRequestHandler({
         store,
         resolveClient: writeClient,
-        resolveControlUiTarget: mainControlUiTarget,
+        resolveControlUiBasePath: rootControlUiBasePath,
       }),
     );
     expect((await fetch(endpoint)).status).toBe(405);
@@ -306,7 +303,7 @@ describe("Beam mirror receiver boundary", () => {
       createBeamRequestHandler({
         store,
         resolveClient: writeClient,
-        resolveControlUiTarget: mainControlUiTarget,
+        resolveControlUiBasePath: rootControlUiBasePath,
       }),
       (requestNumber, req, res) => {
         const status = requestNumber === 2 ? 503 : 200;
@@ -388,10 +385,60 @@ describe("Beam mirror receiver boundary", () => {
 });
 
 describe("Beam session catalog", () => {
+  it("queries Beam ids by strict share-prefix without choosing between collisions", async () => {
+    const store = memoryStore();
+    const ids = [
+      "0123456789ab00000000000000000000",
+      "0123456789abffffffffffffffffffff",
+      "fedcba9876543210fedcba9876543210",
+    ];
+    for (const [index, beamId] of ids.entries()) {
+      await store.put({
+        ...sampleUpload({ beamId, title: `Beam ${String(index)}` }),
+        createdAt: index,
+        receivedAt: index,
+      });
+    }
+    const catalog = createBeamSessionCatalog(store);
+
+    const [ambiguous] = await catalog.list({
+      agentId: "main",
+      search: "0123456789ab",
+      limitPerHost: 2,
+    });
+    expect(ambiguous?.sessions.map((session) => session.threadId)).toEqual(
+      expect.arrayContaining(ids.slice(0, 2)),
+    );
+
+    const [unique] = await catalog.list({
+      agentId: "main",
+      search: "fedcba987654",
+      limitPerHost: 2,
+    });
+    expect(unique?.sessions.map((session) => session.threadId)).toEqual([ids[2]]);
+
+    const [exact] = await catalog.list({ agentId: "main", search: ids[2], limitPerHost: 2 });
+    expect(exact?.sessions.map((session) => session.threadId)).toEqual([ids[2]]);
+
+    const [missing] = await catalog.list({
+      agentId: "main",
+      search: "aaaaaaaaaaaa",
+      limitPerHost: 2,
+    });
+    expect(missing?.sessions).toEqual([]);
+  });
+
   it("lists newest sessions and reads paginated transcript items without mutation capabilities", async () => {
     const store = memoryStore();
     await store.put({
-      ...sampleUpload({ truncated: true }),
+      ...sampleUpload({
+        truncated: true,
+        items: [
+          ...sampleUpload().items,
+          { type: "userMessage", text: "Did the upload keep the conversation order?" },
+          { type: "agentMessage", text: "Yes, the question still precedes its answer." },
+        ],
+      }),
       createdAt: 100,
       receivedAt: 200,
     });
@@ -426,10 +473,19 @@ describe("Beam session catalog", () => {
       agentId: "main",
       hostId: "gateway",
       threadId: "0123456789abcdef0123456789abcdef",
-      limit: 1,
+      limit: 2,
     });
     expect(transcript.items).toEqual([
-      expect.objectContaining({ type: "agentMessage", text: "Implemented and tested." }),
+      expect.objectContaining({
+        id: "0123456789abcdef0123456789abcdef:3",
+        type: "agentMessage",
+        text: "Yes, the question still precedes its answer.",
+      }),
+      expect.objectContaining({
+        id: "0123456789abcdef0123456789abcdef:2",
+        type: "userMessage",
+        text: "Did the upload keep the conversation order?",
+      }),
     ]);
     expect(transcript.items[0]).not.toHaveProperty("truncated");
     expect(transcript.nextCursor).toEqual(expect.any(String));
@@ -438,10 +494,11 @@ describe("Beam session catalog", () => {
       agentId: "main",
       hostId: "gateway",
       threadId: "0123456789abcdef0123456789abcdef",
-      limit: 1,
+      limit: 2,
       cursor: transcript.nextCursor,
     });
     expect(older.items).toEqual([
+      expect.objectContaining({ type: "agentMessage", text: "Implemented and tested." }),
       expect.objectContaining({ type: "userMessage", text: "Please fix the upload flow." }),
     ]);
     expect(older.nextCursor).toBeUndefined();
@@ -450,6 +507,7 @@ describe("Beam session catalog", () => {
     if (!current) {
       throw new Error("Beam test store lost the current session");
     }
+    expect(current.items.slice(0, 2)).toEqual(sampleUpload().items);
     await store.put({
       ...current,
       items: [

@@ -82,6 +82,8 @@ Content-Type: application/json
 }
 ```
 
+Send `items` in conversation order, oldest first. Beam preserves that order in storage and displays questions before their replies. Its session-catalog API returns newest-first pages, matching the other coding-session catalogs.
+
 The schema is closed. Beam rejects unknown fields, invalid item types, empty text, more than 200 items, item text over 6,000 characters, non-JSON requests, and bodies over 56 KiB.
 
 A successful upload returns the stable Beam id and a relative Control UI URL:
@@ -90,9 +92,15 @@ A successful upload returns the stable Beam id and a relative Control UI URL:
 {
   "ok": true,
   "beamId": "0123456789abcdef0123456789abcdef",
-  "url": "/chat/main?catalog=beam&host=gateway&thread=<beamId>"
+  "url": "/beam/0123456789ab"
 }
 ```
+
+The returned URL uses a 12-character lowercase hexadecimal prefix and keeps
+that readable path in the browser while the existing read-only Beam catalog
+renders the transcript. A configured Control UI base path prefixes the route,
+for example `/openclaw/beam/0123456789ab`. Longer prefixes through the full
+32-character Beam id also work.
 
 Uploading the same `beamId` updates the existing catalog row. A completed upload sets the row status to `completed`; earlier updates display as `live`.
 
@@ -146,7 +154,7 @@ Beam can also act as the sender: an opt-in mirror that continuously publishes th
 - `pollSeconds` (default 30, minimum 10): how often the mirror scans local catalogs.
 - `activeWindowMinutes` (default 180): sessions with newer activity than this window count as live and stay mirrored; when a session goes idle past the window the running mirror service retries its final `completed` update until the receiver accepts it or the seven-day retention window ends. Retry state is process-local: a Gateway restart clears pending terminal retries, so the remote row remains live until its normal seven-day retention expires.
 
-The mirror applies the same redaction contract as the beam skill before anything leaves the machine: only user and agent message text is uploaded, while reasoning, tool calls, tool results, and raw payloads are replaced with compact counts. Snapshots are capped to the receiver limits (200 items, 56 KiB), dropping oldest entries first and marking the upload `truncated`. Sessions on paired nodes are not mirrored; the mirror shares only sessions from this Gateway's machine, newest 32 first.
+The mirror applies the same redaction contract as the beam skill before anything leaves the machine: only user and agent message text is uploaded, while reasoning, tool calls, tool results, and raw payloads are replaced with compact counts. It converts newest-first catalog pages into chronological uploads before applying the receiver limits (200 items, 56 KiB), dropping oldest entries first and marking the upload `truncated`. Sessions on paired nodes are not mirrored; the mirror shares only sessions from this Gateway's machine, newest 32 first.
 
 ## Troubleshooting
 
@@ -177,6 +185,7 @@ The mirror applies the same redaction contract as the beam skill before anything
 ## Related
 
 - [Control UI](/web/control-ui)
+- [Control UI URLs](/web/urls)
 - [Operator scopes](/gateway/operator-scopes)
 - [Trusted proxy auth](/gateway/trusted-proxy-auth)
 - [Plugin management](/plugins/manage-plugins)
