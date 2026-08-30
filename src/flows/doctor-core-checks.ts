@@ -94,6 +94,25 @@ const skillForgeStaleStateCheck: HealthCheck = {
     return { changes: result.changes, effects: result.effects };
   },
 };
+
+/**
+ * QW-B (2026-08-30): report-only lint of workspace imperative rules
+ * (AGENTS.md/USER.md) against the effective exec-policy surface. Advisory-only
+ * rules and allowlist drift become visible; never repairs (prose→policy
+ * matching is heuristic by design).
+ */
+const agentsRulesExecPolicyLintCheck: HealthCheck = {
+  id: "core/doctor/agents-rules-exec-policy",
+  kind: "core",
+  description:
+    "Workspace imperative rules (AGENTS.md/USER.md) are cross-referenced against the effective exec policy; advisory-only rules are visible.",
+  source: "doctor",
+  async detect(ctx) {
+    const { collectAgentsRulesExecPolicyFindings } =
+      await import("./doctor-agents-rules-exec-policy.js");
+    return await collectAgentsRulesExecPolicyFindings({ cfg: ctx.cfg, env: ctx.env });
+  },
+};
 const GATEWAY_SERVICES_EXTRA_CHECK_ID = "core/doctor/gateway-services/extra";
 const TELEGRAM_GENERAL_TOPIC_CONVERSATIONS_CHECK_ID =
   "core/doctor/telegram-general-topic-conversations";
@@ -1487,6 +1506,7 @@ export function createCoreHealthChecks(
     createSkillsReadinessCheck(deps),
     browserClawdProfileResidueCheck,
     skillForgeStaleStateCheck,
+    agentsRulesExecPolicyLintCheck,
     MODEL_DEPRECATION_HEALTH_CHECK,
     finalConfigValidationCheck,
   ];
