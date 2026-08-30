@@ -20,6 +20,7 @@ import {
   renderRateLimitReplyCopy,
 } from "../../agents/failover/user-copy.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
+import { isAgentRunRestartAbortReason } from "../../agents/run-termination.js";
 import { logVerbose } from "../../globals.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { formatErrorMessage, readErrorName } from "../../infra/errors.js";
@@ -43,8 +44,7 @@ import type { AgentFallbackCycleState } from "./agent-runner-fallback-cycle.js";
 import type { AgentTurnTimingTracker } from "./agent-runner-turn-timing.js";
 import {
   buildRestartLifecycleReplyText,
-  isReplyOperationRestartAbort,
-  isReplyOperationUserAbort,
+  resolveReplyOperationAbortReason,
   resolveReplyOperationTerminationFields,
   resolveRestartLifecycleError,
 } from "./reply-operation-abort.js";
@@ -100,7 +100,7 @@ export async function cancelOverloadRetryNotice(state: OverloadRetryState): Prom
 
 type ErrorAction =
   | { kind: "retry"; liveModelSwitchError?: LiveSessionModelSwitchError }
-  | Extract<AgentTurnInternalResult, { kind: "final" }>;
+  | Extract<AgentTurnInternalResult, { kind: "final" | "aborted" }>;
 
 // The old SQLite session-write lease was removed upstream in favor of an
 // in-process transcript writer-claim fence (see transcript-write-context.ts);
@@ -177,21 +177,20 @@ export async function handleAgentExecutionError(params: {
     return terminal;
   };
   const resolveReplyOperationAbortAction = (abortError: unknown): ErrorAction | undefined => {
-    if (isReplyOperationRestartAbort(turn.replyOperation)) {
-      takePendingLifecycleTerminal().emit("end", abortError);
-      return {
-        kind: "final",
-        payload:
-          turn.isRestartRecoveryArmed?.() === true
-            ? { text: SILENT_REPLY_TOKEN }
-            : markAgentRunFailureReplyPayload({ text: buildRestartLifecycleReplyText() }),
-      };
+    const reason = isAgentRunRestartAbortReason(abortError)
+      ? "restart"
+      : resolveReplyOperationAbortReason(turn.replyOperation);
+    if (!reason) {
+      return undefined;
     }
-    if (isReplyOperationUserAbort(turn.replyOperation)) {
-      takePendingLifecycleTerminal().emit("error", abortError);
-      return { kind: "final", payload: { text: SILENT_REPLY_TOKEN } };
-    }
-    return undefined;
+    // Preserve signal-owned timeout attribution; only normalized restart/supersession need metadata.
+    const terminalMetadata = reason === "user" ? undefined : { aborted: true, stopReason: reason };
+    takePendingLifecycleTerminal().emit(
+      reason === "restart" ? "end" : "error",
+      abortError,
+      terminalMetadata,
+    );
+    return { kind: "aborted", reason };
   };
   const waitForRetryBackoff = async (delayMs: number, abortSignal?: AbortSignal) => {
     try {
@@ -205,6 +204,10 @@ export async function handleAgentExecutionError(params: {
     }
     return undefined;
   };
+  const replyOperationAbortAction = resolveReplyOperationAbortAction(err);
+  if (replyOperationAbortAction) {
+    return replyOperationAbortAction;
+  }
   if (err instanceof LiveSessionModelSwitchError) {
     if (params.liveModelSwitchRetries <= MAX_LIVE_SWITCH_RETRIES) {
       params.state.pendingLifecycleTerminal = undefined;
@@ -276,13 +279,11 @@ export async function handleAgentExecutionError(params: {
     isTransientHttpError(message) ||
     (isFailoverError(err) && (err.reason === "timeout" || err.reason === "server_error"));
 
-  const replyOperationAbortAction = resolveReplyOperationAbortAction(err);
-  if (replyOperationAbortAction) {
-    return replyOperationAbortAction;
-  }
-  // A replacement run rebound this session's transcript writer claim (see
-  // isSessionLeaseLoss). Recovery only proceeds once the replacement's own
-  // SQLite row confirms the active claim or its terminal marker.
+  // Upstream moved the generic reply-operation abort check earlier (before
+  // live-switch/failover classification). The fork's lease-loss restart-recovery
+  // block stays HERE by design: it must run after the failover/transient
+  // classification so a lease loss wrapped in a failover error still reaches it,
+  // and before restart-lifecycle handling.
   if (isSessionLeaseLoss(err) && turn.isRestartRecoveryArmed?.() === true) {
     // The replacement owns recovery only after the latest SQLite row confirms
     // the active claim or its terminal marker. The old owner then exits silently.

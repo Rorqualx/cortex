@@ -301,10 +301,14 @@ async function readOriginalWriteState(
 
   try {
     const originalContent = await ops.readFile(absolutePath);
-    const originalText = Buffer.isBuffer(originalContent)
-      ? originalContent.toString("utf8")
-      : originalContent;
-    return { state: originalText === content ? "same" : "different", beforeStat: stat };
+    const originalBytes = Buffer.isBuffer(originalContent)
+      ? originalContent
+      : Buffer.from(originalContent, "utf8");
+    return {
+      // No-op receipts need the same encoded bytes as post-write verification.
+      state: originalBytes.equals(Buffer.from(content, "utf8")) ? "same" : "different",
+      beforeStat: stat,
+    };
   } catch {
     return { state: "unknown", beforeStat: stat };
   }

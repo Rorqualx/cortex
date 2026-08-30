@@ -930,6 +930,7 @@ interface ToolResultEventBase {
   input: Record<string, unknown>;
   content: (TextContent | ImageContent)[];
   isError: boolean;
+  terminate?: boolean;
 }
 
 interface BashToolResultEvent extends ToolResultEventBase {
@@ -1111,6 +1112,7 @@ export interface ToolResultEventResult {
   content?: (TextContent | ImageContent)[];
   details?: unknown;
   isError?: boolean;
+  terminate?: boolean;
 }
 
 export interface MessageEndEventResult {

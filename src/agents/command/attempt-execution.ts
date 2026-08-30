@@ -606,6 +606,7 @@ export function runAgentAttempt(params: {
   onUserMessagePersisted?: (message: Extract<AgentMessage, { role: "user" }>) => void;
   onContextEngineTurnCandidate?: (facts: ContextEngineTurnAttemptFacts) => void;
   onLifecycleGenerationChanged?: (lifecycleGeneration: string) => void;
+  onCompactionAccounting?: RunEmbeddedAgentInternalParams["onCompactionAccounting"];
   onSuccessfulAuthProfile?: (selection: {
     authProfileId?: string;
     authProfileIdSource?: "auto" | "user";
@@ -1219,7 +1220,10 @@ export function runAgentAttempt(params: {
   const embeddedPersistencePrompt = params.opts.gitCoauthorAttribution
     ? (continuationTranscriptBody ?? effectivePrompt)
     : continuationTranscriptBody;
-  const embeddedRunParams: RunEmbeddedAgentInternalParams = {
+  const embeddedRunBase: Omit<
+    RunEmbeddedAgentInternalParams,
+    "compactionCountOwner" | "onCompactionAccounting"
+  > = {
     preparedRunAdmission: params.preparedRunAdmission,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
@@ -1357,6 +1361,13 @@ export function runAgentAttempt(params: {
     bootstrapPromptWarningSignaturesSeen,
     bootstrapPromptWarningSignature,
   };
+  const embeddedRunParams: RunEmbeddedAgentInternalParams = params.onCompactionAccounting
+    ? {
+        ...embeddedRunBase,
+        compactionCountOwner: "caller",
+        onCompactionAccounting: params.onCompactionAccounting,
+      }
+    : embeddedRunBase;
   setChannelSourceTurnId(embeddedRunParams, readChannelSourceTurnId(params.runContext));
   setChannelSourceTurnSameThreadRequired(
     embeddedRunParams,

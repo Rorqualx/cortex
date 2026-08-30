@@ -1353,6 +1353,7 @@ export function truncateOversizedToolResultsInSessionManager(params: {
   sessionId?: string;
   sessionKey?: string;
   agentId?: string;
+  storePath?: string;
 }): { truncated: boolean; truncatedCount: number; reason?: string } {
   try {
     return truncateOversizedToolResultsInExistingSessionManager(params);
@@ -1363,6 +1364,12 @@ export function truncateOversizedToolResultsInSessionManager(params: {
   }
 }
 
+// Fork keeps `truncateOversizedToolResultsInActiveTarget` although upstream
+// deleted it: upstream's only consumer (overflow-context-recovery.ts) was
+// refactored to a sync SessionManager closure, but the fork's run.ts
+// context-overflow path still calls the fork-owned InSession entry point below,
+// which delegates here. `transcript-runtime-state.ts` still exists upstream, so
+// the imports stay valid.
 export async function truncateOversizedToolResultsInActiveTarget(params: {
   scope: RuntimeTranscriptScope;
   contextWindowTokens: number;

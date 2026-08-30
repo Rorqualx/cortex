@@ -151,6 +151,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "contextTokens",
   "contextBudgetStatus",
   "compactionCount",
+  "transcriptByteCompactionLatch",
   "compactionCheckpoints",
   "memoryFlush",
   "cliSessionIds",

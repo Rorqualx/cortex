@@ -139,7 +139,11 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
   const runtimeWebTools = getActiveRuntimeWebToolsMetadata();
   const sandbox =
     options?.sandboxRoot && options?.sandboxFsBridge
-      ? { root: options.sandboxRoot, bridge: options.sandboxFsBridge }
+      ? {
+          root: options.sandboxRoot,
+          bridge: options.sandboxFsBridge,
+          stagedMediaPaths: options.stagedMediaPaths,
+        }
       : undefined;
   const optionalMediaTools = resolveOptionalMediaToolFactoryPlan({
     config: availabilityConfig ?? resolvedConfig,

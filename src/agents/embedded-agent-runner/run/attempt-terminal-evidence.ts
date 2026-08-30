@@ -76,12 +76,21 @@ type TerminalAttemptState = Pick<
 
 export function hasAttemptTerminalState(attempt: TerminalAttemptState): boolean {
   return Boolean(
+    attempt.lastToolError ||
+      // Fork: a tool that succeeded after retry is failure-dependent terminal
+      // evidence (the recovery counterpart of lastToolError).
+      attempt.lastToolRecovery ||
+      hasNonToolTerminalState(attempt),
+  );
+}
+
+/** Projects terminal evidence whose ownership does not depend on a tool failure. */
+export function hasNonToolTerminalState(attempt: TerminalAttemptState): boolean {
+  return Boolean(
     attempt.clientToolCalls ||
     attempt.yieldDetected ||
     attempt.didSendDeterministicApprovalPrompt ||
     attempt.heartbeatToolResponse ||
-    attempt.lastToolError ||
-    attempt.lastToolRecovery ||
     attempt.toolMediaUrls?.some((url) => url.trim().length > 0) ||
     attempt.toolAudioAsVoice ||
     attempt.toolTrustedLocalMedia ||
