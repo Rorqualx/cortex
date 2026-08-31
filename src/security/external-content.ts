@@ -1,6 +1,7 @@
 // Wraps external content with source tags and random boundary tokens.
 import { randomBytes } from "node:crypto";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
+import { escapeRegExp } from "../shared/regexp.js";
 export {
   resolveHookExternalContentSource,
   type HookExternalContentSource,
@@ -144,11 +145,14 @@ const LLM_SPECIAL_TOKEN_LITERALS = [
   "<end_of_turn>",
 ] as const;
 
-const LLM_SPECIAL_TOKEN_PATTERNS = [
-  // Many Hugging Face chat templates reserve token spellings in this form. Exact known
-  // literals above handle the common cases; this catches future reserved-token variants.
-  /<\|reserved_special_token_\d+\|>/g,
-] as const;
+// Token spellings do not overlap, and the replacement cannot create another token.
+// Keep the existing literal set and reserved numeric family in one native scan.
+const LLM_SPECIAL_TOKEN_PATTERN = new RegExp(
+  [...LLM_SPECIAL_TOKEN_LITERALS.map(escapeRegExp), /<\|reserved_special_token_\d+\|>/.source].join(
+    "|",
+  ),
+  "g",
+);
 
 const TOOL_CALL_DELIMITER_REPLACEMENT = "[REMOVED_TOOL_DELIMITER]";
 
@@ -234,14 +238,16 @@ function isMarkerIgnorableChar(char: string): boolean {
 
 type FoldedMarkerMatch = {
   folded: string;
-  originalStartByFoldedIndex: number[];
-  originalEndByFoldedIndex: number[];
+  // ASCII folding is identity; all other retained code units need only their source start.
+  originalStartByFoldedIndex?: number[];
 };
 
 function foldMarkerTextWithIndexMap(input: string): FoldedMarkerMatch {
+  if (!/[\u0080-\u{10FFFF}]/u.test(input)) {
+    return { folded: input };
+  }
   let folded = "";
   const originalStartByFoldedIndex: number[] = [];
-  const originalEndByFoldedIndex: number[] = [];
 
   for (let index = 0; index < input.length; index += 1) {
     const char = input.charAt(index);
@@ -251,10 +257,9 @@ function foldMarkerTextWithIndexMap(input: string): FoldedMarkerMatch {
     const foldedChar = foldMarkerChar(char);
     folded += foldedChar;
     originalStartByFoldedIndex.push(index);
-    originalEndByFoldedIndex.push(index + 1);
   }
 
-  return { folded, originalStartByFoldedIndex, originalEndByFoldedIndex };
+  return { folded, originalStartByFoldedIndex };
 }
 
 // Spoofed boundary markers. Catch whitespace-delimited spoof variants (space, tab,
@@ -295,8 +300,7 @@ function replaceFoldedSpans(
   content: string,
   patterns: ReadonlyArray<{ regex: RegExp; value: string }>,
 ): string {
-  const { folded, originalStartByFoldedIndex, originalEndByFoldedIndex } =
-    foldMarkerTextWithIndexMap(content);
+  const { folded, originalStartByFoldedIndex } = foldMarkerTextWithIndexMap(content);
   // Every pattern (markers and tool-call delimiters) needs a literal '<' after folding;
   // bail before the per-pattern scan when none survives — the common clean-content case.
   if (!folded.includes("<")) {
@@ -310,11 +314,8 @@ function replaceFoldedSpans(
       const foldedStart = match.index;
       const foldedEnd = match.index + match[0].length;
       replacements.push({
-        start: originalStartByFoldedIndex[foldedStart] ?? foldedStart,
-        end:
-          originalEndByFoldedIndex[foldedEnd - 1] ??
-          originalStartByFoldedIndex[foldedEnd] ??
-          foldedEnd,
+        start: originalStartByFoldedIndex?.[foldedStart] ?? foldedStart,
+        end: (originalStartByFoldedIndex?.[foldedEnd - 1] ?? foldedEnd - 1) + 1,
         value,
       });
     }
@@ -323,6 +324,7 @@ function replaceFoldedSpans(
     return content;
   }
   replacements.sort((a, b) => a.start - b.start);
+
   let cursor = 0;
   let output = "";
   for (const replacement of replacements) {
@@ -342,27 +344,7 @@ function replaceFoldedSpans(
 // like session-memory transcript scrubbing reuse the exact literal/pattern stripping
 // without the folded-span boundary pass that sanitizeExternalContentText layers on top.
 export function sanitizeModelSpecialTokens(content: string): string {
-  let output = content;
-  for (const literal of LLM_SPECIAL_TOKEN_LITERALS) {
-    output = output.split(literal).join(SPECIAL_TOKEN_REPLACEMENT);
-  }
-  for (const pattern of LLM_SPECIAL_TOKEN_PATTERNS) {
-    output = output.replace(pattern, SPECIAL_TOKEN_REPLACEMENT);
-  }
-  return output;
-}
-
-/**
- * Neutralizes the injection families that can ride in on untrusted external content
- * before it reaches a model: exact LLM special-token literals, spoofed boundary markers,
- * and agentic tool-call delimiters (the latter two share one homoglyph-folded pass).
- *
- * Known limitation: special-token literals are matched verbatim, so a homoglyph-spelled
- * variant (e.g. a fullwidth-pipe `<｜im_end｜>`) is not caught here. Extending the folded
- * pass to that family is a separate, scoped hardening follow-up.
- */
-export function sanitizeExternalContentText(content: string): string {
-  return replaceFoldedSpans(sanitizeModelSpecialTokens(content), FOLDED_SPAN_PATTERNS);
+  return content.replace(LLM_SPECIAL_TOKEN_PATTERN, SPECIAL_TOKEN_REPLACEMENT);
 }
 
 /** Bound sanitized external prose while preserving its exact retained source prefix. */
@@ -380,7 +362,10 @@ export function truncateSanitizedExternalContent(
         /<<<\s*(?:END[\s_]+)?EXTERNAL[\s_]+UNTRUSTED[\s_]+CONTENT((?:\s+id=\\*"[^"]*")?\s*>>>)?/giu;
       for (const match of folded.folded.matchAll(markers)) {
         if (!match[1]) {
-          retained = retained.slice(0, folded.originalStartByFoldedIndex[match.index]);
+          retained = retained.slice(
+            0,
+            folded.originalStartByFoldedIndex?.[match.index] ?? match.index,
+          );
           break;
         }
       }
@@ -413,6 +398,19 @@ export function truncateSanitizedExternalContent(
     }
   }
   return { text, truncated: true, retainedRawChars };
+}
+
+/**
+ * Neutralizes the injection families that can ride in on untrusted external content
+ * before it reaches a model: exact LLM special-token literals, spoofed boundary markers,
+ * and agentic tool-call delimiters (the latter two share one homoglyph-folded pass).
+ *
+ * Known limitation: special-token literals are matched verbatim, so a homoglyph-spelled
+ * variant (e.g. a fullwidth-pipe `<｜im_end｜>`) is not caught here. Extending the folded
+ * pass to that family is a separate, scoped hardening follow-up.
+ */
+export function sanitizeExternalContentText(content: string): string {
+  return replaceFoldedSpans(sanitizeModelSpecialTokens(content), FOLDED_SPAN_PATTERNS);
 }
 
 type WrapExternalContentOptions = {

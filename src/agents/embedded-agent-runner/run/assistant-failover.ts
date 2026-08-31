@@ -10,8 +10,9 @@ import {
 } from "../../agent-run-terminal-outcome.js";
 import type { AuthProfileFailureReason } from "../../auth-profiles.js";
 import {
-  formatAssistantErrorText,
   formatBillingErrorMessage,
+  formatUserFacingAssistantErrorText,
+  GENERIC_ASSISTANT_ERROR_TEXT,
   isTimeoutErrorMessage,
   type FailoverReason,
 } from "../../embedded-agent-helpers.js";
@@ -392,7 +393,7 @@ function resolveAssistantFailoverErrorMessage(params: {
     params.terminal.kind === "timeout" && params.terminal.source !== "observation";
   return (
     (params.lastAssistant
-      ? formatAssistantErrorText(params.lastAssistant, {
+      ? formatUserFacingAssistantErrorText(params.lastAssistant, {
           cfg: params.config,
           sessionKey: params.sessionKey,
           agentId: params.agentId,
@@ -415,7 +416,7 @@ function resolveAssistantFailoverErrorMessage(params: {
             )
           : params.authFailure
             ? "LLM request unauthorized."
-            : "LLM request failed.")
+            : GENERIC_ASSISTANT_ERROR_TEXT)
   );
 }
 
