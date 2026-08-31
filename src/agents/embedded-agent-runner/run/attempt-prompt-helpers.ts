@@ -529,6 +529,7 @@ type AfterTurnRuntimeContextAttempt = Pick<
   | "contextEngineAgentId"
   | "sessionKey"
   | "sandboxSessionKey"
+  | "sandboxAgentId"
   | "messageChannel"
   | "messageProvider"
   | "agentAccountId"
@@ -601,6 +602,8 @@ export function buildAfterTurnRuntimeContext(params: {
   return {
     ...buildEmbeddedCompactionRuntimeContext({
       sessionKey: params.attempt.sessionKey,
+      sandboxSessionKey: params.attempt.sandboxSessionKey,
+      sandboxAgentId: params.attempt.sandboxAgentId,
       messageChannel: params.attempt.messageChannel,
       messageProvider: params.attempt.messageProvider,
       agentAccountId: params.attempt.agentAccountId,
