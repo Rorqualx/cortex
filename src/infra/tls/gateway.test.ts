@@ -45,7 +45,7 @@ vi.mock("../../process/exec.js", async (importOriginal) => ({
 
 vi.mock("../resolve-system-bin.js", () => ({ resolveSystemBin: resolveSystemBinMock }));
 
-import { loadGatewayTlsRuntime } from "./gateway.js";
+import { loadGatewayTlsServerRuntime } from "./gateway.js";
 
 const tempDirs = createTrackedTempDirs();
 const createTempDir = () => tempDirs.make("openclaw-gateway-tls-test-");
@@ -73,13 +73,13 @@ afterEach(async () => {
   await tempDirs.cleanup();
 });
 
-describe("loadGatewayTlsRuntime", () => {
+describe("loadGatewayTlsServerRuntime", () => {
   it("disables tls when config is absent or disabled", async () => {
-    await expect(loadGatewayTlsRuntime(undefined)).resolves.toEqual({
+    await expect(loadGatewayTlsServerRuntime(undefined)).resolves.toEqual({
       enabled: false,
       required: false,
     });
-    await expect(loadGatewayTlsRuntime({ enabled: false })).resolves.toEqual({
+    await expect(loadGatewayTlsServerRuntime({ enabled: false })).resolves.toEqual({
       enabled: false,
       required: false,
     });
@@ -94,7 +94,7 @@ describe("loadGatewayTlsRuntime", () => {
     await fs.writeFile(keyPath, KEY_PEM, "utf8");
     await fs.writeFile(caPath, CERT_PEM, "utf8");
 
-    const result = await loadGatewayTlsRuntime({
+    const result = await loadGatewayTlsServerRuntime({
       enabled: true,
       certPath,
       keyPath,
@@ -141,7 +141,7 @@ describe("loadGatewayTlsRuntime", () => {
     const certPath = path.join(dir, "missing-cert.pem");
     const keyPath = path.join(dir, "missing-key.pem");
 
-    const result = await loadGatewayTlsRuntime({
+    const result = await loadGatewayTlsServerRuntime({
       enabled: true,
       certPath,
       keyPath,
@@ -156,6 +156,28 @@ describe("loadGatewayTlsRuntime", () => {
   });
 
   it.each(["key", "cert"] as const)(
+    "does not replace an existing %s or generate its missing counterpart",
+    async (existing) => {
+      const dir = await createTempDir();
+      const certPath = path.join(dir, "gateway-cert.pem");
+      const keyPath = path.join(dir, "gateway-key.pem");
+      const existingPath = existing === "cert" ? certPath : keyPath;
+      await fs.writeFile(existingPath, "existing material");
+
+      const result = await loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath });
+
+      expect(result).toMatchObject({
+        enabled: false,
+        required: true,
+        error: "gateway tls: cert/key missing",
+      });
+      expect(runExecMock).not.toHaveBeenCalled();
+      await expect(fs.readFile(existingPath, "utf8")).resolves.toBe("existing material");
+      await expect(fs.readdir(dir)).resolves.toEqual([path.basename(existingPath)]);
+    },
+  );
+
+  it.each(["key", "cert"] as const)(
     "bounds generation and cleans a partial staged %s",
     async (partialOutput) => {
       const dir = await createTempDir();
@@ -167,7 +189,7 @@ describe("loadGatewayTlsRuntime", () => {
         throw new Error("openssl timed out");
       });
 
-      const result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath });
+      const result = await loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath });
 
       expect(runExecMock).toHaveBeenCalledOnce();
       const [command, args, options] = runExecMock.mock.calls[0] as [
@@ -195,7 +217,7 @@ describe("loadGatewayTlsRuntime", () => {
       await writeGeneratedTlsPair(args);
     });
 
-    const result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath });
+    const result = await loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath });
 
     expect(result.enabled).toBe(true);
     await expect(fs.readFile(certPath, "utf8")).resolves.toBe(CERT_PEM);
@@ -238,7 +260,7 @@ describe("loadGatewayTlsRuntime", () => {
 
     try {
       await expect(
-        loadGatewayTlsRuntime({ enabled: true, certPath, keyPath }),
+        loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath }),
       ).resolves.toMatchObject({ enabled: true });
     } finally {
       openSpy.mockRestore();
@@ -260,7 +282,7 @@ describe("loadGatewayTlsRuntime", () => {
       await writeGeneratedTlsPair(args);
     });
 
-    const result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath });
+    const result = await loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath });
 
     expect(result.enabled).toBe(true);
     await expect(fs.readFile(certPath, "utf8")).resolves.toBe(CERT_PEM);
@@ -285,7 +307,7 @@ describe("loadGatewayTlsRuntime", () => {
       await originalLink(source, target);
     });
 
-    const result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath });
+    const result = await loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath });
 
     expect(result.enabled).toBe(false);
     expect(result.error).toContain("key destination appeared");
@@ -324,7 +346,7 @@ describe("loadGatewayTlsRuntime", () => {
       });
 
       await expect(
-        loadGatewayTlsRuntime({ enabled: true, certPath, keyPath }),
+        loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath }),
       ).resolves.toMatchObject({
         enabled: true,
       });
@@ -347,9 +369,9 @@ describe("loadGatewayTlsRuntime", () => {
       .spyOn(fs, "link")
       .mockRejectedValue(Object.assign(new Error("hard links unsupported"), { code: "ENOTSUP" }));
 
-    let result: Awaited<ReturnType<typeof loadGatewayTlsRuntime>> | undefined;
+    let result: Awaited<ReturnType<typeof loadGatewayTlsServerRuntime>> | undefined;
     try {
-      result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath }, { warn });
+      result = await loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath }, { warn });
     } finally {
       linkSpy.mockRestore();
     }
@@ -385,7 +407,10 @@ describe("loadGatewayTlsRuntime", () => {
     });
     durabilityTestState.syncOutcome = { status: "unsupported", code: "EISDIR" };
 
-    const result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath }, { warn });
+    const result = await loadGatewayTlsServerRuntime(
+      { enabled: true, certPath, keyPath },
+      { warn },
+    );
 
     expect(result.enabled).toBe(true);
     expect(warn).toHaveBeenCalledOnce();
@@ -411,7 +436,10 @@ describe("loadGatewayTlsRuntime", () => {
     );
     durabilityTestState.syncOutcome = { status: "unsupported", code: "EISDIR" };
 
-    const result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath }, { warn });
+    const result = await loadGatewayTlsServerRuntime(
+      { enabled: true, certPath, keyPath },
+      { warn },
+    );
 
     expect(result.enabled).toBe(true);
     expect(warn).toHaveBeenCalledTimes(2);
@@ -438,7 +466,7 @@ describe("loadGatewayTlsRuntime", () => {
     await fs.writeFile(certPath, "not a certificate\n", "utf8");
     await fs.writeFile(keyPath, KEY_PEM, "utf8");
 
-    const result = await loadGatewayTlsRuntime({
+    const result = await loadGatewayTlsServerRuntime({
       enabled: true,
       certPath,
       keyPath,
@@ -453,7 +481,7 @@ describe("loadGatewayTlsRuntime", () => {
   });
 
   it("falls back to default paths when certPath and keyPath are empty strings", async () => {
-    const result = await loadGatewayTlsRuntime({
+    const result = await loadGatewayTlsServerRuntime({
       enabled: true,
       certPath: "",
       keyPath: "",
@@ -468,7 +496,7 @@ describe("loadGatewayTlsRuntime", () => {
   });
 
   it("falls back to default paths when certPath and keyPath are whitespace-only", async () => {
-    const result = await loadGatewayTlsRuntime({
+    const result = await loadGatewayTlsServerRuntime({
       enabled: true,
       certPath: "   ",
       keyPath: "\t",
@@ -482,7 +510,7 @@ describe("loadGatewayTlsRuntime", () => {
   });
 
   it("does not fall back for non-empty paths with leading/trailing spaces", async () => {
-    const result = await loadGatewayTlsRuntime({
+    const result = await loadGatewayTlsServerRuntime({
       enabled: true,
       certPath: "  /etc/ssl/cert.pem  ",
       keyPath: "  /etc/ssl/private/server.key  ",

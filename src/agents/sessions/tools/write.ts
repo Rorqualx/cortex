@@ -22,6 +22,7 @@ import {
   invalidArgText,
   normalizeDisplayText,
   replaceTabs,
+  reuseTextComponent,
   shortenPath,
   str,
   trimTrailingEmptyLines,
@@ -487,9 +488,7 @@ export function createWriteToolDefinition(
         component.clear();
         return component;
       }
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-      text.setText(output);
-      return text;
+      return reuseTextComponent(context.lastComponent, output);
     },
   };
 }
