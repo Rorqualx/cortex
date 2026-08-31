@@ -113,6 +113,7 @@ function createWorkspacePluginMetadataSnapshot(params: {
     setupProviders: new Map(),
     commandAliases: new Map(),
     contracts: new Map(),
+    modelIdNormalizationPolicies: new Map(),
   };
   const index: PluginMetadataSnapshot["index"] = {
     version: 1,

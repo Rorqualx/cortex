@@ -327,6 +327,9 @@ export const validateSystemAgentSetupVerifyParams = compile(S.SystemAgentSetupVe
 export const validateSystemAgentSetupActivateParams = compile(
   S.SystemAgentSetupActivateParamsSchema,
 );
+export const validateSystemAgentSetupActivateStartParams = compile(
+  S.SystemAgentSetupActivateStartParamsSchema,
+);
 export const validateSystemAgentSetupAuthStartParams = compile(
   S.SystemAgentSetupAuthStartParamsSchema,
 );

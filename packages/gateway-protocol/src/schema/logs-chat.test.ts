@@ -28,9 +28,15 @@ describe("ChatHistoryParamsSchema", () => {
   it("accepts the history boundary and rejects larger requests", () => {
     const request = { sessionKey: "agent:main:main" };
 
+    // Fork: the validation ceiling is 10_000 because the fork's Control UI
+    // requests its whole transcript window in one call; the handler still
+    // clamps delivery to CHAT_HISTORY_MAX_ENTRIES (1000).
     expect(Value.Check(ChatHistoryParamsSchema, { ...request, limit: 1000 })).toBe(true);
-    expect(Value.Check(ChatHistoryParamsSchema, { ...request, limit: 1001 })).toBe(false);
-    expect(Value.Check(ChatHistoryParamsSchema, { ...request, cursor: "" })).toBe(true);
+    expect(Value.Check(ChatHistoryParamsSchema, { ...request, limit: 10_000 })).toBe(true);
+    expect(Value.Check(ChatHistoryParamsSchema, { ...request, limit: 10_001 })).toBe(false);
+    // Fork: the cursor-based history request param was removed in favor of
+    // offset/pendingBefore paging; the closed object rejects it outright.
+    expect(Value.Check(ChatHistoryParamsSchema, { ...request, cursor: "" })).toBe(false);
   });
 });
 
@@ -62,6 +68,8 @@ describe("ChatHistoryCursorResultSchema", () => {
       Value.Check(ChatHistoryCursorResultSchema, {
         ...delta,
         inFlightRun: { runId: "run-live", text: "still working" },
+        inputReceipts: [{ runId: "retained-run", state: "pending" }],
+        inputConsumptions: [{ runId: "consumed-run", consumedByEventId: "event-1" }],
       }),
     ).toBe(true);
     expect(Value.Check(ChatHistoryCursorResultSchema, { kind: "reset" })).toBe(true);
