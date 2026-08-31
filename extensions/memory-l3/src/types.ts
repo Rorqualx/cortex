@@ -96,6 +96,14 @@ export type L2Fact = {
   /** Distinct participant roles present in the source chunk. */
   participants?: string[];
   /**
+   * Verbatim source quote backing this fact (HERO-inspired
+   * provenance-on-recall). Populated from the L3 typed-fact
+   * `provenance.quote` at retrieval time so recall rendering can surface a
+   * one-line evidence pointer alongside the distilled value. Absent on
+   * facts without a recorded source span.
+   */
+  provenanceQuote?: string;
+  /**
    * MERIT-inspired outcome polarity (positive/negative/neutral).
    * Negative facts represent approaches that failed or were rejected.
    * Absent on facts extracted before this feature; readers treat absent
