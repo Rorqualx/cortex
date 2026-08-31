@@ -703,6 +703,76 @@ describe("retrieveTopK typed-fact tier", () => {
     expect(result).not.toContain("no provenance here src=");
   });
 
+  it("renders a truncated provenance quote when provenanceQuote is set", () => {
+    const result = formatMemorySection(
+      [
+        {
+          fact: {
+            id: "f-quote",
+            text: "user:phone = 555-1234",
+            importance: 0.9,
+            createdAt: NOW,
+            dedupKey: "user:phone",
+          },
+          score: 0.8,
+          signals: {
+            lexical: 0.5,
+            bm25: 0,
+            importance: 0.9,
+            recency: 1,
+            l3Boost: 0,
+            semantic: 0,
+            informationGain: 0,
+            goalRelevance: 0,
+            reliability: 1,
+            semanticEntropy: 1,
+            validity: 1,
+          },
+          chunkId: "longterm-typed",
+          tier: "longterm-typed",
+          provenanceQuote: "my phone is 555-1234",
+        },
+      ],
+      { now: NOW },
+    );
+    // Quote rides on the rendered line, after the fact text.
+    expect(result).toContain('user:phone = 555-1234 ← "my phone is 555-1234"');
+    // The prelude explains the marker.
+    expect(result).toContain("verbatim source text");
+  });
+
+  it("omits the quote marker when provenanceQuote is absent", () => {
+    const result = formatMemorySection([
+      {
+        fact: {
+          id: "f-noquote",
+          text: "no quote here",
+          importance: 0.7,
+          createdAt: NOW,
+          dedupKey: "k:noquote",
+        },
+        score: 0.8,
+        signals: {
+          lexical: 1,
+          bm25: 0,
+          importance: 0.7,
+          recency: 1,
+          l3Boost: 0,
+          semantic: 0,
+          informationGain: 0,
+          goalRelevance: 0,
+          reliability: 1,
+          semanticEntropy: 1,
+          validity: 1,
+        },
+        chunkId: "chunk-1",
+        tier: "l2",
+      },
+    ]);
+    expect(result).toContain("[0.80] no quote here");
+    expect(result).not.toContain("no quote here ←");
+  });
+
   it("renders typed-fact hits with the ■ marker in formatMemorySection", () => {
     const result = formatMemorySection([
       {
@@ -883,6 +953,137 @@ describe("retrieveTopK longterm-typed tier", () => {
     expect(canonical).toBeDefined();
     expect(canonical?.fact.text).toBe("user:account_balance = 750.00");
     expect(perChunk).toBeUndefined();
+  });
+
+  it("surfaces provenance quotes for high-confidence typed facts and gates stale low-confidence ones", async () => {
+    // HERO-style raw-evidence pointers: a long-term typed fact with a
+    // provenance quote surfaces it at recall when confident or recent; a
+    // stale low-confidence fact does not, protecting the token budget.
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "placeholder", importance: 0.1, createdAt: NOW, dedupKey: "k:placeholder" },
+    ]);
+    await storage.writeLongTermTyped(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "ltt-quoted",
+            slot: "user:phone",
+            value: "555-1234",
+            unit: null,
+            confidence: 0.95,
+            firstSeenAt: NOW,
+            lastConfirmedAt: NOW,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-000000-x"],
+            history: [],
+            validFrom: NOW,
+            validUntil: null,
+            supersededBy: null,
+            archived: false,
+            archivedAt: null,
+            lastAccessedAt: NOW,
+            provenance: {
+              quote: "my phone is 555-1234, call any time",
+              chunkId: "chunk-000000-x",
+              sessionId: "agent:main:cron:test",
+            },
+          },
+          {
+            id: "ltt-stale",
+            slot: "infra:old_router",
+            value: "deadbeef",
+            unit: null,
+            confidence: 0.5,
+            firstSeenAt: NOW - 120 * 86400000,
+            lastConfirmedAt: NOW - 120 * 86400000,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-000000-x"],
+            history: [],
+            validFrom: NOW - 120 * 86400000,
+            validUntil: null,
+            supersededBy: null,
+            archived: false,
+            archivedAt: null,
+            lastAccessedAt: NOW - 120 * 86400000,
+            provenance: {
+              quote: "the old router mac is deadbeef",
+              chunkId: "chunk-000000-x",
+              sessionId: "agent:main:cron:test",
+            },
+          },
+        ],
+      },
+      "",
+    );
+
+    const { facts: result } = await retrieveTopK({
+      query: "phone router",
+      storage,
+      topK: 10,
+      now: NOW,
+    });
+    const quoted = result.find((r) => r.fact.id === "ltt-quoted");
+    const stale = result.find((r) => r.fact.id === "ltt-stale");
+    expect(quoted).toBeDefined();
+    expect(quoted!.provenanceQuote).toBe("my phone is 555-1234, call any time");
+    expect(stale).toBeDefined();
+    expect(stale!.provenanceQuote).toBeUndefined();
+  });
+
+  it("truncates long provenance quotes to one line", async () => {
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "placeholder", importance: 0.1, createdAt: NOW, dedupKey: "k:placeholder" },
+    ]);
+    const longQuote =
+      "the verbatim source span is quite long and would flood the context if rendered in full so it must be truncated";
+    await storage.writeLongTermTyped(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "ltt-longquote",
+            slot: "user:long_note",
+            value: "truncated",
+            unit: null,
+            confidence: 0.95,
+            firstSeenAt: NOW,
+            lastConfirmedAt: NOW,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-000000-x"],
+            history: [],
+            validFrom: NOW,
+            validUntil: null,
+            supersededBy: null,
+            archived: false,
+            archivedAt: null,
+            lastAccessedAt: NOW,
+            provenance: {
+              quote: longQuote,
+              chunkId: "chunk-000000-x",
+              sessionId: "agent:main:cron:test",
+            },
+          },
+        ],
+      },
+      "",
+    );
+
+    const { facts: result } = await retrieveTopK({
+      query: "long_note",
+      storage,
+      topK: 10,
+      now: NOW,
+    });
+    const hit = result.find((r) => r.tier === "longterm-typed");
+    expect(hit).toBeDefined();
+    expect(hit!.provenanceQuote).toBeDefined();
+    expect(hit!.provenanceQuote!.length).toBeLessThanOrEqual(80);
+    expect(hit!.provenanceQuote!.endsWith("…")).toBe(true);
   });
 
   it("applies access-time decay to typed-fact confidence", async () => {

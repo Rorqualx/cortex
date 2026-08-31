@@ -306,6 +306,13 @@ export type RetrievedFact = {
   /** Number of messages in the buffer that produced this fact (L2 tier only).
    * Enables RaMem-style contextual reinstatement. */
   contextWindow?: number;
+  /** Truncated verbatim source quote (longterm-typed tier only) — the raw
+   * evidence span the fact's value was extracted from. Surfaced at recall so
+   * downstream consumers can anchor on the original wording instead of a
+   * paraphrased slot/value (HERO-style raw-evidence pointers reduce semantic
+   * drift). Undefined when the fact has no provenance or fails the
+   * confidence/recency gate. */
+  provenanceQuote?: string;
 };
 
 /**
@@ -581,6 +588,8 @@ export async function retrieveTopK(params: {
     contextWindow?: number;
     /** QW-4: Source trust for long-term typed facts. */
     sourceTrust?: import("./types.js").SourceTrust;
+    /** QW (HERO): truncated provenance quote for longterm-typed facts. */
+    provenanceQuote?: string;
   };
   const items: ScorableItem[] = [];
 
@@ -629,6 +638,7 @@ export async function retrieveTopK(params: {
       l3Boost: 0,
       tierBoost: config.weightLongTermTierBoost,
       sourceTrust: ltt.sourceTrust,
+      provenanceQuote: provenanceQuoteForRecall(ltt, now),
     });
   }
 
@@ -847,6 +857,7 @@ export async function retrieveTopK(params: {
         chunkId: item.chunkId,
         tier: item.tier,
         contextWindow: item.contextWindow,
+        provenanceQuote: item.provenanceQuote,
       });
     }
   }
@@ -1306,6 +1317,7 @@ export async function retrieveTopK(params: {
           signals,
           chunkId: cand.chunkId,
           tier: cand.tier,
+          provenanceQuote: cand.provenanceQuote,
         });
       }
     }
@@ -1388,7 +1400,10 @@ function trimToTokenBudget(facts: RetrievedFact[], maxTokens: number): Retrieved
   // Greedily pack from the top until we exhaust the budget.
   const result: RetrievedFact[] = [];
   for (const rf of facts) {
-    const lineTokens = Math.ceil((rf.fact.text.length + 20) / 4);
+    // Provenance quotes ride along on the rendered line — count them so the
+    // estimate stays honest against the token budget.
+    const quoteChars = rf.provenanceQuote ? rf.provenanceQuote.length + 4 : 0;
+    const lineTokens = Math.ceil((rf.fact.text.length + quoteChars + 20) / 4);
     if (lineTokens > remaining && result.length > 0) {
       break; // stop when adding this fact would exceed budget
     }
@@ -1536,6 +1551,39 @@ function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
     // Failure-avoidance typed facts get significance for FSRS slower decay.
     significant: ltt.slot.startsWith("failure:") || undefined,
   };
+}
+
+/** Max rendered length of a provenance-quote excerpt — one line, no more. */
+const PROVENANCE_QUOTE_MAX_CHARS = 80;
+/** Confidence at or above this surfaces the quote regardless of recency. */
+const PROVENANCE_MIN_CONFIDENCE = 0.75;
+/** Facts confirmed within this window surface the quote regardless of confidence. */
+const PROVENANCE_RECENT_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * QW (HERO, finding 4): pick the truncated verbatim source quote to surface
+ * at recall for a long-term typed fact. Provenance is stamped at promotion
+ * (`longterm-typed.ts`) but was never rendered — this closes that loop.
+ *
+ * Gated to high-confidence OR recently-confirmed facts so the token budget
+ * isn't flooded with quotes on stale, uncertain trivia. The quote keeps the
+ * original wording (dates, numbers, phrasing) available to the reader, which
+ * supports stale-prose flagging in cross-brain reconciliation.
+ */
+function provenanceQuoteForRecall(ltt: LongTermTypedFact, now: number): string | undefined {
+  const quote = ltt.provenance?.quote?.trim();
+  if (!quote) {
+    return undefined;
+  }
+  const highConfidence = ltt.confidence >= PROVENANCE_MIN_CONFIDENCE;
+  const recentlyConfirmed = now - ltt.lastConfirmedAt <= PROVENANCE_RECENT_MS;
+  if (!highConfidence && !recentlyConfirmed) {
+    return undefined;
+  }
+  if (quote.length <= PROVENANCE_QUOTE_MAX_CHARS) {
+    return quote;
+  }
+  return quote.slice(0, PROVENANCE_QUOTE_MAX_CHARS - 1).trimEnd() + "…";
 }
 
 /** Default half-life for typed-fact access-time decay, in days.
@@ -2001,7 +2049,10 @@ export function formatMemorySection(
     // recalls share an origin (and weigh same-session clusters accordingly).
     // Last 6 chars only — full session ids would bloat every line.
     const src = r.fact.sessionId ? ` src=${r.fact.sessionId.slice(-6)}` : "";
-    return `- ${marker} [${r.score.toFixed(2)}]${age}${src} ${r.fact.text}`;
+    // Verbatim source quote (longterm-typed tier, confidence/recency gated):
+    // the raw evidence span the value was extracted from. One line, truncated.
+    const quote = r.provenanceQuote ? ` ← "${r.provenanceQuote}"` : "";
+    return `- ${marker} [${r.score.toFixed(2)}]${age}${src} ${r.fact.text}${quote}`;
   });
   // Guidance prelude: tells the agent how to use the facts. Stays passive
   // ("draw on these"), respects the agent's own answer style — no hard rules
@@ -2011,7 +2062,7 @@ export function formatMemorySection(
   // event ordering ("which came first") or durations ("how long ago"), the
   // answer lives in the fact text itself, not in the recall annotation.
   const prelude =
-    "Draw on these recalled facts when relevant. The (Nd ago) annotation shows when each fact was *noted*, not when the event happened — use it only to break ties between two facts that directly contradict (e.g. balance is X vs balance is Y, prefer the more recent recall). For questions about event ordering, durations, or dates, the answer lives in the fact text itself. The `src=` tag (when present) is the short id of the session that produced the fact — recalls sharing a `src` came from the same origin session.";
+    'Draw on these recalled facts when relevant. The (Nd ago) annotation shows when each fact was *noted*, not when the event happened — use it only to break ties between two facts that directly contradict (e.g. balance is X vs balance is Y, prefer the more recent recall). For questions about event ordering, durations, or dates, the answer lives in the fact text itself. The `src=` tag (when present) is the short id of the session that produced the fact — recalls sharing a `src` came from the same origin session. A `← "quote"` (when present) is the verbatim source text a fact was extracted from — trust its exact wording over any paraphrase.';
   return `## Memory (hierarchical-l3)\n${prelude}\n\n${lines.join("\n")}`;
 }
 
