@@ -39,6 +39,7 @@ import { createAgentHarnessTaskRuntimeScope } from "../../tasks/agent-harness-ta
 import { resolveUserPath } from "../../utils.js";
 import { isMarkdownCapableMessageChannel } from "../../utils/message-channel.js";
 import { resolveRuntimeServiceVersion } from "../../version.js";
+import { resolvePreparedRunAdmission } from "../admitted-run-context.js";
 import {
   retireSessionMcpRuntime,
   retireSessionMcpRuntimeForSessionKey,
@@ -53,8 +54,6 @@ import {
   resolveSessionAgentIds,
   resolveAgentWorkspaceDir,
 } from "../agent-scope.js";
-import { resolvePreparedRunAdmission } from "../admitted-run-context.js";
-import { resolveProcessToolScopeKey } from "../bash-process-scope.js";
 import {
   type AuthProfileFailureReason,
   type AuthProfileStore,
@@ -65,6 +64,7 @@ import {
 } from "../auth-profiles.js";
 import { resolveExternalCliAuthOverlayScopeFromSelection } from "../auth-profiles/external-cli-auth-selection.js";
 import { listActiveProcessSessionReferences } from "../bash-process-references.js";
+import { resolveProcessToolScopeKey } from "../bash-process-scope.js";
 import {
   resolveSessionKeyForRequestCore,
   resolveStoredSessionKeyForSessionId,
@@ -147,13 +147,13 @@ import {
 } from "./post-compaction-loop-guard.js";
 import { createEmbeddedRunReplayState, observeReplayMetadata } from "./replay-state.js";
 import { handleAssistantFailover } from "./run/assistant-failover.js";
+import { forgetPromptBuildDrainCacheForRun } from "./run/attempt-prompt-helpers.js";
 import {
   createEmbeddedRunStageTracker,
   EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE,
   formatEmbeddedRunStageSummary,
   shouldWarnEmbeddedRunStageSummary,
 } from "./run/attempt-stage-timing.js";
-import { forgetPromptBuildDrainCacheForRun } from "./run/attempt-prompt-helpers.js";
 import { createEmbeddedRunAuthController } from "./run/auth-controller.js";
 import { resolveAuthProfileFailureReason } from "./run/auth-profile-failure-policy.js";
 import { runEmbeddedAttemptWithBackend } from "./run/backend.js";
@@ -289,7 +289,9 @@ async function resetNoRealConversationTokenSnapshot(params: {
   if (!params.sessionKey) {
     return;
   }
-  const storePath = resolveSessionStorePathCore(params.config?.session?.store, { agentId: params.agentId });
+  const storePath = resolveSessionStorePathCore(params.config?.session?.store, {
+    agentId: params.agentId,
+  });
   try {
     await updateSessionEntry(
       { sessionKey: params.sessionKey, storePath },
@@ -491,7 +493,6 @@ function backfillSessionKey(params: {
       : resolveSessionKeyForRequestCore({
           cfg: params.config,
           sessionId: params.sessionId,
-          clone: false,
         });
     return normalizeOptionalString(resolved.sessionKey);
   } catch (err) {
