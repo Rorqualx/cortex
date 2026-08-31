@@ -571,6 +571,20 @@ export function resolveRunModelFallbacksOverride(params: {
   return agentId ? resolveAgentModelFallbacksOverride(params.cfg, agentId) : undefined;
 }
 
+// Fork: presence-only fallback check kept for the embedded-agent-runner monolith's
+// run/fallbacks.ts wrapper (upstream 5454da8 removed it in favor of the richer
+// resolveModelFallbackAvailability above; both coexist — this one deliberately
+// ignores disable-reasons and only reports whether a ladder is configured).
+export function hasConfiguredModelFallbacks(params: {
+  cfg: OpenClawConfig | undefined;
+  agentId?: string | null;
+  sessionKey?: string | null;
+}): boolean {
+  const fallbacksOverride = resolveRunModelFallbacksOverride(params);
+  const defaultFallbacks = resolveAgentModelFallbackValues(params.cfg?.agents?.defaults?.model);
+  return (fallbacksOverride ?? defaultFallbacks).length > 0;
+}
+
 export type ModelFallbackAvailability =
   // `source` records whether an explicit fallbacks override owns the ladder or the
   // models were inherited from defaults; the run-override projection depends on it.
