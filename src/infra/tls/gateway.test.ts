@@ -123,7 +123,7 @@ describe("loadGatewayTlsServerRuntime", () => {
     const keyPath = path.join(dir, "gateway-key.pem");
 
     // autoGenerate defaults to true; missing files trigger openssl generation.
-    const result = await loadGatewayTlsRuntime({ enabled: true, certPath, keyPath });
+    const result = await loadGatewayTlsServerRuntime({ enabled: true, certPath, keyPath });
 
     expect(result.error).toBeUndefined();
     expect(result.enabled).toBe(true);

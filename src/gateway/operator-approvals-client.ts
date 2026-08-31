@@ -6,7 +6,7 @@ import {
   GATEWAY_CLIENT_NAMES,
 } from "../../packages/gateway-protocol/src/client-info.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { loadGatewayTlsRuntime } from "../infra/tls/gateway.js";
+import { loadGatewayTlsServerRuntime } from "../infra/tls/gateway.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { resolveGatewayClientBootstrap } from "./client-bootstrap.js";
 import { startGatewayClientWhenEventLoopReady } from "./client-start-readiness.js";
@@ -52,14 +52,14 @@ export async function createOperatorApprovalsGatewayClient(
   // Without the pin Node rejects the cert and the native approval handler retries
   // forever (approval-handler-bootstrap). Only the local loopback connection trusts
   // this cert, so gate on the same loopback signal as the runtime token; guard on
-  // tlsRuntime.enabled because loadGatewayTlsRuntime returns it false (fingerprint
+  // tlsRuntime.enabled because loadGatewayTlsServerRuntime returns it false (fingerprint
   // undefined) when cert generation/parse fails.
   const localLoopbackTls =
     sendsApprovalRuntimeToken &&
     params.config.gateway?.tls?.enabled === true &&
     bootstrap.url.startsWith("wss://");
   const tlsRuntime = localLoopbackTls
-    ? await loadGatewayTlsRuntime(params.config.gateway?.tls)
+    ? await loadGatewayTlsServerRuntime(params.config.gateway?.tls)
     : undefined;
   const tlsFingerprint = tlsRuntime?.enabled ? tlsRuntime.fingerprintSha256 : undefined;
 
