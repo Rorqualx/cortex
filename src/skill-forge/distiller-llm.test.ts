@@ -67,4 +67,9 @@ describe("SKILL_FORGE_LLM_DISTILLER_SYSTEM", () => {
     expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/no yaml frontmatter/iu);
     expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/script/iu);
   });
+
+  it("carries the EVOMAL counter-prompt against copying existing skill bodies", () => {
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/do not copy verbatim/iu);
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/banners/iu);
+  });
 });

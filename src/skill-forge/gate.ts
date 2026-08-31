@@ -1,6 +1,10 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { resolveSkillForgePromotedSkillDir, resolveSkillForgeRetiredSkillDir } from "./paths.js";
+import {
+  resolveSkillForgePromotedSkillDir,
+  resolveSkillForgeRetiredSkillDir,
+  resolveSkillForgeSkillsRoot,
+} from "./paths.js";
 
 export const LLM_REPLAY_TODO =
   "Phase 4 LLM-replay gate (leave-one-out re-run with the candidate skill loaded) requires an LLM provider; defer until provider chosen.";
@@ -268,6 +272,108 @@ export function llmReplayGateStub(): never {
   throw new Error(LLM_REPLAY_TODO);
 }
 
+/**
+ * Default near-duplicate threshold: Jaccard similarity of 3-word shingles
+ * between the candidate body and a promoted skill's body at or above which
+ * the gate fails. Deliberately LOOSE (0.8) — legitimately similar recovery
+ * skills share workflow scaffolding ("run the tool, check output, retry")
+ * and must not be blocked; only genuine near-copies should trip this.
+ * (EVOMAL banner-imitation hardening — ASPR defense without an LLM.)
+ */
+export const NEAR_DUPLICATE_DEFAULT_THRESHOLD = 0.8;
+
+/** Normalize text into a set of lowercase word shingles (n-grams). */
+function shingleSet(text: string, size = 3): Set<string> {
+  const words = text
+    .toLowerCase()
+    .split(/\s+/u)
+    .filter((w) => w.length > 0);
+  const out = new Set<string>();
+  for (let i = 0; i + size <= words.length; i++) {
+    out.add(words.slice(i, i + size).join(" "));
+  }
+  return out;
+}
+
+/** Jaccard similarity between two shingle sets (0 when either is empty). */
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) {
+    return 0;
+  }
+  let intersection = 0;
+  for (const s of a) {
+    if (b.has(s)) {
+      intersection++;
+    }
+  }
+  return intersection / (a.size + b.size - intersection);
+}
+
+/** Strip YAML frontmatter, returning the body (whole content when absent). */
+function stripFrontmatter(content: string): string {
+  const match = content.match(/^---\n([\s\S]+?)\n---\n([\s\S]*)$/u);
+  return match?.[2] ?? content;
+}
+
+/**
+ * EVOMAL near-duplicate gate check: fail when the authored body is a
+ * near-duplicate of an existing promoted skill's body. Cheap shingle
+ * (3-word n-gram) Jaccard overlap — no LLM, no regex backtracking risk.
+ * Cross-over worms propagate by imitating retrieved skill bodies; this
+ * blocks that lane at promotion time even if a future distiller lane
+ * starts feeding retrieved skills into the prompt.
+ */
+export async function nearDuplicateCheck(params: {
+  skillDir: string;
+  threshold?: number;
+  env?: NodeJS.ProcessEnv;
+}): Promise<GateVerdict> {
+  const env = params.env ?? process.env;
+  const threshold = params.threshold ?? NEAR_DUPLICATE_DEFAULT_THRESHOLD;
+  let candidateContent: string;
+  try {
+    candidateContent = await fsp.readFile(path.join(params.skillDir, "SKILL.md"), "utf8");
+  } catch {
+    // Missing SKILL.md is validateSkillDir's job — not a near-dup failure.
+    return { status: "pass", reasons: [] };
+  }
+  const candidateShingles = shingleSet(stripFrontmatter(candidateContent));
+  if (candidateShingles.size === 0) {
+    return { status: "pass", reasons: [] };
+  }
+
+  const skillsRoot = resolveSkillForgeSkillsRoot(env);
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(skillsRoot);
+  } catch {
+    // No promoted skills root — nothing to duplicate.
+    return { status: "pass", reasons: [] };
+  }
+
+  for (const entry of entries) {
+    if (entry.startsWith("_")) {
+      continue; // skip _staging / _retired pseudo-directories
+    }
+    let promotedContent: string;
+    try {
+      promotedContent = await fsp.readFile(path.join(skillsRoot, entry, "SKILL.md"), "utf8");
+    } catch {
+      continue; // not a skill directory or unreadable — skip
+    }
+    const overlap = jaccard(candidateShingles, shingleSet(stripFrontmatter(promotedContent)));
+    if (overlap >= threshold) {
+      return {
+        status: "fail",
+        reasons: [
+          `body is a near-duplicate of promoted skill '${entry}' (shingle overlap ${overlap.toFixed(2)} ≥ ${threshold.toFixed(2)}); write the workflow fresh instead of copying`,
+        ],
+      };
+    }
+  }
+  return { status: "pass", reasons: [] };
+}
+
 export async function evaluateGate(params: {
   skillDir: string;
   name: string;
@@ -320,6 +426,13 @@ export async function evaluateGate(params: {
   const collision = await nameCollisionCheck({ name: params.name, env: params.env });
   if (collision.status === "fail") {
     return { ...collision, qualityFacets: facets };
+  }
+
+  // EVOMAL near-duplicate check: blocks promotion of bodies that are
+  // near-copies of already-promoted skills (banner/code imitation lane).
+  const nearDup = await nearDuplicateCheck({ skillDir: params.skillDir, env: params.env });
+  if (nearDup.status === "fail") {
+    return { ...nearDup, qualityFacets: facets };
   }
 
   // If minFacets thresholds are specified, check each facet.

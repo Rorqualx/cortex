@@ -7,6 +7,7 @@ import {
   llmReplayGateStub,
   LLM_REPLAY_TODO,
   nameCollisionCheck,
+  nearDuplicateCheck,
   staticSecurityScan,
   validateSkillDir,
 } from "./gate.js";
@@ -260,5 +261,116 @@ describe("evaluateGate", () => {
     });
     expect(verdict.status).toBe("fail");
     expect(verdict.reasons.some((r) => r.includes("[security]"))).toBe(true);
+  });
+});
+
+describe("nearDuplicateCheck (EVOMAL banner-imitation hardening)", () => {
+  let stateDir: string;
+  let candidateDir: string;
+  beforeEach(async () => {
+    stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-gate-neardup-"));
+    candidateDir = path.join(stateDir, "candidate");
+    await fsp.mkdir(candidateDir, { recursive: true });
+  });
+  afterEach(async () => {
+    await fsp.rm(stateDir, { recursive: true, force: true });
+  });
+  const env = (): NodeJS.ProcessEnv => ({
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_TEST_FAST: "1",
+  });
+
+  const DUP_BODY = `## Overview
+
+This skill recovers a stalled deployment by re-running the deploy script
+after checking the log tail for a lock file. First inspect the state dir,
+then remove the stale lock, then re-run the deploy and verify the output
+mentions the completed build target.`;
+
+  async function writePromoted(name: string, body: string): Promise<void> {
+    const dir = resolveSkillForgePromotedSkillDir({ name, env: env() });
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(
+      path.join(dir, "SKILL.md"),
+      `---\nname: ${name}\ndescription: Existing.\n---\n\n${body}\n`,
+      "utf8",
+    );
+  }
+
+  it("passes when no promoted skills exist", async () => {
+    await fsp.writeFile(
+      path.join(candidateDir, "SKILL.md"),
+      `---\nname: fresh\ndescription: x\n---\n\n${VALID_BODY}\n`,
+      "utf8",
+    );
+    const verdict = await nearDuplicateCheck({ skillDir: candidateDir, env: env() });
+    expect(verdict.status).toBe("pass");
+  });
+
+  it("passes when SKILL.md is missing (validation owns that failure)", async () => {
+    const verdict = await nearDuplicateCheck({ skillDir: candidateDir, env: env() });
+    expect(verdict.status).toBe("pass");
+  });
+
+  it("fails when the candidate body is a near-duplicate of a promoted skill", async () => {
+    await writePromoted("deploy-recovery", DUP_BODY);
+    // Same body, one word swapped — well above the loose 0.8 threshold.
+    const tweaked = DUP_BODY.replace("stalled", "stuck");
+    await fsp.writeFile(
+      path.join(candidateDir, "SKILL.md"),
+      `---\nname: copycat\ndescription: x\n---\n\n${tweaked}\n`,
+      "utf8",
+    );
+    const verdict = await nearDuplicateCheck({ skillDir: candidateDir, env: env() });
+    expect(verdict.status).toBe("fail");
+    expect(verdict.reasons[0]).toMatch(/near-duplicate of promoted skill 'deploy-recovery'/u);
+  });
+
+  it("passes on topically similar but genuinely distinct bodies", async () => {
+    await writePromoted("deploy-recovery", DUP_BODY);
+    // Shares scaffolding ("## Overview", recovery intent) but distinct words.
+    const distinct = `## Overview
+
+Restarts a wedged CI pipeline from scratch. Re-create the runner container,
+drain the queued jobs one at a time, and confirm the agent log shows a
+healthy heartbeat before marking the incident resolved.`;
+    await fsp.writeFile(
+      path.join(candidateDir, "SKILL.md"),
+      `---\nname: ci-restart\ndescription: x\n---\n\n${distinct}\n`,
+      "utf8",
+    );
+    const verdict = await nearDuplicateCheck({ skillDir: candidateDir, env: env() });
+    expect(verdict.status).toBe("pass");
+  });
+
+  it("evaluateGate fails a valid skill whose body duplicates a promoted one", async () => {
+    await writePromoted("deploy-recovery", DUP_BODY);
+    const stagedDir = path.join(stateDir, "skill-forge", "skills", "_staging", "copycat");
+    await fsp.mkdir(stagedDir, { recursive: true });
+    await fsp.writeFile(
+      path.join(stagedDir, "SKILL.md"),
+      `---\nname: copycat\ndescription: Copies the recovery skill.\n---\n\n${DUP_BODY}\n`,
+      "utf8",
+    );
+    const verdict = await evaluateGate({
+      skillDir: stagedDir,
+      name: "copycat",
+      env: env(),
+    });
+    expect(verdict.status).toBe("fail");
+    expect(verdict.reasons.some((r) => r.includes("near-duplicate"))).toBe(true);
+  });
+
+  it("evaluateGate passes an unrelated valid skill (near-dup check does not over-trigger)", async () => {
+    await writePromoted("deploy-recovery", DUP_BODY);
+    const stagedDir = path.join(stateDir, "skill-forge", "skills", "_staging", "fresh");
+    await fsp.mkdir(stagedDir, { recursive: true });
+    await fsp.writeFile(path.join(stagedDir, "SKILL.md"), validSkill("fresh"), "utf8");
+    const verdict = await evaluateGate({
+      skillDir: stagedDir,
+      name: "fresh",
+      env: env(),
+    });
+    expect(verdict.status).toBe("pass");
   });
 });
