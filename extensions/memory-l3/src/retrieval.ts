@@ -1535,6 +1535,9 @@ function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
     dedupKey: ltt.slot,
     // Failure-avoidance typed facts get significance for FSRS slower decay.
     significant: ltt.slot.startsWith("failure:") || undefined,
+    // HERO-style provenance-on-recall: thread the verbatim source span
+    // through so the recall renderer can surface an evidence pointer.
+    provenanceQuote: ltt.provenance?.quote,
   };
 }
 
@@ -1994,6 +1997,11 @@ export function formatMemorySection(
     return "";
   }
   const now = options?.now;
+  // HERO-inspired provenance-on-recall: surface a one-line verbatim quote for
+  // the strongest facts that carry one. Budget-capped (top N by rank order —
+  // callers pass results already sorted by score) so quotes cannot flood the
+  // context window. Quotes are whitespace-collapsed and truncated.
+  let quoteBudget = PROVENANCE_QUOTE_TOP_N;
   const lines = facts.map((r) => {
     const marker = tierMarker(r.tier);
     const age = now !== undefined ? ` ${formatRelativeAge(now - r.fact.createdAt)}` : "";
@@ -2001,7 +2009,13 @@ export function formatMemorySection(
     // recalls share an origin (and weigh same-session clusters accordingly).
     // Last 6 chars only — full session ids would bloat every line.
     const src = r.fact.sessionId ? ` src=${r.fact.sessionId.slice(-6)}` : "";
-    return `- ${marker} [${r.score.toFixed(2)}]${age}${src} ${r.fact.text}`;
+    let quote = "";
+    const rawQuote = r.fact.provenanceQuote;
+    if (rawQuote && quoteBudget > 0) {
+      quoteBudget--;
+      quote = ` «${truncateQuote(rawQuote)}»`;
+    }
+    return `- ${marker} [${r.score.toFixed(2)}]${age}${src} ${r.fact.text}${quote}`;
   });
   // Guidance prelude: tells the agent how to use the facts. Stays passive
   // ("draw on these"), respects the agent's own answer style — no hard rules
@@ -2011,8 +2025,23 @@ export function formatMemorySection(
   // event ordering ("which came first") or durations ("how long ago"), the
   // answer lives in the fact text itself, not in the recall annotation.
   const prelude =
-    "Draw on these recalled facts when relevant. The (Nd ago) annotation shows when each fact was *noted*, not when the event happened — use it only to break ties between two facts that directly contradict (e.g. balance is X vs balance is Y, prefer the more recent recall). For questions about event ordering, durations, or dates, the answer lives in the fact text itself. The `src=` tag (when present) is the short id of the session that produced the fact — recalls sharing a `src` came from the same origin session.";
+    "Draw on these recalled facts when relevant. The (Nd ago) annotation shows when each fact was *noted*, not when the event happened — use it only to break ties between two facts that directly contradict (e.g. balance is X vs balance is Y, prefer the more recent recall). For questions about event ordering, durations, or dates, the answer lives in the fact text itself. The `src=` tag (when present) is the short id of the session that produced the fact — recalls sharing a `src` came from the same origin session. A «…» quote (when present) is the verbatim source span the fact was extracted from; when paraphrase and quote disagree, trust the quote.";
   return `## Memory (hierarchical-l3)\n${prelude}\n\n${lines.join("\n")}`;
+}
+
+/** Max number of recall lines that may carry a provenance quote. */
+const PROVENANCE_QUOTE_TOP_N = 3;
+
+/** Max rendered length of a provenance quote (single line). */
+const PROVENANCE_QUOTE_MAX_CHARS = 120;
+
+/** Collapse whitespace and truncate a provenance quote to one line. */
+function truncateQuote(quote: string): string {
+  const collapsed = quote.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= PROVENANCE_QUOTE_MAX_CHARS) {
+    return collapsed;
+  }
+  return `${collapsed.slice(0, PROVENANCE_QUOTE_MAX_CHARS - 1).trimEnd()}…`;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

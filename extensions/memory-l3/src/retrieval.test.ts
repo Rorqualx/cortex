@@ -733,6 +733,87 @@ describe("retrieveTopK typed-fact tier", () => {
     ]);
     expect(result).toContain("■ [0.78] user:phone = 555-1234");
   });
+
+  it("appends a truncated provenance quote to recall lines that carry one", () => {
+    const longQuote =
+      "The router at 192.168.50.1 was replaced on March 3rd and the new gateway address is now 192.168.50.128 with Pi-hole DNS configured for the whole network and unbound upstream resolvers";
+    const mk = (id: string, quote?: string, score = 0.9): RetrievedFact => ({
+      fact: {
+        id,
+        text: `infra:pi_hole_ip = 192.168.50.128`,
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: `infra:pi_hole_ip`,
+        provenanceQuote: quote,
+      },
+      score,
+      signals: {
+        lexical: 1,
+        bm25: 0,
+        importance: 0.9,
+        recency: 1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 1,
+        semanticEntropy: 1,
+        validity: 1,
+      },
+      chunkId: "longterm-typed",
+      tier: "longterm-typed",
+    });
+    const result = formatMemorySection([mk("q-1", longQuote)]);
+    // Quote is collapsed to one line, truncated with an ellipsis, wrapped in «».
+    expect(result).toContain("«The router at 192.168.50.1");
+    expect(result).toContain("…»");
+    // Truncation keeps the quote to a single budgeted line.
+    expect(result).not.toContain("for the whole network and unbound");
+    // Prelude explains the quote annotation.
+    expect(result).toContain("trust the quote");
+  });
+
+  it("budget-caps provenance quotes to the top 3 facts by rank order", () => {
+    const mk = (id: string, quote?: string, score = 0.9): RetrievedFact => ({
+      fact: {
+        id,
+        text: `${id} = value`,
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: id,
+        provenanceQuote: quote,
+      },
+      score,
+      signals: {
+        lexical: 1,
+        bm25: 0,
+        importance: 0.9,
+        recency: 1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 1,
+        semanticEntropy: 1,
+        validity: 1,
+      },
+      chunkId: "longterm-typed",
+      tier: "longterm-typed",
+    });
+    const result = formatMemorySection([
+      mk("a", "quote a"),
+      mk("b", "quote b"),
+      mk("c", "quote c"),
+      mk("d", "quote d"),
+      mk("e"),
+    ]);
+    expect(result).toContain("a = value «quote a»");
+    expect(result).toContain("b = value «quote b»");
+    expect(result).toContain("c = value «quote c»");
+    // 4th quote-carrying fact exceeds the budget → no quote rendered.
+    expect(result).toContain("d = value\n");
+    expect(result).not.toContain("«quote d»");
+  });
 });
 
 describe("retrieveTopK failure-fact significance", () => {
