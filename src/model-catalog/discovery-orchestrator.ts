@@ -9,7 +9,9 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import { normalizeModelCatalogProviderId } from "@openclaw/model-catalog-core/model-catalog-refs";
+import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { resolveApiKeyForProviderCore } from "../agents/model-auth.js";
+import { buildModelAliasIndex } from "../agents/model-selection-shared.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
 import { upsertProbedServedModels } from "./discovered-store.js";
@@ -29,8 +31,10 @@ export type ProviderDiscoveryReport = {
 /** Cap on probe completions per provider per refresh, to bound latency/calls. */
 const MAX_PROBE_CANDIDATES = 24;
 
-/** Candidate ids to probe for served-but-unlisted models: the curated config
- * catalog ids when present, else the live /models ids. */
+/** Candidate ids to probe for served-but-unlisted models: configured alias-pin
+ * targets first (they're the ids users actually run, so their served
+ * checkpoint sub-version gets recorded on every refresh), then the curated
+ * config catalog ids when present, else the live /models ids. */
 function collectProbeCandidateIds(
   cfg: OpenClawConfig,
   provider: string,
@@ -40,7 +44,22 @@ function collectProbeCandidateIds(
     .map((m) => m.id?.trim())
     .filter((id): id is string => Boolean(id));
   const liveIds = fetchResult.ok ? fetchResult.models.map((m) => m.modelId) : [];
-  const source = configIds.length > 0 ? configIds : liveIds;
+  // Alias pins resolve through the same index doctor uses; targets pinned to
+  // other providers are filtered out by provider match.
+  const aliasIds: string[] = [];
+  try {
+    const aliasIndex = buildModelAliasIndex({ cfg, defaultProvider: DEFAULT_PROVIDER });
+    for (const { ref } of aliasIndex.byAlias.values()) {
+      if (
+        normalizeModelCatalogProviderId(ref.provider) === normalizeModelCatalogProviderId(provider)
+      ) {
+        aliasIds.push(ref.model);
+      }
+    }
+  } catch {
+    // Alias resolution is best-effort — fall back to config/live ids only.
+  }
+  const source = [...aliasIds, ...(configIds.length > 0 ? configIds : liveIds)];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const id of source) {

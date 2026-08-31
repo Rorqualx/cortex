@@ -103,7 +103,7 @@ describe("discovered-store", () => {
     // A probe row without upgradedFrom contributes no upgrade.
     upsertProbedServedModels(db, "zai", [{ modelId: "glm-4.6v", raw: { id: "glm-4.6v" } }], 1000);
     expect(listSilentUpgrades(db, "zai")).toEqual([
-      { provider: "zai", from: "glm-5.1", to: "glm-5.2" },
+      { provider: "zai", from: "glm-5.1", to: "glm-5.2", lastSeenMs: 1000 },
     ]);
   });
 
@@ -133,7 +133,13 @@ describe("discovered-store", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.source).toBe("models"); // probe never downgrades source
     expect(listSilentUpgrades(db, "deepseek")).toEqual([
-      { provider: "deepseek", from: "deepseek-v4-flash", to: "DeepSeek-V4-Flash-0731" },
+      {
+        provider: "deepseek",
+        from: "deepseek-v4-flash",
+        to: "DeepSeek-V4-Flash-0731",
+        // Probe refresh at t=2000 stamps the newer confirmation time.
+        lastSeenMs: 2000,
+      },
     ]);
   });
 

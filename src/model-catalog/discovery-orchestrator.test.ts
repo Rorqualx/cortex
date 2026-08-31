@@ -164,7 +164,12 @@ describe("runProviderModelDiscovery", () => {
     expect(report.probedAdded).toBeUndefined();
     // But the alias→snapshot link is recorded on the served row.
     expect(listSilentUpgrades(db, "deepseek")).toEqual([
-      { provider: "deepseek", from: "deepseek-v4-flash", to: "DeepSeek-V4-Flash-0731" },
+      {
+        provider: "deepseek",
+        from: "deepseek-v4-flash",
+        to: "DeepSeek-V4-Flash-0731",
+        lastSeenMs: 1000,
+      },
     ]);
     // The snapshot row keeps its /models source (probe never downgrades it).
     const rows = listDiscoveredModels(db, { provider: "deepseek" });
@@ -215,7 +220,12 @@ describe("runProviderModelDiscovery", () => {
     expect(second).toMatchObject({ ok: true, deprecated: [] });
     expect(listDiscoveredModels(db, { provider: "deepseek", status: "deprecated" })).toEqual([]);
     expect(listSilentUpgrades(db, "deepseek")).toEqual([
-      { provider: "deepseek", from: "deepseek-v4-flash", to: "DeepSeek-V4-Flash-0731" },
+      {
+        provider: "deepseek",
+        from: "deepseek-v4-flash",
+        to: "DeepSeek-V4-Flash-0731",
+        lastSeenMs: 1000,
+      },
     ]);
   });
 

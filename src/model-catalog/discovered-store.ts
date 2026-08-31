@@ -166,8 +166,18 @@ export function upsertActiveDiscoveredModels(
   }
 }
 
-/** A silently-upgraded model: requests for `from` are served as `to` (same provider). */
-export type SilentModelUpgrade = { provider: string; from: string; to: string };
+/**
+ * A silently-upgraded model: requests for `from` are served as `to` (same
+ * provider). `lastSeenMs` is when the link was last observed, so a checkpoint
+ * sub-version change (e.g. 0813 → 0901) is diffable across doctor runs.
+ */
+export type SilentModelUpgrade = {
+  provider: string;
+  from: string;
+  to: string;
+  /** When serving `to` for `from` was last probe-confirmed (ms epoch). */
+  lastSeenMs: number;
+};
 
 /**
  * Reads silent upgrades recorded by the served-model probe: rows whose
@@ -180,7 +190,7 @@ export type SilentModelUpgrade = { provider: string; from: string; to: string };
 export function listSilentUpgrades(db: DatabaseSync, provider?: string): SilentModelUpgrade[] {
   let query = getDiscoveredStoreKysely(db)
     .selectFrom("model_catalog_discovered")
-    .select(["provider", "model_id", "raw_json"]);
+    .select(["provider", "model_id", "raw_json", "last_seen_at_ms"]);
   const normalizedProvider = provider ? normalizeModelCatalogProviderId(provider) : undefined;
   if (normalizedProvider) {
     query = query.where("provider", "=", normalizedProvider);
@@ -208,7 +218,12 @@ export function listSilentUpgrades(db: DatabaseSync, provider?: string): SilentM
         continue;
       }
       seen.add(key);
-      upgrades.push({ provider: row.provider, from, to: row.model_id });
+      upgrades.push({
+        provider: row.provider,
+        from,
+        to: row.model_id,
+        lastSeenMs: row.last_seen_at_ms,
+      });
     }
   }
   return upgrades;

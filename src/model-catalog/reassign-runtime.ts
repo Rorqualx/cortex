@@ -17,7 +17,6 @@ import {
 import { loadPreparedModelCatalog } from "../agents/prepared-model-catalog.js";
 import { resolveDefaultSessionStorePath } from "../config/sessions/paths.js";
 import { patchSessionEntryWithKey } from "../config/sessions/session-accessor.entry.js";
-import { loadSessionStore } from "../plugin-sdk/session-store-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   loadCronJobsStore,
@@ -25,6 +24,7 @@ import {
   resolveCronJobsStorePath,
   saveCronJobsStore,
 } from "../cron/store.js";
+import { loadSessionStore } from "../plugin-sdk/session-store-runtime.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { listDiscoveredModels, listSilentUpgrades } from "./discovered-store.js";
 import { loadOpenClawProviderIndex } from "./provider-index/index.js";
@@ -215,6 +215,58 @@ export async function buildRuntimeReassignmentPlan(
   const bindings = collectAllBindings(cfg, resolveRef, aliasIndex);
   const plan = planReassignments({ bindings, replacements });
   return { plan, deprecatedCount: deprecated.length + preSpecifiedByKey.size };
+}
+
+/**
+ * An alias pin whose target id the provider is silently serving as a different
+ * (typically dated-checkpoint) id — e.g. alias "fast" pins `deepseek-v4-pro`
+ * while the provider serves `DeepSeek-V4-Pro-0813`. Surfaced by doctor so the
+ * sub-version is visible and diffable across runs instead of invisible.
+ */
+export type AliasServedVersion = {
+  alias: string;
+  provider: string;
+  /** The model id the alias is pinned to (what we request). */
+  pinnedModelId: string;
+  /** The id the provider actually serves (the dated checkpoint sub-version). */
+  servedModelId: string;
+  /** When the served id was last probe-confirmed for the pinned id (ms epoch). */
+  lastSeenMs: number;
+};
+
+/**
+ * Cross-references configured alias pins against recorded silent-upgrade links
+ * from the served-model probe. Read-only; failures return an empty list.
+ */
+export function listAliasServedVersions(cfg: OpenClawConfig): AliasServedVersion[] {
+  try {
+    const { db } = openOpenClawStateDatabase();
+    const upgrades = listSilentUpgrades(db);
+    if (upgrades.length === 0) {
+      return [];
+    }
+    const byFromKey = new Map(
+      upgrades.map((u) => [`${u.provider}/${u.from}`.toLowerCase(), u] as const),
+    );
+    const aliasIndex = buildModelAliasIndex({ cfg, defaultProvider: DEFAULT_PROVIDER });
+    const out: AliasServedVersion[] = [];
+    for (const { alias, ref } of aliasIndex.byAlias.values()) {
+      // listSilentUpgrades dedupes per (provider, from), so at most one link.
+      const hit = byFromKey.get(`${ref.provider}/${ref.model}`.toLowerCase());
+      if (hit) {
+        out.push({
+          alias,
+          provider: hit.provider,
+          pinnedModelId: ref.model,
+          servedModelId: hit.to,
+          lastSeenMs: hit.lastSeenMs,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /**
