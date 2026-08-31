@@ -7,6 +7,9 @@ import {
   llmReplayGateStub,
   LLM_REPLAY_TODO,
   nameCollisionCheck,
+  nearDuplicateCheck,
+  shingleJaccard,
+  shingles,
   staticSecurityScan,
   validateSkillDir,
 } from "./gate.js";
@@ -129,6 +132,75 @@ describe("nameCollisionCheck", () => {
     const verdict = await nameCollisionCheck({ name: "dup", env: env() });
     expect(verdict.status).toBe("fail");
     expect(verdict.reasons[0]).toMatch(/collides/u);
+  });
+});
+
+describe("nearDuplicateCheck (EVOMAL defense)", () => {
+  let stateDir: string;
+  let tmp: string;
+  beforeEach(async () => {
+    stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-gate-neardup-state-"));
+    tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-gate-neardup-cand-"));
+  });
+  afterEach(async () => {
+    await fsp.rm(stateDir, { recursive: true, force: true });
+    await fsp.rm(tmp, { recursive: true, force: true });
+  });
+  const env = (): NodeJS.ProcessEnv => ({
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_TEST_FAST: "1",
+  });
+
+  it("shingleJaccard is 1 for identical texts and 0 for disjoint ones", () => {
+    const a = shingles("the quick brown fox jumps over the lazy dog");
+    const same = shingles("the quick brown fox jumps over the lazy dog");
+    const disjoint = shingles("completely unrelated words with no overlap at all here");
+    expect(shingleJaccard(a, same)).toBe(1);
+    expect(shingleJaccard(a, disjoint)).toBe(0);
+  });
+
+  it("fails when the candidate body near-duplicates a promoted skill body", async () => {
+    // Plant a promoted skill whose body shares most 5-grams with the candidate.
+    const promotedDir = resolveSkillForgePromotedSkillDir({ name: "existing-skill", env: env() });
+    await fsp.mkdir(promotedDir, { recursive: true });
+    await fsp.writeFile(path.join(promotedDir, "SKILL.md"), validSkill("existing-skill"), "utf8");
+    // Candidate: same body with one changed word (still >= 0.7 overlap).
+    const mutated = VALID_BODY.replace("validator does not reject", "validator does not refuse");
+    await fsp.writeFile(
+      path.join(tmp, "SKILL.md"),
+      `---\nname: copycat\ndescription: A near copy.\n---\n\n${mutated}\n`,
+      "utf8",
+    );
+    const verdict = await nearDuplicateCheck({ skillDir: tmp, name: "copycat", env: env() });
+    expect(verdict.status).toBe("fail");
+    expect(verdict.reasons[0]).toMatch(/near-duplicate of promoted skill 'existing-skill'/u);
+  });
+
+  it("passes a distinct body and skips the skill's own promoted name", async () => {
+    const promotedDir = resolveSkillForgePromotedSkillDir({ name: "same-name", env: env() });
+    await fsp.mkdir(promotedDir, { recursive: true });
+    await fsp.writeFile(path.join(promotedDir, "SKILL.md"), validSkill("same-name"), "utf8");
+    // Re-promotion of the identical body under the same name must pass.
+    await fsp.writeFile(path.join(tmp, "SKILL.md"), validSkill("same-name"), "utf8");
+    expect(
+      (await nearDuplicateCheck({ skillDir: tmp, name: "same-name", env: env() })).status,
+    ).toBe("pass");
+    // A genuinely different body passes too.
+    const distinctBody = [
+      "## Overview",
+      "",
+      "Recovers from git merge conflicts by inspecting the conflict markers,",
+      "replaying the upstream merge script, and verifying tests pass before",
+      "pushing anything. Totally unrelated prose to any planted skill body.",
+    ].join("\n");
+    await fsp.writeFile(
+      path.join(tmp, "SKILL.md"),
+      `---\nname: distinct\ndescription: Different.\n---\n\n${distinctBody}\n`,
+      "utf8",
+    );
+    expect((await nearDuplicateCheck({ skillDir: tmp, name: "distinct", env: env() })).status).toBe(
+      "pass",
+    );
   });
 });
 

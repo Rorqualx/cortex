@@ -1,6 +1,10 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { resolveSkillForgePromotedSkillDir, resolveSkillForgeRetiredSkillDir } from "./paths.js";
+import {
+  resolveSkillForgePromotedSkillDir,
+  resolveSkillForgeRetiredSkillDir,
+  resolveSkillForgeSkillsRoot,
+} from "./paths.js";
 
 export const LLM_REPLAY_TODO =
   "Phase 4 LLM-replay gate (leave-one-out re-run with the candidate skill loaded) requires an LLM provider; defer until provider chosen.";
@@ -268,6 +272,119 @@ export function llmReplayGateStub(): never {
   throw new Error(LLM_REPLAY_TODO);
 }
 
+// ---------------------------------------------------------------------------
+// EVOMAL near-duplicate gate (openclaw-analysis-2026-08-31, Finding 7)
+// ---------------------------------------------------------------------------
+// Skill worms propagate by inducing an authoring model to copy an existing
+// promoted skill's body (or its self-advertising banner) verbatim. Today the
+// distiller only sees session-trajectory candidates, so the vector is latent —
+// this check makes the gate refuse near-duplicate bodies regardless of how
+// the body was authored. Loose threshold to start (0.7 shingle Jaccard) so
+// legitimately similar recovery skills don't false-fail.
+
+const NEAR_DUP_SHINGLE_SIZE = 5;
+export const NEAR_DUP_THRESHOLD = 0.7;
+
+/** Split text into normalized lowercase word k-grams (shingles).
+ * Simple split/normalize — linear time, no backtracking regex. */
+export function shingles(text: string, size: number = NEAR_DUP_SHINGLE_SIZE): Set<string> {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, " ")
+    .split(" ")
+    .filter((w) => w.length > 0);
+  const out = new Set<string>();
+  for (let i = 0; i + size <= words.length; i++) {
+    out.add(words.slice(i, i + size).join(" "));
+  }
+  return out;
+}
+
+/** Jaccard overlap between two shingle sets (0-1). */
+export function shingleJaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) {
+    return 0;
+  }
+  let intersection = 0;
+  for (const shingle of a) {
+    if (b.has(shingle)) {
+      intersection++;
+    }
+  }
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/** Read the markdown body (post-frontmatter) of a SKILL.md; null if unreadable. */
+async function readSkillBody(skillMdPath: string): Promise<string | null> {
+  let content: string;
+  try {
+    content = await fsp.readFile(skillMdPath, "utf8");
+  } catch {
+    return null;
+  }
+  const match = content.match(/^---\n([\s\S]+?)\n---\n([\s\S]*)$/u);
+  return match?.[2] ?? content;
+}
+
+/**
+ * Fail when the candidate skill's body is a near-duplicate of any promoted
+ * skill's body (EVOMAL self-propagation defense). Compares word-shingle
+ * Jaccard overlap; skips `_staging`/`_retired` pseudo-dirs and the skill's
+ * own name (re-promotion path). Non-fatal on unreadable state dirs.
+ */
+export async function nearDuplicateCheck(params: {
+  skillDir: string;
+  name?: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<GateVerdict> {
+  const env = params.env ?? process.env;
+  const body = await readSkillBody(path.join(params.skillDir, "SKILL.md"));
+  if (body === null || body.trim().length === 0) {
+    // Structural checks (validateSkillDir) own missing/short-body failures.
+    return { status: "pass", reasons: [] };
+  }
+  const candidateShingles = shingles(body);
+  if (candidateShingles.size === 0) {
+    return { status: "pass", reasons: [] };
+  }
+  let promotedRoot: string;
+  try {
+    promotedRoot = resolveSkillForgeSkillsRoot(env);
+  } catch {
+    return { status: "pass", reasons: [] };
+  }
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(promotedRoot);
+  } catch {
+    // No promoted skills root yet — nothing to duplicate.
+    return { status: "pass", reasons: [] };
+  }
+  for (const entry of entries) {
+    if (entry.startsWith("_")) {
+      continue; // _staging / _retired pseudo-dirs
+    }
+    if (params.name !== undefined && entry === params.name) {
+      continue; // re-validating an already-promoted skill
+    }
+    const other = await readSkillBody(path.join(promotedRoot, entry, "SKILL.md"));
+    if (other === null || other.trim().length === 0) {
+      continue;
+    }
+    const overlap = shingleJaccard(candidateShingles, shingles(other));
+    if (overlap >= NEAR_DUP_THRESHOLD) {
+      return {
+        status: "fail",
+        reasons: [
+          `body is a near-duplicate of promoted skill '${entry}' (shingle overlap ${overlap.toFixed(2)} >= ${NEAR_DUP_THRESHOLD}) — possible self-propagation; rewrite the workflow fresh from the candidate data`,
+        ],
+      };
+    }
+  }
+  return { status: "pass", reasons: [] };
+}
+
 export async function evaluateGate(params: {
   skillDir: string;
   name: string;
@@ -320,6 +437,16 @@ export async function evaluateGate(params: {
   const collision = await nameCollisionCheck({ name: params.name, env: params.env });
   if (collision.status === "fail") {
     return { ...collision, qualityFacets: facets };
+  }
+
+  // EVOMAL defense: refuse near-duplicate bodies of already-promoted skills.
+  const nearDup = await nearDuplicateCheck({
+    skillDir: params.skillDir,
+    name: params.name,
+    env: params.env,
+  });
+  if (nearDup.status === "fail") {
+    return { ...nearDup, qualityFacets: facets };
   }
 
   // If minFacets thresholds are specified, check each facet.
