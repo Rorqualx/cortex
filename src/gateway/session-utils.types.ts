@@ -63,6 +63,8 @@ type SessionCompactionCheckpointPreview = Pick<
 export type GatewaySessionRow = {
   key: string;
   permissionMode?: SessionEntry["permissionMode"];
+  /** A permission-mode change is awaiting confirmation on this session. */
+  permissionModePending?: boolean;
   sessionRoot?: string;
   /** Additive collaboration state; absent on older gateways. */
   visibility?: SessionVisibility;

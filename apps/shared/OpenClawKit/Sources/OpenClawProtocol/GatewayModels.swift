@@ -6412,6 +6412,7 @@ public struct SessionRow: Codable, Sendable {
     public let spawnedworkspacedir: String?
     public let spawnedcwd: String?
     public let permissionmode: SessionPermissionMode?
+    public let permissionmodepending: Bool?
     public let sessionroot: String?
     public let createdvia: AnyCodable?
     public let createdactor: SessionCreatedActor?
@@ -6486,6 +6487,7 @@ public struct SessionRow: Codable, Sendable {
         spawnedworkspacedir: String? = nil,
         spawnedcwd: String? = nil,
         permissionmode: SessionPermissionMode? = nil,
+        permissionmodepending: Bool? = nil,
         sessionroot: String? = nil,
         createdvia: AnyCodable? = nil,
         createdactor: SessionCreatedActor? = nil,
@@ -6559,6 +6561,7 @@ public struct SessionRow: Codable, Sendable {
         self.spawnedworkspacedir = spawnedworkspacedir
         self.spawnedcwd = spawnedcwd
         self.permissionmode = permissionmode
+        self.permissionmodepending = permissionmodepending
         self.sessionroot = sessionroot
         self.createdvia = createdvia
         self.createdactor = createdactor
@@ -6634,6 +6637,7 @@ public struct SessionRow: Codable, Sendable {
         case spawnedworkspacedir = "spawnedWorkspaceDir"
         case spawnedcwd = "spawnedCwd"
         case permissionmode = "permissionMode"
+        case permissionmodepending = "permissionModePending"
         case sessionroot = "sessionRoot"
         case createdvia = "createdVia"
         case createdactor = "createdActor"
