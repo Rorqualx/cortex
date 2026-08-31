@@ -1211,7 +1211,7 @@ async function initSessionStateAttemptLocked(
         onWarn: (message) => log.warn(message),
         onError: (error) => log.warn(`browser tab cleanup failed: ${String(error)}`),
       });
-    }).catch((error: unknown) => {
+    }, "session:browser-cleanup").catch((error: unknown) => {
       log.warn(`browser tab cleanup admission failed: ${String(error)}`);
     });
   }
@@ -1247,7 +1247,7 @@ async function initSessionStateAttemptLocked(
         });
         void runWithGatewayIndependentRootWorkContinuation(async () => {
           await hookRunner.runSessionEnd(payload.event, payload.context);
-        }).catch(() => {});
+        }, "hooks:session-end").catch(() => {});
       }
     }
 
@@ -1274,7 +1274,7 @@ async function initSessionStateAttemptLocked(
       });
       void runWithGatewayIndependentRootWorkContinuation(async () => {
         await hookRunner.runSessionStart(payload.event, payload.context);
-      }).catch(() => {});
+      }, "hooks:session-start").catch(() => {});
     }
   }
 
