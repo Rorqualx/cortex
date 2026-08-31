@@ -201,6 +201,7 @@ async function executeAgentTurnInternalWithRetryState(
       agentTurnTiming.measureSync("reply_media_context", () =>
         createReplyMediaContext({
           cfg: runtimeConfig,
+          agentId: params.followupRun.run.agentId,
           sessionKey: params.sessionKey,
           workspaceDir: params.followupRun.run.workspaceDir,
           messageProvider: params.followupRun.run.messageProvider,

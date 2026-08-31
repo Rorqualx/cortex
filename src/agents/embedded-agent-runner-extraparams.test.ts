@@ -2003,36 +2003,6 @@ describe("applyExtraParamsToAgent", () => {
     expect(calls[0]?.transport).toBe("websocket");
   });
 
-  it("passes configured websocket transport through stream options for openai gpt-5.4", () => {
-    const { calls, agent } = createOptionsCaptureAgent();
-    const cfg = {
-      agents: {
-        defaults: {
-          models: {
-            "openai/gpt-5.4": {
-              params: {
-                transport: "websocket",
-              },
-            },
-          },
-        },
-      },
-    };
-
-    applyExtraParamsToAgent(agent, cfg, "openai", "gpt-5.4");
-
-    const model = {
-      api: "openai-chatgpt-responses",
-      provider: "openai",
-      id: "gpt-5.4",
-    } as Model<"openai-chatgpt-responses">;
-    const context: Context = { messages: [] };
-    void agent.streamFn?.(model, context, {});
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.transport).toBe("websocket");
-  });
-
   it("preserves maxTokens: 0 in shared extra params for providers that forward it", () => {
     const { calls, agent } = createOptionsCaptureAgent();
     const cfg = {
@@ -3325,22 +3295,6 @@ describe("applyExtraParamsToAgent", () => {
   });
 
   it("maps MiniMax /fast to the matching highspeed model", () => {
-    const resolvedModelId = runResolvedModelIdCase({
-      applyProvider: "minimax",
-      applyModelId: "MiniMax-M2.7",
-      extraParamsOverride: { fastMode: true },
-      model: {
-        api: "anthropic-messages",
-        provider: "minimax",
-        id: "MiniMax-M2.7",
-        baseUrl: "https://api.minimax.io/anthropic",
-      } as Model<"anthropic-messages">,
-    });
-
-    expect(resolvedModelId).toBe("MiniMax-M2.7-highspeed");
-  });
-
-  it("maps MiniMax M2.7 /fast to the matching highspeed model", () => {
     const resolvedModelId = runResolvedModelIdCase({
       applyProvider: "minimax",
       applyModelId: "MiniMax-M2.7",

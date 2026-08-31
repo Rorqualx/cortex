@@ -14,6 +14,7 @@ import type { createCacheTrace } from "../../cache-trace.js";
 import { isCloudCodeAssistFormatError } from "../../embedded-agent-helpers.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
 import type { AgentRuntimeModelAttempt } from "../../runtime-plan/types.js";
+import { markCoreTtsAttemptResult } from "../../tools/tts-tool-result-provenance.js";
 import { log } from "../logger.js";
 import type { PromptCacheBreak, PromptCacheChange } from "../prompt-cache-observability.js";
 import { observeReplayMetadata, replayMetadataFromState } from "../replay-state.js";
@@ -234,6 +235,7 @@ export function completeEmbeddedAttemptResult(
     getMessagingToolSentTexts,
     getMessagingToolSourceReplyPayloads,
     getPendingToolMediaReply,
+    getToolAutoDeliveryMediaUrls,
     getReplayState,
     getSuccessfulCronAdds,
     getVisibleBlockReplyCount,
@@ -345,13 +347,18 @@ export function completeEmbeddedAttemptResult(
   }
 
   const acceptedSessionSpawns = getAcceptedSessionSpawns();
+  const messagingToolSentMediaUrls = getMessagingToolSentMediaUrls();
+  const sentMediaUrls = new Set(messagingToolSentMediaUrls.map((url) => url.trim()));
+  const toolAutoDeliveryMediaUrls = getToolAutoDeliveryMediaUrls().filter(
+    (url) => !sentMediaUrls.has(url.trim()),
+  );
   const observedReplayMetadata = buildAttemptReplayMetadata({
     // Structured start arguments already updated replayState for mutations and async work.
     // Reclassifying by tool name would incorrectly mark read-only cron actions as unsafe.
     toolMetas: [],
     didSendViaMessagingTool: didSendViaMessagingTool(),
     messagingToolSentTexts: getMessagingToolSentTexts(),
-    messagingToolSentMediaUrls: getMessagingToolSentMediaUrls(),
+    messagingToolSentMediaUrls,
     acceptedSessionSpawns,
     successfulCronAdds: getSuccessfulCronAdds(),
   });
@@ -363,7 +370,7 @@ export function completeEmbeddedAttemptResult(
     toolMetas: toolMetasNormalized,
     didSendViaMessagingTool: didSendViaMessagingTool(),
     messagingToolSentTexts: getMessagingToolSentTexts(),
-    messagingToolSentMediaUrls: getMessagingToolSentMediaUrls(),
+    messagingToolSentMediaUrls,
     acceptedSessionSpawns,
     successfulCronAdds: getSuccessfulCronAdds(),
   });
@@ -390,7 +397,7 @@ export function completeEmbeddedAttemptResult(
     didDeliverSourceReplyViaMessageTool: state.didDeliverSourceReplyViaMessageTool,
     messagingToolSourceReplyPayloads,
     messagingToolSentTexts: getMessagingToolSentTexts(),
-    messagingToolSentMediaUrls: getMessagingToolSentMediaUrls(),
+    messagingToolSentMediaUrls,
     messagingToolSentTargets: getMessagingToolSentTargets(),
     acceptedSessionSpawns,
     successfulCronAdds: getSuccessfulCronAdds(),
@@ -433,7 +440,7 @@ export function completeEmbeddedAttemptResult(
       didSendDeterministicApprovalPrompt: didSendDeterministicApprovalPromptNow,
       didSendViaMessagingTool: didSendViaMessagingTool(),
       messagingToolSentTexts: getMessagingToolSentTexts(),
-      messagingToolSentMediaUrls: getMessagingToolSentMediaUrls(),
+      messagingToolSentMediaUrls,
       messagingToolSentTargets: getMessagingToolSentTargets(),
       acceptedSessionSpawns,
       lastToolError,
@@ -473,7 +480,7 @@ export function completeEmbeddedAttemptResult(
     didSendViaMessagingTool: didSendViaMessagingTool(),
     didSendDeterministicApprovalPrompt: didSendDeterministicApprovalPromptNow,
     messagingToolSentTexts: getMessagingToolSentTexts(),
-    messagingToolSentMediaUrls: getMessagingToolSentMediaUrls(),
+    messagingToolSentMediaUrls,
     messagingToolSentTargets: getMessagingToolSentTargets(),
     messagingToolSourceReplyPayloads,
     heartbeatToolResponse,
@@ -492,8 +499,16 @@ export function completeEmbeddedAttemptResult(
     yieldDetected: state.yieldDetected || undefined,
     yieldAcknowledgment: state.yieldAcknowledgment,
   };
+  const resultWithAutoDeliveryMedia =
+    toolAutoDeliveryMediaUrls.length > 0
+      ? markCoreTtsAttemptResult(
+          result,
+          toolAutoDeliveryMediaUrls,
+          attempt.admittedRunContext.operationalRunInstance,
+        )
+      : result;
   return finalizeEmbeddedAttempt({
-    result,
+    result: resultWithAutoDeliveryMedia,
     trajectoryRecorder: input.trajectoryRecorder,
     deferredLifecycleOwner: input.deferredLifecycleOwner,
     synthesizedPayloadCount,
