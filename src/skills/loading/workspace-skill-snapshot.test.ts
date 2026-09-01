@@ -23,6 +23,7 @@ vi.mock("./plugin-skills.js", () => ({
 }));
 
 const fixtureSuite = createFixtureSuite("openclaw-skills-snapshot-suite-");
+const directorySymlinkType = process.platform === "win32" ? "junction" : "dir";
 let truncationWorkspaceTemplateDir = "";
 let tempHome: TempHomeEnv | null = null;
 let skillsHomeEnv: SkillsHomeEnvSnapshot | null = null;
@@ -346,7 +347,11 @@ describe("buildSkillSnapshot", () => {
       description: "Personal compatibility skill",
     });
     await fs.mkdir(path.join(home, ".agents"), { recursive: true });
-    await fs.symlink(compatibilitySkillsDir, path.join(home, ".agents", "skills"), "dir");
+    await fs.symlink(
+      compatibilitySkillsDir,
+      path.join(home, ".agents", "skills"),
+      directorySymlinkType,
+    );
     const buildHomeSnapshot = () =>
       buildSkillSnapshot(workspaceDir, {
         managedSkillsDir: path.join(workspaceDir, ".managed"),
