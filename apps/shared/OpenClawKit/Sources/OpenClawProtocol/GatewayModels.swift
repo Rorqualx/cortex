@@ -9804,6 +9804,8 @@ public struct SessionsPatchParams: Codable, Sendable {
     public let agentid: String?
     public let expectedsessionid: String?
     public let expectedlifecyclerevision: String?
+    public let expectedpermissionmode: AnyCodable?
+    public let expectedtooloverrides: AnyCodable?
     public let expectedmarkedunreadat: AnyCodable?
     public let label: AnyCodable?
     public let icon: AnyCodable?
@@ -9843,6 +9845,8 @@ public struct SessionsPatchParams: Codable, Sendable {
         agentid: String? = nil,
         expectedsessionid: String? = nil,
         expectedlifecyclerevision: String? = nil,
+        expectedpermissionmode: AnyCodable? = nil,
+        expectedtooloverrides: AnyCodable? = nil,
         expectedmarkedunreadat: AnyCodable? = nil,
         label: AnyCodable? = nil,
         icon: AnyCodable? = nil,
@@ -9881,6 +9885,8 @@ public struct SessionsPatchParams: Codable, Sendable {
         self.agentid = agentid
         self.expectedsessionid = expectedsessionid
         self.expectedlifecyclerevision = expectedlifecyclerevision
+        self.expectedpermissionmode = expectedpermissionmode
+        self.expectedtooloverrides = expectedtooloverrides
         self.expectedmarkedunreadat = expectedmarkedunreadat
         self.label = label
         self.icon = icon
@@ -9921,6 +9927,8 @@ public struct SessionsPatchParams: Codable, Sendable {
         case agentid = "agentId"
         case expectedsessionid = "expectedSessionId"
         case expectedlifecyclerevision = "expectedLifecycleRevision"
+        case expectedpermissionmode = "expectedPermissionMode"
+        case expectedtooloverrides = "expectedToolOverrides"
         case expectedmarkedunreadat = "expectedMarkedUnreadAt"
         case label
         case icon
@@ -21164,6 +21172,8 @@ public struct ChatSendParams: Codable, Sendable {
     public let suppresscommandinterpretation: Bool?
     public let expectedleafentryid: AnyCodable?
     public let expectedsessionroutingcontract: String?
+    public let expectedpermissionmode: AnyCodable?
+    public let expectedtooloverrides: AnyCodable?
     public let idempotencykey: String
 
     public init(
@@ -21190,6 +21200,8 @@ public struct ChatSendParams: Codable, Sendable {
         suppresscommandinterpretation: Bool? = nil,
         expectedleafentryid: AnyCodable? = nil,
         expectedsessionroutingcontract: String? = nil,
+        expectedpermissionmode: AnyCodable? = nil,
+        expectedtooloverrides: AnyCodable? = nil,
         idempotencykey: String)
     {
         self.sessionkey = sessionkey
@@ -21215,6 +21227,8 @@ public struct ChatSendParams: Codable, Sendable {
         self.suppresscommandinterpretation = suppresscommandinterpretation
         self.expectedleafentryid = expectedleafentryid
         self.expectedsessionroutingcontract = expectedsessionroutingcontract
+        self.expectedpermissionmode = expectedpermissionmode
+        self.expectedtooloverrides = expectedtooloverrides
         self.idempotencykey = idempotencykey
     }
 
@@ -21241,6 +21255,8 @@ public struct ChatSendParams: Codable, Sendable {
         suppresscommandinterpretation: Bool? = nil,
         expectedleafentryid: AnyCodable? = nil,
         expectedsessionroutingcontract: String? = nil,
+        expectedpermissionmode: AnyCodable? = nil,
+        expectedtooloverrides: AnyCodable? = nil,
         idempotencykey: String)
     {
         self.init(
@@ -21267,6 +21283,8 @@ public struct ChatSendParams: Codable, Sendable {
             suppresscommandinterpretation: suppresscommandinterpretation,
             expectedleafentryid: expectedleafentryid,
             expectedsessionroutingcontract: expectedsessionroutingcontract,
+            expectedpermissionmode: expectedpermissionmode,
+            expectedtooloverrides: expectedtooloverrides,
             idempotencykey: idempotencykey)
     }
 
@@ -21294,6 +21312,8 @@ public struct ChatSendParams: Codable, Sendable {
         case suppresscommandinterpretation = "suppressCommandInterpretation"
         case expectedleafentryid = "expectedLeafEntryId"
         case expectedsessionroutingcontract = "expectedSessionRoutingContract"
+        case expectedpermissionmode = "expectedPermissionMode"
+        case expectedtooloverrides = "expectedToolOverrides"
         case idempotencykey = "idempotencyKey"
     }
 }
