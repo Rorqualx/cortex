@@ -443,3 +443,10 @@ Conflicts resolved (6) + merge=ours drift (2):
   steering-loop/preparer interplay (attempt-stream-prepare consults the preparer; this
   test mocks subscribe away), NOT merge-caused; not net-new → proof gate unaffected.
   Fork follow-up, not resync scope.
+
+## 2026-08-31 evening merge (upstream 0eb5d6fb74a, 35 commits)
+
+- `pnpm-lock.yaml` — REGENERATE (derived). `pnpm install --no-frozen-lockfile`; upstream dep set adopted. COUNT-DISAGREEMENT hunks moot after regeneration.
+- `src/agents/system-prompt.ts` — ENHANCE-OURS via merge-file graft (upstream onto fork): churn=2 was only the `buildModelIdentityPromptLine` wording change ("Model question: answer this current-run value." → "If asked what model you are, answer with this value for the current run."). Graft was clean (exit 0); skill-forge markers verified back (`buildSkillForgePromptSection`, `SKILL_FORGE_TOOL_NAME`).
+- `scripts/write-plugin-sdk-entry-dts.ts` — KEEP-OURS (cited): ab1b880a865 (2026-08-29 resync) deliberately froze this file to the fork baseline wholesale because upstream's staged-writer fragments were a semantic mix. Upstream's two new commits (#134528 shard UI checks/reuse SDK compiler inputs, #134529 bind declaration caches to plugin selection) further refine the staged-declarations architecture the fork does not run. Fork version is internally consistent (`.mjs`→`.mts` tsx resolution; build-all.mts carries the matching fork adaptations: distArtifactEntryArgs + heap nodeOptions for the huey OOM). Adopting upstream would mean adopting the whole staged-writer architecture — maintainer-scale decision, not drift repair.
+- Derived regen: `protocol-gen{,-swift,-kotlin}` all clean (no dropped merge=ours exports); `generate-kysely-types.mts` clean; no unstaged/untracked residue.
