@@ -386,3 +386,17 @@ export function resolveFinalAssistantRawText(
   const rawText = (finalAnswerText ?? extractAssistantTextForPhase(lastAssistant) ?? "").trim();
   return rawText || undefined;
 }
+
+export function isAssistantForModelRef(
+  assistant: { provider?: string; model?: string } | undefined,
+  ref: { provider: string; model: string },
+): boolean {
+  if (!assistant) {
+    return false;
+  }
+  const resolved = resolveReportedModelRef({
+    ...ref,
+    assistant,
+  });
+  return resolved.provider === ref.provider && resolved.model === ref.model;
+}

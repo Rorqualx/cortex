@@ -328,8 +328,7 @@ export function buildEmbeddedRunPayloads(params: {
       ? fallbackAnswerDirectiveState
       : null;
   let hasUserFacingAssistantReply =
-    completedSourceReplyViaMessageTool ||
-    params.heartbeatToolResponse?.notify === true;
+    completedSourceReplyViaMessageTool || params.heartbeatToolResponse?.notify === true;
   const hasUserFacingErrorReply = replyItems.some((item) => item.isError === true);
   let hasUserFacingFailureAcknowledgement =
     params.heartbeatToolResponse?.notify === true &&
@@ -388,8 +387,8 @@ export function buildEmbeddedRunPayloads(params: {
     // A restart intentionally aborts the active tool while the Gateway takes over.
     // Keep that lifecycle status independent from tool-error suppression.
     const isRestartStatus = params.runStopReason === "restart";
-    const warningText = isRestartStatus
-      ? "Gateway restarting…"
+    const failureWarning = isRestartStatus
+      ? { text: "Gateway restarting…", nonTerminalToolErrorWarning: false }
       : buildFailureWarning({
           lastToolError: params.lastToolError,
           hasUserFacingReply: hasUserFacingAssistantReply,
@@ -400,8 +399,8 @@ export function buildEmbeddedRunPayloads(params: {
           verboseLevel: params.verboseLevel,
           useMarkdown,
         });
-    if (warningText) {
-      const normalizedWarning = normalizeTextForComparison(warningText);
+    if (failureWarning) {
+      const normalizedWarning = normalizeTextForComparison(failureWarning.text);
       const duplicateWarning = normalizedWarning
         ? replyItems.some((item) => {
             if (!item.text) {
