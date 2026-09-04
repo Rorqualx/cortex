@@ -2652,6 +2652,9 @@ importers:
       lit:
         specifier: 3.3.3
         version: 3.3.3
+      lit-html:
+        specifier: 3.3.3
+        version: 3.3.3
       markdown-it:
         specifier: 14.2.0
         version: 14.2.0
