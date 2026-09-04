@@ -26,6 +26,8 @@ import {
   validateSkillsStatusParams,
   validateSkillsUpdateParams,
 } from "../../../packages/gateway-protocol/src/index.js";
+import type { SkillLibrarySelection } from "../../../packages/gateway-protocol/src/schema/skill-library.js";
+import { tryResolveAmbientOwnerAgentId } from "../../agents/agent-scope-config.js";
 import { resolveNodeExecEligibility } from "../../agents/exec-defaults.js";
 import { listAgentWorkspaceDirs } from "../../agents/workspace-dirs.js";
 import { redactConfigObject } from "../../config/redact-snapshot.js";
@@ -49,6 +51,8 @@ import { recordSkillDemotion } from "../../skill-forge/telemetry.js";
 import { updateSkillConfigEntry } from "../../skills/config/mutations.js";
 import { collectSkillBins } from "../../skills/discovery/bins.js";
 import { buildWorkspaceSkillStatus } from "../../skills/discovery/status.js";
+import { loadSkillLibrarySelection } from "../../skills/library/selection.js";
+import { parseRequestedClawHubSkillRef } from "../../skills/lifecycle/clawhub-store.js";
 import {
   installSkillFromClawHub,
   readLocalSkillCardContentSync,
@@ -79,6 +83,10 @@ import {
   rejectSkillProposal,
   reviseSkillProposal,
 } from "../../skills/workshop/service.js";
+import { PROPOSAL_DRAFT_FILE } from "../../skills/workshop/store-record.js";
+import type { SkillProposalReadResult, SkillProposalRecord } from "../../skills/workshop/types.js";
+import { authorizeSessionSharingTarget, resolveSessionSharingTarget } from "../session-sharing.js";
+import { skillsLibraryHandlers } from "./skills-library.js";
 import { skillProposalHistoryHandlers } from "./skills-proposal-history.js";
 import { skillsUploadHandlers } from "./skills-upload.js";
 import {
@@ -120,7 +128,10 @@ function installClawHubSkillDeduped(params: ClawHubInstallParams): Promise<ClawH
   return install;
 }
 
-function buildRemoteAwareWorkspaceSkillStatus(resolved: ResolvedSkillsWorkspace) {
+function buildRemoteAwareWorkspaceSkillStatus(
+  resolved: ResolvedSkillsWorkspace,
+  selections?: SkillLibrarySelection[],
+) {
   // Remote skill availability depends on the agent's executable-node surface,
   // not only the workspace contents, so status reports include live eligibility.
   const nodeSkills = resolveNodeExecEligibility({
@@ -128,6 +139,18 @@ function buildRemoteAwareWorkspaceSkillStatus(resolved: ResolvedSkillsWorkspace)
     agentId: resolved.agentId,
   });
   return buildWorkspaceSkillStatus(resolved.workspaceDir, {
+    ...(selections?.length
+      ? {
+          entries: [
+            ...loadWorkspaceSkills(resolved.workspaceDir, {
+              config: resolved.cfg,
+              agentId: resolved.agentId,
+              agentSkillFilter: "ignore",
+            }),
+            ...loadSkillLibrarySelection(selections),
+          ],
+        }
+      : {}),
     config: resolved.cfg,
     agentId: resolved.agentId,
     eligibility: {
@@ -364,9 +387,10 @@ function respondSkillForgeError(respond: RespondFn, err: unknown) {
 }
 
 export const skillsHandlers: GatewayRequestHandlers = {
+  ...skillsLibraryHandlers,
   ...skillsUploadHandlers,
   ...skillProposalHistoryHandlers,
-  "skills.status": ({ params, respond, context }) => {
+  "skills.status": ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateSkillsStatusParams, "skills.status", respond)) {
       return;
     }
@@ -375,7 +399,28 @@ export const skillsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, resolved.error);
       return;
     }
-    const report = buildRemoteAwareWorkspaceSkillStatus(resolved);
+    const target = params.sessionKey
+      ? resolveSessionSharingTarget({
+          cfg: resolved.cfg,
+          sessionKey: params.sessionKey,
+          agentId: resolved.agentId,
+        })
+      : undefined;
+    if (params.sessionKey && !target) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "Session not found."));
+      return;
+    }
+    if (target) {
+      const denied = authorizeSessionSharingTarget({ cfg: resolved.cfg, client, target });
+      if (denied) {
+        respond(false, undefined, denied);
+        return;
+      }
+    }
+    const report = buildRemoteAwareWorkspaceSkillStatus(
+      resolved,
+      target?.entry.skillLibrarySelections,
+    );
     respond(true, report, undefined);
   },
   "skills.securityVerdicts": async ({ params, respond, context }) => {

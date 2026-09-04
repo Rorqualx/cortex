@@ -1,4 +1,5 @@
 // Defines metadata for bundled plugins that are installed externally.
+
 export type ExternalizedBundledPluginPreferredSource = "npm" | "clawhub";
 
 export type ExternalizedBundledPluginBridge = {
@@ -6,7 +7,7 @@ export type ExternalizedBundledPluginBridge = {
   bundledPluginId: string;
   /** Plugin id declared by the external package. Defaults to bundledPluginId. */
   pluginId?: string;
-  /** Preferred external source when migrating the bundled plugin out. Defaults to npm. */
+  /** Preferred install source when both npm and ClawHub specs are known. */
   preferredSource?: ExternalizedBundledPluginPreferredSource;
   /** npm spec OpenClaw can install when migrating the bundled plugin out. */
   npmSpec?: string;
@@ -36,20 +37,6 @@ function normalizePluginId(value: string | undefined): string {
 
 function normalizeOptionalSpec(value: string | undefined): string {
   return value?.trim() ?? "";
-}
-
-export function getExternalizedBundledPluginPreferredSource(
-  bridge: ExternalizedBundledPluginBridge,
-): ExternalizedBundledPluginPreferredSource {
-  if (bridge.preferredSource === "clawhub") {
-    return "clawhub";
-  }
-  if (bridge.preferredSource === "npm") {
-    return "npm";
-  }
-  return normalizeOptionalSpec(bridge.clawhubSpec) && !normalizeOptionalSpec(bridge.npmSpec)
-    ? "clawhub"
-    : "npm";
 }
 
 export function getExternalizedBundledPluginNpmSpec(

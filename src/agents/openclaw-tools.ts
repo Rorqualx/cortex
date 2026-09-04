@@ -418,7 +418,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
           createScreenTool({
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
           }),
-          ...(options?.sandboxed
+          ...(options?.sandboxed && !options.skillWorkshop?.libraryAuthoring
             ? []
             : [
                 createTerminalTool({
@@ -593,6 +593,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
           createSessionsSpawnTool({
             agentSessionKey: options?.agentSessionKey,
             requesterTurnRunId: options?.runId,
+            requesterThinkingLevel: options?.requesterThinkingLevel,
             completionOwnerKey: options?.runSessionKey,
             agentChannel: options?.agentChannel,
             agentAccountId: options?.agentAccountId,
