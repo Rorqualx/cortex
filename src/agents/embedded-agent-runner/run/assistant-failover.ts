@@ -18,7 +18,7 @@ import {
 } from "../../embedded-agent-helpers.js";
 import { FailoverError, resolveFailoverStatus } from "../../failover-error.js";
 import type { PreparedProviderFailoverOwner } from "../../failover/provider-patterns.js";
-import { classifyRateLimitWindow } from "../../failover/retry-evidence.js";
+import { classifyRateLimitWindow, resolveRetryAfterMs } from "../../failover/retry-evidence.js";
 import {
   mergeRetryFailoverReason,
   resolveRunFailoverDecision,
@@ -34,36 +34,20 @@ type AssistantFailoverOutcome =
       action: "retry";
       overloadProfileRotations: number;
       lastRetryFailoverReason: FailoverReason | null;
-      retryKind:
-        | "profile_rotation"
-        | "same_model_idle_timeout"
-        | "same_model_rate_limit"
-        // Fork: bounded same-model retry of transient provider failures.
-        | "same_model_transient";
+      retryKind: "profile_rotation" | "same_model_transient";
     }
   | {
       action: "throw";
       overloadProfileRotations: number;
       error: FailoverError;
     };
-type ShortWindowRateLimitRetry = {
-  retryAfterSeconds?: number;
-};
-
-function resolveShortWindowRateLimitRetry(
-  message: string | undefined,
-): ShortWindowRateLimitRetry | null {
+function resolveShortWindowRateLimitRetry(message: string | undefined): boolean {
   const window = classifyRateLimitWindow(message);
-  if (window.kind !== "short") {
-    return null;
-  }
-  return window.retryAfterSeconds === undefined
-    ? {}
-    : { retryAfterSeconds: window.retryAfterSeconds };
+  return window.kind === "short";
 }
 
 export function isShortWindowRateLimitMessage(message: string | undefined): boolean {
-  return resolveShortWindowRateLimitRetry(message) !== null;
+  return resolveShortWindowRateLimitRetry(message);
 }
 
 /**
@@ -79,18 +63,6 @@ export async function handleAssistantFailover(params: {
   failoverFailure: boolean;
   failoverReason: FailoverReason | null;
   harnessOwnsTransport: boolean;
-  allowSameModelIdleTimeoutRetry: boolean;
-  allowSameModelRateLimitRetry: boolean;
-  /**
-   * Fork: eligible for a bounded same-model retry of a transient provider
-   * failure (5xx / dropped connection / mid-stream error). Computed by the
-   * caller from the failover reason plus the raw error text; excludes
-   * rate-limit, overload, terminal auth/billing, and watchdog timeouts, which
-   * own their own paths. The retry budget itself is owned by
-   * maybeRetrySameModelTransient. Optional so callers without a transient
-   * retry budget (upstream run-loop path) skip the branch entirely.
-   */
-  transientFailure?: boolean;
   assistantProfileFailureReason: AuthProfileFailureReason | null;
   lastProfileId?: string;
   modelId: string;
@@ -110,10 +82,16 @@ export async function handleAssistantFailover(params: {
   isProbeSession: boolean;
   overloadProfileRotations: number;
   overloadProfileRotationLimit: number;
+  getTransientRetryCount: () => number;
   previousRetryFailoverReason: FailoverReason | null;
   logAssistantFailoverDecision: (
-    decision: "rotate_profile" | "fallback_model" | "surface_error",
-    extra?: { status?: number },
+    decision:
+      | "rotate_profile"
+      | "fallback_model"
+      | "surface_error"
+      | "retry_same_model"
+      | "continue_normal",
+    extra?: { status?: number; retryCount?: number; profileRotationCount?: number },
   ) => void;
   warn: (message: string) => void;
   maybeMarkAuthProfileFailure: (failure: {
@@ -121,10 +99,10 @@ export async function handleAssistantFailover(params: {
     reason?: AuthProfileFailureReason | null;
     modelId?: string;
   }) => Promise<void>;
-  maybeRetrySameModelRateLimit: (retry?: ShortWindowRateLimitRetry) => Promise<boolean>;
-  /** Sleeps the transient backoff and bumps its retry counter; false once the budget is spent. */
-  maybeRetrySameModelTransient?: () => Promise<boolean>;
-  maybeBackoffBeforeOverloadFailover: (reason: FailoverReason | null) => Promise<void>;
+  maybeRetryTransient: (retry: {
+    reason: FailoverReason;
+    retryAfterMs?: number;
+  }) => Promise<boolean>;
   advanceAuthProfile: () => Promise<boolean>;
   advanceRateLimitAuthProfile: (context: {
     failoverProvider: string;
@@ -136,31 +114,6 @@ export async function handleAssistantFailover(params: {
   const externalAbort = terminal.externalAbort || params.signalOwnedInterruption;
   let overloadProfileRotations = params.overloadProfileRotations;
   let decision = params.initialDecision;
-  const sameModelIdleTimeoutRetry = (): AssistantFailoverOutcome => {
-    params.warn(
-      `[llm-idle-timeout] ${sanitizeForLog(params.provider)}/${sanitizeForLog(params.modelId)} produced no reply before the idle watchdog; retrying same model`,
-    );
-    return {
-      action: "retry",
-      overloadProfileRotations,
-      retryKind: "same_model_idle_timeout",
-      lastRetryFailoverReason: mergeRetryFailoverReason({
-        previous: params.previousRetryFailoverReason,
-        failoverReason: params.failoverReason,
-        timedOut: true,
-      }),
-    };
-  };
-  const sameModelRateLimitRetry = (): AssistantFailoverOutcome => ({
-    action: "retry",
-    overloadProfileRotations,
-    retryKind: "same_model_rate_limit",
-    lastRetryFailoverReason: mergeRetryFailoverReason({
-      previous: params.previousRetryFailoverReason,
-      failoverReason: params.failoverReason,
-      timedOut: terminal.timedOut,
-    }),
-  });
   const sameModelTransientRetry = (): AssistantFailoverOutcome => ({
     action: "retry",
     overloadProfileRotations,
@@ -168,24 +121,35 @@ export async function handleAssistantFailover(params: {
     lastRetryFailoverReason: mergeRetryFailoverReason({
       previous: params.previousRetryFailoverReason,
       failoverReason: params.failoverReason,
-      timedOut: terminal.timedOut || terminal.idleTimedOut,
+      timedOut: terminal.timedOut,
     }),
   });
 
-  // Transient provider blips (5xx / dropped connection / mid-stream error) are
-  // usually momentary, so re-issue the same request before spending a profile
-  // rotation or model fallback. Runs ahead of the rotate/surface branches so a
-  // single transient failure on a single-profile, no-fallback agent retries
-  // instead of surfacing "LLM request failed". Eligibility (transient reason +
-  // transient raw error, not a watchdog timeout) is decided by the caller;
-  // maybeRetrySameModelTransient owns the bounded backoff/counter.
+  const canRetryRateLimit =
+    params.failoverReason !== "rate_limit" ||
+    resolveShortWindowRateLimitRetry(params.lastAssistant?.errorMessage);
+  // A silent idle timeout carries no classifiable provider error, so it
+  // arrives with a null reason; consult the retry owner as a timeout so the
+  // quiet same-model replay stays budgeted by the single transient owner
+  // (the idle-timeout breaker still caps consecutive silent attempts).
+  const transientConsultReason =
+    params.failoverReason ?? (terminal.idleTimedOut ? "timeout" : null);
   if (
-    !terminal.aborted &&
     !externalAbort &&
-    params.transientFailure === true &&
-    params.maybeRetrySameModelTransient &&
-    (await params.maybeRetrySameModelTransient())
+    canRetryRateLimit &&
+    transientConsultReason &&
+    (decision.action === "rotate_profile" ||
+      decision.action === "fallback_model" ||
+      decision.action === "surface_error") &&
+    (await params.maybeRetryTransient({
+      reason: transientConsultReason,
+      retryAfterMs: resolveRetryAfterMs(params.lastAssistant?.errorMessage),
+    }))
   ) {
+    params.logAssistantFailoverDecision("retry_same_model", {
+      retryCount: params.getTransientRetryCount(),
+      profileRotationCount: overloadProfileRotations,
+    });
     return sameModelTransientRetry();
   }
 
@@ -219,7 +183,11 @@ export async function handleAssistantFailover(params: {
           `overload profile rotation cap reached for ${sanitizeForLog(params.provider)}/${sanitizeForLog(params.modelId)} after ${overloadProfileRotations} rotations; escalating to model fallback`,
         );
         await markFailedProfile();
-        params.logAssistantFailoverDecision("fallback_model", { status });
+        params.logAssistantFailoverDecision("fallback_model", {
+          status,
+          retryCount: params.getTransientRetryCount(),
+          profileRotationCount: overloadProfileRotations,
+        });
         return {
           action: "throw",
           overloadProfileRotations,
@@ -243,10 +211,6 @@ export async function handleAssistantFailover(params: {
       // Minute-scale RPM windows can clear without spending a profile rotation
       // or model fallback. Keep the retry bounded; once exhausted, continue
       // through the existing rate-limit escalation path.
-      const shortWindowRetry = resolveShortWindowRateLimitRetry(params.lastAssistant?.errorMessage);
-      if (shortWindowRetry && (await params.maybeRetrySameModelRateLimit(shortWindowRetry))) {
-        return sameModelRateLimitRetry();
-      }
       rotated = await params.advanceRateLimitAuthProfile({
         failoverProvider: params.activeErrorContext.provider,
         failoverModel: params.activeErrorContext.model,
@@ -277,8 +241,10 @@ export async function handleAssistantFailover(params: {
       // Marking the failed profile is non-blocking after rotation succeeds; the
       // retry can proceed with the next profile while the failure record settles.
       void markFailedProfilePromise;
-      params.logAssistantFailoverDecision("rotate_profile");
-      await params.maybeBackoffBeforeOverloadFailover(params.failoverReason);
+      params.logAssistantFailoverDecision("rotate_profile", {
+        retryCount: params.getTransientRetryCount(),
+        profileRotationCount: overloadProfileRotations,
+      });
       return {
         action: "retry",
         overloadProfileRotations,
@@ -291,10 +257,6 @@ export async function handleAssistantFailover(params: {
       };
     }
     await markFailedProfilePromise;
-    if (terminal.idleTimedOut && params.allowSameModelIdleTimeoutRetry) {
-      return sameModelIdleTimeoutRetry();
-    }
-
     decision = resolveRunFailoverDecision({
       stage: "assistant",
       allowFormatRetry: params.cloudCodeAssistFormatError,
@@ -309,13 +271,14 @@ export async function handleAssistantFailover(params: {
   }
 
   if (decision.action === "fallback_model") {
-    // Backoff runs before throwing so the outer fallback model starts after the
-    // provider-specific overload delay.
-    await params.maybeBackoffBeforeOverloadFailover(params.failoverReason);
     const message = resolveAssistantFailoverErrorMessage(params);
     const status =
       resolveFailoverStatus(decision.reason) ?? (isTimeoutErrorMessage(message) ? 408 : undefined);
-    params.logAssistantFailoverDecision("fallback_model", { status });
+    params.logAssistantFailoverDecision("fallback_model", {
+      status,
+      retryCount: params.getTransientRetryCount(),
+      profileRotationCount: overloadProfileRotations,
+    });
     const shouldSuspend =
       Boolean(params.sessionKey) &&
       (decision.reason === "rate_limit" || decision.reason === "billing");
@@ -337,10 +300,10 @@ export async function handleAssistantFailover(params: {
   }
 
   if (decision.action === "surface_error") {
-    if (!externalAbort && terminal.idleTimedOut && params.allowSameModelIdleTimeoutRetry) {
-      return sameModelIdleTimeoutRetry();
-    }
-    params.logAssistantFailoverDecision("surface_error");
+    params.logAssistantFailoverDecision("surface_error", {
+      retryCount: params.getTransientRetryCount(),
+      profileRotationCount: overloadProfileRotations,
+    });
     // Only current provider failures throw here. External aborts, timeout
     // payload synthesis, and stale classified text without failoverFailure
     // keep the normal payload path.
@@ -369,6 +332,10 @@ export async function handleAssistantFailover(params: {
     }
   }
 
+  params.logAssistantFailoverDecision("continue_normal", {
+    retryCount: params.getTransientRetryCount(),
+    profileRotationCount: overloadProfileRotations,
+  });
   return {
     action: "continue_normal",
     overloadProfileRotations,

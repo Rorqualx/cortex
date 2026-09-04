@@ -291,7 +291,7 @@ async function resolveIneligibleAutomaticMemoryFiles(params: {
 }
 
 /** Resolves hook-adjusted, session-filtered bootstrap files for a run. */
-export async function resolveBootstrapFilesForRun(params: {
+type BootstrapFileResolutionParams = {
   workspaceDir: string;
   config?: OpenClawConfig;
   sessionKey?: string;
@@ -302,7 +302,25 @@ export async function resolveBootstrapFilesForRun(params: {
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
   readOnlyState?: boolean;
-}): Promise<WorkspaceBootstrapFile[]> {
+};
+
+/** Prepare the same bounded workspace facts without invoking run-owned bootstrap hooks. */
+export async function resolveBootstrapFilesForPreparation(
+  params: BootstrapFileResolutionParams,
+): Promise<WorkspaceBootstrapFile[]> {
+  return resolveBootstrapFiles({ ...params, readOnlyState: true }, false);
+}
+
+export async function resolveBootstrapFilesForRun(
+  params: BootstrapFileResolutionParams,
+): Promise<WorkspaceBootstrapFile[]> {
+  return resolveBootstrapFiles(params, true);
+}
+
+async function resolveBootstrapFiles(
+  params: BootstrapFileResolutionParams,
+  applyHooks: boolean,
+): Promise<WorkspaceBootstrapFile[]> {
   const sessionKey = params.sessionKey ?? params.sessionId;
   const session = {
     sessionKey,
@@ -353,14 +371,16 @@ export async function resolveBootstrapFilesForRun(params: {
     runKind: params.runKind,
   });
 
-  const updated = await applyBootstrapHookOverrides({
-    files: bootstrapFiles,
-    workspaceDir: params.workspaceDir,
-    config: params.config,
-    sessionKey: params.sessionKey,
-    sessionId: params.sessionId,
-    agentId: params.agentId,
-  });
+  const updated = applyHooks
+    ? await applyBootstrapHookOverrides({
+        files: bootstrapFiles,
+        workspaceDir: params.workspaceDir,
+        config: params.config,
+        sessionKey: params.sessionKey,
+        sessionId: params.sessionId,
+        agentId: params.agentId,
+      })
+    : bootstrapFiles;
   const filteredUpdated = filterCompletedWorkspaceBootstrapFile(
     filterBootstrapFilesAfterHooks({
       files: updated,

@@ -3015,19 +3015,6 @@ export async function runEmbeddedAgent(
               provider: assistantForFailover?.provider,
             },
           );
-          // A current-provider failure whose reason and raw error both look
-          // transient (5xx / dropped connection / mid-stream) gets a bounded
-          // same-model retry before profile rotation/fallback. Watchdog timeouts
-          // are excluded here; they own the idle-timeout retry and full-timeout
-          // surfacing paths.
-          const transientAssistantFailure =
-            failoverFailure &&
-            !aborted &&
-            !externalAbort &&
-            !timedOut &&
-            !idleTimedOut &&
-            isTransientRetryFailoverReason(assistantFailoverReason) &&
-            isTransientProviderOperationError(undefined, assistantForFailover?.errorMessage ?? "");
           const assistantProviderStarted =
             Boolean(currentAttemptAssistant?.provider) ||
             idleTimedOut ||
@@ -3103,6 +3090,60 @@ export async function runEmbeddedAgent(
             harnessOwnsTransport: pluginHarnessOwnsTransport,
             profileRotated: false,
           });
+          // Fork: upstream's handleAssistantFailover consults one transient
+          // retry owner for every classified failure and idle timeout. This
+          // fork keeps its three separate budgets + eligibility gates behind
+          // that API: short-window rate limits draw from the rate-limit
+          // budget, idle watchdog timeouts from the restart-for-live-switch
+          // gate, and only transient-classified failures (reason + raw error
+          // text) from the transient budget. Overload/terminal classes are
+          // refused here; they own their escalation paths.
+          const maybeRetryAssistantTransient = async (retry: {
+            reason: FailoverReason;
+            retryAfterMs?: number;
+          }): Promise<boolean> => {
+            if (retry.reason === "rate_limit") {
+              return maybeRetrySameModelRateLimit(
+                retry.retryAfterMs !== undefined
+                  ? { retryAfterSeconds: Math.round(retry.retryAfterMs / 1000) }
+                  : undefined,
+              );
+            }
+            if (retry.reason === "timeout") {
+              // Full watchdog timeouts surface; only idle timeouts with a
+              // live-switch restart budget replay the same model.
+              if (
+                !timedOut ||
+                !idleTimedOut ||
+                timedOutDuringCompaction ||
+                fallbackConfigured ||
+                !canRestartForLiveSwitch ||
+                sameModelIdleTimeoutRetries >= MAX_SAME_MODEL_IDLE_TIMEOUT_RETRIES
+              ) {
+                return false;
+              }
+              sameModelIdleTimeoutRetries += 1;
+              return true;
+            }
+            if (retry.reason === "overloaded") {
+              // No same-model retry on overload; preserve the fork's
+              // configured pre-failover backoff before escalation proceeds.
+              await maybeBackoffBeforeOverloadFailover("overloaded");
+              return false;
+            }
+            if (
+              !isTransientRetryFailoverReason(retry.reason) ||
+              !isTransientProviderOperationError(
+                undefined,
+                assistantForFailover?.errorMessage ?? "",
+              )
+            ) {
+              return false;
+            }
+            return maybeRetrySameModelTransient();
+          };
+          const getAssistantTransientRetryCount = () =>
+            consecutiveSameModelRateLimitRetries + consecutiveSameModelTransientRetries;
           const assistantFailoverOutcome = await handleAssistantFailover({
             initialDecision: assistantFailoverDecision,
             terminal: attempt.terminal,
@@ -3111,15 +3152,8 @@ export async function runEmbeddedAgent(
             fallbackConfigured,
             failoverFailure,
             failoverReason: assistantFailoverReason,
-            allowSameModelIdleTimeoutRetry:
-              timedOut &&
-              idleTimedOut &&
-              !timedOutDuringCompaction &&
-              !fallbackConfigured &&
-              canRestartForLiveSwitch &&
-              sameModelIdleTimeoutRetries < MAX_SAME_MODEL_IDLE_TIMEOUT_RETRIES,
-            allowSameModelRateLimitRetry: rateLimitProfileRotations < rateLimitProfileRotationLimit,
-            transientFailure: transientAssistantFailure,
+            getTransientRetryCount: getAssistantTransientRetryCount,
+            maybeRetryTransient: maybeRetryAssistantTransient,
             assistantProfileFailureReason,
             lastProfileId,
             modelId,
@@ -3139,9 +3173,6 @@ export async function runEmbeddedAgent(
             logAssistantFailoverDecision,
             warn: (message) => log.warn(message),
             maybeMarkAuthProfileFailure,
-            maybeRetrySameModelRateLimit,
-            maybeRetrySameModelTransient,
-            maybeBackoffBeforeOverloadFailover,
             advanceAuthProfile: advanceAttemptAuthProfile,
             // Same escalate-then-rotate composition the prompt-side failover branch
             // above uses directly: the escalation gate may throw a FailoverError to
@@ -3159,17 +3190,15 @@ export async function runEmbeddedAgent(
               model: activeErrorContext.model,
               result:
                 assistantFailoverOutcome.retryKind === "same_model_transient"
-                  ? "same_model_transient"
-                  : assistantFailoverOutcome.retryKind === "same_model_idle_timeout" ||
-                      assistantFailoverReason === "timeout"
+                  ? assistantFailoverReason === "timeout"
+                    ? "timeout"
+                    : "same_model_transient"
+                  : assistantFailoverReason === "timeout"
                     ? "timeout"
                     : "rotate_profile",
               ...(assistantFailoverReason ? { reason: assistantFailoverReason } : {}),
               stage: "assistant",
             });
-            if (assistantFailoverOutcome.retryKind === "same_model_idle_timeout") {
-              sameModelIdleTimeoutRetries += 1;
-            }
             lastRetryFailoverReason = assistantFailoverOutcome.lastRetryFailoverReason;
             continue;
           }

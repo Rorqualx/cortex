@@ -61,6 +61,7 @@ import { resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
 import { addSession, appendOutput, markExited, tail } from "./bash-process-registry.js";
 import { renderExecUpdateText } from "./bash-tools.exec-output.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
+import { buildGitHubExecLaunchArgv } from "./github-exec-launch.js";
 import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
 import { createSessionSlug } from "./session-slug.js";
 import { maybeWrapCommandWithShellSnapshot } from "./shell-snapshot.js";
@@ -732,6 +733,8 @@ export async function runExecProcess(opts: {
   execCommand?: string;
   workdir: string;
   env: Record<string, string>;
+  /** Host-selected managed profile; never inferred from the requested environment. */
+  githubProfileDir?: string;
   pathPrepend?: string[];
   sandbox?: BashSandboxConfig;
   containerWorkdir?: string | null;
@@ -974,7 +977,6 @@ export async function runExecProcess(opts: {
       }
     | {
         mode: "pty";
-        ptyCommand: string;
         childFallbackArgv: string[];
         env: NodeJS.ProcessEnv;
         stdinMode: "pipe-open";
@@ -1025,22 +1027,24 @@ export async function runExecProcess(opts: {
       env: shellRuntimeEnv,
     });
 
-    const childArgv =
-      useOsSandbox && osSandboxArgv
-        ? osSandboxArgv
-        : [shell, ...shellArgs, commandWithShellSnapshot];
+    const shellArgv = [shell, ...shellArgs, commandWithShellSnapshot];
+    const baseArgv = useOsSandbox && osSandboxArgv ? osSandboxArgv : shellArgv;
+    // Upstream graft: wrap the launch argv when a host-selected managed GitHub
+    // profile is in play; composes with the fork's OS-sandbox argv override.
+    const launchArgv = opts.githubProfileDir
+      ? buildGitHubExecLaunchArgv(baseArgv, opts.githubProfileDir)
+      : baseArgv;
     if (opts.usePty) {
       return {
         mode: "pty" as const,
-        ptyCommand: commandWithShellSnapshot,
-        childFallbackArgv: childArgv,
+        childFallbackArgv: launchArgv,
         env: shellRuntimeEnv,
         stdinMode: "pipe-open" as const,
       };
     }
     return {
       mode: "child" as const,
-      argv: childArgv,
+      argv: launchArgv,
       env: shellRuntimeEnv,
       stdinMode: "pipe-closed" as const,
     };
@@ -1098,7 +1102,7 @@ export async function runExecProcess(opts: {
         ? await supervisor.spawn({
             ...spawnBase,
             mode: "pty",
-            ptyCommand: spawnSpec.ptyCommand,
+            argv: spawnSpec.childFallbackArgv,
           })
         : await supervisor.spawn({
             ...spawnBase,

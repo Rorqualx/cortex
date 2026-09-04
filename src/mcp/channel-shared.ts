@@ -84,7 +84,7 @@ export type SessionMessagePayload = {
 };
 
 /** Gateway approval family exposed through MCP. */
-export type ApprovalKind = "exec" | "plugin";
+export type ApprovalKind = "exec" | "plugin" | "system-agent";
 /** Decision values accepted by Gateway approval resolvers. */
 export type ApprovalDecision = "allow-once" | "allow-always" | "deny";
 

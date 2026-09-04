@@ -18,7 +18,6 @@ type TsdownConfigEntry = {
   entry?: Record<string, string> | string[];
   inputOptions?: TsdownInputOptions;
   minify?: unknown;
-  outputOptions?: TsdownOutputOptions;
   outDir?: string;
   plugins?: Array<{ name?: string }>;
 };
@@ -50,24 +49,6 @@ type TsdownExternalFunction = (
   parentId: string | undefined,
   isResolved: boolean,
 ) => boolean | null | undefined;
-
-type TsdownOutputOptions = (
-  options: {
-    entryFileNames?:
-      | string
-      | ((chunkInfo: { facadeModuleId?: string; moduleIds: string[]; name?: string }) => string);
-    chunkFileNames?: string | ((chunkInfo: { moduleIds: string[] }) => string);
-  },
-  format?: unknown,
-  context?: unknown,
-) =>
-  | {
-      entryFileNames?:
-        | string
-        | ((chunkInfo: { facadeModuleId?: string; moduleIds: string[]; name?: string }) => string);
-      chunkFileNames?: string | ((chunkInfo: { moduleIds: string[] }) => string);
-    }
-  | undefined;
 
 function asConfigArray(config: unknown): TsdownConfigEntry[] {
   return Array.isArray(config) ? (config as TsdownConfigEntry[]) : [config as TsdownConfigEntry];
@@ -109,11 +90,8 @@ function readGatewayRunLoopSource(): string {
   return readFileSync(new URL("../../src/cli/gateway-cli/run-loop.ts", import.meta.url), "utf8");
 }
 
-function readAgentModelDiscoveryCacheSource(): string {
-  return readFileSync(
-    new URL("../../src/agents/embedded-agent-runner/model-discovery-cache.ts", import.meta.url),
-    "utf8",
-  );
+function readAgentAuthDiscoverySource(): string {
+  return readFileSync(new URL("../../src/agents/agent-auth-discovery.ts", import.meta.url), "utf8");
 }
 
 describe("tsdown config", () => {
@@ -150,6 +128,12 @@ describe("tsdown config", () => {
     const rootDir = process.cwd();
     const watchedPaths: string[] = [];
     const plugin = createStateSchemaInlinePlugin(rootDir);
+    let cacheKeyGenerator: ((context: { id: string }) => string | undefined) | undefined;
+    plugin.configureVitest({
+      experimental_defineCacheKeyGenerator: (generator) => {
+        cacheKeyGenerator = generator;
+      },
+    });
     const result = plugin.load.call(
       { addWatchFile: (filePath: string) => watchedPaths.push(filePath) },
       path.resolve(rootDir, schema.modulePath),
@@ -165,11 +149,25 @@ describe("tsdown config", () => {
     expect(JSON.parse(match?.[1] ?? "null")).toBe(canonicalSql);
     expect(schema.sourceValue).toBe(canonicalSql);
     expect(watchedPaths).toEqual([schemaPath]);
+    expect(cacheKeyGenerator?.({ id: path.resolve(rootDir, schema.modulePath) })).toBe(
+      canonicalSql,
+    );
+    expect(cacheKeyGenerator?.({ id: path.resolve(rootDir, "src/index.ts") })).toBeUndefined();
   });
 
-  it("installs schema inlining only on the unified runtime graph", () => {
+  it("installs schema inlining only on executable runtime graphs", () => {
+    const configs = asConfigArray(tsdownConfig);
     const unifiedGraph = requireUnifiedDistGraph();
-    const inlinePlugins = asConfigArray(tsdownConfig).flatMap(
+    const workerGraph = configs.find((config) => {
+      const entry = config.entry;
+      return (
+        typeof entry === "object" &&
+        entry !== null &&
+        !Array.isArray(entry) &&
+        (entry as Record<string, unknown>)["worker/worker"] === "src/worker/worker-deploy-entry.ts"
+      );
+    });
+    const inlinePlugins = configs.flatMap(
       (config) =>
         config.plugins?.filter((plugin) => plugin.name === STATE_SCHEMA_INLINE_PLUGIN_NAME) ?? [],
     );
@@ -177,7 +175,10 @@ describe("tsdown config", () => {
     expect(unifiedGraph.plugins).toContainEqual(
       expect.objectContaining({ name: STATE_SCHEMA_INLINE_PLUGIN_NAME }),
     );
-    expect(inlinePlugins).toHaveLength(1);
+    expect(workerGraph?.plugins).toContainEqual(
+      expect.objectContaining({ name: STATE_SCHEMA_INLINE_PLUGIN_NAME }),
+    );
+    expect(inlinePlugins).toHaveLength(2);
   });
 
   it("keeps core, plugin runtime, plugin-sdk, bundled root plugins, and bundled hooks in one dist graph", () => {
@@ -192,7 +193,10 @@ describe("tsdown config", () => {
       "cli/gateway-lifecycle.runtime",
       "agents/compaction-planning.worker",
       "agents/model-provider-auth.worker",
+      "config/sessions/session-accessor.sqlite-archive.worker",
       "infra/sqlite-readonly-location.worker",
+      "state/openclaw-database-verify.worker",
+      "system-agent/setup-inference-detection.worker",
       "plugins/memory-state",
       "subagent-registry.runtime",
       "task-registry-control.runtime",
@@ -208,8 +212,8 @@ describe("tsdown config", () => {
       "plugins/runtime/index",
       "plugins/synthetic-auth.runtime",
       "web-fetch/runtime",
-      "plugin-sdk/compat",
-      "plugin-sdk/index",
+      "mcp/openclaw-tools-serve",
+      "mcp/plugin-tools-serve",
       bundledEntry("active-memory"),
       "bundled/boot-md/handler",
     ]) {
@@ -257,15 +261,31 @@ describe("tsdown config", () => {
     );
   });
 
+  it("keeps worker environment bootstrap behind one stable dist entry", () => {
+    const distGraph = requireUnifiedDistGraph();
+
+    expect(entrySources(distGraph)["gateway/worker-environments/runtime"]).toBe(
+      "src/gateway/worker-environments/runtime.ts",
+    );
+  });
+
+  it("keeps Gateway plugin reload targets behind one stable dist entry", () => {
+    const distGraph = requireUnifiedDistGraph();
+
+    expect(entrySources(distGraph)["gateway/plugin-channel-reload-targets"]).toBe(
+      "src/gateway/plugin-channel-reload-targets.ts",
+    );
+  });
+
   it("keeps PI model discovery synthetic auth refs behind one stable runtime dist entry", () => {
     const distGraph = requireUnifiedDistGraph();
     const importSpecifiers = [
-      ...readAgentModelDiscoveryCacheSource().matchAll(
+      ...readAgentAuthDiscoverySource().matchAll(
         /from ["']([^"']*synthetic-auth\.runtime\.js)["']/gu,
       ),
     ].map((match) => match[1]);
 
-    expect(importSpecifiers).toEqual(["../../plugins/synthetic-auth.runtime.js"]);
+    expect(importSpecifiers).toEqual(["../plugins/synthetic-auth.runtime.js"]);
     expect(entrySources(distGraph)["plugins/synthetic-auth.runtime"]).toBe(
       "src/plugins/synthetic-auth.runtime.ts",
     );
@@ -315,7 +335,6 @@ describe("tsdown config", () => {
     if (typeof neverBundle === "function") {
       expect(neverBundle("@anthropic-ai/vertex-sdk")).toBe(true);
       expect(neverBundle("@discordjs/voice")).toBe(true);
-      expect(neverBundle("@lancedb/lancedb")).toBe(true);
       expect(neverBundle("@larksuiteoapi/node-sdk")).toBe(true);
       expect(neverBundle("@matrix-org/matrix-sdk-crypto-nodejs")).toBe(true);
       expect(neverBundle("@slack/bolt")).toBe(true);
@@ -323,23 +342,18 @@ describe("tsdown config", () => {
       expect(neverBundle("@vitest/expect")).toBe(true);
       expect(neverBundle("jimp")).toBe(true);
       expect(neverBundle("matrix-js-sdk/lib/client.js")).toBe(true);
-      expect(neverBundle("qrcode-terminal/lib/main.js")).toBe(true);
-      expect(neverBundle("sharp")).toBe(true);
       expect(neverBundle("vitest")).toBe(true);
       expect(neverBundle("not-a-runtime-dependency")).toBe(false);
     } else {
       for (const dependency of [
         "@anthropic-ai/vertex-sdk",
         "@discordjs/voice",
-        "@lancedb/lancedb",
         "@larksuiteoapi/node-sdk",
         "@slack/bolt",
         "@slack/web-api",
         "@vitest/expect",
         "jimp",
         "matrix-js-sdk",
-        "qrcode-terminal",
-        "sharp",
         "vitest",
       ]) {
         expect(neverBundle).toContain(dependency);
@@ -350,8 +364,6 @@ describe("tsdown config", () => {
     }
     const externalize = external;
     expect(externalize("jimp", undefined, false)).toBe(true);
-    expect(externalize("qrcode-terminal/lib/main.js", undefined, false)).toBe(true);
-    expect(externalize("sharp", undefined, false)).toBe(true);
   });
 
   it("always bundles plugin SDK package-local runtime dependencies", () => {
@@ -364,70 +376,11 @@ describe("tsdown config", () => {
 
     expect(alwaysBundle("@openclaw/fs-safe")).toBe(true);
     expect(alwaysBundle("@openclaw/fs-safe/path")).toBe(true);
+    expect(alwaysBundle("openclaw/plugin-sdk/ssrf-runtime-internal")).toBe(true);
+    expect(alwaysBundle("openclaw/plugin-sdk/ssrf-runtime")).toBe(false);
     expect(alwaysBundle("zod")).toBe(true);
     expect(alwaysBundle("zod/v4/core")).toBe(true);
     expect(alwaysBundle("not-a-runtime-dependency")).toBe(false);
-  });
-
-  it("routes externalized bundled plugin chunks under their excluded dist subtree", () => {
-    const configured = unifiedDistGraph()?.outputOptions?.({
-      entryFileNames: "[name].js",
-      chunkFileNames: "[name]-[hash].js",
-    });
-    const entryFileNames = configured?.entryFileNames;
-    const chunkFileNames = configured?.chunkFileNames;
-
-    expect(typeof entryFileNames).toBe("function");
-    expect(typeof chunkFileNames).toBe("function");
-    expect(
-      (
-        entryFileNames as (chunkInfo: {
-          facadeModuleId?: string;
-          moduleIds: string[];
-          name?: string;
-        }) => string
-      )({
-        facadeModuleId: "/repo/extensions/zalouser/src/setup-surface.ts",
-        moduleIds: [],
-        name: "setup-surface",
-      }),
-    ).toBe("extensions/zalouser/[name].js");
-    expect(
-      (
-        entryFileNames as (chunkInfo: {
-          facadeModuleId?: string;
-          moduleIds: string[];
-          name?: string;
-        }) => string
-      )({
-        facadeModuleId: "/repo/extensions/zalouser/index.ts",
-        moduleIds: [],
-        name: "extensions/zalouser/index",
-      }),
-    ).toBe("[name].js");
-    expect(
-      (chunkFileNames as (chunkInfo: { moduleIds: string[] }) => string)({
-        moduleIds: ["/repo/extensions/feishu/src/client.ts"],
-      }),
-    ).toBe("extensions/feishu/[name]-[hash].js");
-    expect(
-      (chunkFileNames as (chunkInfo: { moduleIds: string[] }) => string)({
-        moduleIds: ["/repo/extensions/telegram/src/api.ts"],
-      }),
-    ).toBe("[name]-[hash].js");
-    expect(
-      (chunkFileNames as (chunkInfo: { moduleIds: string[] }) => string)({
-        moduleIds: ["/repo/extensions/feishu/src/client.ts", "/repo/src/shared/string.ts"],
-      }),
-    ).toBe("extensions/feishu/[name]-[hash].js");
-    expect(
-      (chunkFileNames as (chunkInfo: { moduleIds: string[] }) => string)({
-        moduleIds: [
-          "/repo/extensions/feishu/src/client.ts",
-          "/repo/extensions/telegram/src/api.ts",
-        ],
-      }),
-    ).toBe("[name]-[hash].js");
   });
 
   it("suppresses unresolved imports from extension source", () => {

@@ -91,7 +91,9 @@ async function loadGatewayModelCatalogOwnerSnapshot(
       : {}),
     config: (params?.getConfig ?? getRuntimeConfig)(),
     readOnly: params?.readOnly !== false,
-    ...(params?.refreshFullCatalog ? { refreshFullCatalog: true } : {}),
+    ...(params?.refreshFullCatalog !== undefined
+      ? { refreshFullCatalog: params.refreshFullCatalog }
+      : {}),
     ...(params?.workspaceDir ? { workspaceDir: params.workspaceDir } : {}),
   });
   const owner = resolvePublishedModelCatalogOwner(candidate);

@@ -41,10 +41,12 @@ export const RUNTIME_AUTH_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 export const RUNTIME_AUTH_REFRESH_RETRY_MS = 60 * 1000;
 export const RUNTIME_AUTH_REFRESH_MIN_DELAY_MS = 5 * 1000;
 
-const DEFAULT_OVERLOAD_FAILOVER_BACKOFF_MS = 0;
 const DEFAULT_MAX_OVERLOAD_PROFILE_ROTATIONS = 1;
 const DEFAULT_MAX_RATE_LIMIT_PROFILE_ROTATIONS = 1;
 
+// Fork keeps the same-model rate_limit retry budget (linear, deterministic)
+// that this fork's run loop still owns; upstream's unified transient budget
+// (jittered, window-capped) below serves the consult API consumers.
 // Same-model in-place rate_limit retry: provider RPM caps reset on a
 // minute scale, so wait out the current provider/model window before spending
 // a profile rotation or model failover.
@@ -54,10 +56,17 @@ export const MAX_SAME_MODEL_RATE_LIMIT_RETRIES = 3;
 const SAME_MODEL_RATE_LIMIT_BACKOFF_STEP_MS = 10_000;
 const SAME_MODEL_RATE_LIMIT_MAX_BACKOFF_MS = 60_000;
 
+const DEFAULT_OVERLOAD_FAILOVER_BACKOFF_MS = 0;
+
 // Fork: auth.cooldowns.* config keys can override the failover budgets.
 export function resolveOverloadFailoverBackoffMs(cfg?: OpenClawConfig): number {
   return cfg?.auth?.cooldowns?.overloadedBackoffMs ?? DEFAULT_OVERLOAD_FAILOVER_BACKOFF_MS;
 }
+
+export const MAX_TRANSIENT_RETRIES = 3;
+const MAX_TRANSIENT_RETRY_TIME_MS = 90_000;
+const TRANSIENT_RETRY_BASE_DELAY_MS = 1_000;
+const TRANSIENT_RETRY_MAX_DELAY_MS = 30_000;
 
 export function resolveOverloadProfileRotationLimit(cfg?: OpenClawConfig): number {
   return cfg?.auth?.cooldowns?.overloadedProfileRotations ?? DEFAULT_MAX_OVERLOAD_PROFILE_ROTATIONS;
@@ -73,6 +82,8 @@ export function resolveRateLimitProfileRotationLimit(cfg?: OpenClawConfig): numb
  * Backoff before the next same-model rate_limit retry, given how many such
  * retries already happened. Linear and deterministic (no jitter) so RPM
  * windows clear predictably and tests can assert exact values.
+ * Fork: retained for this fork's run-loop rate-limit budget; upstream's
+ * transient controller uses resolveTransientRetryDelayMs below.
  */
 export function resolveSameModelRateLimitRetryDelayMs(params: {
   retriesSoFar: number;
@@ -92,6 +103,31 @@ export function resolveNextSameModelRateLimitRetryCount(params: {
   retriedSameModelRateLimit: boolean;
 }): number {
   return params.retriedSameModelRateLimit ? Math.max(0, params.retriesSoFar) + 1 : 0;
+}
+
+/** Resolves jittered exponential backoff without exceeding the turn retry ceiling. */
+export function resolveTransientRetryDelayMs(params: {
+  retryNumber: number;
+  retryAfterMs?: number;
+  elapsedMs: number;
+}): number | undefined {
+  const remainingMs = MAX_TRANSIENT_RETRY_TIME_MS - Math.max(0, params.elapsedMs);
+  if (remainingMs <= 0) {
+    return undefined;
+  }
+  const exponentialMs = Math.min(
+    TRANSIENT_RETRY_MAX_DELAY_MS,
+    TRANSIENT_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, params.retryNumber - 1),
+  );
+  const jitteredMs = Math.min(
+    TRANSIENT_RETRY_MAX_DELAY_MS,
+    Math.round(exponentialMs * (0.5 + Math.random())),
+  );
+  const retryAfterMs = Number.isFinite(params.retryAfterMs)
+    ? Math.max(0, Math.ceil(params.retryAfterMs ?? 0))
+    : 0;
+  const delayMs = Math.max(jitteredMs, retryAfterMs);
+  return delayMs <= remainingMs ? delayMs : undefined;
 }
 
 // Same-model transient retry: provider 5xx, dropped connections, and mid-stream

@@ -425,6 +425,8 @@ export function resolveProviderRequestFailureCopy(params: {
     code,
     userMessage,
     technicalMessage: params.technicalMessage,
+    // Fork: the whole-turn transient-HTTP retry gate in auto-reply/reply/
+    // agent-runner-error-handler.ts reads this flag on 503 facets.
     ...(params.facet === "provider-internal-503" ? { allowTransientHttpRetry: true as const } : {}),
   };
 }

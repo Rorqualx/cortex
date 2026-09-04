@@ -39,11 +39,12 @@ export {
   isCloudCodeAssistFormatError,
   isContextOverflowError,
   isFailoverErrorMessage,
-  isGenericUnknownStreamErrorMessage,
   isLikelyContextOverflowError,
   isProviderRequestSizeCeilingError,
-  isTransientHttpError,
   isTimeoutErrorMessage,
+  // Fork: the whole-turn transient-HTTP retry in auto-reply/reply/
+  // agent-runner-error-handler.ts consumes this classifier.
+  isTransientHttpError,
 } from "./failover/classify.js";
 export type { FailoverReason } from "./failover/signal.js";
 export { sanitizeGoogleTurnOrdering } from "./embedded-agent-helpers/google.js";

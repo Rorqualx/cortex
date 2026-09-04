@@ -52,7 +52,8 @@ import {
 } from "./provider-patterns.js";
 import type { FailoverClassification, FailoverReason, FailoverSignal } from "./signal.js";
 export {
-  isGenericUnknownStreamErrorMessage,
+  // Fork: re-exported for the whole-turn transient-HTTP retry gate in
+  // auto-reply/reply/agent-runner-error-handler.ts (via embedded-agent-helpers).
   isTransientHttpError,
   isUnclassifiedNoBodyHttpSignal,
 } from "./classification-rules.js";

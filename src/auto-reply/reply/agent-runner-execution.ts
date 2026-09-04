@@ -288,6 +288,10 @@ async function executeAgentTurnInternalWithRetryState(
   const fallbackCycleState: AgentFallbackCycleState = {
     deferredLifecycle,
     lifecycleGeneration,
+    // Upstream #132186: record the turn start on the cycle state (the fork's
+    // error handler still reads overloadRetryState.turnStartedAtMs, but the
+    // shared type now carries this field).
+    turnStartedAtMs: Date.now(),
     compaction,
     postCompactionModelAttempted: false,
     attemptedRuntimeProvider: fallbackProvider,
