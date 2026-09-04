@@ -1,16 +1,13 @@
 import {
   canonicalizeMaxTokensParam,
-  detectOpenAICompletionsCompat,
   resolveMaxTokensParam,
   resolveOpenAICompletionsCompat,
 } from "@openclaw/ai/transports";
-import { legacyModelKey } from "../model-ref-shared.js";
-import { modelKey } from "../../shared/model-key.js";
-import type { ThinkLevel } from "../../auto-reply/thinking.shared.js";
 import {
   type NativeWebSearchToolPolicyParams,
   isNativeWebSearchAllowedByToolPolicy,
 } from "../../agents/codex-native-web-search-core.js";
+import type { ThinkLevel } from "../../auto-reply/thinking.shared.js";
 /**
  * Resolves model extra parameters and transport overrides for embedded agents.
  */
@@ -42,6 +39,8 @@ import {
   wrapProviderStreamFn as wrapProviderStreamFnRuntime,
 } from "../../plugins/provider-hook-runtime.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import { modelKey } from "../../shared/model-key.js";
+import { legacyModelKey } from "../model-ref-shared.js";
 import { resolveProviderRequestPolicyConfig } from "../provider-request-config.js";
 import type { AgentRuntimeTransport } from "../runtime-plan/types.js";
 import type { StreamFn } from "../runtime/index.js";

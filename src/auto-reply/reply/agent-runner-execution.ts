@@ -529,23 +529,6 @@ async function executeAgentTurnInternal(
     completed: false,
   };
   const runId = params.opts?.runId ?? crypto.randomUUID();
-  const admittedRunContext: { current?: AdmittedRunContext } = {};
-  const gatewayContextResolver =
-    readChannelContextGatewayContextResolver(params.sessionCtx) ??
-    getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
-  const preparedRunAdmission = prepareChannelRunAdmission({
-    cfg: resolveQueuedReplyRuntimeConfig(params.followupRun.run.config),
-    runId,
-    agentId: params.followupRun.run.agentId,
-    ingressKind: "channel",
-    boundary: "auto-reply.agent-runner",
-    evidence: params.followupRun.channelAdmissionEvidence,
-    onAdmitted: (context) => {
-      bindGatewayContextResolver(context, gatewayContextResolver);
-      admittedRunContext.current = context;
-      params.followupRun.run.skillLibraryAuthoring?.bind(context);
-    },
-  });
   const deferredLifecycle = createDeferredEmbeddedRunLifecycleManager({
     runId,
     agentId: params.followupRun.run.agentId,

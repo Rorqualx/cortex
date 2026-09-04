@@ -2173,6 +2173,7 @@
     "baileys": "7.0.0-rc14",
     "esbuild": "0.28.2",
     "fast-check": "^4.8.0",
+    "glob": "13.0.6",
     "fast-glob": "3.3.3",
     "ipaddr.js": "2.5.0",
     "jscpd": "5.0.16",
