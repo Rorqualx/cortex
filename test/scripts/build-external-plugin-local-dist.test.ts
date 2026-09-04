@@ -27,9 +27,9 @@ describe("external plugin local dist build", () => {
         "extensions/slack",
         "extensions/sms",
         "extensions/mxc",
+        "extensions/whatsapp",
       ]),
     );
-    expect(packageDirs).not.toContain("extensions/whatsapp");
     expect(
       packageDirs.every((packageDir) => excludedPluginIds.has(packageDir.split("/").at(-1) ?? "")),
     ).toBe(true);
@@ -40,7 +40,7 @@ describe("external plugin local dist build", () => {
       listExternalPluginLocalDistPackageDirs({
         env: {
           ...process.env,
-          [DOCKER_SELECTED_PLUGIN_BUILD_IDS_ENV]: "slack",
+          [DOCKER_SELECTED_PLUGIN_BUILD_IDS_ENV]: "slack,whatsapp",
         },
       }),
     ).toEqual([]);
@@ -51,7 +51,7 @@ describe("external plugin local dist build", () => {
       buildExternalPluginLocalDist({
         env: {
           ...process.env,
-          [DOCKER_SELECTED_PLUGIN_BUILD_IDS_ENV]: "slack",
+          [DOCKER_SELECTED_PLUGIN_BUILD_IDS_ENV]: "slack,whatsapp",
         },
         logLevel: "silent",
       }),

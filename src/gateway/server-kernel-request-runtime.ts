@@ -40,6 +40,7 @@ export async function prepareGatewayKernelRequestRuntime(params: {
     approvalWebPushDelivery,
     pluginApprovalIosPushDelivery,
     pluginApprovalManager,
+    placementStandingGrants,
     systemAgentApprovalManager,
     bindApprovalPublicationContext,
     validateAgentRuntimeApprovalAuthority,
@@ -143,6 +144,7 @@ export async function prepareGatewayKernelRequestRuntime(params: {
       approvalWebPushDelivery,
       pluginApprovalIosPushDelivery,
       pluginApprovalManager,
+      placementStandingGrants,
       systemAgentApprovalManager,
       // Activity feed (Control UI cross-agent panel): shares the same subscriber
       // registry server-lifecycle.ts wires into node-session broadcast fan-out,

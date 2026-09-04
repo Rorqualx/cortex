@@ -264,24 +264,45 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
   nodeStep("write-cli-compat", ["--experimental-strip-types", "scripts/write-cli-compat.ts"]),
 ];
 
-const FULL_BUILD_STEP_LABELS = [
+const RUNTIME_SETUP_STEP_LABELS = [
+  "external-plugins:local-dist",
+  "check-cli-bootstrap-imports",
+] as const;
+const RUNTIME_FINALIZE_STEP_LABELS = [
+  "runtime-postbuild",
+  "build-stamp",
+  "runtime-postbuild-stamp",
+] as const;
+const RUNTIME_STEP_LABELS = [...RUNTIME_SETUP_STEP_LABELS, ...RUNTIME_FINALIZE_STEP_LABELS];
+const ASSET_RUNTIME_STEP_LABELS = [
   "plugins:assets:build",
+  "tsdown",
+  ...RUNTIME_SETUP_STEP_LABELS,
+  // Copy after compiler cleanup, before postbuild records the generated asset inventory.
+  "plugins:assets:copy",
+  ...RUNTIME_FINALIZE_STEP_LABELS,
+];
+const BUILD_METADATA_STEP_LABELS = ["write-build-info", "write-cli-startup-metadata"] as const;
+const FINAL_BUILD_ARTIFACTS_STEP_LABELS = [
+  "write-plugin-sdk-entry-dts",
+  "check-plugin-sdk-exports",
+  "ui:build",
+  ...BUILD_METADATA_STEP_LABELS,
+] as const;
+const CI_ARTIFACT_STEP_LABELS = [
+  ...ASSET_RUNTIME_STEP_LABELS,
+  ...FINAL_BUILD_ARTIFACTS_STEP_LABELS,
+];
+const FULL_COMPILER_STEP_LABELS = [
   "tsdown-ai",
   "tsdown-packages",
   "tsdown-unified",
   "write-unified-entry-dts",
-  "external-plugins:local-dist",
-  "check-cli-bootstrap-imports",
-  "plugins:assets:copy",
-  "runtime-postbuild",
-  "build-stamp",
-  "runtime-postbuild-stamp",
-  "write-plugin-sdk-entry-dts",
-  "check-plugin-sdk-exports",
-  "ui:build",
-  "write-build-info",
-  "write-cli-startup-metadata",
 ] as const;
+// Full and package builds cache declaration groups separately from the runtime graph.
+const FULL_BUILD_STEP_LABELS = CI_ARTIFACT_STEP_LABELS.flatMap((step) =>
+  step === "tsdown" ? FULL_COMPILER_STEP_LABELS : [step],
+);
 
 export const BUILD_ALL_PROFILES: Record<string, string[]> = {
   // Fork deploy profile, inlined (NOT FULL_BUILD_STEP_LABELS): adds

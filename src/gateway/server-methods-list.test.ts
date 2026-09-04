@@ -57,6 +57,7 @@ describe("GATEWAY_EVENTS", () => {
 });
 
 describe("listGatewayMethods", () => {
+
   it("advertises plugin surface refresh for capability rotation", () => {
     expect(listGatewayMethods()).toContain("plugin.surface.refresh");
     expect(listGatewayMethods()).toContain("node.pluginSurface.refresh");
@@ -77,7 +78,7 @@ describe("listGatewayMethods", () => {
   });
 
   it("appends new methods after model probing without shifting older method indices", () => {
-    expect(listGatewayMethods().slice(-107)).toEqual([
+    expect(listGatewayMethods().slice(-115)).toEqual([
       "models.probe",
       "migrations.memory.plan",
       "migrations.memory.apply",
@@ -144,6 +145,14 @@ describe("listGatewayMethods", () => {
       "diagnostics.lanes",
       "session.members.listEvidence",
       "plugins.inspect",
+      "users.github.status",
+      "users.github.authorize.start",
+      "users.github.authorize.poll",
+      "users.github.authorize.cancel",
+      "users.github.disconnect",
+      "sessions.github.options",
+      "sessions.github.status",
+      "sessions.github.confirm",
       "activity.list",
       "activity.subscribe",
       "activity.unsubscribe",
@@ -300,7 +309,7 @@ describe("listGatewayMethods", () => {
       "exec.approval.get",
     ]);
     expect(methods).toContain("tts.speak");
-    expect(coreMethods.slice(-116)).toEqual([
+    expect(coreMethods.slice(-124)).toEqual([
       "sessions.catalog.read",
       "terminal.upload",
       "sessions.catalog.continue",
@@ -376,6 +385,14 @@ describe("listGatewayMethods", () => {
       "diagnostics.lanes",
       "session.members.listEvidence",
       "plugins.inspect",
+      "users.github.status",
+      "users.github.authorize.start",
+      "users.github.authorize.poll",
+      "users.github.authorize.cancel",
+      "users.github.disconnect",
+      "sessions.github.options",
+      "sessions.github.status",
+      "sessions.github.confirm",
       "activity.list",
       "activity.subscribe",
       "activity.unsubscribe",

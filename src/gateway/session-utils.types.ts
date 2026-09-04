@@ -2,21 +2,12 @@
 // Keeps server methods and Control UI payloads aligned.
 import type { FastMode } from "@openclaw/normalization-core/string-coerce";
 import type {
-  SessionClassification,
-  SessionCreatedActor,
-  SessionOwner,
-  SessionPeerKind,
   SessionPlacement,
   SessionRow,
-  SessionRunStatus,
-  SessionSharingRole,
-  SessionVisibility,
 } from "../../packages/gateway-protocol/src/index.js";
 import type { QueueMode } from "../../packages/gateway-protocol/src/schema/logs-chat.js";
-import type { SessionParticipant } from "../../packages/gateway-protocol/src/schema/session-participant.js";
 import type { SessionObserverDigest } from "../../packages/gateway-protocol/src/schema/sessions.js";
 import type { StickyModelSelectionTarget } from "../agents/sticky-model-selection.js";
-import type { ChatType } from "../channels/chat-type.js";
 import type {
   SessionCompactionCheckpoint,
   SessionEntry,
@@ -30,7 +21,6 @@ import type {
   GatewayAgentRow as SharedGatewayAgentRow,
   GatewayContextWindowOption,
   GatewayThinkingLevelOption,
-  SessionBoardFace,
   SessionsListResultBase,
   SessionsPatchResultBase,
 } from "../shared/session-types.js";
@@ -62,92 +52,22 @@ type SessionCompactionCheckpointPreview = Pick<
   "checkpointId" | "createdAt" | "reason"
 >;
 
-export type GatewaySessionRow = {
-  key: string;
-  permissionMode?: SessionEntry["permissionMode"];
-  /** A permission-mode change is awaiting confirmation on this session. */
-  permissionModePending?: boolean;
-  sessionRoot?: string;
-  /** Additive collaboration state; absent on older gateways. */
-  visibility?: SessionVisibility;
-  /** Caller-relative role used by Control UI participation controls. */
-  sharingRole?: SessionSharingRole;
-  incognito?: true;
-  spawnedBy?: string;
-  /** Current runtime controller, falling back to the durable spawning session. */
-  controlOwnerSessionKey?: string;
-  /** Collector swarm group that owns this child session, when applicable. */
-  swarmGroupId?: string;
-  spawnedWorkspaceDir?: string;
-  spawnedCwd?: string;
-  /** Managed worktree bound to this session (repo checkout + branch). */
+export type GatewaySessionRow = Omit<SessionRow, "archivedBy" | "updatedAt" | "worktree"> & {
   worktree?: SessionEntry["worktree"];
-  /** Session-scoped exec node binding (exec host=node routing). */
-  execNode?: string;
-  /** Working directory interpreted only by the bound exec node. */
-  execCwd?: string;
-  forkedFromParent?: boolean;
-  spawnDepth?: number;
-  subagentRole?: SessionEntry["subagentRole"];
-  subagentControlScope?: SessionEntry["subagentControlScope"];
-  createdVia?: SessionEntry["createdVia"];
-  createdActor?: SessionCreatedActor;
-  owner?: SessionOwner;
-  participants?: SessionParticipant[];
-  participantCount?: number;
-  createdAt?: SessionEntry["createdAt"];
-  forkSource?: SessionEntry["forkSource"];
-  previousSessionId?: SessionEntry["previousSessionId"];
-  kind: "direct" | "group" | "global" | "unknown";
-  label?: string;
-  /** User-defined organization bucket; unrelated to chat-group kind/groupChannel. */
-  category?: string;
-  /** Preferred Control UI face for generic session navigation. */
-  boardFace?: SessionBoardFace;
-  /** Stable, non-sensitive classification fact set from session-classification.ts. */
-  classification?: SessionClassification;
-  agentId?: string;
-  accountId?: string;
-  peerKind?: SessionPeerKind;
-  isMain?: boolean;
-  // Classification only: this does not change session visibility, sharing,
-  // retention, or authorization semantics.
-  isBackground?: boolean;
-  displayName?: string;
-  derivedTitle?: string;
   /** Fork: LLM-generated conversation title shown in Control UI lists. */
   llmTitle?: string;
-  lastMessagePreview?: string;
-  channel?: string;
+  origin?: SessionOrigin;
+  category?: string;
   subject?: string;
   groupChannel?: string;
   space?: string;
-  chatType?: ChatType;
-  origin?: SessionOrigin;
   updatedAt: number | null;
-  archived?: boolean;
-  archivedAt?: number;
   archivedBy?: SessionEntry["archivedBy"];
-  pinned?: boolean;
-  /** Upstream restart-recovery lifecycle marker; must mirror protocol SessionRow (drift guard below). */
-  restartRecoveryStatus?: "tombstoned";
-  pinnedAt?: number;
-  icon?: string;
-  /** Named sidebar tint (SESSION_COLOR_IDS). */
-  color?: string;
-  channelAvatarUrl?: string;
-  unread?: boolean;
-  lastReadAt?: number;
-  markedUnreadAt?: number;
   agentStatus?: SessionEntry["agentStatus"];
   observerDigest?: Pick<
     SessionObserverDigest,
     "agentId" | "runId" | "headline" | "health" | "updatedAt" | "revision"
   >;
-  /** Last real user/channel interaction; background work does not advance it. */
-  lastInteractionAt?: number;
-  lastActivityAt?: number;
-  sessionId?: string;
   placement?: SessionPlacement;
   systemSent?: boolean;
   abortedLastRun?: boolean;
@@ -156,7 +76,6 @@ export type GatewaySessionRow = {
   thinkingOptions?: string[];
   thinkingDefault?: string;
   fastMode?: FastMode;
-  toolOverrides?: SessionEntry["toolOverrides"];
   effectiveFastMode?: FastMode;
   effectiveFastModeSource?: FastModeSource;
   fastAutoOnSeconds?: number;
@@ -165,47 +84,25 @@ export type GatewaySessionRow = {
   reasoningLevel?: string;
   elevatedLevel?: string;
   sendPolicy?: "allow" | "deny";
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-  totalTokensFresh?: boolean;
   goal?: SessionGoal;
-  estimatedCostUsd?: number;
-  status?: SessionRunStatus;
-  /** Compact user-facing reason for the latest failed or timed-out run. */
-  lastRunError?: string;
-  /** Exact run that produced the latest terminal lifecycle projection. */
-  lastRunId?: string;
   hasActiveRun?: boolean;
   activeRunIds?: string[];
-  /** Active transcript-branch leaf for history rendered from this row. */
-  activeLeafEntryId?: string | null;
-  /** An enabled cron job is bound to this session (runs in it or delivers to it). */
   hasAutomation?: boolean;
   subagentRunState?: SubagentRunState;
   hasActiveSubagentRun?: boolean;
   startedAt?: number;
   endedAt?: number;
   runtimeMs?: number;
-  parentSessionKey?: string;
-  childSessions?: string[];
   responseUsage?: "on" | "off" | "tokens" | "full";
-  /** Resolved effective usage mode (session override → channel config → default → off). Populated by surfaces that have config access; absent from the raw session store row. */
   effectiveResponseUsage?: "on" | "off" | "tokens" | "full";
-  /** Explicit per-session queue override, before channel/global defaults. */
   queueMode?: QueueMode;
-  /** Queue mode for Control UI sends (session override → webchat config → global default). */
   effectiveQueueMode?: QueueMode;
-  modelProvider?: string;
-  model?: string;
-  modelOverrideSource?: "user" | "auto" | null;
   modelSelectionLocked?: boolean;
   agentRuntime?: GatewayAgentRuntime;
   contextTokens?: number;
   contextWindow?: string;
   contextWindows?: GatewayContextWindowOption[];
-  contextWindowDefault?: string;
-  contextBudgetStatus?: SessionEntry["contextBudgetStatus"];
+  contextWindowDefault?: string;  contextBudgetStatus?: SessionEntry["contextBudgetStatus"];
   deliveryContext?: DeliveryContext;
   lastChannel?: string;
   lastTo?: string;

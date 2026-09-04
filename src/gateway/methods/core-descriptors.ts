@@ -1,6 +1,6 @@
 // Core gateway method descriptors keep handler names, auth scopes, startup availability, and write policy in one table.
 import type { OperatorScope } from "../operator-scopes.js";
-import { isSessionProfileDependentMethod } from "../session-sharing-target-input.js";
+import { isCoreGatewayMethodProfileDependent } from "./core-profile-access.js";
 import {
   DYNAMIC_GATEWAY_METHOD_SCOPE,
   NODE_GATEWAY_METHOD_SCOPE,
@@ -33,46 +33,6 @@ type CoreGatewayMethodSpecRow = readonly [
   since: string,
   policy?: CoreGatewayMethodPolicy,
 ];
-
-const PROFILE_DEPENDENT_CORE_METHODS = new Set([
-  "agent.wait",
-  "ui.command",
-  "users.linkEmail",
-  "users.setAvatar",
-  "users.setDisplayName",
-  "users.setRole",
-  // talk.config projects the caller's profile accent; without this gate a
-  // client asking during the post-hello GitHub identity sync window would get
-  // the gateway-wide accent instead. Profile-less clients pass through.
-  "talk.config",
-]);
-const PROFILE_DEPENDENT_CORE_PREFIXES = [
-  "artifacts.",
-  "chat.",
-  "conversations.",
-  "controlUi.session",
-  "mcp.app.",
-  "openclaw.approval.",
-  "openclaw.chat",
-  "progressCard.",
-  "projects.",
-  "secrets.",
-  "session.",
-  "sessions.",
-  "taskSuggestions.",
-  "tasks.",
-  "terminal.",
-  "users.prefs.",
-] as const;
-
-/** Classifies core methods whose behavior reads or mutates durable user/session ownership. */
-function isCoreGatewayMethodProfileDependent(method: string): boolean {
-  return (
-    isSessionProfileDependentMethod(method) ||
-    PROFILE_DEPENDENT_CORE_METHODS.has(method) ||
-    PROFILE_DEPENDENT_CORE_PREFIXES.some((prefix) => method.startsWith(prefix))
-  );
-}
 
 // This is the canonical core method policy table: every core handler must appear here so
 // listing, authorization, startup availability, and write throttling stay in sync.
@@ -654,7 +614,45 @@ const CORE_GATEWAY_METHOD_SPECS = [
   // its required `addedBy` response contract remain unchanged.
   ["session.members.listEvidence", "sessions-sharing", "operator.read", "2026.8"],
   ["plugins.inspect", "plugins", "operator.read", "2026.8"],
-  // Fork (cortex) handler groups. "activity", "vault", and "chat-branch" have
+ ["users.github.status", "users", "operator.read", "2026.8", { startup: true }],
+  [
+    "users.github.authorize.start",
+    "users",
+    "operator.read",
+    "2026.8",
+    { startup: true, controlPlaneWrite: true },
+  ],
+  [
+    "users.github.authorize.poll",
+    "users",
+    "operator.read",
+    "2026.8",
+    { startup: true, controlPlaneWrite: true },
+  ],
+  [
+    "users.github.authorize.cancel",
+    "users",
+    "operator.read",
+    "2026.8",
+    { startup: true, controlPlaneWrite: true },
+  ],
+  [
+    "users.github.disconnect",
+    "users",
+    "operator.read",
+    "2026.8",
+    { startup: true, controlPlaneWrite: true },
+  ],
+  ["sessions.github.options", "sessions-github", "operator.read", "2026.8", { startup: true }],
+  ["sessions.github.status", "sessions-github", "operator.read", "2026.8", { startup: true }],
+  [
+    "sessions.github.confirm",
+    "sessions-github",
+    "operator.write",
+    "2026.8",
+    { startup: true, controlPlaneWrite: true },
+  ],
+ // Fork (cortex) handler groups. "activity", "vault", and "chat-branch" have
   // loaders in CORE_GATEWAY_HANDLER_MODULES; skills.forge.* ships in the skills
   // family module; workboard.* is injected by the auxiliary gateway surface
   // (server-aux-handlers.ts). Appended at the tail so upstream's advertised
@@ -699,8 +697,7 @@ const CORE_GATEWAY_METHOD_SPECS = [
   ["skills.forge.run", "skills", "operator.admin", "<=2026.7"],
   ["skills.forge.promote", "skills", "operator.admin", "<=2026.7"],
   ["skills.forge.retire", "skills", "operator.admin", "<=2026.7"],
-  ["skills.forge.telemetry", "skills", "operator.read", "<=2026.7"],
-] as const satisfies readonly CoreGatewayMethodSpecRow[];
+  ["skills.forge.telemetry", "skills", "operator.read", "<=2026.7"],] as const satisfies readonly CoreGatewayMethodSpecRow[];
 
 export type CoreGatewayHandlerFamily = Exclude<(typeof CORE_GATEWAY_METHOD_SPECS)[number][1], null>;
 
