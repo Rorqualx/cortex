@@ -104,7 +104,7 @@ export function buildDeveloperInstructions(
 }
 
 function buildVisibleReplyInstruction(
-  params: EmbeddedRunAttemptParams,
+  params: CodexThreadPromptContext,
   messageToolAvailable: boolean,
 ): string {
   if (params.sourceReplyDeliveryMode === "message_tool_only" && messageToolAvailable) {
