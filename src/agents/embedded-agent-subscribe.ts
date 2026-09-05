@@ -45,6 +45,7 @@ import {
 import { isSubscribeTranscriptOnlyOpenClawAssistantMessage } from "./embedded-agent-subscribe.handlers.messages.stream.js";
 import { cleanupRunToolStartData } from "./embedded-agent-subscribe.handlers.tools.js";
 import type {
+  AssistantStreamData,
   EmbeddedAgentSubscribeContext,
   EmbeddedAgentSubscribeState,
 } from "./embedded-agent-subscribe.handlers.types.js";
@@ -85,6 +86,12 @@ function resolveEmbeddedAgentSessionLogger(messageChannel?: string) {
   }
   return embeddedLog;
 }
+
+/** One deferred assistant stream delivery held until the pre-terminal flush. */
+type DeferredAssistantEventDelivery = {
+  data: AssistantStreamData;
+  emitPartialReply: boolean;
+};
 
 function isPotentialTrailingBlockTagFragment(fragment: string): boolean {
   if (!fragment.startsWith("<") || fragment.includes(">")) {
@@ -164,9 +171,11 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
   const partialReplyDirectiveAccumulator = createStreamingDirectiveAccumulator();
   const shouldAllowSilentTurnText = (text: string | undefined) =>
     Boolean(text && isSilentReplyText(text, SILENT_REPLY_TOKEN));
-  const emitAssistantStreamDataSafely = (
-    delivery: EmbeddedAgentSubscribeContext["state"]["deferredAssistantEvents"][number],
-  ) => {
+  // Deferred assistant stream deliveries, pending until the pre-terminal flush.
+  // Closure-local: upstream moved this queue into state.assistantStream's
+  // coalescing engine; the fork keeps its simpler defer-until-flush queue.
+  const deferredAssistantEvents: DeferredAssistantEventDelivery[] = [];
+  const emitAssistantStreamDataSafely = (delivery: DeferredAssistantEventDelivery) => {
     const { data } = delivery;
     emitAgentEvent({
       runId: params.runId,
@@ -182,27 +191,27 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     }
   };
   const emitAssistantStreamData = (
-    data: EmbeddedAgentSubscribeContext["state"]["deferredAssistantEvents"][number]["data"],
+    data: AssistantStreamData,
     options?: { emitPartialReply?: boolean },
   ) => {
     const delivery = { data, emitPartialReply: options?.emitPartialReply === true };
     if (state.deferBlockReplyDelivery) {
-      state.deferredAssistantEvents.push(delivery);
+      deferredAssistantEvents.push(delivery);
       return;
     }
     emitAssistantStreamDataSafely(delivery);
   };
   const flushDeferredAssistantEvents = () => {
-    if (state.deferredAssistantEvents.length === 0) {
+    if (deferredAssistantEvents.length === 0) {
       return;
     }
-    const deferred = state.deferredAssistantEvents.splice(0);
+    const deferred = deferredAssistantEvents.splice(0);
     for (const delivery of deferred) {
       emitAssistantStreamDataSafely(delivery);
     }
   };
   const clearDeferredAssistantEvents = () => {
-    state.deferredAssistantEvents.length = 0;
+    deferredAssistantEvents.length = 0;
   };
   const deferredToolMediaReplies = new WeakSet<BlockReplyPayload>();
   const emitBlockReplySafely = (
@@ -1271,9 +1280,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     flushBlockReplyBuffer,
     emitAssistantStreamData,
     emitBlockReply,
-    flushDeferredAssistantEvents,
+    flushAssistantStream: flushDeferredAssistantEvents,
     flushDeferredBlockReplies,
-    clearDeferredAssistantEvents,
+    clearAssistantStream: clearDeferredAssistantEvents,
     clearDeferredBlockReplies,
     emitReasoningStream,
     consumeReplyDirectives,
