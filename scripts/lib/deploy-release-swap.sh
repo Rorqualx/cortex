@@ -102,6 +102,17 @@ promote_release() {
     echo "REFUSE-PROMOTE: could not make a complete clone of dist into $rel" >&2
     return 1
   fi
+  # Pin the release's own package.json beside its dist/. src/version.ts resolves VERSION
+  # from "../package.json" relative to the served dist; without this copy it climbs to the
+  # live tree's package.json, so a version bump landed on main (no deploy) flips VERSION under
+  # the running release, the state-DB schema fast path (schema_meta.app_version == VERSION)
+  # stops matching, and every write-mode CLI/spawned process hits the Gateway-owner fence
+  # ("device identity required" from the CLI). Observed 2026-09-05.
+  cp "$root/package.json" "$base/package.json" 2>/dev/null || {
+    rm -rf "$base" 2>/dev/null || true
+    echo "REFUSE-PROMOTE: could not pin package.json into $base" >&2
+    return 1
+  }
   if ! _deploy_repoint_current "$root" "$rel"; then
     rm -rf "$base" 2>/dev/null || true
     echo "REFUSE-PROMOTE: could not repoint dist.current" >&2
