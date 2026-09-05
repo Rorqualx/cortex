@@ -94,7 +94,7 @@ describe("subscribeEmbeddedAgentSession partial reply lifecycle", () => {
     await vi.waitFor(() => expect(onPartialReply).toHaveBeenCalledOnce());
     emitAssistantTextDelta({ emit, delta: " queued" });
     emitAssistantTextDelta({ emit, delta: " tail" });
-    await subscription.waitForPendingEvents({ includePartialReplies: false });
+    await subscription.waitForPendingEvents();
     expect(onPartialReply).toHaveBeenCalledOnce();
     subscription.unsubscribe();
     rejectPartial?.(callbackError);
