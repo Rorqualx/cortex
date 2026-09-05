@@ -16,8 +16,9 @@ import {
 } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  acquireSessionMcpRuntime,
   disposeAllSessionMcpRuntimes,
-  getOrCreateSessionMcpRuntime,
+  releaseSessionMcpRuntime,
 } from "../../../../src/agents/agent-bundle-mcp-manager-api.js";
 import { materializeBundleMcpToolsForRun } from "../../../../src/agents/agent-bundle-mcp-materialize.js";
 import { getMcpAppViewLease } from "../../../../src/agents/mcp-ui-resource.js";
@@ -53,7 +54,8 @@ let sandboxPort: number;
 let tempRoot: string;
 let viewId: string;
 let appAssetServer: HttpServer | undefined;
-let runtime: Awaited<ReturnType<typeof getOrCreateSessionMcpRuntime>>;
+let lease: Awaited<ReturnType<typeof acquireSessionMcpRuntime>>;
+let runtime: (typeof lease)["runtime"];
 let envSnapshot: ReturnType<typeof captureEnv>;
 
 const openContexts = new Set<BrowserContext>();
@@ -415,12 +417,13 @@ describeConformance("MCP App Control UI and standalone host conformance", () => 
     setTestEnvValue("OPENCLAW_BUNDLED_PLUGINS_DIR", path.join(tempRoot, "empty-plugins"));
     clearConfigCache();
     clearRuntimeConfigSnapshot();
-    runtime = await getOrCreateSessionMcpRuntime({
+    lease = await acquireSessionMcpRuntime({
       sessionId: `mcp-app-conformance-${randomUUID()}`,
       sessionKey,
       workspaceDir: tempRoot,
       cfg,
     });
+    runtime = lease.runtime;
     const materialized = await materializeBundleMcpToolsForRun({ runtime });
     materialized.restrictAppTools?.([...materialized.tools, ...(materialized.appTools ?? [])]);
     const show = materialized.tools.find((tool) => tool.name === "conformance__show");
@@ -452,6 +455,11 @@ describeConformance("MCP App Control UI and standalone host conformance", () => 
     }
     await browser?.close();
     await gateway?.close({ reason: "MCP App conformance complete" });
+    // Release the acquisition lease before global disposal so the manager sees a
+    // zero-lease runtime instead of force-retiring a held one.
+    if (lease) {
+      await releaseSessionMcpRuntime(lease);
+    }
     await disposeAllSessionMcpRuntimes();
     if (appAssetServer) {
       await new Promise<void>((resolve, reject) => {
