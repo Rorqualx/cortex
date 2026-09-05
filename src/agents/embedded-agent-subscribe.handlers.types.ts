@@ -29,6 +29,7 @@ import type { McpConnectAction } from "./mcp-connect-action.js";
 import type { McpAppChannelView } from "./mcp-ui-resource.js";
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
+import type { AgentSessionEvent } from "./sessions/index.js";
 import type { ToolErrorSummary, ToolRecoverySummary } from "./tool-error-summary.js";
 import type { NormalizedUsage } from "./usage.js";
 
@@ -147,19 +148,16 @@ export type EmbeddedAgentSubscribeState = {
   /** Scanner state shares deltaBuffer's lifecycle so each provider byte is parsed once. */
   thinkingTagStream: ThinkingTagStreamState;
   blockBuffer: string;
-  blockState: {
-    thinking: boolean;
-    final: boolean;
-    inlineCode: InlineCodeState;
-    fence?: FenceScanState;
-    reasoningInlineCode?: InlineCodeState;
-    reasoningFence?: FenceScanState;
-    reasoningPendingFenceFragment?: string;
-    finalInlineCode?: InlineCodeState;
-    finalFence?: FenceScanState;
-    pendingFenceFragment?: string;
-    pendingTagFragment?: string;
+  blockState: StreamBlockState & { inlineCode: InlineCodeState };
+  partialBlockState: StreamBlockState & { inlineCode: InlineCodeState };
+  assistantStream?: {
+    raw: string;
+    text: string;
+    sanitized?: { phase: AssistantPhase | undefined; text: string };
   };
+  lastStreamedAssistant?: string;
+  lastStreamedAssistantCleaned?: string;
+  emittedAssistantUpdate: boolean;
   lastStreamedReasoning?: string;
   lastBlockReplyText?: string;
   lastDeliveredBlockReplyText?: string;
@@ -181,6 +179,10 @@ export type EmbeddedAgentSubscribeState = {
   assistantTextBaseline: number;
   suppressBlockChunks: boolean;
   lastReasoningSent?: string;
+
+  pendingAssistantUsage?: NormalizedUsage;
+  assistantUsageCommitted: boolean;
+  retryUsage?: NormalizedUsage;
 
   compactionInFlight: boolean;
   lastCompactionTokensAfter?: number;
@@ -242,6 +244,7 @@ export type EmbeddedAgentSubscribeContext = {
   builtinToolNames?: ReadonlySet<string>;
   trustedLocalMediaToolNames?: ReadonlySet<string>;
   noteLastAssistant: (msg: AgentMessage) => void;
+  noteCompletedAssistant?: (msg: AgentMessage) => void;
 
   shouldEmitToolResult: () => boolean;
   shouldEmitToolOutput: () => boolean;
@@ -270,6 +273,10 @@ export type EmbeddedAgentSubscribeContext = {
     text: string,
     options?: { final?: boolean },
   ) => ReplyDirectiveParseResult | null;
+  consumeReplyDirectives?: (
+    text: string,
+    options?: { final?: boolean },
+  ) => ReplyDirectiveParseResult | null;
   resetBlockReplyDirectives: () => void;
   resetPartialReplyDirectives: () => void;
   resetAssistantMessageState: (nextAssistantTextBaseline: number) => void;
@@ -285,6 +292,8 @@ export type EmbeddedAgentSubscribeContext = {
   noteCompactionRetry: () => void;
   resolveCompactionRetry: () => void;
   maybeResolveCompactionWait: () => void;
+  recordAssistantUsage?: (usage: unknown) => void;
+  commitAssistantUsage?: () => void;
   captureModelEvent: (evt: AgentSessionEvent) => void;
   incrementCompactionCount: () => void;
   noteCompactionTokensAfter: (value: unknown) => void;

@@ -42,13 +42,14 @@ import {
   hasAssistantVisibleReply,
   readPendingToolMediaReply,
 } from "./embedded-agent-subscribe.handlers.messages.replies.js";
+import { isSubscribeTranscriptOnlyOpenClawAssistantMessage } from "./embedded-agent-subscribe.handlers.messages.stream.js";
 import { cleanupRunToolStartData } from "./embedded-agent-subscribe.handlers.tools.js";
-import { createEmbeddedToolLifecycleRunner } from "./embedded-agent-subscribe.tool-lifecycle.js";
 import type {
   EmbeddedAgentSubscribeContext,
   EmbeddedAgentSubscribeState,
 } from "./embedded-agent-subscribe.handlers.types.js";
 import { createEmbeddedAgentSubscribeState } from "./embedded-agent-subscribe.run-state.js";
+import { createEmbeddedToolLifecycleRunner } from "./embedded-agent-subscribe.tool-lifecycle.js";
 import type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
 import {
   extractToolResultMediaArtifact,
@@ -61,6 +62,7 @@ import {
 } from "./embedded-agent-utils.js";
 import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
+import type { AgentSessionEvent } from "./sessions/index.js";
 import { setSessionModelUsageSink } from "./sessions/session-model-usage.js";
 import { hasNonzeroUsage, hasObservedModelUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
@@ -608,7 +610,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
   };
 
   const blockChunking = params.blockReplyChunking;
-  const blockChunker = blockChunking ? new EmbeddedBlockChunker(blockChunking) : null;
+  // Upstream contract: the chunker is always present (constructor accepts undefined
+  // for unchunked streaming), so adopted handlers can use it unconditionally.
+  const blockChunker = new EmbeddedBlockChunker(blockChunking);
   // KNOWN: Provider streams are not strictly once-only or perfectly ordered.
   // `text_end` can repeat full content; late `text_end` can arrive after `message_end`.
   // Tests: `src/agents/embedded-agent-subscribe.test.ts` (e.g. late text_end cases).
@@ -696,6 +700,8 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     stateLocal: {
       thinking: boolean;
       final: boolean;
+      /** Upstream projection marker; the fork lane ignores it (no projection pass). */
+      textIsVisible?: true;
       inlineCode?: InlineCodeState;
       fence?: FenceScanState;
       reasoningInlineCode?: InlineCodeState;
@@ -1213,6 +1219,49 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     trustedLocalMediaToolNames: params.trustedLocalMediaToolNames,
     noteLastAssistant,
     noteCompletedAssistant,
+    captureModelEvent: (evt: AgentSessionEvent): void => {
+      // Upstream handlers advance all model facts through this single hook.
+      // Route each event into the fork's inline usage/assistant pipeline.
+      if (evt.type === "compaction_end") {
+        if (evt.outcome.status === "completed" && evt.outcome.willRetry) {
+          currentAttemptAssistant = undefined;
+          state.retryUsage = lastAssistantUsage ?? state.retryUsage;
+          lastAssistantUsage = undefined;
+        }
+        return;
+      }
+      if (
+        evt.type !== "message_start" &&
+        evt.type !== "message_update" &&
+        evt.type !== "message_end"
+      ) {
+        return;
+      }
+      const message = evt.message;
+      if (
+        message.role !== "assistant" ||
+        isSubscribeTranscriptOnlyOpenClawAssistantMessage(message)
+      ) {
+        return;
+      }
+      if (evt.type === "message_start") {
+        state.pendingAssistantUsage = undefined;
+        return;
+      }
+      if (evt.type === "message_update") {
+        const evtType = evt.assistantMessageEvent.type;
+        if (evtType === "text_end" || evtType === "done" || evtType === "error") {
+          recordAssistantUsage(message.usage);
+          if (evtType === "done" || evtType === "error") {
+            commitAssistantUsage();
+          }
+        }
+        return;
+      }
+      recordAssistantUsage(message.usage);
+      commitAssistantUsage();
+      noteCompletedAssistant(message);
+    },
     shouldEmitToolResult,
     shouldEmitToolOutput,
     emitToolSummary,
@@ -1229,6 +1278,12 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     emitReasoningStream,
     consumeReplyDirectives,
     consumePartialReplyDirectives,
+    resetBlockReplyDirectives: () => {
+      replyDirectiveAccumulator.reset();
+    },
+    resetPartialReplyDirectives: () => {
+      partialReplyDirectiveAccumulator.reset();
+    },
     resetAssistantMessageState,
     resetForCompactionRetry,
     finalizeAssistantTexts,

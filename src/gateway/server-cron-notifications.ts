@@ -14,7 +14,11 @@ import { retryTransientDirectCronDelivery } from "../cron/isolated-agent/deliver
 import { createCronExecutionId } from "../cron/run-id.js";
 import type { CronEvent, CronService } from "../cron/service.js";
 import { resolveCronDeliverySessionKey } from "../cron/session-target.js";
-import type { CronFailureNotificationDelivery, CronJob, CronMessageChannel } from "../cron/types.js";
+import type {
+  CronFailureNotificationDelivery,
+  CronJob,
+  CronMessageChannel,
+} from "../cron/types.js";
 import { normalizeHttpWebhookUrl } from "../cron/webhook-url.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { formatZonedTimestamp } from "../infra/format-time/format-datetime.js";
@@ -648,6 +652,9 @@ function dispatchCronCompletionAnnounce(params: {
       channel: target.channel,
       to: target.to,
       accountId: target.accountId,
+      // Completion announces are best-effort: never record failure-alert state
+      // or enqueue fallback notifications for a success summary.
+      onDeliverySettled: async () => {},
       threadId: target.threadId,
       mode: "announce",
     }).catch((err: unknown) => {

@@ -12,11 +12,8 @@ import type {
 } from "@openclaw/llm-core";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { TranscriptNotContinuableError } from "./errors.js";
-import {
-  copyInternalToolResultState,
-  getInternalSyncSteeringGetter,
-} from "./internal-hooks.js";
 import { uuidv7 } from "./harness/session/uuid.js";
+import { copyInternalToolResultState, getInternalSyncSteeringGetter } from "./internal-hooks.js";
 import { resolveAgentReasoningOption } from "./reasoning.js";
 import { type AgentCoreStreamRuntimeDeps, resolveAgentCoreStreamFn } from "./runtime-deps.js";
 import {
@@ -840,8 +837,7 @@ async function executeToolCallsSequential(
     }
 
     await emitToolExecutionEnd(finalized, emit);
-    const toolResultMessage = createToolResultMessage(finalized);
-    await emitToolResultMessage(toolResultMessage, emit);
+    const toolResultMessage = await emitToolResultMessage(finalized, emit);
     finalizedCalls.push(finalized);
     messages.push(toolResultMessage);
 
@@ -1001,8 +997,7 @@ async function executeToolCallsParallel(
 
   const messages: ToolResultMessage[] = [];
   for (const finalized of orderedFinalizedCalls) {
-    const toolResultMessage = createToolResultMessage(finalized);
-    await emitToolResultMessage(toolResultMessage, emit);
+    const toolResultMessage = await emitToolResultMessage(finalized, emit);
     messages.push(toolResultMessage);
   }
 
@@ -1456,8 +1451,7 @@ async function completeAbortedToolCall(
     signal,
   );
   await emitToolExecutionEnd(finalized, emit);
-  const message = createToolResultMessage(finalized);
-  await emitToolResultMessage(message, emit);
+  const message = await emitToolResultMessage(finalized, emit);
   return { finalized, message };
 }
 
