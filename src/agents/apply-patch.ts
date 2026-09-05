@@ -161,10 +161,11 @@ export function createApplyPatchTool(
         signal: executionSignal,
       });
 
+      // A no-op patch is not terminal — the model may still be mid-task and
+      // needs a continuation, not an ended turn.
       return {
         content: [{ type: "text", text: result.text }],
         details: { summary: result.summary },
-        ...(result.noOp ? { terminate: true } : {}),
       };
     },
   };

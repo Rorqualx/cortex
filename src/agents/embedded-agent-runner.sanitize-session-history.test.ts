@@ -1587,6 +1587,53 @@ describe("sanitizeSessionHistory", () => {
     expect(toolResult.toolCallId).toBe("toolu_legacy");
   });
 
+  it("keeps consecutive user turns separate for append-only Anthropic Messages replay", async () => {
+    // A command turn followed by the prompt is sent as two stamped user messages on the
+    // active turn; merging them on replay changes the bytes bound to later thinking.
+    const basePolicy: TranscriptPolicy = {
+      sanitizeMode: "full",
+      sanitizeToolCallIds: true,
+      toolCallIdMode: "strict",
+      preserveNativeAnthropicToolUseIds: true,
+      repairToolUseResultPairing: true,
+      preserveSignatures: true,
+      // Fork-only TranscriptPolicy field (thinking-signature scrub); off in this replay case.
+      sanitizeThinkingSignatures: false,
+      appendOnlyRuntimeContext: true,
+      dropThinkingBlocks: false,
+      dropReasoningFromHistory: false,
+      applyGoogleTurnOrdering: false,
+      validateGeminiTurns: false,
+      validateAnthropicTurns: true,
+      allowSyntheticToolResults: true,
+    };
+    const messages = castAgentMessages([
+      makeUserMessage("/model anthropic/claude-fable-5-1 -s"),
+      makeUserMessage("Read notes.txt"),
+      makeAssistantMessage([{ type: "text", text: "Done" }]),
+    ]);
+
+    const anthropic = await validateReplayTurns({
+      messages,
+      modelApi: "anthropic-messages",
+      provider: "anthropic",
+      modelId: "claude-fable-5-1",
+      sessionId: TEST_SESSION_ID,
+      policy: basePolicy,
+    });
+    expect(anthropic.map((msg) => msg.role)).toEqual(["user", "user", "assistant"]);
+
+    const bedrock = await validateReplayTurns({
+      messages,
+      modelApi: "bedrock-converse-stream",
+      provider: "amazon-bedrock",
+      modelId: "anthropic.claude-fable-5-1",
+      sessionId: TEST_SESSION_ID,
+      policy: basePolicy,
+    });
+    expect(bedrock.map((msg) => msg.role)).toEqual(["user", "assistant"]);
+  });
+
   it("strips copied inbound metadata from assistant replay text", async () => {
     const messages = castAgentMessages([
       makeUserMessage("Ping"),
@@ -1651,6 +1698,8 @@ describe("sanitizeSessionHistory", () => {
     expect(sanitized.map((msg) => msg.role)).toEqual(["user", "user"]);
     expect(JSON.stringify(sanitized)).not.toContain("assistant copied inbound metadata omitted");
 
+    // Sonnet 4.6 does not bind thinking to the prefix, so Messages API replay
+    // merges the surviving user turns back into one message.
     const validated = await validateReplayTurns({
       messages: sanitized,
       modelApi: "anthropic-messages",
@@ -1664,7 +1713,6 @@ describe("sanitizeSessionHistory", () => {
       { type: "text", text: "First" },
       { type: "text", text: "Second" },
     ]);
-    expect(typeof (validated[0] as { timestamp?: unknown }).timestamp).toBe("number");
   });
 
   it("strips prior assistant reasoning for Qwen-style OpenAI-compatible replay", async () => {

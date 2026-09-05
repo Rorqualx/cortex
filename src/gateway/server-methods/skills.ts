@@ -70,6 +70,7 @@ import {
   getSkillCuratorStatus,
   SKILL_LIFECYCLE_CURATION_RETIRED_MESSAGE,
 } from "../../skills/workshop/curator.js";
+import { resolveSkillProposalName } from "../../skills/workshop/frontmatter.js";
 import {
   applySkillProposal,
   evaluateSkillProposal,
@@ -185,7 +186,7 @@ function buildRevisionAgentInstruction(
     return "";
   }
   return [
-    `Revise Skill Workshop proposal \`${proposal.record.id}\` (${proposal.record.target.skillKey}).`,
+    `Revise Skill Workshop proposal \`${proposal.record.id}\` (${resolveSkillProposalName(proposal.record.kind, proposal.record.target)}).`,
     "",
     "Use `skill_workshop` with `action=inspect` first, then `action=revise` for that pending proposal.",
     `Pass \`expected_revision_hash=${expectedRevisionHash}\` to reject stale proposal revisions.`,

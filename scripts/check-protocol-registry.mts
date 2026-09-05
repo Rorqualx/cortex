@@ -129,8 +129,8 @@ const ownerModules = [
 // An upstream merge that adds modules must re-measure this rather than take a
 // side: both sides of the 2026-08-03 conflict were stale against the merged tree.
 check(
-  ownerModules.length === 60 && new Set(ownerModules).size === ownerModules.length,
-  "schema-modules.ts must contain one unique 60-module owner list",
+  ownerModules.length === 62 && new Set(ownerModules).size === ownerModules.length,
+  "schema-modules.ts must contain one unique 62-module owner list",
 );
 check(
   schemaModulesSource.split("\n").filter(Boolean).length === ownerModules.length,

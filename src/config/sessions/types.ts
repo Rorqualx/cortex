@@ -10,6 +10,7 @@ import type { SessionGoal } from "../../../packages/gateway-protocol/src/schema/
 import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import type {
+  SessionEntryArchiveReason,
   SessionRow,
   SessionRunStatus,
 } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
@@ -336,6 +337,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
     archivedAt?: number;
     /** Actor that archived the session; cleared when the session is restored. */
     archivedBy?: SessionActor;
+    /** Stable lifecycle cause; absent values are legacy archives and remain manually protected. */
+    archiveReason?: SessionEntryArchiveReason;
     /** Timestamp (ms) when the session was pinned for quick access. */
     pinnedAt?: number;
     /** Custom sidebar icon in the format accepted by the gateway protocol session-icon helper. */

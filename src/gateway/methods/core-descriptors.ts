@@ -33,6 +33,7 @@ type CoreGatewayMethodSpecRow = readonly [
   since: string,
   policy?: CoreGatewayMethodPolicy,
 ];
+const CONTROL_PLANE_WRITE = { controlPlaneWrite: true } as const;
 
 // This is the canonical core method policy table: every core handler must appear here so
 // listing, authorization, startup availability, and write throttling stay in sync.
@@ -47,7 +48,6 @@ const CORE_GATEWAY_METHOD_SPECS = [
   ["doctor.memory.repairDreamingArtifacts", "doctor", "operator.write", "<=2026.7"],
   ["doctor.memory.dedupeDreamDiary", "doctor", "operator.write", "<=2026.7"],
   // Fork (cortex) compat entry: advertised since fork HEAD; no handler module.
-  ["doctor.memory.remHarness", null, "operator.read", "<=2026.7"],
   ["logs.tail", "logs", "operator.read", "<=2026.7"],
   ["channels.status", "channels", "operator.read", "<=2026.7"],
   ["channels.start", "channels", "operator.admin", "<=2026.7"],
@@ -116,11 +116,7 @@ const CORE_GATEWAY_METHOD_SPECS = [
   ["talk.client.toolCall", "talk", "operator.talk", "<=2026.7"],
   ["talk.client.steer", "talk", "operator.talk", "<=2026.7"],
   ["talk.session.create", "talk", "operator.talk", "<=2026.7"],
-  ["talk.session.join", null, "operator.talk", "<=2026.7"],
   ["talk.session.appendAudio", "talk", "operator.talk", "<=2026.7"],
-  ["talk.session.startTurn", null, "operator.talk", "<=2026.7"],
-  ["talk.session.endTurn", null, "operator.talk", "<=2026.7"],
-  ["talk.session.cancelTurn", null, "operator.talk", "<=2026.7"],
   ["talk.session.cancelOutput", "talk", "operator.talk", "<=2026.7"],
   ["talk.session.acknowledgeMark", "talk", "operator.talk", "<=2026.7"],
   ["talk.session.submitToolResult", "talk", "operator.talk", "<=2026.7"],
@@ -237,17 +233,14 @@ const CORE_GATEWAY_METHOD_SPECS = [
   ["secrets.reload", null, "operator.admin", "<=2026.7"],
   ["secrets.resolve", null, "operator.admin", "<=2026.7"],
   ["voicewake.routing.get", "voicewake-routing", "operator.read", "<=2026.7"],
-  ["voicewake.routing.set", null, "operator.write", "<=2026.7"],
   ["sessions.list", "sessions-read", "operator.read", "<=2026.7", { startup: true }],
   ["sessions.subscribe", "sessions-subscriptions", "operator.read", "<=2026.7", { startup: true }],
-  ["sessions.unsubscribe", null, "operator.read", "<=2026.7"],
   ["sessions.messages.subscribe", "sessions-subscriptions", "operator.read", "<=2026.7"],
   ["sessions.messages.unsubscribe", "sessions-subscriptions", "operator.read", "<=2026.7"],
   ["sessions.viewers.set", "sessions-subscriptions", "operator.read", "2026.7"],
   ["sessions.preview", "sessions-read", "operator.read", "<=2026.7"],
   ["sessions.describe", "sessions-read", "operator.read", "<=2026.7"],
   ["sessions.compaction.list", "sessions-compaction-queries", "operator.read", "<=2026.7"],
-  ["sessions.compaction.get", null, "operator.read", "<=2026.7"],
   ["sessions.compaction.branch", "sessions-compaction-checkpoints", "operator.write", "<=2026.7"],
   ["sessions.compaction.restore", "sessions-compaction-checkpoints", "operator.admin", "<=2026.7"],
   ["sessions.branches.list", "sessions-rewind", "operator.read", "<=2026.7"],
@@ -410,7 +403,6 @@ const CORE_GATEWAY_METHOD_SPECS = [
   // advertised method indices stay stable for older clients; new methods append.
   ["terminal.attach", "terminal", "operator.admin", "2026.7"],
   ["terminal.list", "terminal", "operator.admin", "2026.7"],
-  ["terminal.text", null, "operator.admin", "2026.7"],
   ["controlUi.githubPreview", "control-ui", "operator.read", "<=2026.7"],
   // Additive discovery methods append here so older clients keep stable indices.
   ["system.info", "system", "operator.read", "<=2026.7"],
@@ -666,7 +658,16 @@ const CORE_GATEWAY_METHOD_SPECS = [
     "2026.8",
     { controlPlaneWrite: true },
   ],
- // Fork (cortex) handler groups. "activity", "vault", and "chat-branch" have
+  ["users.mentionable", "users-mentionable", "operator.read", "2026.8", { startup: true }],
+  ["mentions.list", "mentions", "operator.read", "2026.8", { startup: true }],
+  // Dismissal only changes the caller's temporary Inbox, not session or shared state.
+  ["mentions.dismiss", "mentions", "operator.read", "2026.8", { startup: true }],
+  // Meeting notes share the trusted operator domain, like workspace/session reads.
+  // Strong user/tenant isolation requires separate Gateways; see operator-scopes.md.
+  ["transcripts.list", "transcripts", "operator.read", "2026.8"],
+  ["transcripts.get", "transcripts", "operator.read", "2026.8"],
+  ["models.authOrderSet", "models-auth-order", "operator.admin", "2026.8", CONTROL_PLANE_WRITE],
+  // Fork (cortex) handler groups. "activity", "vault", and "chat-branch" have
   // loaders in CORE_GATEWAY_HANDLER_MODULES; skills.forge.* ships in the skills
   // family module; workboard.* is injected by the auxiliary gateway surface
   // (server-aux-handlers.ts). Appended at the tail so upstream's advertised
@@ -711,7 +712,7 @@ const CORE_GATEWAY_METHOD_SPECS = [
   ["skills.forge.run", "skills", "operator.admin", "<=2026.7"],
   ["skills.forge.promote", "skills", "operator.admin", "<=2026.7"],
   ["skills.forge.retire", "skills", "operator.admin", "<=2026.7"],
-  ["skills.forge.telemetry", "skills", "operator.read", "<=2026.7"]
+  ["skills.forge.telemetry", "skills", "operator.read", "<=2026.7"],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];
 
 export type CoreGatewayHandlerFamily = Exclude<(typeof CORE_GATEWAY_METHOD_SPECS)[number][1], null>;

@@ -1,5 +1,7 @@
 // Control UI shared URL helpers.
 // Normalizes base paths and avatar URLs for browser/gateway surfaces.
+import { resolveGatewayPublicOrigin } from "../config/gateway-public-origin.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isRenderableAvatarImageDataUrl } from "../shared/avatar-limits.js";
 import { isAvatarHttpUrl, looksLikeAvatarPath } from "../shared/avatar-policy.js";
 
@@ -72,3 +74,15 @@ export function resolveAssistantAvatarUrl(params: {
 
 /** URL prefix for gateway-served Control UI avatar assets. */
 export { CONTROL_UI_AVATAR_PREFIX };
+
+/** Keeps push navigation in the receiving PWA while selecting its originating Gateway. */
+export function resolveControlUiWebPushUrl(cfg: OpenClawConfig, relativePath: string): string {
+  const publicOrigin = resolveGatewayPublicOrigin(cfg);
+  if (!publicOrigin) {
+    return relativePath;
+  }
+  // A remote Gateway's base path may differ from the PWA's service-worker scope.
+  const basePath = normalizeControlUiBasePath(cfg.gateway?.controlUi?.basePath);
+  const gatewayUrl = `${publicOrigin.replace(/^https:/u, "wss:").replace(/^http:/u, "ws:")}${basePath}`;
+  return `${relativePath}#${new URLSearchParams({ gatewayUrl })}`;
+}

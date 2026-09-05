@@ -27,6 +27,7 @@ type SessionChangeContext = Pick<
   | "chatAbortControllers"
   | "getRuntimeConfig"
   | "getSessionEventSubscriberConnIds"
+  | "mentionInbox"
 >;
 
 type PendingSessionChange = {
@@ -169,6 +170,8 @@ export function emitSessionsChanged(context: SessionChangeContext, payload: Sess
   // joined or cached by a request that begins after the mutation.
   sessionsMutationVersions.set(context, readSessionsMutationVersion(context) + 1);
   invalidateSessionSharingSnapshot(payload.sessionKey);
+  // Inbox subscriptions are independent of session-list subscriptions, including a closed sidebar.
+  context.mentionInbox?.invalidate();
   const connIds = context.getSessionEventSubscriberConnIds();
   if (!hasSessionChangeReceivers(connIds)) {
     return;

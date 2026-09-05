@@ -399,7 +399,7 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   },
   {
     id: "gateway",
-    description: "Gateway control",
+    description: "Read Gateway config/schema; owner-only OpenClaw self-update",
     sectionId: "automation",
     profiles: [],
     includeInOpenClawGroup: true,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { isNixMode } from "../config/paths.js";
 import { clearGatewayAgentCliShim } from "../infra/openclaw-cli-shim.js";
 import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
@@ -134,9 +135,19 @@ export async function createGatewayKernel(
   opts: GatewayServerOptions = {},
   options: { deferEarlyRuntime?: boolean } = {},
 ) {
+  // Listener and socket-free embedders share one generation for instance-owned state.
+  const suppliedBootId = opts.bootId;
+  if (
+    suppliedBootId !== undefined &&
+    (suppliedBootId.trim() !== suppliedBootId || !suppliedBootId || suppliedBootId.length > 96)
+  ) {
+    throw new Error("Gateway boot ID must contain 1 to 96 characters");
+  }
+  const bootId = suppliedBootId ?? randomUUID();
   ensureOpenClawCliOnPath();
   const releasePluginMetadata = retainGatewayPluginMetadata();
   let lifecycleRuntime: Awaited<ReturnType<typeof prepareGatewayLifecycle>> | undefined;
+  let kernelState: Awaited<ReturnType<typeof prepareGatewayKernelState>> | undefined;
   try {
     const bootstrap = await prepareGatewayServerBootstrap({
       port,
@@ -149,6 +160,7 @@ export async function createGatewayKernel(
     const runtime = await bootstrap.startupTrace.measure("gateway.kernel-state", () =>
       prepareGatewayKernelState({
         bootstrap,
+        bootId,
         port,
         opts,
         log,
@@ -161,6 +173,7 @@ export async function createGatewayKernel(
         loadWorkerPlacementStartupModule,
       }),
     );
+    kernelState = runtime;
     // An in-place update may replace every hashed chunk before SIGTERM arrives.
     // Resolve and retain the complete shutdown graph while the install is healthy.
     const shutdownRuntime = await runtime.startupTrace.measure(
@@ -208,6 +221,7 @@ export async function createGatewayKernel(
       if (lifecycleRuntime) {
         await lifecycleRuntime.closeOnStartupFailure();
       } else {
+        kernelState?.mentionInbox.dispose();
         clearGatewayAgentCliShim();
         clearSecretsRuntimeSnapshotState();
       }

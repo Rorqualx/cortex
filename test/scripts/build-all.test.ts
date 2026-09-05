@@ -1451,6 +1451,7 @@ describe("resolveBuildStepCacheState", () => {
   it("marks cacheable steps fresh when the input signature matches", () => {
     withBuildCacheFixture(({ rootDir, step }) => {
       const cacheState = resolveBuildStepCacheState(step, { rootDir });
+      expect(cacheState.reason).toBe("record-unavailable");
       writeBuildStepCacheStamp(step, cacheState, { rootDir });
 
       const fresh = resolveBuildStepCacheState(step, { rootDir });
@@ -1511,7 +1512,7 @@ describe("resolveBuildStepCacheState", () => {
 
       expect(stale).toMatchObject({
         fresh: false,
-        reason: "stale",
+        reason: "required-output-unrecorded",
         restorable: false,
         signature: legacyState.signature,
         stampedOutputs: ["dist/output.js"],
@@ -1564,7 +1565,7 @@ describe("resolveBuildStepCacheState", () => {
       expect(fs.readFileSync(cachedOutputPath, "utf8")).toBe("output");
       expect(resolveBuildStepCacheState(completeStep, { rootDir })).toMatchObject({
         fresh: false,
-        reason: "stale",
+        reason: "required-output-unrecorded",
       });
     });
   });
@@ -1587,6 +1588,9 @@ describe("resolveBuildStepCacheState", () => {
         fs.writeFileSync(inputPath, "changed input");
 
         const refreshed = resolveBuildStepCacheState(step, { rootDir });
+        expect(refreshed.reason).toBe(
+          stampKind === "current" ? "signature-mismatch" : "record-unavailable",
+        );
         writeBuildStepCacheStamp(step, refreshed, { rootDir });
 
         expect(fs.readdirSync(path.join(refreshed.outputRoot!, "dist"))).toEqual(["output.js"]);
@@ -1595,19 +1599,32 @@ describe("resolveBuildStepCacheState", () => {
     },
   );
 
-  it("marks cacheable steps stale when an input changes", () => {
+  it.each([
+    { change: "input changed", reason: "signature-mismatch" },
+    { change: "cached output changed", reason: "output-digest-mismatch" },
+    { change: "cached output removed", reason: "output-missing-or-unreadable" },
+  ])("reports stale cache state after $change", ({ change, reason }) => {
     withBuildCacheFixture(({ rootDir, inputPath, step }) => {
-      const cacheState = resolveBuildStepCacheState(step, { rootDir });
-      writeBuildStepCacheStamp(step, cacheState, { rootDir });
-      fs.writeFileSync(inputPath, "changed");
+      const restoreStep = { ...step, cache: { ...step.cache, restore: "always" as const } };
+      const cacheState = resolveBuildStepCacheState(restoreStep, { rootDir });
+      writeBuildStepCacheStamp(restoreStep, cacheState, { rootDir });
+      const cachedOutput = path.join(cacheState.outputRoot!, "dist/output.js");
+      if (change === "input changed") {
+        fs.writeFileSync(inputPath, "changed");
+      } else if (change === "cached output changed") {
+        fs.writeFileSync(cachedOutput, "changed");
+      } else {
+        fs.rmSync(cachedOutput);
+      }
 
-      const stale = resolveBuildStepCacheState(step, { rootDir });
+      const stale = resolveBuildStepCacheState(restoreStep, { rootDir });
       expect(stale.cacheable).toBe(true);
       expect(stale.fresh).toBe(false);
-      expect(stale.reason).toBe("stale");
+      expect(stale.reason).toBe(reason);
       expect(stale.inputFiles).toBe(1);
       expect(stale.outputFiles).toBe(1);
       expect(stale.restorable).toBe(false);
+      expect(restoreBuildStepCacheOutputs(stale, { rootDir })).toBe(false);
       expect(stale.relativeOutputFiles).toEqual(["dist/output.js"]);
       expect(stale.stampedOutputs).toEqual(["dist/output.js"]);
       expect(typeof stale.signature).toBe("string");
@@ -1624,7 +1641,7 @@ describe("resolveBuildStepCacheState", () => {
         inputFiles: 1,
         outputFiles: 1,
         outputRoot: stale.outputRoot,
-        reason: "stale",
+        reason,
         relativeOutputFiles: ["dist/output.js"],
         restorable: false,
         signature: stale.signature,
@@ -1712,7 +1729,7 @@ describe("resolveBuildStepCacheState", () => {
       expect(stale.cacheable).toBe(true);
       expect(stale.fresh).toBe(false);
       expect(stale.restorable).toBe(false);
-      expect(stale.reason).toBe("stale");
+      expect(stale.reason).toBe("signature-mismatch");
     });
   });
 

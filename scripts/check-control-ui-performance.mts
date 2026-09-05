@@ -21,6 +21,8 @@ const DEFAULT_STARTUP_BUDGET_BASELINE_PATH = path.resolve(
 // may accumulate. The fixed startup JS ceiling bounds that cumulative creep.
 const CONTROL_UI_STARTUP_JS_GZIP_TOLERANCE_BYTES = 512;
 const CONTROL_UI_STARTUP_JS_GZIP_BUILD_VARIANCE_BYTES = 64;
+const CONTROL_UI_STARTUP_CSS_GZIP_TARGET_BYTES = 45 * KIB;
+const CONTROL_UI_CSS_GZIP_GROWTH_BYTES = KIB;
 // The opaque Mermaid sandbox loads one self-contained classic script only when
 // a diagram is viewed. Keep its size visible without relaxing ordinary chunks.
 const MERMAID_RENDERER_ASSET = /^assets\/mermaid\.min-[\w-]+\.js$/u;
@@ -188,6 +190,7 @@ export function evaluateControlUiPerformanceBudgets(
   budgets: Readonly<typeof CONTROL_UI_PERFORMANCE_BUDGETS> = CONTROL_UI_PERFORMANCE_BUDGETS,
   startupBudgetBaseline: Readonly<ControlUiStartupBudgetBaseline> | null = null,
   startupJsTolerance = CONTROL_UI_STARTUP_JS_GZIP_TOLERANCE_BYTES,
+  baseMetrics: ReturnType<typeof collectControlUiPerformanceMetrics> | null = null,
 ) {
   const baselineBytes = startupBudgetBaseline?.startupJsGzipBytes;
   const startupJsLimits = resolveControlUiStartupJsGzipLimits(
@@ -219,6 +222,19 @@ export function evaluateControlUiPerformanceBudgets(
   const violations = checks.flatMap(([metric, actual, limit, unit]) =>
     actual > limit ? [{ metric, actual, limit, unit }] : [],
   );
+  if (baseMetrics) {
+    for (const area of ["startup", "largest"] as const) {
+      const growth = metrics[area].css.gzipBytes - baseMetrics[area].css.gzipBytes;
+      if (growth >= CONTROL_UI_CSS_GZIP_GROWTH_BYTES) {
+        violations.push({
+          metric: `${area} CSS gzip growth`,
+          actual: growth,
+          limit: CONTROL_UI_CSS_GZIP_GROWTH_BYTES - 1,
+          unit: "bytes",
+        });
+      }
+    }
+  }
   if (baselineBytes !== undefined && baselineBytes > budgets.startupJsGzipBytes) {
     violations.unshift({
       metric: "startup JS gzip baseline",
@@ -267,7 +283,24 @@ function formatRequestCount(count: number): string {
 }
 
 function formatAssetSummary(summary: ReturnType<typeof summarizeAssets>): string {
-  return `${formatRequestCount(summary.requests)}, ${formatControlUiPerformanceBytes(summary.gzipBytes)} gzip, ${formatControlUiPerformanceBytes(summary.brotliBytes)} br`;
+  return `${formatRequestCount(summary.requests)}, ${formatControlUiPerformanceBytes(summary.gzipBytes)} gzip (${summary.gzipBytes} B), ${formatControlUiPerformanceBytes(summary.brotliBytes)} br, ${summary.rawBytes} B raw`;
+}
+
+function controlUiPerformanceWarnings(
+  metrics: ReturnType<typeof collectControlUiPerformanceMetrics>,
+  budgets: Readonly<typeof CONTROL_UI_PERFORMANCE_BUDGETS>,
+): string[] {
+  const warnings: string[] = [];
+  if (metrics.startup.css.gzipBytes > CONTROL_UI_STARTUP_CSS_GZIP_TARGET_BYTES) {
+    warnings.push(
+      `startup CSS gzip is above the ${CONTROL_UI_STARTUP_CSS_GZIP_TARGET_BYTES} B advisory target; remaining hard-ceiling headroom: ${budgets.startupCssGzipBytes - metrics.startup.css.gzipBytes} B`,
+    );
+  }
+  const largestCssHeadroom = budgets.largestCssGzipBytes - metrics.largest.css.gzipBytes;
+  if (largestCssHeadroom < CONTROL_UI_CSS_GZIP_GROWTH_BYTES) {
+    warnings.push(`largest CSS gzip has ${largestCssHeadroom} B of hard-ceiling headroom`);
+  }
+  return warnings;
 }
 
 function formatViolation(violation: ControlUiPerformanceBudgetViolation): string {
@@ -291,6 +324,7 @@ export function formatControlUiPerformanceReport(
   budgets: Readonly<typeof CONTROL_UI_PERFORMANCE_BUDGETS> = CONTROL_UI_PERFORMANCE_BUDGETS,
   startupBudgetBaseline: Readonly<ControlUiStartupBudgetBaseline> | null = null,
   startupJsTolerance: number = CONTROL_UI_STARTUP_JS_GZIP_TOLERANCE_BYTES,
+  baseMetrics: ReturnType<typeof collectControlUiPerformanceMetrics> | null = null,
 ): string {
   const startupJsLimits = resolveControlUiStartupJsGzipLimits(
     budgets,
@@ -302,9 +336,11 @@ export function formatControlUiPerformanceReport(
     budgets,
     startupBudgetBaseline,
     startupJsTolerance,
+    baseMetrics,
   );
   const lines = [
     "Control UI performance:",
+    `  measurement: shipped gzip sidecars; Node ${process.version}`,
     `  startup JS: ${formatAssetSummary(metrics.startup.js)} (limits: ${formatRequestCount(budgets.startupJsRequests)}, ${formatControlUiPerformanceBytes(startupJsLimits.enforcementLimit)} gzip / ${startupJsLimits.enforcementLimit} B)`,
   ];
   if (startupBudgetBaseline) {
@@ -313,12 +349,23 @@ export function formatControlUiPerformanceReport(
     );
   }
   lines.push(
-    `  startup CSS: ${formatAssetSummary(metrics.startup.css)} (limits: ${formatRequestCount(budgets.startupCssRequests)}, ${formatControlUiPerformanceBytes(budgets.startupCssGzipBytes)} gzip)`,
+    `  startup CSS: ${formatAssetSummary(metrics.startup.css)} (limits: ${formatRequestCount(budgets.startupCssRequests)}, advisory target ${CONTROL_UI_STARTUP_CSS_GZIP_TARGET_BYTES} B, hard ceiling ${budgets.startupCssGzipBytes} B; headroom ${budgets.startupCssGzipBytes - metrics.startup.css.gzipBytes} B)`,
     `  largest ordinary JS: ${metrics.largest.js.file}, ${formatControlUiPerformanceBytes(metrics.largest.js.gzipBytes)} gzip (limit: ${formatControlUiPerformanceBytes(budgets.largestJsGzipBytes)})`,
-    `  largest CSS: ${metrics.largest.css.file}, ${formatControlUiPerformanceBytes(metrics.largest.css.gzipBytes)} gzip (limit: ${formatControlUiPerformanceBytes(budgets.largestCssGzipBytes)})`,
+    `  largest CSS: ${metrics.largest.css.file}, ${metrics.largest.css.gzipBytes} B gzip (hard ceiling ${budgets.largestCssGzipBytes} B; headroom ${budgets.largestCssGzipBytes - metrics.largest.css.gzipBytes} B)`,
     `  all JS: ${formatAssetSummary(metrics.total.js)}`,
     `  all CSS: ${formatAssetSummary(metrics.total.css)}`,
   );
+  if (baseMetrics) {
+    for (const area of ["startup", "largest"] as const) {
+      const growth = metrics[area].css.gzipBytes - baseMetrics[area].css.gzipBytes;
+      lines.push(
+        `  ${area} CSS gzip vs base: ${baseMetrics[area].css.gzipBytes} B -> ${metrics[area].css.gzipBytes} B (${growth >= 0 ? "+" : ""}${growth} B; growth below ${CONTROL_UI_CSS_GZIP_GROWTH_BYTES} B allowed)`,
+      );
+    }
+  }
+  for (const warning of controlUiPerformanceWarnings(metrics, budgets)) {
+    lines.push(`  warning: ${warning}`);
+  }
   if (metrics.mermaidRenderer.length > 0) {
     lines.push(
       `  isolated Mermaid JS: ${formatAssetSummary(summarizeAssets(metrics.mermaidRenderer))} (limits: 1 deferred asset, ${formatControlUiPerformanceBytes(MERMAID_RENDERER_GZIP_BYTES)} gzip; forbidden at startup)`,
@@ -418,24 +465,42 @@ export function runControlUiPerformanceCheck(
   distDir: string,
   budgets: Readonly<typeof CONTROL_UI_PERFORMANCE_BUDGETS> = CONTROL_UI_PERFORMANCE_BUDGETS,
   baselinePath = DEFAULT_STARTUP_BUDGET_BASELINE_PATH,
+  baseDistDir?: string,
 ) {
   const startupBudgetBaseline = readControlUiStartupBudgetBaseline(baselinePath);
   const metrics = collectControlUiPerformanceMetrics(distDir);
-  const violations = evaluateControlUiPerformanceBudgets(metrics, budgets, startupBudgetBaseline);
-  const report = formatControlUiPerformanceReport(metrics, budgets, startupBudgetBaseline);
+  const baseMetrics = baseDistDir ? collectControlUiPerformanceMetrics(baseDistDir) : null;
+  const violations = evaluateControlUiPerformanceBudgets(
+    metrics,
+    budgets,
+    startupBudgetBaseline,
+    undefined,
+    baseMetrics,
+  );
+  const report = formatControlUiPerformanceReport(
+    metrics,
+    budgets,
+    startupBudgetBaseline,
+    undefined,
+    baseMetrics,
+  );
   return {
     metrics,
+    baseMetrics,
     budgets,
     startupBudgetBaseline,
     startupJsTolerance: CONTROL_UI_STARTUP_JS_GZIP_TOLERANCE_BYTES,
     startupJsBuildVariance: CONTROL_UI_STARTUP_JS_GZIP_BUILD_VARIANCE_BYTES,
     violations,
+    warnings: controlUiPerformanceWarnings(metrics, budgets),
     report,
   };
 }
 
 function main(argv: string[] = process.argv.slice(2)): void {
   let json = false;
+  let reportOnly = false;
+  let baseDistDir: string | undefined;
   let updateBaseline = false;
   let reason: string | undefined;
   let startupJsBytes: number | undefined;
@@ -443,6 +508,14 @@ function main(argv: string[] = process.argv.slice(2)): void {
     const arg = argv[index];
     if (arg === "--json") {
       json = true;
+    } else if (arg === "--report-only") {
+      reportOnly = true;
+    } else if (arg === "--base-dist") {
+      const value = argv[++index];
+      if (!value || value.startsWith("--")) {
+        throw new Error("--base-dist requires a directory");
+      }
+      baseDistDir = path.resolve(value);
     } else if (arg === "--update-baseline") {
       updateBaseline = true;
     } else if (arg === "--reason") {
@@ -474,6 +547,9 @@ function main(argv: string[] = process.argv.slice(2)): void {
   if (json && updateBaseline) {
     throw new Error("--json cannot be combined with --update-baseline");
   }
+  if (updateBaseline && (reportOnly || baseDistDir)) {
+    throw new Error("--report-only and --base-dist cannot be combined with --update-baseline");
+  }
   const distDir = path.resolve(SCRIPT_DIR, "../dist/control-ui");
   if (updateBaseline) {
     if (startupJsBytes !== undefined) {
@@ -494,13 +570,13 @@ function main(argv: string[] = process.argv.slice(2)): void {
     );
     return;
   }
-  const result = runControlUiPerformanceCheck(distDir);
+  const result = runControlUiPerformanceCheck(distDir, undefined, undefined, baseDistDir);
   if (json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else {
     process.stdout.write(`${result.report}\n`);
   }
-  if (result.violations.length > 0) {
+  if (!reportOnly && result.violations.length > 0) {
     process.exitCode = 1;
   }
 }

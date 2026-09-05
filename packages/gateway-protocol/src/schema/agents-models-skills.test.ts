@@ -5,6 +5,7 @@ import {
   AgentsListResultSchema,
   AgentsUpdateParamsSchema,
   ModelsAuthLogoutParamsSchema,
+  ModelsAuthOrderSetParamsSchema,
   ModelsAuthStatusParamsSchema,
   ModelsListParamsSchema,
   ModelsListResultSchema,
@@ -31,7 +32,11 @@ import { GatewayAgentRuntimeSchema } from "./session-row.js";
  * guards, so the fixtures exercise strictness at the public gateway boundary.
  */
 
-function expectSchemaCases(schema: import("typebox").TSchema, expected: boolean, values: readonly unknown[]) {
+function expectSchemaCases(
+  schema: import("typebox").TSchema,
+  expected: boolean,
+  values: readonly unknown[],
+) {
   for (const value of values) {
     expect(Value.Check(schema, value)).toBe(expected);
   }
@@ -654,5 +659,21 @@ describe("ModelsListResultSchema", () => {
         models: [{ ...model, unavailableReason: "cooldown", unavailableUntil }],
       });
     }
+  });
+});
+
+describe("ModelsAuthOrderSetParamsSchema", () => {
+  it("requires a provider and rejects empty, null, or duplicate profile orders", () => {
+    expectAccepted(
+      ModelsAuthOrderSetParamsSchema,
+      { provider: "openai", profileIds: ["openai:writer"] },
+      { provider: "openai", agentId: "writer" },
+    );
+    expectRejected(
+      ModelsAuthOrderSetParamsSchema,
+      { provider: "openai", profileIds: [] },
+      { provider: "openai", profileIds: null },
+      { provider: "openai", profileIds: ["openai:writer", "openai:writer"] },
+    );
   });
 });

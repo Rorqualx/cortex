@@ -414,7 +414,6 @@ export function createWriteToolDefinition(
                 },
               ],
               details: undefined,
-              terminate: true,
             };
           }
           try {
