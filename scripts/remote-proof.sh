@@ -17,7 +17,7 @@
 # Usage: scripts/remote-proof.sh <branch>
 #
 # Env: REMOTE_HOST (joe@192.168.50.185) · REMOTE_NODE_BIN (/home/joe/node24/bin)
-#      PROOF_DIR (~/openclaw-proof) · FORK_URL · PROOF_TIMEOUT (5400) · POLL (25)
+#      PROOF_DIR (~/openclaw-proof) · FORK_URL · PROOF_TIMEOUT (10800) · POLL (25)
 
 set -uo pipefail
 
@@ -35,7 +35,11 @@ PROOF_DIR="${PROOF_DIR:-\$HOME/openclaw-proof}"
 FORK_URL="${FORK_URL:-https://github.com/Rorqualx/cortex.git}"
 UPSTREAM_URL="${UPSTREAM_URL:-https://github.com/openclaw/openclaw.git}"
 SSH_OPTS="${SSH_OPTS:--o BatchMode=yes -o ConnectTimeout=8}"
-PROOF_TIMEOUT="${PROOF_TIMEOUT:-5400}"
+# Every land creates a new baseline sha, so the first proof after a land builds AND
+# tests the baseline cold before the candidate (~110 min total on huey as of
+# 2026-09-05); 5400s only ever fit the warm-cache re-prove and timed out the cold
+# run while it was still green. The remote job keeps running past this poll cap.
+PROOF_TIMEOUT="${PROOF_TIMEOUT:-10800}"
 POLL="${POLL:-25}"
 LANES="tsgo:core tsgo:extensions tsgo:core:test tsgo:extensions:test tsgo:test:src tsgo:test:ui tsgo:test:packages"
 
