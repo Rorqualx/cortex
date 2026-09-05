@@ -164,7 +164,8 @@ export async function publishStagedDeclarations(
   sanitizePublishedDeclarationTree(dist);
 }
 
-function sanitizePublishedDeclarationTree(root: string) {
+/** Exported for the fork plugin-sdk dts writer, which emits via tsdown directly and never stages. */
+export function sanitizePublishedDeclarationTree(root: string) {
   const queue = [root];
   while (queue.length > 0) {
     const dir = queue.pop()!;

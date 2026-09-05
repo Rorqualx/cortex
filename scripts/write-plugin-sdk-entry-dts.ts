@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { build } from "tsdown";
 import { discoverDeclarationSources } from "./lib/declaration-source-index.mts";
+import { sanitizePublishedDeclarationTree } from "./lib/declaration-stage.mts";
 import {
   buildPluginSdkEntrySources,
   pluginSdkEntrypoints,
@@ -162,3 +163,9 @@ for (const entry of pluginSdkEntrypoints) {
 const stampPath = path.join(process.cwd(), "dist/plugin-sdk/.boundary-entry-shims.stamp");
 fs.mkdirSync(path.dirname(stampPath), { recursive: true });
 fs.writeFileSync(stampPath, `${new Date().toISOString()}\n`, "utf8");
+
+// This writer emits declarations through tsdown directly (not the staged
+// declaration path), so upstream's staging sanitizer never sees them. Sweep
+// the published tree so mangled `__exportAll` helper re-exports cannot ship
+// (check-plugin-sdk-exports rejects them; strict consumers hit TS2304).
+sanitizePublishedDeclarationTree(path.join(process.cwd(), "dist"));
