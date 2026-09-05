@@ -289,13 +289,15 @@ function startPendingSessionDeliveryRuntime(params: {
   log: GatewayRuntimeServiceLogger;
   maxEnqueuedAt: number;
   resolveGatewayContext?: GatewayContextResolver;
-}): () => void {
+}): () => Promise<void> {
   let stopped = false;
-  let stopRuntime: (() => void) | undefined;
+  let recovery: Promise<void> | undefined;
+  let stopPromise: Promise<void> | undefined;
+  let stopRuntime: (() => Promise<void>) | undefined;
   // Delay session continuation recovery so the gateway has time to publish ready state and
   // request routing before replaying restart-sentinel deliveries.
   const timer = setTimeout(() => {
-    void runWithGatewayIndependentRootWorkAdmission(async () => {
+    recovery = runWithGatewayIndependentRootWorkAdmission(async () => {
       const {
         deliverQueuedSessionDelivery,
         recoverPendingRestartContinuationDeliveries,
@@ -330,7 +332,9 @@ function startPendingSessionDeliveryRuntime(params: {
       } finally {
         // Recovery and scheduling are independent safeguards. A transient
         // recovery failure must not leave persisted rows without timers.
-        await schedulePendingSessionDeliveries();
+        if (!stopped) {
+          await schedulePendingSessionDeliveries();
+        }
       }
     }, "runtime:session-delivery-recovery").catch((err: unknown) =>
       params.log.error(`Session delivery recovery failed: ${String(err)}`),
@@ -340,8 +344,10 @@ function startPendingSessionDeliveryRuntime(params: {
   return () => {
     stopped = true;
     clearTimeout(timer);
-    stopRuntime?.();
-    stopRuntime = undefined;
+    // Join the import as well as admitted recovery and drains before their
+    // Gateway dependencies disappear. Clearing the timer alone cannot do that.
+    stopPromise ??= Promise.all([recovery, stopRuntime?.()]).then(() => {});
+    return stopPromise;
   };
 }
 
@@ -360,7 +366,7 @@ export function activateGatewayScheduledServices(params: {
 }): {
   heartbeatRunner: HeartbeatRunner;
   stopModelCatalogRefresh: () => void;
-  stopOutboundDeliveryRecovery: () => Promise<void>;
+  stopDeliveryRecovery: () => Promise<void>;
 } {
   if (params.minimalTestGateway) {
     // Minimal gateways keep handles callable but inert so tests can share shutdown paths with
@@ -368,7 +374,7 @@ export function activateGatewayScheduledServices(params: {
     return {
       heartbeatRunner: createNoopHeartbeatRunner(),
       stopModelCatalogRefresh: () => {},
-      stopOutboundDeliveryRecovery: async () => {},
+      stopDeliveryRecovery: async () => {},
     };
   }
   if (
@@ -442,11 +448,19 @@ export function activateGatewayScheduledServices(params: {
         getLog: () => params.log.child("model-catalog"),
       })
     : () => {};
+  let deliveryRecoveryStopPromise: Promise<void> | undefined;
+  const stopDeliveryRecovery = () => {
+    // Both owners fence synchronously before the close prelude awaits either.
+    deliveryRecoveryStopPromise ??= Promise.all([
+      stopOutboundDeliveryRecovery(),
+      stopSessionDeliveryRuntime(),
+    ]).then(() => {});
+    return deliveryRecoveryStopPromise;
+  };
   const heartbeatRunnerWithUpstreamMonitor: HeartbeatRunner = {
     updateConfig: heartbeatRunner.updateConfig,
     stop: () => {
-      void stopOutboundDeliveryRecovery();
-      stopSessionDeliveryRuntime();
+      void stopDeliveryRecovery();
       sessionUpstreamMonitor.stop();
       heartbeatRunner.stop();
       // The catalog refresh is also stopped from server-close.ts; both paths are
@@ -457,6 +471,6 @@ export function activateGatewayScheduledServices(params: {
   return {
     heartbeatRunner: heartbeatRunnerWithUpstreamMonitor,
     stopModelCatalogRefresh,
-    stopOutboundDeliveryRecovery,
+    stopDeliveryRecovery,
   };
 }

@@ -385,7 +385,7 @@ export function buildEmbeddedRunPayloads(params: {
     // Surface mutating failures unless the assistant explicitly acknowledged the failed action.
     // Otherwise, keep the previous behavior and only surface non-recoverable failures when no reply exists.
     // A restart intentionally aborts the active tool while the Gateway takes over.
-    // Keep that lifecycle status independent from tool-error suppression.
+    // Report the lifecycle status instead of a tool failure.
     const isRestartStatus = params.runStopReason === "restart";
     const failureWarning = isRestartStatus
       ? { text: "Gateway restarting…", nonTerminalToolErrorWarning: false }
@@ -394,7 +394,6 @@ export function buildEmbeddedRunPayloads(params: {
           hasUserFacingReply: hasUserFacingAssistantReply,
           hasUserFacingErrorReply,
           hasUserFacingFailureAcknowledgement,
-          suppressToolErrors: Boolean(params.config?.messages?.suppressToolErrors),
           suppressToolErrorWarnings: params.suppressToolErrorWarnings,
           verboseLevel: params.verboseLevel,
           useMarkdown,

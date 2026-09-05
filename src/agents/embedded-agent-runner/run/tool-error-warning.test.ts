@@ -165,13 +165,6 @@ describe("buildEmbeddedRunPayloads tool warnings", () => {
     },
   );
 
-  it("suppresses non-mutating non-recoverable tool errors when messages.suppressToolErrors is enabled", () => {
-    expectNoPayloads({
-      lastToolError: { toolName: "browser", error: "connection timeout" },
-      config: { messages: { suppressToolErrors: true } },
-    });
-  });
-
   it("suppresses mutating tool errors when suppressToolErrorWarnings is enabled", () => {
     expectNoPayloads({
       lastToolError: { toolName: "exec", error: "command not found" },
@@ -180,16 +173,6 @@ describe("buildEmbeddedRunPayloads tool warnings", () => {
   });
 
   it.each([
-    {
-      name: "suppresses mutating tool errors when messages.suppressToolErrors is enabled",
-      payload: {
-        lastToolError: { toolName: "write", error: "connection timeout" },
-        config: { messages: { suppressToolErrors: true } },
-      },
-      title: "Write",
-      absentDetail: "connection timeout",
-      suppressed: true,
-    },
     {
       name: "shows recoverable tool errors for mutating tools",
       payload: {
@@ -363,17 +346,6 @@ describe("buildEmbeddedRunPayloads tool warnings", () => {
     expectSingleToolErrorPayload(payloads, {
       title: "Bash",
       absentDetail: "missing required flag",
-    });
-  });
-
-  it("suppresses exec-like tool errors when messages.suppressToolErrors is enabled", () => {
-    expectNoPayloads({
-      lastToolError: {
-        toolName: "bash",
-        error: "command not found",
-        mutatingAction: true,
-      },
-      config: { messages: { suppressToolErrors: true } },
     });
   });
 
@@ -728,8 +700,6 @@ describe("buildEmbeddedRunPayloads tool warnings", () => {
   });
 
   it("wraps markdown-capable mutating tool warnings so mention-looking names stay inert", () => {
-    // Non-recoverable error so the generic exec-like rule still surfaces a warning
-    // for this no-reply formatting case (recoverable keywords would suppress it).
     const payloads = buildPayloads({
       lastToolError: {
         toolName: "bash",

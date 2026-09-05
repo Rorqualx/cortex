@@ -25,14 +25,12 @@ import {
   isClaudeCliAuthError,
   isExactUnknownNoDetailsError,
   isGenericUnknownStreamErrorMessage,
-  isTransientHttpError,
   isUnsupportedImageInputErrorMessage,
   toPluginClassification,
   toReasonClassification,
 } from "./classification-rules.js";
 import { isContextOverflowErrorFromTables } from "./context-overflow.js";
 import {
-  GENERIC_MODEL_NOT_FOUND_RE,
   isAuthErrorMessage,
   isAuthPermanentErrorMessage,
   isBillingErrorMessage,
@@ -51,12 +49,19 @@ import {
   type PreparedProviderFailoverOwner,
 } from "./provider-patterns.js";
 import type { FailoverClassification, FailoverReason, FailoverSignal } from "./signal.js";
-export {
-  // Fork: re-exported for the whole-turn transient-HTTP retry gate in
-  // auto-reply/reply/agent-runner-error-handler.ts (via embedded-agent-helpers).
-  isTransientHttpError,
-  isUnclassifiedNoBodyHttpSignal,
-} from "./classification-rules.js";
+export { isUnclassifiedNoBodyHttpSignal } from "./classification-rules.js";
+
+/**
+ * Fork: boolean form of the transient-HTTP rule for the whole-turn retry gate in
+ * auto-reply/reply/agent-runner-error-handler.ts (via embedded-agent-helpers).
+ * Mirrors classifyFailoverClassificationFromHttpStatus, which treats 499 and every
+ * 5xx as retryable (timeout/overloaded/server_error) since upstream retired the
+ * per-code TRANSIENT_HTTP_ERROR_CODES set.
+ */
+export function isTransientHttpError(raw: string): boolean {
+  const status = extractLeadingHttpStatus(raw.trim());
+  return status != null && (status.code === 499 || (status.code >= 500 && status.code < 600));
+}
 export {
   isContextOverflowError,
   isLikelyContextOverflowError,
@@ -157,11 +162,6 @@ function classifyFailoverClassificationFromMessage(
   if (isPeriodicUsageLimitErrorMessage(raw)) {
     return toReasonClassification(isBillingErrorMessage(raw) ? "billing" : "rate_limit");
   }
-  // Billing/plan entitlement wording owns "model ... not available" first;
-  // the generic provider phrase should only displace unclassified/rate-limit text.
-  if (GENERIC_MODEL_NOT_FOUND_RE.test(raw)) {
-    return toReasonClassification("model_not_found");
-  }
   if (isRateLimitErrorMessage(raw)) {
     return toReasonClassification("rate_limit");
   }
@@ -182,13 +182,6 @@ function classifyFailoverClassificationFromMessage(
     !isAuthErrorMessage(raw)
   ) {
     return toReasonClassification("server_error");
-  }
-  if (isTransientHttpError(raw)) {
-    const status = extractLeadingHttpStatus(raw.trim());
-    if (status?.code === 529) {
-      return toReasonClassification("overloaded");
-    }
-    return toReasonClassification("timeout");
   }
   if (isGenericProviderInternalError(raw)) {
     return toReasonClassification("timeout");
@@ -231,7 +224,13 @@ function classifyFailoverClassificationFromMessage(
   if (apiErrorReason) {
     return toReasonClassification(apiErrorReason);
   }
-  return null;
+  return classifyFailoverClassificationFromHttpStatus(
+    inferSignalStatus({ message: raw }),
+    raw,
+    null,
+    undefined,
+    provider,
+  );
 }
 function classificationReason(
   classification: FailoverClassification | null,

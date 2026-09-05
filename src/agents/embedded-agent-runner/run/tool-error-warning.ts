@@ -315,7 +315,6 @@ function resolveToolErrorWarningPolicy(params: {
   hasUserFacingReply: boolean;
   hasUserFacingErrorReply: boolean;
   hasUserFacingFailureAcknowledgement: boolean;
-  suppressToolErrors: boolean;
   suppressToolErrorWarnings?: boolean | (() => boolean | undefined);
   verboseLevel?: VerboseLevel;
 }): ToolErrorWarningPolicy {
@@ -338,9 +337,6 @@ function resolveToolErrorWarningPolicy(params: {
   // issues — the message may still have been delivered. Suppress warnings to
   // prevent raw error text from leaking into the chat surface (#23989).
   if (normalizedToolName === "sessions_send") {
-    return { showWarning: false, includeDetails };
-  }
-  if (params.suppressToolErrors) {
     return { showWarning: false, includeDetails };
   }
   // Mutating branch protects "assistant claims success while a user-visible mutation
@@ -375,7 +371,6 @@ export function buildFailureWarning(params: {
   hasUserFacingReply: boolean;
   hasUserFacingErrorReply: boolean;
   hasUserFacingFailureAcknowledgement: boolean;
-  suppressToolErrors: boolean;
   suppressToolErrorWarnings?: boolean | (() => boolean | undefined);
   verboseLevel?: VerboseLevel;
   useMarkdown: boolean;

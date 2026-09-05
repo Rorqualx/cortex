@@ -583,6 +583,7 @@ export async function buildPreparedModelCatalogSnapshot(
         env,
         params.authCredentials,
         cfg,
+        workspaceDir,
       );
       const resolveProviderApiKey = (providerId?: string) =>
         providerId?.trim()

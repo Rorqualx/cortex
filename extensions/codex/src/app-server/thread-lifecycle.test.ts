@@ -1004,6 +1004,12 @@ function createAttestedAccountAppThreadConfigProvider(appId: string) {
 async function seedAdoptedThreadBinding(params: EmbeddedRunAttemptParams, cwd: string) {
   const threadId = "thread-adopted";
   const request = vi.fn(async (method: string) => {
+    if (method === "config/read") {
+      return { config: {}, origins: {}, layers: [] };
+    }
+    if (method === "configRequirements/read") {
+      return { requirements: null };
+    }
     if (method === "thread/start") {
       return threadStartResult(threadId);
     }
@@ -1613,6 +1619,7 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode_only": false,
       "features.goals": false,
       "tools.update_plan.enabled": false,
+      "features.shell_tool": true,
       "features.apply_patch_streaming_events": true,
       suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
@@ -1761,6 +1768,7 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode_only": false,
       "features.goals": false,
       "tools.update_plan.enabled": false,
+      "features.shell_tool": true,
       "features.apply_patch_streaming_events": true,
       suppress_unstable_features_warning: true,
       "features.multi_agent": false,
@@ -1921,6 +1929,7 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode_only": true,
       "features.goals": false,
       "tools.update_plan.enabled": false,
+      "features.shell_tool": true,
       "features.apply_patch_streaming_events": true,
       suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
@@ -1946,6 +1955,7 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode_only": true,
       "features.goals": false,
       "tools.update_plan.enabled": false,
+      "features.shell_tool": true,
       "features.apply_patch_streaming_events": true,
       suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
@@ -2029,6 +2039,7 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode_only": false,
       "features.goals": false,
       "tools.update_plan.enabled": false,
+      "features.shell_tool": true,
       "features.apply_patch_streaming_events": true,
       suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
@@ -2110,6 +2121,7 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode_only": false,
       "features.goals": false,
       "tools.update_plan.enabled": false,
+      "features.shell_tool": true,
       "features.apply_patch_streaming_events": true,
       suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
@@ -2146,6 +2158,7 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode_only": false,
       "features.goals": false,
       "tools.update_plan.enabled": false,
+      "features.shell_tool": true,
       "features.apply_patch_streaming_events": true,
       suppress_unstable_features_warning: true,
       "features.standalone_web_search": false,
@@ -2441,6 +2454,7 @@ describe("Codex app-server turn params", () => {
         "features.code_mode_only": false,
         "features.goals": false,
         "tools.update_plan.enabled": false,
+        "features.shell_tool": true,
         "features.apply_patch_streaming_events": true,
         suppress_unstable_features_warning: true,
         "features.standalone_web_search": false,
@@ -2711,6 +2725,12 @@ describe("Codex plugin binding recovery", () => {
       },
     });
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         return threadStartResult("thread-managed");
       }
@@ -2767,6 +2787,12 @@ describe("Codex plugin binding recovery", () => {
       },
     );
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         const result = threadStartResult("thread-managed-remote");
         return { ...result, thread: { ...result.thread, path: rolloutPath } };
@@ -2816,6 +2842,12 @@ describe("Codex plugin binding recovery", () => {
       },
     });
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         return threadStartResult("thread-managed-without-index");
       }
@@ -2842,6 +2874,12 @@ describe("Codex plugin binding recovery", () => {
     const workspaceDir = path.join(tempDir, "workspace");
     const params = createThreadLifecycleParams(sessionFile, workspaceDir);
     const respond = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start" || method === "thread/resume") {
         return threadStartResult("thread-settled");
       }
@@ -2905,8 +2943,12 @@ describe("Codex plugin binding recovery", () => {
       config: { apps: { calendar: { enabled: false } } },
     });
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "thread/unsubscribe",
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/resume",
       "thread/inject_items",
@@ -2918,6 +2960,12 @@ describe("Codex plugin binding recovery", () => {
     const workspaceDir = path.join(tempDir, "workspace");
     const params = createThreadLifecycleParams(sessionFile, workspaceDir);
     const respond = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start" || method === "thread/resume") {
         return threadStartResult("thread-settled-transition");
       }
@@ -2998,12 +3046,18 @@ describe("Codex plugin binding recovery", () => {
       });
     }
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "thread/unsubscribe",
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/resume",
       "thread/inject_items",
       "thread/unsubscribe",
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/resume",
       "thread/inject_items",
@@ -3019,6 +3073,12 @@ describe("Codex plugin binding recovery", () => {
     let threadSequence = 0;
     const threadStarts: Array<Record<string, unknown>> = [];
     const respond = vi.fn(async (method: string, requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         threadSequence += 1;
         threadStarts.push(requestParams as Record<string, unknown>);
@@ -3114,16 +3174,26 @@ describe("Codex plugin binding recovery", () => {
     });
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "app/installed",
       "thread/unsubscribe",
+      "config/read",
+      "configRequirements/read",
       "thread/read",
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "app/installed",
       "thread/unsubscribe",
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "app/installed",
       "thread/unsubscribe",
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/resume",
       "app/installed",
@@ -3176,6 +3246,12 @@ describe("Codex thread-effective app attestation", () => {
       const workspaceDir = path.join(tempDir, "workspace");
       const params = createThreadLifecycleParams(path.join(tempDir, "session.jsonl"), workspaceDir);
       const request = vi.fn(async (method: string, requestParams?: unknown) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/start") {
           return threadStartResult("thread-linear");
         }
@@ -3214,10 +3290,12 @@ describe("Codex thread-effective app attestation", () => {
       });
 
       expect(request.mock.calls.map(([method]) => method)).toEqual([
+        "config/read",
+        "configRequirements/read",
         "thread/start",
         "app/installed",
       ]);
-      expect(request.mock.invocationCallOrder[1]).toBeLessThan(
+      expect(request.mock.invocationCallOrder[3]).toBeLessThan(
         mutate.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
       );
       expect(
@@ -3258,6 +3336,12 @@ describe("Codex thread-effective app attestation", () => {
     const abandonClient = vi.fn(async () => undefined);
     const request = vi.fn(
       async (method: string, _requestParams?: unknown, _requestOptions?: unknown) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/start") {
           return threadStartResult("thread-linear-blocked");
         }
@@ -3284,12 +3368,14 @@ describe("Codex thread-effective app attestation", () => {
     ).rejects.toThrow(failure);
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "app/installed",
       "thread/delete",
     ]);
-    expect(request.mock.calls[2]?.[1]).toEqual({ threadId: "thread-linear-blocked" });
-    expect(request.mock.calls[2]?.[2]).toEqual({ timeoutMs: 5_000 });
+    expect(request.mock.calls[4]?.[1]).toEqual({ threadId: "thread-linear-blocked" });
+    expect(request.mock.calls[4]?.[2]).toEqual({ timeoutMs: 5_000 });
     expect(abandonClient).not.toHaveBeenCalled();
     expect(
       testCodexAppServerBindingStore.read(
@@ -3343,6 +3429,12 @@ describe("Codex thread-effective app attestation", () => {
       const params = createThreadLifecycleParams(path.join(tempDir, "session.jsonl"), workspaceDir);
       const abandonClient = vi.fn(async () => undefined);
       const request = vi.fn(async (method: string, requestParams?: unknown) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/start") {
           return threadStartResult("thread-global-ready");
         }
@@ -3371,6 +3463,8 @@ describe("Codex thread-effective app attestation", () => {
       ).rejects.toThrow(failure);
 
       expect(request.mock.calls.map(([method]) => method)).toEqual([
+        "config/read",
+        "configRequirements/read",
         "thread/start",
         "app/installed",
         "thread/delete",
@@ -3394,6 +3488,12 @@ describe("Codex thread-effective app attestation", () => {
     const params = createThreadLifecycleParams(path.join(tempDir, "session.jsonl"), workspaceDir);
     const abandonClient = vi.fn(async () => undefined);
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         return threadStartResult("thread-linear-unsafe");
       }
@@ -3422,6 +3522,8 @@ describe("Codex thread-effective app attestation", () => {
     ).rejects.toThrow("Codex uncommitted thread cleanup failed");
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "app/installed",
       "thread/delete",
@@ -3435,6 +3537,12 @@ describe("Codex thread-effective app attestation", () => {
     const params = createThreadLifecycleParams(path.join(tempDir, "session.jsonl"), workspaceDir);
     const abandonClient = vi.fn(async () => undefined);
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         return threadStartResult("thread-linear-snapshot-error");
       }
@@ -3463,6 +3571,8 @@ describe("Codex thread-effective app attestation", () => {
     });
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "app/installed",
       "thread/delete",
@@ -3476,6 +3586,12 @@ describe("Codex thread-effective app attestation", () => {
     params.sessionKey = "agent:main:internal-session-effects:incognito-plugin-attestation";
     const abandonClient = vi.fn(async () => undefined);
     const request = vi.fn(async (method: string, requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         expect(requestParams).toEqual(expect.objectContaining({ ephemeral: true }));
         return threadStartResult("thread-linear-ephemeral");
@@ -3502,6 +3618,8 @@ describe("Codex thread-effective app attestation", () => {
     ).rejects.toThrow("linear-app:missing");
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "app/installed",
       "thread/unsubscribe",
@@ -3515,6 +3633,12 @@ describe("Codex thread-effective app attestation", () => {
     params.sessionKey = "agent:main:internal-session-effects:incognito-plugin-attestation";
     const abandonClient = vi.fn(async () => undefined);
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         return threadStartResult("thread-linear-ephemeral-unsafe");
       }
@@ -3540,6 +3664,8 @@ describe("Codex thread-effective app attestation", () => {
     ).rejects.toThrow("Codex uncommitted thread cleanup failed");
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/start",
       "app/installed",
       "thread/unsubscribe",
@@ -3584,6 +3710,12 @@ describe("Codex app-server adopted thread lifecycle", () => {
         agentDir: path.join(tempDir, "agent"),
         persistedThreads: [threadId],
         respond: (method) => {
+          if (method === "config/read") {
+            return { config: {}, origins: {}, layers: [] };
+          }
+          if (method === "configRequirements/read") {
+            return { requirements: null };
+          }
           throw new Error(`unexpected method: ${method}`);
         },
       });
@@ -3615,6 +3747,12 @@ describe("Codex app-server adopted thread lifecycle", () => {
     const { identity, threadId } = await seedAdoptedThreadBinding(params, workspaceDir);
     let resumeCount = 0;
     const respond = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/resume") {
         resumeCount += 1;
         return {
@@ -3645,20 +3783,24 @@ describe("Codex app-server adopted thread lifecycle", () => {
     const secondBinding = await startOrResumeThread(commonParams);
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/resume",
       "thread/inject_items",
       "thread/unsubscribe",
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/resume",
       "thread/inject_items",
     ]);
-    expect(request.mock.calls[0]?.[1]).toEqual({ threadId, includeTurns: false });
-    expect(request.mock.calls[4]?.[1]).toEqual({ threadId, includeTurns: false });
-    expect(request.mock.calls[1]?.[1]).not.toHaveProperty("model");
-    expect(request.mock.calls[1]?.[1]).not.toHaveProperty("modelProvider");
-    expect(request.mock.calls[5]?.[1]).not.toHaveProperty("model");
-    expect(request.mock.calls[5]?.[1]).not.toHaveProperty("modelProvider");
+    expect(request.mock.calls[2]?.[1]).toEqual({ threadId, includeTurns: false });
+    expect(request.mock.calls[8]?.[1]).toEqual({ threadId, includeTurns: false });
+    expect(request.mock.calls[3]?.[1]).not.toHaveProperty("model");
+    expect(request.mock.calls[3]?.[1]).not.toHaveProperty("modelProvider");
+    expect(request.mock.calls[9]?.[1]).not.toHaveProperty("model");
+    expect(request.mock.calls[9]?.[1]).not.toHaveProperty("modelProvider");
     expect(firstBinding).toMatchObject({
       model: "native-model-1",
       modelProvider: "lmstudio",
@@ -3691,6 +3833,12 @@ describe("Codex app-server adopted thread lifecycle", () => {
       const harness = await createLeasedCodexLifecycleHarness({
         agentDir: path.join(tempDir, "agent"),
         respond: (method) => {
+          if (method === "config/read") {
+            return { config: {}, origins: {}, layers: [] };
+          }
+          if (method === "configRequirements/read") {
+            return { requirements: null };
+          }
           throw new Error(`unexpected method: ${method}`);
         },
       });
@@ -3727,7 +3875,11 @@ describe("Codex app-server adopted thread lifecycle", () => {
           }),
         ).rejects.toThrow(error);
 
-        expect(harness.request.mock.calls.map(([method]) => method)).toEqual(["thread/read"]);
+        expect(harness.request.mock.calls.map(([method]) => method)).toEqual([
+          "config/read",
+          "configRequirements/read",
+          "thread/read",
+        ]);
         expect(release).not.toHaveBeenCalled();
         expect(testCodexAppServerBindingStore.read(identity)).toEqual(before);
         expect(reserveResumeThread).not.toHaveBeenCalled();
@@ -3791,7 +3943,11 @@ describe("Codex app-server supervised branch lifecycle", () => {
         const written = write(...args);
         const request = JSON.parse(String(args[0]));
         let result: unknown;
-        if (request.method === "thread/read") {
+        if (request.method === "config/read") {
+          result = { config: {}, origins: {}, layers: [] };
+        } else if (request.method === "configRequirements/read") {
+          result = { requirements: null };
+        } else if (request.method === "thread/read") {
           result = { thread: source };
         } else if (request.method === "thread/fork" || request.method === "thread/start") {
           const threadId = request.method === "thread/fork" ? probeThreadId : finalThreadId;
@@ -3861,8 +4017,14 @@ describe("Codex app-server supervised branch lifecycle", () => {
           expect(abandonClient).toHaveBeenCalledTimes(unsafe ? 1 : 0);
           expect(requests.map((request) => request.method)).toEqual(
             fault === "fork response lost"
-              ? ["thread/read", "thread/fork"]
-              : ["thread/read", "thread/fork", "thread/unsubscribe"],
+              ? ["config/read", "configRequirements/read", "thread/read", "thread/fork"]
+              : [
+                  "config/read",
+                  "configRequirements/read",
+                  "thread/read",
+                  "thread/fork",
+                  "thread/unsubscribe",
+                ],
           );
           if (fault === "unsubscribe timeout") {
             expect(settled).toMatchObject({
@@ -3879,15 +4041,17 @@ describe("Codex app-server supervised branch lifecycle", () => {
           return;
         }
         expect(settled).toMatchObject({ value: { threadId: finalThreadId } });
-        expect(requests[1].params).toMatchObject({ ephemeral: true, excludeTurns: true });
+        expect(requests[3].params).toMatchObject({ ephemeral: true, excludeTurns: true });
         expect(requests.map((request) => request.method)).toEqual([
+          "config/read",
+          "configRequirements/read",
           "thread/read",
           "thread/fork",
           "thread/unsubscribe",
           "thread/start",
         ]);
-        expect(requests[2].params).toEqual({ threadId: probeThreadId });
-        expect(requests[3].params.ephemeral === true).toBe(incognito);
+        expect(requests[4].params).toEqual({ threadId: probeThreadId });
+        expect(requests[5].params.ephemeral === true).toBe(incognito);
         expect([...subscriptions]).toEqual([sourceThreadId, finalThreadId]);
         expect(testCodexAppServerBindingStore.read(identity)).toMatchObject({
           threadId: finalThreadId,
@@ -3946,6 +4110,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       ],
     });
     const request = vi.fn(async (method: string, requestParams: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         const threadId = (requestParams as { threadId?: string }).threadId;
         return {
@@ -3994,17 +4164,19 @@ describe("Codex app-server supervised branch lifecycle", () => {
     const materialized = await startOrResumeThread(commonParams);
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/fork",
       "thread/unsubscribe",
       "thread/start",
       "thread/inject_items",
     ]);
-    expect(request.mock.calls[0]?.[1]).toEqual({
+    expect(request.mock.calls[2]?.[1]).toEqual({
       threadId: sourceThreadId,
       includeTurns: true,
     });
-    const forkParams = request.mock.calls[1]?.[1] as Record<string, unknown>;
+    const forkParams = request.mock.calls[3]?.[1] as Record<string, unknown>;
     expect(forkParams).toMatchObject({
       threadId: sourceThreadId,
       lastTurnId,
@@ -4064,7 +4236,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
     expect(
       JSON.stringify(request.mock.calls.find(([method]) => method === "thread/inject_items")?.[1]),
     ).not.toContain("secret-tool");
-    expect(request.mock.calls[2]?.[1]).toEqual({ threadId: probeThreadId });
+    expect(request.mock.calls[4]?.[1]).toEqual({ threadId: probeThreadId });
     expect(materialized).toMatchObject({
       threadId: finalThreadId,
       model: "native-effective",
@@ -4105,14 +4277,16 @@ describe("Codex app-server supervised branch lifecycle", () => {
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
       "thread/read",
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/resume",
       "thread/inject_items",
     ]);
     expect(request.mock.calls[0]?.[1]).toEqual({ threadId: finalThreadId, includeTurns: false });
-    expect(request.mock.calls[2]?.[1]).not.toHaveProperty("model");
-    expect(request.mock.calls[2]?.[1]).not.toHaveProperty("modelProvider");
-    expect(request.mock.calls[2]?.[1]).toMatchObject({
+    expect(request.mock.calls[4]?.[1]).not.toHaveProperty("model");
+    expect(request.mock.calls[4]?.[1]).not.toHaveProperty("modelProvider");
+    expect(request.mock.calls[4]?.[1]).toMatchObject({
       developerInstructions: agentWorkspaceDeveloperInstructions,
     });
     expect(resumed).toMatchObject({
@@ -4266,11 +4440,13 @@ describe("Codex app-server supervised branch lifecycle", () => {
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
       "thread/read",
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/resume",
       "thread/inject_items",
     ]);
-    const resumeParams = request.mock.calls[2]?.[1] as { config?: Record<string, unknown> };
+    const resumeParams = request.mock.calls[4]?.[1] as { config?: Record<string, unknown> };
     expect(resumeParams.config).toMatchObject({
       mcp_servers: { "request-only": { command: "request-mcp" } },
     });
@@ -4396,6 +4572,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
         pending: { sourceThreadId, lastTurnId },
       });
       const request = vi.fn(async (method: string, requestParams?: unknown) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/read") {
           return {
             thread: sourceThread({
@@ -4453,6 +4635,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       ).resolves.toMatchObject({ threadId: finalThreadId, lifecycle: { action: "forked" } });
 
       expect(request.mock.calls.map(([method]) => method)).toEqual([
+        "config/read",
+        "configRequirements/read",
         "thread/read",
         "thread/fork",
         "thread/unsubscribe",
@@ -4531,6 +4715,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       });
       const abandonClient = vi.fn(async () => undefined);
       const request = vi.fn(async (method: string, requestParams?: unknown) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/read") {
           return { thread: sourceThread({ threadId: sourceThreadId }) };
         }
@@ -4563,6 +4753,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       ).rejects.toThrow(failure);
 
       expect(request.mock.calls.map(([method]) => method)).toEqual([
+        "config/read",
+        "configRequirements/read",
         "thread/read",
         "thread/fork",
         "thread/unsubscribe",
@@ -4570,8 +4762,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
         "app/installed",
         "thread/delete",
       ]);
-      expect(request.mock.calls[2]?.[1]).toEqual({ threadId: probeThreadId });
-      expect(request.mock.calls[5]?.[1]).toEqual({ threadId: finalThreadId });
+      expect(request.mock.calls[4]?.[1]).toEqual({ threadId: probeThreadId });
+      expect(request.mock.calls[7]?.[1]).toEqual({ threadId: finalThreadId });
       expect(abandonClient).not.toHaveBeenCalled();
       expect(testCodexAppServerBindingStore.read(identity)).toMatchObject({
         pendingSupervisionBranch: { sourceThreadId },
@@ -4596,6 +4788,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
     });
     const abandonClient = vi.fn(async () => undefined);
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread: sourceThread({ threadId: sourceThreadId }) };
       }
@@ -4630,6 +4828,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
     ).rejects.toThrow("Codex supervised plugin app attestation cleanup failed");
 
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/fork",
       "thread/unsubscribe",
@@ -4655,7 +4855,15 @@ describe("Codex app-server supervised branch lifecycle", () => {
       cwd: workspaceDir,
       pending: { sourceThreadId: "thread-source" },
     });
-    const request = vi.fn();
+    const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
     const appServer = createThreadLifecycleAppServerOptions();
     appServer.start.command = "different-codex";
 
@@ -4668,7 +4876,10 @@ describe("Codex app-server supervised branch lifecycle", () => {
         appServer,
       }),
     ).rejects.toThrow("source connection changed before branch materialization");
-    expect(request).not.toHaveBeenCalled();
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
+    ]);
   });
 
   it("recovers every persisted orphan before materializing a fresh canonical branch", async () => {
@@ -4701,6 +4912,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       },
     };
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/archive" || method === "thread/unsubscribe") {
         return {};
       }
@@ -4735,6 +4952,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       lifecycle: { action: "forked" },
     });
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/archive",
       "thread/archive",
       "thread/read",
@@ -4743,6 +4962,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       "thread/start",
     ]);
     expect(request.mock.calls.map(([, requestParams]) => requestParams)).toEqual([
+      { cwd: path.resolve(workspaceDir), includeLayers: true },
+      undefined,
       { threadId: orphanProbeThreadId },
       { threadId: orphanFinalThreadId },
       { threadId: sourceThreadId, includeTurns: true },
@@ -4780,6 +5001,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       },
     });
     const request = vi.fn(async (method: string, requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       const threadId = (requestParams as { threadId?: string } | undefined)?.threadId;
       if (method === "thread/archive" && threadId === orphanProbeThreadId) {
         return {};
@@ -4806,6 +5033,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       }),
     ).rejects.toThrow(`cleanup must finish before retry: ${orphanFinalThreadId}`);
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/archive",
       "thread/archive",
       "thread/unsubscribe",
@@ -4836,6 +5065,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       },
     });
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/archive") {
         return {};
       }
@@ -4866,6 +5101,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       }),
     ).rejects.toThrow("recovering a supervised Codex branch");
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/archive",
       "thread/archive",
     ]);
@@ -4901,6 +5138,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       pending: { sourceThreadId: "thread-source" },
     });
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread };
       }
@@ -4916,7 +5159,11 @@ describe("Codex app-server supervised branch lifecycle", () => {
         appServer: createThreadLifecycleAppServerOptions(),
       }),
     ).rejects.toThrow("source changed after Continue");
-    expect(request.mock.calls.map(([method]) => method)).toEqual(["thread/read"]);
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
+      "thread/read",
+    ]);
   });
 
   it("keeps a structured fork rejection retryable without touching the source", async () => {
@@ -4930,6 +5177,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
     });
     let forkAttempts = 0;
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread: sourceThread({ threadId: sourceThreadId }) };
       }
@@ -4960,7 +5213,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
     };
 
     await expect(startOrResumeThread(commonParams)).rejects.toThrow("temporary fork rejected");
-    expect(request.mock.calls.map(([method]) => method)).toEqual(["thread/read", "thread/fork"]);
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
+      "thread/read",
+      "thread/fork",
+    ]);
     expect(testCodexAppServerBindingStore.read(identity)).toMatchObject({
       threadId: sourceThreadId,
       pendingSupervisionBranch: { sourceThreadId },
@@ -4972,6 +5230,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       lifecycle: { action: "forked" },
     });
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/fork",
       "thread/unsubscribe",
@@ -4993,6 +5253,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
     });
     const abortController = new AbortController();
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return {
           thread: sourceThread({
@@ -5025,14 +5291,16 @@ describe("Codex app-server supervised branch lifecycle", () => {
       }),
     ).rejects.toThrow("cancelled after canonical start");
     expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "config/read",
+      "configRequirements/read",
       "thread/read",
       "thread/fork",
       "thread/unsubscribe",
       "thread/start",
       "thread/archive",
     ]);
-    expect(request.mock.calls[2]?.[1]).toEqual({ threadId: probeThreadId });
-    expect(request.mock.calls[4]?.[1]).toEqual({ threadId: finalThreadId });
+    expect(request.mock.calls[4]?.[1]).toEqual({ threadId: probeThreadId });
+    expect(request.mock.calls[6]?.[1]).toEqual({ threadId: finalThreadId });
     const persisted = testCodexAppServerBindingStore.read(identity);
     expect(persisted).toMatchObject({
       threadId: sourceThreadId,
@@ -5053,6 +5321,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       pending: { sourceThreadId },
     });
     const request = vi.fn(async (method: string, requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread: sourceThread({ threadId: sourceThreadId }) };
       }
@@ -5137,6 +5411,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       const unarchivedId = finalThreadId;
       const nativeThreads = new Set([sourceThreadId]);
       const request = vi.fn(async (method: string, requestParams?: unknown) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/read") {
           return { thread: sourceThread({ threadId: sourceThreadId }) };
         }
@@ -5238,7 +5518,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       expect(persisted?.threadId).toBe(`${finalThreadId}-retry`);
       expect(persisted?.pendingSupervisionBranch).toBeUndefined();
       if (archiveFails) {
-        expect(request.mock.calls[0]).toEqual([
+        expect(request.mock.calls.find(([method]) => method === "thread/archive")).toEqual([
           "thread/archive",
           { threadId: unarchivedId },
           expect.any(Object),
@@ -5268,6 +5548,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       let failed = false;
       let preserved: Awaited<ReturnType<CodexAppServerBindingStore["read"]>>;
       const request = vi.fn(async (method: string) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/read") {
           return { thread: sourceThread({ threadId: sourceThreadId }) };
         }
@@ -5340,6 +5626,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       });
       expect(abandonClient).toHaveBeenCalledOnce();
       expect(request.mock.calls.map(([method]) => method)).toEqual([
+        "config/read",
+        "configRequirements/read",
         "thread/read",
         "thread/fork",
         "thread/unsubscribe",
@@ -5365,6 +5653,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       pending: { sourceThreadId },
     });
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread: sourceThread({ threadId: sourceThreadId }) };
       }
@@ -5425,6 +5719,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       pending: { sourceThreadId },
     });
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread: sourceThread({ threadId: sourceThreadId }) };
       }
@@ -5485,6 +5785,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       pending: { sourceThreadId },
     });
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread: sourceThread({ threadId: sourceThreadId }) };
       }
@@ -5552,6 +5858,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       pending: { sourceThreadId },
     });
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread: sourceThread({ threadId: sourceThreadId }) };
       }
@@ -5623,6 +5935,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
       pending: { sourceThreadId },
     });
     const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/read") {
         return { thread: sourceThread({ threadId: sourceThreadId }) };
       }
@@ -5704,6 +6022,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
         pending: { sourceThreadId },
       });
       const request = vi.fn(async (method: string) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/read") {
           return { thread: sourceThread({ threadId: sourceThreadId }) };
         }
@@ -5728,7 +6052,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
           ? "model probe reused an existing thread"
           : "model probe may have materialized without a safe thread id",
       );
-      expect(request.mock.calls.map(([method]) => method)).toEqual(["thread/read", "thread/fork"]);
+      expect(request.mock.calls.map(([method]) => method)).toEqual([
+        "config/read",
+        "configRequirements/read",
+        "thread/read",
+        "thread/fork",
+      ]);
       expect(abandonClient).toHaveBeenCalledOnce();
     },
   );
@@ -5749,6 +6078,12 @@ describe("Codex app-server supervised branch lifecycle", () => {
         pending: { sourceThreadId },
       });
       const request = vi.fn(async (method: string, _requestParams?: unknown) => {
+        if (method === "config/read") {
+          return { config: {}, origins: {}, layers: [] };
+        }
+        if (method === "configRequirements/read") {
+          return { requirements: null };
+        }
         if (method === "thread/read") {
           return { thread: sourceThread({ threadId: sourceThreadId }) };
         }
@@ -5780,13 +6115,15 @@ describe("Codex app-server supervised branch lifecycle", () => {
           : "canonical branch may have materialized without a safe thread id",
       );
       expect(request.mock.calls.map(([method]) => method)).toEqual([
+        "config/read",
+        "configRequirements/read",
         "thread/read",
         "thread/fork",
         "thread/unsubscribe",
         "thread/start",
       ]);
-      expect(request.mock.calls[2]?.[1]).toEqual({ threadId: probeThreadId });
-      expect(request.mock.invocationCallOrder[2]).toBeLessThan(
+      expect(request.mock.calls[4]?.[1]).toEqual({ threadId: probeThreadId });
+      expect(request.mock.invocationCallOrder[4]).toBeLessThan(
         abandonClient.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
       );
       expect(abandonClient).toHaveBeenCalledOnce();
@@ -5819,6 +6156,12 @@ describe("Codex app-server thread lifecycle timing", () => {
     let nowMs = 0;
     const log = createTimingLogger(true);
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         nowMs += 17;
         return threadStartResult("thread-started");
@@ -5854,6 +6197,12 @@ describe("Codex app-server thread lifecycle timing", () => {
     let nowMs = 0;
     const log = createTimingLogger(true);
     const respond = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         return threadStartResult("thread-existing");
       }
@@ -5908,6 +6257,12 @@ describe("Codex app-server thread lifecycle timing", () => {
     let nowMs = 0;
     const log = createTimingLogger(false);
     const request = vi.fn(async (method: string) => {
+      if (method === "config/read") {
+        return { config: {}, origins: {}, layers: [] };
+      }
+      if (method === "configRequirements/read") {
+        return { requirements: null };
+      }
       if (method === "thread/start") {
         nowMs += 25;
         return threadStartResult("thread-slow");

@@ -7,13 +7,13 @@ import type {
 } from "@openclaw/acp-core/types";
 import { normalizeOptionalString, type FastMode } from "@openclaw/normalization-core/string-coerce";
 import type { SessionGoal } from "../../../packages/gateway-protocol/src/schema/sessions-goal.js";
-import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
-import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import type {
   SessionEntryArchiveReason,
   SessionRow,
   SessionRunStatus,
 } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
+import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import type { ChatType } from "../../channels/chat-type.js";
 import type {
   CronScheduledToolCallerOrigin,
@@ -25,7 +25,6 @@ import type { ChannelRouteRef } from "../../plugin-sdk/channel-route.js";
 import type { SessionBoardFace } from "../../shared/session-types.js";
 import type { Skill } from "../../skills/loading/skill-contract.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
-import type { SessionSystemPromptReport } from "./session-system-prompt-report.js";
 import type { TtsAutoMode } from "../types.tts.js";
 import type { MainRestartRecoveryState } from "./main-session-recovery.types.js";
 import type {
@@ -42,6 +41,7 @@ import type {
   SessionParticipant,
 } from "./session-entry-provenance.js";
 import type { AgentPatchedSessionModelFallback } from "./session-model-fallback.js";
+import type { SessionSystemPromptReport } from "./session-system-prompt-report.js";
 
 export type SessionScope = "per-sender" | "global";
 export type SessionChatType = ChatType;
@@ -78,7 +78,6 @@ export type SessionDeliveryState =
       context: DeliveryContext;
       origin: SessionOrigin;
     };
-
 
 /**
  * Durable transcript-repair record: an assistant final that was delivered to
@@ -531,7 +530,7 @@ type SessionEntryCore = SessionRestartRecoveryState &
     /** One-run rollback guard for a model selected by the agent sessions tool. */
     modelFallback?: AgentPatchedSessionModelFallback;
     authProfileOverride?: string;
-    authProfileOverrideSource?: "auto" | "user";
+    authProfileOverrideSource?: "auto" | "user" | "user-link";
     authProfileOverrideCompactionCount?: number;
     /**
      * Set on explicit user-driven session model changes (for example `/model`

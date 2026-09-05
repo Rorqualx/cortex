@@ -150,6 +150,8 @@ Notes:
 | `list`                           | Default action when no subcommand is provided.                                                                                                                                                                                                                                                                                    |
 | `list`/`info`/`check` output     | Rendered output goes to stdout. With `--json`, the machine-readable payload stays on stdout for pipes and scripts.                                                                                                                                                                                                                |
 
+## Release trust
+
 Community ClawHub skill installs and updates check trust before downloading.
 Versioned community archive releases use exact-release trust metadata.
 Resolver-backed GitHub skills rely on ClawHub's install resolver to enforce

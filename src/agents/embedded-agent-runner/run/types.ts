@@ -366,6 +366,7 @@ export type EmbeddedRunAttemptResult = {
   lastToolRecovery?: ToolRecoverySummary;
   didSendViaMessagingTool: boolean;
   didDeliverSourceReplyViaMessageTool?: boolean;
+  sourceReplyDelivered?: true;
   didSendDeterministicApprovalPrompt?: boolean;
   messagingToolSentTexts: string[];
   messagingToolSentMediaUrls: string[];

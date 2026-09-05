@@ -17,7 +17,10 @@ import { ensureAgentWorkspace } from "../../agents/workspace.js";
 import { normalizeThinkLevel, resolveThinkingProfile } from "../../auto-reply/thinking.js";
 import { getRuntimeConfig } from "../../config/config.js";
 import * as session from "../../config/sessions/lifecycle.js";
-import { resolveSessionFilePathCore, resolveSessionStorePathCore } from "../../config/sessions/paths.js";
+import {
+  resolveSessionFilePathCore,
+  resolveSessionStorePathCore,
+} from "../../config/sessions/paths.js";
 import {
   deleteSessionEntryLifecycle,
   listSessionEntriesCore as listAccessorSessionEntries,
@@ -31,7 +34,6 @@ import {
   updateSessionEntry,
 } from "../../config/sessions/session-accessor.js";
 import { normalizeResolvedMaintenanceConfigInput } from "../../config/sessions/store-maintenance.js";
-import type { ResolvedSessionMaintenanceConfigInput } from "../../config/sessions/store-maintenance.js";
 import type { SessionAcpMeta, SessionEntry } from "../../config/sessions/types.js";
 import {
   captureSessionInitializationOwner,
@@ -76,17 +78,6 @@ type RuntimeSessionStoreEntryUpdateParams = {
   skipMaintenance?: boolean;
   takeCacheOwnership?: boolean;
   requireWriteSuccess?: boolean;
-};
-
-type RuntimeSessionStoreEntryPatchParams = RuntimeSessionStoreReadParams & {
-  fallbackEntry?: SessionEntry;
-  maintenanceConfig?: ResolvedSessionMaintenanceConfigInput;
-  preserveActivity?: boolean;
-  replaceEntry?: boolean;
-  update: (
-    entry: SessionEntry,
-    context: { existingEntry?: SessionEntry },
-  ) => Promise<Partial<SessionEntry> | null> | Partial<SessionEntry> | null;
 };
 
 type RuntimeUpsertSessionEntryParams = RuntimeSessionStoreReadParams & {
@@ -140,9 +131,10 @@ function listSessionEntries(
 }
 
 async function patchSessionEntry(
-  params: RuntimeSessionStoreEntryPatchParams,
+  params: Parameters<PluginRuntime["agent"]["session"]["patchSessionEntry"]>[0],
 ): Promise<SessionEntry | null> {
   return await patchAccessorSessionEntry(toSessionAccessScope(params), params.update, {
+    assertCommitAllowed: params.assertCommitAllowed,
     fallbackEntry: params.fallbackEntry,
     maintenanceConfig:
       params.maintenanceConfig !== undefined

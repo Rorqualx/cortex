@@ -35,6 +35,7 @@ import {
 } from "./openclaw-tools.registration.js";
 import { createOpenClawSwarmToolGroups } from "./openclaw-tools.swarm.js";
 import type { OpenClawToolsOptions } from "./openclaw-tools.types.js";
+import { resolveWidgetPresentationForRun } from "./openclaw-tools.widget-presentation.js";
 import { createSessionAwarenessTool } from "./sessions/tools/session-awareness-tool.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
@@ -135,6 +136,11 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
   });
   // Scheduled turns keep delivery routing live, but Gateway authorization remains bound to the
   // authenticated creator account captured in the immutable scheduled authority envelope.
+  const widgetPresentation = resolveWidgetPresentationForRun(options);
+  const inlineWidgetClientAvailable = options?.clientCaps?.includes("inline-widgets") === true;
+  const widgetSessionKey = normalizeOptionalString(
+    options?.runSessionKey ?? options?.agentSessionKey,
+  );
   const gatewayCallerAccountId = options?.gatewayCallerAccountId ?? options?.agentAccountId;
   const runtimeWebTools = getActiveRuntimeWebToolsMetadata();
   const sandbox =
@@ -342,6 +348,21 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     resolvedConfig?.tools?.deny,
     options?.pluginToolDenylist,
   );
+  const scheduledWidgetExplicitlyAllowed = isToolExplicitlyAllowedByFactoryPolicy({
+    toolName: "show_widget",
+    allowlist: options?.runtimeToolAllowlist,
+    denylist: explicitFactoryDenylist,
+  });
+  // Scheduled turns with an explicit server-stamped tool cap have no originating
+  // renderer. Persistent session targets may still write their durable board;
+  // detached cron-run sessions stay gated because their board is not user-owned.
+  const scheduledPinnedWidgetOnly =
+    options?.gatewayCallerScheduled === true &&
+    scheduledWidgetExplicitlyAllowed &&
+    !inlineWidgetClientAvailable &&
+    !widgetPresentation.currentChannelPresenter &&
+    Boolean(widgetSessionKey) &&
+    !isCronRunSessionKey(widgetSessionKey);
   const includeMessageTool =
     !embedded ||
     options?.sourceReplyDeliveryMode === "message_tool_only" ||
@@ -448,7 +469,12 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
           createShowWidgetTool({
             sessionId: options?.sessionId,
             agentId: sessionAgentId,
-            agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+            agentSessionKey: widgetSessionKey,
+            inlineHostEnabled: isCoreCanvasHostEnabled(resolvedConfig),
+            inlineClientAvailable: inlineWidgetClientAvailable,
+            pinnedOnly: scheduledPinnedWidgetOnly,
+            presenters: widgetPresentation.presenters,
+            presenterContext: widgetPresentation.context,
           }),
         ]),
     ...collectPresentOpenClawTools([heartbeatTool]),

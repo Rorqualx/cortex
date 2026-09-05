@@ -183,6 +183,7 @@ export function prepareEmbeddedRunTerminal(input: {
         responseModel,
       },
       successfulToolNames,
+      sourceReplyDelivered: attempt.sourceReplyDelivered,
       rerouted:
         reportedModelRef.provider !== input.provider ||
         reportedModelRef.model !== input.model ||
@@ -217,7 +218,6 @@ export function prepareEmbeddedRunTerminal(input: {
     reasoningLevel: runParams.reasoningLevel,
     thinkingLevel: runParams.thinkLevel,
     toolResultFormat: input.resolvedToolResultFormat,
-    suppressToolErrorWarnings: runParams.suppressToolErrorWarnings,
     didSendViaMessagingTool: attempt.didSendViaMessagingTool,
     didDeliverSourceReplyViaMessageTool: attempt.didDeliverSourceReplyViaMessageTool === true,
     messagingToolSentTargets: attempt.messagingToolSentTargets,

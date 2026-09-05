@@ -279,6 +279,9 @@ export async function handleToolExecutionEnd(
   const messageDelivery = readEmbeddedMessageDeliveryFact(
     readToolResultDetails(toolSendReceiptResult)?.messageDelivery,
   );
+  if (messageDelivery?.sourceReplyDelivered) {
+    ctx.state.sourceReplyDelivered = true;
+  }
   const didDeliverMessagingResult =
     isMessagingInvocation &&
     (messageDelivery
@@ -466,9 +469,7 @@ export async function handleToolExecutionEnd(
     ...(callSummary.commandBearing && !isExecToolName(toolName)
       ? { suppressChannelProgress: true }
       : {}),
-    ...(isToolError && extractToolErrorMessage(sanitizedResult)
-      ? { error: extractToolErrorMessage(sanitizedResult) }
-      : {}),
+    ...(errorMessage ? { error: errorMessage } : {}),
   };
   emitTrackedItemEvent(ctx, itemData);
   emitAgentEventCallbackBestEffort(ctx, {
@@ -563,9 +564,7 @@ export async function handleToolExecutionEnd(
         startedAt: startData?.startTime,
         endedAt,
         ...(output ? { summary: output } : {}),
-        ...(isToolError && extractToolErrorMessage(sanitizedResult)
-          ? { error: extractToolErrorMessage(sanitizedResult) }
-          : {}),
+        ...(errorMessage ? { error: errorMessage } : {}),
       });
       const outputData: AgentCommandOutputEventData = {
         itemId: commandItemId,
