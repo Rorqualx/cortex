@@ -1314,6 +1314,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     // Mark as unsubscribed FIRST to prevent waitForCompactionRetry from creating
     // new un-resolvable promises during teardown.
     state.unsubscribed = true;
+    // Drop deferred assistant stream data so a late flush cannot deliver
+    // stream chunks after unsubscribe (upstream clearAssistantStream graft).
+    clearDeferredAssistantEvents();
     cleanupRunToolStartData(params.runId);
     // Reject pending compaction wait to unblock awaiting code.
     // Don't resolve, as that would incorrectly signal "compaction complete" when it's still in-flight.

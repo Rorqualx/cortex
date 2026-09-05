@@ -30,7 +30,10 @@ const SESSION_PLACEMENT_SOURCE_LOCALE_PATH = path.join(LOCALES_DIR, "en-session-
 const FALLBACK_BASELINE_PATH = path.join(I18N_ASSETS_DIR, "catalog-fallbacks.json");
 const FALLBACK_BASELINE_VERSION = 1;
 const CONTROL_UI_TEST_FILE_PATTERN = /\.(?:test|browser\.test|node\.test)\.tsx?$/u;
-
+const AUTOMATIONS_FEATURE_KEYS =
+  `sessionsView.showCronSessions sessionsView.subagentPrefix sessionsView.automationPrefix agents.cronPanel.schedulerSubtitle agents.cronPanel.agentJobsTitle configForm.sections.cron.label configView.sections.cron subtitles.tasks subtitles.automation memoryPage.dreaming.intro tasksPage.runtime.cron attention.cronFailed attention.cronOverdue palette.items.scheduled`.split(
+    " ",
+  );
 function compareStringArrays(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -212,11 +215,19 @@ async function buildCatalogFallbackBaseline(
     if (!existsSync(memoryPath)) {
       throw new Error(`${toRepoPath(memoryPath)} does not contain ${entry.locale} translations`);
     }
+    // Match the source + translation-memory materialization served by the runtime Vite module.
     const localeMap = materializeControlUiLocaleCatalog(
       sourceFlat,
       loadControlUiTranslationMemory(memoryPath),
     );
-    localeFlats.set(entry.locale, flattenControlUiCatalog(localeMap, entry.locale));
+    const localeFlat = flattenControlUiCatalog(localeMap, entry.locale);
+    const invalid = AUTOMATIONS_FEATURE_KEYS.slice(1, 3).filter((key) =>
+      /\bcron\b/i.test(localeFlat.get(key) ?? ""),
+    );
+    if (invalid.length > 0) {
+      throw new Error(`${entry.locale}: ${invalid.join(", ")}`);
+    }
+    localeFlats.set(entry.locale, localeFlat);
   }
 
   const analysis = analyzeControlUiCatalogs(sourceFlat, localeFlats);

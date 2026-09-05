@@ -51,11 +51,12 @@ export function buildDeveloperInstructions(
     }
     for (const tool of spec.type === "namespace" ? spec.tools : [spec]) {
       const name = tool.name.trim();
+      const qualifiedName = spec.type === "namespace" ? `${spec.name}.${name}` : name;
       if (tool.deferLoading === true && name) {
         deferredToolNames.add(name);
       }
       if (name === "secrets" && params.disableTools !== true) {
-        secretsToolName ??= spec.type === "namespace" ? `${spec.name}.${name}` : name;
+        secretsToolName ??= qualifiedName;
       }
       hasSkillForge ||= name === SKILL_FORGE_TOOL_NAME;
       hasSessionsSpawn ||= name === "sessions_spawn";

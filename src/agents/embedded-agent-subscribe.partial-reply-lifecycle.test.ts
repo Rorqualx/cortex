@@ -14,7 +14,10 @@ vi.mock("../logging/subsystem.js", () => ({
   createSubsystemLogger: () => logger,
 }));
 
-import { createSubscribedSessionHarness } from "./embedded-agent-subscribe.e2e-harness.js";
+import {
+  createSubscribedSessionHarness,
+  emitAssistantTextDelta,
+} from "./embedded-agent-subscribe.e2e-harness.js";
 
 function emitPartialThenProviderFailure(emit: (event: unknown) => void): void {
   emit({
@@ -89,11 +92,16 @@ describe("subscribeEmbeddedAgentSession partial reply lifecycle", () => {
     });
 
     await vi.waitFor(() => expect(onPartialReply).toHaveBeenCalledOnce());
+    emitAssistantTextDelta({ emit, delta: " queued" });
+    emitAssistantTextDelta({ emit, delta: " tail" });
+    await subscription.waitForPendingEvents({ includePartialReplies: false });
+    expect(onPartialReply).toHaveBeenCalledOnce();
     subscription.unsubscribe();
     rejectPartial?.(callbackError);
     await expect(subscription.waitForPendingEvents()).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
       `assistant partial reply callback failed: ${String(callbackError)}`,
     );
+    expect(onPartialReply).toHaveBeenCalledOnce();
   });
 });

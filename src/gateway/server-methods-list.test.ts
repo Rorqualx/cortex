@@ -78,7 +78,7 @@ describe("listGatewayMethods", () => {
   });
 
   it("appends new methods after model probing without shifting older method indices", () => {
-    expect(listGatewayMethods().slice(-115)).toEqual([
+    expect(listGatewayMethods().slice(-116)).toEqual([
       "models.probe",
       "migrations.memory.plan",
       "migrations.memory.apply",
@@ -153,6 +153,7 @@ describe("listGatewayMethods", () => {
       "sessions.github.options",
       "sessions.github.status",
       "sessions.github.confirm",
+      "sessions.title.prepare",
       "activity.list",
       "activity.subscribe",
       "activity.unsubscribe",
@@ -278,6 +279,26 @@ describe("listGatewayMethods", () => {
     expect(methods).not.toContain("sessions.usage");
   });
 
+  it("rate-limits speculative inference under operator write authority", () => {
+    const descriptors = createCoreGatewayMethodDescriptors(coreGatewayHandlers);
+    expect(
+      descriptors.find((descriptor) => descriptor.name === "sessions.title.prepare"),
+    ).toMatchObject({
+      scope: "operator.write",
+      controlPlaneWrite: true,
+    });
+  });
+
+  it("rate-limits speculative inference under operator write authority", () => {
+    const descriptors = createCoreGatewayMethodDescriptors(coreGatewayHandlers);
+    expect(
+      descriptors.find((descriptor) => descriptor.name === "sessions.title.prepare"),
+    ).toMatchObject({
+      scope: "operator.write",
+      controlPlaneWrite: true,
+    });
+  });
+
   it("registers the hidden node protocol feature publication method", () => {
     const descriptor = createCoreGatewayMethodDescriptors(coreGatewayHandlers).find(
       (candidate) => candidate.name === "node.runnerInventory.update",
@@ -309,7 +330,7 @@ describe("listGatewayMethods", () => {
       "exec.approval.get",
     ]);
     expect(methods).toContain("tts.speak");
-    expect(coreMethods.slice(-124)).toEqual([
+    expect(coreMethods.slice(-125)).toEqual([
       "sessions.catalog.read",
       "terminal.upload",
       "sessions.catalog.continue",
@@ -393,6 +414,7 @@ describe("listGatewayMethods", () => {
       "sessions.github.options",
       "sessions.github.status",
       "sessions.github.confirm",
+      "sessions.title.prepare",
       "activity.list",
       "activity.subscribe",
       "activity.unsubscribe",

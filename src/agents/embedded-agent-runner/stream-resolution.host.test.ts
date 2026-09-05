@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("embedded stream transport host", () => {
   it("installs runtime transport ports before resolving an embedded stream", async () => {
     const inertResolver = getAiTransportHost().plugin.resolveProviderStream;
-    const { describeEmbeddedAgentStreamStrategy } = await import("./stream-resolution.js");
+    const { resolveEmbeddedAgentStream } = await import("./stream-resolution.js");
     const model = {
       api: "test-embedded-runtime-host-api",
       provider: "test-embedded-runtime-host",
@@ -32,13 +32,12 @@ describe("embedded stream transport host", () => {
       }),
     ).toBeUndefined();
     expect(
-      // Fork keeps the direct `currentStreamFn` shape; upstream's
-      // EmbeddedStreamRuntimeOwner indirection was deliberately reverted, so
-      // there is no llmRuntime to hand in here.
-      describeEmbeddedAgentStreamStrategy({
+      resolveEmbeddedAgentStream({
+        sessionId: "session-1",
+        llmRuntime: createLlmRuntime(),
         currentStreamFn: undefined,
         model,
-      }),
+      }).strategy,
     ).toBe("stream-simple");
   });
 });

@@ -166,9 +166,9 @@ export async function runAgentLoop(
 ): Promise<AgentMessage[]> {
   const newMessages: AgentMessage[] = [];
   // Isolate the caller's messages array: runLoop appends turn output to
-  // currentContext.messages, which must never alias the caller's array
+  // state.context.messages, which must never alias the caller's array
   // (upstream #129293).
-  const currentContext: AgentContext = { ...context, messages: [...context.messages] };
+  const state = { context: { ...context, messages: [...context.messages] } };
 
   await emit({ type: "agent_start" });
   await emit({ type: "turn_start" });
@@ -181,7 +181,7 @@ export async function runAgentLoop(
       continue;
     }
     await emit({ type: "message_end", message: prompt });
-    currentContext.messages.push(prompt);
+    state.context.messages.push(prompt);
     newMessages.push(prompt);
   }
   if (prompts.length > 0 && newMessages.length === 0) {
@@ -190,9 +190,7 @@ export async function runAgentLoop(
     await emit({ type: "agent_end", messages: [] });
     return [];
   }
-
-  await runLoop(currentContext, newMessages, config, signal, emit, streamFn, runtime);
-  return newMessages;
+  return runLoop(state, newMessages, config, signal, emit, streamFn, runtime);
 }
 
 /** Continue an existing loop context and emit only newly produced messages. */
@@ -215,15 +213,14 @@ export async function runAgentLoopContinue(
 
   const newMessages: AgentMessage[] = [];
   // Isolate the caller's messages array: runLoop appends turn output to
-  // currentContext.messages, which must never alias the caller's array
+  // state.context.messages, which must never alias the caller's array
   // (upstream #129293).
-  const currentContext: AgentContext = { ...context, messages: [...context.messages] };
+  const state = { context: { ...context, messages: [...context.messages] } };
 
   await emit({ type: "agent_start" });
   await emit({ type: "turn_start" });
 
-  await runLoop(currentContext, newMessages, config, signal, emit, streamFn, runtime);
-  return newMessages;
+  return runLoop(state, newMessages, config, signal, emit, streamFn, runtime);
 }
 
 function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
@@ -255,22 +252,22 @@ function pushLoopFailure(
 }
 
 /**
- * Main loop logic shared by agentLoop and agentLoopContinue.
+ * Own one replaceable context slot so this async frame does not retain earlier
+ * contexts after a next-turn hook replaces them.
  */
 async function runLoop(
-  initialContext: AgentContext,
+  state: { context: AgentContext },
   newMessages: AgentMessage[],
   initialConfig: AgentLoopConfig,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
   streamFn?: StreamFn,
   runtime?: AgentCoreStreamRuntimeDeps,
-): Promise<void> {
-  let currentContext = initialContext;
+): Promise<AgentMessage[]> {
   let config = initialConfig;
   let firstTurn = true;
   let turnOpen = true;
-  let turnTainted = isActiveTurnTainted(initialContext.messages);
+  let turnTainted = isActiveTurnTainted(state.context.messages);
   // Check for steering messages at start (user may have typed while waiting)
   let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
   const stopIfAborted = async (): Promise<boolean> => {
@@ -310,7 +307,7 @@ async function runLoop(
     // Inner loop: process tool calls and steering messages
     while (hasMoreToolCalls || pendingMessages.length > 0) {
       if (await stopIfAborted()) {
-        return;
+        return newMessages;
       }
 
       if (!firstTurn) {
@@ -337,7 +334,7 @@ async function runLoop(
             turnTainted = false;
           }
           await emit({ type: "message_end", message });
-          currentContext.messages.push(message);
+          state.context.messages.push(message);
           newMessages.push(message);
           injectedMessage = true;
         }
@@ -349,12 +346,12 @@ async function runLoop(
       }
 
       if (await stopIfAborted()) {
-        return;
+        return newMessages;
       }
 
       // Stream assistant response
       const message = await streamAssistantResponse(
-        currentContext,
+        state.context,
         config,
         signal,
         emit,
@@ -370,7 +367,7 @@ async function runLoop(
           await appendInterruptedTurnMessage(newMessages, emit);
         }
         await emit({ type: "agent_end", messages: newMessages });
-        return;
+        return newMessages;
       }
 
       // Only completed toolUse turns dispatch; length/stop can carry partial stream blocks.
@@ -383,7 +380,7 @@ async function runLoop(
         // should cut in-flight preemptable tools. undefined when preemption off.
         const preemptSignal = config.beginToolBatchPreempt?.();
         const executedToolBatch = await executeToolCalls(
-          currentContext,
+          state.context,
           message,
           config,
           signal,
@@ -395,7 +392,7 @@ async function runLoop(
         hasMoreToolCalls = !executedToolBatch.terminate;
 
         for (const result of toolResults) {
-          currentContext.messages.push(result);
+          state.context.messages.push(result);
           newMessages.push(result);
         }
       }
@@ -403,18 +400,17 @@ async function runLoop(
       await emit({ type: "turn_end", message, toolResults });
       turnOpen = false;
       if (await stopIfAborted()) {
-        return;
+        return newMessages;
       }
 
-      const nextTurnContext = {
+      const nextTurnSnapshot = await config.prepareNextTurn?.({
         message,
         toolResults,
-        context: currentContext,
+        context: state.context,
         newMessages,
-      };
-      const nextTurnSnapshot = await config.prepareNextTurn?.(nextTurnContext);
+      });
       if (nextTurnSnapshot) {
-        currentContext = nextTurnSnapshot.context ?? currentContext;
+        state.context = nextTurnSnapshot.context ?? state.context;
         const nextModel = nextTurnSnapshot.model ?? config.model;
         const nextThinkingLevel = nextTurnSnapshot.thinkingLevel ?? config.thinkingLevel;
         const shouldResolveReasoning =
@@ -431,24 +427,24 @@ async function runLoop(
         });
       }
       if (await stopIfAborted()) {
-        return;
+        return newMessages;
       }
 
       if (
         await config.shouldStopAfterTurn?.({
           message,
           toolResults,
-          context: currentContext,
+          context: state.context,
           newMessages,
         })
       ) {
         await emit({ type: "agent_end", messages: newMessages });
-        return;
+        return newMessages;
       }
 
       pendingMessages = (await config.getSteeringMessages?.()) || [];
       if (await stopIfAborted()) {
-        return;
+        return newMessages;
       }
     }
 
@@ -464,6 +460,7 @@ async function runLoop(
   }
 
   await emit({ type: "agent_end", messages: newMessages });
+  return newMessages;
 }
 
 /**
