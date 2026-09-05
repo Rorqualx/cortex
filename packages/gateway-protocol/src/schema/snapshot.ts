@@ -264,6 +264,8 @@ export const SnapshotSchema = closedObject({
   configPath: Type.Optional(NonEmptyString),
   stateDir: Type.Optional(NonEmptyString),
   sessionDefaults: Type.Optional(SessionDefaultsSchema),
+  /** Credential-free browser sign-in endpoint advertised to authenticated operators. */
+  controlUiIdentityUrl: Type.Optional(NonEmptyString),
   authMode: Type.Optional(
     Type.Union([
       Type.Literal("none"),
@@ -283,4 +285,3 @@ export type PresenceEntry = Static<typeof PresenceEntrySchema>;
 export type StateVersion = Static<typeof StateVersionSchema>;
 export type PresenceEvent = Static<typeof PresenceEventSchema>;
 export type UpdateAvailableEvent = Static<typeof UpdateAvailableEventSchema>;
-

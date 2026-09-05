@@ -19,6 +19,7 @@ import {
   validateWakeParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { bindCronSelfRemovalCommitGuard } from "../../cron/active-jobs.js";
 import { resolveCronJobConfigRevision } from "../../cron/config-revision.js";
 import {
   assertValidCronAnnounceDelivery,
@@ -30,8 +31,8 @@ import {
   resolveCronDeliveryPreviews,
 } from "../../cron/delivery-preview.js";
 import { assertCronDeliveryInputNonBlankFields } from "../../cron/delivery-target-validation.js";
+import { cronJobReadView } from "../../cron/job-read-view.js";
 import { normalizeCronJobCreate, normalizeCronJobPatch } from "../../cron/normalize.js";
-import { toPublicCronJob } from "../../cron/public-job.js";
 import type { CronRuntimeAuthority } from "../../cron/runtime-authority.js";
 import { CRON_JOB_SCRATCH_MAX_BYTES } from "../../cron/scratch-contract.js";
 import { resolveFailureAlert } from "../../cron/service/failure-alerts.js";
@@ -192,25 +193,6 @@ function publicCronScratch(
     content: scratch.content,
     revision: scratch.revision,
     updatedAtMs: scratch.updatedAtMs,
-  };
-}
-
-function cronJobReadView(job: CronJob) {
-  const publicJob = toPublicCronJob(job);
-  return {
-    ...publicJob,
-    configRevision: resolveCronJobConfigRevision(job),
-    nextRunAtMs: job.state.nextRunAtMs,
-    lastRunAtMs: job.state.lastRunAtMs,
-    lastRunStatus: job.state.lastRunStatus ?? job.state.lastStatus,
-    lastRunError: job.state.lastError,
-    lastDelivered: job.state.lastDelivered,
-    lastDeliveryStatus: job.state.lastDeliveryStatus,
-    lastDeliveryError: job.state.lastDeliveryError,
-    deliverySuppressionReason: job.state.deliverySuppressionReason,
-    lastFailureNotificationDelivered: job.state.lastFailureNotificationDelivered,
-    lastFailureNotificationDeliveryStatus: job.state.lastFailureNotificationDeliveryStatus,
-    lastFailureNotificationDeliveryError: job.state.lastFailureNotificationDeliveryError,
   };
 }
 
@@ -1224,6 +1206,15 @@ export const cronHandlers: GatewayRequestHandlers = {
         allowCurrentJob: usesCurrentJobCapability,
         expectedConfigRevision,
       });
+      const identity = client?.internal?.agentRuntimeIdentity;
+      const validateAuthority = context.validateAgentRuntimeApprovalAuthority;
+      if (identity && validateAuthority && commitGuard && callerScope?.currentJobId === jobId) {
+        bindCronSelfRemovalCommitGuard(jobId, identity.operationalRunInstance, commitGuard, () => {
+          if (!validateAuthority(identity) || readCronCallerScope(client)?.currentJobId !== jobId) {
+            throw new TypeError("cron self-removal authority is no longer active");
+          }
+        });
+      }
       result = commitGuard
         ? await context.cron.remove(jobId, { commitGuard })
         : await context.cron.remove(jobId);

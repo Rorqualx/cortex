@@ -35,7 +35,6 @@ import {
 } from "../infra/sqlite-transaction.js";
 import { readSqliteUserVersion } from "../infra/sqlite-user-version.js";
 import { withStateSchemaFence } from "../infra/state-database-coordinator.js";
-import { backfillVaultAuthKinds } from "./openclaw-state-db-legacy-backfills.js";
 import { migrateLegacyCronRunLogsToTaskRuns } from "../infra/state-migrations.cron-run-logs.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { VERSION } from "../version.js";
@@ -60,6 +59,7 @@ import {
   assertCurrentStateRuntimeSchema,
   isOpenClawStateSchemaFastPathEligible,
 } from "./openclaw-state-db-fast-path.js";
+import { backfillVaultAuthKinds } from "./openclaw-state-db-legacy-backfills.js";
 import {
   assertOpenClawStateDatabaseForMaintenance,
   markCurrentStateSchemaVersion,
@@ -642,10 +642,10 @@ function openOpenClawStateDatabaseWithBusyTimeout(
     if (!unpublished) {
       throw error;
     }
-    const cleanup = stateDbCache.closeOpenClawStateDatabaseHandle(unpublished);
-    if (cleanup.caught) {
+    const errors = stateDbCache.closeOpenClawStateDatabaseHandle(unpublished);
+    if (errors.length > 0) {
       throw createSqliteLifecycleAggregateError(
-        [error, ...cleanup.errors],
+        [error, ...errors],
         `Fresh OpenClaw state database open failed releasing access and closing its unpublished handle for ${pathname}.`,
         error,
       );

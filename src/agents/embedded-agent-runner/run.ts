@@ -214,6 +214,7 @@ import {
   resolveEffectiveRuntimeModel,
   resolveHookModelSelection,
 } from "./run/setup.js";
+import { resolveEmbeddedRunAttemptTerminalState } from "./run/terminal-outcome.js";
 import { mergeAttemptToolMediaPayloads } from "./run/tool-media-payloads.js";
 import {
   resolveLiveToolResultMaxChars,
@@ -3083,7 +3084,6 @@ export async function runEmbeddedAgent(
             stage: "assistant",
             allowFormatRetry: cloudCodeAssistFormatError,
             terminal: attempt.terminal,
-            signalOwnedInterruption: false,
             fallbackConfigured,
             failoverFailure,
             failoverReason: assistantFailoverReason,
@@ -3147,7 +3147,14 @@ export async function runEmbeddedAgent(
           const assistantFailoverOutcome = await handleAssistantFailover({
             initialDecision: assistantFailoverDecision,
             terminal: attempt.terminal,
-            signalOwnedInterruption: false,
+            // Upstream's failover reads the projected terminal state (outcome +
+            // whether the run's own abort signal owns the interruption) instead
+            // of a bare flag; project it from the same attempt/assistant pair.
+            terminalState: resolveEmbeddedRunAttemptTerminalState({
+              attempt,
+              assistant: assistantForFailover,
+              abortSignal: params.abortSignal,
+            }),
             harnessOwnsTransport: pluginHarnessOwnsTransport,
             fallbackConfigured,
             failoverFailure,

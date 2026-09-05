@@ -45,6 +45,7 @@ import {
   markOverloadRetryUnsafeToReplay,
   type OverloadRetryState,
 } from "./agent-runner-error-handler.js";
+import { recordAgentTurnExecutionOutcome } from "./agent-runner-execution-outcome.js";
 import type {
   AgentTurnCompaction,
   AgentTurnExecutionResult,
@@ -61,12 +62,11 @@ import {
   executeAgentFallbackCycle,
   type AgentFallbackCycleState,
 } from "./agent-runner-fallback-cycle.js";
-import { recordMessageToolOnlyRunOutcome } from "./agent-runner-message-tool-outcome.js";
 import { createAgentTurnPresentation } from "./agent-runner-presentation.js";
 import { createAgentTurnTimingTracker } from "./agent-runner-turn-timing.js";
 import { resolveQueuedReplyRuntimeConfig } from "./agent-runner-utils.js";
 import { shouldNotifyUserAboutCompaction } from "./compaction-notice.js";
-import { resolveCurrentTurnImages } from "./current-turn-images.js";
+import { type CurrentTurnImages, resolveCurrentTurnImages } from "./current-turn-images.js";
 import type { FollowupRun } from "./queue.js";
 import type { ReplyMediaContext } from "./reply-media-paths.js";
 import { createReplyMediaContext } from "./reply-media-paths.runtime.js";
@@ -75,6 +75,12 @@ import { resolveReplyOperationAbortReason } from "./reply-operation-abort.js";
 // intentionally passes only runId); only the retain fence is used in this file.
 import { retainReplyOperationUntilComplete } from "./reply-run-registry.js";
 import { isReplyProfilerEnabled } from "./reply-timing-tracker.js";
+
+type InternalFollowupRun = FollowupRun & {
+  /** Keep admission state out of the public plugin-facing FollowupRun contract. */
+  currentTurnImagesPrepared?: true;
+  mediaImageLayout?: CurrentTurnImages["mediaImageLayout"];
+};
 
 function resolveRunStartupPhase(
   phase: EmbeddedAgentExecutionPhase,
@@ -196,7 +202,7 @@ async function executeAgentTurnInternalWithRetryState(
     });
   }
   let replyMediaContext: ReplyMediaContext;
-  let currentTurnImages: Awaited<ReturnType<typeof resolveCurrentTurnImages>>;
+  let currentTurnImages: CurrentTurnImages;
   try {
     replyMediaContext =
       params.replyMediaContext ??
@@ -218,14 +224,27 @@ async function executeAgentTurnInternalWithRetryState(
           requesterSenderE164: params.followupRun.run.senderE164,
         }),
       );
-    currentTurnImages = await agentTurnTiming.measure("current_turn_images", () =>
-      resolveCurrentTurnImages({
-        ctx: params.sessionCtx,
-        cfg: runtimeConfig,
-        images: params.followupRun.images ?? params.opts?.images,
-        imageOrder: params.followupRun.imageOrder ?? params.opts?.imageOrder,
-      }),
-    );
+    const internalFollowupRun = params.followupRun as InternalFollowupRun;
+    const hasQueuedCurrentTurnImages =
+      internalFollowupRun.currentTurnImagesPrepared === true ||
+      Object.hasOwn(params.followupRun, "images") ||
+      Object.hasOwn(params.followupRun, "imageOrder");
+    // Queue admission owns current-turn materialization, including empty results.
+    // Re-scanning here can resurrect suppressed media or duplicate loaded images.
+    currentTurnImages = hasQueuedCurrentTurnImages
+      ? {
+          images: params.followupRun.images,
+          imageOrder: params.followupRun.imageOrder,
+          mediaImageLayout: internalFollowupRun.mediaImageLayout,
+        }
+      : await agentTurnTiming.measure("current_turn_images", () =>
+          resolveCurrentTurnImages({
+            ctx: params.sessionCtx,
+            cfg: runtimeConfig,
+            images: params.opts?.images,
+            imageOrder: params.opts?.imageOrder,
+          }),
+        );
   } catch (error) {
     clearAgentRunContext(runId, lifecycleGeneration);
     throw error;
@@ -706,8 +725,12 @@ async function executeAgentTurnOutcome(params: AgentTurnParams): Promise<AgentTu
   }
 }
 
-/** Runs the agent turn and records its message-tool-only visible-outcome fact once. */
+/** Runs the agent turn and records its execution and message-tool delivery outcomes. */
 export async function executeAgentTurn(params: AgentTurnParams): Promise<AgentTurnExecutionResult> {
+  params.opts?.onRunVerbosityResolved?.({
+    verboseLevelOverride: params.followupRun.run.verboseLevelOverride,
+    resolvedVerboseLevel: params.resolvedVerboseLevel,
+  });
   if (params.replyOperation) {
     // Cancellation stops execution, but the exact owner must finish committed accounting first.
     retainReplyOperationUntilComplete(params.replyOperation);
@@ -717,20 +740,10 @@ export async function executeAgentTurn(params: AgentTurnParams): Promise<AgentTu
     params.opts?.runId === runId ? params : { ...params, opts: { ...params.opts, runId } };
   try {
     const result = await executeAgentTurnOutcome(executionParams);
-    const terminalOutcome =
-      result.outcome.kind === "aborted"
-        ? undefined
-        : result.outcome.kind === "rejected" || result.outcome.status === "failed"
-          ? "failed"
-          : "completed";
-    if (terminalOutcome) {
-      executionParams.opts?.onAgentRunTerminalOutcome?.(terminalOutcome);
-    }
-    recordMessageToolOnlyRunOutcome(executionParams, result);
+    recordAgentTurnExecutionOutcome(executionParams, result);
     return result;
   } catch (error) {
-    executionParams.opts?.onAgentRunTerminalOutcome?.("failed");
-    recordMessageToolOnlyRunOutcome(executionParams, undefined);
+    recordAgentTurnExecutionOutcome(executionParams, undefined);
     throw error;
   }
 }

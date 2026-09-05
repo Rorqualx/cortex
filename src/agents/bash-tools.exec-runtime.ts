@@ -401,8 +401,6 @@ export function applyShellPath(env: Record<string, string>, shellPath?: string |
 function stripSettledSessionRouting(session: ProcessSession): void {
   delete session.sessionKey;
   delete session.agentId;
-  delete session.mainKey;
-  delete session.sessionScope;
   delete session.eventRouting;
   delete session.notifyDeliveryContext;
   delete session.notifyOnExit;
@@ -433,10 +431,7 @@ function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "faile
   const summary = output
     ? `Exec ${status} (${session.id.slice(0, 8)}, ${exitLabel}) :: ${output}`
     : `Exec ${status} (${session.id.slice(0, 8)}, ${exitLabel})`;
-  const eventRouting = session.eventRouting ?? {
-    mainKey: session.mainKey,
-    sessionScope: session.sessionScope,
-  };
+  const eventRouting = session.eventRouting ?? {};
   enqueueSystemEvent(summary, {
     sessionKey: resolveEventSessionKeyForPolicy(sessionKey, eventRouting),
     deliveryContext: session.notifyDeliveryContext,
@@ -530,12 +525,6 @@ export function emitExecSystemEvent(
     sessionKey?: string;
     contextKey?: string;
     deliveryContext?: DeliveryContext;
-    /** `session.mainKey` from the runtime config; pass-through of `undefined`
-     *  falls back to the literal "main" default in `resolveEventSessionKey`. */
-    mainKey?: string;
-    /** `session.scope` from the runtime config; needed so global-scope
-     *  agents route cron-run events to the "global" queue. */
-    sessionScope?: "per-sender" | "global";
     eventRouting?: EventSessionRoutingPolicy;
   },
 ) {
@@ -543,10 +532,7 @@ export function emitExecSystemEvent(
   if (!sessionKey) {
     return;
   }
-  const eventRouting = opts.eventRouting ?? {
-    mainKey: opts.mainKey,
-    sessionScope: opts.sessionScope,
-  };
+  const eventRouting = opts.eventRouting ?? {};
   enqueueSystemEvent(text, {
     sessionKey: resolveEventSessionKeyForPolicy(sessionKey, eventRouting),
     contextKey: opts.contextKey,
@@ -751,15 +737,6 @@ export async function runExecProcess(opts: {
   processContinuationAvailable?: boolean;
   /** Cancels startup only; background process lifetime belongs to the supervisor. */
   startupSignal?: AbortSignal;
-  /** `session.mainKey` from the runtime config; snapshotted onto the
-   *  ProcessSession so background-exit notifications can remap cron-run
-   *  keys without an ambient config load. Long-running background exits use
-   *  this start-time value even if config changes while the process runs. */
-  mainKey?: string;
-  /** `session.scope` from the runtime config; snapshotted alongside
-   *  `mainKey` so the cron-run remap can route global-scope agents to
-   *  the "global" queue instead of agent-main. */
-  sessionScope?: "per-sender" | "global";
   /** Start-time routing policy for detached exec system events. */
   eventRouting?: EventSessionRoutingPolicy;
   /** Resolved OS sandbox config (Seatbelt on macOS). When provided and enabled,
@@ -857,8 +834,6 @@ export async function runExecProcess(opts: {
     scopeKey: opts.scopeKey,
     sessionKey: opts.sessionKey,
     agentId: opts.agentId,
-    mainKey: opts.mainKey,
-    sessionScope: opts.sessionScope,
     eventRouting: opts.eventRouting,
     notifyDeliveryContext: normalizeDeliveryContext(opts.notifyDeliveryContext),
     notifyOnExit: opts.notifyOnExit,

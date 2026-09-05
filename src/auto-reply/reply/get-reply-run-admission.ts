@@ -61,7 +61,7 @@ import {
   resolveRoutedDeliveryThreadId,
 } from "./routed-delivery-thread.js";
 import { drainFormattedSystemEvents } from "./session-system-events.js";
-import { getReplySystemEventSessionKey } from "./system-event-session-key.js";
+import { getReplySystemEventContext } from "./system-event-session-key.js";
 
 export async function prepareReplyRunAdmission(context: PreparedReplyRunContext) {
   const {
@@ -107,6 +107,10 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
   } = params;
   let { sessionEntry, prefixedBodyBase } = context;
   let { resolvedThinkLevel } = params;
+  let thinkLevelOverride =
+    explicitThinkingLevelOverride ??
+    directives.thinkLevel ??
+    (directives.clearThinkLevel ? ("default" as const) : undefined);
 
   // Extract first-token think hint from the user body BEFORE prepending system events.
   // If done after, the System: prefix becomes the first token and silently shadows any
@@ -130,6 +134,7 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
       })
     ) {
       resolvedThinkLevel = maybeLevel;
+      thinkLevelOverride = maybeLevel;
       prefixedBodyBase = removeDirectiveSpan(prefixedBodyBase, 0, firstToken.length);
     }
   }
@@ -146,9 +151,11 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
     if (useFastReplyRuntime) {
       return;
     }
-    const routeSystemEventSessionKey = normalizeOptionalString(getReplySystemEventSessionKey(opts));
-    const systemEventSessionKeys =
-      routeSystemEventSessionKey && routeSystemEventSessionKey !== sessionKey
+    const eventContext = getReplySystemEventContext(opts);
+    const routeSystemEventSessionKey = normalizeOptionalString(eventContext?.sessionKey);
+    const systemEventSessionKeys = context.isHeartbeat
+      ? [routeSystemEventSessionKey ?? sessionKey]
+      : routeSystemEventSessionKey && routeSystemEventSessionKey !== sessionKey
         ? [routeSystemEventSessionKey, sessionKey]
         : [sessionKey];
     for (const systemEventSessionKey of systemEventSessionKeys) {
@@ -159,7 +166,9 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
         sessionKey: systemEventSessionKey,
         isMainSession: isCurrentSession && isMainSession,
         isNewSession: isCurrentSession && isNewSession,
-        suppressHeartbeatOwnedEvents: context.isHeartbeat,
+        // A heartbeat may consume only its prepared generic selection, never
+        // dedicated reminders or arrivals that were not part of this turn.
+        events: context.isHeartbeat ? (eventContext?.events ?? []) : undefined,
       });
       if (eventsBlock) {
         drainedSystemEventBlocks.push(eventsBlock);
@@ -662,6 +671,7 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
     kind: "ready",
     context,
     resolvedThinkLevel,
+    thinkLevelOverride,
     thinkingCatalog,
     sessionEntry,
     skillsSnapshot,

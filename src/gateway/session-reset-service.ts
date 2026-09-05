@@ -53,8 +53,8 @@ import {
   resetSessionEntryLifecycle,
 } from "../config/sessions.js";
 import { rebindCliSessionReseedReceiptsForReset } from "../config/sessions/cli-session-binding.js";
-import { preserveResetSessionForDiscovery } from "../config/sessions/preserve-reset-discovery.js";
 import { formatSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
+import { preserveResetSessionForDiscovery } from "../config/sessions/preserve-reset-discovery.js";
 import { resolveResetPreservedSelection } from "../config/sessions/reset-preserved-selection.js";
 import { createSessionDiffBaselineCaptureClaim } from "../config/sessions/session-diff-baseline-capture.js";
 import { sessionEntryForkedFromParent } from "../config/sessions/session-entry-lineage.js";
@@ -858,6 +858,8 @@ export async function cleanupSessionBeforeMutation(params: {
     registry: getActivePluginRegistry(),
     reason: params.reason === "session-reset" ? "reset" : "delete",
     sessionKey: params.target.canonicalKey ?? params.key,
+    // Unscoped keys can exist in several agent stores; this lifecycle owns only its target.
+    sessionStoreTargets: [params.target],
     shouldCleanup: () => {
       params.assertCurrent?.();
       return true;
@@ -1578,7 +1580,9 @@ export async function performGatewaySessionReset(params: {
         commitGuard: assertCompletionAuthorized,
         archivePreviousTranscript: false,
         agentId: target.agentId,
-        resetBoundary: boundaryEntry ? { context: "clear", reason: params.reason } : undefined,
+        resetBoundary: boundaryEntry
+          ? { context: "clear", reason: params.reason, cwd: workspaceDir }
+          : undefined,
         storePath,
         target: {
           canonicalKey: target.canonicalKey,

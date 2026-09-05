@@ -49,6 +49,7 @@ export const ChatHistoryParamsSchema = closedObject({
   // clamps delivery to 1000 regardless. Upstream's 1000 ceiling rejects that
   // request outright, so chat.startup fails and the dashboard loads no history.
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10_000 })),
+  maxBytes: Type.Optional(Type.Integer({ minimum: 1024 })),
   offset: Type.Optional(Type.Integer({ minimum: 0 })),
   pendingBefore: Type.Optional(Type.Integer({ minimum: 1 })),
   inputRunIds: Type.Optional(
@@ -62,6 +63,18 @@ export const ChatHistoryParamsSchema = closedObject({
   sessionId: Type.Optional(NonEmptyString),
   maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 500_000 })),
 });
+
+/** Resolve a short chat link and fetch its first page under the same discovery policy. */
+export const ChatStartupParamsSchema = Type.Union([
+  ChatHistoryParamsSchema,
+  closedObject({
+    shortId: NonEmptyString,
+    slugHint: Type.Optional(NonEmptyString),
+    agentId: NonEmptyString,
+    limit: ChatHistoryParamsSchema.properties.limit,
+    maxBytes: ChatHistoryParamsSchema.properties.maxBytes,
+  }),
+]);
 
 /** Lightweight metadata; session scope preserves the persisted auth-profile selection. */
 export const ChatMetadataParamsSchema = Object.assign(
@@ -347,6 +360,7 @@ export const ChatEventSchema = Type.Union([
 
 // Wire types derive directly from local schema consts so public d.ts graphs never
 // pull in the ProtocolSchemas registry.
+export type ChatStartupParams = Static<typeof ChatStartupParamsSchema>;
 export type ChatMetadataParams = Static<typeof ChatMetadataParamsSchema>;
 export type ChatToolTitlesParams = Static<typeof ChatToolTitlesParamsSchema>;
 export type LogsTailParams = Static<typeof LogsTailParamsSchema>;

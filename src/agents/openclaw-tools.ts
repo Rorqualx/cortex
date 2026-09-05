@@ -4,14 +4,13 @@ import { createShowWidgetTool } from "../canvas/widget-tool.js";
 import { selectApplicableRuntimeConfig } from "../config/config.js";
 import { callGateway } from "../gateway/call.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
-import { formatErrorMessage } from "../infra/errors.js";
-import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../secrets/runtime-state.js";
 import { getActiveRuntimeWebToolsMetadataFromState as getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
 import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
 import { resolveTranscriptsConfig } from "../transcripts/config.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentIds } from "./agent-scope.js";
+import { finalizeAgentToolAvailability } from "./agent-tool-availability.js";
 import { bindAssembledAgentToolActionDescriptor } from "./agent-tool-metadata.js";
 import {
   type HookContext,
@@ -26,6 +25,7 @@ import {
   resolveImageToolFactoryAvailable,
   resolveOptionalMediaToolFactoryPlan,
 } from "./openclaw-tools.media-factory-plan.js";
+import { createMediaGenerationAsyncStartCallback } from "./openclaw-tools.media-yield.js";
 import { applyNodesToolWorkspaceGuard } from "./openclaw-tools.nodes-workspace-guard.js";
 import {
   collectPresentOpenClawTools,
@@ -92,8 +92,6 @@ import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { createWorkboardTools } from "./tools/workboard-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
-const mediaGenerationYieldLog = createSubsystemLogger("agents/tools/media-generation-yield");
-
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
 export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentTool[] {
   const resolvedConfig = options?.config;
@@ -138,9 +136,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
   // authenticated creator account captured in the immutable scheduled authority envelope.
   const widgetPresentation = resolveWidgetPresentationForRun(options);
   const inlineWidgetClientAvailable = options?.clientCaps?.includes("inline-widgets") === true;
-  const widgetSessionKey = normalizeOptionalString(
-    options?.runSessionKey ?? options?.agentSessionKey,
-  );
+  const sessionKey = normalizeOptionalString(options?.runSessionKey ?? options?.agentSessionKey);
   const gatewayCallerAccountId = options?.gatewayCallerAccountId ?? options?.agentAccountId;
   const runtimeWebTools = getActiveRuntimeWebToolsMetadata();
   const sandbox =
@@ -164,22 +160,10 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     trimmedRunSessionKey && isCronRunSessionKey(trimmedRunSessionKey)
       ? trimmedRunSessionKey
       : options?.agentSessionKey;
-  const yieldMediaGenerationTurn = options?.onYield;
-  const mediaGenerationAsyncStartCallback =
-    !yieldMediaGenerationTurn ||
-    (mediaGenerationAgentSessionKey && isCronRunSessionKey(mediaGenerationAgentSessionKey))
-      ? undefined
-      : (message: string) => {
-          // Commit the start before yielding; handle teardown failures outside the owner turn.
-          setImmediate(() => {
-            void (async () => yieldMediaGenerationTurn(message))().catch((error: unknown) => {
-              mediaGenerationYieldLog.warn("Failed to yield foreground media generation turn", {
-                error: formatErrorMessage(error),
-              });
-            });
-          });
-        };
-  const taskKey = normalizeOptionalString(options?.runSessionKey ?? options?.agentSessionKey);
+  const mediaGenerationAsyncStartCallback = createMediaGenerationAsyncStartCallback({
+    sessionKey: mediaGenerationAgentSessionKey,
+    onYield: options?.onYield,
+  });
   const { agentSessionKey: requesterSessionKey, runId: requesterTurnRunId } = options ?? {};
   const imageTool =
     options?.agentDir &&
@@ -361,8 +345,8 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     scheduledWidgetExplicitlyAllowed &&
     !inlineWidgetClientAvailable &&
     !widgetPresentation.currentChannelPresenter &&
-    Boolean(widgetSessionKey) &&
-    !isCronRunSessionKey(widgetSessionKey);
+    Boolean(sessionKey) &&
+    !isCronRunSessionKey(sessionKey);
   const includeMessageTool =
     !embedded ||
     options?.sourceReplyDeliveryMode === "message_tool_only" ||
@@ -380,7 +364,8 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     pluginToolDenylist: options?.pluginToolDenylist,
   })
     ? createProgressCardTool({
-        agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+        agentSessionKey: sessionKey,
+        agentId: sessionAgentId,
       })
     : null;
   const includeAskUserTool = shouldIncludeAskUserToolForOpenClawTools({
@@ -454,9 +439,9 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
                 }),
               ]),
         ]),
-    ...(!embedded && taskKey && options?.taskSuggestionDeliveryMode === "gateway"
+    ...(!embedded && sessionKey && options?.taskSuggestionDeliveryMode === "gateway"
       ? createTaskSuggestionTools({
-          sessionKey: taskKey,
+          sessionKey,
           agentId: sessionAgentId,
           cwd: resolveWorkspaceRoot(options?.cwd ?? options?.workspaceDir ?? inferredWorkspaceDir),
         })
@@ -469,7 +454,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
           createShowWidgetTool({
             sessionId: options?.sessionId,
             agentId: sessionAgentId,
-            agentSessionKey: widgetSessionKey,
+            agentSessionKey: sessionKey,
             inlineHostEnabled: isCoreCanvasHostEnabled(resolvedConfig),
             inlineClientAvailable: inlineWidgetClientAvailable,
             pinnedOnly: scheduledPinnedWidgetOnly,
@@ -715,7 +700,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     options?.recordToolPrepStage?.("openclaw-tools:plugin-tools");
   }
 
-  allTools = filterToolsByClientCaps(allTools, options?.clientCaps);
+  allTools = finalizeAgentToolAvailability(filterToolsByClientCaps(allTools, options?.clientCaps));
   options?.recordToolPrepStage?.("openclaw-tools:client-capabilities");
   for (const tool of allTools) {
     bindAssembledAgentToolActionDescriptor(tool);

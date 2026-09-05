@@ -47,11 +47,8 @@ import {
   resolveSkillInvocationPolicy,
   resolveSkillKey,
 } from "./frontmatter.js";
-import {
-  loadSkillsFromDirSafe,
-  readSkillFrontmatterSafe,
-  type LocalSkillLoadDiagnostic,
-} from "./local-loader.js";
+import { loadSkillsFromDirSafe, readSkillFrontmatterSafe } from "./local-loader-safe.js";
+import type { LocalSkillLoadDiagnostic } from "./local-loader.js";
 import { resolvePluginSkillRoots } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
 import { formatSkillsForPromptCore, type Skill } from "./skill-contract.js";

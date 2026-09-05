@@ -11,6 +11,7 @@ import {
   setPluginToolMeta,
   type PluginToolMcpMeta,
 } from "../plugins/tool-metadata.js";
+import { sanitizeExternalContentText, wrapExternalContent } from "../security/external-content.js";
 import {
   buildSafeToolName,
   normalizeReservedToolNames,
@@ -34,7 +35,6 @@ import { buildMcpAppCanvasPayload, fetchMcpAppView } from "./mcp-ui-resource.js"
 import type { AgentToolResult } from "./runtime/index.js";
 import { toToolSearchJsonSafe } from "./tool-search-json.js";
 import type { AnyAgentTool } from "./tools/common.js";
-import { sanitizeExternalContentText, wrapExternalContent } from "../security/external-content.js";
 
 type ToolResultContentBlock = AgentToolResult<unknown>["content"][number];
 
@@ -89,14 +89,9 @@ async function releaseRuntimeLease(params: {
   runtime: SessionMcpRuntime;
   releaseLease?: () => void;
 }): Promise<void> {
-  params.releaseLease?.();
-  // Lease retirement is a lifecycle-only edge. Keep the manager graph out of
-  // read-only CLI startup paths that load tool materialization metadata.
-  const { completeDeferredSessionMcpRuntimeRetirement } =
-    await import("./agent-bundle-mcp-manager-api.js");
-  await completeDeferredSessionMcpRuntimeRetirement(params.runtime).catch((error: unknown) => {
-    logWarn(`bundle-mcp: deferred runtime cleanup failed: ${String(error)}`);
-  });
+  // Keep lifecycle imports out of read-only tool metadata loading.
+  const { releaseSessionMcpRuntime } = await import("./agent-bundle-mcp-manager-api.js");
+  await releaseSessionMcpRuntime(params);
 }
 
 function buildAppToolPolicyProjections(params: {
@@ -166,7 +161,9 @@ function toAgentToolResult(params: {
   const content = projected.content.map((block) =>
     fenceUntrustedMcpBlock(block, params.serverName),
   );
-  const details: Record<string, unknown> = isRecord(projected.details) ? { ...projected.details } : {};
+  const details: Record<string, unknown> = isRecord(projected.details)
+    ? { ...projected.details }
+    : {};
   if (details.structuredContent !== undefined) {
     details.structuredContent = sanitizeMcpStructuredValue(details.structuredContent);
   }
@@ -509,12 +506,14 @@ export async function materializeBundleMcpToolsForRun(params: {
   runtime: SessionMcpRuntime;
   agentId?: string;
   reservedToolNames?: Iterable<string>;
+  /** Transfer the lease admitted by the manager before returning this runtime. */
+  releaseLease?: () => void;
   disposeRuntime?: () => Promise<void>;
 }): Promise<BundleMcpToolRuntime> {
   const runtime = params.runtime;
   let disposed = false;
   let allowedAppToolsByServer: Map<string, Set<string>> | undefined;
-  const releaseLease = runtime.acquireLease?.();
+  const releaseLease = params.releaseLease ?? runtime.acquireLease?.();
   runtime.markUsed();
   let catalog;
   try {

@@ -2,8 +2,8 @@ import * as agentsModelsSkills from "./agents-models-skills.js";
 import * as agentsWorkspace from "./agents-workspace.js";
 import * as artifacts from "./artifacts.js";
 import * as commands from "./commands.js";
+import * as skillHistory from "./skill-history.js";
 import * as skillLibrary from "./skill-library.js";
-import * as skillWorkshop from "./skill-protocol-schemas.js";
 import * as transcripts from "./transcripts.js";
 
 export const AgentSkillProtocolSchemas = {
@@ -112,11 +112,15 @@ export const AgentSkillProtocolSchemas = {
   SkillsCuratorActionResult: agentsModelsSkills.SkillsCuratorActionResultSchema,
   SkillsCuratorStatusParams: agentsModelsSkills.SkillsCuratorStatusParamsSchema,
   SkillsCuratorStatusResult: agentsModelsSkills.SkillsCuratorStatusResultSchema,
-  // The gateway registers 11 skills.proposals.* methods (see
-  // src/gateway/server-methods/skills.ts) plus the two history methods, so their
-  // schemas have to be registered here or the public registry disagrees with the
-  // surface the server actually validates against.
-  ...skillWorkshop.SkillWorkshopProtocolSchemas,
+  SkillsProposalsListParams: agentsModelsSkills.SkillsProposalsListParamsSchema,
+  SkillsProposalsListResult: agentsModelsSkills.SkillsProposalsListResultSchema,
+  SkillsProposalEvaluateParams: agentsModelsSkills.SkillsProposalEvaluateParamsSchema,
+  SkillsProposalEvaluateResult: agentsModelsSkills.SkillsProposalEvaluateResultSchema,
+  SkillsProposalEventsListParams: agentsModelsSkills.SkillsProposalEventsListParamsSchema,
+  SkillsProposalEventsListResult: agentsModelsSkills.SkillsProposalEventsListResultSchema,
+  SkillsProposalHistoryStatusParams: skillHistory.SkillsProposalHistoryStatusParamsSchema,
+  SkillsProposalHistoryScanParams: skillHistory.SkillsProposalHistoryScanParamsSchema,
+  SkillsProposalHistoryScanResult: skillHistory.SkillsProposalHistoryScanResultSchema,
   SkillsProposalInspectParams: agentsModelsSkills.SkillsProposalInspectParamsSchema,
   SkillsProposalInspectResult: agentsModelsSkills.SkillsProposalInspectResultSchema,
   SkillsProposalCreateParams: agentsModelsSkills.SkillsProposalCreateParamsSchema,

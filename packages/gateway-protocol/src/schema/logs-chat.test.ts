@@ -8,6 +8,7 @@ import {
   ChatHistoryDeltaResultSchema,
   ChatHistoryParamsSchema,
   ChatHistoryResetResultSchema,
+  ChatStartupParamsSchema,
   ChatSendParamsSchema,
   ChatStatusEventSchema,
   type ChatHistoryCursorResult,
@@ -37,6 +38,24 @@ describe("ChatHistoryParamsSchema", () => {
     // Fork: the cursor-based history request param was removed in favor of
     // offset/pendingBefore paging; the closed object rejects it outright.
     expect(Value.Check(ChatHistoryParamsSchema, { ...request, cursor: "" })).toBe(false);
+  });
+});
+
+describe("ChatStartupParamsSchema", () => {
+  it("accepts one canonical or short selector while history remains canonical", () => {
+    const short = { shortId: "12345678", agentId: "main", slugHint: "selected-chat" };
+    expect(Value.Check(ChatStartupParamsSchema, short)).toBe(true);
+    expect(
+      Value.Check(ChatStartupParamsSchema, { sessionKey: "agent:main:main", cursor: "cursor" }),
+    ).toBe(true);
+    expect(Value.Check(ChatHistoryParamsSchema, short)).toBe(false);
+    for (const invalid of [
+      { ...short, sessionKey: "agent:main:main" },
+      { ...short, cursor: "cursor" },
+      { shortId: "12345678" },
+    ]) {
+      expect(Value.Check(ChatStartupParamsSchema, invalid)).toBe(false);
+    }
   });
 });
 

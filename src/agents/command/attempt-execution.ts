@@ -912,7 +912,7 @@ export function runAgentAttempt(params: {
             throw createAgentRunSupersededAbortError();
           }
         }
-        params.deferredLifecycle?.handoffToCli();
+        const diagnosticOwner = params.deferredLifecycle?.handoffToCli();
         const cliSessionBinding = getCliSessionBinding(params.sessionEntry, cliExecutionProvider);
         const cliProcessCwd = params.cwd ? resolveUserPath(params.cwd) : params.workspaceDir;
         const cliContinuationBody = params.opts.execApprovalContinuationPromptRange
@@ -1036,6 +1036,7 @@ export function runAgentAttempt(params: {
               : undefined;
           return await runCliAgent({
             preparedRunAdmission: params.preparedRunAdmission,
+            diagnosticOwner,
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,
             sessionTarget: params.sessionTarget,

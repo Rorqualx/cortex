@@ -20,6 +20,7 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { interactiveAgentTheme as theme } from "../../modes/interactive/theme/theme.js";
 import type { AgentTool } from "../../runtime/index.js";
+import { executionTitleSchema } from "../../schema/typebox.js";
 import {
   buildShellCommandInvocation,
   getBashShellConfig,
@@ -34,10 +35,9 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "./truncate.js";
 
 const bashSchema = Type.Object({
-  command: Type.String({ description: "Bash command to execute" }),
-  timeout: Type.Optional(
-    Type.Number({ description: "Timeout in seconds (optional, no default timeout)" }),
-  ),
+  title: executionTitleSchema(),
+  command: Type.String({ description: "Bash command." }),
+  timeout: Type.Optional(Type.Number({ description: "Optional timeout seconds; default none." })),
 });
 export type { BashToolDetails, BashToolInput } from "./tool-contracts.js";
 
