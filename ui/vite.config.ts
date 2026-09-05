@@ -365,6 +365,18 @@ export function resolveExternalPackageAliasesForVite(
       find: "@openclaw/uirouter",
       replacement: path.join(packageRoot("@openclaw/uirouter"), "dist/index.js"),
     },
+    // Dedupe the markdown parser for the browser bundle. The fork UI pins
+    // markdown-it 14.2.0 while packages/markdown-core resolves 15.0.0 from its
+    // own scope; without this alias any browser-reachable markdown-core module
+    // (e.g. image-spans via src/media/parse) bundles a second full markdown-it
+    // copy into the startup path (+42 KiB gzip on 2026-09-04). The alias keeps
+    // ONE instance (the UI's pin) for the browser; server resolution is
+    // unchanged. Rollup alias matching is exact-or-subpath, so
+    // markdown-it-task-lists and friends are unaffected.
+    {
+      find: "markdown-it",
+      replacement: path.join(packageRoot("markdown-it"), "index.mjs"),
+    },
   ];
 }
 
