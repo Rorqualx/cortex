@@ -134,7 +134,7 @@ git fetch "$REMOTE_BUNDLE" "+refs/heads/$BRANCH:refs/remotes/proof/$BRANCH" 2>/t
 BDIR="\$PROOF_DIR/.proof-baseline-\$BASELINE_REF"
 # The cache is valid ONLY when tsgo.txt has one line per lane AND testfail.txt exists.
 # A baseline run killed mid-loop (e.g. the Mac poller was stopped) used to leave a
-# PARTIAL tsgo.txt that the bare `-f` check happily reused — the missing test lanes
+# PARTIAL tsgo.txt that the bare \`-f\` check happily reused — the missing test lanes
 # then defaulted to 0 and false-failed every candidate against this main sha (poisoned
 # 2026-08-22, breaking the hourly cron's proof). Publish tsgo.txt LAST via atomic mv so
 # an interrupted recompute leaves no valid-looking cache.
