@@ -22,7 +22,6 @@ import {
 } from "../../agents/failover/user-copy.js";
 import { isAgentHarnessPreflightError } from "../../agents/harness/errors.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
-import { isAgentRunRestartAbortReason } from "../../agents/run-termination.js";
 import { logVerbose } from "../../globals.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { formatErrorMessage, readErrorName } from "../../infra/errors.js";
@@ -30,6 +29,7 @@ import { CommandLaneClearedError, GatewayDrainingError } from "../../process/com
 import { defaultRuntime } from "../../runtime.js";
 import { markReplyPayloadForSourceSuppressionDelivery } from "../reply-payload.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
+import type { ReplyPayload } from "../types.js";
 import { createAgentLifecycleTerminalBackstop } from "./agent-lifecycle-terminal.js";
 import { buildContextOverflowRecoveryText } from "./agent-runner-context-recovery.js";
 import type { AgentTurnInternalResult, AgentTurnParams } from "./agent-runner-execution.types.js";
@@ -178,10 +178,21 @@ export async function handleAgentExecutionError(params: {
     params.state.pendingLifecycleTerminal = undefined;
     return terminal;
   };
+  const settleFailure = async (
+    payload: ReplyPayload,
+    terminalMetadata?: { fallbackExhaustedFailure: true },
+  ): Promise<Extract<AgentTurnInternalResult, { kind: "final" }>> => {
+    takePendingLifecycleTerminal().emit("error", err, terminalMetadata);
+    turn.replyOperation?.fail("run_failed", err);
+    await params.modelPatch.fail(err);
+    return {
+      kind: "final",
+      payload: markAgentRunFailureReplyPayload(payload),
+      postCompactionModelFailure,
+    };
+  };
   const resolveReplyOperationAbortAction = (abortError: unknown): ErrorAction | undefined => {
-    const reason = isAgentRunRestartAbortReason(abortError)
-      ? "restart"
-      : resolveReplyOperationAbortReason(turn.replyOperation);
+    const reason = resolveReplyOperationAbortReason(turn.replyOperation, abortError);
     if (!reason) {
       return undefined;
     }
@@ -271,14 +282,7 @@ export async function handleAgentExecutionError(params: {
       isGenericRunnerFailure: externalReply.isGenericRunnerFailure,
       cfg: turn.followupRun.run.config,
     });
-    takePendingLifecycleTerminal().emit("error", err);
-    turn.replyOperation?.fail("run_failed", err);
-    await params.modelPatch.fail(err);
-    return {
-      kind: "final",
-      payload: markAgentRunFailureReplyPayload({ text }),
-      postCompactionModelFailure,
-    };
+    return await settleFailure({ text });
   }
   const failoverFacts = resolveReplyFailoverFacts(err, message);
   const fallbackAttempts = isFailoverError(err) ? err.attempts : undefined;
@@ -511,14 +515,11 @@ export async function handleAgentExecutionError(params: {
     return { kind: "retry" };
   }
   if (providerRequestError) {
-    takePendingLifecycleTerminal().emit("error", err);
-    turn.replyOperation?.fail("run_failed", err);
-    await params.modelPatch.fail(err);
-    return {
-      kind: "final",
-      payload: markAgentRunFailureReplyPayload({ text: providerRequestError.userMessage }),
-      postCompactionModelFailure,
-    };
+    return await settleFailure({
+      // Curated facet copy beats the generic classified summary; see
+      // buildExternalRunFailureReply for the same priority.
+      text: providerRequestError.userMessage,
+    });
   }
   defaultRuntime.error(`Embedded agent failed before reply: ${message}`);
   const isPureTransientSummary = Boolean(
@@ -597,17 +598,13 @@ export async function handleAgentExecutionError(params: {
     isGenericRunnerFailure: externalRunFailureReply?.isGenericRunnerFailure ?? false,
     cfg: turn.followupRun.run.config,
   });
-  takePendingLifecycleTerminal().emit("error", err, { fallbackExhaustedFailure: true });
-  turn.replyOperation?.fail("run_failed", err);
-  await params.modelPatch.fail(err);
-  return {
-    kind: "final",
-    payload: markAgentRunFailureReplyPayload({
+  return await settleFailure(
+    {
       text: userVisibleFallbackText,
       ...(externalRunFailureReply?.presentation
         ? { presentation: externalRunFailureReply.presentation }
         : {}),
-    }),
-    postCompactionModelFailure,
-  };
+    },
+    { fallbackExhaustedFailure: true },
+  );
 }

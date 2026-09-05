@@ -1484,8 +1484,11 @@ async function emitToolExecutionEnd(
   });
 }
 
-function createToolResultMessage(finalized: FinalizedToolCallOutcome): ToolResultMessage {
-  return copyInternalToolResultState(
+async function emitToolResultMessage(
+  finalized: FinalizedToolCallOutcome,
+  emit: AgentEventSink,
+): Promise<ToolResultMessage> {
+  const message = copyInternalToolResultState(
     finalized.result,
     withToolResultContentSource(
       {
@@ -1500,6 +1503,9 @@ function createToolResultMessage(finalized: FinalizedToolCallOutcome): ToolResul
       finalized.resultContentSource,
     ),
   );
+  await emit({ type: "message_start", message });
+  await emit({ type: "message_end", message });
+  return message;
 }
 
 type TurnTaintMetadata = {
@@ -1562,11 +1568,4 @@ function withToolResultContentSource(
   } as ToolResultMessage;
 }
 
-async function emitToolResultMessage(
-  toolResultMessage: ToolResultMessage,
-  emit: AgentEventSink,
-): Promise<void> {
-  await emit({ type: "message_start", message: toolResultMessage });
-  await emit({ type: "message_end", message: toolResultMessage });
-}
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

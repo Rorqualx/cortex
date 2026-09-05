@@ -21,7 +21,6 @@ import { classifyFailoverReason } from "../../agents/failover/classify.js";
 import { renderRateLimitOrOverloadedCopy } from "../../agents/failover/user-copy.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 import { leaseMcpAppModelContextForTurn } from "../../agents/mcp-app-model-context.js";
-import { isAgentRunRestartAbortReason } from "../../agents/run-termination.js";
 import { createAgentPatchedSessionModelRunGuard } from "../../agents/session-model-auto-revert.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
@@ -690,9 +689,7 @@ async function executeAgentTurnOutcome(params: AgentTurnParams): Promise<AgentTu
       },
     };
   } catch (error) {
-    const abortReason = isAgentRunRestartAbortReason(error)
-      ? "restart"
-      : resolveReplyOperationAbortReason(executionParams.replyOperation);
+    const abortReason = resolveReplyOperationAbortReason(executionParams.replyOperation, error);
     if (abortReason) {
       return { runId, outcome: { kind: "aborted", reason: abortReason, ...completedCompaction() } };
     }

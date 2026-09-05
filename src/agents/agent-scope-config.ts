@@ -94,6 +94,41 @@ function stripNullBytes(s: string): string {
   return s.replaceAll("\0", "");
 }
 
+type AgentRosterFacts = {
+  compatibilityAgentId?: { value: string | undefined };
+  entryByNormalizedId?: Map<string, { clone: boolean; entry: AgentEntry }>;
+};
+
+type AgentRosterFactsBatch = {
+  config: OpenClawConfig;
+  facts: AgentRosterFacts;
+};
+
+let activeAgentRosterFactsBatch: AgentRosterFactsBatch | undefined;
+
+/**
+ * Runs a read-only callback with batch-scoped roster memoization.
+ *
+ * Runtime discovery calls the owner helpers for every configured model. Keep
+ * their derived facts on this exact config and discard them before returning,
+ * so later config mutations cannot observe a stale process cache.
+ */
+export function withAgentRosterFactsBatch<T>(config: OpenClawConfig, callback: () => T): T {
+  const parent = activeAgentRosterFactsBatch;
+  activeAgentRosterFactsBatch = parent?.config === config ? parent : { config, facts: {} };
+  try {
+    return callback();
+  } finally {
+    activeAgentRosterFactsBatch = parent;
+  }
+}
+
+function readAgentRosterFacts(cfg: OpenClawConfig): AgentRosterFacts | undefined {
+  return activeAgentRosterFactsBatch?.config === cfg
+    ? activeAgentRosterFactsBatch.facts
+    : undefined;
+}
+
 /** Lists valid configured agent entries from config. */
 export function listAgentEntriesWithSource(cfg: OpenClawConfig): ListedAgentEntry[] {
   const roster = readAgentRosterProperty(cfg);
@@ -309,6 +344,14 @@ export function tryResolveDefaultAgentId(cfg: OpenClawConfig): string | undefine
 
 export function resolveAgentEntry(cfg: OpenClawConfig, agentId: string): AgentEntry | undefined {
   const id = normalizeAgentId(agentId);
+  const facts = readAgentRosterFacts(cfg);
+  if (facts) {
+    // Point lookups inside a batch reuse one first-match index instead of
+    // re-traversing the roster per model ref (#135743).
+    const byId = (facts.entryByNormalizedId ??= buildAgentEntryIndex(cfg));
+    const found = byId.get(id);
+    return found ? (found.clone ? { ...found.entry } : found.entry) : undefined;
+  }
   // Point lookups are hot; the public list helper must clone every keyed entry.
   // Traverse the roster directly so a match does not project unrelated agents.
   const roster = readAgentRosterProperty(cfg);
@@ -331,6 +374,26 @@ export function resolveAgentEntry(cfg: OpenClawConfig, agentId: string): AgentEn
     );
   }
   return undefined;
+}
+
+/**
+ * First-match index over the projected roster for batch point lookups.
+ *
+ * Keyed entries must stay clone-on-read (callers may mutate the returned
+ * entry); list entries keep the original object, matching the direct
+ * traversal semantics of `resolveAgentEntry` outside a batch.
+ */
+function buildAgentEntryIndex(
+  cfg: OpenClawConfig,
+): Map<string, { clone: boolean; entry: AgentEntry }> {
+  const index = new Map<string, { clone: boolean; entry: AgentEntry }>();
+  for (const { entry, source } of listAgentEntriesWithSource(cfg)) {
+    const normalizedId = normalizeAgentId(entry?.id);
+    if (!index.has(normalizedId)) {
+      index.set(normalizedId, { clone: source.kind === "entries", entry });
+    }
+  }
+  return index;
 }
 
 /** Resolves the authored entry object for in-place canonical config mutations. */

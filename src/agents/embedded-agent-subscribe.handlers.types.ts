@@ -56,7 +56,7 @@ export type ToolCallSummary = {
 };
 
 /** User-visible assistant stream payload emitted to subscribers. */
-type AssistantStreamData = {
+export type AssistantStreamData = {
   text: string;
   delta: string;
   replace?: true;
@@ -69,7 +69,26 @@ type AssistantStreamData = {
 /** Deferred assistant stream event plus whether it should emit partial replies. */
 type AssistantStreamDelivery = {
   data: AssistantStreamData;
+  eventData?: AssistantStreamData;
   emitPartialReply: boolean;
+  finalMessage?: boolean;
+};
+
+/** Incremental tag and Markdown parsing state, owned by one stream lane. */
+export type StreamBlockState = {
+  thinking: boolean;
+  final: boolean;
+  /** The reply buffer already contains the phase-aware visible projection. */
+  textIsVisible?: true;
+  inlineCode?: InlineCodeState;
+  fence?: FenceScanState;
+  reasoningInlineCode?: InlineCodeState;
+  reasoningFence?: FenceScanState;
+  reasoningPendingFenceFragment?: string;
+  finalInlineCode?: InlineCodeState;
+  finalFence?: FenceScanState;
+  pendingFenceFragment?: string;
+  pendingTagFragment?: string;
 };
 
 /** Mutable subscription state shared by embedded-agent event handlers. */
@@ -121,6 +140,10 @@ export type EmbeddedAgentSubscribeState = {
   streamReasoning: boolean;
 
   deltaBuffer: string;
+  /** Raw text received for the current native block, independent of snapshot separators. */
+  streamBlockText: string;
+  /** Start of this native block in the reply chunker's source, before Markdown rewriting. */
+  streamBlockOffset: number;
   /** Scanner state shares deltaBuffer's lifecycle so each provider byte is parsed once. */
   thinkingTagStream: ThinkingTagStreamState;
   blockBuffer: string;
@@ -137,22 +160,6 @@ export type EmbeddedAgentSubscribeState = {
     pendingFenceFragment?: string;
     pendingTagFragment?: string;
   };
-  partialBlockState: {
-    thinking: boolean;
-    final: boolean;
-    inlineCode: InlineCodeState;
-    fence?: FenceScanState;
-    reasoningInlineCode?: InlineCodeState;
-    reasoningFence?: FenceScanState;
-    reasoningPendingFenceFragment?: string;
-    finalInlineCode?: InlineCodeState;
-    finalFence?: FenceScanState;
-    pendingFenceFragment?: string;
-    pendingTagFragment?: string;
-  };
-  lastStreamedAssistant?: string;
-  lastStreamedAssistantCleaned?: string;
-  emittedAssistantUpdate: boolean;
   lastStreamedReasoning?: string;
   lastBlockReplyText?: string;
   lastDeliveredBlockReplyText?: string;
@@ -162,17 +169,18 @@ export type EmbeddedAgentSubscribeState = {
   toolExecutionSinceLastBlockReply: boolean;
   reasoningStreamOpen: boolean;
   assistantMessageIndex: number;
+  /** Physical message boundary; assistantMessageIndex also advances between content blocks. */
+  assistantMessageStartIndex: number;
   lastAssistantStreamContentIndex?: number;
   lastAssistantStreamItemId?: string;
   lastAssistantTextMessageIndex: number;
+  lastAssistantTextContentIndex?: number;
+  lastAssistantTextItemId?: string;
   lastAssistantTextNormalized?: string;
   lastAssistantTextTrimmed?: string;
   assistantTextBaseline: number;
   suppressBlockChunks: boolean;
   lastReasoningSent?: string;
-  pendingAssistantUsage?: NormalizedUsage;
-  assistantUsageCommitted: boolean;
-  retryUsage?: NormalizedUsage;
 
   compactionInFlight: boolean;
   lastCompactionTokensAfter?: number;
@@ -229,12 +237,11 @@ export type EmbeddedAgentSubscribeContext = {
   state: EmbeddedAgentSubscribeState;
   log: EmbeddedSubscribeLogger;
   blockChunking?: BlockReplyChunking;
-  blockChunker: EmbeddedBlockChunker | null;
+  blockChunker: EmbeddedBlockChunker;
   hookRunner?: HookRunner;
   builtinToolNames?: ReadonlySet<string>;
   trustedLocalMediaToolNames?: ReadonlySet<string>;
   noteLastAssistant: (msg: AgentMessage) => void;
-  noteCompletedAssistant: (msg: AgentMessage) => void;
 
   shouldEmitToolResult: () => boolean;
   shouldEmitToolOutput: () => boolean;
@@ -244,40 +251,27 @@ export type EmbeddedAgentSubscribeContext = {
     commandBearing: boolean,
   ) => void;
   emitToolOutput: (toolName?: string, meta?: string, output?: string, result?: unknown) => void;
-  stripBlockTags: (
-    text: string,
-    state: {
-      thinking: boolean;
-      final: boolean;
-      inlineCode?: InlineCodeState;
-      fence?: FenceScanState;
-      reasoningInlineCode?: InlineCodeState;
-      reasoningFence?: FenceScanState;
-      reasoningPendingFenceFragment?: string;
-      finalInlineCode?: InlineCodeState;
-      finalFence?: FenceScanState;
-      pendingFenceFragment?: string;
-      pendingTagFragment?: string;
-    },
-    options?: { final?: boolean },
-  ) => string;
+  stripBlockTags: (text: string, state: StreamBlockState, options?: { final?: boolean }) => string;
   emitBlockChunk: (
     text: string,
-    options?: { assistantMessageIndex?: number; final?: boolean },
+    options?: {
+      assistantMessageIndex?: number;
+      final?: boolean;
+      finalReply?: ReplyDirectiveParseResult;
+    },
   ) => void;
   flushBlockReplyBuffer: (options?: {
     assistantMessageIndex?: number;
     final?: boolean;
+    finalReply?: ReplyDirectiveParseResult;
   }) => void | Promise<void>;
   emitReasoningStream: (text: string) => void;
-  consumeReplyDirectives: (
-    text: string,
-    options?: { final?: boolean },
-  ) => ReplyDirectiveParseResult | null;
   consumePartialReplyDirectives: (
     text: string,
     options?: { final?: boolean },
   ) => ReplyDirectiveParseResult | null;
+  resetBlockReplyDirectives: () => void;
+  resetPartialReplyDirectives: () => void;
   resetAssistantMessageState: (nextAssistantTextBaseline: number) => void;
   resetForCompactionRetry: () => void;
   finalizeAssistantTexts: (args: {
@@ -291,8 +285,7 @@ export type EmbeddedAgentSubscribeContext = {
   noteCompactionRetry: () => void;
   resolveCompactionRetry: () => void;
   maybeResolveCompactionWait: () => void;
-  recordAssistantUsage: (usage: unknown) => void;
-  commitAssistantUsage: () => void;
+  captureModelEvent: (evt: AgentSessionEvent) => void;
   incrementCompactionCount: () => void;
   noteCompactionTokensAfter: (value: unknown) => void;
   getUsageTotals: () => NormalizedUsage | undefined;
@@ -301,7 +294,7 @@ export type EmbeddedAgentSubscribeContext = {
   getLastCompactionTokensAfter: () => number | undefined;
   emitAssistantStreamData: (
     data: AssistantStreamData,
-    options?: { emitPartialReply?: boolean },
+    options?: { emitPartialReply?: boolean; finalMessage?: boolean },
   ) => void;
   emitBlockReply: (
     payload: BlockReplyPayload,

@@ -92,6 +92,8 @@ type CreateAgentParams = {
   skipOptionalBootstrapFiles?: OptionalBootstrapFileName[];
   bindingSpecs?: string[];
   transformConfig?: typeof transformConfigFileWithRetry;
+  /** Revalidate delegated authority before each new persistent effect. */
+  beforePersistentApply?: () => void;
   /** Prepare guided staged state at the last reversible edge before config publication. */
   prepareConfigCommit?: () => Promise<ConfigCommitRollback | void>;
   provenance?: { createdVia: AgentCreatedVia; creatorAgentId?: string };
@@ -212,6 +214,7 @@ export async function checkAgentCreationGate(agentId: string): Promise<CreateErr
 async function writeIdentityFile(params: {
   workspaceDir: string;
   identity: NonNullable<ReturnType<typeof createAgentIdentityConfig>>;
+  beforePersistentApply?: () => void;
 }): Promise<void> {
   const workspaceRoot = await root(params.workspaceDir);
   let existing: string | undefined;
@@ -227,6 +230,9 @@ async function writeIdentityFile(params: {
     }
   }
   const content = mergeIdentityMarkdownContent(existing, params.identity);
+  // Root.write owns the admitted filesystem operation; finish our async reads
+  // before checking authority, without canceling an already-started write.
+  params.beforePersistentApply?.();
   await workspaceRoot.write(DEFAULT_IDENTITY_FILENAME, content, { encoding: "utf8" });
 }
 
@@ -278,6 +284,7 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
       if (gateError) {
         return gateError;
       }
+      params.beforePersistentApply?.();
       const deletion = readAgentDeletionJournal(agentId);
       if (deletion && !deletion.cleanupCompleted) {
         return createError(
@@ -299,9 +306,14 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
       const committed = await transformConfig<CreateAgentSuccess>({
         afterWrite: { mode: "auto" },
         maxAttempts: 1,
-        ...(params.bootstrapFirstAgent
-          ? { writeOptions: { allowedAgentRosterRemovals: [BOOTSTRAP_AGENT_ID] } }
-          : {}),
+        writeOptions: {
+          ...(params.bootstrapFirstAgent
+            ? { allowedAgentRosterRemovals: [BOOTSTRAP_AGENT_ID] }
+            : {}),
+          ...(params.beforePersistentApply
+            ? { assertConfigPathForWrite: params.beforePersistentApply }
+            : {}),
+        },
         transform: async (currentConfig, context) => {
           if (
             Object.hasOwn(params, "expectedConfigHash") &&
@@ -421,8 +433,10 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
           // The outer lock makes this result-bearing transform single-attempt: setup
           // finishes before the final entry becomes visible to readers or delete flows.
           const skipBootstrap = params.skipBootstrap ?? nextConfig.agents?.defaults?.skipBootstrap;
+          params.beforePersistentApply?.();
           const workspace = await ensureAgentWorkspace({
             dir: workspaceDir,
+            beforePersistentApply: params.beforePersistentApply,
             ensureBootstrapFiles: !skipBootstrap,
             skipOptionalBootstrapFiles:
               params.skipOptionalBootstrapFiles ??
@@ -445,13 +459,19 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
               };
             }
           }
+          params.beforePersistentApply?.();
           await fs.mkdir(resolveSessionTranscriptsDirForAgent(agentId), { recursive: true });
           // A creation-time name is config, not proof that the fresh workspace hatched.
           // Keep IDENTITY.md templated until BOOTSTRAP completes its first-turn ceremony.
           if (!workspace.bootstrapPending && !skipBootstrap) {
-            await writeIdentityFile({ workspaceDir: workspace.dir, identity });
+            await writeIdentityFile({
+              workspaceDir: workspace.dir,
+              identity,
+              beforePersistentApply: params.beforePersistentApply,
+            });
           }
           // The receipt owns compensation until the config transform publishes this result.
+          params.beforePersistentApply?.();
           const preparedRollback = await params.prepareConfigCommit?.();
           configCommitRollback =
             typeof preparedRollback === "function" ? preparedRollback : undefined;
@@ -471,7 +491,8 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
           };
         },
       });
-      // Publication is now irreversible; later tombstone or provenance failures retain staged state.
+      // Successful publication owns completion of tombstone/provenance bookkeeping,
+      // even after delegated authority closes; it must not roll staged state back.
       configCommitRollback = undefined;
       if (
         deletion?.cleanupCompleted &&

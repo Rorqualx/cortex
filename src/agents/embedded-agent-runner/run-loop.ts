@@ -596,7 +596,8 @@ export async function runPreparedEmbeddedLoop(
           modelApi: effectiveModel.api,
           executionContract,
           hasTerminalToolPresentation: Boolean(terminalToolPresentationText),
-          noteLaneTaskProgress: input.laneController.noteLaneTaskProgress,
+          createAttemptControls: input.laneController.createAttemptControls,
+          abortSignal: input.laneController.abortSignal,
         },
       });
       const {
@@ -629,7 +630,6 @@ export async function runPreparedEmbeddedLoop(
 
       const terminalTimeoutResult = resolveEmbeddedRunTerminalTimeout({
         terminalPrepared,
-        shouldSurfaceCodexCompletionTimeout: recovery.shouldSurfaceCodexCompletionTimeout,
         attempt: terminalAttempt,
         terminalState: resolvedTerminalState,
         resolveReplayInvalid: resolveReplayInvalidForAttempt,

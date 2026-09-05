@@ -141,7 +141,7 @@ function buildAppToolPolicyProjections(params: {
         toolName: tool.toolName,
         operation: "tool",
         codexApproval: {
-          mode: server?.codexApprovalMode ?? "auto",
+          mode: server?.codexApprovalMode,
           ...(tool.codexAnnotations ? { annotations: tool.codexAnnotations } : {}),
         },
       },
@@ -398,7 +398,7 @@ export function buildBundleMcpToolsFromCatalog(params: {
           : {}),
         ...(tool.deniedBySession ? { deniedBySession: true } : {}),
         codexApproval: {
-          mode: server?.codexApprovalMode ?? "auto",
+          mode: server?.codexApprovalMode,
           ...(tool.codexAnnotations ? { annotations: tool.codexAnnotations } : {}),
         },
       },
