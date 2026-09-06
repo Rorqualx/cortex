@@ -63,11 +63,10 @@ import { addSession, appendOutput, markExited, tail } from "./bash-process-regis
 import { renderExecOutputText, renderExecUpdateText } from "./bash-tools.exec-output.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
 import { buildGitHubExecLaunchArgv } from "./github-exec-launch.js";
-import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
 import { recordAgentCleanupFailure } from "./run-cleanup-timeout.js";
 import { createSessionSlug } from "./session-slug.js";
 import { maybeWrapCommandWithShellSnapshot } from "./shell-snapshot.js";
-import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
+import { createStreamingBinaryOutputSanitizer, getShellConfig } from "./shell-utils.js";
 import { registerTrustedToolNoStartError } from "./tool-result-error.js";
 
 export { execSchema } from "./bash-tools.schemas.js";
@@ -85,30 +84,11 @@ export class ExecProcessPreflightError extends Error {
   }
 }
 
-const SMKX = "\x1b[?1h";
-const RMKX = "\x1b[?1l";
-
 function resolveExecTimeoutMs(timeoutSec: number | null | undefined): number | undefined {
   if (typeof timeoutSec !== "number" || !Number.isFinite(timeoutSec) || timeoutSec <= 0) {
     return undefined;
   }
   return resolveSafeTimeoutDelayMs(timeoutSec * 1000);
-}
-
-/**
- * Detect cursor key mode from PTY output chunk.
- * Uses lastIndexOf to find the *last* toggle in the chunk.
- * Returns "application" if smkx is the last toggle, "normal" if rmkx is last,
- * or null if no toggle is found.
- */
-export function detectCursorKeyMode(raw: string): "application" | "normal" | null {
-  const lastSmkx = raw.lastIndexOf(SMKX);
-  const lastRmkx = raw.lastIndexOf(RMKX);
-  if (lastSmkx === -1 && lastRmkx === -1) {
-    return null;
-  }
-  // Whichever appears later in the chunk wins.
-  return lastSmkx > lastRmkx ? "application" : "normal";
 }
 
 /** Removes dangerous inherited host env vars before non-sandboxed execution. */
@@ -906,16 +886,18 @@ export async function runExecProcess(opts: {
     });
   };
 
-  const handleStdout = (data: string) => {
-    const raw = data;
-    // Detect smkx/rmkx BEFORE sanitizeBinaryOutput strips ESC sequences.
-    // Note: PTY chunking is arbitrary, but smkx/rmkx sequences are typically short (4-5 bytes)
-    // and sent atomically by terminals. Split across chunks is rare in practice.
-    const mode = detectCursorKeyMode(raw);
-    if (mode) {
-      session.cursorKeyMode = mode;
+  // One parser per stream so ESC sequences split across chunks are not mangled.
+  const sanitizeStdout = createStreamingBinaryOutputSanitizer((sequence) => {
+    if (sequence === "?1h" || sequence === "?1l") {
+      session.cursorKeyMode = sequence === "?1h" ? "application" : "normal";
+    } else if (usingPty && (sequence === "6n" || sequence === "?6n")) {
+      managedRun?.stdin?.write("\x1b[1;1R");
     }
-    const str = sanitizeBinaryOutput(raw);
+  });
+  const sanitizeStderr = createStreamingBinaryOutputSanitizer();
+
+  const handleStdout = (data: string) => {
+    const str = sanitizeStdout(data);
     for (const chunk of chunkString(str)) {
       appendOutput(session, "stdout", chunk);
       emitUpdate();
@@ -923,7 +905,7 @@ export async function runExecProcess(opts: {
   };
 
   const handleStderr = (data: string) => {
-    const str = sanitizeBinaryOutput(data);
+    const str = sanitizeStderr(data);
     for (const chunk of chunkString(str)) {
       appendOutput(session, "stderr", chunk);
       emitUpdate();
@@ -1032,21 +1014,6 @@ export async function runExecProcess(opts: {
 
   let managedRun: ManagedRun | null = null;
   let usingPty = spawnSpec.mode === "pty";
-  const cursorResponse = buildCursorPositionResponse();
-
-  const onSupervisorStdout = (chunk: string) => {
-    if (usingPty) {
-      const { cleaned, requests } = stripDsrRequests(chunk);
-      if (requests > 0 && managedRun?.stdin) {
-        for (let i = 0; i < requests; i += 1) {
-          managedRun.stdin.write(cursorResponse);
-        }
-      }
-      handleStdout(cleaned);
-      return;
-    }
-    handleStdout(chunk);
-  };
 
   const assertPreSpawnAuthorized = async () => {
     opts.startupSignal?.throwIfAborted();
@@ -1064,15 +1031,13 @@ export async function runExecProcess(opts: {
     opts.startupSignal?.throwIfAborted();
     const spawnBase = {
       runId: sessionId,
-      sessionId: opts.sessionKey?.trim() || sessionId,
-      backendId: opts.sandbox ? "exec-sandbox" : "exec-host",
       ...(opts.sandbox ? { cleanupOwnership: "external" as const } : {}),
       scopeKey: opts.scopeKey,
       cwd: opts.workdir,
       env: spawnSpec.env,
       timeoutMs,
       captureOutput: false,
-      onStdout: onSupervisorStdout,
+      onStdout: handleStdout,
       onStderr: handleStderr,
     };
     // Revalidate authorization after async preparation, immediately before the
@@ -1110,8 +1075,6 @@ export async function runExecProcess(opts: {
         opts.startupSignal?.throwIfAborted();
         managedRun = await supervisor.spawn({
           runId: sessionId,
-          sessionId: opts.sessionKey?.trim() || sessionId,
-          backendId: "exec-host",
           scopeKey: opts.scopeKey,
           mode: "child",
           argv: spawnSpec.childFallbackArgv,
