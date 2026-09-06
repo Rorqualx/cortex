@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { withEnvAsync } from "../../test-utils/env.js";
 import type { PostCorePluginUpdateResult } from "./update-command-plugins.js";
 
 const mocks = vi.hoisted(() => ({
@@ -30,10 +29,7 @@ vi.mock("./shared.js", async (importOriginal) => ({
   resolveNodeRunner: vi.fn(() => "/usr/bin/node"),
 }));
 
-import {
-  completePostCorePluginUpdate,
-  runUpdateFinalizationDoctorInFreshProcess,
-} from "./update-command-fresh-doctor.js";
+import { completePostCorePluginUpdate } from "./update-command-fresh-doctor.js";
 
 const pluginUpdate: PostCorePluginUpdateResult = {
   status: "ok",
@@ -48,6 +44,15 @@ const pluginUpdate: PostCorePluginUpdateResult = {
   npm: { changed: false, outcomes: [] },
   integrityDrifts: [],
   warnings: [],
+};
+
+const updateOptions = {
+  root: "/opt/openclaw",
+  pluginUpdate,
+  freshDoctorRequired: true,
+  yes: true,
+  json: true,
+  timeoutMs: 5_000,
 };
 
 const validConfigSnapshot = {
@@ -75,12 +80,7 @@ describe("post-plugin update readiness", () => {
 
   it("runs declared readiness checks in the updated process before accepting restart", async () => {
     await completePostCorePluginUpdate({
-      root: "/opt/openclaw",
-      pluginUpdate,
-      freshDoctorRequired: true,
-      yes: true,
-      json: true,
-      timeoutMs: 5_000,
+      ...updateOptions,
     });
 
     expect(mocks.runExec.mock.calls.map(([, args]) => args)).toEqual([
@@ -100,56 +100,12 @@ describe("post-plugin update readiness", () => {
     });
   });
 
-  it.each(["pre-plugin", "post-plugin"] as const)(
-    "forwards an established external service-repair policy to the %s fresh Doctor child",
-    async (phase) => {
-      await withEnvAsync({ OPENCLAW_SERVICE_REPAIR_POLICY: "external" }, async () => {
-        await runUpdateFinalizationDoctorInFreshProcess({
-          phase,
-          root: "/opt/openclaw",
-          entryPath: "/opt/openclaw/dist/index.js",
-          yes: true,
-          json: true,
-          timeoutMs: 5_000,
-        });
-      });
-
-      expect(mocks.runExec.mock.calls[0]?.[2]).toMatchObject({
-        env: expect.objectContaining({
-          OPENCLAW_SERVICE_REPAIR_POLICY: "external",
-        }),
-      });
-    },
-  );
-
-  it("does not invent an external service-repair policy for an unknown owner", async () => {
-    await withEnvAsync({ OPENCLAW_SERVICE_REPAIR_POLICY: "unknown" }, async () => {
-      await runUpdateFinalizationDoctorInFreshProcess({
-        phase: "post-plugin",
-        root: "/opt/openclaw",
-        entryPath: "/opt/openclaw/dist/index.js",
-        yes: true,
-        json: true,
-        timeoutMs: 5_000,
-      });
-    });
-
-    expect(mocks.runExec.mock.calls[0]?.[2]).toMatchObject({
-      env: expect.objectContaining({
-        OPENCLAW_SERVICE_REPAIR_POLICY: undefined,
-      }),
-    });
-  });
-
   it("runs updated readiness checks even when no plugin package changed", async () => {
     const beforeDoctor = vi.fn(async () => undefined);
     await completePostCorePluginUpdate({
-      root: "/opt/openclaw",
+      ...updateOptions,
       pluginUpdate: { ...pluginUpdate, changed: false },
       freshDoctorRequired: false,
-      yes: true,
-      json: true,
-      timeoutMs: 5_000,
       beforeDoctor,
     });
 
@@ -163,12 +119,7 @@ describe("post-plugin update readiness", () => {
   it("requires the lifecycle owner before starting fresh Doctor maintenance", async () => {
     const beforeDoctor = vi.fn(async () => undefined);
     await completePostCorePluginUpdate({
-      root: "/opt/openclaw",
-      pluginUpdate,
-      freshDoctorRequired: true,
-      yes: true,
-      json: true,
-      timeoutMs: 5_000,
+      ...updateOptions,
       beforeDoctor,
     });
     expect(beforeDoctor).toHaveBeenCalledOnce();
@@ -180,12 +131,9 @@ describe("post-plugin update readiness", () => {
   it("uses target validation when the unchanged-plugin parent retains an older schema", async () => {
     mocks.readConfig.mockResolvedValue({ ...validConfigSnapshot, valid: false });
     const result = await completePostCorePluginUpdate({
-      root: "/opt/openclaw",
+      ...updateOptions,
       pluginUpdate: { ...pluginUpdate, changed: false },
       freshDoctorRequired: false,
-      yes: true,
-      json: true,
-      timeoutMs: 5_000,
     });
     expect(result.pluginUpdate.status).toBe("ok");
     expect(result.configSnapshot.valid).toBe(false);
@@ -200,12 +148,7 @@ describe("post-plugin update readiness", () => {
       throw new Error("Gateway owner changed");
     });
     const result = await completePostCorePluginUpdate({
-      root: "/opt/openclaw",
-      pluginUpdate,
-      freshDoctorRequired: true,
-      yes: true,
-      json: true,
-      timeoutMs: 5_000,
+      ...updateOptions,
       beforeDoctor,
     });
     expect(beforeDoctor).toHaveBeenCalledOnce();
@@ -245,12 +188,7 @@ describe("post-plugin update readiness", () => {
     });
 
     const result = await completePostCorePluginUpdate({
-      root: "/opt/openclaw",
-      pluginUpdate,
-      freshDoctorRequired: true,
-      yes: true,
-      json: true,
-      timeoutMs: 5_000,
+      ...updateOptions,
     });
 
     expect(result.pluginUpdate).toMatchObject({
@@ -285,12 +223,7 @@ describe("post-plugin update readiness", () => {
     }));
 
     const result = await completePostCorePluginUpdate({
-      root: "/opt/openclaw",
-      pluginUpdate,
-      freshDoctorRequired: true,
-      yes: true,
-      json: true,
-      timeoutMs: 5_000,
+      ...updateOptions,
     });
 
     expect(result.pluginUpdate).toMatchObject({

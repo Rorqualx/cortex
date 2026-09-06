@@ -93,12 +93,14 @@ describe("listGatewayMethods", () => {
       "gateway.suspend.handoff",
     ]);
     // Fork: workboard + skills.forge methods sit between the upstream tail and
-    // the newest core additions; the four newest methods stay last (append-only).
-    expect(methods.slice(-4)).toEqual([
+    // the newest core additions; the six newest methods stay last (append-only).
+    expect(methods.slice(-6)).toEqual([
       "transcripts.export",
       "transcripts.status",
       "update.report",
       "skills.workshop.read",
+      "session.publicShare.set",
+      "claws.monitors",
     ]);
   });
 
@@ -160,7 +162,7 @@ describe("listGatewayMethods", () => {
   it("classifies cron mutations as control-plane writes", () => {
     const descriptors = createCoreGatewayMethodDescriptors(coreGatewayHandlers);
 
-    for (const method of ["cron.add", "cron.update", "cron.remove", "cron.run"]) {
+    for (const method of ["cron.add", "cron.update", "cron.remove", "cron.run", "claws.monitors"]) {
       expect(descriptors.find((descriptor) => descriptor.name === method)).toMatchObject({
         name: method,
         scope: "operator.admin",

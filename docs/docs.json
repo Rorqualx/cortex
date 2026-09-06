@@ -925,6 +925,10 @@
       "destination": "/channels/telegram"
     },
     {
+      "source": "/reference/templates/CLAUDE",
+      "destination": "/reference/templates/AGENTS"
+    },
+    {
       "source": "/templates/AGENTS",
       "destination": "/reference/templates/AGENTS"
     },
@@ -2105,7 +2109,16 @@
                   "reference/templates/HEARTBEAT",
                   "reference/templates/IDENTITY",
                   "reference/templates/SOUL",
-                  "reference/templates/USER"
+                  "reference/templates/USER",
+                  {
+                    "group": "Dev agent templates",
+                    "pages": [
+                      "reference/templates/AGENTS.dev",
+                      "reference/templates/IDENTITY.dev",
+                      "reference/templates/SOUL.dev",
+                      "reference/templates/USER.dev"
+                    ]
+                  }
                 ]
               },
               {

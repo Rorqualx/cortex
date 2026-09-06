@@ -40,7 +40,6 @@ export function buildDeveloperInstructions(
   let hasSessionsSpawn = false;
   let hasSessionsYield = false;
   let hasSeenDirectNamespace = false;
-  let messageToolAvailable = options.dynamicTools ? false : params.disableMessageTool !== true;
   for (const spec of options.dynamicTools ?? []) {
     const isDirectNamespace =
       spec.type === "namespace" &&
@@ -61,7 +60,6 @@ export function buildDeveloperInstructions(
       hasSkillForge ||= name === SKILL_FORGE_TOOL_NAME;
       hasSessionsSpawn ||= name === "sessions_spawn";
       hasSessionsYield ||= isDirectNamespace && name === "sessions_yield";
-      messageToolAvailable ||= name === "message";
     }
   }
   const nativeCommandGuidance = listRegisteredPluginAgentPromptGuidance({
@@ -96,23 +94,13 @@ export function buildDeveloperInstructions(
     hasSessionsYield && nativeDelegationAvailable
       ? "When a native child's result belongs in a later turn, end the current turn with `openclaw_direct.sessions_yield`; the completion arrives as the next model-visible input. Use native `wait_agent` only for an intentional same-turn wait when the immediate next step is blocked on the child. Never loop-poll for native child completion."
       : undefined,
-    buildVisibleReplyInstruction(params, messageToolAvailable),
+    // Source-delivery guidance moved per-turn (upstream #123624): turn-params.ts
+    // injects openclaw_source_delivery via buildHarnessVisibleReplyGuidance each
+    // turn, keeping these developer instructions cache-stable. Fork keeps its
+    // lean trim: no delegation-guidance or UI-presentation sections here.
     buildCredentialSafetyPrompt(secretsToolName),
     nativeCommandGuidance,
     params.extraSystemPrompt,
   ];
   return sections.filter((section) => typeof section === "string" && section.trim()).join("\n\n");
-}
-
-function buildVisibleReplyInstruction(
-  params: CodexThreadPromptContext,
-  messageToolAvailable: boolean,
-): string {
-  if (params.sourceReplyDeliveryMode === "message_tool_only" && messageToolAvailable) {
-    return "Visible source replies are not automatically delivered for this run. Use `message(action=send)` for user-visible source-channel output. For progress, set `final=false`. Set `final=true`, or omit it, for the completed reply to the current source conversation; OpenClaw stops after confirming delivery. Do not repeat visible message content in your final answer.";
-  }
-  if (messageToolAvailable) {
-    return "For the current source conversation, reply normally in your final assistant message; OpenClaw will deliver it through the active source conversation. Use `message` for supported non-text actions in the current conversation, such as reacting to its current message. Reserve other `message` actions for explicit out-of-band sends or media/file delivery. Reactions are not delivered automatically.";
-  }
-  return "For the current source conversation, reply normally in your final assistant message; OpenClaw will deliver it through the active source conversation.";
 }

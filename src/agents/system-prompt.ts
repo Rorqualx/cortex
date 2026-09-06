@@ -1112,8 +1112,6 @@ export function buildAgentSystemPrompt(params: {
     userTimezone,
     runtimeChannel,
     threadBoundAcpSpawnEnabled,
-    sourceMessageToolOnly,
-    silentReplyPromptMode,
     subagentDelegationMode,
     proactiveSubagentOrchestration,
     sandboxInfo: params.sandboxInfo,
@@ -1361,7 +1359,6 @@ export function buildAgentSystemPrompt(params: {
       "## Workspace Files (injected)",
       "User-editable; OpenClaw loads below as Project Context.",
       "",
-      ...buildAssistantOutputDirectivesSection({ isMinimal, sourceMessageToolOnly }),
     ];
 
     if (reasoningHint) {
@@ -1369,15 +1366,6 @@ export function buildAgentSystemPrompt(params: {
     }
 
     lines.push(...buildProjectContextSection(preparedContextFiles));
-
-    if (!isMinimal && silentReplyPromptMode !== "none") {
-      lines.push(
-        "## Silent Replies",
-        `Nothing to say: entire reply exactly ${SILENT_REPLY_TOKEN}`,
-        `Never append to real response or wrap in Markdown/code.`,
-        "",
-      );
-    }
 
     lines.push(SYSTEM_PROMPT_CACHE_BOUNDARY);
     return lines.filter(Boolean).join("\n");
@@ -1398,6 +1386,15 @@ export function buildAgentSystemPrompt(params: {
   // Channel/session-specific guidance lives below the cache boundary so large
   // stable workspace context can remain a byte-identical prefix across turns.
   lines.push(
+    ...buildAssistantOutputDirectivesSection({ isMinimal, sourceMessageToolOnly }),
+    ...(!isMinimal && silentReplyPromptMode !== "none"
+      ? [
+          "## Silent Replies",
+          `Nothing to say: entire reply exactly ${SILENT_REPLY_TOKEN}`,
+          `Never append to real response or wrap in Markdown/code.`,
+          "",
+        ]
+      : []),
     // Approval UI and owner identity vary by turn, so keep both below the stable prefix.
     // A tool_call_style override owns the complete section and suppresses default guidance.
     ...(providerSectionOverrides.tool_call_style

@@ -648,6 +648,7 @@ export {
   resolveMainSessionDelegationMode,
 } from "../agents/delegation-guidance.js";
 export { buildHarnessVisibleReplyGuidance } from "../auto-reply/source-reply-delivery-mode.js";
+export { buildUiPresentationPrompt } from "../agents/ui-presentation-prompt.js";
 export { getPluginToolSideEffectOwnerKey } from "../plugins/tool-metadata.js";
 export type {
   AgentHarnessNativeCompaction,
