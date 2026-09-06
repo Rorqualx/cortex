@@ -134,6 +134,8 @@ data class SessionObserverPlanProgress(
 data class SessionObserverDigest(
   val sessionKey: String,
   val agentId: String? = null,
+  val sessionId: String? = null,
+  val lifecycleRevision: String? = null,
   val runId: String? = null,
   val revision: Long,
   val updatedAt: Long,
@@ -960,6 +962,10 @@ enum class GatewayMethod(
   SkillsForgePromote("skills.forge.promote"),
   SkillsForgeRetire("skills.forge.retire"),
   SkillsForgeTelemetry("skills.forge.telemetry"),
+  TranscriptsExport("transcripts.export"),
+  TranscriptsStatus("transcripts.status"),
+  UpdateReport("update.report"),
+  SkillsWorkshopRead("skills.workshop.read"),
 }
 
 enum class GatewayEvent(

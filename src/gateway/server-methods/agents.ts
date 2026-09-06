@@ -12,7 +12,6 @@ import {
 import {
   ErrorCodes,
   errorShape,
-  formatValidationErrors,
   validateAgentsComposePromptParams,
   validateAgentsCreateParams,
   validateAgentsDeleteParams,
@@ -117,6 +116,7 @@ import {
 } from "./agents-config-mutations.js";
 import { readPreparedServerMethodModelCatalog } from "./optional-model-catalog.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
+import { assertValidParams } from "./validation.js";
 
 // Derived from the canonical workspace list so retiring a bootstrap file cannot
 // leave the Control UI advertising a file the runtime no longer reads.
@@ -432,20 +432,6 @@ function resolveAgentIdOrError(agentIdRaw: string, cfg: OpenClawConfig) {
   return agentId;
 }
 
-function respondInvalidMethodParams(
-  respond: RespondFn,
-  method: string,
-  errors: Parameters<typeof formatValidationErrors>[0],
-): void {
-  respond(
-    false,
-    undefined,
-    errorShape(
-      ErrorCodes.INVALID_REQUEST,
-      `invalid ${method} params: ${formatValidationErrors(errors)}`,
-    ),
-  );
-}
 
 function respondAgentNotFound(respond: RespondFn, agentId: string): void {
   respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" not found`));
@@ -937,8 +923,7 @@ async function buildIdentityMarkdownOrRespondUnsafe(params: {
 
 export const agentsHandlers: GatewayRequestHandlers = {
   "agents.list": async ({ params, respond, context, client }) => {
-    if (!validateAgentsListParams(params)) {
-      respondInvalidMethodParams(respond, "agents.list", validateAgentsListParams.errors);
+    if (!assertValidParams(params, validateAgentsListParams, "agents.list", respond)) {
       return;
     }
 
@@ -965,8 +950,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     );
   },
   "agents.create": async ({ params, respond }) => {
-    if (!validateAgentsCreateParams(params)) {
-      respondInvalidMethodParams(respond, "agents.create", validateAgentsCreateParams.errors);
+    if (!assertValidParams(params, validateAgentsCreateParams, "agents.create", respond)) {
       return;
     }
 
@@ -994,12 +978,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     );
   },
   "agents.composePrompt": async ({ params, respond, context }) => {
-    if (!validateAgentsComposePromptParams(params)) {
-      respondInvalidMethodParams(
-        respond,
-        "agents.composePrompt",
-        validateAgentsComposePromptParams.errors,
-      );
+    if (!assertValidParams(params, validateAgentsComposePromptParams, "agents.composePrompt", respond)) {
       return;
     }
     const cfg = context.getRuntimeConfig();
@@ -1081,8 +1060,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     respond(true, { ok: true, prompt }, undefined);
   },
   "agents.update": async ({ params, respond, context }) => {
-    if (!validateAgentsUpdateParams(params)) {
-      respondInvalidMethodParams(respond, "agents.update", validateAgentsUpdateParams.errors);
+    if (!assertValidParams(params, validateAgentsUpdateParams, "agents.update", respond)) {
       return;
     }
 
@@ -1184,8 +1162,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     respond(true, { ok: true, agentId }, undefined);
   },
   "agents.delete": async ({ params, respond, context }) => {
-    if (!validateAgentsDeleteParams(params)) {
-      respondInvalidMethodParams(respond, "agents.delete", validateAgentsDeleteParams.errors);
+    if (!assertValidParams(params, validateAgentsDeleteParams, "agents.delete", respond)) {
       return;
     }
 
@@ -1672,12 +1649,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
   },
   "agents.files.list": async ({ params, respond, context }) => {
-    if (!validateAgentsFilesListParams(params)) {
-      respondInvalidMethodParams(
-        respond,
-        "agents.files.list",
-        validateAgentsFilesListParams.errors,
-      );
+    if (!assertValidParams(params, validateAgentsFilesListParams, "agents.files.list", respond)) {
       return;
     }
     const cfg = context.getRuntimeConfig();
@@ -1718,8 +1690,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     );
   },
   "agents.files.get": async ({ params, respond, context }) => {
-    if (!validateAgentsFilesGetParams(params)) {
-      respondInvalidMethodParams(respond, "agents.files.get", validateAgentsFilesGetParams.errors);
+    if (!assertValidParams(params, validateAgentsFilesGetParams, "agents.files.get", respond)) {
       return;
     }
 
@@ -1824,8 +1795,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     );
   },
   "agents.files.set": async ({ params, respond, context }) => {
-    if (!validateAgentsFilesSetParams(params)) {
-      respondInvalidMethodParams(respond, "agents.files.set", validateAgentsFilesSetParams.errors);
+    if (!assertValidParams(params, validateAgentsFilesSetParams, "agents.files.set", respond)) {
       return;
     }
     const resolved = resolveAgentWorkspaceFileOrRespondError(

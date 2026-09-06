@@ -109,6 +109,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
     "activeRunAbort" | "cleanupAdmittedRun" | "lifecycleGeneration" | "restartSafeAdmission"
   >;
   context: GatewayRequestContext;
+  isAgentRunStarted: () => boolean;
   isQueuedFollowupEnqueued: () => boolean;
   classifyFailure?: (error: unknown) => AcceptedChatSendFailureDisposition;
   isReplyDispatchRun?: () => boolean;
@@ -294,14 +295,16 @@ export function createChatSendDispatchErrorLifecycle(params: {
     // across error persistence by deferring cleanupAdmittedRun to the finally below.
     sessionAwarenessRegistry.releaseAllForSession(sessionKey);
     readLedger.clearSession(sessionKey);
+    // Commands and reply-dispatch runtimes have already published their terminal.
+    // Native agent events keep ownership until their own terminal delivery completes.
+    if (!params.isAgentRunStarted() || params.isReplyDispatchRun?.()) {
+      context.chatRunState.clearRun(clientRunId);
+      context.agentRunSeq.delete(clientRunId);
+    }
     if (!dispatchError) {
       cleanupAdmittedRun();
       // Reply-dispatch lifecycle events deliberately retain these until delivery settles.
       clearAgentRunContext(clientRunId, lifecycleGeneration);
-      if (params.isReplyDispatchRun?.()) {
-        context.chatRunState.clearRun(clientRunId);
-        context.agentRunSeq.delete(clientRunId);
-      }
       context.removeChatRun(clientRunId, clientRunId, sessionKey);
       return;
     }

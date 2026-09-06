@@ -442,8 +442,6 @@ describe("createGatewayCloseHandler", () => {
             'sleep 60 >/dev/null 2>&1 & child=$!; printf "%s %s\\n" "$$" "$child"; wait',
           ],
           stdinMode: "pipe-closed",
-          sessionId: "gateway-close-test",
-          backendId: "gateway-close-test",
           onStdout: (chunk) => {
             output += chunk;
           },
@@ -499,8 +497,6 @@ describe("createGatewayCloseHandler", () => {
       argv: [`/openclaw-missing-adapter-${process.pid}`],
       exactEnv: true,
       stdinMode: "pipe-closed",
-      sessionId: "gateway-close-startup-failure",
-      backendId: "gateway-close-startup-failure",
     });
     releaseEmbeddingDrain();
 
@@ -513,8 +509,6 @@ describe("createGatewayCloseHandler", () => {
       argv: [process.execPath, "-e", ""],
       exactEnv: true,
       stdinMode: "pipe-closed",
-      sessionId: "gateway-close-fresh-supervisor",
-      backendId: "gateway-close-fresh-supervisor",
     });
     await expect(run.wait()).resolves.toMatchObject({ reason: "exit", exitCode: 0 });
     expect(nextSupervisor).not.toBe(supervisor);

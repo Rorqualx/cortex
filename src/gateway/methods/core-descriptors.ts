@@ -695,6 +695,10 @@ const CORE_GATEWAY_METHOD_SPECS = [
   ["skills.forge.promote", "skills", "operator.admin", "<=2026.7"],
   ["skills.forge.retire", "skills", "operator.admin", "<=2026.7"],
   ["skills.forge.telemetry", "skills", "operator.read", "<=2026.7"],
+  ["transcripts.export", "transcripts", "operator.read", "2026.9"],
+  ["transcripts.status", "transcripts", "operator.read", "2026.9"],
+  ["update.report", "update", "operator.admin", "2026.9", { controlPlaneWrite: true }],
+  ["skills.workshop.read", "skills", "operator.read", "2026.9"],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];
 
 export type CoreGatewayHandlerFamily = Exclude<(typeof CORE_GATEWAY_METHOD_SPECS)[number][1], null>;

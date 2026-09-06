@@ -25,6 +25,7 @@ import {
   validateSkillsSkillCardParams,
   validateSkillsStatusParams,
   validateSkillsUpdateParams,
+  validateSkillsWorkshopReadParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { SkillLibrarySelection } from "../../../packages/gateway-protocol/src/schema/skill-library.js";
 import { resolveNodeExecEligibility } from "../../agents/exec-defaults.js";
@@ -83,6 +84,10 @@ import {
   rejectSkillProposal,
   reviseSkillProposal,
 } from "../../skills/workshop/service.js";
+import {
+  listWritableWorkshopSkillSummaries,
+  readWritableWorkshopSkill,
+} from "../../skills/workshop/workspace-skill-read.js";
 import { authorizeSessionSharingTarget, resolveSessionSharingTarget } from "../session-sharing.js";
 import { skillsLibraryHandlers } from "./skills-library.js";
 import { skillProposalHistoryHandlers } from "./skills-proposal-history.js";
@@ -561,8 +566,37 @@ export const skillsHandlers: GatewayRequestHandlers = {
       respond,
       context,
       validate: validateSkillsProposalsListParams,
-      run: (_parsedParams, resolved) =>
-        listSkillProposals({ config: resolved.cfg, agentId: resolved.agentId }),
+      run: async (_parsedParams, resolved) => {
+        const options = { config: resolved.cfg, agentId: resolved.agentId };
+        const manifest = await listSkillProposals(options);
+        return {
+          ...manifest,
+          installedSkills: listWritableWorkshopSkillSummaries(options).map(
+            ({ name, skillKey, description }) => ({ name, skillKey, description }),
+          ),
+        };
+      },
+    });
+  },
+  "skills.workshop.read": async ({ params, respond, context }) => {
+    await runSkillsProposalWorkspaceHandler({
+      method: "skills.workshop.read",
+      rawParams: params,
+      respond,
+      context,
+      validate: validateSkillsWorkshopReadParams,
+      run: async (parsedParams, resolved) => {
+        const skill = await readWritableWorkshopSkill(parsedParams.name, {
+          config: resolved.cfg,
+          agentId: resolved.agentId,
+        });
+        return {
+          name: skill.skillName,
+          skillKey: skill.skillKey,
+          description: skill.description,
+          content: skill.content,
+        };
+      },
     });
   },
   "skills.proposals.events.list": async ({ params, respond, context }) => {

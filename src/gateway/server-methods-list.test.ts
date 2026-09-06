@@ -76,7 +76,7 @@ describe("listGatewayMethods", () => {
     expect(listGatewayMethods()).toContain("approval.resolve");
   });
 
-  it("appends plugin UI methods without changing the complete legacy method prefix", () => {
+  it("appends plugin UI, update and transcript methods without changing the legacy prefix", () => {
     const methods = listGatewayMethods();
     const legacyCount = LEGACY_ADVERTISED_GATEWAY_METHODS.length;
 
@@ -86,6 +86,19 @@ describe("listGatewayMethods", () => {
       "plugins.controlUi.reload",
       "plugins.controlUi.report",
       "plugins.controlUi.status",
+    ]);
+    expect(methods.slice(legacyCount + 4, legacyCount + 7)).toEqual([
+      "update.runs.get",
+      "update.runs.list",
+      "gateway.suspend.handoff",
+    ]);
+    // Fork: workboard + skills.forge methods sit between the upstream tail and
+    // the newest core additions; the four newest methods stay last (append-only).
+    expect(methods.slice(-4)).toEqual([
+      "transcripts.export",
+      "transcripts.status",
+      "update.report",
+      "skills.workshop.read",
     ]);
   });
 

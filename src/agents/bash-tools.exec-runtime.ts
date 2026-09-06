@@ -64,6 +64,7 @@ import { renderExecOutputText, renderExecUpdateText } from "./bash-tools.exec-ou
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
 import { buildGitHubExecLaunchArgv } from "./github-exec-launch.js";
 import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
+import { recordAgentCleanupFailure } from "./run-cleanup-timeout.js";
 import { createSessionSlug } from "./session-slug.js";
 import { maybeWrapCommandWithShellSnapshot } from "./shell-snapshot.js";
 import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
@@ -1138,6 +1139,7 @@ export async function runExecProcess(opts: {
         }
         await finalizeSandboxExec({ status: "failed", exitCode: null, timedOut: false }).catch(
           (finalizeErr: unknown) => {
+            recordAgentCleanupFailure();
             logWarn(`exec: sandbox finalize after spawn failure failed (${String(finalizeErr)}).`);
           },
         );
@@ -1211,6 +1213,11 @@ export async function runExecProcess(opts: {
         status: outcome.status,
         exitCode: exit.exitCode ?? null,
         timedOut: exit.timedOut,
+      }).catch((finalizeErr: unknown) => {
+        // Upstream #run-cleanup-timeout: a failed finalize leaves cleanup ownership
+        // uncertain; record it before the outer catch converts the outcome.
+        recordAgentCleanupFailure();
+        throw finalizeErr;
       });
       emitExecProcessCompleted({
         command: opts.command,
