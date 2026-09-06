@@ -5,11 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProviderExternalAuthProfile } from "../plugins/provider-external-auth.types.js";
 import { AUTH_STORE_VERSION, authProfilesLog as log } from "./auth-profiles/constants.js";
 import {
-  clearRuntimeAuthProfileStoreSnapshot,
   ensureAuthProfileStore,
   loadAuthProfileStoreForRuntime,
   saveAuthProfileStore,
-} from "./auth-profiles/store.js";
+} from "./auth-profiles/store-runtime.js";
+import { clearRuntimeAuthProfileStoreSnapshot } from "./auth-profiles/store.js";
 import type { AuthProfileCredential } from "./auth-profiles/types.js";
 
 const resolveExternalAuthProfilesWithPluginsMock = vi.hoisted(() =>

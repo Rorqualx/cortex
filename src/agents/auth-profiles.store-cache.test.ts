@@ -7,10 +7,10 @@ import {
   AUTH_STORE_VERSION,
 } from "./auth-profiles/constants.js";
 import {
-  clearRuntimeAuthProfileStoreSnapshot,
   ensureAuthProfileStore,
   ensureAuthProfileStoreWithoutExternalProfiles,
-} from "./auth-profiles/store.js";
+} from "./auth-profiles/store-runtime.js";
+import { clearRuntimeAuthProfileStoreSnapshot } from "./auth-profiles/store.js";
 import type { OAuthCredential } from "./auth-profiles/types.js";
 
 type RuntimeOnlyOverlay = {
