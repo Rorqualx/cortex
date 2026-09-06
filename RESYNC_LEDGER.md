@@ -457,3 +457,32 @@ Conflicts resolved (6) + merge=ours drift (2):
 - `src/gateway/session-utils.types.ts` (merge=ours drift, hand-graft — upstream delta tiny/additive vs fork's heavy restructure): added `import type { StickyModelSelectionTarget }` + `GatewaySessionsDefaults.modelSelectionTarget?: StickyModelSelectionTarget`. Required, not optional polish: auto-adopted consumers (`server-methods/sessions-read.ts` writes it into `result.defaults`, `chat-history-handler.ts` resolves it) — without the graft the field is a type error or a silent closedObject strip (dropped-contract class).
 - Derived regen: lockfile already up to date; `generate-kysely-types.mts` clean (NOTE: cron prompt still says `.mjs` — renamed `.mts` upstream; correct invocation `node --import ./scripts/tsx.mjs scripts/generate-kysely-types.mts`); protocol-gen rewrote `dist/protocol.schema.json` (untracked build output), swift unchanged, kotlin 2 files rewritten. No dropped merge=ours exports (dropped-upstream-count=0).
 - Proof (huey, stamp 2b4ab254ee6): BUILD_EXIT=0; tsgo lanes core 0/0, extensions 1/1, core:test 8/8, extensions:test 28/28, test:src 8/8, test:ui 0/0, test:packages 0/0; no NEWFAIL; EXIT=0. Baseline recompute ~50 min (fresh cache at b390fe33956), candidate+lanes+test:fast ~35 min. LANDED main @ 11ea1197fad (merge 2b4ab254ee6 + baseline regen), pushed to origin; deploy deferred to the daily midnight cron.
+
+## 2026-09-06 third batch (upstream dbf7b06342d, 112 commits) — test-port finish
+
+- Conflicts (6) + merge=ours drift resolved by the 16:18 run (worktree STAGE-RESUME'd; see
+  upstream-merge.log for that pass's detail). This run finished its blocker: the two fork-only
+  auth-profile integration suites still seeded `auth-profiles.json` and asserted JSON cache
+  semantics while upstream moved the store to sqlite cells behind the store-runtime facade with a
+  fail-closed legacy gate (`AUTH_PROFILE_MIGRATION_REQUIRED` → doctor). Committed 8b78abebb50.
+- `auth-profiles.ensureauthprofilestore.test.ts` (28→24): PORT fixtures to
+  `writePersistedAuthProfileStoreRaw` raw cells (load-path normalization guards: mode/apiKey
+  aliases, #58861 SecretRef-backed key/token migration, invalid-entry warn aggregation) and
+  `saveAuthProfileStore` (main/agent merge + inherited reads); array payloads now assert the
+  stronger `AuthProfileStoreUnreadableError` contract; external-profile resolution re-pointed to
+  the `externalAuthTestApi` test-support seam (the old provider-runtime vi.mock never intercepted
+  `nativePluginBindings`); persisted-read assertion via `loadPersistedAuthProfileStore`.
+  DROP 4 legacy-JSON migration tests as superseded upstream: doctor-auth-flat-profiles (59 its),
+  doctor-auth-canonical-api-key-alias, doctor-auth-migration-receipts, plus the runtime gate
+  itself (legacy-source-diagnostic.test.ts; sqlite-store.test.ts "does not read legacy
+  auth-profiles.json at runtime"). Guards preserved, subjects relocated.
+- `auth-profiles.store-cache.test.ts` (9→3): PORT cache-refresh-after-sqlite-change,
+  mutation-isolation (structuredClone guard scoped to store-shaped payloads — plugin-registry
+  code legitimately clones its own objects now), runtime-only-overlay non-persistence (cell
+  missing via inspect). DROP 6 retired subjects: file-mtime cache, auth-profiles.json.lock
+  contention ×2, unscoped persisted CLI overlay persist/races ×3 — owned by
+  auth-profiles.sqlite-store.test.ts (revision-keyed handles, overlay recompute),
+  external-oauth.test.ts (scoped CLI refresh; persisted sync now scope-gated to explicit refresh
+  or MiniMax), upsert-with-lock.sqlite.test.ts (locked writes).
+- Local proof: both files 27/27; sibling auth-profiles suites 122/122; tsgo core:test shards =
+  7 baseline-only errors (agent-bundle-mcp-runtime ×6 + system-prompt ×1, pre-existing).
