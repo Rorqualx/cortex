@@ -12,6 +12,7 @@ import {
 import { dirname } from "node:path";
 import { Container, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { captureAgentToolSourceExecutionGuard } from "../../agent-tool-source-execution-guard.js";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.js";
 import type { AgentTool } from "../../runtime/index.js";
@@ -395,6 +396,7 @@ export function createWriteToolDefinition(
       void toolCallId;
       void onUpdate;
       void ctx;
+      const assertCurrent = captureAgentToolSourceExecutionGuard();
       const absolutePath = resolvePath(path, cwd);
       const dir = dirname(absolutePath);
       return withFileMutationQueue(
@@ -404,6 +406,7 @@ export function createWriteToolDefinition(
           if (signal?.aborted) {
             throw new Error("Operation aborted");
           }
+          assertCurrent();
           // Terminal no-op: file already has byte-identical content.
           if (precheck.state === "same") {
             return {
@@ -421,10 +424,12 @@ export function createWriteToolDefinition(
             if (signal?.aborted) {
               throw new Error("Operation aborted");
             }
+            assertCurrent();
             await ops.writeFile(absolutePath, content);
             if (signal?.aborted) {
               throw new Error("Operation aborted");
             }
+            assertCurrent();
             return {
               content: [
                 {
@@ -435,6 +440,7 @@ export function createWriteToolDefinition(
               details: undefined,
             };
           } catch (error: unknown) {
+            assertCurrent();
             const recovered = await recoverSuccessfulWrite({
               absolutePath,
               content,
@@ -445,6 +451,7 @@ export function createWriteToolDefinition(
               signal,
             });
             if (recovered) {
+              assertCurrent();
               return recovered;
             }
             throw error;

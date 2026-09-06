@@ -58,6 +58,7 @@ import {
   type DeliveryContext,
 } from "../utils/delivery-context.shared.js";
 import { resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
+import { captureAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";
 import { addSession, appendOutput, markExited, tail } from "./bash-process-registry.js";
 import { renderExecOutputText, renderExecUpdateText } from "./bash-tools.exec-output.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
@@ -750,6 +751,9 @@ export async function runExecProcess(opts: {
   /** Revalidates authorization after async preparation, immediately before each spawn attempt. */
   beforeSpawn?: () => Promise<AgentToolResult<ExecToolDetails> | undefined>;
 }): Promise<ExecProcessHandle> {
+  let assertSourceActive: (() => void) | undefined = captureAgentToolSourceExecutionGuard(
+    opts.startupSignal,
+  );
   const startedAt = Date.now();
   const sessionId = createSessionSlug();
   let execCommand = opts.execCommand ?? opts.command;
@@ -1045,8 +1049,10 @@ export async function runExecProcess(opts: {
 
   const assertPreSpawnAuthorized = async () => {
     opts.startupSignal?.throwIfAborted();
+    assertSourceActive?.();
     const denied = await opts.beforeSpawn?.();
     opts.startupSignal?.throwIfAborted();
+    assertSourceActive?.();
     if (denied) {
       throw new ExecProcessPreflightError(denied);
     }
@@ -1059,6 +1065,7 @@ export async function runExecProcess(opts: {
       runId: sessionId,
       sessionId: opts.sessionKey?.trim() || sessionId,
       backendId: opts.sandbox ? "exec-sandbox" : "exec-host",
+      ...(opts.sandbox ? { cleanupOwnership: "external" as const } : {}),
       scopeKey: opts.scopeKey,
       cwd: opts.workdir,
       env: spawnSpec.env,
@@ -1072,6 +1079,7 @@ export async function runExecProcess(opts: {
     await assertPreSpawnAuthorized();
     // No await between the final cancellation check and supervisor admission.
     opts.startupSignal?.throwIfAborted();
+    assertSourceActive?.();
     managedRun =
       spawnSpec.mode === "pty"
         ? await supervisor.spawn({
@@ -1115,6 +1123,7 @@ export async function runExecProcess(opts: {
           onStderr: handleStderr,
         });
       } catch (retryErr) {
+        assertSourceActive?.();
         markExited(session, null, null, "failed");
         const outcome = buildExecRuntimeErrorOutcome({
           error: retryErr,

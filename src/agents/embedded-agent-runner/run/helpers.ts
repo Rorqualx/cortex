@@ -109,10 +109,14 @@ export function resolveNextSameModelRateLimitRetryCount(params: {
 export function resolveTransientRetryDelayMs(params: {
   retryNumber: number;
   retryAfterMs?: number;
-  elapsedMs: number;
+  elapsedMs?: number;
 }): number | undefined {
-  const remainingMs = MAX_TRANSIENT_RETRY_TIME_MS - Math.max(0, params.elapsedMs);
-  if (remainingMs <= 0) {
+  const remainingMs =
+    params.elapsedMs === undefined
+      ? Infinity
+      : MAX_TRANSIENT_RETRY_TIME_MS - Math.max(0, params.elapsedMs);
+  // The header parser uses Infinity for a floor too large to represent safely.
+  if (remainingMs <= 0 || params.retryAfterMs === Infinity) {
     return undefined;
   }
   const exponentialMs = Math.min(

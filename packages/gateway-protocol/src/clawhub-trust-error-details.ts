@@ -1,3 +1,4 @@
+import { readNonBlankString } from "@openclaw/normalization-core/string-coerce";
 import { isProtocolRecord } from "./protocol-value-normalization.js";
 
 /** Structured ClawHub trust details carried in gateway error payloads. */
@@ -16,10 +17,6 @@ export type ClawHubTrustErrorDetails = {
   version?: string;
   warning?: string;
 };
-
-function normalizeNonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
-}
 
 export function isClawHubTrustErrorCode(value: unknown): value is ClawHubTrustErrorCode {
   return (
@@ -50,14 +47,11 @@ export function readClawHubTrustErrorDetails(
   if (!isProtocolRecord(details)) {
     return undefined;
   }
-  const raw = details as {
-    clawhubTrustCode?: unknown;
-    version?: unknown;
-    warning?: unknown;
-  };
-  const code = isClawHubTrustErrorCode(raw.clawhubTrustCode) ? raw.clawhubTrustCode : undefined;
-  const version = normalizeNonEmptyString(raw.version);
-  const warning = normalizeNonEmptyString(raw.warning);
+  const code = isClawHubTrustErrorCode(details.clawhubTrustCode)
+    ? details.clawhubTrustCode
+    : undefined;
+  const version = readNonBlankString(details.version);
+  const warning = readNonBlankString(details.warning);
   if (!code && !version && !warning) {
     return undefined;
   }

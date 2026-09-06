@@ -12,6 +12,7 @@ import {
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { Type } from "typebox";
+import { captureAgentToolSourceExecutionGuard } from "../../agent-tool-source-execution-guard.js";
 import { normalizeToLF } from "../../line-endings.js";
 import { renderDiff } from "../../modes/interactive/components/diff.js";
 import type { AgentTool } from "../../runtime/index.js";
@@ -416,6 +417,7 @@ export function createEditToolDefinition(
       void toolCallId;
       void onUpdate;
       void ctx;
+      const assertCurrent = captureAgentToolSourceExecutionGuard();
       const { path, edits: originalEdits } = validateEditInput(input);
       const absolutePath = resolvePath(path, cwd);
 
@@ -425,6 +427,7 @@ export function createEditToolDefinition(
           if (signal?.aborted) {
             throw new Error("Operation aborted");
           }
+          assertCurrent();
 
           let realEdits: Edit[] = [];
 
@@ -446,6 +449,7 @@ export function createEditToolDefinition(
             if (signal?.aborted) {
               throw new Error("Operation aborted");
             }
+            assertCurrent();
 
             const { bom, text: content } = stripBom(rawContent);
             const normalizedContent = normalizeToLF(content);
@@ -468,7 +472,9 @@ export function createEditToolDefinition(
             if (signal?.aborted) {
               throw new Error("Operation aborted");
             }
+            assertCurrent();
 
+            assertCurrent();
             const diffResult = generateDiffString(baseContent, newContent);
             const patch = generateUnifiedPatch(path, baseContent, newContent);
             return {
@@ -488,6 +494,7 @@ export function createEditToolDefinition(
               },
             };
           } catch (error: unknown) {
+            assertCurrent();
             const normalizedError = error instanceof Error ? error : new Error(String(error));
             const currentContent = await ops
               .readFile(absolutePath)

@@ -35,6 +35,7 @@ import type {
 } from "../../../skills/workshop/types.js";
 import type { AdmittedRunContext, PreparedAgentRunAdmission } from "../../admitted-run-context.js";
 import type { ModelFallbackAvailability } from "../../agent-scope.js";
+import type { AssistantErrorTranscript } from "../../assistant-error-transcript.js";
 import type { ExecApprovalContinuationPromptRange } from "../../bash-tools.exec-approval-output.js";
 import type { ExecElevatedDefaults, ExecToolDefaults } from "../../bash-tools.exec-types.js";
 import type { BootstrapContextRunKind } from "../../bootstrap-mode.js";
@@ -114,6 +115,8 @@ export type RunEmbeddedAgentParams = {
   messageProvider?: string;
   /** Capabilities declared by the gateway client that originated this run. */
   clientCaps?: string[];
+  /** Host-admitted dashboard authoring without an originating inline renderer. */
+  pinnedWidgetAuthoring?: boolean;
   /** Out-of-band plugin bindings attached by the run initiator. */
   toolBindings?: Readonly<Record<string, unknown>>;
   chatType?: ChatType;
@@ -458,7 +461,7 @@ export type RunEmbeddedAgentParams = {
   allowTransientCooldownProbe?: boolean;
   suppressNextUserMessagePersistence?: boolean;
   suppressTranscriptOnlyAssistantPersistence?: boolean;
-  suppressAssistantErrorPersistence?: boolean;
+  assistantErrorTranscript?: AssistantErrorTranscript;
   userTurnTranscriptRecorder?: UserTurnTranscriptRecorder;
   /** Context engine resolved once by the outer logical-turn owner. */
   contextEngineLogicalTurnLease?: ContextEngineLogicalTurnLease;
@@ -468,9 +471,6 @@ export type RunEmbeddedAgentParams = {
   skipPreparedUserTurnMessage?: boolean;
   onUserMessagePersisted?: (message: Extract<AgentMessage, { role: "user" }>) => void;
   onUserMessagePersistenceInvalidated?: () => void;
-  onAssistantErrorMessagePersisted?: (
-    message: Extract<AgentMessage, { role: "assistant" }>,
-  ) => void;
   /**
    * Called when a model-visible (non-error, non-transcript-only) assistant turn
    * is committed to the transcript. Lets the originating channel surface turns

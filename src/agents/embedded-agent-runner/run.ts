@@ -1974,9 +1974,8 @@ export async function runEmbeddedAgent(
             maxBeforeAgentFinalizeRevisions: MAX_BEFORE_AGENT_FINALIZE_REVISIONS,
             suppressTranscriptOnlyAssistantPersistence:
               params.suppressTranscriptOnlyAssistantPersistence,
-            suppressAssistantErrorPersistence: params.suppressAssistantErrorPersistence,
+            assistantErrorTranscript: params.assistantErrorTranscript,
             onUserMessagePersisted,
-            onAssistantErrorMessagePersisted: params.onAssistantErrorMessagePersisted,
             onAssistantMessagePersisted: params.onAssistantMessagePersisted,
           })
             .catch((err: unknown): never => {

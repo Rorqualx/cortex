@@ -58,7 +58,6 @@ export function createSessionsYieldTool(opts?: {
       await opts.onYield(message, acknowledgment);
       return jsonResult({
         status: "yielded",
-        message,
         ...(acknowledgment ? { acknowledgment } : {}),
       });
     },

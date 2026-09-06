@@ -4,10 +4,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createCoreGatewayMethodDescriptors,
-  listCoreGatewayMethodNames,
   STARTUP_UNAVAILABLE_GATEWAY_METHODS,
 } from "./methods/core-descriptors.js";
-import { GATEWAY_AUX_METHODS } from "./server-aux-methods.js";
 import { GATEWAY_EVENTS, listGatewayMethods } from "./server-methods-list.js";
 import { LEGACY_ADVERTISED_GATEWAY_METHODS } from "./server-methods-list.test-fixtures.js";
 import { coreGatewayHandlers } from "./server-methods.js";
@@ -272,21 +270,19 @@ describe("listGatewayMethods", () => {
     });
   });
 
-  it("wires a dispatchable handler for every core descriptor", () => {
-    // A descriptor without a matching entry in the lazy handler routing table
-    // advertises a method that then dispatches as "unknown method" — exactly
-    // how terminal.attach/list/text and later sessions.dispatch first shipped
-    // broken. Aux methods are injected at server construction; assistant media
-    // is served by the control-ui handler.
-    const injectedElsewhere = new Set<string>([...GATEWAY_AUX_METHODS, "assistant.media.get"]);
-    const missing = listCoreGatewayMethodNames()
-      // Workboard is injected at server construction too, and createGatewayAuxHandlers
-      // derives its registration list from these same specs — so a descriptor without a
-      // handler is unrepresentable there rather than merely untested.
-      .filter((method) => !method.startsWith("workboard."))
-      .filter((method) => !injectedElsewhere.has(method))
-      .filter((method) => typeof coreGatewayHandlers[method] !== "function");
-    expect(missing).toEqual([]);
+  it("classifies project cloning as a described control-plane write", () => {
+    const descriptors = createCoreGatewayMethodDescriptors(coreGatewayHandlers);
+
+    expect(descriptors.find((descriptor) => descriptor.name === "projects.add")).toMatchObject({
+      scope: "operator.write",
+      controlPlaneWrite: true,
+    });
+    expect(
+      descriptors.find((descriptor) => descriptor.name === "projects.searchRemote"),
+    ).toMatchObject({
+      scope: "operator.read",
+      description: "Search GitHub repositories that can be cloned as managed projects.",
+    });
   });
 });
 

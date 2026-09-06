@@ -595,15 +595,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
           config: resolved.cfg,
         });
         if (!proposal) {
-          respond(
-            false,
-            undefined,
-            errorShape(
-              ErrorCodes.INVALID_REQUEST,
-              `Skill proposal not found: ${parsedParams.proposalId}`,
-            ),
-          );
-          return SKILL_PROPOSAL_RESPONSE_HANDLED;
+          throw new Error(`Skill proposal not found: ${parsedParams.proposalId}`);
         }
         return proposal;
       },
@@ -713,26 +705,10 @@ export const skillsHandlers: GatewayRequestHandlers = {
           config: resolved.cfg,
         });
         if (!proposal) {
-          respond(
-            false,
-            undefined,
-            errorShape(
-              ErrorCodes.INVALID_REQUEST,
-              `Skill proposal not found: ${parsedParams.proposalId}`,
-            ),
-          );
-          return SKILL_PROPOSAL_RESPONSE_HANDLED;
+          throw new Error(`Skill proposal not found: ${parsedParams.proposalId}`);
         }
         if (proposal.record.status !== "pending") {
-          respond(
-            false,
-            undefined,
-            errorShape(
-              ErrorCodes.INVALID_REQUEST,
-              `Skill proposal is not pending: ${parsedParams.proposalId}`,
-            ),
-          );
-          return SKILL_PROPOSAL_RESPONSE_HANDLED;
+          throw new Error(`Skill proposal is not pending: ${parsedParams.proposalId}`);
         }
         if (
           parsedParams.expectedRevisionHash &&
