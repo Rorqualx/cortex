@@ -154,7 +154,10 @@ import {
   formatEmbeddedRunStageSummary,
   shouldWarnEmbeddedRunStageSummary,
 } from "./run/attempt-stage-timing.js";
-import { createEmbeddedRunAuthController } from "./run/auth-controller.js";
+import {
+  createEmbeddedRunAuthController,
+  type EmbeddedRunAuthState,
+} from "./run/auth-controller.js";
 import { resolveAuthProfileFailureReason } from "./run/auth-profile-failure-policy.js";
 import { runEmbeddedAttemptWithBackend } from "./run/backend.js";
 import { resolveCodexAppServerRecoveryRetry } from "./run/codex-app-server-recovery.js";
@@ -1219,6 +1222,61 @@ export async function runEmbeddedAgent(
       let lastProfileId: string | undefined;
       let runtimeAuthState: RuntimeAuthState | null = null;
       let runtimeAuthRefreshCancelled = false;
+      // Fork: upstream consolidated the auth controller surface into one
+      // mutable EmbeddedRunAuthState. Back it with accessors over this run
+      // loop's locals so controller writes still land where the loop reads.
+      const runAuthState: EmbeddedRunAuthState = {
+        models: {
+          get runtime() {
+            return runtimeModel;
+          },
+          set runtime(value) {
+            runtimeModel = value;
+          },
+          get effective() {
+            return effectiveModel;
+          },
+          set effective(value) {
+            effectiveModel = value;
+          },
+        },
+        get apiKeyInfo() {
+          return apiKeyInfo;
+        },
+        set apiKeyInfo(value) {
+          apiKeyInfo = value;
+        },
+        get lastProfileId() {
+          return lastProfileId;
+        },
+        set lastProfileId(value) {
+          lastProfileId = value;
+        },
+        get runtimeAuthState() {
+          return runtimeAuthState;
+        },
+        set runtimeAuthState(value) {
+          runtimeAuthState = value;
+        },
+        get runtimeAuthRefreshCancelled() {
+          return runtimeAuthRefreshCancelled;
+        },
+        set runtimeAuthRefreshCancelled(value) {
+          runtimeAuthRefreshCancelled = value;
+        },
+        get profileIndex() {
+          return profileIndex;
+        },
+        set profileIndex(value) {
+          profileIndex = value;
+        },
+        get thinkLevel() {
+          return thinkLevel;
+        },
+        set thinkLevel(value) {
+          thinkLevel = value;
+        },
+      };
       const {
         advanceAuthProfile,
         initializeAuthProfile,
@@ -1236,39 +1294,9 @@ export async function runEmbeddedAgent(
         attemptedThinking,
         fallbackConfigured,
         allowTransientCooldownProbe: params.allowTransientCooldownProbe === true,
-        getProvider: () => provider,
-        getModelId: () => modelId,
-        getRuntimeModel: () => runtimeModel,
-        setRuntimeModel: (next) => {
-          runtimeModel = next;
-        },
-        getEffectiveModel: () => effectiveModel,
-        setEffectiveModel: (next) => {
-          effectiveModel = next;
-        },
-        getApiKeyInfo: () => apiKeyInfo,
-        setApiKeyInfo: (next) => {
-          apiKeyInfo = next;
-        },
-        getLastProfileId: () => lastProfileId,
-        setLastProfileId: (next) => {
-          lastProfileId = next;
-        },
-        getRuntimeAuthState: () => runtimeAuthState,
-        setRuntimeAuthState: (next) => {
-          runtimeAuthState = next;
-        },
-        getRuntimeAuthRefreshCancelled: () => runtimeAuthRefreshCancelled,
-        setRuntimeAuthRefreshCancelled: (next) => {
-          runtimeAuthRefreshCancelled = next;
-        },
-        getProfileIndex: () => profileIndex,
-        setProfileIndex: (next) => {
-          profileIndex = next;
-        },
-        setThinkLevel: (next) => {
-          thinkLevel = next;
-        },
+        provider,
+        modelId,
+        state: runAuthState,
         log,
       });
       const advancePluginHarnessAuthProfile = async (): Promise<boolean> => {

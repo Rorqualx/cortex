@@ -310,6 +310,12 @@ export function createChatSendDispatchErrorLifecycle(params: {
     clearAgentRunContext(clientRunId, lifecycleGeneration);
     context.removeChatRun(clientRunId, clientRunId, sessionKey);
     try {
+      // The lifecycle owner may append a failure notice; keep its input first.
+      await persistDispatchErrorUserTurn?.().catch((transcriptErr: unknown) => {
+        context.logGateway.warn(
+          `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,
+        );
+      });
       const hasActiveRun = hasTrackedActiveSessionRun({
         context,
         requestedKey: rawSessionKey,
@@ -346,11 +352,6 @@ export function createChatSendDispatchErrorLifecycle(params: {
           );
         }
       }
-      await persistDispatchErrorUserTurn?.().catch((transcriptErr: unknown) => {
-        context.logGateway.warn(
-          `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,
-        );
-      });
     } catch (continuationErr: unknown) {
       context.logGateway.warn(
         `webchat session lifecycle continuation failed: ${formatForLog(continuationErr)}`,

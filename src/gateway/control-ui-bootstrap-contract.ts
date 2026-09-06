@@ -57,6 +57,7 @@ export type ControlUiBootstrapConfig = {
    * gateways running unreleased branch code.
    */
   devGitBranch?: string;
+  // Fork: consumed by the fork-owned ui/ media preview plumbing (upstream #139346 removed it for their rearchitected UI only).
   localMediaPreviewRoots?: string[];
   embedSandbox?: ControlUiEmbedSandboxMode;
   allowExternalEmbedUrls?: boolean;

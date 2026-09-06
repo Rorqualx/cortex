@@ -336,6 +336,9 @@ export type SubagentRunRecord = {
 export type SubagentRunReadRecord = Pick<
   SubagentRunRecord,
   | "runId"
+  | "collect"
+  | "groupId"
+  | "swarmRequesterSessionKey"
   | "childSessionKey"
   | "controllerSessionKey"
   | "requesterSessionKey"
@@ -351,4 +354,5 @@ export type SubagentRunReadRecord = Pick<
   | "delivery"
 > & {
   execution: Pick<SubagentExecutionState, "status" | "startedAt" | "endedAt" | "outcome">;
+  collectorCompletion?: Pick<SwarmCollectorCompletion, "status">;
 };

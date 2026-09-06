@@ -634,7 +634,7 @@ export type ToolsConfig = {
   swarm?: SwarmConfig;
   /** sessions_spawn tool configuration. */
   sessions_spawn?: SessionsSpawnToolsConfig;
-  /** Sub-agent tool policy defaults (deny wins). */
+  /** Sub-agent tool policy defaults (deny wins; progress_card is always denied). */
   subagents?: {
     tools?: ToolAllowDenyPolicyConfig;
   };

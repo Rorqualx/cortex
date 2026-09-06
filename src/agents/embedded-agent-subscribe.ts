@@ -1,4 +1,5 @@
 import type { ThinkingContent } from "@openclaw/llm-core";
+import type { AgentRunTimeoutPhase } from "@openclaw/normalization-core/agent-run-terminal-outcome";
 import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 /**
  * Subscribes to embedded-agent sessions and streams formatted replies/events.
@@ -62,7 +63,6 @@ import {
   stripDowngradedToolCallText,
   THINKING_TAG_SCAN_RE,
 } from "./embedded-agent-utils.js";
-import type { AgentRunTimeoutPhase } from "./run-timeout-attribution.js";
 import type { AgentMessage } from "./runtime/index.js";
 import type { AgentSessionEvent } from "./sessions/index.js";
 import { setSessionModelUsageSink } from "./sessions/session-model-usage.js";
@@ -1364,6 +1364,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       currentAttemptAssistant ? structuredClone(currentAttemptAssistant) : undefined,
     getLastAssistantTextMessageIndex: () =>
       state.lastAssistantTextMessageIndex >= 0 ? state.lastAssistantTextMessageIndex : undefined,
+    // Fork: exposed for attempt-settle's run-budget salvage flush (upstream
+    // names the counterpart flushPartialAssistantText).
+    flushAssistantStream: flushDeferredAssistantEvents,
     toolMetas,
     getAcceptedSessionSpawns: () => state.acceptedSessionSpawns.slice(),
     getLatestMcpAppChannelView: () =>
@@ -1434,7 +1437,8 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     getCompactionCount: () => compactionCount,
     getLastCompactionTokensAfter: () => state.lastCompactionTokensAfter,
     getAssistantTurnCount: () => state.assistantTurnCount,
-    waitForPendingEvents: () => state.pendingEventChain ?? Promise.resolve(),
+    waitForPendingEvents: (_options?: { includePartialReplies?: boolean }) =>
+      state.pendingEventChain ?? Promise.resolve(),
     getItemLifecycle: () => ({
       startedCount: state.itemStartedCount,
       completedCount: state.itemCompletedCount,
