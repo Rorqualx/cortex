@@ -1,24 +1,29 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderExternalAuthProfile } from "../plugins/provider-external-auth.types.js";
+import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
+import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { AUTH_STORE_VERSION, authProfilesLog as log } from "./auth-profiles/constants.js";
+import { testing as externalAuthTesting } from "./auth-profiles/external-auth.test-support.js";
+import { AuthProfileStoreUnreadableError } from "./auth-profiles/legacy-source-diagnostic.js";
+import { loadPersistedAuthProfileStore } from "./auth-profiles/persisted.js";
+import {
+  inspectPersistedAuthProfileStoreRaw,
+  writePersistedAuthProfileStoreRaw,
+} from "./auth-profiles/sqlite.js";
 import {
   ensureAuthProfileStore,
   loadAuthProfileStoreForRuntime,
   saveAuthProfileStore,
 } from "./auth-profiles/store-runtime.js";
 import { clearRuntimeAuthProfileStoreSnapshot } from "./auth-profiles/store.js";
-import type { AuthProfileCredential } from "./auth-profiles/types.js";
+import type { AuthProfileCredential, AuthProfileStore } from "./auth-profiles/types.js";
 
 const resolveExternalAuthProfilesWithPluginsMock = vi.hoisted(() =>
   vi.fn<() => ProviderExternalAuthProfile[]>(() => []),
 );
-
-vi.mock("../plugins/provider-runtime.js", () => ({
-  resolveExternalAuthProfilesWithPlugins: resolveExternalAuthProfilesWithPluginsMock,
-}));
 
 vi.mock("./cli-credentials.js", () => ({
   readClaudeCliCredentialsCached: () => null,
@@ -57,35 +62,57 @@ vi.mock("./cli-credentials.js", () => ({
 }));
 
 describe("ensureAuthProfileStore", () => {
+  beforeEach(() => {
+    externalAuthTesting.setResolveExternalAuthProfilesForTest(
+      resolveExternalAuthProfilesWithPluginsMock,
+    );
+  });
+
   afterEach(() => {
     clearRuntimeAuthProfileStoreSnapshot();
     resolveExternalAuthProfilesWithPluginsMock.mockReset();
     resolveExternalAuthProfilesWithPluginsMock.mockReturnValue([]);
+    externalAuthTesting.resetResolveExternalAuthProfilesForTest();
   });
 
+  // Env-scoped temp agent dir (state dir + agent dir inside a throwaway root) so
+  // sqlite store resolution and shared-store discovery stay inside the sandbox.
   function withTempAgentDir<T>(prefix: string, run: (agentDir: string) => T): T {
-    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    const agentDir = path.join(root, "agents", "main", "agent");
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    const previousAgentDir = process.env.OPENCLAW_AGENT_DIR;
+    fs.mkdirSync(agentDir, { recursive: true });
+    process.env.OPENCLAW_STATE_DIR = root;
+    process.env.OPENCLAW_AGENT_DIR = agentDir;
     try {
       return run(agentDir);
     } finally {
-      fs.rmSync(agentDir, { recursive: true, force: true });
+      clearRuntimeAuthProfileStoreSnapshot();
+      closeOpenClawAgentDatabasesForTest();
+      closeOpenClawStateDatabaseForTest();
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      if (previousAgentDir === undefined) {
+        delete process.env.OPENCLAW_AGENT_DIR;
+      } else {
+        process.env.OPENCLAW_AGENT_DIR = previousAgentDir;
+      }
+      fs.rmSync(root, { recursive: true, force: true });
     }
   }
 
+  // Seeds an arbitrary raw payload into the persisted sqlite store cell;
+  // load-path normalization is what the tests below assert.
   function writeAuthProfileStore(agentDir: string, profiles: Record<string, unknown>): void {
-    fs.writeFileSync(
-      path.join(agentDir, "auth-profiles.json"),
-      `${JSON.stringify({ version: AUTH_STORE_VERSION, profiles }, null, 2)}\n`,
-      "utf8",
-    );
+    writePersistedAuthProfileStoreRaw({ version: AUTH_STORE_VERSION, profiles }, agentDir);
   }
 
   function writeRawAuthProfileStore(agentDir: string, raw: unknown): void {
-    fs.writeFileSync(
-      path.join(agentDir, "auth-profiles.json"),
-      `${JSON.stringify(raw, null, 2)}\n`,
-      "utf8",
-    );
+    writePersistedAuthProfileStoreRaw(raw, agentDir);
   }
 
   function loadAuthProfile(agentDir: string, profileId: string): AuthProfileCredential {
@@ -110,6 +137,8 @@ describe("ensureAuthProfileStore", () => {
     previousStateDir?: string | undefined;
     previousAgentDir: string | undefined;
   }): void {
+    closeOpenClawAgentDatabasesForTest();
+    closeOpenClawStateDatabaseForTest();
     if ("previousStateDir" in params) {
       restoreEnvValue("OPENCLAW_STATE_DIR", params.previousStateDir);
     }
@@ -166,48 +195,7 @@ describe("ensureAuthProfileStore", () => {
     }
   }
 
-  it("migrates legacy auth.json and deletes it (PR #368)", () => {
-    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-profiles-"));
-    try {
-      const legacyPath = path.join(agentDir, "auth.json");
-      fs.writeFileSync(
-        legacyPath,
-        `${JSON.stringify(
-          {
-            anthropic: {
-              type: "oauth",
-              provider: "anthropic",
-              access: "access-token",
-              refresh: "refresh-token",
-              expires: Date.now() + 60_000,
-            },
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      );
-
-      const store = ensureAuthProfileStore(agentDir);
-      expectRecordFields(store.profiles["anthropic:default"], {
-        type: "oauth",
-        provider: "anthropic",
-      });
-
-      const migratedPath = path.join(agentDir, "auth-profiles.json");
-      expect(fs.existsSync(migratedPath)).toBe(true);
-      expect(fs.existsSync(legacyPath)).toBe(false);
-
-      // idempotent
-      const store2 = ensureAuthProfileStore(agentDir);
-      expect(store2.profiles).toHaveProperty("anthropic:default");
-      expect(fs.existsSync(legacyPath)).toBe(false);
-    } finally {
-      fs.rmSync(agentDir, { recursive: true, force: true });
-    }
-  });
-
-  it("ignores array-shaped auth profile stores instead of loading numeric profile ids", () => {
+  it("rejects array-shaped persisted store payloads instead of loading numeric profile ids", () => {
     withTempAgentDir("openclaw-auth-profiles-array-", (agentDir) => {
       writeRawAuthProfileStore(agentDir, {
         version: AUTH_STORE_VERSION,
@@ -220,14 +208,11 @@ describe("ensureAuthProfileStore", () => {
         ],
       });
 
-      const store = ensureAuthProfileStore(agentDir);
-
-      expect(store.profiles["0"]).toBeUndefined();
-      expect(Object.keys(store.profiles)).toEqual([]);
+      expect(() => ensureAuthProfileStore(agentDir)).toThrow(AuthProfileStoreUnreadableError);
     });
   });
 
-  it("ignores top-level array auth stores instead of treating entries as profiles", () => {
+  it("rejects top-level array persisted store payloads instead of treating entries as profiles", () => {
     withTempAgentDir("openclaw-auth-top-array-", (agentDir) => {
       writeRawAuthProfileStore(agentDir, [
         {
@@ -237,10 +222,7 @@ describe("ensureAuthProfileStore", () => {
         },
       ]);
 
-      const store = ensureAuthProfileStore(agentDir);
-
-      expect(store.profiles["0"]).toBeUndefined();
-      expect(Object.keys(store.profiles)).toEqual([]);
+      expect(() => ensureAuthProfileStore(agentDir)).toThrow(AuthProfileStoreUnreadableError);
     });
   });
 
@@ -249,7 +231,7 @@ describe("ensureAuthProfileStore", () => {
     const { mainDir, agentDir, previousStateDir, previousAgentDir } =
       configureMainAuthTestDirs(root);
     try {
-      const mainStore = {
+      const mainStore: AuthProfileStore = {
         version: AUTH_STORE_VERSION,
         profiles: {
           "openai:default": {
@@ -264,13 +246,9 @@ describe("ensureAuthProfileStore", () => {
           },
         },
       };
-      fs.writeFileSync(
-        path.join(mainDir, "auth-profiles.json"),
-        `${JSON.stringify(mainStore, null, 2)}\n`,
-        "utf8",
-      );
+      saveAuthProfileStore(mainStore, mainDir);
 
-      const agentStore = {
+      const agentStore: AuthProfileStore = {
         version: AUTH_STORE_VERSION,
         profiles: {
           "openai:default": {
@@ -280,11 +258,7 @@ describe("ensureAuthProfileStore", () => {
           },
         },
       };
-      fs.writeFileSync(
-        path.join(agentDir, "auth-profiles.json"),
-        `${JSON.stringify(agentStore, null, 2)}\n`,
-        "utf8",
-      );
+      saveAuthProfileStore(agentStore, agentDir);
 
       const store = ensureAuthProfileStore(agentDir);
       expectRecordFields(store.profiles["anthropic:default"], {
@@ -383,10 +357,8 @@ describe("ensureAuthProfileStore", () => {
       expect(store.lastGood?.["openai"]).toBe(freshProfileId);
       expect(store.usageStats?.[staleProfileId]).toBeUndefined();
 
-      const persistedAgentStore = JSON.parse(
-        fs.readFileSync(path.join(agentDir, "auth-profiles.json"), "utf8"),
-      ) as { profiles: Record<string, unknown> };
-      expect(persistedAgentStore.profiles).toHaveProperty(staleProfileId);
+      const persistedAgentStore = loadPersistedAuthProfileStore(agentDir);
+      expect(persistedAgentStore?.profiles).toHaveProperty(staleProfileId);
     } finally {
       restoreAgentDirEnv({ previousStateDir, previousAgentDir });
       fs.rmSync(root, { recursive: true, force: true });
@@ -751,17 +723,12 @@ describe("ensureAuthProfileStore", () => {
     "normalizes auth-profiles credential aliases with canonical-field precedence: $name",
     ({ name, profile, expected }) => {
       withTempAgentDir("openclaw-auth-alias-", (agentDir) => {
-        const storeData = {
+        writeRawAuthProfileStore(agentDir, {
           version: AUTH_STORE_VERSION,
           profiles: {
             "anthropic:work": profile,
           },
-        };
-        fs.writeFileSync(
-          path.join(agentDir, "auth-profiles.json"),
-          `${JSON.stringify(storeData, null, 2)}\n`,
-          "utf8",
-        );
+        });
 
         const store = ensureAuthProfileStore(agentDir);
         expectRecordFields(store.profiles["anthropic:work"], expected, name);
@@ -769,118 +736,8 @@ describe("ensureAuthProfileStore", () => {
     },
   );
 
-  it("normalizes mode/apiKey aliases while migrating legacy auth.json", () => {
-    withTempAgentDir("openclaw-auth-legacy-alias-", (agentDir) => {
-      fs.writeFileSync(
-        path.join(agentDir, "auth.json"),
-        `${JSON.stringify(
-          {
-            anthropic: {
-              provider: "anthropic",
-              mode: "api_key",
-              apiKey: "sk-ant-legacy", // pragma: allowlist secret
-            },
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      );
-
-      const store = ensureAuthProfileStore(agentDir);
-      expectRecordFields(store.profiles["anthropic:default"], {
-        type: "api_key",
-        provider: "anthropic",
-        key: "sk-ant-legacy",
-      });
-    });
-  });
-
-  it("does not load legacy flat auth-profiles.json entries at runtime", () => {
-    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-flat-profiles-"));
-    try {
-      const authPath = path.join(agentDir, "auth-profiles.json");
-      const legacyFlatStore = {
-        "ollama-windows": {
-          apiKey: "ollama-local",
-          baseUrl: "http://10.0.2.2:11434/v1",
-        },
-      };
-      fs.writeFileSync(authPath, `${JSON.stringify(legacyFlatStore)}\n`, "utf8");
-
-      const store = ensureAuthProfileStore(agentDir);
-
-      expect(store.profiles["ollama-windows:default"]).toBeUndefined();
-      expect(JSON.parse(fs.readFileSync(authPath, "utf8"))).toEqual(legacyFlatStore);
-    } finally {
-      fs.rmSync(agentDir, { recursive: true, force: true });
-    }
-  });
-
-  it("merges legacy oauth.json into auth-profiles.json", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-oauth-migrate-"));
-    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
-    const previousAgentDir = process.env.OPENCLAW_AGENT_DIR;
-    try {
-      const agentDir = path.join(root, "agent");
-      const oauthDir = path.join(root, "credentials");
-      fs.mkdirSync(agentDir, { recursive: true });
-      fs.mkdirSync(oauthDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(oauthDir, "oauth.json"),
-        `${JSON.stringify(
-          {
-            openai: {
-              access: "access-token",
-              refresh: "refresh-token",
-              expires: Date.now() + 60_000,
-              accountId: "acct_123",
-            },
-          },
-          null,
-          2,
-        )}\n`,
-        "utf8",
-      );
-
-      process.env.OPENCLAW_STATE_DIR = root;
-      process.env.OPENCLAW_AGENT_DIR = agentDir;
-      clearRuntimeAuthProfileStoreSnapshot();
-
-      const store = ensureAuthProfileStore(agentDir);
-      expectRecordFields(store.profiles["openai:default"], {
-        type: "oauth",
-        provider: "openai",
-        access: "access-token",
-        refresh: "refresh-token",
-      });
-
-      const persisted = JSON.parse(
-        fs.readFileSync(path.join(agentDir, "auth-profiles.json"), "utf8"),
-      ) as {
-        profiles: Record<string, Record<string, unknown>>;
-      };
-      const persistedProfile = persisted.profiles["openai:default"];
-      expect(persistedProfile?.type).toBe("oauth");
-      expect(persistedProfile?.provider).toBe("openai");
-      expect(persistedProfile?.access).toBe("access-token");
-      expect(persistedProfile?.refresh).toBe("refresh-token");
-      expect(persistedProfile).not.toHaveProperty("oauthRef");
-      expect(persistedProfile).not.toHaveProperty("idToken");
-    } finally {
-      clearRuntimeAuthProfileStoreSnapshot();
-      restoreEnvValue("OPENCLAW_STATE_DIR", previousStateDir);
-      restoreAgentDirEnv({ previousAgentDir });
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
   it("exposes provider-managed runtime auth without persisting copied tokens", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-external-auth-"));
-    const previousAgentDir = process.env.OPENCLAW_AGENT_DIR;
-    try {
-      const agentDir = path.join(root, "agent");
-      fs.mkdirSync(agentDir, { recursive: true });
+    withTempAgentDir("openclaw-external-auth-", (agentDir) => {
       resolveExternalAuthProfilesWithPluginsMock.mockReturnValueOnce([
         {
           profileId: "demo-provider:external",
@@ -896,9 +753,6 @@ describe("ensureAuthProfileStore", () => {
         },
       ]);
 
-      process.env.OPENCLAW_AGENT_DIR = agentDir;
-      clearRuntimeAuthProfileStoreSnapshot();
-
       const store = ensureAuthProfileStore(agentDir);
       expectRecordFields(store.profiles["demo-provider:external"], {
         type: "oauth",
@@ -908,11 +762,8 @@ describe("ensureAuthProfileStore", () => {
       });
 
       expect(fs.existsSync(path.join(agentDir, "auth-profiles.json"))).toBe(false);
-    } finally {
-      clearRuntimeAuthProfileStoreSnapshot();
-      restoreAgentDirEnv({ previousAgentDir });
-      fs.rmSync(root, { recursive: true, force: true });
-    }
+      expect(inspectPersistedAuthProfileStoreRaw(agentDir).status).toBe("missing");
+    });
   });
 
   it("does not write inherited auth stores during secrets runtime reads", () => {
@@ -924,23 +775,18 @@ describe("ensureAuthProfileStore", () => {
       const workerAgentDir = path.join(stateDir, "agents", "worker", "agent");
       const workerStorePath = path.join(workerAgentDir, "auth-profiles.json");
       fs.mkdirSync(mainAgentDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(mainAgentDir, "auth-profiles.json"),
-        `${JSON.stringify(
-          {
-            version: AUTH_STORE_VERSION,
-            profiles: {
-              "openai:default": {
-                type: "api_key",
-                provider: "openai",
-                keyRef: { source: "env", provider: "default", id: "OPENAI_API_KEY" },
-              },
+      saveAuthProfileStore(
+        {
+          version: AUTH_STORE_VERSION,
+          profiles: {
+            "openai:default": {
+              type: "api_key",
+              provider: "openai",
+              keyRef: { source: "env", provider: "default", id: "OPENAI_API_KEY" },
             },
           },
-          null,
-          2,
-        )}\n`,
-        "utf8",
+        },
+        mainAgentDir,
       );
       process.env.OPENCLAW_STATE_DIR = stateDir;
       clearRuntimeAuthProfileStoreSnapshot();
@@ -954,6 +800,8 @@ describe("ensureAuthProfileStore", () => {
       expect(fs.existsSync(workerStorePath)).toBe(false);
     } finally {
       clearRuntimeAuthProfileStoreSnapshot();
+      closeOpenClawAgentDatabasesForTest();
+      closeOpenClawStateDatabaseForTest();
       restoreEnvValue("OPENCLAW_STATE_DIR", previousStateDir);
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -968,25 +816,20 @@ describe("ensureAuthProfileStore", () => {
       const workerAgentDir = path.join(stateDir, "agents", "worker", "agent");
       const workerStorePath = path.join(workerAgentDir, "auth-profiles.json");
       fs.mkdirSync(mainAgentDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(mainAgentDir, "auth-profiles.json"),
-        `${JSON.stringify(
-          {
-            version: AUTH_STORE_VERSION,
-            profiles: {
-              "openai:default": {
-                type: "oauth",
-                provider: "openai",
-                access: "main-access",
-                refresh: "main-refresh",
-                expires: Date.now() + 60_000,
-              },
+      saveAuthProfileStore(
+        {
+          version: AUTH_STORE_VERSION,
+          profiles: {
+            "openai:default": {
+              type: "oauth",
+              provider: "openai",
+              access: "main-access",
+              refresh: "main-refresh",
+              expires: Date.now() + 60_000,
             },
           },
-          null,
-          2,
-        )}\n`,
-        "utf8",
+        },
+        mainAgentDir,
       );
       process.env.OPENCLAW_STATE_DIR = stateDir;
       clearRuntimeAuthProfileStoreSnapshot();
@@ -1001,6 +844,8 @@ describe("ensureAuthProfileStore", () => {
       expect(fs.existsSync(workerStorePath)).toBe(false);
     } finally {
       clearRuntimeAuthProfileStoreSnapshot();
+      closeOpenClawAgentDatabasesForTest();
+      closeOpenClawStateDatabaseForTest();
       restoreEnvValue("OPENCLAW_STATE_DIR", previousStateDir);
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -1023,11 +868,7 @@ describe("ensureAuthProfileStore", () => {
             "qwen:not-object": "broken",
           },
         };
-        fs.writeFileSync(
-          path.join(agentDir, "auth-profiles.json"),
-          `${JSON.stringify(invalidStore, null, 2)}\n`,
-          "utf8",
-        );
+        writeRawAuthProfileStore(agentDir, invalidStore);
         const store = ensureAuthProfileStore(agentDir);
         expect(store.profiles).toStrictEqual({});
         expect(warnSpy).toHaveBeenCalledTimes(1);
