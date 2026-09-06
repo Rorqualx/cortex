@@ -263,26 +263,33 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
       await registerSubCliWithPluginCommands(
         program,
         argv,
-        async () => (await import("../pairing-cli.js")).registerPairingCli(program),
+        async () => {
+          const mod = await import("../pairing-cli.js");
+          mod.registerPairingCli(program);
+        },
         "before",
       );
     },
-  ],
-  [
-    ["plugins"],
-    async (program, argv) => {
+  },
+  {
+    commandNames: ["plugins"],
+    register: async (program, argv) => {
       await registerSubCliWithPluginCommands(
         program,
         argv,
-        async () => (await import("../plugins-cli.js")).registerPluginsCli(program),
+        async () => {
+          const mod = await import("../plugins-cli.js");
+          mod.registerPluginsCli(program);
+        },
         "after",
       );
     },
-  ],
-  [
-    ["channels"],
-    async (program, argv, context) =>
-      (await import("../channels-cli.js")).registerChannelsCli(program, argv, {
+  },
+  {
+    commandNames: ["channels"],
+    register: async (program, argv, context) => {
+      const mod = await import("../channels-cli.js");
+      await mod.registerChannelsCli(program, argv, {
         includeSetupOptions: context.purpose === "completion",
       });
     },
