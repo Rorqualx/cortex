@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-06T15:21:18.193Z",
+  "timestamp": "2026-09-06T20:36:09.419Z",
   "branch": "main",
-  "headSha": "15c73f621d8a744b26676a2dbbf2cf3559ec3231",
+  "headSha": "6cf6521becc2a8e59aa36dd0162a4429ea0f9dee",
   "files": {
     ".gitattributes": {
-      "hash": "197f3778ee124670dcc211f4b3490e1936269e8083ec96614321f2ea70e48bdc",
+      "hash": "2de566efccdc555dec59ce19658b78a0f207f152eba9694db02cd5cbd0eeed6c",
       "mergeOursLines": [
         "extensions/memory-l3/**                                              merge=ours",
         "memory/.l3/**                                                        merge=ours",
@@ -62,8 +62,6 @@
         "scripts/skill-forge-cli.ts                                              merge=ours",
         "src/agents/acp-fast-spawn.perf.test.ts                                  merge=ours",
         "src/agents/acp-fast-spawn.test.ts                                       merge=ours",
-        "src/agents/agent-auth-json.test.ts                                      merge=ours",
-        "src/agents/agent-auth-json.ts                                           merge=ours",
         "src/agents/auth-profiles.ensureauthprofilestore.test.ts                 merge=ours",
         "src/agents/auth-profiles.store-cache.test.ts                            merge=ours",
         "src/agents/auth-profiles/store-cache.ts                                 merge=ours",
@@ -276,7 +274,7 @@
       "jsonKeys": null
     },
     "tsconfig.json": {
-      "hash": "b078ff2f6ab0e3a11c0113acee3560d227bfd25f3dce7092358c8b64f14b3a81",
+      "hash": "e25af0709e1aaee48971d7c16e04816c65456777201dc43e33144cf26158e217",
       "jsonKeys": [
         "compilerOptions",
         "include",
@@ -292,8 +290,8 @@
       "jsonKeys": null
     },
     "package.json": {
-      "hash": "245a444fb3a974a73425902bb0ae7a396a26fcea16292527bc9ed312ab3c0dfd",
-      "pkgSectionsHash": "9959d8e5a11709f4bdd8da98bc0b9477fa1b5c65f513cbbea6b2bba54deb8cf1"
+      "hash": "ed56cb0bfacc2e65bfe4cdf1fac56826ca725bf3e5999fe8bff3c9132531475f",
+      "pkgSectionsHash": "8ac100c38633f5763603ba8ddc87d454ea6a0f5c7d07795349f2e5b0a548ce09"
     },
     "src/config/schema.ts": {
       "hash": "de979d49cb8474e4e43cf9f62bebbedcd665d8d0bbda6c97fdaf987ae87a05c5"
