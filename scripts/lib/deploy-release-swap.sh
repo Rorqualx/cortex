@@ -113,6 +113,24 @@ promote_release() {
     echo "REFUSE-PROMOTE: could not pin package.json into $base" >&2
     return 1
   }
+  # Ship the workspace template pack beside dist/. Pinning package.json above makes the release
+  # dir the resolved package root (resolveOpenClawPackageRoot stops at the first "openclaw"
+  # package.json walking up from the served dist/). The runtime resolves workspace bootstrap
+  # templates from "<packageRoot>/docs/reference/templates" (src/agents/workspace-templates.ts),
+  # and the npm package contract ships them there (check-openclaw-package-tarball REQUIRED_TARBALL
+  # _ENTRIES). Without this copy, isolated-session bootstrap fails with "Missing workspace
+  # template: AGENTS.md ()" for every cron/spawned agent. Observed 2026-09-05 after the pin.
+  if [ -d "$root/docs/reference/templates" ]; then
+    mkdir -p "$base/docs/reference" 2>/dev/null && cp -R "$root/docs/reference/templates" "$base/docs/reference/templates" 2>/dev/null || {
+      rm -rf "$base" 2>/dev/null || true
+      echo "REFUSE-PROMOTE: could not pin workspace templates into $base" >&2
+      return 1
+    }
+  else
+    rm -rf "$base" 2>/dev/null || true
+    echo "REFUSE-PROMOTE: source workspace templates missing at $root/docs/reference/templates" >&2
+    return 1
+  fi
   if ! _deploy_repoint_current "$root" "$rel"; then
     rm -rf "$base" 2>/dev/null || true
     echo "REFUSE-PROMOTE: could not repoint dist.current" >&2
