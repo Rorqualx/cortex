@@ -9,6 +9,7 @@ import {
 } from "../command-registration-policy.js";
 import {
   buildCommandGroupEntries,
+  defineImportedProgramCommandGroupSpecs,
   type CommandGroupDescriptorSpec,
 } from "./command-group-descriptors.js";
 import { removeCommandByName } from "./command-tree.js";
@@ -25,6 +26,11 @@ export type SubCliRegistrationContext = {
 };
 
 type PluginCliModule = typeof import("../../plugins/cli.js");
+type SubCliRegistrar = (
+  program: Command,
+  argv: string[],
+  context: SubCliRegistrationContext,
+) => Promise<void> | void;
 
 const pluginCliLoader = createLazyImportLoader<PluginCliModule>(
   () => import("../../plugins/cli.js"),
@@ -336,9 +342,10 @@ function resolveSubCliCommandGroups(
   const descriptorNames = new Set(descriptors.map((descriptor) => descriptor.name));
   return buildCommandGroupEntries(
     descriptors,
-    entrySpecs.filter(([commandNames]) => commandNames.every((name) => descriptorNames.has(name))),
-    argv,
-    context,
+    entrySpecs.filter((spec) => spec.commandNames.every((name) => descriptorNames.has(name))),
+    (register) => async (program) => {
+      await register(program, argv, context);
+    },
   );
 }
 

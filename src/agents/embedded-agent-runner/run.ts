@@ -2881,7 +2881,6 @@ export async function runEmbeddedAgent(
             }
             let promptFailoverDecision = resolveRunFailoverDecision({
               stage: "prompt",
-              aborted,
               externalAbort,
               fallbackConfigured,
               failoverFailure: promptFailoverFailure,
@@ -2920,7 +2919,6 @@ export async function runEmbeddedAgent(
             if (promptFailoverDecision.action === "rotate_profile") {
               promptFailoverDecision = resolveRunFailoverDecision({
                 stage: "prompt",
-                aborted,
                 externalAbort,
                 fallbackConfigured,
                 failoverFailure: promptFailoverFailure,

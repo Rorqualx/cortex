@@ -1,3 +1,4 @@
+import type { ThinkingContent } from "@openclaw/llm-core";
 import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 /**
  * Subscribes to embedded-agent sessions and streams formatted replies/events.
@@ -1113,14 +1114,17 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     })();
   };
 
-  const emitReasoningStream = (text: string) => {
+  const emitReasoningStream = (text: string | ThinkingContent, fallback?: string) => {
     if (params.silentExpected) {
       return;
     }
     if (!state.streamReasoning || !params.onReasoningStream) {
       return;
     }
-    const trimmed = text.trim();
+    // Structured thinking content streams its reasoning text; the fallback is
+    // pre-rendered text for providers without a structured payload.
+    const rawText = typeof text === "string" ? text : text.thinking || fallback || "";
+    const trimmed = rawText.trim();
     if (!trimmed) {
       return;
     }

@@ -562,7 +562,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       context,
       validate: validateSkillsProposalsListParams,
       run: (_parsedParams, resolved) =>
-        listSkillProposals({ agentId: resolved.agentId, workspaceDir: resolved.workspaceDir }),
+        listSkillProposals({ config: resolved.cfg, agentId: resolved.agentId }),
     });
   },
   "skills.proposals.events.list": async ({ params, respond, context }) => {
@@ -574,7 +574,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       validate: validateSkillsProposalEventsListParams,
       run: async (parsedParams, resolved) =>
         listSkillProposalEvents({
-          workspaceDir: resolved.workspaceDir,
+          config: resolved.cfg,
           agentId: resolved.agentId,
           proposalId: parsedParams.proposalId,
           afterSequence: parsedParams.afterSequence,
@@ -592,7 +592,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       run: async (parsedParams, resolved) => {
         const proposal = await inspectSkillProposal(parsedParams.proposalId, {
           agentId: resolved.agentId,
-          workspaceDir: resolved.workspaceDir,
+          config: resolved.cfg,
         });
         if (!proposal) {
           respond(
@@ -621,6 +621,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
           workspaceDir: resolved.workspaceDir,
           agentId: resolved.agentId,
           eventActor: { type: "gateway" },
+          config: resolved.cfg,
           proposalId: parsedParams.proposalId,
           expectedRevisionHash: parsedParams.expectedRevisionHash,
           correlationId: parsedParams.correlationId,
@@ -709,7 +710,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       run: async (parsedParams, resolved) => {
         const proposal = await inspectSkillProposal(parsedParams.proposalId, {
           agentId: resolved.agentId,
-          workspaceDir: resolved.workspaceDir,
+          config: resolved.cfg,
         });
         if (!proposal) {
           respond(
@@ -795,6 +796,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
           workspaceDir: resolved.workspaceDir,
           agentId: resolved.agentId,
           eventActor: { type: "gateway" },
+          config: resolved.cfg,
           proposalId: parsedParams.proposalId,
           expectedRevisionHash: parsedParams.expectedRevisionHash,
           correlationId: parsedParams.correlationId,
@@ -814,6 +816,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
           workspaceDir: resolved.workspaceDir,
           agentId: resolved.agentId,
           eventActor: { type: "gateway" },
+          config: resolved.cfg,
           proposalId: parsedParams.proposalId,
           expectedRevisionHash: parsedParams.expectedRevisionHash,
           correlationId: parsedParams.correlationId,
