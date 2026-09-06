@@ -405,7 +405,15 @@ export async function finalizeCodexAttempt(
       attemptSucceeded,
       completedTurnStatus,
     } = projectTerminalOutcome();
-    terminalState.turnSucceeded = turnSucceeded;
+    terminalState.settledTurnStatus = turnSucceeded
+      ? "completed"
+      : completedTurnStatus === "failed" &&
+          !finalAborted &&
+          !effectiveTimedOut &&
+          !state.clientClosedPromptError &&
+          !resourceState.executionDisconnectError
+        ? "failed"
+        : undefined;
     terminalState.sharedAbortAllowedAfterTerminalOutcome = shouldKeepCodexSharedAbortOpen({
       trigger: params.trigger,
       result,
@@ -493,7 +501,13 @@ export async function finalizeCodexAttempt(
       ctx: hookContext,
       hookRunner,
     });
+    // A non-retryable refusal is a visible terminal reply, not learning evidence
+    // for another call to the same provider. User-aborted turns remain eligible.
+    const providerRefusal = result.currentAttemptAssistant?.diagnostics?.some(
+      (diagnostic) => diagnostic.type === "provider_refusal",
+    );
     await runCodexAgentEndHook(params, {
+      skillExperienceReviewSource: providerRefusal ? undefined : terminalAnchor,
       event: {
         messages: result.messagesSnapshot,
         success: !finalAborted && !finalPromptError,

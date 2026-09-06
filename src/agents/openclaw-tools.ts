@@ -513,7 +513,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     // Available to embedded workers too — dispatched worker/orchestrator subagents
     // drive the board through these (specify/decompose/complete/block).
     ...createWorkboardTools({ config: resolvedConfig, callGateway: effectiveCallGateway }),
-    ...(options?.sandboxed
+    ...((options?.sandboxed && !options.skillWorkshop?.libraryAuthoring) || !resolvedConfig
       ? []
       : [
           // Fork: Skill Forge replaces the upstream Skill Workshop tool surface.

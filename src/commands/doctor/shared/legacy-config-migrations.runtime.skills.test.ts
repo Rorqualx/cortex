@@ -74,4 +74,22 @@ describe("skills.workshop -> skills.forge migration", () => {
     expect(result.raw).toEqual({ skills: { forge: { approvalPolicy: "auto" } } });
     expect(result.changes).toEqual([]);
   });
+
+  it("drops the retired symlink write option", () => {
+    const result = migrate({
+      skills: {
+        workshop: {
+          allowSymlinkTargetWrites: true,
+          autonomous: { mode: "auto" },
+        },
+      },
+    });
+
+    expect(result.raw).toEqual({
+      skills: { workshop: { autonomous: { mode: "auto" } } },
+    });
+    expect(result.changes).toEqual([
+      "Removed retired skills.workshop.allowSymlinkTargetWrites; Skill Workshop writes only inside its own directory.",
+    ]);
+  });
 });

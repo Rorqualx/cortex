@@ -27,7 +27,10 @@ Most skills configuration lives under `skills` in
       allowUploadedArchives: false,
     },
     forge: {
-      approvalPolicy: "pending",
+      autonomous: { mode: "auto" },
+      approvalPolicy: "auto",
+      maxPending: 50,
+      maxSkillBytes: 40000,
     },
     entries: {
       "image-lab": {
@@ -345,12 +348,34 @@ different visible skill set per agent.
 
 ## Skill Forge (`skills.forge`)
 
-<ParamField path="skills.forge.approvalPolicy" type='"pending" | "auto"' default='"pending"'>
-  `pending` requires operator approval before agent-initiated `skill_forge`
-  promote or retire actions. `auto` allows those actions without approval.
-  Legacy `skills.workshop` config is migrated by `openclaw doctor --fix`.
+<ParamField path="skills.forge.autonomous.mode" type='"off" | "propose" | "auto"' default='"auto"'>
+  `off` disables autonomous capture while keeping the durable-instruction
+  suggestion nudge. `propose` creates pending proposals from corrections and
+  substantial completed work. `auto` sends the same captures through the normal
+  scanner-gated apply path and runs weekly collection cleanup that can
+  rewrite or drop eligible writable skills. User-prompted skill creation,
+  `/learn`, and manual history scan continue to work in every mode.
 </ParamField>
 
+See [Self-learning](/tools/self-learning) for eligibility, privacy, cost,
+proposal-only permissions, and troubleshooting.
+
+<ParamField path="skills.forge.approvalPolicy" type='"pending" | "auto"' default='"auto"'>
+  `auto` allows agent-initiated apply, reject, or quarantine without an
+  additional approval prompt. `pending` requires operator approval. Legacy
+  `skills.workshop` config is migrated by `openclaw doctor --fix`.
+</ParamField>
+
+<ParamField path="skills.forge.maxPending" type="number" default="50">
+  Maximum pending and quarantined proposals retained per agent (allowed
+  range: 1-200).
+</ParamField>
+
+<ParamField path="skills.forge.maxSkillBytes" type="number" default="40000">
+  Maximum proposal body size in bytes (allowed range: 1024-200000). Proposal
+  descriptions are hard-capped at 160 bytes separately, because they appear
+  in discovery and listing output.
+</ParamField>
 ## Symlinked skill roots
 
 By default, workspace, project-agent, extra-dir, and bundled skill roots are
@@ -374,6 +399,10 @@ With this config, `<workspace>/skills/manager -> ~/Projects/manager/skills`
 is accepted after realpath resolution. `extraDirs` scans the sibling repo
 directly; `allowSymlinkTargets` preserves the symlinked path for existing
 layouts.
+
+Skill Workshop uses each agent's `<state-dir>/agents/<agentId>/agent/workshop-skills`
+containment boundary. It does not use `allowSymlinkTargets`, and it rejects
+symlinked skills that resolve outside that directory.
 
 Managed `~/.openclaw/skills` and personal `~/.agents/skills` directories
 already accept skill-directory symlinks unconditionally (per-skill

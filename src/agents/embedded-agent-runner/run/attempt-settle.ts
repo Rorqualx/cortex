@@ -215,7 +215,7 @@ export async function runEmbeddedAttemptSettledPhase(
   };
 
   try {
-    const { promptStartedAt } = await runEmbeddedAttemptPromptPhase({
+    const { promptStartedAt, transcriptLeafId } = await runEmbeddedAttemptPromptPhase({
       attempt,
       activeSession,
       sessionManager,
@@ -517,6 +517,7 @@ export async function runEmbeddedAttemptSettledPhase(
         messagesSnapshot: settledStream.messagesSnapshot,
         nestedToolActivities,
         prePromptMessageCount: sessionRuntimeState.prePromptMessageCount,
+        transcriptLeafId,
         contextEngineAfterTurnCheckpoint: contextGuards.getAfterTurnCheckpoint(),
         lastCallUsage: settledStream.lastCallUsage,
         promptCache: settledStream.promptCache,

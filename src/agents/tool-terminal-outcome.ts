@@ -6,7 +6,7 @@ import {
 } from "./agent-tools.before-tool-call.state.js";
 import { extractApplyPatchTargets } from "./apply-patch-targets.js";
 import type { EmbeddedRunAttemptParams } from "./embedded-agent-runner/run/types.js";
-import { buildToolEffectReceipt } from "./tool-effect-receipt.js";
+import { buildToolEffectReceipt, readToolEffectReceipt } from "./tool-effect-receipt.js";
 import { createToolErrorState } from "./tool-error-state.js";
 import type { ToolErrorSummary, ToolRecoverySummary } from "./tool-error-summary.js";
 import type { FileTarget } from "./tool-mutation.js";
@@ -35,6 +35,7 @@ export function createToolTerminalObserver(
   const errors = createToolErrorState();
 
   return (observation) => {
+    const effectReceipt = readToolEffectReceipt(observation.result);
     const trackedExecutionStarted = observation.toolCallId
       ? consumeTrackedToolExecutionStarted(observation.toolCallId, runId)
       : undefined;
@@ -45,7 +46,9 @@ export function createToolTerminalObserver(
       ? peekPreExecutionBlockedToolCall(observation.toolCallId, runId)
       : false;
     const executionStarted =
-      (trackedExecutionStarted ?? observation.executionStarted ?? true) && !executionPrevented;
+      (trackedExecutionStarted ?? observation.executionStarted ?? true) &&
+      !executionPrevented &&
+      effectReceipt?.state !== "not_started";
     const executedArguments = asRecord(trackedArguments) ?? asRecord(observation.arguments);
     const mutation = observation.ownerMutation
       ? buildToolMutationState(observation.toolName, executedArguments, observation.meta, {
@@ -98,12 +101,14 @@ export function createToolTerminalObserver(
       executionStarted,
       ...(executedArguments ? { executedArguments } : {}),
       sideEffectEvidence: executionStarted && !replaySafe,
-      effectReceipt: buildToolEffectReceipt({
-        executionStarted,
-        mutatingAction: mutation.mutatingAction,
-        replaySafe,
-        outcome: observation.outcome,
-      }),
+      effectReceipt:
+        effectReceipt ??
+        buildToolEffectReceipt({
+          executionStarted,
+          mutatingAction: mutation.mutatingAction,
+          replaySafe,
+          outcome: observation.outcome,
+        }),
     };
   };
 }

@@ -25,6 +25,7 @@ describe("tool-catalog", () => {
   it("includes code_execution, web_search, x_search, web_fetch, and progress_card in the coding profile policy", () => {
     const policy = requireCoreToolProfilePolicy("coding");
     expect(policy.allow).toEqual([
+      "ls",
       "read",
       "write",
       "edit",

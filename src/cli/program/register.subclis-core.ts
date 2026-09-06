@@ -9,7 +9,6 @@ import {
 } from "../command-registration-policy.js";
 import {
   buildCommandGroupEntries,
-  defineImportedProgramCommandGroupSpecs,
   type CommandGroupDescriptorSpec,
 } from "./command-group-descriptors.js";
 import { removeCommandByName } from "./command-tree.js";
@@ -26,11 +25,6 @@ export type SubCliRegistrationContext = {
 };
 
 type PluginCliModule = typeof import("../../plugins/cli.js");
-type SubCliRegistrar = (
-  program: Command,
-  argv: string[],
-  context: SubCliRegistrationContext,
-) => Promise<void> | void;
 
 const pluginCliLoader = createLazyImportLoader<PluginCliModule>(
   () => import("../../plugins/cli.js"),
@@ -269,33 +263,26 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
       await registerSubCliWithPluginCommands(
         program,
         argv,
-        async () => {
-          const mod = await import("../pairing-cli.js");
-          mod.registerPairingCli(program);
-        },
+        async () => (await import("../pairing-cli.js")).registerPairingCli(program),
         "before",
       );
     },
-  },
-  {
-    commandNames: ["plugins"],
-    register: async (program, argv) => {
+  ],
+  [
+    ["plugins"],
+    async (program, argv) => {
       await registerSubCliWithPluginCommands(
         program,
         argv,
-        async () => {
-          const mod = await import("../plugins-cli.js");
-          mod.registerPluginsCli(program);
-        },
+        async () => (await import("../plugins-cli.js")).registerPluginsCli(program),
         "after",
       );
     },
-  },
-  {
-    commandNames: ["channels"],
-    register: async (program, argv, context) => {
-      const mod = await import("../channels-cli.js");
-      await mod.registerChannelsCli(program, argv, {
+  ],
+  [
+    ["channels"],
+    async (program, argv, context) =>
+      (await import("../channels-cli.js")).registerChannelsCli(program, argv, {
         includeSetupOptions: context.purpose === "completion",
       });
     },
@@ -342,10 +329,9 @@ function resolveSubCliCommandGroups(
   const descriptorNames = new Set(descriptors.map((descriptor) => descriptor.name));
   return buildCommandGroupEntries(
     descriptors,
-    entrySpecs.filter((spec) => spec.commandNames.every((name) => descriptorNames.has(name))),
-    (register) => async (program) => {
-      await register(program, argv, context);
-    },
+    entrySpecs.filter(([commandNames]) => commandNames.every((name) => descriptorNames.has(name))),
+    argv,
+    context,
   );
 }
 

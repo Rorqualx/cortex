@@ -2,7 +2,10 @@ import type { StreamFn } from "openclaw/plugin-sdk/agent-core";
 import type { Context, Model, SimpleStreamOptions } from "openclaw/plugin-sdk/llm";
 import { createAssistantMessageEventStream } from "openclaw/plugin-sdk/llm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { testing as extraParamsTesting } from "./embedded-agent-runner/extra-params.js";
+import {
+  testing as extraParamsTesting,
+  type WrapProviderStreamFnParams,
+} from "./embedded-agent-runner/extra-params.test-support.js";
 
 vi.mock("../plugins/provider-hook-runtime.js", () => ({
   clearProviderRuntimePluginCacheForTest: vi.fn(),
@@ -10,9 +13,8 @@ vi.mock("../plugins/provider-hook-runtime.js", () => ({
     buildHookProviderCacheKey: () => "test-provider-hook-cache-key",
     clearProviderRuntimePluginCacheForTest: vi.fn(),
   },
-  prepareProviderExtraParams: () => undefined,
-  resolveProviderExtraParamsForTransport: () => undefined,
-  wrapProviderStreamFn: (params: { context: { streamFn?: StreamFn } }) => params.context.streamFn,
+  ensureProviderRuntimePluginHandle: vi.fn(),
+  getModelProviderRuntimePluginHandle: () => undefined,
 }));
 
 vi.mock("./codex-native-web-search.js", () => ({
@@ -313,10 +315,6 @@ import {
   resolvePreparedExtraParams,
 } from "./embedded-agent-runner/extra-params.js";
 import { log } from "./embedded-agent-runner/logger.js";
-
-type WrapProviderStreamFnParams = Parameters<
-  typeof import("../plugins/provider-hook-runtime.js").wrapProviderStreamFn
->[0];
 
 function installFullProviderRuntimeDepsForTest() {
   extraParamsTesting.setProviderRuntimeDepsForTest({
@@ -2364,7 +2362,7 @@ describe("applyExtraParamsToAgent", () => {
     expect(hookContext?.workspaceDir).toBe("/tmp/workspace");
   });
 
-  it("keys prepared extra-param memoization by resolved model transport inputs", () => {
+  it("prepares extra params from each model's transport inputs", () => {
     const resolveProviderExtraParamsForTransport = vi.fn((params) => ({
       patch: {
         transportFamily: params.context.model?.api,
@@ -2437,7 +2435,7 @@ describe("applyExtraParamsToAgent", () => {
     expect(differentModelHeadersParams.baseUrl).toBe("https://api-two.example/v1");
     expect(differentModelHeadersParams.headerAuth).toBe("two");
     expect(repeatedResponsesParams.transportFamily).toBe("openai-responses");
-    expect(resolveProviderExtraParamsForTransport).toHaveBeenCalledTimes(3);
+    expect(resolveProviderExtraParamsForTransport).toHaveBeenCalledTimes(4);
   });
 
   it("passes explicit settings transport to transport extra-param hooks", () => {

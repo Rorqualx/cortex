@@ -294,8 +294,8 @@ existing session. Removal preserves already selected revisions. See
 
 ## Skill Workshop
 
-`openclaw skills workshop` manages pending skill proposals in the selected
-workspace. Proposals are not active skills until applied. For proposal
+`openclaw skills workshop` manages pending skill proposals for the selected
+agent. Proposals are not active skills until applied. For proposal
 storage, support-file safeguards, Gateway methods, and approval policy, see
 [Skill Workshop](/tools/skill-workshop).
 

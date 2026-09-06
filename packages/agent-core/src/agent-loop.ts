@@ -10,6 +10,7 @@ import type {
   ToolResultMessage,
   EventStream as SourceEventStream,
 } from "@openclaw/llm-core";
+import { coerceErrorMessage } from "@openclaw/normalization-core/error-coercion";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { TranscriptNotContinuableError } from "./errors.js";
 import { uuidv7 } from "./harness/session/uuid.js";
@@ -1169,7 +1170,7 @@ async function prepareToolCall(
   } catch (error) {
     return {
       kind: "immediate",
-      result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
+      result: createToolExecutionErrorResult(error),
       isError: true,
     };
   }
@@ -1180,7 +1181,7 @@ async function prepareToolCall(
   } catch (error) {
     return {
       kind: "immediate",
-      result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
+      result: createToolExecutionErrorResult(error),
       isError: true,
       errorKind: "argument-validation",
     };
@@ -1228,7 +1229,7 @@ async function prepareToolCall(
   } catch (error) {
     return {
       kind: "immediate",
-      result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
+      result: createToolExecutionErrorResult(error),
       isError: true,
     };
   }
@@ -1287,7 +1288,7 @@ async function executePreparedToolCall(
     acceptingUpdates = false;
     await Promise.all(updateEvents);
     return {
-      result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
+      result: createToolExecutionErrorResult(error),
       isError: true,
       executionStarted: true,
       ...(signal?.aborted && error === signal.reason ? { callerCancelled: true } : {}),
@@ -1450,6 +1451,13 @@ async function completeAbortedToolCall(
   await emitToolExecutionEnd(finalized, emit);
   const message = await emitToolResultMessage(finalized, emit);
   return { finalized, message };
+}
+
+function createToolExecutionErrorResult(error: unknown): AgentToolResult<unknown> {
+  const result = createErrorToolResult(coerceErrorMessage(error));
+  return typeof error === "object" && error !== null
+    ? copyInternalToolResultState(error, result)
+    : result;
 }
 
 function createErrorToolResult(message: string): AgentToolResult<unknown> {

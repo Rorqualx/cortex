@@ -5,6 +5,7 @@ import {
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
 } from "../../../config/legacy.shared.js";
+import { deleteRetiredPath } from "./legacy-config-record-shared.js";
 
 const SKILLS_WORKSHOP_RULE: LegacyConfigRule = {
   path: ["skills", "workshop"],
@@ -71,6 +72,24 @@ export const LEGACY_CONFIG_MIGRATIONS_RUNTIME_SKILLS: LegacyConfigMigrationSpec[
       changes.push(
         "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
       );
+    },
+  }),
+  defineLegacyConfigMigration({
+    id: "skills.workshop.allowSymlinkTargetWrites-retired",
+    describe: "Remove the retired Skill Workshop symlink write option.",
+    legacyRules: [
+      {
+        path: ["skills", "workshop", "allowSymlinkTargetWrites"],
+        message:
+          'skills.workshop.allowSymlinkTargetWrites is retired; Skill Workshop writes only inside its own directory. Run "openclaw doctor --fix".',
+      },
+    ],
+    apply: (raw, changes) => {
+      if (deleteRetiredPath(raw, ["skills", "workshop", "allowSymlinkTargetWrites"])) {
+        changes.push(
+          "Removed retired skills.workshop.allowSymlinkTargetWrites; Skill Workshop writes only inside its own directory.",
+        );
+      }
     },
   }),
 ];
