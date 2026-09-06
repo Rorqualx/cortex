@@ -2,19 +2,24 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred, withTestTimeout } from "../../../test/helpers/promise.js";
+import { resolveAdmittedRunActiveAssertion } from "../../agents/admitted-run-context.js";
 import { resolveSessionLane } from "../../agents/embedded-agent-runner/lanes.js";
-import type { EmbeddedForegroundPromptContext } from "../../agents/embedded-agent-runner/run/params.js";
+import type {
+  RunEmbeddedAgentParams,
+  EmbeddedForegroundPromptContext,
+} from "../../agents/embedded-agent-runner/run/params.js";
 import { resolveSessionBoundaryPromptCacheKey } from "../../agents/embedded-agent-runner/run/session-boundary-prompt-cache-key.js";
 import type { EmbeddedAgentRunResult } from "../../agents/embedded-agent-runner/types.js";
 import { resolveAgentRunSessionTarget } from "../../agents/run-session-target.js";
 import { SessionManager } from "../../agents/sessions/index.js";
-import { runWithCanonicalSkillWorkspace } from "../../agents/skill-workshop-workspace-context.js";
+import { createWriteTool } from "../../agents/sessions/tools/write.js";
 import { createSkillWorkshopTool } from "../../agents/tools/skill-workshop-tool.js";
 import {
   createSessionEntryWithTranscript,
   deleteSessionEntryLifecycle,
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { emitAgentEvent, onAgentRuntimeEvent } from "../../infra/agent-events.js";
 import { getAgentRunContext } from "../../infra/agent-run-registry.js";
 import * as agentRunRegistry from "../../infra/agent-run-registry.js";
@@ -33,7 +38,6 @@ import { readSkillReviewOutcomes } from "./collection-review-state.js";
 import type { ExperienceReviewCandidate } from "./experience-review-scheduler.js";
 import { runSkillExperienceReview as runCapturedExperienceReview } from "./experience-review.js";
 import { inspectSkillProposal, listSkillProposals, proposeCreateSkill } from "./service.js";
-import * as workshopService from "./service.js";
 import { resolveWorkshopSkillsDir } from "./skills-root.js";
 
 const runEmbeddedAgent = vi.hoisted(() => vi.fn());
@@ -60,7 +64,14 @@ async function captureReviewFixture(
   });
   const created = await createSessionEntryWithTranscript(
     source,
-    () => ({ ok: true, entry: { sessionId: source.sessionId, updatedAt: Date.now() } }),
+    () => ({
+      ok: true,
+      entry: {
+        sessionId: source.sessionId,
+        updatedAt: Date.now(),
+        permissionMode: fixture.ctx.foregroundPromptContext.permissionMode,
+      },
+    }),
     { cwd: fixture.ctx.workspaceDir },
   );
   if (!created.ok) {
@@ -84,11 +95,8 @@ async function captureReviewFixture(
   };
 }
 
-async function runSkillExperienceReview(
-  fixture: ExperienceReviewFixture,
-  deps: Parameters<typeof runCapturedExperienceReview>[1],
-): Promise<void> {
-  await runCapturedExperienceReview(await captureReviewFixture(fixture), deps);
+async function runSkillExperienceReview(fixture: ExperienceReviewFixture): Promise<void> {
+  await runCapturedExperienceReview(await captureReviewFixture(fixture));
 }
 
 function foregroundPromptContext(
@@ -111,7 +119,7 @@ let testState: OpenClawTestState;
 beforeEach(async () => {
   testState = await createOpenClawTestState({
     layout: "state-only",
-    prefix: "openclaw-experience-auto-apply-state-",
+    prefix: "openclaw-experience-maintenance-state-",
   });
 });
 
@@ -162,59 +170,41 @@ describe("experience review auto apply", () => {
         if (boundary === "model result") {
           await waitForReset();
         }
-        return { meta: { durationMs: 1 } };
+        return { meta: { durationMs: 1 } };      });
+      written.resolve();
+      await release.promise;
+      return { meta: { durationMs: 1 } };
+    });
+    const review = runSkillExperienceReview({
+      ctx: {
+        sessionId: "foreground-session",
+        sessionKey: "agent:main:reset",
+        workspaceDir,
+        modelProviderId: "openai",
+        modelId: "gpt-test",
+        foregroundPromptContext: foregroundPromptContext(workspaceDir),
+      },
+      config,
+    });
+    const settled = review.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    try {
+      await Promise.race([written.promise, settled]);
+      resetGatewayWorkAdmission();
+      release.resolve();
+      expect(await settled).toMatchObject({ message: "gateway runtime reset" });
+      await expect(fs.readFile(skillFile, "utf8")).resolves.toBe(content);
+      expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
+        outcome: "failed",
+        error: expect.stringContaining("gateway runtime reset"),
       });
-      const review = runSkillExperienceReview(
-        {
-          ctx: {
-            sessionId: "foreground-session",
-            sessionKey: "agent:main:apply-reset",
-            workspaceDir,
-            modelProviderId: "openai",
-            modelId: "gpt-test",
-            foregroundPromptContext: foregroundPromptContext(workspaceDir),
-          },
-          config,
-        },
-        {
-          getCurrentConfig: async () => {
-            if (boundary === "configuration") {
-              await waitForReset();
-            }
-            return config;
-          },
-        },
-      );
-      const settled = review.then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      try {
-        await Promise.race([acquired.promise, settled]);
-        resetGatewayWorkAdmission();
-        release.resolve();
-        expect(await settled).toMatchObject({ message: "gateway runtime reset" });
-        expect(apply).not.toHaveBeenCalled();
-        expect((await listSkillProposals({ config, agentId: "main" })).proposals[0]).toMatchObject({
-          status: "pending",
-        });
-        await expect(
-          fs.stat(
-            path.join(resolveWorkshopSkillsDir(config, "main"), "deployment-preflight", "SKILL.md"),
-          ),
-        ).rejects.toMatchObject({ code: "ENOENT" });
-        expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
-          outcome: "failed",
-          error: expect.stringContaining("gateway runtime reset"),
-        });
-      } finally {
-        release.resolve();
-        await settled;
-        inspect.mockRestore();
-        apply.mockRestore();
-      }
-    },
-  );
+    } finally {
+      release.resolve();
+      await settled;
+    }
+  });
 
   it("does not review a captured session after its source is deleted", async () => {
     const workspaceDir = await tempDirs.make("openclaw-experience-read-failure-");
@@ -241,9 +231,9 @@ describe("experience review auto apply", () => {
       },
     });
     try {
-      await expect(
-        runCapturedExperienceReview(candidate, { getCurrentConfig: () => ({}) }),
-      ).rejects.toThrow("Completed-turn transcript anchor changed");
+      await expect(runCapturedExperienceReview(candidate)).rejects.toThrow(
+        "Completed-turn transcript anchor changed",
+      );
       expect(runEmbeddedAgent).not.toHaveBeenCalled();
       expect(registration).toHaveBeenCalledOnce();
       expect(getAgentRunContext(registration.mock.calls[0]![0])).toBeUndefined();
@@ -292,9 +282,7 @@ describe("experience review auto apply", () => {
         });
       runEmbeddedAgent.mockResolvedValue({ meta: { durationMs: 1 } });
       try {
-        await expect(
-          runCapturedExperienceReview(candidate, { getCurrentConfig: () => candidate.config }),
-        ).rejects.toThrow(
+        await expect(runCapturedExperienceReview(candidate)).rejects.toThrow(
           change === "session"
             ? "source session was deleted or replaced"
             : "Completed-turn transcript anchor changed",
@@ -310,6 +298,96 @@ describe("experience review auto apply", () => {
       } finally {
         contextRead.mockRestore();
       }
+    },
+  );
+
+  it.each(["delete", "replace", "permission", "restore", "append"] as const)(
+    "revalidates source authority after a foreground %s",
+    async (change) => {
+      const workspaceDir = await tempDirs.make("openclaw-experience-live-source-");
+      const candidate = await captureReviewFixture({
+        ctx: {
+          sessionId: "foreground-session",
+          sessionKey: "agent:main:live-source",
+          workspaceDir,
+          modelProviderId: "openai",
+          modelId: "gpt-test",
+          foregroundPromptContext: {
+            ...foregroundPromptContext(workspaceDir),
+            permissionMode: "guarded",
+            execOverrides: { security: "deny", ask: "always" },
+          },
+        },
+        config: { skills: { forge: { autonomous: { mode: "auto" } } } },
+      });
+      let retainedAssertion: (() => void) | undefined;
+      runEmbeddedAgent.mockImplementation(async (params: RunEmbeddedAgentParams) => {
+        expect(params.permissionMode).toBe("guarded");
+        expect(params.execOverrides).toEqual({ security: "deny", ask: "always" });
+        if (!params.preparedRunAdmission) {
+          throw new Error("Review did not prepare run authority.");
+        }
+        const admitted = await params.preparedRunAdmission.admit("embedded");
+        retainedAssertion = resolveAdmittedRunActiveAssertion(admitted, params.abortSignal);
+        if (!retainedAssertion) {
+          throw new Error("Review did not retain live source authority.");
+        }
+        retainedAssertion();
+        if (change === "delete") {
+          await deleteSessionEntryLifecycle({
+            agentId: candidate.source.agentId,
+            storePath: candidate.source.storePath,
+            archiveTranscript: true,
+            deleteTranscriptWithoutArchive: true,
+            target: {
+              canonicalKey: candidate.source.sessionKey,
+              storeKeys: [candidate.source.sessionKey],
+            },
+          });
+        } else if (change === "replace") {
+          await upsertSessionEntryCore(candidate.source, {
+            sessionId: "replacement-session",
+            updatedAt: Date.now(),
+          });
+        } else if (change === "permission" || change === "restore") {
+          await upsertSessionEntryCore(candidate.source, {
+            permissionMode: "read-only",
+            updatedAt: Date.now(),
+          });
+        } else {
+          SessionManager.open(candidate.source).appendMessage({
+            role: "user",
+            content: "Continue the foreground task.",
+            timestamp: Date.now(),
+          });
+        }
+        await Promise.resolve();
+        if (change === "append") {
+          retainedAssertion();
+        } else {
+          expect(retainedAssertion).toThrow("no longer active");
+        }
+        if (change === "restore") {
+          await upsertSessionEntryCore(candidate.source, {
+            permissionMode: "guarded",
+            updatedAt: Date.now(),
+          });
+          expect(retainedAssertion).toThrow("no longer active");
+        }
+        return { meta: { durationMs: 1 } };
+      });
+
+      const review = runCapturedExperienceReview(candidate);
+      if (change === "append") {
+        await review;
+      } else {
+        await expect(review).rejects.toThrow("source");
+      }
+      expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
+        outcome: change === "append" ? "completed" : "failed",
+      });
+      expect(retainedAssertion).toBeDefined();
+      expect(() => retainedAssertion?.()).toThrow("no longer active");
     },
   );
 
@@ -336,10 +414,9 @@ describe("experience review auto apply", () => {
           modelId: "gpt-test",
           foregroundPromptContext: foregroundPromptContext(workspaceDir),
         },
-        config: { skills: { forge: { autonomous: { mode: "propose" } } } },
-      },
-      { getCurrentConfig: () => ({}) },
-    );
+        config: { skills: { forge: { autonomous: { mode: "propose" } } } },      },
+      config: { skills: { forge: { autonomous: { mode: "propose" } } } },
+    });
     await reviewStarted.promise;
 
     const foregroundStarted = createDeferred();
@@ -404,20 +481,17 @@ describe("experience review auto apply", () => {
     const config = { skills: { forge: { autonomous: { mode: "auto" as const } } } };
 
     try {
-      await runSkillExperienceReview(
-        {
-          ctx: {
-            sessionId: "foreground-session",
-            sessionKey: "agent:main:main",
-            workspaceDir,
-            modelProviderId: "openai",
-            modelId: "gpt-test",
-            foregroundPromptContext: foregroundPromptContext(workspaceDir),
-          },
-          config,
+      await runSkillExperienceReview({
+        ctx: {
+          sessionId: "foreground-session",
+          sessionKey: "agent:main:main",
+          workspaceDir,
+          modelProviderId: "openai",
+          modelId: "gpt-test",
+          foregroundPromptContext: foregroundPromptContext(workspaceDir),
         },
-        { getCurrentConfig: () => config },
-      );
+        config,
+      });
     } finally {
       unsubscribe();
     }
@@ -435,7 +509,7 @@ describe("experience review auto apply", () => {
 
   it.each([
     {
-      name: "applies the isolated proposal after a successful review",
+      name: "keeps the isolated proposal pending after a successful draft review",
       result: { meta: { durationMs: 1 } },
       error: undefined,
     },
@@ -483,8 +557,7 @@ describe("experience review auto apply", () => {
       const agentDir = await tempDirs.make("openclaw-experience-auto-apply-agent-dir-");
       const config = {
         agents: { entries: { main: { default: true, agentDir } } },
-        skills: { forge: { autonomous: { mode: "auto" as const } } },
-      };
+        skills: { forge: { autonomous: { mode: "auto" as const } } },      };
       const foregroundPromptCacheKey = resolveSessionBoundaryPromptCacheKey({
         api: "openai-responses",
         boundaryCount: 0,
@@ -532,9 +605,7 @@ describe("experience review auto apply", () => {
         config,
       };
 
-      const review = runSkillExperienceReview(candidate, {
-        getCurrentConfig: () => config,
-      });
+      const review = runSkillExperienceReview(candidate);
       if (error) {
         await expect(review).rejects.toThrow(error);
       } else {
@@ -545,21 +616,24 @@ describe("experience review auto apply", () => {
       expect(manifest.proposals).toHaveLength(1);
       expect(manifest.proposals[0]).toMatchObject({
         skillKey: "deployment-preflight",
-        status: error ? "pending" : "applied",
+        status: "pending",
       });
       const skillFile = path.join(
         resolveWorkshopSkillsDir(config, "main", testState.env),
         "deployment-preflight",
         "SKILL.md",
       );
+      await expect(fs.stat(skillFile)).rejects.toMatchObject({ code: "ENOENT" });
       if (error) {
-        await expect(fs.stat(skillFile)).rejects.toMatchObject({ code: "ENOENT" });
         expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
           outcome: "failed",
           error: expect.stringContaining(error),
         });
       } else {
-        await expect(fs.readFile(skillFile, "utf8")).resolves.toContain("Read the manifest");
+        expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
+          outcome: "proposed",
+          proposalId: manifest.proposals[0]?.id,
+        });
       }
       expect(runEmbeddedAgent).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -594,22 +668,23 @@ describe("experience review auto apply", () => {
     },
   );
 
-  it("records normal NO_REPLY as nothing learned with provider usage", async () => {
-    const workspaceDir = await tempDirs.make("openclaw-experience-usage-");
-    runEmbeddedAgent.mockResolvedValue({
-      payloads: [{ text: "NO_REPLY" }],
-      meta: {
-        durationMs: 1,
-        stopReason: "stop",
-        agentMeta: {
-          usage: { input: 43, cacheRead: 12_000, cacheWrite: 200, output: 91 },
+  it.each(["auto", "propose"] as const)(
+    "records %s completion with provider usage",
+    async (mode) => {
+      const workspaceDir = await tempDirs.make("openclaw-experience-usage-");
+      runEmbeddedAgent.mockResolvedValue({
+        payloads: [{ text: "NO_REPLY" }],
+        meta: {
+          durationMs: 1,
+          stopReason: "stop",
+          agentMeta: {
+            usage: { input: 43, cacheRead: 12_000, cacheWrite: 200, output: 91 },
+          },
         },
       },
     });
     const config = { skills: { forge: { autonomous: { mode: "auto" as const } } } };
-
-    await runSkillExperienceReview(
-      {
+      await runSkillExperienceReview({
         ctx: {
           sessionId: "foreground-session",
           sessionKey: "agent:main:usage",
@@ -619,17 +694,16 @@ describe("experience review auto apply", () => {
           foregroundPromptContext: foregroundPromptContext(workspaceDir, "agent:main:usage"),
         },
         config,
-      },
-      { getCurrentConfig: () => config },
-    );
+      });
 
-    expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
-      outcome: "nothing",
-      usage: { inputTokens: 12_243, cachedInputTokens: 12_000, outputTokens: 91 },
-    });
-  });
+      expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
+        outcome: mode === "auto" ? "completed" : "nothing",
+        usage: { inputTokens: 12_243, cachedInputTokens: 12_000, outputTokens: 91 },
+      });
+    },
+  );
 
-  it("auto-applies updates to the agent Workshop directory from a session worktree", async () => {
+  it("edits the agent Workshop directory from a session worktree", async () => {
     const canonicalWorkspaceDir = await tempDirs.make("openclaw-experience-canonical-");
     const worktreeWorkspaceDir = await tempDirs.make("openclaw-experience-worktree-");
     const skillDir = path.join(
@@ -671,16 +745,15 @@ describe("experience review auto apply", () => {
       await tool.execute("review-update", {
         action: "update",
         skill_name: "deployment-preflight",
-        proposal_content: "# Deployment Preflight\n\nReviewer-rewritten steps.\n",
-      });
+        proposal_content: "# Deployment Preflight\n\nReviewer-rewritten steps.\n",      });
       return { meta: { durationMs: 1 } };
     });
-    const candidate: ExperienceReviewFixture = {
+    await runSkillExperienceReview({
       ctx: {
         runId: "foreground-run",
         sessionId: "foreground-session",
         sessionKey: "agent:main:main",
-        workspaceDir: worktreeWorkspaceDir,
+        workspaceDir: canonicalWorkspaceDir,
         modelProviderId: "openai",
         modelId: "gpt-test",
         foregroundPromptContext: foregroundPromptContext(worktreeWorkspaceDir),
@@ -708,12 +781,7 @@ describe("experience review auto apply", () => {
     });
     const inspected = await inspectSkillProposal(updateEntry?.id ?? "", {
       agentId: "main",
-      config: candidate.config,
-    });
-    expect(inspected?.record.target.skillFile).toBe(path.join(skillDir, "SKILL.md"));
-    await expect(fs.readFile(path.join(skillDir, "SKILL.md"), "utf8")).resolves.toContain(
-      "Reviewer-rewritten steps.",
-    );
+      config: candidate.config,    });
     await expect(
       fs.access(path.join(worktreeWorkspaceDir, "skills", "deployment-preflight", "SKILL.md")),
     ).rejects.toThrow();
@@ -785,12 +853,24 @@ describe("experience review auto apply", () => {
       path.join(
         resolveWorkshopSkillsDir({}, "main", testState.env),
         "deployment-preflight",
-        "SKILL.md",
-      ),
-      "utf8",
+        "SKILL.md",      ),
+    ).resolves.toBe(content);
+    await expect(
+      fs.access(path.join(worktreeWorkspaceDir, "deployment-preflight")),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(canonicalWorkspaceDir, "deployment-preflight")),
+    ).rejects.toThrow();
+    expect(runEmbeddedAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bootstrapWorkspaceDir: canonicalWorkspaceDir,
+        cwd: resolveWorkshopSkillsDir(config, "main"),
+        sessionRoot: resolveWorkshopSkillsDir(config, "main"),
+        requireWorkspaceOnly: true,
+        requireWritableSandbox: true,
+        skillsSnapshot: { prompt: "", skills: [] },
+      }),
     );
-    expect(liveSkill).toContain("Operator-authored preflight steps.");
-    expect(liveSkill).toContain("Check alerts and timing before retrying.");
   });
 
   it("re-enters gateway admission when fired from a released request root", async () => {
@@ -820,36 +900,40 @@ describe("experience review auto apply", () => {
     expect(admission).not.toBeNull();
     await admission?.run(async () => {
       admission.release();
-      await runSkillExperienceReview(candidate, {
-        getCurrentConfig: () => candidate.config,
-      });
+      await runSkillExperienceReview(candidate);
     });
 
     expect(runEmbeddedAgent).toHaveBeenCalledTimes(1);
     expect(subordinateClosedInsideRun).toBe(false);
   });
 
-  it("leaves the capture pending when auto mode is disabled during review", async () => {
-    const workspaceDir = await tempDirs.make("openclaw-experience-mode-change-workspace-");
-    runEmbeddedAgent.mockImplementation(async (params) => {
-      const tool = createSkillWorkshopTool({
-        workspaceDir: params.workspaceDir,
-        config: params.config,
-        agentId: params.agentId,
-        origin: params.skillWorkshopOrigin,
-        proposalOnly: params.skillWorkshopProposalOnly,
-        autonomousCapture: params.skillWorkshopAutonomousCapture,
-        proposalMutationBudget: params.skillWorkshopProposalMutationBudget,
-      });
-      await tool.execute("review-create", {
-        action: "create",
-        name: "deployment-preflight",
-        description: "Check deployment prerequisites before retrying.",
-        proposal_content: "# Deployment Preflight\n\nVerify prerequisites before deploy.\n",
-      });
-      return { meta: { durationMs: 1 } };
-    });
-    const candidate: ExperienceReviewFixture = {
+  it("keeps a draft pending when auto mode is enabled during review", async () => {
+    const workspaceDir = await tempDirs.make("openclaw-experience-mode-change-");
+    const config: OpenClawConfig = {
+      skills: { forge: { autonomous: { mode: "propose" } } },
+    };
+    runEmbeddedAgent.mockImplementation(
+      async (params: RunEmbeddedAgentParams & { config: OpenClawConfig; agentId: string }) => {
+        const tool = createSkillWorkshopTool({
+          workspaceDir: params.workspaceDir,
+          config: params.config,
+          agentId: params.agentId,
+          origin: params.skillWorkshopOrigin,
+          proposalOnly: params.skillWorkshopProposalOnly,
+          autonomousCapture: params.skillWorkshopAutonomousCapture,
+          proposalMutationBudget: params.skillWorkshopProposalMutationBudget,
+        });
+        await tool.execute("review-create", {
+          action: "create",
+          name: "deployment-preflight",
+          description: "Check deployment prerequisites before retrying.",
+          proposal_content: "# Deployment Preflight\n\nVerify prerequisites before deploy.\n",
+        });
+        config.skills = { workshop: { autonomous: { mode: "auto" } } };
+        return { meta: { durationMs: 1 } };
+      },
+    );
+    await runSkillExperienceReview({
       ctx: {
         runId: "foreground-run",
         sessionId: "foreground-session",
@@ -865,12 +949,8 @@ describe("experience review auto apply", () => {
     await runSkillExperienceReview(candidate, {
       getCurrentConfig: () => ({
         skills: { forge: { autonomous: { mode: "propose" } } },
-      }),
-    });
-
-    expect(
-      (await listSkillProposals({ config: candidate.config, agentId: "main" })).proposals[0],
-    ).toMatchObject({
+      }),    });
+    expect((await listSkillProposals({ config, agentId: "main" })).proposals[0]).toMatchObject({
       status: "pending",
     });
   });
@@ -911,20 +991,13 @@ describe("experience review auto apply", () => {
       },
       config: { skills: { forge: { autonomous: { mode: "auto" } } } },
     };
-
     await expect(
-      runSkillExperienceReview(candidate, { getCurrentConfig: () => candidate.config }),
+      fs.access(
+        path.join(resolveWorkshopSkillsDir(config, "main"), "deployment-preflight", "SKILL.md"),
+      ),
     ).rejects.toThrow();
-
-    expect(runEmbeddedAgent).toHaveBeenCalledTimes(1);
-    expect(
-      (await listSkillProposals({ config: candidate.config, agentId: "main" })).proposals[0],
-    ).toMatchObject({
-      status: "pending",
-    });
     expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
-      outcome: "failed",
-      error: expect.stringContaining("directory"),
+      outcome: "proposed",
     });
   });
 
@@ -957,22 +1030,18 @@ describe("experience review auto apply", () => {
       return { meta: { durationMs: 1 } };
     });
     const config = { skills: { forge: { autonomous: { mode: "auto" as const } } } };
-
-    await runSkillExperienceReview(
-      {
-        ctx: {
-          runId: "foreground-run",
-          sessionId: "foreground-session",
-          sessionKey: "agent:main:main",
-          workspaceDir,
-          modelProviderId: "openai",
-          modelId: "gpt-test",
-          foregroundPromptContext: foregroundPromptContext(workspaceDir),
-        },
-        config,
+    await runSkillExperienceReview({
+      ctx: {
+        runId: "foreground-run",
+        sessionId: "foreground-session",
+        sessionKey: "agent:main:main",
+        workspaceDir,
+        modelProviderId: "openai",
+        modelId: "gpt-test",
+        foregroundPromptContext: foregroundPromptContext(workspaceDir),
       },
-      { getCurrentConfig: () => config },
-    );
+      config,
+    });
 
     const inspected = await inspectSkillProposal(manual.record.id, {
       config,
