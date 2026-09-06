@@ -704,7 +704,7 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
     });
     try {
       const config = {
-        skills: { workshop: { approvalPolicy: "pending" as const } },
+        skills: { forge: { approvalPolicy: "pending" as const } },
       };
       const skillsRoot = resolveWorkshopSkillsDir(config, "agent-a", testState.env);
       const skillDir = `${skillsRoot}/agent-a-private-procedure`;

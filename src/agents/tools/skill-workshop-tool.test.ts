@@ -171,7 +171,7 @@ describe("skill_workshop tool", () => {
       config: {},
       disablePluginTools: true,
     });
-    expect(tools.some((tool) => tool.name === "skill_workshop")).toBe(true);
+    expect(tools.some((tool) => tool.name === "skill_forge")).toBe(true);
   });
 
   it("stays exposed when autonomous proposal capture is disabled", async () => {
@@ -189,7 +189,7 @@ describe("skill_workshop tool", () => {
       },
       disablePluginTools: true,
     });
-    expect(tools.some((tool) => tool.name === "skill_workshop")).toBe(true);
+    expect(tools.some((tool) => tool.name === "skill_forge")).toBe(true);
   });
 
   it("describes the configured foreground repair outcome", () => {
@@ -415,7 +415,7 @@ describe("skill_workshop tool", () => {
       sandboxed: true,
     });
 
-    expect(tools.some((tool) => tool.name === "skill_workshop")).toBe(false);
+    expect(tools.some((tool) => tool.name === "skill_forge")).toBe(false);
   });
 
   it("creates pending skill proposals without applying them", async () => {

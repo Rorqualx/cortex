@@ -357,7 +357,10 @@ describe("agent tool definition adapter", () => {
       label: name,
       description: `${name} tool`,
       parameters: Type.Object({}),
-      execute: async () => ({ status: "ok" }),
+      execute: async () => ({
+        content: [{ type: "text", text: "ok" }],
+        details: {},
+      }),
     });
     const forward = ["alpha", "beta", "gamma"].map(make);
     const shuffled = [make("gamma"), make("alpha"), make("beta")];

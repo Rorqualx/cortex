@@ -21,6 +21,7 @@ import {
   SESSION_STATUS_TOOL_DISPLAY_SUMMARY,
   SUGGEST_TASK_TOOL_DISPLAY_SUMMARY,
   DISMISS_TASK_TOOL_DISPLAY_SUMMARY,
+  SKILL_WORKSHOP_TOOL_DISPLAY_SUMMARY,
 } from "./tool-description-presets.js";
 import { AUTOMATIONS_TOOL_NAME } from "./tools/automations-tool-name.js";
 
@@ -483,8 +484,7 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   },
   {
     id: "skill_workshop",
-    description:
-      "Create, update, revise, list, inspect, apply, reject, or quarantine Skill Workshop proposals",
+    description: SKILL_WORKSHOP_TOOL_DISPLAY_SUMMARY,
     sectionId: "agents",
     profiles: ["coding"],
     includeInOpenClawGroup: true,

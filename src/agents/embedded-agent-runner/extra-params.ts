@@ -307,6 +307,11 @@ function applyDefaultOpenAIGptRuntimeParams(
   if (!Object.hasOwn(merged, "text_verbosity") && !Object.hasOwn(merged, "textVerbosity")) {
     merged.text_verbosity = "low";
   }
+  // Fork: OpenAI API-key GPT-5 runs default to SSE transport (WebSocket-first is
+  // opt-in via explicit transport setting); upstream defaults to "auto".
+  if (params.provider === "openai" && !Object.hasOwn(merged, "transport")) {
+    merged.transport = "sse";
+  }
 }
 
 export function resolveAgentTransportOverride(params: {
