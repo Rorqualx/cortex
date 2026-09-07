@@ -96,6 +96,12 @@ export type LlmReplayGateResult =
       overfittingRisk?: "HIGH" | "MEDIUM" | "LOW";
       /** Matched-budget baseline comparison, when available. */
       baselineComparison?: BaselineComparison;
+      /** Step-rubric lane marker (QW4), when judged by judgeSkillCandidateWithStepRubric. */
+      judgeMode?: "step-rubric";
+      /** Per-step rubric scores, when the step-rubric lane judged this candidate. */
+      stepScores?: StepScore[];
+      /** Final-reply-vs-actions consistency check result from the step-rubric lane. */
+      consistency?: "PASS" | "FAIL";
     }
   | { status: "skipped"; reason: string }
   | { status: "failed"; reason: string };
