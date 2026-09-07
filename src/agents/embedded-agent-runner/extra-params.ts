@@ -450,6 +450,7 @@ function createStreamFnWithExtraParams(
     typeof model?.api === "string" ? model.api : undefined,
     typeof model?.id === "string" ? model.id : undefined,
     readCacheCompat(model),
+    model?.baseUrl,
   );
   if (Object.keys(streamParams).length > 0 || initialCacheRetention) {
     const debugParams = initialCacheRetention
@@ -466,6 +467,7 @@ function createStreamFnWithExtraParams(
       typeof callModel.api === "string" ? callModel.api : undefined,
       typeof callModel.id === "string" ? callModel.id : undefined,
       readCacheCompat(callModel),
+      callModel.baseUrl,
     );
     if (Object.keys(streamParams).length === 0 && !cacheRetention) {
       return underlying(callModel, context, options);

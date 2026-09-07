@@ -1,11 +1,7 @@
-import {
-  ensureSystemPromptCacheBoundary,
-  prependSystemPromptAdditionAfterCacheBoundary,
-} from "@openclaw/ai/internal/shared";
+import { prependSystemPromptAdditionAfterCacheBoundary } from "@openclaw/ai/internal/shared";
 /**
  * Builds and repairs prompt inputs for embedded-agent attempts.
  */
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type {
   ContextEnginePromptCacheInfo,
@@ -28,21 +24,11 @@ import { truncateUtf16Safe } from "../../../utils.js";
 import { listActiveProcessSessionReferences } from "../../bash-process-references.js";
 import { resolveProcessToolScopeKey } from "../../bash-process-scope.js";
 import { wrapPluginSystemContextSection } from "../../hook-system-context-boundary.js";
-import {
-  buildActiveImageGenerationTaskPromptContextForSession,
-  buildActiveMusicGenerationTaskPromptContextForSession,
-  buildActiveVideoGenerationTaskPromptContextForSession,
-} from "../../media-generation-task-status.js";
-import {
-  appendModelIdentitySystemPrompt,
-  buildModelIdentityPromptLine,
-} from "../../system-prompt.js";
 import { resolveEffectiveToolFsWorkspaceOnly } from "../../tool-fs-policy.js";
 import { deriveContextPromptTokens, type NormalizedUsage } from "../../usage.js";
 import { buildEmbeddedCompactionRuntimeContext } from "../compaction-runtime-context.js";
 import { resolveContextEngineCapabilities } from "../context-engine-capabilities.js";
 import { log } from "../logger.js";
-import { composeSystemPromptWithHookContext } from "./attempt-thread-helpers.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 type PromptBuildHookRunner = {
@@ -192,12 +178,8 @@ export async function resolvePromptBuildHookResult(params: {
       heartbeatContribution?.appendContext,
       promptBuildResult?.appendContext,
     ]),
-    prependSystemContext: joinPresentTextSegments([
-      wrapPluginSystemContextSection(promptBuildResult?.prependSystemContext),
-    ]),
-    appendSystemContext: joinPresentTextSegments([
-      wrapPluginSystemContextSection(promptBuildResult?.appendSystemContext),
-    ]),
+    prependSystemContext: wrapPluginSystemContextSection(promptBuildResult?.prependSystemContext),
+    appendSystemContext: wrapPluginSystemContextSection(promptBuildResult?.appendSystemContext),
   };
 }
 
@@ -462,72 +444,6 @@ export function prependSystemPromptAddition(params: {
   return prependSystemPromptAdditionAfterCacheBoundary(params);
 }
 
-// Per-turn media-generation task hints depend on live session state, so they must
-// be routed BELOW the system-prompt cache boundary (via prependSystemPromptAddition)
-// rather than placed in the static prepend slot — keeping them above the boundary
-// shifted the cacheable prefix turn-to-turn and broke prompt caching (#85203).
-export function resolveAttemptMediaTaskSystemPromptAddition(params: {
-  sessionKey?: string;
-  agentId?: string;
-  trigger?: EmbeddedRunAttemptParams["trigger"];
-}): string | undefined {
-  if (params.trigger !== "user" && params.trigger !== "manual") {
-    return undefined;
-  }
-  return joinPresentTextSegments([
-    buildActiveImageGenerationTaskPromptContextForSession(params.sessionKey, params.agentId),
-    buildActiveVideoGenerationTaskPromptContextForSession(params.sessionKey, params.agentId),
-    buildActiveMusicGenerationTaskPromptContextForSession(params.sessionKey, params.agentId),
-  ]);
-}
-
-// Folds the per-turn system prompt (hook override, prepend/append context, media hints,
-// model identity) in one place. The ensureSystemPromptCacheBoundary wraps are load-bearing:
-// every dynamic addition must land BELOW the boundary so an idle turn's cached prefix stays
-// byte-identical to a media/active turn's, else the prefix shifts and forfeits the provider
-// cache-read discount (#85203). Covered by attempt.system-prompt.cache-stability.test.ts.
-export function composeAttemptSystemPrompt(params: {
-  baseSystemPrompt: string;
-  hookSystemPromptOverride?: string;
-  prependSystemContext?: string;
-  appendSystemContext?: string;
-  mediaTaskAddition?: string;
-  model?: string;
-}): string {
-  let systemPrompt = params.baseSystemPrompt;
-
-  const legacyOverride = normalizeOptionalString(params.hookSystemPromptOverride) ?? "";
-  if (legacyOverride) {
-    systemPrompt = legacyOverride;
-  }
-
-  const composed = composeSystemPromptWithHookContext({
-    baseSystemPrompt: systemPrompt,
-    prependSystemContext: params.prependSystemContext,
-    appendSystemContext: params.appendSystemContext,
-  });
-  if (composed) {
-    systemPrompt = composed;
-  }
-
-  if (params.mediaTaskAddition) {
-    systemPrompt = prependSystemPromptAddition({
-      systemPrompt: ensureSystemPromptCacheBoundary(systemPrompt),
-      systemPromptAddition: params.mediaTaskAddition,
-    });
-  }
-
-  // Route the identity line below the boundary too: wrap only when an identity line exists
-  // and the prompt is non-empty (raw/gateway runs have an empty prompt and need no boundary).
-  return appendModelIdentitySystemPrompt({
-    systemPrompt:
-      buildModelIdentityPromptLine(params.model) && systemPrompt.trim().length > 0
-        ? ensureSystemPromptCacheBoundary(systemPrompt)
-        : systemPrompt,
-    model: params.model,
-  });
-}
-
 type AfterTurnRuntimeContextAttempt = Pick<
   EmbeddedRunAttemptParams,
   | "sessionTarget"
@@ -675,50 +591,4 @@ export function buildAfterTurnRuntimeContextFromUsage(
     ...params,
     currentTokenCount: deriveContextPromptTokens({ lastCallUsage: params.lastCallUsage }),
   });
-}
-
-type PromptSubmissionSkipReason = "blank_user_prompt" | "empty_prompt_history_images";
-
-/**
- * Distinguishes a truly empty prompt/history from a blank follow-up in a visible
- * conversation. This lets callers skip model submission while reporting the
- * reason accurately.
- */
-export function resolvePromptSubmissionSkipReason(params: {
-  prompt: string;
-  messages: readonly unknown[];
-  imageCount: number;
-  runtimeOnly?: boolean;
-}): PromptSubmissionSkipReason | null {
-  if (params.prompt.trim().length > 0 || params.imageCount > 0) {
-    return null;
-  }
-  return params.messages.some(hasVisiblePromptHistory)
-    ? "blank_user_prompt"
-    : "empty_prompt_history_images";
-}
-
-function hasVisiblePromptHistory(message: unknown): boolean {
-  if (!message || typeof message !== "object") {
-    return false;
-  }
-  const record = message as { role?: unknown; content?: unknown };
-  if (record.role !== "user" && record.role !== "assistant") {
-    return false;
-  }
-  return hasNonEmptyContent(record.content);
-}
-
-function hasNonEmptyContent(content: unknown): boolean {
-  if (typeof content === "string") {
-    return content.trim().length > 0;
-  }
-  if (Array.isArray(content)) {
-    return content.some(hasNonEmptyContent);
-  }
-  if (!content || typeof content !== "object") {
-    return false;
-  }
-  const record = content as { text?: unknown; content?: unknown };
-  return hasNonEmptyContent(record.text) || hasNonEmptyContent(record.content);
 }
