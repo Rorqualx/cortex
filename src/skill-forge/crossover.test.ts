@@ -145,6 +145,24 @@ describe("generateCrossoverCandidates", () => {
     expect(result!.captureDirs).toHaveLength(2);
   });
 
+  it("unions parent failure excerpts onto the crossover candidate", () => {
+    const a = {
+      ...makeRepCandidate("a", ["read", "write", "exec"], 0.9),
+      failureExcerpts: ["write failed: boom", "user frustration: nope"],
+    };
+    const b = {
+      ...makeRepCandidate("b", ["read", "edit", "exec"], 0.8),
+      failureExcerpts: ["write failed: boom", "edit failed: quota"],
+    };
+    const [result] = generateCrossoverCandidates([a, b]);
+    expect(result).toBeDefined();
+    expect(result!.failureExcerpts).toEqual([
+      "write failed: boom",
+      "user frustration: nope",
+      "edit failed: quota",
+    ]);
+  });
+
   it("handles candidates with empty tool sequences gracefully", () => {
     const empty: Candidate = {
       lane: "tool-shape",

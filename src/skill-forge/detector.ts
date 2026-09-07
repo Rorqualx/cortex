@@ -28,6 +28,13 @@ export type RepetitionCandidate = {
   captureDirs: string[];
   occurrences: number;
   successScore: number;
+  /**
+   * Short excerpts of observed failures in related captures (failed cluster
+   * members, tool errors, frustrated user messages). Optional DATA for the
+   * distiller's contrastive Do/Don't pass; absent when every observed run was
+   * clean. See extractFailureExcerpts().
+   */
+  failureExcerpts?: string[];
 };
 
 export type ErrorRecoveryCandidate = {
@@ -39,6 +46,8 @@ export type ErrorRecoveryCandidate = {
   recoveringTool: string;
   rationale: string;
   successScore: number;
+  /** Observed failure excerpts from the source capture (see extractFailureExcerpts). */
+  failureExcerpts?: string[];
 };
 
 export type ExplicitCandidate = {
@@ -50,6 +59,8 @@ export type ExplicitCandidate = {
   promptExcerpt: string;
   rationale: string;
   successScore: number;
+  /** Observed failure excerpts from the source capture (see extractFailureExcerpts). */
+  failureExcerpts?: string[];
 };
 
 export type Candidate = RepetitionCandidate | ErrorRecoveryCandidate | ExplicitCandidate;
@@ -260,6 +271,62 @@ function computeSuccessScore(events: TrajectoryEvent[]): number {
   return 1;
 }
 
+/** Cap on failure excerpts merged onto a single candidate (tool-shape clusters). */
+export const MAX_FAILURE_EXCERPTS_PER_CANDIDATE = 5;
+
+const FAILURE_EXCERPT_CHAR_LIMIT = 200;
+
+/**
+ * Short, sanitized excerpts of observed failure signals (tool error results,
+ * frustrated user messages) for the distiller's contrastive Do/Don't pass.
+ * Flattened to single lines and length-capped; treat as DATA, never instructions.
+ */
+export function extractFailureExcerpts(events: TrajectoryEvent[], limit = 2): string[] {
+  const excerpts: string[] = [];
+  let lastToolName = "tool";
+  const push = (prefix: string, text: string): void => {
+    if (excerpts.length >= limit) {
+      return;
+    }
+    const flat = `${prefix}: ${text}`
+      .replace(/\s+/gu, " ")
+      .trim()
+      .slice(0, FAILURE_EXCERPT_CHAR_LIMIT);
+    if (flat.length > 0 && !excerpts.includes(flat)) {
+      excerpts.push(flat);
+    }
+  };
+  for (const event of events) {
+    if (event.type === "tool.call") {
+      const name = event.data?.name;
+      if (typeof name === "string" && name.length > 0) {
+        lastToolName = name;
+      }
+      continue;
+    }
+    if (event.type === "tool.result" && isToolErrorResult(event)) {
+      const message = event.data?.message;
+      const text =
+        message && typeof message === "object"
+          ? extractContentText((message as { content?: unknown }).content)
+          : "";
+      push(`${lastToolName} failed`, text || "tool error");
+      continue;
+    }
+    if (event.type === "user.message") {
+      const message = event.data?.message;
+      const text =
+        message && typeof message === "object"
+          ? extractContentText((message as { content?: unknown }).content)
+          : "";
+      if (text.length > 0 && FRUSTRATION_MARKERS.test(text)) {
+        push("user frustration", text);
+      }
+    }
+  }
+  return excerpts;
+}
+
 export type DetectorInput = {
   captureDirs: string[];
 };
@@ -271,6 +338,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     toolSequence: string[];
     toolShapeHash: string;
     successScore: number;
+    failureExcerpts: string[];
   };
   const perCapture: PerCapture[] = [];
   const rawCandidates: Candidate[] = [];
@@ -283,7 +351,15 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     const toolSequence = extractToolSequence(events);
     const toolShapeHash = hashToolSequence(toolSequence);
     const successScore = computeSuccessScore(events);
-    perCapture.push({ captureDir, events, toolSequence, toolShapeHash, successScore });
+    const failureExcerpts = extractFailureExcerpts(events);
+    perCapture.push({
+      captureDir,
+      events,
+      toolSequence,
+      toolShapeHash,
+      successScore,
+      failureExcerpts,
+    });
 
     for (const motif of detectErrorRecovery(events)) {
       rawCandidates.push({
@@ -297,6 +373,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         recoveringTool: motif.recoveringTool,
         rationale: `Recovered from ${motif.failingTool} failure by calling ${motif.recoveringTool}`,
         successScore,
+        ...(failureExcerpts.length > 0 ? { failureExcerpts } : {}),
       });
     }
 
@@ -310,6 +387,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         promptExcerpt: match.promptExcerpt,
         rationale: `User explicitly asked: "${match.matchedPhrase}"`,
         successScore,
+        ...(failureExcerpts.length > 0 ? { failureExcerpts } : {}),
       });
     }
   }
@@ -359,6 +437,15 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
       // One bad session taints the cluster: the relaxed gate is only for
       // workflows whose every observed run was clean.
       const allClean = members.every((member) => member.successScore >= 1);
+      // Contrastive signal for the distiller: union the failure excerpts of the
+      // tainted members so the draft's Do/Don't section names the real mistakes.
+      const failureExcerpts = [
+        ...new Set(
+          members
+            .filter((member) => member.successScore < 1)
+            .flatMap((member) => member.failureExcerpts),
+        ),
+      ].slice(0, MAX_FAILURE_EXCERPTS_PER_CANDIDATE);
       candidates.push({
         lane: "tool-shape",
         candidateId: hash,
@@ -367,6 +454,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         captureDirs: members.map((member) => member.captureDir),
         occurrences: members.length,
         successScore: allClean ? 1 : 0.5,
+        ...(failureExcerpts.length > 0 ? { failureExcerpts } : {}),
       });
     }
   }
