@@ -200,8 +200,8 @@ importers:
         specifier: workspace:*
         version: link:packages/ai
       '@openclaw/fs-safe':
-        specifier: 0.8.3
-        version: 0.8.3
+        specifier: 0.8.5
+        version: 0.8.5
       '@openclaw/proxyline':
         specifier: 0.3.11
         version: 0.3.11(undici@8.10.2)
@@ -1736,8 +1736,8 @@ importers:
   extensions/onepassword:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.8.3
-        version: 0.8.3
+        specifier: 0.8.5
+        version: 0.8.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1783,8 +1783,8 @@ importers:
   extensions/openshell:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.8.3
-        version: 0.8.3
+        specifier: 0.8.5
+        version: 0.8.5
       p-limit:
         specifier: 7.3.1
         version: 7.3.1
@@ -3231,8 +3231,8 @@ packages:
     peerDependencies:
       '@csstools/css-tokenizer': ^4.0.0
 
-  '@csstools/css-syntax-patches-for-csstree@1.1.10':
-    resolution: {integrity: sha512-xBja6gaAaH2R2c7eNyl0TY4dhnnZ2uhj+KXpLdEQ6M/wuk9bYFZM8wY0ykw3VO4TgEJ56KGlerXS/9KBKVR/Cg==}
+  '@csstools/css-syntax-patches-for-csstree@1.1.11':
+    resolution: {integrity: sha512-+a7SqvwQfLl8OAp/C/B8PhfV2UjRUIeCRvcZQEXjhTkM2nTxg8r9nbB7mdxkEGT67VbR6pREsAIlsx65N2KR6Q==}
     peerDependencies:
       css-tree: ^3.2.1
     peerDependenciesMeta:
@@ -4149,54 +4149,54 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  '@openclaw/fs-safe-darwin-arm64@0.8.3':
-    resolution: {integrity: sha512-JYmJPUjVdoxMyU326epDW3MWqpQqkPb1H9ZB6kp/e/T4vuerMXtDehEXXbxw2BECioCB+ZzGcCwFfyFPJkk5Xg==}
+  '@openclaw/fs-safe-darwin-arm64@0.8.5':
+    resolution: {integrity: sha512-FfVvzgmn4OixKrfh0vTM3OL4/y7WAVqwL4RfcQw3vtainzWE492YD1Gn3PrFEMpUB86VDmNX8mBNCNz4zQrr5g==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [darwin]
 
-  '@openclaw/fs-safe-darwin-x64@0.8.3':
-    resolution: {integrity: sha512-3dl5F73Bg0+RBFXawlOC8oWMwYIFyrInK2ukyzrzQ/JVRKpYAm9IiRRSNnGrXUE8f/qyBrovJb0AGzG58kWeBQ==}
+  '@openclaw/fs-safe-darwin-x64@0.8.5':
+    resolution: {integrity: sha512-npJFOWhRq6FSnTtb6TCq7t+uaL+4owxzyD6JG44L54NsZlr/QO+iQCZN1CXybejar0Ou8QVSxf8vhL94Q4cKJw==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [darwin]
 
-  '@openclaw/fs-safe-linux-arm64-gnu@0.8.3':
-    resolution: {integrity: sha512-8XAM646RKkTnVcLMmS+ufoFnWa3ShT9U1ZI6dOUS3Dzq3xzSZPUb0U7utFBzVsFnYirHKmgAvGxVphNbDfJjlQ==}
+  '@openclaw/fs-safe-linux-arm64-gnu@0.8.5':
+    resolution: {integrity: sha512-JAR/JPO/QL1i9N6N7acXeZcf807iIBN6R51A9Kda1GW8iy7+35Qt4wa06jw0cemjfoy9QBsfVv/XCkosc7ikaQ==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@openclaw/fs-safe-linux-arm64-musl@0.8.3':
-    resolution: {integrity: sha512-6adbSOi/oAqOcnOwwpul8C+c67E91qF3RBeuDRgOTdd1WMFyXzcMj9YxVTyfN5kswqZ1rVgcPjElryPEyMRT2Q==}
+  '@openclaw/fs-safe-linux-arm64-musl@0.8.5':
+    resolution: {integrity: sha512-COv697J5N9kizognlTFyXJaudFLMqpgq4XZajVOut145RCKUa45EKRLWD+OHIn1hJ5IseF7V0t5VY1IX4MN1Sg==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@openclaw/fs-safe-linux-x64-gnu@0.8.3':
-    resolution: {integrity: sha512-R4NHf6EGlFKh51Yu+VGx0HiD7z31DTO+BZFPF7sMxe2j8shrjDzchoOk7uos88o/boQZhr4hS/T7hJrMKgzQoQ==}
+  '@openclaw/fs-safe-linux-x64-gnu@0.8.5':
+    resolution: {integrity: sha512-tlgwQH9V49GWClxuB7gQ9MdPQoMHhd/RjEWBABRINkfAb8OEqLp2OXRxIhBD2++98KsX3nfQ9ldvjzxLj/qbLw==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@openclaw/fs-safe-linux-x64-musl@0.8.3':
-    resolution: {integrity: sha512-vxPDvc4LygQESNNUi17KU+jrosA12sjsb7X/FziqsoTLonA1QTa3zdvdI3GpfZiK4qjLmqZyNPwFCo7Y2V2jBQ==}
+  '@openclaw/fs-safe-linux-x64-musl@0.8.5':
+    resolution: {integrity: sha512-zeDVgMML51mmc62RbzE9/LlxYGaHHfqC3qQ6LpYWkHHQphI4P5shxUhtdXVJZ7whCTVkT3GWVLei6lXumpC2jg==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@openclaw/fs-safe-win32-x64-msvc@0.8.3':
-    resolution: {integrity: sha512-aAhYKQg2cognuh8d4wg84i3RFltTmnAlb+J2+D17/babmnC14hKr7l/KhTN//vsdIvzU9UiTnFs14uft78Y/Sg==}
+  '@openclaw/fs-safe-win32-x64-msvc@0.8.5':
+    resolution: {integrity: sha512-wqNhQznNjrbenmWpXYcJeDtwxY75krDeRtHjclvkpLOAwDI2cP0kSxd+2TlHOcPM9yLnkJrpGCwl/i8wQmmtIw==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [win32]
 
-  '@openclaw/fs-safe@0.8.3':
-    resolution: {integrity: sha512-2hzKN8W5CQhhoa+9NZCO9vwpuEInrX4nlVbm2JrEvI2aYCI/dXcjHcZWJOefWR/t3VfqLntr30+7lLg3dj0t5A==}
+  '@openclaw/fs-safe@0.8.5':
+    resolution: {integrity: sha512-MAuWVgZ+DZhakzfrbyn2NOKsZop3ES2ITeVCoAaDNb/NIxF45hAzYDXmp2G8W10CE/HGasL97QMC0+iBZNzHUQ==}
     engines: {node: '>=22'}
 
   '@openclaw/libterminal@0.3.2':
@@ -5744,12 +5744,12 @@ packages:
   '@vitest/expect@4.1.10':
     resolution: {integrity: sha512-YsCn+qAk1GWjQOWFEsEcL2gNQ0zmVmQu3T03qP6UyjhtmdtwtbuI+DASn/7iQB3HGTXkdBwGddzxPlmiql5vlA==}
 
-  '@vitest/istanbul-lib-coverage@1.0.0':
-    resolution: {integrity: sha512-BScRXlnT3d8tN39mDZuZgS6OmczgyLNO55FGka+CO0LO5458m7hBnEvDm/Dc12f07R4ChdDst66YfKtCr2T8mg==}
+  '@vitest/istanbul-lib-coverage@1.0.1':
+    resolution: {integrity: sha512-k3DJZ8LhMBK9NS4SclF1ASD3OgXEWDorbIcPTRDK0/Zae6fRvu+fJRxtFdLfHsa9Y24beCdPnoNZ4LviTNstfA==}
     engines: {node: '>=22'}
 
-  '@vitest/istanbul-lib-report@1.0.0':
-    resolution: {integrity: sha512-NYqaFIc2vKd069hB+oRPf2ckkEq/lYg1W+12l4t0M0c3LYrGgMz8Sj7v+fgONanDsZMBqxQySQkChcwN/ajUBw==}
+  '@vitest/istanbul-lib-report@1.0.1':
+    resolution: {integrity: sha512-1EOLRfsTMnyAr3+kEAsP4o9dhaDlGPpD7H5iLBBeq//YpNB1VIahkPhB+eRp9N2Dkfw8oySROjE3yf9XDeaIkQ==}
     engines: {node: '>=22'}
 
   '@vitest/mocker@4.1.10':
@@ -7332,8 +7332,8 @@ packages:
     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
     engines: {node: '>=6'}
 
-  import-in-the-middle@3.3.3:
-    resolution: {integrity: sha512-AiohS3H80sXO6owEltjGX+glb7qXaDhBoJb9XcQVH4UI207xu/bDLUcadVKp7Qe576reg9yr/PXZjV5qx8gfbA==}
+  import-in-the-middle@3.4.0:
+    resolution: {integrity: sha512-Xfjwfarhe+LGmoaof+sexeNo3sGRysb5x56WrZLwHtmqT0OilSKtVWkv0lrCcMgSKyKP9oBogBAisHZvtJH0aw==}
     engines: {node: '>=18'}
 
   import-meta-resolve@4.2.0:
@@ -7991,8 +7991,8 @@ packages:
     resolution: {integrity: sha512-kOy3OxT2HH39N70UnKgu4NWDZjLOz8W/mfyvniHjRH/DrL3f2pOfvWQ4p60offbbtDAnXWp0v9LfMIqMec269Q==}
     engines: {node: '>=18'}
 
-  mediabunny@1.55.4:
-    resolution: {integrity: sha512-dJDE7ScjKlt21ZA3wS0xWQtgXjoUBEkWzjbnTVX5/BdN88C4QMdQu1u+K13vPHbuEbvjKbsXdYy38M3JTtPRHw==}
+  mediabunny@1.55.5:
+    resolution: {integrity: sha512-m0v6y8FGXiK+HKOc3AZqU+kJPLYsSKaLitmQNQIIHZKIGlTwQ34OF+X6Ul0K8iV4b03oPse10apwuoqbvmKeAA==}
 
   meow@14.1.0:
     resolution: {integrity: sha512-EDYo6VlmtnumlcBCbh1gLJ//9jvM/ndXHfVXIFrZVr6fGcwTUyCTFNTLCKuY3ffbK8L/+3Mzqnd58RojiZqHVw==}
@@ -9419,8 +9419,8 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
-  undici-types@8.10.0:
-    resolution: {integrity: sha512-ibvdovq3nCFs8Msrd95BW+zUOq+aOVbT+wpHUoPWhztbHEoPc6oof51iFDB6Es8lTKvNvVW9jNSAB8dwrKTMGg==}
+  undici-types@8.10.1:
+    resolution: {integrity: sha512-ZpkgovMu+ALwfuo6Bgys8H82gHJ25d4ARMB51FD2BeLnUCDRgY6N3caWk3N6CtKR77gHmRKYHnLF723owNYPNA==}
 
   undici-types@8.3.0:
     resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
@@ -10779,7 +10779,7 @@ snapshots:
     dependencies:
       '@csstools/css-tokenizer': 4.0.0
 
-  '@csstools/css-syntax-patches-for-csstree@1.1.10(css-tree@3.2.1)':
+  '@csstools/css-syntax-patches-for-csstree@1.1.11(css-tree@3.2.1)':
     optionalDependencies:
       css-tree: 3.2.1
 
@@ -11695,36 +11695,36 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@openclaw/fs-safe-darwin-arm64@0.8.3':
+  '@openclaw/fs-safe-darwin-arm64@0.8.5':
     optional: true
 
-  '@openclaw/fs-safe-darwin-x64@0.8.3':
+  '@openclaw/fs-safe-darwin-x64@0.8.5':
     optional: true
 
-  '@openclaw/fs-safe-linux-arm64-gnu@0.8.3':
+  '@openclaw/fs-safe-linux-arm64-gnu@0.8.5':
     optional: true
 
-  '@openclaw/fs-safe-linux-arm64-musl@0.8.3':
+  '@openclaw/fs-safe-linux-arm64-musl@0.8.5':
     optional: true
 
-  '@openclaw/fs-safe-linux-x64-gnu@0.8.3':
+  '@openclaw/fs-safe-linux-x64-gnu@0.8.5':
     optional: true
 
-  '@openclaw/fs-safe-linux-x64-musl@0.8.3':
+  '@openclaw/fs-safe-linux-x64-musl@0.8.5':
     optional: true
 
-  '@openclaw/fs-safe-win32-x64-msvc@0.8.3':
+  '@openclaw/fs-safe-win32-x64-msvc@0.8.5':
     optional: true
 
-  '@openclaw/fs-safe@0.8.3':
+  '@openclaw/fs-safe@0.8.5':
     optionalDependencies:
-      '@openclaw/fs-safe-darwin-arm64': 0.8.3
-      '@openclaw/fs-safe-darwin-x64': 0.8.3
-      '@openclaw/fs-safe-linux-arm64-gnu': 0.8.3
-      '@openclaw/fs-safe-linux-arm64-musl': 0.8.3
-      '@openclaw/fs-safe-linux-x64-gnu': 0.8.3
-      '@openclaw/fs-safe-linux-x64-musl': 0.8.3
-      '@openclaw/fs-safe-win32-x64-msvc': 0.8.3
+      '@openclaw/fs-safe-darwin-arm64': 0.8.5
+      '@openclaw/fs-safe-darwin-x64': 0.8.5
+      '@openclaw/fs-safe-linux-arm64-gnu': 0.8.5
+      '@openclaw/fs-safe-linux-arm64-musl': 0.8.5
+      '@openclaw/fs-safe-linux-x64-gnu': 0.8.5
+      '@openclaw/fs-safe-linux-x64-musl': 0.8.5
+      '@openclaw/fs-safe-win32-x64-msvc': 0.8.5
       jszip: 3.10.1
 
   '@openclaw/libterminal@0.3.2':
@@ -11845,7 +11845,7 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.221.0
-      import-in-the-middle: 3.3.3
+      import-in-the-middle: 3.4.0
       require-in-the-middle: 8.0.1(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
@@ -12964,7 +12964,7 @@ snapshots:
       '@types/node': 26.4.0
       '@types/tough-cookie': 4.0.5
       parse5: 8.0.1
-      undici-types: 8.10.0
+      undici-types: 8.10.1
 
   '@types/jsonwebtoken@9.0.10':
     dependencies:
@@ -13192,8 +13192,8 @@ snapshots:
   '@vitest/coverage-v8@5.0.0(vitest@5.0.0)':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
-      '@vitest/istanbul-lib-coverage': 1.0.0
-      '@vitest/istanbul-lib-report': 1.0.0
+      '@vitest/istanbul-lib-coverage': 1.0.1
+      '@vitest/istanbul-lib-report': 1.0.1
       ast-v8-to-istanbul: 1.0.5
       magicast: 0.5.4
       obug: 2.1.4
@@ -13210,11 +13210,11 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.1
 
-  '@vitest/istanbul-lib-coverage@1.0.0': {}
+  '@vitest/istanbul-lib-coverage@1.0.1': {}
 
-  '@vitest/istanbul-lib-report@1.0.0':
+  '@vitest/istanbul-lib-report@1.0.1':
     dependencies:
-      '@vitest/istanbul-lib-coverage': 1.0.0
+      '@vitest/istanbul-lib-coverage': 1.0.1
 
   '@vitest/mocker@4.1.10(vite@8.1.5(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))':
     dependencies:
@@ -14889,7 +14889,7 @@ snapshots:
       parent-module: 1.0.1
       resolve-from: 4.0.0
 
-  import-in-the-middle@3.3.3:
+  import-in-the-middle@3.4.0:
     dependencies:
       cjs-module-lexer: 2.2.1
       es-module-lexer: 2.3.2
@@ -15050,7 +15050,7 @@ snapshots:
       '@asamuzakjp/css-color': 5.1.11
       '@asamuzakjp/dom-selector': 7.1.1
       '@bramus/specificity': 2.4.2
-      '@csstools/css-syntax-patches-for-csstree': 1.1.10(css-tree@3.2.1)
+      '@csstools/css-syntax-patches-for-csstree': 1.1.11(css-tree@3.2.1)
       '@exodus/bytes': 1.15.1(@noble/hashes@2.4.0)
       css-tree: 3.2.1
       data-urls: 7.0.0(@noble/hashes@2.4.0)
@@ -15620,7 +15620,7 @@ snapshots:
 
   media-typer@2.0.0: {}
 
-  mediabunny@1.55.4:
+  mediabunny@1.55.5:
     dependencies:
       '@types/dom-mediacapture-transform': 0.1.12
       '@types/dom-webcodecs': 0.1.13
@@ -16969,7 +16969,7 @@ snapshots:
     dependencies:
       '@csstools/css-calc': 3.3.0(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)
       '@csstools/css-parser-algorithms': 4.0.0(@csstools/css-tokenizer@4.0.0)
-      '@csstools/css-syntax-patches-for-csstree': 1.1.10(css-tree@3.2.1)
+      '@csstools/css-syntax-patches-for-csstree': 1.1.11(css-tree@3.2.1)
       '@csstools/css-tokenizer': 4.0.0
       '@csstools/media-query-list-parser': 5.0.0(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)
       '@csstools/selector-resolve-nested': 4.0.1(postcss-selector-parser@7.1.5)
@@ -17257,7 +17257,7 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  undici-types@8.10.0: {}
+  undici-types@8.10.1: {}
 
   undici-types@8.3.0: {}
 
@@ -17485,7 +17485,7 @@ snapshots:
       '@shinyoshiaki/binary-data': 0.6.1
       buffer: 6.0.3
       debug: 4.4.0(supports-color@10.2.2)
-      mediabunny: 1.55.4
+      mediabunny: 1.55.5
       multicast-dns: 7.2.5
       tweetnacl: 1.0.3
     transitivePeerDependencies:
