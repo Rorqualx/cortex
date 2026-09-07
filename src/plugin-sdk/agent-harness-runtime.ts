@@ -24,7 +24,6 @@ import {
   clearActiveEmbeddedRun,
   queueEmbeddedAgentMessageWithOutcome,
   setActiveEmbeddedRun,
-  type AbortAndDrainEmbeddedAgentRunResult,
   type EmbeddedAgentQueueMessageOptions,
 } from "../agents/embedded-agent-runner/runs.js";
 import { runStructuredInput } from "../agents/harness/structured-input-execution.js";
@@ -37,6 +36,8 @@ import {
 } from "../agents/harness/structured-input.js";
 import type { SandboxFsBridge } from "../agents/sandbox/fs-bridge.js";
 import { formatToolDetail, resolveToolDisplay } from "../agents/tool-display.js";
+import { createToolPolicyMatcher } from "../agents/tool-policy-match.js";
+import { expandToolGroups } from "../agents/tool-policy-shared.js";
 import {
   buildWatchedSessionsPromptLines,
   prepareWatchedSessionsPrompt,
@@ -303,7 +304,6 @@ export {
   resolveActiveEmbeddedRunSessionId,
   setActiveEmbeddedRun,
 };
-export type { AbortAndDrainEmbeddedAgentRunResult as AbortAndDrainAgentHarnessRunResult };
 
 /**
  * @deprecated Active-run queueing is an internal runtime concern. This legacy
@@ -389,6 +389,24 @@ export async function loadCodexBundleMcpThreadConfig(
     await import("../agents/codex-mcp-config.js");
   return load(params);
 }
+
+/** Load shared MCP request and subprocess ownership only when opening a connection. */
+export const mcpStdioRuntime = Object.freeze({
+  async load() {
+    const [{ createMcpStdioClient }, { OpenClawStdioClientTransport }, lifecycle] =
+      await Promise.all([
+        import("../agents/mcp-stdio-client.js"),
+        import("../agents/mcp-stdio-transport.js"),
+        import("../agents/mcp-client-lifecycle.js"),
+      ]);
+    return {
+      createMcpStdioClient,
+      OpenClawStdioClientTransport,
+      connectMcpClient: lifecycle.connectMcpClient,
+      disposeMcpClient: lifecycle.disposeMcpClient,
+    };
+  },
+});
 
 export type { McpToolCatalog, SessionMcpRuntime } from "../agents/agent-bundle-mcp-types.js";
 export { assignSafeServerNames as assignMcpCatalogSafeServerNames } from "../agents/agent-bundle-mcp-names.js";
@@ -644,6 +662,10 @@ export {
   SKILL_FORGE_TOOL_NAME,
 } from "../agents/skill-forge-prompt.js";
 export {
+  buildSkillWorkshopPromptSection,
+  SKILL_WORKSHOP_TOOL_NAME,
+} from "../agents/skill-workshop-prompt.js";
+export {
   buildDelegationGuidanceSection,
   resolveMainSessionDelegationMode,
 } from "../agents/delegation-guidance.js";
@@ -652,5 +674,10 @@ export { buildUiPresentationPrompt } from "../agents/ui-presentation-prompt.js";
 export { getPluginToolSideEffectOwnerKey } from "../plugins/tool-metadata.js";
 export type {
   AgentHarnessNativeCompaction,
+  AgentHarnessNativeCompactionParams,
+  AgentHarnessNativeCompactionRequest,
   AgentHarnessModelCatalogParams,
+  AgentHarnessRegistrationOptions,
 } from "../agents/harness/types.js";
+
+export const toolPolicy = Object.freeze({ createToolPolicyMatcher, expandToolGroups });
