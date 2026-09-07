@@ -1,4 +1,6 @@
 /** Tests configured MCP tools survive policy/splitting to the outbound request boundary. */
+import { GetPromptResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { expectDefined } from "@openclaw/normalization-core";
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
@@ -9,6 +11,25 @@ import type { McpCatalogTool, SessionMcpRuntime } from "./agent-bundle-mcp-types
 import { resolveConversationCapabilityProfile } from "./conversation-capability-profile.js";
 import { applyFinalEffectiveToolPolicy } from "./embedded-agent-runner/effective-tool-policy.js";
 import { splitSdkTools } from "./embedded-agent-runner/tool-split.js";
+import { consumeMcpCodeModeGuestResult } from "./mcp-content.js";
+
+// Fork: MCP server output is untrusted and gets fenced through the shared
+// external-content sanitizer before reaching the model (see
+// agent-bundle-mcp-materialize.ts). Assert the boundary markers + source label
+// are present and the (sanitized) payload survives. Ported from
+// agent-bundle-mcp-tools.materialize.test.ts when the utility-tool tests moved
+// here upstream (#141421).
+function expectFencedMcpText(block: unknown, innerText: string) {
+  const content = block as { type?: string; text?: string } | undefined;
+  expect(content?.type).toBe("text");
+  expect(content?.text).toMatch(/<<<EXTERNAL_UNTRUSTED_CONTENT id="[a-f0-9]{16}">>>/);
+  expect(content?.text).toMatch(/<<<END_EXTERNAL_UNTRUSTED_CONTENT id="[a-f0-9]{16}">>>/);
+  expect(content?.text).toContain("Source: MCP tool");
+  // Exact inner-region check (between the metadata separator and the end marker) so the
+  // payload rendering — not just its presence — stays covered after fencing.
+  const inner = content?.text?.split("---\n")[1]?.split("\n<<<END_EXTERNAL_UNTRUSTED_CONTENT")[0];
+  expect(inner).toBe(innerText);
+}
 
 // Regression coverage for #76063. The reporter's evidence was a captured
 // outbound provider request body that contained only built-in OpenClaw tools
@@ -188,5 +209,162 @@ describe("configured MCP tools reach the request boundary (#76063)", () => {
       "userMcp__mu_tool",
       "userMcp__zeta_tool",
     ]);
+  });
+  it("exposes MCP resource and prompt utility tools when advertised", async () => {
+    const base = makeConfiguredRuntime({ toolNames: [], serverName: "knowledge" });
+    const publicResults = {
+      prompts_get: {
+        description: "Brief the user",
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "Summarize MCP",
+              annotations: { audience: ["assistant"] },
+              _meta: { promptBlock: "preserved" },
+            },
+          },
+        ],
+      },
+      prompts_list: {
+        prompts: [{ name: "brief", _meta: { promptEntry: "preserved" } }],
+        nextCursor: "prompt-page-two",
+      },
+      resources_list: {
+        resources: [
+          {
+            uri: "memo://one",
+            name: "memo",
+            annotations: { priority: 0.5 },
+            _meta: { resourceEntry: "preserved" },
+          },
+        ],
+        nextCursor: "resource-page-two",
+      },
+      resources_read: {
+        contents: [{ uri: "memo://one", text: "memo text", _meta: { content: "preserved" } }],
+      },
+    };
+    const privateResults = Object.fromEntries(
+      Object.entries(publicResults).map(([operation, value]) => [
+        operation,
+        { ...value, _meta: { privateState: `${operation}-must-not-leak` } },
+      ]),
+    );
+    const runtime = await materializeBundleMcpToolsForRun({
+      runtime: {
+        ...base,
+        getCatalog: async () => ({
+          version: 1,
+          generatedAt: 0,
+          servers: {
+            knowledge: {
+              serverName: "knowledge",
+              safeServerName: "knowledge",
+              launchSummary: "knowledge",
+              toolCount: 0,
+              resources: { listChanged: true },
+              prompts: { listChanged: true },
+            },
+          },
+          tools: [],
+        }),
+        listResources: async () => privateResults.resources_list,
+        readResource: async () => privateResults.resources_read,
+        listPrompts: async () => privateResults.prompts_list,
+        getPrompt: async () => GetPromptResultSchema.parse(privateResults.prompts_get),
+      },
+    });
+
+    expect(runtime.tools.map((tool) => tool.name)).toEqual([
+      "knowledge__prompts_get",
+      "knowledge__prompts_list",
+      "knowledge__resources_list",
+      "knowledge__resources_read",
+    ]);
+
+    for (const [operation, args] of [
+      ["prompts_get", { name: "brief" }],
+      ["prompts_list", {}],
+      ["resources_list", {}],
+      ["resources_read", { uri: "memo://one" }],
+    ] as const) {
+      const tool = expectDefined(
+        runtime.tools.find((candidate) => candidate.name === `knowledge__${operation}`),
+        `${operation} utility tool`,
+      );
+      const result = await tool.execute(`call-${operation}`, args, undefined, undefined);
+      if (operation === "prompts_get") {
+        // Fork fence: upstream's role-prefixed prompt rendering (#141421), each
+        // model-facing text block fenced through the shared boundary helper.
+        expect(result.content).toHaveLength(3);
+        expectFencedMcpText(result.content[0], "Brief the user");
+        expectFencedMcpText(result.content[1], "user:");
+        expectFencedMcpText(result.content[2], "Summarize MCP");
+      } else {
+        expect(result.content).toHaveLength(1);
+        expectFencedMcpText(result.content[0], JSON.stringify(publicResults[operation], null, 2));
+      }
+      expect(consumeMcpCodeModeGuestResult(result)).toEqual(publicResults[operation]);
+      expect(result.details).toMatchObject({
+        mcpServer: "knowledge",
+        mcpOperation: operation,
+        untrustedMcpOutput: true,
+      });
+      expect(tool.resultContentSource).toBe("network");
+      expect(expectDefined(privateResults[operation], `${operation} private source`)._meta).toEqual(
+        {
+          privateState: `${operation}-must-not-leak`,
+        },
+      );
+    }
+
+    await expect(
+      runtime.tools
+        .find((tool) => tool.name === "knowledge__prompts_get")!
+        .execute("call-prompt", { name: "brief", arguments: { count: 1 } }, undefined, undefined),
+    ).rejects.toThrow("arguments.count must be a string");
+  });
+
+  it("presents prompt images with their roles while preserving the raw guest template", async () => {
+    const image = {
+      type: "image",
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
+      mimeType: "image/png",
+    } as const;
+    const prompt = GetPromptResultSchema.parse({
+      description: "Describe the supplied diagram",
+      messages: [
+        { role: "user", content: { type: "text", text: "Explain this image." } },
+        { role: "user", content: image },
+        { role: "assistant", content: { type: "text", text: "An example answer." } },
+      ],
+    });
+    const base = makeConfiguredRuntime({ toolNames: [], serverName: "diagrams" });
+    const catalog = await base.getCatalog();
+    catalog.servers.diagrams!.prompts = {};
+    const materialized = await materializeBundleMcpToolsForRun({
+      runtime: { ...base, getCatalog: async () => catalog, getPrompt: async () => prompt },
+    });
+    const tool = expectDefined(
+      materialized.tools.find((candidate) => candidate.name === "diagrams__prompts_get"),
+      "prompt utility",
+    );
+    const result = await tool.execute("prompt-image", { name: "diagram" }, undefined, undefined);
+
+    // Fork fence: text blocks fenced, the image block passes through raw
+    // (images carry no text boundary to forge) with roles preserved upstream-style.
+    expect(result.content).toHaveLength(7);
+    expectFencedMcpText(result.content[0], "Describe the supplied diagram");
+    expectFencedMcpText(result.content[1], "user:");
+    expectFencedMcpText(result.content[2], "Explain this image.");
+    expectFencedMcpText(result.content[3], "user:");
+    expect(result.content[4]).toEqual(image);
+    expectFencedMcpText(result.content[5], "assistant:");
+    expectFencedMcpText(result.content[6], "An example answer.");
+    const originalPrompt = structuredClone(prompt);
+    prompt.description = "A later server-side edit";
+    expect(consumeMcpCodeModeGuestResult(result)).toEqual(originalPrompt);
   });
 });

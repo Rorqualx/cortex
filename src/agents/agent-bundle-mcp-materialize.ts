@@ -26,6 +26,7 @@ import type {
 } from "./agent-bundle-mcp-types.js";
 import {
   projectMcpCallToolResult,
+  projectMcpGetPromptResult,
   setMcpCodeModeGuestResult,
   setMcpCodeModeGuestResultFromAgentResult,
 } from "./mcp-content.js";
@@ -166,6 +167,7 @@ function toJsonAgentToolResult(params: {
     details: {
       mcpServer: params.serverName,
       mcpOperation: params.operation,
+      untrustedMcpOutput: true,
     },
   };
   return setMcpCodeModeGuestResult(result, publicValue);
@@ -516,6 +518,7 @@ export async function materializeBundleMcpToolsForRun(params: {
       ? Array.from(params.reservedToolNames)
       : undefined;
     const materializedCatalog = mergeMcpConnectCatalog(catalog, runtime.requesterConnect);
+    const getPrompt = runtime.getPrompt?.bind(runtime);
     const tools = buildBundleMcpToolsFromCatalog({
       catalog: materializedCatalog,
       reservedToolNames,
@@ -614,19 +617,32 @@ export async function materializeBundleMcpToolsForRun(params: {
               });
             })
         : undefined,
-      createPromptGetExecute: runtime.getPrompt
+      createPromptGetExecute: getPrompt
         ? (serverName) => (_toolCallId: string, input: unknown, signal?: AbortSignal) =>
             runWithSessionMcpRequestSignal(signal, async () => {
               runtime.markUsed();
-              return toJsonAgentToolResult({
-                serverName,
-                operation: "prompts_get",
-                value: await runtime.getPrompt?.(
+              const projected = projectMcpGetPromptResult(
+                await getPrompt(
                   serverName,
                   requireStringArg(input, "name"),
                   optionalStringRecordArg(input, "arguments"),
                 ),
-              });
+                {
+                  mcpServer: serverName,
+                  mcpOperation: "prompts_get",
+                  untrustedMcpOutput: true,
+                },
+              );
+              // Fork: MCP prompts are untrusted server output. Keep upstream's
+              // role-prefixed rendering (image preservation, #141421) but fence every
+              // model-facing text block through the shared boundary helper — same
+              // policy as the callTool and resources/prompts list channels. Mutates
+              // `projected` in place so the code-mode guest registration (WeakMap
+              // keyed on this object) survives with the raw, unfenced value.
+              projected.content = projected.content.map((block) =>
+                fenceUntrustedMcpBlock(block, serverName),
+              );
+              return projected;
             })
         : undefined,
     });

@@ -161,7 +161,9 @@ openclaw triage --agent codex
 Use `openclaw triage --non-interactive` to collect diagnostics without starting
 an agent. Add `--update-result <path>` to include a saved update-failure artifact.
 
-Validation failures leave the serving Gateway untouched. After activation, a
+Validation failures leave the serving Gateway untouched. If stopping the managed
+service unloads it and then fails before activation, OpenClaw attempts to restore
+the verified original runtime after rechecking service ownership. After activation, a
 failed verification can [restore the previous package](/cli/update#validation-and-activation)
 when database schemas are unchanged and the config file still matches the
 candidate’s activation Doctor output. Preserve migrated state and
@@ -763,6 +765,14 @@ the sentinel.
 </Steps>
 
 ### Plugin sync details
+
+On stable updates, a configured OpenClaw-owned official plugin with no install
+record is repaired from the selected core release cohort. This also applies to
+`doctor --fix` after an earlier upgrade lost a formerly bundled plugin. Admission
+checks that package target before stopping the Gateway; post-core reconciliation
+installs it before restart. Existing install records retain their source and
+selector policy. Verified official packages use the existing
+[capability-consent exemption](/plugins/manage-plugins#capability-consent).
 
 Managed npm plugins on the beta channel select the newest version by semantic
 version order from their `beta` and `latest` dist-tags, using the same policy as

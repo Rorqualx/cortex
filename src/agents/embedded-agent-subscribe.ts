@@ -10,7 +10,7 @@ import {
   createInlineCodeState,
 } from "../../packages/markdown-core/src/code-spans.js";
 import type { FenceScanState } from "../../packages/markdown-core/src/fences.js";
-import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
+import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import { createStreamingDirectiveAccumulator } from "../auto-reply/reply/streaming-directives.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { formatToolAggregate } from "../auto-reply/tool-meta.js";
@@ -92,6 +92,10 @@ function resolveEmbeddedAgentSessionLogger(messageChannel?: string) {
 type DeferredAssistantEventDelivery = {
   data: AssistantStreamData;
   emitPartialReply: boolean;
+  /** Assistant block this delivery belongs to; supersession releases by index. */
+  blockIndex?: number;
+  /** Superseded tool-turn text with no media: drop instead of emitting (#141444). */
+  dropped?: boolean;
 };
 
 function isPotentialTrailingBlockTagFragment(fragment: string): boolean {
@@ -176,6 +180,12 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
   // Closure-local: upstream moved this queue into state.assistantStream's
   // coalescing engine; the fork keeps its simpler defer-until-flush queue.
   const deferredAssistantEvents: DeferredAssistantEventDelivery[] = [];
+  // Assistant blocks whose last message ended in tool use (or carried tool results)
+  // while delivery was deferred. Their text is provisional: a later accepted answer
+  // in the same run supersedes it (upstream #141444). Fork port: upstream's version
+  // lives in embedded-agent-subscribe.reply-delivery.ts alongside its scope-coalescing
+  // engine; this monolith keeps the simpler defer-until-flush queue.
+  const provisionalAssistantBlocks = new Set<number>();
   const emitAssistantStreamDataSafely = (delivery: DeferredAssistantEventDelivery) => {
     const { data } = delivery;
     emitAgentEvent({
@@ -195,7 +205,11 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     data: AssistantStreamData,
     options?: { emitPartialReply?: boolean },
   ) => {
-    const delivery = { data, emitPartialReply: options?.emitPartialReply === true };
+    const delivery = {
+      data,
+      emitPartialReply: options?.emitPartialReply === true,
+      blockIndex: state.assistantMessageIndex,
+    };
     if (state.deferBlockReplyDelivery) {
       deferredAssistantEvents.push(delivery);
       return;
@@ -208,11 +222,15 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     }
     const deferred = deferredAssistantEvents.splice(0);
     for (const delivery of deferred) {
+      if (delivery.dropped) {
+        continue;
+      }
       emitAssistantStreamDataSafely(delivery);
     }
   };
   const clearDeferredAssistantEvents = () => {
     deferredAssistantEvents.length = 0;
+    provisionalAssistantBlocks.clear();
   };
   const deferredToolMediaReplies = new WeakSet<BlockReplyPayload>();
   const emitBlockReplySafely = (
@@ -280,14 +298,41 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       }
     }
   };
-  const flushDeferredBlockReplies = () => {
-    if (state.deferredBlockReplies.length === 0) {
-      return;
+  const releaseDeferredReplies = () => {
+    // A later answer supersedes deferred tool-turn text, not completed answers
+    // to earlier user inputs, media, or reasoning. Port of upstream #141444
+    // ("stop replaying obsolete deferred tool replies") onto the fork's
+    // defer-until-flush queues; commentary progress is never superseded
+    // (upstream never defers it, so it cannot become provisional).
+    const messageStartIndex = state.assistantMessageStartIndex;
+    const isSuperseded = (index: number | undefined) =>
+      index !== undefined && index < messageStartIndex && provisionalAssistantBlocks.has(index);
+    for (const delivery of deferredAssistantEvents) {
+      if (delivery.data.phase === "commentary" || !isSuperseded(delivery.blockIndex)) {
+        continue;
+      }
+      if (!delivery.data.mediaUrls?.length) {
+        delivery.dropped = true;
+      } else {
+        delivery.data = { ...delivery.data, text: "", delta: "" };
+      }
     }
-    const deferred = state.deferredBlockReplies.splice(0);
-    for (const payload of deferred) {
+    const replies = state.deferredBlockReplies.splice(0);
+    for (const payload of replies) {
+      const index = getReplyPayloadMetadata(payload)?.assistantMessageIndex;
+      if (!payload.isReasoning && isSuperseded(index)) {
+        payload.text = undefined;
+      }
+    }
+    provisionalAssistantBlocks.clear();
+    state.deferBlockReplyDelivery = false;
+    flushDeferredAssistantEvents();
+    for (const payload of replies) {
+      if (!hasAssistantVisibleReply(payload)) {
+        continue;
+      }
       const emitted = emitBlockReplySafely(payload);
-      if (emitted && !payload.isReasoning && hasAssistantVisibleReply(payload)) {
+      if (emitted && !payload.isReasoning) {
         state.visibleBlockReplyCount += 1;
         if (deferredToolMediaReplies.has(payload)) {
           state.hasToolMediaBlockReply = true;
@@ -1206,9 +1251,24 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     resetAssistantMessageState(0);
   };
 
-  const noteLastAssistant = (msg: AgentMessage) => {
+  const noteLastAssistant = (msg: AgentMessage, options?: { hasToolResults: boolean }) => {
     if (msg?.role === "assistant") {
       state.lastAssistant = msg;
+      if (
+        state.deferBlockReplyDelivery &&
+        (msg.stopReason === "toolUse" || options?.hasToolResults)
+      ) {
+        // Async tools can leave a normal-stop tail after their tool-use fragment.
+        // The response's tool results, not its text phase, establish continuation,
+        // so mark this turn's blocks provisional for supersession (#141444).
+        for (
+          let index = state.assistantMessageStartIndex;
+          index <= state.assistantMessageIndex;
+          index++
+        ) {
+          provisionalAssistantBlocks.add(index);
+        }
+      }
     }
   };
   const noteCompletedAssistant = (msg: AgentMessage) => {
@@ -1285,7 +1345,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     emitAssistantStreamData,
     emitBlockReply,
     flushAssistantStream: flushDeferredAssistantEvents,
-    flushDeferredBlockReplies,
+    releaseDeferredReplies,
     clearAssistantStream: clearDeferredAssistantEvents,
     clearDeferredBlockReplies,
     emitReasoningStream,

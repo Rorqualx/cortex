@@ -319,9 +319,7 @@ export function handleAgentEnd(
   };
 
   const deliverTerminal = () => {
-    ctx.state.deferBlockReplyDelivery = false;
-    ctx.flushAssistantStream();
-    ctx.flushDeferredBlockReplies();
+    ctx.releaseDeferredReplies();
     const flushBlockReplyBufferResult = ctx.flushBlockReplyBuffer({ final: true });
     finalizeAgentEnd();
     const flushPendingMediaAndChannelResult = isPromiseLike<void>(flushBlockReplyBufferResult)
