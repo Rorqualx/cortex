@@ -593,6 +593,12 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
       sessionId,
     };
   }
+  // QW-3δ: record the L2 typed facts folded into this promotion (all source
+  // facts except the latest, which provenance already points at).
+  const absorbedFactIds = c.factIds.filter((id) => id !== c.latest.id);
+  if (absorbedFactIds.length > 0) {
+    fact.mergedWith = absorbedFactIds;
+  }
   return fact;
 }
 
@@ -628,6 +634,13 @@ function reaffirm(
       chunkId: c.latestChunkId,
       sessionId: effectiveSession,
     };
+  }
+  // QW-3δ: the reaffirmation merged the candidate's supporting facts into
+  // the survivor — keep the cumulative, deduplicated link set.
+  const absorbedFactIds = c.factIds.filter((id) => id !== c.latest.id);
+  const mergedIds = [...new Set([...(prior.mergedWith ?? []), ...absorbedFactIds])];
+  if (mergedIds.length > 0) {
+    result.mergedWith = mergedIds;
   }
   return result;
 }
