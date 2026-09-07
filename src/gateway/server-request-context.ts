@@ -109,7 +109,7 @@ type GatewayRequestContextRuntime = Pick<
     > & {
       configReloader: Pick<
         GatewayCoreRuntime["runtimeState"]["configReloader"],
-        "isConfigReloadSettled"
+        "isConfigReloadSettled" | "getDeferredChannelReloads"
       >;
     };
     lifecycle: Pick<GatewayCoreRuntime["lifecycle"], "closePreludeStarted">;
@@ -250,6 +250,10 @@ export function createGatewayRequestContext(
     getRuntimeConfig,
     isConfigReloadSettled: () =>
       !lifecycle.closePreludeStarted && runtimeState.configReloader.isConfigReloadSettled(),
+    getDeferredChannelReloads: () =>
+      lifecycle.closePreludeStarted
+        ? []
+        : (runtimeState.configReloader.getDeferredChannelReloads?.() ?? []),
     getGatewayMethodRegistry: runtime.getAttachedGatewayMethodRegistry,
     gatewayTlsFingerprint: runtime.gatewayTls.enabled
       ? runtime.gatewayTls.fingerprintSha256

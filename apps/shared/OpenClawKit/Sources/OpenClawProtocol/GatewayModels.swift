@@ -15081,6 +15081,7 @@ public struct ChannelsStatusResult: Codable, Sendable {
     public let eventloop: [String: AnyCodable]?
     public let partial: Bool?
     public let warnings: [String]?
+    public let statusissues: [[String: AnyCodable]]?
 
     public init(
         ts: Int,
@@ -15094,7 +15095,8 @@ public struct ChannelsStatusResult: Codable, Sendable {
         channeldefaultaccountid: [String: AnyCodable],
         eventloop: [String: AnyCodable]? = nil,
         partial: Bool? = nil,
-        warnings: [String]? = nil)
+        warnings: [String]? = nil,
+        statusissues: [[String: AnyCodable]]? = nil)
     {
         self.ts = ts
         self.channelorder = channelorder
@@ -15108,6 +15110,7 @@ public struct ChannelsStatusResult: Codable, Sendable {
         self.eventloop = eventloop
         self.partial = partial
         self.warnings = warnings
+        self.statusissues = statusissues
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -15123,6 +15126,7 @@ public struct ChannelsStatusResult: Codable, Sendable {
         case eventloop = "eventLoop"
         case partial
         case warnings
+        case statusissues = "statusIssues"
     }
 }
 
