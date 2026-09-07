@@ -984,6 +984,132 @@ describe("consolidateLongTermTyped", () => {
   });
 
   // -----------------------------------------------------------------
+  // QW-3δ: mergedWith merge provenance (MemoryLACE-inspired)
+  // -----------------------------------------------------------------
+
+  it("records mergedWith on promotion when multiple chunks emit the same slot", async () => {
+    await writeChunkWithTyped(
+      "chunk-merge-1",
+      [
+        {
+          id: "tf-merge-1",
+          slot: "infra:nas_ip",
+          value: "192.168.50.111",
+          sourceSpan: "nas at 192.168.50.111",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 3 * DAY,
+        },
+      ],
+      NOW - 3 * DAY,
+    );
+    await writeChunkWithTyped(
+      "chunk-merge-2",
+      [
+        {
+          id: "tf-merge-2",
+          slot: "infra:nas_ip",
+          value: "192.168.50.111",
+          sourceSpan: "nas still at 192.168.50.111",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      sessionId: "session-merge",
+    });
+
+    const ltt = await storage.readLongTermTyped();
+    const fact = ltt.facts.find((f) => f.slot === "infra:nas_ip");
+    // The latest emission lives in provenance; the older one was absorbed.
+    expect(fact?.mergedWith).toEqual(["tf-merge-1"]);
+  });
+
+  it("leaves mergedWith absent on single-source promotions", async () => {
+    await writeChunkWithTyped(
+      "chunk-solo",
+      [
+        {
+          id: "tf-solo",
+          slot: "user:favorite_editor",
+          value: "vim",
+          sourceSpan: "I use vim",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+
+    const ltt = await storage.readLongTermTyped();
+    const fact = ltt.facts.find((f) => f.slot === "user:favorite_editor");
+    expect(fact?.mergedWith).toBeUndefined();
+  });
+
+  it("accumulates mergedWith across reaffirmations without duplicates", async () => {
+    await writeChunkWithTyped(
+      "chunk-acc-1",
+      [
+        {
+          id: "tf-acc-1",
+          slot: "proj:go_version",
+          value: "1.24",
+          sourceSpan: "go 1.24",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 5 * DAY,
+        },
+      ],
+      NOW - 5 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 5 * DAY });
+
+    await writeChunkWithTyped(
+      "chunk-acc-2",
+      [
+        {
+          id: "tf-acc-2",
+          slot: "proj:go_version",
+          value: "1.24",
+          sourceSpan: "still on go 1.24",
+          unit: null,
+          confidence: 0.92,
+          createdAt: NOW - 2 * DAY,
+        },
+      ],
+      NOW - 2 * DAY,
+    );
+    await writeChunkWithTyped(
+      "chunk-acc-3",
+      [
+        {
+          id: "tf-acc-3",
+          slot: "proj:go_version",
+          value: "1.24",
+          sourceSpan: "go version remains 1.24",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+
+    const ltt = await storage.readLongTermTyped();
+    const fact = ltt.facts.find((f) => f.slot === "proj:go_version");
+    expect(fact?.mergedWith).toEqual(["tf-acc-1", "tf-acc-2"]);
+  });
+
+  // -----------------------------------------------------------------
   // QW-3: Consolidation Skip for Stable Tiers (LeanMem-inspired)
   // -----------------------------------------------------------------
 
