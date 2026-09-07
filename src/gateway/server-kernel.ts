@@ -152,6 +152,7 @@ export async function createGatewayKernel(
   const releasePluginMetadata = retainGatewayPluginMetadata();
   let lifecycleRuntime: Awaited<ReturnType<typeof prepareGatewayLifecycle>> | undefined;
   let kernelState: Awaited<ReturnType<typeof prepareGatewayKernelState>> | undefined;
+  let closeStartupTrace: (() => void) | undefined;
   try {
     const bootstrap = await prepareGatewayServerBootstrap({
       port,
@@ -161,6 +162,7 @@ export async function createGatewayKernel(
       loadWorkerEnvironmentStartupModule,
       formatRuntimeGatewayAuthTokenWarning,
     });
+    closeStartupTrace = bootstrap.startupTrace.close;
     const runtime = await bootstrap.startupTrace.measure("gateway.kernel-state", () =>
       prepareGatewayKernelState({
         bootstrap,
@@ -230,6 +232,7 @@ export async function createGatewayKernel(
         // The lifecycle releases metadata only after its required joins succeed.
         await lifecycleRuntime.closeOnStartupFailure();
       } else {
+        closeStartupTrace?.();
         kernelState?.mentionInbox.dispose();
         clearGatewayAgentCliShim();
         clearSecretsRuntimeSnapshotState();
