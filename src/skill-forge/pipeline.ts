@@ -16,7 +16,12 @@ import { tryResolveSkillForgeEmbeddingProvider } from "./embedding-provider.js";
 import { nameCollisionCheck } from "./gate.js";
 import { resolveSkillForgeSessionsDir } from "./paths.js";
 import { promoteStagedSkill, type PromotionResult } from "./promoter.js";
-import { judgeSkillCandidateWithLlm, type LlmReplayGateResult } from "./replay-gate.js";
+import {
+  isBorderlineCandidate,
+  judgeSkillCandidateWithLlm,
+  judgeSkillCandidateWithStepRubric,
+  type LlmReplayGateResult,
+} from "./replay-gate.js";
 import { compressDraftedSkill } from "./skill-compressor.js";
 import { recordSkillCreation } from "./telemetry.js";
 
@@ -41,6 +46,10 @@ export type PipelineRunInput = {
   resolveEmbeddingProvider?: typeof tryResolveSkillForgeEmbeddingProvider;
   /** Opt-in: generate crossover candidates from high-success pairs (Frontis-MA1 Crossover operator). Default false. */
   enableCrossover?: boolean;
+  /** Injectable outcome judge (tests); defaults to the runtime-config-backed judge. */
+  judgeSkill?: typeof judgeSkillCandidateWithLlm;
+  /** Injectable step-rubric judge for borderline candidates (tests); defaults to the runtime judge. */
+  judgeStepRubric?: typeof judgeSkillCandidateWithStepRubric;
 };
 
 /** Embedding clustering lane outcome. `disabled` unless `useEmbedding` was set. */
@@ -52,7 +61,12 @@ export type EmbeddingLaneResult =
 /** LLM replay-gate outcome over the drafted skills (present only when `useLlmReplay`). */
 export type LlmReplayLaneResult = {
   status: "ran";
-  judged: Array<{ name: string; gate: LlmReplayGateResult }>;
+  judged: Array<{
+    name: string;
+    gate: LlmReplayGateResult;
+    /** Which judge mode ran: borderline candidates get the step-rubric lane (QW4). */
+    judgeMode: "outcome" | "step-rubric";
+  }>;
 };
 
 /**
@@ -241,17 +255,34 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
   // LLM replay gate (LLM-as-judge): opt-in. Judges each drafted skill body for
   // safety + usefulness. Diagnostic only here — it reports verdicts without
   // gating promotion (promotion already ran above via the strict frontmatter gate).
+  // QW4: borderline candidates (tainted-but-not-failed sessions) route through
+  // the step-rubric judge lane, which scores every workflow step plus a
+  // final-reply-vs-actions consistency check; clean candidates keep the cheap
+  // outcome judge, confining the extra judge cost to the fence-case slice.
   let llmReplay: LlmReplayLaneResult | undefined;
   if (input.useLlmReplay) {
-    const judged: Array<{ name: string; gate: LlmReplayGateResult }> = [];
+    const outcomeJudge = input.judgeSkill ?? judgeSkillCandidateWithLlm;
+    const stepRubricJudge = input.judgeStepRubric ?? judgeSkillCandidateWithStepRubric;
+    const judged: LlmReplayLaneResult["judged"] = [];
     for (const target of judgeTargets) {
       const draftedBody = await readDraftedBody(target.draft);
-      const gate = await judgeSkillCandidateWithLlm({
-        candidate: target.candidate,
-        draftedBody,
-        ...(input.agentId ? { agentId: input.agentId } : {}),
+      const borderline = isBorderlineCandidate(target.candidate.successScore);
+      const gate = borderline
+        ? await stepRubricJudge({
+            candidate: target.candidate,
+            draftedBody,
+            ...(input.agentId ? { agentId: input.agentId } : {}),
+          })
+        : await outcomeJudge({
+            candidate: target.candidate,
+            draftedBody,
+            ...(input.agentId ? { agentId: input.agentId } : {}),
+          });
+      judged.push({
+        name: target.draft.name,
+        gate,
+        judgeMode: borderline ? "step-rubric" : "outcome",
       });
-      judged.push({ name: target.draft.name, gate });
     }
     llmReplay = { status: "ran", judged };
   }

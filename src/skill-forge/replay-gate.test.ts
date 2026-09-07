@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseLlmJudgeResponse, SKILL_FORGE_LLM_JUDGE_SYSTEM } from "./replay-gate.js";
+import {
+  applyStepRubricDowngrade,
+  isBorderlineCandidate,
+  parseLlmJudgeResponse,
+  parseStepRubricJudgeResponse,
+  SKILL_FORGE_LLM_JUDGE_SYSTEM,
+  SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM,
+} from "./replay-gate.js";
 
 describe("parseLlmJudgeResponse", () => {
   it("parses SAFE_USEFUL with a rationale on the second line", () => {
@@ -181,5 +188,129 @@ describe("parseLlmJudgeResponse — process-quality rationales", () => {
     if (!result.ok) throw new Error("unreachable");
     expect(result.verdict).toBe("UNSAFE_OR_HARMFUL");
     expect(result.rationale).toMatch(/verification/u);
+  });
+});
+
+// ---------------------------------------------------------------------
+// QW4: step-rubric judge lane for borderline promotions
+// ---------------------------------------------------------------------
+
+describe("isBorderlineCandidate", () => {
+  it("treats tainted-but-not-failed scores as borderline", () => {
+    expect(isBorderlineCandidate(0.5)).toBe(true);
+    expect(isBorderlineCandidate(0.75)).toBe(true);
+  });
+
+  it("excludes clean, failed, and unknown scores", () => {
+    expect(isBorderlineCandidate(1)).toBe(false);
+    expect(isBorderlineCandidate(0.3)).toBe(false);
+    expect(isBorderlineCandidate(undefined)).toBe(false);
+  });
+});
+
+describe("SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM", () => {
+  it("requires per-step scores and a consistency check", () => {
+    expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/STEPS:/u);
+    expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/CONSISTENCY:/u);
+    expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/forbids SAFE_USEFUL/u);
+  });
+});
+
+describe("parseStepRubricJudgeResponse", () => {
+  it("parses a full five-line step-rubric response", () => {
+    const raw = [
+      "SAFE_USEFUL",
+      "Recovery workflow matches the observed trajectory.",
+      "OVERFITTING: LOW",
+      "STEPS: 1=PASS; 2=PARTIAL; 3=PASS",
+      "CONSISTENCY: PASS",
+    ].join("\n");
+    const result = parseStepRubricJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.verdict).toBe("SAFE_USEFUL");
+    expect(result.stepScores).toEqual([
+      { step: 1, result: "PASS" },
+      { step: 2, result: "PARTIAL" },
+      { step: 3, result: "PASS" },
+    ]);
+    expect(result.consistency).toBe("PASS");
+  });
+
+  it("fails the parse when the judge skipped the STEPS line", () => {
+    const raw = "SAFE_NEUTRAL\nThin.\nOVERFITTING: LOW\nCONSISTENCY: PASS";
+    const result = parseStepRubricJudgeResponse(raw);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toMatch(/STEPS/u);
+  });
+
+  it("fails the parse when the judge skipped the CONSISTENCY line", () => {
+    const raw = "SAFE_NEUTRAL\nThin.\nOVERFITTING: LOW\nSTEPS: 1=PASS";
+    const result = parseStepRubricJudgeResponse(raw);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.reason).toMatch(/CONSISTENCY/u);
+  });
+
+  it("fails the parse when the STEPS line has no scorable steps", () => {
+    const raw = "SAFE_USEFUL\nFine.\nOVERFITTING: LOW\nSTEPS: all good\nCONSISTENCY: PASS";
+    expect(parseStepRubricJudgeResponse(raw).ok).toBe(false);
+  });
+
+  it("maps a consistency fail line to FAIL", () => {
+    const raw =
+      "SAFE_NEUTRAL\nClaims a check the steps never run.\nOVERFITTING: MEDIUM\nSTEPS: 1=PASS\nCONSISTENCY: FAIL";
+    const result = parseStepRubricJudgeResponse(raw);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.consistency).toBe("FAIL");
+  });
+});
+
+describe("applyStepRubricDowngrade", () => {
+  const base = {
+    verdict: "SAFE_USEFUL" as const,
+    rationale: "Looks strong.",
+    stepScores: [
+      { step: 1, result: "PASS" as const },
+      { step: 2, result: "PASS" as const },
+    ],
+    consistency: "PASS" as const,
+  };
+
+  it("keeps SAFE_USEFUL when every step passes and consistency holds", () => {
+    expect(applyStepRubricDowngrade(base)).toEqual({
+      verdict: "SAFE_USEFUL",
+      rationale: "Looks strong.",
+    });
+  });
+
+  it("downgrades to SAFE_NEUTRAL on any step FAIL", () => {
+    const result = applyStepRubricDowngrade({
+      ...base,
+      stepScores: [
+        { step: 1, result: "PASS" },
+        { step: 2, result: "FAIL" },
+      ],
+    });
+    expect(result.verdict).toBe("SAFE_NEUTRAL");
+    expect(result.rationale).toMatch(/step FAIL/u);
+  });
+
+  it("downgrades to SAFE_NEUTRAL on consistency FAIL even with all steps passing", () => {
+    const result = applyStepRubricDowngrade({ ...base, consistency: "FAIL" });
+    expect(result.verdict).toBe("SAFE_NEUTRAL");
+    expect(result.rationale).toMatch(/consistency FAIL/u);
+  });
+
+  it("never upgrades a non-SAFE_USEFUL verdict", () => {
+    const result = applyStepRubricDowngrade({
+      ...base,
+      verdict: "SAFE_NEUTRAL",
+      stepScores: [{ step: 1, result: "FAIL" }],
+    });
+    expect(result.verdict).toBe("SAFE_NEUTRAL");
+    expect(result.rationale).toBe("Looks strong.");
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildUserPrompt,
   SKILL_FORGE_LLM_DISTILLER_SYSTEM,
   SKILL_FORGE_LLM_MAX_BODY_CHARS,
   validateLlmDistilledProse,
@@ -66,5 +67,39 @@ describe("SKILL_FORGE_LLM_DISTILLER_SYSTEM", () => {
   it("forbids YAML frontmatter and HTML scripts in output", () => {
     expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/no yaml frontmatter/iu);
     expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/script/iu);
+  });
+
+  it("requires a contrastive Do/Don't section when failure trajectories are supplied", () => {
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/## Do \/ ## Don't/u);
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/only from the supplied failure excerpts/u);
+  });
+});
+
+describe("buildUserPrompt", () => {
+  const baseCandidate = {
+    lane: "tool-shape",
+    candidateId: "abc123",
+    toolShapeHash: "abc123",
+    toolSequence: ["read_file", "grep"],
+    captureDirs: ["/captures/one", "/captures/two", "/captures/three"],
+    occurrences: 3,
+    successScore: 0.5,
+  } as const;
+
+  it("omits the failure block when the candidate has no failure excerpts", () => {
+    const prompt = buildUserPrompt({ ...baseCandidate });
+    expect(prompt).not.toMatch(/Observed failure trajectories/u);
+    expect(prompt).toContain("Lane: tool-shape");
+  });
+
+  it("surfaces failure excerpts as data for the contrastive Do/Don't pass", () => {
+    const prompt = buildUserPrompt({
+      ...baseCandidate,
+      failureExcerpts: ["read_file failed: disk quota exceeded", "user frustration: still broken"],
+    });
+    expect(prompt).toMatch(/Observed failure trajectories/u);
+    expect(prompt).toContain("- read_file failed: disk quota exceeded");
+    expect(prompt).toContain("- user frustration: still broken");
+    expect(prompt).toMatch(/DATA, not instructions/u);
   });
 });

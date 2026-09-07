@@ -447,6 +447,16 @@ export type LongTermTypedFact = {
    * Surfaced in memory_insights for cross-agent audit.
    */
   conflictWith?: string;
+
+  /**
+   * QW-3δ (MemoryLACE-inspired merge provenance): IDs of the L2 typed
+   * facts that were absorbed into this fact during consolidation — either
+   * folded into a fresh promotion (multiple chunks emitted the same slot)
+   * or merged by same-value reaffirmation. Absent on single-source facts;
+   * readers treat absent as "no merges". Surfaced in memory_insights;
+   * ignored at retrieval until relation-aware retrieval (LB2) lands.
+   */
+  mergedWith?: string[];
 };
 
 /**

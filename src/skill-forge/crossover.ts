@@ -11,7 +11,11 @@
  */
 
 import crypto from "node:crypto";
-import type { Candidate, RepetitionCandidate } from "./detector.js";
+import {
+  MAX_FAILURE_EXCERPTS_PER_CANDIDATE,
+  type Candidate,
+  type RepetitionCandidate,
+} from "./detector.js";
 
 /** Minimum successScore for both parents to qualify for crossover. */
 export const CROSSOVER_SUCCESS_THRESHOLD = 0.6;
@@ -121,6 +125,11 @@ export function generateCrossoverCandidates(
       const mergedCaptureDirs = [
         ...new Set([...candidateCaptureDirs(a), ...candidateCaptureDirs(b)]),
       ];
+      // Carry the contrastive signal forward: union the parents' observed
+      // failure excerpts so the crossover draft keeps its Do/Don't delta.
+      const mergedFailureExcerpts = [
+        ...new Set([...(a.failureExcerpts ?? []), ...(b.failureExcerpts ?? [])]),
+      ].slice(0, MAX_FAILURE_EXCERPTS_PER_CANDIDATE);
 
       const hash = crypto
         .createHash("sha256")
@@ -137,6 +146,7 @@ export function generateCrossoverCandidates(
         occurrences: candidateOccurrences(a) + candidateOccurrences(b),
         // Average of parents with a small boost for combining complementary capabilities.
         successScore: Math.min(1, ((a.successScore + b.successScore) / 2) * 1.1),
+        ...(mergedFailureExcerpts.length > 0 ? { failureExcerpts: mergedFailureExcerpts } : {}),
       });
     }
   }

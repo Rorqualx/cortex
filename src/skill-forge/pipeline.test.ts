@@ -153,3 +153,85 @@ describe("runForgePipeline", () => {
     expect(second.skipped).toEqual([promotedName]);
   });
 });
+
+// ---------------------------------------------------------------------
+// QW4: borderline candidates route through the step-rubric judge lane
+// ---------------------------------------------------------------------
+
+describe("runForgePipeline — step-rubric routing for borderline candidates", () => {
+  let stateDir: string;
+  const env = (): NodeJS.ProcessEnv => ({
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_TEST_FAST: "1",
+  });
+
+  beforeEach(async () => {
+    stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-pipeline-rubric-"));
+  });
+
+  afterEach(async () => {
+    await fsp.rm(stateDir, { recursive: true, force: true });
+  });
+
+  it("routes tainted candidates to the step-rubric judge and clean ones to the outcome judge", async () => {
+    const sessionsDir = resolveSkillForgeSessionsDir(env());
+    // Borderline capture (successScore 0.5): a tool error recovered by mkdir
+    // produces an error-recovery candidate from a tainted session.
+    await writeCapture(path.join(sessionsDir, "cap-tainted-2026-05-20T18-00-00"), [
+      event("tool.call", { name: "write_file" }),
+      event("tool.result", {
+        message: { role: "toolResult", isError: true, content: "ENOENT" },
+      }),
+      event("tool.call", { name: "mkdir" }),
+      event("tool.result", { message: { role: "toolResult", content: "ok" } }),
+    ]);
+    // Clean capture (successScore 1): explicit crystallization request.
+    await writeCapture(path.join(sessionsDir, "cap-clean-2026-05-20T18-01-00"), [
+      event("user.message", {
+        message: { role: "user", content: [{ type: "text", text: "turn this into a skill" }] },
+      }),
+      event("tool.call", { name: "read_file" }),
+      event("tool.result", { message: { role: "toolResult", content: "ok" } }),
+      event("tool.call", { name: "list_dir" }),
+      event("tool.result", { message: { role: "toolResult", content: "ok" } }),
+    ]);
+
+    const outcomeCalls: string[] = [];
+    const rubricCalls: string[] = [];
+    const result = await runForgePipeline({
+      env: env(),
+      useLlmReplay: true,
+      judgeSkill: async ({ candidate }) => {
+        outcomeCalls.push(candidate.lane);
+        return {
+          status: "ran",
+          verdict: "SAFE_USEFUL",
+          rationale: "outcome judge",
+          provider: "test",
+          modelId: "test-model",
+        };
+      },
+      judgeStepRubric: async ({ candidate }) => {
+        rubricCalls.push(candidate.lane);
+        return {
+          status: "ran",
+          verdict: "SAFE_NEUTRAL",
+          rationale: "step-rubric judge",
+          provider: "test",
+          modelId: "test-model",
+          judgeMode: "step-rubric",
+          stepScores: [{ step: 1, result: "PASS" }],
+          consistency: "PASS",
+        };
+      },
+    });
+
+    expect(result.drafted).toHaveLength(2);
+    // Only the tainted error-recovery candidate paid the step-rubric cost.
+    expect(rubricCalls).toEqual(["error-recovery"]);
+    expect(outcomeCalls).toEqual(["explicit"]);
+    const byMode = new Map(result.llmReplay?.judged.map((j) => [j.judgeMode, j.gate]));
+    expect(byMode.get("step-rubric")).toMatchObject({ status: "ran", verdict: "SAFE_NEUTRAL" });
+    expect(byMode.get("outcome")).toMatchObject({ status: "ran", verdict: "SAFE_USEFUL" });
+  });
+});

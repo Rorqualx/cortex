@@ -53,6 +53,7 @@ export type MemoryInsights = {
       changes: number;
       provenance?: { quote: string; chunkId: string; sessionId: string };
       conflictWith?: string;
+      mergedWith?: string[];
     }>;
     epochsCreated: Array<{ id: string; createdAt: number; representativeFactCount: number }>;
     l2Chunks: number;
@@ -120,6 +121,7 @@ export async function collectMemoryInsights(params: {
       changes: fact.history.length,
       provenance: fact.provenance,
       conflictWith: fact.conflictWith,
+      mergedWith: fact.mergedWith,
     }));
 
   const topRecalled = activeFacts

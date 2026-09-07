@@ -8,6 +8,7 @@ import {
   detectExplicitInstructions,
   EMBEDDING_LANE_TODO,
   embeddingClusteringStub,
+  extractFailureExcerpts,
   extractToolSequence,
   hashToolSequence,
   REPETITION_THRESHOLD,
@@ -154,6 +155,48 @@ describe("detectExplicitInstructions", () => {
   });
 });
 
+describe("extractFailureExcerpts", () => {
+  it("captures flattened tool-error excerpts with the failing tool name", () => {
+    const excerpts = extractFailureExcerpts([
+      toolCall("write_file"),
+      toolResult({ isError: true, text: "ENOENT: no such file\nat line 2" }),
+      toolCall("mkdir"),
+      toolResult("ok"),
+    ]);
+    expect(excerpts).toHaveLength(1);
+    expect(excerpts[0]).toMatch(/^write_file failed: ENOENT/u);
+    expect(excerpts[0]).not.toMatch(/\n/u);
+  });
+
+  it("captures frustration messages and respects the limit", () => {
+    const excerpts = extractFailureExcerpts(
+      [
+        userMessage("that's wrong"),
+        toolCall("a"),
+        toolResult({ isError: true, text: "boom one" }),
+        toolCall("b"),
+        toolResult({ isError: true, text: "boom two" }),
+      ],
+      2,
+    );
+    expect(excerpts).toHaveLength(2);
+    expect(excerpts[0]).toMatch(/^user frustration:/u);
+  });
+
+  it("returns no excerpts for clean trajectories", () => {
+    expect(extractFailureExcerpts([toolCall("read_file"), toolResult("ok")])).toEqual([]);
+  });
+
+  it("caps excerpt length", () => {
+    const long = "x".repeat(500);
+    const [excerpt] = extractFailureExcerpts([
+      toolCall("t"),
+      toolResult({ isError: true, text: long }),
+    ]);
+    expect(excerpt?.length).toBeLessThanOrEqual(200);
+  });
+});
+
 describe("embeddingClusteringStub", () => {
   it("throws with the deferred-implementation marker", () => {
     expect(() => embeddingClusteringStub()).toThrow(EMBEDDING_LANE_TODO);
@@ -284,6 +327,71 @@ describe("runDetector", () => {
     const candidates = await runDetector({ captureDirs: dirs });
     const repetition = candidates.find((c) => c.lane === "tool-shape");
     expect(repetition?.successScore).toBe(0.5);
+  });
+
+  it("carries failureExcerpts from tainted members onto tool-shape clusters", async () => {
+    const dirs: string[] = [];
+    for (let i = 0; i < REPETITION_THRESHOLD - 1; i += 1) {
+      const dir = path.join(tmpDir, `cap-ok-${i}`);
+      dirs.push(dir);
+      await writeCapture(dir, [
+        toolCall("read_file"),
+        toolResult("ok"),
+        toolCall("grep"),
+        toolResult("ok"),
+      ]);
+    }
+    const taintedDir = path.join(tmpDir, "cap-tainted");
+    await writeCapture(taintedDir, [
+      toolCall("read_file"),
+      toolResult({ isError: true, text: "disk quota exceeded" }),
+      toolCall("grep"),
+      toolResult("ok"),
+    ]);
+    const candidates = await runDetector({ captureDirs: [...dirs, taintedDir] });
+    const repetition = candidates.find(
+      (c): c is Extract<Candidate, { lane: "tool-shape" }> => c.lane === "tool-shape",
+    );
+    if (!repetition) throw new Error("expected tool-shape candidate");
+    expect(repetition.successScore).toBe(0.5);
+    expect(repetition.failureExcerpts).toEqual(["read_file failed: disk quota exceeded"]);
+  });
+
+  it("omits failureExcerpts when every cluster member was clean", async () => {
+    const dirs: string[] = [];
+    for (let i = 0; i < REPETITION_THRESHOLD; i += 1) {
+      const dir = path.join(tmpDir, `cap-allclean-${i}`);
+      dirs.push(dir);
+      await writeCapture(dir, [
+        toolCall("read_file"),
+        toolResult("ok"),
+        toolCall("grep"),
+        toolResult("ok"),
+      ]);
+    }
+    const candidates = await runDetector({ captureDirs: dirs });
+    const repetition = candidates.find(
+      (c): c is Extract<Candidate, { lane: "tool-shape" }> => c.lane === "tool-shape",
+    );
+    if (!repetition) throw new Error("expected tool-shape candidate");
+    expect(repetition.successScore).toBe(1);
+    expect(repetition.failureExcerpts).toBeUndefined();
+  });
+
+  it("carries failureExcerpts onto error-recovery and explicit candidates", async () => {
+    const dir = path.join(tmpDir, "cap-mixed-failures");
+    await writeCapture(dir, [
+      userMessage("turn this into a skill"),
+      toolCall("write_file"),
+      toolResult({ isError: true, text: "ENOENT" }),
+      toolCall("mkdir"),
+      toolResult("ok"),
+    ]);
+    const candidates = await runDetector({ captureDirs: [dir] });
+    expect(candidates).toHaveLength(2);
+    for (const candidate of candidates) {
+      expect(candidate.failureExcerpts?.[0]).toBe("write_file failed: ENOENT");
+    }
   });
 });
 

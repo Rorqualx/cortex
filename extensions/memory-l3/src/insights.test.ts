@@ -134,6 +134,32 @@ describe("collectMemoryInsights", () => {
     ]);
   });
 
+  it("surfaces conflictWith and mergedWith provenance on typed slot changes", async () => {
+    await storage.writeLongTermTyped(
+      {
+        version: 1,
+        agentId: null,
+        lastConsolidatedAt: NOW,
+        facts: [
+          typedFact({
+            id: "ltt-merged",
+            slot: "infra:pi_hole_ip",
+            value: "192.168.50.128",
+            lastConfirmedAt: NOW - DAY_MS,
+            conflictWith: "ltt-prior",
+            mergedWith: ["tf-merge-a", "tf-merge-b"],
+          }),
+        ],
+      },
+      "body",
+    );
+
+    const insights = await collectMemoryInsights({ storage, days: 7, now: NOW });
+    expect(insights.window.typedSlotsChanged).toHaveLength(1);
+    expect(insights.window.typedSlotsChanged[0]?.conflictWith).toBe("ltt-prior");
+    expect(insights.window.typedSlotsChanged[0]?.mergedWith).toEqual(["tf-merge-a", "tf-merge-b"]);
+  });
+
   it("counts epochs and L2 chunks inside the window", async () => {
     await storage.writeL3Epoch(
       {
