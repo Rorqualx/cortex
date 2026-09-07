@@ -69,7 +69,7 @@ STAGE_BASELINE_REF="${BASELINE_REF_OVERRIDE:-main}"
 # baseline, and letting it also move this one turned the documented escape hatch into
 # a way to silently empty the drift report and pass the export gate on zero files.
 STAGE_OURS_REF="main"
-REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node24/bin}"   # upstream needs node>=22.22.3
+REMOTE_NODE_BIN="${REMOTE_NODE_BIN:-/home/joe/node24x/bin}"  # node 24.20 (node24x): upstream ce0e84d0732 raised the engine floor to >=24.16.0 <25 || >=26.1.0; the old node24 (24.15.0) dies in write-cli-startup-metadata
 LOG="${UPSTREAM_MERGE_LOG:-$HOME/.openclaw/workspace/memory/reports/upstream-merge.log}"
 # Scratch for the set-comparison plumbing (drift/dropped/ui listings). Overridable
 # so a test run cannot clobber a concurrent run's intermediate files, and vice
