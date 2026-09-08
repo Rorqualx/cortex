@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { build } from "tsdown";
 import { discoverDeclarationSources } from "./lib/declaration-source-index.mts";
-import { sanitizePublishedDeclarationTree } from "./lib/declaration-stage.mts";
+import { sanitizeBundlerHelperDtsExportTree } from "./lib/sanitize-bundler-helper-dts-exports.mts";
 import {
   buildPluginSdkEntrySources,
   pluginSdkEntrypoints,
@@ -168,4 +168,4 @@ fs.writeFileSync(stampPath, `${new Date().toISOString()}\n`, "utf8");
 // declaration path), so upstream's staging sanitizer never sees them. Sweep
 // the published tree so mangled `__exportAll` helper re-exports cannot ship
 // (check-plugin-sdk-exports rejects them; strict consumers hit TS2304).
-sanitizePublishedDeclarationTree(path.join(process.cwd(), "dist"));
+sanitizeBundlerHelperDtsExportTree(path.join(process.cwd(), "dist"));
