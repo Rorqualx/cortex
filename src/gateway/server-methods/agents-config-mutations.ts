@@ -65,6 +65,7 @@ export async function deleteAgentConfigEntry(params: {
   agentId: string;
   validate?: (agent: AgentConfig) => void;
   validateConfig?: (config: OpenClawConfig) => void;
+  assertCurrent?: () => void;
   allowMissing?: boolean;
   allowConfigSizeDrop?: boolean;
   fallbackWorkspace?: string;
@@ -76,6 +77,7 @@ export async function deleteAgentConfigEntry(params: {
     afterWrite: { mode: "auto" },
     writeOptions: {
       allowedAgentRosterRemovals: [params.agentId],
+      assertConfigPathForWrite: params.assertCurrent,
       ...(params.allowConfigSizeDrop ? { allowConfigSizeDrop: true } : {}),
     },
     mutate: (draft) => {

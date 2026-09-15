@@ -1570,6 +1570,7 @@ type LegacyStateMigrationExecutionPlan = {
   pluginStateMigrationInventory?: PluginDoctorStateMigrationInventory;
   deferPostSessionPluginMigrations?: boolean;
   legacySessionSurfaces: PreparedLegacySessionSurfaces;
+  beforeWorkspaceStateMigration?: (config: OpenClawConfig) => Promise<void>;
 };
 
 function buildLegacyStateMigrationSteps(
@@ -1995,7 +1996,17 @@ function buildLegacyStateMigrationSteps(
     : undefined;
   const finalSteps: LegacyStateMigrationStep[] = [
     ownerStep("restart-sentinel", detected.restartSentinel, migrateLegacyRestartSentinel),
-    ownerStep("workspace-state", detected.workspace, migrateLegacyWorkspaceState),
+    {
+      ...ownerStep("workspace-state", detected.workspace, async (options) => {
+        // Shared/agent schemas are ready here. Repair alias ownership before
+        // carried legacy files can be imported under the wrong workspace key.
+        if (isDoctor) {
+          await params.beforeWorkspaceStateMigration?.(params.sessionConfig ?? params.config);
+        }
+        return migrateLegacyWorkspaceState(options);
+      }),
+      runWithoutFileDetection: isDoctor && params.beforeWorkspaceStateMigration !== undefined,
+    },
     ...doctorFinalSteps,
     {
       // Workspace attestations must settle before Workshop relocation can retire them.
@@ -3003,6 +3014,7 @@ export async function autoMigrateLegacyState(params: {
   allowLegacyDeviceIdentityImport?: boolean;
   legacySessionSurfaces?: PreparedLegacySessionSurfaces;
   onStepReceipt?: (receipt: LegacyStateMigrationStepReceipt) => void;
+  beforeWorkspaceStateMigration?: (config: OpenClawConfig) => Promise<void>;
 }): Promise<{
   mode: LegacyStateMigrationMode;
   migrated: boolean;
@@ -3230,6 +3242,7 @@ async function executeLegacyStateMigrations(
       allowLegacyDeviceIdentityImport: params.allowLegacyDeviceIdentityImport,
       pluginStateMigrationInventory,
       legacySessionSurfaces,
+      beforeWorkspaceStateMigration: params.beforeWorkspaceStateMigration,
     }).filter((step) => step.id !== "state-schema" && step.id !== "plugin-install-index");
     return steps;
   };

@@ -16579,6 +16579,7 @@ public struct ModelChoice: Codable, Sendable {
     public let contextwindowdefault: String?
     public let reasoning: Bool?
     public let effectivefastmode: AnyCodable?
+    public let supportsfastmode: Bool?
     public let supportstools: Bool?
     public let agentruntime: GatewayAgentRuntime?
     public let apikeysupported: Bool?
@@ -16598,6 +16599,7 @@ public struct ModelChoice: Codable, Sendable {
         contextwindowdefault: String? = nil,
         reasoning: Bool? = nil,
         effectivefastmode: AnyCodable? = nil,
+        supportsfastmode: Bool? = nil,
         supportstools: Bool? = nil,
         agentruntime: GatewayAgentRuntime? = nil,
         apikeysupported: Bool? = nil,
@@ -16616,6 +16618,7 @@ public struct ModelChoice: Codable, Sendable {
         self.contextwindowdefault = contextwindowdefault
         self.reasoning = reasoning
         self.effectivefastmode = effectivefastmode
+        self.supportsfastmode = supportsfastmode
         self.supportstools = supportstools
         self.agentruntime = agentruntime
         self.apikeysupported = apikeysupported
@@ -16636,6 +16639,7 @@ public struct ModelChoice: Codable, Sendable {
         case contextwindowdefault = "contextWindowDefault"
         case reasoning
         case effectivefastmode = "effectiveFastMode"
+        case supportsfastmode = "supportsFastMode"
         case supportstools = "supportsTools"
         case agentruntime = "agentRuntime"
         case apikeysupported = "apiKeySupported"
