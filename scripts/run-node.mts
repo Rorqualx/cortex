@@ -1252,13 +1252,8 @@ const waitForSpawnedProcess = async (childProcess: RunNodeChild, deps: RunNodeDe
         }
         settle({ exitCode, exitSignal, forwardedSignal });
       };
-      if ("once" in childProcess) {
-        childProcess.on("error", handleError);
-        childProcess.on("exit", handleExit);
-      } else {
-        childProcess.on("error", handleError);
-        childProcess.on("exit", handleExit);
-      }
+      childProcess.on("error", handleError);
+      childProcess.on("exit", handleExit);
     });
   } finally {
     cleanupSignals();

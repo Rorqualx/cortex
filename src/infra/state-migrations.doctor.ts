@@ -561,7 +561,7 @@ export async function detectLegacyStateMigrations(params: {
     artifactPreservingReadOnly: params.artifactPreservingReadOnly,
   });
   const restartSentinel = detectLegacyRestartSentinel({ stateDir });
-  const workspace = detectLegacyWorkspaceState({
+  const workspace = await detectLegacyWorkspaceState({
     cfg: params.cfg,
     stateDir,
     env,
@@ -1996,6 +1996,7 @@ function buildLegacyStateMigrationSteps(
         message: "Channel pairing account discovery is deferred to plugin validation.",
       }
     : undefined;
+  let unavailableWorkshopWorkspaces: ReadonlyMap<string, string> | undefined;
   const finalSteps: LegacyStateMigrationStep[] = [
     ownerStep("restart-sentinel", detected.restartSentinel, migrateLegacyRestartSentinel),
     {
@@ -2005,7 +2006,9 @@ function buildLegacyStateMigrationSteps(
         if (isDoctor) {
           await params.beforeWorkspaceStateMigration?.(params.sessionConfig ?? params.config);
         }
-        return migrateLegacyWorkspaceState(options);
+        const result = await migrateLegacyWorkspaceState(options);
+        unavailableWorkshopWorkspaces = result.unavailableWorkshopWorkspaces;
+        return result;
       }),
       runWithoutFileDetection: isDoctor && params.beforeWorkspaceStateMigration !== undefined,
     },
@@ -2017,6 +2020,7 @@ function buildLegacyStateMigrationSteps(
           config: params.sessionConfig ?? params.config,
           env: { ...env, OPENCLAW_STATE_DIR: stateDir },
           retireMissingDrafts: isDoctor,
+          unavailableWorkspaceDirs: unavailableWorkshopWorkspaces,
         }),
       ),
       runWithoutFileDetection: true,

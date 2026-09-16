@@ -6287,6 +6287,16 @@ public struct DeniedApprovalSnapshot: Codable, Sendable {
     }
 }
 
+public struct DesktopAvailability: Codable, Sendable {
+    public let state: AnyCodable
+
+    public init(
+        state: AnyCodable)
+    {
+        self.state = state
+    }
+}
+
 public struct DesktopLaunchParams: Codable, Sendable {
     public let source: [String: AnyCodable]
     public let app: WorkerDesktopAppId
@@ -6767,6 +6777,7 @@ public struct EnvironmentSummary: Codable, Sendable {
     public let capabilities: [String]?
     public let invocablecommands: [String]?
     public let desktop: Bool?
+    public let desktopavailability: DesktopAvailability?
     public let issues: [[String: AnyCodable]]?
     public let worker: WorkerEnvironmentMetadata?
     public let preparation: [String: AnyCodable]?
@@ -6789,6 +6800,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         capabilities: [String]? = nil,
         invocablecommands: [String]? = nil,
         desktop: Bool? = nil,
+        desktopavailability: DesktopAvailability? = nil,
         issues: [[String: AnyCodable]]? = nil,
         worker: WorkerEnvironmentMetadata? = nil,
         preparation: [String: AnyCodable]? = nil,
@@ -6810,6 +6822,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         self.capabilities = capabilities
         self.invocablecommands = invocablecommands
         self.desktop = desktop
+        self.desktopavailability = desktopavailability
         self.issues = issues
         self.worker = worker
         self.preparation = preparation
@@ -6833,6 +6846,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         case capabilities
         case invocablecommands = "invocableCommands"
         case desktop
+        case desktopavailability = "desktopAvailability"
         case issues
         case worker
         case preparation
@@ -6875,6 +6889,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
     public let capabilities: [String]?
     public let invocablecommands: [String]?
     public let desktop: Bool?
+    public let desktopavailability: DesktopAvailability?
     public let issues: [[String: AnyCodable]]?
     public let worker: WorkerEnvironmentMetadata?
     public let preparation: [String: AnyCodable]?
@@ -6896,6 +6911,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         capabilities: [String]? = nil,
         invocablecommands: [String]? = nil,
         desktop: Bool? = nil,
+        desktopavailability: DesktopAvailability? = nil,
         issues: [[String: AnyCodable]]? = nil,
         worker: WorkerEnvironmentMetadata? = nil,
         preparation: [String: AnyCodable]? = nil)
@@ -6916,6 +6932,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         self.capabilities = capabilities
         self.invocablecommands = invocablecommands
         self.desktop = desktop
+        self.desktopavailability = desktopavailability
         self.issues = issues
         self.worker = worker
         self.preparation = preparation
@@ -6938,6 +6955,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         case capabilities
         case invocablecommands = "invocableCommands"
         case desktop
+        case desktopavailability = "desktopAvailability"
         case issues
         case worker
         case preparation
@@ -6979,6 +6997,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
     public let capabilities: [String]?
     public let invocablecommands: [String]?
     public let desktop: Bool?
+    public let desktopavailability: DesktopAvailability?
     public let issues: [[String: AnyCodable]]?
     public let worker: WorkerEnvironmentMetadata?
     public let preparation: [String: AnyCodable]?
@@ -7000,6 +7019,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         capabilities: [String]? = nil,
         invocablecommands: [String]? = nil,
         desktop: Bool? = nil,
+        desktopavailability: DesktopAvailability? = nil,
         issues: [[String: AnyCodable]]? = nil,
         worker: WorkerEnvironmentMetadata? = nil,
         preparation: [String: AnyCodable]? = nil)
@@ -7020,6 +7040,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         self.capabilities = capabilities
         self.invocablecommands = invocablecommands
         self.desktop = desktop
+        self.desktopavailability = desktopavailability
         self.issues = issues
         self.worker = worker
         self.preparation = preparation
@@ -7042,6 +7063,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         case capabilities
         case invocablecommands = "invocableCommands"
         case desktop
+        case desktopavailability = "desktopAvailability"
         case issues
         case worker
         case preparation
@@ -7146,6 +7168,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
     public let capabilities: [String]?
     public let invocablecommands: [String]?
     public let desktop: Bool?
+    public let desktopavailability: DesktopAvailability?
     public let issues: [[String: AnyCodable]]?
     public let worker: WorkerEnvironmentMetadata?
     public let preparation: [String: AnyCodable]?
@@ -7167,6 +7190,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         capabilities: [String]? = nil,
         invocablecommands: [String]? = nil,
         desktop: Bool? = nil,
+        desktopavailability: DesktopAvailability? = nil,
         issues: [[String: AnyCodable]]? = nil,
         worker: WorkerEnvironmentMetadata? = nil,
         preparation: [String: AnyCodable]? = nil)
@@ -7187,6 +7211,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         self.capabilities = capabilities
         self.invocablecommands = invocablecommands
         self.desktop = desktop
+        self.desktopavailability = desktopavailability
         self.issues = issues
         self.worker = worker
         self.preparation = preparation
@@ -7209,6 +7234,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         case capabilities
         case invocablecommands = "invocableCommands"
         case desktop
+        case desktopavailability = "desktopAvailability"
         case issues
         case worker
         case preparation
