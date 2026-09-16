@@ -1407,6 +1407,8 @@ The Control UI is static files; the WebSocket target is configurable and can dif
 
 Remote access setup details: [Remote access](/gateway/remote).
 
+Running the Gateway in Docker? See [Using the Control UI browser](/install/docker#using-the-control-ui-browser) for the browser-equipped image and setup requirements.
+
 ## Where each section moved
 
 Every section heading from the previous single-page version keeps its anchor here, so an existing link such as `/web/control-ui#chat-behavior` still resolves. Each entry points at the page that now holds the content.

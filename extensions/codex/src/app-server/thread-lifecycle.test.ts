@@ -1167,6 +1167,34 @@ function disabledMcpServerStatus(name: string) {
   };
 }
 
+function createSupervisedCommitRequest(params: {
+  sourceThreadId: string;
+  probeThreadId: string;
+  finalThreadId: string;
+}) {
+  return vi.fn(async (method: string, _requestParams?: unknown) => {
+    if (method === "config/read") {
+      return { config: {}, origins: {}, layers: [] };
+    }
+    if (method === "configRequirements/read") {
+      return { requirements: null };
+    }
+    if (method === "thread/read") {
+      return { thread: sourceThread({ threadId: params.sourceThreadId }) };
+    }
+    if (method === "thread/fork") {
+      return nativeThreadResult(params.probeThreadId, "native-effective", "native-provider");
+    }
+    if (method === "thread/start") {
+      return nativeThreadResult(params.finalThreadId, "native-effective", "native-provider");
+    }
+    if (method === "thread/archive" || method === "thread/unsubscribe") {
+      return {};
+    }
+    throw new Error(`unexpected method: ${method}`);
+  });
+}
+
 function sourceThread(params: {
   threadId: string;
   status?: "idle" | "active" | "notLoaded";
@@ -5633,27 +5661,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       cwd: workspaceDir,
       pending: { sourceThreadId },
     });
-    const request = vi.fn(async (method: string, _requestParams?: unknown) => {
-      if (method === "config/read") {
-        return { config: {}, origins: {}, layers: [] };
-      }
-      if (method === "configRequirements/read") {
-        return { requirements: null };
-      }
-      if (method === "thread/read") {
-        return { thread: sourceThread({ threadId: sourceThreadId }) };
-      }
-      if (method === "thread/fork") {
-        return nativeThreadResult(probeThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/start") {
-        return nativeThreadResult(finalThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/archive" || method === "thread/unsubscribe") {
-        return {};
-      }
-      throw new Error(`unexpected method: ${method}`);
-    });
+    const request = createSupervisedCommitRequest({ sourceThreadId, probeThreadId, finalThreadId });
     const abandonClient = vi.fn(async () => undefined);
 
     await expect(
@@ -5699,27 +5707,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       cwd: workspaceDir,
       pending: { sourceThreadId },
     });
-    const request = vi.fn(async (method: string, _requestParams?: unknown) => {
-      if (method === "config/read") {
-        return { config: {}, origins: {}, layers: [] };
-      }
-      if (method === "configRequirements/read") {
-        return { requirements: null };
-      }
-      if (method === "thread/read") {
-        return { thread: sourceThread({ threadId: sourceThreadId }) };
-      }
-      if (method === "thread/fork") {
-        return nativeThreadResult(probeThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/start") {
-        return nativeThreadResult(finalThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/archive" || method === "thread/unsubscribe") {
-        return {};
-      }
-      throw new Error(`unexpected method: ${method}`);
-    });
+    const request = createSupervisedCommitRequest({ sourceThreadId, probeThreadId, finalThreadId });
     const bindingStore: CodexAppServerBindingStore = {
       ...testCodexAppServerBindingStore,
       mutate: vi.fn(async (storeIdentity, mutation) => {
@@ -5765,27 +5753,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       cwd: workspaceDir,
       pending: { sourceThreadId },
     });
-    const request = vi.fn(async (method: string, _requestParams?: unknown) => {
-      if (method === "config/read") {
-        return { config: {}, origins: {}, layers: [] };
-      }
-      if (method === "configRequirements/read") {
-        return { requirements: null };
-      }
-      if (method === "thread/read") {
-        return { thread: sourceThread({ threadId: sourceThreadId }) };
-      }
-      if (method === "thread/fork") {
-        return nativeThreadResult(probeThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/start") {
-        return nativeThreadResult(finalThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/archive" || method === "thread/unsubscribe") {
-        return {};
-      }
-      throw new Error(`unexpected method: ${method}`);
-    });
+    const request = createSupervisedCommitRequest({ sourceThreadId, probeThreadId, finalThreadId });
     const bindingStore: CodexAppServerBindingStore = {
       ...testCodexAppServerBindingStore,
       read: vi.fn((storeIdentity) => {
@@ -5838,27 +5806,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       cwd: workspaceDir,
       pending: { sourceThreadId },
     });
-    const request = vi.fn(async (method: string, _requestParams?: unknown) => {
-      if (method === "config/read") {
-        return { config: {}, origins: {}, layers: [] };
-      }
-      if (method === "configRequirements/read") {
-        return { requirements: null };
-      }
-      if (method === "thread/read") {
-        return { thread: sourceThread({ threadId: sourceThreadId }) };
-      }
-      if (method === "thread/fork") {
-        return nativeThreadResult(probeThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/start") {
-        return nativeThreadResult(finalThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/archive" || method === "thread/unsubscribe") {
-        return {};
-      }
-      throw new Error(`unexpected method: ${method}`);
-    });
+    const request = createSupervisedCommitRequest({ sourceThreadId, probeThreadId, finalThreadId });
     let commitFailed = false;
     const bindingStore: CodexAppServerBindingStore = {
       ...testCodexAppServerBindingStore,
@@ -5915,27 +5863,7 @@ describe("Codex app-server supervised branch lifecycle", () => {
       cwd: workspaceDir,
       pending: { sourceThreadId },
     });
-    const request = vi.fn(async (method: string, _requestParams?: unknown) => {
-      if (method === "config/read") {
-        return { config: {}, origins: {}, layers: [] };
-      }
-      if (method === "configRequirements/read") {
-        return { requirements: null };
-      }
-      if (method === "thread/read") {
-        return { thread: sourceThread({ threadId: sourceThreadId }) };
-      }
-      if (method === "thread/fork") {
-        return nativeThreadResult(probeThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/start") {
-        return nativeThreadResult(finalThreadId, "native-effective", "native-provider");
-      }
-      if (method === "thread/archive" || method === "thread/unsubscribe") {
-        return {};
-      }
-      throw new Error(`unexpected method: ${method}`);
-    });
+    const request = createSupervisedCommitRequest({ sourceThreadId, probeThreadId, finalThreadId });
     let commitFailed = false;
     const bindingStore: CodexAppServerBindingStore = {
       ...testCodexAppServerBindingStore,
