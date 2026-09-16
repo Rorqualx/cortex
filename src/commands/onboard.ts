@@ -538,7 +538,7 @@ export async function setupWizardCommand(
   opts: OnboardOptions,
   runtime: RuntimeEnv = defaultRuntime,
 ) {
-  assertSupportedRuntime(runtime);
+  await assertSupportedRuntime(runtime);
   const { authChoice: normalizedAuthChoice, deprecated } = resolveLegacyOnboardAuthChoice(
     opts.authChoice,
     { env: process.env },

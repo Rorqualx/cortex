@@ -48,11 +48,8 @@ import { hasActiveGatewayExecCredential } from "./doctor-gateway-exec-credential
 import { MODEL_DEPRECATION_HEALTH_CHECK } from "./doctor-model-deprecation-check.js";
 import { removedWorkspacesStateCheck } from "./doctor-removed-workspaces-state-check.js";
 import { resolveDoctorWorkspaceSuggestionScopes } from "./doctor-workspace-suggestion-scopes.js";
-import { defineSplitHealthCheckInput } from "./health-check-adapter.js";
-import type {
-  SplitHealthCheckDefinition,
-  SplitHealthCheckInput,
-} from "./health-check-runner-types.js";
+import { copyHealthCheck } from "./health-check-adapter.js";
+import type { DoctorHealthCheck } from "./health-check-runner-types.js";
 import type {
   HealthCheck,
   HealthCheckContext,
@@ -978,7 +975,7 @@ const legacyWhatsAppCrontabCheck: HealthCheck & { readonly defaultEnabled: false
   },
 };
 
-const legacyCronStoreCheck: SplitHealthCheckDefinition = {
+const legacyCronStoreCheck: DoctorHealthCheck = {
   id: "core/doctor/legacy-cron-store",
   kind: "core",
   description: "Legacy cron store, run-log, and payload state is normalized.",
@@ -1132,7 +1129,7 @@ const gatewayPlatformNotesCheck: HealthCheck = {
   },
 };
 
-function createGatewayHealthCheck(deps: CoreHealthCheckDeps): SplitHealthCheckDefinition {
+function createGatewayHealthCheck(deps: CoreHealthCheckDeps): DoctorHealthCheck {
   return {
     id: GATEWAY_HEALTH_CHECK_ID,
     kind: "core",
@@ -1145,7 +1142,7 @@ function createGatewayHealthCheck(deps: CoreHealthCheckDeps): SplitHealthCheckDe
   };
 }
 
-function createGatewayDaemonCheck(deps: CoreHealthCheckDeps): SplitHealthCheckDefinition {
+function createGatewayDaemonCheck(deps: CoreHealthCheckDeps): DoctorHealthCheck {
   return {
     id: GATEWAY_DAEMON_CHECK_ID,
     kind: "core",
@@ -1456,9 +1453,7 @@ function createWorkspaceSuggestionsCheck(
   };
 }
 
-function createConvertedWorkflowChecks(
-  deps: CoreHealthCheckDeps,
-): readonly SplitHealthCheckDefinition[] {
+function createConvertedWorkflowChecks(deps: CoreHealthCheckDeps): readonly DoctorHealthCheck[] {
   return [
     claudeCliCheck,
     gatewayAuthCheck,
@@ -1525,8 +1520,8 @@ function createConvertedWorkflowChecks(
 
 export function createCoreHealthChecks(
   deps: CoreHealthCheckDeps = defaultCoreHealthCheckDeps,
-): readonly SplitHealthCheckInput[] {
-  const checks: readonly SplitHealthCheckDefinition[] = [
+): readonly DoctorHealthCheck[] {
+  const checks: readonly DoctorHealthCheck[] = [
     gatewayConfigCheck,
     ...createConvertedWorkflowChecks(deps),
     commandOwnerCheck,
@@ -1536,8 +1531,8 @@ export function createCoreHealthChecks(
     MODEL_DEPRECATION_HEALTH_CHECK,
     finalConfigValidationCheck,
   ];
-  return checks.map(defineSplitHealthCheckInput);
+  return checks.map(copyHealthCheck);
 }
 
-export const CORE_HEALTH_CHECKS: readonly SplitHealthCheckInput[] = createCoreHealthChecks();
+export const CORE_HEALTH_CHECKS: readonly DoctorHealthCheck[] = createCoreHealthChecks();
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

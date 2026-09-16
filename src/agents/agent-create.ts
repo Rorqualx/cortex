@@ -69,7 +69,10 @@ type CreateAgentResult =
   | CreateError;
 type AgentEntryConfig = NonNullable<NonNullable<OpenClawConfig["agents"]>["entries"]>[string];
 type CreateAgentEntry = AgentEntryConfig & { id: string };
-type ConfigCommitRollback = () => void | Promise<void>;
+type ConfigCommitReceipt = {
+  commit: () => void | Promise<void>;
+  rollback: () => void | Promise<void>;
+};
 
 type CreateAgentParams = {
   name?: string;
@@ -98,7 +101,7 @@ type CreateAgentParams = {
   /** Revalidate delegated authority before each new persistent effect. */
   beforePersistentApply?: () => void;
   /** Prepare guided staged state at the last reversible edge before config publication. */
-  prepareConfigCommit?: () => Promise<ConfigCommitRollback | void>;
+  prepareConfigCommit?: () => Promise<ConfigCommitReceipt | void>;
   provenance?: { createdVia: AgentCreatedVia; creatorAgentId?: string };
 };
 
@@ -279,7 +282,7 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
     ? resolveUserPath(requestedAgentDir.trim())
     : undefined;
   const transformConfig = params.transformConfig ?? transformConfigFileWithRetry;
-  let configCommitRollback: ConfigCommitRollback | undefined;
+  let configCommitReceipt: ConfigCommitReceipt | undefined;
 
   try {
     return await withConfigMutationExclusive(async (lockedConfig) => {
@@ -477,9 +480,8 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
           }
           // The receipt owns compensation until the config transform publishes this result.
           params.beforePersistentApply?.();
-          const preparedRollback = await params.prepareConfigCommit?.();
-          configCommitRollback =
-            typeof preparedRollback === "function" ? preparedRollback : undefined;
+          const preparedReceipt = await params.prepareConfigCommit?.();
+          configCommitReceipt = preparedReceipt ? preparedReceipt : undefined;
 
           return {
             nextConfig,
@@ -498,7 +500,9 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
       });
       // Successful publication owns completion of tombstone/provenance bookkeeping,
       // even after delegated authority closes; it must not roll staged state back.
-      configCommitRollback = undefined;
+      const committedReceipt = configCommitReceipt;
+      configCommitReceipt = undefined;
+      await committedReceipt?.commit();
       if (
         deletion?.cleanupCompleted &&
         !tombstoneClaimed &&
@@ -521,9 +525,9 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
       };
     });
   } catch (error) {
-    if (configCommitRollback) {
+    if (configCommitReceipt) {
       try {
-        await configCommitRollback();
+        await configCommitReceipt.rollback();
       } catch (rollbackError) {
         throw new Error(
           `${String(error)}\nstaged config rollback failed: ${String(rollbackError)}`,

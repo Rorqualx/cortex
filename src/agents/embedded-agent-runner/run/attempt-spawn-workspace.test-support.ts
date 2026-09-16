@@ -42,6 +42,8 @@ import type { EmbeddedRunAttemptParams } from "./types.js";
 
 type SubscribeEmbeddedAgentSessionFn =
   typeof import("../../embedded-agent-subscribe.js").subscribeEmbeddedAgentSession;
+type GuardSessionManagerFn =
+  typeof import("../../session-tool-result-guard-wrapper.js").guardSessionManager;
 type ShouldPreemptivelyCompactBeforePromptFn =
   typeof import("./preemptive-compaction.js").shouldPreemptivelyCompactBeforePrompt;
 
@@ -98,6 +100,7 @@ type AttemptSpawnWorkspaceHoisted = {
   createAgentSessionMock: Mock<(options: CreateAgentSessionOptions) => unknown>;
   applyExtraParamsToAgentMock: UnknownMock;
   sessionManagerOpenMock: UnknownMock;
+  guardSessionManagerMock: Mock<GuardSessionManagerFn>;
   defaultResourceLoaderInitMock: UnknownMock;
   resolveSandboxContextMock: UnknownMock;
   ensureGlobalUndiciEnvProxyDispatcherMock: UnknownMock;
@@ -221,6 +224,7 @@ const hoisted = vi.hoisted((): AttemptSpawnWorkspaceHoisted => {
   const createAgentSessionMock = vi.fn<(options: CreateAgentSessionOptions) => unknown>();
   const applyExtraParamsToAgentMock = vi.fn();
   const sessionManagerOpenMock = vi.fn();
+  const guardSessionManagerMock = vi.fn<GuardSessionManagerFn>((sessionManager) => sessionManager);
   const defaultResourceLoaderInitMock = vi.fn();
   const resolveSandboxContextMock = vi.fn();
   const ensureGlobalUndiciEnvProxyDispatcherMock = vi.fn();
@@ -310,6 +314,7 @@ const hoisted = vi.hoisted((): AttemptSpawnWorkspaceHoisted => {
     createAgentSessionMock,
     applyExtraParamsToAgentMock,
     sessionManagerOpenMock,
+    guardSessionManagerMock,
     defaultResourceLoaderInitMock,
     resolveSandboxContextMock,
     ensureGlobalUndiciEnvProxyDispatcherMock,
@@ -489,7 +494,8 @@ vi.mock("../../sandbox.js", () => ({
 }));
 
 vi.mock("../../session-tool-result-guard-wrapper.js", () => ({
-  guardSessionManager: (sessionManager: unknown) => sessionManager,
+  guardSessionManager: (...args: Parameters<GuardSessionManagerFn>) =>
+    hoisted.guardSessionManagerMock(...args),
 }));
 
 vi.mock("../../embedded-agent-subscribe.js", () => ({
@@ -1063,6 +1069,9 @@ export function resetEmbeddedAttemptHarness(
   hoisted.createAgentSessionMock.mockReset();
   hoisted.applyExtraParamsToAgentMock.mockReset();
   hoisted.sessionManagerOpenMock.mockReset().mockReturnValue(hoisted.sessionManager);
+  hoisted.guardSessionManagerMock
+    .mockReset()
+    .mockImplementation((sessionManager) => sessionManager);
   hoisted.defaultResourceLoaderInitMock.mockReset();
   hoisted.resolveSandboxContextMock.mockReset();
   hoisted.ensureGlobalUndiciEnvProxyDispatcherMock.mockReset();

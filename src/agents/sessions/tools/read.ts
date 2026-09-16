@@ -624,10 +624,11 @@ export function createReadToolDefinition(
               if (textDetails) {
                 // A full-fit selection can still have a continuation and borrow the decoded file.
                 // Detach both bounded channels regardless of EOF, preserving exact UTF-16 units.
+                const sameContent = outputText === textDetails.content;
                 outputText = Buffer.from(outputText, "utf16le").toString("utf16le");
-                textDetails.content = Buffer.from(textDetails.content, "utf16le").toString(
-                  "utf16le",
-                );
+                textDetails.content = sameContent
+                  ? outputText
+                  : Buffer.from(textDetails.content, "utf16le").toString("utf16le");
               }
               if (unchangedRepeat) {
                 // Cheap, compaction-safe signal: full content is still returned, we
