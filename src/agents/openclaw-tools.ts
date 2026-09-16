@@ -33,6 +33,7 @@ import {
   shouldIncludeProgressCardToolForOpenClawTools,
   shouldIncludeSecretsToolForOpenClawTools,
 } from "./openclaw-tools.registration.js";
+import { createRequesterYieldCallback } from "./openclaw-tools.requester-yield.js";
 import { createOpenClawSwarmToolGroups } from "./openclaw-tools.swarm.js";
 import type { OpenClawToolsOptions } from "./openclaw-tools.types.js";
 import { resolveWidgetPresentationForRun } from "./openclaw-tools.widget-presentation.js";
@@ -165,7 +166,6 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     sessionKey: mediaGenerationAgentSessionKey,
     onYield: options?.onYield,
   });
-  const { runId: requesterTurnRunId } = options ?? {};
   const imageTool =
     options?.agentDir &&
     resolveImageToolFactoryAvailable({
@@ -638,14 +638,11 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     ...swarmToolGroups.agentsWait,
     createSessionsYieldTool({
       sessionId: options?.sessionId,
-      onBeforeYield:
-        requesterSessionKey && requesterTurnRunId
-          ? async () => {
-              const { markRequesterTurnYielded } =
-                await import("./subagents/registry/subagent-registry.js");
-              markRequesterTurnYielded({ requesterSessionKey, requesterTurnRunId });
-            }
-          : undefined,
+      claimYield: createRequesterYieldCallback({
+        requesterSessionKey,
+        requesterAgentId: sessionAgentId,
+        requesterTurnRunId: options?.runId,
+      }),
       onYield: options?.onYield,
     }),
     createSubagentsTool({
