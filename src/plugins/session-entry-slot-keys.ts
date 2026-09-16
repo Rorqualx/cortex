@@ -162,6 +162,8 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "acpSessionBinding",
   "claudeCliSessionId",
   "label",
+  "autoLabel",
+  "icon",
   "llmTitle",
   "color",
   "category",

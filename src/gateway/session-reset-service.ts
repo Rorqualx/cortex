@@ -1755,6 +1755,7 @@ export async function performGatewaySessionReset(params: {
             subagentRole: currentEntry?.subagentRole,
             subagentControlScope: currentEntry?.subagentControlScope,
             label: currentEntry?.label,
+            autoLabel: currentEntry?.autoLabel,
             icon: currentEntry?.icon,
             category: currentEntry?.category,
             boardFace: currentEntry?.boardFace,

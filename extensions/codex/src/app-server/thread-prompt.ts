@@ -1,7 +1,12 @@
 import {
   buildCredentialSafetyPrompt,
+  buildDelegationGuidanceSection,
   buildSkillForgePromptSection,
+  buildSkillWorkshopPromptSection,
+  buildUiPresentationPrompt,
+  resolveMainSessionDelegationMode,
   SKILL_FORGE_TOOL_NAME,
+  SKILL_WORKSHOP_TOOL_NAME,
   type EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { listRegisteredPluginAgentPromptGuidance } from "openclaw/plugin-sdk/plugin-runtime";
@@ -28,6 +33,7 @@ export type CodexThreadPromptContext = Pick<
   | "sourceReplyDeliveryMode"
   | "promptMode"
   | "extraSystemPrompt"
+  | "gitCoauthorPrompt"
 >;
 
 export function buildDeveloperInstructions(
@@ -35,10 +41,16 @@ export function buildDeveloperInstructions(
   options: { dynamicTools?: readonly CodexDynamicToolSpec[] } = {},
 ): string {
   const deferredToolNames = new Set<string>();
-  let secretsToolName: string | undefined;
+  let showWidgetToolName: string | undefined;
+  let dashboardToolName: string | undefined;
+  let portalToolName: string | undefined;
   let hasSkillForge = false;
+  let hasSkillWorkshop = false;
   let hasSessionsSpawn = false;
   let hasSessionsYield = false;
+  let hasSubagentsList = false;
+  let hasSessionsSend = false;
+  let hasControlTools = false;
   let hasSeenDirectNamespace = false;
   for (const spec of options.dynamicTools ?? []) {
     const isDirectNamespace =
@@ -54,22 +66,34 @@ export function buildDeveloperInstructions(
       if (tool.deferLoading === true && name) {
         deferredToolNames.add(name);
       }
-      if (name === "secrets" && params.disableTools !== true) {
-        secretsToolName ??= qualifiedName;
+      if (name === "show_widget") {
+        showWidgetToolName ??= qualifiedName;
+      }
+      if (name === "dashboard") {
+        dashboardToolName ??= qualifiedName;
+      }
+      if (name === "portal") {
+        portalToolName ??= qualifiedName;
       }
       hasSkillForge ||= name === SKILL_FORGE_TOOL_NAME;
+      hasSkillWorkshop ||= name === SKILL_WORKSHOP_TOOL_NAME;
       hasSessionsSpawn ||= name === "sessions_spawn";
       hasSessionsYield ||= isDirectNamespace && name === "sessions_yield";
+      hasSubagentsList ||= name === "subagents";
+      hasSessionsSend ||= name === "sessions_send";
+      hasControlTools ||= name === "openclaw" || name === "gateway";
     }
   }
   const nativeCommandGuidance = listRegisteredPluginAgentPromptGuidance({
     surface: "codex_app_server",
     includeLegacyGlobalGuidance: false,
   }).join("\n");
-  const nativeDelegationAvailable =
+  const delegationGuidanceAvailable =
     params.disableTools !== true &&
     params.delegationCapability !== "report_only" &&
-    !isMessageOnlyCodexSourceReply(params) &&
+    !isMessageOnlyCodexSourceReply(params);
+  const nativeDelegationAvailable =
+    delegationGuidanceAvailable &&
     !isSystemAgentOnlyCodexDynamicToolAllowlist(params.toolsAllow) &&
     !shouldDisableCodexToolSearchForModel(params.modelId);
   const deferredToolDiscoveryGuidance =
@@ -85,6 +109,7 @@ export function buildDeveloperInstructions(
       : undefined,
     deferredToolDiscoveryGuidance,
     hasSkillForge ? buildSkillForgePromptSection().join("\n") : undefined,
+    hasSkillWorkshop ? buildSkillWorkshopPromptSection().join("\n") : undefined,
     // Codex defers native collab tools behind tool_search on search-capable
     // models (codex-rs spec_plan add_collaboration_tools). Without this hint
     // models cannot see spawn_agent and grab the always-direct sessions_spawn.
@@ -96,10 +121,35 @@ export function buildDeveloperInstructions(
       : undefined,
     // Source-delivery guidance moved per-turn (upstream #123624): turn-params.ts
     // injects openclaw_source_delivery via buildHarnessVisibleReplyGuidance each
-    // turn, keeping these developer instructions cache-stable. Fork keeps its
-    // lean trim: no delegation-guidance or UI-presentation sections here.
-    buildCredentialSafetyPrompt(secretsToolName),
+    // turn, keeping these developer instructions cache-stable.
+    delegationGuidanceAvailable
+      ? buildDelegationGuidanceSection({
+          mode: resolveMainSessionDelegationMode({
+            config: params.config,
+            agentId: params.agentId,
+            sessionKey: params.sessionKey,
+          }),
+          // Subagent/none prompt modes stay lean and must not be told to delegate further.
+          isMinimal: params.promptMode === "minimal" || params.promptMode === "none",
+          hiddenDelegationTool: nativeDelegationAvailable
+            ? "native `spawn_agent`"
+            : hasSessionsSpawn
+              ? "`sessions_spawn`"
+              : "",
+          hasVisibleSessionSpawn: hasSessionsSpawn,
+          hasSessionsYield,
+          hasSubagentsList,
+          hasSessionsSend,
+        }).join("\n")
+      : undefined,
+    params.disableTools !== true && params.promptMode !== "minimal" && params.promptMode !== "none"
+      ? buildUiPresentationPrompt({ showWidgetToolName, dashboardToolName, portalToolName })
+      : undefined,
+    buildCredentialSafetyPrompt({
+      controlToolsAvailable: params.disableTools !== true && hasControlTools,
+    }),
     nativeCommandGuidance,
+    params.gitCoauthorPrompt,
     params.extraSystemPrompt,
   ];
   return sections.filter((section) => typeof section === "string" && section.trim()).join("\n\n");

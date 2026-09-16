@@ -127,7 +127,7 @@ export { isOpenClawRuntimeContextCustomMessage } from "../agents/internal-runtim
 export { restorePreparedUserTurnOperationalMetaForRuntime } from "../sessions/user-turn-transcript.metadata.js";
 export { fingerprintResolvedAuthProfileCredential } from "../agents/execution-auth-binding.js";
 export { normalizeQuestionTimeoutSeconds } from "../agents/tools/ask-user-tool-normalization.js";
-export { buildCredentialSafetyPrompt } from "../agents/transcript-credential-safety.js";
+export { buildCredentialSafetyPrompt } from "../agents/credential-safety-prompt.js";
 export type {
   AgentHarnessUserInputAnswers,
   AgentHarnessUserInputOption,

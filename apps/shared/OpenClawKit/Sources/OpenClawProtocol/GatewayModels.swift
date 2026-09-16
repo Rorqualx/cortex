@@ -6604,6 +6604,7 @@ public struct SessionRow: Codable, Sendable {
     public let incognito: Bool?
     public let kind: AnyCodable
     public let label: String?
+    public let autolabel: String?
     public let icon: String?
     public let color: String?
     public let channelavatarurl: String?
@@ -6686,6 +6687,7 @@ public struct SessionRow: Codable, Sendable {
         incognito: Bool? = nil,
         kind: AnyCodable,
         label: String? = nil,
+        autolabel: String? = nil,
         icon: String? = nil,
         color: String? = nil,
         channelavatarurl: String? = nil,
@@ -6767,6 +6769,7 @@ public struct SessionRow: Codable, Sendable {
         self.incognito = incognito
         self.kind = kind
         self.label = label
+        self.autolabel = autolabel
         self.icon = icon
         self.color = color
         self.channelavatarurl = channelavatarurl
@@ -6850,6 +6853,7 @@ public struct SessionRow: Codable, Sendable {
         case incognito
         case kind
         case label
+        case autolabel = "autoLabel"
         case icon
         case color
         case channelavatarurl = "channelAvatarUrl"
@@ -10409,6 +10413,7 @@ public struct SessionsPatchParams: Codable, Sendable {
     public let expectedtooloverrides: AnyCodable?
     public let expectedmarkedunreadat: AnyCodable?
     public let label: AnyCodable?
+    public let autolabel: AnyCodable?
     public let icon: AnyCodable?
     public let color: AnyCodable?
     public let category: AnyCodable?
@@ -10450,6 +10455,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         expectedtooloverrides: AnyCodable? = nil,
         expectedmarkedunreadat: AnyCodable? = nil,
         label: AnyCodable? = nil,
+        autolabel: AnyCodable? = nil,
         icon: AnyCodable? = nil,
         color: AnyCodable? = nil,
         category: AnyCodable? = nil,
@@ -10490,6 +10496,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         self.expectedtooloverrides = expectedtooloverrides
         self.expectedmarkedunreadat = expectedmarkedunreadat
         self.label = label
+        self.autolabel = autolabel
         self.icon = icon
         self.color = color
         self.category = category
@@ -10532,6 +10539,7 @@ public struct SessionsPatchParams: Codable, Sendable {
         case expectedtooloverrides = "expectedToolOverrides"
         case expectedmarkedunreadat = "expectedMarkedUnreadAt"
         case label
+        case autolabel = "autoLabel"
         case icon
         case color
         case category
@@ -10568,6 +10576,7 @@ public struct SessionsPatchParams: Codable, Sendable {
 
 public struct SessionsPatchMutation: Codable, Sendable {
     public let label: AnyCodable?
+    public let autolabel: AnyCodable?
     public let icon: AnyCodable?
     public let color: AnyCodable?
     public let category: AnyCodable?
@@ -10602,6 +10611,7 @@ public struct SessionsPatchMutation: Codable, Sendable {
 
     public init(
         label: AnyCodable? = nil,
+        autolabel: AnyCodable? = nil,
         icon: AnyCodable? = nil,
         color: AnyCodable? = nil,
         category: AnyCodable? = nil,
@@ -10635,6 +10645,7 @@ public struct SessionsPatchMutation: Codable, Sendable {
         groupactivation: AnyCodable? = nil)
     {
         self.label = label
+        self.autolabel = autolabel
         self.icon = icon
         self.color = color
         self.category = category
@@ -10670,6 +10681,7 @@ public struct SessionsPatchMutation: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case label
+        case autolabel = "autoLabel"
         case icon
         case color
         case category
@@ -21704,6 +21716,7 @@ public struct PluginCatalogEntry: Codable, Sendable {
     public let hasicon: Bool?
     public let install: PluginCatalogInstallAction?
     public let error: String?
+    public let categories: [String]?
     public let category: String?
     public let removable: Bool?
 
@@ -21724,6 +21737,7 @@ public struct PluginCatalogEntry: Codable, Sendable {
         hasicon: Bool? = nil,
         install: PluginCatalogInstallAction? = nil,
         error: String? = nil,
+        categories: [String]? = nil,
         category: String? = nil,
         removable: Bool? = nil)
     {
@@ -21743,6 +21757,7 @@ public struct PluginCatalogEntry: Codable, Sendable {
         self.hasicon = hasicon
         self.install = install
         self.error = error
+        self.categories = categories
         self.category = category
         self.removable = removable
     }
@@ -21764,6 +21779,7 @@ public struct PluginCatalogEntry: Codable, Sendable {
         case hasicon = "hasIcon"
         case install
         case error
+        case categories
         case category
         case removable
     }
@@ -22154,6 +22170,144 @@ public struct PluginInstallTrust: Codable, Sendable {
     }
 }
 
+public struct PluginDiscoveryCategory: Codable, Sendable {
+    public let slug: String
+    public let label: String
+    public let description: String
+    public let icon: String
+    public let order: Int
+
+    public init(
+        slug: String,
+        label: String,
+        description: String,
+        icon: String,
+        order: Int)
+    {
+        self.slug = slug
+        self.label = label
+        self.description = description
+        self.icon = icon
+        self.order = order
+    }
+}
+
+public struct PluginDiscoveryCatalogFacts: Codable, Sendable {
+    public let name: String
+    public let summary: String?
+    public let family: AnyCodable?
+    public let author: String?
+    public let official: Bool
+    public let categories: [String]
+    public let icon: String?
+    public let imageurl: String?
+    public let latestversion: String?
+    public let downloads: Double?
+    public let installs: Double?
+    public let verificationtier: String?
+    public let publishedtoclawhub: Bool?
+
+    public init(
+        name: String,
+        summary: String? = nil,
+        family: AnyCodable? = nil,
+        author: String? = nil,
+        official: Bool,
+        categories: [String],
+        icon: String? = nil,
+        imageurl: String? = nil,
+        latestversion: String? = nil,
+        downloads: Double? = nil,
+        installs: Double? = nil,
+        verificationtier: String? = nil,
+        publishedtoclawhub: Bool? = nil)
+    {
+        self.name = name
+        self.summary = summary
+        self.family = family
+        self.author = author
+        self.official = official
+        self.categories = categories
+        self.icon = icon
+        self.imageurl = imageurl
+        self.latestversion = latestversion
+        self.downloads = downloads
+        self.installs = installs
+        self.verificationtier = verificationtier
+        self.publishedtoclawhub = publishedtoclawhub
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case summary
+        case family
+        case author
+        case official
+        case categories
+        case icon
+        case imageurl = "imageUrl"
+        case latestversion = "latestVersion"
+        case downloads
+        case installs
+        case verificationtier = "verificationTier"
+        case publishedtoclawhub = "publishedToClawHub"
+    }
+}
+
+public struct PluginDiscoveryLocalFacts: Codable, Sendable {
+    public let present: Bool
+    public let installed: Bool
+    public let enabled: Bool
+    public let state: AnyCodable
+    public let pluginid: String?
+    public let install: PluginCatalogInstallAction?
+    public let action: AnyCodable
+
+    public init(
+        present: Bool,
+        installed: Bool,
+        enabled: Bool,
+        state: AnyCodable,
+        pluginid: String? = nil,
+        install: PluginCatalogInstallAction? = nil,
+        action: AnyCodable)
+    {
+        self.present = present
+        self.installed = installed
+        self.enabled = enabled
+        self.state = state
+        self.pluginid = pluginid
+        self.install = install
+        self.action = action
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case present
+        case installed
+        case enabled
+        case state
+        case pluginid = "pluginId"
+        case install
+        case action
+    }
+}
+
+public struct PluginDiscoveryEntry: Codable, Sendable {
+    public let id: String
+    public let catalog: PluginDiscoveryCatalogFacts
+    public let local: PluginDiscoveryLocalFacts
+
+    public init(
+        id: String,
+        catalog: PluginDiscoveryCatalogFacts,
+        local: PluginDiscoveryLocalFacts)
+    {
+        self.id = id
+        self.catalog = catalog
+        self.local = local
+    }
+}
+
 public struct PluginOperatorGrants: Codable, Sendable {
     public let hooks: [String: AnyCodable]
     public let llm: [String: AnyCodable]?
@@ -22367,6 +22521,93 @@ public struct PluginsSearchResult: Codable, Sendable {
         results: [PluginSearchResultEntry])
     {
         self.results = results
+    }
+}
+
+public struct PluginsCatalogBrowseParams: Codable, Sendable {
+    public let query: String?
+    public let intent: AnyCodable?
+    public let category: String?
+    public let cursor: String?
+    public let pagesize: Int?
+
+    public init(
+        query: String? = nil,
+        intent: AnyCodable? = nil,
+        category: String? = nil,
+        cursor: String? = nil,
+        pagesize: Int? = nil)
+    {
+        self.query = query
+        self.intent = intent
+        self.category = category
+        self.cursor = cursor
+        self.pagesize = pagesize
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case query
+        case intent
+        case category
+        case cursor
+        case pagesize = "pageSize"
+    }
+}
+
+public struct PluginsCatalogBrowseResult: Codable, Sendable {
+    public let items: [PluginDiscoveryEntry]
+    public let nextcursor: String?
+    public let remoteerror: String?
+
+    public init(
+        items: [PluginDiscoveryEntry],
+        nextcursor: String? = nil,
+        remoteerror: String? = nil)
+    {
+        self.items = items
+        self.nextcursor = nextcursor
+        self.remoteerror = remoteerror
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case items
+        case nextcursor = "nextCursor"
+        case remoteerror = "remoteError"
+    }
+}
+
+public struct PluginsCatalogCategoriesParams: Codable, Sendable {}
+
+public struct PluginsCatalogCategoriesResult: Codable, Sendable {
+    public let categories: [PluginDiscoveryCategory]
+
+    public init(
+        categories: [PluginDiscoveryCategory])
+    {
+        self.categories = categories
+    }
+}
+
+public struct PluginsCatalogGetParams: Codable, Sendable {
+    public let id: String
+
+    public init(
+        id: String)
+    {
+        self.id = id
+    }
+}
+
+public struct PluginsCatalogGetResult: Codable, Sendable {
+    public let plugin: PluginDiscoveryEntry
+    public let detail: [String: AnyCodable]
+
+    public init(
+        plugin: PluginDiscoveryEntry,
+        detail: [String: AnyCodable])
+    {
+        self.plugin = plugin
+        self.detail = detail
     }
 }
 
