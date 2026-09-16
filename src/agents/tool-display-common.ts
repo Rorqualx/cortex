@@ -784,4 +784,29 @@ function resolveToolVerbAndDetail(params: {
   return { verb, detail };
 }
 
+export function formatToolDetailText(
+  detail: string | undefined,
+  opts: { prefixWithWith?: boolean } = {},
+): string | undefined {
+  if (!detail) {
+    return undefined;
+  }
+  const normalized = detail.includes(" · ")
+    ? (() => {
+        const parts: string[] = [];
+        for (const part of detail.split(" · ")) {
+          const trimmed = part.trim();
+          if (trimmed) {
+            parts.push(trimmed);
+          }
+        }
+        return parts.join(", ");
+      })()
+    : detail;
+  if (!normalized) {
+    return undefined;
+  }
+  return opts.prefixWithWith ? `with ${normalized}` : normalized;
+}
+
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
