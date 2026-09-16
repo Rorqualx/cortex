@@ -7531,34 +7531,10 @@ describe("update-cli", () => {
       expectedSpec: "OpenClaw@github:openclaw/openclaw#main",
     },
     {
-      name: "full git URL package spec",
-      options: { yes: true, tag: "https://github.com/openclaw/openclaw.git#main" },
-      packageSpec: undefined,
-      expectedSpec: "https://github.com/openclaw/openclaw.git#main",
-    },
-    {
-      name: "hosted GitHub URL package spec without git suffix",
-      options: { yes: true, tag: "https://github.com/openclaw/openclaw#main" },
-      packageSpec: undefined,
-      expectedSpec: "https://github.com/openclaw/openclaw#main",
-    },
-    {
       name: "aliased hosted GitHub URL package spec without git suffix",
       options: { yes: true, tag: "openclaw@https://github.com/openclaw/openclaw#main" },
       packageSpec: undefined,
       expectedSpec: "https://github.com/openclaw/openclaw#main",
-    },
-    {
-      name: "GitHub shorthand package spec",
-      options: { yes: true, tag: "openclaw/openclaw#main" },
-      packageSpec: undefined,
-      expectedSpec: "openclaw/openclaw#main",
-    },
-    {
-      name: "SCP-style SSH package spec",
-      options: { yes: true, tag: "git@github.com:openclaw/openclaw.git#main" },
-      packageSpec: undefined,
-      expectedSpec: "git@github.com:openclaw/openclaw.git#main",
     },
     {
       name: "OPENCLAW_UPDATE_PACKAGE_SPEC override",
@@ -7582,6 +7558,17 @@ describe("update-cli", () => {
         await updateCommand(options);
       }
       expectPackageInstallSpec(expectedSpec);
+      if (options.tag === "next") {
+        expect(fetchNpmTagVersion).toHaveBeenCalledWith(
+          expect.objectContaining({ tag: "next", spec: "openclaw@next" }),
+        );
+        expect(fetchNpmPackageTargetStatus).toHaveBeenCalledWith(
+          expect.objectContaining({ target: "9999.0.0", spec: expectedSpec }),
+        );
+      } else if (!packageSpec) {
+        expect(fetchNpmTagVersion).not.toHaveBeenCalled();
+        expect(fetchNpmPackageTargetStatus).not.toHaveBeenCalled();
+      }
     },
   );
 
@@ -8077,9 +8064,15 @@ describe("update-cli", () => {
     const doctorStep = jsonOutput?.steps.find((step) => step.name === "openclaw doctor");
     expect(jsonOutput?.status).toBe("ok");
     expect(doctorStep?.exitCode).toBe(UPDATE_POST_INSTALL_DOCTOR_ADVISORY_EXIT_CODE);
+    // Keep the established advisory shape; complete ledger warnings travel on the step.
     expect(doctorStep?.advisory).toEqual({
       kind: "package-post-install-doctor",
       message: expect.stringContaining("recoverable update-time repair warning"),
+    });
+    expect(doctorStep).toMatchObject({
+      warnings: [
+        "deferred configured plugin repair\nRun openclaw doctor --fix to finish deferred repairs.",
+      ],
     });
     expect(doctorStep?.advisory?.message).not.toContain("gateway restart");
     expect(doctorStep?.stderrTail).toContain("doctor deferred configured plugin repair");

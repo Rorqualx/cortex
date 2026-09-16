@@ -172,6 +172,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "delivery",
   "groupId",
   "subject",
+  "topicName",
   "groupChannel",
   "space",
   "skillsSnapshot",

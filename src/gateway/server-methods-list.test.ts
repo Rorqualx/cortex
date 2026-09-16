@@ -184,6 +184,7 @@ describe("listGatewayMethods", () => {
       "claws.monitors",
       ...pluginDiscoveryMethods,
       "tasks.history",
+      "environments.prepare",
     ];
     expect(listGatewayMethods().slice(-expectedSuffix.length)).toEqual(expectedSuffix);
     const methods = listGatewayMethods();
@@ -212,6 +213,7 @@ describe("listGatewayMethods", () => {
       "claws.monitors",
       ...pluginDiscoveryMethods,
       "tasks.history",
+      "environments.prepare",
     ]);
   });
 
@@ -373,6 +375,7 @@ describe("listGatewayMethods", () => {
       "claws.monitors",
       ...pluginDiscoveryMethods,
       "tasks.history",
+      "environments.prepare",
     ];
     expect(coreMethods.slice(-expectedCoreSuffix.length)).toEqual(expectedCoreSuffix);
     expect(methods.indexOf("approval.get")).toBeGreaterThan(methods.indexOf("tts.speak"));
@@ -443,7 +446,11 @@ describe("listGatewayMethods", () => {
   });
 
   it("advertises and wires cloud worker environment mutations", () => {
-    const methods = ["environments.create", "environments.destroy"] as const;
+    const methods = [
+      "environments.create",
+      "environments.destroy",
+      "environments.prepare",
+    ] as const;
     const advertisedMethods = listGatewayMethods();
     const descriptors = createCoreGatewayMethodDescriptors(coreGatewayHandlers);
 
