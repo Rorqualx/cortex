@@ -156,6 +156,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     preparedModelRuntime: options?.preparedModelRuntime,
   });
   const trimmedRunSessionKey = options?.runSessionKey?.trim();
+  const requesterSessionKey = trimmedRunSessionKey || options?.agentSessionKey;
   const mediaGenerationAgentSessionKey =
     trimmedRunSessionKey && isCronRunSessionKey(trimmedRunSessionKey)
       ? trimmedRunSessionKey
@@ -164,7 +165,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     sessionKey: mediaGenerationAgentSessionKey,
     onYield: options?.onYield,
   });
-  const { agentSessionKey: requesterSessionKey, runId: requesterTurnRunId } = options ?? {};
+  const { runId: requesterTurnRunId } = options ?? {};
   const imageTool =
     options?.agentDir &&
     resolveImageToolFactoryAvailable({

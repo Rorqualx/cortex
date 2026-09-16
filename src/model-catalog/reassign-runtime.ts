@@ -14,7 +14,7 @@ import {
   resolveConfiguredModelRef,
   resolveModelRefFromString,
 } from "../agents/model-selection-shared.js";
-import { loadPreparedModelCatalog } from "../agents/prepared-model-catalog.js";
+import { readPreparedModelCatalog } from "../agents/prepared-model-catalog.js";
 import { resolveDefaultSessionStorePath } from "../config/sessions/paths.js";
 import { patchSessionEntryWithKey } from "../config/sessions/session-accessor.entry.js";
 import { loadSessionStore } from "../plugin-sdk/session-store-runtime.js";
@@ -130,7 +130,7 @@ export async function buildRuntimeReassignmentPlan(
   const deprecated = listDiscoveredModels(db, { status: "deprecated" });
   const upgrades = listSilentUpgrades(db);
 
-  const catalog = await loadPreparedModelCatalog({ config: cfg, readOnly: true });
+  const catalog = await readPreparedModelCatalog({ config: cfg, readOnly: true });
 
   // Collect pre-announced deprecations from catalog entries (manifest/provider-index
   // data that carries a replacedBy hint before the model actually vanishes).

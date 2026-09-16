@@ -1,5 +1,6 @@
 // Agent consult runtime starts agent consultation flows from talk sessions.
 import { randomUUID } from "node:crypto";
+import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import {
   buildAgentRunTerminalOutcomeFromLifecycleEvent,
   classifyAgentRunTerminalOutcome,
@@ -40,7 +41,11 @@ export type RealtimeVoiceAgentConsultRuntime = PluginRuntimeCore["agent"];
 /**
  * Speakable text returned to the realtime voice bridge after an agent consult.
  */
-export type RealtimeVoiceAgentConsultResult = { text: string };
+export type RealtimeVoiceAgentConsultResult = { text: string; yielded?: true };
+
+const REALTIME_VOICE_YIELD_ACK_MAX_CHARS = 500;
+const REALTIME_VOICE_YIELD_ACK_FALLBACK =
+  "I started that work and will share the result when it is ready.";
 
 /**
  * Sender-auth contract revision for official realtime voice plugins.
@@ -544,6 +549,19 @@ export async function consultRealtimeVoiceAgent(params: {
         .finally(() => runRegistration?.cleanup?.());
       assertRealtimeVoiceConsultNotInterrupted(abortSignal, result.meta);
 
+      if (result.meta?.yielded === true) {
+        const acknowledgment =
+          typeof result.meta.yieldAcknowledgment === "string"
+            ? truncateUtf16Safe(
+                result.meta.yieldAcknowledgment.replaceAll(/\s+/g, " ").trim(),
+                REALTIME_VOICE_YIELD_ACK_MAX_CHARS,
+              )
+            : "";
+        return {
+          text: acknowledgment || REALTIME_VOICE_YIELD_ACK_FALLBACK,
+          yielded: true,
+        };
+      }
       const text = collectRealtimeVoiceAgentConsultVisibleText(result.payloads ?? []);
       if (!text) {
         params.logger.warn(

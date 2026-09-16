@@ -243,6 +243,12 @@ export const AgentsDeleteResultSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const Sha256String = Type.String({
+  minLength: 64,
+  maxLength: 64,
+  pattern: "^[a-fA-F0-9]{64}$",
+});
+
 /** File metadata and optional content for agent-local editable files. */
 export const AgentsFileEntrySchema = closedObject({
   name: NonEmptyString,
@@ -254,6 +260,7 @@ export const AgentsFileEntrySchema = closedObject({
   expectedAbsent: Type.Optional(Type.Boolean()),
   size: Type.Optional(Type.Integer({ minimum: 0 })),
   updatedAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
+  hash: Type.Optional(Sha256String),
   content: Type.Optional(Type.String()),
 });
 
@@ -297,14 +304,12 @@ export const AgentsFilesGetResultSchema = Type.Object(
 );
 
 /** Writes one editable agent file. */
-export const AgentsFilesSetParamsSchema = Type.Object(
-  {
-    agentId: NonEmptyString,
-    name: NonEmptyString,
-    content: Type.String(),
-  },
-  { additionalProperties: false },
-);
+export const AgentsFilesSetParamsSchema = closedObject({
+  agentId: NonEmptyString,
+  name: NonEmptyString,
+  content: Type.String(),
+  expectedHash: Type.Optional(Sha256String),
+});
 
 /** Result returned after writing an editable agent file. */
 export const AgentsFilesSetResultSchema = Type.Object(
@@ -449,11 +454,6 @@ export const SkillsBinsResultSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const Sha256String = Type.String({
-  minLength: 64,
-  maxLength: 64,
-  pattern: "^[a-fA-F0-9]{64}$",
-});
 const SkillUploadIdempotencyKeyString = Type.String({
   minLength: 1,
   maxLength: 2048,

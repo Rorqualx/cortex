@@ -84,7 +84,7 @@ const coreCliCommandCatalog = defineCommandDescriptorCatalog([
   },
   {
     name: "uninstall",
-    description: "Uninstall the gateway service + local data (CLI remains)",
+    description: "Uninstall the gateway service + local data",
     hasSubcommands: false,
   },
   {
