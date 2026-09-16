@@ -61,6 +61,7 @@ import {
 import { installSkill } from "../../skills/lifecycle/install.js";
 import { installUploadedSkillArchive } from "../../skills/lifecycle/upload-install.js";
 import { loadWorkspaceSkills } from "../../skills/loading/workspace-skill-loader.js";
+import { ensureSkillsWatcher } from "../../skills/runtime/refresh.js";
 import { loadWorkspaceSkillEntries } from "../../skills/loading/workspace.js";
 import { getRemoteSkillEligibility } from "../../skills/runtime/remote.js";
 import {
@@ -420,6 +421,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
         return;
       }
     }
+    ensureSkillsWatcher({
+      workspaceDir: resolved.workspaceDir,
+      config: resolved.cfg,
+      agentId: resolved.agentId,
+    });
     const report = buildRemoteAwareWorkspaceSkillStatus(
       resolved,
       target?.entry.skillLibrarySelections,

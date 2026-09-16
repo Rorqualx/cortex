@@ -2,6 +2,7 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
+import { ChatAccountSelectionSchema, ModelAuthProfileIdSchema } from "./model-account-selection.js";
 import { NonEmptyString } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
 import { SessionPermissionModeSchema } from "./sessions-row.js";
@@ -40,6 +41,8 @@ export const ModelChoiceSchema = closedObject({
   /** Earliest known retry time in epoch milliseconds, only for unavailable models. */
   unavailableUntil: Type.Optional(Type.Integer({ minimum: 0 })),
   contextWindow: Type.Optional(Type.Integer({ minimum: 1 })),
+  contextTokens: Type.Optional(Type.Integer({ minimum: 1 })),
+  local: Type.Optional(Type.Boolean()),
   contextWindows: Type.Optional(Type.Array(GatewayContextWindowOptionSchema)),
   contextWindowDefault: Type.Optional(NonEmptyString),
   reasoning: Type.Optional(Type.Boolean()),
@@ -318,7 +321,13 @@ export const AgentsFilesSetResultSchema = Type.Object(
 export const ModelsListParamsSchema = Type.Object(
   {
     agentId: Type.Optional(Type.String()),
+    sessionKey: Type.Optional(NonEmptyString),
+    authProfileId: Type.Optional(ModelAuthProfileIdSchema),
+    provider: Type.Optional(NonEmptyString),
+    includeDetails: Type.Optional(Type.Boolean()),
     includeProviderCapabilities: Type.Optional(Type.Boolean()),
+    preparedOnly: Type.Optional(Type.Boolean()),
+    refresh: Type.Optional(Type.Boolean()),
     view: Type.Optional(
       Type.Union([
         Type.Literal("default"),
@@ -328,7 +337,18 @@ export const ModelsListParamsSchema = Type.Object(
       ]),
     ),
   },
-  { additionalProperties: false },
+  {
+    additionalProperties: false,
+    allOf: [
+      {
+        not: {
+          properties: { preparedOnly: { const: true }, refresh: { const: true } },
+          required: ["preparedOnly", "refresh"],
+        },
+      },
+      { not: { required: ["sessionKey", "authProfileId"] } },
+    ],
+  },
 );
 
 /** Reads model-provider credential health for one configured agent. */
@@ -362,13 +382,12 @@ export const ModelCatalogProviderOutcomeSchema = closedObject({
   ]),
 });
 
-export const ModelsListResultSchema = Type.Object(
-  {
-    models: Type.Array(ModelChoiceSchema),
-    providerOutcomes: Type.Optional(Type.Array(ModelCatalogProviderOutcomeSchema)),
-  },
-  { additionalProperties: false },
-);
+export const ModelsListResultSchema = closedObject({
+  models: Type.Array(ModelChoiceSchema),
+  refreshFailed: Type.Optional(Type.Boolean()),
+  accountSelection: Type.Optional(ChatAccountSelectionSchema),
+  providerOutcomes: Type.Optional(Type.Array(ModelCatalogProviderOutcomeSchema)),
+});
 
 /** Runs a bounded live credential probe for one model provider. */
 export const ModelsProbeParamsSchema = closedObject({

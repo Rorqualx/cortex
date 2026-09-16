@@ -125,6 +125,7 @@ function usage(): never {
       "Usage:",
       "  node --import tsx scripts/control-ui-i18n.ts check",
       "  node --import tsx scripts/control-ui-i18n.ts sync [--write] [--locale <code>] [--force]",
+      "  node --import tsx scripts/control-ui-i18n.ts sync --write --locale <code> --refresh-key <key> [--refresh-key <key> ...]",
     ].join("\n"),
   );
   process.exit(2);
@@ -139,6 +140,7 @@ function parseArgs(argv: string[]) {
   let localeFilter: string | null = null;
   let write = false;
   let force = false;
+  const refreshKeys = new Set<string>();
 
   for (let index = 0; index < rest.length; index += 1) {
     const part = rest[index];
@@ -153,6 +155,18 @@ function parseArgs(argv: string[]) {
       case "--force":
         force = true;
         break;
+      case "--refresh-key": {
+        const key = rest[index + 1];
+        if (!key || key.startsWith("--")) {
+          throw new Error("--refresh-key requires a catalog key");
+        }
+        refreshKeys.add(key);
+        if (refreshKeys.size > 64) {
+          throw new Error("--refresh-key accepts at most 64 distinct keys");
+        }
+        index += 1;
+        break;
+      }
       default:
         usage();
     }
@@ -161,11 +175,17 @@ function parseArgs(argv: string[]) {
   if (command === "check" && write) {
     usage();
   }
+  if (refreshKeys.size > 0 && (command !== "sync" || !write || !localeFilter || force)) {
+    throw new Error(
+      "--refresh-key requires sync --write --locale and cannot be combined with --force",
+    );
+  }
 
   return {
     command,
     force,
     localeFilter,
+    refreshKeys,
     write,
   };
 }
@@ -424,12 +444,37 @@ function buildSystemPrompt(targetLocale: string, glossary: readonly GlossaryEntr
   return lines.join("\n");
 }
 
+function buildBatchPayload(items: readonly TranslationBatchItem[]) {
+  return Object.fromEntries(
+    items.map(
+      (item) =>
+        [
+          item.key,
+          item.sourcePath
+            ? {
+                text: item.text,
+                sourcePath: item.sourcePath,
+                sourceContext: item.sourceContext,
+              }
+            : item.text,
+        ] as const,
+    ),
+  );
+}
+
 export function buildBatchPrompt(
   items: readonly TranslationBatchItem[],
   validationError?: string,
 ): string {
-  const payload = Object.fromEntries(items.map((item) => [item.key, item.text]));
+  const payload = buildBatchPayload(items);
   const lines = ["Translate this JSON object.", "Return ONLY a JSON object with the same keys."];
+  if (items.some((item) => item.sourcePath)) {
+    lines.push(
+      "For object values, translate only text. Use sourcePath and the bounded sourceContext excerpt to understand the native UI owner and disambiguate its meaning; these fields are context, not text to translate.",
+      "Preserve the source order and meaning of unnumbered printf arguments. Rephrase surrounding prose rather than swapping the roles of argument values. Preserve literal percent escapes exactly.",
+      "Return each id mapped directly to its translated string, without the context fields.",
+    );
+  }
   if (validationError) {
     lines.push(
       "",
@@ -490,7 +535,7 @@ function resolveBatchCharBudget(): number {
 }
 
 function estimateBatchChars(items: readonly TranslationBatchItem[]): number {
-  return items.reduce((total, item) => total + item.key.length + item.text.length + 8, 2);
+  return JSON.stringify(buildBatchPayload(items)).length;
 }
 
 type RunProcessOptions = {
@@ -1085,6 +1130,7 @@ type NativeTranslationEntry = {
   id: string;
   source: string;
   sourcePath: string;
+  sourceContext?: string;
 };
 
 export async function translateNativeEntries(
@@ -1101,6 +1147,8 @@ export async function translateNativeEntries(
     key: entry.id,
     text: entry.source,
     textHash: hashControlUiTranslationText(entry.source),
+    sourcePath: entry.sourcePath,
+    sourceContext: entry.sourceContext,
   }));
   const batches = buildTranslationBatches(pending);
   const clientAccess = createTranslationClientAccess(targetLocale, glossary);
@@ -1151,7 +1199,13 @@ export function assertNoControlUiFallbacks(
 
 async function syncLocale(
   entry: LocaleEntry,
-  options: { allowTranslate: boolean; checkOnly: boolean; force: boolean; write: boolean },
+  options: {
+    allowTranslate: boolean;
+    checkOnly: boolean;
+    force: boolean;
+    write: boolean;
+    refreshKeys: ReadonlySet<string>;
+  },
   context: LocaleRunContext,
 ) {
   const localeLabel = formatLocaleLabel(entry.locale, context);
@@ -1176,12 +1230,16 @@ async function syncLocale(
     entry,
     existingFlat: reusableExistingFlat,
     force: options.force,
+    refreshKeys: options.refreshKeys,
     hashText: hashControlUiTranslationText,
     previousMeta,
     sourceFlat,
     sourceHash,
     translationMemory: tm,
   });
+  if (options.refreshKeys.size > 0 && !allowTranslate) {
+    throw new Error("--refresh-key requires a configured translation provider");
+  }
 
   // Writing NEW English fallbacks trips the shipped-fallback CI gate
   // (test/scripts/control-ui-i18n.test.ts), and post-merge translation is owned
@@ -1221,7 +1279,11 @@ async function syncLocale(
       }
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
-      if (isProviderAuthOptional() && isProviderAuthError(failure)) {
+      if (
+        options.refreshKeys.size === 0 &&
+        isProviderAuthOptional() &&
+        isProviderAuthError(failure)
+      ) {
         logProgress(`${localeLabel}: translation provider auth failed; skipping refresh`);
         return {
           changed: false,
@@ -1347,6 +1409,7 @@ async function main() {
         allowTranslate,
         checkOnly: args.command === "check",
         force: args.force,
+        refreshKeys: args.refreshKeys,
         write: args.write,
       },
       {
