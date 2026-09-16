@@ -598,7 +598,9 @@ async function reconcileWorkspaceBootstrapCompletionState(params: {
       setupCompletedAt: new Date().toISOString(),
     };
     params.beforePersistentApply?.();
-    const persistedState = mergeWorkspaceSetupState(params.dir, completedState);
+    const persistedState = await mergeWorkspaceSetupState(params.dir, completedState, undefined, {
+      assertCurrent: params.beforePersistentApply,
+    });
     return { repaired: true, bootstrapExists: false, state: persistedState };
   }
 
@@ -618,7 +620,9 @@ async function reconcileWorkspaceBootstrapCompletionState(params: {
     setupCompletedAt: now,
   };
   params.beforePersistentApply?.();
-  const persistedState = mergeWorkspaceSetupState(params.dir, repairedState);
+  const persistedState = await mergeWorkspaceSetupState(params.dir, repairedState, undefined, {
+    assertCurrent: params.beforePersistentApply,
+  });
   params.beforePersistentApply?.();
   try {
     await fs.rm(params.bootstrapPath, { force: true });
@@ -671,15 +675,17 @@ async function maybeWriteWorkspaceAttestation(
   const generatedHashes = await collectGeneratedBootstrapHashes(dir);
   beforePersistentApply?.();
   try {
-    replaceWorkspaceAttestation({
+    await replaceWorkspaceAttestation({
       workspaceDir: dir,
       attestedAtMs,
       generatedHashes,
+      assertCurrent: beforePersistentApply,
     });
   } catch {
     // Attestation is a lifecycle guard; setup should not fail solely because
     // the auxiliary disappearance evidence could not be refreshed.
   }
+  beforePersistentApply?.();
 }
 
 function hasWorkspaceSetupStateMarker(state: WorkspaceSetupState): boolean {
@@ -725,6 +731,7 @@ async function workspaceSetupStateHasSurvivalEvidence(params: {
   dir: string;
   bootstrapPath: string;
   initialState: WorkspaceStateSnapshot;
+  beforePersistentApply?: () => void;
 }): Promise<boolean> {
   if (await pathExists(params.bootstrapPath)) {
     return true;
@@ -732,7 +739,11 @@ async function workspaceSetupStateHasSurvivalEvidence(params: {
   if (await workspaceProfileLooksConfigured({ dir: params.dir })) {
     return true;
   }
-  const currentState = readCanonicalWorkspaceStateSnapshot(params.dir);
+  const currentState = await readCanonicalWorkspaceStateSnapshot(
+    params.dir,
+    undefined,
+    params.beforePersistentApply,
+  );
   if (
     currentState.setup.bootstrapSeededAt !== params.initialState.setup.bootstrapSeededAt ||
     currentState.setup.setupCompletedAt !== params.initialState.setup.setupCompletedAt
@@ -748,11 +759,12 @@ async function workspaceSetupStateHasSurvivalEvidence(params: {
   ].every((fileName) => generatedHashes.has(fileName));
 }
 
-function readCanonicalWorkspaceStateSnapshot(
+async function readCanonicalWorkspaceStateSnapshot(
   dir: string,
   options: OpenClawStateDatabaseOptions = {},
-): WorkspaceStateSnapshot {
-  const snapshot = readWorkspaceStateSnapshot(dir, options);
+  assertCurrent?: () => void,
+): Promise<WorkspaceStateSnapshot> {
+  const snapshot = await readWorkspaceStateSnapshot(dir, { ...options, assertCurrent });
   assertNoUnmigratedWorkspaceState({
     workspaceDir: dir,
   });
@@ -763,7 +775,7 @@ export async function isWorkspaceSetupCompleted(
   dir: string,
   options: OpenClawStateDatabaseOptions = {},
 ): Promise<boolean> {
-  const state = readCanonicalWorkspaceStateSnapshot(dir, options).setup;
+  const state = (await readCanonicalWorkspaceStateSnapshot(dir, options)).setup;
   return typeof state.setupCompletedAt === "string" && state.setupCompletedAt.trim().length > 0;
 }
 
@@ -772,7 +784,7 @@ export async function resolveWorkspaceBootstrapStatus(
   options: OpenClawStateDatabaseOptions = {},
 ): Promise<"pending" | "complete"> {
   const resolvedDir = resolveUserPath(dir);
-  const state = readCanonicalWorkspaceStateSnapshot(resolvedDir, options).setup;
+  const state = (await readCanonicalWorkspaceStateSnapshot(resolvedDir, options)).setup;
   if (typeof state.setupCompletedAt === "string" && state.setupCompletedAt.trim().length > 0) {
     return "complete";
   }
@@ -814,7 +826,7 @@ export async function seedWorkspaceBootstrap(params: {
 
   const dir = resolveUserPath(params.dir);
   const bootstrapPath = path.join(dir, DEFAULT_BOOTSTRAP_FILENAME);
-  const initialState = readCanonicalWorkspaceStateSnapshot(dir, params.stateOptions).setup;
+  const initialState = (await readCanonicalWorkspaceStateSnapshot(dir, params.stateOptions)).setup;
   if (initialState.setupCompletedAt) {
     return "consumed";
   }
@@ -914,7 +926,7 @@ export async function seedWorkspaceBootstrap(params: {
 
   if (!initialState.bootstrapSeededAt) {
     const nowMs = params.nowMs ?? Date.now();
-    mergeWorkspaceSetupState(
+    await mergeWorkspaceSetupState(
       dir,
       {
         bootstrapSeededAt: new Date(nowMs).toISOString(),
@@ -1012,7 +1024,11 @@ export async function ensureAgentWorkspace(params?: {
     await fs.mkdir(dir, { recursive: true });
     return { dir, bootstrapPending: false };
   }
-  let initialState = readCanonicalWorkspaceStateSnapshot(dir);
+  let initialState = await readCanonicalWorkspaceStateSnapshot(
+    dir,
+    undefined,
+    beforePersistentApply,
+  );
   let reseedingExpiredWorkspaceState = false;
   const recentAttestation = recentWorkspaceAttestation(initialState.attestation);
   const recentSetupState = hasRecentWorkspaceSetupState(initialState);
@@ -1026,7 +1042,11 @@ export async function ensureAgentWorkspace(params?: {
     // Expired SQLite evidence must preserve that reseed contract. The write
     // transaction also catches a concurrent attestation refresh.
     beforePersistentApply?.();
-    if (!clearExpiredWorkspaceStateForVanishedWorkspace(dir)) {
+    if (
+      !(await clearExpiredWorkspaceStateForVanishedWorkspace(dir, undefined, {
+        assertCurrent: beforePersistentApply,
+      }))
+    ) {
       throw new WorkspaceVanishedError({ workspaceDir: dir });
     }
   }
@@ -1047,13 +1067,18 @@ export async function ensureAgentWorkspace(params?: {
         dir,
         bootstrapPath,
         initialState,
+        beforePersistentApply,
       }))
     ) {
       if (recentSetupState) {
         throw new WorkspaceVanishedError({ workspaceDir: dir });
       }
       beforePersistentApply?.();
-      if (!clearExpiredWorkspaceStateForVanishedWorkspace(dir)) {
+      if (
+        !(await clearExpiredWorkspaceStateForVanishedWorkspace(dir, undefined, {
+          assertCurrent: beforePersistentApply,
+        }))
+      ) {
         throw new WorkspaceVanishedError({ workspaceDir: dir });
       }
     }
@@ -1092,7 +1117,11 @@ export async function ensureAgentWorkspace(params?: {
     // A wiped workspace can leave its directory (or only .git) behind. Clear
     // expired SQLite evidence before deciding whether setup already completed.
     beforePersistentApply?.();
-    if (!clearExpiredWorkspaceStateForVanishedWorkspace(dir)) {
+    if (
+      !(await clearExpiredWorkspaceStateForVanishedWorkspace(dir, undefined, {
+        assertCurrent: beforePersistentApply,
+      }))
+    ) {
       throw new WorkspaceVanishedError({ workspaceDir: dir });
     }
   }
@@ -1112,14 +1141,23 @@ export async function ensureAgentWorkspace(params?: {
       // The transaction rejects a concurrent refresh. Only the expired
       // snapshot we just inspected may be cleared before reseeding.
       beforePersistentApply?.();
-      if (!clearExpiredWorkspaceStateForVanishedWorkspace(dir)) {
+      if (
+        !(await clearExpiredWorkspaceStateForVanishedWorkspace(dir, undefined, {
+          assertCurrent: beforePersistentApply,
+        }))
+      ) {
         throw new WorkspaceVanishedError({ workspaceDir: dir });
       }
     }
   } else if (
     hasWorkspaceSetupStateMarker(initialState.setup) &&
     !isBrandNewWorkspace &&
-    !(await workspaceSetupStateHasSurvivalEvidence({ dir, bootstrapPath, initialState }))
+    !(await workspaceSetupStateHasSurvivalEvidence({
+      dir,
+      bootstrapPath,
+      initialState,
+      beforePersistentApply,
+    }))
   ) {
     // Setup can outlive a best-effort attestation write or arrive alone from
     // Doctor. Ambiguous partial remnants must fail closed, not inherit stale
@@ -1129,7 +1167,11 @@ export async function ensureAgentWorkspace(params?: {
     }
     reseedingExpiredWorkspaceState = true;
     beforePersistentApply?.();
-    if (!clearExpiredWorkspaceStateForVanishedWorkspace(dir)) {
+    if (
+      !(await clearExpiredWorkspaceStateForVanishedWorkspace(dir, undefined, {
+        assertCurrent: beforePersistentApply,
+      }))
+    ) {
       throw new WorkspaceVanishedError({ workspaceDir: dir });
     }
   }
@@ -1140,7 +1182,7 @@ export async function ensureAgentWorkspace(params?: {
   const userTemplate = await loadTemplate(DEFAULT_USER_FILENAME);
   // Template and filesystem checks above are async. Another process may have
   // completed setup while they ran, so optional-file policy needs fresh state.
-  initialState = readCanonicalWorkspaceStateSnapshot(dir);
+  initialState = await readCanonicalWorkspaceStateSnapshot(dir, undefined, beforePersistentApply);
   const skipOptionalBootstrapFiles = new Set(params?.skipOptionalBootstrapFiles ?? []);
   // When the workspace is already configured, skip optional bootstrap files to
   // prevent subagent spawns from recreating root-level SOUL.md, USER.md, or
@@ -1165,7 +1207,8 @@ export async function ensureAgentWorkspace(params?: {
     await publishBootstrapFile(userPath, userTemplate, beforePersistentApply);
   }
 
-  let state = readCanonicalWorkspaceStateSnapshot(dir).setup;
+  let state = (await readCanonicalWorkspaceStateSnapshot(dir, undefined, beforePersistentApply))
+    .setup;
   let stateDirty = false;
   const markState = (next: Partial<WorkspaceSetupState>) => {
     state = { ...state, ...next };
@@ -1231,7 +1274,9 @@ export async function ensureAgentWorkspace(params?: {
 
   if (stateDirty) {
     beforePersistentApply?.();
-    state = mergeWorkspaceSetupState(dir, state);
+    state = await mergeWorkspaceSetupState(dir, state, undefined, {
+      assertCurrent: beforePersistentApply,
+    });
   }
   await ensureGitRepo(dir, isBrandNewWorkspace, beforePersistentApply);
   await maybeWriteWorkspaceAttestation(dir, beforePersistentApply);

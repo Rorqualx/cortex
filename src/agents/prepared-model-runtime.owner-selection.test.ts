@@ -191,8 +191,7 @@ describe("prepared model runtime owner selection", () => {
           workspaceDir: state.workspaceDir,
           loadRuntimePlugins: true,
         },
-        undefined,
-        catalogMode,
+        { catalogMode },
       );
       try {
         expect(lease.snapshot.modelCatalog.entries.map(({ id }) => id)).toEqual(

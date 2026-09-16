@@ -11,6 +11,8 @@ export interface Skill {
   locationNote?: string;
   /** Prepared instructions for transferred bundles or non-filesystem locators such as node://. */
   readContent?: string;
+  /** Prepared runtime identity of instruction bytes, or the complete delivered bundle tree. */
+  contentHash?: string;
   filePath: string;
   baseDir: string;
   /** Deterministic marker for the SKILL.md content rendered as <version>. */

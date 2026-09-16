@@ -584,9 +584,7 @@ export async function removeWorkspaceDirs(
       }
     }
     if (!opts?.dryRun && statePlan) {
-      await attempt(stateLabel, () => {
-        deleteWorkspaceState(statePlan);
-      });
+      await attempt(stateLabel, () => deleteWorkspaceState(statePlan));
     }
   }
   return [...failures];

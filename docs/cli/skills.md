@@ -157,6 +157,16 @@ Notes:
 | `list`                           | Default action when no subcommand is provided.                                                                                                                                                                                                                                                                                    |
 | `list`/`info`/`check` output     | Rendered output goes to stdout. With `--json`, the machine-readable payload stays on stdout for pipes and scripts.                                                                                                                                                                                                                |
 
+On servers supporting full scanner reports, verification JSON includes `security.scannerReports.aig` (the full upstream SARIF report)
+and `security.scannerReports.skillspector` (the full upstream JSON report) when ClawHub
+has retained them. Nested scanner fields pass through unchanged, including
+coverage and incomplete-analysis details. A report is `null` when unavailable,
+including older scans whose full output was not retained; summaries are not
+substituted. Older servers may omit `security.scannerReports` entirely. `verify`
+reads the stored scan and does not start another scan. Verification responses
+can be up to 64 MiB; larger responses fail explicitly without printing partial
+reports. Other ClawHub JSON requests retain their 16 MiB limit.
+
 ## Release trust
 
 Community ClawHub skill installs and updates check trust before downloading.

@@ -14,6 +14,7 @@ type ToolRecoveryState = {
 };
 
 type ToolErrorState = {
+  read: () => ToolTerminalState;
   recordFailure: (failure: ToolErrorSummary) => ToolTerminalState;
   recordSuccess: (
     success: ToolAction,
@@ -39,6 +40,7 @@ export function createToolErrorState(): ToolErrorState {
   };
 
   return {
+    read: terminalState,
     recordFailure(failure) {
       if (recovery) {
         const recoveredIndex = recovery.actions.findIndex((action) =>

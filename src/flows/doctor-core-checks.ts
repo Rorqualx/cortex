@@ -394,8 +394,16 @@ const skillWorkshopRelocationCheck: HealthCheck = {
       config: ctx.cfg,
       env: process.env,
     });
+    const automationFindings = (inspection.automationReferences ?? []).map((reference) => ({
+      checkId: SKILL_WORKSHOP_RELOCATION_CHECK_ID,
+      severity: "warning" as const,
+      target: reference.automationId,
+      path: reference.field,
+      message: reference.message,
+      fixHint: reference.fixHint,
+    }));
     if (inspection.externalProposalCount === 0 && inspection.legacyBackupRootCount === 0) {
-      return [];
+      return automationFindings;
     }
     const fixHints: string[] = [];
     if (
@@ -414,6 +422,7 @@ const skillWorkshopRelocationCheck: HealthCheck = {
       );
     }
     return [
+      ...automationFindings,
       {
         checkId: SKILL_WORKSHOP_RELOCATION_CHECK_ID,
         severity: "warning",

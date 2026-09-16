@@ -15,8 +15,6 @@ import {
 } from "openclaw/plugin-sdk/runtime-env";
 import {
   canonicalizeWebhookRouteKey,
-  normalizePluginHttpPath,
-  normalizeWebhookPath,
   registerWebhookTargetWithPluginRoute,
   resolveSingleWebhookTarget,
 } from "openclaw/plugin-sdk/webhook-ingress";
@@ -47,7 +45,11 @@ import {
   rejectLineWebhookRequest,
 } from "./webhook-node.js";
 import { LineWebhookTerminalDeliveryError } from "./webhook-spool.js";
-import { parseLineWebhookBody, validateLineSignature } from "./webhook-utils.js";
+import {
+  parseLineWebhookBody,
+  resolveLineWebhookPath,
+  validateLineSignature,
+} from "./webhook-utils.js";
 
 interface MonitorLineProviderOptions {
   channelAccessToken: string;
@@ -252,7 +254,7 @@ export async function monitorLineProvider(
               delivery: {
                 // Core renders presentations inside the outbound send pipeline only,
                 // so this path resolves them before either branch reads channelData.
-                preparePayload: prepareLineReplyPayload,
+                preparePayload: (payload) => prepareLineReplyPayload(payload, ctxPayload.From),
                 durable: (payload, info) =>
                   resolveLineDurableReplyOptions({
                     payload,
@@ -334,9 +336,7 @@ export async function monitorLineProvider(
     },
   });
 
-  const normalizedPath = normalizeWebhookPath(
-    normalizePluginHttpPath(webhookPath, "/line/webhook") ?? "/line/webhook",
-  );
+  const normalizedPath = resolveLineWebhookPath(webhookPath);
   const webhookRouteKey = canonicalizeWebhookRouteKey(normalizedPath);
   const createScopedLineWebhookHandler = (target: LineWebhookTarget) =>
     createLineNodeWebhookHandler({
