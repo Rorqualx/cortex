@@ -21,24 +21,15 @@ function normalizedAlias(value: string | null | undefined): string | undefined {
   return normalized || undefined;
 }
 
-function localAliases(plugin: PluginCatalogEntry): string[] {
-  const aliases = [plugin.id, plugin.packageName];
-  if (plugin.install?.source === "clawhub") {
-    aliases.push(plugin.install.packageName);
-  }
-  return aliases.flatMap((value) => {
-    const normalized = normalizedAlias(value);
-    return normalized ? [normalized] : [];
-  });
-}
-
-function indexLocalPlugins(
+function indexClawHubPlugins(
   plugins: readonly PluginCatalogEntry[],
 ): Map<string, PluginCatalogEntry> {
   const index = new Map<string, PluginCatalogEntry>();
   for (const plugin of plugins) {
-    for (const alias of localAliases(plugin)) {
-      index.set(alias, plugin);
+    const packageName = localClawHubIdentity(plugin);
+    const identity = normalizedAlias(packageName);
+    if (identity) {
+      index.set(identity, plugin);
     }
   }
   return index;
@@ -48,14 +39,7 @@ function findLocalPlugin(
   plugin: ClawHubPluginCatalogEntry,
   index: ReadonlyMap<string, PluginCatalogEntry>,
 ): PluginCatalogEntry | undefined {
-  for (const alias of [plugin.runtimeId, plugin.packageName]) {
-    const normalized = normalizedAlias(alias);
-    const match = normalized ? index.get(normalized) : undefined;
-    if (match) {
-      return match;
-    }
-  }
-  return undefined;
+  return index.get(normalizedAlias(plugin.packageName) ?? "");
 }
 
 function projectLocalFacts(
@@ -96,7 +80,7 @@ function encodeDiscoveryId(prefix: string, identity: string): string {
   return `${prefix}${Buffer.from(normalized, "utf8").toString("base64url")}`;
 }
 
-function encodePluginDiscoveryId(packageName: string): string {
+export function encodePluginDiscoveryId(packageName: string): string {
   const normalized = packageName.trim();
   if (!normalized) {
     throw new Error("Cannot encode an empty ClawHub package identity.");
@@ -145,13 +129,14 @@ export function joinClawHubPluginCatalog(params: {
   query?: string;
   cursor?: string;
 }): PluginDiscoveryEntry[] {
-  const localIndex = indexLocalPlugins(params.local.plugins);
+  const localIndex = indexClawHubPlugins(params.local.plugins);
   const remote = params.remote.map((plugin) => {
     const localPlugin = findLocalPlugin(plugin, localIndex);
     return {
       id: encodePluginDiscoveryId(plugin.packageName),
       catalog: {
         name: plugin.displayName,
+        packageName: plugin.packageName,
         ...(plugin.summary ? { summary: plugin.summary } : {}),
         family: plugin.family,
         ...(plugin.ownerHandle ? { author: plugin.ownerHandle } : {}),
@@ -167,19 +152,32 @@ export function joinClawHubPluginCatalog(params: {
       local: projectLocalFacts(localPlugin, params.local.mutationAllowed),
     };
   });
-  if (!params.includeBundledOnly) {
+  if ((!params.includeBundledOnly && params.intent !== "all") || params.cursor) {
     return remote;
   }
   const publishedLocalPlugins = new Set<PluginCatalogEntry>();
-  for (const plugin of [...(params.published ?? []), ...params.remote]) {
+  for (const plugin of params.remote) {
     const localPlugin = findLocalPlugin(plugin, localIndex);
     if (localPlugin) {
       publishedLocalPlugins.add(localPlugin);
     }
   }
+  if (params.includeBundledOnly) {
+    for (const plugin of params.published ?? []) {
+      const localPlugin = findLocalPlugin(plugin, localIndex);
+      if (localPlugin && !(params.intent === "all" && localPlugin.installed)) {
+        publishedLocalPlugins.add(localPlugin);
+      }
+    }
+  }
   const query = normalizedAlias(params.query);
   const localOnly = params.local.plugins
-    .filter((plugin) => plugin.origin === "bundled" && !publishedLocalPlugins.has(plugin))
+    .filter(
+      (plugin) =>
+        !publishedLocalPlugins.has(plugin) &&
+        ((params.intent === "all" && plugin.installed) ||
+          (params.includeBundledOnly && plugin.origin === "bundled")),
+    )
     .filter((plugin) => {
       const categories = localDiscoveryCategories(plugin);
       if (params.category && !categories.includes(params.category)) {
@@ -193,41 +191,65 @@ export function joinClawHubPluginCatalog(params: {
         .some((value) => value.includes(query));
     })
     .toSorted((left, right) => left.name.localeCompare(right.name))
-    .map((plugin) => projectLocalDiscoveryEntry(plugin, params.local.mutationAllowed));
-  return [...localOnly, ...remote];
+    .map((plugin) =>
+      projectLocalDiscoveryEntry(plugin, params.local.mutationAllowed, params.includeBundledOnly),
+    );
+  const joined = [...localOnly, ...remote];
+  return params.intent === "all" && !query ? joined.toSorted(compareOfficialDownloads) : joined;
 }
 
 function localDiscoveryCategories(plugin: PluginCatalogEntry): string[] {
   return plugin.categories ?? (plugin.category ? [plugin.category] : []);
 }
 
-function localDiscoveryIdentity(plugin: PluginCatalogEntry): string {
-  return plugin.packageName ?? plugin.id;
+function localClawHubIdentity(plugin: PluginCatalogEntry): string | undefined {
+  return (
+    plugin.clawhubPackage ??
+    (plugin.install?.source === "clawhub" ? plugin.install.packageName : undefined)
+  );
 }
 
 function projectLocalDiscoveryEntry(
   plugin: PluginCatalogEntry,
   mutationAllowed: boolean,
+  publicationVerified = false,
 ): PluginDiscoveryEntry {
+  const clawhubIdentity = localClawHubIdentity(plugin);
+  const publishedToClawHub = clawhubIdentity ? true : publicationVerified ? false : undefined;
+  const packageName = plugin.clawhubPackage ?? plugin.packageName;
   return {
-    id: encodeLocalPluginDiscoveryId(localDiscoveryIdentity(plugin)),
+    id: clawhubIdentity
+      ? encodePluginDiscoveryId(clawhubIdentity)
+      : encodeLocalPluginDiscoveryId(plugin.id),
     catalog: {
       name: plugin.name,
+      ...(packageName ? { packageName } : {}),
       ...(plugin.description ? { summary: plugin.description } : {}),
       official: false,
       categories: localDiscoveryCategories(plugin),
-      publishedToClawHub: false,
+      ...(publishedToClawHub !== undefined ? { publishedToClawHub } : {}),
       ...(plugin.version ? { latestVersion: plugin.version } : {}),
     },
     local: projectLocalFacts(plugin, mutationAllowed, false),
   };
 }
 
+function compareOfficialDownloads(left: PluginDiscoveryEntry, right: PluginDiscoveryEntry): number {
+  if (left.catalog.official !== right.catalog.official) {
+    return left.catalog.official ? -1 : 1;
+  }
+  const downloadOrder = (right.catalog.downloads ?? 0) - (left.catalog.downloads ?? 0);
+  return downloadOrder || left.catalog.name.localeCompare(right.catalog.name);
+}
+
 export function findLocalPluginByIdentity(
   local: PluginsListResult,
   identity: string,
+  origin: "clawhub" | "local" = "clawhub",
 ): PluginCatalogEntry | undefined {
-  return indexLocalPlugins(local.plugins).get(normalizedAlias(identity) ?? "");
+  return origin === "local"
+    ? local.plugins.find((plugin) => plugin.id === identity)
+    : indexClawHubPlugins(local.plugins).get(normalizedAlias(identity) ?? "");
 }
 
 export function joinLocalPluginDetail(params: {
@@ -245,7 +267,7 @@ export function joinLocalPluginDetail(params: {
       topics: [],
       configuration: [],
       mcpServers: inspection?.declared.mcpServers ?? [],
-      skills: (inspection?.declared.skills ?? []).map((name) => ({ name })),
+      skills: (inspection?.components.skills ?? []).map((name) => ({ name })),
       versions: [],
     },
   };

@@ -569,25 +569,42 @@ export const SkillsSearchParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/** Marker ClawHub sets on a result whose source it has not scanned. */
+const CLAWHUB_SKILLS_SH_TRUST_STATE_VALUE = "not-scanned-by-clawhub";
+
 /** Ranked skill registry search results. */
-export const SkillsSearchResultSchema = Type.Object(
-  {
-    results: Type.Array(
-      Type.Object(
-        {
-          score: Type.Number(),
-          slug: NonEmptyString,
-          displayName: NonEmptyString,
-          summary: Type.Optional(Type.String()),
-          version: Type.Optional(NonEmptyString),
-          updatedAt: Type.Optional(Type.Integer()),
-        },
-        { additionalProperties: false },
+export const SkillsSearchResultSchema = closedObject({
+  results: Type.Array(
+    closedObject({
+      score: Type.Number(),
+      slug: NonEmptyString,
+      registry: NonEmptyString,
+      ownerHandle: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
+      installRef: Type.String({
+        minLength: 1,
+        description:
+          "Source-qualified reference for this result. Send it as `slug` to skills.install; several publishers can share one slug.",
+      }),
+      installOnly: Type.Optional(
+        Type.Literal(true, {
+          description:
+            "Present when ClawHub serves this result install-only: offer install directly with `installRef`, because skills.detail cannot answer for it. Absence means the ordinary review-then-install flow, so results from servers that predate this field keep their existing behavior.",
+        }),
       ),
-    ),
-  },
-  { additionalProperties: false },
-);
+      trustState: Type.Optional(
+        Type.Literal(CLAWHUB_SKILLS_SH_TRUST_STATE_VALUE, {
+          description:
+            "Present when ClawHub resolves this result from a source it has not scanned.",
+        }),
+      ),
+      displayName: NonEmptyString,
+      summary: Type.Optional(Type.String()),
+      icon: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      version: Type.Optional(NonEmptyString),
+      updatedAt: Type.Optional(Type.Integer()),
+    }),
+  ),
+});
 
 /** Reads registry detail for one skill slug. */
 export const SkillsDetailParamsSchema = Type.Object(

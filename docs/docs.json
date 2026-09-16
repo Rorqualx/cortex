@@ -1642,6 +1642,7 @@
                 "pages": [
                   "channels/pairing",
                   "channels/access-groups",
+                  "channels/bot-loop-protection",
                   "channels/group-messages",
                   "channels/groups",
                   "channels/ambient-room-events",
@@ -1789,6 +1790,7 @@
                       "plugins/codex-supervision"
                     ]
                   },
+                  "plugins/copilot",
                   {
                     "group": "Meetings and calls",
                     "pages": [
@@ -2048,13 +2050,13 @@
                         "pages": [
                           "tools/browser/setup",
                           "tools/browser/profiles",
+                          "tools/browser/existing-session",
                           "tools/browser/configuration",
                           "tools/browser/remote",
                           "tools/browser/security",
-                          "tools/browser/existing-session",
                           "tools/browser/isolation",
-                          "tools/browser/troubleshooting",
-                          "tools/browser/agent-tools"
+                          "tools/browser/agent-tools",
+                          "tools/browser/troubleshooting"
                         ]
                       },
                       "tools/browser-control",
@@ -2195,6 +2197,7 @@
                       "providers/alibaba",
                       "providers/anthropic",
                       "providers/arcee",
+                      "providers/baseten",
                       "providers/bedrock",
                       "providers/bedrock-mantle",
                       "providers/cerebras",
@@ -2633,6 +2636,7 @@
                 "pages": [
                   "security/network-proxy",
                   "security/formal-verification",
+                  "security/incident-response",
                   "security/THREAT-MODEL-ATLAS",
                   "security/THREAT-MODEL-ATLAS/reconnaissance",
                   "security/THREAT-MODEL-ATLAS/initial-access",
@@ -2667,8 +2671,7 @@
                       "nodes/media-playback",
                       "nodes/images",
                       "nodes/audio",
-                      "nodes/camera",
-                      "tools/tts"
+                      "nodes/camera"
                     ]
                   },
                   {
@@ -2732,7 +2735,6 @@
                   {
                     "group": "Running the service",
                     "pages": [
-                      "cli/openclaw",
                       "cli/daemon",
                       "cli/fleet",
                       "cli/gateway",
@@ -2757,6 +2759,7 @@
                       "cli/backup",
                       "cli/migrate",
                       "cli/onboard",
+                      "cli/openclaw",
                       "cli/reset",
                       "cli/setup",
                       "cli/uninstall",
@@ -2803,7 +2806,9 @@
                       "cli/models",
                       "cli/promos",
                       "cli/sessions",
-                      "cli/tasks"
+                      "cli/tasks",
+                      "cli/transcripts",
+                      "cli/wiki"
                     ]
                   },
                   {
@@ -2908,8 +2913,7 @@
                           "cli/mcp/apps"
                         ]
                       },
-                      "cli/proxy",
-                      "cli/wiki"
+                      "cli/proxy"
                     ]
                   }
                 ]

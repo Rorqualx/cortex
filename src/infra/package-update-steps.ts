@@ -8,10 +8,10 @@ import { resolveBunGlobalInstallOwner } from "./detect-package-manager.js";
 import { formatErrorMessage } from "./errors.js";
 import { readPackageVersion } from "./package-json.js";
 import { completePendingPackageLifecycle } from "./package-lifecycle.js";
+import { readPackageVersionIfPresent } from "./package-update-integrity.js";
 import {
   isBlockingPackageUpdateStep,
   PackageUpdateActivationError,
-  readPackageVersionIfPresent,
   removePackageUpdatePath,
   swapStagedPackageInstall,
   type PackageUpdateTransaction,

@@ -11,9 +11,13 @@ import {
   readRequiredClawHubBooleanField,
   readRequiredClawHubNumberField,
   readRequiredClawHubStringField,
-  requestClawHub,
+  withClawHubResponse,
   type ClawHubFetch,
 } from "./clawhub-client.js";
+import {
+  fetchClawHubPackageSecurity,
+  type ClawHubPackageSecurityResponse,
+} from "./clawhub-packages.js";
 
 export type ClawHubPluginCatalogEntry = {
   packageName: string;
@@ -78,6 +82,7 @@ type ClawHubPluginVerification = {
 
 type ClawHubPluginSecurity = {
   status: string;
+  auditUrl?: string;
   verdict?: string;
   summary?: string;
   guidance?: string;
@@ -341,22 +346,23 @@ function parseVerification(
   };
 }
 
-function parseSecurity(
-  value: Record<string, unknown> | undefined,
-): ClawHubPluginSecurity | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const verdict = readClawHubStringField(value, "verdict", "plugin security analysis");
-  const summary = readClawHubStringField(value, "summary", "plugin security analysis");
-  const guidance = readClawHubStringField(value, "guidance", "plugin security analysis");
-  const checkedAt = readOptionalNonNegativeNumber(value, "checkedAt", "plugin security analysis");
+function projectSecurity(value: ClawHubPackageSecurityResponse): ClawHubPluginSecurity {
+  const trust = value.trust;
+  const moderationStatus =
+    trust.moderationState && trust.moderationState !== "approved"
+      ? trust.moderationState
+      : undefined;
+  const status = trust.blockedFromDownload
+    ? "blocked"
+    : trust.pending
+      ? "pending"
+      : trust.stale
+        ? "stale"
+        : (moderationStatus ?? trust.scanStatus ?? "unknown");
   return {
-    status: readRequiredClawHubStringField(value, "status", "plugin security analysis"),
-    ...(verdict ? { verdict } : {}),
-    ...(summary ? { summary } : {}),
-    ...(guidance ? { guidance } : {}),
-    ...(checkedAt !== undefined ? { checkedAt } : {}),
+    status,
+    auditUrl: value.securityAuditUrl,
+    summary: value.overview,
   };
 }
 
@@ -381,34 +387,37 @@ function parseVersions(value: unknown): ClawHubPluginVersion[] {
 async function fetchOptionalReadme(
   params: ClawHubReadOptions & { packageName: string; version?: string },
 ): Promise<string | undefined> {
-  const { response, url, hasToken } = await requestClawHub({
-    baseUrl: params.baseUrl,
-    token: params.token,
-    skipAuth: params.skipAuth,
-    timeoutMs: params.timeoutMs,
-    fetchImpl: params.fetchImpl,
-    path: `/api/v1/packages/${encodeURIComponent(params.packageName)}/file`,
-    search: {
-      path: "README.md",
-      preview: "1",
-      version: params.version,
+  return await withClawHubResponse(
+    {
+      baseUrl: params.baseUrl,
+      token: params.token,
+      skipAuth: params.skipAuth,
+      timeoutMs: params.timeoutMs,
+      fetchImpl: params.fetchImpl,
+      path: `/api/v1/packages/${encodeURIComponent(params.packageName)}/file`,
+      search: {
+        path: "README.md",
+        preview: "1",
+        version: params.version,
+      },
+      headers: { Accept: "text/plain" },
     },
-    headers: { Accept: "text/plain" },
-  });
-  if ([403, 404, 415, 423].includes(response.status)) {
-    await response.body?.cancel().catch(() => undefined);
-    return undefined;
-  }
-  if (!response.ok) {
-    throw await createClawHubError(response, url, hasToken, params.timeoutMs);
-  }
-  const bytes = await readClawHubBytes({
-    response,
-    maxBytes: 512 * 1024,
-    timeoutMs: params.timeoutMs,
-    resourceLabel: `${url.pathname} README`,
-  });
-  return decodeClawHubResponseBody(bytes);
+    async ({ response, url, hasToken }) => {
+      if ([403, 404, 415, 423].includes(response.status)) {
+        return undefined;
+      }
+      if (!response.ok) {
+        throw await createClawHubError(response, url, hasToken, params.timeoutMs);
+      }
+      const bytes = await readClawHubBytes({
+        response,
+        maxBytes: 512 * 1024,
+        timeoutMs: params.timeoutMs,
+        resourceLabel: `${url.pathname} README`,
+      });
+      return decodeClawHubResponseBody(bytes);
+    },
+  );
 }
 
 export async function fetchClawHubPluginCatalog(
@@ -448,12 +457,14 @@ export async function fetchClawHubPluginCatalog(
       cursor: params.cursor,
       featured: params.intent === "featured" ? "true" : undefined,
       isOfficial: params.intent === "official" ? "true" : undefined,
+      officialFirst:
+        params.intent === "featured" || params.intent === "trending" ? undefined : "true",
       sort:
         params.intent === "featured"
           ? undefined
           : params.intent === "trending"
             ? "trending"
-            : "recommended",
+            : "downloads",
       limit: params.limit ? String(params.limit) : undefined,
     },
   });
@@ -610,7 +621,7 @@ export async function fetchClawHubPluginVersionCategories(
 }
 
 export async function fetchClawHubPluginDetail(
-  params: ClawHubReadOptions & { packageName: string },
+  params: ClawHubReadOptions & { packageName: string; version?: string },
 ): Promise<ClawHubPluginDetail> {
   const value = await fetchClawHubJson<unknown>({
     baseUrl: params.baseUrl,
@@ -650,8 +661,8 @@ export async function fetchClawHubPluginDetail(
     timeoutMs: params.timeoutMs,
     fetchImpl: params.fetchImpl,
   };
-  const version = catalog.latestVersion;
-  const [versionsValue, versionValue, readme] = await Promise.all([
+  const version = params.version ?? catalog.latestVersion;
+  const [versionsValue, versionValue, readme, security] = await Promise.all([
     fetchClawHubJson<unknown>({
       ...shared,
       path: `/api/v1/packages/${encodeURIComponent(params.packageName)}/versions`,
@@ -664,6 +675,15 @@ export async function fetchClawHubPluginDetail(
         })
       : Promise.resolve(undefined),
     fetchOptionalReadme({ ...shared, packageName: params.packageName, version }),
+    version
+      ? fetchClawHubPackageSecurity({
+          ...shared,
+          name: params.packageName,
+          version,
+        })
+          .then(projectSecurity)
+          .catch(() => undefined)
+      : Promise.resolve(undefined),
   ]);
   if (versionValue !== undefined && !isRecord(versionValue)) {
     throw new Error("Malformed ClawHub plugin version response: expected an object.");
@@ -680,9 +700,6 @@ export async function fetchClawHubPluginDetail(
     versionRecord
       ? readOptionalRecord(versionRecord, "verification", "plugin version")
       : readOptionalRecord(value.package, "verification", "plugin detail"),
-  );
-  const security = parseSecurity(
-    versionRecord ? readOptionalRecord(versionRecord, "llmAnalysis", "plugin version") : undefined,
   );
   const owner = {
     ...(ownerHandle ? { handle: ownerHandle } : {}),

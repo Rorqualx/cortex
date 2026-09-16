@@ -8,6 +8,8 @@ import {
   normalizePromptCapabilityIds,
   normalizeStructuredPromptSection,
   SYSTEM_PROMPT_CACHE_BOUNDARY,
+  SYSTEM_PROMPT_RELOCATABLE_BOUNDARY,
+  SYSTEM_PROMPT_RELOCATABLE_BOUNDARY_END,
 } from "@openclaw/ai/internal/shared";
 import {
   normalizeLowercaseStringOrEmpty,
@@ -53,6 +55,7 @@ import {
   buildOpenClawToolFallbackText,
   shouldRenderOpenClawToolWorkflowHints,
 } from "./prompt-surface.js";
+import { buildUiPresentationPrompt } from "./ui-presentation-prompt.js";
 import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
 import { buildSkillForgePromptSection, SKILL_FORGE_TOOL_NAME } from "./skill-forge-prompt.js";
 import {
@@ -767,6 +770,7 @@ export function buildAgentSystemPrompt(params: {
   runtimeInfo?: SystemPromptRuntimeInfo;
   messageToolHints?: string[];
   toolSchemaDirectoryPrompt?: string;
+  messageTool?: Parameters<typeof buildUiPresentationPrompt>[0]["messageTool"];
   sandboxInfo?: EmbeddedSandboxInfo;
   /** Whether read/write/edit/apply_patch are restricted to the workspace root. */
   fsWorkspaceOnly?: boolean;
@@ -832,7 +836,7 @@ export function buildAgentSystemPrompt(params: {
     conversations_turn: "Send and wait for one correlated external reply",
     openclaw: "Gateway restart/system setup/config",
     gateway:
-      "Read gateway config/schema; owner-only update on explicit request; automatic restart and completion notice; never via shell",
+      "Read this Gateway's config/schema; owner-only self-update on explicit request; automatic restart and completion notice",
     agents_list: acpSpawnRuntimeEnabled
       ? "List allowed OpenClaw subagent ids; not ACP ids"
       : "List allowed subagent ids",
@@ -932,6 +936,7 @@ export function buildAgentSystemPrompt(params: {
 
   const hasGateway = availableTools.has("gateway");
   const hasOpenClaw = availableTools.has("openclaw");
+  const hasExec = availableTools.has("exec");
   const hasAutomations = availableTools.has(AUTOMATIONS_TOOL_NAME);
   const readToolName = resolveToolName("read");
   const execToolName = resolveToolName("exec");
@@ -1265,11 +1270,17 @@ export function buildAgentSystemPrompt(params: {
           ? "Config read: `gateway` (`config.get|config.schema.lookup`). Write/restart unavailable; ask human."
           : "",
       [
+        "For the Gateway hosting this session:",
         hasGateway
           ? "Update OpenClaw: `gateway` action update.run, only on explicit user request; restart and completion notice are automatic."
           : `${hasOpenClaw ? "Updates" : "System controls unavailable. Updates and restarts"} need the OpenClaw owner: tell the user to run \`openclaw update\` in a terminal or use the Control UI.`,
         `Never run ${hasGateway ? "openclaw update, npm install -g openclaw, or stop/restart" : "npm install -g openclaw or stop"} the gateway service via exec.`,
       ].join(" "),
+      ...(hasExec
+        ? [
+            "For a user-requested update on another host, verify it is not this Gateway, then use exec/SSH with `openclaw update --yes`; normal exec approvals still apply.",
+          ]
+        : []),
       "",
       ...skillsSection,
       ...skillWorkshopSection,
@@ -1424,6 +1435,20 @@ export function buildAgentSystemPrompt(params: {
           }),
         ]),
     ...buildUserIdentitySection(ownerLine, isMinimal),
+    ...(!isMinimal
+      ? [
+          buildUiPresentationPrompt({
+            messageTool: messageToolAvailable ? params.messageTool : undefined,
+            showWidgetToolName: availableTools.has("show_widget")
+              ? resolveToolName("show_widget")
+              : undefined,
+            dashboardToolName: availableTools.has("dashboard")
+              ? resolveToolName("dashboard")
+              : undefined,
+            portalToolName: availableTools.has("portal") ? resolveToolName("portal") : undefined,
+          }),
+        ]
+      : []),
     ...buildWebchatCanvasSection({
       isMinimal,
       runtimeChannel,
@@ -1482,10 +1507,13 @@ export function buildAgentSystemPrompt(params: {
 
   lines.push(
     "## Runtime",
-    buildRuntimeLine(runtimeInfo, runtimeChannel, runtimeCapabilities),
     ...(runtimeInfo?.gitCoauthorPrompt ? [runtimeInfo.gitCoauthorPrompt] : []),
     ...(modelIdentityLine ? [modelIdentityLine] : []),
     `Reasoning=${reasoningLevel}; hidden unless on/stream. Toggle /reasoning; /status shows when enabled.`,
+    // Only Runtime facts may move behind tools. Close the region before callers
+    // append hook instructions or permission notices that must retain their role.
+    SYSTEM_PROMPT_RELOCATABLE_BOUNDARY,
+    `${buildRuntimeLine(runtimeInfo, runtimeChannel, runtimeCapabilities)}${SYSTEM_PROMPT_RELOCATABLE_BOUNDARY_END}`,
   );
 
   return lines.filter(Boolean).join("\n");

@@ -1274,44 +1274,31 @@ async function resolveAgentSoulFilePath(
 
 export async function loadWorkspaceBootstrapFiles(
   dir: string,
-  opts?: { agentId?: string },
+  optsOrNames?: { agentId?: string } | readonly WorkspaceBootstrapFileName[],
 ): Promise<WorkspaceBootstrapFile[]> {
   const resolvedDir = resolveUserPath(dir);
+  // Accept both the fork's per-agent soul selector and upstream's name filter.
+  // Array.isArray does not narrow a readonly-array union member, so branch on it
+  // explicitly and cast each side to the intended shape.
+  const names = Array.isArray(optsOrNames)
+    ? (optsOrNames as readonly WorkspaceBootstrapFileName[])
+    : undefined;
+  const agentId = Array.isArray(optsOrNames)
+    ? undefined
+    : (optsOrNames as { agentId?: string } | undefined)?.agentId;
 
   // Resolve the agent's individual persona (souls/<id>.md) when present, else the
   // shared SOUL.md at the workspace root. The entry keeps name "SOUL.md" so the
   // rest of the bootstrap pipeline and prompt treat it identically.
-  const soulFilePath = await resolveAgentSoulFilePath(resolvedDir, opts?.agentId);
+  const soulFilePath = await resolveAgentSoulFilePath(resolvedDir, agentId);
 
-  const entries: Array<{
-    name: WorkspaceBootstrapFileName;
-    filePath: string;
-  }> = [
-    {
-      name: DEFAULT_AGENTS_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_AGENTS_FILENAME),
-    },
-    {
-      name: DEFAULT_SOUL_FILENAME,
-      filePath: soulFilePath,
-    },
-    {
-      name: DEFAULT_IDENTITY_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_IDENTITY_FILENAME),
-    },
-    {
-      name: DEFAULT_USER_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_USER_FILENAME),
-    },
-    {
-      name: DEFAULT_BOOTSTRAP_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_BOOTSTRAP_FILENAME),
-    },
-    {
-      name: DEFAULT_MEMORY_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_MEMORY_FILENAME),
-    },
-  ];
+  // Cache hits still open files to validate identity, so select names before I/O.
+  const entries = WORKSPACE_BOOTSTRAP_FILENAMES.filter(
+    (name) => names === undefined || names.includes(name),
+  ).map((name) => ({
+    name,
+    filePath: name === DEFAULT_SOUL_FILENAME ? soulFilePath : path.join(resolvedDir, name),
+  }));
 
   const result: WorkspaceBootstrapFile[] = [];
   for (const entry of entries) {

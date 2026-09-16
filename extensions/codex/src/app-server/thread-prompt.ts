@@ -45,6 +45,7 @@ export function buildDeveloperInstructions(
   let dashboardToolName: string | undefined;
   let portalToolName: string | undefined;
   let hasSkillForge = false;
+  let messageTool: Parameters<typeof buildUiPresentationPrompt>[0]["messageTool"];
   let hasSkillWorkshop = false;
   let hasSessionsSpawn = false;
   let hasSessionsYield = false;
@@ -76,6 +77,9 @@ export function buildDeveloperInstructions(
         portalToolName ??= qualifiedName;
       }
       hasSkillForge ||= name === SKILL_FORGE_TOOL_NAME;
+      if (name === "message") {
+        messageTool ??= { name: qualifiedName, parameters: tool.inputSchema };
+      }
       hasSkillWorkshop ||= name === SKILL_WORKSHOP_TOOL_NAME;
       hasSessionsSpawn ||= name === "sessions_spawn";
       hasSessionsYield ||= isDirectNamespace && name === "sessions_yield";
@@ -143,7 +147,12 @@ export function buildDeveloperInstructions(
         }).join("\n")
       : undefined,
     params.disableTools !== true && params.promptMode !== "minimal" && params.promptMode !== "none"
-      ? buildUiPresentationPrompt({ showWidgetToolName, dashboardToolName, portalToolName })
+      ? buildUiPresentationPrompt({
+          showWidgetToolName,
+          dashboardToolName,
+          portalToolName,
+          messageTool,
+        })
       : undefined,
     buildCredentialSafetyPrompt({
       controlToolsAvailable: params.disableTools !== true && hasControlTools,

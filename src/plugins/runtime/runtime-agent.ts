@@ -379,6 +379,7 @@ async function createSessionEntry(
           await runAfterCreate({
             ...created,
             storePath: target.storePath,
+            isNew: false,
           });
         } else {
           const result = await createGatewaySession({

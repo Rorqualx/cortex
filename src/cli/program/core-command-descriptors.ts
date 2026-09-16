@@ -56,6 +56,11 @@ const coreCliCommandCatalog = defineCommandDescriptorCatalog([
   },
   {
     name: "database",
+    description: "Inspect database schema compatibility and shared-state write ownership",
+    hasSubcommands: true,
+  },
+  {
+    name: "database",
     description: "Inspect shared-state schema compatibility and write ownership",
     hasSubcommands: true,
     parentDefaultHelp: true,
