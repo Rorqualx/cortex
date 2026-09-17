@@ -750,6 +750,7 @@ describe("chat metadata ownership", () => {
           {
             agentId: "main",
             sessionKey,
+            isCurrent: expect.any(Function),
             sessionEntry: expect.objectContaining({
               authProfileOverride: "test:locked",
               authProfileOverrideSource: "user",

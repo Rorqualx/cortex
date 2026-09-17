@@ -251,7 +251,6 @@ async function streamMistralTerminalFixture(fixture: MistralTerminalFixture) {
       })}\n\n`,
     );
     if (fixture.abort) {
-      request.once("close", () => response.end());
       return;
     }
     response.end(fixture.done ? "data: [DONE]\n\n" : "");
@@ -291,6 +290,7 @@ async function streamMistralTerminalFixture(fixture: MistralTerminalFixture) {
     }
     return { result: await stream.result(), events };
   } finally {
+    server.closeAllConnections();
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
