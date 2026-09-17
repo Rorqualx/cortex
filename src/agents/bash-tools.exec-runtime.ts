@@ -732,6 +732,8 @@ export async function runExecProcess(opts: {
   onUpdate?: (partialResult: AgentToolResult<ExecToolDetails>) => void;
   /** Revalidates authorization after async preparation, immediately before each spawn attempt. */
   beforeSpawn?: () => Promise<AgentToolResult<ExecToolDetails> | undefined>;
+  /** Rechecks host policy at the supervisor's final synchronous spawn boundary. */
+  assertCurrent?: () => void;
 }): Promise<ExecProcessHandle> {
   let assertSourceActive: (() => void) | undefined = captureAgentToolSourceExecutionGuard(
     opts.startupSignal,

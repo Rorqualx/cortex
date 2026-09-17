@@ -198,12 +198,12 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
           (searchSyncEnabled &&
             indexIdentity.status === "mismatched" &&
             indexIdentity.owner === "openclaw" &&
-            indexIdentity.code === "chunking_version"));
+            indexIdentity.versionOrder === "older"));
       if (shouldRepairIdentity) {
-        // Missing metadata has no safe generation; chunking upgrades need a full
-        // rebuild. Repair before a read-generation lease can block its writer.
+        this.recordAutomaticRebuild();
+        // The writer rechecks identity under its lease; another manager may have repaired it.
         await this.syncAdmitted(
-          { reason: "search", force: true },
+          { reason: "search" },
           { allowEmbeddingBootstrapFallback: true },
         ).catch((err: unknown) => {
           if (err instanceof WorkerTaskError && err.code === "overloaded") {

@@ -3642,6 +3642,16 @@ public struct CancelledApprovalSnapshot: Codable, Sendable {
     }
 }
 
+public struct CanvasDocumentPreviewParams: Codable, Sendable {
+    public let html: String
+
+    public init(
+        html: String)
+    {
+        self.html = html
+    }
+}
+
 public struct CanvasDocumentViewParams: Codable, Sendable {
     public let docid: String
 
@@ -4276,6 +4286,7 @@ public struct ChatHistoryDeltaResult: Codable, Sendable {
 
 public struct ChatHistoryParams: Codable, Sendable {
     public let sessionkey: String
+    public let cursor: String?
     public let agentid: String?
     public let limit: Int?
     public let maxbytes: Int?
@@ -4288,6 +4299,7 @@ public struct ChatHistoryParams: Codable, Sendable {
 
     public init(
         sessionkey: String,
+        cursor: String? = nil,
         agentid: String? = nil,
         limit: Int? = nil,
         maxbytes: Int? = nil,
@@ -4299,6 +4311,7 @@ public struct ChatHistoryParams: Codable, Sendable {
         maxchars: Int? = nil)
     {
         self.sessionkey = sessionkey
+        self.cursor = cursor
         self.agentid = agentid
         self.limit = limit
         self.maxbytes = maxbytes
@@ -4312,6 +4325,7 @@ public struct ChatHistoryParams: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case sessionkey = "sessionKey"
+        case cursor
         case agentid = "agentId"
         case limit
         case maxbytes = "maxBytes"

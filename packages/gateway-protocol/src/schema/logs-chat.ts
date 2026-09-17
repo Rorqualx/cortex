@@ -43,6 +43,7 @@ export const LogsTailResultSchema = closedObject({
 /** Session-scoped history request used by WebChat and native WebSocket clients. */
 export const ChatHistoryParamsSchema = closedObject({
   sessionKey: NonEmptyString,
+  cursor: Type.Optional(Type.String()),
   agentId: Type.Optional(NonEmptyString),
   // Validation ceiling only: the fork's Control UI asks for its whole transcript
   // window in one call (CHAT_HISTORY_REQUEST_LIMIT = 10_000), and the handler
