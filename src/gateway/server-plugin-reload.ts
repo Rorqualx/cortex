@@ -134,7 +134,7 @@ export async function reloadGatewayPlugins(
       errors.push(error);
     }
   };
-  const replacePluginIds = new Set(requestedIds);
+  const replacePluginIds = new Set([...requestedIds, ...(params.reloadPluginIds ?? [])]);
   for (const record of previousRegistry.plugins) {
     if (
       params.changedPaths.some(
@@ -346,7 +346,7 @@ export async function reloadGatewayPlugins(
     params.prepareConfigEffects({ pluginIds: changedPluginIds, channels: channelTargets });
     releaseChannelStarts = channelManager.pauseChannelStarts(channelTargets);
     phase = "drain";
-    for (const sidecar of runtimeState.gatewayLifetimeSidecars) {
+    for (const sidecar of runtimeState.gatewayLifetimeSidecars.snapshot()) {
       const prepared = sidecar.preparePluginReload?.({
         previousRegistry,
         nextRegistry,

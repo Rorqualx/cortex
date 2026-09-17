@@ -219,6 +219,11 @@ logs the skipped notice and keeps the update outcome in the run record and
 Control UI; it does not redirect the notice to another chat or wake the rejected
 session with diagnostics.
 
+Update lifecycle notices also honor the destination account's `actions.sendMessage`
+policy. An explicit account setting overrides the channel default; when neither
+sets the flag, notices are allowed. Disabled sends are recorded as skipped notices
+without preventing the update or its Control UI report.
+
 Managed systemd or launchd updates can stop the Gateway before an intermediate
 notice is delivered. The complete four-message sequence is not guaranteed for
 those installations; the durable run report remains available after reconnect.
@@ -235,6 +240,11 @@ verification facts, and the next action when needed. A run sends each notice
 at most once; an update that stops before restart sends only the notices for
 phases it reached. If the update cannot start, the bot records and explains why
 and provides the manual command when available.
+The agent relays the returned recovery instructions to the operator. Manual
+update commands run in a terminal outside the Gateway service; the agent must
+not execute them in the shell of the Gateway hosting its session. A missing
+owner permission requires owner setup, and an externally supervised installation
+uses its deployment owner's update workflow.
 
 Chat, CLI, Control UI, and automatic updates share a durable run ID. Use
 `openclaw update status` to read the active or latest report, including after a

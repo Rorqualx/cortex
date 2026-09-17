@@ -63,7 +63,7 @@ const { subagentRegistryRuntimeMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("./subagent-announce.runtime.js", () => ({
-  callGateway: (request: unknown) => callGatewayMock(request),
+  callSubagentLifecycleGateway: (request: unknown) => callGatewayMock(request),
   dispatchGatewayMethodInProcess: (
     method: string,
     params: Record<string, unknown>,
@@ -325,7 +325,8 @@ describe("subagent announce seam flow", () => {
     subagentRegistryRuntimeMock.resolveRequesterForChildSession.mockReset();
     subagentRegistryRuntimeMock.resolveRequesterForChildSession.mockReturnValue(null);
     outputTesting.setDepsForTest({
-      callGateway: callGatewayMock as typeof import("./subagent-announce.runtime.js").callGateway,
+      callGateway:
+        callGatewayMock as typeof import("./subagent-announce.runtime.js").callSubagentLifecycleGateway,
       getRuntimeConfig: () => mockConfig,
       readSubagentSessionEntry: (storePath, sessionKey) =>
         (
@@ -379,6 +380,7 @@ describe("subagent announce seam flow", () => {
         expectedLifecycleRevision: "child-lifecycle-revision",
       },
       timeoutMs: 10_000,
+      assertDispatchCurrent: expect.any(Function),
     });
   });
 
@@ -529,6 +531,7 @@ describe("subagent announce seam flow", () => {
         expectedLifecycleRevision: "child-lifecycle-revision",
       },
       timeoutMs: 10_000,
+      assertDispatchCurrent: expect.any(Function),
     });
   });
 
