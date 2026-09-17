@@ -2577,7 +2577,7 @@ export async function planLegacyStateMigrationsReadOnly(params: {
   let agentTargetRefusal: PreparedLegacyStateMigrationStep["refusal"];
   let agentTargetRefusalEndpoints: LegacyStateMigrationEndpoint[] = [];
   try {
-    registeredDatabases = inspectOpenClawRegisteredAgentDatabases({
+    registeredDatabases = await inspectOpenClawRegisteredAgentDatabases({
       env,
       includeIncompatibleSchemaVersions: true,
     });
