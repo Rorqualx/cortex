@@ -257,6 +257,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
         },
       },
     },
+    plugins: {
+      emoji: "🧩",
+      title: "Plugins",
+      detailKeys: ["action", "pluginId", "packageName", "query"],
+    },
     exec: {
       emoji: "🛠️",
       title: "Exec",

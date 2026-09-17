@@ -70,6 +70,7 @@ describe("tool-catalog", () => {
       "workboard_research_sync",
       "workboard_research_stage",
       "gateway",
+      "plugins",
       "get_goal",
       "create_goal",
       "update_goal",

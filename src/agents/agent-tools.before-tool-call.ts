@@ -19,7 +19,6 @@ export {
   resetAdjustedParamsByToolCallIdForTests,
 } from "./agent-tools.before-tool-call.state.js";
 export {
-  copyBeforeToolCallHookMarker,
   isToolWrappedWithBeforeToolCallHook,
   setBeforeToolCallDiagnosticsEnabled,
 } from "./before-tool-call-metadata.js";

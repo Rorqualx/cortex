@@ -191,14 +191,21 @@ describe("config mutate helpers", () => {
 
   it("mutates source config with optimistic hash protection", async () => {
     const snapshot = createSnapshot({
+      path: resolveConfigPath(),
       hash: "source-hash",
       sourceConfig: { gateway: { port: 18789 } },
       runtimeConfig: { gateway: { port: 19001 } },
     });
-    ioMocks.readConfigFileSnapshotForWrite.mockResolvedValue({
-      snapshot,
-      writeOptions: { expectedConfigPath: snapshot.path },
-    });
+    ioMocks.readConfigFileSnapshotForWrite
+      .mockResolvedValueOnce({ snapshot, writeOptions: { expectedConfigPath: snapshot.path } })
+      .mockResolvedValue({
+        snapshot: createSnapshot({
+          path: snapshot.path,
+          hash: "written-hash",
+          sourceConfig: { gateway: { port: 18789, auth: { mode: "token" } } },
+        }),
+        writeOptions: { expectedConfigPath: snapshot.path },
+      });
 
     const result = await mutateConfigFile({
       baseHash: snapshot.hash,
@@ -427,7 +434,7 @@ describe("config mutate helpers", () => {
         snapshot: initial,
         writeOptions: { expectedConfigPath: initial.path },
       })
-      .mockResolvedValueOnce({
+      .mockResolvedValue({
         snapshot: fresh,
         writeOptions: { expectedConfigPath: fresh.path },
       });
@@ -509,7 +516,6 @@ describe("config mutate helpers", () => {
     });
 
     expect(result.result).toBe("created");
-    expect(ioMocks.readConfigFileSnapshotForWrite).toHaveBeenCalledTimes(2);
     expect(ioMocks.writeConfigFile).toHaveBeenCalledOnce();
   });
 
@@ -692,7 +698,7 @@ describe("config mutate helpers", () => {
       writeOptions: { expectedConfigPath: snapshot.path },
     });
 
-    expect(ioMocks.readConfigFileSnapshotForWrite).not.toHaveBeenCalled();
+    expect(ioMocks.readConfigFileSnapshotForWrite).toHaveBeenCalledAfter(ioMocks.writeConfigFile);
     expect(ioMocks.writeConfigFile).toHaveBeenCalledWith(
       { gateway: { auth: { mode: "token", token: "minted" } } },
       {
@@ -992,17 +998,28 @@ describe("config mutate helpers", () => {
     );
   });
 
-  it("returns the canonical persisted config from replace writes", async () => {
+  it("returns config and revision from the same post-write snapshot", async () => {
     const snapshot = createSnapshot({
       hash: "hash-persisted",
       sourceConfig: { gateway: { auth: { mode: "token" } } },
     });
+    const persistedSourceConfig = {
+      gateway: { auth: { mode: "token" as const, token: "${TOKEN}" } },
+    };
     ioMocks.writeConfigFile.mockResolvedValue({
+      persistedSourceConfig,
       persistedHash: "hash-after",
       persistedConfig: {
         gateway: { auth: { mode: "token", token: "minted" } },
         meta: { lastTouchedVersion: "test" },
       },
+    });
+    ioMocks.readConfigFileSnapshotForWrite.mockResolvedValue({
+      snapshot: createSnapshot({
+        hash: "newer-hash",
+        sourceConfig: { gateway: { auth: { mode: "token", token: "newer" } } },
+      }),
+      writeOptions: {},
     });
 
     const result = await replaceConfigFile({
@@ -1012,10 +1029,10 @@ describe("config mutate helpers", () => {
       writeOptions: { expectedConfigPath: snapshot.path },
     });
 
-    expect(result.persistedHash).toBe("hash-after");
+    expect(result.persistedHash).toBe("newer-hash");
+    expect(result.persistedSourceConfig).toBe(persistedSourceConfig);
     expect(result.nextConfig).toEqual({
-      gateway: { auth: { mode: "token", token: "minted" } },
-      meta: { lastTouchedVersion: "test" },
+      gateway: { auth: { mode: "token", token: "newer" } },
     });
   });
 
