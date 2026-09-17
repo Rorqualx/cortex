@@ -69,6 +69,7 @@ describe("tool-catalog", () => {
       "workboard_block",
       "workboard_research_sync",
       "workboard_research_stage",
+      "gateway",
       "get_goal",
       "create_goal",
       "update_goal",
@@ -114,10 +115,11 @@ describe("tool-catalog", () => {
       "workboard_heartbeat",
       "workboard_complete",
       "workboard_block",
+      "gateway",
       "ask_user",
       "bundle-mcp",
     ]);
-    expect(requirePolicyAllow("minimal")).toEqual(["session_status"]);
+    expect(requirePolicyAllow("minimal")).toEqual(["session_status", "gateway"]);
   });
 
   it("full profile uses wildcard to grant all tools (#76507)", () => {

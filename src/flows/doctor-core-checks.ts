@@ -1141,9 +1141,8 @@ const gatewayPlatformNotesCheck: HealthCheck = {
     if (!isDefaultInstallIdentity(process.env)) {
       return [];
     }
-    const { collectMacGatewayPlatformWarnings } =
-      await import("../commands/doctor-platform-notes.js");
-    const warnings = await collectMacGatewayPlatformWarnings(ctx.cfg);
+    const { collectGatewayPlatformWarnings } = await import("../commands/doctor-platform-notes.js");
+    const warnings = await collectGatewayPlatformWarnings(ctx.cfg);
     return warnings.map((warning) =>
       noteTextToFinding({
         checkId: "core/doctor/gateway-services/platform-notes",

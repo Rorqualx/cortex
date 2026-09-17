@@ -5,8 +5,8 @@ import { closedObject } from "./closed-object.js";
 import { ChatAccountSelectionSchema, ModelAuthProfileIdSchema } from "./model-account-selection.js";
 import { NonEmptyString } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
-import { SessionPermissionModeSchema } from "./sessions-row.js";
 import { GatewayAgentRuntimeSchema } from "./session-row.js";
+import { SessionPermissionModeSchema } from "./sessions-row.js";
 
 /**
  * Agent, model, skill, and tool catalog schemas.
@@ -79,6 +79,17 @@ export const AgentOwnershipSchema = Type.Union([
 /** Condensed agent record returned by list APIs. */
 export const AgentSummarySchema = closedObject({
   id: NonEmptyString,
+  status: Type.Optional(Type.Literal("degraded")),
+  admissionRefusal: Type.Optional(
+    closedObject({
+      agentId: NonEmptyString,
+      paths: Type.Array(NonEmptyString),
+      embeddedOwnerId: NonEmptyString,
+      code: Type.Literal("agent-database-ownership-mismatch"),
+      reason: NonEmptyString,
+      repairHint: NonEmptyString,
+    }),
+  ),
   kind: Type.Optional(AgentKindSchema),
   name: Type.Optional(NonEmptyString),
   identity: Type.Optional(
@@ -331,6 +342,9 @@ export const ModelsListParamsSchema = Type.Object(
     provider: Type.Optional(NonEmptyString),
     includeDetails: Type.Optional(Type.Boolean()),
     includeProviderCapabilities: Type.Optional(Type.Boolean()),
+    /** Include global default-model previews, independent of agent/session overrides. */
+    includeDefaultModels: Type.Optional(Type.Boolean()),
+    /** Reuse prepared/cached facts without starting provider discovery. */
     preparedOnly: Type.Optional(Type.Boolean()),
     refresh: Type.Optional(Type.Boolean()),
     view: Type.Optional(
@@ -396,6 +410,12 @@ export const ModelCatalogProviderOutcomeSchema = closedObject({
 
 export const ModelsListResultSchema = closedObject({
   models: Type.Array(ModelChoiceSchema),
+  defaultModels: Type.Optional(
+    closedObject({
+      /** Auto preview from agents.defaults.model, even when utility routing is explicit or disabled. */
+      automaticUtilityModel: Type.Union([NonEmptyString, Type.Null()]),
+    }),
+  ),
   refreshFailed: Type.Optional(Type.Boolean()),
   accountSelection: Type.Optional(ChatAccountSelectionSchema),
   providerOutcomes: Type.Optional(Type.Array(ModelCatalogProviderOutcomeSchema)),

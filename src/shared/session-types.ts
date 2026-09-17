@@ -33,6 +33,8 @@ export type SessionBoardFace = "chat" | "dashboard";
 export type GatewayAgentRow = Pick<
   AgentSummary,
   | "id"
+  | "status"
+  | "admissionRefusal"
   | "kind"
   | "name"
   | "identity"

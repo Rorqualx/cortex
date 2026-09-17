@@ -926,6 +926,8 @@ public struct AgentParams: Codable, Sendable {
 
 public struct AgentSummary: Codable, Sendable {
     public let id: String
+    public let status: String?
+    public let admissionrefusal: [String: AnyCodable]?
     public let kind: AgentKind?
     public let name: String?
     public let identity: [String: AnyCodable]?
@@ -940,6 +942,8 @@ public struct AgentSummary: Codable, Sendable {
 
     public init(
         id: String,
+        status: String? = nil,
+        admissionrefusal: [String: AnyCodable]? = nil,
         kind: AgentKind? = nil,
         name: String? = nil,
         identity: [String: AnyCodable]? = nil,
@@ -953,6 +957,8 @@ public struct AgentSummary: Codable, Sendable {
         defaultpermissionmode: SessionPermissionMode? = nil)
     {
         self.id = id
+        self.status = status
+        self.admissionrefusal = admissionrefusal
         self.kind = kind
         self.name = name
         self.identity = identity
@@ -968,6 +974,8 @@ public struct AgentSummary: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id
+        case status
+        case admissionrefusal = "admissionRefusal"
         case kind
         case name
         case identity
@@ -6315,6 +6323,7 @@ public struct DesktopObserveResult: Codable, Sendable {
     public let wspath: String
     public let expiresatms: Int
     public let control: Bool
+    public let canresize: Bool?
     public let vncpassword: String?
     public let auth: String?
     public let preauthenticated: Bool?
@@ -6324,6 +6333,7 @@ public struct DesktopObserveResult: Codable, Sendable {
         wspath: String,
         expiresatms: Int,
         control: Bool,
+        canresize: Bool? = nil,
         vncpassword: String? = nil,
         auth: String? = nil,
         preauthenticated: Bool? = nil)
@@ -6332,6 +6342,7 @@ public struct DesktopObserveResult: Codable, Sendable {
         self.wspath = wspath
         self.expiresatms = expiresatms
         self.control = control
+        self.canresize = canresize
         self.vncpassword = vncpassword
         self.auth = auth
         self.preauthenticated = preauthenticated
@@ -6342,6 +6353,7 @@ public struct DesktopObserveResult: Codable, Sendable {
         case wspath = "wsPath"
         case expiresatms = "expiresAtMs"
         case control
+        case canresize = "canResize"
         case vncpassword = "vncPassword"
         case auth
         case preauthenticated
@@ -9694,6 +9706,7 @@ public struct ModelsListParams: Codable, Sendable {
     public let provider: String?
     public let includedetails: Bool?
     public let includeprovidercapabilities: Bool?
+    public let includedefaultmodels: Bool?
     public let preparedonly: Bool?
     public let refresh: Bool?
     public let view: AnyCodable?
@@ -9705,6 +9718,7 @@ public struct ModelsListParams: Codable, Sendable {
         provider: String? = nil,
         includedetails: Bool? = nil,
         includeprovidercapabilities: Bool? = nil,
+        includedefaultmodels: Bool? = nil,
         preparedonly: Bool? = nil,
         refresh: Bool? = nil,
         view: AnyCodable? = nil)
@@ -9715,6 +9729,7 @@ public struct ModelsListParams: Codable, Sendable {
         self.provider = provider
         self.includedetails = includedetails
         self.includeprovidercapabilities = includeprovidercapabilities
+        self.includedefaultmodels = includedefaultmodels
         self.preparedonly = preparedonly
         self.refresh = refresh
         self.view = view
@@ -9727,6 +9742,7 @@ public struct ModelsListParams: Codable, Sendable {
         case provider
         case includedetails = "includeDetails"
         case includeprovidercapabilities = "includeProviderCapabilities"
+        case includedefaultmodels = "includeDefaultModels"
         case preparedonly = "preparedOnly"
         case refresh
         case view
@@ -9735,17 +9751,20 @@ public struct ModelsListParams: Codable, Sendable {
 
 public struct ModelsListResult: Codable, Sendable {
     public let models: [ModelChoice]
+    public let defaultmodels: [String: AnyCodable]?
     public let refreshfailed: Bool?
     public let accountselection: ChatAccountSelection?
     public let provideroutcomes: [[String: AnyCodable]]?
 
     public init(
         models: [ModelChoice],
+        defaultmodels: [String: AnyCodable]? = nil,
         refreshfailed: Bool? = nil,
         accountselection: ChatAccountSelection? = nil,
         provideroutcomes: [[String: AnyCodable]]? = nil)
     {
         self.models = models
+        self.defaultmodels = defaultmodels
         self.refreshfailed = refreshfailed
         self.accountselection = accountselection
         self.provideroutcomes = provideroutcomes
@@ -9753,6 +9772,7 @@ public struct ModelsListResult: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case models
+        case defaultmodels = "defaultModels"
         case refreshfailed = "refreshFailed"
         case accountselection = "accountSelection"
         case provideroutcomes = "providerOutcomes"
@@ -12327,6 +12347,7 @@ public struct PortalSummary: Codable, Sendable {
 
 public struct PresenceEntry: Codable, Sendable {
     public let host: String?
+    public let clientid: String?
     public let ip: String?
     public let version: String?
     public let platform: String?
@@ -12350,6 +12371,7 @@ public struct PresenceEntry: Codable, Sendable {
 
     public init(
         host: String? = nil,
+        clientid: String? = nil,
         ip: String? = nil,
         version: String? = nil,
         platform: String? = nil,
@@ -12372,6 +12394,7 @@ public struct PresenceEntry: Codable, Sendable {
         watchedsessions: [String]? = nil)
     {
         self.host = host
+        self.clientid = clientid
         self.ip = ip
         self.version = version
         self.platform = platform
@@ -12396,6 +12419,7 @@ public struct PresenceEntry: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case host
+        case clientid = "clientId"
         case ip
         case version
         case platform
@@ -19458,16 +19482,26 @@ public struct SessionsSearchParams: Codable, Sendable {
 public struct SessionsSearchResult: Codable, Sendable {
     public let results: [SessionsSearchHit]
     public let indexing: Bool?
+    public let archivedtranscriptsexcluded: Int?
     public let truncated: Bool?
 
     public init(
         results: [SessionsSearchHit],
         indexing: Bool? = nil,
+        archivedtranscriptsexcluded: Int? = nil,
         truncated: Bool? = nil)
     {
         self.results = results
         self.indexing = indexing
+        self.archivedtranscriptsexcluded = archivedtranscriptsexcluded
         self.truncated = truncated
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case results
+        case indexing
+        case archivedtranscriptsexcluded = "archivedTranscriptsExcluded"
+        case truncated
     }
 }
 
@@ -19510,6 +19544,21 @@ public struct SessionsSendParams: Codable, Sendable {
         case attachments
         case timeoutms = "timeoutMs"
         case idempotencykey = "idempotencyKey"
+    }
+}
+
+public struct SessionsStorageParams: Codable, Sendable {}
+
+public struct SessionsStorageStatusResult: Codable, Sendable {
+    public let agents: [[String: AnyCodable]]
+    public let maintenance: [String: AnyCodable]
+
+    public init(
+        agents: [[String: AnyCodable]],
+        maintenance: [String: AnyCodable])
+    {
+        self.agents = agents
+        self.maintenance = maintenance
     }
 }
 
@@ -21788,7 +21837,18 @@ public struct TalkAgentControlResult: Codable, Sendable {
     }
 }
 
-public struct TalkCatalogParams: Codable, Sendable {}
+public struct TalkCatalogParams: Codable, Sendable {
+    public let provider: String?
+    public let model: String?
+
+    public init(
+        provider: String? = nil,
+        model: String? = nil)
+    {
+        self.provider = provider
+        self.model = model
+    }
+}
 
 public struct TalkCatalogResult: Codable, Sendable {
     public let modes: [AnyCodable]
@@ -25997,6 +26057,7 @@ public struct WorkerDesktopObserveResult: Codable, Sendable {
     public let wspath: String
     public let expiresatms: Int
     public let control: Bool
+    public let canresize: Bool?
     public let vncpassword: String?
 
     public init(
@@ -26004,12 +26065,14 @@ public struct WorkerDesktopObserveResult: Codable, Sendable {
         wspath: String,
         expiresatms: Int,
         control: Bool,
+        canresize: Bool? = nil,
         vncpassword: String? = nil)
     {
         self.transport = transport
         self.wspath = wspath
         self.expiresatms = expiresatms
         self.control = control
+        self.canresize = canresize
         self.vncpassword = vncpassword
     }
 
@@ -26018,6 +26081,7 @@ public struct WorkerDesktopObserveResult: Codable, Sendable {
         case wspath = "wsPath"
         case expiresatms = "expiresAtMs"
         case control
+        case canresize = "canResize"
         case vncpassword = "vncPassword"
     }
 }

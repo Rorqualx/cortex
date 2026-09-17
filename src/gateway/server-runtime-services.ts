@@ -93,9 +93,12 @@ export async function clearGatewayMaintenanceHandles(
   clearInterval(maintenance.healthInterval);
   clearInterval(maintenance.dedupeCleanup);
   clearInterval(maintenance.workboardDispatch);
-  await maintenance.stopMediaCleanup();
   clearInterval(maintenance.worktreeCleanup);
   maintenance.skillUsageCleanup();
+  await Promise.all([
+    maintenance.stopSessionColdStorageMaintenance(),
+    maintenance.stopMediaCleanup(),
+  ]);
 }
 
 /** Schedules post-ready maintenance and cancels/cleans handles if shutdown wins the race. */
