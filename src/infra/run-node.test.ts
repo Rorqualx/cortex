@@ -27,6 +27,7 @@ import {
   runNodeMain,
   stripGatewayServiceMarkers,
 } from "../../scripts/run-node.mts";
+import { createDeferred } from "../../test/helpers/promise.js";
 import {
   previousReleaseInventory,
   writeUpdateCompatibilityBuildFixture,
@@ -1268,10 +1269,7 @@ describe("run-node script", () => {
       const postbuildRelease = new Promise<void>((resolve) => {
         releasePostbuild = resolve;
       });
-      let markWaiting!: () => void;
-      const waitingForLock = new Promise<void>((resolve) => {
-        markWaiting = resolve;
-      });
+      const { promise: waitingForLock, resolve: markWaiting } = createDeferred();
       const runRuntimePostBuild = vi.fn(async () => {
         markPostbuildStarted();
         await postbuildRelease;
@@ -1883,10 +1881,7 @@ describe("run-node script", () => {
       process: lockProcess,
       stderr: { write: () => true } as unknown as NodeJS.WriteStream,
     });
-    let markWaiting!: () => void;
-    const waitingForLock = new Promise<void>((resolve) => {
-      markWaiting = resolve;
-    });
+    const { promise: waitingForLock, resolve: markWaiting } = createDeferred();
     const stderr = {
       write: (chunk: string | Buffer) => {
         if (String(chunk).includes("Waiting for TypeScript/runtime artifact lock")) {

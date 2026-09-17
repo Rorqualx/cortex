@@ -1138,14 +1138,10 @@ describe("createGatewayCloseHandler", () => {
   );
 
   it("replaces the process supervisor after a concurrent adapter startup failure", async () => {
-    let markEmbeddingDrainStarted!: () => void;
-    const embeddingDrainStarted = new Promise<void>((resolve) => {
-      markEmbeddingDrainStarted = resolve;
-    });
-    let releaseEmbeddingDrain!: () => void;
-    const embeddingDrainReleased = new Promise<void>((resolve) => {
-      releaseEmbeddingDrain = resolve;
-    });
+    const { promise: embeddingDrainStarted, resolve: markEmbeddingDrainStarted } =
+      createDeferredCore();
+    const { promise: embeddingDrainReleased, resolve: releaseEmbeddingDrain } =
+      createDeferredCore();
     const supervisor = getProcessSupervisor();
     const close = createGatewayCloseHandler(
       createGatewayCloseTestDeps({
@@ -1190,10 +1186,7 @@ describe("createGatewayCloseHandler", () => {
         events.push("session-suspension-timers");
         return 1;
       });
-      let releaseReload!: () => void;
-      const reloadStopped = new Promise<void>((resolve) => {
-        releaseReload = resolve;
-      });
+      const { promise: reloadStopped, resolve: releaseReload } = createDeferredCore();
       const configReloader = {
         stop: vi.fn(async () => {
           events.push("reload:stopping");
@@ -2524,10 +2517,7 @@ describe("createGatewayCloseHandler", () => {
     vi.useFakeTimers();
     const controller = new AbortController();
     const getPendingReplyCount = vi.fn().mockReturnValueOnce(1).mockReturnValue(0);
-    let finishMarker: (() => void) | undefined;
-    const markerPending = new Promise<void>((resolve) => {
-      finishMarker = resolve;
-    });
+    const { promise: markerPending, resolve: finishMarker } = createDeferredCore();
     const chatAbortControllers = new Map([
       [
         "active-run",
@@ -2840,10 +2830,7 @@ describe("createGatewayCloseHandler", () => {
 
   it("starts bundle MCP and LSP runtime disposal concurrently", async () => {
     const disposalOrder: string[] = [];
-    let releaseMcp: (() => void) | undefined;
-    const mcpBlocked = new Promise<void>((resolve) => {
-      releaseMcp = resolve;
-    });
+    const { promise: mcpBlocked, resolve: releaseMcp } = createDeferredCore();
     mocks.disposeAllSessionMcpRuntimes.mockImplementation(async () => {
       disposalOrder.push("mcp-start");
       await mcpBlocked;
