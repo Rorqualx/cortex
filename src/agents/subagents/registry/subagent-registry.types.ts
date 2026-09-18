@@ -333,10 +333,11 @@ export type SubagentRunRecord = {
   };
 };
 
-/** Minimal registry shape needed by session-list topology and display reads. */
+/** Minimal registry shape needed by session-list topology, display and run lookup reads. */
 export type SubagentRunReadRecord = Pick<
   SubagentRunRecord,
   | "runId"
+  | "swarmRunId"
   | "collect"
   | "groupId"
   | "swarmRequesterSessionKey"

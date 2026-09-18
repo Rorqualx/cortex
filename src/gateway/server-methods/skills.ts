@@ -6,6 +6,8 @@ import {
   buildClawHubTrustErrorDetails,
   ErrorCodes,
   errorShape,
+  type SkillsInstallParams,
+  type SkillsUpdateParams,
   validateSkillsBinsParams,
   validateSkillsCuratorActionParams,
   validateSkillsCuratorStatusParams,
@@ -850,6 +852,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
     if (!assertValidParams(params, validateSkillsInstallParams, "skills.install", respond)) {
       return;
     }
+    const p: SkillsInstallParams = params;
     const resolved = resolveSkillsAgentWorkspace(params, context);
     if (!resolved.ok) {
       respond(false, undefined, resolved.error);
@@ -859,13 +862,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
     const workspaceDirRaw = resolved.workspaceDir;
     // Skill installs are intentionally routed by source; each source owns its
     // validation, provenance checks, and result payload shape.
-    if (params && typeof params === "object" && "source" in params && params.source === "clawhub") {
-      const p = params as {
-        source: "clawhub";
-        slug: string;
-        version?: string;
-        force?: boolean;
-      };
+    if ("source" in p && p.source === "clawhub") {
       const result = await installClawHubSkillDeduped({
         workspaceDir: workspaceDirRaw,
         slug: p.slug,
@@ -900,15 +897,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    if (params && typeof params === "object" && "source" in params && params.source === "upload") {
-      const p = params as {
-        source: "upload";
-        uploadId: string;
-        slug: string;
-        force?: boolean;
-        sha256?: string;
-        timeoutMs?: number;
-      };
+    if ("source" in p && p.source === "upload") {
       const result = await installUploadedSkillArchive({
         uploadId: p.uploadId,
         slug: p.slug,
@@ -937,11 +926,6 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const p = params as {
-      name: string;
-      installId: string;
-      timeoutMs?: number;
-    };
     const result = await installSkill({
       workspaceDir: workspaceDirRaw,
       skillName: p.name,
@@ -959,13 +943,8 @@ export const skillsHandlers: GatewayRequestHandlers = {
     if (!assertValidParams(params, validateSkillsUpdateParams, "skills.update", respond)) {
       return;
     }
-    if (params && typeof params === "object" && "source" in params && params.source === "clawhub") {
-      const p = params as {
-        source: "clawhub";
-        slug?: string;
-        all?: boolean;
-        force?: boolean;
-      };
+    const p: SkillsUpdateParams = params;
+    if ("source" in p) {
       if (!p.slug && !p.all) {
         respond(
           false,
@@ -1020,12 +999,6 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const p = params as {
-      skillKey: string;
-      enabled?: boolean;
-      apiKey?: string;
-      env?: Record<string, string>;
-    };
     const updated = await updateSkillConfigEntry(p);
     respond(
       true,

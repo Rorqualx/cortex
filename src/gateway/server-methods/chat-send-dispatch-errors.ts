@@ -1,4 +1,6 @@
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
+import { describeFailoverError } from "../../agents/failover-error.js";
+import { renderFailoverCodeUserCopy } from "../../agents/failover/user-copy.js";
 import { clearAgentRunContext } from "../../infra/agent-run-registry.js";
 import {
   readLedger,
@@ -46,7 +48,8 @@ export async function handleChatSendSetupError(params: {
 }): Promise<void> {
   const { cleanupAdmittedRun, lifecycleGeneration, restartSafeAdmission } = params.admission;
   const { agentId, clientRunId, sessionKey } = params.session;
-  const errorMessage = String(params.error);
+  const errorMessage =
+    renderFailoverCodeUserCopy(describeFailoverError(params.error).code) ?? String(params.error);
   const failureDisposition = classifyAcceptedChatSendFailure({
     error: params.error,
     phase: "pre-ack",
@@ -138,7 +141,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
   let publishDispatchError: (() => void) | undefined;
 
   const handleError = async (err: unknown) => {
-    const errorMessage = String(err);
+    const errorMessage = renderFailoverCodeUserCopy(describeFailoverError(err).code) ?? String(err);
     const failureDisposition =
       params.classifyFailure?.(err) ??
       classifyAcceptedChatSendFailure({ error: err, phase: "post-ack" });

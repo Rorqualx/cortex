@@ -604,7 +604,10 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
           // stamp for materialized agent roots (opts.callGateway === undefined
           // is the gate in ensureConfiguredAgentMainSession).
           createSessionsSendTool({
-            agentSessionKey: options?.agentSessionKey,
+            agentId: sessionAgentId,
+            // Match sessions_spawn: spawned children record the durable run
+            // session as spawnedBy, so the parent check must use the same key.
+            agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
             agentChannel: options?.agentChannel,
             sandboxed: options?.sandboxed,
             config: sessionConfig,

@@ -239,7 +239,7 @@ describe("experience review auto apply", () => {
       expect(getAgentRunContext(registration.mock.calls[0]![0])).toBeUndefined();
       expect(Object.values(readSkillReviewOutcomes().experienceReviews)[0]).toMatchObject({
         outcome: "failed",
-        error: "WorkerTaskError: Completed-turn transcript anchor changed",
+        error: "SessionTranscriptReadFenceError: Completed-turn transcript anchor changed",
       });
     } finally {
       registration.mockRestore();

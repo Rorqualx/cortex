@@ -41,6 +41,7 @@ const CORE_GATEWAY_HANDLER_MODULES = {
   activity: () => import("./activity.js").then((module) => module.activityHandlers),
   "chat-branch": () => import("./chat-branch.js").then((module) => module.chatBranchHandlers),
   vault: () => import("./vault.js").then((module) => module.vaultHandlers),
+  computer: () => import("./computer.js").then((module) => module.computerHandlers),
   config: () => import("./config.js").then((module) => module.configHandlers),
   conversations: () => import("./conversations.js").then((module) => module.conversationHandlers),
   connect: () => import("./connect.js").then((module) => module.connectHandlers),
