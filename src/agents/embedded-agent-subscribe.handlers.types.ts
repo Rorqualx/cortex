@@ -60,6 +60,13 @@ export type ToolCallSummary = {
   fileTarget?: import("./tool-mutation.js").FileTarget;
 };
 
+export type ExecLiveItemMetadata = {
+  name: string;
+  meta?: string;
+  commandBearing?: boolean;
+  hideFromChannelProgress: boolean;
+};
+
 /** User-visible assistant stream payload emitted to subscribers. */
 export type AssistantStreamData = {
   text: string;
@@ -106,7 +113,10 @@ export type EmbeddedAgentSubscribeState = {
   acceptedSessionSpawns: AcceptedSessionSpawn[];
   toolMetaById: Map<string, ToolCallSummary>;
   toolSummaryById: Set<string>;
-  execLiveUpdateStateById?: Map<string, { lastEmittedAtMs: number }>;
+  execLiveUpdateStateById?: Map<
+    string,
+    { lastEmittedAtMs: number; itemMetadata: ExecLiveItemMetadata }
+  >;
   liveEditDiffStateById: Map<
     string,
     {

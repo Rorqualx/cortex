@@ -32,7 +32,9 @@ export type ToolErrorSummary = {
   ownerKey?: string;
   actionFingerprint?: string;
   fileTarget?: FileTarget;
-  terminalDiagnostic?: ProcessTerminalDiagnostic;
+  terminalDiagnostic?:
+    | ProcessTerminalDiagnostic
+    | { kind: "timeout"; timeoutMs: number; partialResults?: number };
 };
 
 export type ToolRecoverySummary = Pick<ToolErrorSummary, "toolName">;

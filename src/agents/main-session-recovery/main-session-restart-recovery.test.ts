@@ -1579,6 +1579,9 @@ describe("main-session-restart-recovery", () => {
     expect(resumeParams.lane).toBe("main");
     // Fork: the "[System]" continuation must not persist as a visible user turn.
     expect(resumeParams.suppressPromptPersistence).toBe(true);
+    expect(resumeParams.message).toContain("The restart did not cancel the user's task");
+    expect(resumeParams.message).toContain("check the current state, recover interrupted work");
+    expect(resumeParams.message).toContain("verify what happened before repeating an action");
     const store = readStore(path.join(sessionsDir, "sessions.json"));
     expect(store["agent:main:main"]?.abortedLastRun).toBe(false);
   });
@@ -6029,6 +6032,12 @@ describe("main-session-restart-recovery", () => {
       bestEffortDeliver: true,
       forceRestartSafeTools: true,
     });
+    expect(gatewayCall?.params?.message).toContain(
+      "the tool surface has been narrowed to replay-safe tools",
+    );
+    expect(gatewayCall?.params?.message).toContain(
+      "the full tool surface restores on the next user turn",
+    );
 
     const store = readStore(path.join(sessionsDir, "sessions.json"));
     expect(store["agent:main:demo-channel:room-1"]?.status).toBe("running");

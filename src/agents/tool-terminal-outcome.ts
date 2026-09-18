@@ -12,6 +12,27 @@ import { createToolErrorState } from "./tool-error-state.js";
 import type { ToolErrorSummary, ToolRecoverySummary } from "./tool-error-summary.js";
 import type { FileTarget } from "./tool-mutation.js";
 import { buildToolMutationState } from "./tool-mutation.js";
+import { readToolResultDetails } from "./tool-result-error.js";
+
+function readTimeoutDiagnostic(result: unknown): ToolErrorSummary["terminalDiagnostic"] {
+  const details = readToolResultDetails(result);
+  const timeoutMs = details?.timeoutMs;
+  if (
+    details?.timedOut !== true ||
+    typeof timeoutMs !== "number" ||
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    kind: "timeout",
+    timeoutMs,
+    ...(details.partial === true && Array.isArray(details.results) && details.results.length > 0
+      ? { partialResults: details.results.length }
+      : {}),
+  };
+}
 
 function extractPatchFileTargets(
   toolName: string,
@@ -65,10 +86,14 @@ export function createToolTerminalObserver(
     let lastToolRecovery: ToolRecoverySummary | undefined;
     if (observation.outcome === "failure") {
       const mutatingAction = executionStarted && mutation.mutatingAction;
+      const terminalDiagnostic =
+        observation.failure?.terminalDiagnostic ??
+        (executionStarted ? readTimeoutDiagnostic(observation.result) : undefined);
       const failure: ToolErrorSummary = {
         toolName: observation.toolName,
         ...(observation.meta ? { meta: observation.meta } : {}),
         ...observation.failure,
+        ...(terminalDiagnostic ? { terminalDiagnostic } : {}),
         executionStarted,
         mutatingAction,
         ...(observation.ownerMutation ? { ownerKey: observation.ownerMutation.ownerKey } : {}),

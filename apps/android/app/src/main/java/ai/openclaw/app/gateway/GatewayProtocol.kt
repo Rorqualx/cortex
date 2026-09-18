@@ -985,6 +985,7 @@ enum class GatewayMethod(
   CanvasDocumentPreview("canvas.document.preview"),
   ComputerStatus("computer.status"),
   ComputerInvoke("computer.invoke"),
+  SessionsActivitySummaryEnsure("sessions.activitySummary.ensure"),
 }
 
 enum class GatewayEvent(

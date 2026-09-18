@@ -119,6 +119,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     runId: options?.runId,
     swarmCollector: options?.swarmCollector,
     swarmOutputSchema: options?.swarmOutputSchema,
+    assertCollectorWriteAuthority: options?.assertCollectorWriteAuthority,
   });
   const inferredWorkspaceDir =
     options?.workspaceDir || !resolvedConfig
@@ -651,6 +652,8 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
         requesterSessionKey,
         requesterAgentId: sessionAgentId,
         requesterTurnRunId: options?.runId,
+        swarmCollector: options?.swarmCollector,
+        claimYieldCompletion: options?.claimYieldCompletion,
       }),
       onYield: options?.onYield,
     }),

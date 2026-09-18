@@ -25,6 +25,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "lastReadAt",
   "agentStatus",
   "observerDigest",
+  "activitySummary",
   "markedUnreadAt",
   "lastActivityAt",
   "sessionFile",

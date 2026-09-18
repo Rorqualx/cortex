@@ -31,7 +31,10 @@ import {
   toPluginClassification,
   toReasonClassification,
 } from "./classification-rules.js";
-import { isContextOverflowErrorFromTables } from "./context-overflow.js";
+import {
+  isContextOverflowErrorFromTables,
+  looksLikeProviderContextOverflowCandidate,
+} from "./context-overflow-tables.js";
 import {
   isAuthErrorMessage,
   isAuthPermanentErrorMessage,
@@ -47,7 +50,6 @@ import {
 import {
   classifyLegacyProviderSpecificError,
   classifyProviderPluginError,
-  looksLikeProviderContextOverflowCandidate,
   type PreparedProviderFailoverOwner,
 } from "./provider-patterns.js";
 import type { FailoverClassification, FailoverReason, FailoverSignal } from "./signal.js";
@@ -64,11 +66,7 @@ export function isTransientHttpError(raw: string): boolean {
   const status = extractLeadingHttpStatus(raw.trim());
   return status != null && (status.code === 499 || (status.code >= 500 && status.code < 600));
 }
-export {
-  isContextOverflowError,
-  isLikelyContextOverflowError,
-  isReasoningConstraintErrorMessage,
-} from "./context-overflow.js";
+export { isContextOverflowError, isLikelyContextOverflowError } from "./context-overflow.js";
 export {
   isAuthErrorMessage,
   isBillingErrorMessage,
