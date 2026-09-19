@@ -5,7 +5,7 @@
 // wrapper that only fails once a client calls it. Neither direction type-checks, and
 // the 2026-07 resync deleted the whole block with every lane staying green.
 import { describe, expect, it } from "vitest";
-import { listCoreGatewayMethodNames } from "../gateway/methods/core-descriptors.js";
+import { listCoreGatewayMethodNames } from "../gateway/methods/core-method-policy.js";
 import { createWorkboardGatewayHandlers } from "./api.js";
 import type { WorkboardStore } from "./store.js";
 

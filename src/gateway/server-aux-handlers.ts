@@ -41,7 +41,7 @@ import {
   type OperatorStandingGrantMintSpec,
 } from "./exec-approval-manager.js";
 import { createLazyHandler } from "./lazy-handler.js";
-import { listCoreGatewayMethodNames } from "./methods/core-descriptors.js";
+import { listCoreGatewayMethodNames } from "./methods/core-method-policy.js";
 import {
   createPlacementStandingGrantRuntime,
   type PlacementStandingGrantRuntime,

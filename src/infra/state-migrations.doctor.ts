@@ -2151,10 +2151,10 @@ function buildLegacyStateMigrationSteps(
               const result = await migrateLegacyMainSessionKeys({
                 cfg: params.sessionConfig ?? params.config,
                 env,
-                mode: "automatic",
+                mode: "detect",
                 now,
               });
-              return { changes: result.changes, warnings: [], notices: result.warnings };
+              return { changes: [], warnings: [], notices: result.warnings };
             },
         true,
         legacySessionStoreRefusal,

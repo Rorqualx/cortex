@@ -30,7 +30,7 @@ import {
   resolveKnownModelRefMigrationTarget,
 } from "../commands/doctor/shared/codex-route-warnings.js";
 import { isDefaultInstallIdentity } from "../config/paths.js";
-import type { ConfigValidationIssue, OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveSecretInputRef, type SecretRef } from "../config/types.secrets.js";
 import type { CronListPageResult } from "../cron/service/list-page-types.js";
 import type { CronJob } from "../cron/types.js";
@@ -44,8 +44,12 @@ import type { SecurityAuditFinding } from "../security/audit.types.js";
 import type { SkillStatusEntry } from "../skills/discovery/status.js";
 import { resolveSkillWorkshopConfig } from "../skills/workshop/config.js";
 import { detectSkillWorkshopToolPolicyDiagnostic } from "../skills/workshop/tool-policy-diagnostic.js";
+import {
+  configValidationIssuesToHealthFindings,
+  configValidationWarningsToHealthFindings,
+  FINAL_CONFIG_VALIDATION_CHECK_ID,
+} from "./doctor-config-validation-findings.js";
 import { hasActiveGatewayExecCredential } from "./doctor-gateway-exec-credential.js";
-import { MODEL_DEPRECATION_HEALTH_CHECK } from "./doctor-model-deprecation-check.js";
 import { removedWorkspacesStateCheck } from "./doctor-removed-workspaces-state-check.js";
 import { resolveDoctorWorkspaceSuggestionScopes } from "./doctor-workspace-suggestion-scopes.js";
 import { copyHealthCheck } from "./health-check-adapter.js";
@@ -59,39 +63,8 @@ import type {
 
 const BROWSER_CLAWD_PROFILE_RESIDUE_CHECK_ID = "core/doctor/browser-clawd-profile-residue";
 const CODEX_SESSION_ROUTES_CHECK_ID = "core/doctor/codex-session-routes";
-const FINAL_CONFIG_VALIDATION_CHECK_ID = "core/doctor/final-config-validation";
 const GATEWAY_DAEMON_CHECK_ID = "core/doctor/gateway-daemon";
 const GATEWAY_HEALTH_CHECK_ID = "core/doctor/gateway-health";
-const SKILL_FORGE_STALE_STATE_CHECK_ID = "core/doctor/skill-forge-stale-state";
-
-const skillForgeStaleStateCheck: HealthCheck = {
-  id: SKILL_FORGE_STALE_STATE_CHECK_ID,
-  kind: "core",
-  description:
-    "SkillForge has no orphaned legacy staging dir or pre-fix duplicate recovery skills.",
-  source: "doctor",
-  async detect() {
-    const { detectSkillForgeStaleState, summarizeSkillForgeStaleState } =
-      await import("../commands/doctor-skill-forge-state.js");
-    const state = await detectSkillForgeStaleState();
-    return summarizeSkillForgeStaleState(state).map(
-      (message): HealthFinding => ({
-        checkId: SKILL_FORGE_STALE_STATE_CHECK_ID,
-        severity: "info",
-        message,
-        fixHint: "Run `openclaw doctor --fix` to clean up SkillForge state.",
-      }),
-    );
-  },
-  async repair(ctx) {
-    const { repairSkillForgeStaleState } = await import("../commands/doctor-skill-forge-state.js");
-    const result = await repairSkillForgeStaleState({ dryRun: ctx.dryRun === true });
-    if (result.changes.length === 0) {
-      return { status: "skipped", reason: "no stale SkillForge state", changes: [] };
-    }
-    return { changes: result.changes, effects: result.effects };
-  },
-};
 const GATEWAY_SERVICES_EXTRA_CHECK_ID = "core/doctor/gateway-services/extra";
 const TELEGRAM_GENERAL_TOPIC_CONVERSATIONS_CHECK_ID =
   "core/doctor/telegram-general-topic-conversations";
@@ -285,19 +258,6 @@ const defaultCoreHealthCheckDeps: CoreHealthCheckDeps = {
   collectGatewayDaemonFindings: collectGatewayDaemonFindingsWithRuntime,
   listGatewayCronJobs: listGatewayCronJobsWithRuntime,
 };
-
-export function configValidationIssuesToHealthFindings(
-  issues: readonly ConfigValidationIssue[],
-): readonly HealthFinding[] {
-  return issues.map(
-    (issue): HealthFinding => ({
-      checkId: FINAL_CONFIG_VALIDATION_CHECK_ID,
-      severity: "error",
-      message: issue.message,
-      path: issue.path || "<root>",
-    }),
-  );
-}
 
 const gatewayConfigCheck: HealthCheck = {
   id: "core/doctor/gateway-config",
@@ -633,24 +593,20 @@ const legacyStateCheck: HealthCheck & { readonly defaultEnabled: false } = {
       legacySessionSurfaces,
     });
     return [
-      ...detected.preview.map(
-        (line): HealthFinding => ({
-          checkId: "core/doctor/legacy-state",
-          severity: "warning",
-          message: line.replace(/^- /, ""),
-          path: detected.stateDir,
-          fixHint: "Run `openclaw doctor --fix` to migrate legacy state.",
-        }),
-      ),
-      ...detected.warnings.map(
-        (warning): HealthFinding => ({
-          checkId: "core/doctor/legacy-state",
-          severity: "warning",
-          message: warning,
-          path: detected.stateDir,
-          fixHint: "Resolve the warning, then rerun `openclaw doctor --fix`.",
-        }),
-      ),
+      ...detected.preview.map((line): HealthFinding => ({
+        checkId: "core/doctor/legacy-state",
+        severity: "warning",
+        message: line.replace(/^- /, ""),
+        path: detected.stateDir,
+        fixHint: "Run `openclaw doctor --fix` to migrate legacy state.",
+      })),
+      ...detected.warnings.map((warning): HealthFinding => ({
+        checkId: "core/doctor/legacy-state",
+        severity: "warning",
+        message: warning,
+        path: detected.stateDir,
+        fixHint: "Resolve the warning, then rerun `openclaw doctor --fix`.",
+      })),
     ];
   },
 };
@@ -1422,18 +1378,22 @@ const browserClawdProfileResidueCheck: HealthCheck = {
   },
 };
 
-const finalConfigValidationCheck: HealthCheck = {
+const finalConfigValidationCheck: DoctorHealthCheck = {
   id: FINAL_CONFIG_VALIDATION_CHECK_ID,
+  updateReadiness: "post-plugin",
   kind: "core",
   description: "Active openclaw.jsonc parses and conforms to the config schema.",
   source: "doctor",
   async detect() {
     const { readConfigFileSnapshot } = await import("../config/config.js");
     const snap = await readConfigFileSnapshot({ observe: false });
-    if (!snap.exists || snap.valid) {
+    if (!snap.exists) {
       return [];
     }
-    return configValidationIssuesToHealthFindings(snap.issues);
+    return [
+      ...configValidationIssuesToHealthFindings(snap.issues),
+      ...configValidationWarningsToHealthFindings(snap.warnings),
+    ];
   },
 };
 
@@ -1591,8 +1551,6 @@ export function createCoreHealthChecks(
     commandOwnerCheck,
     createSkillsReadinessCheck(deps),
     browserClawdProfileResidueCheck,
-    skillForgeStaleStateCheck,
-    MODEL_DEPRECATION_HEALTH_CHECK,
     finalConfigValidationCheck,
   ];
   return checks.map(copyHealthCheck);

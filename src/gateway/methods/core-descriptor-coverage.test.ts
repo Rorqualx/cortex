@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { coreGatewayHandlers } from "../server-methods.js";
-import { isCoreGatewayMethodClassified } from "./core-descriptors.js";
+import { isCoreGatewayMethodClassified } from "./core-method-policy.js";
 
 describe("core gateway method descriptor coverage", () => {
   it("classifies every registered core handler", () => {

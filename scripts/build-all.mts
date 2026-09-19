@@ -19,6 +19,7 @@ import {
 } from "./lib/dist-artifact-ownership.mts";
 import { runManagedCommand } from "./lib/managed-child-process.mts";
 import { pluginSdkEntrypoints } from "./lib/plugin-sdk-entries.mts";
+import type { MemoryLimitParams } from "./lib/process-memory.mts";
 import {
   TSDOWN_PACKAGE_CONFIG_GROUP,
   TSDOWN_UNIFIED_CONFIG_GROUP,
@@ -34,7 +35,6 @@ import {
   TSDOWN_DECLARATION_TOOL_INPUTS,
   TSDOWN_PACKAGES_CACHE_INPUT,
   resolveTsdownBuildPlan,
-  type MemoryLimitParams,
 } from "./tsdown-build.mts";
 
 const nodeBin = resolveNodeRuntimeExecutable() ?? process.execPath;
