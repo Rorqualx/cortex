@@ -145,6 +145,7 @@ describe("listGatewayMethods", () => {
     "plugins.catalog.categories",
     "plugins.catalog.get",
   ];
+  const voiceSelectionMethods = ["talk.voice.get", "talk.voice.set", "talk.voice.complete"];
 
   it("advertises plugin surface refresh for capability rotation", () => {
     expect(listGatewayMethods()).toContain("plugin.surface.refresh");
@@ -211,6 +212,7 @@ describe("listGatewayMethods", () => {
       "sessions.activitySummary.ensure",
       "controlUi.sessionPullRequests.checks",
       "diagnostics.cpuProfile",
+      ...voiceSelectionMethods,
     ];
     expect(listGatewayMethods().slice(-expectedSuffix.length)).toEqual(expectedSuffix);
     const methods = listGatewayMethods();
@@ -253,6 +255,7 @@ describe("listGatewayMethods", () => {
       "sessions.activitySummary.ensure",
       "controlUi.sessionPullRequests.checks",
       "diagnostics.cpuProfile",
+      ...voiceSelectionMethods,
     ]);
   });
 
@@ -430,6 +433,7 @@ describe("listGatewayMethods", () => {
       "sessions.activitySummary.ensure",
       "controlUi.sessionPullRequests.checks",
       "diagnostics.cpuProfile",
+      ...voiceSelectionMethods,
     ];
     expect(coreMethods.slice(-expectedCoreSuffix.length)).toEqual(expectedCoreSuffix);
     expect(methods.indexOf("approval.get")).toBeGreaterThan(methods.indexOf("tts.speak"));
@@ -507,6 +511,10 @@ describe("listGatewayMethods", () => {
     expect(methods).toContain("talk.session.submitToolResult");
     expect(methods).toContain("talk.session.steer");
     expect(methods).toContain("talk.session.close");
+    for (const method of voiceSelectionMethods) {
+      expect(methods).toContain(method);
+      expect(coreGatewayHandlers[method]).toBeTypeOf("function");
+    }
   });
 
   it("advertises and wires cloud worker environment mutations", () => {
