@@ -106,7 +106,6 @@ vi.mock("./subagent-announce-delivery.js", () => ({
     targetRequesterSessionKey: string;
     triggerMessage: string;
     requesterIsSubagent?: boolean;
-    requesterOrigin?: { channel?: string; to?: string; accountId?: string; threadId?: string };
     completionDirectOrigin?: {
       channel?: string;
       to?: string;
@@ -149,8 +148,7 @@ vi.mock("./subagent-announce-delivery.js", () => ({
       return { delivered: true, path: "steered" };
     }
 
-    const effectiveOrigin =
-      params.completionDirectOrigin ?? params.requesterOrigin ?? params.directOrigin;
+    const effectiveOrigin = params.completionDirectOrigin ?? params.directOrigin;
 
     const response = (await callGatewayMock({
       method: "agent",

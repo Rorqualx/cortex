@@ -1,7 +1,6 @@
 // Core command registry that lazily imports command groups based on parsed argv.
 import type { Command } from "commander";
 import { resolveCliArgvInvocation } from "../argv-invocation.js";
-import { shouldRegisterPrimaryCommandOnly } from "../command-registration-policy.js";
 import {
   buildCommandGroupEntries,
   defineImportedCommandGroupSpec,
@@ -192,6 +191,6 @@ export function registerCoreCliCommands(program: Command, ctx: ProgramContext, a
   registerCommandGroups(program, resolveCoreCommandGroups(ctx, argv), {
     eager: false,
     primary,
-    registerPrimaryOnly: Boolean(primary && shouldRegisterPrimaryCommandOnly(argv)),
+    registerPrimaryOnly: true,
   });
 }

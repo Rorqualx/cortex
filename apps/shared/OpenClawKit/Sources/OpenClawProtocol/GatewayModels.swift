@@ -16563,6 +16563,8 @@ public struct SessionRow: Codable, Sendable {
     public let execcwd: String?
     public let spawnedworkspacedir: String?
     public let spawnedcwd: String?
+    public let projectid: String?
+    public let workspacedir: String?
     public let permissionmode: SessionPermissionMode?
     public let permissionmodepending: Bool?
     public let sessionroot: String?
@@ -16648,6 +16650,8 @@ public struct SessionRow: Codable, Sendable {
         execcwd: String? = nil,
         spawnedworkspacedir: String? = nil,
         spawnedcwd: String? = nil,
+        projectid: String? = nil,
+        workspacedir: String? = nil,
         permissionmode: SessionPermissionMode? = nil,
         permissionmodepending: Bool? = nil,
         sessionroot: String? = nil,
@@ -16732,6 +16736,8 @@ public struct SessionRow: Codable, Sendable {
         self.execcwd = execcwd
         self.spawnedworkspacedir = spawnedworkspacedir
         self.spawnedcwd = spawnedcwd
+        self.projectid = projectid
+        self.workspacedir = workspacedir
         self.permissionmode = permissionmode
         self.permissionmodepending = permissionmodepending
         self.sessionroot = sessionroot
@@ -16818,6 +16824,8 @@ public struct SessionRow: Codable, Sendable {
         case execcwd = "execCwd"
         case spawnedworkspacedir = "spawnedWorkspaceDir"
         case spawnedcwd = "spawnedCwd"
+        case projectid = "projectId"
+        case workspacedir = "workspaceDir"
         case permissionmode = "permissionMode"
         case permissionmodepending = "permissionModePending"
         case sessionroot = "sessionRoot"
@@ -19220,12 +19228,17 @@ public struct SessionsListParams: Codable, Sendable {
     public let includelastmessage: Bool?
     public let includeactivitysummary: Bool?
     public let label: String?
+    public let projectid: String?
+    public let workspacedir: String?
+    public let group: String?
+    public let pinned: Bool?
     public let boardface: AnyCodable?
     public let hasboard: Bool?
     public let creatorid: String?
     public let ownerid: String?
     public let ownerfirst: Bool?
     public let involvingme: Bool?
+    public let profilerelation: [String: AnyCodable]?
     public let involvingprofileid: String?
     public let includepeople: Bool?
     public let spawnedby: String?
@@ -19248,12 +19261,17 @@ public struct SessionsListParams: Codable, Sendable {
         includelastmessage: Bool? = nil,
         includeactivitysummary: Bool? = nil,
         label: String? = nil,
+        projectid: String? = nil,
+        workspacedir: String? = nil,
+        group: String? = nil,
+        pinned: Bool? = nil,
         boardface: AnyCodable? = nil,
         hasboard: Bool? = nil,
         creatorid: String? = nil,
         ownerid: String? = nil,
         ownerfirst: Bool? = nil,
         involvingme: Bool? = nil,
+        profilerelation: [String: AnyCodable]? = nil,
         involvingprofileid: String? = nil,
         includepeople: Bool? = nil,
         spawnedby: String? = nil,
@@ -19275,12 +19293,17 @@ public struct SessionsListParams: Codable, Sendable {
         self.includelastmessage = includelastmessage
         self.includeactivitysummary = includeactivitysummary
         self.label = label
+        self.projectid = projectid
+        self.workspacedir = workspacedir
+        self.group = group
+        self.pinned = pinned
         self.boardface = boardface
         self.hasboard = hasboard
         self.creatorid = creatorid
         self.ownerid = ownerid
         self.ownerfirst = ownerfirst
         self.involvingme = involvingme
+        self.profilerelation = profilerelation
         self.involvingprofileid = involvingprofileid
         self.includepeople = includepeople
         self.spawnedby = spawnedby
@@ -19304,12 +19327,17 @@ public struct SessionsListParams: Codable, Sendable {
         case includelastmessage = "includeLastMessage"
         case includeactivitysummary = "includeActivitySummary"
         case label
+        case projectid = "projectId"
+        case workspacedir = "workspaceDir"
+        case group
+        case pinned
         case boardface = "boardFace"
         case hasboard = "hasBoard"
         case creatorid = "creatorId"
         case ownerid = "ownerId"
         case ownerfirst = "ownerFirst"
         case involvingme = "involvingMe"
+        case profilerelation = "profileRelation"
         case involvingprofileid = "involvingProfileId"
         case includepeople = "includePeople"
         case spawnedby = "spawnedBy"

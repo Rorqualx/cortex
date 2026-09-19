@@ -179,6 +179,7 @@ export type SubagentCompletionDeliveryState = {
     | "parent_run_ended"
     | "sink_unavailable"
     | "steer_dropped"
+    | "message_tool_delivery_missing"
     | "dedupe"
     | "waiting_for_requester_turn";
 };
@@ -362,6 +363,22 @@ export type SubagentRunReadRecord = Pick<
 > & {
   execution: Pick<SubagentExecutionState, "status" | "startedAt" | "endedAt" | "outcome">;
   collectorCompletion?: Pick<SwarmCollectorCompletion, "status">;
+};
+
+/** Lifecycle facts needed to protect child transcripts during session maintenance. */
+export type SubagentRunMaintenanceRecord = Pick<
+  SubagentRunRecord,
+  | "runId"
+  | "childSessionKey"
+  | "requesterSessionKey"
+  | "createdAt"
+  | "cleanupCompletedAt"
+  | "expectsCompletionMessage"
+  | "killIntent"
+  | "killReconciliation"
+> & {
+  execution: Pick<SubagentExecutionState, "status" | "endedAt">;
+  delivery?: Pick<SubagentCompletionDeliveryState, "status" | "suspendedAt">;
 };
 
 export type RegisterSubagentRunParams = {

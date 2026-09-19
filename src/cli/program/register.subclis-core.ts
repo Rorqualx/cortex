@@ -3,10 +3,7 @@ import type { Command } from "commander";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveCliArgvInvocation } from "../argv-invocation.js";
 import { resolveCliCommandPathPolicy } from "../command-path-policy.js";
-import {
-  shouldEagerRegisterSubcommands,
-  shouldRegisterPrimarySubcommandOnly,
-} from "../command-registration-policy.js";
+import { shouldEagerRegisterSubcommands } from "../command-registration-policy.js";
 import {
   buildCommandGroupEntries,
   defineImportedProgramCommandGroupSpecs,
@@ -383,6 +380,6 @@ export function registerSubCliCommandsCore(program: Command, argv: string[] = pr
   registerCommandGroups(program, resolveSubCliCommandGroups(argv), {
     eager: shouldEagerRegisterSubcommands(),
     primary,
-    registerPrimaryOnly: Boolean(primary && shouldRegisterPrimarySubcommandOnly(argv)),
+    registerPrimaryOnly: true,
   });
 }

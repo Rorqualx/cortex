@@ -29,6 +29,8 @@ type LoadGatewayModelCatalogSnapshot =
   typeof import("./server-model-catalog.js").loadGatewayModelCatalogSnapshot;
 type ReadPreparedGatewayModelCatalog =
   typeof import("./server-model-catalog.js").readPreparedGatewayModelCatalog;
+type ReadPreparedGatewayModelCatalogBatch =
+  typeof import("./server-model-catalog.js").readPreparedGatewayModelCatalogBatch;
 type LoadPreparedGatewayModelCatalogSnapshot =
   typeof import("./server-model-catalog.js").loadPreparedGatewayModelCatalogSnapshot;
 type ReadPreparedGatewayModelCatalogOwnerSnapshot =
@@ -103,6 +105,12 @@ const loadGatewayModelCatalogSnapshot: LoadGatewayModelCatalogSnapshot = async (
 const readPreparedGatewayModelCatalog: ReadPreparedGatewayModelCatalog = async (params) => {
   const mod = await loadGatewayModelCatalogModule();
   return mod.readPreparedGatewayModelCatalog({ ...params, allowGatewaySubagentBinding: true });
+};
+const readPreparedGatewayModelCatalogBatch: ReadPreparedGatewayModelCatalogBatch = async (
+  ...args
+) => {
+  const mod = await loadGatewayModelCatalogModule();
+  return mod.readPreparedGatewayModelCatalogBatch(...args);
 };
 const loadPreparedGatewayModelCatalogSnapshot: LoadPreparedGatewayModelCatalogSnapshot = async (
   ...args
@@ -258,6 +266,7 @@ async function createGatewayKernelWithSdkHost(
         loadGatewayModelCatalog,
         loadGatewayModelCatalogSnapshot,
         readPreparedGatewayModelCatalog,
+        readPreparedGatewayModelCatalogBatch,
       }),
     );
     if (!options.deferEarlyRuntime) {

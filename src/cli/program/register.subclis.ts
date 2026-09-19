@@ -1,10 +1,7 @@
 // Sub-CLI registration: core subcommands plus lazily imported command groups.
 import type { Command } from "commander";
 import { resolveCliArgvInvocation } from "../argv-invocation.js";
-import {
-  shouldEagerRegisterSubcommands,
-  shouldRegisterPrimarySubcommandOnly,
-} from "../command-registration-policy.js";
+import { shouldEagerRegisterSubcommands } from "../command-registration-policy.js";
 import {
   buildCommandGroupEntries,
   defineImportedProgramCommandGroupSpecs,
@@ -71,6 +68,6 @@ export function registerSubCliCommands(program: Command, argv: string[] = proces
   registerCommandGroups(program, resolveSubCliCommandGroups(argv), {
     eager: shouldEagerRegisterSubcommands(),
     primary,
-    registerPrimaryOnly: Boolean(primary && shouldRegisterPrimarySubcommandOnly(argv)),
+    registerPrimaryOnly: true,
   });
 }

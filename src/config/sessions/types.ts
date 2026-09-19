@@ -450,7 +450,7 @@ type SessionEntryCore = SessionRestartRecoveryState &
     /** Accumulated runtime across subagent follow-up runs, persisted after completion. */
     runtimeMs?: number;
     /** Final persisted subagent run status, used after in-memory run archival. */
-    status?: SessionRunStatus;
+    status?: PersistedSessionRunStatus;
     /** Compact user-facing reason for the latest failed or timed-out run. */
     lastRunError?: string;
     /**
@@ -674,7 +674,13 @@ export interface InternalSessionEntry extends InternalSessionEntryCore {}
 export function isTerminalSessionStatus(
   status: unknown,
 ): status is Exclude<NonNullable<SessionEntry["status"]>, "running"> {
-  return status === "done" || status === "failed" || status === "killed" || status === "timeout";
+  return (
+    status === "done" ||
+    status === "failed" ||
+    status === "interrupted" ||
+    status === "killed" ||
+    status === "timeout"
+  );
 }
 
 function isSessionPluginTraceLine(line: string): boolean {
@@ -946,6 +952,10 @@ export type { SessionSystemPromptReport } from "./session-system-prompt-report.j
 // Upstream session token-accounting version tag (grafted from upstream during resync;
 // consumed by session-usage/compaction accounting).
 export const SESSION_TOTAL_TOKENS_VERSION = 1 as const;
+
+// Upstream persisted run status (grafted during resync; consumed by
+// session-transcript-turn-lifecycle types). Adds the "interrupted" persisted state.
+export type PersistedSessionRunStatus = SessionRunStatus | "interrupted";
 
 export const DEFAULT_RESET_TRIGGER = "/new";
 export const DEFAULT_RESET_TRIGGERS = ["/new", "/reset"];
