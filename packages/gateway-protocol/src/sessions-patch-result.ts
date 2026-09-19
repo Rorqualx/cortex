@@ -11,6 +11,7 @@ export type SessionsPatchResult = {
     // agents-models-skills.ts); contextWindow(s) grafted from upstream #127951 so
     // this result stays a superset for any merged producer that populates them.
     agentRuntime?: import("./schema/session-row.js").GatewayAgentRuntime;
+    runtimeSelectionLocked?: boolean;
     contextWindow?: string;
     contextWindows?: Array<{ id: string; label: string; contextWindow: number }>;
     thinkingLevel?: string;

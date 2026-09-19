@@ -8,6 +8,7 @@ import {
   type AgentRunDelegatedAuthority,
   registerAgentRunDelegatedAuthorityClosedHandler,
 } from "../infra/agent-run-registry.js";
+import type { ApprovalNativeRouteCoordinator } from "../infra/approval-native-route-coordinator.js";
 import type { ChannelApprovalKind } from "../infra/approval-types.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { createExecApprovalForwarder } from "../infra/exec-approval-forwarder.js";
@@ -90,6 +91,8 @@ export function createGatewayAuxHandlers(
     validateAgentRuntimeDelegatedAuthority?: (authority: AgentRuntimeDelegatedAuthority) => boolean;
     /** Abort-wins guard: a tombstoned run must not mint standing authority. */
     hasRunAbortMarker?: (runId: string) => boolean;
+    /** Native approval handlers of this Gateway's channel accounts register here. */
+    getNativeApprovalRouteCoordinator: () => ApprovalNativeRouteCoordinator | undefined;
     /** Config-driven default expiry stamp for freshly minted standing grants. */
     resolveGrantDefaultExpiresAtMs?: (nowMs: number) => number | null;
     chatAbortControllers?: Map<string, ChatAbortControllerEntry>;
@@ -165,7 +168,9 @@ export function createGatewayAuxHandlers(
       };
     },
   );
-  const execApprovalForwarder = createExecApprovalForwarder();
+  const execApprovalForwarder = createExecApprovalForwarder({
+    getNativeApprovalRouteCoordinator: params.getNativeApprovalRouteCoordinator,
+  });
   const approvalWebPushDelivery = createApprovalWebPushDelivery({
     getRuntimeConfig,
     log: params.log,
