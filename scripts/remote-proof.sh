@@ -85,6 +85,13 @@ rsh "cat > /tmp/remote-proof-$STAMP.sh" <<EOF
 set -uo pipefail
 export PATH=$REMOTE_NODE_BIN:\$PATH
 export npm_config_verify_deps_before_run=false
+# Cap vitest workers on the prover. huey has 24 cores, so the default local
+# scheduler picks ~18 workers; that many concurrent test files each forking a
+# child_process (e.g. the agent-schema-inspection worker) exhausts fork/IPC
+# resources into a runaway child-spawn loop that spins one worker at ~250% CPU
+# and hangs the whole vitest.unit lane (2026-09-18). 3 matches the CI scheduler's
+# proven-safe count. Override via OPENCLAW_VITEST_MAX_WORKERS to tune/serialize.
+export OPENCLAW_VITEST_MAX_WORKERS=\${OPENCLAW_VITEST_MAX_WORKERS:-3}
 PROOF_DIR=$PROOF_DIR
 LANES="$LANES"
 BASELINE_REF=$BASELINE_REF
