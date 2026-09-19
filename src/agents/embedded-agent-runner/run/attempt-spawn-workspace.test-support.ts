@@ -730,8 +730,8 @@ vi.mock("../../cache-trace.js", () => ({
 }));
 
 vi.mock("../../agent-tools.js", () => ({
-  createOpenClawCodingTools: (options?: { workspaceDir?: string; spawnWorkspaceDir?: string }) =>
-    hoisted.createOpenClawCodingToolsMock(options),
+  createOpenClawCodingTools: hoisted.createOpenClawCodingToolsMock,
+  createOpenClawCodingToolsInternal: hoisted.createOpenClawCodingToolsMock,
   resolveToolLoopDetectionConfig: () => undefined,
 }));
 
@@ -1010,7 +1010,7 @@ type MutableSession = {
   dispose: () => void;
   steer: (text: string) => Promise<void>;
   [agentSessionSetContextReplacementHook]: (
-    callback: ((tokensAfter: number) => void) | undefined,
+    callback: ((tokensAfter: number, tokensBefore: number) => void) | undefined,
   ) => void;
   [agentSessionSetPromptPreparation]: (prepare: (() => Promise<void>) | undefined) => void;
 };

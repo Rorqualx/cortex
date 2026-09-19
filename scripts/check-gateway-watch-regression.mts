@@ -13,6 +13,7 @@ import { stripLeadingPackageManagerSeparator } from "./lib/arg-utils.mts";
 import { readProcessTreeCpuMs } from "./lib/gateway-bench-probes.ts";
 import {
   BUILD_STAMP_FILE,
+  refreshLocalBuildStampTimes,
   writeBuildStamp,
   writeRuntimePostBuildStamp,
 } from "./lib/local-build-metadata.mts";
@@ -1124,8 +1125,8 @@ async function main() {
     writeBuildAndRuntimePostBuildStamps();
   } else {
     // Restored CI artifacts can be older than the fresh checkout mtimes.
-    // Refresh the local artifact stamps so run-node trusts the already-built dist.
-    writeBuildAndRuntimePostBuildStamps();
+    // Preserve the artifact producer's provenance; recipient cleanliness is not build proof.
+    refreshLocalBuildStampTimes();
   }
 
   // This harness must see the REAL build requirement: run-node suppresses stale

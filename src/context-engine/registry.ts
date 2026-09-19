@@ -29,6 +29,7 @@ import {
   describeResolvedContextEngineContractError,
   projectContextEngineHostParams,
 } from "./registry-contract.js";
+import { resolveEffectiveContextEngineId } from "./registry-selection.js";
 import {
   recordContextEngineRegistrationSource,
   createContextEngineWithResources,
@@ -625,9 +626,7 @@ export async function resolveLogicalTurnContextEngines(
 ): Promise<LogicalTurnContextEngineResolution> {
   return await runContextEngineFactoryResolution(async (abandon) => {
     const defaultEngineId = defaultSlotIdForKey("contextEngine");
-    const slotValue = config?.plugins?.slots?.contextEngine;
-    const configuredEngineId =
-      typeof slotValue === "string" && slotValue.trim() ? slotValue.trim() : defaultEngineId;
+    const configuredEngineId = resolveEffectiveContextEngineId(config, getContextEngines());
     const factoryCtx: ContextEngineFactoryContext = {
       config,
       agentDir: options?.agentDir,
@@ -701,7 +700,7 @@ export async function resolveLogicalTurnContextEngines(
  * Resolve which ContextEngine to use based on plugin slot configuration.
  *
  * Resolution order:
- *   1. `config.plugins.slots.contextEngine` (explicit slot override)
+ *   1. `config.plugins.slots.contextEngine` when its plugin policy permits it
  *   2. Default slot value ("legacy")
  *
  * When `config` is provided it is forwarded to the factory as part of a

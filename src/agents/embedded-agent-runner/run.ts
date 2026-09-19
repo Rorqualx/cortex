@@ -210,6 +210,7 @@ import {
   shouldTreatEmptyAssistantReplyAsSilent,
 } from "./run/incomplete-turn.js";
 import type { RunEmbeddedAgentParams } from "./run/params.js";
+import type { RunEmbeddedAgentInternalParams } from "./run/internal-params.js";
 import { buildEmbeddedRunPayloads } from "./run/payloads.js";
 import { handleRetryLimitExhaustion } from "./run/retry-limit.js";
 import {
@@ -523,7 +524,7 @@ function buildHandledReplyPayloads(reply?: ReplyPayload) {
 }
 
 export async function runEmbeddedAgent(
-  paramsInput: RunEmbeddedAgentParams,
+  paramsInput: RunEmbeddedAgentInternalParams,
 ): Promise<EmbeddedAgentRunResult> {
   let params = paramsInput;
   // Resolve sessionKey early so all downstream consumers (hooks, LCM, compaction)
