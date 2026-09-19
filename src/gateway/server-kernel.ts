@@ -285,7 +285,9 @@ async function createGatewayKernelWithSdkHost(
       kernelState?.mentionInbox.dispose();
       await sdkResourceHost.drainWork();
       const cleanupErrors: unknown[] = [];
-      const releaseMetadata = async (retireRegistry?: () => Promise<void>) => {
+      const releaseMetadata = async (
+        retireRegistry?: Parameters<typeof pluginMetadata.close>[1],
+      ) => {
         try {
           await sdkResourceHost.close();
         } catch (cleanupError) {
@@ -294,7 +296,7 @@ async function createGatewayKernelWithSdkHost(
           }
           cleanupErrors.push(cleanupError);
         }
-        await pluginMetadata.close(async (retire) => {
+        return pluginMetadata.close(async (retire) => {
           await closePreparedModelRuntimeSnapshots();
           await retire();
           for (const cleanup of [clearGatewayAgentCliShim, clearSecretsRuntimeSnapshotState]) {
