@@ -273,7 +273,8 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
   const model = normalizeOptionalString(params.model);
   const role = normalizeOptionalString(params.role);
   const description = normalizeOptionalString(params.description);
-  const baseIdentity = template?.identity ??
+  const baseIdentity =
+    (template ? { ...template.identity, ...params.entry?.identity } : undefined) ??
     params.entry?.identity ??
     createAgentIdentityConfig({
       name: safeName,
@@ -473,7 +474,19 @@ export async function createAgent(params: CreateAgentParams): Promise<CreateAgen
             dir: workspaceDir,
             beforePersistentApply: params.beforePersistentApply,
             ensureBootstrapFiles: !skipBootstrap,
-            ...(template ? { templates: template.files } : {}),
+            ...(template
+              ? {
+                  templates: params.entry?.identity
+                    ? {
+                        ...template.files,
+                        [DEFAULT_IDENTITY_FILENAME]: mergeIdentityMarkdownContent(
+                          template.files[DEFAULT_IDENTITY_FILENAME],
+                          identity,
+                        ),
+                      }
+                    : template.files,
+                }
+              : {}),
             skipOptionalBootstrapFiles: template
               ? []
               : (params.skipOptionalBootstrapFiles ??

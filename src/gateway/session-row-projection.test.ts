@@ -8,6 +8,8 @@ import {
   deleteSessionEntryLifecycle,
   replaceSessionEntrySync,
 } from "../config/sessions/session-accessor.js";
+import { setCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata.test-support.js";
+import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
 import { emitSessionIdentityMutation } from "../sessions/session-lifecycle-events.js";
 import { sessionChanges } from "../sessions/session-row-changes.js";
 import { registerOpenClawAgentDatabase } from "../state/openclaw-agent-db-registry.js";
@@ -21,6 +23,45 @@ import { createSessionRowProjection } from "./session-row-projection.js";
 import * as rowInputs from "./session-utils-row.js";
 
 afterEach(() => vi.restoreAllMocks());
+
+it("keeps child links ordered after a keyed child refresh", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    const cfg = { agents: { list: [{ id: "main", default: true }] } };
+    const parent = "agent:main:parent";
+    const children = ["agent:main:child-a", "agent:main:child-b"] as const;
+    replaceSessionEntrySync(
+      { agentId: "main", sessionKey: parent },
+      { sessionId: "parent", updatedAt: 1 },
+    );
+    for (const [index, key] of children.entries()) {
+      replaceSessionEntrySync(
+        { agentId: "main", sessionKey: key },
+        {
+          sessionId: `child-${index}`,
+          updatedAt: 1,
+          status: "running",
+          ...(index === 0 ? { parentSessionKey: parent } : { spawnedBy: parent }),
+        },
+      );
+    }
+    const projection = await createSessionRowProjection({ cfg });
+    try {
+      await projection.ensureMaterialized();
+      expect(projection.snapshot({ agentId: "main", key: parent }).row?.childSessions).toEqual(
+        children,
+      );
+      sessionChanges.emit({ agentId: "main", sessionKey: children[0] });
+      expect(projection.snapshot({ agentId: "main", key: children[0] }).row?.sessionId).toBe(
+        "child-0",
+      );
+      expect(projection.snapshot({ agentId: "main", key: parent }).row?.childSessions).toEqual(
+        children,
+      );
+    } finally {
+      projection.dispose();
+    }
+  });
+});
 
 it("resolves agent-scoped legacy locators from resident topology for reads and dirty publications", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
@@ -409,6 +450,138 @@ it("normalizes parent lineage after configuration publication", async () => {
     }
   });
 });
+
+it("reprocesses activity-summary policy when config changes during materialization", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    let cfg = {
+      agents: {
+        list: [{ id: "main", default: true }, { id: "work" }],
+        defaults: { utilityModel: "unit-test/small" },
+      },
+    };
+    const targets = ["main", "work"].flatMap((agentId) =>
+      Array.from({ length: 80 }, (_, index) => ({
+        agentId,
+        key: `agent:${agentId}:policy-${index}`,
+      })),
+    );
+    for (const target of targets) {
+      replaceSessionEntrySync(
+        { agentId: target.agentId, sessionKey: target.key },
+        { sessionId: target.key, updatedAt: 1, displayName: "Policy fixture" },
+      );
+    }
+    const projection = await createSessionRowProjection({
+      cfg,
+      getConfig: () => cfg,
+      getModelCatalog: async () => [],
+    });
+    await projection.ensureMaterialized();
+    try {
+      for (const target of targets) {
+        expect(projection.snapshot(target).row?.activitySummary?.state).toBe("stale");
+      }
+      const readInputs = rowInputs.readSessionRowInputs;
+      vi.spyOn(rowInputs, "readSessionRowInputs").mockImplementationOnce((params) => {
+        cfg = { ...cfg, agents: { ...cfg.agents, defaults: { utilityModel: "" } } };
+        sessionChanges.emit({ all: true, scope: "config" });
+        return readInputs(params);
+      });
+      sessionChanges.emit({ all: true, scope: "acp" });
+      await projection.ensureMaterialized();
+      expect(projection.dirtyRowCount).toBe(0);
+      for (const target of targets) {
+        expect(projection.snapshot(target).row?.activitySummary?.state).toBe("unavailable");
+      }
+      cfg = { ...cfg, agents: { ...cfg.agents, defaults: { utilityModel: "unit-test/small" } } };
+      sessionChanges.emit({ all: true, scope: "config" });
+      await projection.ensureMaterialized();
+      for (const target of targets) {
+        expect(projection.snapshot(target).row?.activitySummary?.state).toBe("stale");
+      }
+    } finally {
+      projection.dispose();
+    }
+  });
+});
+
+it.each([false, true])(
+  "reprocesses utility policy after a synchronous model publication (catalog reader: %s)",
+  async (withCatalogReader) => {
+    await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      const cfg = {
+        agents: {
+          list: [{ id: "main", default: true }],
+          defaults: { model: "fixture/primary" },
+        },
+      };
+      const publish = (enabled: boolean) => {
+        const snapshot = createPluginMetadataSnapshotFixture({
+          plugins: [
+            {
+              id: "fixture",
+              providers: ["fixture"],
+              modelCatalog: {
+                providers: {
+                  fixture: {
+                    models: [{ id: "primary" }],
+                    ...(enabled ? { defaultUtilityModel: "small" } : {}),
+                  },
+                },
+              },
+            },
+          ],
+        });
+        setCurrentPluginMetadataSnapshot(snapshot, { config: cfg, compatibleConfigs: [cfg] });
+      };
+      publish(true);
+      const targets = ["first", "middle", "last"].map((name) => ({
+        agentId: "main",
+        key: `agent:main:publication-${name}`,
+      }));
+      try {
+        for (const target of targets) {
+          replaceSessionEntrySync(
+            { agentId: target.agentId, sessionKey: target.key },
+            { sessionId: target.key, updatedAt: 1, displayName: "Publication fixture" },
+          );
+        }
+        const projection = await createSessionRowProjection({
+          cfg,
+          ...(withCatalogReader ? { getModelCatalog: async () => [] } : { modelCatalog: [] }),
+        });
+        await projection.ensureMaterialized();
+        try {
+          for (const target of targets) {
+            expect(projection.snapshot(target).row?.activitySummary?.state).toBe("stale");
+          }
+          // Keep the publication and following rows in one deterministic synchronous slice.
+          const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+          try {
+            const readInputs = rowInputs.readSessionRowInputs;
+            vi.spyOn(rowInputs, "readSessionRowInputs").mockImplementationOnce((params) => {
+              publish(false);
+              notifyPreparedModelRuntimePublication({ phase: "catalog-published" });
+              return readInputs(params);
+            });
+            sessionChanges.emit({ all: true, scope: "catalog" });
+            await projection.ensureMaterialized();
+          } finally {
+            clock.mockRestore();
+          }
+          expect(projection.dirtyRowCount).toBe(0);
+          for (const target of targets) {
+            expect(projection.snapshot(target).row?.activitySummary?.state).toBe("unavailable");
+          }
+        } finally {
+          projection.dispose();
+        }
+      } finally {
+        setCurrentPluginMetadataSnapshot(undefined);
+      }
+    });
+  },
+);
 
 it("refreshes prepared catalog metadata after catalog publication", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {

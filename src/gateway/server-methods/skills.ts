@@ -554,7 +554,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatErrorMessage(err)));
     }
   },
-  "skills.curator.status": async ({ params, respond }) => {
+  "skills.curator.status": async ({ params, respond, context }) => {
     if (
       !assertValidParams(
         params,
@@ -565,7 +565,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
     ) {
       return;
     }
-    respond(true, getSkillCuratorStatus(), undefined);
+    respond(true, getSkillCuratorStatus({ config: context.getRuntimeConfig() }), undefined);
   },
   "skills.curator.pin": (options) =>
     respondRetiredSkillCuratorAction(options, "skills.curator.pin"),

@@ -123,6 +123,7 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["tools.effective", "tools-effective", "operator.read", "<=2026.7", { startup: true }],
   ["tools.invoke", "tools-invoke", "operator.write", "<=2026.7"],
   ["mcp.app.view", "mcp-app", "operator.read", "<=2026.7"],
+  ["mcp.authLogin", "mcp-auth-login", "operator.admin", "2026.9", CONTROL_PLANE_WRITE],
   ["mcp.app.listTools", "mcp-app", "operator.read", "<=2026.7"],
   ["mcp.app.listResources", "mcp-app", "operator.read", "<=2026.7"],
   ["mcp.app.listResourceTemplates", "mcp-app", "operator.read", "<=2026.7"],
