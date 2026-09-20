@@ -1,5 +1,5 @@
 // Control UI type declarations define types contracts.
-export type UpdateAvailable = import("../../../src/infra/update-startup.js").UpdateAvailable;
+export type UpdateAvailable = import("../../../src/infra/update-status-state.js").UpdateAvailable;
 import type { CronJobBase } from "../../../src/cron/types-shared.js";
 import type { CronTrigger } from "../../../src/cron/types.js";
 import type { ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";

@@ -396,10 +396,7 @@ export function activateGatewayScheduledServices(params: {
   cfgAtStart: OpenClawConfig;
   deps: import("../cli/deps.types.js").CliDeps;
   sessionDeliveryRecoveryMaxEnqueuedAt: number;
-  cronState: GatewayCronState;
-  cronReconciliation: GatewayCronReconciliation;
-  startCron?: boolean;
-  logCron: { error: (message: string) => void };
+  cronEnabled: boolean;
   log: GatewayRuntimeServiceLogger;
   resolveGatewayContext?: GatewayContextResolver;
 }): {
@@ -417,7 +414,7 @@ export function activateGatewayScheduledServices(params: {
     };
   }
   if (
-    !params.cronState.cronEnabled &&
+    !params.cronEnabled &&
     resolveHeartbeatAgents(params.cfgAtStart).some((agent) =>
       Boolean(resolveHeartbeatIntervalMs(params.cfgAtStart, undefined, agent.heartbeat)),
     )
@@ -429,7 +426,7 @@ export function activateGatewayScheduledServices(params: {
       );
   }
   if (
-    !params.cronState.cronEnabled &&
+    !params.cronEnabled &&
     resolveSkillWorkshopConfig(params.cfgAtStart).autonomous.mode === "auto"
   ) {
     params.log
@@ -474,15 +471,6 @@ export function activateGatewayScheduledServices(params: {
       ? { resolveGatewayContext: params.resolveGatewayContext }
       : {}),
   });
-  if (params.startCron !== false) {
-    startGatewayCronWithLogging({
-      cronState: params.cronState,
-      cronReconciliation: params.cronReconciliation,
-      reason: "startup",
-      config: params.cfgAtStart,
-      logCron: params.logCron,
-    });
-  }
   const stopOutboundDeliveryRecovery = startPendingOutboundDeliveryRecovery({
     cfg: params.cfgAtStart,
     log: params.log,

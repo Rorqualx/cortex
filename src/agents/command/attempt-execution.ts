@@ -174,35 +174,6 @@ const ACP_TRANSCRIPT_USAGE = {
     total: 0,
   },
 } as const;
-const CLI_TRANSCRIPT_UNAVAILABLE_USAGE = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  total: 0,
-  contextUsage: { state: "unavailable" },
-} as const;
-
-function resolveCliTranscriptUsage(usage: TranscriptUsage | undefined): TranscriptUsage {
-  if (!usage) {
-    return CLI_TRANSCRIPT_UNAVAILABLE_USAGE;
-  }
-  if (usage.contextUsage) {
-    return usage;
-  }
-  const promptTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-  return {
-    ...usage,
-    contextUsage:
-      promptTokens > 0
-        ? {
-            state: "available",
-            promptTokens,
-            totalTokens: promptTokens + (usage.output ?? 0),
-          }
-        : { state: "unavailable" },
-  };
-}
 function shouldSuppressEmbeddedLiveStreamOutput(params: { opts: AgentCommandOpts }): boolean {
   return params.opts.sessionEffects === "internal" && params.opts.deliver !== true;
 }
@@ -515,52 +486,6 @@ export async function persistAcpTurnTranscript(params: {
       provider: "openclaw",
       model: "acp-runtime",
       stopReason: outcome === "success" ? "stop" : outcome === "failure" ? "error" : "aborted",
-    },
-  });
-}
-
-export async function persistCliTurnTranscript(params: {
-  body: string;
-  transcriptBody?: string;
-  userMessage?: PersistedUserTurnMessage;
-  result: EmbeddedAgentRunResult;
-  sessionId: string;
-  sessionKey: string;
-  sessionFile?: string;
-  sessionEntry: SessionEntry | undefined;
-  sessionStore?: Record<string, SessionEntry>;
-  storePath?: string;
-  sessionAgentId: string;
-  threadId?: string | number;
-  sessionCwd: string;
-  config: OpenClawConfig;
-  embeddedAssistantGapFill?: boolean;
-  skipUserTurn?: boolean;
-  skipAssistantTurn?: boolean;
-}): Promise<PersistTextTurnTranscriptResult> {
-  const { result, skipUserTurn: requestedSkipUserTurn, ...transcript } = params;
-  const replyText = resolveCliTranscriptReplyText(result);
-  const provider = result.meta.agentMeta?.provider?.trim() ?? "cli";
-  const model = result.meta.agentMeta?.model?.trim() ?? "default";
-  // Embedded gap-fill already persisted the user turn via the embedded runner;
-  // skip re-appending it so the fill only records the assistant reply.
-  const gapFill = params.embeddedAssistantGapFill ?? false;
-  const skipUserTurn = gapFill || requestedSkipUserTurn === true;
-
-  return await persistTextTurnTranscript({
-    ...transcript,
-    body: skipUserTurn ? "" : transcript.body,
-    transcriptBody: skipUserTurn ? undefined : transcript.transcriptBody,
-    userMessage: skipUserTurn ? undefined : transcript.userMessage,
-    finalText: replyText,
-    assistant: {
-      api: "cli",
-      provider,
-      model,
-      stopReason: "stop",
-      // The marker is terminal for fallback scans: without it, readers could
-      // skip this turn and revive an older cumulative usage record as fresh.
-      usage: resolveCliTranscriptUsage(result.meta.agentMeta?.lastCallUsage),
     },
   });
 }

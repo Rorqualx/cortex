@@ -717,6 +717,7 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["sessions.activitySummary.ensure", "session-activity-summary", "operator.write", "2026.9"],
   ["controlUi.sessionPullRequests.checks", "control-ui", "operator.read", "2026.9"],
   ["diagnostics.cpuProfile", "diagnostics", "operator.admin", "2026.9"],
+  ["diagnostics.heapProfile", "diagnostics", "operator.admin", "2026.9"],
   ["talk.voice.get", "talk", "operator.talk", "2026.9"],
   ["talk.voice.set", "talk", "operator.talk", "2026.9"],
   ["talk.voice.complete", "talk", "operator.talk", "2026.9"],

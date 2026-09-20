@@ -96,14 +96,28 @@ export const AgentSummarySchema = closedObject({
   id: NonEmptyString,
   status: Type.Optional(Type.Literal("degraded")),
   admissionRefusal: Type.Optional(
-    closedObject({
-      agentId: NonEmptyString,
-      paths: Type.Array(NonEmptyString),
-      embeddedOwnerId: NonEmptyString,
-      code: Type.Literal("agent-database-ownership-mismatch"),
-      reason: NonEmptyString,
-      repairHint: NonEmptyString,
-    }),
+    Type.Union([
+      closedObject({
+        agentId: NonEmptyString,
+        paths: Type.Array(NonEmptyString),
+        embeddedOwnerId: NonEmptyString,
+        code: Type.Literal("agent-database-ownership-mismatch"),
+        reason: NonEmptyString,
+        repairHint: NonEmptyString,
+      }),
+      // Diagnostic inspection refusals carry no embeddedOwnerId; mirrors the
+      // expanded AgentDatabaseAdmissionRefusal discriminated union.
+      closedObject({
+        agentId: NonEmptyString,
+        paths: Type.Array(NonEmptyString),
+        code: Type.Union([
+          Type.Literal("agent-database-inspection-pending"),
+          Type.Literal("agent-database-inspection-failed"),
+        ]),
+        reason: NonEmptyString,
+        repairHint: NonEmptyString,
+      }),
+    ]),
   ),
   kind: Type.Optional(AgentKindSchema),
   name: Type.Optional(NonEmptyString),

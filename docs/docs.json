@@ -1828,6 +1828,7 @@
                   {
                     "group": "Models and memory",
                     "pages": [
+                      "plugins/apple-fm",
                       "plugins/llama-cpp",
                       "plugins/memory-lancedb",
                       "plugins/memory-wiki"
