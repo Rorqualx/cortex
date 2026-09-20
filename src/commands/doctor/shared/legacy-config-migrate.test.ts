@@ -4918,7 +4918,7 @@ describe("legacy flat memory search field migrate", () => {
         "Moved memory.search.chunkSize → memory.search.chunking.tokens.",
         "Moved memory.search.chunkOverlap → memory.search.chunking.overlap.",
         "Moved memory.search.maxResults → memory.search.query.maxResults.",
-        "Removed retired runtime tuning knobs; built-in defaults now apply.",
+        "Removed retired runtime tuning knobs: memory.search.chunking; built-in defaults now apply.",
       ]),
     );
   });
@@ -4952,7 +4952,7 @@ describe("legacy flat memory search field migrate", () => {
         "Removed memory.search.chunkSize (memory.search.chunking.tokens already set).",
         "Moved memory.search.chunkOverlap → memory.search.chunking.overlap.",
         "Removed memory.search.maxResults (memory.search.query.maxResults already set).",
-        "Removed retired runtime tuning knobs; built-in defaults now apply.",
+        "Removed retired runtime tuning knobs: memory.search.chunking; built-in defaults now apply.",
       ]),
     );
   });
@@ -4972,7 +4972,7 @@ describe("legacy flat memory search field migrate", () => {
       query: { maxResults: 10 },
     });
     expect(res.changes).toContain(
-      "Removed retired runtime tuning knobs; built-in defaults now apply.",
+      "Removed retired runtime tuning knobs: agents.list[0].memory.search.chunking, agents.list[1].memory.search.chunking; built-in defaults now apply.",
     );
   });
 
@@ -4996,7 +4996,7 @@ describe("legacy flat memory search field migrate", () => {
       query: { maxResults: 5 },
     });
     expect(res.changes).toContain(
-      "Removed retired runtime tuning knobs; built-in defaults now apply.",
+      "Removed retired runtime tuning knobs: memory.search.chunking; built-in defaults now apply.",
     );
   });
 });

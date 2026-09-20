@@ -1,7 +1,11 @@
 // Shared Gateway session projection types.
 // Keeps server methods and Control UI payloads aligned.
 import type { FastMode } from "@openclaw/normalization-core/string-coerce";
-import type { SessionPlacement, SessionRow } from "../../packages/gateway-protocol/src/index.js";
+import type {
+  SessionPlacement,
+  SessionPlacementMove,
+  SessionRow,
+} from "../../packages/gateway-protocol/src/index.js";
 import type { QueueMode } from "../../packages/gateway-protocol/src/schema/logs-chat.js";
 import type { SessionObserverDigest } from "../../packages/gateway-protocol/src/schema/sessions.js";
 import type { StickyModelSelectionTarget } from "../agents/sticky-model-selection.js";
@@ -67,6 +71,7 @@ export type GatewaySessionRow = Omit<SessionRow, "archivedBy" | "updatedAt" | "w
     "agentId" | "runId" | "headline" | "health" | "updatedAt" | "revision"
   >;
   placement?: SessionPlacement;
+  placementMove?: SessionPlacementMove;
   systemSent?: boolean;
   abortedLastRun?: boolean;
   thinkingLevel?: string;

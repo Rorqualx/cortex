@@ -20,6 +20,7 @@ import {
   AGENT_HARNESS_SESSION_KEY_RESERVED_MESSAGE,
   isAgentHarnessSessionKey,
 } from "../../sessions/agent-harness-session-key.js";
+import type { InputProvenance } from "../../sessions/input-provenance.js";
 import {
   beginSessionWorkAdmission,
   type SessionWorkAdmissionLease,
@@ -112,6 +113,7 @@ export type PreparedCronRunContext = {
   workspaceDir: string;
   executionRoot?: RunCronAgentTurnParams["executionRoot"];
   commandBody: string;
+  inputProvenance?: InputProvenance;
   cronSession: MutableCronSession;
   sessionWorkAdmission: SessionWorkAdmissionLease;
   persistSessionEntry: PersistCronSessionEntry;
@@ -749,7 +751,8 @@ export async function prepareCronRunContext(params: {
     const message = currentConversationContext
       ? `${currentConversationContext}\n\n${resolveCronAgentTurnMessage(input)}`
       : resolveCronAgentTurnMessage(input);
-    const base = `[cron:${input.job.id} ${input.job.name}] ${message}`.trim();
+    const sourcePromptPrefix = `[cron:${input.job.id} ${input.job.name}]`;
+    const base = `${sourcePromptPrefix} ${message}`.trim();
     const isExternalHook =
       hookExternalContentSource !== undefined || isExternalHookSession(baseSessionKey);
     const allowUnsafeExternalContent =
@@ -888,6 +891,17 @@ export async function prepareCronRunContext(params: {
         workspaceDir,
         executionRoot: input.executionRoot,
         commandBody,
+        inputProvenance:
+          agentPayload && !isExternalHook
+            ? {
+                kind: "internal_system",
+                sourceTool: "cron",
+                sourcePromptPrefix,
+                jobId: input.job.id,
+                runId: runSessionId,
+                sourceSessionKey: runSessionKey,
+              }
+            : undefined,
         cronSession,
         sessionWorkAdmission,
         persistSessionEntry,

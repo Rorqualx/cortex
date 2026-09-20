@@ -544,6 +544,7 @@ export const CORE_GATEWAY_METHOD_SPECS = [
     { description: "Search GitHub repositories that can be cloned as managed projects." },
   ],
   ["desktop.observe", "environments", "operator.admin", "2026.8", { startup: true }],
+  ["desktop.release", "environments", "operator.admin", "2026.9", { startup: true }],
   ["desktop.launch", "environments", "operator.admin", "2026.8", { startup: true }],
   // Live device scope upgrades are additive so every older advertised index stays stable.
   ["device.scopes.requestUpgrade", "devices", "operator.read", "2026.8"],
