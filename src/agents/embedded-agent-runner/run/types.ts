@@ -148,6 +148,8 @@ export type EmbeddedRunAttemptTrajectoryRecorder = {
 export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   disableToolSearch?: true;
   sessionReadScopeKey?: string;
+  /** Recomputed by the host for this attempt; never inherited from the requesting turn. */
+  githubPublicationAvailable?: boolean;
   admittedRunContext: NonNullable<RunEmbeddedAgentParams["admittedRunContext"]>;
   /**
    * Run-owned start timestamp captured by the embedded-run orchestrator before
@@ -404,6 +406,8 @@ export type EmbeddedRunAttemptResult = {
   currentAttemptCompletedAssistant?: AssistantMessage | undefined;
   lastToolError?: ToolErrorSummary;
   lastToolRecovery?: ToolRecoverySummary;
+  /** A real model response completed successfully during this attempt, before any later failure. */
+  hasSuccessfulModelResponse?: boolean;
   didSendViaMessagingTool: boolean;
   didDeliverSourceReplyViaMessageTool?: boolean;
   sourceReplyDelivered?: true;

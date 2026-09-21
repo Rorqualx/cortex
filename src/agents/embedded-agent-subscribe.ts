@@ -1,4 +1,5 @@
 import type { ThinkingContent } from "@openclaw/llm-core";
+import { isProviderRefusalAssistantError } from "@openclaw/llm-core/diagnostics";
 import type { AgentRunTimeoutPhase } from "@openclaw/normalization-core/agent-run-terminal-outcome";
 import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 /**
@@ -160,6 +161,10 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
   let lastAssistantUsage: ReturnType<typeof normalizeUsage>;
   let compactionCount = 0;
   let currentAttemptAssistant: AssistantMessage | undefined;
+  // Monotonic within this per-attempt subscription: a real model response
+  // completed successfully before any later failure. Consumed by the failover
+  // retry controller to distinguish a post-success failure from a hard failure.
+  let hasSuccessfulModelResponse = false;
 
   const assistantTexts = state.assistantTexts;
   const toolMetas = state.toolMetas;
@@ -1267,6 +1272,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       currentAttemptAssistant = structuredClone(msg) as AssistantMessage;
       lastAssistantUsage ??= msg.stopReason === "error" ? state.retryUsage : undefined;
       state.retryUsage = undefined;
+      hasSuccessfulModelResponse ||=
+        (msg.stopReason === "stop" || msg.stopReason === "toolUse") &&
+        !isProviderRefusalAssistantError(msg);
     }
   };
 
@@ -1411,6 +1419,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     assistantTexts,
     getCurrentAttemptAssistant: () =>
       currentAttemptAssistant ? structuredClone(currentAttemptAssistant) : undefined,
+    hasSuccessfulModelResponse: () => hasSuccessfulModelResponse,
     getLastAssistantTextMessageIndex: () =>
       state.lastAssistantTextMessageIndex >= 0 ? state.lastAssistantTextMessageIndex : undefined,
     // Fork: exposed for attempt-settle's run-budget salvage flush (upstream
