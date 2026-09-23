@@ -2,6 +2,7 @@ import { compressDiffOutput } from "./diff-compressor.js";
 import { estimateEntropy } from "./entropy-estimator.js";
 import type { EntropyBucket } from "./entropy-estimator.js";
 import { compressLogOutput } from "./log-compressor.js";
+import { compressProseOutput } from "./prose-compressor.js";
 import { compressSearchResults } from "./search-compressor.js";
 import { crushJsonArray } from "./smart-crusher.js";
 /**
@@ -12,7 +13,8 @@ import { crushJsonArray } from "./smart-crusher.js";
  *  2. Search/grep  → SearchCompressor
  *  3. Diff         → DiffCompressor
  *  4. Log/build    → LogCompressor
- *  5. Unknown      → Passthrough
+ *  5. Prose/markdown → ProseCompressor (ARCH-1, flag-gated: enabledTypes.prose)
+ *  6. Unknown      → Passthrough
  */
 import type { CompressorOutput, CompressionConfig } from "./types.js";
 
@@ -44,8 +46,10 @@ export function routeAndCompress(
   const contentType = detectContentType(content);
 
   // ARCH-3 entropy-guided budget (opt-in). Disabled ⇒ effectiveRatio stays
-  // the global targetRatio and no entropyBucket is attached (byte parity).
-  let effectiveRatio = config.targetRatio;
+  // the global targetRatio (when no override is given) and no entropyBucket
+  // is attached (byte parity). An explicit ratioOverride always wins
+  // pre-dispatch (ARCH-1 A1: external protects beat every lane default).
+  let effectiveRatio = ratioOverride ?? config.targetRatio;
   let entropyBucket: EntropyBucket | undefined;
   if (config.entropyGuidedBudget) {
     const estimate = estimateEntropy(content);
@@ -83,6 +87,15 @@ export function routeAndCompress(
       output = compressLogOutput(content, effectiveRatio);
       break;
 
+    case "prose":
+      if (!config.enabledTypes.prose) {
+        break;
+      }
+      // A1: consume the pre-dispatch effectiveRatio so external overrides
+      // (entropy buckets, plan-protection) win over the prose lane's ratio.
+      output = compressProseOutput(content, effectiveRatio);
+      break;
+
     case "passthrough":
     default:
       break;
@@ -106,7 +119,7 @@ export function routeAndCompress(
 // Type detection
 // ---------------------------------------------------------------------------
 
-type ContentType = "json_array" | "search" | "diff" | "log" | "passthrough";
+type ContentType = "json_array" | "search" | "diff" | "log" | "prose" | "passthrough";
 
 function detectContentType(content: string): ContentType {
   const trimmed = content.trim();
@@ -139,6 +152,11 @@ function detectContentType(content: string): ContentType {
   // 4. Log/build output
   if (isLogContent(trimmed)) {
     return "log";
+  }
+
+  // 5. Prose / markdown (detection is config-free; dispatch above is gated).
+  if (isProseContent(trimmed)) {
+    return "prose";
   }
 
   return "passthrough";
@@ -212,4 +230,74 @@ function isLogContent(content: string): boolean {
     }
   }
   return logLines > sampleSize * 0.4;
+}
+
+// ---------------------------------------------------------------------------
+// Prose detection (ARCH-1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Deterministic prose-shape heuristic (design §3.1): runs last, after all
+ * machine-format detectors. Positive only when the first-40-line sample is
+ * mostly sentence-like lines (or markdown block markers) AND shows paragraph
+ * structure; negative guards refuse CSV/TSV column rows, YAML frontmatter,
+ * and table-dominant documents. Worst-case misroute degrades to heavy
+ * truncation (never corruption) and CCR preserves the original.
+ */
+export function isProseContent(content: string): boolean {
+  const lines = content.split("\n");
+  const sample = lines.slice(0, 40);
+  const nonEmpty = sample.filter((l) => l.trim().length > 0);
+  if (nonEmpty.length === 0) {
+    return false;
+  }
+
+  // Negative guard 1: CSV/TSV column rows (≥2 separators on ≥30% of lines).
+  const columnar = nonEmpty.filter((l) => {
+    const commas = (l.match(/,/g) ?? []).length;
+    const tabs = (l.match(/\t/g) ?? []).length;
+    return commas + tabs >= 2;
+  });
+  if (columnar.length / nonEmpty.length >= 0.3) {
+    return false;
+  }
+
+  // Negative guard 2: YAML frontmatter (--- opener followed by key: density).
+  if ((lines[0] ?? "").trim() === "---") {
+    const head = lines.slice(1, 12).filter((l) => l.trim().length > 0);
+    const keyLines = head.filter((l) => /^[A-Za-z][\w-]*:/.test(l.trim()));
+    if (head.length > 0 && keyLines.length / head.length >= 0.3) {
+      return false;
+    }
+  }
+
+  // Negative guard 3: markdown table dominance.
+  if (/\|---/.test(content)) {
+    return false;
+  }
+
+  // Positive signal 1: ≥60% sentence-like or markdown-block-marker lines.
+  let proseish = 0;
+  let headings = 0;
+  for (const line of nonEmpty) {
+    const t = line.trim();
+    const isHeading = /^#{1,6} /.test(t);
+    if (isHeading) {
+      headings++;
+    }
+    const tokenCount = Math.max(1, t.split(/\s+/).length);
+    const avgTokenLen = t.length / tokenCount;
+    const sentenceLike = t.length >= 40 && t.includes(" ") && avgTokenLen <= 15;
+    const blockMarker = isHeading || /^[#>*-]\s/.test(t) || /^\d+\.\s/.test(t);
+    if (sentenceLike || blockMarker) {
+      proseish++;
+    }
+  }
+  if (proseish / nonEmpty.length < 0.6) {
+    return false;
+  }
+
+  // Positive signal 2: paragraph structure — blank-line separation or ≥2 headings.
+  const hasBlankSeparator = lines.some((l) => l.trim().length === 0);
+  return hasBlankSeparator || headings >= 2;
 }

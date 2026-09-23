@@ -30,6 +30,8 @@ export type CompressionConfig = {
     searchResults: boolean;
     logs: boolean;
     diffs: boolean;
+    /** ARCH-1 (a78e8033): deterministic prose distillation lane. Default off. */
+    prose: boolean;
   };
   /** CCR reversible cache (Phase 2). */
   ccr: {
@@ -51,6 +53,7 @@ export const DEFAULT_COMPRESSION_CONFIG: CompressionConfig = {
     searchResults: true,
     logs: true,
     diffs: true,
+    prose: false,
   },
   ccr: {
     enabled: false,

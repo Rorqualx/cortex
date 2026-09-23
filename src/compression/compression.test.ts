@@ -561,6 +561,31 @@ describe("DiffCompressor", () => {
 describe("ContentRouter", () => {
   const config = makeConfig();
 
+  // ARCH-1 (a78e8033) manifest §B #16 — prose lane router parity.
+  const prosePage = [
+    "# Page",
+    ...Array.from({ length: 8 }, () =>
+      "Sentence number one about the behaviour of the overall system and its design.".repeat(3),
+    ),
+  ].join("\n\n");
+
+  it("default config (prose off): prose-shaped tool result ⇒ passthrough byte-identity through routeAndCompress", () => {
+    const result = routeAndCompress(prosePage, config);
+    expect(result.compressed).toBe(false);
+    expect(result.content).toBe(prosePage);
+    expect(result.contentType).toBe("passthrough");
+  });
+
+  it("prose enabled: prose-shaped tool result ⇒ compressed, contentType 'prose'", () => {
+    const proseCfg = {
+      ...config,
+      enabledTypes: { ...config.enabledTypes, prose: true },
+    };
+    const result = routeAndCompress(prosePage, proseCfg);
+    expect(result.compressed).toBe(true);
+    expect(result.contentType).toBe("prose");
+  });
+
   it("routes JSON arrays to SmartCrusher", () => {
     const input = generateJsonArray(200);
     const result = routeAndCompress(input, config);
@@ -926,6 +951,14 @@ describe("resolveCompressionConfig", () => {
     expect(config.enabled).toBe(false);
     expect(config.targetRatio).toBe(0.3);
     expect(config.maxArrayItems).toBe(20);
+  });
+
+  // ARCH-1 (a78e8033) manifest §B #17 — resolver lives in index.ts, not types.ts.
+  it("user override prose=true honored over default false", () => {
+    const config = resolveCompressionConfig({ enabledTypes: { prose: true } });
+    expect(config.enabledTypes.prose).toBe(true);
+    const defaults = resolveCompressionConfig();
+    expect(defaults.enabledTypes.prose).toBe(false);
   });
 
   it("merges partial user config with defaults", () => {

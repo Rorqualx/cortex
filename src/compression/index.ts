@@ -352,6 +352,7 @@ export function resolveCompressionConfig(
         DEFAULT_COMPRESSION_CONFIG.enabledTypes.searchResults,
       logs: userConfig.enabledTypes?.logs ?? DEFAULT_COMPRESSION_CONFIG.enabledTypes.logs,
       diffs: userConfig.enabledTypes?.diffs ?? DEFAULT_COMPRESSION_CONFIG.enabledTypes.diffs,
+      prose: userConfig.enabledTypes?.prose ?? DEFAULT_COMPRESSION_CONFIG.enabledTypes.prose,
     },
     ccr: {
       enabled: userConfig.ccr?.enabled ?? DEFAULT_COMPRESSION_CONFIG.ccr.enabled,
