@@ -290,7 +290,6 @@ function buildVerificationPrompt(
     "4. Temporal (0-1): are all dates, times, and durations from the source facts retained verbatim, with no abbreviation, rounding, or drift? (1.0 if the source facts contain no dates or times)",
     "",
     "Respond with a JSON object: { results: [{ coverage: number, preservation: number, faithfulness: number, temporal: number }] }",
-    ,
     "The results array must match the candidate order below.",
     "",
   ];
