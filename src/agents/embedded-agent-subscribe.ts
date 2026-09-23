@@ -1233,7 +1233,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     lastAssistantUsage = undefined;
     state.replayState = mergeEmbeddedRunReplayState(state.replayState, params.initialReplayState);
     state.livenessState = "working";
-    streamRendering.resetAssistantMessageState(0);
+    resetAssistantMessageState(0);
   };
 
   const noteLastAssistant = (msg: AgentMessage, options?: { hasToolResults: boolean }) => {
@@ -1270,7 +1270,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
   };
 
   const ctx: EmbeddedAgentSubscribeContext = {
-    ...streamRendering,
+    stripBlockTags,
+    emitBlockChunk,
+    flushBlockReplyBuffer,
     params,
     state,
     log,

@@ -74,6 +74,18 @@ const getChannelRuntime = createLazyRuntimeModule(() =>
   ),
 );
 
+type LoadGatewayModelCatalog = typeof import("./server-model-catalog.js").loadGatewayModelCatalog;
+type LoadGatewayModelCatalogSnapshot =
+  typeof import("./server-model-catalog.js").loadGatewayModelCatalogSnapshot;
+type ReadPreparedGatewayModelCatalog =
+  typeof import("./server-model-catalog.js").readPreparedGatewayModelCatalog;
+type ReadPreparedGatewayModelCatalogBatch =
+  typeof import("./server-model-catalog.js").readPreparedGatewayModelCatalogBatch;
+type LoadPreparedGatewayModelCatalogSnapshot =
+  typeof import("./server-model-catalog.js").loadPreparedGatewayModelCatalogSnapshot;
+type ReadPreparedGatewayModelCatalogOwnerSnapshot =
+  typeof import("./server-model-catalog.js").readPreparedGatewayModelCatalogOwnerSnapshot;
+
 // Gateway startup publishes configured model-runtime owners under its own
 // allowGatewaySubagentBinding flag, and owner resolution treats that flag as exact.
 // These request-path readers carry the flag so gateway-owned reads reuse the published
