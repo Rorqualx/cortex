@@ -78,7 +78,6 @@ import {
   resolveFastModeState,
   runCliAgent,
 } from "./run-execution.runtime.js";
-import type { CronRunExecutionParams } from "./run-execution.types.js";
 import { resolveCronFallbacksOverride } from "./run-fallback-policy.js";
 import {
   type CronLiveSelection,
@@ -90,12 +89,6 @@ import {
   syncCronSessionLiveSelection,
 } from "./run-session-state.js";
 import { resolveThinkingDefault } from "./run.runtime.js";
-import type {
-  AgentTurnPayload,
-  CronCompletedPromptRun,
-  CronExecutionResult,
-  CronRunnerStartedInfo,
-} from "./run.types.js";
 import { isLikelyInterimCronMessage } from "./subagent-followup-hints.js";
 
 type AgentTurnPayload = Extract<CronJob["payload"], { kind: "agentTurn" }> | null;
