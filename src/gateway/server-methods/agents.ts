@@ -125,6 +125,7 @@ import {
 import { readPreparedServerMethodModelCatalog } from "./optional-model-catalog.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 import { assertValidParams } from "./validation.js";
+import { enqueueWorkspaceFileUpdate } from "./workspace-fs.js";
 
 const agentsHandlerDeps = {
   root,
@@ -194,6 +195,42 @@ function respondWorkspaceFileMissing(params: {
 
 function hashWorkspaceFileContent(content: Buffer | string): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+async function readWorkspaceFileHash(
+  workspaceRoot: WorkspaceRoot,
+  name: string,
+): Promise<string | undefined> {
+  try {
+    const safeRead = await workspaceRoot.read(name, {
+      hardlinks: "reject",
+      nonBlockingRead: true,
+    });
+    return hashWorkspaceFileContent(safeRead.buffer);
+  } catch (err) {
+    if (isMissingPathError(err)) {
+      return undefined;
+    }
+    throw err;
+  }
+}
+
+function respondWorkspaceFileConflict(
+  respond: RespondFn,
+  name: string,
+  currentHash: string | undefined,
+) {
+  respond(
+    false,
+    undefined,
+    errorShape(ErrorCodes.INVALID_REQUEST, `agent file "${name}" changed since it was read`, {
+      details: {
+        type: "agent_file_conflict",
+        name,
+        ...(currentHash ? { currentHash } : {}),
+      },
+    }),
+  );
 }
 
 function resolveAgentWorkspaceFileOrRespondError(
