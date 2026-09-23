@@ -13,7 +13,12 @@ import {
   promoteStagedSkill,
   runDecaySweep,
 } from "./promoter.js";
-import { readTelemetry, recordSkillPromotion, recordSkillUsage } from "./telemetry.js";
+import {
+  readTelemetry,
+  recordSkillPromotion,
+  recordSkillUsage,
+  recordSkillUsageOutcome,
+} from "./telemetry.js";
 
 const VALID_BODY = `
 # Test Skill
@@ -152,6 +157,27 @@ describe("demoteSkill", () => {
     const reason = await fsp.readFile(path.join(retiredDir, "retirement-reason.txt"), "utf8");
     expect(reason.trim()).toBe("no longer relevant");
   });
+
+  it("refuses to retire protected infrastructure and leaves it promoted", async () => {
+    const promotedDir = resolveSkillForgePromotedSkillDir({
+      name: "gateway-restart",
+      env: env(),
+    });
+    await fsp.mkdir(promotedDir, { recursive: true });
+    await fsp.writeFile(path.join(promotedDir, "SKILL.md"), validSkill("gateway-restart"), "utf8");
+    await recordSkillPromotion({ name: "gateway-restart", env: env() });
+
+    await expect(
+      demoteSkill({ name: "gateway-restart", reason: "decay test", env: env() }),
+    ).rejects.toThrow(/protected infrastructure/);
+    const stillPromoted = await fsp
+      .stat(path.join(promotedDir, "SKILL.md"))
+      .then(() => true)
+      .catch(() => false);
+    expect(stillPromoted).toBe(true);
+    const entry = await readTelemetry({ name: "gateway-restart", env: env() });
+    expect(entry?.status).toBe("promoted");
+  });
 });
 
 describe("runDecaySweep", () => {
@@ -192,6 +218,66 @@ describe("runDecaySweep", () => {
 
   it("does not demote anything when the policy threshold has not been crossed", async () => {
     await setupPromotedSkill("recent", "2026-05-15T00:00:00Z");
+    const demoted = await runDecaySweep({
+      policy: DEFAULT_DECAY_POLICY,
+      now: new Date("2026-05-20T00:00:00Z"),
+      env: env(),
+    });
+    expect(demoted).toEqual([]);
+  });
+
+  it("never retires protected infrastructure, even when old and unused", async () => {
+    await setupPromotedSkill("gateway-restart", "2026-01-01T00:00:00Z");
+    const demoted = await runDecaySweep({
+      policy: DEFAULT_DECAY_POLICY,
+      now: new Date("2026-05-20T00:00:00Z"),
+      env: env(),
+    });
+    expect(demoted).toEqual([]);
+    const entry = await readTelemetry({ name: "gateway-restart", env: env() });
+    expect(entry?.status).toBe("promoted");
+  });
+
+  it("retires a stale used skill whose outcome mix is predominantly wrong", async () => {
+    await setupPromotedSkill("bad-skill", "2026-01-01T00:00:00Z");
+    for (let i = 0; i < 3; i += 1) {
+      await recordSkillUsage({
+        name: "bad-skill",
+        now: new Date("2026-02-01T00:00:00Z"),
+        env: env(),
+      });
+      await recordSkillUsageOutcome({ name: "bad-skill", invocationOutcome: "wrong", env: env() });
+    }
+    const demoted = await runDecaySweep({
+      policy: DEFAULT_DECAY_POLICY,
+      now: new Date("2026-05-20T00:00:00Z"),
+      env: env(),
+    });
+    expect(demoted.map((d) => d.name)).toEqual(["bad-skill"]);
+    expect(demoted[0]?.reason).toContain("wrong outcomes");
+  });
+
+  it("keeps a stale used skill with good outcomes or too few outcome samples", async () => {
+    await setupPromotedSkill("good-skill", "2026-01-01T00:00:00Z");
+    for (let i = 0; i < 3; i += 1) {
+      await recordSkillUsage({
+        name: "good-skill",
+        now: new Date("2026-02-01T00:00:00Z"),
+        env: env(),
+      });
+      await recordSkillUsageOutcome({
+        name: "good-skill",
+        invocationOutcome: "correct",
+        env: env(),
+      });
+    }
+    await setupPromotedSkill("thin-skill", "2026-01-01T00:00:00Z");
+    await recordSkillUsage({
+      name: "thin-skill",
+      now: new Date("2026-02-01T00:00:00Z"),
+      env: env(),
+    });
+    await recordSkillUsageOutcome({ name: "thin-skill", invocationOutcome: "wrong", env: env() });
     const demoted = await runDecaySweep({
       policy: DEFAULT_DECAY_POLICY,
       now: new Date("2026-05-20T00:00:00Z"),
