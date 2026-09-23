@@ -25,18 +25,6 @@ import { prepareGatewayKernelState } from "./server-runtime-state-prepare.js";
 import { rethrowGatewayStartupError } from "./server-shutdown.js";
 import { prepareGatewayServerBootstrap } from "./server-startup-bootstrap.js";
 
-type LoadGatewayModelCatalog = typeof import("./server-model-catalog.js").loadGatewayModelCatalog;
-type LoadGatewayModelCatalogSnapshot =
-  typeof import("./server-model-catalog.js").loadGatewayModelCatalogSnapshot;
-type ReadPreparedGatewayModelCatalog =
-  typeof import("./server-model-catalog.js").readPreparedGatewayModelCatalog;
-type ReadPreparedGatewayModelCatalogBatch =
-  typeof import("./server-model-catalog.js").readPreparedGatewayModelCatalogBatch;
-type LoadPreparedGatewayModelCatalogSnapshot =
-  typeof import("./server-model-catalog.js").loadPreparedGatewayModelCatalogSnapshot;
-type ReadPreparedGatewayModelCatalogOwnerSnapshot =
-  typeof import("./server-model-catalog.js").readPreparedGatewayModelCatalogOwnerSnapshot;
-
 const loadGatewayModelCatalogModule = createLazyRuntimeModule(
   () => import("./server-model-catalog.js"),
 );

@@ -478,6 +478,8 @@ export function createGatewayAuxHandlers(
     execApprovalManager,
     cancelRunBoundApprovals,
     forwardPluginApprovalRequest: execApprovalForwarder.handlePluginApprovalRequested,
+    forwardExecApprovalRequest: execApprovalForwarder.handleRequested,
+    execApprovalIosPushDelivery,
     approvalWebPushDelivery,
     pluginApprovalIosPushDelivery,
     pluginApprovalManager,

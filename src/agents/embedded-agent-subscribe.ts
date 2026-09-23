@@ -472,24 +472,15 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       messagingToolSentTexts.splice(0, overflow);
       messagingToolSentTextsNormalized.splice(0, overflow);
     }
-    if (
-      state.currentSourceMessagingToolSentTextsNormalized.length > MAX_MESSAGING_HISTORY_ENTRIES
-    ) {
-      const overflow =
-        state.currentSourceMessagingToolSentTextsNormalized.length - MAX_MESSAGING_HISTORY_ENTRIES;
-      state.currentSourceMessagingToolSentTextsNormalized.splice(0, overflow);
-    }
-    if (messagingToolSentTargets.length > MAX_MESSAGING_HISTORY_ENTRIES) {
-      const overflow = messagingToolSentTargets.length - MAX_MESSAGING_HISTORY_ENTRIES;
-      messagingToolSentTargets.splice(0, overflow);
-    }
-    if (messagingToolSentMediaUrls.length > MAX_MESSAGING_HISTORY_ENTRIES) {
-      const overflow = messagingToolSentMediaUrls.length - MAX_MESSAGING_HISTORY_ENTRIES;
-      messagingToolSentMediaUrls.splice(0, overflow);
-    }
-    if (messagingToolSourceReplyPayloads.length > MAX_MESSAGING_HISTORY_ENTRIES) {
-      const overflow = messagingToolSourceReplyPayloads.length - MAX_MESSAGING_HISTORY_ENTRIES;
-      messagingToolSourceReplyPayloads.splice(0, overflow);
+    for (const history of [
+      state.currentSourceMessagingToolSentTextsNormalized,
+      messagingToolSentTargets,
+      messagingToolSentMediaUrls,
+      messagingToolSourceReplyPayloads,
+    ]) {
+      if (history.length > MAX_MESSAGING_HISTORY_ENTRIES) {
+        history.splice(0, history.length - MAX_MESSAGING_HISTORY_ENTRIES);
+      }
     }
   };
 
@@ -1242,7 +1233,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     lastAssistantUsage = undefined;
     state.replayState = mergeEmbeddedRunReplayState(state.replayState, params.initialReplayState);
     state.livenessState = "working";
-    resetAssistantMessageState(0);
+    streamRendering.resetAssistantMessageState(0);
   };
 
   const noteLastAssistant = (msg: AgentMessage, options?: { hasToolResults: boolean }) => {
@@ -1279,6 +1270,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
   };
 
   const ctx: EmbeddedAgentSubscribeContext = {
+    ...streamRendering,
     params,
     state,
     log,
@@ -1336,9 +1328,6 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     shouldEmitToolOutput,
     emitToolSummary,
     emitToolOutput,
-    stripBlockTags,
-    emitBlockChunk,
-    flushBlockReplyBuffer,
     emitAssistantStreamData,
     emitBlockReply,
     flushAssistantStream: flushDeferredAssistantEvents,

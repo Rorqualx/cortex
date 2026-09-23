@@ -998,6 +998,11 @@ enum class GatewayMethod(
   TalkVoiceComplete("talk.voice.complete"),
   PluginsCredentialsInspect("plugins.credentials.inspect"),
   PluginsSkillsRead("plugins.skills.read"),
+  EnvironmentsSessionStatus("environments.session.status"),
+  EnvironmentsSessionCreate("environments.session.create"),
+  EnvironmentsSessionDestroy("environments.session.destroy"),
+  EnvironmentsSessionExec("environments.session.exec"),
+  SessionsSetInvolvement("sessions.setInvolvement"),
 }
 
 enum class GatewayEvent(

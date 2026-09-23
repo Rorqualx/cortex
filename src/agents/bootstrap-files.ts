@@ -22,11 +22,13 @@ import {
   resolveBootstrapTotalMaxChars,
 } from "./embedded-agent-helpers.js";
 import type { AgentRunSessionTarget } from "./run-session-target.js";
+import { getAgentWorkspaceAccess } from "./workspace-access.js";
 import {
   DEFAULT_BOOTSTRAP_FILENAME,
   DEFAULT_MEMORY_FILENAME,
   DEFAULT_USER_FILENAME,
   filterBootstrapFilesForSession,
+  getWorkspaceFileSourceRelativePath,
   isWorkspaceSetupCompleted,
   isWorkspaceBootstrapPending,
   loadWorkspaceBootstrapFiles,
@@ -262,12 +264,24 @@ async function resolveIneligibleAutomaticMemoryFiles(params: {
   );
   let classificationResult: Awaited<ReturnType<typeof classifyActiveMemoryWorkspacePaths>>;
   try {
+    const access = getAgentWorkspaceAccess(params.workspaceDir);
     classificationResult = await classifyActiveMemoryWorkspacePaths({
       cfg: params.config,
       agentId,
       workspaceDir: params.workspaceDir,
       relativePaths,
+      ...(access
+        ? {
+            readSources: candidates.map((file, index) => ({
+              relativePath: relativePaths[index]!,
+              canonicalRelativePath: getWorkspaceFileSourceRelativePath(file),
+            })),
+          }
+        : {}),
     });
+    if (access && getAgentWorkspaceAccess(params.workspaceDir) !== access) {
+      throw new Error("Workspace access changed during memory classification");
+    }
   } catch (error) {
     params.warn?.(`excluding automatic memory context: ${String(error)}`);
     return candidates;
@@ -324,6 +338,7 @@ async function resolveBootstrapFiles(
   params: BootstrapFileResolutionParams,
   hooks: BootstrapHookApplication,
 ): Promise<WorkspaceBootstrapFile[]> {
+  const access = getAgentWorkspaceAccess(params.workspaceDir);
   const sessionKey = params.sessionKey ?? params.sessionId;
   const session = {
     sessionKey,
@@ -395,6 +410,9 @@ async function resolveBootstrapFiles(
     workspaceSetupCompleted,
     params.workspaceDir,
   );
+  if (getAgentWorkspaceAccess(params.workspaceDir) !== access) {
+    throw new Error("Workspace access changed while preparing bootstrap context");
+  }
   return sanitizeBootstrapFiles(filteredUpdated, params.workspaceDir, params.warn);
 }
 

@@ -726,4 +726,21 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["plugins.credentials.inspect", "plugins", "operator.admin", "2026.9"],
   // Plugin skill reads append without shifting previously advertised method indices.
   ["plugins.skills.read", "plugins", "operator.read", "2026.9"],
+  ["environments.session.status", "environments", "operator.read", "2026.9"],
+  [
+    "environments.session.create",
+    "environments",
+    "operator.admin",
+    "2026.9",
+    { controlPlaneWrite: true },
+  ],
+  [
+    "environments.session.destroy",
+    "environments",
+    "operator.admin",
+    "2026.9",
+    { controlPlaneWrite: true },
+  ],
+  ["environments.session.exec", "environments", "operator.admin", "2026.9"],
+  ["sessions.setInvolvement", "sessions-mutations", "operator.read", "2026.9"],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];

@@ -26,6 +26,8 @@ import {
   listActiveEmbeddedRunSessionKeys,
 } from "../embedded-agent-runner/active-run-projections.js";
 import { resolveExecDefaults } from "../exec-defaults.js";
+import type { MainSessionRecoveryAdmission } from "./main-session-recovery-admission.js";
+import type { MainSessionRecoveryCapacity } from "./main-session-recovery-capacity.js";
 import {
   getMainSessionRecoveryRetryCount,
   isMainRestartRecoveryAggregateTerminalOnly,
@@ -239,10 +241,11 @@ export async function recoverStore(params: {
   handledSessionKeys: Set<string>;
   expectedClaim?: ExpectedRestartRecoveryClaim;
   expectedTarget?: ExpectedRestartRecoveryTarget;
-  sessionWorkAdmissionHandoffId?: string;
+  recoveryAdmission?: MainSessionRecoveryAdmission;
   activeSessionIds?: Iterable<string>;
   activeSessionKeys?: Iterable<string>;
   lifecycleGeneration?: string;
+  recoveryCapacity?: MainSessionRecoveryCapacity;
   shouldContinue?: () => boolean;
   gatewayRuntime: GatewayRecoveryRuntime;
 }): Promise<{ started: number; settled: number; failed: number; skipped: number }> {
@@ -487,7 +490,7 @@ export async function recoverStore(params: {
       > = {},
     ) => {
       if (stopped()) {
-        return;
+        return false;
       }
       recordResumeResult(
         await resumeMainSession({
@@ -497,13 +500,15 @@ export async function recoverStore(params: {
           entry,
           observation: recoveryView.observation,
           recoveryAttempt: recoveryView.nextAttempt,
-          sessionWorkAdmissionHandoffId: params.sessionWorkAdmissionHandoffId,
+          recoveryAdmission: params.recoveryAdmission,
           gatewayRuntime: params.gatewayRuntime,
           ...options,
           lifecycleGeneration: params.lifecycleGeneration,
+          recoveryCapacity: params.recoveryCapacity,
           shouldContinue: params.shouldContinue,
         }),
       );
+      return true;
     };
 
     const pendingAction = entry.pendingFinalDelivery
@@ -537,12 +542,16 @@ export async function recoverStore(params: {
       continue;
     }
     if (pendingAction === "fail") {
-      await resumeCurrent({
-        ...(entry.pendingFinalDelivery?.kind === "replayable"
-          ? { pendingFinalDeliveryText: entry.pendingFinalDelivery.text }
-          : {}),
-        forceRestartSafeTools: true,
-      });
+      if (
+        !(await resumeCurrent({
+          ...(entry.pendingFinalDelivery?.kind === "replayable"
+            ? { pendingFinalDeliveryText: entry.pendingFinalDelivery.text }
+            : {}),
+          forceRestartSafeTools: true,
+        }))
+      ) {
+        return result;
+      }
       continue;
     }
 
@@ -550,10 +559,14 @@ export async function recoverStore(params: {
       entry.pendingFinalDelivery?.kind === "replayable" &&
       entry.restartRecoveryForceSafeTools === true
     ) {
-      await resumeCurrent({
-        pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
-        forceRestartSafeTools: true,
-      });
+      if (
+        !(await resumeCurrent({
+          pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
+          forceRestartSafeTools: true,
+        }))
+      ) {
+        return result;
+      }
       continue;
     }
 
@@ -594,9 +607,13 @@ export async function recoverStore(params: {
         mainSessionRecoveryLog.warn(
           `transcript unavailable for ${sessionKey}; resuming its durable pending final delivery`,
         );
-        await resumeCurrent({
-          pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
-        });
+        if (
+          !(await resumeCurrent({
+            pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
+          }))
+        ) {
+          return result;
+        }
         continue;
       }
       mainSessionRecoveryLog.warn(`failed to read transcript for ${sessionKey}: ${String(err)}`);
@@ -608,10 +625,14 @@ export async function recoverStore(params: {
       return result;
     }
     if (entry.pendingFinalDelivery?.kind === "replayable") {
-      await resumeCurrent({
-        pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
-        forceRestartSafeTools: hasReplaySafeCodeModeCheckpointInCurrentTurn(messages),
-      });
+      if (
+        !(await resumeCurrent({
+          pendingFinalDeliveryText: entry.pendingFinalDelivery.text,
+          forceRestartSafeTools: hasReplaySafeCodeModeCheckpointInCurrentTurn(messages),
+        }))
+      ) {
+        return result;
+      }
       continue;
     }
 
@@ -718,15 +739,21 @@ export async function recoverStore(params: {
       } else if (completion.outcome === "changed") {
         result.skipped++;
       } else {
-        await resumeCurrent({ forceRestartSafeTools: true });
+        if (!(await resumeCurrent({ forceRestartSafeTools: true }))) {
+          return result;
+        }
       }
       continue;
     }
 
-    await resumeCurrent({
-      forceRestartSafeTools: retainedSafeTools || resumePolicy.forceRestartSafeTools,
-      forceCodeModeTools: resumePolicy.forceCodeModeTools === true,
-    });
+    if (
+      !(await resumeCurrent({
+        forceRestartSafeTools: retainedSafeTools || resumePolicy.forceRestartSafeTools,
+        forceCodeModeTools: resumePolicy.forceCodeModeTools === true,
+      }))
+    ) {
+      return result;
+    }
   }
 
   return result;
