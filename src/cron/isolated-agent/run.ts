@@ -229,6 +229,7 @@ export async function runCronIsolatedAgentTurn(
             const { executeCronRun } = await cronExecutorRuntimeLoader.load();
             const executionParams: Parameters<typeof executeCronRun>[0] = {
               ...prepared.context,
+              resolvedDeliveryOk: prepared.context.resolvedDelivery.ok ?? false,
               cfg: params.cfg,
               job: params.job,
               lane: params.lane,

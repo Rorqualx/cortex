@@ -17,6 +17,9 @@ import {
   validateAgentsComposePromptParams,
   validateAgentsCreateParams,
   validateAgentsDeleteParams,
+  validateAgentsFilesGetParams,
+  validateAgentsFilesListParams,
+  validateAgentsFilesSetParams,
   validateAgentsListParams,
   validateAgentsUpdateParams,
 } from "../../../packages/gateway-protocol/src/index.js";
@@ -65,12 +68,12 @@ import {
   sanitizeAgentIdentityLine,
 } from "../../agents/identity-file.js";
 import { resolveAgentIdentity } from "../../agents/identity.js";
-import { getAgentWorkspaceAccess } from "../../agents/workspace-access.js";
-import { MAX_WORKSPACE_BOOTSTRAP_FILE_BYTES } from "../../agents/workspace-bootstrap-read.js";
 import {
   completeWithPreparedSimpleCompletionModel,
   prepareSimpleCompletionModelForAgent,
 } from "../../agents/simple-completion-runtime.js";
+import { getAgentWorkspaceAccess } from "../../agents/workspace-access.js";
+import { MAX_WORKSPACE_BOOTSTRAP_FILE_BYTES } from "../../agents/workspace-bootstrap-read.js";
 import {
   prepareLegacyWorkspaceStateReset,
   removeLegacyWorkspaceStateForReset,
@@ -80,11 +83,14 @@ import {
   prepareWorkspaceStateDeletion,
 } from "../../agents/workspace-state-store.js";
 import {
+  DEFAULT_BOOTSTRAP_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_SOUL_FILENAME,
   SOULS_DIRNAME,
+  WORKSPACE_BOOTSTRAP_FILENAMES,
   agentSoulRelativePath,
   ensureAgentWorkspace,
+  isExpectedAbsentBootstrapFile,
   isWorkspaceSetupCompleted,
 } from "../../agents/workspace.js";
 import { applyAgentConfig } from "../../commands/agents.config.js";
@@ -99,7 +105,7 @@ import type { IdentityConfig } from "../../config/types.base.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { isMissingPathError } from "../../infra/errors.js";
 import { withAgentExecApprovalsRemoved } from "../../infra/exec-approvals.js";
-import { root, FsSafeError } from "../../infra/fs-safe.js";
+import { root, FsSafeError, type ReadResult } from "../../infra/fs-safe.js";
 import { isPathInside } from "../../infra/path-guards.js";
 import { movePathToTrash } from "../../plugin-sdk/browser-maintenance.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
@@ -145,10 +151,50 @@ export const testing = {
   },
 };
 
+// IDENTITY.md is excluded: it is a parsed record that `agents.update` rewrites via
+// mergeIdentityMarkdownContent, so a second freeform editor would clobber fields
+// (Creature/Vibe, unfilled placeholders) that the identity form round-trips.
+// It stays writable through agents.files.set for clients that want raw access.
+const CORE_FILE_NAMES = WORKSPACE_BOOTSTRAP_FILENAMES.filter(
+  (name) => name !== DEFAULT_IDENTITY_FILENAME,
+);
+const CORE_FILE_NAMES_POST_ONBOARDING = CORE_FILE_NAMES.filter(
+  (name) => name !== DEFAULT_BOOTSTRAP_FILENAME,
+);
+
 // Writes stay capped to canonical workspace files, and deliberately remain wider
 // than the listed core files: IDENTITY.md is not offered as an editor tab but is
 // still writable for clients that manage it directly.
 const ALLOWED_FILE_NAMES = new Set<string>(WORKSPACE_BOOTSTRAP_FILENAMES);
+
+function respondWorkspaceFileMissing(params: {
+  respond: RespondFn;
+  agentId: string;
+  workspaceDir: string;
+  name: string;
+  filePath: string;
+}): void {
+  params.respond(
+    true,
+    {
+      agentId: params.agentId,
+      workspace: params.workspaceDir,
+      // Clients merge this entry over the listed one, so it must carry the same
+      // absence classification or a picked optional file re-renders as a fault.
+      file: {
+        name: params.name,
+        path: params.filePath,
+        missing: true,
+        expectedAbsent: isExpectedAbsentBootstrapFile(params.name),
+      },
+    },
+    undefined,
+  );
+}
+
+function hashWorkspaceFileContent(content: Buffer | string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
 
 function resolveAgentWorkspaceFileOrRespondError(
   params: Record<string, unknown>,
@@ -420,7 +466,6 @@ function resolveAgentIdOrError(agentIdRaw: string, cfg: OpenClawConfig) {
   }
   return agentId;
 }
-
 
 function respondAgentNotFound(respond: RespondFn, agentId: string): void {
   respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" not found`));
@@ -982,7 +1027,9 @@ export const agentsHandlers: GatewayRequestHandlers = {
     );
   },
   "agents.composePrompt": async ({ params, respond, context }) => {
-    if (!assertValidParams(params, validateAgentsComposePromptParams, "agents.composePrompt", respond)) {
+    if (
+      !assertValidParams(params, validateAgentsComposePromptParams, "agents.composePrompt", respond)
+    ) {
       return;
     }
     const cfg = context.getRuntimeConfig();
@@ -1276,7 +1323,11 @@ export const agentsHandlers: GatewayRequestHandlers = {
           let databasePlan: AgentDeleteDatabasePlan | undefined;
           try {
             prepareJournaledAgentDirOwnership(lockedConfig, agentId, journal.agentDir);
-            databasePlan = await prepareAgentDeleteDatabases(lockedConfig, agentId, journal.agentDir);
+            databasePlan = await prepareAgentDeleteDatabases(
+              lockedConfig,
+              agentId,
+              journal.agentDir,
+            );
             deletion.fenceDatabasePaths([
               ...journal.databasePaths,
               ...databasePlan.fileGroups.flat(),
