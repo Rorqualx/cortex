@@ -44,6 +44,7 @@ import type { AgentInternalEvent } from "../../internal-events.js";
 import type { PreparedModelThinkingCapability } from "../../model-catalog-lookup.js";
 import type { ModelFallbackRouteResolution } from "../../model-fallback.types.js";
 import type { AgentRunSessionTarget } from "../../run-session-target.js";
+import type { AgentMessage } from "../../runtime/index.js";
 import type { TrustedSubagentCompletionHandoff } from "../../subagents/announce/subagent-announce-handoff.js";
 import type { SilentReplyPromptMode, PromptMode } from "../../system-prompt.types.js";
 import type { EmbeddedAgentExecutionPhase } from "../execution-phase.js";

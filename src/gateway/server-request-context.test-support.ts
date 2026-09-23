@@ -112,6 +112,12 @@ export function makeContextParams(
         unsubscribe: vi.fn(),
         getAll: vi.fn(() => new Set<string>()),
       },
+      // Fork: cross-agent activity feed registry shares this shape.
+      activitySubscribers: {
+        subscribe: vi.fn(),
+        unsubscribe: vi.fn(),
+        getAll: vi.fn(() => new Set<string>()),
+      },
       subscribeSessionMessageEvents: vi.fn(),
       unsubscribeSessionMessageEvents: vi.fn(),
       sessionMessageSubscribers: { unsubscribeAll: vi.fn() },

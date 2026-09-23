@@ -30,6 +30,7 @@ import {
 import type {
   ToolResultContentSource,
   AgentContext,
+  AgentEvent,
   AgentLoopConfig,
   AgentMessage,
   AgentTool,
@@ -101,7 +102,7 @@ export function agentLoop(
       stream.end(messages);
     })
     .catch((error: unknown) => {
-      pushLoopFailure(stream, config, error, signal);
+      void pushLoopFailure(stream, config, error, signal);
     });
 
   return stream;
@@ -147,7 +148,7 @@ export function agentLoopContinue(
       stream.end(messages);
     })
     .catch((error: unknown) => {
-      pushLoopFailure(stream, config, error, signal);
+      void pushLoopFailure(stream, config, error, signal);
     });
 
   return stream;
@@ -229,12 +230,12 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
   );
 }
 
-function pushLoopFailure(
+async function pushLoopFailure(
   stream: EventStream<AgentEvent, AgentMessage[]>,
   config: AgentLoopConfig,
   error: unknown,
   signal: AbortSignal | undefined,
-): void {
+): Promise<void> {
   const aborted = signal?.aborted === true;
   const failureMessage = createFailureMessage(config.model, error, aborted);
   stream.push({ type: "message_start", message: failureMessage });
@@ -242,10 +243,7 @@ function pushLoopFailure(
   stream.push({ type: "turn_end", message: failureMessage, toolResults: [] });
   const messages: AgentMessage[] = [failureMessage];
   if (aborted && !isTurnHandoffAbort(signal)) {
-    const interruption = createInterruptedTurnMessage();
-    messages.push(interruption);
-    stream.push({ type: "message_start", message: interruption });
-    stream.push({ type: "message_end", message: interruption });
+    await appendInterruptedTurnMessage(messages, (event) => stream.push(event));
   }
   stream.push({ type: "agent_end", messages });
 }

@@ -130,6 +130,8 @@ type UserTurnTranscriptPersistenceTarget = {
 // caller's transcript file.
 export type UserTurnTranscriptFileTarget = {
   transcriptPath: string;
+  /** Store-directory locator asserted by shared fixtures; optional for ad-hoc file targets. */
+  storePath?: string;
   sessionId?: string;
   agentId?: string;
   sessionKey?: string;
