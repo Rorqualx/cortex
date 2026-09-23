@@ -23,6 +23,7 @@ import {
   resetGatewayWorkAdmission,
   tryBeginGatewayRootWorkAdmission,
 } from "../process/gateway-work-admission.js";
+import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { defaultRuntime } from "../runtime.js";
 import { NodeRegistry } from "./node-registry.js";
 import { normalizeRpcAttachmentsToChatAttachments } from "./server-methods/attachment-normalize.js";
@@ -48,7 +49,7 @@ const buildSessionLookup = (
   } = {},
 ): ReturnType<typeof loadSessionEntryType> => ({
   cfg: { session: { mainKey: "agent:main:main" } } as OpenClawConfig,
-  agentId: "main",
+  agentId: resolveAgentIdFromSessionKey(sessionKey, "main"),
   storePath: "/tmp/sessions.json",
   store: {} as ReturnType<typeof loadSessionEntryType>["store"],
   entry: {
@@ -153,12 +154,6 @@ const runtimeMocks = vi.hoisted(() => ({
     }),
   ),
   persistInboundImagesForTranscript: persistInboundImagesForTranscriptMock,
-  scopedHeartbeatWakeOptions: vi.fn((sessionKey?: string, opts?: { reason: string }) => {
-    const wakeOptions = { reason: opts?.reason };
-    return /^agent:[^:]+:.+$/i.test(sessionKey ?? "")
-      ? { ...wakeOptions, sessionKey: sessionKey as string }
-      : wakeOptions;
-  }),
 }));
 
 import type { CliDeps } from "../cli/deps.js";
@@ -545,7 +540,7 @@ describe("node exec events", () => {
     expect(enqueueSystemEventMock).toHaveBeenCalledWith(
       "Exec finished (node=node-2 id=run-finished, code 0)\ndone",
       {
-        sessionKey: "node-node-2",
+        sessionKey: "agent:main:node-node-2",
         contextKey: "exec:run-finished",
       },
     );
@@ -1587,6 +1582,7 @@ describe("notifications changed events", () => {
       source: "notifications-event",
       intent: "event",
       reason: "notifications-event",
+      agentId: "main",
       sessionKey: "agent:main:main",
     });
   });
@@ -1606,7 +1602,7 @@ describe("notifications changed events", () => {
       }),
     });
 
-    expect(loadSessionEntryMock).toHaveBeenCalledWith("node-node-n5");
+    expect(loadSessionEntryMock).toHaveBeenCalledWith("node-node-n5", { agentId: undefined });
     expect(enqueueSystemEventMock).toHaveBeenCalledWith(
       "Notification posted (node=node-n5 key=notif-5)",
       {
@@ -1618,6 +1614,7 @@ describe("notifications changed events", () => {
       source: "notifications-event",
       intent: "event",
       reason: "notifications-event",
+      agentId: "main",
       sessionKey: "agent:main:node-node-n5",
     });
   });
@@ -2564,8 +2561,6 @@ describe("chat subscribe/unsubscribe events", () => {
     const nodeSubscribe = vi.fn();
     const ctx = { ...buildCtx(), nodeSubscribe };
 
-    // parseSessionKeyFromPayloadJSON trims whitespace; canonicalization
-    // may further normalize (e.g. lowercasing, agent-key resolution).
     loadSessionEntryMock.mockImplementation((sessionKey: string) => ({
       ...buildSessionLookup(sessionKey),
       canonicalKey: `agent:main:${sessionKey.toLowerCase()}`,
@@ -2581,12 +2576,7 @@ describe("chat subscribe/unsubscribe events", () => {
       { connId: "node-c1-connection" },
     );
 
-    // The canonicalized key (not the parsed raw key) must be passed to
-    // nodeSubscribe. On unfixed main, nodeSubscribe receives the parsed
-    // key ("Main"), causing a mismatch with delivery which uses the
-    // canonical form ("agent:main:main").
     expect(nodeSubscribe).toHaveBeenCalledWith("node-c1", "agent:main:main", "node-c1-connection");
-    // loadSessionEntry is called with the parsed (trimmed) key from the payload.
     expect(loadSessionEntryMock).toHaveBeenCalledWith("Main");
   });
 
@@ -2609,8 +2599,6 @@ describe("chat subscribe/unsubscribe events", () => {
       { connId: "node-c2-connection" },
     );
 
-    // parseSessionKeyFromPayloadJSON trims "\tOtherAgent " to "OtherAgent".
-    // The fix canonicalizes it to the canonical key.
     expect(nodeUnsubscribe).toHaveBeenCalledWith(
       "node-c2",
       "agent:other:otheragent",

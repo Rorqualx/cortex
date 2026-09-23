@@ -25,7 +25,6 @@ import { AgentHarnessPreflightError } from "../../agents/harness/errors.js";
 import { runAgentHarnessBeforeMessageWriteHook } from "../../agents/harness/hook-helpers.js";
 import { findModelInCatalog, modelSupportsInput } from "../../agents/model-catalog-lookup.js";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.types.js";
-import { resolveCliRuntimeExecutionProvider } from "../../agents/model-runtime-aliases.js";
 import { resolveConfiguredThinkingDefault } from "../../agents/model-thinking-default.js";
 import { rootedAgentRunParams } from "../../agents/rooted-run-params.js";
 import { wrapUntrustedPromptDataBlock } from "../../agents/sanitize-for-prompt.js";
@@ -65,10 +64,10 @@ import {
   resolveCurrentChannelTarget,
 } from "./channel-output-policy.js";
 import { resolveCronPayloadOutcome } from "./helpers.js";
+import { createCronCandidateExecutionResolver } from "./run-candidate-runtime.js";
 import { appendCronDeliveryInstruction } from "./run-delivery-trace.js";
 import {
   getCliSessionBinding,
-  isCliProvider,
   LiveSessionModelSwitchError,
   logWarn,
   normalizeVerboseLevel,
@@ -89,7 +88,7 @@ import {
   setCronSessionRuntimeModel,
   syncCronSessionLiveSelection,
 } from "./run-session-state.js";
-import { resolveEffectiveAgentRuntime, resolveThinkingDefault } from "./run.runtime.js";
+import { resolveThinkingDefault } from "./run.runtime.js";
 import { isLikelyInterimCronMessage } from "./subagent-followup-hints.js";
 
 type AgentTurnPayload = Extract<CronJob["payload"], { kind: "agentTurn" }> | null;
@@ -170,13 +169,8 @@ function resolveCronBootstrapContextMode(
 ): BootstrapContextMode | undefined {
   // Command-like cron prompts benefit from lightweight bootstrap context so
   // simple scheduled command tasks do not spend budget on full repo context.
-  if (payload?.lightContext === true) {
-    return "lightweight";
-  }
-  if (payload?.lightContext === false) {
-    return undefined;
-  }
-  return isCommandStyleCronMessage(payload?.message ?? "") ? "lightweight" : undefined;
+  const lightweight = payload?.lightContext ?? isCommandStyleCronMessage(payload?.message ?? "");
+  return lightweight ? "lightweight" : undefined;
 }
 
 function buildCronDeliveryTargetRuntimeContext(params: {
@@ -400,28 +394,7 @@ function createCronPromptExecutor(
   const currentAttemptCommittedMedia = () =>
     hasNewGeneratedMediaTaskForSessionKey(params.runSessionKey, attemptMediaTaskIds);
 
-  const resolveCandidateExecution = (provider: string, model: string) => {
-    const sessionRuntimeOverride = resolveSessionRuntimeOverrideForProvider({
-      provider,
-      entry: params.cronSession.sessionEntry,
-      cfg: params.cfgWithAgentDefaults,
-    });
-    const executionProvider = sessionRuntimeOverride
-      ? isCliProvider(sessionRuntimeOverride, params.cfgWithAgentDefaults)
-        ? sessionRuntimeOverride
-        : provider
-      : (resolveCliRuntimeExecutionProvider({
-          provider,
-          cfg: params.cfgWithAgentDefaults,
-          agentId: params.agentId,
-          modelId: model,
-        }) ?? provider);
-    return {
-      sessionRuntimeOverride,
-      executionProvider,
-      cliExecution: isCliProvider(executionProvider, params.cfgWithAgentDefaults),
-    };
-  };
+  const resolveCandidateExecution = createCronCandidateExecutionResolver(params);
 
   return async (promptText: string, runStartedAt: number): Promise<CronCompletedPromptRun> => {
     // A retry can fail during preparation, before any backend start callback.
@@ -489,6 +462,7 @@ function createCronPromptExecutor(
       // Non-canonicalizable job config: no grant registration for this run.
     }
     const fallbackResult = await runEmbeddedAgentEntry({
+      preparedRunAdmission,
       selection: {
         cfg: params.cfgWithAgentDefaults,
         provider: params.liveSelection.provider,
@@ -512,10 +486,18 @@ function createCronPromptExecutor(
         workspaceDir: params.executionRoot ?? params.workspaceDir,
         sessionKey: params.runSessionKey,
         preparation: { kind: "direct" },
-        resolveRuntimeOverride: (provider, model) =>
-          resolveCandidateExecution(provider, model).sessionRuntimeOverride,
-        resolveContextEngineHost: (provider, model) => {
-          const { executionProvider, cliExecution } = resolveCandidateExecution(provider, model);
+        resolveRuntimeOverride: (provider) =>
+          resolveSessionRuntimeOverrideForProvider({
+            provider,
+            entry: params.cronSession.sessionEntry,
+            cfg: params.cfgWithAgentDefaults,
+          }),
+        resolveContextEngineHost: (provider, model, runtimeOverride) => {
+          const { executionProvider, cliExecution } = resolveCandidateExecution(
+            provider,
+            model,
+            runtimeOverride,
+          );
           if (!cliExecution) {
             return undefined;
           }
@@ -555,16 +537,16 @@ function createCronPromptExecutor(
         if (params.abortSignal?.aborted) {
           throw new Error(params.abortReason());
         }
-        const { sessionRuntimeOverride, executionProvider, cliExecution } =
-          resolveCandidateExecution(providerOverride, modelOverride);
-        const candidateRuntime = resolveEffectiveAgentRuntime({
-          cfg: params.cfgWithAgentDefaults,
-          provider: providerOverride,
-          modelId: modelOverride,
-          agentId: params.agentId,
-          sessionKey: params.runSessionKey,
-          sessionEntry: params.cronSession.sessionEntry,
-        });
+        const {
+          sessionRuntimeOverride,
+          executionProvider,
+          cliExecution,
+          runtime: candidateRuntime,
+        } = resolveCandidateExecution(
+          providerOverride,
+          modelOverride,
+          runOptions.agentHarnessRuntimeOverride,
+        );
         const candidateConfiguredThinkLevel =
           params.immutableThinkLevel ??
           resolveConfiguredThinkingDefault({
@@ -640,8 +622,7 @@ function createCronPromptExecutor(
         await params.setRunContinuationCliExecutionProvider?.(
           cliExecution ? executionProvider : undefined,
         );
-        const bootstrapPromptWarningSignature =
-          bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1];
+        const bootstrapPromptWarningSignature = bootstrapPromptWarningSignaturesSeen.at(-1);
         // CLI providers can resume provider-native sessions; embedded providers
         // use OpenClaw's transcript/session file plus prompt-cache affinity.
         const fastModeState = resolveFastModeState({
@@ -799,7 +780,12 @@ function createCronPromptExecutor(
                 }
                 return candidateResult;
               },
-              { preparedRunAdmission, abortSignal: cliAbortSignal, trigger: "cron" },
+              {
+                preparedRunAdmission,
+                abortSignal: cliAbortSignal,
+                trigger: "cron",
+                isFinalFallbackAttempt: runOptions.isFinalFallbackAttempt,
+              },
             );
             bootstrapPromptWarningSignaturesSeen = resolveBootstrapWarningSignaturesSeen(
               result.meta?.systemPromptReport,

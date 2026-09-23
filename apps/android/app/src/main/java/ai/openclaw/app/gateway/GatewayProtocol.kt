@@ -581,6 +581,7 @@ enum class GatewayMethod(
   ToolsEffective("tools.effective"),
   ToolsInvoke("tools.invoke"),
   McpAppView("mcp.app.view"),
+  McpAuthLogin("mcp.authLogin"),
   McpAppListTools("mcp.app.listTools"),
   McpAppListResources("mcp.app.listResources"),
   McpAppListResourceTemplates("mcp.app.listResourceTemplates"),
@@ -883,6 +884,7 @@ enum class GatewayMethod(
   ProjectsAdd("projects.add"),
   ProjectsSearchRemote("projects.searchRemote"),
   DesktopObserve("desktop.observe"),
+  DesktopRelease("desktop.release"),
   DesktopLaunch("desktop.launch"),
   DeviceScopesRequestUpgrade("device.scopes.requestUpgrade"),
   DeviceScopesWaitUpgrade("device.scopes.waitUpgrade"),
@@ -990,14 +992,12 @@ enum class GatewayMethod(
   SessionsActivitySummaryEnsure("sessions.activitySummary.ensure"),
   ControlUiSessionPullRequestsChecks("controlUi.sessionPullRequests.checks"),
   DiagnosticsCpuProfile("diagnostics.cpuProfile"),
+  DiagnosticsHeapProfile("diagnostics.heapProfile"),
   TalkVoiceGet("talk.voice.get"),
   TalkVoiceSet("talk.voice.set"),
   TalkVoiceComplete("talk.voice.complete"),
   PluginsCredentialsInspect("plugins.credentials.inspect"),
   PluginsSkillsRead("plugins.skills.read"),
-  DiagnosticsHeapProfile("diagnostics.heapProfile"),
-  DesktopRelease("desktop.release"),
-  McpAuthLogin("mcp.authLogin"),
 }
 
 enum class GatewayEvent(

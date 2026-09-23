@@ -22,7 +22,8 @@ import {
 import { requestHeartbeat } from "../infra/heartbeat-wake.js";
 import { isDangerousHostInheritedEnvVarName } from "../infra/host-env-security.js";
 import { findPathKey, mergePathPrepend, removePathPrepend } from "../infra/path-prepend.js";
-import { enqueueSystemEvent } from "../infra/system-events.js";
+import { enqueueSystemEvent, enqueueSystemEventWithReceipt } from "../infra/system-events.js";
+import { withSystemEventOwner } from "../infra/system-event-ownership.js";
 import {
   shouldApplyOsSandbox,
   buildSeatbeltConfigWithOverrides,
@@ -59,7 +60,14 @@ import {
 } from "../utils/delivery-context.shared.js";
 import { resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
 import { captureAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";
-import { addSession, appendOutput, markExited, resolveProcessCleanupMs, tail } from "./bash-process-registry.js";
+import {
+  addSession,
+  appendOutput,
+  markExited,
+  recordNotifyOnExitRemoval,
+  resolveProcessCleanupMs,
+  tail,
+} from "./bash-process-registry.js";
 import { renderExecOutputText, renderExecUpdateText } from "./bash-tools.exec-output.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
 import { buildGitHubExecLaunchArgv } from "./github-exec-launch.js";
@@ -414,10 +422,18 @@ function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "faile
     ? `Exec ${status} (${session.id.slice(0, 8)}, ${exitLabel}) :: ${output}`
     : `Exec ${status} (${session.id.slice(0, 8)}, ${exitLabel})`;
   const eventRouting = session.eventRouting ?? {};
-  enqueueSystemEvent(summary, {
+  const eventOptions = {
     sessionKey: resolveEventSessionKeyForPolicy(sessionKey, eventRouting),
     deliveryContext: session.notifyDeliveryContext,
-  });
+  };
+  const remove = enqueueSystemEventWithReceipt(
+    summary,
+    session.agentId ? withSystemEventOwner(eventOptions, session.agentId) : eventOptions,
+    { allowDuplicate: true },
+  );
+  if (remove) {
+    recordNotifyOnExitRemoval(session, remove);
+  }
   // Subagent sessions receive exec results via process poll and announce flow;
   // the heartbeat would fall back to the main session and cause spurious wakes.
   if (!isSubagentSessionKey(sessionKey)) {

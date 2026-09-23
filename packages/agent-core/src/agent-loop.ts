@@ -24,14 +24,12 @@ import {
 import {
   appendInterruptedTurnMessage,
   createFailureMessage,
-  createInterruptedTurnMessage,
   isTurnHandoffAbort,
   normalizeCoreContextMessages,
 } from "./turn-interruption.js";
 import type {
   ToolResultContentSource,
   AgentContext,
-  AgentEvent,
   AgentLoopConfig,
   AgentMessage,
   AgentTool,

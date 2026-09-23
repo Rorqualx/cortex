@@ -56,6 +56,10 @@ import {
 import { isTimeoutErrorMessage } from "../../failover/classify.js";
 import type { PreparedProviderFailoverOwner } from "../../failover/provider-patterns.js";
 import type { ToolErrorSummary, ToolRecoverySummary } from "../../tool-error-summary.js";
+import {
+  hasCompletedMessagingToolDeliveryEvidence,
+  hasVisibleCommittedMessagingToolDeliveryEvidence,
+} from "../delivery-evidence.js";
 import { buildSourceReplyPayloadState } from "./source-reply-payloads.js";
 import { buildFailureWarning } from "./tool-error-warning.js";
 import { hasExplicitMutatingToolFailureAcknowledgement } from "./tool-failure-acknowledgement.js";
@@ -336,6 +340,7 @@ export function buildEmbeddedRunPayloads(params: {
       hasExplicitMutatingToolFailureAcknowledgement(
         getHeartbeatToolNotificationText(params.heartbeatToolResponse),
       ));
+  let hasIntentionalSilentFinal = false;
   for (const text of answerTexts) {
     const {
       text: cleanedText,
@@ -344,7 +349,10 @@ export function buildEmbeddedRunPayloads(params: {
       replyToId,
       replyToTag,
       replyToCurrent,
+      isSilent,
     } = preparedAnswerDirectives ?? parseReplyDirectives(text);
+    // Silence belongs to the final answer text: NO_REPLY is an authored outcome.
+    hasIntentionalSilentFinal = isSilent;
     const ttsFacts = shouldUseCanonicalFinalAnswer ? storedDelivery?.tts : undefined;
     const delivery = shouldUseCanonicalFinalAnswer
       ? {
@@ -381,7 +389,20 @@ export function buildEmbeddedRunPayloads(params: {
     });
     replyItems.push({ text: `✅ ${toolLabel} succeeded after retry.` });
   }
-  if (params.lastToolError) {
+  // A conversational NO_REPLY is an authored outcome, not a missing answer.
+  // Native shell calls are conservatively classified as mutating even when
+  // they only search files. That replay-safety classification must not replace
+  // a completed answer with a synthetic warning. A scheduled report can also
+  // finish silently after a confirmed completed message-tool delivery. Progress
+  // updates alone must not suppress a scheduled task's failure reporting.
+  const respectIntentionalSilence =
+    hasIntentionalSilentFinal &&
+    (!params.isCronTrigger ||
+      (hasVisibleCommittedMessagingToolDeliveryEvidence(params) &&
+        hasCompletedMessagingToolDeliveryEvidence(params))) &&
+    !params.isHeartbeatTrigger &&
+    !params.runAborted;
+  if (params.lastToolError && !respectIntentionalSilence) {
     // Surface mutating failures unless the assistant explicitly acknowledged the failed action.
     // Otherwise, keep the previous behavior and only surface non-recoverable failures when no reply exists.
     // A restart intentionally aborts the active tool while the Gateway takes over.

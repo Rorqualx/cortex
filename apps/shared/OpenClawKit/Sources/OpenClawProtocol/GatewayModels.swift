@@ -1009,7 +1009,6 @@ public struct AgentParams: Codable, Sendable {
 
 public struct AgentSummary: Codable, Sendable {
     public let id: String
-    public let utilitymodel: String?
     public let status: String?
     public let admissionrefusal: AnyCodable?
     public let kind: AgentKind?
@@ -1026,7 +1025,6 @@ public struct AgentSummary: Codable, Sendable {
 
     public init(
         id: String,
-        utilitymodel: String? = nil,
         status: String? = nil,
         admissionrefusal: AnyCodable? = nil,
         kind: AgentKind? = nil,
@@ -1042,7 +1040,6 @@ public struct AgentSummary: Codable, Sendable {
         defaultpermissionmode: SessionPermissionMode? = nil)
     {
         self.id = id
-        self.utilitymodel = utilitymodel
         self.status = status
         self.admissionrefusal = admissionrefusal
         self.kind = kind
@@ -1060,7 +1057,6 @@ public struct AgentSummary: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id
-        case utilitymodel = "utilityModel"
         case status
         case admissionrefusal = "admissionRefusal"
         case kind
@@ -4382,7 +4378,6 @@ public struct ChatHistoryActivity: Codable, Sendable {
 public struct ChatHistoryDeltaResult: Codable, Sendable {
     public let kind: String
     public let messages: [AnyCodable]
-    public let activity: [ChatHistoryActivity]?
     public let deltacursor: String
     public let sessioninfo: AnyCodable
     public let agentslist: AnyCodable?
@@ -4395,7 +4390,6 @@ public struct ChatHistoryDeltaResult: Codable, Sendable {
     public init(
         kind: String,
         messages: [AnyCodable],
-        activity: [ChatHistoryActivity]? = nil,
         deltacursor: String,
         sessioninfo: AnyCodable,
         agentslist: AnyCodable? = nil,
@@ -4407,7 +4401,6 @@ public struct ChatHistoryDeltaResult: Codable, Sendable {
     {
         self.kind = kind
         self.messages = messages
-        self.activity = activity
         self.deltacursor = deltacursor
         self.sessioninfo = sessioninfo
         self.agentslist = agentslist
@@ -4421,7 +4414,6 @@ public struct ChatHistoryDeltaResult: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case kind
         case messages
-        case activity
         case deltacursor = "deltaCursor"
         case sessioninfo = "sessionInfo"
         case agentslist = "agentsList"
@@ -24673,7 +24665,6 @@ public struct ToolCatalogEntry: Codable, Sendable {
     public let optional: Bool?
     public let risk: AnyCodable?
     public let tags: [String]?
-    public let fulldescription: String?
     public let defaultprofiles: [AnyCodable]
 
     public init(
@@ -24685,7 +24676,6 @@ public struct ToolCatalogEntry: Codable, Sendable {
         optional: Bool? = nil,
         risk: AnyCodable? = nil,
         tags: [String]? = nil,
-        fulldescription: String? = nil,
         defaultprofiles: [AnyCodable])
     {
         self.id = id
@@ -24696,7 +24686,6 @@ public struct ToolCatalogEntry: Codable, Sendable {
         self.optional = optional
         self.risk = risk
         self.tags = tags
-        self.fulldescription = fulldescription
         self.defaultprofiles = defaultprofiles
     }
 
@@ -24709,7 +24698,6 @@ public struct ToolCatalogEntry: Codable, Sendable {
         case optional
         case risk
         case tags
-        case fulldescription = "fullDescription"
         case defaultprofiles = "defaultProfiles"
     }
 }
