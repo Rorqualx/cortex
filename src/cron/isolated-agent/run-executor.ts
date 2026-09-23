@@ -367,13 +367,13 @@ function createCronPromptExecutor(
     }
     const promptWithDeliveryGuidance = appendCronDeliveryInstruction({
       commandBody: prompt,
-      deliveryRequested: params.deliveryRequested,
+      deliveryRequested: params.deliveryRequested ?? false,
       messageToolEnabled: deliveryMessageToolAvailable,
-      resolvedDeliveryOk: params.resolvedDelivery.ok,
+      resolvedDeliveryOk: params.resolvedDelivery.ok ?? false,
       requireExplicitMessageTarget: sourceDelivery.messageTool.requireExplicitTarget,
     });
     const deliveryTargetRuntimeContext = buildCronDeliveryTargetRuntimeContext({
-      resolvedDeliveryOk: params.resolvedDelivery.ok,
+      resolvedDeliveryOk: params.resolvedDelivery.ok ?? false,
       messageToolAvailable: deliveryMessageToolAvailable,
       resolvedDelivery: params.resolvedDelivery,
       sourceDelivery,
@@ -642,7 +642,6 @@ function createCronPromptExecutor(
             agentId: params.agentId,
             trigger: "cron",
             jobId: params.job.id,
-            messageActionTurnCapability,
             config: params.cfgWithAgentDefaults,
             prompt: promptText,
             finalizePromptForResolvedTools,

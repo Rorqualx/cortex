@@ -21,9 +21,9 @@ import {
 } from "../infra/exec-approvals.js";
 import { requestHeartbeat } from "../infra/heartbeat-wake.js";
 import { isDangerousHostInheritedEnvVarName } from "../infra/host-env-security.js";
-import { findPathKey, mergePathPrepend, removePathPrepend } from "../infra/path-prepend.js";
-import { enqueueSystemEvent, enqueueSystemEventWithReceipt } from "../infra/system-events.js";
+import { findPathKey, mergePathPrepend } from "../infra/path-prepend.js";
 import { withSystemEventOwner } from "../infra/system-event-ownership.js";
+import { enqueueSystemEvent, enqueueSystemEventWithReceipt } from "../infra/system-events.js";
 import {
   shouldApplyOsSandbox,
   buildSeatbeltConfigWithOverrides,
