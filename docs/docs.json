@@ -1831,7 +1831,8 @@
                       "plugins/apple-fm",
                       "plugins/llama-cpp",
                       "plugins/memory-lancedb",
-                      "plugins/memory-wiki"
+                      "plugins/memory-wiki",
+                      "plugins/typesafe"
                     ]
                   },
                   {

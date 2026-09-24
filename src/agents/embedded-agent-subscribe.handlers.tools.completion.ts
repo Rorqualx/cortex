@@ -262,7 +262,6 @@ export async function handleToolExecutionEnd(
     });
   }
 
-  // Commit messaging tool evidence on success, discard on error.
   const messagingArgs = applyCurrentMessageProvider(toolName, startArgs, ctx.params.messageChannel);
   const isMessagingInvocation = isMessagingTool(toolName);
   const isMessagingSend = isMessagingInvocation && isMessagingToolSendAction(toolName, startArgs);
@@ -271,9 +270,7 @@ export async function handleToolExecutionEnd(
   const messageDelivery = readEmbeddedMessageDeliveryFact(
     readToolResultDetails(toolSendReceiptResult)?.messageDelivery,
   );
-  if (messageDelivery?.sourceReplyDelivered) {
-    ctx.state.sourceReplyDelivered = true;
-  }
+  // Embedded receipt capture omits core conversation statuses; presentation can rewrite them.
   const didDeliverMessagingResult =
     isMessagingInvocation &&
     (messageDelivery
@@ -338,9 +335,17 @@ export async function handleToolExecutionEnd(
       result,
       isToolError,
     });
-  const sourceReplyFinal = deliveredMessageToolSourceReply
-    ? resolveMessageToolSourceReplyFinal(startArgs)
-    : undefined;
+  const sourceReplyFinal =
+    deliveredMessageToolSourceReply || messageDelivery?.sourceReplyDelivered
+      ? resolveMessageToolSourceReplyFinal(startArgs)
+      : undefined;
+  ctx.state.sourceReplyDelivered ||= messageDelivery?.sourceReplyDelivered;
+  if (
+    sourceReplyFinal !== false &&
+    (messageDelivery?.sourceReplyDelivered || deliveredCurrentSourceReply)
+  ) {
+    ctx.state.sourceReplyDeliveryState = "delivered";
+  }
   if (didDeliverMessagingResult && messageText) {
     ctx.state.messagingToolSentTexts.push(messageText);
     ctx.state.messagingToolSentTextsNormalized.push(normalizeTextForComparison(messageText));

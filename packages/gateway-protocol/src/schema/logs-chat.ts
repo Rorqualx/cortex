@@ -3,6 +3,7 @@ import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import type { Static } from "typebox";
 import { Type } from "typebox";
+import { CHAT_WORK_CONTEXT_LIMITS } from "../chat-work-context.js";
 import {
   CHAT_INPUT_RECEIPT_MAX_RUN_IDS,
   CHAT_INPUT_RUN_ID_MAX_CHARS,
@@ -21,6 +22,17 @@ export const ChatSendIntentSchema = closedObject({
   issuedAtMs: Type.Integer({ minimum: 0 }),
 });
 export type ChatSendIntent = Static<typeof ChatSendIntentSchema>;
+
+const ChatWorkContextSchema = closedObject({
+  page: Type.String({ minLength: 1, maxLength: CHAT_WORK_CONTEXT_LIMITS.page }),
+  title: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.title })),
+  sessionKey: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.sessionKey })),
+  sessionId: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.sessionId })),
+  agentId: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.agentId })),
+  workspace: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.workspace })),
+  file: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.file })),
+  selection: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.selection })),
+});
 
 /** Cursor-based request for the gateway log tail endpoint. */
 export const LogsTailParamsSchema = closedObject({
@@ -179,6 +191,7 @@ export const ChatSendParamsSchema = closedObject({
   sessionId: Type.Optional(NonEmptyString),
   message: Type.String(),
   mentions: Type.Optional(HumanMentionsSchema),
+  workContext: Type.Optional(ChatWorkContextSchema),
   intent: Type.Optional(ChatSendIntentSchema),
   thinking: Type.Optional(Type.String()),
   fastMode: Type.Optional(Type.Union([Type.Boolean(), Type.Literal("auto")])),

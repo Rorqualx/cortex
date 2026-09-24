@@ -90,6 +90,7 @@ export function createEmbeddedAgentSubscribeState(
     messageToolOnlySourceReplyDelivered: false,
     pendingMessagingTexts: new Map(),
     pendingMessagingTargets: new Map(),
+    sourceReplyDeliveryState: "missing",
     successfulCronAdds: 0,
     pendingMessagingMediaUrls: new Map(),
     pendingToolMediaUrls: initialPendingToolMedia.mediaUrls,

@@ -78,6 +78,7 @@ export type ResolvedAgentConfig = {
   modelPolicy?: AgentEntry["modelPolicy"];
   agentRuntime?: AgentEntry["agentRuntime"];
   utilityModel?: AgentEntry["utilityModel"];
+  decisionModel?: AgentEntry["decisionModel"];
   thinkingDefault?: AgentEntry["thinkingDefault"];
   verboseDefault?: AgentDefaultsConfig["verboseDefault"];
   toolProgressDetail?: AgentDefaultsConfig["toolProgressDetail"];
@@ -405,6 +406,7 @@ export function resolveAgentConfig(
     ...(hasExplicitModelPolicyAllow(entry.modelPolicy) ? { modelPolicy: entry.modelPolicy } : {}),
     ...(entry.agentRuntime ? { agentRuntime: entry.agentRuntime } : {}),
     utilityModel: readStringValue(entry.utilityModel),
+    decisionModel: readStringValue(entry.decisionModel),
     thinkingDefault: entry.thinkingDefault,
     verboseDefault: entry.verboseDefault ?? agentDefaults?.verboseDefault,
     toolProgressDetail: entry.toolProgressDetail ?? agentDefaults?.toolProgressDetail,

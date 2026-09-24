@@ -32,6 +32,7 @@ import type {
 } from "./embedded-agent-utils.js";
 import type { McpConnectAction } from "./mcp-connect-action.js";
 import type { McpAppChannelView } from "./mcp-ui-resource.js";
+import type { ReplyDeliveryState } from "./reply-completion.js";
 import type { AgentMessage } from "./runtime/index.js";
 import type { AgentSessionEvent } from "./sessions/index.js";
 import type { ToolErrorSummary, ToolRecoverySummary } from "./tool-error-summary.js";
@@ -221,6 +222,7 @@ export type EmbeddedAgentSubscribeState = {
   sourceReplyDelivered?: true;
   pendingMessagingTexts: Map<string, string>;
   pendingMessagingTargets: Map<string, MessagingToolSend>;
+  sourceReplyDeliveryState?: ReplyDeliveryState;
   successfulCronAdds: number;
   pendingMessagingMediaUrls: Map<string, string[]>;
   pendingToolMediaUrls: string[];
@@ -403,6 +405,7 @@ type ToolHandlerState = Pick<
   | "messagingToolSourceReplyPayloads"
   | "messageToolOnlySourceReplyDelivered"
   | "sourceReplyDelivered"
+  | "sourceReplyDeliveryState"
   | "messagingToolSentTargets"
   | "heartbeatToolResponse"
   | "successfulCronAdds"

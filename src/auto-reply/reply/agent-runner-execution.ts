@@ -22,6 +22,7 @@ import { classifyFailoverReason } from "../../agents/failover/classify.js";
 import { renderRateLimitOrOverloadedCopy } from "../../agents/failover/user-copy.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 import { leaseMcpAppModelContextForTurn } from "../../agents/mcp-app-model-context.js";
+import { resolveReplyExpectation } from "../../agents/reply-completion.js";
 import { createAgentPatchedSessionModelRunGuard } from "../../agents/session-model-auto-revert.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
@@ -35,6 +36,7 @@ import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { logSessionTurnCreated } from "../../logging/diagnostic.js";
 import { isInternalMessageChannel } from "../../utils/message-channel.js";
+import type { ReplyPayload } from "../types.js";
 import {
   clearRecoveredAutoFallbackPrimaryProbeSelection,
   resolveRunAfterAutoFallbackPrimaryProbeRecheck,
@@ -56,7 +58,6 @@ import type {
 import {
   buildTerminalAgentRunFailureReplyPayload,
   markAgentRunFailureReplyPayload,
-  resolveExternalRunFailureTextForConversation,
 } from "./agent-runner-failure-reply.js";
 import {
   executeAgentFallbackCycle,
@@ -68,7 +69,7 @@ import { resolveQueuedReplyRuntimeConfig } from "./agent-runner-utils.js";
 import { shouldNotifyUserAboutCompaction } from "./compaction-notice.js";
 import { type CurrentTurnImages, resolveCurrentTurnImages } from "./current-turn-images.js";
 import type { FollowupRun } from "./queue.js";
-import type { DirectBlockDelivery } from "./reply-delivery.js";
+import { resolveReplyFailureVisibility, type DirectBlockDelivery } from "./reply-delivery.js";
 import type { ReplyMediaContext } from "./reply-media-paths.js";
 import { createReplyMediaContext } from "./reply-media-paths.runtime.js";
 import { resolveReplyOperationAbortReason } from "./reply-operation-abort.js";
@@ -407,6 +408,8 @@ async function executeAgentTurnInternalWithRetryState(
         overloadRetryState,
         consumeTransientHttpRetry,
         modelPatch,
+        resolveVisibleReplyDelivery: () =>
+          resolveReplyFailureVisibility(params.resolveVisibleReplyDelivery, directBlockDeliveries),
       });
       if (action.kind === "aborted") {
         return action;
@@ -498,12 +501,7 @@ async function executeAgentTurnInternalWithRetryState(
       if (formattedErrorCandidate) {
         runResult.payloads = [
           markAgentRunFailureReplyPayload({
-            text: resolveExternalRunFailureTextForConversation({
-              text: formattedErrorCandidate,
-              sessionCtx: params.sessionCtx,
-              isGenericRunnerFailure: false,
-              cfg: params.followupRun.run.config,
-            }),
+            text: formattedErrorCandidate,
             isError: true,
           }),
         ];
@@ -514,14 +512,21 @@ async function executeAgentTurnInternalWithRetryState(
     ? false
     : (modelPatch.captureFallbackFailure(fallbackAttempts) ?? false);
   await modelPatch.finish(!terminalRunFailed && !patchedModelNeedsRevert);
-  const terminalFailurePayload = terminalRunFailed
-    ? buildTerminalAgentRunFailureReplyPayload({
-        isHeartbeat: params.isHeartbeat,
-        visibleReplyDelivered: (await params.resolveVisibleReplyDelivery?.()) === true,
-        sessionCtx: params.sessionCtx,
-        cfg: params.followupRun.run.config,
-      })
-    : undefined;
+  let terminalFailurePayload: ReplyPayload | undefined;
+  if (terminalRunFailed) {
+    const replyExpectation = resolveReplyExpectation(params.followupRun.run);
+    terminalFailurePayload = buildTerminalAgentRunFailureReplyPayload({
+      isHeartbeat: params.isHeartbeat,
+      replyExpectation,
+      visibleReplyDelivered:
+        replyExpectation === "optional"
+          ? await resolveReplyFailureVisibility(
+              params.resolveVisibleReplyDelivery,
+              directBlockDeliveries,
+            )
+          : false,
+    });
+  }
 
   return {
     kind: "completed",

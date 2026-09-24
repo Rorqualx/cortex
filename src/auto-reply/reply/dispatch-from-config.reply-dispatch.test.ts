@@ -11,6 +11,7 @@ import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gatew
 import { createInternalHookEventPayload } from "../../test-utils/internal-hook-event-payload.js";
 import { withReplyDispatcher } from "../dispatch-dispatcher.js";
 import { setReplyPayloadMetadata } from "../reply-payload.js";
+import type { FinalizedMsgContext } from "../templating.js";
 import type { ReplyPayload } from "../types.js";
 import {
   acpManagerRuntimeMocks,
@@ -80,6 +81,10 @@ function pendingFinalDelivery(
     deliveries: [{ id: "delivery-1", state: "prepared" as const }],
     ...overrides,
   };
+}
+
+function createInternalHookCtx(): FinalizedMsgContext {
+  return { ...createHookCtx(), InputProvenance: { kind: "internal_system" } };
 }
 
 function pendingFinalReply(
@@ -273,21 +278,22 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
       queuedFinal: false,
       counts: { tool: 0, block: 0, final: 0 },
     } satisfies PluginHookReplyDispatchResult);
+    const dispatcher = createDispatcher();
 
     const result = await dispatchReplyFromConfig({
       ctx: createHookCtx(),
       cfg: { ...emptyConfig, session: { sendPolicy: { default: "deny" } } },
-      dispatcher: createDispatcher(),
+      dispatcher,
       replyResolver: async () => ({ text: "model reply" }),
     });
 
     expect(hookMocks.runner.runReplyDispatch).toHaveBeenCalled();
-    // createHookCtx's "private" chat type is undirected, so no fallback
-    // eligibility surfaces for this turn.
+    expect(dispatcher.sendFinalReply).not.toHaveBeenCalled();
     expect(result).toEqual({
       queuedFinal: false,
       counts: { tool: 0, block: 0, final: 0 },
       sendPolicyDenied: true,
+      deliberateSilentTerminalReply: true,
     });
   });
 
@@ -428,7 +434,7 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
         dispatcher,
         run: () =>
           dispatchReplyFromConfig({
-            ctx: createHookCtx(),
+            ctx: createInternalHookCtx(),
             cfg: emptyConfig,
             dispatcher,
             replyResolver: async () => pendingFinalReply("durable reply"),
@@ -440,8 +446,7 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
 
       expect(result.queuedFinal).toBe(true);
       expect(deliver).not.toHaveBeenCalled();
-      // createHookCtx's "private" chat type is undirected, so no fallback
-      // attempt follows the timed-out final.
+      // This internal turn isolates retained delivery custody from missing-user-reply recovery.
       expect(sessionStoreMocks.currentEntry?.pendingFinalDelivery).toMatchObject({
         kind: "replayable",
         text: "durable reply",
@@ -487,7 +492,7 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
         dispatcher,
         run: () =>
           dispatchReplyFromConfig({
-            ctx: createHookCtx(),
+            ctx: createInternalHookCtx(),
             cfg: emptyConfig,
             dispatcher,
             replyResolver: async () => [{ text: "first" }, pendingFinalReply("durable reply")],
@@ -540,7 +545,7 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
         dispatcher,
         run: () =>
           dispatchReplyFromConfig({
-            ctx: createHookCtx(),
+            ctx: createInternalHookCtx(),
             cfg: emptyConfig,
             dispatcher,
             replyResolver: async () => [{ text: "auxiliary" }, pendingFinalReply("durable reply")],
@@ -599,7 +604,7 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
         dispatcher,
         run: () =>
           dispatchReplyFromConfig({
-            ctx: createHookCtx(),
+            ctx: createInternalHookCtx(),
             cfg: emptyConfig,
             dispatcher,
             replyResolver: async () => [
@@ -651,7 +656,7 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
         dispatcher,
         run: () =>
           dispatchReplyFromConfig({
-            ctx: createHookCtx(),
+            ctx: createInternalHookCtx(),
             cfg: emptyConfig,
             dispatcher,
             replyResolver: async () =>
@@ -772,21 +777,23 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
 
     expect(result.queuedFinal).toBe(true);
     expect(deliver).not.toHaveBeenCalled();
-    // createHookCtx's "private" chat type is undirected, so the cancelled final
-    // does not trigger a fallback attempt.
-    expect(receipt?.counts.final).toMatchObject({ cancelled: 1, failedBeforeSend: 0 });
-    expect(sessionStoreMocks.updateSessionEntry).toHaveBeenCalledTimes(2);
+    expect(receipt?.counts.final).toMatchObject({
+      delivered: 0,
+      cancelled: 2,
+      failedBeforeSend: 0,
+    });
+    expect(result.noVisibleReplyFallbackDelivered).toBeUndefined();
+    expect(result.noVisibleReplyFallbackEligible).toBe(true);
   });
 
   it("delivers a generated final reply before queued follow-up admission", async () => {
     hookMocks.runner.hasHooks.mockReturnValue(false);
-    const dispatcher = createDispatcher();
     const deliveryOrder: string[] = [];
-    let queuedOperation: ReturnType<typeof createReplyOperation> | undefined;
-    vi.mocked(dispatcher.sendFinalReply).mockImplementation(() => {
+    const deliver = vi.fn(async () => {
       deliveryOrder.push("final");
-      return true;
     });
+    const dispatcher = createReplyDispatcher({ deliver });
+    let queuedOperation: ReturnType<typeof createReplyOperation> | undefined;
 
     try {
       const result = await dispatchReplyFromConfig({
@@ -812,14 +819,15 @@ describe("dispatchReplyFromConfig reply_dispatch hook", () => {
       });
 
       expect(result.queuedFinal).toBe(true);
-      expect(dispatcher.sendFinalReply).toHaveBeenCalledOnce();
-      expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "first reply" });
+      expect(deliver).toHaveBeenCalledOnce();
+      expect(deliver).toHaveBeenCalledWith({ text: "first reply" }, { kind: "final" });
       await vi.waitFor(() => {
         expect(queuedOperation).toBeDefined();
       });
       expect(deliveryOrder).toEqual(["final", "followup"]);
       expect(replyRunRegistry.get("agent:test:session")).toBe(queuedOperation);
     } finally {
+      dispatcher.markComplete();
       queuedOperation?.complete();
     }
   });

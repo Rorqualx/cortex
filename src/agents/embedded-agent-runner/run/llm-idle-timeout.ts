@@ -16,6 +16,7 @@ import { markDiagnosticRunProgress } from "../../../logging/diagnostic-run-activ
 import type { EmbeddedRunTrigger } from "./params.js";
 import { captureAsyncWorkTracker } from "../../../shared/async-work-scope.js";
 import { recordAgentCleanupFailure } from "../../run-cleanup-timeout.js";
+import type { EmbeddedRunTrigger } from "../../run-trigger.js";
 import type { StreamFn } from "../../runtime/index.js";
 import type { MutableAssistantMessageEventStream } from "../../stream-compat.js";
 import { createStreamIteratorWrapper } from "../../stream-iterator-wrapper.js";
