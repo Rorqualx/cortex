@@ -6,7 +6,12 @@ import {
   resolveSkillForgeRetiredSkillDir,
   resolveSkillForgeStagedSkillDir,
 } from "./paths.js";
-import { listTelemetryEntries, recordSkillDemotion, recordSkillPromotion } from "./telemetry.js";
+import {
+  listTelemetryEntries,
+  recordSkillDemotion,
+  recordSkillPromotion,
+  type SkillTelemetryEntry,
+} from "./telemetry.js";
 
 export type PromotionResult =
   | {
@@ -63,6 +68,19 @@ export async function promoteStagedSkill(params: {
   return { status: "promoted", name: params.name, promotedDir, verdict };
 }
 
+/**
+ * Skills that must never be retired by Skill Forge. These are critical
+ * infrastructure — retiring one wedges the gateway's own recovery path. This
+ * is a hard guard, not a policy: decay sweeps skip them and every retirement
+ * entry point refuses them. Manual filesystem removal remains the only
+ * escape hatch, by design.
+ */
+export const PROTECTED_SKILL_NAMES: ReadonlySet<string> = new Set(["gateway-restart"]);
+
+export function isProtectedSkillName(name: string): boolean {
+  return PROTECTED_SKILL_NAMES.has(name);
+}
+
 export async function demoteSkill(params: {
   name: string;
   reason: string;
@@ -70,6 +88,9 @@ export async function demoteSkill(params: {
   now?: Date;
 }): Promise<{ retiredDir: string }> {
   const env = params.env ?? process.env;
+  if (isProtectedSkillName(params.name)) {
+    throw new Error(`skill "${params.name}" is protected infrastructure and cannot be retired`);
+  }
   const promotedDir = resolveSkillForgePromotedSkillDir({ name: params.name, env });
   const retiredDir = resolveSkillForgeRetiredSkillDir({ name: params.name, env });
   await fsp.mkdir(path.dirname(retiredDir), { recursive: true });
@@ -81,6 +102,18 @@ export async function demoteSkill(params: {
 
 export type DecayPolicy = {
   maxUnusedDays: number;
+  /**
+   * Evidence-based retirement of used skills: minimum number of
+   * outcome-stamped usage records required before the wrong-rate signal is
+   * trusted. Default 3.
+   */
+  minOutcomeSamples?: number;
+  /**
+   * Evidence-based retirement of used skills: wrong-outcome rate at or above
+   * which a stale (beyond maxUnusedDays since last use) skill is retired.
+   * Default 0.5.
+   */
+  wrongRateThreshold?: number;
 };
 
 export const DEFAULT_DECAY_POLICY: DecayPolicy = { maxUnusedDays: 30 };
@@ -95,12 +128,68 @@ function daysSince(timestamp: string, now: Date): number {
 
 export type DecayedSkill = { name: string; reason: string };
 
+function unusedRetirementReason(
+  entry: SkillTelemetryEntry,
+  policy: DecayPolicy,
+  now: Date,
+): string | null {
+  const reference = entry.promotedAt ?? entry.createdAt;
+  const days = daysSince(reference, now);
+  if (days < policy.maxUnusedDays) {
+    return null;
+  }
+  return `unused for ${days.toFixed(1)} days since promotion (policy: ${policy.maxUnusedDays})`;
+}
+
+type EvidencePolicy = {
+  maxUnusedDays: number;
+  minOutcomeSamples: number;
+  wrongRateThreshold: number;
+};
+
+/**
+ * Evidence-based retirement for USED skills (RRSI-style cost-benefit pruning):
+ * a skill whose usage trajectory has gone stale AND whose invocation outcomes
+ * are predominantly wrong is retired despite past usage. Both conditions must
+ * hold — being used once no longer protects a skill forever, but a stale skill
+ * with good outcomes (or too few outcome-stamped samples) always stays.
+ * Conservative by default: the unused-days floor still applies as the staleness
+ * gate, and this never fires above the promotion thresholds it advises on.
+ */
+function evidenceRetirementReason(
+  entry: SkillTelemetryEntry,
+  policy: EvidencePolicy,
+  now: Date,
+): string | null {
+  if (!entry.lastUsedAt) {
+    return null;
+  }
+  const days = daysSince(entry.lastUsedAt, now);
+  if (days < policy.maxUnusedDays) {
+    return null;
+  }
+  const stamped = (entry.usageLog ?? []).filter((record) => record.invocationOutcome !== undefined);
+  if (stamped.length < policy.minOutcomeSamples) {
+    return null;
+  }
+  const wrong = stamped.filter((record) => record.invocationOutcome === "wrong").length;
+  if (wrong / stamped.length < policy.wrongRateThreshold) {
+    return null;
+  }
+  return `stale for ${days.toFixed(1)} days since last use with ${wrong}/${stamped.length} wrong outcomes (policy: ${policy.maxUnusedDays}d stale, wrong-rate >= ${policy.wrongRateThreshold}, samples >= ${policy.minOutcomeSamples})`;
+}
+
 export async function runDecaySweep(params: {
   policy?: DecayPolicy;
   now?: Date;
   env?: NodeJS.ProcessEnv;
 }): Promise<DecayedSkill[]> {
   const policy = params.policy ?? DEFAULT_DECAY_POLICY;
+  const evidencePolicy: EvidencePolicy = {
+    maxUnusedDays: policy.maxUnusedDays,
+    minOutcomeSamples: policy.minOutcomeSamples ?? 3,
+    wrongRateThreshold: policy.wrongRateThreshold ?? 0.5,
+  };
   const now = params.now ?? new Date();
   const env = params.env ?? process.env;
   const demoted: DecayedSkill[] = [];
@@ -108,15 +197,17 @@ export async function runDecaySweep(params: {
     if (entry.status !== "promoted") {
       continue;
     }
-    if (entry.usageCount > 0) {
+    if (isProtectedSkillName(entry.name)) {
+      // Critical infrastructure is never a decay candidate (hard guard).
       continue;
     }
-    const reference = entry.promotedAt ?? entry.createdAt;
-    const days = daysSince(reference, now);
-    if (days < policy.maxUnusedDays) {
+    const reason =
+      entry.usageCount === 0
+        ? unusedRetirementReason(entry, policy, now)
+        : evidenceRetirementReason(entry, evidencePolicy, now);
+    if (!reason) {
       continue;
     }
-    const reason = `unused for ${days.toFixed(1)} days since promotion (policy: ${policy.maxUnusedDays})`;
     try {
       await demoteSkill({ name: entry.name, reason, now, env });
       demoted.push({ name: entry.name, reason });

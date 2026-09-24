@@ -18,6 +18,7 @@ import { runForgePipeline, type PipelineRunResult } from "../../skill-forge/pipe
 import {
   promoteStagedSkill,
   runDecaySweep,
+  isProtectedSkillName,
   type PromotionResult,
   DEFAULT_DECAY_POLICY,
 } from "../../skill-forge/promoter.js";
@@ -287,6 +288,11 @@ export function createSkillForgeTool(options: SkillForgeToolOptions): AnyAgentTo
     const maxUnusedDays = readMaxUnusedDaysParam(params) ?? DEFAULT_DECAY_POLICY.maxUnusedDays;
 
     if (name) {
+      if (isProtectedSkillName(name)) {
+        throw new ToolInputError(
+          `skill "${name}" is protected infrastructure and cannot be retired`,
+        );
+      }
       const reason = readToolStringParam(params, "reason") ?? "manual retirement";
       const entry = await recordSkillDemotion({ name, reason });
       return {
