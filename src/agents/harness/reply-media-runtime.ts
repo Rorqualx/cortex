@@ -79,7 +79,6 @@ export async function prepareHarnessReplyMedia(params: {
     config: context.cfg,
     sessionKey: context.sessionKey ?? "",
     assistantTexts: result.assistantTexts,
-    answerSegments: result.answerSegments,
     lastAssistant: assistant,
     currentAssistant: result.yieldDetected ? null : (assistant ?? null),
     lastToolError: result.lastToolError,

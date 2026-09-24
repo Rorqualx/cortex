@@ -97,7 +97,10 @@ export async function prepareTerminalWithSettledTurnFinalization(input: {
   const initial = input.initial;
   let attempt = initial.attempt;
   let lastRunPromptUsage = input.lastRunPromptUsage;
-  const minimumAssistantMessageIndex = (attempt.answerSegments?.at(-1)?.messageEnd ?? -1) + 1;
+  // Fork: answerSegments were removed with the segment machinery, so the
+  // observer counts deliveries across the whole attempt (upstream's expression
+  // already degrades to this when no segments are populated).
+  const minimumAssistantMessageIndex = 0;
   const observeSourceDelivery = () =>
     observeReplyDelivery(
       input.terminalBase.runParams.resolveReplyDelivery,

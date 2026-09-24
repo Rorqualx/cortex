@@ -13,7 +13,6 @@ import { areDiagnosticsEnabledForProcess } from "../../../infra/diagnostic-event
 import { toErrorObject } from "../../../infra/errors.js";
 import type { AssistantMessageEvent } from "../../../llm/types.js";
 import { markDiagnosticRunProgress } from "../../../logging/diagnostic-run-activity.js";
-import type { EmbeddedRunTrigger } from "./params.js";
 import { captureAsyncWorkTracker } from "../../../shared/async-work-scope.js";
 import { recordAgentCleanupFailure } from "../../run-cleanup-timeout.js";
 import type { EmbeddedRunTrigger } from "../../run-trigger.js";
