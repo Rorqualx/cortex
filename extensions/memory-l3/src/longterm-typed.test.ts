@@ -8,7 +8,7 @@ import {
   deriveVolatilityClass,
 } from "./longterm-typed.js";
 import { Storage } from "./storage.js";
-import type { TypedFact } from "./types.js";
+import type { TypedFact, LongTermTypedFact } from "./types.js";
 
 let tmpRoot: string;
 let storage: Storage;
@@ -217,6 +217,167 @@ describe("consolidateLongTermTyped", () => {
     expect(ltt.facts[0]!.value).toBe("555-9999");
     expect(ltt.facts[0]!.conflictWith).toBeDefined();
     expect(ltt.facts[0]!.conflictWith).toBe(ltt.facts[0]!.id);
+  });
+
+  it("demotes temporally-dominated stale candidates into history instead of superseding (GC-Mem temporal dominance)", async () => {
+    // Canonical truth confirmed at NOW-2d; a late-appearing L2 chunk carries an
+    // older contradiction (NOW-8d) — e.g. after L2 pruning/rotation resurrects a
+    // stale value. The stale value must NOT shadow the newer canonical truth.
+    const seedFact: LongTermTypedFact = {
+      id: "ltt-seed",
+      slot: "user:account_balance",
+      value: "1200.00",
+      unit: "USD",
+      confidence: 0.9,
+      firstSeenAt: NOW - 10 * DAY,
+      lastConfirmedAt: NOW - 2 * DAY,
+      recallCount: 2,
+      sourceChunkIds: ["chunk-000000-gone"],
+      history: [],
+      validFrom: NOW - 2 * DAY,
+      validUntil: null,
+      supersededBy: null,
+      archived: false,
+      archivedAt: null,
+      sourceTrust: "user",
+    };
+    await storage.writeLongTermTyped(
+      { version: 1, agentId: "j-rorqual", lastConsolidatedAt: NOW - 2 * DAY, facts: [seedFact] },
+      "## Typed facts (canonical)\n\n- `user:account_balance` = `1200.00` USD (recall 2, conf 0.90)\n",
+    );
+
+    await writeChunkWithTyped(
+      "chunk-000000-stale",
+      [
+        {
+          id: "tf-stale",
+          slot: "user:account_balance",
+          value: "500.00",
+          sourceSpan: "balance was 500.00 USD",
+          unit: "USD",
+          confidence: 0.95,
+          createdAt: NOW - 8 * DAY,
+        },
+      ],
+      NOW - 8 * DAY,
+    );
+
+    const out = await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+    expect(out.dominatedCount).toBe(1);
+    expect(out.supersededCount).toBe(0);
+    expect(out.reaffirmedCount).toBe(0);
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("1200.00");
+    expect(ltt.facts[0]!.confidence).toBe(0.9);
+    expect(ltt.facts[0]!.recallCount).toBe(2);
+    // Demoted-not-deleted: the stale value lands in the audit trail.
+    expect(ltt.facts[0]!.history).toEqual([{ value: "500.00", supersededAt: NOW }]);
+
+    // Idempotent: a second pass over the same chunks does not re-demote.
+    const second = await consolidateLongTermTyped({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW + DAY,
+    });
+    expect(second.dominatedCount).toBe(0);
+    expect(second.supersededCount).toBe(0);
+    const after = await storage.readLongTermTyped();
+    expect(after.facts[0]!.history).toHaveLength(1);
+    expect(after.facts[0]!.value).toBe("1200.00");
+  });
+
+  it("still supersedes when the candidate is newer than the canonical confirmation", async () => {
+    const seedFact: LongTermTypedFact = {
+      id: "ltt-seed2",
+      slot: "user:account_balance",
+      value: "500.00",
+      unit: "USD",
+      confidence: 0.9,
+      firstSeenAt: NOW - 10 * DAY,
+      lastConfirmedAt: NOW - 5 * DAY,
+      recallCount: 1,
+      sourceChunkIds: ["chunk-000000-old"],
+      history: [],
+      validFrom: NOW - 5 * DAY,
+      validUntil: null,
+      supersededBy: null,
+      archived: false,
+      archivedAt: null,
+      sourceTrust: "user",
+    };
+    await storage.writeLongTermTyped(
+      { version: 1, agentId: "j-rorqual", lastConsolidatedAt: NOW - 5 * DAY, facts: [seedFact] },
+      "## Typed facts (canonical)\n\n- `user:account_balance` = `500.00` USD (recall 1, conf 0.90)\n",
+    );
+
+    await writeChunkWithTyped(
+      "chunk-000000-new",
+      [
+        {
+          id: "tf-fresh",
+          slot: "user:account_balance",
+          value: "900.00",
+          sourceSpan: "balance is now 900.00 USD",
+          unit: "USD",
+          confidence: 0.95,
+          createdAt: NOW - 1 * DAY,
+        },
+      ],
+      NOW - 1 * DAY,
+    );
+
+    const out = await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+    expect(out.supersededCount).toBe(1);
+    expect(out.dominatedCount).toBe(0);
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("900.00");
+    expect(ltt.facts[0]!.history).toEqual([{ value: "500.00", supersededAt: NOW }]);
+  });
+
+  it("breaks equal-timestamp value conflicts deterministically on fact id, not chunk order", async () => {
+    // Two facts at the same createdAt with different values: without a
+    // tie-break, whichever chunk lists first in path order would win. The
+    // greater fact id must win regardless of iteration order.
+    const T = NOW - 3 * DAY;
+    await writeChunkWithTyped(
+      "chunk-000000-tie-a",
+      [
+        {
+          id: "tf-a",
+          slot: "infra:pi_hole_ip",
+          value: "192.168.50.1",
+          sourceSpan: "pi-hole at 192.168.50.1",
+          unit: null,
+          confidence: 0.9,
+          createdAt: T,
+        },
+      ],
+      T,
+    );
+    await writeChunkWithTyped(
+      "chunk-000001-tie-b",
+      [
+        {
+          id: "tf-b",
+          slot: "infra:pi_hole_ip",
+          value: "192.168.50.128",
+          sourceSpan: "pi-hole at 192.168.50.128",
+          unit: null,
+          confidence: 0.9,
+          createdAt: T,
+        },
+      ],
+      T,
+    );
+
+    const out = await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+    expect(out.promotedCount).toBe(1);
+
+    const ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("192.168.50.128");
+    expect(ltt.facts[0]!.history).toEqual([{ value: "192.168.50.1", supersededAt: T }]);
   });
 
   it("re-affirms when value is identical across chunks (no history entry)", async () => {

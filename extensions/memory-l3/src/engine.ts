@@ -529,12 +529,14 @@ export class HierarchicalL3Engine implements ContextEngine {
             now,
             sessionId: params.sessionId,
           });
-          typedActivity = ltt.promotedCount + ltt.supersededCount > 0;
+          typedActivity = ltt.promotedCount + ltt.supersededCount + ltt.dominatedCount > 0;
           metricPasses += 1;
           metricPromotions += ltt.promotedCount;
-          metricDemotions += ltt.supersededCount;
+          // GC-Mem temporal-dominance demotions (stale contradictions folded
+          // into the history trail) count toward epoch demotions in l3_metrics.
+          metricDemotions += ltt.supersededCount + ltt.dominatedCount;
           l3debug(
-            `afterTurn(): typed consolidation promoted=${ltt.promotedCount} superseded=${ltt.supersededCount} reaffirmed=${ltt.reaffirmedCount} archived=${ltt.archivedCount} active=${ltt.activeCount}`,
+            `afterTurn(): typed consolidation promoted=${ltt.promotedCount} superseded=${ltt.supersededCount} reaffirmed=${ltt.reaffirmedCount} dominated=${ltt.dominatedCount} archived=${ltt.archivedCount} active=${ltt.activeCount}`,
           );
         } catch (typedErr) {
           console.error(`[memory-l3] typed consolidation failed: ${(typedErr as Error).message}`);

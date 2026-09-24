@@ -331,6 +331,12 @@ export type ConsolidateLongTermTypedOutput = {
   archivedCount: number;
   /** Archived entries that re-appeared and were re-activated. */
   unarchivedCount: number;
+  /**
+   * GC-Mem temporal dominance: stale contradictions where a temporally-
+   * dominated (older) candidate value was demoted into the history trail
+   * instead of superseding the newer canonical truth.
+   */
+  dominatedCount: number;
   /** Total active canonical entries after the pass (excludes archived). */
   activeCount: number;
 };
@@ -388,6 +394,7 @@ export async function consolidateLongTermTyped(params: {
   let supersededCount = 0;
   let reaffirmedCount = 0;
   let unarchivedCount = 0;
+  let dominatedCount = 0;
   /** Slots newly promoted this epoch, with candidate fact IDs for retrieval-signal lookup. */
   const newSlotIds: Array<{ slot: string; candidateFactIds: string[] }> = [];
 
@@ -423,6 +430,18 @@ export async function consolidateLongTermTyped(params: {
         reaffirmedCount += 1;
       }
       merged.set(candidate.slot, reaffirmed);
+    } else if (candidate.latest.createdAt < prior.lastConfirmedAt) {
+      // GC-Mem temporal dominance + contradiction check: the candidate value
+      // contradicts the canonical truth but is temporally dominated (observed
+      // strictly earlier than the canonical's last confirmation). Letting it
+      // supersede would let append-only history shadow the newer truth —
+      // instead demote the stale value into the history trail (demoted,
+      // never deleted) and keep the canonical value authoritative.
+      const dominated = demoteDominated(prior, candidate, params.now);
+      if (dominated !== prior) {
+        dominatedCount += 1;
+        merged.set(candidate.slot, dominated);
+      }
     } else {
       merged.set(
         candidate.slot,
@@ -500,6 +519,7 @@ export async function consolidateLongTermTyped(params: {
     reaffirmedCount,
     archivedCount,
     unarchivedCount,
+    dominatedCount,
     activeCount: ordered.filter((f) => !f.archived).length,
   };
 }
@@ -536,7 +556,15 @@ async function aggregateTypedCandidates(storage: Storage): Promise<Map<string, T
         cur.sourceChunkIds.push(chunkId);
       }
       cur.firstSeenAt = Math.min(cur.firstSeenAt, t.createdAt);
-      if (t.createdAt > cur.latest.createdAt) {
+      // Temporal-dominance tie-break: equal timestamps have no temporal order,
+      // so path/file iteration order would otherwise decide which value is
+      // "latest" nondeterministically. Break ties on fact id (greater wins) so
+      // the winner is stable across passes regardless of chunk listing order.
+      const tWinsTie =
+        t.createdAt === cur.latest.createdAt &&
+        t.value !== cur.latest.value &&
+        t.id > cur.latest.id;
+      if (t.createdAt > cur.latest.createdAt || tWinsTie) {
         if (t.value !== cur.latest.value) {
           cur.prior.push({ value: cur.latest.value, createdAt: cur.latest.createdAt });
         }
@@ -696,6 +724,28 @@ function supersede(
   // This is surfaced in memory_insights so cross-agent conflicts are visible.
   result.conflictWith = prior.id;
   return result;
+}
+
+/**
+ * GC-Mem temporal dominance: demote a temporally-dominated (stale, older)
+ * contradictory value into the canonical fact's history trail. The canonical
+ * value, confidence, and recall stay authoritative — only the audit trail
+ * grows. Returns the SAME fact object when the stale value is already in the
+ * trail, so repeated consolidation passes stay idempotent.
+ */
+function demoteDominated(
+  prior: LongTermTypedFact,
+  c: TypedCandidate,
+  now: number,
+): LongTermTypedFact {
+  if (prior.history.some((h) => h.value === c.latest.value)) {
+    return prior;
+  }
+  return {
+    ...prior,
+    history: [...prior.history, { value: c.latest.value, supersededAt: now }],
+    lastAccessedAt: Math.max(prior.lastAccessedAt, c.latest.createdAt),
+  };
 }
 
 function archive(fact: LongTermTypedFact, now: number): LongTermTypedFact {
