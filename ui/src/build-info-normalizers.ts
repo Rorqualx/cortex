@@ -1,6 +1,9 @@
 // Shared build identity normalization for the runtime artifact and Vite config.
 // Vite loads this module before source-package aliases exist, so use the canonical source path.
-import { truncateUtf16Safe } from "../../packages/normalization-core/src/utf16-slice.js";
+// The .ts specifier is deliberate: this module is also loaded natively (Node type
+// stripping) by scripts/write-build-info.ts via the vitest worker compiler — a .js
+// specifier pointing at a .ts-only file cannot link under native ESM resolution.
+import { truncateUtf16Safe } from "../../packages/normalization-core/src/utf16-slice.ts";
 import type { ControlUiBuildInfo } from "./build-info-types.ts";
 
 type ControlUiBuildMetadata = Pick<ControlUiBuildInfo, "version" | "commit" | "builtAt">;

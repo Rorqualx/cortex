@@ -26,8 +26,8 @@ export const vitestWorkerDeclarationEntries = {
     "extensions/logbook/src/sqlite-backend-entrypoint.test-support.ts",
   "extensions/team-reports/sqlite-backend-entrypoint.test-support":
     "extensions/team-reports/src/sqlite-backend-entrypoint.test-support.ts",
-  "extensions/workboard/sqlite-backend-entrypoint.test-support":
-    "extensions/workboard/src/sqlite-backend-entrypoint.test-support.ts",
+  // Fork: extensions/workboard lifted to core; its declaration entry is removed
+  // because the source path does not exist in this fork.
   "infra/update-managed-service-handoff-runtime-assets":
     "src/infra/update-managed-service-handoff-runtime-assets.ts",
   "infra/triage-runtime.test-support": "src/infra/triage-runtime.test-support.ts",
