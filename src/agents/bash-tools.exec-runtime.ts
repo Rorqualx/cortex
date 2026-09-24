@@ -47,6 +47,18 @@ import fs from "node:fs";
 import { logWarn } from "../logger.js";
 import type { ManagedRun } from "../process/supervisor/index.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
+import type { RunExit, SpawnInput, TerminationReason } from "../process/supervisor/types.js";
+import type {
+  SecretEgressProcessGrant,
+  SecretEgressSentinelBinding,
+} from "../secrets/egress-proxy/proxy-server.js";
+import { registerSecretEgressProxyProcess } from "../secrets/egress-proxy/registry.js";
+import { isSubagentSessionKey } from "../sessions/session-key-utils.js";
+/**
+ * Bash exec runtime.
+ * Spawns host/sandbox processes, manages session updates/backgrounding,
+ * approval messaging constants, environment safety, and exit outcome shaping.
+ */
 import type { RunExit, TerminationReason } from "../process/supervisor/types.js";
 import {
   detectSshInjectionTarget,
@@ -71,11 +83,9 @@ import {
 } from "./bash-process-registry.js";
 import { renderExecOutputText, renderExecUpdateText } from "./bash-tools.exec-output.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
-import { buildGitHubExecLaunchArgv } from "./github-exec-launch.js";
 import { recordAgentCleanupFailure } from "./run-cleanup-timeout.js";
 import { createSessionSlug } from "./session-slug.js";
-import { maybeWrapCommandWithShellSnapshot } from "./shell-snapshot.js";
-import { createStreamingBinaryOutputSanitizer, getShellConfig } from "./shell-utils.js";
+import { createStreamingBinaryOutputSanitizer } from "./shell-utils.js";
 import { registerTrustedToolNoStartError } from "./tool-result-error.js";
 
 export { execSchema } from "./bash-tools.schemas.js";
@@ -683,6 +693,7 @@ export async function runExecProcess(opts: {
   execCommand?: string;
   workdir: string;
   env: Record<string, string>;
+  secretEgressBindings?: readonly SecretEgressSentinelBinding[];
   /** Host-selected managed profile; never inferred from the requested environment. */
   githubProfileDir?: string;
   pathPrepend?: string[];
@@ -908,6 +919,7 @@ export async function runExecProcess(opts: {
   // Finalize the sandbox exec on every terminal path (including spawn failure),
   // guarded so it runs once. Previously only clean exit finalized → spawn
   // failures leaked the sandbox.
+  let secretEgressGrant: SecretEgressProcessGrant | undefined;
   const finalizeSandboxExec = async (params: {
     status: "completed" | "failed";
     exitCode: number | null;
@@ -917,7 +929,85 @@ export async function runExecProcess(opts: {
       return;
     }
     sandboxFinalized = true;
-    await opts.sandbox.finalizeExec({ ...params, token: sandboxFinalizeToken });
+    await opts.sandbox.finalizeExec({
+      ...params,
+      token: sandboxFinalizeToken,
+    });
+  };
+  const finalizeAndSettleSession = async (
+    outcome: ExecProcessOutcome,
+  ): Promise<ExecProcessOutcome> => {
+    secretEgressGrant?.revoke();
+    let finalOutcome = outcome;
+    session.finalizing = true;
+    onActivity?.(Date.now());
+    try {
+      if (!opts.sandbox && managedRun?.waitForExtinction) {
+        // Root completion does not release descendants that retained the group's lineage fd.
+        managedRun.cancel();
+        await managedRun.waitForExtinction();
+      }
+      await finalizeSandboxExec({
+        status: outcome.status,
+        exitCode: outcome.exitCode,
+        timedOut: outcome.timedOut,
+      });
+    } catch (error) {
+      session.finalizationFailed = true;
+      recordAgentCleanupFailure();
+      if (outcome.status === "completed") {
+        finalOutcome = buildExecRuntimeErrorOutcome({
+          error,
+          aggregated: session.aggregated.trim(),
+          durationMs: Date.now() - startedAt,
+        });
+        // Background observers need the finalizer failure in the same bounded, redacted output.
+        appendOutput(session, "stderr", `\n${redactToolPayloadText(formatErrorMessage(error))}\n`);
+      } else {
+        logWarn(`exec: finalization after process failure failed (${String(error)}).`);
+      }
+    } finally {
+      // Finalization can release remote process/session resources. Keep the
+      // background-work blocker until that owner transition has settled.
+      session.finalizing = false;
+      try {
+        const shouldNotify = !session.exited;
+        if (shouldNotify) {
+          markExited(
+            session,
+            finalOutcome.exitCode,
+            finalOutcome.exitSignal,
+            finalOutcome.status,
+            finalOutcome.exitReason,
+            finalOutcome.noOutputTimedOut,
+          );
+        }
+        onSettledBeforeNotify?.(finalOutcome);
+        if (shouldNotify) {
+          maybeNotifyOnExit(session, finalOutcome.status);
+        }
+      } catch (error) {
+        session.finalizationFailed = true;
+        // Recover before yielding: scope joins queued by markExited must not
+        // outrun the task's failed outcome or restore its environment state.
+        finalOutcome = buildExecRuntimeErrorOutcome({
+          error,
+          aggregated: session.aggregated.trim(),
+          durationMs: Date.now() - startedAt,
+        });
+        onSettledBeforeNotify?.(finalOutcome);
+      } finally {
+        // Notifications need start-time routing, but completed logs must not
+        // retain it, including when a task callback or notification throws.
+        delete session.sessionKey;
+        delete session.agentId;
+        delete session.eventRouting;
+        delete session.notifyDeliveryContext;
+        delete session.notifyOnExit;
+        delete session.notifyOnExitEmptySuccess;
+      }
+    }
+    return finalOutcome;
   };
 
   const spawnSpec:
@@ -1015,13 +1105,42 @@ export async function runExecProcess(opts: {
       throw new ExecProcessPreflightError(denied);
     }
   };
+  const spawn = async (input: SpawnInput) => {
+    const assertSourceCurrent = assertSourceActive;
+    const assertRuntimeCurrent = assertSandboxCurrent;
+    const assertHostPolicyCurrent = assertPolicyCurrent;
+    const assertCurrent = () => {
+      assertSourceCurrent?.();
+      assertRuntimeCurrent?.();
+    };
+    // Source authority covers construction; approval policy ends at native launch.
+    assertCurrent();
+    assertHostPolicyCurrent?.();
+    const grant = opts.secretEgressBindings
+      ? registerSecretEgressProxyProcess(opts.secretEgressBindings)
+      : undefined;
+    secretEgressGrant = grant;
+    try {
+      return await withoutGatewayToolCallerIdentity(() =>
+        supervisor.spawn({
+          ...input,
+          ...(grant ? { env: { ...input.env, ...grant.env }, onCancel: grant.revoke } : {}),
+          assertCurrent,
+          beforeSpawn: assertHostPolicyCurrent,
+        }),
+      );
+    } catch (error) {
+      grant?.revoke();
+      throw error;
+    }
+  };
 
   try {
     // Abort before any spawn work if startup was cancelled while preparing.
     opts.startupSignal?.throwIfAborted();
     const spawnBase = {
       runId: sessionId,
-      ...(opts.sandbox ? { cleanupOwnership: "external" as const } : {}),
+      ...(opts.sandbox ? { cleanupOwnership: "external" as const, exactEnv: true as const } : {}),
       scopeKey: opts.scopeKey,
       cwd: opts.workdir,
       env: spawnSpec.env,

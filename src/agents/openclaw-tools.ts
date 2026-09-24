@@ -87,6 +87,7 @@ import { createSkillForgeTool } from "./tools/skill-forge-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
 import { createTaskSuggestionTools } from "./tools/task-suggestion-tools.js";
 import { createTerminalTool } from "./tools/terminal-tool.js";
+import { createThemeTool } from "./tools/theme-tool.js";
 import { createTranscriptsTool } from "./tools/transcripts-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
@@ -428,6 +429,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
           createScreenTool({
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
           }),
+          createThemeTool(),
           ...(options?.sandboxed && !options.skillWorkshop?.libraryAuthoring
             ? []
             : [

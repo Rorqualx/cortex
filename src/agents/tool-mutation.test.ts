@@ -29,6 +29,15 @@ describe("tool mutation helpers", () => {
     }
   });
 
+  it.each(["list", "get", "set", "import", "future-action", undefined])(
+    "classifies theme action %s for safe replay",
+    (action) => {
+      const readOnly = action === "list" || action === "get";
+      expect(buildToolMutationState("theme", { action }).mutatingAction).toBe(!readOnly);
+      expect(buildToolMutationState("theme", { action }).replaySafe).toBe(readOnly);
+    },
+  );
+
   it("builds stable fingerprints for mutating calls and omits read-only calls", () => {
     const writeFingerprint = buildToolMutationState(
       "write",

@@ -30,8 +30,8 @@ import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worke
 import { assertQueuedConversationDeliveryAttemptAuthorized } from "./conversation-route-ownership.js";
 import { startGatewayModelCatalogRefresh } from "./model-catalog-refresh.js";
 import {
+  createScheduledGatewayRunner,
   fenceScheduledGatewayContextResolver,
-  runWithScheduledGatewayContext,
 } from "./scheduled-run-gateway-context.js";
 import type { GatewayCronReconciliation } from "./server-cron-reconciled.js";
 import type { GatewayCronState } from "./server-cron.js";
@@ -455,6 +455,7 @@ export function activateGatewayScheduledServices(params: {
   const heartbeatGatewayContextResolver = fenceScheduledGatewayContextResolver(
     params.resolveGatewayContext,
   );
+  const runScheduledHeartbeat = createScheduledGatewayRunner(heartbeatGatewayContextResolver);
   let heartbeatStopped = false;
   const heartbeatRunner = startHeartbeatRunner({
     cfg: params.cfgAtStart,
@@ -469,10 +470,7 @@ export function activateGatewayScheduledServices(params: {
             if (heartbeatStopped || wakeSignal?.aborted) {
               return { status: "skipped", reason: "disabled" };
             }
-            return await runWithScheduledGatewayContext({
-              resolveGatewayContext: heartbeatGatewayContextResolver,
-              run: async () => await runHeartbeatOnce(opts),
-            });
+            return await runScheduledHeartbeat(async () => await runHeartbeatOnce(opts));
           },
         }
       : {}),

@@ -68,6 +68,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Screen",
       detailKeys: ["action", "sessionKey", "dock"],
     },
+    theme: {
+      emoji: "🎨",
+      title: "Theme",
+      detailKeys: ["action", "id", "mode"],
+    },
     terminal: {
       emoji: "⌨️",
       title: "Terminal",
@@ -363,7 +368,15 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     sessions_spawn: {
       emoji: "🧑‍🔧",
       title: "Sub-agent",
-      detailKeys: ["label", "task", "agentId", "model", "thinking", "runTimeoutSeconds", "cleanup"],
+      detailKeys: [
+        "label",
+        "taskName",
+        "agentId",
+        "model",
+        "thinking",
+        "runTimeoutSeconds",
+        "cleanup",
+      ],
     },
     subagents: {
       emoji: "🤖",

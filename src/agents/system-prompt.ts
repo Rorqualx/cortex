@@ -66,6 +66,8 @@ import type {
   ProviderSystemPromptContribution,
   ProviderSystemPromptSectionId,
 } from "./system-prompt-contribution.js";
+import { buildMessagingSection } from "./system-prompt-messaging.js";
+import { buildSystemPromptToolLines } from "./system-prompt-tool-list.js";
 import type { PromptMode, SilentReplyPromptMode } from "./system-prompt.types.js";
 import { AUTOMATIONS_TOOL_NAME } from "./tools/automations-tool-name.js";
 import {
@@ -506,97 +508,6 @@ function buildOverridablePromptSection(params: {
   return params.fallback;
 }
 
-function buildMessagingSection(params: {
-  isMinimal: boolean;
-  availableTools: Set<string>;
-  inlineButtonsEnabled: boolean;
-  runtimeChannel?: string;
-  runtimeChatType?: ChatType;
-  messageChannelOptions?: string;
-  messageToolHints?: string[];
-  sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
-  requireExplicitMessageTarget?: boolean;
-  silentReplyPromptMode?: SilentReplyPromptMode;
-  // Upstream graft: skip the inline subagent hints when the below-boundary
-  // delegation section already renders them (anti-duplication gate).
-  delegationSectionRenders?: boolean;
-}) {
-  const messageToolOnly = params.sourceReplyDeliveryMode === "message_tool_only";
-  const visibleReplyInstruction = messageToolOnly
-    ? "- Current source visible reply MUST use `message(action=send)`; final text is private. Skip tool = user gets nothing. Brief tool-call progress is visible; no hidden instructions/private data/reasoning."
-    : "- Current-session final text normally routes to source. If turn says final private, visible output uses `message(action=send)`.";
-  const messageToolTargetInstruction = params.requireExplicitMessageTarget
-    ? "- `send`: `target` + `message`; target required this turn."
-    : "- `send`: `message`; current source is default target. Set `target` only elsewhere.";
-  if (params.isMinimal) {
-    // Restricted delivery turns still need their sole visible-reply contract;
-    // omitting it makes a private final silently disappear for the requester.
-    return messageToolOnly && params.availableTools.has("message")
-      ? ["## Messaging", visibleReplyInstruction, messageToolTargetInstruction, ""]
-      : [];
-  }
-  const showGenericInlineButtonHint = params.runtimeChannel !== "slack";
-  const groupMessageToolOnly =
-    messageToolOnly && (params.runtimeChatType === "group" || params.runtimeChatType === "channel");
-  const hasSessionsSpawn = params.availableTools.has("sessions_spawn");
-  const hasSubagents = params.availableTools.has("subagents");
-  const hasSessionsYield = params.availableTools.has("sessions_yield");
-  const suppressSilentTokenGuidance = messageToolOnly || params.silentReplyPromptMode === "none";
-  const completionEventGuidance = suppressSilentTokenGuidance
-    ? "- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or silent placeholder."
-    : `- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or default to ${SILENT_REPLY_TOKEN}.`;
-  const subagentOrchestrationGuidance = params.delegationSectionRenders
-    ? ""
-    : hasSessionsSpawn
-      ? [
-          '- Subagents: `sessions_spawn` with objective/output/write-scope/verification; stable handle needs `taskName`, UI title `label`; clean context needs `context:"isolated"`, transcript needs `context:"fork"`. Follow the accepted completion mode.',
-          hasSessionsYield ? "Announcing children: wait via `sessions_yield`." : "",
-          hasSubagents ? "`subagents(action=list)` only status/debug." : "",
-        ]
-          .filter(Boolean)
-          .join(" ")
-      : hasSubagents
-        ? "- Subagents: `subagents(action=list)` only for status/debug visibility."
-        : "";
-  return [
-    "## Messaging",
-    visibleReplyInstruction,
-    "- Cross-session: `sessions_send(sessionKey, message)`.",
-    subagentOrchestrationGuidance,
-    completionEventGuidance,
-    "- OpenClaw channel replies/actions: use OpenClaw routing, not exec/curl. Other services (e.g. email): user-authorized CLI/API use is allowed; normal tool permissions and approvals still apply.",
-    params.availableTools.has("message")
-      ? [
-          "",
-          "### message tool",
-          "- Proactive send/channel action (poll, reaction, etc.): `message`.",
-          groupMessageToolOnly
-            ? "- Group/channel: stale/joke/light ack/low-value chatter => reaction or silence. Needed reply => `message(action=send)`; final text private."
-            : "",
-          messageToolOnly ? messageToolTargetInstruction : "- `send`: `target` + `message`.",
-          params.messageChannelOptions
-            ? `- No source default: proactive send needs \`channel\`; ids: ${params.messageChannelOptions}.`
-            : "- Set `channel` only outside current/default source.",
-          messageToolOnly
-            ? "- Visible `message(send)` content: never repeat in final."
-            : suppressSilentTokenGuidance
-              ? "- Follow turn delivery: private final => visible via `message(send)`; otherwise normal reply once."
-              : `- After visible \`message(send)\`, final ONLY ${SILENT_REPLY_TOKEN}.`,
-          showGenericInlineButtonHint
-            ? params.inlineButtonsEnabled
-              ? "- Inline buttons: `send` with `buttons=[[{text,callback_data,style?}]]`; style primary|success|danger."
-              : params.runtimeChannel
-                ? `- Inline buttons OFF for ${params.runtimeChannel}; ask owner for ${params.runtimeChannel}.capabilities.inlineButtons=dm|group|all|allowlist.`
-                : ""
-            : "",
-          ...(params.messageToolHints ?? []),
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : "",
-    "",
-  ];
-}
 
 function buildCollapsibleDetailsSection(params: {
   isMinimal: boolean;
@@ -807,98 +718,6 @@ export function buildAgentSystemPrompt(params: {
   const promptSurface = params.promptSurface ?? "openclaw_main";
   const sandboxedRuntime = params.sandboxInfo?.enabled === true;
   const acpSpawnRuntimeEnabled = acpEnabled && !sandboxedRuntime;
-  const coreToolSummaries: Record<string, string> = {
-    read: "Read files",
-    write: "Write files",
-    edit: "Exact file edits",
-    apply_patch: "Patch files",
-    grep: "Search file contents",
-    find: "Find files by glob",
-    ls: "List directories",
-    exec: params.codeModeActive
-      ? "Run JavaScript/TypeScript Code Mode; call exact catalog tools from code, never shell/Python/imports"
-      : promptSurface === "cli_backend"
-        ? "Run shell on connected node; sync; host=node"
-        : "Run shell; pty for TTY CLIs",
-    wait: "Resume a suspended Code Mode exec",
-    process: "Control background exec",
-    web_search: "Web search",
-    web_fetch: "Fetch/extract URL",
-    // Channel docking: add login tools here when a channel needs interactive linking.
-    browser: "Control browser",
-    screen: "Drive operator web UI",
-    terminal:
-      "List/read/resize/close operator-opened session terminals; input follows exec policy and may require exact-input approval; never open shells",
-    canvas: "Present/eval/snapshot Canvas",
-    nodes: "Paired node status/control/media",
-    [AUTOMATIONS_TOOL_NAME]:
-      "Schedule/wake. Reminder text must read as reminder when fired; mention reminder for delayed gaps; include useful recent context. This feature is called automations; never call it cron.",
-    message: "Message/channel actions",
-    conversations_list: "List exact external conversation addresses",
-    conversations_send: "Send directly to an external conversation",
-    conversations_turn: "Send and wait for one correlated external reply",
-    openclaw: "Gateway restart/system setup/config",
-    gateway:
-      "Read this Gateway's config/schema; owner-only self-update on explicit request; automatic restart and completion notice",
-    agents_list: acpSpawnRuntimeEnabled
-      ? "List allowed OpenClaw subagent ids; not ACP ids"
-      : "List allowed subagent ids",
-    sessions_list: "List visible sessions; filters/last",
-    sessions_history: "Read visible session/subagent history",
-    sessions_search: "Search past sessions; use sessionKey with sessions_history",
-    sessions_send: "Message other session/subagent",
-    sessions_spawn: acpSpawnRuntimeEnabled
-      ? 'Spawn subagent/ACP. Native clean context: context="isolated"; transcript: context="fork". ACP needs agentId unless default; ids from acp.allowedAgents, not agents_list.'
-      : 'Spawn subagent; clean context: context="isolated"; transcript: context="fork"',
-    sessions_yield: "End turn; await subagent events",
-    subagents: "Subagent status; never wait-loop",
-    session_status: "Session/model/usage/time/status; model override",
-    skill_workshop: "Manage reusable-skill proposals",
-    skill_forge:
-      "Inspect, capture, run, promote, retire, and query telemetry for the Skill Forge autonomous pipeline",
-    image: "Analyze images",
-    image_generate: "Generate/edit images",
-  };
-
-  const toolOrder = [
-    "read",
-    "write",
-    "edit",
-    "apply_patch",
-    "grep",
-    "find",
-    "ls",
-    "exec",
-    "process",
-    "web_search",
-    "web_fetch",
-    "browser",
-    "screen",
-    "terminal",
-    "canvas",
-    "nodes",
-    AUTOMATIONS_TOOL_NAME,
-    "message",
-    "conversations_list",
-    "conversations_send",
-    "conversations_turn",
-    "openclaw",
-    "gateway",
-    "agents_list",
-    "sessions_list",
-    "sessions_history",
-    "sessions_search",
-    "sessions_send",
-    "sessions_spawn",
-    "sessions_yield",
-    "subagents",
-    "session_status",
-    "skill_workshop",
-    "skill_forge",
-    "image",
-    "image_generate",
-  ];
-
   // Preserve first caller casing; sparse tool arrays skip absent entries.
   const visibleTools = new Map<string, string>();
   (params.toolNames ?? []).forEach((tool) => {
@@ -918,18 +737,13 @@ export function buildAgentSystemPrompt(params: {
   const nativeCommandGuidanceLines = normalizeUniqueStringEntries(
     params.nativeCommandGuidanceLines,
   );
-  const extraTools = [...visibleTools.keys()].filter((tool) => !toolOrder.includes(tool));
-  const enabledTools = toolOrder.filter((tool) => visibleTools.has(tool));
-  const toolLines = enabledTools.map((tool) => {
-    const summary = coreToolSummaries[tool];
-    const name = resolveToolName(tool);
-    return summary ? `- ${name}: ${summary}` : `- ${name}`;
+  const toolLines = buildSystemPromptToolLines({
+    visibleTools,
+    availableTools,
+    codeModeActive: params.codeModeActive,
+    promptSurface,
+    acpSpawnRuntimeEnabled,
   });
-  for (const tool of extraTools.toSorted()) {
-    const summary = coreToolSummaries[tool];
-    const name = resolveToolName(tool);
-    toolLines.push(summary ? `- ${name}: ${summary}` : `- ${name}`);
-  }
   const toolSchemaDirectoryPrompt = params.toolSchemaDirectoryPrompt?.trim();
   const renderOpenClawToolWorkflowHints =
     shouldRenderOpenClawToolWorkflowHints({

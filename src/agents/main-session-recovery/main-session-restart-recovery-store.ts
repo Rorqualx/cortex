@@ -188,31 +188,6 @@ async function completePendingFinalRecoveryWithNotice(
   return completed;
 }
 
-export type ExpectedRestartRecoveryClaim = ExpectedRestartRecoveryTarget & {
-  recoveryRunId: string;
-  recoverySourceRunId: string;
-};
-
-export function loadExpectedRestartRecoveryClaim(params: {
-  expected: ExpectedRestartRecoveryClaim;
-  storePath: string;
-}): SessionEntry | undefined {
-  const exact = loadExactSessionEntry({
-    ...params.expected,
-    readConsistency: "latest",
-    storePath: params.storePath,
-  });
-  const entry = exact?.sessionKey === params.expected.sessionKey ? exact.entry : undefined;
-  return entry?.sessionId === params.expected.sessionId &&
-    entry.status === "running" &&
-    entry.abortedLastRun === true &&
-    normalizeOptionalString(entry.restartRecoveryDeliveryRunId) === params.expected.recoveryRunId &&
-    normalizeOptionalString(entry.restartRecoveryDeliverySourceRunId) ===
-      params.expected.recoverySourceRunId
-    ? entry
-    : undefined;
-}
-
 export function loadExpectedRestartRecoveryTarget(params: {
   expected: ExpectedRestartRecoveryTarget;
   storePath: string;
@@ -226,7 +201,12 @@ export function loadExpectedRestartRecoveryTarget(params: {
   return entry?.sessionId === params.expected.sessionId &&
     entry.status === "running" &&
     entry.abortedLastRun === true &&
-    isMainRestartRecoveryCandidate(entry, params.expected.sessionKey)
+    (params.expected.claim
+      ? normalizeOptionalString(entry.restartRecoveryDeliveryRunId) ===
+          params.expected.claim.runId &&
+        normalizeOptionalString(entry.restartRecoveryDeliverySourceRunId) ===
+          params.expected.claim.sourceRunId
+      : isMainRestartRecoveryCandidate(entry, params.expected.sessionKey))
     ? entry
     : undefined;
 }
@@ -239,7 +219,6 @@ export async function recoverStore(params: {
   storePath: string;
   stateDir?: string;
   handledSessionKeys: Set<string>;
-  expectedClaim?: ExpectedRestartRecoveryClaim;
   expectedTarget?: ExpectedRestartRecoveryTarget;
   recoveryAdmission?: MainSessionRecoveryAdmission;
   activeSessionIds?: Iterable<string>;
@@ -270,13 +249,7 @@ export async function recoverStore(params: {
     providedActiveSessionKeys ?? normalizeStringSet(listActiveEmbeddedRunSessionKeys());
   let entries: Array<{ sessionKey: string; entry: SessionEntry }>;
   try {
-    if (params.expectedClaim) {
-      const entry = loadExpectedRestartRecoveryClaim({
-        expected: params.expectedClaim,
-        storePath: params.storePath,
-      });
-      entries = entry ? [{ sessionKey: params.expectedClaim.sessionKey, entry }] : [];
-    } else if (params.expectedTarget) {
+    if (params.expectedTarget) {
       const entry = loadExpectedRestartRecoveryTarget({
         expected: params.expectedTarget,
         storePath: params.storePath,
@@ -316,7 +289,7 @@ export async function recoverStore(params: {
       continue;
     }
     const dispatchTarget = resolveRestartRecoveryDispatchTarget({
-      agentId: (params.expectedClaim ?? params.expectedTarget)?.agentId,
+      agentId: params.expectedTarget?.agentId,
       storeAgentId: params.storeAgentId,
       cfg: params.cfg,
       sessionKey,
@@ -329,9 +302,7 @@ export async function recoverStore(params: {
     const agentId = dispatchTarget.agentId;
     const target = { agentId, sessionKey, storePath: params.storePath };
     const dispatchSessionKey =
-      params.expectedClaim?.canonicalSessionKey ??
-      params.expectedTarget?.canonicalSessionKey ??
-      dispatchTarget.sessionKey;
+      params.expectedTarget?.canonicalSessionKey ?? dispatchTarget.sessionKey;
     if (
       hasCurrentProcessOwner({
         activeSessionIds: resolveActiveSessionIds(),
