@@ -6,6 +6,7 @@ import {
   compactSession,
   applyCategoryBudget,
   applyCategoryBudgetWithOperators,
+  orderByQueryEvidence,
   pruneStaleToolOutputs,
   filterLowInformationMessages,
 } from "./compaction.js";
@@ -426,6 +427,57 @@ describe("compactSession", () => {
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]!)).toEqual({ role: "user", content: "first" });
     expect(JSON.parse(lines[1]!)).toEqual({ role: "user", content: "second" });
+  });
+});
+
+describe("orderByQueryEvidence", () => {
+  it("orders equal-importance facts by evidence strength, not input order (anti-preemption)", () => {
+    // Weak, isolated fact listed FIRST (transcript order); two strongly
+    // cross-supporting facts listed after it. Without the evidence-first
+    // ordering pass, the early weak fact absorbs budget credit and the
+    // stronger later evidence gets pruned (MORSE "information preemption").
+    const weak = {
+      text: "User enjoys pineapples",
+      importance: 0.5,
+      dedupKey: "infra:weak",
+    };
+    const strongA = {
+      text: "Pi-hole DNS resolver runs at 192.168.50.128",
+      importance: 0.5,
+      dedupKey: "infra:pi_hole_dns",
+    };
+    const strongB = {
+      text: "The Pi-hole DNS resolver serves the whole LAN",
+      importance: 0.5,
+      dedupKey: "infra:pi_hole_lan",
+    };
+    const ordered = orderByQueryEvidence([weak, strongA, strongB]);
+    // Both strongly-evidenced facts outrank the isolated one regardless of
+    // their input position; the weak fact sinks to last.
+    expect(ordered.indexOf(strongA)).toBeLessThan(ordered.indexOf(weak));
+    expect(ordered.indexOf(strongB)).toBeLessThan(ordered.indexOf(weak));
+    expect(ordered[2]).toBe(weak);
+  });
+
+  it("keeps importance as the primary key over evidence", () => {
+    const lowImportanceStrong = {
+      text: "Pi-hole DNS resolver runs at 192.168.50.128 and serves the LAN",
+      importance: 0.2,
+      dedupKey: "infra:low",
+    };
+    const highImportanceWeak = {
+      text: "User enjoys pineapples",
+      importance: 0.9,
+      dedupKey: "infra:high",
+    };
+    const ordered = orderByQueryEvidence([lowImportanceStrong, highImportanceWeak]);
+    expect(ordered[0]).toBe(highImportanceWeak);
+  });
+
+  it("returns short inputs unchanged and is deterministic", () => {
+    const single = [{ text: "only fact", importance: 0.5, dedupKey: "a:1" }];
+    expect(orderByQueryEvidence(single)).toEqual(single);
+    expect(orderByQueryEvidence([])).toEqual([]);
   });
 });
 

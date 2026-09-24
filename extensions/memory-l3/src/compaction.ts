@@ -19,7 +19,7 @@ import {
   formatTranscriptForPrompt,
   type LlmCaller,
 } from "./llm.js";
-import { cosineSimilarity } from "./scoring.js";
+import { cosineSimilarity, jaccard, tokenize } from "./scoring.js";
 import { buildMessageChunks, detectTopicBoundaries, splitByBoundaries } from "./segmentation.js";
 import type { Storage } from "./storage.js";
 import type {
@@ -106,6 +106,49 @@ function estimateFactTokens(text: string): number {
  * category are sorted by importance (descending); the lowest-importance facts
  * are dropped until the category is under budget.
  */
+/**
+ * MORSE evidence-first ordering pass (QW-3): order candidate facts by query-
+ * evidence strength descending BEFORE the compression/selection phase, so
+ * early weak-but-topically-matching facts can't absorb the category budget
+ * and get stronger later evidence pruned ("information preemption").
+ *
+ * Evidence strength is lexical centrality over the candidate set itself — the
+ * same blended-match idea retrieval uses (BM25-style overlap against the
+ * corpus), computed here with the reusable tokenize/jaccard primitives from
+ * scoring.ts: a fact strongly supported by the rest of the session's extracted
+ * evidence scores high; an isolated one-off scores 0. Deterministic, no LLM,
+ * no embeddings (compaction-time provider is optional).
+ *
+ * Primary key stays `importance`; evidence breaks ties. Both budget operators
+ * sort by importance with a stable sort, so this ordering survives into the
+ * retain/drop decision exactly where preemption used to bite.
+ */
+export function orderByQueryEvidence(facts: ReadonlyArray<ExtractedFact>): ExtractedFact[] {
+  if (facts.length < 2) {
+    return [...facts];
+  }
+  const tokenSets = facts.map((f) => tokenize(f.text));
+  const evidence = facts.map((set, i) => {
+    let sum = 0;
+    let pairs = 0;
+    for (let j = 0; j < facts.length; j += 1) {
+      if (j === i) continue;
+      sum += jaccard(tokenSets[i]!, tokenSets[j]!);
+      pairs += 1;
+    }
+    return pairs > 0 ? sum / pairs : 0;
+  });
+  return facts
+    .map((fact, i) => ({ fact, evidence: evidence[i]! }))
+    .toSorted(
+      (a, b) =>
+        b.fact.importance - a.fact.importance ||
+        b.evidence - a.evidence ||
+        a.fact.dedupKey.localeCompare(b.fact.dedupKey),
+    )
+    .map((entry) => entry.fact);
+}
+
 export function applyCategoryBudget(
   facts: ReadonlyArray<ExtractedFact>,
   maxTokensPerCategory: number,
@@ -862,7 +905,7 @@ export async function compactSession(params: {
   });
 
   const filtered = dropAlreadyKnown(extracted.facts, alreadyKnownSet);
-  const deduped = dedupWithinChunk(filtered);
+  const deduped = orderByQueryEvidence(dedupWithinChunk(filtered));
 
   // Apply per-category token budget if configured (QW-1). Prevents a single
   // chatty category from crowding out diverse signal in long sessions.
