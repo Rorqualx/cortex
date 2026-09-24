@@ -23,7 +23,7 @@ import {
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import type { ReasoningLevel } from "../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
-import { normalizeChatType, type ChatType } from "../channels/chat-type.js";
+import { normalizeChatType } from "../channels/chat-type.js";
 import {
   hasNativeApprovalPromptRuntimeCapability,
   isKnownNativeApprovalPromptChannel,
@@ -55,7 +55,6 @@ import {
   buildOpenClawToolFallbackText,
   shouldRenderOpenClawToolWorkflowHints,
 } from "./prompt-surface.js";
-import { buildUiPresentationPrompt } from "./ui-presentation-prompt.js";
 import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
 import { buildSkillForgePromptSection, SKILL_FORGE_TOOL_NAME } from "./skill-forge-prompt.js";
 import {
@@ -70,6 +69,7 @@ import { buildMessagingSection } from "./system-prompt-messaging.js";
 import { buildSystemPromptToolLines } from "./system-prompt-tool-list.js";
 import type { PromptMode, SilentReplyPromptMode } from "./system-prompt.types.js";
 import { AUTOMATIONS_TOOL_NAME } from "./tools/automations-tool-name.js";
+import { buildUiPresentationPrompt } from "./ui-presentation-prompt.js";
 import {
   buildWatchedSessionsPromptLines,
   type PreparedWatchedSessionsPrompt,
@@ -507,7 +507,6 @@ function buildOverridablePromptSection(params: {
   }
   return params.fallback;
 }
-
 
 function buildCollapsibleDetailsSection(params: {
   isMinimal: boolean;
