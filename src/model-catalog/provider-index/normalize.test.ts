@@ -185,20 +185,30 @@ describe("OpenClaw provider index", () => {
         contextWindow,
       })),
     ).toEqual([
+      { id: "deepseek-flash", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-v4-flash", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-v4-flash-vision-exp", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-v4-pro", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-chat", reasoning: undefined, contextWindow: 1000000 },
       { id: "deepseek-reasoner", reasoning: true, contextWindow: 1000000 },
     ]);
-    // Experimental vision variant is capability-flagged (image input, preview
-    // status) and deliberately absent from any default routing chain.
+    // Retired V4-Flash names are deprecated with a replacedBy chain onto the
+    // current deepseek-flash id (V4.1-Flash), so the doctor reassignment table
+    // can repoint silently-served pins.
+    const retiredFlash = index.providers.deepseek?.previewCatalog?.models.find(
+      (model) => model.id === "deepseek-v4-flash",
+    );
+    expect(retiredFlash).toMatchObject({ status: "deprecated", replacedBy: "deepseek-flash" });
+    // Experimental vision variant keeps its image capability flags (no current
+    // image-input successor) but is retired with the V4-Flash names and remains
+    // deliberately absent from any default routing chain.
     const visionExp = index.providers.deepseek?.previewCatalog?.models.find(
       (model) => model.id === "deepseek-v4-flash-vision-exp",
     );
     expect(visionExp).toMatchObject({
       input: ["text", "image"],
-      status: "preview",
+      status: "deprecated",
+      replacedBy: "deepseek-flash",
     });
   });
 });

@@ -40,6 +40,9 @@ const PRICES: Record<string, ModelPrice> = {
   // === DeepSeek ===
   // deepseek-v4-pro is at 75% promotional discount through 2026-05-31 15:59 UTC.
   // Full rates after that: input $1.74 / cachedInput $0.0145 / output $3.48.
+  // deepseek-v4-flash is retired (silently served by V4.1-Flash); rate kept
+  // for historical logs. deepseek-flash serves at the same Flash pricing.
+  "deepseek:deepseek-flash": { input: 0.14, cachedInput: 0.0028, output: 0.28 },
   "deepseek:deepseek-v4-flash": { input: 0.14, cachedInput: 0.0028, output: 0.28 },
   "deepseek:deepseek-v4-pro": { input: 0.435, cachedInput: 0.003625, output: 0.87 },
 

@@ -64,23 +64,40 @@ export const OPENCLAW_PROVIDER_INDEX = {
       previewCatalog: {
         models: [
           {
-            id: "deepseek-v4-flash",
-            name: "DeepSeek V4 Flash",
+            id: "deepseek-flash",
+            name: "DeepSeek V4.1 Flash",
             input: ["text"],
             reasoning: true,
             contextWindow: 1000000,
           },
           {
+            // Retired 2026-09: still validates on the API but is silently served
+            // by DeepSeek-V4.1-Flash (deepseek-flash) at Flash pricing — the exact
+            // silent-upgrade case the doctor reassignment table protects against.
+            id: "deepseek-v4-flash",
+            name: "DeepSeek V4 Flash",
+            input: ["text"],
+            reasoning: true,
+            contextWindow: 1000000,
+            status: "deprecated",
+            replacedBy: "deepseek-flash",
+          },
+          {
             // Experimental vision-input variant of V4 Flash. Capability-flagged
             // only — deliberately NOT added to delegation router defaults or
             // priority chains, so nothing auto-routes to an exp model.
+            // Retired with the V4-Flash names: silently served by V4.1-Flash.
+            // Nearest-capability survivor is deepseek-flash (no current
+            // image-input successor in the lineup; image pins lose that modality).
             id: "deepseek-v4-flash-vision-exp",
             name: "DeepSeek V4 Flash Vision (Experimental)",
             input: ["text", "image"],
             reasoning: true,
             contextWindow: 1000000,
-            status: "preview",
-            statusReason: "Experimental vision variant; snapshot-pinned experimental release.",
+            status: "deprecated",
+            statusReason:
+              "Retired with the V4-Flash names; requests silently served by V4.1-Flash.",
+            replacedBy: "deepseek-flash",
           },
           {
             id: "deepseek-v4-pro",
@@ -95,7 +112,7 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text"],
             contextWindow: 1000000,
             status: "deprecated",
-            replacedBy: "deepseek-v4-flash",
+            replacedBy: "deepseek-flash",
           },
           {
             id: "deepseek-reasoner",
@@ -104,9 +121,10 @@ export const OPENCLAW_PROVIDER_INDEX = {
             reasoning: true,
             contextWindow: 1000000,
             status: "deprecated",
-            // DeepSeek's deprecation notice maps reasoner → v4-flash (thinking
-            // mode), not v4-pro. Flash already carries reasoning: true.
-            replacedBy: "deepseek-v4-flash",
+            // DeepSeek's deprecation notice maps reasoner → flash (thinking
+            // mode). Flash carries reasoning: true; the v4-flash intermediate
+            // name is itself retired now, so chain straight to deepseek-flash.
+            replacedBy: "deepseek-flash",
           },
         ],
       },
