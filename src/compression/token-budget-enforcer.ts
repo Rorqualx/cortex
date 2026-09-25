@@ -14,6 +14,9 @@
  *  - Forward references — messages referenced by later messages score higher
  *  - Temporal anchors — messages carrying explicit dates/times score higher
  *    (temporal grounding is hard to reconstruct and drives later retrieval)
+ *  - Redundancy — overlapping/duplicate tool results are penalized so a weak
+ *    early chunk cannot absorb credit and get the strongest evidence carrier
+ *    evicted (evidence-first drop order)
  *
  * Rough token estimate: 1 token ≈ 4 chars (English text average).
  */
@@ -121,6 +124,76 @@ function extractMessageText(msg: AgentMessage): string {
   return "";
 }
 
+// --- Evidence-first redundancy ordering (2026-09-25, MORSE-style) ----------
+
+/** Whitespace-normalized view for overlap comparison. */
+function normalizeForOverlap(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+/** Exact duplicates carry zero marginal evidence: drop them before anything. */
+const DUPLICATE_PENALTY = 1000;
+/** A fully-contained chunk's evidence survives inside its carrier: evict it
+ *  before any non-redundant candidate, regardless of its own base score. */
+const CONTAINMENT_PENALTY = 150;
+/** Pairwise containment is O(n²) over candidates; cap the scan for safety.
+ *  Exact-duplicate detection stays linear and always applies. */
+const REDUNDANCY_SCAN_MAX_CANDIDATES = 64;
+
+/**
+ * Evidence-first overlap handling: overlapping tool results must not absorb
+ * retention credit from each other. An exact duplicate after its first
+ * occurrence is fully redundant, and a chunk whose (whitespace-normalized)
+ * content is contained in another candidate carries no marginal evidence —
+ * the budget enforcer drops those first so the strongest evidence carrier
+ * survives, instead of the carrier being evicted while a weaker overlapping
+ * twin rides on recency/role credit.
+ */
+export function computeRedundancyPenalties(messages: AgentMessage[]): Map<number, number> {
+  const penalties = new Map<number, number>();
+  const candidates: { index: number; norm: string }[] = [];
+  const seen = new Map<string, number>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg?.role !== "toolResult") {
+      continue;
+    }
+    const norm = normalizeForOverlap(extractMessageText(msg));
+    if (!norm) {
+      continue;
+    }
+    if (seen.has(norm)) {
+      // Identical evidence is already retained at the first occurrence.
+      penalties.set(i, (penalties.get(i) ?? 0) + DUPLICATE_PENALTY);
+      continue;
+    }
+    seen.set(norm, i);
+    candidates.push({ index: i, norm });
+  }
+
+  if (candidates.length > REDUNDANCY_SCAN_MAX_CANDIDATES) {
+    return penalties;
+  }
+
+  for (let i = 0; i < candidates.length; i++) {
+    const a = candidates[i];
+    if (!a) continue;
+    for (let j = 0; j < candidates.length; j++) {
+      const b = candidates[j];
+      if (!b || a.index === b.index || a.norm.length >= b.norm.length) {
+        continue;
+      }
+      // a is strictly shorter; it is redundant only when carrier b literally
+      // subsumes its normalized content.
+      if (b.norm.includes(a.norm)) {
+        penalties.set(a.index, (penalties.get(a.index) ?? 0) + CONTAINMENT_PENALTY);
+      }
+    }
+  }
+  return penalties;
+}
+
 /**
  * Score a message for retention priority. Higher = more important to keep.
  */
@@ -189,6 +262,9 @@ export function enforceTokenBudget(
 
   // Build forward-reference index for scoring
   const forwardRefs = buildForwardReferenceIndex(messages);
+  // Evidence-first redundancy penalties: overlapping/duplicate tool results
+  // lose retention credit so their carrier survives budget eviction.
+  const redundancy = computeRedundancyPenalties(messages);
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
@@ -197,7 +273,8 @@ export function enforceTokenBudget(
     }
     const tokens = estimateMessageTokens(msg);
     totalTokens += tokens;
-    const score = scoreMessageForRetention(msg, i, messages.length, forwardRefs);
+    const score =
+      scoreMessageForRetention(msg, i, messages.length, forwardRefs) - (redundancy.get(i) ?? 0);
     estimates.push({ index: i, tokens, score });
   }
 

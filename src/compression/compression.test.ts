@@ -29,7 +29,12 @@ import { scoreItem, buildFieldStats, findConstantFields } from "./scoring.js";
 import { compressSearchResults } from "./search-compressor.js";
 import { crushJsonArray } from "./smart-crusher.js";
 import { hasTemporalAnchor } from "./temporal.js";
-import { enforceTokenBudget, estimateTokens } from "./token-budget-enforcer.js";
+import {
+  computeRedundancyPenalties,
+  enforceTokenBudget,
+  estimateMessageTokens,
+  estimateTokens,
+} from "./token-budget-enforcer.js";
 import type { CompressionConfig } from "./types.js";
 
 // ARCH-3: spy on the estimator module so the single-estimation-pass guard
@@ -764,6 +769,86 @@ describe("TokenBudgetEnforcer", () => {
     expect(enforceTokenBudget(messages, 100, entropyOn)).toEqual(
       enforceTokenBudget(messages, 100, entropyOff),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TokenBudgetEnforcer — evidence-first redundancy ordering (2026-09-25)
+// ---------------------------------------------------------------------------
+describe("TokenBudgetEnforcer — evidence-first redundancy ordering", () => {
+  const mkToolResult = (text: string, toolCallId: string) =>
+    ({
+      role: "toolResult" as const,
+      toolCallId,
+      toolName: "read",
+      content: [{ type: "text" as const, text }],
+      isError: false,
+      timestamp: Date.now(),
+    }) as unknown as AgentMessage;
+
+  it("drops exact-duplicate tool results before unique evidence", () => {
+    const dupText = `line one\nline two\n${"shared payload ".repeat(200)}`;
+    const uniqueText = `unique evidence\n${"distinct payload ".repeat(200)}`;
+    const messages: AgentMessage[] = [
+      mkToolResult(dupText, "1"),
+      mkToolResult(uniqueText, "2"),
+      mkToolResult(dupText, "3"), // exact duplicate of tool result 1
+      { role: "user" as const, content: "what did you find?" } as unknown as AgentMessage,
+    ];
+    const total = messages.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
+    // Budget forces at least one drop; the duplicate twin must go first.
+    const result = enforceTokenBudget(messages, total - 1, DEFAULT_COMPRESSION_CONFIG);
+    const survivingDupCopies = result.filter(
+      (m) => m.role === "toolResult" && JSON.stringify(m).includes("shared payload"),
+    );
+    expect(survivingDupCopies).toHaveLength(1);
+    expect(JSON.stringify(result)).toContain("unique evidence");
+  });
+
+  it("drops a contained weak chunk before its evidence carrier", () => {
+    const sharedText = `header line\n${"common output ".repeat(230)}`;
+    const carrierText = `${sharedText}\nUNIQUE-CARRIER-TAIL ${"carrier only ".repeat(230)}`;
+    const weakText = sharedText; // fully contained in the carrier
+    const messages: AgentMessage[] = [
+      mkToolResult(carrierText, "1"), // carrier is EARLY (low recency credit)
+      { role: "assistant" as const, content: "analysis note" } as unknown as AgentMessage,
+      mkToolResult(weakText, "2"), // weak twin is LATE — without the redundancy
+      // penalty its recency credit would get the carrier evicted first
+      { role: "user" as const, content: "summarize findings" } as unknown as AgentMessage,
+    ];
+    const total = messages.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
+    const weakTokens = estimateMessageTokens(messages[2]!);
+    // Dropping exactly the weak chunk must land under budget.
+    const budget = total - weakTokens + 1;
+    const result = enforceTokenBudget(messages, budget, DEFAULT_COMPRESSION_CONFIG);
+    const toolResults = result.filter((m) => m.role === "toolResult");
+    expect(toolResults).toHaveLength(1);
+    expect(JSON.stringify(toolResults)).toContain("UNIQUE-CARRIER-TAIL");
+  });
+
+  it("leaves under-budget contexts unchanged (penalties affect drop order only)", () => {
+    const dupText = `line one\n${"shared payload ".repeat(200)}`;
+    const messages: AgentMessage[] = [
+      mkToolResult(dupText, "1"),
+      mkToolResult(dupText, "2"),
+      { role: "user" as const, content: "what did you find?" } as unknown as AgentMessage,
+    ];
+    expect(enforceTokenBudget(messages, 1_000_000, DEFAULT_COMPRESSION_CONFIG)).toEqual(messages);
+  });
+
+  it("flags later duplicates and contained chunks, not the carrier or first copy", () => {
+    const bigText = `carrier\n${"payload ".repeat(400)}`;
+    const smallText = "carrier"; // contained in bigText
+    const messages: AgentMessage[] = [
+      mkToolResult(bigText, "1"),
+      mkToolResult(smallText, "2"),
+      mkToolResult(bigText, "3"), // duplicate of the carrier (later occurrence)
+      { role: "user" as const, content: "go" } as unknown as AgentMessage,
+    ];
+    const penalties = computeRedundancyPenalties(messages);
+    expect(penalties.has(0)).toBe(false); // first carrier copy: clean
+    expect(penalties.get(1)).toBeGreaterThan(0); // contained chunk: penalized
+    expect(penalties.get(2)).toBeGreaterThan(0); // duplicate twin: penalized
   });
 });
 
