@@ -7173,6 +7173,7 @@ public struct EnvironmentSummary: Codable, Sendable {
     public let worker: WorkerEnvironmentMetadata?
     public let preparation: [String: AnyCodable]?
     public let requirednodecommand: RequiredNodeCommand?
+    public let desktopsetup: [String: AnyCodable]?
 
     public init(
         id: String,
@@ -7195,7 +7196,8 @@ public struct EnvironmentSummary: Codable, Sendable {
         issues: [[String: AnyCodable]]? = nil,
         worker: WorkerEnvironmentMetadata? = nil,
         preparation: [String: AnyCodable]? = nil,
-        requirednodecommand: RequiredNodeCommand? = nil)
+        requirednodecommand: RequiredNodeCommand? = nil,
+        desktopsetup: [String: AnyCodable]? = nil)
     {
         self.id = id
         self.type = type
@@ -7218,6 +7220,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         self.worker = worker
         self.preparation = preparation
         self.requirednodecommand = requirednodecommand
+        self.desktopsetup = desktopsetup
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -7242,6 +7245,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         case worker
         case preparation
         case requirednodecommand = "requiredNodeCommand"
+        case desktopsetup = "desktopSetup"
     }
 }
 
@@ -7464,18 +7468,22 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
 public struct EnvironmentsListParams: Codable, Sendable {
     public let runtimeid: String?
     public let projection: String?
+    public let includedesktopsetup: Bool?
 
     public init(
         runtimeid: String? = nil,
-        projection: String? = nil)
+        projection: String? = nil,
+        includedesktopsetup: Bool? = nil)
     {
         self.runtimeid = runtimeid
         self.projection = projection
+        self.includedesktopsetup = includedesktopsetup
     }
 
     private enum CodingKeys: String, CodingKey {
         case runtimeid = "runtimeId"
         case projection
+        case includedesktopsetup = "includeDesktopSetup"
     }
 }
 
@@ -13562,6 +13570,50 @@ public struct ProgressCardPutResult: Codable, Sendable {
     }
 }
 
+public struct ProgressCardRefreshParams: Codable, Sendable {
+    public let sessionkey: String
+    public let agentid: String?
+    public let idempotencykey: String
+
+    public init(
+        sessionkey: String,
+        agentid: String? = nil,
+        idempotencykey: String)
+    {
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.idempotencykey = idempotencykey
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case idempotencykey = "idempotencyKey"
+    }
+}
+
+public struct ProgressCardRefreshResult: Codable, Sendable {
+    public let runid: String
+    public let status: String
+    public let revision: Int
+
+    public init(
+        runid: String,
+        status: String,
+        revision: Int)
+    {
+        self.runid = runid
+        self.status = status
+        self.revision = revision
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case runid = "runId"
+        case status
+        case revision
+    }
+}
+
 public struct ProgressCard: Codable, Sendable {
     public let sessionkey: String
     public let revision: Int
@@ -15246,7 +15298,7 @@ public struct SessionCompactionCheckpoint: Codable, Sendable {
     public let reason: SessionCompactionCheckpointReason
     public let tokensbefore: Int?
     public let tokensafter: Int?
-    public let tokensVersion: Double?
+    public let tokensversion: Double?
     public let summary: String?
     public let firstkeptentryid: String?
     public let precompaction: [String: AnyCodable]
@@ -15260,7 +15312,7 @@ public struct SessionCompactionCheckpoint: Codable, Sendable {
         reason: SessionCompactionCheckpointReason,
         tokensbefore: Int? = nil,
         tokensafter: Int? = nil,
-        tokensVersion: Double? = nil,
+        tokensversion: Double? = nil,
         summary: String? = nil,
         firstkeptentryid: String? = nil,
         precompaction: [String: AnyCodable],
@@ -15273,7 +15325,7 @@ public struct SessionCompactionCheckpoint: Codable, Sendable {
         self.reason = reason
         self.tokensbefore = tokensbefore
         self.tokensafter = tokensafter
-        self.tokensVersion = tokensVersion
+        self.tokensversion = tokensversion
         self.summary = summary
         self.firstkeptentryid = firstkeptentryid
         self.precompaction = precompaction
@@ -15288,7 +15340,7 @@ public struct SessionCompactionCheckpoint: Codable, Sendable {
         case reason
         case tokensbefore = "tokensBefore"
         case tokensafter = "tokensAfter"
-        case tokensVersion
+        case tokensversion = "tokensVersion"
         case summary
         case firstkeptentryid = "firstKeptEntryId"
         case precompaction = "preCompaction"

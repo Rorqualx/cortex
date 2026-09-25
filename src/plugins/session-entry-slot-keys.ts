@@ -158,7 +158,6 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "contextBudgetStatus",
   "compactionCount",
   "transcriptByteCompactionLatch",
-  "compactionCheckpoints",
   "memoryFlush",
   "cliHistoryBoundary",
   "cliSessionIds",
@@ -217,6 +216,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEYS = new Set<SessionEntryReservedSlotSetValu
 );
 const RETIRED_SESSION_SLOT_KEYS = new Set<string>([
   // retired session fields; reserved so plugin slots can never collide with historical data
+  "compactionCheckpoints",
   "execSecurity",
   "execAsk",
   "channel",

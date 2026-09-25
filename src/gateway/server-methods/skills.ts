@@ -2,106 +2,44 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import {
-  buildClawHubTrustErrorDetails,
-  ErrorCodes,
-  errorShape,
-  type SkillsInstallParams,
-  type SkillsUpdateParams,
-  validateSkillsBinsParams,
-  validateSkillsCuratorActionParams,
-  validateSkillsCuratorStatusParams,
-  validateSkillsDetailParams,
-  validateSkillsInstallParams,
-  validateSkillsProposalActionParams,
-  validateSkillsProposalCreateParams,
-  validateSkillsProposalEvaluateParams,
-  validateSkillsProposalEventsListParams,
-  validateSkillsProposalInspectParams,
-  validateSkillsProposalRequestRevisionParams,
-  validateSkillsProposalReviseParams,
-  validateSkillsProposalsListParams,
-  validateSkillsProposalUpdateParams,
-  validateSkillsSearchParams,
-  validateSkillsSecurityVerdictsParams,
-  validateSkillsSkillCardParams,
-  validateSkillsStatusParams,
-  validateSkillsUpdateParams,
-  validateSkillsWorkshopReadParams,
-} from "../../../packages/gateway-protocol/src/index.js";
+import { buildClawHubTrustErrorDetails, ErrorCodes, errorShape, type SkillsInstallParams, type SkillsUpdateParams, validateSkillsBinsParams, validateSkillsCuratorActionParams, validateSkillsCuratorStatusParams, validateSkillsDetailParams, validateSkillsInstallParams, validateSkillsProposalActionParams, validateSkillsProposalCreateParams, validateSkillsProposalEvaluateParams, validateSkillsProposalEventsListParams, validateSkillsProposalInspectParams, validateSkillsProposalRequestRevisionParams, validateSkillsProposalReviseParams, validateSkillsProposalsListParams, validateSkillsProposalUpdateParams, validateSkillsSearchParams, validateSkillsSecurityVerdictsParams, validateSkillsSkillCardParams, validateSkillsUpdateParams, validateSkillsWorkshopReadParams } from "../../../packages/gateway-protocol/src/index.js";
+import { listAgentIds, resolveAgentWorkspaceDir } from "../../agents/agent-scope-config.js";
 import type { SkillLibrarySelection } from "../../../packages/gateway-protocol/src/schema/skill-library.js";
 import { resolveNodeExecEligibility } from "../../agents/exec-defaults.js";
-import { listAgentWorkspaceDirs } from "../../agents/workspace-dirs.js";
+
 import { redactConfigObject } from "../../config/redact-snapshot.js";
 import { fetchClawHubSkillDetail } from "../../infra/clawhub-skills.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { registerClawHubCatalogIconUrls } from "../../plugins/catalog-icon-registry.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
-import {
-  resolveSkillForgeSkillsRoot,
-  resolveSkillForgeStagedSkillsDir,
-  resolveSkillForgeRetiredSkillsDir,
-  resolveSkillForgeCandidatesDir,
-} from "../../skill-forge/paths.js";
+import { resolveSkillForgeSkillsRoot, resolveSkillForgeStagedSkillsDir, resolveSkillForgeRetiredSkillsDir, resolveSkillForgeCandidatesDir } from "../../skill-forge/paths.js";
 import { runForgePipeline, type PipelineRunResult } from "../../skill-forge/pipeline.js";
-import {
-  promoteStagedSkill,
-  runDecaySweep,
-  DEFAULT_DECAY_POLICY,
-} from "../../skill-forge/promoter.js";
+import { promoteStagedSkill, runDecaySweep, DEFAULT_DECAY_POLICY } from "../../skill-forge/promoter.js";
 import { listTelemetryEntries, type SkillTelemetryEntry } from "../../skill-forge/telemetry.js";
 import { recordSkillDemotion } from "../../skill-forge/telemetry.js";
 import { updateSkillConfigEntry } from "../../skills/config/mutations.js";
 import { collectSkillBins } from "../../skills/discovery/bins.js";
+import { parseRequestedClawHubSkillRef } from "../../skills/lifecycle/clawhub-store.js";
 import { buildWorkspaceSkillStatus } from "../../skills/discovery/status.js";
 import { loadSkillLibrarySelection } from "../../skills/library/selection.js";
-import {
-  installSkillFromClawHub,
-  readLocalSkillCardContentSync,
-  searchSkillsFromClawHub,
-  updateSkillsFromClawHub,
-} from "../../skills/lifecycle/clawhub.js";
+import { installSkillFromClawHub, searchSkillsFromClawHub, updateSkillsFromClawHub } from "../../skills/lifecycle/clawhub.js";
 import { installSkill } from "../../skills/lifecycle/install.js";
 import { installUploadedSkillArchive } from "../../skills/lifecycle/upload-install.js";
+import { prepareWorkspaceSkillEntries } from "../../skills/loading/workspace-skill-loader.js";
 import { loadWorkspaceSkills } from "../../skills/loading/workspace-skill-loader.js";
 import { ensureSkillsWatcher } from "../../skills/runtime/refresh.js";
-import { loadWorkspaceSkillEntries } from "../../skills/loading/workspace.js";
+
 import { getRemoteSkillEligibility } from "../../skills/runtime/remote.js";
-import {
-  collectClawHubVerdictTargets,
-  fetchOpenClawSkillSecurityVerdicts,
-} from "../../skills/security/clawhub-verdicts.js";
-import {
-  getSkillCuratorStatus,
-  SKILL_LIFECYCLE_CURATION_RETIRED_MESSAGE,
-} from "../../skills/workshop/curator.js";
+import { collectClawHubVerdictTargets, fetchOpenClawSkillSecurityVerdicts } from "../../skills/security/clawhub-verdicts.js";
+import { getSkillCuratorStatus, SKILL_LIFECYCLE_CURATION_RETIRED_MESSAGE } from "../../skills/workshop/curator.js";
 import { resolveSkillProposalName } from "../../skills/workshop/frontmatter.js";
-import {
-  applySkillProposal,
-  evaluateSkillProposal,
-  inspectSkillProposal,
-  listSkillProposalEvents,
-  listSkillProposals,
-  proposeCreateSkill,
-  proposeUpdateSkill,
-  quarantineSkillProposal,
-  rejectSkillProposal,
-  reviseSkillProposal,
-} from "../../skills/workshop/service.js";
-import {
-  listWritableWorkshopSkillSummaries,
-  readWritableWorkshopSkill,
-} from "../../skills/workshop/workspace-skill-read.js";
+import { applySkillProposal, evaluateSkillProposal, inspectSkillProposal, listSkillProposalEvents, listSkillProposals, proposeCreateSkill, proposeUpdateSkill, quarantineSkillProposal, rejectSkillProposal, reviseSkillProposal } from "../../skills/workshop/service.js";
+import { listWritableWorkshopSkillSummaries, readWritableWorkshopSkill } from "../../skills/workshop/workspace-skill-read.js";
 import { authorizeSessionSharingTarget, resolveSessionSharingTarget } from "../session-sharing.js";
 import { skillsLibraryHandlers } from "./skills-library.js";
 import { skillProposalHistoryHandlers } from "./skills-proposal-history.js";
 import { skillsUploadHandlers } from "./skills-upload.js";
-import {
-  resolveSkillsAgentWorkspace,
-  runSkillsProposalWorkspaceHandler,
-  SKILL_PROPOSAL_RESPONSE_HANDLED,
-  type ResolvedSkillsWorkspace,
-} from "./skills-workspace-handler.js";
+import { resolveSkillsAgentWorkspace, runSkillsProposalWorkspaceHandler, SKILL_PROPOSAL_RESPONSE_HANDLED } from "./skills-workspace-handler.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers, RespondFn } from "./types.js";
 import { assertValidParams } from "./validation.js";
 
@@ -452,7 +390,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       return;
     }
     try {
-      const report = buildRemoteAwareWorkspaceSkillStatus(resolved);
+      const { report } = await buildRemoteAwareWorkspaceSkillStatus(resolved);
       const targets = collectClawHubVerdictTargets(report);
       if (targets.length === 0) {
         respond(true, { schema: "openclaw.skills.security-verdicts.v1", items: [] }, undefined);
@@ -464,7 +402,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatErrorMessage(err)));
     }
   },
-  "skills.skillCard": ({ params, respond, context }) => {
+  "skills.skillCard": async ({ params, respond, context }) => {
     if (!assertValidParams(params, validateSkillsSkillCardParams, "skills.skillCard", respond)) {
       return;
     }
@@ -473,10 +411,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, resolved.error);
       return;
     }
-    const report = buildWorkspaceSkillStatus(resolved.workspaceDir, {
-      config: resolved.cfg,
-      agentId: resolved.agentId,
-    });
+    const { report, files } = await buildRemoteAwareWorkspaceSkillStatus(
+      resolved,
+      undefined,
+      params.skillKey,
+    );
     const skill = report.skills.find((candidate) => candidate.skillKey === params.skillKey);
     if (!skill?.skillCard) {
       respond(
@@ -486,7 +425,9 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const content = readLocalSkillCardContentSync(skill.baseDir);
+    const content = files.find(
+      (file) => file.name === skill.name && file.filePath === skill.filePath,
+    )?.skillCard?.content;
     if (content === undefined) {
       respond(
         false,
@@ -507,15 +448,22 @@ export const skillsHandlers: GatewayRequestHandlers = {
       undefined,
     );
   },
-  "skills.bins": ({ params, respond, context }) => {
+  "skills.bins": async ({ params, respond, context }) => {
     if (!assertValidParams(params, validateSkillsBinsParams, "skills.bins", respond)) {
       return;
     }
     const cfg = context.getRuntimeConfig();
-    const workspaceDirs = listAgentWorkspaceDirs(cfg);
     const bins = new Set<string>();
-    for (const workspaceDir of workspaceDirs) {
-      const entries = loadWorkspaceSkillEntries(workspaceDir, { config: cfg });
+    for (const agentId of listAgentIds(cfg)) {
+      // Node inventories include missing requirements, not only locally usable skills.
+      const { entries } = await prepareWorkspaceSkillEntries(
+        resolveAgentWorkspaceDir(cfg, agentId),
+        {
+          config: cfg,
+          agentId,
+          agentSkillFilter: "ignore",
+        },
+      );
       for (const bin of collectSkillBins(entries)) {
         bins.add(bin);
       }
@@ -542,8 +490,26 @@ export const skillsHandlers: GatewayRequestHandlers = {
       return;
     }
     try {
+      // Same reference grammar as skills.install, so a client cannot review one publisher's
+      // card and then install another's.
+      const requested = parseRequestedClawHubSkillRef((params as { slug: string }).slug);
+      if (requested.requestedReference) {
+        // ClawHub has no source-qualified read endpoint, so reading this by bare slug would
+        // show a same-slug registry skill while install resolves the external artifact.
+        // Refusing keeps review and install on one identity until that contract exists.
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            `ClawHub cannot return details for ${requested.requestedReference}; external skill sources are install-only. Install it directly, or run "openclaw skills install ${requested.requestedReference}".`,
+          ),
+        );
+        return;
+      }
       const detail = await fetchClawHubSkillDetail({
-        slug: (params as { slug: string }).slug,
+        slug: requested.slug,
+        ...(requested.ownerHandle ? { ownerHandle: requested.ownerHandle } : {}),
       });
       registerClawHubCatalogIconUrls([
         detail.skill?.icon ?? undefined,

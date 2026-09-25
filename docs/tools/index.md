@@ -213,7 +213,7 @@ the current turn:
 - [Skills](/tools/skills) for skill load order, gating, and config
 - [Tool Search](/tools/tool-search) for compact OpenClaw tool catalog
   discovery
-- [Code Mode](/tools/code-mode) for compact JavaScript or TypeScript workflows
+- [Code Mode](/tools/code-mode) for compact JavaScript workflows
   over a hidden OpenClaw tool catalog
 - [Swarm](/tools/swarm) for structured fan-out and collection from Code Mode
 - [Tools invoke API](/gateway/tools-invoke-http-api) — call these tools over HTTP

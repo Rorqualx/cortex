@@ -201,6 +201,7 @@ export function prepareEmbeddedRunTerminal(input: {
     currentAssistant: attempt.yieldDetected ? null : (payloadAssistant ?? null),
     lastToolError: attempt.lastToolError,
     lastToolRecovery: attempt.lastToolRecovery,
+    lastToolRecovery: attempt.lastToolRecovery,
     config: runParams.config,
     isCronTrigger: runParams.trigger === "cron",
     isHeartbeatTrigger: runParams.trigger === "heartbeat",

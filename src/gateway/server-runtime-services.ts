@@ -1,9 +1,9 @@
 // Gateway post-ready runtime services.
 // Starts delayed maintenance, cron, heartbeat, recovery, and model-catalog refresh work.
 import { getRuntimeConfig } from "../config/config.js";
-import { resolveStateDir } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
+  captureDeliveryQueueStateContext,
   resolveDeliveryQueueStateEnv,
   type DeliveryQueueStateContext,
 } from "../infra/delivery-queue-sqlite.js";
@@ -35,7 +35,10 @@ import {
 } from "./scheduled-run-gateway-context.js";
 import type { GatewayCronReconciliation } from "./server-cron-reconciled.js";
 import type { GatewayCronState } from "./server-cron.js";
-import type { startGatewayMaintenanceTimers } from "./server-maintenance.js";
+import {
+  clearGatewayMaintenanceHandles,
+  type GatewayMaintenanceHandles,
+} from "./server-maintenance-lifecycle.js";
 import type { GatewayContextResolver } from "./server-methods/types.js";
 import {
   createNoopHeartbeatRunner,
@@ -54,9 +57,6 @@ const loadHeartbeatExecution = createLazyRuntimeModule(
 type GatewayPostReadyLogger = {
   warn: (message: string) => void;
 };
-export type GatewayMaintenanceHandles = NonNullable<
-  Awaited<ReturnType<typeof startGatewayMaintenanceTimers>>
->;
 
 /** Starts cron without making the surrounding startup or reload transaction wait. */
 export function startGatewayCronWithLogging(params: {
@@ -175,6 +175,7 @@ function startPendingOutboundDeliveryRecovery(params: {
   cfg: OpenClawConfig;
   log: GatewayRuntimeServiceLogger;
 }): () => Promise<void> {
+  const recoveryContext = captureDeliveryQueueStateContext();
   let stopped = false;
   let initialPass = true;
   let inFlight: Promise<void> | null = null;
@@ -246,14 +247,18 @@ function startPendingOutboundDeliveryRecovery(params: {
           OUTBOUND_LEGACY_PREPARATION_QUEUE_NAME,
           OUTBOUND_DELIVERY_MIGRATION_QUEUE_NAME,
         } = await import("../infra/outbound/delivery-queue-namespaces.js");
-        const remaining = countPendingDeliveryQueueEntries([
-          LEGACY_OUTBOUND_DELIVERY_QUEUE_NAME,
-          OUTBOUND_LEGACY_PREPARATION_QUEUE_NAME,
-          OUTBOUND_DELIVERY_MIGRATION_QUEUE_NAME,
-        ]);
+        const remaining = countPendingDeliveryQueueEntries(
+          [
+            LEGACY_OUTBOUND_DELIVERY_QUEUE_NAME,
+            OUTBOUND_LEGACY_PREPARATION_QUEUE_NAME,
+            OUTBOUND_DELIVERY_MIGRATION_QUEUE_NAME,
+          ],
+          undefined,
+          recoveryContext,
+        );
         const { listLegacyDeliveryQueueArtifacts } =
           await import("../infra/delivery-queue-legacy-files.js");
-        const legacyFiles = listLegacyDeliveryQueueArtifacts(resolveStateDir());
+        const legacyFiles = listLegacyDeliveryQueueArtifacts(recoveryContext.stateDir);
         if (remaining > 0 || legacyFiles.length > 0) {
           logRecovery.warn(
             `${remaining} legacy outbound deliveries and ${legacyFiles.length} legacy queue files need repair. Stop the Gateway and run openclaw doctor --fix.`,
@@ -267,6 +272,7 @@ function startPendingOutboundDeliveryRecovery(params: {
             shouldContinue: () => !stopped,
           },
           deliverWithCurrentConversationAuthority,
+          recoveryContext,
         );
         return;
       }
@@ -283,6 +289,7 @@ function startPendingOutboundDeliveryRecovery(params: {
           shouldContinue: () => !stopped,
         },
         deliverWithCurrentConversationAuthority,
+        recoveryContext,
       );
     }, "runtime:delivery-recovery").catch((err: unknown) =>
       params.log.error(`Delivery recovery failed: ${String(err)}`),

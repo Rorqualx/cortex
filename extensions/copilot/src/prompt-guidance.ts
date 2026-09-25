@@ -19,6 +19,7 @@ const COPILOT_HARNESS_IDENTITY =
 export function buildCopilotPromptGuidance(params: {
   attempt: AttemptParamsLike;
   callableToolNames: Iterable<string>;
+  toolSchemaDirectoryPrompt?: string;
   workspaceBootstrapInstructions?: string;
   requireExplicitMessageTarget?: boolean;
 }): string | undefined {
@@ -47,8 +48,9 @@ export function buildCopilotPromptGuidance(params: {
       : undefined;
   const sections = [
     COPILOT_HARNESS_IDENTITY,
-    callableTools.has(SKILL_FORGE_TOOL_NAME)
-      ? buildSkillForgePromptSection().join("\n")
+    params.toolSchemaDirectoryPrompt,
+    callableTools.has(SKILL_WORKSHOP_TOOL_NAME)
+      ? buildSkillWorkshopPromptSection().join("\n")
       : undefined,
     delegationGuidance,
     buildHarnessVisibleReplyGuidance({

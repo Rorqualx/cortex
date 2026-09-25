@@ -3,7 +3,6 @@
  * Parses OpenAI-style patch envelopes and applies add/update/delete/move hunks
  * through guarded host or sandbox filesystem operations.
  */
-import fs from "node:fs/promises";
 import path from "node:path";
 import { Type } from "typebox";
 import { createAbortError } from "../infra/abort-signal.js";
@@ -19,15 +18,12 @@ import {
   resolvePatchFileOps,
   type SandboxApplyPatchConfig,
 } from "./apply-patch-file-ops.js";
-import {
-  relativePathEscapesRoot,
-  resolveApplyPatchInputPath,
-  toDisplayPath,
-} from "./apply-patch-paths.js";
+import { resolveApplyPatchInputPath, toDisplayPath } from "./apply-patch-paths.js";
 import { applyUpdateHunk } from "./apply-patch-update.js";
 import type { MemoryWriteProvenanceObserver } from "./memory-write-provenance.js";
 import {
   preserveAtPrefixedRelativePath,
+  relativePathEscapesRoot,
   resolvePathFromInput,
   resolveSandboxPathMapping,
 } from "./path-policy.js";
@@ -410,7 +406,7 @@ async function ensureDir(filePath: string, ops: PatchFileOps) {
   if (!parent || parent === ".") {
     return;
   }
-  await ops.mkdirp(parent);
+  await ops.mkdirp?.(parent);
 }
 
 async function assertPatchParentPath(rawFilePath: string, options: ApplyPatchOptions) {
