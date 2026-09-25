@@ -971,7 +971,6 @@ describe("resolveStreamingReply", () => {
         visibleDelta: delta,
         appendDelta: delta,
         parsedStreamDirectives: { text: delta, replyToTag: false, isSilent: false },
-        previousAudioDirectiveCount: 0,
       }),
     ).toEqual({
       text: delta,
@@ -979,7 +978,6 @@ describe("resolveStreamingReply", () => {
       replace: false,
       hasText: true,
       replyDirectives: { text: delta, replyToTag: false, isSilent: false },
-      audioDirectiveCount: 0,
     });
     expect(performance.now() - started).toBeLessThan(1_000);
   });
