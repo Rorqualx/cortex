@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 /**
  * Runtime apply_patch tool and parser.
  * Parses OpenAI-style patch envelopes and applies add/update/delete/move hunks
@@ -18,12 +19,15 @@ import {
   resolvePatchFileOps,
   type SandboxApplyPatchConfig,
 } from "./apply-patch-file-ops.js";
-import { resolveApplyPatchInputPath, toDisplayPath } from "./apply-patch-paths.js";
+import {
+  relativePathEscapesRoot,
+  resolveApplyPatchInputPath,
+  toDisplayPath,
+} from "./apply-patch-paths.js";
 import { applyUpdateHunk } from "./apply-patch-update.js";
 import type { MemoryWriteProvenanceObserver } from "./memory-write-provenance.js";
 import {
   preserveAtPrefixedRelativePath,
-  relativePathEscapesRoot,
   resolvePathFromInput,
   resolveSandboxPathMapping,
 } from "./path-policy.js";
@@ -248,7 +252,11 @@ async function applyPatch(input: string, options: ApplyPatchOptions): Promise<Ap
     }
 
     if (hunk.kind === "delete") {
-      const targetResolution = resolvePatchPath(hunk.path, patchOptions, PATH_ALIAS_POLICIES.unlinkTarget);
+      const targetResolution = resolvePatchPath(
+        hunk.path,
+        patchOptions,
+        PATH_ALIAS_POLICIES.unlinkTarget,
+      );
       await withFileMutationQueueKeyResolution(
         targetResolution.then((target) => target.queueKey),
         async () => {

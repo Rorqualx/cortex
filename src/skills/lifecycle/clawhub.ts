@@ -41,6 +41,11 @@ import { normalizeTrackedSkillSlug } from "./install-paths.js";
 
 export { readVerifiedClawHubSkillSourceUrl } from "./clawhub-install-core.js";
 export {
+  readLocalSkillCardContentSync,
+  resolveClawHubSkillVerificationTarget,
+  searchSkillsFromClawHub,
+} from "./clawhub-status.js";
+export {
   resolveClawHubSkillVerificationTarget,
   searchSkillsFromClawHub,
 } from "./clawhub-status.js";

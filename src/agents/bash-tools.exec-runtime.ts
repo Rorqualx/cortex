@@ -70,7 +70,11 @@ import {
   resolveProcessCleanupMs,
   tail,
 } from "./bash-process-registry.js";
-import { renderExecOutputText, renderExecUpdateText } from "./bash-tools.exec-output.js";
+import {
+  renderExecExitLabel,
+  renderExecOutputText,
+  renderExecUpdateText,
+} from "./bash-tools.exec-output.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
 import { buildGitHubExecLaunchArgv } from "./github-exec-launch.js";
 import { recordAgentCleanupFailure } from "./run-cleanup-timeout.js";

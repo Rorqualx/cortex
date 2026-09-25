@@ -2,44 +2,107 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { buildClawHubTrustErrorDetails, ErrorCodes, errorShape, type SkillsInstallParams, type SkillsUpdateParams, validateSkillsBinsParams, validateSkillsCuratorActionParams, validateSkillsCuratorStatusParams, validateSkillsDetailParams, validateSkillsInstallParams, validateSkillsProposalActionParams, validateSkillsProposalCreateParams, validateSkillsProposalEvaluateParams, validateSkillsProposalEventsListParams, validateSkillsProposalInspectParams, validateSkillsProposalRequestRevisionParams, validateSkillsProposalReviseParams, validateSkillsProposalsListParams, validateSkillsProposalUpdateParams, validateSkillsSearchParams, validateSkillsSecurityVerdictsParams, validateSkillsSkillCardParams, validateSkillsUpdateParams, validateSkillsWorkshopReadParams } from "../../../packages/gateway-protocol/src/index.js";
-import { listAgentIds, resolveAgentWorkspaceDir } from "../../agents/agent-scope-config.js";
+import {
+  buildClawHubTrustErrorDetails,
+  ErrorCodes,
+  errorShape,
+  type SkillsInstallParams,
+  type SkillsUpdateParams,
+  validateSkillsBinsParams,
+  validateSkillsCuratorActionParams,
+  validateSkillsCuratorStatusParams,
+  validateSkillsDetailParams,
+  validateSkillsInstallParams,
+  validateSkillsProposalActionParams,
+  validateSkillsProposalCreateParams,
+  validateSkillsProposalEvaluateParams,
+  validateSkillsProposalEventsListParams,
+  validateSkillsProposalInspectParams,
+  validateSkillsProposalRequestRevisionParams,
+  validateSkillsProposalReviseParams,
+  validateSkillsProposalsListParams,
+  validateSkillsProposalUpdateParams,
+  validateSkillsSearchParams,
+  validateSkillsSecurityVerdictsParams,
+  validateSkillsSkillCardParams,
+  validateSkillsStatusParams,
+  validateSkillsUpdateParams,
+  validateSkillsWorkshopReadParams,
+} from "../../../packages/gateway-protocol/src/index.js";
 import type { SkillLibrarySelection } from "../../../packages/gateway-protocol/src/schema/skill-library.js";
+import { listAgentIds, resolveAgentWorkspaceDir } from "../../agents/agent-scope-config.js";
 import { resolveNodeExecEligibility } from "../../agents/exec-defaults.js";
-
 import { redactConfigObject } from "../../config/redact-snapshot.js";
 import { fetchClawHubSkillDetail } from "../../infra/clawhub-skills.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { registerClawHubCatalogIconUrls } from "../../plugins/catalog-icon-registry.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
-import { resolveSkillForgeSkillsRoot, resolveSkillForgeStagedSkillsDir, resolveSkillForgeRetiredSkillsDir, resolveSkillForgeCandidatesDir } from "../../skill-forge/paths.js";
+import {
+  resolveSkillForgeSkillsRoot,
+  resolveSkillForgeStagedSkillsDir,
+  resolveSkillForgeRetiredSkillsDir,
+  resolveSkillForgeCandidatesDir,
+} from "../../skill-forge/paths.js";
 import { runForgePipeline, type PipelineRunResult } from "../../skill-forge/pipeline.js";
-import { promoteStagedSkill, runDecaySweep, DEFAULT_DECAY_POLICY } from "../../skill-forge/promoter.js";
+import {
+  promoteStagedSkill,
+  runDecaySweep,
+  DEFAULT_DECAY_POLICY,
+} from "../../skill-forge/promoter.js";
 import { listTelemetryEntries, type SkillTelemetryEntry } from "../../skill-forge/telemetry.js";
 import { recordSkillDemotion } from "../../skill-forge/telemetry.js";
 import { updateSkillConfigEntry } from "../../skills/config/mutations.js";
 import { collectSkillBins } from "../../skills/discovery/bins.js";
-import { parseRequestedClawHubSkillRef } from "../../skills/lifecycle/clawhub-store.js";
 import { buildWorkspaceSkillStatus } from "../../skills/discovery/status.js";
 import { loadSkillLibrarySelection } from "../../skills/library/selection.js";
-import { installSkillFromClawHub, searchSkillsFromClawHub, updateSkillsFromClawHub } from "../../skills/lifecycle/clawhub.js";
+import { parseRequestedClawHubSkillRef } from "../../skills/lifecycle/clawhub-store.js";
+import {
+  installSkillFromClawHub,
+  readLocalSkillCardContentSync,
+  searchSkillsFromClawHub,
+  updateSkillsFromClawHub,
+} from "../../skills/lifecycle/clawhub.js";
 import { installSkill } from "../../skills/lifecycle/install.js";
 import { installUploadedSkillArchive } from "../../skills/lifecycle/upload-install.js";
 import { prepareWorkspaceSkillEntries } from "../../skills/loading/workspace-skill-loader.js";
 import { loadWorkspaceSkills } from "../../skills/loading/workspace-skill-loader.js";
 import { ensureSkillsWatcher } from "../../skills/runtime/refresh.js";
-
 import { getRemoteSkillEligibility } from "../../skills/runtime/remote.js";
-import { collectClawHubVerdictTargets, fetchOpenClawSkillSecurityVerdicts } from "../../skills/security/clawhub-verdicts.js";
-import { getSkillCuratorStatus, SKILL_LIFECYCLE_CURATION_RETIRED_MESSAGE } from "../../skills/workshop/curator.js";
+import {
+  collectClawHubVerdictTargets,
+  fetchOpenClawSkillSecurityVerdicts,
+} from "../../skills/security/clawhub-verdicts.js";
+import {
+  getSkillCuratorStatus,
+  SKILL_LIFECYCLE_CURATION_RETIRED_MESSAGE,
+} from "../../skills/workshop/curator.js";
 import { resolveSkillProposalName } from "../../skills/workshop/frontmatter.js";
-import { applySkillProposal, evaluateSkillProposal, inspectSkillProposal, listSkillProposalEvents, listSkillProposals, proposeCreateSkill, proposeUpdateSkill, quarantineSkillProposal, rejectSkillProposal, reviseSkillProposal } from "../../skills/workshop/service.js";
-import { listWritableWorkshopSkillSummaries, readWritableWorkshopSkill } from "../../skills/workshop/workspace-skill-read.js";
+import {
+  applySkillProposal,
+  evaluateSkillProposal,
+  inspectSkillProposal,
+  listSkillProposalEvents,
+  listSkillProposals,
+  proposeCreateSkill,
+  proposeUpdateSkill,
+  quarantineSkillProposal,
+  rejectSkillProposal,
+  reviseSkillProposal,
+} from "../../skills/workshop/service.js";
+import {
+  listWritableWorkshopSkillSummaries,
+  readWritableWorkshopSkill,
+} from "../../skills/workshop/workspace-skill-read.js";
 import { authorizeSessionSharingTarget, resolveSessionSharingTarget } from "../session-sharing.js";
 import { skillsLibraryHandlers } from "./skills-library.js";
 import { skillProposalHistoryHandlers } from "./skills-proposal-history.js";
 import { skillsUploadHandlers } from "./skills-upload.js";
-import { resolveSkillsAgentWorkspace, runSkillsProposalWorkspaceHandler, SKILL_PROPOSAL_RESPONSE_HANDLED } from "./skills-workspace-handler.js";
+import {
+  resolveSkillsAgentWorkspace,
+  runSkillsProposalWorkspaceHandler,
+  SKILL_PROPOSAL_RESPONSE_HANDLED,
+  type ResolvedSkillsWorkspace,
+} from "./skills-workspace-handler.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers, RespondFn } from "./types.js";
 import { assertValidParams } from "./validation.js";
 
@@ -390,7 +453,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       return;
     }
     try {
-      const { report } = await buildRemoteAwareWorkspaceSkillStatus(resolved);
+      const report = buildRemoteAwareWorkspaceSkillStatus(resolved);
       const targets = collectClawHubVerdictTargets(report);
       if (targets.length === 0) {
         respond(true, { schema: "openclaw.skills.security-verdicts.v1", items: [] }, undefined);
@@ -402,7 +465,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatErrorMessage(err)));
     }
   },
-  "skills.skillCard": async ({ params, respond, context }) => {
+  "skills.skillCard": ({ params, respond, context }) => {
     if (!assertValidParams(params, validateSkillsSkillCardParams, "skills.skillCard", respond)) {
       return;
     }
@@ -411,11 +474,10 @@ export const skillsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, resolved.error);
       return;
     }
-    const { report, files } = await buildRemoteAwareWorkspaceSkillStatus(
-      resolved,
-      undefined,
-      params.skillKey,
-    );
+    const report = buildWorkspaceSkillStatus(resolved.workspaceDir, {
+      config: resolved.cfg,
+      agentId: resolved.agentId,
+    });
     const skill = report.skills.find((candidate) => candidate.skillKey === params.skillKey);
     if (!skill?.skillCard) {
       respond(
@@ -425,9 +487,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const content = files.find(
-      (file) => file.name === skill.name && file.filePath === skill.filePath,
-    )?.skillCard?.content;
+    const content = readLocalSkillCardContentSync(skill.baseDir);
     if (content === undefined) {
       respond(
         false,
