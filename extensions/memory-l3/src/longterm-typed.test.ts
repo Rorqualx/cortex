@@ -772,7 +772,7 @@ describe("consolidateLongTermTyped", () => {
     // Pre-write retrieval signals for the L2 typed fact IDs of boosted slots.
     // The retrieval signal factId matches the L2 typed fact's id field.
     const signals = Array.from(boostedSlots).flatMap((slot) => {
-      const i = parseInt(slot.split("_")[1], 10);
+      const i = parseInt(slot.split("_")[1] ?? "0", 10);
       return [
         {
           factId: `tf-rh-${i}-0`,

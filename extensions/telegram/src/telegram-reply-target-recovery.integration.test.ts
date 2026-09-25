@@ -105,7 +105,6 @@ describeTelegramDispatch("consumed first target and latest transcript recovery",
               const captured = subscription.getCurrentAttemptAssistant();
               const embedded = buildEmbeddedRunPayloads({
                 assistantTexts: subscription.assistantTexts,
-                answerSegments: subscription.answerSegments,
                 lastAssistant: captured,
                 currentAssistant: captured ?? null,
                 sessionKey: scope.sessionKey,

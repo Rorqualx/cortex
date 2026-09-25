@@ -156,6 +156,7 @@ describe("scoreFact + composite", () => {
       weightValidity: 0,
       weightEntity: 0,
       useEntityScoring: false,
+      polarityDemotionFactor: 0.5,
     };
     const score = composite(
       {
@@ -217,6 +218,7 @@ describe("scoreFact + composite", () => {
       weightValidity: 0,
       weightEntity: 0,
       useEntityScoring: false,
+      polarityDemotionFactor: 0.5,
     };
     const signals = {
       lexical: 0,
@@ -257,6 +259,7 @@ describe("scoreFact + composite", () => {
       weightValidity: 0,
       weightEntity: 0,
       useEntityScoring: false,
+      polarityDemotionFactor: 0.5,
     };
     const score = composite(
       {
@@ -563,6 +566,7 @@ describe("buildCorpusStats + BM25", () => {
       weightValidity: 0,
       weightEntity: 0,
       useEntityScoring: false,
+      polarityDemotionFactor: 0.5,
     };
     const signals = {
       lexical: 0,
@@ -652,6 +656,7 @@ describe("episodicValidity", () => {
       weightValidity: 0.5,
       weightEntity: 0,
       useEntityScoring: false,
+      polarityDemotionFactor: 0.5,
     };
     const now = Date.now();
     const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;

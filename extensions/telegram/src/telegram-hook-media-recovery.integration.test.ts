@@ -217,7 +217,6 @@ describeTelegramDispatch("hook media selection during transcript recovery", () =
               const assistant = subscription.getCurrentAttemptAssistant();
               const embedded = buildEmbeddedRunPayloads({
                 assistantTexts: subscription.assistantTexts,
-                answerSegments: subscription.answerSegments,
                 lastAssistant: assistant,
                 currentAssistant: assistant ?? null,
                 sessionKey: scope.sessionKey,

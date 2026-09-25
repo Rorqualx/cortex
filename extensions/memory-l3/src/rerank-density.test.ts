@@ -90,6 +90,8 @@ describe("rerankByInformationDensity", () => {
       reliability: 0,
       semanticEntropy: 1,
       validity: 1,
+      entityScore: 0,
+      polarityMultiplier: 1,
     },
     chunkId: "chunk-1",
     tier: "l2" as const,
