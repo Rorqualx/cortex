@@ -15,6 +15,8 @@ export interface Skill {
   contentHash?: string;
   filePath: string;
   baseDir: string;
+  /** Assigned by Gateway discovery, never accepted from the workspace provider. */
+  fileHost?: "gateway" | "workspace";
   /** Deterministic marker for the SKILL.md content rendered as <version>. */
   promptVersion?: string;
   sourceInfo: SourceInfo;

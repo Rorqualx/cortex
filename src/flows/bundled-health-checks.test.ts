@@ -370,6 +370,7 @@ describe("registerBundledHealthChecks", () => {
     expect(mocks.registerWorkerProviderDoctorChecks).toHaveBeenCalledWith({
       getHealthCheck: expect.any(Function),
       registerHealthCheck: expect.any(Function),
+      listPluginStateEntries: expect.any(Function),
     });
   });
 

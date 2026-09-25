@@ -96,6 +96,12 @@ export type StreamBlockState = {
   pendingTagFragment?: string;
 };
 
+/** Raw offsets for literal directives whose Markdown code ownership is settled. */
+export type StreamDirectiveCodePrefix = {
+  end: number;
+  checkedRawLength: number;
+};
+
 /** Mutable subscription state shared by embedded-agent event handlers. */
 export type EmbeddedAgentSubscribeState = {
   assistantTexts: string[];
@@ -152,17 +158,23 @@ export type EmbeddedAgentSubscribeState = {
   streamBlockText: string;
   /** Start of this native block in the reply chunker's source, before Markdown rewriting. */
   streamBlockOffset: number;
+  streamBlockFinal: boolean;
+  /** Native source boundary from which the prepared block chunker's frame begins. */
+  blockReplyScopeStart: { contentIndex: number; itemId?: string; after?: boolean } | undefined;
   /** Scanner state shares deltaBuffer's lifecycle so each provider byte is parsed once. */
   thinkingTagStream: ThinkingTagStreamState;
   blockBuffer: string;
   blockState: StreamBlockState & { inlineCode: InlineCodeState };
   partialBlockState: StreamBlockState & { inlineCode: InlineCodeState };
+  /** Accepted audio occurrences in the current partial-directive snapshot. */
+  lastAssistantAudioDirectiveCount: number;
   assistantStream?: {
     raw: string;
     text: string;
     projection?: {
       kind: "raw" | "delivery" | "final";
       projector: ReturnType<typeof createAssistantVisibleStreamText>;
+      directiveCodePrefix?: StreamDirectiveCodePrefix;
     };
   };
   lastStreamedAssistant?: string;
@@ -239,7 +251,7 @@ export type EmbeddedAgentSubscribeState = {
   pendingAssistantReplyDirectives?: Pick<
     BlockReplyPayload,
     "audioAsVoice" | "replyToId" | "replyToTag" | "replyToCurrent"
-  >;
+  > & { audioDirectiveStart?: number };
   deterministicApprovalPromptPending: boolean;
   deterministicApprovalPromptSent: boolean;
   lastAssistant?: AgentMessage;

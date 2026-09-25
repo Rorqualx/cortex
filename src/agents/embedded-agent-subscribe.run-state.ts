@@ -37,6 +37,8 @@ export function createEmbeddedAgentSubscribeState(
     deltaBuffer: "",
     streamBlockText: "",
     streamBlockOffset: 0,
+    streamBlockFinal: false,
+    blockReplyScopeStart: undefined,
     thinkingTagStream: createThinkingTagStreamState(),
     pendingAssistantUsage: undefined,
     assistantUsageCommitted: false,
@@ -45,6 +47,7 @@ export function createEmbeddedAgentSubscribeState(
     // Track if a streamed chunk opened a <think> block (stateful across chunks).
     blockState: { thinking: false, final: false, inlineCode: createInlineCodeState() },
     partialBlockState: { thinking: false, final: false, inlineCode: createInlineCodeState() },
+    lastAssistantAudioDirectiveCount: 0,
     assistantStream: undefined,
     lastStreamedAssistant: undefined,
     lastStreamedAssistantCleaned: undefined,

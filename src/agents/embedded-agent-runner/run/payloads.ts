@@ -11,7 +11,7 @@ import {
 import { buildProviderLoginRecovery } from "../../../auto-reply/provider-login-recovery.js";
 import {
   copyReplyPayloadMetadata,
-  getReplyPayloadMetadata,
+  hasReplyPayloadSpeechContent,
   markReplyPayloadForSourceSuppressionDelivery,
   setReplyPayloadMetadata,
   type ReplyPayload,
@@ -313,7 +313,10 @@ export function buildEmbeddedRunPayloads(params: {
   const shouldUseCanonicalFinalAnswer =
     !lastAssistantNeedsErrorSurface &&
     fallbackAnswerSourceText.length > 0 &&
-    normalizedFallbackAnswerSourceText.length > 0;
+    // Upstream #152510: media-bearing or tts-bearing canonical answers also qualify.
+    (normalizedFallbackAnswerSourceText.length > 0 ||
+      (fallbackAnswerDirectiveState?.mediaUrls?.length ?? 0) > 0 ||
+      Boolean(storedDelivery?.tts?.text?.trim()));
   const hasAssistantTextPayload = nonEmptyAssistantTexts.length > 0;
   const answerTexts =
     suppressAssistantArtifacts || runAborted || lastAssistantNeedsErrorSurface
@@ -555,7 +558,7 @@ export function buildEmbeddedRunPayloads(params: {
       if (payload.text && isSilentReplyPayloadText(payload.text, SILENT_REPLY_TOKEN)) {
         const silentText = payload.text;
         payload.text = undefined;
-        if (hasReplyPayloadContent(payload)) {
+        if (hasReplyPayloadContent(payload) || hasReplyPayloadSpeechContent(payload)) {
           return payload;
         }
         payload.text = silentText;
@@ -563,7 +566,7 @@ export function buildEmbeddedRunPayloads(params: {
       return payload;
     })
     .filter((p) => {
-      if (!hasReplyPayloadContent(p) && !getReplyPayloadMetadata(p)?.tts) {
+      if (!hasReplyPayloadContent(p) && !hasReplyPayloadSpeechContent(p)) {
         return false;
       }
       if (p.text && isSilentReplyPayloadText(p.text, SILENT_REPLY_TOKEN)) {
