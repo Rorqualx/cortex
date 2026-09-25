@@ -1,7 +1,7 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { isCoreCanvasHostEnabled } from "../canvas/config.js";
 import { createShowWidgetTool } from "../canvas/widget-tool.js";
-import { selectApplicableRuntimeConfig } from "../config/config.js";
+import { getRuntimeConfig, selectApplicableRuntimeConfig } from "../config/config.js";
 import { callGateway } from "../gateway/call.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../secrets/runtime-state.js";
@@ -112,7 +112,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     agentId: options?.requesterAgentIdOverride,
   });
   const swarmToolGroups = createOpenClawSwarmToolGroups({
-    config: resolvedConfig,
+    config: sessionConfig ?? getRuntimeConfig(),
     effectiveRequesterAgentId: sessionAgentId,
     agentSessionKey: options?.agentSessionKey,
     runSessionKey: options?.runSessionKey,

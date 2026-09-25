@@ -2,7 +2,6 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
-import { ModelAuthProfileIdSchema } from "./model-account-selection.js";
 import { NonEmptyString } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
 import { GatewayAgentRuntimeSchema } from "./session-row.js";
@@ -12,12 +11,14 @@ export {
   ModelChoiceSchema,
   ModelRuntimeChoiceSchema,
   ModelCatalogProviderOutcomeSchema,
+  ModelsListParamsSchema,
   ModelsListResultSchema,
 } from "./model-catalog.js";
 export type {
   ModelChoice,
   ModelRuntimeChoice,
   ModelCatalogProviderOutcome,
+  ModelsListParams,
   ModelsListResult,
 } from "./model-catalog.js";
 
@@ -156,6 +157,8 @@ export const AgentsUpdateParamsSchema = Type.Object(
     workspace: Type.Optional(NonEmptyString),
     // null clears the per-agent model override so the agent falls back to the global default.
     model: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
+    /** Exact catalog runtime for a model-only selection; native authentication stays with it. */
+    agentRuntime: Type.Optional(NonEmptyString),
     emoji: Type.Optional(Type.String()),
     avatar: Type.Optional(Type.String()),
     description: Type.Optional(Type.String()),
@@ -309,43 +312,6 @@ export const AgentsFilesSetResultSchema = Type.Object(
     file: AgentsFileEntrySchema,
   },
   { additionalProperties: false },
-);
-
-/** Model catalog request with optional visibility scope. */
-export const ModelsListParamsSchema = Type.Object(
-  {
-    agentId: Type.Optional(Type.String()),
-    sessionKey: Type.Optional(NonEmptyString),
-    authProfileId: Type.Optional(ModelAuthProfileIdSchema),
-    provider: Type.Optional(NonEmptyString),
-    includeDetails: Type.Optional(Type.Boolean()),
-    includeProviderCapabilities: Type.Optional(Type.Boolean()),
-    /** Include global default-model previews, independent of agent/session overrides. */
-    includeDefaultModels: Type.Optional(Type.Boolean()),
-    /** Reuse prepared/cached facts without starting provider discovery. */
-    preparedOnly: Type.Optional(Type.Boolean()),
-    refresh: Type.Optional(Type.Boolean()),
-    view: Type.Optional(
-      Type.Union([
-        Type.Literal("default"),
-        Type.Literal("configured"),
-        Type.Literal("provider-config"),
-        Type.Literal("all"),
-      ]),
-    ),
-  },
-  {
-    additionalProperties: false,
-    allOf: [
-      {
-        not: {
-          properties: { preparedOnly: { const: true }, refresh: { const: true } },
-          required: ["preparedOnly", "refresh"],
-        },
-      },
-      { not: { required: ["sessionKey", "authProfileId"] } },
-    ],
-  },
 );
 
 /** Reads model-provider credential health for one configured agent. */
@@ -1545,7 +1511,6 @@ export type AgentsFilesSetParams = Static<typeof AgentsFilesSetParamsSchema>;
 export type AgentsFilesSetResult = Static<typeof AgentsFilesSetResultSchema>;
 export type AgentsListParams = Static<typeof AgentsListParamsSchema>;
 export type AgentsListResult = Static<typeof AgentsListResultSchema>;
-export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
 export type ModelsAuthSetApiKeyParams = Static<typeof ModelsAuthSetApiKeyParamsSchema>;
 export type ModelsAuthSetApiKeyResult = Static<typeof ModelsAuthSetApiKeyResultSchema>;
 export type ModelsAuthStatusParams = Static<typeof ModelsAuthStatusParamsSchema>;

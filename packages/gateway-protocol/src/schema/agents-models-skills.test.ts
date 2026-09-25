@@ -7,7 +7,6 @@ import {
   ModelsAuthLogoutParamsSchema,
   ModelsAuthOrderSetParamsSchema,
   ModelsAuthStatusParamsSchema,
-  ModelsListParamsSchema,
   ModelsListResultSchema,
   ModelsProbeParamsSchema,
   ModelsProbeResultSchema,
@@ -24,6 +23,7 @@ import {
   ToolsEffectiveResultSchema,
   ToolsInvokeParamsSchema,
 } from "./agents-models-skills.js";
+import { ModelsListParamsSchema } from "./model-catalog.js";
 import { GatewayAgentRuntimeSchema } from "./session-row.js";
 
 /**

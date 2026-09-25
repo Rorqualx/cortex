@@ -1834,6 +1834,7 @@
                       "plugins/llama-cpp",
                       "plugins/memory-lancedb",
                       "plugins/memory-wiki",
+                      "plugins/onnx",
                       "plugins/typesafe"
                     ]
                   },
@@ -2185,6 +2186,7 @@
                 "group": "Concepts and configuration",
                 "pages": [
                   "concepts/models",
+                  "concepts/decision-models",
                   "concepts/model-providers",
                   {
                     "group": "Model providers",
