@@ -185,20 +185,38 @@ describe("OpenClaw provider index", () => {
         contextWindow,
       })),
     ).toEqual([
+      { id: "deepseek-flash", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-v4-flash", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-v4-flash-vision-exp", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-v4-pro", reasoning: true, contextWindow: 1000000 },
       { id: "deepseek-chat", reasoning: undefined, contextWindow: 1000000 },
       { id: "deepseek-reasoner", reasoning: true, contextWindow: 1000000 },
     ]);
-    // Experimental vision variant is capability-flagged (image input, preview
-    // status) and deliberately absent from any default routing chain.
+    // 2026-09 consolidation: v4-flash (and its experimental vision variant) are
+    // deprecated with a forward map to the renamed deepseek-flash survivor.
+    const v4Flash = index.providers.deepseek?.previewCatalog?.models.find(
+      (model) => model.id === "deepseek-v4-flash",
+    );
+    expect(v4Flash).toMatchObject({
+      status: "deprecated",
+      replacedBy: "deepseek-flash",
+    });
+    // Retired vision variant: capability-flagged (image input), deliberately
+    // absent from any default routing chain, and deprecated onto the text-only
+    // deepseek-flash survivor — the swap silently drops image input.
     const visionExp = index.providers.deepseek?.previewCatalog?.models.find(
       (model) => model.id === "deepseek-v4-flash-vision-exp",
     );
     expect(visionExp).toMatchObject({
       input: ["text", "image"],
-      status: "preview",
+      status: "deprecated",
+      replacedBy: "deepseek-flash",
     });
+    // Older deprecations forward-map straight to the consolidation survivor,
+    // never onto another deprecated model.
+    const chat = index.providers.deepseek?.previewCatalog?.models.find(
+      (model) => model.id === "deepseek-chat",
+    );
+    expect(chat?.replacedBy).toBe("deepseek-flash");
   });
 });

@@ -64,11 +64,24 @@ export const OPENCLAW_PROVIDER_INDEX = {
       previewCatalog: {
         models: [
           {
+            // 2026-09 DeepSeek alias consolidation: deepseek-v4-flash (and the
+            // experimental vision variant) were folded into `deepseek-flash`.
+            // Pins on the retired ids are repointed here by doctor --fix.
+            id: "deepseek-flash",
+            name: "DeepSeek Flash",
+            input: ["text"],
+            reasoning: true,
+            contextWindow: 1000000,
+          },
+          {
             id: "deepseek-v4-flash",
             name: "DeepSeek V4 Flash",
             input: ["text"],
             reasoning: true,
             contextWindow: 1000000,
+            status: "deprecated",
+            statusReason: "Consolidated into deepseek-flash by DeepSeek's 2026-09 alias rename.",
+            replacedBy: "deepseek-flash",
           },
           {
             // Experimental vision-input variant of V4 Flash. Capability-flagged
@@ -79,8 +92,10 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text", "image"],
             reasoning: true,
             contextWindow: 1000000,
-            status: "preview",
-            statusReason: "Experimental vision variant; snapshot-pinned experimental release.",
+            status: "deprecated",
+            statusReason:
+              "Retired by the deepseek-flash consolidation. deepseek-flash is text-only: repointing this alias silently drops image input.",
+            replacedBy: "deepseek-flash",
           },
           {
             id: "deepseek-v4-pro",
@@ -95,7 +110,7 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text"],
             contextWindow: 1000000,
             status: "deprecated",
-            replacedBy: "deepseek-v4-flash",
+            replacedBy: "deepseek-flash",
           },
           {
             id: "deepseek-reasoner",
@@ -104,9 +119,9 @@ export const OPENCLAW_PROVIDER_INDEX = {
             reasoning: true,
             contextWindow: 1000000,
             status: "deprecated",
-            // DeepSeek's deprecation notice maps reasoner → v4-flash (thinking
-            // mode), not v4-pro. Flash already carries reasoning: true.
-            replacedBy: "deepseek-v4-flash",
+            // DeepSeek's deprecation notice maps reasoner → flash (thinking
+            // mode). Flash already carries reasoning: true.
+            replacedBy: "deepseek-flash",
           },
         ],
       },

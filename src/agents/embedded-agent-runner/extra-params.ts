@@ -832,7 +832,11 @@ function isDeepSeekV4OpenAICompletionsModel(model: Parameters<StreamFn>[0]): boo
   const normalizedModelId = normalizeDeepSeekV4CandidateId(model.id);
   return (
     model.api === "openai-completions" &&
-    (normalizedModelId === "deepseek-v4-flash" || normalizedModelId === "deepseek-v4-pro")
+    // "deepseek-flash" is the 2026-09 consolidation rename of v4-flash; same
+    // completions API shape, so it keeps the same extra-params handling.
+    (normalizedModelId === "deepseek-flash" ||
+      normalizedModelId === "deepseek-v4-flash" ||
+      normalizedModelId === "deepseek-v4-pro")
   );
 }
 

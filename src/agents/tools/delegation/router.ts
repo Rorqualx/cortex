@@ -227,7 +227,7 @@ const PREFERRED_SECONDARY: Partial<Record<DelegationKind, string>> = {
 const STATIC_MODELS: Record<string, string[]> = {
   zai: ["glm-5.1", "glm-5", "glm-5-turbo", "glm-4.7", "glm-4.6", "glm-4.6v", "glm-5v-turbo"],
   kimi: ["kimi-for-coding"],
-  deepseek: ["deepseek-v4-pro", "deepseek-v4-flash"],
+  deepseek: ["deepseek-v4-pro", "deepseek-flash", "deepseek-v4-flash"],
   moonshot: ["kimi-k2.6", "kimi-k2.5", "moonshot-v1-128k-vision-preview"],
 };
 

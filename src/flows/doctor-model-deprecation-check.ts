@@ -17,6 +17,76 @@ import type {
 
 const CHECK_ID = "core/doctor/model-deprecation";
 
+/**
+ * Input-modality caps per model, keyed `${provider}/${modelId}` (lowercased).
+ * Built from the provider-index preview catalog; advisory only — models absent
+ * from the index contribute no signal.
+ */
+export type ModelInputCaps = ReadonlyMap<string, ReadonlySet<string>>;
+
+/** Minimal structural shape consumed from the provider index. */
+type ProviderIndexLike = {
+  providers: Record<
+    string,
+    {
+      id?: string;
+      previewCatalog?:
+        | {
+            models: readonly { id: string; input?: readonly string[] }[];
+          }
+        | undefined;
+    }
+  >;
+};
+
+/** Projects provider-index preview models into an input-modality lookup. */
+export function buildProviderIndexInputCaps(index: ProviderIndexLike): ModelInputCaps {
+  const caps = new Map<string, ReadonlySet<string>>();
+  for (const provider of Object.values(index.providers)) {
+    for (const model of provider.previewCatalog?.models ?? []) {
+      caps.set(`${provider.id}/${model.id}`.toLowerCase(), new Set(model.input ?? []));
+    }
+  }
+  return caps;
+}
+
+/**
+ * Warning note for reassignments that silently drop image input: the pinned
+ * (deprecated) model accepted images while the replacement is text-only.
+ * Null when the swap keeps vision, either side is unknown, or nothing survives.
+ */
+export function visionDropNote(
+  action: {
+    binding: { kind: string; ref: { provider: string; modelId: string } };
+    outcome: "rewrite" | "clear";
+    replacementModelId?: string;
+  },
+  caps: ModelInputCaps,
+): string | null {
+  if (action.outcome !== "rewrite" || !action.replacementModelId) {
+    return null;
+  }
+  const { provider, modelId } = action.binding.ref;
+  const fromCaps = caps.get(`${provider}/${modelId}`.toLowerCase());
+  const toCaps = caps.get(`${provider}/${action.replacementModelId}`.toLowerCase());
+  if (!fromCaps || !toCaps) {
+    return null;
+  }
+  if (!fromCaps.has("image") || toCaps.has("image")) {
+    return null;
+  }
+  return `${modelId} accepts images but ${action.replacementModelId} is text-only — this reassignment silently drops vision capability`;
+}
+
+async function loadInputCaps(): Promise<ModelInputCaps> {
+  try {
+    const { loadOpenClawProviderIndex } = await import("../model-catalog/provider-index/index.js");
+    return buildProviderIndexInputCaps(loadOpenClawProviderIndex());
+  } catch {
+    return new Map();
+  }
+}
+
 function describeReassignment(action: {
   binding: { kind: string; jobId?: string; agentId?: string; sessionKey?: string; alias?: string };
   outcome: "rewrite" | "clear";
@@ -42,15 +112,25 @@ export const MODEL_DEPRECATION_HEALTH_CHECK: HealthCheck = {
   async detect(ctx: HealthCheckContext): Promise<readonly HealthFinding[]> {
     const { buildRuntimeReassignmentPlan } = await import("../model-catalog/reassign-runtime.js");
     const { plan } = await buildRuntimeReassignmentPlan(ctx.cfg);
-    return plan.actions.map((action) => ({
-      checkId: CHECK_ID,
-      severity: action.binding.kind === "alias" ? ("info" as const) : ("warning" as const),
-      message:
+    const caps = await loadInputCaps();
+    return plan.actions.map((action) => {
+      const note = visionDropNote(action, caps);
+      const base =
         action.outcome === "rewrite"
           ? `Pinned to a deprecated or superseded model; reassign ${describeReassignment(action)}.`
-          : `Pinned to a deprecated model with no replacement: ${describeReassignment(action)}.`,
-      fixHint: "Run `openclaw doctor --fix` to reassign deprecated/superseded model pins.",
-    }));
+          : `Pinned to a deprecated model with no replacement: ${describeReassignment(action)}.`;
+      return {
+        checkId: CHECK_ID,
+        // A vision-dropping swap deserves operator visibility even for aliases,
+        // which otherwise report as info-only.
+        severity:
+          note !== null || action.binding.kind !== "alias"
+            ? ("warning" as const)
+            : ("info" as const),
+        message: note !== null ? `${base} Note: ${note}.` : base,
+        fixHint: "Run `openclaw doctor --fix` to reassign deprecated/superseded model pins.",
+      };
+    });
   },
   async repair(ctx: HealthRepairContext): Promise<HealthRepairResult> {
     const { buildRuntimeReassignmentPlan, buildRuntimeApplyDeps, buildDiscoveredDisplayNames } =
@@ -104,6 +184,16 @@ export const MODEL_DEPRECATION_HEALTH_CHECK: HealthCheck = {
         next.agents.defaults = next.agents.defaults ?? {};
         (next.agents.defaults as { models?: unknown }).models = aliases;
         config = next;
+      }
+    }
+
+    // Surface silent capability drops (e.g. a retired vision alias repointed at
+    // a text-only replacement) so the operator sees what the swap costs.
+    const caps = await loadInputCaps();
+    for (const action of plan.actions) {
+      const note = visionDropNote(action, caps);
+      if (note !== null) {
+        changes.push(`${describeReassignment(action)} — ${note}`);
       }
     }
 

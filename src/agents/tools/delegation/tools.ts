@@ -74,8 +74,8 @@ function academicModels(providerId: string): {
   switch (providerId) {
     case "deepseek":
       return {
-        planModel: "deepseek-v4-flash",
-        relevanceModel: "deepseek-v4-flash",
+        planModel: "deepseek-flash",
+        relevanceModel: "deepseek-flash",
         synthesizeModel: "deepseek-v4-pro",
         verifyModel: "deepseek-v4-pro",
       };
