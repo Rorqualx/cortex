@@ -69,10 +69,7 @@ export function createGatewayCloseTestDepsFactory(mocks: GatewayCloseFixtureMock
       nodePresenceTimers: new Map(),
       broadcast: vi.fn(),
       maintenance: {
-        tickInterval: setInterval(() => undefined, 60_000),
-        healthInterval: setInterval(() => undefined, 60_000),
-        workboardDispatch: setInterval(() => undefined, 60_000),
-        dedupeCleanup: setInterval(() => undefined, 60_000),
+        stopPeriodicTasks: vi.fn(async () => {}),
         startMediaCleanup: vi.fn(),
         stopMediaCleanup: vi.fn(async () => "drained" as const),
         skillUsageCleanup: vi.fn(async () => {}),

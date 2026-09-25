@@ -199,8 +199,12 @@ export function prepareEmbeddedRunTerminal(input: {
     assistantTranscriptIdempotencyKey: attempt.assistantTranscriptIdempotencyKey,
     lastAssistant: payloadAssistant,
     currentAssistant: attempt.yieldDetected ? null : (payloadAssistant ?? null),
-    lastToolError: attempt.lastToolError,
-    lastToolRecovery: attempt.lastToolRecovery,
+    // A clean yield is a handoff, not a terminal tool failure. Keep the error
+    // on the attempt for diagnostics without turning the pause into a warning.
+    lastToolError:
+      attempt.yieldDetected && input.terminalState.outcome.status === "ok"
+        ? undefined
+        : attempt.lastToolError,
     lastToolRecovery: attempt.lastToolRecovery,
     config: runParams.config,
     isCronTrigger: runParams.trigger === "cron",

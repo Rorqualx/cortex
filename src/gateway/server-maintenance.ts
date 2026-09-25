@@ -120,10 +120,6 @@ export function startGatewayMaintenanceTimers(params: {
   stopPeriodicTasks: () => Promise<void>;
   startMediaCleanup: () => void;
   stopMediaCleanup: () => Promise<MediaCleanupStopResult>;
-  workboardDispatch: ReturnType<typeof setInterval>;
-  stopSessionColdStorageMaintenance: () => Promise<void>;
-  stopTelemetryChecks: () => Promise<void>;
-  worktreeCleanup: ReturnType<typeof setInterval>;
   skillUsageCleanup: () => Promise<void>;
 } {
   const restartDrainSignal = getGatewayRestartDrainSignal();
@@ -667,9 +663,6 @@ export function startGatewayMaintenanceTimers(params: {
     stopPeriodicTasks,
     startMediaCleanup,
     stopMediaCleanup,
-    workboardDispatch,
-    stopSessionColdStorageMaintenance: sessionColdStorageMaintenance.stop,
-    worktreeCleanup,
     skillUsageCleanup,
   };
 }

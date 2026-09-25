@@ -91,27 +91,6 @@ export function startGatewayCronWithLogging(params: {
   );
 }
 
-export async function clearGatewayMaintenanceHandles(
-  maintenance: GatewayMaintenanceHandles | null,
-): Promise<void> {
-  if (!maintenance) {
-    return;
-  }
-  // Maintenance startup can race shutdown. Stop every owner here and wait for
-  // in-flight media work before discarding its state directory and SQLite handles.
-  clearInterval(maintenance.tickInterval);
-  clearInterval(maintenance.healthInterval);
-  clearInterval(maintenance.dedupeCleanup);
-  clearInterval(maintenance.workboardDispatch);
-  clearInterval(maintenance.worktreeCleanup);
-  await Promise.all([
-    maintenance.skillUsageCleanup(),
-    maintenance.stopTelemetryChecks(),
-    maintenance.stopSessionColdStorageMaintenance(),
-    maintenance.stopMediaCleanup(),
-  ]);
-}
-
 /** Schedules post-ready maintenance and cancels/cleans handles if shutdown wins the race. */
 export function scheduleGatewayPostReadyMaintenance(params: {
   delayMs: number;
