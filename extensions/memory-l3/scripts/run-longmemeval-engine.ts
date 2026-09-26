@@ -51,7 +51,12 @@ import { compactSession } from "../src/compaction.js";
 import type { EmbeddingProvider } from "../src/engine.js";
 import { DEFAULT_HEBBIAN_CONFIG, type HebbianConfig } from "../src/hebbian.js";
 import { IngestBuffer } from "../src/ingest.js";
-import { createAnthropicCaller, createGlmCaller, type UsageCallback } from "../src/llm.js";
+import {
+  createAnthropicCaller,
+  DEFAULT_GLM_MODEL,
+  createGlmCaller,
+  type UsageCallback,
+} from "../src/llm.js";
 import { consolidateLongTermTyped } from "../src/longterm-typed.js";
 import {
   consolidateLongTerm,
@@ -547,6 +552,41 @@ async function runWithConcurrency<T, R>(
   return results;
 }
 
+// QW-1 (2026-09-26): pin reader/judge model + retry budget so cross-run deltas
+// are attributable (a reader-model swap alone moves LongMemEval ±2 pts —
+// Wontopos). Printed in the summary and written into runmeta as `pinned`;
+// optimize-weights.ts warns when a sweep compares runs with different pinning.
+const READER_MAX_RETRIES = 10;
+const READER_MAX_BACKOFF_MS = 60_000;
+
+type RunPinning = {
+  embedModel: string;
+  readerApi: "glm" | "anthropic-messages";
+  readerModel: string;
+  judgeModel: string;
+  readerMaxRetries: number;
+  readerMaxBackoffMs: number;
+  readerMinIntervalMs: number;
+};
+
+function resolveRunPinning(env: NodeJS.ProcessEnv = process.env): RunPinning {
+  const readerApi = env.EVAL_LLM_API === "anthropic-messages" ? "anthropic-messages" : "glm";
+  return {
+    embedModel: env.EMBED_MODEL ?? "nomic-embed-text",
+    readerApi,
+    // anthropic-messages caller requires an explicit model (empty = unset).
+    readerModel:
+      readerApi === "anthropic-messages"
+        ? (env.EVAL_LLM_MODEL ?? "")
+        : (env.EVAL_LLM_MODEL ?? DEFAULT_GLM_MODEL),
+    // Judge default mirrors score-longmemeval.mjs (JUDGE_MODEL ?? glm-5.2).
+    judgeModel: env.JUDGE_MODEL ?? DEFAULT_GLM_MODEL,
+    readerMaxRetries: READER_MAX_RETRIES,
+    readerMaxBackoffMs: READER_MAX_BACKOFF_MS,
+    readerMinIntervalMs: Number(env.ZENBRAIN_MIN_INTERVAL_MS ?? 1000),
+  };
+}
+
 async function main(): Promise<void> {
   const ablation = resolveAblation();
   console.log(`# LongMemEval (REAL ENGINE) — ablation: ${ablation.label}, topK=${TOP_K}`);
@@ -565,6 +605,7 @@ async function main(): Promise<void> {
   // Set ZENBRAIN_MIN_INTERVAL_MS=0 to disable pacing when the key is dedicated
   // (e.g. the gateway is paused) so the run isn't throttle-bound to ~1 call/sec.
   const minIntervalMs = Number(process.env.ZENBRAIN_MIN_INTERVAL_MS ?? 1000);
+  const pinned = resolveRunPinning();
   // Shared cost tracker — accumulates token usage across all LLM calls in this
   // run (per arm/seed). Per-question deltas are computed by snapshoting in
   // runQuestion. JS is single-threaded so the counter is race-free even with
@@ -587,8 +628,8 @@ async function main(): Promise<void> {
           baseUrl: process.env.EVAL_LLM_BASE_URL ?? "",
           model: process.env.EVAL_LLM_MODEL ?? "",
           minIntervalMs,
-          maxRetries: 10,
-          maxBackoffMs: 60_000,
+          maxRetries: pinned.readerMaxRetries,
+          maxBackoffMs: pinned.readerMaxBackoffMs,
           onUsage,
         })
       : createGlmCaller({
@@ -596,8 +637,8 @@ async function main(): Promise<void> {
           baseUrl: process.env.EVAL_LLM_BASE_URL,
           model: process.env.EVAL_LLM_MODEL,
           minIntervalMs,
-          maxRetries: 10,
-          maxBackoffMs: 60_000,
+          maxRetries: pinned.readerMaxRetries,
+          maxBackoffMs: pinned.readerMaxBackoffMs,
           onUsage,
         });
   const embeddingProvider = await resolveEmbeddingProvider(ablation.useQueryEmbedding);
@@ -672,6 +713,9 @@ async function main(): Promise<void> {
   console.log(
     `  tokens: ${totalTokens} (in ${totalPrompt} / out ${totalCompletion}) · est cost $${estimatedCostUsd.toFixed(4)}`,
   );
+  console.log(
+    `  pinned: reader=${pinned.readerModel}${pinned.readerApi === "anthropic-messages" ? " [anthropic-messages]" : ""} · judge=${pinned.judgeModel} · embed=${pinned.embedModel} · retry=${pinned.readerMaxRetries}x ≤${pinned.readerMaxBackoffMs / 1000}s @ ${pinned.readerMinIntervalMs}ms gap`,
+  );
 
   const tag =
     (STRATIFIED ? `stratified${STRATIFIED}` : `${TYPE}-n${selected.length}`) +
@@ -689,6 +733,7 @@ async function main(): Promise<void> {
     metaPath,
     JSON.stringify(
       {
+        pinned,
         ablation: ablation.label,
         scoring: ablation.scoring,
         hebbian: ablation.hebbian,

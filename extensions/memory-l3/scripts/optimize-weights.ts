@@ -40,6 +40,7 @@
 // applying.
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
 import * as path from "node:path";
 
@@ -100,6 +101,11 @@ type EvalResult = {
   hypothesisPath: string;
   metaPath: string;
 };
+
+// QW-1 (2026-09-26): pinned reader/judge metadata of the first successful run
+// in this sweep. Later runs are compared against it; a mismatch means accuracy
+// deltas are NOT attributable (a reader-model swap alone moves LongMemEval ±2 pts).
+let sweepPinning: string | null = null;
 
 /**
  * Run the LongMemEval engine with a given scoring config, then judge results.
@@ -197,11 +203,32 @@ function runEvaluation(config: ScoringConfig, iteration: number, keyName: string
 
   console.log(`    Accuracy: ${hits}/${total} (${pct}%)`);
 
+  // QW-1 (2026-09-26): compare pinned metadata (reader/judge model, retry
+  // budget) from this run's runmeta against the sweep baseline; warn on drift.
+  const metaPath = metaMatch?.[1] ?? "";
+  if (metaPath) {
+    try {
+      const pinned = (JSON.parse(readFileSync(metaPath, "utf8")) as { pinned?: unknown }).pinned;
+      if (pinned !== undefined) {
+        const key = JSON.stringify(pinned);
+        if (sweepPinning === null) {
+          sweepPinning = key;
+        } else if (sweepPinning !== key) {
+          console.error(
+            `    ⚠ pinned reader/judge metadata differs from an earlier run in this sweep — accuracy deltas are NOT attributable`,
+          );
+        }
+      }
+    } catch {
+      // runmeta missing/unreadable — nothing to compare.
+    }
+  }
+
   return {
     accuracy: pct / 100,
     perType,
     hypothesisPath,
-    metaPath: metaMatch?.[1] ?? "",
+    metaPath,
   };
 }
 
