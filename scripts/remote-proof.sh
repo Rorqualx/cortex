@@ -92,6 +92,12 @@ export npm_config_verify_deps_before_run=false
 # and hangs the whole vitest.unit lane (2026-09-18). 3 matches the CI scheduler's
 # proven-safe count. Override via OPENCLAW_VITEST_MAX_WORKERS to tune/serialize.
 export OPENCLAW_VITEST_MAX_WORKERS=\${OPENCLAW_VITEST_MAX_WORKERS:-3}
+# huey's cgroup layout is unreadable by the tsdown heap preflight (upstream's
+# readProcessMemoryCapacity returns unresolved -> sentinel 1MB -> build aborts
+# before any output). huey has 16GB RAM and the build peaks near 4.7GB, so an
+# explicit 8192MB ceiling is safe and bypasses the unresolvable cgroup read.
+# Override by setting OPENCLAW_TSDOWN_MAX_OLD_SPACE_MB when invoking the prover.
+export OPENCLAW_TSDOWN_MAX_OLD_SPACE_MB=\${OPENCLAW_TSDOWN_MAX_OLD_SPACE_MB:-8192}
 PROOF_DIR=$PROOF_DIR
 LANES="$LANES"
 BASELINE_REF=$BASELINE_REF
