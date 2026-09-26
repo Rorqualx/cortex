@@ -368,7 +368,9 @@ function readSqliteTranscriptRowsForFork(
     return {
       status: "created",
       events: rows
-        .filter((row) => typeof row.event_json === "string")
+        .filter(
+          (row): row is { event_json: string; seq: number } => typeof row.event_json === "string",
+        )
         .map((row) => JSON.parse(row.event_json) as TranscriptEvent),
     };
   } catch {
