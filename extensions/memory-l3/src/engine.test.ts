@@ -5,6 +5,9 @@ import { pressureAdaptiveTopK } from "./engine.js";
 // The engine's buildMemorySection() scales its retrieveTopK count with
 // current context-token pressure (estimatedTokens / tokenBudget, clamped
 // to [0,1]); this file pins the mapping so regressions are caught cheaply.
+// QW-2 note (2026-09-26): the intent-gate tests live in intent-gate.test.ts —
+// the gate is a dependency-free module so it stays runnable even when the
+// storage/sqlite import graph cannot be compiled in this environment.
 describe("pressureAdaptiveTopK", () => {
   it("returns the full baseline topK at zero pressure", () => {
     expect(pressureAdaptiveTopK(0)).toBe(5);

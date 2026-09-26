@@ -40,6 +40,9 @@ export type EmbeddingProvider = {
   /** Compute embeddings for multiple texts in a batch. */
   embedBatch(texts: string[]): Promise<number[][]>;
 };
+// QW-2 (2026-09-26): intent gate — pure lexical module, kept free of the
+// storage/sqlite import graph so it stays unit-testable in isolation.
+import { INTENT_GATE_ENABLED, isSelfContainedPrompt } from "./intent-gate.js";
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { cosineSimilarity } from "./scoring.js";
 import { selectSlidingWindow } from "./sliding-window.js";
@@ -111,6 +114,10 @@ function getRetopkThreshold(l3Root: string): number {
   }
   return RETOPK_SIMILARITY_THRESHOLD;
 }
+
+// QW-2 (2026-09-26): intent gate before recall — logic in intent-gate.ts;
+// skips are counted here at the buildMemorySection wiring point (l3debug).
+let intentGateSkips = 0;
 
 type ReTopKCacheEntry = {
   query: string;
@@ -295,6 +302,16 @@ export class HierarchicalL3Engine implements ContextEngine {
     tokenPressure = 0,
   ): Promise<string | undefined> {
     if (!prompt || prompt.length === 0) {
+      return undefined;
+    }
+
+    // QW-2: intent gate — skip the entire recall path (no embedding compute,
+    // no ReTopK lookup) for lexically self-contained turns. Counted via l3debug.
+    if (INTENT_GATE_ENABLED && isSelfContainedPrompt(prompt)) {
+      intentGateSkips++;
+      l3debug(
+        `IntentGate skip #${intentGateSkips} (self-contained prompt, recall skipped): ${prompt.slice(0, 60)}`,
+      );
       return undefined;
     }
 
