@@ -424,13 +424,11 @@ describe("resolveBuildAllSteps", () => {
       "plugins:assets:copy",
       "runtime-postbuild",
       "build-stamp",
-      "build:plugin-sdk:dts",
       "write-plugin-sdk-entry-dts",
       "check-plugin-sdk-exports",
       "ui:build",
       "write-build-info",
       "write-cli-startup-metadata",
-      "write-cli-compat",
       "runtime-postbuild-stamp",
     ]);
     expect(BUILD_ALL_PROFILES.ciArtifacts).toContain("tsdown");
@@ -439,15 +437,15 @@ describe("resolveBuildAllSteps", () => {
 
   it("cleans dist before the full package build steps", () => {
     const packageSteps = resolveBuildAllSteps("package");
-    // Fork: `full` is the inlined deploy profile (adds build:plugin-sdk:dts +
-    // write-cli-compat, stamp last) while `package` stays the canonical
-    // FULL_BUILD_STEP_LABELS order with clean:dist in front.
+    // Fork: `full` is the inlined deploy profile (stamp last) while `package`
+    // stays the canonical FULL_BUILD_STEP_LABELS order with clean:dist in front.
     expect(packageSteps.map((step) => step.label)).toEqual([
       "clean:dist",
       "plugins:assets:build",
       "tsdown-ai",
       "tsdown-packages",
       "tsdown-unified",
+      "write-unified-entry-dts",
       "external-plugins:local-dist",
       "check-cli-bootstrap-imports",
       "plugins:assets:copy",
@@ -752,13 +750,11 @@ describe("resolveBuildAllSteps", () => {
       "runtime-postbuild",
       "build-stamp",
       "runtime-postbuild-stamp",
-      "build:plugin-sdk:dts",
       "write-plugin-sdk-entry-dts",
       "check-plugin-sdk-exports",
       "ui:build",
       "write-build-info",
       "write-cli-startup-metadata",
-      "write-cli-compat",
     ]);
   });
 
@@ -889,7 +885,6 @@ describe("resolveBuildAllSteps", () => {
       "runtime-postbuild",
       "build-stamp",
       "runtime-postbuild-stamp",
-      "write-cli-compat",
     ]);
   });
 
@@ -1141,7 +1136,6 @@ describe("resolveBuildAllSteps", () => {
       "build-stamp",
       "runtime-postbuild-stamp",
       "write-cli-startup-metadata",
-      "write-cli-compat",
     ]);
   });
 

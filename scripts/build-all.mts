@@ -73,42 +73,6 @@ const TSDOWN_MAIN_PACKAGE_OUTPUT_ROOTS = TSDOWN_PACKAGE_OUTPUT_ROOTS.filter(
 const declarationCacheOutputs = (roots: string[]) =>
   roots.map((root) => ({ path: root, extensions: TSDOWN_DECLARATION_EXTENSIONS }));
 const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 8192;
-// Fork-only: build:plugin-sdk:dts emits the plugin-sdk declaration bundle
-// consumed by write-cli-compat; keep its cache inputs in sync with every
-// package the plugin-sdk surface re-exports.
-const PLUGIN_SDK_DTS_CACHE_INPUTS = [
-  "package.json",
-  "pnpm-lock.yaml",
-  "npm-shrinkwrap.json",
-  "packages/plugin-sdk/package.json",
-  "packages/llm-core/package.json",
-  "packages/markdown-core/package.json",
-  "packages/media-core/package.json",
-  "packages/media-understanding-common/package.json",
-  "packages/terminal-core/package.json",
-  "packages/acp-core/package.json",
-  "packages/model-catalog-core/package.json",
-  "packages/normalization-core/package.json",
-  "packages/web-content-core/package.json",
-  "packages/memory-host-sdk/package.json",
-  "tsconfig.json",
-  "tsconfig.plugin-sdk.dts.json",
-  "src/plugin-sdk",
-  "packages/llm-core/src",
-  "packages/markdown-core/src",
-  "packages/media-core/src",
-  "packages/media-generation-core/src",
-  "packages/model-catalog-core/src",
-  "packages/memory-host-sdk/src",
-  "packages/normalization-core/src",
-  "packages/acp-core/src",
-  "packages/media-understanding-common/src",
-  "packages/terminal-core/src",
-  "packages/web-content-core/src",
-  "src/types",
-  "src/video-generation/dashscope-compatible.ts",
-  "src/video-generation/types.ts",
-];
 const PLUGIN_SDK_ENTRY_DTS_CACHE_ENV = [
   "OPENCLAW_BUILD_PRIVATE_QA",
   "OPENCLAW_PLUGIN_SDK_CANONICAL_DTS",
@@ -210,17 +174,6 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
   tsxStep("build-stamp", "scripts/build-stamp.mts"),
   tsxStep("runtime-postbuild-stamp", "scripts/runtime-postbuild-stamp.mts"),
   {
-    // Fork-only: emits the plugin-sdk declaration bundle write-cli-compat needs.
-    label: "build:plugin-sdk:dts",
-    kind: "pnpm",
-    pnpmArgs: ["build:plugin-sdk:dts"],
-    windowsNodeOptions: `--max-old-space-size=${WINDOWS_BUILD_MAX_OLD_SPACE_MB}`,
-    cache: {
-      inputs: PLUGIN_SDK_DTS_CACHE_INPUTS,
-      outputs: ["dist/plugin-sdk/.tsbuildinfo", "dist/plugin-sdk/packages", "dist/plugin-sdk/src"],
-    },
-  },
-  {
     ...tsxStep("write-plugin-sdk-entry-dts", "scripts/write-plugin-sdk-entry-dts.ts"),
     env: {
       OPENCLAW_PLUGIN_SDK_CANONICAL_DTS: "1",
@@ -261,8 +214,6 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
       runOnHit: { finalize: "refresh" },
     },
   },
-  // Fork-only: writes the CLI compat shim from the plugin-sdk dts bundle.
-  nodeStep("write-cli-compat", ["--experimental-strip-types", "scripts/write-cli-compat.ts"]),
 ];
 
 const RUNTIME_SETUP_STEP_LABELS = [
@@ -310,26 +261,24 @@ const FULL_RUNTIME_STEP_LABELS = ASSET_RUNTIME_STEP_LABELS.flatMap((step) =>
 const FULL_BUILD_STEP_LABELS = [...FULL_RUNTIME_STEP_LABELS, ...FINAL_BUILD_ARTIFACTS_STEP_LABELS];
 
 export const BUILD_ALL_PROFILES: Record<string, string[]> = {
-  // Fork deploy profile, inlined (NOT FULL_BUILD_STEP_LABELS): adds
-  // build:plugin-sdk:dts + write-cli-compat and reorders runtime-postbuild-stamp to
-  // last — see the comment there.
+  // Fork deploy profile, inlined (NOT FULL_BUILD_STEP_LABELS): reorders
+  // runtime-postbuild-stamp to last — see the comment there.
   full: [
     "plugins:assets:build",
     "tsdown-ai",
     "tsdown-packages",
     "tsdown-unified",
+    "write-unified-entry-dts",
     "external-plugins:local-dist",
     "check-cli-bootstrap-imports",
     "plugins:assets:copy",
     "runtime-postbuild",
     "build-stamp",
-    "build:plugin-sdk:dts",
     "write-plugin-sdk-entry-dts",
     "check-plugin-sdk-exports",
     "ui:build",
     "write-build-info",
     "write-cli-startup-metadata",
-    "write-cli-compat",
     // runtime-postbuild-stamp MUST be last for the deploy profile. Writing
     // dist/.runtime-postbuildstamp is the trigger the rebuild-restart WatchPaths
     // job (~/.openclaw/restart-gateway-on-rebuild.sh) fires on — it `launchctl
@@ -353,67 +302,18 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "runtime-postbuild",
     "build-stamp",
     "runtime-postbuild-stamp",
-    "build:plugin-sdk:dts",
     "write-plugin-sdk-entry-dts",
     "check-plugin-sdk-exports",
     "ui:build",
     "write-build-info",
     "write-cli-startup-metadata",
-    "write-cli-compat",
-  ],
-  gatewayWatch: [
-    "tsdown",
-    "external-plugins:local-dist",
-    "check-cli-bootstrap-imports",
-    "runtime-postbuild",
-    "build-stamp",
-    "runtime-postbuild-stamp",
-    "write-cli-compat",
-  ],
-  qaRuntime: [
-    "plugins:assets:build",
-    "tsdown",
-    "external-plugins:local-dist",
-    "check-cli-bootstrap-imports",
-    "plugins:assets:copy",
-    "runtime-postbuild",
-    "build-stamp",
-    "runtime-postbuild-stamp",
-  ],
-  sourcePerformance: [
-    "plugins:assets:build",
-    "tsdown",
-    "external-plugins:local-dist",
-    "check-cli-bootstrap-imports",
-    "plugins:assets:copy",
-    "runtime-postbuild",
-    "build-stamp",
-    "runtime-postbuild-stamp",
-    "write-build-info",
-    "write-cli-startup-metadata",
-  ],
-  cliStartup: [
-    "tsdown",
-    "external-plugins:local-dist",
-    "check-cli-bootstrap-imports",
-    "runtime-postbuild",
-    "build-stamp",
-    "runtime-postbuild-stamp",
-    "write-cli-startup-metadata",
-    "write-cli-compat",
   ],
   // Upstream smoke profiles (strictSmoke / pluginSdkStrictSmoke): typed compilation + publication checks without the
-  // UI/metadata tail. build:plugin-sdk:dts precedes the SDK declaration steps as in every
-  // fork profile above.
-  strictSmoke: [
-    ...FULL_RUNTIME_STEP_LABELS,
-    "build:plugin-sdk:dts",
-    ...SDK_DECLARATION_STEP_LABELS,
-  ],
+  // UI/metadata tail.
+  strictSmoke: [...FULL_RUNTIME_STEP_LABELS, ...SDK_DECLARATION_STEP_LABELS],
   pluginSdkStrictSmoke: [
     ...FULL_COMPILER_STEP_LABELS,
     ...RUNTIME_STEP_LABELS,
-    "build:plugin-sdk:dts",
     ...SDK_DECLARATION_STEP_LABELS,
   ],
   gatewayWatch: ["tsdown", ...RUNTIME_STEP_LABELS],
