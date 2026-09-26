@@ -54,7 +54,11 @@ import { nativeSchtasksIntegrationEnabled } from "./vitest-worker-declarations.m
 // These fixture hooks require physical module boundaries and complete namespaces.
 export const legacyFinalizerBuildSources = [
   "src/cli/update-finalization-output.test-support.ts",
+  "src/cli/program/register.maintenance.ts",
+  "src/cli/one-shot-exit.ts",
   "src/commands/doctor.ts",
+  "src/commands/doctor-lint.ts",
+  "src/commands/doctor-post-upgrade.ts",
   "src/config/config.ts",
   "src/config/paths.ts",
   "src/plugins/installed-plugin-index-records.ts",
@@ -134,8 +138,6 @@ export const vitestWorkerBuildEntries = {
     agentDatabaseHeldRuntimeEntrypoint,
     databaseVerifyHostRuntimeEntrypoint,
   ]),
-  // The retention fixture executes the real nested QuickJS worker.
-  "agents/code-mode.worker": "src/agents/code-mode.worker.ts",
   // The real ulimit fixture must import its parent before imposing a file-size limit.
   "infra/sqlite-snapshot-source": "src/infra/sqlite-snapshot-source.ts",
   // Keep provider preparation in the same compiled graph as payload rendering;

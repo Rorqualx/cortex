@@ -92,18 +92,12 @@ describe("applyExclusiveSlotSelection", () => {
         entries: { "memory-core": { enabled: true } },
       }),
       expectedDisabled: false,
-      expectedWarnings: [
-        'Exclusive slot "memory" switched from "memory-core" to "memory".',
-        'Disabled other "memory" slot plugins: memory-core.',
-      ],
+      expectedWarnings: ['Disabled other "memory" slot plugins: memory-core.'],
     },
     {
-      name: "warns when the slot falls back to a default",
+      name: "selects an implicit default slot while retaining competing-plugin warnings",
       config: createMemoryConfig(),
-      expectedWarnings: [
-        'Exclusive slot "memory" switched from "memory-core" to "memory".',
-        'Disabled other "memory" slot plugins: memory-core.',
-      ],
+      expectedWarnings: ['Disabled other "memory" slot plugins: memory-core.'],
     },
     {
       name: "keeps disabled competing plugins disabled without adding disable warnings",
@@ -113,7 +107,7 @@ describe("applyExclusiveSlotSelection", () => {
         },
       }),
       expectedDisabled: false,
-      expectedWarnings: ['Exclusive slot "memory" switched from "memory-core" to "memory".'],
+      expectedWarnings: [],
     },
   ] as const)("$name", ({ config, expectedDisabled, expectedWarnings }) => {
     const result = applyExclusiveSlotSelection({

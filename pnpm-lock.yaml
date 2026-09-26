@@ -108,14 +108,14 @@ settings:
 overrides:
   '@lancedb/lancedb>@huggingface/transformers': '-'
   baileys>sharp: '-'
-  '@agentclientprotocol/codex-acp@1.10.0>@openai/codex': 0.154.0
+  '@agentclientprotocol/codex-acp@1.11.0>@openai/codex': 0.154.0
   '@codemirror/commands@6.11.0>@codemirror/view': 6.43.11
-  '@anthropic-ai/sdk': 0.124.0
-  '@anthropic-ai/vertex-sdk@0.19.7>google-auth-library': 11.0.2
+  '@anthropic-ai/sdk': 0.125.0
+  '@anthropic-ai/vertex-sdk@0.19.8>google-auth-library': 11.0.2
   '@opentelemetry/core': 2.11.0
   '@opentelemetry/propagator-jaeger': 2.11.0
-  '@aws-sdk/core': 3.977.9
-  '@aws-sdk/credential-provider-node': 3.972.82
+  '@aws-sdk/core': 3.978.0
+  '@aws-sdk/credential-provider-node': 3.972.83
   '@aws-sdk/xml-builder': 3.972.40
   '@hono/node-server': 2.1.1
   axios: 1.20.0
@@ -127,13 +127,12 @@ overrides:
   request-promise: npm:@cypress/request-promise@5.0.0
   basic-ftp: 6.2.1
   brace-expansion: 5.0.9
-  file-type: 22.0.2
+  file-type: 22.1.0
   form-data: 4.0.6
   werift-ice@0.2.2>ip: npm:neoip@3.1.0
   ip-address: 10.7.0
-  mailauth@5.0.3>nodemailer: 10.0.8
+  mailauth@5.0.3>nodemailer: 10.0.9
   mailauth@5.0.3>undici: 8.10.2
-  mailparser@3.9.23>nodemailer: 10.0.8
   minimatch: 10.2.6
   path-to-regexp: 8.4.2
   proxy-addr: 2.0.8
@@ -161,22 +160,22 @@ importers:
     dependencies:
       '@agentclientprotocol/sdk':
         specifier: 1.4.0
-        version: 1.4.0(zod@4.6.4)
+        version: 1.4.0(zod@4.6.5)
       '@anthropic-ai/sdk':
-        specifier: 0.124.0
-        version: 0.124.0(zod@4.6.4)
+        specifier: 0.125.0
+        version: 0.125.0(zod@4.6.5)
       '@clack/core':
-        specifier: 1.5.0
-        version: 1.5.0
+        specifier: 1.5.1
+        version: 1.5.1
       '@clack/prompts':
-        specifier: 1.8.0
-        version: 1.8.0
+        specifier: 1.8.1
+        version: 1.8.1
       '@earendil-works/pi-tui':
         specifier: 0.85.1
         version: 0.85.1
       '@google/genai':
         specifier: 2.22.0
-        version: 2.22.0(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4))(supports-color@10.2.2)
+        version: 2.22.0(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5))(supports-color@10.2.2)
       '@grammyjs/runner':
         specifier: 2.0.3
         version: 2.0.3(grammy@1.46.0(supports-color@10.2.2))
@@ -194,7 +193,7 @@ importers:
         version: 2.7.0(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
-        version: 1.30.0(supports-color@10.2.2)(zod@4.6.4)
+        version: 1.30.0(supports-color@10.2.2)(zod@4.6.5)
       '@mozilla/readability':
         specifier: 0.6.0
         version: 0.6.0
@@ -202,8 +201,8 @@ importers:
         specifier: workspace:*
         version: link:packages/ai
       '@openclaw/fs-safe':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.18.0
+        version: 0.18.0
       '@openclaw/proxyline':
         specifier: 0.3.12
         version: 0.3.12(undici@8.10.2)
@@ -250,8 +249,8 @@ importers:
         specifier: 5.2.1
         version: 5.2.1(supports-color@10.2.2)
       file-type:
-        specifier: 22.0.2
-        version: 22.0.2(supports-color@10.2.2)
+        specifier: 22.1.0
+        version: 22.1.0(supports-color@10.2.2)
       grammy:
         specifier: 1.46.0
         version: 1.46.0(supports-color@10.2.2)
@@ -299,7 +298,7 @@ importers:
         version: 1.2.10(supports-color@10.2.2)
       openai:
         specifier: 7.15.0
-        version: 7.15.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.4)
+        version: 7.15.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       p-limit:
         specifier: 7.3.2
         version: 7.3.2
@@ -318,9 +317,6 @@ importers:
       qrcode:
         specifier: 1.5.4
         version: 1.5.4
-      quickjs-wasi:
-        specifier: 3.6.0
-        version: 3.6.0
       rastermill:
         specifier: 0.3.3
         version: 0.3.3
@@ -358,8 +354,8 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@a2ui/lit':
         specifier: 0.10.3
@@ -368,8 +364,8 @@ importers:
         specifier: 0.10.7
         version: 0.10.7
       '@copilotkit/aimock':
-        specifier: 1.41.0
-        version: 1.41.0(vitest@5.0.0)
+        specifier: 1.42.0
+        version: 1.42.0(vitest@5.0.0)
       '@lit-labs/signals':
         specifier: 0.3.0
         version: 0.3.0
@@ -573,8 +569,8 @@ importers:
   extensions/a2a:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -587,10 +583,10 @@ importers:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
         specifier: 0.76.0
-        version: 0.76.0(@anthropic-ai/sdk@0.124.0(zod@4.6.4))(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4))
+        version: 0.76.0(@anthropic-ai/sdk@0.125.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5))
       '@agentclientprotocol/codex-acp':
-        specifier: 1.10.0
-        version: 1.10.0
+        specifier: 1.11.0
+        version: 1.11.0
       acpx:
         specifier: 0.18.0
         version: 0.18.0
@@ -598,8 +594,8 @@ importers:
         specifier: 1.8.0
         version: 1.8.0
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -626,8 +622,8 @@ importers:
         specifier: 3.1131.0
         version: 3.1131.0
       '@aws-sdk/credential-provider-node':
-        specifier: 3.972.82
-        version: 3.972.82
+        specifier: 3.972.83
+        version: 3.972.83
       '@smithy/node-http-handler':
         specifier: 4.12.1
         version: 4.12.1
@@ -645,8 +641,8 @@ importers:
   extensions/amazon-bedrock-mantle:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: 0.124.0
-        version: 0.124.0(zod@4.6.4)
+        specifier: 0.125.0
+        version: 0.125.0(zod@4.6.5)
       '@aws/bedrock-token-generator':
         specifier: 1.1.0
         version: 1.1.0
@@ -664,8 +660,8 @@ importers:
   extensions/anthropic-vertex:
     dependencies:
       '@anthropic-ai/vertex-sdk':
-        specifier: 0.19.7
-        version: 0.19.7(supports-color@10.2.2)(zod@4.6.4)
+        specifier: 0.19.8
+        version: 0.19.8(supports-color@10.2.2)(zod@4.6.5)
       google-auth-library:
         specifier: 11.0.2
         version: 11.0.2(supports-color@10.2.2)
@@ -680,8 +676,8 @@ importers:
   extensions/apple-fm:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -731,7 +727,7 @@ importers:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
-        version: 1.30.0(supports-color@10.2.2)(zod@4.6.4)
+        version: 1.30.0(supports-color@10.2.2)(zod@4.6.5)
       chrome-devtools-mcp:
         specifier: 1.8.0
         version: 1.8.0(patch_hash=c9e9590160eb099415e7ff6e705b0e0f725e364419f91153a0207e31a71f8547)
@@ -748,8 +744,8 @@ importers:
         specifier: 22.0.0
         version: 22.0.0
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -767,8 +763,8 @@ importers:
         specifier: 2.25.2
         version: 2.25.2(typescript@6.0.3)
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -839,8 +835,8 @@ importers:
         specifier: 8.21.3
         version: 8.21.3
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -850,6 +846,16 @@ importers:
         version: link:../..
 
   extensions/cloudflare-ai-gateway:
+    devDependencies:
+      '@openclaw/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+
+  extensions/code-mode-quickjs:
+    dependencies:
+      quickjs-wasi:
+        specifier: 3.6.0
+        version: 3.6.0
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -873,8 +879,8 @@ importers:
         specifier: 8.21.3
         version: 8.21.3
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -923,8 +929,8 @@ importers:
         specifier: 0.3.3
         version: 0.3.3
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1018,8 +1024,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1058,8 +1064,8 @@ importers:
         specifier: 8.21.3
         version: 8.21.3
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1139,8 +1145,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1152,8 +1158,8 @@ importers:
   extensions/file-transfer:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.18.0
+        version: 0.18.0
       minimatch:
         specifier: 10.2.6
         version: 10.2.6
@@ -1171,8 +1177,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1222,7 +1228,7 @@ importers:
     dependencies:
       '@google/genai':
         specifier: 2.22.0
-        version: 2.22.0(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4))(supports-color@10.2.2)
+        version: 2.22.0(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5))(supports-color@10.2.2)
       dotenv:
         specifier: 17.4.2
         version: 17.4.2
@@ -1256,8 +1262,8 @@ importers:
         specifier: 11.0.2
         version: 11.0.2(supports-color@10.2.2)
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1309,8 +1315,8 @@ importers:
         specifier: 5.0.3
         version: 5.0.3
       mailparser:
-        specifier: 3.9.23
-        version: 3.9.23
+        specifier: 3.9.26
+        version: 3.9.26
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1325,8 +1331,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1344,8 +1350,8 @@ importers:
   extensions/irc:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1372,8 +1378,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1385,8 +1391,8 @@ importers:
   extensions/linux-node:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1401,8 +1407,8 @@ importers:
   extensions/llama-cpp:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.18.0
+        version: 0.18.0
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1423,8 +1429,8 @@ importers:
   extensions/lobster:
     dependencies:
       '@clawdbot/lobster':
-        specifier: 2026.9.11
-        version: 2026.9.11
+        specifier: 2026.9.13
+        version: 2026.9.13
       typebox:
         specifier: 1.3.30
         version: 1.3.30
@@ -1472,8 +1478,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1485,8 +1491,8 @@ importers:
   extensions/mattermost:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1533,7 +1539,7 @@ importers:
         version: 18.1.0
       openai:
         specifier: 7.15.0
-        version: 7.15.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.4)
+        version: 7.15.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       typebox:
         specifier: 1.3.30
         version: 1.3.30
@@ -1579,8 +1585,8 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/memory-core':
         specifier: workspace:*
@@ -1617,8 +1623,8 @@ importers:
   extensions/migrate-claude:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.18.0
+        version: 0.18.0
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1679,8 +1685,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@microsoft/teams.common':
         specifier: 2.0.16
@@ -1701,8 +1707,8 @@ importers:
         specifier: 0.8.0
         version: 0.8.0
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1711,8 +1717,8 @@ importers:
   extensions/nextcloud-talk:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1727,8 +1733,8 @@ importers:
         specifier: 2.25.2
         version: 2.25.2(typescript@6.0.3)
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1784,8 +1790,8 @@ importers:
   extensions/onepassword:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.18.0
+        version: 0.18.0
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1820,8 +1826,8 @@ importers:
         specifier: 8.21.3
         version: 8.21.3
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1848,14 +1854,14 @@ importers:
   extensions/openshell:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.18.0
+        version: 0.18.0
       p-limit:
         specifier: 7.3.2
         version: 7.3.2
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1901,8 +1907,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1914,11 +1920,11 @@ importers:
   extensions/qa-lab:
     dependencies:
       '@copilotkit/aimock':
-        specifier: 1.41.0
-        version: 1.41.0(vitest@5.0.0)
+        specifier: 1.42.0
+        version: 1.42.0(vitest@5.0.0)
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
-        version: 1.30.0(supports-color@10.2.2)(zod@4.6.4)
+        version: 1.30.0(supports-color@10.2.2)(zod@4.6.5)
       '@openclaw/crabline':
         specifier: 0.1.27
         version: 0.1.27
@@ -1935,8 +1941,8 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/crabbox-provider':
         specifier: workspace:*
@@ -1987,8 +1993,8 @@ importers:
   extensions/raft:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2009,8 +2015,8 @@ importers:
         specifier: 2.4.0
         version: 2.4.0
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2049,14 +2055,14 @@ importers:
   extensions/signal:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.17.0
-        version: 0.17.0
+        specifier: 0.18.0
+        version: 0.18.0
       ws:
         specifier: 8.21.3
         version: 8.21.3
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2083,8 +2089,8 @@ importers:
         specifier: 7.29.1
         version: 7.29.1
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2096,8 +2102,8 @@ importers:
   extensions/sms:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2112,8 +2118,8 @@ importers:
   extensions/synology-chat:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2138,8 +2144,8 @@ importers:
   extensions/team-reports:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2182,8 +2188,8 @@ importers:
         specifier: 8.10.2
         version: 8.10.2
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2210,8 +2216,8 @@ importers:
         specifier: 3.0.0
         version: 3.0.0
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2257,8 +2263,8 @@ importers:
         specifier: 8.2.0
         version: 8.2.0(@twurple/auth@8.2.0)
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2298,8 +2304,8 @@ importers:
         specifier: 1.3.30
         version: 1.3.30
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2320,8 +2326,8 @@ importers:
         specifier: 8.21.3
         version: 8.21.3
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2364,8 +2370,8 @@ importers:
   extensions/webhooks:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2418,8 +2424,8 @@ importers:
   extensions/zalo:
     dependencies:
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2437,8 +2443,8 @@ importers:
         specifier: 2.1.2
         version: 2.1.2
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -2484,17 +2490,17 @@ importers:
   packages/ai:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: 0.124.0
-        version: 0.124.0(zod@4.6.4)
+        specifier: 0.125.0
+        version: 0.125.0(zod@4.6.5)
       '@google/genai':
         specifier: 2.22.0
-        version: 2.22.0(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4))(supports-color@10.2.2)
+        version: 2.22.0(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5))(supports-color@10.2.2)
       '@mistralai/mistralai':
         specifier: 2.7.0
         version: 2.7.0(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
       openai:
         specifier: 7.15.0
-        version: 7.15.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.4)
+        version: 7.15.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5)
       partial-json:
         specifier: 0.1.7
         version: 0.1.7
@@ -2571,8 +2577,8 @@ importers:
         specifier: workspace:*
         version: link:../normalization-core
       file-type:
-        specifier: 22.0.2
-        version: 22.0.2(supports-color@10.2.2)
+        specifier: 22.1.0
+        version: 22.1.0(supports-color@10.2.2)
 
   packages/media-generation-core:
     dependencies:
@@ -2620,8 +2626,8 @@ importers:
         specifier: workspace:*
         version: link:../normalization-core
       zod:
-        specifier: 4.6.4
-        version: 4.6.4
+        specifier: 4.6.5
+        version: 4.6.5
 
   packages/net-policy:
     dependencies:
@@ -2668,8 +2674,8 @@ importers:
   packages/terminal-core:
     dependencies:
       '@clack/prompts':
-        specifier: 1.8.0
-        version: 1.8.0
+        specifier: 1.8.1
+        version: 1.8.1
       '@openclaw/normalization-core':
         specifier: workspace:*
         version: link:../normalization-core
@@ -2719,10 +2725,10 @@ importers:
         version: 1.1.6
       '@modelcontextprotocol/ext-apps':
         specifier: 1.7.4
-        version: 1.7.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.4))(zod@4.6.4)
+        version: 1.7.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.5))(zod@4.6.5)
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
-        version: 1.29.0(supports-color@10.2.2)(zod@4.6.4)
+        version: 1.29.0(supports-color@10.2.2)(zod@4.6.5)
       '@noble/ed25519':
         specifier: 3.1.0
         version: 3.1.0
@@ -2830,8 +2836,8 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  '@agentclientprotocol/codex-acp@1.10.0':
-    resolution: {integrity: sha512-b4dDCPkH/GgHRb3JelXz4QdNirdoTjO3yYM1ImUJMxVXxgZLZMguEXNhZOH2G755UKzf6ZypiiC7UHe3fKgp2Q==}
+  '@agentclientprotocol/codex-acp@1.11.0':
+    resolution: {integrity: sha512-opPKsRaekgdmQpOpHrR0EEDn9chgtiN+b+h0V78fTuQP84TNzB7vrn3EtKODwbiJQTBHJAlynjSFQazFfaT+VQ==}
     hasBin: true
 
   '@agentclientprotocol/sdk@1.4.0':
@@ -2890,12 +2896,12 @@ packages:
     resolution: {integrity: sha512-Se55zXv48IYLg/WzoXzpbPLcq86suwDSbRUoNb69l4dkovorqS/47Xuy7MUo/gPNwwcPB4a+aqbXbshU33dcdQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      '@anthropic-ai/sdk': 0.124.0
+      '@anthropic-ai/sdk': 0.125.0
       '@modelcontextprotocol/sdk': ^1.29.0
       zod: ^4.0.0
 
-  '@anthropic-ai/sdk@0.124.0':
-    resolution: {integrity: sha512-cN5O8i9UVxHeOQAzj/XjshWXG8KiibJDw9OGpH2Z/eR3n/RBxdoLxDJOcfqAJWvjaMDFfHTBADU04hWRJVkDyA==}
+  '@anthropic-ai/sdk@0.125.0':
+    resolution: {integrity: sha512-Hq5wYlXupzJ9M1Fzqjqa3hObcuigEXVZJqSYDgeZGM3wF4qrNERM5Z1OOAeoT9rlod8awJ3uYyJjbQXp1ckIGg==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -2903,8 +2909,8 @@ packages:
       zod:
         optional: true
 
-  '@anthropic-ai/vertex-sdk@0.19.7':
-    resolution: {integrity: sha512-WbSYU84IAGPPCz02se6tJNc2X4Ij1itcj5+9L27boYCYDOwPLiYT5/bVmcygCy9pD6fn3Hc/8/WtuJBBQUAP2w==}
+  '@anthropic-ai/vertex-sdk@0.19.8':
+    resolution: {integrity: sha512-V8GpZcNEfeduKdASbqen9E6xUhUShOCEj6PqZqplVju6NxcrFqMfFquY9UCLnvp20ZpfIScYh8Sq0Ygd+PLRGA==}
 
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
@@ -2949,8 +2955,8 @@ packages:
     resolution: {integrity: sha512-jMw3q5sYNvWJRngkNwdS3H2WPBcdqhdrOez+7fBUB26fpH/2+TaJcDdlzdjgLTMhFTq2eOyXBSy1T/4A6CL/Lw==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/core@3.977.9':
-    resolution: {integrity: sha512-reqPFEQrZxDZpeGj4PFMepBeR5LGYHRqq/L0motTzgFkCRBA4rFdaVXDSLYyGHhxVz7sT2PDnPN9CluGSfgyJA==}
+  '@aws-sdk/core@3.978.0':
+    resolution: {integrity: sha512-2yX9LUmxPklVjSGTb8dfnWRJSiFQ3TeH2nn7G1mdKHTfnabzF0+gfrS8rYfLWmZrQ8A3mEcxMJjRc51dL5KWaA==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-cognito-identity@3.972.70':
@@ -2973,8 +2979,8 @@ packages:
     resolution: {integrity: sha512-eUtswnXu0+Ii9ieRK+0L7aPFV3Z/dnW2VntJzjBP9xs8s+8p5nBNuymIXtXwZ+5r5+XJP3e32nMkuZ/r0HozEA==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/credential-provider-node@3.972.82':
-    resolution: {integrity: sha512-znDkEOGXB8W3kG1LJUKP3foBZY/9qLM0eil/DxWXSp37XsdsRLQHE/d/OaCGGVgKpA6znR38h/+INk8do1FjiA==}
+  '@aws-sdk/credential-provider-node@3.972.83':
+    resolution: {integrity: sha512-jdso7ejzfRnatxMUZK4S/U6KbaDPCvfIV4XL+IQAPFDBt5rj5Fq595euqlK8Le4lNCMFR9oUpt+1l0aMgaayOQ==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-process@3.972.71':
@@ -3175,16 +3181,16 @@ packages:
   '@chevrotain/types@11.1.2':
     resolution: {integrity: sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw==}
 
-  '@clack/core@1.5.0':
-    resolution: {integrity: sha512-zNikCcd8BbcEvzzG1sbXFrRHFk5kHPrpwZwksPvf9qyQO1Teb7JaXaOAxXZei9nZLDW0gaZawiuTCji88bTBhw==}
+  '@clack/core@1.5.1':
+    resolution: {integrity: sha512-iHTrHA8MtVuLl2TfZySmcKv1qO2PoyC9Z7pfSDozEuV5vtY3/wcOPKJXlqJ5Oq2Cx5DDGQGAMVx6HZfRRoVEbQ==}
     engines: {node: '>= 20.12.0'}
 
-  '@clack/prompts@1.8.0':
-    resolution: {integrity: sha512-PXzLZ8N34rxmuo4dJg3xtOXhcBse94qGjDqsteoEYrFrrZ5FSjIGwMAuOcv64ln8rHVBBD06XeVGr+/JX+plcA==}
+  '@clack/prompts@1.8.1':
+    resolution: {integrity: sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ==}
     engines: {node: '>= 20.12.0'}
 
-  '@clawdbot/lobster@2026.9.11':
-    resolution: {integrity: sha512-ui1xgrIj7q+R+838ptFLWza0YKn8HTUNJMZI1utFdYkxJuIDeX6WDgUKLAiWoDL38L/9JagwiY7CxaSWuba5QQ==}
+  '@clawdbot/lobster@2026.9.13':
+    resolution: {integrity: sha512-sWbtxWkiN1UWVwhoUiMhrIus7ZjbavSQJc8zO3FUTh9p9AUECJrtR7eMyNZmkLP5zxSG8KhbQRjdlCIK2qkWKA==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -3275,8 +3281,8 @@ packages:
   '@codemirror/view@6.43.6':
     resolution: {integrity: sha512-EVunGSYN1wz1p75WY1s3Xg7t3i8Yol0kGZGizNdX9BUFgMFILYVe8/u6EVpo7Ff5PwbZuILb4QAq7IZoKzIEQA==}
 
-  '@copilotkit/aimock@1.41.0':
-    resolution: {integrity: sha512-hduXWDo0vI3ZyidIcb+BP1CsquVOOwqaRPUY3E3tvi4EV6nyndTuw0RNrIa4fPTh56EAozhIQDEmjKULY8MJHQ==}
+  '@copilotkit/aimock@1.42.0':
+    resolution: {integrity: sha512-P8mIGzSdIByeegbrqkjj9uiLJqeUl3H33gmePsfl8ttVJjkx3TqYp+lF+SxZSDdr/NGx0NJmKxcVT6OibUmNqg==}
     engines: {node: '>=20.15.0'}
     hasBin: true
     peerDependencies:
@@ -4254,8 +4260,8 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
-  '@openclaw/fs-safe-darwin-arm64@0.17.0':
-    resolution: {integrity: sha512-2ySWv0Mz2n3aUIcfdHP+AEaB4wsyx7jblIF88Ebl9Ucx+Z5pEYPUTAlbBQhcrDmP5q+IfBJUKUacLqpOPLg1fQ==}
+  '@openclaw/fs-safe-darwin-arm64@0.18.0':
+    resolution: {integrity: sha512-51CreZp7bBKVBNj4pw3xojnMqIrFgWxplH5F5eHReEVYkIS8hH+c096hOZRS1y5qBcQmxqtnHUbfjtbJNevoZQ==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [darwin]
@@ -4266,8 +4272,8 @@ packages:
     cpu: [x64]
     os: [darwin]
 
-  '@openclaw/fs-safe-darwin-x64@0.17.0':
-    resolution: {integrity: sha512-WxRPSXmz0iEoup7x4sfZX3GgHAOmbdmuTB/OZQpx+GGytCdXpzhIX81zg8ZrvbBXqxqnwe3gCAPJijkUO3PjFw==}
+  '@openclaw/fs-safe-darwin-x64@0.18.0':
+    resolution: {integrity: sha512-nQySFyOc4UcLjG3gi7FATR2Nm827v85kZODFQNYVl/77mgwy0JgWGdEhSKOb1K8VcezRqPeo2ZRcJobQ7XjGJg==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [darwin]
@@ -4279,8 +4285,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@openclaw/fs-safe-linux-arm64-gnu@0.17.0':
-    resolution: {integrity: sha512-KrpaYk5c4aVfzkGzE1Kt7diG/2X6ByX0LYzBYQ2QKI7iOJfd/OleO6m9GDwABLxdxitMcPeUk1VRp3gMSqC5CQ==}
+  '@openclaw/fs-safe-linux-arm64-gnu@0.18.0':
+    resolution: {integrity: sha512-uBJwBv3HZM8OsGIzVU7IVpk5wREpriMfTwLYJ/ZlL2RWcBUAKVdzjgNGm3GiiUnuqdSeQDToEFXF7Xa+JQDrGw==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [linux]
@@ -4293,8 +4299,8 @@ packages:
     os: [linux]
     libc: [musl]
 
-  '@openclaw/fs-safe-linux-arm64-musl@0.17.0':
-    resolution: {integrity: sha512-jGKxoQWbLUV+3vW39PO4JYUwYwsBAVkub65/w7rY9qgKmf8neY/str5oSl4WDcEKs5RqDmJyxAeYrCvmZw5/yg==}
+  '@openclaw/fs-safe-linux-arm64-musl@0.18.0':
+    resolution: {integrity: sha512-6MSz4W1/tdFt9osKKEOi8GazCVNO21Kp9gZkRltRz6EaIkLMY9lzWs7pihygdUkhk4cJ7EJKN4epBu7y6E46JA==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [linux]
@@ -4307,8 +4313,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@openclaw/fs-safe-linux-x64-gnu@0.17.0':
-    resolution: {integrity: sha512-ajnsE6avq53s0r5X+9vLN1e9MT0YSt2XJCKvxgk+f/Wh+W4FnInAQxNu19y3FC95SOBAiwYudPcjmevmOTmBRA==}
+  '@openclaw/fs-safe-linux-x64-gnu@0.18.0':
+    resolution: {integrity: sha512-nghyt4YhNI7Dep8zXVyG3ITttpkOhwQUC+TGBahfpGeVnRlT6+nsz8lyJwNSeR5j3KasD8hEeBi/a2mYT++yBA==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [linux]
@@ -4321,8 +4327,8 @@ packages:
     os: [linux]
     libc: [musl]
 
-  '@openclaw/fs-safe-linux-x64-musl@0.17.0':
-    resolution: {integrity: sha512-qRvuM1vX/Kj2ouGkyAg/ADXOZzR4lAbyNHfyx1NTo19e5WguwEBcvPfMW+HU2z3m19jFutvdz5IQI+cKL2pwUg==}
+  '@openclaw/fs-safe-linux-x64-musl@0.18.0':
+    resolution: {integrity: sha512-JLKdDlSLn0FzcUk24fHtXp/FL7Di6FVq9xAtuHdf5BuLHrj7xjGQwuWvUJVfYLSfXQdKXUeUSVb4z+keAa+O3Q==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [linux]
@@ -4334,8 +4340,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@openclaw/fs-safe-win32-x64-msvc@0.17.0':
-    resolution: {integrity: sha512-Q82+jVSZWxOwakmodXWhAJF4oAxb4Ryj17lnO3w9bmowOTIHVdU+EWG7akTSNhocfGyz+ktzIXPA1o6UcHIJZA==}
+  '@openclaw/fs-safe-win32-x64-msvc@0.18.0':
+    resolution: {integrity: sha512-V09PsSgniYnk85Omqq01eo1h2drTHBEUJ6pIgOJ9Bj1F/L57qEN+sisditCV9fHDC8YulwHQe9ZT8HyLSu3Fjw==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [win32]
@@ -4344,8 +4350,8 @@ packages:
     resolution: {integrity: sha512-Dwu2BZL6+n9pTeSLwijjL+dUBN0ktOjyucZPDjwSpuIkiPx9aussFWdyiWUD9UvNu3gwfLRAcktz1HfYT8QW1w==}
     engines: {node: '>=22'}
 
-  '@openclaw/fs-safe@0.17.0':
-    resolution: {integrity: sha512-T2p3BM5Iz3CnFdK6XkdMowKsaxTgZG9J/FTIlrA3U/wGZCAqfaqHylFOQqMQqIU14i+8A1OM6Vt80ycu1zeqQw==}
+  '@openclaw/fs-safe@0.18.0':
+    resolution: {integrity: sha512-eSPdJUUIHSPMc0iHwgvONxEtFQ8AwtDGBwWLjOau7THlnL173QArWE9xlsxsOOacAcjG6awVo25IU4D6Dxfzng==}
     engines: {node: '>=22'}
 
   '@openclaw/libterminal@0.3.2':
@@ -7303,8 +7309,8 @@ packages:
   file-entry-cache@11.1.5:
     resolution: {integrity: sha512-+PFTHITI08JIGhnNpGNI8T8inUpgZfk3GNEqfT9R2zZV2iFXg3CvqzSl/uEhs7TSGujYRELEANyDvS8Fj7+S7Q==}
 
-  file-type@22.0.2:
-    resolution: {integrity: sha512-0H8TsCUGBLx+V5adH3EY52hTAcyLKbV1D4gq5cIOJ6DnQAHeV9Z2Hhuc5CoBX4YmvB2oL+JIC84z0qO7JsCoNw==}
+  file-type@22.1.0:
+    resolution: {integrity: sha512-fbvf9u6jnHWr1EP6V8R99E9iLMhNLXgZkUzWBiPpJ5/89UJ/Atuxjn5YXR+XaZWo2hc2/8mGfTez+NDAgOcpLA==}
     engines: {node: '>=22'}
 
   fill-range@7.1.1:
@@ -8201,8 +8207,8 @@ packages:
     engines: {node: '>=22.19.0'}
     hasBin: true
 
-  mailparser@3.9.23:
-    resolution: {integrity: sha512-5jpsKltHt9oudhMu6mXxiwWMWV/CILfly+m9xhKiKW6cdmfOVvcAZ/NCuChV6QlADJqx1e5E2hwDAkP7lTP+Lg==}
+  mailparser@3.9.26:
+    resolution: {integrity: sha512-YUdylKj8RnSoyavscy2Kl3ZTh9l0k4PC/KEpW6M/IwTnicKwR/fMLaVXshlF8MfRg1p4HTsW+TVER6YaIeKnow==}
     engines: {node: '>=20.0.0'}
 
   make-fetch-happen@16.0.1:
@@ -8335,8 +8341,8 @@ packages:
     resolution: {integrity: sha512-kOy3OxT2HH39N70UnKgu4NWDZjLOz8W/mfyvniHjRH/DrL3f2pOfvWQ4p60offbbtDAnXWp0v9LfMIqMec269Q==}
     engines: {node: '>=18'}
 
-  mediabunny@1.58.0:
-    resolution: {integrity: sha512-0jW6vSDVqWwNe3+WBryrMzC2mUBfk6E5KQLGXLdKVGzclceXXIsbayEkAsNDCuoTcoMiVI62sPDnkkFDxiMjGw==}
+  mediabunny@1.58.1:
+    resolution: {integrity: sha512-edscMXOwBgUlMT+45wpAHdiXTGukCQb1nOJPE2D+fM4esNhAvGyB2yGGgnEer2VSwhEg+7gMliZDDQQqLaR7nA==}
 
   meow@14.1.0:
     resolution: {integrity: sha512-EDYo6VlmtnumlcBCbh1gLJ//9jvM/ndXHfVXIFrZVr6fGcwTUyCTFNTLCKuY3ffbK8L/+3Mzqnd58RojiZqHVw==}
@@ -8581,8 +8587,8 @@ packages:
     resolution: {integrity: sha512-M6Rm/bbG6De/gKGxOpeOobx/dnGuP0dz40adqx38boqHhlWssBJZgLCPBNtb9NkrmnKYiV04xELq+R6PFOnoLA==}
     engines: {node: '>=4.4.0'}
 
-  nodemailer@10.0.8:
-    resolution: {integrity: sha512-uCZ0AtFDI46sHwJ6mhwNuIoA/KiTC0ZCzX7g01941+H9VMIXEiZjtgjQkzoBRTeQba0cIrKfwk31q99PfcIMRw==}
+  nodemailer@10.0.9:
+    resolution: {integrity: sha512-BF0qcyplCwp+jMk6HCjFykBz/YhhZSsxrARhOldLwFWH+8kGjQsd2WIMIZhqEuyXRoGFi0ONbDeWDMDoL8MhLw==}
     engines: {node: '>=20.0.0'}
 
   normalize-path@3.0.0:
@@ -8667,7 +8673,7 @@ packages:
     resolution: {integrity: sha512-2DIwesnPSduw68MFx7nAdgvshrgvS8WOan5W8+tgUMlAy/tY+Q41g80Pa+w/v64rHA6rtn+dketa8QvMVxU96w==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
-      '@aws-sdk/credential-provider-node': 3.972.82
+      '@aws-sdk/credential-provider-node': 3.972.83
       '@smithy/hash-node': '>=4.3.0 <5'
       '@smithy/signature-v4': '>=5.4.0 <6'
       undici: '>=5 <9'
@@ -10266,6 +10272,9 @@ packages:
   zod@4.6.4:
     resolution: {integrity: sha512-AXSD6hvGdvRjajG/l1cC+d6IrhH+sjmPKtYeQdJIK8MFJl3LyClzS+o/YsVC+zQZPupAaeH5skwwm8YqYH7BqA==}
 
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
@@ -10289,27 +10298,27 @@ snapshots:
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)
 
-  '@agentclientprotocol/claude-agent-acp@0.76.0(@anthropic-ai/sdk@0.124.0(zod@4.6.4))(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4))':
+  '@agentclientprotocol/claude-agent-acp@0.76.0(@anthropic-ai/sdk@0.125.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5))':
     dependencies:
-      '@agentclientprotocol/sdk': 1.4.0(zod@4.6.4)
-      '@anthropic-ai/claude-agent-sdk': 0.3.257(@anthropic-ai/sdk@0.124.0(zod@4.6.4))(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4))(zod@4.6.4)
-      zod: 4.6.4
+      '@agentclientprotocol/sdk': 1.4.0(zod@4.6.5)
+      '@anthropic-ai/claude-agent-sdk': 0.3.257(@anthropic-ai/sdk@0.125.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5))(zod@4.6.5)
+      zod: 4.6.5
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
 
-  '@agentclientprotocol/codex-acp@1.10.0':
+  '@agentclientprotocol/codex-acp@1.11.0':
     dependencies:
-      '@agentclientprotocol/sdk': 1.4.0(zod@4.6.4)
+      '@agentclientprotocol/sdk': 1.4.0(zod@4.6.5)
       '@openai/codex': 0.154.0
       diff: 9.0.0
       open: 11.0.4
       vscode-jsonrpc: 9.0.2
-      zod: 4.6.4
+      zod: 4.6.5
 
-  '@agentclientprotocol/sdk@1.4.0(zod@4.6.4)':
+  '@agentclientprotocol/sdk@1.4.0(zod@4.6.5)':
     dependencies:
-      zod: 4.6.4
+      zod: 4.6.5
 
   '@antfu/install-pkg@2.1.0':
     dependencies:
@@ -10340,11 +10349,11 @@ snapshots:
   '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.257':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk@0.3.257(@anthropic-ai/sdk@0.124.0(zod@4.6.4))(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4))(zod@4.6.4)':
+  '@anthropic-ai/claude-agent-sdk@0.3.257(@anthropic-ai/sdk@0.125.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5))(zod@4.6.5)':
     dependencies:
-      '@anthropic-ai/sdk': 0.124.0(zod@4.6.4)
-      '@modelcontextprotocol/sdk': 1.30.0(supports-color@10.2.2)(zod@4.6.4)
-      zod: 4.6.4
+      '@anthropic-ai/sdk': 0.125.0(zod@4.6.5)
+      '@modelcontextprotocol/sdk': 1.30.0(supports-color@10.2.2)(zod@4.6.5)
+      zod: 4.6.5
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.257
       '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.257
@@ -10355,16 +10364,16 @@ snapshots:
       '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.257
       '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.257
 
-  '@anthropic-ai/sdk@0.124.0(zod@4.6.4)':
+  '@anthropic-ai/sdk@0.125.0(zod@4.6.5)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
     optionalDependencies:
-      zod: 4.6.4
+      zod: 4.6.5
 
-  '@anthropic-ai/vertex-sdk@0.19.7(supports-color@10.2.2)(zod@4.6.4)':
+  '@anthropic-ai/vertex-sdk@0.19.8(supports-color@10.2.2)(zod@4.6.5)':
     dependencies:
-      '@anthropic-ai/sdk': 0.124.0(zod@4.6.4)
+      '@anthropic-ai/sdk': 0.125.0(zod@4.6.5)
       google-auth-library: 11.0.2(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
@@ -10427,7 +10436,7 @@ snapshots:
 
   '@aws-sdk/checksums@3.1001.0':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
       '@smithy/types': 4.18.0
@@ -10435,8 +10444,8 @@ snapshots:
 
   '@aws-sdk/client-bedrock-runtime@3.1131.0':
     dependencies:
-      '@aws-sdk/core': 3.977.9
-      '@aws-sdk/credential-provider-node': 3.972.82
+      '@aws-sdk/core': 3.978.0
+      '@aws-sdk/credential-provider-node': 3.972.83
       '@aws-sdk/eventstream-handler-node': 3.972.34
       '@aws-sdk/middleware-eventstream': 3.972.29
       '@aws-sdk/middleware-websocket': 3.972.53
@@ -10450,8 +10459,8 @@ snapshots:
 
   '@aws-sdk/client-bedrock@3.1131.0':
     dependencies:
-      '@aws-sdk/core': 3.977.9
-      '@aws-sdk/credential-provider-node': 3.972.82
+      '@aws-sdk/core': 3.978.0
+      '@aws-sdk/credential-provider-node': 3.972.83
       '@aws-sdk/token-providers': 3.1131.0
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
@@ -10463,8 +10472,8 @@ snapshots:
   '@aws-sdk/client-s3@3.1131.0':
     dependencies:
       '@aws-sdk/checksums': 3.1001.0
-      '@aws-sdk/core': 3.977.9
-      '@aws-sdk/credential-provider-node': 3.972.82
+      '@aws-sdk/core': 3.978.0
+      '@aws-sdk/credential-provider-node': 3.972.83
       '@aws-sdk/middleware-sdk-s3': 3.972.76
       '@aws-sdk/signature-v4-multi-region': 3.996.46
       '@aws-sdk/types': 3.974.5
@@ -10474,7 +10483,7 @@ snapshots:
       '@smithy/types': 4.18.0
       tslib: 2.8.1
 
-  '@aws-sdk/core@3.977.9':
+  '@aws-sdk/core@3.978.0':
     dependencies:
       '@aws-sdk/types': 3.974.5
       '@aws-sdk/xml-builder': 3.972.40
@@ -10495,7 +10504,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-env@3.972.71':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
       '@smithy/types': 4.18.0
@@ -10503,7 +10512,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-http@3.972.73':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
       '@smithy/fetch-http-handler': 5.8.0
@@ -10513,7 +10522,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-ini@3.973.16':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/credential-provider-env': 3.972.71
       '@aws-sdk/credential-provider-http': 3.972.73
       '@aws-sdk/credential-provider-login': 3.972.78
@@ -10529,14 +10538,14 @@ snapshots:
 
   '@aws-sdk/credential-provider-login@3.972.78':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/nested-clients': 3.997.45
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
       '@smithy/types': 4.18.0
       tslib: 2.8.1
 
-  '@aws-sdk/credential-provider-node@3.972.82':
+  '@aws-sdk/credential-provider-node@3.972.83':
     dependencies:
       '@aws-sdk/credential-provider-env': 3.972.71
       '@aws-sdk/credential-provider-http': 3.972.73
@@ -10552,7 +10561,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-process@3.972.71':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
       '@smithy/types': 4.18.0
@@ -10560,7 +10569,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-sso@3.973.15':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/nested-clients': 3.997.45
       '@aws-sdk/token-providers': 3.1129.0
       '@aws-sdk/types': 3.974.5
@@ -10570,7 +10579,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-web-identity@3.972.77':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/nested-clients': 3.997.45
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
@@ -10579,13 +10588,13 @@ snapshots:
 
   '@aws-sdk/credential-providers@3.1136.0':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/credential-provider-cognito-identity': 3.972.70
       '@aws-sdk/credential-provider-env': 3.972.71
       '@aws-sdk/credential-provider-http': 3.972.73
       '@aws-sdk/credential-provider-ini': 3.973.16
       '@aws-sdk/credential-provider-login': 3.972.78
-      '@aws-sdk/credential-provider-node': 3.972.82
+      '@aws-sdk/credential-provider-node': 3.972.83
       '@aws-sdk/credential-provider-process': 3.972.71
       '@aws-sdk/credential-provider-sso': 3.973.15
       '@aws-sdk/credential-provider-web-identity': 3.972.77
@@ -10612,7 +10621,7 @@ snapshots:
 
   '@aws-sdk/middleware-sdk-s3@3.972.76':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/signature-v4-multi-region': 3.996.46
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
@@ -10621,7 +10630,7 @@ snapshots:
 
   '@aws-sdk/middleware-websocket@3.972.53':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
       '@smithy/fetch-http-handler': 5.8.0
@@ -10631,7 +10640,7 @@ snapshots:
 
   '@aws-sdk/nested-clients@3.997.45':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/signature-v4-multi-region': 3.996.46
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
@@ -10642,7 +10651,7 @@ snapshots:
 
   '@aws-sdk/s3-request-presigner@3.1131.0':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/signature-v4-multi-region': 3.996.46
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
@@ -10658,7 +10667,7 @@ snapshots:
 
   '@aws-sdk/token-providers@3.1129.0':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/nested-clients': 3.997.45
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
@@ -10667,7 +10676,7 @@ snapshots:
 
   '@aws-sdk/token-providers@3.1131.0':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       '@aws-sdk/nested-clients': 3.997.45
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
@@ -10681,7 +10690,7 @@ snapshots:
 
   '@aws-sdk/util-format-url@3.972.47':
     dependencies:
-      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/core': 3.978.0
       tslib: 2.8.1
 
   '@aws-sdk/xml-builder@3.972.40':
@@ -10873,19 +10882,19 @@ snapshots:
 
   '@chevrotain/types@11.1.2': {}
 
-  '@clack/core@1.5.0':
+  '@clack/core@1.5.1':
     dependencies:
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
-  '@clack/prompts@1.8.0':
+  '@clack/prompts@1.8.1':
     dependencies:
-      '@clack/core': 1.5.0
+      '@clack/core': 1.5.1
       fast-string-width: 3.0.2
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
-  '@clawdbot/lobster@2026.9.11':
+  '@clawdbot/lobster@2026.9.13':
     dependencies:
       ajv: 8.20.0
       yaml: 2.9.0
@@ -11135,7 +11144,7 @@ snapshots:
       style-mod: 4.1.4
       w3c-keyname: 2.2.8
 
-  '@copilotkit/aimock@1.41.0(vitest@5.0.0)':
+  '@copilotkit/aimock@1.42.0(vitest@5.0.0)':
     optionalDependencies:
       vitest: 5.0.0(patch_hash=5e7c1655044613ad5d71751e82ea0e6448f7bf5a7445b86114f495866c9a3bcf)(@opentelemetry/api@1.9.1)(@types/node@26.5.1)(@vitest/coverage-v8@5.0.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
 
@@ -11413,7 +11422,7 @@ snapshots:
     dependencies:
       koffi: 3.2.1
       vscode-jsonrpc: 8.2.1
-      zod: 4.6.4
+      zod: 4.6.5
     optionalDependencies:
       '@github/copilot-sdk-darwin-arm64': 1.0.13
       '@github/copilot-sdk-darwin-x64': 1.0.13
@@ -11424,14 +11433,14 @@ snapshots:
       '@github/copilot-sdk-win32-arm64': 1.0.13
       '@github/copilot-sdk-win32-x64': 1.0.13
 
-  '@google/genai@2.22.0(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4))(supports-color@10.2.2)':
+  '@google/genai@2.22.0(@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5))(supports-color@10.2.2)':
     dependencies:
       google-auth-library: 10.9.1(supports-color@10.2.2)
       p-retry: 4.6.2
       protobufjs: 8.8.0
       ws: 8.21.3
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.30.0(supports-color@10.2.2)(zod@4.6.4)
+      '@modelcontextprotocol/sdk': 1.30.0(supports-color@10.2.2)(zod@4.6.5)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -11911,8 +11920,8 @@ snapshots:
     dependencies:
       '@opentelemetry/semantic-conventions': 1.43.0
       ws: 8.21.3
-      zod: 4.6.4
-      zod-to-json-schema: 3.25.2(zod@4.6.4)
+      zod: 4.6.5
+      zod-to-json-schema: 3.25.2(zod@4.6.5)
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/resources': 2.11.0(@opentelemetry/api@1.9.1)
@@ -11921,13 +11930,13 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@modelcontextprotocol/ext-apps@1.7.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.4))(zod@4.6.4)':
+  '@modelcontextprotocol/ext-apps@1.7.4(@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.5))(zod@4.6.5)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(supports-color@10.2.2)(zod@4.6.4)
+      '@modelcontextprotocol/sdk': 1.29.0(supports-color@10.2.2)(zod@4.6.5)
       '@standard-schema/spec': 1.1.0
-      zod: 4.6.4
+      zod: 4.6.5
 
-  '@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.4)':
+  '@modelcontextprotocol/sdk@1.29.0(supports-color@10.2.2)(zod@4.6.5)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.8)
       ajv: 8.20.0
@@ -11944,12 +11953,12 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.6.4
-      zod-to-json-schema: 3.25.2(zod@4.6.4)
+      zod: 4.6.5
+      zod-to-json-schema: 3.25.2(zod@4.6.5)
     transitivePeerDependencies:
       - supports-color
 
-  '@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4)':
+  '@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.5)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.8)
       ajv: 8.20.0
@@ -11966,8 +11975,8 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.6.4
-      zod-to-json-schema: 3.25.2(zod@4.6.4)
+      zod: 4.6.5
+      zod-to-json-schema: 3.25.2(zod@4.6.5)
     transitivePeerDependencies:
       - supports-color
 
@@ -12076,7 +12085,7 @@ snapshots:
       re2js: 2.8.6
       ws: 8.21.3
       yaml: 2.9.0
-      zod: 4.6.4
+      zod: 4.6.5
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -12084,43 +12093,43 @@ snapshots:
   '@openclaw/fs-safe-darwin-arm64@0.12.0':
     optional: true
 
-  '@openclaw/fs-safe-darwin-arm64@0.17.0':
+  '@openclaw/fs-safe-darwin-arm64@0.18.0':
     optional: true
 
   '@openclaw/fs-safe-darwin-x64@0.12.0':
     optional: true
 
-  '@openclaw/fs-safe-darwin-x64@0.17.0':
+  '@openclaw/fs-safe-darwin-x64@0.18.0':
     optional: true
 
   '@openclaw/fs-safe-linux-arm64-gnu@0.12.0':
     optional: true
 
-  '@openclaw/fs-safe-linux-arm64-gnu@0.17.0':
+  '@openclaw/fs-safe-linux-arm64-gnu@0.18.0':
     optional: true
 
   '@openclaw/fs-safe-linux-arm64-musl@0.12.0':
     optional: true
 
-  '@openclaw/fs-safe-linux-arm64-musl@0.17.0':
+  '@openclaw/fs-safe-linux-arm64-musl@0.18.0':
     optional: true
 
   '@openclaw/fs-safe-linux-x64-gnu@0.12.0':
     optional: true
 
-  '@openclaw/fs-safe-linux-x64-gnu@0.17.0':
+  '@openclaw/fs-safe-linux-x64-gnu@0.18.0':
     optional: true
 
   '@openclaw/fs-safe-linux-x64-musl@0.12.0':
     optional: true
 
-  '@openclaw/fs-safe-linux-x64-musl@0.17.0':
+  '@openclaw/fs-safe-linux-x64-musl@0.18.0':
     optional: true
 
   '@openclaw/fs-safe-win32-x64-msvc@0.12.0':
     optional: true
 
-  '@openclaw/fs-safe-win32-x64-msvc@0.17.0':
+  '@openclaw/fs-safe-win32-x64-msvc@0.18.0':
     optional: true
 
   '@openclaw/fs-safe@0.12.0':
@@ -12134,15 +12143,15 @@ snapshots:
       '@openclaw/fs-safe-win32-x64-msvc': 0.12.0
       jszip: 3.10.2
 
-  '@openclaw/fs-safe@0.17.0':
+  '@openclaw/fs-safe@0.18.0':
     optionalDependencies:
-      '@openclaw/fs-safe-darwin-arm64': 0.17.0
-      '@openclaw/fs-safe-darwin-x64': 0.17.0
-      '@openclaw/fs-safe-linux-arm64-gnu': 0.17.0
-      '@openclaw/fs-safe-linux-arm64-musl': 0.17.0
-      '@openclaw/fs-safe-linux-x64-gnu': 0.17.0
-      '@openclaw/fs-safe-linux-x64-musl': 0.17.0
-      '@openclaw/fs-safe-win32-x64-msvc': 0.17.0
+      '@openclaw/fs-safe-darwin-arm64': 0.18.0
+      '@openclaw/fs-safe-darwin-x64': 0.18.0
+      '@openclaw/fs-safe-linux-arm64-gnu': 0.18.0
+      '@openclaw/fs-safe-linux-arm64-musl': 0.18.0
+      '@openclaw/fs-safe-linux-x64-gnu': 0.18.0
+      '@openclaw/fs-safe-linux-x64-musl': 0.18.0
+      '@openclaw/fs-safe-win32-x64-msvc': 0.18.0
       jszip: 3.10.2
 
   '@openclaw/libterminal@0.3.2':
@@ -13850,12 +13859,12 @@ snapshots:
 
   acpx@0.18.0:
     dependencies:
-      '@agentclientprotocol/sdk': 1.4.0(zod@4.6.4)
+      '@agentclientprotocol/sdk': 1.4.0(zod@4.6.5)
       '@openclaw/fs-safe': 0.12.0
       commander: 15.0.0
       skillflag: 0.2.1
       tsx: 4.23.13
-      zod: 4.6.4
+      zod: 4.6.5
     transitivePeerDependencies:
       - bare-abort-controller
       - bare-buffer
@@ -14967,7 +14976,7 @@ snapshots:
     dependencies:
       flat-cache: 6.1.23
 
-  file-type@22.0.2(supports-color@10.2.2):
+  file-type@22.1.0(supports-color@10.2.2):
     dependencies:
       '@tokenizer/inflate': 0.4.1(supports-color@10.2.2)
       strtok3: 10.3.5
@@ -15962,12 +15971,12 @@ snapshots:
       ipaddr.js: 2.5.0
       joi: 18.2.3
       libmime: 5.4.1
-      nodemailer: 10.0.8
+      nodemailer: 10.0.9
       punycode.js: 2.3.1
       tldts: 7.4.10
       undici: 8.10.2
 
-  mailparser@3.9.23:
+  mailparser@3.9.26:
     dependencies:
       '@zone-eu/mailsplit': 5.4.16
       encoding-japanese: 2.3.0
@@ -15976,7 +15985,7 @@ snapshots:
       iconv-lite: 0.7.3
       libmime: 5.4.3
       linkify-it: 5.0.2
-      nodemailer: 10.0.8
+      nodemailer: 10.0.9
       punycode.js: 2.3.1
       tlds: 1.261.0
 
@@ -16201,7 +16210,7 @@ snapshots:
 
   media-typer@2.0.0: {}
 
-  mediabunny@1.58.0:
+  mediabunny@1.58.1:
     dependencies:
       '@types/dom-mediacapture-transform': 0.1.12
       '@types/dom-webcodecs': 0.1.13
@@ -16533,7 +16542,7 @@ snapshots:
       '@tokenizer/token': 0.3.0
       content-type: 2.1.0
       debug: 4.4.3(supports-color@10.2.2)
-      file-type: 22.0.2(supports-color@10.2.2)
+      file-type: 22.1.0(supports-color@10.2.2)
       media-typer: 2.0.0
       strtok3: 10.3.5
       token-types: 6.1.2
@@ -16584,7 +16593,7 @@ snapshots:
 
   node-wav@0.0.2: {}
 
-  nodemailer@10.0.8: {}
+  nodemailer@10.0.9: {}
 
   normalize-path@3.0.0: {}
 
@@ -16686,14 +16695,14 @@ snapshots:
       - encoding
     optional: true
 
-  openai@7.15.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.4):
+  openai@7.15.0(@aws-sdk/credential-provider-node@3.972.83)(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.21.3)(zod@4.6.5):
     optionalDependencies:
-      '@aws-sdk/credential-provider-node': 3.972.82
+      '@aws-sdk/credential-provider-node': 3.972.83
       '@smithy/hash-node': 4.5.2
       '@smithy/signature-v4': 5.7.3
       undici: 8.10.2
       ws: 8.21.3
-      zod: 4.6.4
+      zod: 4.6.5
 
   opus-decoder@0.7.12:
     dependencies:
@@ -17407,7 +17416,7 @@ snapshots:
 
   skillflag@0.2.1:
     dependencies:
-      '@clack/prompts': 1.8.0
+      '@clack/prompts': 1.8.1
       tar-stream: 3.2.1
     transitivePeerDependencies:
       - bare-abort-controller
@@ -18105,7 +18114,7 @@ snapshots:
       '@shinyoshiaki/binary-data': 0.6.1
       buffer: 6.0.3
       debug: 4.4.0(supports-color@10.2.2)
-      mediabunny: 1.58.0
+      mediabunny: 1.58.1
       multicast-dns: 7.2.5
       tweetnacl: 1.0.3
     transitivePeerDependencies:
@@ -18296,12 +18305,14 @@ snapshots:
     dependencies:
       zod: 3.25.76
 
-  zod-to-json-schema@3.25.2(zod@4.6.4):
+  zod-to-json-schema@3.25.2(zod@4.6.5):
     dependencies:
-      zod: 4.6.4
+      zod: 4.6.5
 
   zod@3.25.76: {}
 
   zod@4.6.4: {}
+
+  zod@4.6.5: {}
 
   zwitch@2.0.4: {}

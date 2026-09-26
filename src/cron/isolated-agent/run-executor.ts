@@ -6,7 +6,6 @@ import {
   prepareAgentRunAdmission,
 } from "../../agents/admitted-run-context.js";
 import { resolveGroupToolPolicyOutcome } from "../../agents/agent-tools.policy.js";
-import type { BootstrapContextMode } from "../../agents/bootstrap-files.js";
 import { resolveCliBackendConfig } from "../../agents/cli-backends.js";
 import {
   cliBackendAcceptsAuthProfileForwarding,
@@ -164,15 +163,6 @@ function isCommandStyleCronMessage(message: string): boolean {
   return !trimmed.includes("\n") && COMMAND_STYLE_CRON_PREFIX.test(trimmed);
 }
 
-function resolveCronBootstrapContextMode(
-  payload: AgentTurnPayload,
-): BootstrapContextMode | undefined {
-  // Command-like cron prompts benefit from lightweight bootstrap context so
-  // simple scheduled command tasks do not spend budget on full repo context.
-  const lightweight = payload?.lightContext ?? isCommandStyleCronMessage(payload?.message ?? "");
-  return lightweight ? "lightweight" : undefined;
-}
-
 function buildCronDeliveryTargetRuntimeContext(params: {
   resolvedDeliveryOk: boolean;
   messageToolAvailable: boolean;
@@ -292,8 +282,8 @@ type CronRunExecutionParams = {
   onPromptCompleted?: (runs: readonly CronCompletedPromptRun[]) => void;
   executionIdentity?: import("../service/state.js").CronExecutionIdentityAdmission;
   runStartedAt?: number;
+  admissionSource?: import("../../agents/admitted-run-context.js").AdmittedRunContext["admissionSource"];
 };
-
 /** Creates the model-fallback executor for one isolated cron prompt run. */
 function createCronPromptExecutor(
   params: Omit<
@@ -322,7 +312,11 @@ function createCronPromptExecutor(
   let bootstrapPromptWarningSignaturesSeen = resolveBootstrapWarningSignaturesSeen(
     params.cronSession.sessionEntry.systemPromptReport,
   );
-  const bootstrapContextMode = resolveCronBootstrapContextMode(params.agentPayload);
+  const bootstrapContextMode =
+    (params.agentPayload?.lightContext ??
+    isCommandStyleCronMessage(params.agentPayload?.message ?? ""))
+      ? "lightweight"
+      : undefined;
   const validatedScheduledToolPolicy = resolveCronScheduledToolPolicy({
     toolsAllow: params.agentPayload?.toolsAllow,
     scheduledToolPolicy: params.job.scheduledToolPolicy,
@@ -421,6 +415,7 @@ function createCronPromptExecutor(
     const runId = params.cronSession.sessionEntry.sessionId;
     const basePreparedRunAdmission = prepareAgentRunAdmission({
       operationalRunInstance: createOperationalRunInstanceRef(runId),
+      admissionSource: params.admissionSource,
       cfg: params.cfgWithAgentDefaults,
       facts: {
         runId,
