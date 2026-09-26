@@ -16,6 +16,7 @@ import {
   scoreFact,
   sourceTrustToReliability,
   staleDemotionMultiplier,
+  temporalStabilityScore,
   tokenize,
   volatilityMultiplier,
 } from "./scoring.js";
@@ -1341,5 +1342,81 @@ describe("QW-1: rankByScore", () => {
 
   it("returns empty array for empty map", () => {
     expect(rankByScore(new Map())).toEqual([]);
+  });
+});
+
+// QW-3 (2026-09-26): temporal-stability salience prior (ChronoProfiler-inspired).
+// stability = (1 - e^(-ageDays/tau)) / (1 + events * penalty): age-without-
+// supersession discounted by contradiction events; superseded facts score 0.
+describe("QW-3: temporalStabilityScore", () => {
+  const DAY_MS = 86_400_000;
+
+  it("returns 0 for superseded facts", () => {
+    expect(
+      temporalStabilityScore({ ageMs: 90 * DAY_MS, contradictionEvents: 0, superseded: true }),
+    ).toBe(0);
+  });
+
+  it("grows with age-without-supersession and saturates below 1", () => {
+    const young = temporalStabilityScore({ ageMs: DAY_MS, contradictionEvents: 0 });
+    const mature = temporalStabilityScore({ ageMs: 30 * DAY_MS, contradictionEvents: 0 });
+    const ancient = temporalStabilityScore({ ageMs: 3650 * DAY_MS, contradictionEvents: 0 });
+    expect(ancient).toBeGreaterThan(mature);
+    expect(mature).toBeGreaterThan(young);
+    // Math.exp(-121) underflows to exactly 0 → the prior saturates at 1.
+    expect(ancient).toBeLessThanOrEqual(1);
+    expect(mature).toBeCloseTo(1 - Math.exp(-1), 6); // tau=30d default
+  });
+
+  it("zero age is neutral 0 and contradiction events divide the prior", () => {
+    expect(temporalStabilityScore({ ageMs: 0, contradictionEvents: 0 })).toBe(0);
+    const stable = temporalStabilityScore({ ageMs: 300 * DAY_MS, contradictionEvents: 0 });
+    const corrected = temporalStabilityScore({ ageMs: 300 * DAY_MS, contradictionEvents: 1 });
+    const churned = temporalStabilityScore({ ageMs: 300 * DAY_MS, contradictionEvents: 3 });
+    expect(corrected).toBeCloseTo(stable / 2, 6); // penalty 1.0 default
+    expect(churned).toBeCloseTo(stable / 4, 6);
+  });
+
+  it("respects config tau and penalty overrides", () => {
+    const config = {
+      ...DEFAULT_SCORING_CONFIG,
+      stabilityTauDays: 10,
+      stabilityContradictionPenalty: 3,
+    };
+    expect(
+      temporalStabilityScore({ ageMs: 10 * DAY_MS, contradictionEvents: 0, config }),
+    ).toBeCloseTo(1 - Math.exp(-1), 6);
+    expect(
+      temporalStabilityScore({ ageMs: 10 * DAY_MS, contradictionEvents: 1, config }),
+    ).toBeCloseTo((1 - Math.exp(-1)) / 4, 6);
+  });
+});
+
+describe("QW-3: scoreFact temporalStability signal + composite cap", () => {
+  it("defaults to neutral 0 and flows into Signals and composite", () => {
+    const now = Date.now();
+    const fact = {
+      id: "f1",
+      text: "user prefers morning standups",
+      importance: 0.5,
+      createdAt: now,
+      dedupKey: "k:1",
+    };
+    const queryTokens = tokenize("morning standups");
+    const neutral = scoreFact({ queryTokens, fact, now, config: DEFAULT_SCORING_CONFIG });
+    expect(neutral.temporalStability).toBe(0);
+
+    const boosted = scoreFact({
+      queryTokens,
+      fact,
+      now,
+      config: DEFAULT_SCORING_CONFIG,
+      temporalStability: 0.8,
+    });
+    expect(boosted.temporalStability).toBe(0.8);
+    // Composite delta is capped by the small default weight (0.05).
+    const delta =
+      composite(boosted, DEFAULT_SCORING_CONFIG) - composite(neutral, DEFAULT_SCORING_CONFIG);
+    expect(delta).toBeCloseTo(0.8 * 0.05, 6);
   });
 });

@@ -125,6 +125,22 @@ export type ScoringConfig = {
    * corpusSizeBm25Threshold. Default 1.5 (50% boost). Set to 1.0 to disable.
    */
   corpusSizeBm25ScaleFactor?: number;
+  /**
+   * QW-3 (2026-09-26): weight of the temporal-stability salience prior in
+   * the composite score. Intentionally small — stability must not entrench
+   * old facts over corrected ones. Default 0.05.
+   */
+  weightTemporalStability?: number;
+  /**
+   * QW-3: time constant (days) of the saturating age-without-supersession
+   * curve in temporalStabilityScore(). Default 30.
+   */
+  stabilityTauDays?: number;
+  /**
+   * QW-3: each contradiction/supersession event divides the stability prior
+   * by (1 + penalty). Default 1.0 (each event halves the prior).
+   */
+  stabilityContradictionPenalty?: number;
 };
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -154,6 +170,9 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   staleZeroRecallDemotion: 0.5,
   corpusSizeBm25Threshold: 50_000,
   corpusSizeBm25ScaleFactor: 1.5,
+  weightTemporalStability: 0.05,
+  stabilityTauDays: 30,
+  stabilityContradictionPenalty: 1.0,
 };
 
 // ---------------------------------------------------------------------------
@@ -318,6 +337,12 @@ export type Signals = {
    * text that appear in the query. 0 when entity scoring is disabled or
    * no entities are found. */
   entityScore: number;
+  /**
+   * Temporal-stability salience prior (0–1): age-without-supersession
+   * discounted by contradiction events (QW-3, ChronoProfiler-inspired).
+   * 0 when unavailable (neutral).
+   */
+  temporalStability: number;
   /**
    * Polarity multiplier (0–1). Defaults to 1.0 (neutral). For negative-
    * polarity facts, this is set to `config.polarityDemotionFactor` (0.5)
@@ -544,6 +569,13 @@ export function scoreFact(params: {
    * so a low-trust source cannot hide behind a high-certainty extraction.
    */
   sourceTrust?: import("./types.js").SourceTrust;
+  /**
+   * QW-3 (2026-09-26): temporal-stability salience prior (0–1), computed by
+   * the caller via temporalStabilityScore() from age-without-supersession
+   * and contradiction events (typed-fact supersession history). Defaults to
+   * 0 (neutral) when not provided.
+   */
+  temporalStability?: number;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -585,6 +617,7 @@ export function scoreFact(params: {
       params.config.useEntityScoring && params.queryText
         ? entityOverlapScore(params.queryText, params.fact.text)
         : 0,
+    temporalStability: params.temporalStability ?? 0,
     polarityMultiplier:
       params.fact.polarity === "negative" ? params.config.polarityDemotionFactor : 1.0,
   };
@@ -640,6 +673,42 @@ export function staleDemotionMultiplier(params: {
   return factor + (1 - factor) * t;
 }
 
+/**
+ * Temporal-stability salience prior (ChronoProfiler-inspired, QW-3 2026-09-26).
+ *
+ * Stability = age-without-supersession, discounted by contradiction events:
+ *   stability = (1 - e^(-ageDays / tau)) / (1 + events * penalty)
+ *
+ * - The age factor saturates toward 1.0 with time constant
+ *   `stabilityTauDays` (default 30) — a fact that has survived epochs
+ *   un-superseded is presumed stable.
+ * - Each supersession/contradiction event (from the typed-fact history
+ *   trail in longterm-typed.ts) divides the prior by
+ *   (1 + `stabilityContradictionPenalty`) (default 1.0 → each event halves
+ *   it), so stability never entrenches a repeatedly-corrected fact.
+ * - A superseded fact scores 0: its replacement, not it, should rank.
+ *
+ * Output is in [0,1] by construction (the age factor saturates at 1 in
+ * floating point). Feed the result into
+ * `scoreFact({ temporalStability })`; the composite contribution is capped
+ * by the small default weight `weightTemporalStability` (0.05), composing
+ * with (not replacing) the staleDemotionMultiplier family.
+ */
+export function temporalStabilityScore(params: {
+  ageMs: number;
+  contradictionEvents: number;
+  superseded?: boolean;
+  config?: ScoringConfig;
+}): number {
+  if (params.superseded) return 0;
+  const tauDays = params.config?.stabilityTauDays ?? 30;
+  const penalty = params.config?.stabilityContradictionPenalty ?? 1.0;
+  const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
+  const ageFactor = tauDays > 0 ? 1 - Math.exp(-ageDays / tauDays) : 1;
+  const events = Math.max(0, params.contradictionEvents);
+  return ageFactor / (1 + events * penalty);
+}
+
 export function composite(signals: Signals, config: ScoringConfig): number {
   const weighted =
     signals.lexical * config.weightLexical +
@@ -653,7 +722,10 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.reliability * config.weightReliability +
     signals.semanticEntropy * config.weightSemanticEntropy +
     signals.validity * config.weightValidity +
-    signals.entityScore * config.weightEntity;
+    signals.entityScore * config.weightEntity +
+    // QW-3: ?? 0 keeps manually-constructed Signals objects (tests, callers)
+    // NaN-safe when the stability prior is absent.
+    (signals.temporalStability ?? 0) * (config.weightTemporalStability ?? 0.05);
   return weighted * signals.polarityMultiplier;
 }
 

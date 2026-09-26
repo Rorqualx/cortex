@@ -76,6 +76,7 @@ const OPTIMIZABLE_KEYS = [
   "weightReliability",
   "weightSemanticEntropy",
   "weightValidity",
+  "weightTemporalStability",
 ] as const;
 
 type ScoringConfig = Record<(typeof OPTIMIZABLE_KEYS)[number], number>;
@@ -93,6 +94,7 @@ const DEFAULT_WEIGHTS: ScoringConfig = {
   weightReliability: 0.1,
   weightSemanticEntropy: 0.1,
   weightValidity: 0.05,
+  weightTemporalStability: 0.05,
 };
 
 type EvalResult = {
