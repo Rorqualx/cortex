@@ -144,5 +144,6 @@ packageExtensions:
         optional: true
 
 patchedDependencies:
+  "chrome-devtools-mcp@1.8.0": patches/chrome-devtools-mcp@1.8.0.patch
   "matrix-js-sdk@42.3.0": patches/matrix-js-sdk@42.3.0.patch
   vitest@5.0.0: patches/vitest@5.0.0.patch

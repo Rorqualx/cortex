@@ -342,6 +342,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                     message: message as Record<string, unknown>,
                   });
                 },
+                operatorAuthority: admission.operatorAuthority,
                 dashboardReadAdmission,
                 skillWorkshopProposalRevision,
                 skillLibraryAuthoring,

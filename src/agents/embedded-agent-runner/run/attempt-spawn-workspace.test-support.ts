@@ -39,6 +39,7 @@ import {
   initializeModelRegistryRuntime,
 } from "../../sessions/model-registry-runtime.js";
 import type { WorkspaceBootstrapFile } from "../../workspace.js";
+import type { SessionManagerMocks } from "./attempt-spawn-workspace.session-manager-mock.test-support.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 type SubscribeEmbeddedAgentSessionFn =
@@ -70,32 +71,6 @@ function normalizeMockProviderId(providerId?: string): string {
   return normalizeLowercaseStringOrEmpty(providerId);
 }
 
-type SessionManagerMocks = {
-  getSessionTarget: Mock<() => undefined>;
-  getAppendParentId: Mock<() => string | null>;
-  getHeader: UnknownMock;
-  getLeafId: Mock<() => string | null>;
-  getLeafEntry: UnknownMock;
-  getEntry: UnknownMock;
-  getEntries: UnknownMock;
-  getBranch: UnknownMock;
-  getBoundaryCount: UnknownMock;
-  branch: UnknownMock;
-  resetLeaf: UnknownMock;
-  buildSessionContext: Mock<() => { messages: AgentMessage[] }>;
-  appendThinkingLevelChange: UnknownMock;
-  appendModelChange: UnknownMock;
-  appendCustomEntry: UnknownMock;
-  appendMessage: UnknownMock;
-  appendSessionInfo: UnknownMock;
-  appendLabelChange: UnknownMock;
-  flushPendingPersistence: UnknownMock;
-  flushPendingToolResults: UnknownMock;
-  clearPendingToolResults: UnknownMock;
-  reloadPersistedTranscript: UnknownMock;
-  clearNextUserMessagePersistenceSuppression: UnknownMock;
-  removeTrailingEntries: UnknownMock;
-};
 type AttemptSpawnWorkspaceHoisted = {
   spawnSubagentDirectMock: UnknownMock;
   createAgentSessionMock: Mock<(options: CreateAgentSessionOptions) => unknown>;
@@ -288,6 +263,7 @@ const hoisted = vi.hoisted((): AttemptSpawnWorkspaceHoisted => {
   const trajectoryEvents: CapturedTrajectoryEvent[] = [];
   const sessionManager = {
     getSessionTarget: vi.fn(() => undefined),
+    getSessionId: vi.fn(() => "embedded-session"),
     getAppendParentId: vi.fn<() => string | null>(() => null),
     getHeader: vi.fn(() => ({ version: 3 })),
     getLeafId: vi.fn<() => string | null>(() => null),
@@ -1136,6 +1112,7 @@ export function resetEmbeddedAttemptHarness(
   hoisted.embeddedSystemPromptInputs.length = 0;
   hoisted.trajectoryEvents.length = 0;
   hoisted.sessionManager.getSessionTarget.mockReset().mockReturnValue(undefined);
+  hoisted.sessionManager.getSessionId.mockReset().mockReturnValue("embedded-session");
   hoisted.sessionManager.getAppendParentId.mockReset().mockReturnValue(null);
   hoisted.sessionManager.getHeader.mockReset().mockReturnValue({ version: 3 });
   hoisted.sessionManager.getLeafId.mockReset().mockReturnValue(null);
