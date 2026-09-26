@@ -44,6 +44,59 @@ const it = baseIt.extend<{ tmp: string }>({
   },
 });
 
+describe("run-node script", () => {
+  it.for([
+    { args: ["qa", "mantis", "run"], mantis: true },
+    { args: ["--dev", "qa", "mantis", "run"], mantis: true },
+    { args: ["--profile", "ci", "qa", "mantis", "run"], mantis: true },
+    { args: ["--profile=ci", "qa", "mantis", "run"], mantis: true },
+    { args: ["--no-color", "--log-level", "debug", "qa", "mantis", "run"], mantis: true },
+    { args: ["qa", "--profile", "ci", "mantis", "run"], mantis: true },
+    { args: ["--profile", "qa", "mantis", "run"], mantis: false },
+    { args: ["--profile", "ci", "qa", "suite"], mantis: false },
+    { args: ["status", "qa", "mantis", "run"], mantis: false },
+  ])(
+    "grants Mantis lifecycle IPC only to the parsed command: %j",
+    async ({ args, mantis }, { tmp }) => {
+      await setupStampedProject(tmp, { oldPaths: [ROOT_SRC, ROOT_TSCONFIG, ROOT_PACKAGE] });
+      const fakeProcess = Object.assign(createFakeProcess(), { stdin: { isTTY: true } });
+      const child = Object.assign(new EventEmitter(), { kill: vi.fn(() => true) });
+      const { promise: childSpawned, resolve: markChildSpawned } = createDeferred();
+      const spawn = vi.fn((_cmd: string, childArgs: string[], _options: unknown) => {
+        if (!childArgs.includes("openclaw.mjs")) {
+          return createExitedProcess(0);
+        }
+        markChildSpawned();
+        return child;
+      });
+      const outcome = runNodeCommand(tmp, {
+        args,
+        process: fakeProcess,
+        spawn,
+        runRuntimePostBuild: skipRuntimePostBuild,
+      });
+      // Lifecycle listeners attach in the spawn call stack, after async build/postbuild work.
+      await Promise.race([childSpawned, outcome]);
+      try {
+        expect(child.listenerCount("exit")).toBe(1);
+        vi.useFakeTimers();
+        child.emit("message", { type: "openclaw:shutdown-grace", graceMs: 120_000 });
+        fakeProcess.emit("SIGTERM");
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(child.kill.mock.calls).toEqual(mantis ? [["SIGTERM"]] : [["SIGTERM"], ["SIGKILL"]]);
+        if (mantis) {
+          await vi.advanceTimersByTimeAsync(115_000);
+          expect(child.kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]]);
+        }
+      } finally {
+        child.emit("exit", 0, null);
+        await outcome;
+        vi.useRealTimers();
+      }
+      expect(fakeProcess.listenerCount("SIGTERM")).toBe(0);
+    },
+  );
+
 const ROOT_SRC = "src/index.ts";
 const ROOT_TSCONFIG = "tsconfig.json";
 const ROOT_PACKAGE = "package.json";
@@ -481,16 +534,22 @@ async function expectManifestId(tmp: string, relativePath: string, id: string) {
 describe("run-node script", () => {
   it("starts the CLI only after the canonical runtime build completes", async ({ tmp }) => {
     const build = new EventEmitter();
-    const spawn = vi.fn((_cmd: string, args: string[]) =>
-      isTsxScriptArgs(args, "scripts/build-all.mts") ? build : createExitedProcess(0),
-    );
+    const { promise: buildSpawned, resolve: markBuildSpawned } = createDeferred();
+    const spawn = vi.fn((_cmd: string, args: string[]) => {
+      if (!isTsxScriptArgs(args, "scripts/build-all.mts")) {
+        return createExitedProcess(0);
+      }
+      markBuildSpawned();
+      return build;
+    });
     const runRuntimePostBuild = vi.fn();
     const result = runNodeCommand(tmp, {
       spawn,
       env: { OPENCLAW_FORCE_BUILD: "1" },
       runRuntimePostBuild,
     });
-    await vi.waitFor(() => expect(spawn).toHaveBeenCalledOnce());
+    await Promise.race([buildSpawned, result]);
+    expect(spawn).toHaveBeenCalledOnce();
     const lockDir = path.join(tmp, ".artifacts", "run-node-build.lock");
     expect(fsSync.existsSync(lockDir)).toBe(true);
     build.emit("exit", 0, null);
@@ -1384,29 +1443,16 @@ describe("run-node script", () => {
         },
       });
       const child = Object.assign(new EventEmitter(), {
-        kill: vi.fn((signal: string) => {
+        kill: vi.fn((_signal: string) => {
           queueMicrotask(() => child.emit("exit", 0, null));
-          return signal;
+          return true;
         }),
       });
-      const spawn = vi.fn<
-        (
-          cmd: string,
-          args: string[],
-          options: unknown,
-        ) => {
-          kill: (signal?: string) => boolean;
-          on: (event: "exit", cb: (code: number | null, signal: string | null) => void) => void;
-        }
-      >(() => ({
-        kill: (signal) => {
-          child.kill(signal ?? "SIGTERM");
-          return true;
-        },
-        on: (event, cb) => {
-          child.on(event, cb);
-        },
-      }));
+      const { promise: childSpawned, resolve: markChildSpawned } = createDeferred();
+      const spawn = vi.fn((_cmd: string, _args: string[], _options: SpawnOptions) => {
+        markChildSpawned();
+        return child;
+      });
 
       const exitCodePromise = runNodeCommand(tmp, {
         env: { OPENCLAW_FORCE_BUILD: rebuild ? "1" : "0" },
@@ -1415,9 +1461,8 @@ describe("run-node script", () => {
         runRuntimePostBuild: skipRuntimePostBuild,
       });
 
-      await vi.waitFor(() => {
-        expect(spawn).toHaveBeenCalled();
-      });
+      await Promise.race([childSpawned, exitCodePromise]);
+      expect(spawn).toHaveBeenCalled();
       fakeProcess.emit("SIGTERM");
       const exitCode = await exitCodePromise;
 
@@ -1452,26 +1497,11 @@ describe("run-node script", () => {
         kill: vi.fn(),
       });
       const groupSignals: Array<[number, string | number]> = [];
-      const spawn = vi.fn<
-        (
-          cmd: string,
-          args: string[],
-          options: unknown,
-        ) => {
-          kill: (signal?: string) => boolean;
-          on: (event: "exit", cb: (code: number | null, signal: string | null) => void) => void;
-          pid: number;
-        }
-      >(() => ({
-        kill: (signal) => {
-          child.kill(signal ?? "SIGTERM");
-          return true;
-        },
-        on: (event, cb) => {
-          child.on(event, cb);
-        },
-        pid: child.pid,
-      }));
+      const { promise: childSpawned, resolve: markChildSpawned } = createDeferred();
+      const spawn = vi.fn((_cmd: string, _args: string[], _options: SpawnOptions) => {
+        markChildSpawned();
+        return child;
+      });
 
       const exitCodePromise = runNodeCommand(tmp, {
         env: { OPENCLAW_FORCE_BUILD: rebuild ? "1" : "0" },
@@ -1488,9 +1518,8 @@ describe("run-node script", () => {
         runRuntimePostBuild: skipRuntimePostBuild,
       });
 
-      await vi.waitFor(() => {
-        expect(spawn).toHaveBeenCalled();
-      });
+      await Promise.race([childSpawned, exitCodePromise]);
+      expect(spawn).toHaveBeenCalled();
       fakeProcess.emit("SIGTERM");
       const exitCode = await exitCodePromise;
 

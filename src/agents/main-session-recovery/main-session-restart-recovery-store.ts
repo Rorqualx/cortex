@@ -15,7 +15,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { GatewayRecoveryRuntime } from "../../gateway/server-instance-runtime.types.js";
 import { readSessionMessagesAsync } from "../../gateway/session-transcript-readers.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
-import { findDeliveryIntentOwner } from "../../infra/outbound/delivery-queue-storage.js";
+import { findDeliveryIntentOwners } from "../../infra/outbound/delivery-queue-storage.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel-constants.js";
 import {
   getOwedHarnessCompletionTask,
@@ -100,10 +100,10 @@ function applyWebchatRoutingReset(entry: SessionEntry): void {
   entry.restartRecoveryDeliveryRunId = undefined;
 }
 
-function pendingFinalRecoveryAction(
+async function pendingFinalRecoveryAction(
   pending: NonNullable<SessionEntry["pendingFinalDelivery"]>,
   stateDir?: string,
-): "complete" | "defer" | "fail" | "notice" | "retry" {
+): Promise<"complete" | "defer" | "fail" | "notice" | "retry"> {
   const deliveries = pending.deliveries;
   if (!deliveries?.length) {
     return "fail";
@@ -111,7 +111,10 @@ function pendingFinalRecoveryAction(
   if (deliveries.every(({ state }) => state === "delivered" || state === "suppressed")) {
     return "complete";
   }
-  const owners = deliveries.map(({ id }) => findDeliveryIntentOwner(id, stateDir));
+  const owners = await findDeliveryIntentOwners(
+    deliveries.map(({ id }) => id),
+    stateDir,
+  );
   if (owners.some((owner) => owner?.status === "pending" || owner?.settlementPending)) {
     return "defer";
   }
@@ -481,8 +484,11 @@ export async function recoverStore(params: {
     };
 
     const pendingAction = entry.pendingFinalDelivery
-      ? pendingFinalRecoveryAction(entry.pendingFinalDelivery, params.stateDir)
+      ? await pendingFinalRecoveryAction(entry.pendingFinalDelivery, params.stateDir)
       : undefined;
+    if (stopped()) {
+      return result;
+    }
     if (pendingAction === "defer") {
       // The exact durable queue owner is still responsible for settlement.
       // Dispatching a second recovery turn would duplicate that delivery.

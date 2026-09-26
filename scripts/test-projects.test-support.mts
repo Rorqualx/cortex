@@ -1379,8 +1379,18 @@ function resolveExplicitTestPrefixTargets(targetArg: string, cwd: string) {
   return targets.length > 0 ? targets.toSorted((left, right) => left.localeCompare(right)) : null;
 }
 
+function isNormalizedLiteralPath(value: string) {
+  return /^[\w.-]+(?:\/[\w.-]+)*$/u.test(value) && !/(?:^|\/)\.{1,2}(?:\/|$)/u.test(value);
+}
+
 function includePatternMatchesAnyFile(pattern: string, files: string[]) {
-  return files.some((file) => file === pattern || path.matchesGlob(file, pattern));
+  const literalPattern = isNormalizedLiteralPath(pattern);
+  return files.some(
+    (file) =>
+      file === pattern ||
+      // Keep Node's separator, dot-segment, and platform handling for other paths.
+      ((!literalPattern || !isNormalizedLiteralPath(file)) && path.matchesGlob(file, pattern)),
+  );
 }
 
 function resolveExplicitSourceTestTargets(
@@ -3339,9 +3349,13 @@ function resolveToolingTestTargets(changedPath: string, cwd = process.cwd()) {
   const exactTargets = exactOwners ? resolveToolingTestOwnerTargets(...exactOwners) : [];
   const semanticTargets = resolveSemanticToolingTargets(implementationPath);
   const facts = getChangedPathFacts(changedPath);
+  const toolingTestSource =
+    changedPath.startsWith("test/scripts/") &&
+    TOOLING_IMPORTABLE_FILE_EXTENSIONS.some((ext) => implementationPath.endsWith(ext));
   const hasToolingOwner =
     exactTargets.length > 0 ||
     semanticTargets.length > 0 ||
+    toolingTestSource ||
     facts.surface === "rootTooling" ||
     changedPath === "Dockerfile" ||
     changedPath === ".crabbox.yaml" ||
@@ -3389,9 +3403,13 @@ function resolveToolingTestTargets(changedPath: string, cwd = process.cwd()) {
     TOOLING_IMPORTABLE_FILE_EXTENSIONS.some((ext) => implementationPath.endsWith(ext))
       ? resolveAffectedTestsFromTargetedImportScan(implementationPath, cwd, {
           tooling: true,
-          direct: true,
+          direct: !toolingTestSource,
         })
       : [];
+  if (toolingTestSource && importGraphResult === null) {
+    // Keep caller fallbacks; a partial literal reference cannot prove an opaque frontier.
+    return null;
+  }
   const importGraphTargets = importGraphResult ?? [];
   const referenceTargets =
     githubYaml || (semanticTargets.length === 0 && !hasDirectOwner)
@@ -3481,7 +3499,7 @@ function resolvePackageFixtureTargets(changedPath: string, cwd: string) {
 }
 
 function resolveAppcastTargets(changedPath: string) {
-  return changedPath === "appcast.xml" ? APPCAST_TEST_TARGETS : null;
+  return /^appcast(?:-(?:arm64|x86_64))?\.xml$/u.test(changedPath) ? APPCAST_TEST_TARGETS : null;
 }
 
 function resolveKovaSchemaTestTargets(changedPath: string) {

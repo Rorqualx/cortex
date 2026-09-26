@@ -1,6 +1,6 @@
 // Defines sandbox execution configuration types.
 import type { z } from "zod";
-import type { SecretInput } from "./types.secrets.js";
+import type { AgentSandboxSchema } from "./zod-schema.agent-runtime.js";
 import type {
   SandboxBrowserSchema,
   SandboxDockerSchema,
@@ -16,6 +16,10 @@ export type SandboxBrowserSettings = NonNullable<z.input<typeof SandboxBrowserSc
 
 export type SandboxPruneSettings = NonNullable<z.input<typeof SandboxPruneSchema>>;
 
+type AgentSandboxConfig = NonNullable<z.input<typeof AgentSandboxSchema>>;
+
+export type SandboxSshSettings = NonNullable<AgentSandboxConfig["ssh"]>;
+
 /** OS-level sandbox settings (Seatbelt on macOS, bwrap on Linux).
  *
  * Applied to host exec when Docker/SSH sandbox is not used.
@@ -30,18 +34,4 @@ export type OsSandboxSettings = {
   extraProtectedMetadata?: string[];
   /** Network policy override. Default: "allow-loopback". */
   network?: "deny" | "allow" | "allow-loopback";
-};
-
-export type SandboxSshSettings = {
-  target?: string;
-  command?: string;
-  workspaceRoot?: string;
-  strictHostKeyChecking?: boolean;
-  updateHostKeys?: boolean;
-  identityFile?: string;
-  certificateFile?: string;
-  knownHostsFile?: string;
-  identityData?: SecretInput;
-  certificateData?: SecretInput;
-  knownHostsData?: SecretInput;
 };

@@ -36,6 +36,8 @@ import {
   sanitizeAssistantFinalAnswerText,
   sanitizeAssistantVisibleText,
 } from "../../../shared/text/assistant-visible-text.js";
+import { resolveRawAssistantAnswerText } from "../../../shared/assistant-answer-text.js";
+import { trimTextPreservingCode } from "../../../shared/text/text-projection.js";
 import { classifyOAuthRefreshFailure } from "../../auth-profiles/oauth-refresh-failure.js";
 import {
   formatAssistantErrorText,
@@ -454,7 +456,7 @@ export function buildEmbeddedRunPayloads(params: {
   return replyItems
     .map((item) => {
       const payload: ReplyPayload = copyReplyPayloadMetadata(item, {
-        text: normalizeOptionalString(item.text),
+        text: trimTextPreservingCode(item.text ?? "") || undefined,
       });
       const mediaUrl = item.mediaUrl ?? item.media?.[0];
       if (mediaUrl) {

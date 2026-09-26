@@ -23,6 +23,10 @@ import { noteStaleDistCandidateError } from "../../../infra/stale-dist-restart.j
 import { runOutsideGatewayRootWorkAdmission } from "../../../process/gateway-work-admission.js";
 import { createLazyPromise } from "../../../shared/lazy-runtime.js";
 import { createExpectedProfileBinding } from "../../expected-profile.js";
+import {
+  GATEWAY_OPERATOR_ACCESS_DENIED_MESSAGE,
+  hasCurrentGatewayOperatorAccess,
+} from "../../operator-access-policy.js";
 import type { GatewayRequestEntry } from "../../server-request-entry.js";
 import { classifyGatewayStaleInstall } from "../../stale-install.js";
 import { formatForLog, logWs } from "../../ws-log.js";
@@ -110,6 +114,14 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
     const context = buildRequestContext();
     const expectedProfileBinding = createExpectedProfileBinding(req.expectedProfileId, client);
     const hasCurrentClientAuthority = () => {
+      if (!hasCurrentGatewayOperatorAccess(client.internal?.operatorAccessAuthority)) {
+        invalidateGatewayPolicyClient(client, {
+          reason: "operator-access-closed",
+          code: 4001,
+          message: GATEWAY_OPERATOR_ACCESS_DENIED_MESSAGE,
+          close: () => close(4001, GATEWAY_OPERATOR_ACCESS_DENIED_MESSAGE),
+        });
+      }
       if (closeInvalidatedClient(client, req.method)) {
         return false;
       }
@@ -241,6 +253,12 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
           client.connect.client.id === GATEWAY_CLIENT_IDS.CLI &&
           client.connect.client.mode === GATEWAY_CLIENT_MODES.CLI);
       const requestController = cancelOnDisconnect ? new AbortController() : undefined;
+      const accessSignal = client.internal?.operatorAccessAuthority?.signal;
+      const signal = requestController
+        ? accessSignal
+          ? AbortSignal.any([requestController.signal, accessSignal])
+          : requestController.signal
+        : accessSignal;
       const cancelRequest = () => requestController?.abort();
       if (requestController) {
         client.socket.once("close", cancelRequest);
@@ -300,7 +318,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
         // Waiting never grants authority. Ordinary requests may outlive their socket;
         // only request-owned cancellation and current authority fence their start.
         if (
-          requestController?.signal.aborted ||
+          signal?.aborted ||
           !hasCurrentClientAuthority() ||
           !hasCurrentRuntimeAuthority()
         ) {
@@ -320,7 +338,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
               context,
               ...(admission ? { admission } : {}),
               requestEntry: entry,
-              ...(requestController ? { signal: requestController.signal } : {}),
+              ...(signal ? { signal } : {}),
             },
             diagnostics,
           ),
@@ -340,7 +358,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
         );
       } finally {
         policyResponse?.finish();
-        diagnostics?.finish(requestController?.signal.aborted ? "cancelled" : dispatchOutcome);
+        diagnostics?.finish(signal?.aborted ? "cancelled" : dispatchOutcome);
         entry?.release();
         if (requestController) {
           client.socket.off("close", cancelRequest);
