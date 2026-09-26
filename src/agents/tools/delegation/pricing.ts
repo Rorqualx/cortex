@@ -16,7 +16,19 @@
 
 import type { Provider } from "./providers/types.js";
 
-type ModelPrice = { input: number; cachedInput?: number; output: number };
+// QW-5 (2026-09-26): advisory prefill-cost class. Models whose cached-input
+// rate is dramatically cheaper than base input (≈50× for the DeepSeek V4 pair)
+// make prefill-heavy lanes (transcript ingestion, bulk compaction) far cheaper
+// to run. Purely advisory until the delegation router consumes it — the
+// routing-policy half is queued for guidance (analysis 2026-09-26 QW-5).
+export type PrefillCostClass = "cheap-prefill" | "standard";
+
+type ModelPrice = {
+  input: number;
+  cachedInput?: number;
+  output: number;
+  prefillCostClass?: PrefillCostClass;
+};
 
 // Composite key: `${provider}:${model.toLowerCase()}`. Keep model names in
 // sync with the per-provider enums in schemas.ts. A missing entry returns
@@ -40,8 +52,23 @@ const PRICES: Record<string, ModelPrice> = {
   // === DeepSeek ===
   // deepseek-v4-pro is at 75% promotional discount through 2026-05-31 15:59 UTC.
   // Full rates after that: input $1.74 / cachedInput $0.0145 / output $3.48.
-  "deepseek:deepseek-v4-flash": { input: 0.14, cachedInput: 0.0028, output: 0.28 },
-  "deepseek:deepseek-v4-pro": { input: 0.435, cachedInput: 0.003625, output: 0.87 },
+  // QW-5: cachedInput ≈ 1/50 of input on both V4 tiers → tagged cheap-prefill.
+  "deepseek:deepseek-v4-flash": {
+    input: 0.14,
+    cachedInput: 0.0028,
+    output: 0.28,
+    prefillCostClass: "cheap-prefill",
+  },
+  "deepseek:deepseek-v4-pro": {
+    input: 0.435,
+    cachedInput: 0.003625,
+    output: 0.87,
+    prefillCostClass: "cheap-prefill",
+  },
+  // Radar (QW-5, 2026-09-26): deepseek-v4.1-flash — 1M ctx, CED 8B-prefill,
+  // 890 B/token KV — is the next onboarding candidate for live discovery +
+  // the delegation provider set. NOT priced here until API-verified rates
+  // exist (a guessed entry would corrupt estimateCostUsd footers).
 
   // === Kimi (Moonshot) ===
   "kimi:kimi-k2.6": { input: 0.95, cachedInput: 0.16, output: 4.0 },
@@ -85,6 +112,21 @@ export function estimateCostUsd(
   const inputCost = (miss * price.input + hit * cachedRate) / 1_000_000;
   const outputCost = (outputTokens * price.output) / 1_000_000;
   return inputCost + outputCost;
+}
+
+/**
+ * QW-5 (2026-09-26): advisory prefill-cost class for a (provider, model) pair.
+ * Returns the tag when the model is priced — "cheap-prefill" for models whose
+ * cached-input economics favor prefill-heavy lanes, "standard" otherwise —
+ * and undefined for unknown models so callers treat unclassified as no-signal.
+ */
+export function prefillCostClassFor(
+  provider: Provider,
+  model: string,
+): PrefillCostClass | undefined {
+  const price = PRICES[`${provider}:${model.toLowerCase()}`];
+  if (!price) return undefined;
+  return price.prefillCostClass ?? "standard";
 }
 
 /**
