@@ -6,9 +6,9 @@ import {
   createInlineCodeState,
 } from "../../packages/markdown-core/src/code-spans.js";
 import type { FenceScanState } from "../../packages/markdown-core/src/fences.js";
+import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import type { ReplyDirectiveParseResult } from "../auto-reply/reply/reply-directives.js";
 import { createStreamingDirectiveAccumulator } from "../auto-reply/reply/streaming-directives.js";
-import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { splitMediaFromOutput } from "../media/parse.js";
 import { findFinalTagMatches } from "../shared/text/final-tags.js";
@@ -410,7 +410,8 @@ export function createStreamRendering({
             }),
           )
     ).trimEnd();
-    if (!blockReplyText && !options?.finalReply) {
+    const hasPendingAudioDirective = state.pendingAssistantReplyDirectives?.audioAsVoice === true;
+    if (!blockReplyText && !options?.finalReply && !hasPendingAudioDirective) {
       return;
     }
     const markBlockReplyTextHandled = () => {

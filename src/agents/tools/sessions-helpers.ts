@@ -1,3 +1,8 @@
+/**
+ * Shared session-tool data shapes and classification helpers.
+ *
+ * Keeps list/send/status tools aligned on rows, visibility context, and compact kind/channel labels.
+ */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { Type } from "typebox";
 import type {
@@ -12,11 +17,6 @@ import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import { stringEnum } from "../schema/typebox.js";
-/**
- * Shared session-tool data shapes and classification helpers.
- *
- * Keeps list/send/status tools aligned on rows, visibility context, and compact kind/channel labels.
- */
 import {
   createAgentToAgentPolicy,
   resolveEffectiveSessionToolsVisibility,
@@ -46,20 +46,6 @@ export {
   sanitizeTextContent,
   stripToolMessages,
 } from "./chat-history-text.js";
-import {
-  normalizeOptionalString,
-  type FastMode,
-} from "@openclaw/normalization-core/string-coerce";
-import { Type } from "typebox";
-import type { SessionRow } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
-import {
-  SessionCreatedActorSchema,
-  SessionRowSchema,
-} from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
-import { getRuntimeConfig } from "../../config/config.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { FastModeSource } from "../../shared/fast-mode.js";
-import { stringEnum } from "../schema/typebox.js";
 
 /** Coarse session category used by session list/status tools. */
 export const SESSION_LIST_KINDS = ["main", "group", "cron", "hook", "node", "other"] as const;
@@ -87,7 +73,6 @@ export type SessionListDeliveryContext = {
   accountId?: string;
   threadId?: string | number;
 };
-
 
 const SessionInventoryActorSchema = Type.Omit(SessionCreatedActorSchema, ["avatarUrl"]);
 

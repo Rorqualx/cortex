@@ -1,4 +1,4 @@
-import type { AgentRunSessionTarget } from "./run-session-target.js";
+import type { AgentRunSessionTarget } from "./run-session-target.types.js";
 /**
  * Late-bound steer hooks for the subagent registry.
  *
