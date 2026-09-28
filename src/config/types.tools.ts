@@ -2,9 +2,8 @@
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import type { DoomLoopGuardConfig } from "../agents/doom-loop-guard.js";
 import type { z } from "zod";
-import type { ChatType } from "../channels/chat-type.js";
 import type { SafeBinProfileFixture } from "../infra/exec-safe-bin-policy.js";
-import type { AgentElevatedAllowFromConfig, SessionSendPolicyAction } from "./types.base.js";
+import type { AgentElevatedAllowFromConfig } from "./types.base.js";
 import type { ConfiguredProviderRequest } from "./types.provider-request.js";
 import type { SecretInput } from "./types.secrets.js";
 import type {
@@ -13,33 +12,14 @@ import type {
   ToolPolicySchema,
 } from "./zod-schema.agent-runtime.js";
 type SchemaToolsConfig = NonNullable<z.input<typeof ToolsSchema>>;
+// The web security preprocess erases input inference; parsed output retains its optional authoring shape.
+type ParsedToolsConfig = NonNullable<z.output<typeof ToolsSchema>>;
 type SchemaMediaConfig = NonNullable<SchemaToolsConfig["media"]>;
 type SchemaAudioConfig = NonNullable<SchemaMediaConfig["audio"]>;
 
 export type { MemorySearchConfig } from "./types.memory.js";
 
-export type MediaUnderstandingScopeMatch = {
-  /** Channel/provider id to match before running media or link understanding. */
-  channel?: string;
-  /** Direct/group classification from the channel runtime, when available. */
-  chatType?: ChatType;
-  /** Attachment or link key prefix used for narrow per-source routing. */
-  keyPrefix?: string;
-};
-
-export type MediaUnderstandingScopeRule = {
-  /** Policy applied when match criteria select this scope rule. */
-  action: SessionSendPolicyAction;
-  /** Optional match filter; omitted match behaves as a catch-all rule. */
-  match?: MediaUnderstandingScopeMatch;
-};
-
-export type MediaUnderstandingScopeConfig = {
-  /** Fallback action when no scope rule matches. */
-  default?: SessionSendPolicyAction;
-  /** Ordered allow/block rules; first matching rule wins. */
-  rules?: MediaUnderstandingScopeRule[];
-};
+export type MediaUnderstandingScopeConfig = NonNullable<SchemaAudioConfig["scope"]>;
 
 export type MediaUnderstandingCapability = "image" | "audio" | "video";
 
@@ -230,60 +210,11 @@ export type ToolsConfig = Omit<
   exec?: ExecToolConfig;
   elevated?: AgentToolsConfig["elevated"];
   links?: LinkToolsConfig;
+  web?: NonNullable<ParsedToolsConfig["web"]>;
   /** Bash-command discipline guard (ast-grep/background/read/git rules). On by default. */
   bashDiscipline?: BashDisciplineConfig;
   /** Runtime loop detection for repetitive/stuck tool-call patterns. */
   loopDetection?: ToolLoopDetectionConfig;
-  web?: {
-    search?: {
-      /** Enable managed web_search and optional Codex-native web search. */
-      enabled?: boolean;
-      /** Search provider id. */
-      provider?: string;
-      /** Shared API key slot used by providers that do not need nested config. */
-      apiKey?: SecretInput;
-      /** Default search results count (1-10). */
-      maxResults?: number;
-      /** Timeout in seconds for search requests. */
-      timeoutSeconds?: number;
-      /** Cache TTL in minutes for search results. */
-      cacheTtlMinutes?: number;
-      /** Optional native Codex web search for Codex-capable models. */
-      openaiCodex?: {
-        /** Enable native Codex web search for eligible models. */
-        enabled?: boolean;
-        /** Use cached or live external web access. Default: "cached". */
-        mode?: "cached" | "live";
-        /** Optional allowlist of domains passed to the native Codex tool. */
-        allowedDomains?: string[];
-        /** Optional Codex native search context size hint. */
-        contextSize?: "low" | "medium" | "high";
-        /** Optional approximate user location passed to the native Codex tool. */
-        userLocation?: {
-          country?: string;
-          region?: string;
-          city?: string;
-          timezone?: string;
-        };
-      };
-    } & Record<string, unknown>;
-    /** X (formerly Twitter) search tool configuration using xAI Grok. */
-    x_search?: {
-      /** Enable X search tool (default: true when xAI auth is available via plugin config or XAI_API_KEY). */
-      enabled?: boolean;
-      /** Model id to use for X search. */
-      model?: string;
-      /** Keep inline citations in the xAI response payload when available. */
-      inlineCitations?: boolean;
-      /** Optional max search/tool turns for xAI to use internally. */
-      maxTurns?: number;
-      /** Timeout in seconds for X search requests. */
-      timeoutSeconds?: number;
-      /** Cache TTL in minutes for X search results. */
-      cacheTtlMinutes?: number;
-    };
-    fetch?: NonNullable<SchemaToolsConfig["web"]>["fetch"];
-  };
 };
 
 export type MessageToolsConfig = NonNullable<SchemaToolsConfig["message"]>;

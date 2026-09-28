@@ -1,23 +1,18 @@
 // Gateway node event tests protect how node clients surface inbound commands,
 // delivery metadata, pairing state, and outbound payload lifecycle events.
+import "./server-node-events.test-support.js";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { PROTOCOL_VERSION } from "../../packages/gateway-protocol/src/index.js";
 import { createDeferred } from "../../test/helpers/promise.js";
 import type { DurableMessageBatchSendResult } from "../channels/message/runtime.js";
-import { createOutboundSendDeps } from "../cli/outbound-send-deps.js";
-import type { OpenClawConfig } from "../config/config.js";
-import type { SessionEntry } from "../config/sessions/types.js";
+import type { CliDeps } from "../cli/deps.js";
 import { getCurrentActiveNodeContext, setActiveNodeContext } from "../infra/active-node-context.js";
 import {
   prepareGatewaySuspend,
   resumeGatewaySuspend,
 } from "../infra/gateway-suspend-coordinator.js";
-import { buildOutboundSessionContext } from "../infra/outbound/session-context.js";
-import { resolveOutboundTarget } from "../infra/outbound/targets.js";
-import { normalizeLegacySessionEntryDelivery } from "../infra/state-migrations.legacy-session-store.js";
-import { withSystemEventOwner } from "../infra/system-event-ownership.js";
 import {
   getActiveGatewayRootWorkCount,
   resetGatewayWorkAdmission,
@@ -158,39 +153,25 @@ const runtimeMocks = vi.hoisted(() => ({
 
 import type { CliDeps } from "../cli/deps.js";
 import type { HealthSummary } from "./health/types.js";
-import type { NodeEvent, NodeEventContext } from "./server-node-events-types.js";
-import { handleNodeEvent as handleNodeEventWithDependencies } from "./server-node-events.js";
+import { NodeRegistry } from "./node-registry.js";
+import type { NodeEventContext } from "./server-node-events-types.js";
+import { handleNodeEvent } from "./server-node-events.js";
+import type { GatewayWsClient } from "./server/ws-types.js";
 
-type ServerNodeEventDependencies = NonNullable<
-  Parameters<typeof handleNodeEventWithDependencies>[4]
->;
-
-const serverNodeEventDependencies: ServerNodeEventDependencies = {
-  ...runtimeMocks,
-  buildOutboundSessionContext,
-  createOutboundSendDeps,
-  defaultRuntime,
-  normalizeRpcAttachmentsToChatAttachments,
-  resolveOutboundTarget,
-  withSystemEventOwner,
-  sendDurableMessageBatchCore: runtimeMocks.sendDurableMessageBatch,
-  updatePairedDevicePresence: updatePairedDevicePresenceMock,
-};
+const {
+  buildSessionLookup,
+  loadOrCreateProcessDeviceIdentityMock,
+  parseMessageWithAttachmentsMock,
+  persistInboundImagesForTranscriptMock,
+  runtimeMocks,
+  updatePairedDevicePresenceMock,
+} = await import("./server-node-events.test-support.js");
 
 const sentDurableMessageBatchResult: Extract<DurableMessageBatchSendResult, { status: "sent" }> = {
   status: "sent",
   results: [],
   receipt: { platformMessageIds: [], parts: [], sentAt: 1 },
 };
-
-function handleNodeEvent(
-  ctx: NodeEventContext,
-  nodeId: string,
-  event: NodeEvent,
-  options?: Parameters<typeof handleNodeEventWithDependencies>[3],
-) {
-  return handleNodeEventWithDependencies(ctx, nodeId, event, options, serverNodeEventDependencies);
-}
 
 function waitForFast<T>(
   callback: () => T | Promise<T>,

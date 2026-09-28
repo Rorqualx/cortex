@@ -19,6 +19,7 @@ import {
 } from "./agent-tools.before-tool-call.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
 import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
+import { createHostedGatewayTools } from "./openclaw-tools.gateway.js";
 import {
   isToolExplicitlyAllowedByFactoryPolicy,
   mergeFactoryPolicyList,
@@ -49,10 +50,12 @@ import {
 } from "./tools/conversation-tools.js";
 import { createCronTool } from "./tools/cron-tool.js";
 import { createDashboardTool } from "./tools/dashboard-tool.js";
+import { createDecisionTool } from "./tools/decision-tool.js";
 import { createDelegationTools } from "./tools/delegation/tools.js";
 import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
 import { createGatewayToolCallerWrapper } from "./tools/gateway-caller-context.js";
-import { createGatewayTool } from "./tools/gateway-tool.js";
+import { createGitHubIdentityStatusTool } from "./tools/github-identity-status-tool.js";
+import { createGitHubPublishTool } from "./tools/github-publish-tool.js";
 import {
   createCreateGoalTool,
   createGetGoalTool,
@@ -68,10 +71,8 @@ import { createMessageTool } from "./tools/message-tool-execution.js";
 import { createMobileUiTool } from "./tools/mobile-ui-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
-import { createOpenClawDelegateToolsForRun } from "./tools/openclaw-delegate-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
-import { createPluginsTool } from "./tools/plugins-tool.js";
-import { createPortalTool } from "./tools/portal-tool.js";
+import { createAvailablePortalTools } from "./tools/portal-tool.js";
 import { createProgressCardTool } from "./tools/progress-card-tool.js";
 import { createScreenTool } from "./tools/screen-tool.js";
 import { createSecretsTool } from "./tools/secrets-tool.js";
@@ -443,7 +444,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
                   runId: options?.runId,
                   approvalReviewerDeviceIds: options?.approvalReviewerDeviceIds,
                 }),
-                createPortalTool(),
+                ...createAvailablePortalTools(options),
               ]),
         ]),
     ...(!embedded && sessionKey && options?.taskSuggestionDeliveryMode === "gateway"
@@ -469,13 +470,17 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
             presenterContext: widgetPresentation.context,
           }),
         ]),
-    ...collectPresentOpenClawTools([heartbeatTool]),
+    ...collectPresentOpenClawTools([heartbeatTool, createDecisionTool(sessionAgentId, options)]),
     createTtsTool({
       agentChannel: options?.agentChannel,
       config: resolvedConfig,
       agentId: sessionAgentId,
       agentAccountId: options?.agentAccountId,
     }),
+    ...(options?.githubPublicationAvailable !== undefined
+      ? [createGitHubIdentityStatusTool()]
+      : []),
+    ...(options?.githubPublicationAvailable === true ? [createGitHubPublishTool()] : []),
     ...(includeTranscriptsTool
       ? [createTranscriptsTool({ agentId: sessionAgentId, config: resolvedConfig })]
       : []),
@@ -486,17 +491,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
       workspaceDir,
       agentSessionKey: options?.agentSessionKey,
     }),
-    ...(embedded
-      ? []
-      : [
-          createGatewayTool({
-            allowConfigReads: options?.gatewayConfigReadAllowed === true,
-            senderIsOwner: options?.senderIsOwner,
-            requesterSenderId: options?.requesterSenderId,
-          }),
-          createPluginsTool(),
-          ...createOpenClawDelegateToolsForRun({ ...options, sessionAgentId }),
-        ]),
+    ...createHostedGatewayTools(embedded, sessionAgentId, options),
     createAgentsListTool({
       agentSessionKey: options?.agentSessionKey,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,

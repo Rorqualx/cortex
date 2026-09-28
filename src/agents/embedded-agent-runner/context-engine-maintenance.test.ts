@@ -1,7 +1,6 @@
 // Coverage for deferred context-engine maintenance and transcript rewrite hooks.
 
 import { expectDefined } from "@openclaw/normalization-core";
-import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { resolveDefaultSessionStorePath } from "../../config/sessions/paths.js";
@@ -11,7 +10,7 @@ import {
   registerContextEngineForOwner,
   resolveLogicalTurnContextEngines,
 } from "../../context-engine/registry.js";
-import type { ContextEngine, ContextEngineRuntimeContext } from "../../context-engine/types.js";
+import type { ContextEngineRuntimeContext } from "../../context-engine/types.js";
 import { peekSystemEvents, resetSystemEventsForTest } from "../../infra/system-events.js";
 import {
   enqueueCommandInLane,
@@ -21,19 +20,26 @@ import {
 import * as commandQueueModule from "../../process/command-queue.js";
 import { resetCommandQueueStateForTest } from "../../process/command-queue.test-support.js";
 import { onSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
-import { createQueuedTaskRunCore as createQueuedTaskRunOrNull } from "../../tasks/task-executor.js";
 import { getTaskFlowById } from "../../tasks/task-flow-registry.js";
 import { captureTaskDeliveryWork } from "../../tasks/task-registry-delivery.test-support.js";
 import { getTaskById, listTasksForOwnerKey } from "../../tasks/task-registry.js";
-import type { TaskRecord } from "../../tasks/task-registry.types.js";
 import {
   resetTaskFlowRegistryForTests,
   resetTaskRegistryForTests,
-  setTaskRegistryDeliveryRuntimeForTests,
 } from "../../tasks/task-runtime.test-helpers.js";
 import { withStateDirEnv } from "../../test-helpers/state-dir-env.js";
 import { SessionManager } from "../sessions/session-manager.js";
 import { castAgentMessage } from "../test-helpers/agent-message-fixtures.js";
+import {
+  createBackgroundMaintenanceEngine,
+  createQueuedTaskRunCore,
+  expectRecordFields,
+  expectSystemEventContaining,
+  firstMaintainParams,
+  flushAsyncWork,
+  requireRecord,
+  waitForAssertion,
+} from "./context-engine-maintenance.fixtures.test-support.js";
 import { resolveSessionLane } from "./lanes.js";
 
 const rewriteTranscriptEntriesInSessionManagerMock = vi.fn((_params?: unknown) => ({
@@ -56,78 +62,10 @@ let createDeferredTurnMaintenanceAbortSignal: typeof import("./context-engine-ma
 let resetDeferredTurnMaintenanceStateForTest: typeof import("./context-engine-maintenance.test-support.js").resetDeferredTurnMaintenanceStateForTest;
 let waitForDeferredTurnMaintenanceForSession: typeof import("./context-engine-maintenance.js").waitForDeferredTurnMaintenanceForSession;
 
-function createQueuedTaskRunCore(
-  params: Parameters<typeof createQueuedTaskRunOrNull>[0],
-): TaskRecord {
-  // Task creation can legally return null for invalid inputs; tests here always
-  // need a concrete queued task record.
-  const task = createQueuedTaskRunOrNull(params);
-  if (!task) {
-    throw new Error("expected queued task creation to succeed");
-  }
-  return task;
-}
 let runContextEngineMaintenance: typeof import("./context-engine-maintenance.js").runContextEngineMaintenance;
 // Keep this literal aligned with the production module; tests use dynamic
 // import reloading, so they cannot safely import the constant directly.
 const TURN_MAINTENANCE_TASK_KIND = "context_engine_turn_maintenance";
-
-function createBackgroundMaintenanceEngine(
-  maintain: NonNullable<ContextEngine["maintain"]>,
-  id = "test",
-): ContextEngine {
-  return {
-    info: { id, name: "Test Engine", turnMaintenanceMode: "background" },
-    ingest: async () => ({ ingested: true }),
-    assemble: async ({ messages }) => ({ messages, estimatedTokens: 0 }),
-    compact: async () => ({ ok: true, compacted: false }),
-    maintain,
-  };
-}
-
-async function flushAsyncWork(times = 4): Promise<void> {
-  for (let index = 0; index < times; index += 1) {
-    await Promise.resolve();
-  }
-}
-
-async function waitForAssertion(
-  assertion: () => void,
-  timeoutMs = 2_000,
-  stepMs = 5,
-): Promise<void> {
-  // Timed polling lets fake-timer tasks advance through queue and delivery
-  // microtasks without binding assertions to a specific internal await count.
-  const startedAt = Date.now();
-  for (;;) {
-    try {
-      assertion();
-      return;
-    } catch (error) {
-      if (Date.now() - startedAt >= timeoutMs) {
-        throw error;
-      }
-      await vi.advanceTimersByTimeAsync(stepMs);
-      await flushAsyncWork();
-    }
-  }
-}
-
-const requireRecord = createRequireRecord("record", "expected-label");
-
-function firstMaintainParams(maintain: { mock: { calls: unknown[][] } }): Record<string, unknown> {
-  return requireRecord(maintain.mock.calls[0]?.[0], "maintain params");
-}
-
-function expectRecordFields(record: Record<string, unknown>, expected: Record<string, unknown>) {
-  for (const [key, value] of Object.entries(expected)) {
-    expect(record[key]).toBe(value);
-  }
-}
-
-function expectSystemEventContaining(sessionKey: string, text: string) {
-  expect(peekSystemEvents(sessionKey).join("\n")).toContain(text);
-}
 
 vi.mock("./context-engine-capabilities.js", () => ({
   resolveContextEngineCapabilities: () => ({ llm: undefined }),
@@ -575,12 +513,7 @@ describe("runContextEngineMaintenance", () => {
           currentTokenCount: 1536,
         });
 
-        await waitForAssertion(() =>
-          expect(
-            getTaskById(expectDefined(queuedTasks[0], "queuedTasks[0] test invariant").taskId)
-              ?.status,
-          ).toBe("succeeded"),
-        );
+        await waitForDeferredTurnMaintenanceForSession(sessionKey);
         const completedTask = getTaskById(
           expectDefined(queuedTasks[0], "queuedTasks[0] test invariant").taskId,
         );
@@ -649,14 +582,13 @@ describe("runContextEngineMaintenance", () => {
           throw new Error("Expected maintenance release callback to be initialized");
         }
         releaseMaintenance();
-        await waitForAssertion(() => expect(maintain).toHaveBeenCalledTimes(2));
-        await waitForAssertion(() =>
-          expect(
-            listTasksForOwnerKey(sessionKey)
-              .filter((task) => task.taskKind === TURN_MAINTENANCE_TASK_KIND)
-              .map((task) => task.status),
-          ).toEqual(["succeeded", "succeeded"]),
-        );
+        await waitForDeferredTurnMaintenanceForSession(sessionKey);
+        expect(maintain).toHaveBeenCalledTimes(2);
+        expect(
+          listTasksForOwnerKey(sessionKey)
+            .filter((task) => task.taskKind === TURN_MAINTENANCE_TASK_KIND)
+            .map((task) => task.status),
+        ).toEqual(["succeeded", "succeeded"]);
       } finally {
         vi.useRealTimers();
       }
@@ -674,6 +606,7 @@ describe("runContextEngineMaintenance", () => {
         const sessionKey = "agent:main:session-rerun";
         let releaseFirstMaintenance: (() => void) | undefined;
         let releaseSecondMaintenance: (() => void) | undefined;
+        const secondMaintenanceStarted = createDeferred();
         let maintenanceCalls = 0;
         const maintain = vi.fn(async () => {
           maintenanceCalls += 1;
@@ -683,6 +616,7 @@ describe("runContextEngineMaintenance", () => {
             });
           }
           if (maintenanceCalls === 2) {
+            secondMaintenanceStarted.resolve();
             await new Promise<void>((resolve) => {
               releaseSecondMaintenance = resolve;
             });
@@ -733,8 +667,8 @@ describe("runContextEngineMaintenance", () => {
           throw new Error("Expected first maintenance release callback to be initialized");
         }
         releaseFirstMaintenance();
-        await waitForAssertion(() => expect(maintain).toHaveBeenCalledTimes(2));
-        await Promise.resolve();
+        await Promise.race([secondMaintenanceStarted.promise, secondDeferred]);
+        expect(maintain).toHaveBeenCalledTimes(2);
         expect(secondDeferredSettled).toBe(false);
 
         if (!releaseSecondMaintenance) {
@@ -1272,7 +1206,8 @@ describe("runContextEngineMaintenance", () => {
           reason: "turn",
         });
 
-        await waitForAssertion(() => expect(maintain).toHaveBeenCalledTimes(1));
+        await waitForDeferredTurnMaintenanceForSession(sessionKey);
+        expect(maintain).toHaveBeenCalledTimes(1);
 
         const tasks = listTasksForOwnerKey(sessionKey).filter(
           (task) => task.taskKind === TURN_MAINTENANCE_TASK_KIND,
@@ -1387,13 +1322,12 @@ describe("runContextEngineMaintenance", () => {
           expect(events).toEqual(["foreground-1-start", "maintenance-start"]),
         );
         expect(maintain).toHaveBeenCalledTimes(1);
-        await waitForAssertion(() =>
-          expect(
-            listTasksForOwnerKey(sessionKey).find(
-              (task) => task.taskKind === TURN_MAINTENANCE_TASK_KIND,
-            )?.status,
-          ).toBe("succeeded"),
-        );
+        await waitForDeferredTurnMaintenanceForSession(sessionKey);
+        expect(
+          listTasksForOwnerKey(sessionKey).find(
+            (task) => task.taskKind === TURN_MAINTENANCE_TASK_KIND,
+          )?.status,
+        ).toBe("succeeded");
 
         if (!releaseFirstForeground) {
           throw new Error("Expected first foreground release callback to be initialized");
@@ -1487,20 +1421,17 @@ describe("runContextEngineMaintenance", () => {
           throw new Error("Expected maintenance rewrite release callback to be initialized");
         }
         allowRewrite();
-
-        await waitForAssertion(() =>
-          expect(events).toEqual([
-            "maintenance-start",
-            "foreground-before-read-checkpoint",
-            "maintenance-before-rewrite",
-            "rewrite",
-            "maintenance-after-rewrite",
-            "foreground-read",
-          ]),
-        );
+        await foregroundTurn;
+        expect(events).toEqual([
+          "maintenance-start",
+          "foreground-before-read-checkpoint",
+          "maintenance-before-rewrite",
+          "rewrite",
+          "maintenance-after-rewrite",
+          "foreground-read",
+        ]);
 
         expect(maintain).toHaveBeenCalledTimes(1);
-        await foregroundTurn;
       } finally {
         vi.useRealTimers();
       }
@@ -1516,9 +1447,10 @@ describe("runContextEngineMaintenance", () => {
         resetTaskFlowRegistryForTests({ persist: false });
         resetSystemEventsForTest();
         const sendMessageMock = vi.fn();
-        setTaskRegistryDeliveryRuntimeForTests({
+        vi.doMock("../../tasks/task-registry-delivery-runtime.js", () => ({
           sendMessage: sendMessageMock,
-        });
+          prepareTaskControlUiSessionUrl: async () => () => undefined,
+        }));
 
         const sessionKey = "agent:main:session-fast";
         const maintain = vi.fn(async () => ({
@@ -1543,15 +1475,9 @@ describe("runContextEngineMaintenance", () => {
           (task) => task.taskKind === TURN_MAINTENANCE_TASK_KIND,
         );
         expect(tasks).toHaveLength(1);
-        await waitForAssertion(() =>
-          expect(
-            getTaskById(expectDefined(tasks[0], "tasks[0] test invariant").taskId)?.status,
-          ).toBe("succeeded"),
-        );
-        const task = requireRecord(
-          getTaskById(expectDefined(tasks[0], "tasks[0] test invariant").taskId),
-          "maintenance task",
-        );
+        const taskId = expectDefined(tasks[0], "tasks[0] test invariant").taskId;
+        await waitForDeferredTurnMaintenanceForSession(sessionKey);
+        const task = requireRecord(getTaskById(taskId), "maintenance task");
         expectRecordFields(task, {
           status: "succeeded",
           notifyPolicy: "silent",
@@ -1559,6 +1485,7 @@ describe("runContextEngineMaintenance", () => {
         });
         expect(task.parentFlowId).toBeUndefined();
       } finally {
+        vi.doUnmock("../../tasks/task-registry-delivery-runtime.js");
         vi.useRealTimers();
       }
     });

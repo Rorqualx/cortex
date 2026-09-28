@@ -12,6 +12,7 @@ import { waitForChildClose, waitForDead, waitForPidFile } from "../helpers/proce
 import { createDeferred, withTestTimeout } from "../helpers/promise.js";
 import { createTempDirTracker, useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 import { createToolingVitestConfig } from "../vitest/vitest.tooling.config.ts";
+import { createControlledWorkerCompiler } from "./vitest-worker-artifacts.test-support.js";
 
 const commands = vi.hoisted(() => ({ prepare: vi.fn(), prepareE2e: vi.fn(), reader: vi.fn() }));
 vi.mock("../../scripts/lib/managed-child-process.mts", async (importOriginal) => ({
@@ -107,6 +108,8 @@ describe("CLI runtime admission", () => {
       [
         "--config",
         "test/vitest/vitest.gateway-server.config.ts",
+        "--exclude",
+        "server.acp-native-model.product.test.ts",
         "--exclude",
         "server-sidecar-retention.test.ts",
         "--exclude",
@@ -313,6 +316,11 @@ syncFixtureBuiltinExports();\n`,
             const readersFile = path.join(root, "readers");
             const builder = path.join(root, "build.mjs");
             const preload = path.join(root, "preload.mjs");
+            const workerCompiler = createControlledWorkerCompiler(
+              root,
+              { ...process.env, OPENCLAW_EXTENSION_BATCH_PARALLEL: "2" },
+              process.versions.bun ? "bun" : "node",
+            );
             fs.writeFileSync(
               builder,
               `import fs from 'node:fs';
@@ -344,7 +352,7 @@ syncFixtureBuiltinExports();\n`,
               ["--import", preload, path.resolve(script), ...args],
               {
                 cwd: _name === "single" ? path.resolve("extensions/qa-lab") : process.cwd(),
-                env: { ...process.env, OPENCLAW_EXTENSION_BATCH_PARALLEL: "2" },
+                env: workerCompiler.env,
                 stdio: ["pipe", "pipe", "pipe"],
               },
             );
@@ -381,6 +389,12 @@ syncFixtureBuiltinExports();\n`,
                 `outcome=${outcome}`,
               ).toHaveLength(1);
               await waitForDead(buildPid, 5_000);
+              if (_name === "root config" && outcome === 0) {
+                const compilations = workerCompiler.read();
+                expect(compilations).toHaveLength(1);
+                await waitForDead(compilations[0]!.pid, 5_000);
+                expect(fs.existsSync(compilations[0]!.directory)).toBe(false);
+              }
             } finally {
               if (child.exitCode === null && child.signalCode === null) {
                 child.kill("SIGKILL");
@@ -554,6 +568,12 @@ describe("full-suite timing metadata", () => {
 });
 
 describe("cache lease completion", () => {
+  beforeEach(() => {
+    // The enclosing CI test worker owns its PATH; these fixtures exercise a new scheduler.
+    vi.stubEnv("OPENCLAW_VITEST_FS_MODULE_CACHE_ROOT", "");
+    vi.stubEnv("OPENCLAW_VITEST_FS_MODULE_CACHE_PATH", "");
+  });
+
   it.each([
     { platform: "linux", phase: "preflight" },
     { platform: "linux", phase: "retry" },
@@ -619,7 +639,7 @@ describe("cache lease completion", () => {
     async ({ platform, concurrency }) => {
       vi.spyOn(process, "platform", "get").mockReturnValue(platform);
       const cacheRoot = tempDirs.make("cache-policy-");
-      vi.stubEnv("OPENCLAW_VITEST_FS_MODULE_CACHE_PATH", cacheRoot);
+      vi.stubEnv("OPENCLAW_VITEST_FS_MODULE_CACHE_ROOT", cacheRoot);
       vi.stubEnv("OPENCLAW_TEST_PROJECTS_PARALLEL", String(concurrency));
       vi.stubEnv("OPENCLAW_VITEST_NO_OUTPUT_RETRY", "1");
       const planner = await import("../../scripts/test-projects.test-support.mts");
@@ -687,12 +707,11 @@ describe("cache lease completion", () => {
       try {
         await withTestTimeout(started.promise, 5_000, "preflight and peer admission");
         expect(new Set(paths).size).toBe(concurrency);
-        if (concurrency === 2) {
-          for (const cache of paths) {
-            expect(path.relative(cacheRoot, cache).startsWith(`slots${path.sep}`)).toBe(
-              platform !== "win32",
-            );
-          }
+        for (const cache of paths) {
+          const relative = path.relative(cacheRoot, cache);
+          expect(relative).not.toBe("");
+          expect(path.isAbsolute(relative)).toBe(false);
+          expect(relative.split(path.sep)).not.toContain("..");
         }
         firstPreflight.resolve(joined);
         await withTestTimeout(retryStarted.promise, 5_000, "retry preflight admission");

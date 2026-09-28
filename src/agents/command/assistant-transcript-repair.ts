@@ -78,6 +78,7 @@ export async function persistAssistantTranscriptRepairRecord(params: {
   };
   try {
     await persistAgentSession({
+      agentId: context.sessionAgentId,
       sessionStore: context.sessionStore,
       sessionKey: context.sessionKey,
       storePath: context.storePath,
@@ -168,6 +169,7 @@ export async function repairPendingAssistantTranscriptTurns(params: {
   }
   try {
     await persistAgentSession({
+      agentId: context.sessionAgentId,
       sessionStore: context.sessionStore,
       sessionKey: context.sessionKey,
       storePath: context.storePath,

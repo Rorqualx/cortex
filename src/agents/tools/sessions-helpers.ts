@@ -1,3 +1,17 @@
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { Type } from "typebox";
+import type {
+  SessionRow,
+  SessionRunStatus,
+} from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+import {
+  SessionCreatedActorSchema,
+  SessionRowSchema,
+} from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+import { getRuntimeConfig } from "../../config/config.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { DeliveryContext } from "../../utils/delivery-context.types.js";
+import { stringEnum } from "../schema/typebox.js";
 /**
  * Shared session-tool data shapes and classification helpers.
  *
@@ -74,8 +88,6 @@ export type SessionListDeliveryContext = {
   threadId?: string | number;
 };
 
-/** Compact run status shown by session tools. */
-export type SessionRunStatus = "queued" | "running" | "done" | "failed" | "killed" | "timeout";
 
 const SessionInventoryActorSchema = Type.Omit(SessionCreatedActorSchema, ["avatarUrl"]);
 
@@ -143,30 +155,9 @@ export type GatewaySessionListRow = Omit<
     accountId?: string;
   };
   category?: string;
-  deliveryContext?: SessionListDeliveryContext;
-  stateVersion?: number;
-  startedAt?: number;
-  endedAt?: number;
-  runtimeMs?: number;
-  childSessions?: string[];
-  thinkingLevel?: string;
-  fastMode?: FastMode;
-  effectiveFastMode?: FastMode;
-  effectiveFastModeSource?: FastModeSource;
-  fastAutoOnSeconds?: number;
-  verboseLevel?: string;
-  reasoningLevel?: string;
-  elevatedLevel?: string;
-  responseUsage?: string;
-  systemSent?: boolean;
+  deliveryContext?: DeliveryContext;
   abortedLastRun?: boolean;
-  sendPolicy?: string;
   lastChannel?: string;
-  lastTo?: string;
-  lastAccountId?: string;
-  lastThreadId?: string | number;
-  transcriptPath?: string;
-  messages?: unknown[];
 };
 
 /** Normalized session row returned by session list-style tools. */

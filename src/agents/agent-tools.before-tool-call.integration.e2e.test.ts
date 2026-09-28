@@ -50,6 +50,14 @@ import {
   resetAdjustedParamsByToolCallIdForTests,
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
+import {
+  adjustedParamsByToolCallId,
+  buildAdjustedParamsKey,
+  consumeTrackedToolExecutionStarted,
+  resetAdjustedParamsByToolCallIdForTests,
+  structuredReplaySafeToolCallIds,
+} from "./agent-tools.before-tool-call.state.js";
+import { runWithToolExecutionValidation } from "./agent-tools.execution-validation.js";
 import { normalizeToolParameters } from "./agent-tools.schema.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
 import { markCodeModeControlTool } from "./code-mode-control-tools.js";
@@ -207,6 +215,72 @@ describe("before_tool_call hook integration", () => {
       undefined,
       extensionContext,
     );
+    expect(consumeTrackedToolExecutionStarted("call-1")).toBeUndefined();
+  });
+
+  it("validates final execution arguments before starting the tool", async () => {
+    beforeToolCallHook = installBeforeToolCallHook({ enabled: false });
+    const execute = vi.fn().mockResolvedValue({ content: [], details: { ok: true } });
+    const tool = wrapToolWithBeforeToolCallHook(asAgentTool({ name: "Read", execute }));
+    const validate = vi.fn(() => {
+      throw new Error("invalid projected arguments");
+    });
+    await expect(
+      runWithToolExecutionValidation("call-validation", validate, () =>
+        tool.execute("call-validation", { path: 47 }),
+      ),
+    ).rejects.toThrow("invalid projected arguments");
+
+    expect(validate).toHaveBeenCalledWith({ path: 47 });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("records structured replay trust only for concrete core-owned tools", async () => {
+    beforeToolCallHook = installBeforeToolCallHook({ enabled: false });
+    const execute = vi.fn().mockResolvedValue({ content: [], details: { ok: true } });
+    const coreTool = wrapToolWithBeforeToolCallHook(asAgentTool({ name: "search", execute }), {
+      runId: "run-core",
+    });
+    const pluginSource = asAgentTool({ name: "search", execute });
+    setPluginToolMeta(pluginSource, { pluginId: "example", optional: false });
+    const pluginTool = wrapToolWithBeforeToolCallHook(pluginSource, {
+      runId: "run-plugin",
+    });
+
+    const [coreDefinition] = toToolDefinitions([coreTool], { runId: "run-core" });
+    const [pluginDefinition] = toToolDefinitions([pluginTool], { runId: "run-plugin" });
+    const extensionContext = {} as ExtensionContext;
+    await coreDefinition?.execute(
+      "call-core",
+      { query: "core" },
+      undefined,
+      undefined,
+      extensionContext,
+    );
+    await pluginDefinition?.execute(
+      "call-plugin",
+      { query: "plugin" },
+      undefined,
+      undefined,
+      extensionContext,
+    );
+
+    expect(
+      beforeToolCallTesting.structuredReplaySafeToolCallIds.has(
+        beforeToolCallTesting.buildAdjustedParamsKey({
+          runId: "run-core",
+          toolCallId: "call-core",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      beforeToolCallTesting.structuredReplaySafeToolCallIds.has(
+        beforeToolCallTesting.buildAdjustedParamsKey({
+          runId: "run-plugin",
+          toolCallId: "call-plugin",
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("allows hook to modify parameters", async () => {

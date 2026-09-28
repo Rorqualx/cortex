@@ -3260,6 +3260,10 @@
     "target": "CI 运行器类型"
   },
   {
+    "source": "CI routing costs",
+    "target": "CI 路由成本"
+  },
+  {
     "source": "CI capacity and shard weights",
     "target": "CI 容量与分片权重"
   },
@@ -3894,6 +3898,10 @@
   {
     "source": "Remote and hosted browsers",
     "target": "远程与托管浏览器"
+  },
+  {
+    "source": "Lightweight browsers",
+    "target": "轻量级浏览器"
   },
   {
     "source": "Browser security",

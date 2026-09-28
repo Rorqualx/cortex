@@ -9,6 +9,7 @@ import {
   readLedger,
   sessionActivityRegistry as sessionAwarenessRegistry,
 } from "../../session-awareness/index.js";
+import { resolveStateContentionPresentation } from "../../sessions/session-run-error-presentation.js";
 import type { UserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { captureAgentJobSession, setGatewayDedupeEntry } from "../agent-turn/agent-job.js";
 import { ExpectedProfileMismatchError } from "../expected-profile.js";
@@ -44,6 +45,7 @@ export function formatReturnedAgentErrors(messages: string[]): string | undefine
 type PendingDispatchLifecycleError = {
   endedAt: number;
   error: string;
+  errorKind?: "state_contention";
   sessionId: string;
   startedAt: number;
 };
@@ -56,6 +58,7 @@ function formatChatSendError(error: unknown): string {
     );
   }
   return (
+    resolveStateContentionPresentation(error)?.errorMessage ??
     renderAgentHarnessPreflightUserMessage(error) ??
     renderFailoverCodeUserCopy(describeFailoverError(error).code) ??
     String(error)
@@ -96,6 +99,7 @@ export async function handleChatSendSetupError(params: {
     return;
   }
   const errorMessage = formatChatSendError(params.error);
+  const errorKind = resolveStateContentionPresentation(params.error)?.errorKind;
   const failureDisposition = classifyAcceptedChatSendFailure({
     error: params.error,
     phase: "pre-ack",
@@ -104,6 +108,7 @@ export async function handleChatSendSetupError(params: {
     const terminalized = await params
       .terminalizeRestartSafeAdmission({
         error: errorMessage,
+        errorKind,
         retryable: shouldRetainAcceptedChatSendRetryIdentity(failureDisposition),
         status: "failed",
       })
@@ -155,6 +160,7 @@ export async function handleChatSendSetupError(params: {
       sessionKey,
       agentId,
       errorMessage,
+      errorKind,
     });
   }
 }
@@ -201,6 +207,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
 
   const handleError = async (err: unknown) => {
     const errorMessage = formatChatSendError(err);
+    const errorKind = resolveStateContentionPresentation(err)?.errorKind;
     const failureDisposition =
       params.classifyFailure?.(err) ??
       classifyAcceptedChatSendFailure({ error: err, phase: "post-ack" });
@@ -278,6 +285,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
     if (restartSafeAdmission && !agentTerminalPersistenceOwnedAtDispatchReject) {
       restartSafeDispatchFailureTerminalized = await terminalizeRestartSafeAdmission({
         error: errorMessage,
+        errorKind,
         retryable: shouldRetainAcceptedChatSendRetryIdentity(failureDisposition),
         status: "failed",
       }).catch((terminalizeError: unknown) => {
@@ -311,6 +319,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
       pendingDispatchLifecycleError = {
         endedAt: Date.now(),
         error: errorMessage,
+        errorKind,
         sessionId: activeRunAbort.entry?.sessionId ?? backingSessionId ?? clientRunId,
         startedAt: activeRunAbort.entry?.startedAtMs ?? now,
       };
@@ -342,6 +351,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
             sessionKey,
             agentId,
             errorMessage,
+            errorKind,
           });
         }
       };
@@ -433,6 +443,7 @@ export function createChatSendDispatchErrorLifecycle(params: {
                 startedAt: dispatchError.startedAt,
                 endedAt: dispatchError.endedAt,
                 error: dispatchError.error,
+                errorKind: dispatchError.errorKind,
               },
             },
           });

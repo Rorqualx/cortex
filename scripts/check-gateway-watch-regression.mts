@@ -10,6 +10,7 @@ import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { stripLeadingPackageManagerSeparator } from "./lib/arg-utils.mts";
+import { reportLimitViolations, type LimitViolation } from "./lib/check-limits.mts";
 import { readProcessTreeCpuMs } from "./lib/gateway-bench-probes.ts";
 import {
   BUILD_STAMP_FILE,
@@ -1013,7 +1014,7 @@ export function collectGatewayWatchFindings(params: {
   watchBuildReason: string | null;
   watchResult: WatchFindingResult;
   watchTriggeredBuild: boolean;
-}): { failures: string[]; warnings: string[] } {
+}): { failures: string[]; warnings: string[]; limitViolations: LimitViolation[] } {
   const {
     distRuntimeByteGrowth,
     distRuntimeFileGrowth,
@@ -1025,6 +1026,7 @@ export function collectGatewayWatchFindings(params: {
   } = params;
   const failures: string[] = [];
   const warnings: string[] = [];
+  const limitViolations: LimitViolation[] = [];
   if (watchResult.spawnError) {
     failures.push(`gateway:watch failed to start: ${watchResult.spawnError}`);
   }
@@ -1076,16 +1078,18 @@ export function collectGatewayWatchFindings(params: {
         failures.push("failed to collect idle CPU timing from the ready gateway:watch window");
       }
     } else if (cpuMs > options.cpuFailMs) {
-      failures.push(
-        `LOUD ALARM: gateway:watch used ${cpuMs}ms CPU in ${options.windowMs}ms window, above loud-alarm threshold ${options.cpuFailMs}ms`,
-      );
+      limitViolations.push({
+        file: "scripts/check-gateway-watch-regression.mts",
+        title: "Gateway watch CPU budget",
+        message: `gateway:watch used ${cpuMs}ms CPU in ${options.windowMs}ms window, above threshold ${options.cpuFailMs}ms`,
+      });
     } else if (cpuMs > options.cpuWarnMs) {
       warnings.push(
         `gateway:watch used ${cpuMs}ms CPU in ${options.windowMs}ms window, above target ${options.cpuWarnMs}ms`,
       );
     }
   }
-  return { failures, warnings };
+  return { failures, warnings, limitViolations };
 }
 
 export function shouldReportDuplicateDistRuntimeRegression(failures: string[]): boolean {
@@ -1224,7 +1228,7 @@ async function main() {
 
   console.log(JSON.stringify(summary, null, 2));
 
-  const { failures, warnings } = collectGatewayWatchFindings({
+  const { failures, warnings, limitViolations } = collectGatewayWatchFindings({
     distRuntimeByteGrowth,
     distRuntimeFileGrowth,
     removedPaths: summary.removedPaths,
@@ -1238,7 +1242,8 @@ async function main() {
     warn(message);
   }
 
-  if (failures.length > 0) {
+  const limitsFailed = reportLimitViolations(limitViolations);
+  if (failures.length > 0 || limitsFailed) {
     for (const message of failures) {
       fail(message);
     }

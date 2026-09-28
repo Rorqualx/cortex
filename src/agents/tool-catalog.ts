@@ -69,6 +69,13 @@ const CORE_TOOL_SECTION_ORDER: Array<{ id: string; label: string }> = [
 
 const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   {
+    id: "decision_evaluate",
+    description: "Evaluate explicit evidence with the agent's decision model",
+    sectionId: "agents",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "ls",
     description: "List directory entries",
     sectionId: "fs",
@@ -165,6 +172,13 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
       "Read-only summary of the workspace memory directory: recent dreaming reports, L3 snapshot files, report counts, and salient topics",
     sectionId: "memory",
     profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "personal_instructions",
+    description: "Edit the requesting user’s personal instructions",
+    sectionId: "memory",
+    profiles: ["coding", "messaging"],
     includeInOpenClawGroup: true,
   },
   {
@@ -691,20 +705,31 @@ export function resolveCoreToolProfilePolicy(profile?: string): ToolProfilePolic
 }
 
 /** Lists core tools grouped into UI sections. */
-export function listCoreToolSections(params?: { swarmEnabled?: boolean }): CoreToolSection[] {
+export function listCoreToolSections(params?: {
+  swarmEnabled?: boolean;
+  githubPublicationAvailable?: boolean;
+  personalInstructionsEnabled?: boolean;
+}): CoreToolSection[] {
   // Callers resolve the swarm gate and pass the fact in; resolving config here
   // would couple this ui-shared module to the server graph.
   const swarmEnabled = params?.swarmEnabled === true;
   return CORE_TOOL_SECTIONS.map((section) => ({
     id: section.id,
     label: section.label,
-    tools: CORE_TOOL_DEFINITIONS.filter(
-      (tool) => tool.sectionId === section.id && (tool.id !== "agents_wait" || swarmEnabled),
-    ).map((tool) => ({
-      id: tool.id,
-      label: tool.id,
-      description: tool.description,
-    })),
+    tools: section.tools
+      .filter(
+        (tool) =>
+          (tool.id !== "agents_wait" || swarmEnabled) &&
+          (tool.id !== "personal_instructions" || params?.personalInstructionsEnabled === true) &&
+          (tool.id !== "github_identity_status" ||
+            params?.githubPublicationAvailable !== undefined) &&
+          (tool.id !== "github_publish" || params?.githubPublicationAvailable === true),
+      )
+      .map((tool) => ({
+        id: tool.id,
+        label: tool.id,
+        description: tool.description,
+      })),
   })).filter((section) => section.tools.length > 0);
 }
 

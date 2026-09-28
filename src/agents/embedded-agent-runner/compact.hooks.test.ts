@@ -1661,7 +1661,7 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     );
   });
 
-  it("maps logical Ultra to max before compaction provider hooks", async () => {
+  it("maps logical Ultra to supported effort before compaction provider hooks", async () => {
     const resolveExtraParams = vi.fn(() => undefined);
     await compactTesting.prepareCompactionSessionAgent({
       session: {
@@ -1689,7 +1689,7 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     });
 
     expect(resolveExtraParams).toHaveBeenCalledWith(
-      expect.objectContaining({ thinkingLevel: "max" }),
+      expect.objectContaining({ thinkingLevel: "high" }),
     );
     expect(applyExtraParamsToAgentMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -1697,7 +1697,7 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
       "openai",
       "gpt-5.6-sol",
       undefined,
-      "max",
+      "high",
       "main",
       join(TEST_WORKSPACE_DIR, "workspace"),
       expect.anything(),
@@ -2569,7 +2569,7 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
       createAgentSessionMock.mock.calls.map(
         (call) => (call[0] as { thinkingLevel?: string }).thinkingLevel,
       ),
-    ).toEqual(["ultra", "high"]);
+    ).toEqual(["max", "high"]);
     expect(params.thinkLevel).toBe("ultra");
   });
 
@@ -2795,16 +2795,16 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     expect(resolveAgentHarnessPolicyMock).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "openai", modelId: "fake-model" }),
     );
-    expect(selectAgentHarnessForPreparedModelProvidersMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        modelProviders: expect.arrayContaining([
-          expect.objectContaining({
-            preparedAuth: expect.objectContaining({ source: "profile" }),
-            runtimePolicy: expect.objectContaining({ compatibleIds: ["openclaw", "codex"] }),
+    expectRecordFields(mockCallArg(selectAgentHarnessForPreparedModelProvidersMock), {
+      modelProviders: expect.arrayContaining([
+        expect.objectContaining({
+          preparedAuth: expect.objectContaining({ source: "profile" }),
+          runtimePolicy: expect.objectContaining({
+            compatibleIds: ["openclaw", "codex", "agentsapi"],
           }),
-        ]),
-      }),
-    );
+        }),
+      ]),
+    });
     expect(mockCallArg(resolveModelMock)).toBe("openai");
     expectRecordFields(mockCallArg(resolveContextWindowInfoMock), {
       provider: "openai",

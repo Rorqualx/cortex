@@ -6,7 +6,6 @@ import { randomUUID } from "node:crypto";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import { publishTranscriptUpdate } from "../../config/sessions/session-accessor.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
   hasSameContextEngineInstance,
   isContextEngineAbortRejection,
@@ -16,8 +15,6 @@ import type {
   ContextEngine,
   ContextEngineMaintenanceResult,
   ContextEngineRuntimeContext,
-  ContextEngineRuntimeSettings,
-  ContextEngineSessionTarget,
 } from "../../context-engine/types.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
@@ -29,12 +26,15 @@ import { getGatewayRestartDrainSignal } from "../../process/gateway-work-admissi
 import { createDeferredCore } from "../../shared/deferred.js";
 import {
   CONTEXT_ENGINE_TURN_MAINTENANCE_TASK_KIND as TURN_MAINTENANCE_TASK_KIND,
+  isContextEngineMaintenanceTaskOwnerActive,
   registerContextEngineMaintenanceTaskOwner,
 } from "../../tasks/context-engine-maintenance-task-owner.js";
 import {
-  completeTaskRunByRunId,
+  completeTaskRunByRunIdAsync,
+  failTaskRunByRunIdAsync,
+} from "../../tasks/detached-task-runtime.async.js";
+import {
   createQueuedTaskRun,
-  failTaskRunByRunId,
   recordTaskRunProgressByRunId,
   startTaskRunByRunId,
 } from "../../tasks/detached-task-runtime.js";
@@ -57,6 +57,7 @@ import {
   runContextEngineMaintenanceWork,
   type ContextEngineMaintenanceResources,
 } from "./context-engine-maintenance-work.js";
+import type { ContextEngineMaintenanceParams } from "./context-engine-maintenance.types.js";
 import { log } from "./logger.js";
 import { rewriteTranscriptEntriesInSessionManager } from "./transcript-rewrite.js";
 import { resolveRuntimeTranscriptReadTarget } from "./transcript-runtime-state.js";
@@ -66,30 +67,6 @@ const TURN_MAINTENANCE_LONG_WAIT_MS = 10_000;
 const DEFERRED_TURN_MAINTENANCE_ABORT_STATE_KEY = Symbol.for(
   "openclaw.contextEngineTurnMaintenanceAbortState",
 );
-type SessionManagerRewriteLock = <T>(operation: () => Promise<T> | T) => Promise<T>;
-
-type ContextEngineMaintenanceParams = {
-  contextEngine?: ContextEngine;
-  sessionId: string;
-  sessionKey?: string;
-  sessionTarget?: ContextEngineSessionTarget;
-  sessionFile: string;
-  reason: "bootstrap" | "compaction" | "turn";
-  sessionManager?: Parameters<typeof rewriteTranscriptEntriesInSessionManager>[0]["sessionManager"];
-  withSessionManagerRewriteLock?: SessionManagerRewriteLock;
-  assertActive?: () => void;
-  abortSignal?: AbortSignal;
-  runtimeContext?: ContextEngineRuntimeContext;
-  runtimeSettings?: ContextEngineRuntimeSettings;
-  agentId?: string;
-  contextEngineAgentId?: string;
-  executionMode?: "foreground" | "background";
-  onDeferredMaintenance?: (promise: Promise<void>) => void;
-  onDeferredMaintenanceFailure?: (error: unknown) => void;
-  config?: OpenClawConfig;
-  disposeDeferredContextEngineAfterMaintenance?: boolean;
-  factoryResources?: ContextEngineMaintenanceResources;
-};
 
 type DeferredTurnMaintenanceScheduleParams = ContextEngineMaintenanceParams & {
   contextEngine: ContextEngine;
@@ -356,10 +333,10 @@ async function runDeferredTurnMaintenanceWorker(
   params: DeferredTurnMaintenanceScheduleParams & {
     abortSignal: AbortSignal;
     runId: string;
+    assertTaskSettlementCurrent: () => void;
   },
 ): Promise<void> {
   let surfacedUserNotice = false;
-  let longRunningTimer: ReturnType<typeof setTimeout> | undefined;
   const taskRun = { runId: params.runId, runtime: "acp" as const, sessionKey: params.sessionKey };
   const makeTaskVisible = (notifyPolicy: "done_only" | "state_changes") =>
     buildTurnMaintenanceTaskDescriptor({
@@ -378,7 +355,7 @@ async function runDeferredTurnMaintenanceWorker(
       progressSummary: "Running deferred maintenance.",
       eventSummary: "Starting deferred maintenance.",
     });
-    longRunningTimer = setTimeout(() => {
+    const longRunningTimer = setTimeout(() => {
       try {
         makeTaskVisible("state_changes");
         surfacedUserNotice = true;
@@ -397,19 +374,22 @@ async function runDeferredTurnMaintenanceWorker(
     const result = await executeContextEngineMaintenance({
       ...params,
       executionMode: "background",
-    });
+    }).finally(() => clearTimeout(longRunningTimer));
     const endedAt = Date.now();
-    completeTaskRunByRunId({
-      ...taskRun,
-      endedAt,
-      lastEventAt: endedAt,
-      progressSummary: result?.changed
-        ? "Deferred maintenance completed with transcript changes."
-        : "Deferred maintenance completed.",
-      terminalSummary: result?.changed
-        ? `Rewrote ${result.rewrittenEntries} transcript entr${result.rewrittenEntries === 1 ? "y" : "ies"} and freed ${result.bytesFreed} bytes.`
-        : "No transcript changes were needed.",
-    });
+    await completeTaskRunByRunIdAsync(
+      {
+        ...taskRun,
+        endedAt,
+        lastEventAt: endedAt,
+        progressSummary: result?.changed
+          ? "Deferred maintenance completed with transcript changes."
+          : "Deferred maintenance completed.",
+        terminalSummary: result?.changed
+          ? `Rewrote ${result.rewrittenEntries} transcript entr${result.rewrittenEntries === 1 ? "y" : "ies"} and freed ${result.bytesFreed} bytes.`
+          : "No transcript changes were needed.",
+      },
+      params.assertActive,
+    );
   } catch (err) {
     if (isContextEngineAbortRejection(err, params.abortSignal)) {
       const task = findTaskByRunIdForOwner({
@@ -435,19 +415,18 @@ async function runDeferredTurnMaintenanceWorker(
     if (!surfacedUserNotice) {
       makeTaskVisible("done_only");
     }
-    failTaskRunByRunId({
-      ...taskRun,
-      endedAt,
-      lastEventAt: endedAt,
-      error: reason,
-      progressSummary: "Deferred maintenance failed.",
-      terminalSummary: reason,
-    });
+    await failTaskRunByRunIdAsync(
+      {
+        ...taskRun,
+        endedAt,
+        lastEventAt: endedAt,
+        error: reason,
+        progressSummary: "Deferred maintenance failed.",
+        terminalSummary: reason,
+      },
+      params.assertTaskSettlementCurrent,
+    );
     log.warn(`deferred context engine maintenance failed: ${reason}`);
-  } finally {
-    if (longRunningTimer) {
-      clearTimeout(longRunningTimer);
-    }
   }
 }
 
@@ -633,7 +612,8 @@ function scheduleDeferredTurnMaintenance(
           `taskId=${task.taskId} sessionKey=${sessionKey} lane=${lane}`,
       );
       // Durable rows need a process owner before the engine is admitted to its lane.
-      releaseProcessOwner = registerContextEngineMaintenanceTaskOwner(task.taskId);
+      const taskId = task.taskId;
+      releaseProcessOwner = registerContextEngineMaintenanceTaskOwner(taskId);
       const runId = task.runId!;
       await enqueueCommandInLane(lane, () =>
         params.runInContext(() =>
@@ -646,6 +626,15 @@ function scheduleDeferredTurnMaintenance(
                   assertActive: () => {
                     maintenance.assertCurrent();
                     params.assertActive?.();
+                  },
+                  assertTaskSettlementCurrent: () => {
+                    // Shutdown stops execution, but this retained owner still owes failure settlement.
+                    if (
+                      activeDeferredTurnMaintenanceRuns.get(sessionKey) !== state ||
+                      !isContextEngineMaintenanceTaskOwnerActive(taskId)
+                    ) {
+                      throw new Error("Deferred maintenance task settlement owner is closed");
+                    }
                   },
                   sessionKey,
                   runId,

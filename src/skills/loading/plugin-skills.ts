@@ -205,7 +205,11 @@ export function resolvePluginSkillDetails(
 export async function readPluginSkill(
   record: Pick<PluginManifestRecord, "id" | "origin" | "rootDir" | "skills" | "version">,
   name: string,
+  selection?: { path?: string; version?: string },
 ) {
+  if (selection?.version !== undefined && selection.version !== record.version) {
+    throw new Error("Installed plugin version changed. Reopen the skill preview.");
+  }
   const matches = resolvePluginSkillRecords(record).filter(({ skill }) => skill.name === name);
   if (matches.length !== 1) {
     throw new Error(matches.length ? "Plugin skill name is ambiguous." : "Plugin skill not found.");
@@ -220,6 +224,7 @@ export async function readPluginSkill(
     rootPath: path.relative(pluginRoot, matches[0]!.skill.baseDir).split(path.sep).join("/") || ".",
     name,
     rejectHardlinks: shouldRejectHardlinkedPluginFiles(record),
+    path: selection?.path,
   });
   return { ...result, ...(record.version ? { version: record.version } : {}) };
 }

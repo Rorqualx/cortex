@@ -3,7 +3,12 @@
  * Verifies built-in profile allowlists include expected core tool groups.
  */
 import { describe, expect, it } from "vitest";
-import { resolveCoreToolProfilePolicy } from "./tool-catalog.js";
+import {
+  listCoreToolSections,
+  resolveCoreToolProfilePolicy,
+  resolveCoreToolProfiles,
+} from "./tool-catalog.js";
+import { isToolAllowedByPolicies, isToolAllowedByPolicyName } from "./tool-policy-match.js";
 
 function requireCoreToolProfilePolicy(profile: Parameters<typeof resolveCoreToolProfilePolicy>[0]) {
   const policy = resolveCoreToolProfilePolicy(profile);
@@ -22,9 +27,74 @@ function requirePolicyAllow(profile: Parameters<typeof resolveCoreToolProfilePol
 }
 
 describe("tool-catalog", () => {
-  it("includes code_execution, web_search, x_search, web_fetch, and progress_card in the coding profile policy", () => {
+  it("lists personal instructions only when the multi-user capability is enabled", () => {
+    const ids = (personalInstructionsEnabled?: boolean) =>
+      listCoreToolSections({ personalInstructionsEnabled }).flatMap((section) =>
+        section.tools.map((tool) => tool.id),
+      );
+    expect(ids()).not.toContain("personal_instructions");
+    expect(ids(false)).not.toContain("personal_instructions");
+    expect(ids(true)).toContain("personal_instructions");
+  });
+  it("lists the setup helper once in Automation without adding restricted profile membership", () => {
+    const sections = listCoreToolSections();
+    expect(
+      sections.flatMap((section) => section.tools).filter((tool) => tool.id === "openclaw"),
+    ).toEqual([
+      {
+        id: "openclaw",
+        label: "openclaw",
+        description: "Delegate OpenClaw setup and repair",
+      },
+    ]);
+    expect(
+      sections.find((section) => section.id === "automation")?.tools.map((tool) => tool.id),
+    ).toContain("openclaw");
+    expect(resolveCoreToolProfiles("openclaw")).toEqual([]);
+  });
+
+  it.each(["group:automation", "group:openclaw"])(
+    "includes the helper in %s allows and denies",
+    (group) => {
+      expect(isToolAllowedByPolicyName("openclaw", { allow: [group] })).toBe(true);
+      expect(isToolAllowedByPolicyName("openclaw", { allow: [group], deny: ["openclaw"] })).toBe(
+        false,
+      );
+      expect(isToolAllowedByPolicyName("openclaw", { allow: ["openclaw"], deny: [group] })).toBe(
+        false,
+      );
+      for (const profile of [undefined, "full"]) {
+        const policy = resolveCoreToolProfilePolicy(profile);
+        expect(isToolAllowedByPolicies("openclaw", [policy])).toBe(true);
+        expect(isToolAllowedByPolicies("message", [policy])).toBe(true);
+        expect(isToolAllowedByPolicies("openclaw", [policy, { deny: [group] }])).toBe(false);
+        expect(isToolAllowedByPolicies("exec", [policy, { deny: ["exec"] }])).toBe(false);
+      }
+    },
+  );
+
+  it("lists agents_wait only for a Swarm-enabled catalog", () => {
+    const ids = (config?: Parameters<typeof listCoreToolSections>[0]) =>
+      listCoreToolSections(config).flatMap((section) => section.tools.map((tool) => tool.id));
+
+    expect(ids()).not.toContain("agents_wait");
+    expect(ids({ swarmEnabled: true })).toContain("agents_wait");
+  });
+
+  it("lists GitHub publication only with a prepared session capability", () => {
+    const ids = (config?: Parameters<typeof listCoreToolSections>[0]) =>
+      listCoreToolSections(config).flatMap((section) => section.tools.map((tool) => tool.id));
+
+    expect(ids()).not.toContain("github_publish");
+    expect(ids()).not.toContain("github_identity_status");
+    expect(ids({ githubPublicationAvailable: false })).toContain("github_identity_status");
+    expect(ids({ githubPublicationAvailable: true })).toContain("github_publish");
+  });
+
+  it("includes code execution, web tools, and progress_card in the coding profile policy", () => {
     const policy = requireCoreToolProfilePolicy("coding");
     expect(policy.allow).toEqual([
+      "decision_evaluate",
       "ls",
       "read",
       "write",
@@ -40,6 +110,7 @@ describe("tool-catalog", () => {
       "memory_search",
       "memory_get",
       "memory_reports",
+      "personal_instructions",
       "sessions",
       "sessions_list",
       "sessions_history",
@@ -99,7 +170,9 @@ describe("tool-catalog", () => {
   it("includes bundle MCP tools in coding and messaging profile policies", () => {
     expect(requirePolicyAllow("coding").at(-1)).toBe("bundle-mcp");
     expect(requirePolicyAllow("messaging")).toEqual([
+      "decision_evaluate",
       "secrets",
+      "personal_instructions",
       "sessions",
       "sessions_list",
       "sessions_history",

@@ -134,6 +134,7 @@ export async function prepareTerminalWithSettledTurnFinalization(input: {
     terminalState: initial.terminalState,
     replyDeliveryState,
     settledTurnFinalizationAvailable:
+      !input.terminalBase.runParams.providerReviewAcknowledgment &&
       typeof input.finalization.harness.finalizeSettledTurn === "function",
   });
   if (!prompt) {
