@@ -72,9 +72,13 @@ async function registerSubCliWithPluginCommands(
   }
 }
 
-const entrySpecs: readonly CommandGroupDescriptorSpec<
-  [argv: string[], context: SubCliRegistrationContext]
->[] = [
+type SubCliRegistrar = (
+  program: Command,
+  argv: string[],
+  context: SubCliRegistrationContext,
+) => Promise<void> | void;
+
+const rawEntrySpecs: readonly (readonly [readonly string[], SubCliRegistrar])[] = [
   [["acp"], async (program) => (await import("../acp-cli.js")).registerAcpCli(program)],
   [["gateway"], async (program) => (await import("../gateway-cli.js")).registerGatewayCli(program)],
   [["daemon"], async (program) => (await import("../daemon-cli.js")).registerDaemonCli(program)],
@@ -193,6 +197,10 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<
   ],
 ];
 
+const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = rawEntrySpecs.map(
+  ([commandNames, register]) => ({ commandNames, register }),
+);
+
 function resolveSubCliCommandGroups(
   argv: string[],
   context: SubCliRegistrationContext = {},
@@ -201,9 +209,10 @@ function resolveSubCliCommandGroups(
   const descriptorNames = new Set(descriptors.map((descriptor) => descriptor.name));
   return buildCommandGroupEntries(
     descriptors,
-    entrySpecs.filter(([commandNames]) => commandNames.every((name) => descriptorNames.has(name))),
-    argv,
-    context,
+    entrySpecs.filter((spec) => spec.commandNames.every((name) => descriptorNames.has(name))),
+    (register) => async (program) => {
+      await register(program, argv, context);
+    },
   );
 }
 

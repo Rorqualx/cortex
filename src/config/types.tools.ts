@@ -1,11 +1,10 @@
 // Defines tool availability and allowlist configuration types.
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import type { DoomLoopGuardConfig } from "../agents/doom-loop-guard.js";
 import type { z } from "zod";
+import type { DoomLoopGuardConfig } from "../agents/doom-loop-guard.js";
 import type { SafeBinProfileFixture } from "../infra/exec-safe-bin-policy.js";
 import type { AgentElevatedAllowFromConfig } from "./types.base.js";
 import type { ConfiguredProviderRequest } from "./types.provider-request.js";
-import type { SecretInput } from "./types.secrets.js";
 import type {
   AgentEntrySchema,
   ToolsSchema,

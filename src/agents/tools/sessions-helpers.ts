@@ -9,6 +9,8 @@ import type {
   SessionRow,
   SessionRunStatus,
 } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+
+export type { SessionRunStatus };
 import {
   SessionCreatedActorSchema,
   SessionRowSchema,

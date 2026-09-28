@@ -44,6 +44,8 @@ export const AgentOwnershipSchema = Type.Union([
 /** Condensed agent record returned by list APIs. */
 export const AgentSummarySchema = closedObject({
   id: NonEmptyString,
+  /** Effective explicit utility model; absent for automatic or disabled utility routing. */
+  utilityModel: Type.Optional(NonEmptyString),
   status: Type.Optional(Type.Literal("degraded")),
   admissionRefusal: Type.Optional(
     Type.Union([

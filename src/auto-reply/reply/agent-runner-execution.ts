@@ -2,12 +2,9 @@
 import crypto from "node:crypto";
 import { hasNonEmptyString } from "@openclaw/normalization-core/string-coerce";
 import { hasOutboundReplyContent } from "openclaw/plugin-sdk/reply-payload";
-import type { ChatRunStartupPhase } from "../../../packages/gateway-protocol/src/index.js";
 import { prepareSystemAgentRunAdmission } from "../../agents/admitted-run-context.js";
 import { peekSessionMcpRuntime } from "../../agents/agent-bundle-mcp-manager-api.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-budget.js";
-import { classifyFailoverReason } from "../../agents/embedded-agent-helpers.js";
-import type { EmbeddedAgentExecutionPhase } from "../../agents/embedded-agent-runner/execution-phase.js";
 import {
   createDeferredEmbeddedRunLifecycleManager,
   type DeferredEmbeddedRunLifecycleManager,
@@ -34,7 +31,6 @@ import { formatErrorMessage } from "../../infra/errors.js";
 import { logSessionTurnCreated } from "../../logging/diagnostic.js";
 import { progressCardRefreshRunProjection } from "../../sessions/input-provenance.js";
 import { isInternalMessageChannel } from "../../utils/message-channel.js";
-import { captureCommandOwnerAssertion } from "../command-owner-authority.js";
 import type { ReplyPayload } from "../types.js";
 import {
   clearRecoveredAutoFallbackPrimaryProbeSelection,

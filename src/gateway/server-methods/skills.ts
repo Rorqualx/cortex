@@ -15,6 +15,7 @@ import {
   validateSkillsInstallParams,
   validateSkillsProposalActionParams,
   validateSkillsProposalCreateParams,
+  validateSkillsProposalDecisionParams,
   validateSkillsProposalEvaluateParams,
   validateSkillsProposalEventsListParams,
   validateSkillsProposalInspectParams,
@@ -77,6 +78,7 @@ import {
   SKILL_LIFECYCLE_CURATION_RETIRED_MESSAGE,
 } from "../../skills/workshop/curator.js";
 import { resolveSkillProposalName } from "../../skills/workshop/frontmatter.js";
+import { assertExpectedRevisionHash } from "../../skills/workshop/service-evaluation.js";
 import {
   applySkillProposal,
   evaluateSkillProposal,
@@ -89,6 +91,8 @@ import {
   rejectSkillProposal,
   reviseSkillProposal,
 } from "../../skills/workshop/service.js";
+import { PROPOSAL_DRAFT_FILE } from "../../skills/workshop/store-record.js";
+import type { SkillProposalReadResult, SkillProposalRecord } from "../../skills/workshop/types.js";
 import {
   listWritableWorkshopSkillSummaries,
   readWritableWorkshopSkill,
@@ -761,11 +765,12 @@ export const skillsHandlers: GatewayRequestHandlers = {
       assertExpectedRevisionHash(proposal.revisionHash, expectedRevisionHash);
       await forwardSkillWorkshopRevisionToChatSend(opts, {
         agentId: resolved.agentId,
-        expectedRevisionHash,
+        // Fork wire contract keeps expectedRevisionHash optional; assert above
+        // already proved it matches the current revision when present.
+        expectedRevisionHash: expectedRevisionHash ?? proposal.revisionHash,
         idempotencyKey: parsedParams.idempotencyKey,
         instructions: parsedParams.instructions,
         proposal,
-        workspaceDir: resolved.workspaceDir,
         sessionId: parsedParams.sessionId,
         sessionKey: parsedParams.sessionKey,
         targetAgentId: parsedParams.targetAgentId
