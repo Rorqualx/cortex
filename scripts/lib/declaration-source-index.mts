@@ -44,7 +44,9 @@ if (isDirectRunUrl(process.argv[1], import.meta.url)) {
       throw new Error("Expected a tsconfig, output path, and declaration entry sources");
     }
     // Only the discovery child loads TypeScript; the parent retains just file names.
-    const { default: ts } = await import("typescript");
+    // Fork build tooling needs the classic TS program API; the primary typescript
+    // dependency is 7.x (native), which dropped it. Pinned via the alias dep.
+    const { default: ts } = await import("typescript-classic");
     const config = ts.getParsedCommandLineOfConfigFile(path.resolve(tsconfig), undefined, {
       ...ts.sys,
       onUnRecoverableConfigFileDiagnostic(diagnostic) {

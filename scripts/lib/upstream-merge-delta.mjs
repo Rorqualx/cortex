@@ -8,7 +8,7 @@
 //
 // These are the pure halves (AST + set math); scripts/check-upstream-merge-delta.mjs
 // owns the git plumbing so this stays unit-testable without a repository.
-import ts from "typescript";
+import ts from "typescript-classic";
 
 /**
  * Parses one source file. `allowJs`-style syntax only — no program, no type
