@@ -1620,7 +1620,7 @@ export async function truncateOversizedToolResultsInActiveTarget(params: {
   try {
     const target = await resolveRuntimeTranscriptReadTarget(params.scope);
     const sessionManager = SessionManager.open(target);
-    return truncateOversizedToolResultsInExistingSessionManager({
+    return truncateOversizedToolResultsInSessionManager({
       sessionManager,
       contextWindowTokens: params.contextWindowTokens,
       maxCharsOverride: params.maxCharsOverride,

@@ -317,7 +317,7 @@ export async function handleAgentExecutionError(params: {
   // block stays HERE by design: it must run after the failover/transient
   // classification so a lease loss wrapped in a failover error still reaches it,
   // and before restart-lifecycle handling.
-  if (isSessionLeaseLoss(err) && turn.isRestartRecoveryArmed?.() === true) {
+  if (isSessionLeaseLoss(err) && (await turn.isRestartRecoveryArmed?.()) === true) {
     // The replacement owns recovery only after the latest SQLite row confirms
     // the active claim or its terminal marker. The old owner then exits silently.
     turn.replyOperation?.abortForRestart();

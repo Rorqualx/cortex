@@ -21,6 +21,7 @@ import { resolveWorkerPlacementSessionRuntimeCapabilities } from "../worker-envi
 import type { SessionWorkerPlacementContext } from "../worker-environments/session-placement-lifecycle.js";
 import { resolveWorkerPlacementArchiveRestoreError } from "../worker-environments/session-placement-lifecycle.js";
 import type { GatewayRequestContext, RespondFn } from "./types.js";
+export { resolveSessionWorkerPlacementMutationError } from "../worker-environments/session-placement-lifecycle.js";
 
 export const sessionLog = createSubsystemLogger("gateway/sessions");
 

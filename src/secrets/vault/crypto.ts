@@ -2,7 +2,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { assertNoSymlinkParentsSync } from "../../infra/fs-safe-advanced.js";
+import { assertNoSymlinkParentsSync } from "@openclaw/fs-safe/advanced";
 import { resolveRequiredHomeDir } from "../../infra/home-dir.js";
 import { resolveOpenClawStateSqliteDir } from "../../state/openclaw-state-db.paths.js";
 

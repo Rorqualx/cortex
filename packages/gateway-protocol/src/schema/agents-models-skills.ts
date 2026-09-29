@@ -2,9 +2,9 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
-import { GatewayAgentRuntimeSchema } from "./model-runtime-options.js";
 import { NonEmptyString, Sha256String } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
+import { GatewayAgentRuntimeSchema } from "./session-row.js";
 import { SessionPermissionModeSchema } from "./sessions-row.js";
 
 export {
@@ -1277,7 +1277,6 @@ export const AgentsComposePromptResultSchema = Type.Object(
 // pull in the ProtocolSchemas registry.
 export type AgentKind = Static<typeof AgentKindSchema>;
 export type AgentSummary = Static<typeof AgentSummarySchema>;
-export type GatewayAgentRuntime = Static<typeof GatewayAgentRuntimeSchema>;
 export type AgentsCreateParams = Static<typeof AgentsCreateParamsSchema>;
 export type AgentsCreateResult = Static<typeof AgentsCreateResultSchema>;
 export type AgentsUpdateParams = Static<typeof AgentsUpdateParamsSchema>;

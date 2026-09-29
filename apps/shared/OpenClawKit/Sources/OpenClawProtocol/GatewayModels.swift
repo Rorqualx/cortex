@@ -1029,7 +1029,7 @@ public struct AgentSummary: Codable, Sendable {
     public let workspace: String?
     public let workspacegit: Bool?
     public let model: [String: AnyCodable]?
-    public let agentruntime: [String: AnyCodable]?
+    public let agentruntime: GatewayAgentRuntime?
     public let thinkinglevels: [[String: AnyCodable]]?
     public let thinkingoptions: [String]?
     public let thinkingdefault: String?
@@ -1046,7 +1046,7 @@ public struct AgentSummary: Codable, Sendable {
         workspace: String? = nil,
         workspacegit: Bool? = nil,
         model: [String: AnyCodable]? = nil,
-        agentruntime: [String: AnyCodable]? = nil,
+        agentruntime: GatewayAgentRuntime? = nil,
         thinkinglevels: [[String: AnyCodable]]? = nil,
         thinkingoptions: [String]? = nil,
         thinkingdefault: String? = nil,
@@ -1292,18 +1292,22 @@ public struct AgentsFileEntry: Codable, Sendable {
 public struct AgentsFilesGetParams: Codable, Sendable {
     public let agentid: String
     public let name: String
+    public let path: String?
 
     public init(
         agentid: String,
-        name: String)
+        name: String,
+        path: String? = nil)
     {
         self.agentid = agentid
         self.name = name
+        self.path = path
     }
 
     private enum CodingKeys: String, CodingKey {
         case agentid = "agentId"
         case name
+        case path
     }
 }
 
@@ -1331,15 +1335,19 @@ public struct AgentsFilesGetResult: Codable, Sendable {
 
 public struct AgentsFilesListParams: Codable, Sendable {
     public let agentid: String
+    public let path: String?
 
     public init(
-        agentid: String)
+        agentid: String,
+        path: String? = nil)
     {
         self.agentid = agentid
+        self.path = path
     }
 
     private enum CodingKeys: String, CodingKey {
         case agentid = "agentId"
+        case path
     }
 }
 

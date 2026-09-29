@@ -46,6 +46,8 @@ export function resolveBashTimeoutMs(timeoutSeconds: unknown): number | undefine
     return undefined;
   }
   return resolveTimerTimeoutMs(timeoutSeconds * 1000, 1);
+}
+
 if (process.env.VITEST || process.env.NODE_ENV === "test") {
   (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.bashToolTestApi")] = {
     resolveBashTimeoutMs,

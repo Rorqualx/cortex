@@ -260,6 +260,8 @@ type CronRunExecutionParams = {
   };
   resolvedDeliveryOk: boolean;
   deliveryRequested?: boolean;
+  /** Delivery-scoped system prompt text carried from run preparation. */
+  deliverySystemPrompt?: string;
   sourceDelivery: SourceDeliveryPlan;
   skillsSnapshot: SkillSnapshot;
   agentPayload: AgentTurnPayload;

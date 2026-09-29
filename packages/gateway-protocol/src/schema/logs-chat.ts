@@ -98,10 +98,12 @@ export const ChatPendingInputsPageSchema = closedObject({
       message: Type.Unknown(),
       acceptedAt: Type.Number(),
       state: Type.String({ enum: ["queued", "cancelled", "interrupted"] }),
+      queued: Type.Optional(Type.Literal(true)),
     }),
     { maxItems: 20 },
   ),
   total: Type.Integer({ minimum: 0 }),
+  queuedCount: Type.Optional(Type.Integer({ minimum: 0 })),
   nextBefore: Type.Optional(Type.Integer({ minimum: 1 })),
 });
 export type ChatPendingInputsPage = Static<typeof ChatPendingInputsPageSchema>;
@@ -112,6 +114,7 @@ export const ChatInputReceiptsSchema = Type.Array(
     closedObject({
       runId: Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS }),
       state: Type.Literal("pending"),
+      queued: Type.Optional(Type.Literal(true)),
     }),
     closedObject({
       runId: Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS }),
@@ -132,8 +135,6 @@ export const ChatInputConsumptionsSchema = Type.Array(
   { maxItems: CHAT_INPUT_RECEIPT_MAX_RUN_IDS },
 );
 export type ChatInputConsumptions = Static<typeof ChatInputConsumptionsSchema>;
-
-
 
 export const AgentActivityItemSchema = closedObject({
   itemId: NonEmptyString,
@@ -547,11 +548,6 @@ export type ChatSendTimingEvent = Static<typeof ChatSendTimingEventSchema>;
 /** Fork: server-side phase markers for operator chat.send timing diagnostics. */
 export type ChatSendTimingPhase = ChatSendTimingEvent["phase"];
 export type ChatSideResultEvent = Static<typeof ChatSideResultEventSchema>;
-
-
-
-
-
 
 // Static type exports (upstream #128018) consumed by protocol clients + tests.
 export type ChatHistoryParams = Static<typeof ChatHistoryParamsSchema>;

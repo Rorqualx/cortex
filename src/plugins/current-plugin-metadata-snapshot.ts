@@ -22,7 +22,10 @@ import {
   runOutsidePluginCache,
   withPluginCache,
 } from "./plugin-cache.js";
-import { resolvePluginControlPlaneFingerprint } from "./plugin-control-plane-context.js";
+import {
+  resolvePluginControlPlaneFingerprint,
+  type ResolvePluginControlPlaneContextParams,
+} from "./plugin-control-plane-context.js";
 import {
   createPluginExecutionFrame,
   getPluginExecutionFrame,

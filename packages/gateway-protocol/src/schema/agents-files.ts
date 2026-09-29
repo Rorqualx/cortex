@@ -21,6 +21,8 @@ export const AgentsFileEntrySchema = closedObject({
 /** Lists editable files for one agent. */
 export const AgentsFilesListParamsSchema = closedObject({
   agentId: NonEmptyString,
+  // Fork: alternate directory to list (project folder picker); ~ expands to home.
+  path: Type.Optional(Type.String()),
 });
 
 /** Editable file list for an agent workspace. */
@@ -34,6 +36,8 @@ export const AgentsFilesListResultSchema = closedObject({
 export const AgentsFilesGetParamsSchema = closedObject({
   agentId: NonEmptyString,
   name: NonEmptyString,
+  // Fork: full path for active-directory file reads.
+  path: Type.Optional(Type.String()),
 });
 
 /** Result for reading one editable agent file. */

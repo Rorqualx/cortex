@@ -291,6 +291,31 @@ function hasBooleanContextField<T extends Record<string, unknown>>(
   return typeof context[key] === "boolean";
 }
 
+function isHookEventTypeAndAction(
+  event: InternalHookEvent,
+  type: InternalHookEventType,
+  action: string,
+): boolean {
+  return event.type === type && event.action === action;
+}
+
+function getHookContext<T extends Record<string, unknown>>(
+  event: InternalHookEvent,
+): Partial<T> | null {
+  const context = event.context as Partial<T> | null;
+  if (!context || typeof context !== "object") {
+    return null;
+  }
+  return context;
+}
+
+function hasStringContextField<T extends Record<string, unknown>>(
+  context: Partial<T>,
+  key: keyof T,
+): boolean {
+  return typeof context[key] === "string";
+}
+
 export function isMessageSentEvent(event: InternalHookEvent): event is MessageSentHookEvent {
   if (!isHookEventTypeAndAction(event, "message", "sent")) {
     return false;

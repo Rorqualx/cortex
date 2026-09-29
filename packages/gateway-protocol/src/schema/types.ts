@@ -44,19 +44,12 @@ export type {
  */
 export type {
   AgentSummary,
-  AgentsFileEntry,
   AgentsCreateParams,
   AgentsCreateResult,
   AgentsUpdateParams,
   AgentsUpdateResult,
   AgentsDeleteParams,
   AgentsDeleteResult,
-  AgentsFilesListParams,
-  AgentsFilesListResult,
-  AgentsFilesGetParams,
-  AgentsFilesGetResult,
-  AgentsFilesSetParams,
-  AgentsFilesSetResult,
   AgentsListParams,
   AgentsListResult,
   ModelChoice,
@@ -66,16 +59,6 @@ export type {
   ModelsProbeTargetResult,
   ModelsProbeResult,
   SkillsStatusParams,
-  ToolsCatalogParams,
-  ToolCatalogProfile,
-  ToolCatalogEntry,
-  ToolCatalogGroup,
-  ToolsCatalogResult,
-  ToolsEffectiveParams,
-  ToolsEffectiveEntry,
-  ToolsEffectiveGroup,
-  ToolsEffectiveNotice,
-  ToolsEffectiveResult,
   ToolsInvokeParams,
   ToolsInvokeResult,
   SkillsBinsParams,
@@ -94,6 +77,27 @@ export type {
   SkillsInstallParams,
   SkillsUpdateParams,
 } from "./agents-models-skills.js";
+export type {
+  AgentsFileEntry,
+  AgentsFilesListParams,
+  AgentsFilesListResult,
+  AgentsFilesGetParams,
+  AgentsFilesGetResult,
+  AgentsFilesSetParams,
+  AgentsFilesSetResult,
+} from "./agents-files.js";
+export type {
+  ToolsCatalogParams,
+  ToolCatalogProfile,
+  ToolCatalogEntry,
+  ToolCatalogGroup,
+  ToolsCatalogResult,
+  ToolsEffectiveParams,
+  ToolsEffectiveEntry,
+  ToolsEffectiveGroup,
+  ToolsEffectiveNotice,
+  ToolsEffectiveResult,
+} from "./tools-catalog.js";
 
 /** Logs and chat.send timing/result payloads exposed through gateway RPC. */
 export type {

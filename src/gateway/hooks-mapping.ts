@@ -7,10 +7,10 @@ import {
   readStringValue,
 } from "@openclaw/normalization-core/string-coerce";
 import { resolveConfigPathCandidate } from "../config/paths.js";
-import { isPathInside } from "../infra/path-guards.js";
 import type { HookMappingConfig, HooksConfig, HookSessionMode } from "../config/types.hooks.js";
 import { resolveGmailHookMaxBytes } from "../hooks/gmail.js";
 import { importFileModule, resolveFunctionModuleExport } from "../hooks/module-loader.js";
+import { isPathInside } from "../infra/path-guards.js";
 import type { HookMessageChannel } from "./hooks.types.js";
 
 export type HookMappingResolved = {
@@ -603,7 +603,7 @@ function resolveContainedPath(baseDir: string, target: string, label: string): s
   if (
     baseRealpath &&
     existingAncestorRealpath &&
-    escapesBase(baseRealpath, existingAncestorRealpath)
+    !isPathInside(baseRealpath, existingAncestorRealpath)
   ) {
     throw new Error(`${label} module path must be within ${base}: ${target}`);
   }

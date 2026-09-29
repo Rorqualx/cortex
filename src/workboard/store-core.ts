@@ -292,6 +292,14 @@ export class WorkboardCoreStore {
     return entry?.version === 1 ? entry.card : undefined;
   }
 
+  protected async requireCard(id: string): Promise<WorkboardCard> {
+    const card = await this.get(id);
+    if (!card) {
+      throw new Error(`card not found: ${id}`);
+    }
+    return card;
+  }
+
   private async removeReferencesToCard(cardId: string): Promise<void> {
     for (const card of await this.list()) {
       const links = card.metadata?.links;
