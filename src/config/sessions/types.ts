@@ -836,6 +836,7 @@ function mergeSessionEntryWithPolicy(
   if (existing.createdActor !== undefined) {
     next.createdActor = existing.createdActor;
   }
+  next.inheritedGitContributorProfileIds = existing.inheritedGitContributorProfileIds;
   if (existing.sandbox === "required") {
     next.sandbox = existing.sandbox;
   } else {

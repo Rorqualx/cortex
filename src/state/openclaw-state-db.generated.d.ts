@@ -1535,6 +1535,16 @@ export interface UserPreferences {
   value_json: string;
 }
 
+export interface UserProfileIdentities {
+  authorization_basis_json: string | null;
+  authorization_id: string | null;
+  canonical_login: string | null;
+  created_at: number;
+  profile_id: string;
+  provider: string;
+  subject: string;
+}
+
 export interface VaultSecret {
   approval_policy: Generated<string>;
   auth_config_json: Generated<string>;
@@ -1976,6 +1986,7 @@ export interface DB {
   task_runs: TaskRuns;
   update_runs: UpdateRuns;
   user_preferences: UserPreferences;
+  user_profile_identities: UserProfileIdentities;
   vault_secret: VaultSecret;
   vault_secret_grant: VaultSecretGrant;
   vault_session: VaultSession;

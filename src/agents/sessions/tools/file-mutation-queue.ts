@@ -25,16 +25,13 @@ const keyAdmissions = resolveGlobalSingleton(
   () => ({ fallbackScope: {}, tails: new WeakMap<object, Promise<void>>() }),
 );
 
-function resolveLocalFileMutationQueueKey(filePath: string): string {
-  return resolveIdentityPathViaExistingAncestorSync(filePath);
-}
-
 export async function resolveFileMutationQueueKey(
   filePath: string,
   resolveQueueKey?: (absolutePath: string, signal?: AbortSignal) => string | Promise<string>,
   signal?: AbortSignal,
 ): Promise<string> {
-  return await (resolveQueueKey?.(filePath, signal) ?? resolveLocalFileMutationQueueKey(filePath));
+  return await (resolveQueueKey?.(filePath, signal) ??
+    resolveIdentityPathViaExistingAncestorSync(filePath));
 }
 
 type FileMutationQueueGuardOptions = {

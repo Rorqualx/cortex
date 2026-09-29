@@ -59,7 +59,7 @@ export function createMergePatch(
   options: Pick<MergePatchOptions, "mergeObjectArraysById"> = {},
 ): unknown {
   if (!isRecord(base) || !isRecord(target)) {
-    return cloneUnknown(target);
+    return structuredClone(target);
   }
 
   const patch: Record<string, unknown> = {};
@@ -73,7 +73,7 @@ export function createMergePatch(
     }
     const targetValue = target[key];
     if (!hasBase) {
-      patch[key] = cloneUnknown(targetValue);
+      patch[key] = structuredClone(targetValue);
       continue;
     }
     const baseValue = base[key];
@@ -159,10 +159,6 @@ function isIdKeyedArray(value: unknown): value is (PlainObject & { id: string })
   return Array.isArray(value) && value.every(isObjectWithStringId);
 }
 
-function formatMergePatchArrayEntryPath(arrayPath: string): string {
-  return `${arrayPath}[]`;
-}
-
 /**
  * Merge arrays of object-like entries keyed by `id`.
  *
@@ -177,10 +173,6 @@ function mergeObjectArraysById(
   options: MergePatchOptions,
   arrayPath: string,
 ): unknown[] | undefined {
-  if (!base.every(isObjectWithStringId)) {
-    return undefined;
-  }
-
   const merged: unknown[] = [...base];
   const indexById = new Map<string, number>();
   for (const [index, entry] of merged.entries()) {
@@ -205,7 +197,7 @@ function mergeObjectArraysById(
 
     merged[existingIndex] = applyMergePatch(merged[existingIndex], patchEntry, {
       ...options,
-      path: formatMergePatchArrayEntryPath(arrayPath),
+      path: `${arrayPath}[]`,
     });
   }
 

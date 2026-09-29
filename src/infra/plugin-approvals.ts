@@ -32,7 +32,6 @@ type PluginApprovalPlacementGrantBinding = {
   cwd: string;
 };
 
-/** Request payload supplied by plugin approval callers. */
 export type PluginApprovalRequestPayload = {
   pluginId?: string | null;
   title: string;
@@ -105,7 +104,6 @@ export function truncatePluginApprovalDetail(value: string): string {
   return value;
 }
 
-/** Clamp a plugin approval timeout to the supported runtime bounds. */
 export function resolvePluginApprovalTimeoutMs(value: unknown): number {
   const candidate =
     typeof value === "number" && Number.isFinite(value)
@@ -114,7 +112,6 @@ export function resolvePluginApprovalTimeoutMs(value: unknown): number {
   return Math.min(MAX_PLUGIN_APPROVAL_TIMEOUT_MS, Math.max(1, Math.floor(candidate)));
 }
 
-/** Format an approval decision for user-facing messages. */
 export function approvalDecisionLabel(decision: ExecApprovalDecision): string {
   if (decision === "allow-once") {
     return "allowed once";
@@ -125,7 +122,6 @@ export function approvalDecisionLabel(decision: ExecApprovalDecision): string {
   return "denied";
 }
 
-/** Resolve explicit plugin approval decisions or fall back to defaults. */
 export function resolvePluginApprovalRequestAllowedDecisions(params?: {
   allowedDecisions?: readonly ExecApprovalDecision[] | readonly string[] | null;
 }): readonly ExecApprovalDecision[] {
@@ -143,7 +139,6 @@ export function resolvePluginApprovalRequestAllowedDecisions(params?: {
   return explicit.length > 0 ? explicit : DEFAULT_PLUGIN_APPROVAL_DECISIONS;
 }
 
-/** Build the pending plugin approval message. */
 export function buildPluginApprovalRequestMessage(
   request: PluginApprovalRequest,
   nowMsValue: number,
@@ -178,14 +173,12 @@ export function buildPluginApprovalRequestMessage(
   return lines.join("\n");
 }
 
-/** Build the plugin approval resolution message. */
 export function buildPluginApprovalResolvedMessage(resolved: PluginApprovalResolved): string {
   const base = `✅ Plugin approval ${approvalDecisionLabel(resolved.decision)}.`;
   const by = resolved.resolvedBy ? ` Resolved by ${resolved.resolvedBy}.` : "";
   return `${base}${by} ID: ${resolved.id}`;
 }
 
-/** Build the plugin approval expiration message. */
 export function buildPluginApprovalExpiredMessage(request: PluginApprovalRequest): string {
   return `⏱️ Plugin approval expired. ID: ${request.id}`;
 }

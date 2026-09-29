@@ -36,7 +36,7 @@ import {
   shouldRecordAssistantReplyRepairRecord,
 } from "./assistant-transcript-repair.js";
 import { persistAgentSession } from "./attempt-execution.shared.js";
-import type { deliverAgentCommandResult } from "./delivery.js";
+import type { AgentCommandDeliveryResult } from "./delivery-result.js";
 import { createCommandBudget } from "./maintenance-budget.js";
 import { createCommandMaintenanceFollowup } from "./maintenance.js";
 import type { PreparedAgentCommandExecution } from "./prepare.js";
@@ -176,6 +176,8 @@ export async function finalizeEmbeddedAgentCommand(params: {
     evidence: RestartRecoveryTerminalDeliveryEvidenceResult,
   ) => void;
 }) {
+  const operatorAuthority = params.opts.operatorAuthority;
+  const assertSourceCurrent = params.opts.assertSourceCurrent;
   const {
     cfg,
     body,
@@ -215,7 +217,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
   const isHeartbeatLifecycleRun = isHeartbeatLifecycleRunKind(params.opts.bootstrapContextRunKind);
   let sessionEntry = params.sessionEntry;
   let result = params.attempt.result;
-  let deliveryResult: Awaited<ReturnType<typeof deliverAgentCommandResult>>;
+  let deliveryResult: AgentCommandDeliveryResult;
   let hasResultError: boolean;
   let terminalError: string | undefined;
   let maintenanceRequest: SessionMaintenanceRequest | undefined;
@@ -379,6 +381,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
 
     const payloads = result.payloads ?? [];
     const pendingFinalDeliveryMarker = await persistPendingFinalDeliveryMarker({
+      commandOwnerReference: params.opts.assertSourceCurrent?.recoveryReference,
       agentId: sessionAgentId,
       deliver: params.opts.deliver === true,
       sessionStore,
@@ -472,6 +475,8 @@ export async function finalizeEmbeddedAgentCommand(params: {
       let maintenanceLifecycleRevision = sessionEntry?.lifecycleRevision;
       const authorize = () => {
         throwAgentRunRestartAbortReason(params.opts.abortSignal?.reason);
+        assertSourceCurrent?.();
+        operatorAuthority?.assertCurrent();
         assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
         return (
           maintenance.remainingMs() > 0 && !maintenance.signal.aborted && !sessionReboundDuringRun
@@ -484,6 +489,11 @@ export async function finalizeEmbeddedAgentCommand(params: {
         publishSessionOwnership(
           accepted.previousSessionId === undefined ? undefined : accepted.sessionId,
         );
+      };
+      const assertActive = () => {
+        if (!authorize()) {
+          throw new Error("Command compaction is no longer active");
+        }
       };
       try {
         if (maintenance.remainingMs() > 0) {
@@ -512,11 +522,8 @@ export async function finalizeEmbeddedAgentCommand(params: {
               abortSignal: maintenance.signal,
             },
             {
-              assertActive: () => {
-                if (!authorize()) {
-                  throw new Error("Command compaction is no longer active");
-                }
-              },
+              assertActive,
+              sourceAuthority: { assertActive, operatorAuthority },
               onCommitted,
             },
           );
@@ -569,11 +576,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
         params.opts.abortSignal?.throwIfAborted();
         assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
       },
-      onDeliveryResult: (
-        delivered: Parameters<
-          NonNullable<Parameters<typeof deliverAgentCommandResult>[0]["onDeliveryResult"]>
-        >[0],
-      ) => {
+      onDeliveryResult: (delivered: AgentCommandDeliveryResult) => {
         const deliveryStatus = delivered.deliveryStatus;
         const terminalDelivery = normalizeAgentRunTerminalDeliverySnapshot(
           deliveryStatus && {
@@ -611,11 +614,12 @@ export async function finalizeEmbeddedAgentCommand(params: {
       if (!entry) {
         throw new Error("Cannot clear pending delivery without a session entry");
       }
-      // This command only creates replayable markers, so transport-only is stale from an earlier run.
+      // Durable delivery IDs retain custody even when this run has no final payload.
       const clearStaleTransportOnly =
         params.opts.deliver === true &&
         !pendingFinalDeliveryMarker.hasSendableFinalPayload &&
-        entry.pendingFinalDelivery?.kind === "transport-only";
+        entry.pendingFinalDelivery?.kind === "transport-only" &&
+        !entry.pendingFinalDelivery.deliveries?.length;
       const clearOwnedPendingFinal =
         deliveryResult?.deliverySucceeded === true &&
         pendingFinalDeliveryMarker.pendingFinalDeliveryIntentId !== undefined;
@@ -667,7 +671,10 @@ export async function finalizeEmbeddedAgentCommand(params: {
             (!clearOwnedPendingFinal ||
               current?.pendingFinalDelivery?.intentId ===
                 pendingFinalDeliveryMarker.pendingFinalDeliveryIntentId) &&
-            (!clearStaleTransportOnly || current?.pendingFinalDelivery?.kind === "transport-only"),
+            (!clearStaleTransportOnly ||
+              (current?.pendingFinalDelivery?.kind === "transport-only" &&
+                current.pendingFinalDelivery.intentId === entry.pendingFinalDelivery?.intentId &&
+                !current.pendingFinalDelivery.deliveries?.length)),
         });
       }
     }

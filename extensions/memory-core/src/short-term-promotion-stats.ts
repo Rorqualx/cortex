@@ -126,7 +126,6 @@ export async function loadShortTermPromotionDreamingStats(params: {
   let currentDay: string | undefined;
   let latestPromotedAtMs = Number.NEGATIVE_INFINITY;
   let latestPromotedAt: string | undefined;
-  const activeKeys = new Set<string>();
   const activeEntries = new Map<string, ShortTermDreamingStatsEntry>();
   const shortTermEntries: ShortTermDreamingStatsEntry[] = [];
   const promotedEntries: ShortTermDreamingStatsEntry[] = [];
@@ -158,7 +157,6 @@ export async function loadShortTermPromotionDreamingStats(params: {
     };
     if (!entry.promotedAt) {
       shortTermCount += 1;
-      activeKeys.add(entryKey);
       recallSignalCount += recallCount;
       dailySignalCount += dailyCount;
       groundedSignalCount += groundedCount;
@@ -184,7 +182,8 @@ export async function loadShortTermPromotionDreamingStats(params: {
   }
 
   for (const [key, phaseEntry] of Object.entries(phaseStore.entries)) {
-    if (!activeKeys.has(key)) {
+    const detail = activeEntries.get(key);
+    if (!detail) {
       continue;
     }
     const lightHits = toNonNegativeInt(phaseEntry.lightHits);
@@ -192,12 +191,9 @@ export async function loadShortTermPromotionDreamingStats(params: {
     lightPhaseHitCount += lightHits;
     remPhaseHitCount += remHits;
     phaseSignalCount += lightHits + remHits;
-    const detail = activeEntries.get(key);
-    if (detail) {
-      detail.lightHits = lightHits;
-      detail.remHits = remHits;
-      detail.phaseHitCount = lightHits + remHits;
-    }
+    detail.lightHits = lightHits;
+    detail.remHits = remHits;
+    detail.phaseHitCount = lightHits + remHits;
   }
 
   // Count entries promoted in the latest run so the UI can show "last promoted

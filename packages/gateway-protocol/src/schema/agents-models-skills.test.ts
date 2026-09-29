@@ -20,10 +20,10 @@ import {
   SkillsProposalEventsListResultSchema,
   SkillsProposalInspectResultSchema,
   SkillsProposalRequestRevisionResultSchema,
-  ToolsEffectiveResultSchema,
   ToolsInvokeParamsSchema,
 } from "./agents-models-skills.js";
 import { ModelsListParamsSchema } from "./model-catalog.js";
+import { ToolsEffectiveResultSchema } from "./tools-catalog.js";
 import { GatewayAgentRuntimeSchema } from "./session-row.js";
 
 /**

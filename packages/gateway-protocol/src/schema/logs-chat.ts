@@ -89,6 +89,116 @@ export const ChatStartupParamsSchema = Type.Union([
   }),
 ]);
 
+/** Accepted input awaiting a turn, separate from canonical model history. */
+export const ChatPendingInputsPageSchema = closedObject({
+  items: Type.Array(
+    closedObject({
+      id: NonEmptyString,
+      runId: Type.Optional(Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS })),
+      message: Type.Unknown(),
+      acceptedAt: Type.Number(),
+      state: Type.String({ enum: ["queued", "cancelled", "interrupted"] }),
+    }),
+    { maxItems: 20 },
+  ),
+  total: Type.Integer({ minimum: 0 }),
+  nextBefore: Type.Optional(Type.Integer({ minimum: 1 })),
+});
+export type ChatPendingInputsPage = Static<typeof ChatPendingInputsPageSchema>;
+
+/** Exact accepted-input custody, independent of display pagination and message identity. */
+export const ChatInputReceiptsSchema = Type.Array(
+  Type.Union([
+    closedObject({
+      runId: Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS }),
+      state: Type.Literal("pending"),
+    }),
+    closedObject({
+      runId: Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS }),
+      state: Type.Literal("consumed"),
+      consumedByEventId: NonEmptyString,
+    }),
+  ]),
+  { maxItems: CHAT_INPUT_RECEIPT_MAX_RUN_IDS },
+);
+export type ChatInputReceipts = Static<typeof ChatInputReceiptsSchema>;
+
+/** Consumed-only compatibility projection for existing v4 clients. */
+export const ChatInputConsumptionsSchema = Type.Array(
+  closedObject({
+    runId: Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS }),
+    consumedByEventId: NonEmptyString,
+  }),
+  { maxItems: CHAT_INPUT_RECEIPT_MAX_RUN_IDS },
+);
+export type ChatInputConsumptions = Static<typeof ChatInputConsumptionsSchema>;
+
+
+
+export const AgentActivityItemSchema = closedObject({
+  itemId: NonEmptyString,
+  phase: Type.Union([Type.Literal("start"), Type.Literal("update"), Type.Literal("end")]),
+  kind: Type.String(),
+  title: Type.String(),
+  status: Type.Optional(
+    Type.Union([
+      Type.Literal("running"),
+      Type.Literal("completed"),
+      Type.Literal("failed"),
+      Type.Literal("blocked"),
+    ]),
+  ),
+  name: Type.Optional(Type.String()),
+  meta: Type.Optional(Type.String()),
+  commandBearing: Type.Optional(Type.Boolean()),
+  toolCallId: Type.Optional(Type.String()),
+  startedAt: Type.Optional(Type.Number()),
+  endedAt: Type.Optional(Type.Number()),
+  error: Type.Optional(Type.String()),
+  summary: Type.Optional(Type.String()),
+  progressText: Type.Optional(Type.String()),
+  suppressChannelProgress: Type.Optional(Type.Boolean()),
+  hideFromChannelProgress: Type.Optional(Type.Boolean()),
+  approvalId: Type.Optional(Type.String()),
+  approvalSlug: Type.Optional(Type.String()),
+});
+export type AgentActivityItem = Static<typeof AgentActivityItemSchema>;
+export const ChatHistoryActivitySchema = closedObject({
+  messageId: NonEmptyString,
+  items: Type.Array(AgentActivityItemSchema),
+});
+export type ChatHistoryActivity = Static<typeof ChatHistoryActivitySchema>;
+
+/**
+ * Bounded forward catch-up response. Clients replay `messages` as `session.message`
+ * payloads. There is no continuation loop: more than 200 raw events or the byte
+ * budget returns `reset`, and the client fetches a fresh tail page.
+ */
+export const ChatHistoryDeltaResultSchema = closedObject({
+  kind: Type.Literal("delta"),
+  messages: Type.Array(Type.Unknown()),
+  activity: Type.Optional(Type.Array(ChatHistoryActivitySchema)),
+  deltaCursor: Type.String(),
+  sessionInfo: Type.Unknown(),
+  agentsList: Type.Optional(Type.Unknown()),
+  inFlightRun: Type.Optional(Type.Unknown()),
+  metadata: Type.Optional(Type.Unknown()),
+  pendingInputs: Type.Optional(ChatPendingInputsPageSchema),
+  inputReceipts: Type.Optional(ChatInputReceiptsSchema),
+  inputConsumptions: Type.Optional(ChatInputConsumptionsSchema),
+});
+
+/** Normal cursor discontinuity; clients recover with a fresh tail request. */
+export const ChatHistoryResetResultSchema = closedObject({
+  kind: Type.Literal("reset"),
+});
+
+/** Closed cursor outcome union. */
+export const ChatHistoryCursorResultSchema = Type.Union([
+  ChatHistoryDeltaResultSchema,
+  ChatHistoryResetResultSchema,
+]);
+
 /** Lightweight metadata; session scope preserves the persisted auth-profile selection. */
 export const ChatMetadataParamsSchema = Object.assign(
   closedObject({
@@ -438,108 +548,10 @@ export type ChatSendTimingEvent = Static<typeof ChatSendTimingEventSchema>;
 export type ChatSendTimingPhase = ChatSendTimingEvent["phase"];
 export type ChatSideResultEvent = Static<typeof ChatSideResultEventSchema>;
 
-/** Accepted input awaiting a turn, separate from canonical model history. */
-export const ChatPendingInputsPageSchema = closedObject({
-  items: Type.Array(
-    closedObject({
-      id: NonEmptyString,
-      runId: Type.Optional(Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS })),
-      message: Type.Unknown(),
-      acceptedAt: Type.Number(),
-      state: Type.String({ enum: ["queued", "cancelled", "interrupted"] }),
-    }),
-    { maxItems: 20 },
-  ),
-  total: Type.Integer({ minimum: 0 }),
-  nextBefore: Type.Optional(Type.Integer({ minimum: 1 })),
-});
-export type ChatPendingInputsPage = Static<typeof ChatPendingInputsPageSchema>;
 
-/** Exact accepted-input custody, independent of display pagination and message identity. */
-export const ChatInputReceiptsSchema = Type.Array(
-  Type.Union([
-    closedObject({
-      runId: Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS }),
-      state: Type.Literal("pending"),
-    }),
-    closedObject({
-      runId: Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS }),
-      state: Type.Literal("consumed"),
-      consumedByEventId: NonEmptyString,
-    }),
-  ]),
-  { maxItems: CHAT_INPUT_RECEIPT_MAX_RUN_IDS },
-);
-export type ChatInputReceipts = Static<typeof ChatInputReceiptsSchema>;
 
-/** Consumed-only compatibility projection for existing v4 clients. */
-export const ChatInputConsumptionsSchema = Type.Array(
-  closedObject({
-    runId: Type.String({ minLength: 1, maxLength: CHAT_INPUT_RUN_ID_MAX_CHARS }),
-    consumedByEventId: NonEmptyString,
-  }),
-  { maxItems: CHAT_INPUT_RECEIPT_MAX_RUN_IDS },
-);
-export type ChatInputConsumptions = Static<typeof ChatInputConsumptionsSchema>;
 
-export const AgentActivityItemSchema = closedObject({
-  itemId: NonEmptyString,
-  phase: Type.Union([Type.Literal("start"), Type.Literal("update"), Type.Literal("end")]),
-  kind: Type.String(),
-  title: Type.String(),
-  status: Type.Optional(
-    Type.Union([
-      Type.Literal("running"),
-      Type.Literal("completed"),
-      Type.Literal("failed"),
-      Type.Literal("blocked"),
-    ]),
-  ),
-  name: Type.Optional(Type.String()),
-  meta: Type.Optional(Type.String()),
-  commandBearing: Type.Optional(Type.Boolean()),
-  toolCallId: Type.Optional(Type.String()),
-  startedAt: Type.Optional(Type.Number()),
-  endedAt: Type.Optional(Type.Number()),
-  error: Type.Optional(Type.String()),
-  summary: Type.Optional(Type.String()),
-  progressText: Type.Optional(Type.String()),
-  suppressChannelProgress: Type.Optional(Type.Boolean()),
-  hideFromChannelProgress: Type.Optional(Type.Boolean()),
-  approvalId: Type.Optional(Type.String()),
-  approvalSlug: Type.Optional(Type.String()),
-});
-export type AgentActivityItem = Static<typeof AgentActivityItemSchema>;
-export const ChatHistoryActivitySchema = closedObject({
-  messageId: NonEmptyString,
-  items: Type.Array(AgentActivityItemSchema),
-});
-export type ChatHistoryActivity = Static<typeof ChatHistoryActivitySchema>;
 
-/** Bounded forward catch-up response; clients replay `messages` as `session.message`. */
-export const ChatHistoryDeltaResultSchema = closedObject({
-  kind: Type.Literal("delta"),
-  messages: Type.Array(Type.Unknown()),
-  deltaCursor: Type.String(),
-  sessionInfo: Type.Unknown(),
-  agentsList: Type.Optional(Type.Unknown()),
-  inFlightRun: Type.Optional(Type.Unknown()),
-  metadata: Type.Optional(Type.Unknown()),
-  pendingInputs: Type.Optional(ChatPendingInputsPageSchema),
-  inputReceipts: Type.Optional(ChatInputReceiptsSchema),
-  inputConsumptions: Type.Optional(ChatInputConsumptionsSchema),
-});
-
-/** Normal cursor discontinuity; clients recover with a fresh tail request. */
-export const ChatHistoryResetResultSchema = closedObject({
-  kind: Type.Literal("reset"),
-});
-
-/** Closed cursor outcome union. */
-export const ChatHistoryCursorResultSchema = Type.Union([
-  ChatHistoryDeltaResultSchema,
-  ChatHistoryResetResultSchema,
-]);
 
 // Static type exports (upstream #128018) consumed by protocol clients + tests.
 export type ChatHistoryParams = Static<typeof ChatHistoryParamsSchema>;

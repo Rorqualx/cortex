@@ -6,7 +6,6 @@
 import { existsSync } from "node:fs";
 import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
-import { Type } from "typebox";
 import { releaseChildProcessOutputAfterExit } from "../../../process/child-process.js";
 import { COMMAND_PROCESS_TREE_KILL_GRACE_MS } from "../../../process/exec-spawn.js";
 import { createCommandTerminationController } from "../../../process/exec-termination.js";
@@ -20,7 +19,6 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.js";
 import { interactiveAgentTheme as theme } from "../../modes/interactive/theme/theme.js";
 import type { AgentTool } from "../../runtime/index.js";
-import { executionTitleSchema } from "../../schema/typebox.js";
 import {
   buildShellCommandInvocation,
   getBashShellConfig,
@@ -32,13 +30,9 @@ import { OutputAccumulator } from "./output-accumulator.js";
 import { getTextOutput, invalidArgText, reuseTextComponent, str } from "./render-utils.js";
 import type { BashToolDetails } from "./tool-contracts.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
+import { bashSchema } from "./tool-schemas.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "./truncate.js";
 
-const bashSchema = Type.Object({
-  title: executionTitleSchema(),
-  command: Type.String({ description: "Bash command." }),
-  timeout: Type.Optional(Type.Number({ description: "Optional timeout seconds; default none." })),
-});
 export type { BashToolDetails, BashToolInput } from "./tool-contracts.js";
 
 export type { BashOperations } from "./bash-operations.js";
@@ -52,6 +46,10 @@ export function resolveBashTimeoutMs(timeoutSeconds: unknown): number | undefine
     return undefined;
   }
   return resolveTimerTimeoutMs(timeoutSeconds * 1000, 1);
+if (process.env.VITEST || process.env.NODE_ENV === "test") {
+  (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.bashToolTestApi")] = {
+    resolveBashTimeoutMs,
+  };
 }
 
 /**

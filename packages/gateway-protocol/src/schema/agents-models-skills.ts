@@ -2,9 +2,9 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
-import { NonEmptyString } from "./primitives.js";
+import { GatewayAgentRuntimeSchema } from "./model-runtime-options.js";
+import { NonEmptyString, Sha256String } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
-import { GatewayAgentRuntimeSchema } from "./session-row.js";
 import { SessionPermissionModeSchema } from "./sessions-row.js";
 
 export {
@@ -233,85 +233,6 @@ export const AgentsDeleteResultSchema = Type.Object(
       ),
     ),
     purgeFailed: Type.Optional(Type.Literal(true)),
-  },
-  { additionalProperties: false },
-);
-
-const Sha256String = Type.String({
-  minLength: 64,
-  maxLength: 64,
-  pattern: "^[a-fA-F0-9]{64}$",
-});
-
-/** File metadata and optional content for agent-local editable files. */
-export const AgentsFileEntrySchema = closedObject({
-  name: NonEmptyString,
-  path: NonEmptyString,
-  missing: Type.Boolean(),
-  // True when absence is a normal workspace state (optional profile files, and
-  // MEMORY.md before anything is written). Editors should offer these for
-  // creation rather than flagging them as faults.
-  expectedAbsent: Type.Optional(Type.Boolean()),
-  size: Type.Optional(Type.Integer({ minimum: 0 })),
-  updatedAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
-  hash: Type.Optional(Sha256String),
-  content: Type.Optional(Type.String()),
-});
-
-/** Lists editable files for one agent. */
-export const AgentsFilesListParamsSchema = Type.Object(
-  {
-    agentId: NonEmptyString,
-    path: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
-
-/** Editable file list for an agent workspace. */
-export const AgentsFilesListResultSchema = Type.Object(
-  {
-    agentId: NonEmptyString,
-    workspace: NonEmptyString,
-    files: Type.Array(AgentsFileEntrySchema),
-  },
-  { additionalProperties: false },
-);
-
-/** Reads one editable agent file by name. */
-export const AgentsFilesGetParamsSchema = Type.Object(
-  {
-    agentId: NonEmptyString,
-    name: NonEmptyString,
-    path: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
-
-/** Result for reading one editable agent file. */
-export const AgentsFilesGetResultSchema = Type.Object(
-  {
-    agentId: NonEmptyString,
-    workspace: NonEmptyString,
-    file: AgentsFileEntrySchema,
-  },
-  { additionalProperties: false },
-);
-
-/** Writes one editable agent file. */
-export const AgentsFilesSetParamsSchema = closedObject({
-  agentId: NonEmptyString,
-  name: NonEmptyString,
-  content: Type.String(),
-  expectedHash: Type.Optional(Sha256String),
-});
-
-/** Result returned after writing an editable agent file. */
-export const AgentsFilesSetResultSchema = Type.Object(
-  {
-    ok: Type.Literal(true),
-    agentId: NonEmptyString,
-    workspace: NonEmptyString,
-    file: AgentsFileEntrySchema,
   },
   { additionalProperties: false },
 );
@@ -1108,15 +1029,6 @@ export {
   SkillsCuratorLiveStatusResultSchema,
 } from "./skill-curator.js";
 
-/** Reads the configured tool catalog for an agent. */
-export const ToolsCatalogParamsSchema = Type.Object(
-  {
-    agentId: Type.Optional(NonEmptyString),
-    includePlugins: Type.Optional(Type.Boolean()),
-  },
-  { additionalProperties: false },
-);
-
 export const GitHubIdentityScopeSchema = Type.Union([
   Type.Literal("system"),
   Type.Literal("agent"),
@@ -1293,15 +1205,6 @@ export const ToolsGitHubAuthorizeCancelResultSchema = closedObject({
   cancelled: Type.Boolean(),
 });
 
-/** Reads the effective tool set for one session. */
-export const ToolsEffectiveParamsSchema = Type.Object(
-  {
-    agentId: Type.Optional(NonEmptyString),
-    sessionKey: NonEmptyString,
-  },
-  { additionalProperties: false },
-);
-
 /** Invokes one tool through the gateway tool dispatcher. */
 export const ToolsInvokeParamsSchema = Type.Object(
   {
@@ -1316,130 +1219,6 @@ export const ToolsInvokeParamsSchema = Type.Object(
      * Missing values remain delegated, and agent runtime identity wins server-side.
      */
     conversationReadOrigin: Type.Optional(Type.Literal("direct-operator")),
-  },
-  { additionalProperties: false },
-);
-
-/** Tool profile shown in catalog views. */
-export const ToolCatalogProfileSchema = Type.Object(
-  {
-    id: Type.Union([
-      Type.Literal("minimal"),
-      Type.Literal("coding"),
-      Type.Literal("messaging"),
-      Type.Literal("full"),
-    ]),
-    label: NonEmptyString,
-  },
-  { additionalProperties: false },
-);
-
-/** Tool catalog entry before session-specific filtering is applied. */
-export const ToolCatalogEntrySchema = Type.Object(
-  {
-    id: NonEmptyString,
-    label: NonEmptyString,
-    description: Type.String(),
-    source: Type.Union([Type.Literal("core"), Type.Literal("plugin")]),
-    pluginId: Type.Optional(NonEmptyString),
-    optional: Type.Optional(Type.Boolean()),
-    risk: Type.Optional(
-      Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
-    ),
-    tags: Type.Optional(Type.Array(NonEmptyString)),
-    defaultProfiles: Type.Array(
-      Type.Union([
-        Type.Literal("minimal"),
-        Type.Literal("coding"),
-        Type.Literal("messaging"),
-        Type.Literal("full"),
-      ]),
-    ),
-  },
-  { additionalProperties: false },
-);
-
-/** Group of related catalog tools from core or a plugin. */
-export const ToolCatalogGroupSchema = Type.Object(
-  {
-    id: NonEmptyString,
-    label: NonEmptyString,
-    source: Type.Union([Type.Literal("core"), Type.Literal("plugin")]),
-    pluginId: Type.Optional(NonEmptyString),
-    tools: Type.Array(ToolCatalogEntrySchema),
-  },
-  { additionalProperties: false },
-);
-
-/** Tool catalog result for agent configuration UI. */
-export const ToolsCatalogResultSchema = Type.Object(
-  {
-    agentId: NonEmptyString,
-    profiles: Type.Array(ToolCatalogProfileSchema),
-    groups: Type.Array(ToolCatalogGroupSchema),
-  },
-  { additionalProperties: false },
-);
-
-/** Effective tool entry after session/profile/channel/plugin filtering. */
-export const ToolsEffectiveEntrySchema = closedObject({
-  id: NonEmptyString,
-  label: NonEmptyString,
-  description: Type.String(),
-  rawDescription: Type.String(),
-  source: Type.Union([
-    Type.Literal("core"),
-    Type.Literal("plugin"),
-    Type.Literal("channel"),
-    Type.Literal("mcp"),
-  ]),
-  pluginId: Type.Optional(NonEmptyString),
-  channelId: Type.Optional(NonEmptyString),
-  mcpServer: Type.Optional(NonEmptyString),
-  mcpToolName: Type.Optional(NonEmptyString),
-  deniedBySession: Type.Optional(Type.Literal(true)),
-  risk: Type.Optional(
-    Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
-  ),
-  tags: Type.Optional(Type.Array(NonEmptyString)),
-});
-
-/** Effective tool group shown to runtime/session callers. */
-export const ToolsEffectiveGroupSchema = Type.Object(
-  {
-    id: Type.Union([
-      Type.Literal("core"),
-      Type.Literal("plugin"),
-      Type.Literal("channel"),
-      Type.Literal("mcp"),
-    ]),
-    label: NonEmptyString,
-    source: Type.Union([
-      Type.Literal("core"),
-      Type.Literal("plugin"),
-      Type.Literal("channel"),
-      Type.Literal("mcp"),
-    ]),
-    tools: Type.Array(ToolsEffectiveEntrySchema),
-  },
-  { additionalProperties: false },
-);
-
-/** Notice explaining runtime filtering such as quarantined tool schemas. */
-export const ToolsEffectiveNoticeSchema = closedObject({
-  id: NonEmptyString,
-  severity: Type.Union([Type.Literal("info"), Type.Literal("warning")]),
-  message: Type.String(),
-  servers: Type.Optional(Type.Array(NonEmptyString)),
-});
-
-/** Effective tool set for a session, including profile and filtering notices. */
-export const ToolsEffectiveResultSchema = Type.Object(
-  {
-    agentId: NonEmptyString,
-    profile: NonEmptyString,
-    groups: Type.Array(ToolsEffectiveGroupSchema),
-    notices: Type.Optional(Type.Array(ToolsEffectiveNoticeSchema)),
   },
   { additionalProperties: false },
 );
@@ -1498,19 +1277,13 @@ export const AgentsComposePromptResultSchema = Type.Object(
 // pull in the ProtocolSchemas registry.
 export type AgentKind = Static<typeof AgentKindSchema>;
 export type AgentSummary = Static<typeof AgentSummarySchema>;
-export type AgentsFileEntry = Static<typeof AgentsFileEntrySchema>;
+export type GatewayAgentRuntime = Static<typeof GatewayAgentRuntimeSchema>;
 export type AgentsCreateParams = Static<typeof AgentsCreateParamsSchema>;
 export type AgentsCreateResult = Static<typeof AgentsCreateResultSchema>;
 export type AgentsUpdateParams = Static<typeof AgentsUpdateParamsSchema>;
 export type AgentsUpdateResult = Static<typeof AgentsUpdateResultSchema>;
 export type AgentsDeleteParams = Static<typeof AgentsDeleteParamsSchema>;
 export type AgentsDeleteResult = Static<typeof AgentsDeleteResultSchema>;
-export type AgentsFilesListParams = Static<typeof AgentsFilesListParamsSchema>;
-export type AgentsFilesListResult = Static<typeof AgentsFilesListResultSchema>;
-export type AgentsFilesGetParams = Static<typeof AgentsFilesGetParamsSchema>;
-export type AgentsFilesGetResult = Static<typeof AgentsFilesGetResultSchema>;
-export type AgentsFilesSetParams = Static<typeof AgentsFilesSetParamsSchema>;
-export type AgentsFilesSetResult = Static<typeof AgentsFilesSetResultSchema>;
 export type AgentsListParams = Static<typeof AgentsListParamsSchema>;
 export type AgentsListResult = Static<typeof AgentsListResultSchema>;
 export type ModelsAuthSetApiKeyParams = Static<typeof ModelsAuthSetApiKeyParamsSchema>;
@@ -1524,16 +1297,27 @@ export type ModelsProbeParams = Static<typeof ModelsProbeParamsSchema>;
 export type ModelsProbeTargetResult = Static<typeof ModelsProbeTargetResultSchema>;
 export type ModelsProbeResult = Static<typeof ModelsProbeResultSchema>;
 export type SkillsStatusParams = Static<typeof SkillsStatusParamsSchema>;
-export type ToolsCatalogParams = Static<typeof ToolsCatalogParamsSchema>;
-export type ToolCatalogProfile = Static<typeof ToolCatalogProfileSchema>;
-export type ToolCatalogEntry = Static<typeof ToolCatalogEntrySchema>;
-export type ToolCatalogGroup = Static<typeof ToolCatalogGroupSchema>;
-export type ToolsCatalogResult = Static<typeof ToolsCatalogResultSchema>;
-export type ToolsEffectiveParams = Static<typeof ToolsEffectiveParamsSchema>;
-export type ToolsEffectiveEntry = Static<typeof ToolsEffectiveEntrySchema>;
-export type ToolsEffectiveGroup = Static<typeof ToolsEffectiveGroupSchema>;
-export type ToolsEffectiveNotice = Static<typeof ToolsEffectiveNoticeSchema>;
-export type ToolsEffectiveResult = Static<typeof ToolsEffectiveResultSchema>;
+export type GitHubIdentityFacts = Static<typeof GitHubIdentityFactsSchema>;
+export type GitHubSelectedIdentity = Static<typeof GitHubSelectedIdentitySchema>;
+export type ToolsGitHubStatusParams = Static<typeof ToolsGitHubStatusParamsSchema>;
+export type ToolsGitHubStatusResult = Static<typeof ToolsGitHubStatusResultSchema>;
+export type ToolsGitHubManagedConfigureParams = Static<
+  typeof ToolsGitHubManagedConfigureParamsSchema
+>;
+export type ToolsGitHubInheritConfigureParams = Static<
+  typeof ToolsGitHubInheritConfigureParamsSchema
+>;
+export type ToolsGitHubConfigureParams = Static<typeof ToolsGitHubConfigureParamsSchema>;
+export type ToolsGitHubAuthorizeStartParams = Static<typeof ToolsGitHubAuthorizeStartParamsSchema>;
+export type ToolsGitHubAuthorizeStartResult = Static<typeof ToolsGitHubAuthorizeStartResultSchema>;
+export type ToolsGitHubAuthorizePollParams = Static<typeof ToolsGitHubAuthorizePollParamsSchema>;
+export type ToolsGitHubAuthorizePollResult = Static<typeof ToolsGitHubAuthorizePollResultSchema>;
+export type ToolsGitHubAuthorizeCancelParams = Static<
+  typeof ToolsGitHubAuthorizeCancelParamsSchema
+>;
+export type ToolsGitHubAuthorizeCancelResult = Static<
+  typeof ToolsGitHubAuthorizeCancelResultSchema
+>;
 export type ToolsInvokeParams = Static<typeof ToolsInvokeParamsSchema>;
 export type ToolsInvokeResult = Static<typeof ToolsInvokeResultSchema>;
 export type SkillsBinsParams = Static<typeof SkillsBinsParamsSchema>;
@@ -1565,27 +1349,6 @@ export type SkillsProposalEventsListResult = Static<typeof SkillsProposalEventsL
 export type SkillsProposalApplyResult = Static<typeof SkillsProposalApplyResultSchema>;
 export type SkillsProposalRecordResult = Static<typeof SkillsProposalRecordResultSchema>;
 export type SkillsProposalDecisionParams = Static<typeof SkillsProposalDecisionParamsSchema>;
-export type GitHubIdentityFacts = Static<typeof GitHubIdentityFactsSchema>;
-export type GitHubSelectedIdentity = Static<typeof GitHubSelectedIdentitySchema>;
-export type ToolsGitHubStatusParams = Static<typeof ToolsGitHubStatusParamsSchema>;
-export type ToolsGitHubStatusResult = Static<typeof ToolsGitHubStatusResultSchema>;
-export type ToolsGitHubManagedConfigureParams = Static<
-  typeof ToolsGitHubManagedConfigureParamsSchema
->;
-export type ToolsGitHubInheritConfigureParams = Static<
-  typeof ToolsGitHubInheritConfigureParamsSchema
->;
-export type ToolsGitHubConfigureParams = Static<typeof ToolsGitHubConfigureParamsSchema>;
-export type ToolsGitHubAuthorizeStartParams = Static<typeof ToolsGitHubAuthorizeStartParamsSchema>;
-export type ToolsGitHubAuthorizeStartResult = Static<typeof ToolsGitHubAuthorizeStartResultSchema>;
-export type ToolsGitHubAuthorizePollParams = Static<typeof ToolsGitHubAuthorizePollParamsSchema>;
-export type ToolsGitHubAuthorizePollResult = Static<typeof ToolsGitHubAuthorizePollResultSchema>;
-export type ToolsGitHubAuthorizeCancelParams = Static<
-  typeof ToolsGitHubAuthorizeCancelParamsSchema
->;
-export type ToolsGitHubAuthorizeCancelResult = Static<
-  typeof ToolsGitHubAuthorizeCancelResultSchema
->;
 export type {
   SkillsCuratorStatusParams,
   SkillsCuratorStatusResult,

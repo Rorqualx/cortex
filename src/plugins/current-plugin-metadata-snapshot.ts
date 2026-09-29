@@ -22,10 +22,7 @@ import {
   runOutsidePluginCache,
   withPluginCache,
 } from "./plugin-cache.js";
-import {
-  resolvePluginControlPlaneFingerprint,
-  type ResolvePluginControlPlaneContextParams,
-} from "./plugin-control-plane-context.js";
+import { resolvePluginControlPlaneFingerprint } from "./plugin-control-plane-context.js";
 import {
   createPluginExecutionFrame,
   getPluginExecutionFrame,
@@ -90,7 +87,8 @@ function prepareCurrentPluginMetadataSnapshotPublication(
   owner: "gateway" | "operation" = "operation",
 ): () => void {
   const fingerprint = (config: OpenClawConfig | undefined, policyHash: string | undefined) =>
-    resolvePluginMetadataControlPlaneFingerprint(config, {
+    resolvePluginControlPlaneFingerprint({
+      config,
       env: options.env,
       index: snapshot.index,
       policyHash,
@@ -233,7 +231,8 @@ export function createPluginMetadataSnapshotFrame(
   const cache = getPluginMetadataSnapshotCache(snapshot);
   const workspaceDir = options.workspaceDir ?? snapshot.workspaceDir;
   const fingerprint = (config: OpenClawConfig, policyHash: string | undefined) =>
-    resolvePluginMetadataControlPlaneFingerprint(config, {
+    resolvePluginControlPlaneFingerprint({
+      config,
       env: options.env,
       inventoryFingerprint: withPluginCache(cache, () =>
         resolveInstalledManifestRegistryIndexFingerprint(snapshot.index),
@@ -363,7 +362,8 @@ function resolveCompatiblePluginMetadataSnapshot(
     }
   }
   if (params.config && !canReuseCachedConfig) {
-    const requestedConfigFingerprint = resolvePluginMetadataControlPlaneFingerprint(params.config, {
+    const requestedConfigFingerprint = resolvePluginControlPlaneFingerprint({
+      config: params.config,
       env,
       index: snapshot.index,
       policyHash: requestedPolicyHash,
@@ -391,35 +391,21 @@ function resolveCompatiblePluginMetadataSnapshot(
 export function getCompatibleProcessGatewayPluginMetadataSnapshot(
   params: CurrentPluginMetadataSnapshotParams = {},
 ): PluginMetadataSnapshot | undefined {
-  const {
-    snapshot,
-    owner,
-    configFingerprint,
-    agentWorkspaceFingerprint,
-    envFingerprint,
-    defaultDiscoveryCompatible,
-    compatiblePolicyHashes,
-    compatibleConfigFingerprints,
-  } = getCurrentPluginMetadataSnapshotState();
-  if (owner !== "gateway") {
+  const state = getCurrentPluginMetadataSnapshotState();
+  if (state.owner !== "gateway") {
     return undefined;
   }
   if (
     params.requireAgentWorkspaceCompatibility === true &&
     (!params.config ||
-      agentWorkspaceFingerprint !== resolveAgentWorkspaceFingerprint(params.config, params.env))
+      state.agentWorkspaceFingerprint !==
+        resolveAgentWorkspaceFingerprint(params.config, params.env))
   ) {
     return undefined;
   }
   const compatible = resolveCompatiblePluginMetadataSnapshot(
     {
-      // SAFETY: Gateway publication accepts only a complete typed metadata snapshot.
-      snapshot: snapshot as PluginMetadataSnapshot | undefined,
-      configFingerprint,
-      envFingerprint,
-      defaultDiscoveryCompatible,
-      compatiblePolicyHashes,
-      compatibleConfigFingerprints,
+      ...state,
       hasConfigIdentity: (config) => currentPluginMetadataConfigIdentityCache.has(config),
     },
     params,
@@ -470,25 +456,12 @@ export function getCurrentPluginMetadataSnapshot(
     return undefined;
   }
 
-  const {
-    snapshot,
-    owner,
-    configFingerprint,
-    envFingerprint,
-    defaultDiscoveryCompatible,
-    compatiblePolicyHashes,
-    compatibleConfigFingerprints,
-  } = getCurrentPluginMetadataSnapshotState();
+  const state = getCurrentPluginMetadataSnapshotState();
   const compatible = resolveCompatiblePluginMetadataSnapshot(
     {
-      snapshot,
-      configFingerprint,
-      envFingerprint,
-      defaultDiscoveryCompatible,
-      compatiblePolicyHashes,
-      compatibleConfigFingerprints,
+      ...state,
       hasConfigIdentity: (config) => currentPluginMetadataConfigIdentityCache.has(config),
-      immutableRuntimeGeneration: owner === "gateway",
+      immutableRuntimeGeneration: state.owner === "gateway",
     },
     params,
   );

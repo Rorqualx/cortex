@@ -45,6 +45,7 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "pendingProjectGitUrl",
   "createdVia",
   "createdActor",
+  "inheritedGitContributorProfileIds",
   "sandbox",
   "sandboxMode",
   "nativeRuntimeConsent",

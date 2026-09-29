@@ -316,7 +316,10 @@ export async function resolveCronDeliveryContext(params: {
   agentId: string;
 }) {
   const deliveryPlan = resolveCronDeliveryPlan(params.job);
-  if (deliveryPlan.mode === "webhook") {
+  if (
+    deliveryPlan.mode === "webhook" ||
+    (deliveryPlan.mode === "none" && !hasExplicitCronDeliveryTarget(deliveryPlan))
+  ) {
     const resolvedDelivery = {
       ok: false as const,
       channel: undefined,
@@ -324,33 +327,20 @@ export async function resolveCronDeliveryContext(params: {
       accountId: undefined,
       threadId: undefined,
       mode: "implicit" as const,
-      error: new Error("webhook delivery has no chat target"),
+      error: new Error(
+        deliveryPlan.mode === "webhook"
+          ? "webhook delivery has no chat target"
+          : "delivery is disabled",
+      ),
     };
     return {
       deliveryPlan,
-      deliveryRequested: deliveryPlan.requested,
+      deliveryRequested: deliveryPlan.mode === "webhook" ? deliveryPlan.requested : false,
       resolvedDelivery,
       sourceDelivery: resolveCronSourceDeliveryPlan({ deliveryPlan, resolvedDelivery }),
     };
   }
-  if (deliveryPlan.mode === "none" && !hasExplicitCronDeliveryTarget(deliveryPlan)) {
-    const resolvedDelivery = {
-      ok: false as const,
-      channel: undefined,
-      to: undefined,
-      accountId: undefined,
-      threadId: undefined,
-      mode: "implicit" as const,
-      error: new Error("delivery is disabled"),
-    };
-    return {
-      deliveryPlan,
-      deliveryRequested: false,
-      resolvedDelivery,
-      sourceDelivery: resolveCronSourceDeliveryPlan({ deliveryPlan, resolvedDelivery }),
-    };
-  }
-  const { resolveDeliveryTarget } = await loadCronDeliveryRuntime();
+  const { buildDeliveryFormatPrompt, resolveDeliveryTarget } = await loadCronDeliveryRuntime();
   const resolvedDelivery = await resolveDeliveryTarget(params.cfg, params.agentId, {
     ...deliveryPlan,
     sessionTarget: params.job.payload.kind === "agentTurn" ? params.job.sessionTarget : undefined,
@@ -362,6 +352,16 @@ export async function resolveCronDeliveryContext(params: {
     deliveryPlan,
     deliveryRequested: deliveryPlan.requested,
     resolvedDelivery,
+    deliverySystemPrompt:
+      deliveryPlan.requested && resolvedDelivery.ok
+        ? buildDeliveryFormatPrompt({
+            cfg: params.cfg,
+            channel: resolvedDelivery.channel,
+            accountId: resolvedDelivery.accountId,
+            agentId: params.agentId,
+            allowBootstrap: true,
+          })
+        : undefined,
     sourceDelivery: resolveCronSourceDeliveryPlan({ deliveryPlan, resolvedDelivery }),
   };
 }

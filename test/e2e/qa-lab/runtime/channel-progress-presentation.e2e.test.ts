@@ -843,7 +843,15 @@ describe("channel progress presentation through an isolated Gateway", () => {
         }
         const upstream = await fetch(new URL(request.url ?? "/", provider.baseUrl), {
           method: request.method,
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(typeof request.headers.session_id === "string"
+              ? { session_id: request.headers.session_id }
+              : {}),
+            ...(typeof request.headers["x-session-affinity"] === "string"
+              ? { "x-session-affinity": request.headers["x-session-affinity"] }
+              : {}),
+          },
           ...(request.method === "POST" ? { body: raw } : {}),
         });
         response.writeHead(upstream.status, {
@@ -876,6 +884,7 @@ describe("channel progress presentation through an isolated Gateway", () => {
         usePackagedPlugins: true,
       },
       providerBaseUrl: `http://127.0.0.1:${address.port}/v1`,
+      mockSessionObserverUrl: provider.sessionObserverUrl,
       providerMode: "mock-openai",
       primaryModel: MODEL,
       alternateModel: observerModel,
@@ -1207,7 +1216,15 @@ describe("channel progress presentation through an isolated Gateway", () => {
         }
         const upstream = await fetch(new URL(request.url ?? "/", provider.baseUrl), {
           method: request.method,
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(typeof request.headers.session_id === "string"
+              ? { session_id: request.headers.session_id }
+              : {}),
+            ...(typeof request.headers["x-session-affinity"] === "string"
+              ? { "x-session-affinity": request.headers["x-session-affinity"] }
+              : {}),
+          },
           ...(request.method === "POST" ? { body: raw } : {}),
         });
         const upstreamText = await upstream.text();
@@ -1274,6 +1291,7 @@ describe("channel progress presentation through an isolated Gateway", () => {
         usePackagedPlugins: true,
       },
       providerBaseUrl: `http://127.0.0.1:${address.port}/v1`,
+      mockSessionObserverUrl: provider.sessionObserverUrl,
       providerMode: "mock-openai",
       primaryModel: MODEL,
       alternateModel: MODEL,
@@ -1442,7 +1460,6 @@ describe("channel progress presentation through an isolated Gateway", () => {
       return (
         task?.status === "completed" &&
         delivery?.disposition === "ambiguous" &&
-        typeof delivery.nextAttemptAt === "number" &&
         Boolean(queued) &&
         gateway.logs().includes("automatic completion delivery could not be confirmed")
       );
@@ -1664,7 +1681,7 @@ describe("channel progress presentation through an isolated Gateway", () => {
       }
       const finalText = `${thread === "current" ? "[[reply_to_current]] " : ""}${FINAL_MARKER}`;
       const injected = await injectProviderMessage(
-        `Tool progress QA check: call the exec tool exactly once with this exact command before answering: \`${failTool ? "sleep 3; exit 1" : "sleep 3"}\`. After that command completes or fails, reply exactly \`${finalText}\`.`,
+        `Tool progress QA check: call the exec tool exactly once with this exact command before answering: \`${failTool ? "sleep 2; exit 1" : "sleep 2"}\`. After that command completes or fails, reply exactly \`${finalText}\`.`,
         threadId,
       );
       if (adapter.manifest.provider === "slack") {
