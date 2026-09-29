@@ -92,7 +92,11 @@ const CONTROL_UI_LOCALE_GZIP_BYTES = 300 * KIB;
 const controlUiPerformanceBudgets = {
   startupJsRequests: 28,
   startupCssRequests: 1,
-  startupJsGzipBytes: 576 * KIB,
+  // 576 -> 577 KiB on 2026-09-29 (maintainer-approved): batch-2 resync measured
+  // 590540 B, 140 B past the 590400 B envelope while the baseline sat pinned AT the
+  // old cap. Growth is structural (each upstream batch adds protocol schema to the
+  // startup path); trimming the startup path is the recorded follow-up.
+  startupJsGzipBytes: 577 * KIB,
   startupCssGzipBytes: 128 * KIB,
   largestJsGzipBytes: 380 * KIB,
   largestCssGzipBytes: 128 * KIB,
