@@ -29,6 +29,7 @@ import { addTestHook, createMockPluginRegistry } from "../plugins/hooks.test-hel
 import { patchPluginSessionExtension } from "../plugins/host-hook-state.js";
 import { createEmptyPluginRegistry } from "../plugins/registry.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { setPluginToolMeta } from "../plugins/tool-metadata.js";
 import type { PluginHookRegistration } from "../plugins/types.js";
 import {
   authorizeClientVoiceConfirmation,
@@ -47,7 +48,6 @@ import { finalizeToolTerminalPresentation } from "./agent-tools.before-tool-call
 import {
   consumeAdjustedParamsForToolCall,
   isToolWrappedWithBeforeToolCallHook,
-  resetAdjustedParamsByToolCallIdForTests,
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
 import {
@@ -68,6 +68,12 @@ import { createToolSearchCatalogRef, registerHeadlessToolSearchCatalog } from ".
 import { setToolTerminalPresentation } from "./tool-terminal-presentation.js";
 
 type BeforeToolCallHandlerMock = ReturnType<typeof vi.fn>;
+
+const beforeToolCallTesting = {
+  adjustedParamsByToolCallId,
+  buildAdjustedParamsKey,
+  structuredReplaySafeToolCallIds,
+};
 
 function asAgentTool(tool: {
   description?: string;
