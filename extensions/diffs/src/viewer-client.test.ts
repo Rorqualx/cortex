@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { expectDefined } from "@openclaw/normalization-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiffViewerPayload } from "./types.js";
 
@@ -66,7 +67,7 @@ function renderCard(overrides: Partial<DiffViewerPayload> = {}): void {
     "beforeend",
     `<section class="oc-diff-card">
       <div data-openclaw-diff-host></div>
-      <script type="application/json" data-openclaw-diff-payload>${viewerPayload}</script>
+      <script type="application/json" data-openclaw-diff-payload>${payload}</script>
     </section>`,
   );
 }
@@ -102,7 +103,6 @@ describe("createToolbarButton icon safety", () => {
     expect(VIEWER_CLIENT_SRC.includes("iconMarkup: string")).toBe(false);
   });
 
-describe("createToolbarButton icon safety", () => {
   it("innerHTML reads only from toolbarIconSvg lookup", () => {
     expect(VIEWER_CLIENT_SRC.includes("button.innerHTML = toolbarIconSvg[params.icon]")).toBe(true);
   });

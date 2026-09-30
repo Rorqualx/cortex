@@ -262,6 +262,7 @@ public enum SessionRunStatus: String, Codable, Sendable {
     case running = "running"
     case done = "done"
     case failed = "failed"
+    case interrupted = "interrupted"
     case killed = "killed"
     case timeout = "timeout"
 }
@@ -17639,7 +17640,7 @@ public struct SessionRow: Codable, Sendable {
     public let markedunreadat: Double?
     public let lastactivityat: Double?
     public let lastinteractionat: Double?
-    public let status: AnyCodable?
+    public let status: SessionRunStatus?
     public let lastrunerror: String?
     public let providerreview: SessionProviderReviewProjection?
     public let lastrunid: String?
@@ -17733,7 +17734,7 @@ public struct SessionRow: Codable, Sendable {
         markedunreadat: Double? = nil,
         lastactivityat: Double? = nil,
         lastinteractionat: Double? = nil,
-        status: AnyCodable? = nil,
+        status: SessionRunStatus? = nil,
         lastrunerror: String? = nil,
         providerreview: SessionProviderReviewProjection? = nil,
         lastrunid: String? = nil,

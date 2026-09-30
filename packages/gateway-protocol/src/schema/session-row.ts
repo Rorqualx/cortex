@@ -1,11 +1,12 @@
 // Gateway Protocol schema module defines protocol validation shapes.
 import type { Static } from "typebox";
 import { Type } from "typebox";
-import { SessionGoalSchema } from "./sessions-goal.js";
 import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString } from "./primitives.js";
-import { SessionPlacementSchema } from "./session-placement.js";
 import { SessionCompactionCheckpointReasonSchema } from "./session-compaction-reason.js";
+import { SessionPlacementSchema } from "./session-placement.js";
+import { SessionGoalSchema } from "./sessions-goal.js";
+import { SessionRunStatusSchema } from "./sessions-row.js";
 
 /**
  * Gateway session row and session event schemas.
@@ -31,15 +32,8 @@ export const ChatTypeSchema = Type.Union([
   Type.Literal("channel"),
 ]);
 
-/** Runtime status surfaced for the latest session run. */
-export const SessionRunStatusSchema = Type.Union([
-  Type.Literal("queued"),
-  Type.Literal("running"),
-  Type.Literal("done"),
-  Type.Literal("failed"),
-  Type.Literal("killed"),
-  Type.Literal("timeout"),
-]);
+// Run status is owned by sessions-row; re-exported for the generated protocol surface.
+export { SessionRunStatusSchema };
 
 /** Lifecycle state of the latest subagent run bound to the session. */
 export const SubagentRunStateSchema = Type.Union([
