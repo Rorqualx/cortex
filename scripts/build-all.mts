@@ -19,7 +19,6 @@ import {
 import { formatDurationElapsed } from "./lib/format-duration.mts";
 import { resolveLiveManagedGatewayDistFence } from "./lib/live-gateway-dist-fence.mts";
 import { runManagedCommand } from "./lib/managed-child-process.mts";
-import { pluginSdkEntrypoints } from "./lib/plugin-sdk-entries.mts";
 import type { MemoryLimitParams } from "./lib/process-memory.mts";
 import { preflightInstalledSourceArtifacts } from "./lib/source-update-artifact-preflight.mts";
 import {
@@ -82,29 +81,6 @@ const TSDOWN_MAIN_PACKAGE_OUTPUT_ROOTS = TSDOWN_PACKAGE_OUTPUT_ROOTS.filter(
 const declarationCacheOutputs = (roots: string[]) =>
   roots.map((root) => ({ path: root, extensions: TSDOWN_DECLARATION_EXTENSIONS }));
 const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 8192;
-const PLUGIN_SDK_ENTRY_DTS_CACHE_ENV = [
-  "OPENCLAW_BUILD_PRIVATE_QA",
-  "OPENCLAW_PLUGIN_SDK_CANONICAL_DTS",
-];
-const PLUGIN_SDK_ENTRY_DTS_SHARED_CACHE_INPUTS = [
-  "scripts/write-plugin-sdk-entry-dts.ts",
-  "scripts/lib/declaration-source-index.mts",
-  "scripts/lib/direct-run.mjs",
-  "scripts/lib/native-typescript.mts",
-  "scripts/lib/plugin-sdk-entries.mts",
-  "scripts/lib/plugin-sdk-entrypoints.json",
-  "scripts/lib/plugin-sdk-private-local-only-subpaths.json",
-  "scripts/lib/plugin-sdk-deprecated-public-subpaths.json",
-  "scripts/lib/plugin-sdk-deprecated-barrel-subpaths.json",
-];
-const PLUGIN_SDK_ENTRY_DTS_CACHE_INPUTS = [
-  ...PLUGIN_SDK_ENTRY_DTS_SHARED_CACHE_INPUTS,
-  { path: "dist/plugin-sdk", extensions: [".d.ts"], recursive: false },
-];
-const PLUGIN_SDK_ENTRY_DTS_CACHE_OUTPUTS = [
-  "dist/plugin-sdk/.boundary-entry-shims.stamp",
-  ...pluginSdkEntrypoints.map((entry) => `packages/plugin-sdk/dist/src/plugin-sdk/${entry}.d.ts`),
-];
 const tsxScript = (script: string, ...args: string[]) => ["--import", "tsx", script, ...args];
 const nodeStep = (label: string, args: string[]): Extract<BuildAllStep, { kind?: "node" }> => ({
   label,
@@ -193,12 +169,9 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
     // memory; upstream growth (2026-08-26 batch) pushed it past Node's ~4GB default
     // heap on Linux (huey proof OOM at 4068MB). 8192MB matches the Windows build floor.
     nodeOptions: `--max-old-space-size=${WINDOWS_BUILD_MAX_OLD_SPACE_MB}`,
-    cache: {
-      env: PLUGIN_SDK_ENTRY_DTS_CACHE_ENV,
-      inputs: PLUGIN_SDK_ENTRY_DTS_CACHE_INPUTS,
-      outputs: PLUGIN_SDK_ENTRY_DTS_CACHE_OUTPUTS,
-      restore: "always",
-    },
+    // Uncached: the writer publishes flat SDK declarations plus content-hashed shared
+    // chunks into dist/plugin-sdk, which a fixed output list cannot restore. A cache hit
+    // left dist/plugin-sdk without declarations (2026-09-30); the step costs ~50s.
   },
   tsxStep("check-plugin-sdk-exports", "scripts/check-plugin-sdk-exports.mts"),
   {

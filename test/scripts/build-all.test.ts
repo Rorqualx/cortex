@@ -813,13 +813,10 @@ describe("resolveBuildAllSteps", () => {
       "SDK declaration stage",
     );
     expect(stage.env).toMatchObject({ OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "0" });
-    // Fork: the entry-dts step carries the fork's build-all-level cache (the
-    // fork's writer is the flat-declaration implementation; upstream moved its
-    // caching inside the staged script, which this fork does not ship).
-    expect(stage.cache?.inputs).toEqual(
-      expect.arrayContaining(["scripts/write-plugin-sdk-entry-dts.ts"]),
-    );
-    expect(stage.cache?.outputs).toContain("dist/plugin-sdk/.boundary-entry-shims.stamp");
+    // Fork: the flat-declaration writer publishes content-hashed shared chunks into
+    // dist/plugin-sdk, which a fixed cache output list cannot restore, so it stays
+    // uncached (a cache hit once left dist/plugin-sdk without declarations).
+    expect(stage.cache).toBeUndefined();
     for (const profile of ["full", "package", "strictSmoke", "pluginSdkStrictSmoke"]) {
       const profileSteps = resolveBuildAllSteps(profile);
       expect(profileSteps.find((step) => step.label === stage.label)).toEqual(stage);
