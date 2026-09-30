@@ -1,7 +1,6 @@
-// Gateway RPC handlers for skill discovery, install/update, and proposal workflows.
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { normalizeTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
 import {
   buildClawHubTrustErrorDetails,
   ErrorCodes,
@@ -214,12 +213,6 @@ function respondRetiredSkillCuratorAction(
     return;
   }
   respondSkillWorkshopError(respond, new Error(SKILL_LIFECYCLE_CURATION_RETIRED_MESSAGE));
-}
-
-function collectClawHubTrustWarnings(results: Array<{ warning?: string }>): string[] {
-  return results
-    .map((result) => normalizeOptionalString(result.warning))
-    .filter((warning): warning is string => Boolean(warning));
 }
 
 function buildRevisionAgentInstruction(
@@ -945,7 +938,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
         config: resolved.cfg,
       });
       const errors = results.filter((result) => !result.ok);
-      const warnings = collectClawHubTrustWarnings(results);
+      const warnings = normalizeTrimmedStringList(results.map((result) => result.warning));
       respond(
         errors.length === 0,
         {

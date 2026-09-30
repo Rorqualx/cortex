@@ -1,4 +1,3 @@
-// Defines tool availability and allowlist configuration types.
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import type { z } from "zod";
 import type { DoomLoopGuardConfig } from "../agents/doom-loop-guard.js";

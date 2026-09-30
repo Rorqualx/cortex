@@ -124,10 +124,6 @@ type ModelCatalogRouteVariantCollector = {
   indexByKey: Map<string, number>;
 };
 
-function createModelCatalogRouteVariantCollector(): ModelCatalogRouteVariantCollector {
-  return { entries: [], indexByKey: new Map() };
-}
-
 function mergeCatalogRouteVariants(
   collector: ModelCatalogRouteVariantCollector,
   entries: readonly ModelCatalogEntry[],
@@ -331,7 +327,7 @@ export async function buildPreparedModelCatalogSnapshot(
   params: BuildPreparedModelCatalogParams,
 ): Promise<ModelCatalogSnapshot> {
   const models: ModelCatalogEntry[] = [];
-  const routeVariants = createModelCatalogRouteVariantCollector();
+  const routeVariants: ModelCatalogRouteVariantCollector = { entries: [], indexByKey: new Map() };
   const cfg = params.config;
   const env = params.env ?? process.env;
   const timingEnabled = isDiagnosticFlagEnabled("ingress.timing", cfg);

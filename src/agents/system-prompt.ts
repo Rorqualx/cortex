@@ -918,15 +918,13 @@ export function buildAgentSystemPrompt(params: {
       ...skillWorkshopSection,
       ...skillForgeSection,
       ...memorySection,
-      params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal
-        ? "## Model Aliases"
-        : "",
-      params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal
-        ? "Model override: prefer alias; provider/model also accepted."
-        : "",
-      params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal
-        ? params.modelAliasLines.join("\n")
-        : "",
+      ...(params.modelAliasLines && params.modelAliasLines.length > 0 && !isMinimal
+        ? [
+            "## Model Aliases",
+            "Model override: prefer alias; provider/model also accepted.",
+            params.modelAliasLines.join("\n"),
+          ]
+        : []),
       ...directorySection,
       workspaceOnlyGuidance,
       ...workspaceNotes,

@@ -240,7 +240,6 @@ async function postCronWebhookStrict(params: {
   signal?: AbortSignal;
   deadlineAtMs?: number;
   onDeliveryState?: (outcome: CronWebhookDeliveryOutcome) => void;
-  onResponse?: (status: number) => void;
 }): Promise<void> {
   const remainingMs =
     params.deadlineAtMs === undefined ? CRON_WEBHOOK_TIMEOUT_MS : params.deadlineAtMs - Date.now();
@@ -252,18 +251,27 @@ async function postCronWebhookStrict(params: {
   const requestTimeoutMs = Math.min(CRON_WEBHOOK_TIMEOUT_MS, remainingMs);
   const requestDeadlineAtMs = Date.now() + requestTimeoutMs;
   assertSecretOwnerAvailable("capability", "cron-webhook");
+  let receivedResponse = false;
   const result = await fetchWithSsrFGuard({
     url: params.webhookUrl,
     timeoutMs: requestTimeoutMs,
     policy: params.ssrfPolicy,
     beforeRequest: () => params.onDeliveryState?.({ status: "unknown" }),
-    onResponse: params.onResponse,
+    onResponse: () => {
+      receivedResponse = true;
+    },
     ...(params.signal ? { signal: params.signal } : {}),
     init: {
       method: "POST",
       headers: buildCronWebhookHeaders(params.webhookToken),
       body: JSON.stringify(params.payload),
     },
+  }).catch((error: unknown) => {
+    // A connect error after a redirect does not disprove the earlier POST.
+    if (params.onDeliveryState && !receivedResponse && isProvenDeliveryNotSentError(error)) {
+      params.onDeliveryState({ status: "not-delivered", error: formatErrorMessage(error) });
+    }
+    throw error;
   });
   let accepted = false;
   try {
@@ -352,29 +360,16 @@ export async function sendGatewayCronWebhook(params: {
       label: "webhook",
       ...(params.abortSignal ? { signal: params.abortSignal } : {}),
       ...(params.deadlineAtMs !== undefined ? { deadlineAtMs: params.deadlineAtMs } : {}),
-      run: async () => {
-        let receivedResponse = false;
-        try {
-          await postCronWebhookStrict({
-            webhookUrl,
-            webhookToken: normalizeOptionalString(params.webhookToken),
-            ssrfPolicy: params.ssrfPolicy,
-            payload: buildCronFinishedWebhookPayload(event),
-            signal: params.abortSignal,
-            deadlineAtMs: params.deadlineAtMs,
-            onDeliveryState: publish,
-            onResponse: () => {
-              receivedResponse = true;
-            },
-          });
-        } catch (error) {
-          // A connect error after a redirect does not disprove the earlier POST.
-          if (!receivedResponse && isProvenDeliveryNotSentError(error)) {
-            publish({ status: "not-delivered", error: formatErrorMessage(error) });
-          }
-          throw error;
-        }
-      },
+      run: () =>
+        postCronWebhookStrict({
+          webhookUrl,
+          webhookToken: normalizeOptionalString(params.webhookToken),
+          ssrfPolicy: params.ssrfPolicy,
+          payload: buildCronFinishedWebhookPayload(event),
+          signal: params.abortSignal,
+          deadlineAtMs: params.deadlineAtMs,
+          onDeliveryState: publish,
+        }),
       shouldRetryError: (error) =>
         outcome.status === "not-delivered" && !(error instanceof SsrFBlockedError),
     });
@@ -442,9 +437,7 @@ async function sendGatewayCronFailureAlertUnderAdmission(
         webhookToken: normalizeOptionalString(params.webhookToken),
         ssrfPolicy: params.ssrfPolicy,
         onDeliveryState: (outcome) => {
-          if (outcome.status === "delivered") {
-            onDeliveryAttempt(true);
-          }
+          mayHaveReachedRecipient = outcome.status !== "not-delivered";
         },
         payload: {
           jobId: params.job.id,

@@ -1,4 +1,3 @@
-// Creates and applies JSON merge-patch updates to config-like objects.
 // Import the guard from its defining package, not the src/utils.js barrel: the
 // Control UI imports this module, and the barrel pulls src/infra/home-dir.js,
 // which throws at module-eval in a browser (no HOME/OPENCLAW_HOME) and aborts

@@ -1,4 +1,5 @@
 import type { AgentRunTimeoutPhase } from "@openclaw/normalization-core/agent-run-terminal-outcome";
+import type { FastMode } from "@openclaw/normalization-core/string-coerce";
 import type { HeartbeatToolResponse } from "../../../auto-reply/heartbeat-tool-response.js";
 import type { ThinkLevel } from "../../../auto-reply/thinking.js";
 import type {
@@ -94,7 +95,9 @@ type EmbeddedRunAttemptBase = Omit<
 // Attempt-level fast mode is the resolved effective setting, not the raw "auto"
 // union: a thunk lets the harness re-read it as the auto timer elapses mid-run,
 // while `fastModeAuto` records whether the auto policy is the source.
-export type EmbeddedRunFastModeParam = boolean | (() => boolean | undefined);
+export type EmbeddedRunFastModeParam =
+  | Exclude<FastMode, "auto">
+  | (() => Exclude<FastMode, "auto"> | undefined);
 type EmbeddedRunAttemptOperation = "attempt" | "settled-tool-finalization";
 
 type EmbeddedRunAttemptToolTerminalObservation = {

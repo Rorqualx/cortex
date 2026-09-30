@@ -1,6 +1,5 @@
 import type { AttestationConfig } from "../attestation/types.js";
 import type { CompressionConfig } from "../compression/types.js";
-// Defines the top-level OpenClaw configuration type.
 import type { z } from "zod";
 import type { TranscriptsConfig } from "../transcripts/config.js";
 import type { ConfigIncludeOwnership } from "./includes.js";
