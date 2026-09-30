@@ -78,6 +78,19 @@ for arg in "$@"; do
   esac
 done
 
+# ── Atomic-swap layout guard ───────────────────────────────────────────
+# This script predates the dist.releases/dist.current layout: it removes the
+# plist, requires an in-place dist/index.js, and reinstalls from dist/. Under
+# atomic swap dist/ has no entrypoint, so it killed the gateway and stranded it
+# with no service (2026-09-27 01:33, down until 09-30). Refuse before touching
+# anything; deploys go through cron-deploy-build.sh.
+if [[ -e "${ROOT_DIR}/dist.current" ]]; then
+  fail "atomic-swap layout active (dist.current); prod-restart.sh would strand the gateway.
+  Restart the running release: launchctl kickstart -k gui/\$(id -u)/ai.openclaw.gateway
+  Deploy new code:            bash scripts/cron-deploy-build.sh
+  Inspect layout:             bash scripts/deploy-release-migrate.sh status"
+fi
+
 # ── Auto-detect: if we're running inside the gateway, force daemon mode ──
 # The gateway sets these env vars when it spawns tool commands.
 if [[ "${DAEMONIZED:-0}" -ne 1 ]]; then
