@@ -1039,6 +1039,8 @@ export async function runExecProcess(opts: {
       captureOutput: false,
       onStdout: handleStdout,
       onStderr: handleStderr,
+      // Host approval policy is rechecked by the supervisor at native launch.
+      beforeSpawn: opts.assertCurrent,
     };
     // Revalidate authorization after async preparation, immediately before the
     // first spawn attempt (upstream pre-spawn preflight).
@@ -1085,6 +1087,7 @@ export async function runExecProcess(opts: {
           captureOutput: false,
           onStdout: handleStdout,
           onStderr: handleStderr,
+          beforeSpawn: opts.assertCurrent,
         });
       } catch (retryErr) {
         assertSourceActive?.();
