@@ -22,6 +22,10 @@ import { createDeferredEmbeddedRunLifecycleManager } from "../../agents/embedded
 import type { FastModeAutoProgressState } from "../../agents/fast-mode.js";
 import { AgentHarnessPreflightError } from "../../agents/harness/errors.js";
 import { runAgentHarnessBeforeMessageWriteHook } from "../../agents/harness/hook-helpers.js";
+import {
+  getGeneratedMediaTaskIdsForSessionKey,
+  hasNewGeneratedMediaTaskForSessionKey,
+} from "../../agents/media-generation-activity.js";
 import { findModelInCatalog, modelSupportsInput } from "../../agents/model-catalog-lookup.js";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.types.js";
 import { resolveConfiguredThinkingDefault } from "../../agents/model-thinking-default.js";
@@ -67,7 +71,7 @@ import {
 } from "./channel-output-policy.js";
 import { resolveCronPayloadOutcome } from "./helpers.js";
 import { createCronCandidateExecutionResolver } from "./run-candidate-runtime.js";
-import { appendCronDeliveryInstruction } from "./run-delivery-trace.js";
+import { finalizeCronPromptForResolvedTools } from "./run-delivery-trace.js";
 import {
   getCliSessionBinding,
   LiveSessionModelSwitchError,
@@ -352,30 +356,15 @@ function createCronPromptExecutor(
   }: {
     prompt: string;
     messageToolAvailable: boolean;
-  }) => {
-    const deliveryMessageToolAvailable = sourceDelivery.messageTool.enabled && messageToolAvailable;
-    if (sourceReplyDeliveryMode === "message_tool_only" && !deliveryMessageToolAvailable) {
-      throw new Error(
-        "Cron source delivery requires the message tool, but the selected runtime does not expose it. Allow the message tool, choose a compatible runtime, or use automatic delivery.",
-      );
-    }
-    const promptWithDeliveryGuidance = appendCronDeliveryInstruction({
-      commandBody: prompt,
-      deliveryRequested: params.deliveryRequested ?? false,
-      messageToolEnabled: deliveryMessageToolAvailable,
-      resolvedDeliveryOk: params.resolvedDelivery.ok ?? false,
-      requireExplicitMessageTarget: sourceDelivery.messageTool.requireExplicitTarget,
-    });
-    const deliveryTargetRuntimeContext = buildCronDeliveryTargetRuntimeContext({
-      resolvedDeliveryOk: params.resolvedDelivery.ok ?? false,
-      messageToolAvailable: deliveryMessageToolAvailable,
+  }) =>
+    finalizeCronPromptForResolvedTools({
+      prompt,
+      messageToolAvailable,
+      deliveryRequested: params.deliveryRequested,
       resolvedDelivery: params.resolvedDelivery,
       sourceDelivery,
+      messageToolFormatPrompt: params.messageToolFormatPrompt,
     });
-    return deliveryTargetRuntimeContext
-      ? `${promptWithDeliveryGuidance}\n\n${deliveryTargetRuntimeContext}`.trim()
-      : promptWithDeliveryGuidance;
-  };
   let pendingUserTurn:
     | {
         promptText: string;

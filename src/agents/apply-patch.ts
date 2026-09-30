@@ -24,7 +24,7 @@ import {
   resolveApplyPatchInputPath,
   toDisplayPath,
 } from "./apply-patch-paths.js";
-import { applyUpdateHunk } from "./apply-patch-update.js";
+import { applyUpdateHunk, type UpdateFileChunk } from "./apply-patch-update.js";
 import type { MemoryWriteProvenanceObserver } from "./memory-write-provenance.js";
 import {
   preserveAtPrefixedRelativePath,
@@ -62,14 +62,6 @@ type AddFileHunk = {
 type DeleteFileHunk = {
   kind: "delete";
   path: string;
-};
-
-type UpdateFileChunk = {
-  changeContext?: string;
-  oldLines: string[];
-  newLines: string[];
-  contextOldIndexes: Array<number | undefined>;
-  isEndOfFile: boolean;
 };
 
 type UpdateFileHunk = {
@@ -538,7 +530,7 @@ async function resolvePatchPath(
   };
 }
 
-function parsePatchText(input: string): { hunks: Hunk[]; patch: string } {
+function parsePatchText(input: string): { hunks: Hunk[] } {
   const trimmed = input.trim();
   if (!trimmed) {
     throw new Error("Invalid patch: input is empty.");
@@ -559,7 +551,7 @@ function parsePatchText(input: string): { hunks: Hunk[]; patch: string } {
     remaining = remaining.slice(consumed);
   }
 
-  return { hunks, patch: validated.join("\n") };
+  return { hunks };
 }
 
 function checkPatchBoundariesLenient(lines: string[]): string[] {
@@ -748,15 +740,7 @@ function parseUpdateFileChunk(
     }
 
     const marker = line[0];
-    if (!marker) {
-      chunk.contextOldIndexes.push(chunk.oldLines.length);
-      chunk.oldLines.push("");
-      chunk.newLines.push("");
-      parsedLines += 1;
-      continue;
-    }
-
-    if (marker === " ") {
+    if (!marker || marker === " ") {
       const content = line.slice(1);
       chunk.contextOldIndexes.push(chunk.oldLines.length);
       chunk.oldLines.push(content);

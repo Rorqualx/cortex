@@ -1,7 +1,3 @@
-/**
- * Resolves workspace bootstrap files for agent runs and converts them into
- * bounded context files.
- */
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { ChatType } from "../channels/chat-type.js";
@@ -23,6 +19,7 @@ import {
 } from "./embedded-agent-helpers.js";
 import type { AgentRunSessionTarget } from "./run-session-target.types.js";
 import { getAgentWorkspaceAccess } from "./workspace-access.js";
+import { resolveWorkspaceBootstrapPath } from "./workspace-bootstrap-policy.js";
 import { loadPersonalUserBootstrapFile } from "./workspace-personal-bootstrap.js";
 import {
   DEFAULT_BOOTSTRAP_FILENAME,
@@ -43,7 +40,6 @@ const CONTINUATION_SCAN_MAX_RECORDS = 500;
 export const FULL_BOOTSTRAP_COMPLETED_CUSTOM_TYPE = "openclaw:bootstrap-context:full";
 const BOOTSTRAP_WARNING_DEDUPE_LIMIT = 1024;
 const seenBootstrapWarnings = new Set<string>();
-const bootstrapWarningOrder: string[] = [];
 
 function rememberBootstrapWarning(key: string): boolean {
   // Warning keys include workspace/session/message so repeated setup failures
@@ -52,13 +48,12 @@ function rememberBootstrapWarning(key: string): boolean {
     return false;
   }
   if (seenBootstrapWarnings.size >= BOOTSTRAP_WARNING_DEDUPE_LIMIT) {
-    const oldest = bootstrapWarningOrder.shift();
+    const oldest = seenBootstrapWarnings.values().next().value;
     if (oldest) {
       seenBootstrapWarnings.delete(oldest);
     }
   }
   seenBootstrapWarnings.add(key);
-  bootstrapWarningOrder.push(key);
   return true;
 }
 
@@ -140,11 +135,7 @@ function sanitizeBootstrapFiles(
       );
       continue;
     }
-    const resolvedPath = path.isAbsolute(pathValue)
-      ? path.resolve(pathValue)
-      : pathValue.startsWith("~")
-        ? resolveUserPath(pathValue)
-        : path.resolve(workspaceRoot, pathValue);
+    const resolvedPath = resolveWorkspaceBootstrapPath(workspaceRoot, pathValue);
     const dedupeKey = path.normalize(path.relative(workspaceRoot, resolvedPath));
     if (seenPaths.has(dedupeKey)) {
       continue;
@@ -153,20 +144,6 @@ function sanitizeBootstrapFiles(
     sanitized.push({ ...file, path: resolvedPath });
   }
   return sanitized;
-}
-
-function applyContextModeFilter(params: {
-  files: WorkspaceBootstrapFile[];
-  contextMode?: BootstrapContextMode;
-  runKind?: BootstrapContextRunKind;
-}): WorkspaceBootstrapFile[] {
-  const contextMode = params.contextMode ?? "full";
-  if (contextMode !== "lightweight") {
-    return params.files;
-  }
-  // Heartbeat scratch is injected by the heartbeat runner, not bootstrap files.
-  // Cron/default lightweight mode also keeps bootstrap context empty on purpose.
-  return [];
 }
 
 function filterCompletedWorkspaceBootstrapFile(
@@ -187,11 +164,7 @@ function filterCompletedWorkspaceBootstrapFile(
     if (!pathValue) {
       return true;
     }
-    const resolvedPath = path.isAbsolute(pathValue)
-      ? path.resolve(pathValue)
-      : pathValue.startsWith("~")
-        ? resolveUserPath(pathValue)
-        : path.resolve(workspaceRoot, pathValue);
+    const resolvedPath = resolveWorkspaceBootstrapPath(workspaceRoot, pathValue);
     return resolvedPath !== rootBootstrapPath;
   });
 }
@@ -387,20 +360,18 @@ async function resolveBootstrapFiles(
     ...(protectedRootMemoryFile ? [protectedRootMemoryFile] : []),
     ...ineligibleAutomaticMemoryFiles,
   ];
-  const bootstrapFiles = applyContextModeFilter({
-    files: filterCompletedWorkspaceBootstrapFile(
-      filterBootstrapFilesForSession(rawFiles, session).filter(
-        (file) =>
-          !ineligibleAutomaticMemoryFiles.some((ineligible) =>
-            workspaceFilesShareSourceIdentity(file, ineligible),
-          ),
-      ),
-      workspaceSetupCompleted,
-      params.workspaceDir,
+  const sessionFiles = filterCompletedWorkspaceBootstrapFile(
+    filterBootstrapFilesForSession(rawFiles, session).filter(
+      (file) =>
+        !ineligibleAutomaticMemoryFiles.some((ineligible) =>
+          workspaceFilesShareSourceIdentity(file, ineligible),
+        ),
     ),
-    contextMode: params.contextMode,
-    runKind: params.runKind,
-  });
+    workspaceSetupCompleted,
+    params.workspaceDir,
+  );
+  // Heartbeat scratch is runner-owned; all lightweight runs omit bootstrap context.
+  const bootstrapFiles = params.contextMode === "lightweight" ? [] : sessionFiles;
 
   const hooked =
     hooks === "registered"
@@ -430,19 +401,9 @@ async function resolveBootstrapFiles(
 }
 
 /** Resolves both raw bootstrap metadata and bounded context files for a run. */
-export async function resolveBootstrapContextForRun(params: {
-  bootstrapUserProfileId?: string;
-  workspaceDir: string;
-  config?: OpenClawConfig;
-  sessionKey?: string;
-  sessionId?: string;
-  chatType?: ChatType;
-  agentId?: string;
-  warn?: (message: string) => void;
-  contextMode?: BootstrapContextMode;
-  runKind?: BootstrapContextRunKind;
-  readOnlyState?: boolean;
-}): Promise<{
+export async function resolveBootstrapContextForRun(
+  params: BootstrapFileResolutionParams,
+): Promise<{
   bootstrapFiles: WorkspaceBootstrapFile[];
   contextFiles: EmbeddedContextFile[];
 }> {
@@ -473,12 +434,11 @@ export function buildBootstrapContextForFiles(
     warn?: (message: string) => void;
   },
 ): EmbeddedContextFile[] {
-  const contextFiles = buildBootstrapContextFiles(bootstrapFiles, {
+  return buildBootstrapContextFiles(bootstrapFiles, {
     maxChars: resolveBootstrapMaxChars(params.config, params.agentId),
     totalMaxChars: resolveBootstrapTotalMaxChars(params.config, params.agentId),
     warn: params.warn,
   });
-  return contextFiles;
 }
 
 export { isWorkspaceBootstrapPending };

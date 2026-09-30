@@ -325,15 +325,7 @@ export function createReplyDelivery({ params, state, log }: ReplyDeliveryParams)
       onError: recordDeliveryFailure,
     });
   };
-  const emitBlockReply = (
-    payload: BlockReplyPayload,
-    options?: {
-      assistantMessageIndex?: number;
-      consumePendingToolMedia?: boolean;
-      blockSourceText?: string;
-      blockSourceRange?: readonly [start: number, end: number];
-    },
-  ) => {
+  const emitBlockReply: EmbeddedAgentSubscribeContext["emitBlockReply"] = (payload, options) => {
     flushAssistantStream();
     const withAssistantDirectives = consumePendingAssistantReplyDirectivesIntoReply(state, payload);
     const pendingToolMedia =

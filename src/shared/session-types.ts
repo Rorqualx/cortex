@@ -51,6 +51,18 @@ export type GatewayAgentRow = Pick<
   description?: string;
 };
 
+export type SessionActivityPulse = {
+  since: number;
+  until: number;
+  /** One bucket per elapsed hour of the civil day, 23–25 on DST days. */
+  hours: number[];
+  sessions: number;
+  started: number;
+  /** Sessions with an active run anywhere in the filtered set, not only since `since`. */
+  running: number;
+  people?: number;
+};
+
 /** Generic base for paged session-list responses. */
 export type SessionsListResultBase<TDefaults, TRow> = {
   ts: number;
@@ -68,6 +80,8 @@ export type SessionsListResultBase<TDefaults, TRow> = {
   people?: SessionPerson[];
   peopleIncomplete?: boolean;
   peopleSessionCount?: number;
+  /** Civil-day activity from `activityPulseSince` to `activityPulseUntil`, before pagination. */
+  activityPulse?: SessionActivityPulse;
   /** Canonical profile selected by the person-association filter. */
   involvingProfileId?: string;
   defaults: TDefaults;

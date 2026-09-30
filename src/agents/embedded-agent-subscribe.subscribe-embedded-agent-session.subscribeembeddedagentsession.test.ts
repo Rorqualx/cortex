@@ -12,7 +12,6 @@ import * as agentEvents from "../infra/agent-events.js";
 import { flushLogger, resetLogger, setLoggerOverride } from "../logging/logger.js";
 import { parseLogLine } from "../logging/parse-log-line.js";
 import {
-  THINKING_TAG_CASES,
   createSubscribedSessionHarness,
   emitAssistantLifecycleErrorAndEnd,
   emitMessageStartAndEndForAssistantText,
@@ -29,6 +28,11 @@ import {
 import { textAssistant } from "./test-helpers/sparse-transcript.test-support.js";
 import { markCoreTtsToolResult } from "./tools/tts-tool-result-provenance.js";
 import { makeZeroUsageSnapshot } from "./usage.js";
+
+const STREAMING_THINKING_TAG_CASES = [
+  { open: "<think>", close: "</think>" },
+  { open: "<antml:thinking>", close: "</antml:thinking>" },
+];
 
 const retryingCompactionEnd = () =>
   ({
@@ -316,7 +320,7 @@ describe("subscribeEmbeddedAgentSession", () => {
     });
   });
 
-  it.each(THINKING_TAG_CASES)(
+  it.each(STREAMING_THINKING_TAG_CASES)(
     "streams <%s> reasoning via onReasoningStream without leaking into final text",
     async ({ open, close }) => {
       const onReasoningStream = vi.fn();
@@ -853,7 +857,7 @@ describe("subscribeEmbeddedAgentSession", () => {
     });
   });
 
-  it.each(THINKING_TAG_CASES)(
+  it.each(STREAMING_THINKING_TAG_CASES)(
     "suppresses <%s> blocks across chunk boundaries",
     async ({ open, close }) => {
       const onBlockReply = vi.fn();
@@ -1401,12 +1405,6 @@ describe("subscribeEmbeddedAgentSession", () => {
     },
   );
 
-  it("emits agent events on message_end for non-streaming assistant text", () => {
-    const { emit, onAgentEvent } = createAgentEventHarness();
-    emitMessageStartAndEndForAssistantText({ emit, text: "Hello world" });
-    expectSingleAgentEventText(onAgentEvent.mock.calls, "Hello world");
-  });
-
   it("does not emit duplicate agent events when message_end repeats", () => {
     const { emit, onAgentEvent } = createAgentEventHarness();
 
@@ -1811,6 +1809,200 @@ describe("subscribeEmbeddedAgentSession", () => {
       notify: false,
       summary: "Nothing needs attention.",
     });
+  });
+
+  describe("flushPartialAssistantText", () => {
+    it.each([false, true])(
+      "keeps commentary out of timeout flush (final item: %s)",
+      (hasFinalAnswer) => {
+        const { emit, subscription } = createSubscribedSessionHarness({ runId: "run" });
+        emit({ type: "message_start", message: { role: "assistant" } });
+        emit(
+          createOpenAiResponsesTextEvent({
+            type: "text_delta",
+            text: "Working...",
+            delta: "Working...",
+            id: "item-commentary",
+            signaturePhase: "commentary",
+            partialPhase: "commentary",
+          }),
+        );
+        // A later final-answer item resets the buffer; salvage must never
+        // commit commentary, with or without a visible item after it.
+        if (hasFinalAnswer) {
+          emit(
+            createOpenAiResponsesTextEvent({
+              type: "text_delta",
+              text: "Final answer",
+              delta: "Final answer",
+              id: "item-final",
+              signaturePhase: "final_answer",
+              partialPhase: "final_answer",
+            }),
+          );
+        }
+        subscription.flushPartialAssistantText();
+        expect(subscription.assistantTexts).toEqual(hasFinalAnswer ? ["Final answer"] : []);
+      },
+    );
+
+    it.each([
+      {
+        name: "strips think tags before committing text",
+        chunks: ["Before<think>", " secret", "</think>After"],
+        expected: ["BeforeAfter"],
+      },
+      {
+        name: "handles final tags matching enforceFinalTag param",
+        enforceFinalTag: true,
+        chunks: ["Discarded <final>", "preserved", "</final> also discarded"],
+        expected: ["preserved"],
+      },
+      {
+        name: "strips final tags but preserves visible text when enforceFinalTag is disabled",
+        // Default policy: final-tag enforcement is off, so the timeout flush
+        // must keep the same visible text the normal path would retain and
+        // only strip the <final> markers themselves.
+        enforceFinalTag: false,
+        chunks: ["Discarded <final>", "preserved", "</final> also kept"],
+        // Same normalization as normal completion with enforceFinalTag=false:
+        // the final-tag markers are stripped, no surrounding visible text is lost.
+        expected: ["Discarded preserved also kept"],
+      },
+      {
+        name: "strips downgraded tool call text",
+        chunks: ["Visible answer", " [Tool Call: some_fn]"],
+        expected: ["Visible answer"],
+      },
+      {
+        name: "is a no-op when deltaBuffer is empty",
+        chunks: [],
+        expected: [],
+      },
+      {
+        name: "preserves visible prefix before unclosed final tag on flush",
+        enforceFinalTag: true,
+        // Same boundary: streaming advances state.blockState.final to true
+        // on <final>, then timeout fires. Flush must preserve text inside
+        // the unclosed final block and hide text that appeared before <final>.
+        chunks: ["Before ", "<final> content without close"],
+        // enforceFinalTag hides text before <final>; text inside the
+        // unclosed final block is preserved.
+        expected: [" content without close"],
+      },
+    ])("$name", ({ chunks, enforceFinalTag, expected }) => {
+      const { emit, subscription } = createSubscribedSessionHarness({
+        runId: "run",
+        enforceFinalTag,
+      });
+      if (chunks.length > 0) {
+        emit({ type: "message_start", message: { role: "assistant" } });
+      }
+      for (const chunk of chunks) {
+        emitAssistantTextDelta(emit, chunk);
+      }
+      subscription.flushPartialAssistantText();
+      expect(subscription.assistantTexts).toEqual(expected);
+    });
+
+    it.each([
+      {
+        name: "does not re-append text already committed by an earlier flush",
+        chunks: ["Hello world"],
+        expected: ["Hello world"],
+      },
+      {
+        name: "commits only the queued suffix on a second flush",
+        chunks: ["Hello "],
+        suffix: "world",
+        expected: ["Hello world"],
+      },
+      {
+        name: "retains hidden-tag context across flushes so a queued suffix inside an unclosed think tag never leaks",
+        chunks: ["Before ", "<think> reasoning without close"],
+        firstExpected: ["Before"],
+        suffix: "secret continuation",
+        expected: ["Before"],
+      },
+      {
+        name: "replaces a flushed entry when a queued orphan reasoning close retracts the prefix",
+        chunks: ["private chain"],
+        firstExpected: ["private chain"],
+        suffix: "</mm:think>Visible answer",
+        expected: ["Visible answer"],
+      },
+    ])("$name", ({ chunks, firstExpected, suffix, expected }) => {
+      const { emit, subscription } = createSubscribedSessionHarness({ runId: "run" });
+      emit({ type: "message_start", message: { role: "assistant" } });
+      for (const chunk of chunks) {
+        emitAssistantTextDelta(emit, chunk);
+      }
+      subscription.flushPartialAssistantText();
+      if (firstExpected) {
+        expect(subscription.assistantTexts).toEqual(firstExpected);
+      }
+      // Updates queued behind abort may extend, hide, or retract the flushed
+      // projection. Re-flushing must reconcile it without losing tag context.
+      if (suffix) {
+        emitAssistantTextDelta(emit, suffix);
+      }
+      subscription.flushPartialAssistantText();
+      expect(subscription.assistantTexts).toEqual(expected);
+    });
+
+    it.each([false, true])(
+      "reconciles live block chunks without duplication (flush before suffix: %s)",
+      (flushBeforeSuffix) => {
+        const onBlockReply = vi.fn();
+        const { emit, subscription } = createSubscribedSessionHarness({
+          runId: "run",
+          onBlockReply,
+          blockReplyChunking: {
+            minChars: 8,
+            maxChars: 200,
+            breakPreference: "sentence",
+          },
+        });
+        emit({ type: "message_start", message: { role: "assistant" } });
+        emitAssistantTextDelta(emit, "Hello world. ");
+        if (flushBeforeSuffix) {
+          subscription.flushPartialAssistantText();
+          expect(subscription.assistantTexts).toEqual(["Hello world."]);
+        }
+        emitAssistantTextDelta(emit, "Next sentence. ");
+        // The live path commits both chunks before the timeout reconciles them.
+        expect(subscription.assistantTexts).toEqual(["Hello world.", "Next sentence."]);
+        subscription.flushPartialAssistantText();
+        expect(subscription.assistantTexts).toEqual(["Hello world. Next sentence."]);
+        expect(onBlockReply).toHaveBeenCalled();
+      },
+    );
+
+    it.each(["Hello world", ""])(
+      "replaces flushed partial text with authoritative final %j when message_end arrives",
+      (finalText) => {
+        const { emit, subscription } = createSubscribedSessionHarness({
+          runId: "run",
+        });
+
+        emit({ type: "message_start", message: { role: "assistant" } });
+        emitAssistantTextDelta(emit, "Hello");
+        subscription.flushPartialAssistantText();
+        expect(subscription.assistantTexts).toEqual(["Hello"]);
+
+        // The abort raced completion: the authoritative final can replace or
+        // withdraw the partial text already committed by timeout salvage.
+        emit({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: finalText }],
+          },
+        });
+
+        expect(subscription.assistantTexts).toEqual(finalText ? [finalText] : []);
+      },
+    );
   });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

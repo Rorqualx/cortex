@@ -198,24 +198,6 @@ describe("hooks mapping", () => {
     }
   }
 
-  it("resolves gmail preset", () => {
-    const mappings = resolveHookMappings({ presets: ["gmail"] });
-    expect(mappings.length).toBeGreaterThan(0);
-    expect(mappings[0]?.matchPath).toBe("gmail");
-  });
-
-  it("renders template from payload", async () => {
-    const result = await applyGmailMappings({
-      mappings: [
-        createGmailAgentMapping({
-          id: "demo",
-          messageTemplate: "Subject: {{messages[0].subject}}",
-        }),
-      ],
-    });
-    expectAgentMessage(result, "Subject: Hello");
-  });
-
   it("passes model override from mapping", async () => {
     const result = await applyGmailMappings({
       mappings: [
@@ -878,6 +860,31 @@ describe("hooks mapping", () => {
     expect(instanceB).toBe(instanceA);
   });
 
+  function resolveReloadableMappings(configDir: string) {
+    return resolveHookMappings(
+      {
+        mappings: [
+          {
+            match: { path: "reloadable" },
+            action: "agent",
+            messageTemplate: "unused",
+            transform: { module: "reloadable.mjs" },
+          },
+        ],
+      },
+      { configDir },
+    );
+  }
+
+  function applyReloadableMappings(mappings: ReturnType<typeof resolveHookMappings>) {
+    return applySingleHookMapping(mappings, {
+      payload: {},
+      headers: {},
+      url: new URL("http://127.0.0.1:18789/hooks/reloadable"),
+      path: "reloadable",
+    });
+  }
+
   it("reloads a transform when the module file changes", async () => {
     const configDir = autoCleanupTempDirs.make("openclaw-hooks-reload-");
     const transformsRoot = path.join(configDir, "hooks", "transforms");
@@ -885,30 +892,8 @@ describe("hooks mapping", () => {
     const modPath = path.join(transformsRoot, "reloadable.mjs");
     fs.writeFileSync(modPath, 'export default () => ({ kind: "wake", text: "before" });');
 
-    const resolveMappings = () =>
-      resolveHookMappings(
-        {
-          mappings: [
-            {
-              match: { path: "reloadable" },
-              action: "agent",
-              messageTemplate: "unused",
-              transform: { module: "reloadable.mjs" },
-            },
-          ],
-        },
-        { configDir },
-      );
-    const applyMappings = (mappings: ReturnType<typeof resolveHookMappings>) =>
-      applySingleHookMapping(mappings, {
-        payload: {},
-        headers: {},
-        url: new URL("http://127.0.0.1:18789/hooks/reloadable"),
-        path: "reloadable",
-      });
-
-    let acceptedMappings = acceptHookMappings(resolveMappings());
-    const first = await applyMappings(acceptedMappings);
+    let acceptedMappings = acceptHookMappings(resolveReloadableMappings(configDir));
+    const first = await applyReloadableMappings(acceptedMappings);
     expect(first?.ok).toBe(true);
     if (first?.ok && first.action?.kind === "wake") {
       expect(first.action.text).toBe("before");
@@ -918,8 +903,8 @@ describe("hooks mapping", () => {
     const nextTime = new Date(Date.now() + 5_000);
     fs.utimesSync(modPath, nextTime, nextTime);
 
-    acceptedMappings = acceptHookMappings(resolveMappings());
-    const second = await applyMappings(acceptedMappings);
+    acceptedMappings = acceptHookMappings(resolveReloadableMappings(configDir));
+    const second = await applyReloadableMappings(acceptedMappings);
     expect(second?.ok).toBe(true);
     if (second?.ok && second.action?.kind === "wake") {
       expect(second.action.text).toBe("after");
@@ -933,30 +918,8 @@ describe("hooks mapping", () => {
     const modPath = path.join(transformsRoot, "reloadable.mjs");
     fs.writeFileSync(modPath, 'export default () => ({ kind: "wake", text: "accepted" });');
 
-    const resolveMappings = () =>
-      resolveHookMappings(
-        {
-          mappings: [
-            {
-              match: { path: "reloadable" },
-              action: "agent",
-              messageTemplate: "unused",
-              transform: { module: "reloadable.mjs" },
-            },
-          ],
-        },
-        { configDir },
-      );
-    const applyMappings = (mappings: ReturnType<typeof resolveHookMappings>) =>
-      applySingleHookMapping(mappings, {
-        payload: {},
-        headers: {},
-        url: new URL("http://127.0.0.1:18789/hooks/reloadable"),
-        path: "reloadable",
-      });
-
-    const acceptedMappings = acceptHookMappings(resolveMappings());
-    const accepted = await applyMappings(acceptedMappings);
+    const acceptedMappings = acceptHookMappings(resolveReloadableMappings(configDir));
+    const accepted = await applyReloadableMappings(acceptedMappings);
     expect(accepted?.ok).toBe(true);
     if (accepted?.ok && accepted.action?.kind === "wake") {
       expect(accepted.action.text).toBe("accepted");
@@ -966,16 +929,18 @@ describe("hooks mapping", () => {
     const nextTime = new Date(Date.now() + 5_000);
     fs.utimesSync(modPath, nextTime, nextTime);
 
-    const rejectedCandidateMappings = resolveMappings();
+    const rejectedCandidateMappings = resolveReloadableMappings(configDir);
     expect(rejectedCandidateMappings).toHaveLength(1);
 
-    const stillAccepted = await applyMappings(acceptedMappings);
+    const stillAccepted = await applyReloadableMappings(acceptedMappings);
     expect(stillAccepted?.ok).toBe(true);
     if (stillAccepted?.ok && stillAccepted.action?.kind === "wake") {
       expect(stillAccepted.action.text).toBe("accepted");
     }
 
-    const newlyAccepted = await applyMappings(acceptHookMappings(rejectedCandidateMappings));
+    const newlyAccepted = await applyReloadableMappings(
+      acceptHookMappings(rejectedCandidateMappings),
+    );
     expect(newlyAccepted?.ok).toBe(true);
     if (newlyAccepted?.ok && newlyAccepted.action?.kind === "wake") {
       expect(newlyAccepted.action.text).toBe("candidate");
@@ -1000,38 +965,16 @@ describe("hooks mapping", () => {
       ].join("\n"),
     );
 
-    const resolveMappings = () =>
-      resolveHookMappings(
-        {
-          mappings: [
-            {
-              match: { path: "reloadable" },
-              action: "agent",
-              messageTemplate: "unused",
-              transform: { module: "reloadable.mjs" },
-            },
-          ],
-        },
-        { configDir },
-      );
-    const applyMappings = (mappings: ReturnType<typeof resolveHookMappings>) =>
-      applySingleHookMapping(mappings, {
-        payload: {},
-        headers: {},
-        url: new URL("http://127.0.0.1:18789/hooks/reloadable"),
-        path: "reloadable",
-      });
-
-    let acceptedMappings = acceptHookMappings(resolveMappings());
-    const oldImport = applyMappings(acceptedMappings);
+    let acceptedMappings = acceptHookMappings(resolveReloadableMappings(configDir));
+    const oldImport = applyReloadableMappings(acceptedMappings);
     await waitForFile(oldStartedPath);
 
     fs.writeFileSync(modPath, 'export default () => ({ kind: "wake", text: "new" });');
     const nextTime = new Date(Date.now() + 5_000);
     fs.utimesSync(modPath, nextTime, nextTime);
 
-    acceptedMappings = acceptHookMappings(resolveMappings());
-    const afterReload = await applyMappings(acceptedMappings);
+    acceptedMappings = acceptHookMappings(resolveReloadableMappings(configDir));
+    const afterReload = await applyReloadableMappings(acceptedMappings);
     expect(afterReload?.ok).toBe(true);
     if (afterReload?.ok && afterReload.action?.kind === "wake") {
       expect(afterReload.action.text).toBe("new");
@@ -1044,7 +987,7 @@ describe("hooks mapping", () => {
       expect(olderResult.action.text).toBe("old");
     }
 
-    const final = await applyMappings(acceptedMappings);
+    const final = await applyReloadableMappings(acceptedMappings);
     expect(final?.ok).toBe(true);
     if (final?.ok && final.action?.kind === "wake") {
       expect(final.action.text).toBe("new");

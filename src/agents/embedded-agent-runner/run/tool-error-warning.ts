@@ -36,6 +36,7 @@ function shouldMarkNonTerminalToolErrorWarning(lastToolError: ToolErrorSummary):
   return lastToolError.middlewareError === true;
 }
 
+/** Always warn when a tool failure would otherwise leave the user with no reply. */
 function formatToolErrorWarningText(params: {
   lastToolError: ToolErrorSummary;
   includeDetails: boolean;
@@ -114,7 +115,8 @@ function formatExecLikeFailureSubject(meta: string | undefined, markdown: boolea
 
   const { text, suffix } = splitDisplayContextSuffix(body);
   const literalCommand = extractLiteralExecCommand(text);
-  const subject = `${maybeWrapInlineCode(literalCommand ?? text, markdown)}${suffix}`;
+  const command = literalCommand ?? text;
+  const subject = `${markdown ? formatInlineCodeSpan(command) : command}${suffix}`;
   return flags.length > 0 ? `${flags.join(" · ")} · ${subject}` : subject;
 }
 
@@ -264,16 +266,12 @@ function shouldKeepRawExecTrailingContext(
     .at(-1)
     ?.trim();
   const segmentCommand = segment ? extractLiteralExecCommand(segment) : undefined;
-  if (segmentCommand === inlineCode || segment === inlineCode) {
-    return true;
-  }
-  if (isCompactCwdSuffix(suffix)) {
-    return true;
-  }
-  return isPathLikeCwdSuffix(suffix);
-}
-function isCompactCwdSuffix(suffix: string): boolean {
-  return /^\((?:agent|repo|workspace)\)$/u.test(suffix);
+  return (
+    segmentCommand === inlineCode ||
+    segment === inlineCode ||
+    /^\((?:agent|repo|workspace)\)$/u.test(suffix) ||
+    isPathLikeCwdSuffix(suffix)
+  );
 }
 function isPathLikeCwdSuffix(suffix: string): boolean {
   const cwd = suffix.match(/^\(in ([^)\r\n]+)\)$/u)?.[1]?.trim();

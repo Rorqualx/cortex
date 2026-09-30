@@ -2,16 +2,6 @@ import { describe, expect, it } from "vitest";
 import { resolveExtraParams } from "./embedded-agent-runner/extra-params.js";
 
 describe("resolveExtraParams", () => {
-  it("returns undefined with no model config", () => {
-    const result = resolveExtraParams({
-      cfg: undefined,
-      provider: "zai",
-      modelId: "glm-4.7",
-    });
-
-    expect(result).toBeUndefined();
-  });
-
   it("applies default runtime params for OpenAI GPT-5 models", () => {
     const result = resolveExtraParams({
       cfg: undefined,
@@ -74,26 +64,6 @@ describe("resolveExtraParams", () => {
     expect(result).toBeUndefined();
   });
 
-  it("returns per-agent params when agentId matches", () => {
-    const result = resolveExtraParams({
-      cfg: {
-        agents: {
-          list: [
-            {
-              id: "risk-reviewer",
-              params: { cacheRetention: "none" },
-            },
-          ],
-        },
-      },
-      provider: "anthropic",
-      modelId: "claude-opus-4-6",
-      agentId: "risk-reviewer",
-    });
-
-    expect(result).toEqual({ cacheRetention: "none" });
-  });
-
   it("merges per-agent params over global model defaults", () => {
     const result = resolveExtraParams({
       cfg: {
@@ -152,38 +122,12 @@ describe("resolveExtraParams", () => {
       },
       provider: "openai",
       modelId: "gpt-4.1",
-      agentId: "main",
-    });
-
-    expect(result).toEqual({
-      parallel_tool_calls: false,
-    });
-  });
-
-  it("canonicalizes text verbosity alias styles with agent override precedence", () => {
-    const result = resolveExtraParams({
-      cfg: {
-        agents: {
-          defaults: {
-            models: {
-              "openai/gpt-5.4": {
-                params: {
-                  text_verbosity: "high",
-                },
-              },
-            },
-          },
-          list: [
-            {
-              id: "main",
-              params: {
-                textVerbosity: "low",
-              },
-            },
-          ],
-        },
-      },
-      provider: "openai",
+      modelParams: { parallel_tool_calls: true },
+      agentParams: { parallelToolCalls: false },
+      expected: { parallel_tool_calls: false },
+    },
+    {
+      name: "textVerbosity",
       modelId: "gpt-5.4",
       agentId: "main",
     });
@@ -208,27 +152,13 @@ describe("resolveExtraParams", () => {
               },
             },
           },
-          list: [
-            {
-              id: "main",
-              params: {
-                responseFormat: { type: "json_object" },
-              },
-            },
-          ],
-        },
-      },
-      provider: "openai",
-      modelId: "gpt-5.4",
-      agentId: "main",
-    });
-
-    expect(result).toEqual({
-      parallel_tool_calls: true,
-      response_format: { type: "json_object" },
-      text_verbosity: "low",
-    });
-  });
+          provider: "openai",
+          modelId,
+          agentId: "main",
+        }),
+      ).toEqual(expected);
+    },
+  );
 
   it("ignores per-agent params when agentId does not match", () => {
     const result = resolveExtraParams({

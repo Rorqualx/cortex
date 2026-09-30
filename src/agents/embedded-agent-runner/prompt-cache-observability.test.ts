@@ -18,6 +18,22 @@ function scopedKey(value: string): string {
   return `${value}:${currentTestScope}`;
 }
 
+type ObservationParams = Parameters<typeof beginPromptCacheObservation>[0];
+
+function beginOpenAIObservation(
+  params: Pick<ObservationParams, "sessionId"> & Partial<ObservationParams>,
+) {
+  return beginPromptCacheObservation({
+    provider: "openai",
+    modelId: "gpt-5.4",
+    modelApi: "openai-responses",
+    streamStrategy: "boundary-aware:openai-responses",
+    systemPrompt: "stable system",
+    tools: [{ name: "read" }],
+    ...params,
+  });
+}
+
 describe("prompt cache observability", () => {
   beforeEach(() => {
     currentTestScope = String(++testScope);
@@ -275,16 +291,11 @@ describe("prompt cache observability", () => {
   it("tracks cache-relevant changes and reports a real cache-read drop", () => {
     // Observability only emits when a material cache-read drop follows a tracked
     // cache-affecting change.
-    const first = beginPromptCacheObservation({
+    const first = beginOpenAIObservation({
       sessionId: "session-1",
       sessionKey: scopedKey("agent:main"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
       cacheRetention: "long",
-      streamStrategy: "boundary-aware:openai-responses",
       transport: "sse",
-      systemPrompt: "stable system",
       tools: [{ name: "read" }, { name: "write" }],
     });
 
@@ -297,14 +308,10 @@ describe("prompt cache observability", () => {
       }),
     ).toBeNull();
 
-    const second = beginPromptCacheObservation({
+    const second = beginOpenAIObservation({
       sessionId: "session-1",
       sessionKey: scopedKey("agent:main"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
       cacheRetention: "short",
-      streamStrategy: "boundary-aware:openai-responses",
       transport: "websocket",
       systemPrompt: "stable system with hook change",
       tools: [{ name: "read" }, { name: "write" }],
@@ -369,13 +376,8 @@ describe("prompt cache observability", () => {
   it("treats reordered tool lists as the same diagnostics tool set", () => {
     // Tool list ordering is deterministic for payloads but should not create a
     // false cache-break diagnostic when the set is unchanged.
-    beginPromptCacheObservation({
+    beginOpenAIObservation({
       sessionId: scopedKey("session-1"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
-      streamStrategy: "boundary-aware:openai-responses",
-      systemPrompt: "stable system",
       tools: [{ name: "read" }, { name: "write" }],
     });
     completePromptCacheObservation({
@@ -383,13 +385,8 @@ describe("prompt cache observability", () => {
       usage: { cacheRead: 8_000 },
     });
 
-    const second = beginPromptCacheObservation({
+    const second = beginOpenAIObservation({
       sessionId: scopedKey("session-1"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
-      streamStrategy: "boundary-aware:openai-responses",
-      systemPrompt: "stable system",
       tools: [{ name: "write" }, { name: "read" }],
     });
 
@@ -443,24 +440,14 @@ describe("prompt cache observability", () => {
         parameters: { type: "object", properties: { path: { type: "string" } } },
       },
     ]);
-    beginPromptCacheObservation({
+    beginOpenAIObservation({
       sessionId,
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
-      streamStrategy: "boundary-aware:openai-responses",
-      systemPrompt: "stable system",
       tools: initialTools,
     });
     completePromptCacheObservation({ sessionId, usage: { cacheRead: 8_000 } });
 
-    const next = beginPromptCacheObservation({
+    const next = beginOpenAIObservation({
       sessionId,
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
-      streamStrategy: "boundary-aware:openai-responses",
-      systemPrompt: "stable system",
       tools: collectPromptCacheTools([
         {
           name: "read",
@@ -481,16 +468,10 @@ describe("prompt cache observability", () => {
   it("tracks recurring prompt-cache affinity across rotating session ids", () => {
     // Cron-style isolated runs use promptCacheKey to carry cache affinity across
     // new session ids.
-    beginPromptCacheObservation({
+    beginOpenAIObservation({
       sessionId: "isolated-run-1",
       promptCacheKey: scopedKey("openclaw-cron-stable-cache-key"),
       sessionKey: "agent:cron:run:isolated-run-1",
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
-      streamStrategy: "boundary-aware:openai-responses",
-      systemPrompt: "stable system",
-      tools: [{ name: "read" }],
     });
     completePromptCacheObservation({
       sessionId: "isolated-run-1",
@@ -499,16 +480,10 @@ describe("prompt cache observability", () => {
       usage: { cacheRead: 8_000 },
     });
 
-    const nextRun = beginPromptCacheObservation({
+    const nextRun = beginOpenAIObservation({
       sessionId: "isolated-run-2",
       promptCacheKey: scopedKey("openclaw-cron-stable-cache-key"),
       sessionKey: "agent:cron:run:isolated-run-2",
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
-      streamStrategy: "boundary-aware:openai-responses",
-      systemPrompt: "stable system",
-      tools: [{ name: "read" }],
     });
 
     expect(nextRun.previousCacheRead).toBe(8_000);
@@ -516,14 +491,8 @@ describe("prompt cache observability", () => {
   });
 
   it("evicts old tracker entries when the tracker map grows past the soft cap", () => {
-    beginPromptCacheObservation({
+    beginOpenAIObservation({
       sessionId: scopedKey("session-0"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
-      streamStrategy: "boundary-aware:openai-responses",
-      systemPrompt: "stable system",
-      tools: [{ name: "read" }],
     });
     completePromptCacheObservation({
       sessionId: scopedKey("session-0"),
@@ -531,25 +500,14 @@ describe("prompt cache observability", () => {
     });
 
     for (let index = 1; index <= 513; index += 1) {
-      beginPromptCacheObservation({
+      beginOpenAIObservation({
         sessionId: scopedKey(`session-${index}`),
-        provider: "openai",
-        modelId: "gpt-5.4",
-        modelApi: "openai-responses",
-        streamStrategy: "boundary-aware:openai-responses",
         systemPrompt: `stable system ${index}`,
-        tools: [{ name: "read" }],
       });
     }
 
-    const restarted = beginPromptCacheObservation({
+    const restarted = beginOpenAIObservation({
       sessionId: scopedKey("session-0"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
-      streamStrategy: "boundary-aware:openai-responses",
-      systemPrompt: "stable system",
-      tools: [{ name: "read" }],
     });
 
     expect(restarted.previousCacheRead).toBeNull();
@@ -557,17 +515,11 @@ describe("prompt cache observability", () => {
   });
 
   it("ignores missing usage and preserves the previous cache-read baseline", () => {
-    beginPromptCacheObservation({
+    beginOpenAIObservation({
       sessionId: scopedKey("session-1"),
       sessionKey: scopedKey("agent:main"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
       cacheRetention: "long",
-      streamStrategy: "boundary-aware:openai-responses",
       transport: "sse",
-      systemPrompt: "stable system",
-      tools: [{ name: "read" }],
     });
     completePromptCacheObservation({
       sessionId: scopedKey("session-1"),
@@ -575,17 +527,12 @@ describe("prompt cache observability", () => {
       usage: { cacheRead: 8_000 },
     });
 
-    beginPromptCacheObservation({
+    beginOpenAIObservation({
       sessionId: scopedKey("session-1"),
       sessionKey: scopedKey("agent:main"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
       cacheRetention: "short",
-      streamStrategy: "boundary-aware:openai-responses",
       transport: "websocket",
       systemPrompt: "stable system with hook change",
-      tools: [{ name: "read" }],
     });
 
     expect(
@@ -595,17 +542,12 @@ describe("prompt cache observability", () => {
       }),
     ).toBeNull();
 
-    const resumed = beginPromptCacheObservation({
+    const resumed = beginOpenAIObservation({
       sessionId: scopedKey("session-1"),
       sessionKey: scopedKey("agent:main"),
-      provider: "openai",
-      modelId: "gpt-5.4",
-      modelApi: "openai-responses",
       cacheRetention: "short",
-      streamStrategy: "boundary-aware:openai-responses",
       transport: "websocket",
       systemPrompt: "stable system with hook change",
-      tools: [{ name: "read" }],
     });
 
     expect(resumed.previousCacheRead).toBe(8_000);

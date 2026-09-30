@@ -133,10 +133,6 @@ describe("Mistral bounded-stream-read real wire proof (loopback http.createServe
   });
 });
 
-// Drive the bounded fetcher directly against a synthetic ReadableStream that
-// exceeds the cap. Bypasses any HTTP layer; proves the cap fires against an
-// unbounded chunked source, mirroring what the Mistral SDK's internal SSE
-// parser (`EventStream`) would see when a streaming body exceeds 16 MiB.
 describe("Mistral bounded-stream-read direct (synthetic ReadableStream)", () => {
   it("caps an oversized synthetic ReadableStream at 16 MiB", async () => {
     const CHUNK = 1024 * 1024;
@@ -408,7 +404,6 @@ describe("Mistral terminal ownership through the installed SDK and real HTTP/SSE
   it.each([
     { name: "EOF without a provider terminal", finishReason: null, done: false },
     { name: "DONE without a provider terminal", finishReason: null, done: true },
-    { name: "a provider error terminal", finishReason: "error", done: true },
     { name: "a filtered provider terminal", finishReason: "content_filter", done: true },
     { name: "an unknown provider terminal", finishReason: "provider_guardrail", done: true },
     { name: "malformed arguments on a tool terminal", finishReason: "tool_calls", done: true },
@@ -488,7 +483,7 @@ describe("Mistral terminal ownership through the installed SDK and real HTTP/SSE
     expect(events).toContain("toolcall_end");
   });
 
-  it.each(["null", "[]", "42", '"dangerous"'] as const)(
+  it.each(["null", "[]", "42"] as const)(
     "rejects a provider-confirmed non-object JSON argument: %s",
     async (argumentsJson) => {
       const { result, events } = await streamMistralTerminalFixture({

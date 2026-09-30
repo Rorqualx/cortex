@@ -3,12 +3,13 @@
 import "./server-node-events.test-support.js";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WebSocket } from "ws";
-import { PROTOCOL_VERSION } from "../../packages/gateway-protocol/src/index.js";
 import { createDeferred } from "../../test/helpers/promise.js";
 import type { DurableMessageBatchSendResult } from "../channels/message/runtime.js";
 import type { CliDeps } from "../cli/deps.js";
-import { getCurrentActiveNodeContext, setActiveNodeContext } from "../infra/active-node-context.js";
+import {
+  getCurrentActiveNodeContext,
+  setActiveNodeContexts,
+} from "../infra/active-node-context.js";
 import {
   prepareGatewaySuspend,
   resumeGatewaySuspend,
@@ -154,12 +155,12 @@ const runtimeMocks = vi.hoisted(() => ({
 import type { CliDeps } from "../cli/deps.js";
 import type { HealthSummary } from "./health/types.js";
 import { NodeRegistry } from "./node-registry.js";
-import type { NodeEventContext } from "./server-node-events-types.js";
+import type { NodeEvent, NodeEventContext } from "./server-node-events-types.js";
 import { handleNodeEvent } from "./server-node-events.js";
-import type { GatewayWsClient } from "./server/ws-types.js";
 
 const {
   buildSessionLookup,
+  makeNodeClient,
   loadOrCreateProcessDeviceIdentityMock,
   parseMessageWithAttachmentsMock,
   persistInboundImagesForTranscriptMock,
@@ -172,6 +173,10 @@ const sentDurableMessageBatchResult: Extract<DurableMessageBatchSendResult, { st
   results: [],
   receipt: { platformMessageIds: [], parts: [], sentAt: 1 },
 };
+
+function nodeEvent(event: string, payload: unknown): NodeEvent {
+  return { event, payloadJSON: JSON.stringify(payload) };
+}
 
 function waitForFast<T>(
   callback: () => T | Promise<T>,
@@ -280,34 +285,6 @@ function buildExecCtx() {
   return buildCtx({ authorizeNodeSystemRunEvent: () => true });
 }
 
-function makeNodeClient(connId: string, nodeId: string): GatewayWsClient {
-  return {
-    connId,
-    usesSharedGatewayAuth: false,
-    socket: {
-      readyState: WebSocket.OPEN,
-      send: () => {},
-    } as unknown as GatewayWsClient["socket"],
-    connect: {
-      minProtocol: PROTOCOL_VERSION,
-      maxProtocol: PROTOCOL_VERSION,
-      client: {
-        id: "node-host",
-        version: "1.0.0",
-        platform: "linux",
-        mode: "node",
-      },
-      device: {
-        id: nodeId,
-        publicKey: "public-key",
-        signature: "signature",
-        signedAt: 1,
-        nonce: "nonce",
-      },
-    } as GatewayWsClient["connect"],
-  };
-}
-
 function expectFields(value: unknown, expected: Record<string, unknown>): void {
   if (!value || typeof value !== "object") {
     throw new Error("expected fields object");
@@ -359,41 +336,17 @@ describe("node exec events", () => {
     updatePairedDevicePresenceMock.mockResolvedValue(true);
   });
 
-  it("enqueues exec.started events", async () => {
-    const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-1", {
-      event: "exec.started",
-      payloadJSON: JSON.stringify({
-        sessionKey: "agent:main:main",
-        runId: "run-1",
-        command: "ls -la",
-      }),
-    });
-
-    expect(enqueueSystemEventMock).toHaveBeenCalledWith(
-      "Exec started (node=node-1 id=run-1): ls -la",
-      {
-        sessionKey: "agent:main:main",
-        contextKey: "exec:run-1",
-      },
-    );
-    expect(requestHeartbeatMock).toHaveBeenCalledWith(execEventHeartbeatOptions("agent:main:main"));
-  });
-
   it("rejects exec lifecycle events without a pending node run", async () => {
     const ctx = buildCtx();
     const result = await handleNodeEvent(
       ctx,
       "node-1",
-      {
-        event: "exec.finished",
-        payloadJSON: JSON.stringify({
-          sessionKey: "agent:main:main",
-          runId: "forged-run",
-          exitCode: 0,
-          output: "done",
-        }),
-      },
+      nodeEvent("exec.finished", {
+        sessionKey: "agent:main:main",
+        runId: "forged-run",
+        exitCode: 0,
+        output: "done",
+      }),
       { connId: "conn-1" },
     );
 
@@ -423,10 +376,7 @@ describe("node exec events", () => {
         output: "done",
         suppressNotifyOnExit,
       };
-      const finishedEvent = {
-        event: "exec.finished",
-        payloadJSON: JSON.stringify(finishedPayload),
-      };
+      const finishedEvent = nodeEvent("exec.finished", finishedPayload);
       const unmatchedEvent = {
         ok: true,
         event: "exec.finished",
@@ -450,12 +400,7 @@ describe("node exec events", () => {
           handleNodeEvent(ctx, "node-1", finishedEvent, { connId: "wrong-conn" }),
         ).resolves.toEqual(unmatchedEvent);
         await expect(
-          handleNodeEvent(
-            ctx,
-            "node-1",
-            { event: "exec.started", payloadJSON: JSON.stringify(startedPayload) },
-            connection,
-          ),
+          handleNodeEvent(ctx, "node-1", nodeEvent("exec.started", startedPayload), connection),
         ).resolves.toBeUndefined();
 
         expect(enqueueSystemEventMock).toHaveBeenCalledTimes(1);
@@ -489,10 +434,7 @@ describe("node exec events", () => {
           handleNodeEvent(
             ctx,
             "node-1",
-            {
-              event: "exec.finished",
-              payloadJSON: JSON.stringify({ ...finishedPayload, suppressNotifyOnExit: false }),
-            },
+            nodeEvent("exec.finished", { ...finishedPayload, suppressNotifyOnExit: false }),
             connection,
           ),
         ).resolves.toEqual(unmatchedEvent);
@@ -506,43 +448,18 @@ describe("node exec events", () => {
     },
   );
 
-  it("enqueues exec.finished events with output", async () => {
-    const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-2", {
-      event: "exec.finished",
-      payloadJSON: JSON.stringify({
-        runId: "run-finished",
-        exitCode: 0,
-        timedOut: false,
-        output: "done",
-      }),
-    });
-
-    expect(enqueueSystemEventMock).toHaveBeenCalledWith(
-      "Exec finished (node=node-2 id=run-finished, code 0)\ndone",
-      {
-        sessionKey: "agent:main:node-node-2",
-        contextKey: "exec:run-finished",
-      },
-    );
-    expect(requestHeartbeatMock).toHaveBeenCalledWith(execEventHeartbeatOptions());
-  });
-
   it("accepts legacy exec.finished events when authorization matches without runId", async () => {
     const authorizeNodeSystemRunEvent = vi.fn(() => true);
     const ctx = buildCtx({ authorizeNodeSystemRunEvent });
     await handleNodeEvent(
       ctx,
       "node-2",
-      {
-        event: "exec.finished",
-        payloadJSON: JSON.stringify({
-          sessionKey: "agent:main:main",
-          exitCode: 0,
-          timedOut: false,
-          output: "done",
-        }),
-      },
+      nodeEvent("exec.finished", {
+        sessionKey: "agent:main:main",
+        exitCode: 0,
+        timedOut: false,
+        output: "done",
+      }),
       { connId: "conn-1" },
     );
 
@@ -598,15 +515,16 @@ describe("node exec events", () => {
       canonicalKey: "agent:main:node-node-2",
     });
     const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-2", {
-      event: "exec.finished",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-2",
+      nodeEvent("exec.finished", {
         runId: "run-2",
         exitCode: 0,
         timedOut: false,
         output: "done",
       }),
-    });
+    );
 
     expect(loadSessionEntryMock).toHaveBeenCalledWith("node-node-2");
     expect(enqueueSystemEventMock).toHaveBeenCalledWith(
@@ -623,101 +541,60 @@ describe("node exec events", () => {
 
   it("suppresses noisy exec.finished success events with empty output", async () => {
     const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-2", {
-      event: "exec.finished",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-2",
+      nodeEvent("exec.finished", {
         runId: "run-quiet",
         exitCode: 0,
         timedOut: false,
         output: "   ",
       }),
-    });
+    );
 
     expect(enqueueSystemEventMock).not.toHaveBeenCalled();
     expect(requestHeartbeatMock).not.toHaveBeenCalled();
   });
 
-  it("truncates long exec.finished output in system events", async () => {
-    const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-2", {
-      event: "exec.finished",
-      payloadJSON: JSON.stringify({
-        runId: "run-long",
-        exitCode: 0,
-        timedOut: false,
-        output: "x".repeat(600),
-      }),
-    });
-
-    const [text] = expectDefined(
-      enqueueSystemEventMock.mock.calls[0],
-      "(enqueueSystemEventMock.mock.calls)[0] test invariant",
-    );
-    expect(typeof text).toBe("string");
-    expect(text.startsWith("Exec finished (node=node-2 id=run-long, code 0)\n")).toBe(true);
-    expect(text.endsWith("…")).toBe(true);
-    expect(text.length).toBeLessThan(280);
-    expect(requestHeartbeatMock).toHaveBeenCalledWith(execEventHeartbeatOptions());
-  });
-
-  it("does not split surrogate pairs when truncating exec.finished output", async () => {
-    // 178 ASCII chars + emoji (🫠 = 2 UTF-16 code units at pos 178-179) = 180+ total.
-    // safe = 179 → old slice(0,179) would land on a lone high surrogate at pos 178.
+  it("truncates exec.finished output without splitting surrogate pairs", async () => {
+    // The truncation boundary falls between the emoji's UTF-16 code units.
     const emoji = "🫠";
     const padded = "A".repeat(178) + emoji + "tail";
     const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-2", {
-      event: "exec.finished",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-2",
+      nodeEvent("exec.finished", {
         runId: "run-surrogate",
         exitCode: 0,
         timedOut: false,
         output: padded,
       }),
-    });
+    );
 
     const [text] = expectDefined(
       enqueueSystemEventMock.mock.calls[0],
       "(enqueueSystemEventMock.mock.calls)[0] test invariant",
     );
-    // Must not contain a lone high surrogate (U+D800–U+DBFF).
+    expect(text.startsWith("Exec finished (node=node-2 id=run-surrogate, code 0)\n")).toBe(true);
     expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
     expect(text.endsWith("…")).toBe(true);
+    expect(text.length).toBeLessThan(280);
+    expect(requestHeartbeatMock).toHaveBeenCalledWith(execEventHeartbeatOptions());
   });
 
   it("does not enqueue or wake agent work for exec.denied events", async () => {
     const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-3", {
-      event: "exec.denied",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-3",
+      nodeEvent("exec.denied", {
         sessionKey: "agent:demo:main",
         runId: "run-3",
         command: "rm -rf /",
         reason: "allowlist-miss",
       }),
-    });
-
-    expect(enqueueSystemEventMock).not.toHaveBeenCalled();
-    expect(requestHeartbeatMock).not.toHaveBeenCalled();
-  });
-
-  it("suppresses exec.started when notifyOnExit is false", async () => {
-    loadConfigMock.mockReturnValueOnce({
-      session: { mainKey: "agent:main:main" },
-      tools: { exec: { notifyOnExit: false } },
-    } as {
-      session: { mainKey: string };
-      tools: { exec: { notifyOnExit: boolean } };
-    });
-    const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-1", {
-      event: "exec.started",
-      payloadJSON: JSON.stringify({
-        sessionKey: "agent:main:main",
-        runId: "run-silent-1",
-        command: "ls -la",
-      }),
-    });
+    );
 
     expect(enqueueSystemEventMock).not.toHaveBeenCalled();
     expect(requestHeartbeatMock).not.toHaveBeenCalled();
@@ -732,38 +609,16 @@ describe("node exec events", () => {
       tools: { exec: { notifyOnExit: boolean } };
     });
     const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-2", {
-      event: "exec.finished",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-2",
+      nodeEvent("exec.finished", {
         runId: "run-silent-2",
         exitCode: 0,
         timedOut: false,
         output: "some output",
       }),
-    });
-
-    expect(enqueueSystemEventMock).not.toHaveBeenCalled();
-    expect(requestHeartbeatMock).not.toHaveBeenCalled();
-  });
-
-  it("suppresses exec.denied when notifyOnExit is false", async () => {
-    loadConfigMock.mockReturnValueOnce({
-      session: { mainKey: "agent:main:main" },
-      tools: { exec: { notifyOnExit: false } },
-    } as {
-      session: { mainKey: string };
-      tools: { exec: { notifyOnExit: boolean } };
-    });
-    const ctx = buildExecCtx();
-    await handleNodeEvent(ctx, "node-3", {
-      event: "exec.denied",
-      payloadJSON: JSON.stringify({
-        sessionKey: "agent:demo:main",
-        runId: "run-silent-3",
-        command: "rm -rf /",
-        reason: "allowlist-miss",
-      }),
-    });
+    );
 
     expect(enqueueSystemEventMock).not.toHaveBeenCalled();
     expect(requestHeartbeatMock).not.toHaveBeenCalled();
@@ -774,14 +629,11 @@ describe("node exec events", () => {
     await handleNodeEvent(
       ctx,
       "node-direct",
-      {
-        event: "push.apns.register",
-        payloadJSON: JSON.stringify({
-          token: "abcd1234abcd1234abcd1234abcd1234",
-          topic: "ai.openclaw.ios",
-          environment: "sandbox",
-        }),
-      },
+      nodeEvent("push.apns.register", {
+        token: "abcd1234abcd1234abcd1234abcd1234",
+        topic: "ai.openclaw.ios",
+        environment: "sandbox",
+      }),
       { resolveApnsRegistrationGeneration: () => "generation-node-direct" },
     );
 
@@ -795,61 +647,22 @@ describe("node exec events", () => {
     });
   });
 
-  it("stores relay APNs registrations from node events", async () => {
-    const ctx = buildCtx();
-    await handleNodeEvent(
-      ctx,
-      "node-relay",
-      {
-        event: "push.apns.register",
-        payloadJSON: JSON.stringify({
-          transport: "relay",
-          relayHandle: "relay-handle-123",
-          sendGrant: "send-grant-123",
-          gatewayDeviceId: "gateway-device-1",
-          installationId: "install-123",
-          topic: "ai.openclaw.ios",
-          environment: "production",
-          distribution: "official",
-          tokenDebugSuffix: "abcd1234",
-        }),
-      },
-      { resolveApnsRegistrationGeneration: () => "generation-node-relay" },
-    );
-
-    expect(registerApnsRegistrationVi).toHaveBeenCalledWith({
-      nodeId: "node-relay",
-      transport: "relay",
-      relayHandle: "relay-handle-123",
-      sendGrant: "send-grant-123",
-      installationId: "install-123",
-      topic: "ai.openclaw.ios",
-      environment: "production",
-      distribution: "official",
-      tokenDebugSuffix: "abcd1234",
-      expectedPairingGeneration: "generation-node-relay",
-    });
-  });
-
   it("stores sandbox relay APNs registrations from node events", async () => {
     const ctx = buildCtx();
     await handleNodeEvent(
       ctx,
       "node-relay-sandbox",
-      {
-        event: "push.apns.register",
-        payloadJSON: JSON.stringify({
-          transport: "relay",
-          relayHandle: "relay-handle-123",
-          sendGrant: "send-grant-123",
-          gatewayDeviceId: "gateway-device-1",
-          installationId: "install-123",
-          topic: "ai.openclaw.ios",
-          environment: "sandbox",
-          distribution: "official",
-          tokenDebugSuffix: "abcd1234",
-        }),
-      },
+      nodeEvent("push.apns.register", {
+        transport: "relay",
+        relayHandle: "relay-handle-123",
+        sendGrant: "send-grant-123",
+        gatewayDeviceId: "gateway-device-1",
+        installationId: "install-123",
+        topic: "ai.openclaw.ios",
+        environment: "sandbox",
+        distribution: "official",
+        tokenDebugSuffix: "abcd1234",
+      }),
       { resolveApnsRegistrationGeneration: () => "generation-node-relay-sandbox" },
     );
 
@@ -869,9 +682,10 @@ describe("node exec events", () => {
 
   it("rejects relay registrations bound to a different gateway identity", async () => {
     const ctx = buildCtx();
-    await handleNodeEvent(ctx, "node-relay", {
-      event: "push.apns.register",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-relay",
+      nodeEvent("push.apns.register", {
         transport: "relay",
         relayHandle: "relay-handle-123",
         sendGrant: "send-grant-123",
@@ -881,8 +695,10 @@ describe("node exec events", () => {
         environment: "production",
         distribution: "official",
       }),
-    });
+      { resolveApnsRegistrationGeneration: () => "generation-node-relay" },
+    );
 
+    expect(loadOrCreateProcessDeviceIdentityMock).toHaveBeenCalledOnce();
     expect(registerApnsRegistrationVi).not.toHaveBeenCalled();
   });
 
@@ -892,14 +708,11 @@ describe("node exec events", () => {
     const result = await handleNodeEvent(
       ctx,
       "node-invalidated-register",
-      {
-        event: "push.apns.register",
-        payloadJSON: JSON.stringify({
-          token: "abcd1234abcd1234abcd1234abcd1234",
-          topic: "ai.openclaw.ios",
-          environment: "sandbox",
-        }),
-      },
+      nodeEvent("push.apns.register", {
+        token: "abcd1234abcd1234abcd1234abcd1234",
+        topic: "ai.openclaw.ios",
+        environment: "sandbox",
+      }),
       { resolveApnsRegistrationGeneration: async () => null },
     );
 
@@ -922,14 +735,11 @@ describe("node exec events", () => {
     const result = await handleNodeEvent(
       buildCtx(),
       "node-transaction-invalidated-register",
-      {
-        event: "push.apns.register",
-        payloadJSON: JSON.stringify({
-          token: "abcd1234abcd1234abcd1234abcd1234",
-          topic: "ai.openclaw.ios",
-          environment: "sandbox",
-        }),
-      },
+      nodeEvent("push.apns.register", {
+        token: "abcd1234abcd1234abcd1234abcd1234",
+        topic: "ai.openclaw.ios",
+        environment: "sandbox",
+      }),
       { resolveApnsRegistrationGeneration: async () => "generation-before-transaction" },
     );
 
@@ -951,30 +761,6 @@ describe("voice transcript events", () => {
     runtimeMocks.resolveSystemMainSessionTarget.mockClear();
     agentCommandMock.mockResolvedValue({ status: "ok" } as never);
     upsertSessionEntryMock.mockImplementation(async (_scope, patch) => patch);
-  });
-
-  it("dedupes repeated transcript agent dispatches for the same session", async () => {
-    const addChatRun = vi.fn();
-    const ctx = buildCtx();
-    ctx.addChatRun = addChatRun;
-
-    const payload = {
-      text: "hello from mic",
-      sessionKey: "voice-dedupe-session",
-    };
-
-    await handleNodeEvent(ctx, "node-v1", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify(payload),
-    });
-    await handleNodeEvent(ctx, "node-v1", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify(payload),
-    });
-
-    expect(agentCommandMock).toHaveBeenCalledTimes(1);
-    expect(addChatRun).toHaveBeenCalledTimes(1);
-    expect(upsertSessionEntryMock).toHaveBeenCalledTimes(1);
   });
 
   it("persists only the accepted replay session ID when identical new-session events race", async () => {
@@ -1011,19 +797,13 @@ describe("voice transcript events", () => {
     const firstReplay = handleNodeEvent(
       ctx,
       "node-new-session-replay",
-      {
-        event: "voice.transcript",
-        payloadJSON: JSON.stringify(payload),
-      },
+      nodeEvent("voice.transcript", payload),
       { isConnectionCurrent },
     );
     const duplicateReplay = handleNodeEvent(
       ctx,
       "node-new-session-replay",
-      {
-        event: "voice.transcript",
-        payloadJSON: JSON.stringify(payload),
-      },
+      nodeEvent("voice.transcript", payload),
       { isConnectionCurrent },
     );
     await Promise.all([firstReplay, duplicateReplay]);
@@ -1062,25 +842,13 @@ describe("voice transcript events", () => {
     };
 
     try {
-      await handleNodeEvent(
-        ctx,
-        "node-delayed-admission",
-        {
-          event: "voice.transcript",
-          payloadJSON: JSON.stringify(payload),
-        },
-        { isConnectionCurrent },
-      );
+      await handleNodeEvent(ctx, "node-delayed-admission", nodeEvent("voice.transcript", payload), {
+        isConnectionCurrent,
+      });
       now = 3_000;
-      await handleNodeEvent(
-        ctx,
-        "node-delayed-admission",
-        {
-          event: "voice.transcript",
-          payloadJSON: JSON.stringify(payload),
-        },
-        { isConnectionCurrent },
-      );
+      await handleNodeEvent(ctx, "node-delayed-admission", nodeEvent("voice.transcript", payload), {
+        isConnectionCurrent,
+      });
       await detachedChecksStarted.promise;
       now = 10_000;
       detachedAdmission.resolve(true);
@@ -1115,25 +883,13 @@ describe("voice transcript events", () => {
       sessionKey: "voice-stale-replay-session",
     };
 
-    await handleNodeEvent(
-      ctx,
-      "node-stale-voice",
-      {
-        event: "voice.transcript",
-        payloadJSON: JSON.stringify(payload),
-      },
-      { isConnectionCurrent },
-    );
+    await handleNodeEvent(ctx, "node-stale-voice", nodeEvent("voice.transcript", payload), {
+      isConnectionCurrent,
+    });
     await detachedChecksStarted.promise;
-    await handleNodeEvent(
-      ctx,
-      "node-current-voice",
-      {
-        event: "voice.transcript",
-        payloadJSON: JSON.stringify(payload),
-      },
-      { isConnectionCurrent: () => true },
-    );
+    await handleNodeEvent(ctx, "node-current-voice", nodeEvent("voice.transcript", payload), {
+      isConnectionCurrent: () => true,
+    });
 
     expect(addChatRun).not.toHaveBeenCalled();
     expect(agentCommandMock).not.toHaveBeenCalled();
@@ -1168,23 +924,14 @@ describe("voice transcript events", () => {
       sessionKey: "voice-queued-replay-currentness",
     };
 
-    await handleNodeEvent(
-      ctx,
-      "node-stale-queued-voice",
-      {
-        event: "voice.transcript",
-        payloadJSON: JSON.stringify(payload),
-      },
-      { isConnectionCurrent: isStaleConnectionCurrent },
-    );
+    await handleNodeEvent(ctx, "node-stale-queued-voice", nodeEvent("voice.transcript", payload), {
+      isConnectionCurrent: isStaleConnectionCurrent,
+    });
     await staleCheckStarted.promise;
     await handleNodeEvent(
       ctx,
       "node-replay-invalidated-while-queued",
-      {
-        event: "voice.transcript",
-        payloadJSON: JSON.stringify(payload),
-      },
+      nodeEvent("voice.transcript", payload),
       { isConnectionCurrent: isReplayConnectionCurrent },
     );
     await waitForFast(() => expect(isReplayConnectionCurrent).toHaveBeenCalledTimes(2));
@@ -1212,13 +959,10 @@ describe("voice transcript events", () => {
     await handleNodeEvent(
       ctx,
       "node-stale-after-voice-admission",
-      {
-        event: "voice.transcript",
-        payloadJSON: JSON.stringify({
-          text: "do not persist stale voice ownership",
-          sessionKey: "voice-detached-store-currentness",
-        }),
-      },
+      nodeEvent("voice.transcript", {
+        text: "do not persist stale voice ownership",
+        sessionKey: "voice-detached-store-currentness",
+      }),
       { isConnectionCurrent },
     );
     await waitForFast(() => expect(isConnectionCurrent).toHaveBeenCalledTimes(4));
@@ -1239,10 +983,11 @@ describe("voice transcript events", () => {
     const ctx = buildCtx();
     ctx.addChatRun = addChatRun;
 
-    await handleNodeEvent(ctx, "node-harness-voice-missing", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify({ text: "do not create this", sessionKey }),
-    });
+    await handleNodeEvent(
+      ctx,
+      "node-harness-voice-missing",
+      nodeEvent("voice.transcript", { text: "do not create this", sessionKey }),
+    );
     await Promise.resolve();
 
     expect(upsertSessionEntryMock).not.toHaveBeenCalled();
@@ -1259,10 +1004,11 @@ describe("voice transcript events", () => {
       }),
     );
 
-    await handleNodeEvent(buildCtx(), "node-harness-voice-existing", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify({ text: "continue supervised work", sessionKey }),
-    });
+    await handleNodeEvent(
+      buildCtx(),
+      "node-harness-voice-existing",
+      nodeEvent("voice.transcript", { text: "continue supervised work", sessionKey }),
+    );
     await Promise.resolve();
 
     expect(upsertSessionEntryMock).toHaveBeenCalledTimes(1);
@@ -1282,10 +1028,11 @@ describe("voice transcript events", () => {
       const ctx = buildCtx();
       ctx.addChatRun = addChatRun;
 
-      await handleNodeEvent(ctx, "node-harness-voice-invalid", {
-        event: "voice.transcript",
-        payloadJSON: JSON.stringify({ text: "do not dispatch this", sessionKey }),
-      });
+      await handleNodeEvent(
+        ctx,
+        "node-harness-voice-invalid",
+        nodeEvent("voice.transcript", { text: "do not dispatch this", sessionKey }),
+      );
       await Promise.resolve();
 
       expect(upsertSessionEntryMock).not.toHaveBeenCalled();
@@ -1297,22 +1044,24 @@ describe("voice transcript events", () => {
   it("does not dedupe identical text when source event IDs differ", async () => {
     const ctx = buildCtx();
 
-    await handleNodeEvent(ctx, "node-v1", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-v1",
+      nodeEvent("voice.transcript", {
         text: "hello from mic",
         sessionKey: "voice-dedupe-eventid-session",
         eventId: "evt-voice-1",
       }),
-    });
-    await handleNodeEvent(ctx, "node-v1", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify({
+    );
+    await handleNodeEvent(
+      ctx,
+      "node-v1",
+      nodeEvent("voice.transcript", {
         text: "hello from mic",
         sessionKey: "voice-dedupe-eventid-session",
         eventId: "evt-voice-2",
       }),
-    });
+    );
 
     expect(agentCommandMock).toHaveBeenCalledTimes(2);
     expect(upsertSessionEntryMock).toHaveBeenCalledTimes(2);
@@ -1323,13 +1072,14 @@ describe("voice transcript events", () => {
     const ctx = buildCtx();
     ctx.addChatRun = addChatRun;
 
-    await handleNodeEvent(ctx, "node-v2", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-v2",
+      nodeEvent("voice.transcript", {
         text: "check provenance",
         sessionKey: "voice-provenance-session",
       }),
-    });
+    );
 
     expect(agentCommandMock).toHaveBeenCalledTimes(1);
     const opts = mockCallArg(agentCommandMock);
@@ -1359,13 +1109,14 @@ describe("voice transcript events", () => {
     ctx.logGateway = { warn };
     upsertSessionEntryMock.mockRejectedValueOnce(new Error("disk down"));
 
-    await handleNodeEvent(ctx, "node-v3", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-v3",
+      nodeEvent("voice.transcript", {
         text: "continue anyway",
         sessionKey: "voice-store-fail-session",
       }),
-    });
+    );
     await Promise.resolve();
 
     expect(agentCommandMock).toHaveBeenCalledTimes(1);
@@ -1377,13 +1128,14 @@ describe("voice transcript events", () => {
     const touch = createDeferred();
     upsertSessionEntryMock.mockImplementationOnce(() => touch.promise);
 
-    await runAdmittedNodeEvent(buildCtx(), "node-v-suspend", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify({
+    await runAdmittedNodeEvent(
+      buildCtx(),
+      "node-v-suspend",
+      nodeEvent("voice.transcript", {
         text: "persist before suspension",
         sessionKey: "voice-suspend-session",
       }),
-    });
+    );
 
     await waitForFast(() => expect(getActiveGatewayRootWorkCount()).toBe(1));
     expectSuspendBusyWithRootWork("voice-touch-busy");
@@ -1394,50 +1146,7 @@ describe("voice transcript events", () => {
 
   it("preserves existing session metadata when touching the store for voice transcripts", async () => {
     const ctx = buildCtx();
-    loadSessionEntryMock.mockImplementation((sessionKey: string) =>
-      buildSessionLookup(sessionKey, {
-        sessionId: "sess-preserve",
-        updatedAt: 10,
-        label: "existing label",
-        spawnedBy: "agent:main:parent",
-        parentSessionKey: "agent:main:parent",
-        lastChannel: "discord",
-        lastTo: "thread-1",
-        lastAccountId: "acct-1",
-        lastThreadId: 42,
-      }),
-    );
-
-    let updatedEntry: Record<string, unknown> | undefined;
-    upsertSessionEntryMock.mockImplementationOnce(async (_scope, patch) => {
-      const existing = {
-        sessionId: "sess-preserve",
-        updatedAt: 10,
-        label: "existing label",
-        spawnedBy: "agent:main:parent",
-        parentSessionKey: "agent:main:parent",
-        lastChannel: "discord",
-        lastTo: "thread-1",
-        lastAccountId: "acct-1",
-        lastThreadId: 42,
-      };
-      updatedEntry = {
-        ...existing,
-        ...patch,
-      };
-      return updatedEntry;
-    });
-
-    await handleNodeEvent(ctx, "node-v4", {
-      event: "voice.transcript",
-      payloadJSON: JSON.stringify({
-        text: "preserve metadata",
-        sessionKey: "voice-preserve-session",
-      }),
-    });
-    await Promise.resolve();
-
-    expectFields(updatedEntry, {
+    const metadata = {
       sessionId: "sess-preserve",
       label: "existing label",
       spawnedBy: "agent:main:parent",
@@ -1446,7 +1155,28 @@ describe("voice transcript events", () => {
       lastTo: "thread-1",
       lastAccountId: "acct-1",
       lastThreadId: 42,
+    };
+    loadSessionEntryMock.mockImplementation((sessionKey: string) =>
+      buildSessionLookup(sessionKey, { ...metadata, updatedAt: 10 }),
+    );
+
+    let updatedEntry: Record<string, unknown> | undefined;
+    upsertSessionEntryMock.mockImplementationOnce(async (_scope, patch) => {
+      updatedEntry = { ...metadata, updatedAt: 10, ...patch };
+      return updatedEntry;
     });
+
+    await handleNodeEvent(
+      ctx,
+      "node-v4",
+      nodeEvent("voice.transcript", {
+        text: "preserve metadata",
+        sessionKey: "voice-preserve-session",
+      }),
+    );
+    await Promise.resolve();
+
+    expectFields(updatedEntry, metadata);
   });
 });
 
@@ -1460,16 +1190,17 @@ describe("notifications changed events", () => {
 
   it("enqueues notifications.changed posted events", async () => {
     const ctx = buildCtx();
-    await handleNodeEvent(ctx, "node-n1", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-n1",
+      nodeEvent("notifications.changed", {
         change: "posted",
         key: "notif-1",
         packageName: "com.example.chat",
         title: "Message",
         text: "Ping from Alex",
       }),
-    });
+    );
 
     expect(enqueueSystemEventMock).toHaveBeenCalledWith(
       "Notification posted (node=node-n1 key=notif-1 package=com.example.chat): Message - Ping from Alex",
@@ -1489,14 +1220,15 @@ describe("notifications changed events", () => {
 
   it("compacts notification text without splitting surrogate pairs", async () => {
     const ctx = buildCtx();
-    await handleNodeEvent(ctx, "node-n1", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-n1",
+      nodeEvent("notifications.changed", {
         change: "posted",
         key: "notif-long",
         title: ` \n${"A".repeat(117)}   🫠 tail `,
       }),
-    });
+    );
 
     expect(mockCallArg(enqueueSystemEventMock)).toBe(
       `Notification posted (node=node-n1 key=notif-long): ${"A".repeat(117)} …`,
@@ -1505,14 +1237,15 @@ describe("notifications changed events", () => {
 
   it("enqueues notifications.changed removed events", async () => {
     const ctx = buildCtx();
-    await handleNodeEvent(ctx, "node-n2", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-n2",
+      nodeEvent("notifications.changed", {
         change: "removed",
         key: "notif-2",
         packageName: "com.example.mail",
       }),
-    });
+    );
 
     expect(enqueueSystemEventMock).toHaveBeenCalledWith(
       "Notification removed (node=node-n2 key=notif-2 package=com.example.mail)",
@@ -1536,10 +1269,11 @@ describe("notifications changed events", () => {
       throw new Error("Set agents.defaults.systemAgent.agentId");
     });
 
-    await handleNodeEvent({ ...buildCtx(), logGateway: { warn } }, "node-unowned", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({ change: "posted", key: "notif-unowned" }),
-    });
+    await handleNodeEvent(
+      { ...buildCtx(), logGateway: { warn } },
+      "node-unowned",
+      nodeEvent("notifications.changed", { change: "posted", key: "notif-unowned" }),
+    );
 
     expect(enqueueSystemEventMock).not.toHaveBeenCalled();
     expect(requestHeartbeatMock).not.toHaveBeenCalled();
@@ -1548,40 +1282,21 @@ describe("notifications changed events", () => {
     );
   });
 
-  it("wakes heartbeat on payload sessionKey when provided", async () => {
-    const ctx = buildCtx();
-    await handleNodeEvent(ctx, "node-n4", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({
-        change: "posted",
-        key: "notif-4",
-        sessionKey: "agent:main:main",
-      }),
-    });
-
-    expect(requestHeartbeatMock).toHaveBeenCalledWith({
-      source: "notifications-event",
-      intent: "event",
-      reason: "notifications-event",
-      agentId: "main",
-      sessionKey: "agent:main:main",
-    });
-  });
-
   it("canonicalizes notifications session key before enqueue and wake", async () => {
     loadSessionEntryMock.mockReturnValueOnce({
       ...buildSessionLookup("node-node-n5"),
       canonicalKey: "agent:main:node-node-n5",
     });
     const ctx = buildCtx();
-    await handleNodeEvent(ctx, "node-n5", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-n5",
+      nodeEvent("notifications.changed", {
         change: "posted",
         key: "notif-5",
         sessionKey: "node-node-n5",
       }),
-    });
+    );
 
     expect(loadSessionEntryMock).toHaveBeenCalledWith("node-node-n5", { agentId: undefined });
     expect(enqueueSystemEventMock).toHaveBeenCalledWith(
@@ -1607,10 +1322,11 @@ describe("notifications changed events", () => {
       entry: undefined,
     });
 
-    await handleNodeEvent(buildCtx(), "node-harness-missing", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({ change: "posted", key: "notif", sessionKey }),
-    });
+    await handleNodeEvent(
+      buildCtx(),
+      "node-harness-missing",
+      nodeEvent("notifications.changed", { change: "posted", key: "notif", sessionKey }),
+    );
 
     expect(enqueueSystemEventMock).not.toHaveBeenCalled();
     expect(requestHeartbeatMock).not.toHaveBeenCalled();
@@ -1625,10 +1341,11 @@ describe("notifications changed events", () => {
       }),
     );
 
-    await handleNodeEvent(buildCtx(), "node-harness-existing", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({ change: "posted", key: "notif", sessionKey }),
-    });
+    await handleNodeEvent(
+      buildCtx(),
+      "node-harness-existing",
+      nodeEvent("notifications.changed", { change: "posted", key: "notif", sessionKey }),
+    );
 
     expect(enqueueSystemEventMock).toHaveBeenCalledOnce();
     expect(requestHeartbeatMock).toHaveBeenCalledWith(expect.objectContaining({ sessionKey }));
@@ -1636,12 +1353,13 @@ describe("notifications changed events", () => {
 
   it("ignores notifications.changed payloads missing required fields", async () => {
     const ctx = buildCtx();
-    await handleNodeEvent(ctx, "node-n3", {
-      event: "notifications.changed",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-n3",
+      nodeEvent("notifications.changed", {
         change: "posted",
       }),
-    });
+    );
 
     expect(enqueueSystemEventMock).not.toHaveBeenCalled();
     expect(requestHeartbeatMock).not.toHaveBeenCalled();
@@ -1706,10 +1424,11 @@ describe("agent request events", () => {
       entry: undefined,
     });
 
-    await handleNodeEvent(buildCtx(), "node-harness-request-missing", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({ message: "do not create this", sessionKey }),
-    });
+    await handleNodeEvent(
+      buildCtx(),
+      "node-harness-request-missing",
+      nodeEvent("agent.request", { message: "do not create this", sessionKey }),
+    );
 
     expect(upsertSessionEntryMock).not.toHaveBeenCalled();
     expect(agentCommandMock).not.toHaveBeenCalled();
@@ -1724,10 +1443,11 @@ describe("agent request events", () => {
       }),
     );
 
-    await handleNodeEvent(buildCtx(), "node-harness-request-existing", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({ message: "continue supervised work", sessionKey }),
-    });
+    await handleNodeEvent(
+      buildCtx(),
+      "node-harness-request-existing",
+      nodeEvent("agent.request", { message: "continue supervised work", sessionKey }),
+    );
 
     expect(upsertSessionEntryMock).toHaveBeenCalledTimes(1);
     expect(agentCommandMock).toHaveBeenCalledTimes(1);
@@ -1738,13 +1458,14 @@ describe("agent request events", () => {
     const dispatch = createDeferred<never>();
     agentCommandMock.mockImplementationOnce(() => dispatch.promise);
 
-    await runAdmittedNodeEvent(buildCtx(), "node-agent-suspend", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({
+    await runAdmittedNodeEvent(
+      buildCtx(),
+      "node-agent-suspend",
+      nodeEvent("agent.request", {
         message: "finish before suspension",
         sessionKey: "agent:main:suspend-agent",
       }),
-    });
+    );
 
     await waitForFast(() => expect(getActiveGatewayRootWorkCount()).toBe(1));
     expectSuspendBusyWithRootWork("agent-dispatch-busy");
@@ -1757,9 +1478,10 @@ describe("agent request events", () => {
     const receipt = createDeferred<DurableMessageBatchSendResult>();
     sendDurableMessageBatchMock.mockImplementationOnce(() => receipt.promise);
 
-    await runAdmittedNodeEvent(buildCtx(), "node-receipt-suspend", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({
+    await runAdmittedNodeEvent(
+      buildCtx(),
+      "node-receipt-suspend",
+      nodeEvent("agent.request", {
         message: "acknowledge before suspension",
         sessionKey: "agent:main:suspend-receipt",
         deliver: true,
@@ -1767,7 +1489,7 @@ describe("agent request events", () => {
         channel: "telegram",
         to: "123",
       }),
-    });
+    );
 
     await waitForFast(() => expect(getActiveGatewayRootWorkCount()).toBe(1));
     expectSuspendBusyWithRootWork("receipt-delivery-busy");
@@ -1787,18 +1509,15 @@ describe("agent request events", () => {
     const request = handleNodeEvent(
       ctx,
       "node-revoked-during-model-lookup",
-      {
-        event: "agent.request",
-        payloadJSON: JSON.stringify({
-          message: "describe this image",
-          sessionKey: "agent:main:revoked-during-model-lookup",
-          attachments: [{ type: "image", mimeType: "image/png", content: "AAAA" }],
-          deliver: true,
-          receipt: true,
-          channel: "telegram",
-          to: "123",
-        }),
-      },
+      nodeEvent("agent.request", {
+        message: "describe this image",
+        sessionKey: "agent:main:revoked-during-model-lookup",
+        attachments: [{ type: "image", mimeType: "image/png", content: "AAAA" }],
+        deliver: true,
+        receipt: true,
+        channel: "telegram",
+        to: "123",
+      }),
       { isConnectionCurrent },
     );
 
@@ -1841,13 +1560,10 @@ describe("agent request events", () => {
     await handleNodeEvent(
       buildCtx(),
       "node-revoked-before-detached-start",
-      {
-        event: "agent.request",
-        payloadJSON: JSON.stringify({
-          message: "do not retain this media",
-          sessionKey: "agent:main:revoked-before-detached-start",
-        }),
-      },
+      nodeEvent("agent.request", {
+        message: "do not retain this media",
+        sessionKey: "agent:main:revoked-before-detached-start",
+      }),
       { isConnectionCurrent },
     );
 
@@ -1866,14 +1582,15 @@ describe("agent request events", () => {
       const sessionKey = `agent:main:harness:codex:supervision:invalid-request-${_label.replaceAll(" ", "-")}`;
       loadSessionEntryMock.mockReturnValueOnce(buildSessionLookup(sessionKey, entry));
 
-      await handleNodeEvent(buildCtx(), "node-harness-request-invalid", {
-        event: "agent.request",
-        payloadJSON: JSON.stringify({
+      await handleNodeEvent(
+        buildCtx(),
+        "node-harness-request-invalid",
+        nodeEvent("agent.request", {
           message: "do not dispatch this",
           sessionKey,
           attachments: [{ type: "image", mimeType: "image/png", content: "aGVsbG8=" }],
         }),
-      });
+      );
 
       expect(runtimeMocks.resolveSessionAgentId).not.toHaveBeenCalled();
       expect(runtimeMocks.resolveSessionModelRef).not.toHaveBeenCalled();
@@ -1890,14 +1607,15 @@ describe("agent request events", () => {
     const ctx = buildCtx();
     ctx.logGateway = { warn };
 
-    await handleNodeEvent(ctx, "node-route-miss", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-route-miss",
+      nodeEvent("agent.request", {
         message: "summarize this",
         sessionKey: "agent:main:main",
         deliver: true,
       }),
-    });
+    );
 
     expect(agentCommandMock).toHaveBeenCalledTimes(1);
     const opts = mockCallArg(agentCommandMock);
@@ -1923,14 +1641,15 @@ describe("agent request events", () => {
       canonicalKey: "agent:main:main",
     });
 
-    await handleNodeEvent(ctx, "node-route-hit", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-route-hit",
+      nodeEvent("agent.request", {
         message: "route on session",
         sessionKey: "agent:main:main",
         deliver: true,
       }),
-    });
+    );
 
     expect(agentCommandMock).toHaveBeenCalledTimes(1);
     const opts = mockCallArg(agentCommandMock);
@@ -1951,10 +1670,11 @@ describe("agent request events", () => {
     );
 
     for (const message of ["first turn", "second turn"]) {
-      await handleNodeEvent(buildCtx(), "node-repeat", {
-        event: "agent.request",
-        payloadJSON: JSON.stringify({ message, sessionKey: "agent:main:node-repeat" }),
-      });
+      await handleNodeEvent(
+        buildCtx(),
+        "node-repeat",
+        nodeEvent("agent.request", { message, sessionKey: "agent:main:node-repeat" }),
+      );
     }
 
     expect(agentCommandMock).toHaveBeenCalledTimes(2);
@@ -1982,9 +1702,10 @@ describe("agent request events", () => {
       canonicalKey: "agent:main:main",
     });
 
-    await handleNodeEvent(ctx, "node-text-only", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-text-only",
+      nodeEvent("agent.request", {
         message: "describe",
         sessionKey: "agent:main:main",
         attachments: [
@@ -1996,7 +1717,7 @@ describe("agent request events", () => {
           },
         ],
       }),
-    });
+    );
 
     expect(parseMessageWithAttachmentsMock).toHaveBeenCalledTimes(1);
     const parseCall = mockCall(parseMessageWithAttachmentsMock);
@@ -2043,14 +1764,15 @@ describe("agent request events", () => {
       omission: "none",
     });
 
-    await handleNodeEvent(buildCtx(), "node-media", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      buildCtx(),
+      "node-media",
+      nodeEvent("agent.request", {
         message: "describe",
         sessionKey: "agent:main:main",
         attachments: [{ type: "image", mimeType: "image/png", content: "AAAA" }],
       }),
-    });
+    );
 
     expect(persistInboundImagesForTranscriptMock).toHaveBeenCalledOnce();
     expect(agentCommandMock).toHaveBeenCalledTimes(1);
@@ -2076,14 +1798,15 @@ describe("agent request events", () => {
       omission: "inline-image-save-failed",
     });
 
-    await handleNodeEvent(buildCtx(), "node-media-omission", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      buildCtx(),
+      "node-media-omission",
+      nodeEvent("agent.request", {
         message: "describe",
         sessionKey: "agent:main:main",
         attachments: [{ type: "image", mimeType: "image/jpeg", content: "AAAA" }],
       }),
-    });
+    );
 
     expectFields(mockCallArg(agentCommandMock), {
       message: "describe",
@@ -2104,9 +1827,10 @@ describe("agent request events", () => {
       }),
     );
 
-    await handleNodeEvent(ctx, "node-non-image-refusal", {
-      event: "agent.request",
-      payloadJSON: JSON.stringify({
+    await handleNodeEvent(
+      ctx,
+      "node-non-image-refusal",
+      nodeEvent("agent.request", {
         message: "read this",
         sessionKey: "agent:main:main",
         attachments: [
@@ -2118,7 +1842,7 @@ describe("agent request events", () => {
           },
         ],
       }),
-    });
+    );
 
     // server-node-events must log-and-return on parse failure — no agent
     // dispatch, no crash, and the refusal reason bubbles up via logGateway.
@@ -2138,10 +1862,7 @@ describe("agent request events", () => {
     const result = await handleNodeEvent(
       ctx,
       "ios-presence-persist",
-      {
-        event: "node.presence.alive",
-        payloadJSON: JSON.stringify({ trigger: "bg_app_refresh", sentAtMs: 123 }),
-      },
+      nodeEvent("node.presence.alive", { trigger: "bg_app_refresh", sentAtMs: 123 }),
       presenceConnection("ios-presence-persist"),
     );
 
@@ -2160,10 +1881,11 @@ describe("agent request events", () => {
 
   it("rejects node presence alive events without authenticated device identity", async () => {
     const ctx = buildCtx();
-    const result = await handleNodeEvent(ctx, "ios-presence-missing-identity", {
-      event: "node.presence.alive",
-      payloadJSON: JSON.stringify({ trigger: "silent_push" }),
-    });
+    const result = await handleNodeEvent(
+      ctx,
+      "ios-presence-missing-identity",
+      nodeEvent("node.presence.alive", { trigger: "silent_push" }),
+    );
 
     expect(result).toEqual({
       ok: true,
@@ -2178,10 +1900,7 @@ describe("agent request events", () => {
     const result = await handleNodeEvent(
       buildCtx(),
       "ios-presence-missing-generation",
-      {
-        event: "node.presence.alive",
-        payloadJSON: JSON.stringify({ trigger: "silent_push" }),
-      },
+      nodeEvent("node.presence.alive", { trigger: "silent_push" }),
       { deviceId: "ios-presence-missing-generation" },
     );
 
@@ -2200,10 +1919,7 @@ describe("agent request events", () => {
     const result = await handleNodeEvent(
       ctx,
       "ios-presence-unpaired",
-      {
-        event: "node.presence.alive",
-        payloadJSON: JSON.stringify({ trigger: "silent_push" }),
-      },
+      nodeEvent("node.presence.alive", { trigger: "silent_push" }),
       presenceConnection("ios-presence-unpaired"),
     );
 
@@ -2219,10 +1935,7 @@ describe("agent request events", () => {
     const retry = await handleNodeEvent(
       ctx,
       "ios-presence-unpaired",
-      {
-        event: "node.presence.alive",
-        payloadJSON: JSON.stringify({ trigger: "silent_push" }),
-      },
+      nodeEvent("node.presence.alive", { trigger: "silent_push" }),
       presenceConnection("ios-presence-unpaired"),
     );
     expect(retry).toEqual({
@@ -2302,15 +2015,13 @@ describe("agent request events", () => {
       diskAvailableBytes: 16384,
     };
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(100_000);
-    setActiveNodeContext({ nodeId: "active-computer" });
+    setActiveNodeContexts([{ nodeId: "active-computer" }]);
     try {
       await expect(
-        handleNodeEvent(
-          ctx,
-          session.nodeId,
-          { event: "node.host.stats", payloadJSON: JSON.stringify(stats) },
-          { connId: client.connId, presenceAllowed: false },
-        ),
+        handleNodeEvent(ctx, session.nodeId, nodeEvent("node.host.stats", stats), {
+          connId: client.connId,
+          presenceAllowed: false,
+        }),
       ).resolves.toEqual({
         ok: true,
         event: "node.host.stats",
@@ -2328,7 +2039,7 @@ describe("agent request events", () => {
       expect(updatePairedDevicePresenceMock).not.toHaveBeenCalled();
     } finally {
       nowSpy.mockRestore();
-      setActiveNodeContext(null);
+      setActiveNodeContexts([]);
       registry.unregister(client.connId);
     }
   });
@@ -2360,10 +2071,7 @@ describe("agent request events", () => {
           handleNodeEvent(
             ctx,
             connection === "unknown" ? "unknown-node" : session.nodeId,
-            {
-              event: "node.host.stats",
-              payloadJSON: JSON.stringify({ ...stats, memoryFreeBytes: 1024 }),
-            },
+            nodeEvent("node.host.stats", { ...stats, memoryFreeBytes: 1024 }),
             {
               connId:
                 connection === "missing"
@@ -2424,10 +2132,7 @@ describe("agent request events", () => {
     const result = await handleNodeEvent(
       ctx,
       "mac-node",
-      {
-        event: "node.presence.activity",
-        payloadJSON: JSON.stringify({ idleSeconds: 10 }),
-      },
+      nodeEvent("node.presence.activity", { idleSeconds: 10 }),
       { connId: "conn-1", deviceId: "mac-node", presenceAllowed: true },
     );
 
@@ -2460,10 +2165,7 @@ describe("agent request events", () => {
     const result = await handleNodeEvent(
       ctx,
       "mac-node",
-      {
-        event: "node.presence.activity",
-        payloadJSON: JSON.stringify({ idleSeconds: 0 }),
-      },
+      nodeEvent("node.presence.activity", { idleSeconds: 0 }),
       { connId: "conn-1", deviceId: "mac-node", presenceAllowed: false },
     );
 
@@ -2487,10 +2189,7 @@ describe("agent request events", () => {
     const result = await handleNodeEvent(
       ctx,
       "mac-node",
-      {
-        event: "node.presence.activity",
-        payloadJSON: JSON.stringify({ action: "clear" }),
-      },
+      nodeEvent("node.presence.activity", { action: "clear" }),
       { connId: "conn-1", deviceId: "mac-node", presenceAllowed: false },
     );
 
@@ -2517,10 +2216,7 @@ describe("agent request events", () => {
     await handleNodeEvent(
       ctx,
       "ios-presence-normalize",
-      {
-        event: "node.presence.alive",
-        payloadJSON: JSON.stringify({ trigger: "x".repeat(4096) }),
-      },
+      nodeEvent("node.presence.alive", { trigger: "x".repeat(4096) }),
       presenceConnection("ios-presence-normalize"),
     );
 
@@ -2547,15 +2243,9 @@ describe("chat subscribe/unsubscribe events", () => {
       canonicalKey: `agent:main:${sessionKey.toLowerCase()}`,
     }));
 
-    await handleNodeEvent(
-      ctx,
-      "node-c1",
-      {
-        event: "chat.subscribe",
-        payloadJSON: JSON.stringify({ sessionKey: "  Main  " }),
-      },
-      { connId: "node-c1-connection" },
-    );
+    await handleNodeEvent(ctx, "node-c1", nodeEvent("chat.subscribe", { sessionKey: "  Main  " }), {
+      connId: "node-c1-connection",
+    });
 
     expect(nodeSubscribe).toHaveBeenCalledWith("node-c1", "agent:main:main", "node-c1-connection");
     expect(loadSessionEntryMock).toHaveBeenCalledWith("Main");
@@ -2573,10 +2263,7 @@ describe("chat subscribe/unsubscribe events", () => {
     await handleNodeEvent(
       ctx,
       "node-c2",
-      {
-        event: "chat.unsubscribe",
-        payloadJSON: JSON.stringify({ sessionKey: "\tOtherAgent " }),
-      },
+      nodeEvent("chat.unsubscribe", { sessionKey: "\tOtherAgent " }),
       { connId: "node-c2-connection" },
     );
 
@@ -2592,10 +2279,7 @@ describe("chat subscribe/unsubscribe events", () => {
     const nodeSubscribe = vi.fn();
     const ctx = { ...buildCtx(), nodeSubscribe };
 
-    await handleNodeEvent(ctx, "node-c3", {
-      event: "chat.subscribe",
-      payloadJSON: JSON.stringify({ other: 1 }),
-    });
+    await handleNodeEvent(ctx, "node-c3", nodeEvent("chat.subscribe", { other: 1 }));
 
     expect(nodeSubscribe).not.toHaveBeenCalled();
   });

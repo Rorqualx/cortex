@@ -504,7 +504,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     ensureCompactionPromise();
   };
 
-  const resolveCompactionPromiseIfIdle = () => {
+  const maybeResolveCompactionWait = () => {
     if (state.pendingCompactionRetry !== 0 || state.compactionInFlight) {
       return;
     }
@@ -519,7 +519,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       return;
     }
     state.pendingCompactionRetry -= 1;
-    resolveCompactionPromiseIfIdle();
+    maybeResolveCompactionWait();
   };
 
   const maybeResolveCompactionWait = () => {

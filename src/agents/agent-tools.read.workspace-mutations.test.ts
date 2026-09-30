@@ -66,49 +66,85 @@ describe("workspace mutation authority", () => {
     const options = { workspaceOnly: true, abortSignal: generation.signal };
     const execute = () => {
       if (kind === "append") {
-        return wrapToolMemoryFlushAppendOnlyWrite(createHostWorkspaceWriteTool(root, options), {
-          root,
-          relativePath: "memory.md",
-        }).execute(
-          "workspace-append",
-          { path: "memory.md", content: "appended\n" },
-          generation.signal,
-        );
-      }
-      if (kind === "edit") {
-        return createHostWorkspaceEditTool(root, options).execute("workspace-edit", {
-          path: "memory.md",
-          edits: [{ oldText: "original", newText: "replacement" }],
+        const realOpen = fs.open.bind(fs);
+        vi.spyOn(fs, "open").mockImplementation(async (...args) => {
+          const handle = await realOpen(...args);
+          const [target, flags] = args;
+          if (
+            String(target) === filePath &&
+            typeof flags === "number" &&
+            (flags & constants.O_APPEND) !== 0
+          ) {
+            const read = handle.read.bind(handle);
+            handle.read = (async (...readArgs: Parameters<typeof read>) => {
+              const result = await read(...readArgs);
+              finishPreparation();
+              return result;
+            }) as typeof handle.read;
+          }
+          return handle;
+        });
+      } else {
+        const targetPath = await fs.realpath(filePath);
+        __setFsSafeTestHooksForTest({
+          // Native writes do not open their staging handles through node:fs.
+          beforePinnedWriteParentAdmission: async (preparedPath) => {
+            if (preparedPath === targetPath) {
+              await Promise.resolve();
+              finishPreparation();
+            }
+          },
         });
       }
-      return createHostWorkspaceWriteTool(root, options).execute("workspace-write", {
-        path: "memory.md",
-        content: "replacement\n",
-      });
-    };
+      const options = { workspaceOnly: true, abortSignal: generation.signal };
+      const execute = () => {
+        if (kind === "append") {
+          return wrapToolMemoryFlushAppendOnlyWrite(createHostWorkspaceWriteTool(root, options), {
+            root,
+            relativePath: "memory.md",
+          }).execute(
+            "workspace-append",
+            { path: "memory.md", content: "appended\n" },
+            generation.signal,
+          );
+        }
+        if (kind === "edit") {
+          return createHostWorkspaceEditTool(root, options).execute("workspace-edit", {
+            path: "memory.md",
+            edits: [{ oldText: "original", newText: "replacement" }],
+          });
+        }
+        return createHostWorkspaceWriteTool(root, options).execute("workspace-write", {
+          path: "memory.md",
+          content: "replacement\n",
+        });
+      };
 
-    const pending = withGatewayToolCallerIdentity(
-      {
-        agentId: "main",
-        sessionKey: "agent:main:workspace-mutations",
-        receiptAuthority: () => current,
-      },
-      execute,
-    );
-    if (authority === "active") {
-      await expect(pending).resolves.toBeDefined();
-    } else {
-      await expect(pending).rejects.toThrow(
-        authority === "revoked" ? "authority is no longer active" : "Workspace operation cancelled",
+      const pending = withGatewayToolCallerIdentity(
+        {
+          agentId: "main",
+          sessionKey: "agent:main:workspace-mutations",
+          receiptAuthority: () => current,
+        },
+        execute,
       );
-    }
-    expect(prepared).toBe(true);
-    const changedContent = kind === "append" ? "original\nappended\n" : "replacement\n";
-    await expect(fs.readFile(filePath, "utf8")).resolves.toBe(
-      authority === "active" ? changedContent : "original\n",
-    );
-    await expect(fs.readdir(root)).resolves.toEqual(["memory.md"]);
-  });
+      if (authority === "active") {
+        await expect(pending).resolves.toBeDefined();
+      } else {
+        await expect(pending).rejects.toThrow(
+          authority === "revoked"
+            ? "authority is no longer active"
+            : "Workspace operation cancelled",
+        );
+      }
+      expect(prepared).toBe(true);
+      const changedContent = kind === "append" ? "original\nappended\n" : "replacement\n";
+      await expect(fs.readFile(filePath, "utf8")).resolves.toBe(
+        authority === "active" ? changedContent : "original\n",
+      );
+      await expect(fs.readdir(root)).resolves.toEqual(["memory.md"]);
+    },
+  );
 
   it.each(["existing", "missing"] as const)(
     "rechecks authority before creating directories in a %s workspace",

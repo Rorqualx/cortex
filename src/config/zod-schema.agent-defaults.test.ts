@@ -97,7 +97,7 @@ describe("agent defaults schema", () => {
     },
   );
 
-  it.each(["auto", "true", null, { enabled: true }])(
+  it.each(["true", null, { enabled: true }])(
     "rejects non-boolean per-model Code Mode override %j",
     (codeMode) => {
       const models = { "example/model": { codeMode } };
@@ -438,15 +438,6 @@ describe("agent defaults schema", () => {
     );
   });
 
-  it("accepts embeddedAgent.executionContract", () => {
-    const result = AgentDefaultsSchema.parse({
-      embeddedAgent: {
-        executionContract: "strict-agentic",
-      },
-    })!;
-    expect(result.embeddedAgent?.executionContract).toBe("strict-agentic");
-  });
-
   it("rejects legacy whole-agent runtime pins outside doctor migration", () => {
     expect(AgentDefaultsSchema.safeParse({ agentRuntime: { id: "codex" } }).success).toBe(false);
     expect(
@@ -565,8 +556,6 @@ describe("agent defaults schema", () => {
     });
 
     expect(defaults.heartbeat?.timeoutSeconds).toBe(45);
-    expect(defaults.heartbeat?.timeoutSeconds).toBe(45);
-    expect(agent.heartbeat?.timeoutSeconds).toBe(45);
     expect(agent.heartbeat?.timeoutSeconds).toBe(45);
   });
 

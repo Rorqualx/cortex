@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DiffViewerPayload } from "./types.js";
 
 const disableAutoStartKey = Symbol.for("openclaw.diffs.disableAutoStart");
 (globalThis as typeof globalThis & Record<symbol, unknown>)[disableAutoStartKey] = true;
@@ -41,7 +42,7 @@ vi.mock("@pierre/diffs", () => ({
   preloadHighlighter: preloadHighlighterMock,
 }));
 
-const viewerPayload = JSON.stringify({
+const viewerPayload: DiffViewerPayload = {
   prerenderedHTML: "<div>diff</div>",
   options: {
     theme: { light: "pierre-light", dark: "pierre-dark" },
@@ -55,11 +56,12 @@ const viewerPayload = JSON.stringify({
     unsafeCSS: "",
   },
   langs: ["text"],
-  oldFile: { fileName: "a.ts", lang: "text", content: "old" },
-  newFile: { fileName: "a.ts", lang: "text", content: "new" },
-});
+  oldFile: { name: "a.ts", lang: "text", contents: "old" },
+  newFile: { name: "a.ts", lang: "text", contents: "new" },
+};
 
-function renderCard(): void {
+function renderCard(overrides: Partial<DiffViewerPayload> = {}): void {
+  const payload = JSON.stringify({ ...viewerPayload, ...overrides });
   document.body.insertAdjacentHTML(
     "beforeend",
     `<section class="oc-diff-card">
@@ -69,6 +71,13 @@ function renderCard(): void {
   );
 }
 
+beforeEach(() => {
+  document.body.innerHTML = "";
+  delete document.documentElement.dataset.openclawDiffsError;
+  delete document.documentElement.dataset.openclawDiffsReady;
+  delete document.body.dataset.theme;
+  vi.clearAllMocks();
+});
 describe("createToolbarButton icon safety", () => {
   it("toolbarIconSvg map exists and has exactly 8 icon names", () => {
     const requiredNames = [
@@ -93,6 +102,7 @@ describe("createToolbarButton icon safety", () => {
     expect(VIEWER_CLIENT_SRC.includes("iconMarkup: string")).toBe(false);
   });
 
+describe("createToolbarButton icon safety", () => {
   it("innerHTML reads only from toolbarIconSvg lookup", () => {
     expect(VIEWER_CLIENT_SRC.includes("button.innerHTML = toolbarIconSvg[params.icon]")).toBe(true);
   });
@@ -120,13 +130,6 @@ describe("createToolbarButton icon safety", () => {
 });
 
 describe("hydrateViewer", () => {
-  beforeEach(() => {
-    document.body.innerHTML = "";
-    delete document.documentElement.dataset.openclawDiffsError;
-    delete document.documentElement.dataset.openclawDiffsReady;
-    vi.clearAllMocks();
-  });
-
   it("continues hydrating later cards when one card throws", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     renderCard();
@@ -170,5 +173,153 @@ describe("hydrateViewer", () => {
     );
     expect(document.documentElement.dataset.openclawDiffsError).toBeUndefined();
     warn.mockRestore();
+  });
+
+  it("replaces stale controllers when hydrating the current cards again", async () => {
+    renderCard();
+    const { hydrateViewer } = await import("./viewer-client.js");
+
+    await hydrateViewer();
+
+    document.body.innerHTML = "";
+    renderCard();
+    await hydrateViewer();
+
+    expect(fileDiffHydrateMock).toHaveBeenCalledTimes(2);
+    const currentOptions = fileDiffSetOptionsMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    const renderHeaderMetadata = currentOptions.renderHeaderMetadata as () => HTMLElement;
+    fileDiffRerenderMock.mockClear();
+
+    renderHeaderMetadata().querySelector<HTMLButtonElement>("button")?.click();
+
+    expect(fileDiffRerenderMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("viewerState initialization", () => {
+  it("seeds viewerState from firstPayload options and syncs document theme", async () => {
+    renderCard({
+      options: {
+        ...viewerPayload.options,
+        diffStyle: "split",
+        themeType: "light",
+        backgroundEnabled: false,
+        overflow: "scroll",
+      },
+    });
+    const { hydrateViewer } = await import("./viewer-client.js");
+
+    await hydrateViewer();
+
+    expect(document.body.dataset.theme).toBe("light");
+
+    const opts = fileDiffSetOptionsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(opts.diffStyle).toBe("split");
+    expect(opts.themeType).toBe("light");
+    expect(opts.overflow).toBe("scroll");
+    expect(opts.disableBackground).toBe(true);
+  });
+
+  it("preloadHighlighter receives merged language set from all cards", async () => {
+    renderCard({
+      prerenderedHTML: "<div>diff1</div>",
+      langs: ["typescript"],
+      oldFile: { name: "a.ts", lang: "typescript", contents: "old" },
+      newFile: { name: "a.ts", lang: "typescript", contents: "new" },
+    });
+    renderCard({
+      prerenderedHTML: "<div>diff2</div>",
+      langs: ["python"],
+      oldFile: { name: "b.py", lang: "python", contents: "old" },
+      newFile: { name: "b.py", lang: "python", contents: "new" },
+    });
+    const { hydrateViewer } = await import("./viewer-client.js");
+
+    await hydrateViewer();
+
+    const preloadArg = (preloadHighlighterMock.mock.calls as unknown[][])[0]?.[0] as
+      | { langs: string[]; themes: string[] }
+      | undefined;
+    expect(preloadArg).toBeDefined();
+    expect(preloadArg!.langs).toContain("typescript");
+    expect(preloadArg!.langs).toContain("python");
+    expect(preloadArg!.themes).toEqual(["pierre-light", "pierre-dark"]);
+  });
+});
+
+describe("toolbar button toggles", () => {
+  it.each([
+    ["layout", 0, "diffStyle", "unified", "split"],
+    ["theme", 3, "themeType", "dark", "light"],
+    ["wrap", 1, "overflow", "wrap", "scroll"],
+    ["background", 2, "disableBackground", false, true],
+  ] as const)("%s toggle updates viewer options", async (name, index, key, before, after) => {
+    renderCard();
+    const { hydrateViewer } = await import("./viewer-client.js");
+    await hydrateViewer();
+
+    const initial = fileDiffSetOptionsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(initial[key]).toBe(before);
+    const renderHeaderMetadata = initial.renderHeaderMetadata as () => HTMLElement;
+    const buttons = renderHeaderMetadata().querySelectorAll("button");
+    expectDefined(buttons[index], `${name} toggle`).click();
+
+    const updated = fileDiffSetOptionsMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(updated[key]).toBe(after);
+    if (name === "layout") {
+      expect(fileDiffRerenderMock).toHaveBeenCalled();
+    }
+    if (name === "theme") {
+      expect(document.body.dataset.theme).toBe("light");
+    }
+  });
+});
+
+describe("header metadata", () => {
+  type HeaderMetadataCallback = () => HTMLElement | null;
+
+  async function hydrateAndGetHeaderCallback(): Promise<HeaderMetadataCallback> {
+    const { hydrateViewer } = await import("./viewer-client.js");
+    await hydrateViewer();
+    const opts = fileDiffSetOptionsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    return opts.renderHeaderMetadata as HeaderMetadataCallback;
+  }
+
+  it("renders the toolbar in viewer render mode", async () => {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<main class="oc-frame" data-render-mode="viewer"></main>',
+    );
+    renderCard();
+    const renderHeaderMetadata = await hydrateAndGetHeaderCallback();
+
+    const header = renderHeaderMetadata();
+
+    expect(header).not.toBeNull();
+    expect(header?.querySelectorAll("button")).toHaveLength(4);
+  });
+
+  it("drops the interactive toolbar in image render mode", async () => {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<main class="oc-frame" data-render-mode="image"></main>',
+    );
+    renderCard();
+    const renderHeaderMetadata = await hydrateAndGetHeaderCallback();
+
+    expect(renderHeaderMetadata()).toBeNull();
+  });
+
+  it("skips summary nav cards during hydration", async () => {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<nav class="oc-diff-card oc-diff-nav" aria-label="Changed files"><ol></ol></nav>',
+    );
+    renderCard();
+    const { hydrateViewer } = await import("./viewer-client.js");
+
+    await hydrateViewer();
+
+    expect(fileDiffHydrateMock).toHaveBeenCalledTimes(1);
   });
 });

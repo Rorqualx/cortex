@@ -1,8 +1,3 @@
-/**
- * sessions_list built-in tool.
- *
- * Lists visible sessions and optionally hydrates titles, last messages, and transcript-derived metadata.
- */
 import { readStringValue } from "@openclaw/normalization-core/string-coerce";
 import pMap from "p-map";
 import { Type } from "typebox";

@@ -147,6 +147,7 @@ export const AgentActivityItemSchema = closedObject({
       Type.Literal("completed"),
       Type.Literal("failed"),
       Type.Literal("blocked"),
+      Type.Literal("skipped"),
     ]),
   ),
   name: Type.Optional(Type.String()),

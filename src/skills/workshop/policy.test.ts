@@ -92,6 +92,7 @@ describe("resolveSkillWorkshopToolApproval", () => {
     expect(resolvedByName?.requireApproval?.description).toContain(
       `Proposal ID: ${proposal.record.id}`,
     );
+    expect(resolvedByName?.requireApproval?.title).toBe("Reject Skill Workshop proposal");
   });
 
   it("bounds approval metadata without splitting UTF-16 surrogates", async () => {

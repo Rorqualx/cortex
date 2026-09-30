@@ -105,9 +105,9 @@ export async function repairPendingAssistantTranscriptTurns(params: {
   }
 
   const { appendExactAssistantMessageToSessionTranscript } = await loadTranscriptAppendRuntime();
-  const remaining = [...backlog];
-  while (remaining.length > 0) {
-    const item = remaining[0]!;
+  // Keep the backlog fixed across awaited appends.
+  const pending = [...backlog];
+  for (const item of pending) {
     let result: Awaited<ReturnType<typeof appendExactAssistantMessageToSessionTranscript>>;
     try {
       result = await appendExactAssistantMessageToSessionTranscript({
@@ -143,7 +143,6 @@ export async function repairPendingAssistantTranscriptTurns(params: {
       log.warn(`Assistant transcript repair failed for ${context.sessionKey}: ${result.reason}`);
       throw new Error("Previous assistant reply is still pending transcript recovery; retry.");
     }
-    remaining.shift();
     if (result.ok) {
       log.info(`Re-appended missing assistant transcript turn for ${context.sessionKey}`);
     } else {

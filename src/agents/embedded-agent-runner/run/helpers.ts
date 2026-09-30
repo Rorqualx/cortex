@@ -12,20 +12,11 @@ import {
   deriveContextPromptTokens,
   hasNonzeroUsage,
   normalizeUsage,
-  type ContextUsage,
   type NormalizedUsage,
+  type UsageLike,
 } from "../../usage.js";
 import type { EmbeddedAgentMeta } from "../types.js";
 import { toNormalizedUsage, type UsageAccumulator } from "../usage-accumulator.js";
-
-type UsageSnapshot = {
-  input?: number;
-  output?: number;
-  cacheRead?: number;
-  cacheWrite?: number;
-  contextUsage?: ContextUsage;
-  total?: number;
-};
 
 export type RuntimeAuthState = {
   generation: number;
@@ -191,7 +182,11 @@ export function resolveEmbeddedAttemptBasePrompt(params: {
   if (params.provider !== "anthropic") {
     return params.prompt;
   }
-  return scrubAnthropicRefusalMagic(params.prompt);
+  // Naming the refusal trigger in its replacement can itself prompt a refusal.
+  return params.prompt.replaceAll(
+    ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL,
+    ANTHROPIC_MAGIC_STRING_REPLACEMENT,
+  );
 }
 
 export function createRunRecoveryDiagId(): string {
@@ -225,21 +220,6 @@ export function resolveMaxRunRetryIterations(
   return Math.min(maxLimit, Math.max(minLimit, scaled));
 }
 
-export function resolveActiveErrorContext(params: {
-  provider: string;
-  model: string;
-  assistant?: { provider?: string; model?: string };
-}): {
-  provider: string;
-  model: string;
-} {
-  return resolveReportedModelRef(params);
-}
-
-function isEmbeddedHarnessProvider(provider: string): boolean {
-  return provider.trim().toLowerCase() === "openclaw";
-}
-
 export function resolveReportedModelRef(params: {
   provider: string;
   model: string;
@@ -256,7 +236,7 @@ export function resolveReportedModelRef(params: {
       model: assistantModel || params.model,
     };
   }
-  if (isEmbeddedHarnessProvider(assistantProvider)) {
+  if (assistantProvider.toLowerCase() === "openclaw") {
     return {
       provider: params.provider,
       model: params.model,
@@ -299,13 +279,13 @@ export function normalizeAssistantUsageForContext(
   ) {
     return { contextUsage: { state: "unavailable" } };
   }
-  return normalizeUsage(assistant?.usage as UsageSnapshot | undefined);
+  return normalizeUsage(assistant?.usage as UsageLike | undefined);
 }
 
 export function buildUsageAgentMetaFields(params: {
   usageAccumulator: UsageAccumulator;
-  latestUsage?: UsageSnapshot | null;
-  lastRunPromptUsage: UsageSnapshot | undefined;
+  latestUsage?: UsageLike | null;
+  lastRunPromptUsage: NormalizedUsage | undefined;
   /** Fork: last turn's total wins over the accumulator so a resumed or compacted
    * run reports the turn the user just saw, not the whole-session sum. */
   lastTurnTotal?: number;
@@ -314,7 +294,7 @@ export function buildUsageAgentMetaFields(params: {
   if (usage && params.lastTurnTotal && params.lastTurnTotal > 0) {
     usage.total = params.lastTurnTotal;
   }
-  const latestUsage = normalizeUsage(params.latestUsage as never);
+  const latestUsage = normalizeUsage(params.latestUsage);
   const lastCallUsage = hasNonzeroUsage(latestUsage)
     ? latestUsage
     : hasNonzeroUsage(params.lastRunPromptUsage)
@@ -331,12 +311,7 @@ export function buildUsageAgentMetaFields(params: {
   };
 }
 
-/**
- * Build agentMeta for error return paths, preserving accumulated usage so that
- * session totalTokens reflects the actual context size rather than going stale.
- * Without this, error returns omit usage and the session keeps whatever
- * totalTokens was set by the previous successful run.
- */
+/** Error returns retain usage so the session does not keep an older context total. */
 export function buildErrorAgentMeta(params: {
   sessionId: string;
   sessionFile?: string;
@@ -345,7 +320,7 @@ export function buildErrorAgentMeta(params: {
   credentialSource?: EmbeddedAgentMeta["credentialSource"];
   contextTokens?: number;
   usageAccumulator: UsageAccumulator;
-  lastRunPromptUsage: UsageSnapshot | undefined;
+  lastRunPromptUsage: NormalizedUsage | undefined;
   currentAttemptAssistant?: { api?: string; usage?: unknown } | null;
   lastTurnTotal?: number;
 }): EmbeddedAgentMeta {

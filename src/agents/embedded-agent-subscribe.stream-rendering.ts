@@ -14,12 +14,16 @@ import { splitMediaFromOutput } from "../media/parse.js";
 import { findFinalTagMatches } from "../shared/text/final-tags.js";
 import { hasOrphanReasoningCloseBoundary } from "../shared/text/reasoning-tags.js";
 import { createTextProjection, trimTextFilter } from "../shared/text/text-projection.js";
+import type { BlockChunkMetadata } from "./embedded-agent-block-chunker.js";
 import {
   isMessagingToolDuplicateNormalized,
   normalizeTextForComparison,
 } from "./embedded-agent-helpers.js";
 import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
-import { shouldSuppressDeterministicApprovalOutput } from "./embedded-agent-subscribe.handlers.messages.stream.js";
+import {
+  hasMessageToolOnlySourceDelivery,
+  shouldSuppressDeterministicApprovalOutput,
+} from "./embedded-agent-subscribe.handlers.messages.stream.js";
 import type {
   EmbeddedAgentSubscribeContext,
   StreamBlockState,
@@ -375,21 +379,7 @@ export function createStreamRendering({
       params.hasDeliveredMessageToolOnlySourceReply?.() === true ||
       messagingToolSourceReplyPayloads.length > 0);
 
-  const emitBlockChunk = (
-    text: string,
-    options?: {
-      sourceText?: string;
-      sourceGeneration?: number;
-      reconciledSourceBreak?: true;
-      sourceStart?: number;
-      sourceEnd?: number;
-      assistantMessageIndex?: number;
-      final?: boolean;
-      completeMarkdownChunk?: boolean;
-      startsAtLineStart?: boolean;
-      finalReply?: ReplyDirectiveParseResult;
-    },
-  ) => {
+  const emitBlockChunk: EmbeddedAgentSubscribeContext["emitBlockChunk"] = (text, options) => {
     if (
       state.suppressBlockChunks ||
       params.silentExpected ||
@@ -421,7 +411,7 @@ export function createStreamRendering({
       }
       state.toolExecutionSinceLastBlockReply = false;
     };
-    if (hasMessageToolOnlySourceDelivery()) {
+    if (hasMessageToolOnlySourceDelivery({ params, state })) {
       markBlockReplyTextHandled();
       return;
     }
@@ -645,17 +635,7 @@ export function createStreamRendering({
     if (!params.onBlockReply) {
       return undefined;
     }
-    let pendingChunk:
-      | {
-          text: string;
-          sourceText?: string;
-          sourceGeneration?: number;
-          reconciledSourceBreak?: true;
-          sourceStart?: number;
-          sourceEnd?: number;
-          startsAtLineStart?: boolean;
-        }
-      | undefined;
+    let pendingChunk: ({ text: string } & Partial<BlockChunkMetadata>) | undefined;
     if (blockChunker.hasBuffered()) {
       blockChunker.drain({
         force: true,
@@ -755,7 +735,11 @@ export function createStreamRendering({
     // only what was explicitly sent, so trailing reasoning must stay out of the
     // render hook — uniformly, whether the thinking block rode in on a tool call
     // or arrived on its own. It still reaches the bus/archive above.
-    if (state.streamReasoning && !hasMessageToolOnlySourceDelivery() && params.onReasoningStream) {
+    if (
+      state.streamReasoning &&
+      !hasMessageToolOnlySourceDelivery({ params, state }) &&
+      params.onReasoningStream
+    ) {
       runBestEffortCallback({
         label: "reasoning stream",
         log,
