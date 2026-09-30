@@ -109,6 +109,43 @@ BASELINE_REF=$BASELINE_REF
 # upstream-only file as a regression.
 fail_files() { sed -E "s/\x1b\[[0-9;]*[a-zA-Z]//g" "\$1" 2>/dev/null | grep -oE "[A-Za-z0-9_./-]+\.(test|e2e\.test)\.ts \([0-9]+ tests?[^)]*[0-9]+ failed" | grep -oE "[A-Za-z0-9_./-]+\.(test|e2e\.test)\.ts" | sort -u; }
 
+# tsgo error SET for one lane: file + code + message, positions stripped so an edit
+# elsewhere in a file does not read as a new error. The core test shard runner stops
+# at its first failing shard, so the lanes it backs (core:test, test:src, test:ui,
+# test:packages) reported only that shard's errors -- a count masked 162 real baseline
+# errors as 5 (2026-09-30). Run every shard on its own; SHARD_CACHE holds per-config
+# results for one tree so the grouped lanes reuse core:test's shard runs.
+SHARD_CACHE=/tmp/rp-tsgo-shards
+lane_errors() {
+  local lane="\$1" group=""
+  case "\$lane" in
+    tsgo:core:test) group=all ;;
+    tsgo:test:src) group=src ;;
+    tsgo:test:ui) group=ui ;;
+    tsgo:test:packages) group=packages ;;
+  esac
+  if [ -z "\$group" ]; then
+    rm -rf .artifacts/tsgo-cache
+    corepack pnpm run "\$lane" 2>&1 | grep -E "error TS" | sed -E 's/\(([0-9]+),[0-9]+\)//' | sort -u
+    return
+  fi
+  mkdir -p "\$SHARD_CACHE"
+  for cfg in \$(node --import tsx --input-type=module -e "const m = await import('./scripts/lib/tsgo-core-test-shards.mts'); for (const s of m.TSGO_CORE_TEST_SHARDS) if ('\$group' === 'all' || s.group === '\$group') console.log(s.config);"); do
+    local out="\$SHARD_CACHE/\$(basename "\$cfg")"
+    if [ ! -f "\$out" ]; then
+      rm -rf .artifacts/tsgo-cache
+      node scripts/run-tsgo.mjs -p "\$cfg" 2>&1 | grep -E "error TS" | sed -E 's/\(([0-9]+),[0-9]+\)//' > "\$out.tmp"
+      mv "\$out.tmp" "\$out"
+    fi
+    cat "\$out"
+  done | sort -u
+}
+write_lane_sets() {
+  rm -rf "\$SHARD_CACHE" "\$1"; mkdir -p "\$1"
+  for lane in \$LANES; do lane_errors "\$lane" > "\$1/\$lane.txt"; done
+  rm -rf "\$SHARD_CACHE" .artifacts/tsgo-cache
+}
+
 if [ ! -d "\$PROOF_DIR/.git" ]; then
   git clone $FORK_URL "\$PROOF_DIR" || { echo 'EXIT=90 (clone)'; exit 90; }
   git -C "\$PROOF_DIR" remote add upstream $UPSTREAM_URL 2>/dev/null || true
@@ -161,15 +198,24 @@ if [ ! -f "\$BDIR/tsgo.txt" ] || [ ! -f "\$BDIR/testfail.txt" ] \
   rm -rf .artifacts/tsgo-cache; mkdir -p "\$BDIR"
   CI=1 nice -n 19 corepack pnpm install --frozen-lockfile >/tmp/rp-base-install.log 2>&1 || { echo 'EXIT=93 (base install)'; exit 93; }
   : > "\$BDIR/tsgo.txt.tmp"
-  for lane in \$LANES; do
-    c=\$(corepack pnpm run \$lane 2>&1 | grep -cE "error TS"); echo "\$lane \$c" >> "\$BDIR/tsgo.txt.tmp"
-    rm -rf .artifacts/tsgo-cache
-  done
+  write_lane_sets "\$BDIR/tsgo-sets"
+  for lane in \$LANES; do echo "\$lane \$(wc -l < "\$BDIR/tsgo-sets/\$lane.txt" | tr -d ' ')" >> "\$BDIR/tsgo.txt.tmp"; done
+  touch "\$BDIR/tsgo-sets.done"
   corepack pnpm test:fast >/tmp/rp-base-test.log 2>&1 || true
   fail_files /tmp/rp-base-test.log > "\$BDIR/testfail.txt"
   # Atomic publish: tsgo.txt appears only after every lane + test:fast finished, so a
   # killed recompute cannot leave a partial-but-present cache.
   mv "\$BDIR/tsgo.txt.tmp" "\$BDIR/tsgo.txt"
+fi
+
+# Caches written before error sets existed hold only (masked) counts: add the sets
+# without redoing the baseline test run.
+if [ ! -f "\$BDIR/tsgo-sets.done" ]; then
+  echo "computing baseline tsgo error sets for \$BASELINE_REF"
+  git checkout -f -B baseline-tmp "\$BASELINE_REF" -q 2>/dev/null || { echo 'EXIT=93b (baseline checkout)'; exit 93; }
+  CI=1 nice -n 19 corepack pnpm install --frozen-lockfile >/tmp/rp-base-install.log 2>&1 || { echo 'EXIT=93 (base install)'; exit 93; }
+  write_lane_sets "\$BDIR/tsgo-sets"
+  touch "\$BDIR/tsgo-sets.done"
 fi
 
 # --- Candidate (cherry branch) ---
@@ -187,24 +233,24 @@ BUILD_EXIT=0
 nice -n 19 corepack pnpm build >/tmp/rp-build.log 2>&1 || BUILD_EXIT=\$?
 echo "BUILD_EXIT=\$BUILD_EXIT"
 
-# tsgo net-new diff
+# tsgo net-new diff: an error is a regression only when the candidate's error set
+# gains an entry the baseline lacks. Candidate lanes run right after \`pnpm build\`, whose
+# emitted dist/tsbuildinfo can inflate the first typecheck with transient errors
+# (2026-08-12), so a lane with new entries is recomputed once from a clean cache.
 TSGO_REGRESS=0
+write_lane_sets /tmp/rp-cand-sets
 for lane in \$LANES; do
-  bc=\$(grep -E "^\$lane " "\$BDIR/tsgo.txt" | awk '{print \$2}'); bc=\${bc:-0}
-  # Candidate lanes run right after \`pnpm build\`; its emitted dist/tsbuildinfo can
-  # inflate the FIRST incremental typecheck with transient errors a clean re-run does
-  # not reproduce (2026-08-12: phantom :test counts false-failed a clean merge, wedging
-  # the auto-land gate). Start each lane from a clean cache; confirm any apparent
-  # regression with one more clean run before trusting it — a real type error repeats,
-  # transient inflation does not, so only the disagreeing lane pays the re-run.
-  rm -rf .artifacts/tsgo-cache
-  cc=\$(corepack pnpm run \$lane 2>&1 | grep -cE "error TS")
-  if [ "\$cc" -gt "\$bc" ]; then
-    rm -rf .artifacts/tsgo-cache
-    cc=\$(corepack pnpm run \$lane 2>&1 | grep -cE "error TS")
+  base_set="\$BDIR/tsgo-sets/\$lane.txt"; cand_set="/tmp/rp-cand-sets/\$lane.txt"
+  new=\$(comm -13 "\$base_set" "\$cand_set" | wc -l | tr -d ' ')
+  if [ "\$new" -gt 0 ]; then
+    rm -rf "\$SHARD_CACHE"; lane_errors "\$lane" > "\$cand_set"; rm -rf "\$SHARD_CACHE"
+    new=\$(comm -13 "\$base_set" "\$cand_set" | wc -l | tr -d ' ')
   fi
-  echo "TSGO \$lane base=\$bc cand=\$cc"
-  [ "\$cc" -gt "\$bc" ] && TSGO_REGRESS=1
+  echo "TSGO \$lane base=\$(wc -l < "\$base_set" | tr -d ' ') cand=\$(wc -l < "\$cand_set" | tr -d ' ') new=\$new"
+  if [ "\$new" -gt 0 ]; then
+    TSGO_REGRESS=1
+    comm -13 "\$base_set" "\$cand_set" | head -20 | sed 's/^/TSGO   + /'
+  fi
 done
 rm -rf .artifacts/tsgo-cache
 
