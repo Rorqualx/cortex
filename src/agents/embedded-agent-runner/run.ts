@@ -148,6 +148,7 @@ import {
 } from "./post-compaction-loop-guard.js";
 import { createEmbeddedRunReplayState, observeReplayMetadata } from "./replay-state.js";
 import { handleAssistantFailover } from "./run/assistant-failover.js";
+import { withPreparedEmbeddedGatewayTools } from "./run/attempt-gateway-tools.js";
 import { forgetPromptBuildDrainCacheForRun } from "./run/attempt-prompt-helpers.js";
 import {
   EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE,
@@ -1833,7 +1834,7 @@ export async function runEmbeddedAgent(
             admittedRunContext: params.admittedRunContext,
             preparedRunAdmission: params.preparedRunAdmission,
           });
-          const rawAttempt = await runEmbeddedAttemptWithBackend({
+          const attemptParams: Parameters<typeof runEmbeddedAttemptWithBackend>[0] = {
             admittedRunContext,
             sessionId: activeSessionId,
             sessionKey: resolvedSessionKey,
@@ -1978,7 +1979,25 @@ export async function runEmbeddedAgent(
             assistantErrorTranscript: params.assistantErrorTranscript,
             onUserMessagePersisted,
             onAssistantMessagePersisted: params.onAssistantMessagePersisted,
-          })
+          };
+          // Gateway tool authority (receipt authority, gateway context) is bound only by
+          // this upstream wrapper; tool construction outside it fails the caller assertion.
+          // The wrapper records availability on the attempt object itself, so narrow in place.
+          const attemptAgentId = attemptParams.agentId;
+          const attemptSessionKey = attemptParams.sessionKey;
+          const rawAttempt = await (
+            attemptAgentId && attemptSessionKey
+              ? withPreparedEmbeddedGatewayTools(
+                  Object.assign(attemptParams, {
+                    agentId: attemptAgentId,
+                    sessionKey: attemptSessionKey,
+                    agentHarnessId: agentHarness.id,
+                  }),
+                  () => !attemptAbortController.signal.aborted,
+                  () => runEmbeddedAttemptWithBackend(attemptParams),
+                )
+              : runEmbeddedAttemptWithBackend(attemptParams)
+          )
             .catch((err: unknown): never => {
               throw postCompactionAbortError ?? err;
             })
