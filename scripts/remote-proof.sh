@@ -116,33 +116,52 @@ fail_files() { sed -E "s/\x1b\[[0-9;]*[a-zA-Z]//g" "\$1" 2>/dev/null | grep -oE 
 # errors as 5 (2026-09-30). Run every shard on its own; SHARD_CACHE holds per-config
 # results for one tree so the grouped lanes reuse core:test's shard runs.
 SHARD_CACHE=/tmp/rp-tsgo-shards
+# A tsgo run that exits non-zero without printing any diagnostic did not typecheck
+# (e.g. a stale .artifacts/dist-artifacts.lock refused every lane on 2026-09-30, which
+# recorded an empty "clean" baseline). Fail loudly instead of reading it as zero errors.
+tsgo_diagnostics() {
+  local tmp rc; tmp=\$(mktemp); "\$@" > "\$tmp" 2>&1; rc=\$?
+  if [ "\$rc" -ne 0 ] && ! grep -q "error TS" "\$tmp"; then
+    echo "EXIT-DETAIL tsgo run produced no diagnostics (rc=\$rc): \$*"
+    tail -3 "\$tmp" | sed 's/^/EXIT-DETAIL   /'
+    rm -f "\$tmp"; return 1
+  fi
+  grep -E "error TS" "\$tmp" | sed -E 's/\(([0-9]+),[0-9]+\)//'; rm -f "\$tmp"
+}
 lane_errors() {
-  local lane="\$1" group=""
+  local lane="\$1" group="" acc cfgs cfg out
   case "\$lane" in
     tsgo:core:test) group=all ;;
     tsgo:test:src) group=src ;;
     tsgo:test:ui) group=ui ;;
     tsgo:test:packages) group=packages ;;
   esac
+  acc=\$(mktemp)
   if [ -z "\$group" ]; then
     rm -rf .artifacts/tsgo-cache
-    corepack pnpm run "\$lane" 2>&1 | grep -E "error TS" | sed -E 's/\(([0-9]+),[0-9]+\)//' | sort -u
-    return
+    tsgo_diagnostics corepack pnpm run "\$lane" > "\$acc" || { cat "\$acc" >&2; rm -f "\$acc"; return 1; }
+  else
+    mkdir -p "\$SHARD_CACHE"
+    cfgs=\$(node --import tsx --input-type=module -e "const m = await import('./scripts/lib/tsgo-core-test-shards.mts'); for (const s of m.TSGO_CORE_TEST_SHARDS) if ('\$group' === 'all' || s.group === '\$group') console.log(s.config);")
+    [ -n "\$cfgs" ] || { echo "EXIT-DETAIL no tsgo shards resolved for \$lane" >&2; rm -f "\$acc"; return 1; }
+    for cfg in \$cfgs; do
+      out="\$SHARD_CACHE/\$(basename "\$cfg")"
+      if [ ! -f "\$out" ]; then
+        rm -rf .artifacts/tsgo-cache
+        tsgo_diagnostics node scripts/run-tsgo.mjs -p "\$cfg" > "\$out.tmp" || { cat "\$out.tmp" >&2; rm -f "\$out.tmp" "\$acc"; return 1; }
+        mv "\$out.tmp" "\$out"
+      fi
+      cat "\$out" >> "\$acc"
+    done
   fi
-  mkdir -p "\$SHARD_CACHE"
-  for cfg in \$(node --import tsx --input-type=module -e "const m = await import('./scripts/lib/tsgo-core-test-shards.mts'); for (const s of m.TSGO_CORE_TEST_SHARDS) if ('\$group' === 'all' || s.group === '\$group') console.log(s.config);"); do
-    local out="\$SHARD_CACHE/\$(basename "\$cfg")"
-    if [ ! -f "\$out" ]; then
-      rm -rf .artifacts/tsgo-cache
-      node scripts/run-tsgo.mjs -p "\$cfg" 2>&1 | grep -E "error TS" | sed -E 's/\(([0-9]+),[0-9]+\)//' > "\$out.tmp"
-      mv "\$out.tmp" "\$out"
-    fi
-    cat "\$out"
-  done | sort -u
+  sort -u "\$acc"; rm -f "\$acc"
 }
 write_lane_sets() {
   rm -rf "\$SHARD_CACHE" "\$1"; mkdir -p "\$1"
-  for lane in \$LANES; do lane_errors "\$lane" > "\$1/\$lane.txt"; done
+  for lane in \$LANES; do
+    lane_errors "\$lane" > "\$1/\$lane.txt" 2>/tmp/rp-lane-err.txt || {
+      cat /tmp/rp-lane-err.txt; echo "EXIT=98 (tsgo lane \$lane did not typecheck)"; exit 98; }
+  done
   rm -rf "\$SHARD_CACHE" .artifacts/tsgo-cache
 }
 
@@ -243,7 +262,10 @@ for lane in \$LANES; do
   base_set="\$BDIR/tsgo-sets/\$lane.txt"; cand_set="/tmp/rp-cand-sets/\$lane.txt"
   new=\$(comm -13 "\$base_set" "\$cand_set" | wc -l | tr -d ' ')
   if [ "\$new" -gt 0 ]; then
-    rm -rf "\$SHARD_CACHE"; lane_errors "\$lane" > "\$cand_set"; rm -rf "\$SHARD_CACHE"
+    rm -rf "\$SHARD_CACHE"
+    lane_errors "\$lane" > "\$cand_set" 2>/tmp/rp-lane-err.txt || {
+      cat /tmp/rp-lane-err.txt; echo "EXIT=98 (tsgo lane \$lane did not typecheck)"; exit 98; }
+    rm -rf "\$SHARD_CACHE"
     new=\$(comm -13 "\$base_set" "\$cand_set" | wc -l | tr -d ' ')
   fi
   echo "TSGO \$lane base=\$(wc -l < "\$base_set" | tr -d ' ') cand=\$(wc -l < "\$cand_set" | tr -d ' ') new=\$new"
