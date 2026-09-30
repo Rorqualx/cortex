@@ -571,7 +571,6 @@ export async function prepareGatewayLifecycle(params: {
               lifecycleUnsub: runtimeState.lifecycleUnsub,
               // Fork activity feed: the close handler releases the recorder subscription.
               activityRecorderUnsub: runtimeState.activityRecorderUnsub,
-              taskUnsub: runtimeState.taskUnsub,
               chatRunState,
               clients,
               finishRequestEntries: () => requestEntryLifetime.sealAndJoin(),

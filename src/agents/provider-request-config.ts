@@ -72,7 +72,6 @@ export type ModelProviderRequestTransportOverrides = ProviderRequestTransportOve
 
 type ProviderRequestHeaderPrecedence = "caller-wins" | "defaults-win";
 
-
 const FORBIDDEN_HEADER_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const FORBIDDEN_INSECURE_TLS_MESSAGE =
   "Provider transport overrides do not allow insecureSkipVerify";
@@ -269,7 +268,6 @@ export function mergeModelProviderRequestOverrides(
       merged.allowPrivateNetwork = current.allowPrivateNetwork;
     }
     if (current?.maxConcurrentRequests !== undefined) {
-      merged ??= {};
       merged.maxConcurrentRequests = current.maxConcurrentRequests;
     }
   }

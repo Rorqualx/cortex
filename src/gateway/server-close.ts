@@ -250,7 +250,6 @@ export type GatewayCloseParams = {
   lifecycleUnsub: (() => void) | null;
   // Fork activity feed: recorder subscription released on close.
   activityRecorderUnsub: (() => void) | null;
-  taskUnsub: (() => void) | null;
   clients: Set<{
     connectionKind?: "gateway" | "worker";
     socket: { close: (code: number, reason: string) => void };
@@ -528,9 +527,6 @@ async function closeGatewayResources(
         () => params.activityRecorderUnsub!(),
         warnings,
       );
-    }
-    if (params.taskUnsub) {
-      await shutdownStep("task-unsub", () => params.taskUnsub!(), warnings);
     }
     params.chatRunState.clear();
     let clientCloseFailures = 0;

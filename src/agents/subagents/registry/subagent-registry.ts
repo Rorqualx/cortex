@@ -511,7 +511,6 @@ const subagentRunManager = createSubagentRunManager({
   getRunsForChildSession: getSubagentRunsForChildSession,
   resumedRuns,
   clearPendingLifecycleTimeout,
-  resolveSubagentTask: findSubagentTaskForRun,
   persist: persistSubagentRuns,
   persistOrThrow: persistSubagentRunsOrThrow,
   callGateway: async <T>(request: Parameters<typeof callGateway>[0]) => {

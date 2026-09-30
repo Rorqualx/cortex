@@ -4,6 +4,7 @@ import type {
   SessionAcpIdentity,
   SessionAcpMeta,
 } from "@openclaw/acp-core/types";
+import { asNonNegativeFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString, type FastMode } from "@openclaw/normalization-core/string-coerce";
 import type { SessionGoal } from "../../../packages/gateway-protocol/src/schema/sessions-goal.js";
 import type {

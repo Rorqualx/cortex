@@ -176,12 +176,24 @@ export type UserTurnTranscriptTargetResolver =
   | UserTurnTranscriptTarget
   | (() => UserTurnTranscriptTarget | undefined | Promise<UserTurnTranscriptTarget | undefined>);
 
-export type PersistUserTurnTranscriptParams = UserTurnTranscriptTarget & {
+export type PersistUserTurnTranscriptParams = {
   sessionTurnMutation?: SessionTranscriptTurnMutation;
   input?: UserTurnInput;
   message?: PersistedUserTurnMessage;
+  sessionId: string;
+  expectedSessionId?: string;
+  initialSessionEntry?: SessionEntry;
+  sessionKey: string;
+  sessionEntry: SessionEntry | undefined;
+  sessionStore?: Record<string, SessionEntry>;
+  storePath?: string;
+  agentId: string;
   logicalTurnId?: string;
+  threadId?: string | number;
+  cwd?: string;
+  config?: unknown;
   updateMode?: UserTurnTranscriptUpdateMode;
+  beforeMessageWrite?: UserTurnBeforeMessageWrite;
   expectedSessionState?: SessionTranscriptTurnExpectedState;
   sessionLifecyclePatch?: SessionTranscriptTurnLifecyclePatch;
   onOriginalInputCommitted?: (commit: UserTurnOriginalInputCommit) => void;

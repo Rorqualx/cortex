@@ -968,3 +968,17 @@ export function createWebFetchTool(options?: {
   );
 }
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
+
+function webEgressBlockedError(url: string, redirected: boolean): Error {
+  let host = url;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    /* keep the raw url in the message */
+  }
+  const how = redirected ? `redirected to ${host}, which is` : `${host} is`;
+  return new Error(
+    `Web fetch blocked by egress policy: ${how} not allowed. ` +
+      `Add it to the [web] allow list in ~/.openclaw/exec-policy.toml.`,
+  );
+}

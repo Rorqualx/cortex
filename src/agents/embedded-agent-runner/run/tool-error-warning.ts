@@ -310,9 +310,6 @@ function formatConciseExecExitSuffix(error: string | undefined): string {
   )?.[1];
   return code ? ` (exit ${code})` : "";
 }
-function maybeWrapInlineCode(value: string, markdown: boolean): string {
-  return markdown ? formatInlineCodeSpan(value) : value;
-}
 /**
  * Chooses whether a tool failure needs a separate user-visible warning and
  * whether to include raw details. Mutating failures are stricter because a

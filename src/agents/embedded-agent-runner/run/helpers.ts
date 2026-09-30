@@ -379,3 +379,14 @@ export function isAssistantForModelRef(
   });
   return resolved.provider === ref.provider && resolved.model === ref.model;
 }
+
+export function resolveActiveErrorContext(params: {
+  provider: string;
+  model: string;
+  assistant?: { provider?: string; model?: string };
+}): {
+  provider: string;
+  model: string;
+} {
+  return resolveReportedModelRef(params);
+}

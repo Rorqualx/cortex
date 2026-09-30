@@ -344,7 +344,6 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                     message: message as Record<string, unknown>,
                   });
                 },
-                stateAcquisitionDeadline,
                 operatorAuthority: admission.operatorAuthority,
                 providerReviewAcknowledgment: request.providerReviewAcknowledgment,
                 dashboardReadAdmission,

@@ -83,6 +83,8 @@ import {
   resolveSessionCreateSpawnPolicy,
 } from "./session-create-inheritance.js";
 import { buildDashboardSessionKey, resolveSessionCreateTargetKey } from "./session-create-key.js";
+// Fork consumers (sessions-compaction-checkpoints, session-recovery-service) import this via the service module.
+export { buildDashboardSessionKey };
 import {
   createSessionCreateCommitGuard,
   prepareSessionCreateDefaultAccount,

@@ -115,3 +115,17 @@ export function shouldIncludePrimarySessionToolForOpenClawTools(
   ]);
   return isPrimaryBootstrapRun(sessionKey) && isToolAllowedByPolicyName(toolName, { deny });
 }
+
+/** Keeps the interactive ask_user tool on primary sessions allowed by the normal tool policy. */
+export function shouldIncludeAskUserToolForOpenClawTools(
+  params: PrimarySessionToolRegistrationParams,
+): boolean {
+  return shouldIncludePrimarySessionToolForOpenClawTools("ask_user", params);
+}
+
+/** Keeps credential management on primary sessions allowed by the normal tool policy. */
+export function shouldIncludeSecretsToolForOpenClawTools(
+  params: PrimarySessionToolRegistrationParams,
+): boolean {
+  return shouldIncludePrimarySessionToolForOpenClawTools("secrets", params);
+}

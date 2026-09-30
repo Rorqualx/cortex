@@ -522,9 +522,6 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
     maybeResolveCompactionWait();
   };
 
-  const maybeResolveCompactionWait = () => {
-    resolveCompactionPromiseIfIdle();
-  };
   const resolveAssistantUsage = (usageLike: unknown) => {
     const candidates: unknown[] = [usageLike];
     if (usageLike && typeof usageLike === "object") {

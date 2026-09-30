@@ -2,6 +2,10 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { resolveStaticSessionMcpServerNames } from "../../agents/agent-bundle-mcp-runtime-config.js";
 import { resolveCodexMcpToolOverridesForAgent } from "../../agents/cli-runner/bundle-mcp-codex.js";
 import { wrapUntrustedPromptDataBlock } from "../../agents/sanitize-for-prompt.js";
+import {
+  expandToolGroups,
+  normalizeToolPolicyName as normalizeToolName,
+} from "../../agents/tool-policy-shared.js";
 /** Delivery planning, prompt policy, and delivery trace construction for cron runs. */
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type {
@@ -31,10 +35,6 @@ import type {
   CronToolsAllowProvenance,
 } from "../types.js";
 import { logWarn } from "./run.runtime.js";
-import {
-  expandToolGroups,
-  normalizeToolPolicyName as normalizeToolName,
-} from "../../agents/tool-policy-shared.js";
 import { resolveCronSourceDeliveryPlan } from "./source-delivery-plan.js";
 
 const MAX_CRON_DELIVERY_TARGET_CONTEXT_CHARS = 1000;
@@ -388,7 +388,7 @@ export async function resolveCronDeliveryContext(params: {
   };
 }
 
-function appendCronDeliveryInstruction(params: {
+export function appendCronDeliveryInstruction(params: {
   commandBody: string;
   deliveryRequested: boolean;
   messageToolEnabled: boolean;

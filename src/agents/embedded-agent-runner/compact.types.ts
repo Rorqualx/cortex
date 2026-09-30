@@ -2,10 +2,17 @@ import type { Model } from "openclaw/plugin-sdk/llm";
 /**
  * Shared parameter and metric types for embedded-agent compaction.
  */
+import type { ChatType } from "../../channels/chat-type.js";
 import type { CliSessionBinding, SessionEntry } from "../../config/sessions.js";
+import type { GroupToolPolicyConfig } from "../../config/types.tools.js";
 import type { ContextEngine, ContextEngineRuntimeContext } from "../../context-engine/types.js";
+import type { RuntimePluginToolGrant } from "../../plugins/runtime/tool-grant.js";
+import type { InputProvenance } from "../../sessions/input-provenance.js";
 import type { ExecToolDefaults } from "../bash-tools.exec-types.js";
+import type { AgentRunSessionTarget } from "../run-session-target.types.js";
 import type { AgentRuntimeAuthPlan, AgentRuntimePlan } from "../runtime-plan/types.js";
+import type { ScheduledToolPolicyContext } from "../scheduled-tool-policy.js";
+import type { TrustedSubagentCompletionHandoff } from "../subagents/announce/subagent-announce-handoff.js";
 
 export type CompactEmbeddedAgentSessionParams = Pick<
   import("./run/params.js").RunEmbeddedAgentParams,

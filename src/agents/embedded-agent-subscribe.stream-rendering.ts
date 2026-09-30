@@ -123,7 +123,6 @@ export function createStreamRendering({
   shouldSkipAssistantText,
 }: StreamRenderingParams) {
   const messagingToolSentTextsNormalized = state.messagingToolSentTextsNormalized;
-  const messagingToolSourceReplyPayloads = state.messagingToolSourceReplyPayloads;
   const replyDirectiveAccumulator = createStreamingDirectiveAccumulator();
   const partialReplyDirectiveAccumulator = createStreamingDirectiveAccumulator();
   let reasoningProjection = createTextProjection([trimTextFilter("both")]);
@@ -373,12 +372,6 @@ export function createStreamRendering({
     output += text.slice(lastIndex);
     return output;
   };
-  const hasMessageToolOnlySourceDelivery = () =>
-    params.sourceReplyDeliveryMode === "message_tool_only" &&
-    (state.messageToolOnlySourceReplyDelivered ||
-      params.hasDeliveredMessageToolOnlySourceReply?.() === true ||
-      messagingToolSourceReplyPayloads.length > 0);
-
   const emitBlockChunk: EmbeddedAgentSubscribeContext["emitBlockChunk"] = (text, options) => {
     if (
       state.suppressBlockChunks ||

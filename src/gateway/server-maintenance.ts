@@ -528,10 +528,6 @@ export function startGatewayMaintenanceTimers(params: {
     })();
   }, WORKBOARD_DISPATCH_INTERVAL_MS);
 
-  const playbackTranscodeCacheCleanupLoader = createMediaCleanupLoader(
-    "playback transcode cache cleanup",
-    prunePlaybackTranscodeCache,
-  );
   const runManagedOutgoingMediaGc =
     params.runManagedOutgoingMediaGc ??
     (async () => {

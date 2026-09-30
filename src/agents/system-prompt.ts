@@ -86,6 +86,10 @@ type OwnerIdDisplay = "raw" | "hash";
 
 const SYSTEM_PROMPT_STABLE_PREFIX_CACHE_LIMIT = 64;
 
+function normalizeSubagentDelegationMode(mode?: SubagentDelegationMode): SubagentDelegationMode {
+  return mode === "prefer" ? "prefer" : "suggest";
+}
+
 const stablePromptPrefixCache = new Map<string, string>();
 
 function cacheStablePromptPrefix(key: string, build: () => string): string {
@@ -623,9 +627,7 @@ export function buildAgentSystemPrompt(params: {
   const messageToolAvailable = availableTools.has("message");
   const subagentDelegationPreferenceSection = hasSessionsSpawn
     ? buildDelegationGuidanceSection({
-        mode: proactiveSubagentOrchestration
-          ? "suggest"
-          : (params.subagentDelegationMode ?? "suggest"),
+        mode: proactiveSubagentOrchestration ? "suggest" : subagentDelegationMode,
         isMinimal,
         hiddenDelegationTool: "`sessions_spawn`",
         hasVisibleSessionSpawn: hasSessionsSpawn,
@@ -698,16 +700,19 @@ export function buildAgentSystemPrompt(params: {
   const skillForgeSection = availableTools.has(SKILL_FORGE_TOOL_NAME)
     ? buildSkillForgePromptSection()
     : [];
-  const memorySection = buildMemorySection({
-    isMinimal,
-    includeMemorySection: params.includeMemorySection,
-    availableTools,
-    citationsMode: params.memoryCitationsMode,
-    agentId: params.runtimeInfo?.agentId,
-    agentSessionKey: params.runtimeInfo?.sessionKey,
-    sandboxed: params.sandboxInfo?.enabled === true,
-    prepared: params.preparedMemoryPrompt,
-  });
+  const memorySection =
+    isMinimal || params.includeMemorySection === false
+      ? []
+      : buildMemoryPromptSection(
+          {
+            availableTools,
+            citationsMode: params.memoryCitationsMode,
+            agentId: params.runtimeInfo?.agentId,
+            agentSessionKey: params.runtimeInfo?.sessionKey,
+            sandboxed: params.sandboxInfo?.enabled === true,
+          },
+          params.preparedMemoryPrompt,
+        );
   const docsSection = buildDocsSection({
     docsPath: params.docsPath,
     sourcePath: params.sourcePath,
