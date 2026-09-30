@@ -155,6 +155,7 @@ import {
   formatEmbeddedRunStageSummary,
   shouldWarnEmbeddedRunStageSummary,
 } from "./run/attempt-stage-timing.js";
+import { prepareAttemptSystemPromptAdditions } from "./run/attempt-system-prompt-additions.js";
 import {
   createEmbeddedRunAuthController,
   type EmbeddedRunAuthState,
@@ -1834,8 +1835,53 @@ export async function runEmbeddedAgent(
             admittedRunContext: params.admittedRunContext,
             preparedRunAdmission: params.preparedRunAdmission,
           });
+          // Host-owned prompt additions (incognito notice, progress card, git co-author)
+          // come from the same owner upstream's dispatch uses.
+          const attemptPromptAdditions = await prepareAttemptSystemPromptAdditions({
+            agentId: workspaceResolution.agentId,
+            authProfileId: lastProfileId,
+            config: params.config,
+            extraSystemPrompt: params.extraSystemPrompt,
+            modelId,
+            provider,
+            sessionId: activeSessionId,
+            sessionKey: params.sessionKey,
+            storePath: params.sessionTarget?.storePath,
+            toolsAllow: params.toolsAllow,
+          });
           const attemptParams: Parameters<typeof runEmbeddedAttemptWithBackend>[0] = {
             admittedRunContext,
+            // Policy, authority and routing facts upstream threads through run-attempt-dispatch.
+            // The fork dispatches here instead, so tool policy only sees what is forwarded.
+            senderIsOwner: params.senderIsOwner,
+            scheduledToolPolicy: params.scheduledToolPolicy,
+            cronCreatorAuthorityCapability: params.cronCreatorAuthorityCapability,
+            cronCreatorAuthorityUnavailableReason: params.cronCreatorAuthorityUnavailableReason,
+            scheduledRuntimeAuthority: params.scheduledRuntimeAuthority,
+            scheduledRuntimeAuthorityRecoveryRequired:
+              params.scheduledRuntimeAuthorityRecoveryRequired,
+            messageActionTurnCapability: params.messageActionTurnCapability,
+            permissionMode: params.permissionMode,
+            requireWorkspaceOnly: params.requireWorkspaceOnly,
+            requireWritableSandbox: params.requireWritableSandbox,
+            sessionReadScopeKey: params.sessionReadScopeKey,
+            sessionPersistence: params.sessionPersistence,
+            toolExecutionAllow: params.toolExecutionAllow,
+            runtimePluginToolGrant: params.runtimePluginToolGrant,
+            conversationToolPolicy: params.conversationToolPolicy,
+            toolOverrides: params.toolOverrides,
+            suppressLiveStreamOutput: params.suppressLiveStreamOutput,
+            disableTrajectory: params.disableTrajectory,
+            trustedInternalHandoff: params.trustedInternalHandoff,
+            approvalReviewerDeviceId: params.approvalReviewerDeviceId,
+            gatewayUiCommandTarget: params.gatewayUiCommandTarget,
+            sandboxAgentId: params.sandboxAgentId,
+            chatType: params.chatType,
+            chatId: params.chatId,
+            channelContext: params.channelContext,
+            currentMessagingTarget: params.currentMessagingTarget,
+            conversationRoutePeerId: params.conversationRoutePeerId,
+            clientCaps: params.clientCaps,
             sessionId: activeSessionId,
             sessionKey: resolvedSessionKey,
             promptCacheKey: params.promptCacheKey,
@@ -1949,7 +1995,8 @@ export async function runEmbeddedAgent(
             onAgentEvent: params.onAgentEvent,
             onToolStreamBoundary: maybeAnnounceFastModeAutoOff,
             onExecutionPhase: params.onExecutionPhase,
-            extraSystemPrompt: params.extraSystemPrompt,
+            extraSystemPrompt: attemptPromptAdditions.extraSystemPrompt,
+            gitCoauthorPrompt: attemptPromptAdditions.gitCoauthorPrompt,
             sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
             inputProvenance: params.inputProvenance,
             streamParams: params.streamParams,
