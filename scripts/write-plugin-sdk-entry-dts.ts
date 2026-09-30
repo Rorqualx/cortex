@@ -4,12 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { build } from "tsdown";
 import { discoverDeclarationSources } from "./lib/declaration-source-index.mts";
-import { sanitizeBundlerHelperDtsExportTree } from "./lib/sanitize-bundler-helper-dts-exports.mts";
+import { resolveInstalledNativeTypeScriptCompiler } from "./lib/native-typescript.mts";
 import {
   buildPluginSdkEntrySources,
   pluginSdkEntrypoints,
   publicPluginSdkEntrypoints,
 } from "./lib/plugin-sdk-entries.mts";
+import { sanitizeBundlerHelperDtsExportTree } from "./lib/sanitize-bundler-helper-dts-exports.mts";
 
 const RUNTIME_SHIMS: Partial<Record<string, string>> = {
   "webhook-path": [
@@ -99,7 +100,16 @@ try {
     config: false,
     deps: { neverBundle: (id) => isBareImportSpecifier(id) },
     // Eager reuse checks source root membership, including transitive emit requests.
-    dts: { emitDtsOnly: true, eager: true, tsconfigRaw: { files, include: [] } },
+    // rolldown-plugin-dts auto-selects tsgo only for "7.0.x"; newer TypeScript 7
+    // releases fall back to its classic tsc generator, which needs the removed
+    // `ts.sys` API. Pin the native compiler explicitly.
+    dts: {
+      emitDtsOnly: true,
+      eager: true,
+      generator: "tsgo",
+      tsconfigRaw: { files, include: [] },
+      tsgo: { path: resolveInstalledNativeTypeScriptCompiler().executable },
+    },
     entry,
     failOnWarn: false,
     fixedExtension: false,

@@ -82,6 +82,7 @@ const PLUGIN_SDK_ENTRY_DTS_SHARED_CACHE_INPUTS = [
   "scripts/write-plugin-sdk-entry-dts.ts",
   "scripts/lib/declaration-source-index.mts",
   "scripts/lib/direct-run.mjs",
+  "scripts/lib/native-typescript.mts",
   "scripts/lib/plugin-sdk-entries.mts",
   "scripts/lib/plugin-sdk-entrypoints.json",
   "scripts/lib/plugin-sdk-private-local-only-subpaths.json",
