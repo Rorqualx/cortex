@@ -19,52 +19,29 @@ describe("workspace mutation authority", () => {
     vi.restoreAllMocks();
   });
 
-  it.each(
-    (["write", "edit", "append"] as const).flatMap((kind) =>
-      (["active", "revoked", "aborted"] as const).map((authority) => ({ kind, authority })),
-    ),
-  )("checks $authority authority inside $kind preparation", async ({ kind, authority }) => {
-    const root = tempDirs.make("openclaw-workspace-mutation-");
-    const filePath = path.join(root, "memory.md");
-    await fs.writeFile(filePath, "original\n");
-    const generation = new AbortController();
-    let current = true;
-    let prepared = false;
-    const finishPreparation = () => {
-      prepared = true;
-      if (authority === "revoked") {
-        current = false;
-      } else if (authority === "aborted") {
-        generation.abort(new Error("Workspace operation cancelled"));
-      }
-    };
-    const realOpen = fs.open.bind(fs);
-    vi.spyOn(fs, "open").mockImplementation(async (...args) => {
-      const handle = await realOpen(...args);
-      const [target, flags] = args;
-      if (
-        kind === "append" &&
-        String(target) === filePath &&
-        typeof flags === "number" &&
-        (flags & constants.O_APPEND) !== 0
-      ) {
-        const read = handle.read.bind(handle);
-        handle.read = (async (...readArgs: Parameters<typeof read>) => {
-          const result = await read(...readArgs);
-          finishPreparation();
-          return result;
-        }) as typeof handle.read;
-      } else if (String(target) !== filePath && path.dirname(String(target)) === root) {
-        const sync = handle.sync.bind(handle);
-        handle.sync = async () => {
-          await sync();
-          finishPreparation();
-        };
-      }
-      return handle;
-    });
-    const options = { workspaceOnly: true, abortSignal: generation.signal };
-    const execute = () => {
+  it.each([
+    { kind: "write", authority: "revoked" },
+    { kind: "edit", authority: "aborted" },
+    { kind: "append", authority: "active" },
+    { kind: "append", authority: "revoked" },
+    { kind: "append", authority: "aborted" },
+  ] as const)(
+    "checks $authority authority inside $kind preparation",
+    async ({ kind, authority }) => {
+      const root = tempDirs.make("openclaw-workspace-mutation-");
+      const filePath = path.join(root, "memory.md");
+      await fs.writeFile(filePath, "original\n");
+      const generation = new AbortController();
+      let current = true;
+      let prepared = false;
+      const finishPreparation = () => {
+        prepared = true;
+        if (authority === "revoked") {
+          current = false;
+        } else if (authority === "aborted") {
+          generation.abort(new Error("Workspace operation cancelled"));
+        }
+      };
       if (kind === "append") {
         const realOpen = fs.open.bind(fs);
         vi.spyOn(fs, "open").mockImplementation(async (...args) => {

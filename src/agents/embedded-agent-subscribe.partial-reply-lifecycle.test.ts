@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../test/helpers/promise.js";
 
 const logger = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -43,13 +44,8 @@ describe("subscribeEmbeddedAgentSession partial reply lifecycle", () => {
   });
 
   it("joins a partial reply task created while terminal events settle", async () => {
-    let resolvePartial: (() => void) | undefined;
-    const onPartialReply = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolvePartial = resolve;
-        }),
-    );
+    const partial = createDeferred();
+    const onPartialReply = vi.fn(() => partial.promise);
     const { emit, subscription } = createSubscribedSessionHarness({
       runId: "run-partial-provider-failure",
       onBeforeTerminalDelivery: async () => undefined,
@@ -66,20 +62,15 @@ describe("subscribeEmbeddedAgentSession partial reply lifecycle", () => {
     await Promise.resolve();
     expect(settled).toBe(false);
 
-    resolvePartial?.();
+    partial.resolve();
     await settlement;
     expect(settled).toBe(true);
   });
 
   it("contains and logs a rejected partial reply after unsubscribe", async () => {
     const callbackError = new Error("draft send rejected");
-    let rejectPartial: ((reason: unknown) => void) | undefined;
-    const onPartialReply = vi.fn(
-      () =>
-        new Promise<void>((_resolve, reject) => {
-          rejectPartial = reject;
-        }),
-    );
+    const partial = createDeferred();
+    const onPartialReply = vi.fn(() => partial.promise);
     const { emit, subscription } = createSubscribedSessionHarness({
       runId: "run-partial-rejection",
       onPartialReply,
@@ -97,7 +88,7 @@ describe("subscribeEmbeddedAgentSession partial reply lifecycle", () => {
     await subscription.waitForPendingEvents();
     expect(onPartialReply).toHaveBeenCalledOnce();
     subscription.unsubscribe();
-    rejectPartial?.(callbackError);
+    partial.reject(callbackError);
     await expect(subscription.waitForPendingEvents()).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
       `assistant partial reply callback failed: ${String(callbackError)}`,

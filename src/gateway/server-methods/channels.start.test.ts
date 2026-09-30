@@ -13,6 +13,7 @@ import {
   createChannelTestPluginBase,
   createTestRegistry,
 } from "../../test-utils/channel-plugins.js";
+import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-clock.js";
 import { createGatewayMethodRegistry } from "../methods/registry.js";
 import type { ChannelRuntimeSnapshot } from "../server-channel-runtime.types.js";
 import { createChannelManager } from "../server-channels.js";
@@ -307,6 +308,7 @@ describe("channelsHandlers channels.logout", () => {
       mocks.getChannelPlugin.mockImplementation(getRegisteredChannelPlugin);
       mocks.getRuntimeConfig.mockReturnValue({ channels: { whatsapp: { name: "original" } } });
       const manager = createChannelManager({
+        scheduler: createTestGatewayScheduler(),
         getRuntimeConfig: mocks.getRuntimeConfig,
         getPluginRegistry: () => registry,
         channelLogs: {},
@@ -558,6 +560,7 @@ describe("channel controls remain independent of diagnostic inspection", () => {
       mocks.getRuntimeConfig.mockReturnValue({});
       mocks.getChannelPlugin.mockReturnValue(plugin);
       const manager = createChannelManager({
+        scheduler: createTestGatewayScheduler(),
         getRuntimeConfig: mocks.getRuntimeConfig,
         getPluginRegistry: () => registry,
         channelLogs: {},

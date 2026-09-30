@@ -48,6 +48,8 @@ the generic **Subagent** label. Select a row to open its details.
 Select a session's title in the chat header to rename it. Enter saves the name;
 Escape cancels the edit. While an input method is composing text, Enter and
 Escape stay with composition. Finish composing before saving or canceling.
+Once the Gateway confirms a rename, the saved name stays visible while the session
+list refreshes, even if an older snapshot arrives late.
 
 Dragging a session between sidebar groups updates its placement immediately. A successful
 save keeps that placement even if the subsequent list refresh fails; the UI reports
@@ -76,6 +78,26 @@ Opening **New agent** keeps your existing Ask OpenClaw conversation. Finish any
 pending wizard or approval before opening the creation choices.
 If team creation stops partway through, the custodian reports the retained
 agents so you can inspect them before creating the missing members.
+
+## Take a photo in chat
+
+Choose **Add attachment → Take photo** in chat or New Session to open a camera
+preview. Allow camera access when your browser asks, then choose **Capture**,
+**Retake**, or **Use photo**. The chosen photo becomes a draft attachment; it does
+not send the message. The preview stays in your browser and does not request
+microphone access.
+
+The live preview requires HTTPS or localhost and a browser that supports camera
+access. On plain HTTP LAN addresses or browsers without the camera API, choose
+**Use device camera** to open the native capture picker instead. This preserves
+mobile camera capture without silently substituting a picker for the preview;
+your browser decides whether it shows a camera or a file picker. If access is denied,
+allow the site in your browser and operating-system camera settings and retry.
+If no camera is available, choose **Upload photo** instead.
+
+The camera stops when you capture a photo, close the dialog, or leave its draft.
+File and photo uploads remain available through their existing pickers, including
+the combined **Attach…** picker on iOS Safari.
 
 ## Watch a desktop in Picture-in-Picture
 
@@ -1527,7 +1549,7 @@ Every section heading from the previous single-page version keeps its anchor her
 - <a id="feature-and-rpc-reference" />[Feature and RPC reference](/web/control-ui/feature-reference#feature-and-rpc-reference)
 - <a id="chat-and-talk" />[chat and talk](/web/control-ui/feature-reference#chat-and-talk)
 - <a id="channels-sessions-memory" />[channels sessions memory](/web/control-ui/feature-reference#channels-sessions-memory)
-- <a id="cron-tasks-plugins-skills-devices-exec-approvals" />[cron tasks plugins skills devices exec approvals](/web/control-ui/feature-reference#cron-tasks-plugins-skills-devices-exec-approvals)
+- <a id="cron-tasks-plugins-skills-devices-exec-approvals" />[cron plugins skills devices exec approvals](/web/control-ui/feature-reference#cron-tasks-plugins-skills-devices-exec-approvals)
 - <a id="config" />[config](/web/control-ui/feature-reference#config)
 - <a id="usage" />[usage](/web/control-ui/feature-reference#usage)
 - <a id="debug-logs-update" />[debug logs update](/web/control-ui/feature-reference#debug-logs-update)

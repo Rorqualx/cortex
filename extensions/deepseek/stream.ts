@@ -1,4 +1,3 @@
-// Deepseek plugin module implements stream behavior.
 import type { ProviderWrapStreamFnContext } from "openclaw/plugin-sdk/plugin-entry";
 import {
   createDeepSeekV4OpenAICompatibleThinkingWrapper,

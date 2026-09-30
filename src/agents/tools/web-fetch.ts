@@ -1,6 +1,7 @@
 import {
   asPositiveFiniteNumber,
   resolveIntegerOption,
+  resolveOptionalIntegerOption,
 } from "@openclaw/normalization-core/number-coercion";
 import {
   normalizeLowercaseStringOrEmpty,
@@ -60,7 +61,7 @@ import {
   writeCache,
 } from "./web-shared.js";
 import type { CacheEntry } from "./web-shared.js";
-import { resolveWebFetchToolRuntimeContext } from "./web-tool-runtime-context.js";
+import { resolveWebToolRuntimeContext } from "./web-tool-runtime-context.js";
 
 const EXTRACT_MODES = ["markdown", "text"] as const;
 
@@ -227,11 +228,7 @@ function resolveFetchMaxResponseBytes(fetch?: WebFetchConfig): number {
 }
 
 function looksLikeHtml(value: string): boolean {
-  const trimmed = value.trimStart();
-  if (!trimmed) {
-    return false;
-  }
-  const head = normalizeLowercaseStringOrEmpty(trimmed.slice(0, 256));
+  const head = normalizeLowercaseStringOrEmpty(value.trimStart().slice(0, 256));
   return head.startsWith("<!doctype html") || head.startsWith("<html");
 }
 
@@ -251,8 +248,7 @@ function formatWebFetchErrorDetail(params: {
     const withTitle = rendered.title ? `${rendered.title}\n${rendered.text}` : rendered.text;
     text = markdownToText(withTitle);
   }
-  const truncated = truncateWebFetchText(text.trim(), maxChars);
-  return truncated.text;
+  return truncateWebFetchText(text.trim(), maxChars).text;
 }
 
 function redactUrlForDebugLog(rawUrl: string): string {
@@ -399,17 +395,7 @@ async function spillWebFetchContent(
 }
 
 function normalizeContentType(value: string | null | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const [raw] = value.split(";");
-  const trimmed = raw?.trim();
-  return trimmed ? trimmed.toLowerCase() : undefined;
-}
-
-function isJsonMediaType(value: string): boolean {
-  // Structured +json subtypes are single JSON documents; sequence formats are not.
-  return value === "application/json" || value.endsWith("+json");
+  return value?.split(";", 1)[0]?.trim().toLowerCase() || undefined;
 }
 
 type WebFetchRuntimeParams = {
@@ -526,9 +512,7 @@ async function buildWebFetchPayload(params: {
     payload.truncated === true,
   );
   const providerRawLength =
-    typeof payload.rawLength === "number" && Number.isFinite(payload.rawLength)
-      ? Math.max(0, Math.floor(payload.rawLength))
-      : wrapped.rawLength;
+    resolveOptionalIntegerOption(payload.rawLength, { min: 0 }) ?? wrapped.rawLength;
   const url = params.requestedUrl;
   const resolvedFinalUrl = normalizeProviderFinalUrl(payload.finalUrl) ?? url;
   const oversizedFinalUrl =
@@ -537,10 +521,7 @@ async function buildWebFetchPayload(params: {
   // a different destination by clipping a redirect's path or query.
   const finalUrl = oversizedFinalUrl ? url : resolvedFinalUrl;
   metadataTruncated ||= oversizedFinalUrl;
-  const status =
-    typeof payload.status === "number" && Number.isFinite(payload.status)
-      ? Math.max(0, Math.floor(payload.status))
-      : 200;
+  const status = resolveIntegerOption(payload.status, 200, { min: 0 });
   const contentType =
     typeof payload.contentType === "string" ? normalizeContentType(payload.contentType) : undefined;
   const extractor =
@@ -577,10 +558,7 @@ async function buildWebFetchPayload(params: {
     rawLength: providerRawLength,
     ...(wrapped.spill ? { spill: wrapped.spill } : {}),
     fetchedAt,
-    tookMs:
-      typeof payload.tookMs === "number" && Number.isFinite(payload.tookMs)
-        ? Math.max(0, Math.floor(payload.tookMs))
-        : params.tookMs,
+    tookMs: resolveOptionalIntegerOption(payload.tookMs, { min: 0 }) ?? params.tookMs,
     text: wrapped.text,
     ...(warning ? { warning } : {}),
   };
@@ -743,9 +721,8 @@ async function fetchWebPayload(
       }
       const rawDetailResult = await readResponseText(res, { maxBytes: DEFAULT_ERROR_MAX_BYTES });
       throwIfFetchAborted(params.signal);
-      const rawDetail = rawDetailResult.text;
       const detail = formatWebFetchErrorDetail({
-        detail: rawDetail,
+        detail: rawDetailResult.text,
         contentType: res.headers.get("content-type"),
         maxChars: DEFAULT_ERROR_MAX_CHARS,
       });
@@ -817,7 +794,11 @@ async function fetchWebPayload(
           "Web fetch extraction failed: Readability disabled and no fetch provider is available.",
         );
       }
-    } else if (isJsonMediaType(normalizedContentType)) {
+    } else if (
+      normalizedContentType === "application/json" ||
+      normalizedContentType.endsWith("+json")
+    ) {
+      // Structured +json subtypes are single JSON documents; sequence formats are not.
       try {
         text = JSON.stringify(JSON.parse(body), null, 2);
         extractor = "json";
@@ -873,12 +854,17 @@ export function createWebFetchTool(options?: {
     parameters: WebFetchSchema,
     outputSchema: WebFetchOutputSchema,
     execute: async (_toolCallId, args, signal, onUpdate) => {
-      const { config, preferRuntimeProviders, providerSelectionId, runtimeWebFetch } =
-        resolveWebFetchToolRuntimeContext({
-          config: options?.config,
-          lateBindRuntimeConfig: options?.lateBindRuntimeConfig,
-          runtimeWebFetch: options?.runtimeWebFetch,
-        });
+      const {
+        config,
+        preferRuntimeProviders,
+        providerSelectionId,
+        runtimeMetadata: runtimeWebFetch,
+      } = resolveWebToolRuntimeContext({
+        kind: "fetch",
+        config: options?.config,
+        lateBindRuntimeConfig: options?.lateBindRuntimeConfig,
+        runtimeMetadata: options?.runtimeWebFetch,
+      });
       const executionFetch = resolveFetchConfig(config);
       if (executionFetch?.enabled === false) {
         throw new Error("web_fetch is disabled.");

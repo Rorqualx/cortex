@@ -1,10 +1,10 @@
+// Defines plugin approval request/resolution payloads and actions.
+import { truncateCodePoints } from "@openclaw/normalization-core/code-points";
 import type {
   PluginApprovalActionView as WirePluginApprovalActionView,
   PluginApprovalRequestedEvent as WirePluginApprovalRequestedEvent,
   PluginApprovalResolvedEvent as WirePluginApprovalResolvedEvent,
 } from "../../packages/gateway-protocol/src/index.js";
-// Defines plugin approval request/resolution payloads and actions.
-import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { summarizeApprovalScope, type ApprovalScope } from "./approval-scope.js";
 import type { ExecApprovalDecision } from "./exec-approvals-core.js";
 
@@ -42,6 +42,8 @@ export type PluginApprovalRequestPayload = {
   scope?: ApprovalScope | null;
   toolName?: string | null;
   toolCallId?: string | null;
+  /** Trusted harness-selected policy subject; distinct from display-only toolName. */
+  policySubject?: { pluginKey: string; tool?: string };
   /** Exact MCP persistence intent; the host separately binds live tool-call proof. */
   mcpTool?: { server: string; tool: string };
   allowedDecisions?: readonly ExecApprovalDecision[] | null;
@@ -88,20 +90,13 @@ export function truncatePluginApprovalDetail(value: string): string {
   if (value.length <= PLUGIN_APPROVAL_DETAIL_MAX_LENGTH) {
     return value;
   }
+  const bounded = truncateCodePoints(value, PLUGIN_APPROVAL_DETAIL_MAX_LENGTH);
+  if (bounded === value) {
+    return value;
+  }
   const contentLimit =
     PLUGIN_APPROVAL_DETAIL_MAX_LENGTH - Array.from(PLUGIN_APPROVAL_DETAIL_TRUNCATION_SUFFIX).length;
-  let codePointCount = 0;
-  let contentCodeUnitLength = 0;
-  for (const char of value) {
-    codePointCount += 1;
-    if (codePointCount <= contentLimit) {
-      contentCodeUnitLength += char.length;
-    }
-    if (codePointCount > PLUGIN_APPROVAL_DETAIL_MAX_LENGTH) {
-      return `${truncateUtf16Safe(value, contentCodeUnitLength)}${PLUGIN_APPROVAL_DETAIL_TRUNCATION_SUFFIX}`;
-    }
-  }
-  return value;
+  return `${truncateCodePoints(bounded, contentLimit)}${PLUGIN_APPROVAL_DETAIL_TRUNCATION_SUFFIX}`;
 }
 
 export function resolvePluginApprovalTimeoutMs(value: unknown): number {

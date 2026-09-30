@@ -83,6 +83,7 @@ import {
   respondPlainText,
 } from "./control-ui-http-utils.js";
 import { resolveAssistantMediaRoutePath } from "./control-ui-resource-routes.js";
+import { selectControlUiRoutePreloads } from "./control-ui-route-preloads.js";
 import { classifyControlUiRequest, isControlUiApprovalDocumentPath } from "./control-ui-routing.js";
 import { isControlUiSharePath, serveControlUiShareDocument } from "./control-ui-share.js";
 import { normalizeControlUiBasePath } from "./control-ui-shared.js";
@@ -164,11 +165,9 @@ type ControlUiAvatarMeta = {
   avatarReason: string | null;
 };
 
-function controlUiAvatarResolutionMeta(resolved: AgentAvatarResolution | null): {
-  avatarSource: string | null;
-  avatarStatus: AgentAvatarResolution["kind"] | null;
-  avatarReason: string | null;
-} {
+function controlUiAvatarResolutionMeta(
+  resolved: AgentAvatarResolution | null,
+): Omit<ControlUiAvatarMeta, "avatarUrl"> {
   if (!resolved) {
     return { avatarSource: null, avatarStatus: null, avatarReason: null };
   }
@@ -694,15 +693,12 @@ export async function handleControlUiAvatarRequest(
     requestAuth.assertCurrent();
     const resolved = projection.resolution;
     if (url.searchParams.get("meta") === "1") {
-      const meta = controlUiAvatarResolutionMeta(resolved);
       const avatarUrl =
         gatewayAssistantAvatarUrl(projection, basePath, agentId) ??
         (resolved?.kind === "remote" ? resolved.url : null);
       sendJson(res, 200, {
         avatarUrl,
-        avatarSource: meta.avatarSource,
-        avatarStatus: meta.avatarStatus,
-        avatarReason: meta.avatarReason,
+        ...controlUiAvatarResolutionMeta(resolved),
       } satisfies ControlUiAvatarMeta);
       return true;
     }
@@ -756,13 +752,24 @@ async function serveResolvedIndexHtml(
   req: IncomingMessage,
   res: ServerResponse,
   body: string,
+  uiPath: string,
   basePath?: string,
   allowWasm?: boolean,
   environment?: ControlUiEnvironment,
   buildId?: string,
 ) {
   const normalizedBasePath = normalizeControlUiBasePath(basePath);
-  const withBasePath = rewriteControlUiIndexHtmlAssetHrefs(body, normalizedBasePath, buildId);
+  const preloadRoute =
+    uiPath === "/chat" || uiPath.startsWith("/chat/")
+      ? "chat"
+      : uiPath === "/new" || uiPath === "/new/"
+        ? "new"
+        : null;
+  const withBasePath = rewriteControlUiIndexHtmlAssetHrefs(
+    selectControlUiRoutePreloads(body, preloadRoute),
+    normalizedBasePath,
+    buildId,
+  );
   // An empty base path is authoritative for Gateway resources even when the
   // router infers a namespace. Always emit it so resources stay root-mounted.
   const basePathAttribute = ` ${CONTROL_UI_BASE_PATH_ATTRIBUTE}="${escapeHtml(normalizedBasePath)}"`;
@@ -811,16 +818,13 @@ function isSafeRelativePath(relPath: string) {
     return false;
   }
   const normalized = path.posix.normalize(relPath);
-  if (path.posix.isAbsolute(normalized) || path.win32.isAbsolute(normalized)) {
-    return false;
-  }
-  if (normalized.startsWith("../") || normalized === "..") {
-    return false;
-  }
-  if (normalized.includes("\0")) {
-    return false;
-  }
-  return true;
+  return !(
+    path.posix.isAbsolute(normalized) ||
+    path.win32.isAbsolute(normalized) ||
+    normalized.startsWith("../") ||
+    normalized === ".." ||
+    normalized.includes("\0")
+  );
 }
 
 // The default SPA entry infers /__openclaw__ as its base path before bootstrap.
@@ -963,19 +967,14 @@ export async function handleControlUiHttpRequest(
   }
 
   const root = rootState.path;
-  const rootReal = await (async () => {
-    if (rootState.realPath) {
-      return rootState.realPath;
-    }
-    try {
-      return await fs.promises.realpath(root);
-    } catch (error) {
+  const rootReal =
+    rootState.realPath ||
+    (await fs.promises.realpath(root).catch((error: unknown) => {
       if (isExpectedSafePathError(error)) {
         return null;
       }
       throw error;
-    }
-  })();
+    }));
   if (!rootReal) {
     respondControlUiAssetsUnavailable(res);
     return true;
@@ -1098,6 +1097,7 @@ export async function handleControlUiHttpRequest(
         req,
         res,
         prepared.file.body.toString("utf8"),
+        uiPath,
         basePath,
         terminalEnabled,
         opts?.config?.gateway?.controlUi?.environment,

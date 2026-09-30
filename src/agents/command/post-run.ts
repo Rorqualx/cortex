@@ -314,6 +314,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
           const transcriptResult = await attemptExecutionRuntime.persistCliTurnTranscript({
             body,
             transcriptBody,
+            inputProvenance: params.opts.inputProvenance,
             result,
             sessionId: effectiveSessionId,
             sessionKey: internalSessionTarget?.sessionKey ?? sessionKey ?? effectiveSessionId,
@@ -342,7 +343,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
           persistedCliTurnTranscript = transcriptResult.kind === "persisted";
         } catch (error) {
           log.warn(
-            `Turn transcript persistence failed for ${sessionKey ?? sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+            `Turn transcript persistence failed for ${sessionKey ?? sessionId}: ${coerceErrorMessage(error)}`,
           );
         }
       }

@@ -1,4 +1,3 @@
-// Local skill loader reads skill definitions from local filesystem roots.
 import fs from "node:fs";
 import path from "node:path";
 import {

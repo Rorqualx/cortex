@@ -622,7 +622,6 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
         preparedSessionState = resolvePreparedSessionState();
         // The interrupted run may have changed goal or suggestion state while admission waited.
         await refreshInboundContextAfterAdmissionWait();
-        sessionEntry = context.getSessionEntry();
         promptBodies = await traceRunPhase("reply.build_prompt_bodies", () =>
           rebuildPromptBodies(),
         );
@@ -654,7 +653,6 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
     resolvedThinkLevel,
     thinkLevelOverride,
     thinkingCatalog,
-    sessionEntry,
     skillsSnapshot,
     prefixedCommandBody,
     queuedBody,

@@ -17,6 +17,7 @@ import {
   withDistArtifactOwnership,
 } from "./lib/dist-artifact-ownership.mts";
 import { formatDurationElapsed } from "./lib/format-duration.mts";
+import { resolveLiveManagedGatewayDistFence } from "./lib/live-gateway-dist-fence.mts";
 import { runManagedCommand } from "./lib/managed-child-process.mts";
 import { pluginSdkEntrypoints } from "./lib/plugin-sdk-entries.mts";
 import type { MemoryLimitParams } from "./lib/process-memory.mts";
@@ -35,6 +36,7 @@ import {
   TSDOWN_DECLARATION_EXTENSIONS,
   TSDOWN_DECLARATION_TOOL_INPUTS,
   TSDOWN_PACKAGES_CACHE_INPUT,
+  listTsdownOutputRoots,
   resolveTsdownBuildPlan,
 } from "./tsdown-build.mts";
 
@@ -59,6 +61,12 @@ export type BuildAllStep = BuildCacheStep &
   );
 
 type BuildAllTiming = { label: string; durationMs: number; status: string };
+
+export type BuildAllResult = {
+  exitCode: number;
+  timings: BuildAllTiming[];
+  admissionRefused?: true;
+};
 type BuildAllStepParams = {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
@@ -630,6 +638,9 @@ export async function runBuildAllSteps(
   profile: string,
   params: {
     cacheEnabled?: boolean;
+    signal?: AbortSignal;
+    requireVerifiedGatewayFence?: boolean;
+    cwd?: string;
     env?: NodeJS.ProcessEnv;
     finalizeCache?: typeof finalizeBuildStepCache;
     logger?: Pick<Console, "error" | "warn">;
@@ -642,8 +653,10 @@ export async function runBuildAllSteps(
     ) => { status: number | null } | Promise<{ status: number | null }>;
     steps?: BuildAllStep[];
   } = {},
-) {
+): Promise<BuildAllResult> {
+  params.signal?.throwIfAborted();
   await preflightInstalledSourceArtifacts(params.env ?? process.env);
+  params.signal?.throwIfAborted();
   const { env: buildEnv, heapShortfall } = resolveBuildAllTsdownPlan(
     profile,
     resolveBuildAllEnvironment(params.env),
@@ -652,6 +665,22 @@ export async function runBuildAllSteps(
   const steps = params.steps ?? resolveBuildAllSteps(profile, buildEnv);
   const cacheEnabled = params.cacheEnabled ?? buildEnv.OPENCLAW_BUILD_CACHE !== "0";
   const logger = params.logger ?? console;
+  // One owner for both `pnpm build` and run-node dirty-tree auto-build: both
+  // enter here before clean:dist can delete hashed modules a live Gateway still imports.
+  const fence = await resolveLiveManagedGatewayDistFence(params.cwd ?? process.cwd(), {
+    env: buildEnv,
+    requireVerified: params.requireVerifiedGatewayFence,
+    outputPaths: listTsdownOutputRoots(),
+  });
+  params.signal?.throwIfAborted();
+  if (fence.refuse) {
+    logger.error(fence.message);
+    return {
+      exitCode: 1,
+      timings: [] satisfies BuildAllTiming[],
+      admissionRefused: true,
+    };
+  }
   const now = params.now ?? performance.now.bind(performance);
   const resolveCacheState = params.resolveCacheState ?? resolveBuildStepCacheState;
   const restoreCache = params.restoreCache ?? restoreBuildStepCacheOutputs;
@@ -671,6 +700,7 @@ export async function runBuildAllSteps(
               ? distArtifactEntryArgs(script, invocation.args.slice(3))
               : invocation.args,
           ...invocation.options,
+          signal: params.signal,
           requireProcessTreeExit: process.platform !== "win32",
         }),
       };
@@ -685,6 +715,7 @@ export async function runBuildAllSteps(
     logger.warn(heapShortfall.message);
   }
   for (const step of steps) {
+    params.signal?.throwIfAborted();
     const cacheStartedAt = now();
     const cacheState = resolveCacheState(step, { env: buildEnv });
     const cacheDurationMs = now() - cacheStartedAt;
@@ -708,6 +739,7 @@ export async function runBuildAllSteps(
     logger.error(`[build-all] ${step.label}${reusedCache ? " (cache restored)" : ""}`);
     const invocation = resolveBuildAllStep(stepToRun, { env: buildEnv });
     const result = await runStep(invocation);
+    params.signal?.throwIfAborted();
     const durationMs = cacheDurationMs + now() - startedAt;
     if (result.status !== 0) {
       timings.push({ label: step.label, status: "failed", durationMs });
@@ -733,16 +765,21 @@ if (isDirectRunUrl(process.argv[1], import.meta.url)) {
     args = parseBuildAllArgs(process.argv.slice(2));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
-    process.exit(2);
+    process.exitCode = 2;
   }
   if (args?.help) {
     console.log(buildAllUsage());
-  } else {
-    const result = await withDistArtifactOwnership(process.cwd(), () =>
-      runBuildAllSteps(args.profile),
+  } else if (args) {
+    const { runLegacySourceUpdateBuild } = await import("./lib/source-update-build.mts");
+    const legacyExit = await runLegacySourceUpdateBuild(args.profile, (env) =>
+      runBuildAllSteps(args.profile, { env }),
     );
-    if (result.exitCode !== 0) {
-      process.exit(result.exitCode);
+    const exitCode =
+      legacyExit ??
+      (await withDistArtifactOwnership(process.cwd(), () => runBuildAllSteps(args.profile)))
+        .exitCode;
+    if (exitCode !== 0) {
+      process.exitCode = exitCode;
     }
   }
 }

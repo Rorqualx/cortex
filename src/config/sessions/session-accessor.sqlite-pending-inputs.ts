@@ -26,7 +26,7 @@ import { hasSessionPendingInputsSchema } from "../../state/openclaw-agent-pendin
 import type { OpenClawConfig } from "../types.openclaw.js";
 import { assertCapturedSessionEntryReadSource } from "./session-accessor.sqlite-exact-read.js";
 import { getSessionKysely, type ResolvedTranscriptScope } from "./session-accessor.sqlite-scope.js";
-import type { CapturedSessionEntryReadSource } from "./session-accessor.types.js";
+import type { CapturedSessionEntryReadSource } from "./session-entry-read-source.types.js";
 import { SessionPendingInputCustodyError } from "./session-pending-input-custody-error.js";
 
 export type SessionPendingInputState = "queued" | "interrupted" | "cancelled";
@@ -607,37 +607,4 @@ export function deleteSessionPendingInputs(
         .where("session_key", "=", sessionKey),
     );
   }
-}
-
-/** Select bounded receipt correlations without loading accepted message bodies. */
-export function readSessionPendingInputReceipts(
-  database: Pick<OpenClawAgentDatabase, "db">,
-  scope: Pick<ResolvedTranscriptScope, "sessionKey" | "sessionId">,
-  runIds: readonly string[],
-) {
-  const rows = executeSqliteQuerySync(
-    database.db,
-    getSessionKysely(database.db)
-      .selectFrom("session_pending_inputs")
-      .select(["run_id", "consumed_event_id"])
-      .where("session_key", "=", scope.sessionKey)
-      .where("session_id", "=", scope.sessionId)
-      .where("run_id", "in", runIds)
-      .orderBy("seq", "asc")
-      .limit(51),
-  ).rows;
-  // A run ID is correlation, not unique authority. Never retire an ambiguous
-  // provisional message when another source with that run is still pending.
-  if (rows.length > 50 || new Set(rows.map((row) => row.run_id)).size !== rows.length) {
-    throw new Error("Pending input receipt lookup has ambiguous source run IDs");
-  }
-  return rows.map((row) =>
-    row.consumed_event_id == null
-      ? { runId: row.run_id, state: "pending" as const }
-      : {
-          runId: row.run_id,
-          state: "consumed" as const,
-          consumedByEventId: row.consumed_event_id,
-        },
-  );
 }

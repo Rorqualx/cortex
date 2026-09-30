@@ -315,7 +315,7 @@ export const RUNTIME_FIELD_HELP: Record<string, string> = {
   "nodeHost.workerRuns.isolation":
     'Select the worker-session process boundary: "none" runs directly on the node host (default); "container" requires a working Docker-compatible engine and never falls back to host execution.',
   "nodeHost.workerRuns.containerImage":
-    'Optional Node 24.16+ or 26.1+ image for container-isolated workers (default: "node:24.19.0-slim"). Use a digest-pinned, private-registry, or preloaded image when needed; missing images are pulled on first use.',
+    'Optional Node 24.16+ or 26.1+ image for container-isolated workers (default: "node:24.21.0-slim"). Use a digest-pinned, private-registry, or preloaded image when needed; missing images are pulled on first use.',
   "nodeHost.browserProxy":
     "Groups browser-proxy settings for exposing local browser control through node routing. Enable only when remote node workflows need your local browser profiles.",
   "nodeHost.browserProxy.enabled":
@@ -572,6 +572,12 @@ export const RUNTIME_FIELD_HELP: Record<string, string> = {
     "Optional account selector for multi-account channel setups when plugin approvals must route through a specific account context.",
   "approvals.plugin.targets[].threadId":
     "Optional thread/topic target for channels that support threaded delivery of forwarded plugin approvals.",
+  "approvals.plugin.slack":
+    "Slack reviewer policy for plugin approvals. Omit the default approvers list to retain account allowFrom/defaultTo authorization; set it to [] to deny Slack decisions by default.",
+  "approvals.plugin.slack.approvers":
+    "Default Slack plugin reviewers as raw U/W user IDs within the selected Slack account, or workspace-qualified team:<team-id>:user:<user-id> values. Plugin and tool lists override this list for their own requests.",
+  "approvals.plugin.slack.plugins":
+    "Reviewer overrides keyed by the selected native tool plugin ID. Tool keys encode the raw tool name.",
   "tools.fs.workspaceOnly":
     "Restrict filesystem tools (read/write/edit/apply_patch) to the workspace directory (default: false).",
   "tools.sessions.visibility":

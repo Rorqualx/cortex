@@ -74,7 +74,6 @@ export function createGatewayCloseTestDepsFactory(mocks: GatewayCloseFixtureMock
       cron: { stop: vi.fn() },
       heartbeatRunner: { stop: vi.fn() } as never,
       updateCheckStop: null,
-      nodePresenceTimers: new Map(),
       broadcast: vi.fn(),
       maintenance: {
         stopPeriodicTasks: vi.fn(async () => {}),

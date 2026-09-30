@@ -1774,6 +1774,7 @@
                         ]
                       },
                       "plugins/teams-meetings",
+                      "plugins/slack-huddles",
                       "plugins/voice-call",
                       {
                         "group": "Voice call",
@@ -2243,6 +2244,7 @@
                     "pages": [
                       "providers/comfy",
                       "providers/fal",
+                      "providers/kie",
                       "providers/pixverse",
                       "providers/runway",
                       "providers/vydra"
@@ -2810,6 +2812,7 @@
                       "cli/directory",
                       "cli/pairing",
                       "cli/qr",
+                      "cli/users",
                       "cli/voicecall"
                     ]
                   },
