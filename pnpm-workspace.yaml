@@ -32,6 +32,12 @@ nodeLinker: isolated
 packageImportMethod: clone-or-copy
 # GWTs share node_modules; script commands must not reconcile that shared install.
 verifyDepsBeforeRun: false
+# The deploy host builds with x64 Node (Rosetta) but must run the Gateway on native
+# arm64: koffi calls with pointer arguments segfault under Rosetta (2026-09-30). Install
+# both architectures' prebuilt native packages so either Node can load them.
+supportedArchitectures:
+  os: [current]
+  cpu: [x64, arm64]
 blockExoticSubdeps: true
 
 overrides:
