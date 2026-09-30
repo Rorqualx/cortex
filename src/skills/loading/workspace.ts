@@ -24,7 +24,7 @@ import {
   resolveEffectiveAgentSkillsLimits,
 } from "../discovery/agent-filter.js";
 import { normalizeSkillFilter } from "../discovery/filter.js";
-import { filterPromptVisibleSkillEntries } from "../discovery/skill-index.js";
+import { isSkillPromptVisible } from "../discovery/skill-index.js";
 import { mergeRemoteNodeSkillEntries } from "../runtime/remote-skills.js";
 import type {
   OpenClawSkillMetadata,
@@ -1664,7 +1664,7 @@ function resolveWorkspaceSkillPromptState(
     opts?.skillOverrides,
     opts?.eligibility,
   );
-  const promptEntries = filterPromptVisibleSkillEntries(eligible);
+  const promptEntries = eligible.filter(isSkillPromptVisible);
   const remoteNote = opts?.eligibility?.remote?.note?.trim();
   const resolvedSkills = promptEntries.map((entry) => entry.skill);
   // Derive prompt-facing skills with compacted paths (e.g. ~/...) once.

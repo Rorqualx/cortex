@@ -182,7 +182,6 @@ it.each([
     const assistant = prepared.subscription.getCurrentAttemptAssistant();
     const payloads = buildEmbeddedRunPayloads({
       assistantTexts: prepared.subscription.assistantTexts,
-      answerSegments: prepared.subscription.answerSegments,
       lastAssistant: assistant,
       currentAssistant: assistant ?? null,
       sessionKey: "agent:main:main",

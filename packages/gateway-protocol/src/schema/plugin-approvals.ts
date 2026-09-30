@@ -141,6 +141,13 @@ export const PluginApprovalRequestPayloadSchema = Type.Object(
     scope: Type.Optional(Type.Union([ApprovalScopeSchema, Type.Null()])),
     toolName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     toolCallId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    // Trusted harness-selected policy subject; distinct from display-only toolName.
+    policySubject: Type.Optional(
+      Type.Object(
+        { pluginKey: NonEmptyString, tool: Type.Optional(NonEmptyString) },
+        { additionalProperties: false },
+      ),
+    ),
     // Immutable keeps the schema-derived fields `readonly`, matching the
     // server-side payload types that freeze these views after build.
     allowedDecisions: Type.Optional(

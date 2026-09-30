@@ -35,6 +35,7 @@ import {
   formatFastModeAutoProgressText,
   resolveFastModeForElapsed,
 } from "../../shared/fast-mode.js";
+import { createStageTimingTracker } from "../../shared/stage-timing.js";
 import { createAgentHarnessTaskRuntimeScope } from "../../tasks/agent-harness-task-runtime-scope.js";
 import { resolveUserPath } from "../../utils.js";
 import { isMarkdownCapableMessageChannel } from "../../utils/message-channel.js";
@@ -149,7 +150,6 @@ import { createEmbeddedRunReplayState, observeReplayMetadata } from "./replay-st
 import { handleAssistantFailover } from "./run/assistant-failover.js";
 import { forgetPromptBuildDrainCacheForRun } from "./run/attempt-prompt-helpers.js";
 import {
-  createEmbeddedRunStageTracker,
   EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE,
   formatEmbeddedRunStageSummary,
   shouldWarnEmbeddedRunStageSummary,
@@ -723,7 +723,7 @@ export async function runEmbeddedAgent(
           );
         }
       };
-      const startupStages = createEmbeddedRunStageTracker();
+      const startupStages = createStageTimingTracker(Date.now);
       let startupStagesEmitted = false;
       const notifyExecutionPhase = (
         phase: Parameters<NonNullable<RunEmbeddedAgentParams["onExecutionPhase"]>>[0]["phase"],

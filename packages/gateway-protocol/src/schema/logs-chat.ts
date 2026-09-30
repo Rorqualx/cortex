@@ -340,6 +340,7 @@ export const ChatAbortParamsSchema = closedObject({
   agentId: Type.Optional(NonEmptyString),
   runId: Type.Optional(NonEmptyString),
   preserveSideRuns: Type.Optional(Type.Boolean()),
+  discardPendingInput: Type.Optional(Type.Boolean()),
 });
 
 /** Inserts an operator-visible synthetic message into an existing chat transcript. */

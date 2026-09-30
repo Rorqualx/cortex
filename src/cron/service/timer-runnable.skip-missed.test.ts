@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { CronJob } from "../types.js";
-import type { CronServiceState } from "./state.js";
 import { isRunnableJob } from "./timer-runnable.js";
 
 // A daily 10:00 UTC cron, evaluated at 12:00 with the 10:00 slot already past and the last run
@@ -23,24 +22,22 @@ function dailyCronJob(overrides: Partial<CronJob> = {}): CronJob {
   } as CronJob;
 }
 
-// isRunnableJob reads only the job and params, never params.state.
-const state = {} as CronServiceState;
 
 describe("isRunnableJob skipMissedRuns", () => {
   it("suppresses a missed cron slot during the startup catch-up pass", () => {
     const job = dailyCronJob({ skipMissedRuns: true });
-    expect(isRunnableJob({ state, job, nowMs: NOW, allowCronMissedRunByLastRun: true })).toBe(
+    expect(isRunnableJob({ job, nowMs: NOW, allowCronMissedRunByLastRun: true })).toBe(
       false,
     );
   });
 
   it("replays a missed cron slot during startup catch-up by default", () => {
     const job = dailyCronJob();
-    expect(isRunnableJob({ state, job, nowMs: NOW, allowCronMissedRunByLastRun: true })).toBe(true);
+    expect(isRunnableJob({ job, nowMs: NOW, allowCronMissedRunByLastRun: true })).toBe(true);
   });
 
   it("still fires a due slot on a normal tick with skipMissedRuns set (only catch-up is skipped)", () => {
     const job = dailyCronJob({ skipMissedRuns: true });
-    expect(isRunnableJob({ state, job, nowMs: NOW })).toBe(true);
+    expect(isRunnableJob({ job, nowMs: NOW })).toBe(true);
   });
 });

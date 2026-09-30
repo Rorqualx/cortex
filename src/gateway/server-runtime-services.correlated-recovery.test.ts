@@ -70,7 +70,7 @@ describe("registered correlated completion recovery custody", () => {
       resetGatewayWorkAdmission();
       const cfg = {
         agents: { defaults: { heartbeat: { every: "0m" } } },
-        skills: { workshop: { autonomous: { mode: "off" as const } } },
+        skills: { forge: { autonomous: { mode: "off" as const } } },
       };
       setRuntimeConfigSnapshot(cfg);
       const clock = createGatewaySchedulerClock(Date.now());

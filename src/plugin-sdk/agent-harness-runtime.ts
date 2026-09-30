@@ -409,6 +409,17 @@ export async function detectAndLoadAgentHarnessPromptImages(params: {
   });
 }
 
+/** Load static MCP metadata without connecting transports or discovering tools. */
+export async function loadAgentHarnessMcpConfig(
+  params: Parameters<typeof import("../agents/bundle-mcp-config.js").loadStaticBundleMcpConfig>[0],
+): Promise<ReturnType<typeof import("../agents/bundle-mcp-config.js").loadStaticBundleMcpConfig>> {
+  const { loadStaticBundleMcpConfig } = await import("../agents/bundle-mcp-config.js");
+  return loadStaticBundleMcpConfig(params);
+}
+
+export { decodeHeaderEnvPlaceholder } from "../agents/bundle-mcp-adapter.js";
+export { resolveConfiguredMcpTransport } from "../config/mcp-config-normalize.js";
+
 /** Load Codex bundle MCP thread config without forcing the heavy config module into SDK imports. */
 export async function loadCodexBundleMcpThreadConfig(
   params: LoadCodexBundleMcpThreadConfigParams,

@@ -54,11 +54,12 @@ export type GatewayAgentRow = Pick<
 export type SessionActivityPulse = {
   since: number;
   until: number;
-  /** One bucket per elapsed hour of the civil day, 23–25 on DST days. */
-  hours: number[];
+  /** Counts between consecutive caller-supplied boundaries. */
+  buckets: number[];
   sessions: number;
-  started: number;
-  /** Sessions with an active run anywhere in the filtered set, not only since `since`. */
+  /** Sessions created within `activeMinutes`; omitted for an unbounded time filter. */
+  started?: number;
+  /** Sessions with an active run anywhere in the filtered set. */
   running: number;
   people?: number;
 };

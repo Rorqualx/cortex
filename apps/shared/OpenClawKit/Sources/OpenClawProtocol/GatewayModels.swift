@@ -4155,17 +4155,20 @@ public struct ChatAbortParams: Codable, Sendable {
     public let agentid: String?
     public let runid: String?
     public let preservesideruns: Bool?
+    public let discardpendinginput: Bool?
 
     public init(
         sessionkey: String,
         agentid: String? = nil,
         runid: String? = nil,
-        preservesideruns: Bool? = nil)
+        preservesideruns: Bool? = nil,
+        discardpendinginput: Bool? = nil)
     {
         self.sessionkey = sessionkey
         self.agentid = agentid
         self.runid = runid
         self.preservesideruns = preservesideruns
+        self.discardpendinginput = discardpendinginput
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -4173,6 +4176,7 @@ public struct ChatAbortParams: Codable, Sendable {
         case agentid = "agentId"
         case runid = "runId"
         case preservesideruns = "preserveSideRuns"
+        case discardpendinginput = "discardPendingInput"
     }
 }
 
@@ -11531,6 +11535,7 @@ public struct PluginApprovalRequestPayload: Codable, Sendable {
     public let scope: AnyCodable?
     public let toolname: AnyCodable?
     public let toolcallid: AnyCodable?
+    public let policysubject: [String: AnyCodable]?
     public let alloweddecisions: AnyCodable?
     public let actions: AnyCodable?
     public let agentid: AnyCodable?
@@ -11549,6 +11554,7 @@ public struct PluginApprovalRequestPayload: Codable, Sendable {
         scope: AnyCodable? = nil,
         toolname: AnyCodable? = nil,
         toolcallid: AnyCodable? = nil,
+        policysubject: [String: AnyCodable]? = nil,
         alloweddecisions: AnyCodable? = nil,
         actions: AnyCodable? = nil,
         agentid: AnyCodable? = nil,
@@ -11566,6 +11572,7 @@ public struct PluginApprovalRequestPayload: Codable, Sendable {
         self.scope = scope
         self.toolname = toolname
         self.toolcallid = toolcallid
+        self.policysubject = policysubject
         self.alloweddecisions = alloweddecisions
         self.actions = actions
         self.agentid = agentid
@@ -11585,6 +11592,7 @@ public struct PluginApprovalRequestPayload: Codable, Sendable {
         case scope
         case toolname = "toolName"
         case toolcallid = "toolCallId"
+        case policysubject = "policySubject"
         case alloweddecisions = "allowedDecisions"
         case actions
         case agentid = "agentId"

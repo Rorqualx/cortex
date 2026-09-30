@@ -1652,6 +1652,9 @@ describe("session MCP runtime", () => {
       for (let i = 0; i < expected.length; i++) {
         const actualItem = result.content[i];
         const expectedItem = expected[i];
+        if (!actualItem || !expectedItem) {
+          throw new Error(`missing content item ${i}`);
+        }
         expect(actualItem.type).toBe(expectedItem.type);
         if (actualItem.type === "text" && expectedItem.type === "text") {
           expect(unwrapFencedContent(actualItem.text ?? "")).toBe(expectedItem.text ?? "");

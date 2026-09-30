@@ -1,6 +1,6 @@
 // Shared build identity normalization for the runtime artifact and Vite config.
-// Vite loads this module before source-package aliases exist, so use the canonical source path.
-import { truncateUtf16Safe } from "../../packages/normalization-core/src/utf16-slice.js";
+// Vite and native Node need explicit source paths before source-package aliases exist.
+import { truncateUtf16Safe } from "../../packages/normalization-core/src/utf16-slice.ts";
 import type { ControlUiBuildInfo } from "./build-info-types.ts";
 
 type ControlUiBuildMetadata = Pick<ControlUiBuildInfo, "version" | "commit" | "builtAt">;

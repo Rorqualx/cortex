@@ -500,7 +500,8 @@ describe("applyExtraParamsToAgent", () => {
       | Model<"azure-openai-responses">
       | Model<"openai-chatgpt-responses">
       | Model<"openai-completions">
-      | Model<"anthropic-messages">;
+      | Model<"anthropic-messages">
+      | Model<"google-generative-ai">;
     options?: SimpleStreamOptions;
     cfg?: Record<string, unknown>;
     extraParamsOverride?: Record<string, unknown>;

@@ -66,7 +66,7 @@ import { requireSessionKey } from "./sessions-shared.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
 import { assertValidParams } from "./validation.js";
 
-function resolveAbortSessionKey(params: {
+export function resolveAbortSessionKey(params: {
   context: Pick<GatewayRequestContext, "chatAbortControllers">;
   requestedKey: string;
   canonicalKey: string;

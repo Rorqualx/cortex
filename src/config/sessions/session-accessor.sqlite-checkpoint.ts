@@ -9,7 +9,6 @@ import { clearAllCliSessions } from "./cli-session-binding.js";
 import { buildRestartRecoveryClaimCleanupPatch } from "./restart-recovery-state.js";
 import type { TranscriptEvent } from "./session-accessor.sqlite-contract.js";
 import {
-  collectSessionEntryLookupKeys,
   readSessionEntryRow,
   readSessionIdentitySnapshot,
   writeSessionEntry,
@@ -17,9 +16,7 @@ import {
 import { prepareSessionIdentityPublication } from "./session-accessor.sqlite-identity.js";
 import { readTranscriptIdentityByEventId } from "./session-accessor.sqlite-read.js";
 import {
-  formatSqliteSessionReferenceForScope,
   getSessionKysely,
-  normalizeSqliteSessionKey,
   resolveSqliteScope,
   runExclusiveSqliteSessionWrite,
   toDatabaseOptions,
@@ -27,6 +24,7 @@ import {
 } from "./session-accessor.sqlite-scope.js";
 import { appendTranscriptEventsInTransaction } from "./session-accessor.sqlite-transcript-store.js";
 import { findSessionTranscriptHeader } from "./session-entry-codec.js";
+import { collectSessionEntryLookupKeys, normalizeStoreSessionKey } from "./store-entry.js";
 import {
   COMPACTION_RUN_USAGE_CLEAR_PATCH,
   SESSION_ENTRY_PRIVATE_CLEAR_PATCH,
@@ -118,12 +116,12 @@ export async function restoreCompactionCheckpointSession(
 async function applySqliteCompactionCheckpointSessionOperation(
   operation: SqliteCompactionCheckpointSessionOperation,
 ): Promise<SqliteCompactionCheckpointSessionMutationResult> {
-  const sourceKey = normalizeSqliteSessionKey(
+  const sourceKey = normalizeStoreSessionKey(
     operation.kind === "branch"
       ? (operation.sourceStoreKey ?? operation.sourceKey)
       : (operation.sessionStoreKey ?? operation.sessionKey),
   );
-  const targetKey = normalizeSqliteSessionKey(
+  const targetKey = normalizeStoreSessionKey(
     operation.kind === "branch" ? operation.nextKey : operation.sessionKey,
   );
   const resolved = resolveSqliteScope({
@@ -137,8 +135,8 @@ async function applySqliteCompactionCheckpointSessionOperation(
     async () => {
       const committed = runOpenClawAgentWriteTransaction((database) => {
         const identityKeys = uniqueStrings([
-          ...collectSessionEntryLookupKeys(database, sourceKey),
-          ...collectSessionEntryLookupKeys(database, targetKey),
+          ...collectSessionEntryLookupKeys(sourceKey),
+          ...collectSessionEntryLookupKeys(targetKey),
         ]);
         const previousIdentity = readSessionIdentitySnapshot(database, identityKeys);
         const result = applySqliteCompactionCheckpointSessionOperationInTransaction(
@@ -207,7 +205,7 @@ function applySqliteCompactionCheckpointSessionOperationInTransaction(
             ? `${currentEntry.label.trim()} (checkpoint)`
             : "Checkpoint branch",
           nextSessionId: forked.sessionId,
-          parentSessionKey: normalizeSqliteSessionKey(operation.sourceKey),
+          parentSessionKey: normalizeStoreSessionKey(operation.sourceKey),
           totalTokens: forked.totalTokens,
         })
       : cloneSqliteCheckpointSessionEntry({
@@ -276,7 +274,7 @@ function forkSqliteCheckpointTranscriptInTransaction(
     sessionId,
     sessionKey: params.targetSessionKey,
   };
-  const sessionFile = formatSqliteSessionReferenceForScope(targetScope);
+  const sessionFile = targetScope.sessionKey;
   const selectedEvents = selected?.rows ?? legacySource?.events ?? [];
   const totalTokens = selected?.source.totalTokens ?? legacySource?.totalTokens;
   appendTranscriptEventsInTransaction(database, targetScope, [

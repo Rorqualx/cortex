@@ -245,7 +245,7 @@ describe("CronService declarative jobs", () => {
         defaults: { model: "openai/gpt-blocked" },
         list: [{ id: "main", models: { "openai/gpt-blocked": { agentRuntime: { id: "codex" } } } }],
       },
-      skills: { workshop: { autonomous: { mode: "auto" } } },
+      skills: { forge: { autonomous: { mode: "auto" } } },
     };
     const project = () => {
       const [spec] = resolveSkillCollectionReviewMonitorSpecs(cfg, []);
