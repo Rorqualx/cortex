@@ -342,19 +342,23 @@ export function resolveSourcePackageAliasesForVite(): ControlUiViteAlias[] {
   return [
     sourcePackageAlias("normalization-core", "agent-id"),
     sourcePackageAlias("normalization-core", "code-points"),
+    sourcePackageAlias("normalization-core", "grapheme"),
     sourcePackageAlias("normalization-core", "json-schema"),
     sourcePackageAlias("normalization-core", "markdown-plain-text"),
     sourcePackageAlias("normalization-core", "number-coercion"),
     sourcePackageAlias("normalization-core", "phone-presentation"),
     sourcePackageAlias("normalization-core", "record-coerce"),
     sourcePackageAlias("normalization-core", "result"),
+    sourcePackageAlias("normalization-core", "stable-stringify"),
     sourcePackageAlias("normalization-core", "string-coerce"),
     sourcePackageAlias("normalization-core", "string-normalization"),
     sourcePackageAlias("normalization-core", "utf16-slice"),
+    sourcePackageAlias("normalization-core", "uuid"),
     sourcePackageAlias("normalization-core"),
     sourcePackageAlias("session-url-contract", "parse"),
     sourcePackageAlias("session-url-contract", "share-build"),
     sourcePackageAlias("session-url-contract", "public-share"),
+    sourcePackageAlias("session-url-contract", "session-key-normalization"),
     sourcePackageAlias("session-url-contract"),
     sourcePackageAlias("workboard-contract"),
   ];
@@ -438,11 +442,16 @@ export function controlUiBrowserOnlySharedModuleAliases(): Plugin {
 }
 
 function controlUiServiceWorkerBuildIdPlugin(buildId: string): Plugin {
+  // scripts/ui.mts builds into a staging directory via --outDir; honor it.
+  let buildOutDir = outDir;
   return {
     name: "control-ui-service-worker-build-id",
     apply: "build",
+    configResolved(config) {
+      buildOutDir = path.resolve(config.root, config.build.outDir);
+    },
     closeBundle() {
-      const swPath = path.join(outDir, "sw.js");
+      const swPath = path.join(buildOutDir, "sw.js");
       const publicSwPath = path.join(here, "public/sw.js");
       const source = fs.readFileSync(publicSwPath, "utf8");
       const placeholder = '"__OPENCLAW_CONTROL_UI_BUILD_ID__"';
@@ -450,7 +459,7 @@ function controlUiServiceWorkerBuildIdPlugin(buildId: string): Plugin {
       if (updated === source) {
         throw new Error(`Control UI service worker build id placeholder missing in ${swPath}`);
       }
-      fs.mkdirSync(outDir, { recursive: true });
+      fs.mkdirSync(buildOutDir, { recursive: true });
       fs.writeFileSync(swPath, updated);
     },
   };
@@ -460,14 +469,16 @@ function controlUiPrecompressedAssetsPlugin(): Plugin {
   return {
     name: "control-ui-precompressed-assets",
     apply: "build",
-    writeBundle(_options, bundle) {
+    writeBundle(options, bundle) {
+      // scripts/ui.mts builds into a staging directory via --outDir; honor it.
+      const bundleDir = options.dir ?? outDir;
       for (const output of Object.values(bundle)) {
         // Vite's post-build import analysis rewrites lazy preload markers in a
         // later generateBundle hook. Read from disk here so sidecars always
         // encode the exact final bytes that the identity response serves.
-        const source = fs.readFileSync(path.join(outDir, output.fileName));
+        const source = fs.readFileSync(path.join(bundleDir, output.fileName));
         for (const variant of createControlUiPrecompressedAssetVariants(output.fileName, source)) {
-          fs.writeFileSync(path.join(outDir, variant.fileName), variant.source);
+          fs.writeFileSync(path.join(bundleDir, variant.fileName), variant.source);
         }
       }
     },
