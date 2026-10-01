@@ -109,6 +109,7 @@ type ConfiguredMcpServer = NonNullable<
 
 const LIST_TOOLS_SERVER_LOG_TIMEOUT_MS = 2_000;
 const LIST_TOOLS_TEST_DEADLINE_MS = 4_000;
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 
 function readMcpText(
   result: { content: ReadonlyArray<{ type: string; text?: string }> },

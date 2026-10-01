@@ -88,5 +88,12 @@ export type SkillsConfig = {
   install?: SkillsInstallConfig;
   limits?: SkillsLimitsConfig;
   forge?: SkillsForgeConfig;
+  /**
+   * Retired key (Skill Workshop -> Skill Forge). Runtime reads skills.forge only
+   * (resolveSkillWorkshopConfig) and user configs are doctor-migrated away from
+   * skills.workshop; the shape stays admitted so upstream-authored tests that
+   * build config literals with the legacy key keep type-checking.
+   */
+  workshop?: SkillsForgeConfig;
   entries?: Record<string, SkillConfig>;
 };
