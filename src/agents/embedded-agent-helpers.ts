@@ -37,6 +37,7 @@ export {
   classifyFailoverReason,
   isCloudCodeAssistFormatError,
   isContextOverflowError,
+  isFailoverErrorMessage,
   isLikelyContextOverflowError,
   isProviderRequestSizeCeilingError,
   isTimeoutErrorMessage,

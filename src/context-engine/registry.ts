@@ -286,7 +286,6 @@ function wrapResolvedContextEngine(
   return wrapped;
 }
 const CORE_CONTEXT_ENGINE_OWNER = "core";
-const PUBLIC_CONTEXT_ENGINE_OWNER = "public-sdk";
 
 const getContextEngines = () => requireActivePluginRegistry().contextEngines;
 
@@ -388,13 +387,6 @@ const listContextEngineIds = () => [...getContextEngines().keys()].toSorted();
  * it cannot safely refresh an existing registration because the caller's
  * identity is not authenticated.
  */
-export function registerContextEngine(
-  id: string,
-  factory: ContextEngineFactory,
-): ContextEngineRegistrationResult {
-  return registerContextEngineForOwner(id, factory, PUBLIC_CONTEXT_ENGINE_OWNER);
-}
-
 /**
  * Return the trusted plugin id that registered a resolved context engine.
  * Downgraded engines intentionally report no plugin owner.

@@ -708,6 +708,7 @@ function dispatchCronCompletionAnnounce(params: {
       logger: params.logger,
       resolveCronAgent: params.resolveCronAgent,
       job,
+      routing: {},
       payload: { text: summary },
       channel: target.channel,
       to: target.to,

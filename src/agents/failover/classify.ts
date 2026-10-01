@@ -1,10 +1,10 @@
+import { extractLeadingHttpStatus } from "../../shared/assistant-error-format.js";
 import { classifyFailoverReasonCore, classifyFailoverSignalCore } from "./classify-core.js";
 import {
   classifyProviderPluginError,
   type PreparedProviderFailoverOwner,
 } from "./provider-patterns.js";
 import type { FailoverClassification, FailoverReason, FailoverSignal } from "./signal.js";
-import { extractLeadingHttpStatus } from "../../shared/assistant-error-format.js";
 export { isCloudCodeAssistFormatError } from "./classify-core.js";
 export { isUnclassifiedNoBodyHttpSignal } from "./classification-rules.js";
 
@@ -48,4 +48,7 @@ export function classifyFailoverReason(
   return classifyFailoverReasonCore(raw, opts, (context) =>
     classifyProviderPluginError({ ...context, providerPlugin: opts?.providerPlugin }),
   );
+}
+export function isFailoverErrorMessage(raw: string, opts?: { provider?: string }): boolean {
+  return classifyFailoverReason(raw, opts) !== null;
 }
