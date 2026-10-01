@@ -378,6 +378,8 @@ export function getContextEngineRegistration(id: string): ContextEngineRegistrat
   return getContextEngines().get(id);
 }
 
+const PUBLIC_CONTEXT_ENGINE_OWNER = "public-sdk";
+
 const listContextEngineIds = () => [...getContextEngines().keys()].toSorted();
 
 /**
@@ -387,6 +389,20 @@ const listContextEngineIds = () => [...getContextEngines().keys()].toSorted();
  * it cannot safely refresh an existing registration because the caller's
  * identity is not authenticated.
  */
+/**
+ * Public SDK entry point for third-party registrations.
+ *
+ * This path is intentionally unprivileged: it cannot claim core-owned ids and
+ * it cannot safely refresh an existing registration because the caller's
+ * identity is not authenticated.
+ */
+export async function registerContextEngine(
+  id: string,
+  factory: ContextEngineFactory,
+): Promise<ContextEngineRegistrationResult> {
+  return registerContextEngineForOwner(id, factory, PUBLIC_CONTEXT_ENGINE_OWNER);
+}
+
 /**
  * Return the trusted plugin id that registered a resolved context engine.
  * Downgraded engines intentionally report no plugin owner.
