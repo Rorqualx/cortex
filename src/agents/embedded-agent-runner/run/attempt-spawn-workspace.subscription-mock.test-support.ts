@@ -13,7 +13,6 @@ export function createSubscriptionMock(): SubscriptionMock {
   // override only the lifecycle method they need.
   return {
     assistantTexts: [] as string[],
-    answerSegments: [] as SubscriptionMock["answerSegments"],
     getCurrentAttemptAssistant: () => undefined,
     hasSuccessfulModelResponse: () => false,
     getLastAssistantTextMessageIndex: () => undefined,
