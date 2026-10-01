@@ -59,6 +59,8 @@ export function createSubscriptionMock(): SubscriptionMock {
     setTerminalLifecycleMeta: () => {},
     waitForCompactionRetry: async () => {},
     waitForPendingEvents: async () => {},
+    flushAssistantStream: () => {},
+    getLastToolRecovery: () => undefined,
     getAcceptedSessionSpawns: () => [],
     getMessagingToolSentTexts: () => [] as string[],
     getMessagingToolSentMediaUrls: () => [] as string[],
