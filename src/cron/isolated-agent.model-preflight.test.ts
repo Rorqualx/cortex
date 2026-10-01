@@ -116,6 +116,8 @@ describe("cron model provider preflight", () => {
       sessionId: "cron-session",
     });
 
+    const result = await runPreflight(true);
+
     expect(result.status).toBe("ok");
     expect(preflightCronModelProviderMock).toHaveBeenCalled();
     expect(runEmbeddedAgentMock).toHaveBeenCalled();

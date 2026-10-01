@@ -490,6 +490,8 @@ describe("per-agent SOUL.md resolution", () => {
     expect(agentSoulRelativePath("../etc/passwd")).toBeNull();
     expect(agentSoulRelativePath("a/b")).toBeNull();
     expect(agentSoulRelativePath("")).toBeNull();
+  });
+});
 
 describe("workspace attestation survival", () => {
   it.each([
