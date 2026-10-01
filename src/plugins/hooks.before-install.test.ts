@@ -1,5 +1,4 @@
-// Covers hook behavior before plugin install state exists.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createHookRunner } from "./hooks.js";
 import { addTestHook } from "./hooks.test-fixtures.js";
 import { createEmptyPluginRegistry } from "./registry-empty.js";
@@ -40,21 +39,9 @@ const stubEvent: PluginHookBeforeInstallEvent = {
   sourcePath: "/tmp/demo-skill",
   sourcePathKind: "directory",
   origin: "openclaw-workspace",
-  request: {
-    kind: "skill-install",
-    mode: "install",
-  },
-  builtinScan: {
-    status: "ok",
-    scannedFiles: 1,
-    critical: 0,
-    warn: 0,
-    info: 0,
-    findings: [],
-  },
-  skill: {
-    installId: "deps",
-  },
+  request: { kind: "skill-install", mode: "install" },
+  builtinScan: { status: "ok", scannedFiles: 1, critical: 0, warn: 0, info: 0, findings: [] },
+  skill: { installId: "deps" },
 };
 
 describe("before_install hook merger", () => {

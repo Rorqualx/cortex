@@ -33,8 +33,12 @@ describe("kimi provider plugin", () => {
     );
   });
 
-  it("exposes graded thinking budgets (off/low/medium/high) with thinking off by default", async () => {
+  it("exposes graded thinking budgets (off/low/medium/high) with thinking off by default and repairs replay signatures", async () => {
     const provider = await registerSingleProviderPlugin(plugin);
+
+    expect(provider.buildReplayPolicy?.({ provider: "kimi" })).toEqual({
+      preserveSignatures: false,
+    });
 
     // Distinct budget tiers from KIMI_ANTHROPIC_THINKING_BUDGETS (1024/4096/8192);
     // minimal/xhigh/max collapse onto these so they're not surfaced.

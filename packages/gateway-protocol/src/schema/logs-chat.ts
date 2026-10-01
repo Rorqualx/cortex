@@ -3,7 +3,7 @@ import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import type { Static } from "typebox";
 import { Type } from "typebox";
-import { CHAT_WORK_CONTEXT_LIMITS } from "../chat-work-context.js";
+import { CHAT_WORK_CONTEXT_DETAIL_LIMITS, CHAT_WORK_CONTEXT_LIMITS } from "../chat-work-context.js";
 import {
   CHAT_INPUT_RECEIPT_MAX_RUN_IDS,
   CHAT_INPUT_RUN_ID_MAX_CHARS,
@@ -32,6 +32,20 @@ const ChatWorkContextSchema = closedObject({
   workspace: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.workspace })),
   file: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.file })),
   selection: Type.Optional(Type.String({ maxLength: CHAT_WORK_CONTEXT_LIMITS.selection })),
+  detail: Type.Optional(
+    Type.Record(
+      // TypeBox's default key pattern skips newlines; every field must validate its value.
+      Type.String({ pattern: "^[\\s\\S]*$" }),
+      Type.String({ maxLength: CHAT_WORK_CONTEXT_DETAIL_LIMITS.value }),
+      {
+        maxProperties: CHAT_WORK_CONTEXT_DETAIL_LIMITS.fields,
+        propertyNames: Type.String({
+          minLength: 1,
+          maxLength: CHAT_WORK_CONTEXT_DETAIL_LIMITS.key,
+        }),
+      },
+    ),
+  ),
 });
 
 /** Cursor-based request for the gateway log tail endpoint. */

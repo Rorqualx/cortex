@@ -1,4 +1,3 @@
-// Sub-CLI registry that lazily wires gateway, models, devices, plugins, and plugin commands.
 import type { Command } from "commander";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveCliArgvInvocation } from "../argv-invocation.js";
@@ -72,13 +71,9 @@ async function registerSubCliWithPluginCommands(
   }
 }
 
-type SubCliRegistrar = (
-  program: Command,
-  argv: string[],
-  context: SubCliRegistrationContext,
-) => Promise<void> | void;
-
-const rawEntrySpecs: readonly (readonly [readonly string[], SubCliRegistrar])[] = [
+const entrySpecs: readonly CommandGroupDescriptorSpec<
+  [argv: string[], context: SubCliRegistrationContext]
+>[] = [
   [["acp"], async (program) => (await import("../acp-cli.js")).registerAcpCli(program)],
   [["gateway"], async (program) => (await import("../gateway-cli.js")).registerGatewayCli(program)],
   [["daemon"], async (program) => (await import("../daemon-cli.js")).registerDaemonCli(program)],
@@ -197,23 +192,11 @@ const rawEntrySpecs: readonly (readonly [readonly string[], SubCliRegistrar])[] 
   ],
 ];
 
-const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = rawEntrySpecs.map(
-  ([commandNames, register]) => ({ commandNames, register }),
-);
-
 function resolveSubCliCommandGroups(
   argv: string[],
   context: SubCliRegistrationContext = {},
 ): CommandGroupEntry[] {
-  const descriptors = getSubCliEntriesCore();
-  const descriptorNames = new Set(descriptors.map((descriptor) => descriptor.name));
-  return buildCommandGroupEntries(
-    descriptors,
-    entrySpecs.filter((spec) => spec.commandNames.every((name) => descriptorNames.has(name))),
-    (register) => async (program) => {
-      await register(program, argv, context);
-    },
-  );
+  return buildCommandGroupEntries(getSubCliEntriesCore(), entrySpecs, argv, context);
 }
 
 export function getSubCliCompletionGroups(argv: string[] = process.argv) {
