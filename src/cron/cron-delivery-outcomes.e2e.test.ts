@@ -324,6 +324,8 @@ describe("cron delivery outcomes", { concurrent: false }, () => {
               dispatchGatewayCronFinishedNotifications({
                 evt: event,
                 job: event.job ?? cron.getJob(event.jobId),
+                deps: {} as never,
+                resolveCronAgent: () => ({ agentId: "main", cfg: {} as never }),
                 logger: createNoopLogger(),
                 ssrfPolicy: { allowedHostnames: ["127.0.0.1"] },
               });

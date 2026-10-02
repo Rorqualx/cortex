@@ -206,6 +206,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     try {
       await parentAdmission.run(async () => {
         dispatchGatewayCronFinishedNotifications({
+          deps: {} as CliDeps,
+          resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
           evt: { jobId: job.id, action: "finished", status: "ok", summary: "done" },
           job,
           logger: { warn: vi.fn() },
@@ -250,6 +252,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
       let failureAlert: Promise<void> | undefined;
       await parentAdmission.run(async () => {
         dispatchGatewayCronFinishedNotifications({
+          deps: {} as CliDeps,
+          resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
           evt: { jobId: job.id, action: "finished", status: "ok", summary: "done" },
           job,
           logger: { warn: vi.fn() },
@@ -303,6 +307,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     ]);
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: { jobId: job.id, action: "finished", status: "ok", summary: "done" },
       job,
       logger,
@@ -332,6 +338,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     const job = createCompletionWebhookJob("https://example.invalid/cron?token=must-not-be-logged");
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: { jobId: job.id, action: "finished", status: "ok", summary: "done" },
       job,
       logger,
@@ -602,6 +610,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     const job = createCompletionWebhookJob();
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: {
         jobId: job.id,
         action: "finished",
@@ -628,6 +638,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     const job = createCompletionWebhookJob();
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: {
         jobId: job.id,
         action: "finished",
@@ -645,6 +657,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     const job = createCompletionWebhookJob();
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: { jobId: job.id, action: "finished", status: "ok", summary: "done" },
       job,
       logger: { warn: vi.fn() },
@@ -804,6 +818,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     expect(suspensionAdmission?.commit()).toBe(true);
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: { jobId: job.id, action: "finished", status: "ok", summary: "done" },
       job,
       logger: { warn: vi.fn() },
@@ -842,6 +858,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     } satisfies CronJob;
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: { jobId: job.id, action: "finished", status: "ok" },
       job,
       logger,
@@ -872,6 +890,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     });
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: { jobId: job.id, action: "finished", status: "ok" },
       job,
       logger,
@@ -925,6 +945,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     } satisfies CronJob;
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: {
         jobId: job.id,
         action: "finished",
@@ -1005,6 +1027,8 @@ describe("dispatchGatewayCronFinishedNotifications", () => {
     } satisfies CronJob;
 
     dispatchGatewayCronFinishedNotifications({
+      deps: {} as CliDeps,
+      resolveCronAgent: () => ({ agentId: "main", cfg: {} }),
       evt: {
         jobId: job.id,
         action: "finished",
