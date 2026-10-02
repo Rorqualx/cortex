@@ -38,7 +38,10 @@ import {
   shouldRecordAssistantReplyRepairRecord,
 } from "./assistant-transcript-repair.js";
 import { persistAgentSession } from "./attempt-execution.shared.js";
-import type { AgentCommandDeliveryResult } from "./delivery-result.js";
+import {
+  selectSourceDeliverablePayloads,
+  type AgentCommandDeliveryResult,
+} from "./delivery-result.js";
 import { createCommandBudget } from "./maintenance-budget.js";
 import { createCommandMaintenanceFollowup } from "./maintenance.js";
 import type { PreparedAgentCommandExecution } from "./prepare.js";
@@ -396,7 +399,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
       storePath,
       suppressVisibleSessionEffects: params.suppressVisibleSessionEffects,
       sessionReboundDuringRun,
-      payloads,
+      payloads: selectSourceDeliverablePayloads(payloads, params.opts.sourceReplyDeliveryMode),
       deliveryContext: params.currentRunDeliveryContext,
       runOwnedSessionId,
     });

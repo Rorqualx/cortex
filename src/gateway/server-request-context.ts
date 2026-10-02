@@ -174,6 +174,7 @@ type GatewayRequestContextParams = {
   configRevisionProjector: GatewayRequestContext["configRevisionProjector"];
   chatMetadataLifecycle: {
     read: GatewayRequestContext["readChatMetadata"];
+    readModelsList?: GatewayRequestContext["readPreparedModelsList"];
     readStartup: GatewayRequestContext["readChatStartupProjection"];
   };
   log: GatewayRequestContext["logGateway"];
@@ -323,6 +324,7 @@ export function createGatewayRequestContext(
       ? { readPreparedGatewayModelCatalogBatch: runtime.readPreparedGatewayModelCatalogBatch }
       : {}),
     readChatMetadata: params.chatMetadataLifecycle.read,
+    readPreparedModelsList: params.chatMetadataLifecycle.readModelsList,
     ...(params.chatMetadataLifecycle.readStartup
       ? { readChatStartupProjection: params.chatMetadataLifecycle.readStartup }
       : {}),

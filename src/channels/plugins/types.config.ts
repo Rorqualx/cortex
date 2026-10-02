@@ -1,20 +1,21 @@
-import type { ConfigUiPresentation } from "../../shared/config-ui-hints-types.js";
+import type { ConfigUiHint } from "../../shared/config-ui-hints-types.js";
 import type { JsonSchemaObject } from "../../shared/json-schema.types.js";
 
 /** Optional UI metadata for a JSON Schema property. */
-export type ChannelConfigUiHint = {
-  label?: string;
-  help?: string;
-  tags?: string[];
+export type ChannelConfigUiHint = Pick<
+  ConfigUiHint,
+  | "label"
+  | "help"
+  | "tags"
   /** Form display order (lower sorts first; unset = 0, then alphabetical).
       Lets a channel surface primary fields above the optional long tail. */
-  order?: number;
-  advanced?: boolean;
-  sensitive?: boolean;
-  placeholder?: string;
-  presentation?: ConfigUiPresentation;
-  itemTemplate?: unknown;
-};
+  | "order"
+  | "advanced"
+  | "sensitive"
+  | "placeholder"
+  | "presentation"
+  | "itemTemplate"
+>;
 
 /** Normalized validation issue emitted by a channel runtime parser. */
 export type ChannelConfigRuntimeIssue = {

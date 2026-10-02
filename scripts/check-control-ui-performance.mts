@@ -97,6 +97,12 @@ const CONTROL_UI_LOCALE_GZIP_BYTES = 300 * KIB;
 // is the follow-up; this raise buys room to do that deliberately.
 const controlUiPerformanceBudgets = {
   startupJsRequests: 28,
+  // Upstream-calibrated (their new-architecture UI with facade optimization
+  // measured chat/new at 31/32 requests; allow 3 above the maximum while catching
+  // the roughly 19-request facade regression). Fork note: route-boot metrics only
+  // activate when the built HTML carries the route-preload attribute, which the
+  // fork ui/ tree does not emit — inert today; recalibrate if route preloading lands.
+  routeBootJsRequests: 35,
   startupCssRequests: 1,
   // 576 -> 577 KiB on 2026-09-29 (maintainer-approved): batch-2 resync measured
   // 590540 B, 140 B past the 590400 B envelope while the baseline sat pinned AT the
@@ -345,6 +351,16 @@ export function evaluateControlUiPerformanceBudgets(
       "count",
     ],
   ];
+  if (metrics.routeBoot) {
+    for (const route of ["chat", "new"] as const) {
+      checks.push([
+        `${route} boot JS requests`,
+        metrics.routeBoot[route].js.requests,
+        budgets.routeBootJsRequests,
+        "count",
+      ]);
+    }
+  }
   const violations = checks.flatMap(([metric, actual, limit, unit]) =>
     actual > limit ? [{ metric, actual, limit, unit }] : [],
   );
@@ -483,7 +499,7 @@ export function formatControlUiPerformanceReport(
     for (const route of ["chat", "new"] as const) {
       const boot = metrics.routeBoot[route];
       lines.push(
-        `  ${route} boot JS: ${formatAssetSummary(boot.js)} (${boot.js.gzipBytes - metrics.startup.js.gzipBytes} B beyond initial-entry JS)`,
+        `  ${route} boot JS: ${formatAssetSummary(boot.js)} (${boot.js.gzipBytes - metrics.startup.js.gzipBytes} B beyond initial-entry JS; limit: ${formatRequestCount(budgets.routeBootJsRequests)})`,
         `  ${route} boot CSS: ${formatAssetSummary(boot.css)}`,
       );
       if (baseMetrics) {

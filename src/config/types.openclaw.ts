@@ -24,6 +24,7 @@ import type { NodeHostConfig } from "./types.node-host.js";
 import type { PluginsConfig } from "./types.plugins.js";
 import type { SecretsConfig } from "./types.secrets.js";
 import type { SkillsConfig } from "./types.skills.js";
+import type { StorageConfig } from "./types.storage.js";
 import type { TelemetryConfig } from "./types.telemetry.js";
 import type { ToolsConfig } from "./types.tools.js";
 import type { TtsConfig } from "./types.tts.js";
@@ -134,6 +135,8 @@ export type OpenClawConfig = {
   desktop?: DesktopConfig;
   /** Opt-in cloud-worker provider profiles. */
   cloudWorkers?: CloudWorkersConfig;
+  /** Named storage destinations and their encryption settings. */
+  storage?: StorageConfig;
   /** Memory indexing/search configuration. */
   memory?: MemoryConfig;
   /** MCP client/server and Codex MCP approval configuration. */

@@ -66,6 +66,7 @@ import { createGatewaySecretApprover } from "./tools/http-request.approval.js";
 import { createHttpRequestTool } from "./tools/http-request.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
+import { createInstalledSkillTools } from "./tools/installed-skill-tools.js";
 import { createMemoryReportsTool } from "./tools/memory-reports.js";
 import { createMessageTool } from "./tools/message-tool-execution.js";
 import { createMobileUiTool } from "./tools/mobile-ui-tool.js";
@@ -349,6 +350,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
   });
   const includeTranscriptsTool = resolveTranscriptsConfig(resolvedConfig?.transcripts).enabled;
   const tools: AnyAgentTool[] = [
+    ...createInstalledSkillTools(options?.installedSkills ?? []),
     createDashboardTool({
       agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
     }),

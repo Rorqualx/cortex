@@ -418,7 +418,6 @@ export async function loadAgentHarnessMcpConfig(
 }
 
 export { decodeHeaderEnvPlaceholder } from "../agents/bundle-mcp-adapter.js";
-export { resolveConfiguredMcpTransport } from "../config/mcp-config-normalize.js";
 
 /** Load Codex bundle MCP thread config without forcing the heavy config module into SDK imports. */
 export async function loadCodexBundleMcpThreadConfig(

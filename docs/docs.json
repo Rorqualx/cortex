@@ -1638,6 +1638,7 @@
                 "pages": [
                   "concepts/agent-workspace",
                   "concepts/managed-worktrees",
+                  "concepts/storage-locations",
                   "concepts/oauth",
                   "start/bootstrapping",
                   "concepts/experimental-features"
@@ -1813,6 +1814,7 @@
                     "pages": [
                       "plugins/admin-http-rpc",
                       "plugins/beam",
+                      "plugins/cloudflare",
                       "plugins/geolocation",
                       "plugins/logbook",
                       "plugins/oc-path",
@@ -2749,6 +2751,7 @@
                       "cli/openclaw",
                       "cli/reset",
                       "cli/setup",
+                      "cli/storage",
                       "cli/uninstall",
                       "cli/update",
                       {

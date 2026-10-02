@@ -135,7 +135,6 @@ export type ClaudePermissionRequest = {
   inputPreview: string;
 };
 
-/** Cursor and optional session filter used by event polling and waiting. */
 export type WaitFilter = {
   afterCursor: number;
   sessionKey?: string;
@@ -228,7 +227,6 @@ export function toConversation(row: SessionRow): ConversationDescriptor | null {
   };
 }
 
-/** Check whether a queued event should be visible to a poll or wait call. */
 export function matchEventFilter(event: QueueEvent, filter: WaitFilter): boolean {
   if (event.cursor <= filter.afterCursor) {
     return false;

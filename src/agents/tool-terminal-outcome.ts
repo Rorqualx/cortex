@@ -82,9 +82,13 @@ export function createToolTerminalObserver(
       extractPatchFileTargets(observation.toolName, executedArguments) ??
       (mutation.fileTarget ? [mutation.fileTarget] : undefined);
     const replaySafe = observation.replaySafe ?? mutation.replaySafe;
+    const details = readToolResultDetails(observation.result);
     let lastToolError: ToolErrorSummary | undefined;
     let lastToolRecovery: ToolRecoverySummary | undefined;
-    if (observation.outcome === "failure") {
+    if (!executionStarted && details?.status === "skipped" && details.deniedReason === "steering") {
+      // Skipping work neither creates a failure nor recovers an earlier one.
+      lastToolError = errors.read().lastToolError;
+    } else if (observation.outcome === "failure") {
       const mutatingAction = executionStarted && mutation.mutatingAction;
       const terminalDiagnostic =
         observation.failure?.terminalDiagnostic ??

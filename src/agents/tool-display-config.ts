@@ -290,6 +290,8 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     memory_insights: displayTool("🧠", "Memory Insights", ["limit"]),
     memory_reports: displayTool("🧠", "Memory Reports", ["limit"]),
     memory_get: displayTool("📓", "Memory Get", ["path", "from", "lines"]),
+    skills_search: displayTool("🔍", "Skill Search", ["query"]),
+    skills_read: displayTool("📖", "Skill Read", ["name"]),
     web_search: displayTool("🔎", "Web Search", ["query", "count"]),
     web_fetch: displayTool("📄", "Web Fetch", ["url", "extractMode", "maxChars"]),
     code_execution: displayTool("🧮", "Code Execution", ["task"]),
