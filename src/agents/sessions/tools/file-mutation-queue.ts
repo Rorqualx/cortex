@@ -111,13 +111,17 @@ export async function withFileMutationQueueKeysResolution<T>(
   fn: () => Promise<T>,
   options?: FileMutationQueueGuardOptions,
 ): Promise<T> {
+  // Observe the key resolution before any await: callers derive filePaths and keys from the
+  // same path resolution, so a rejected path (e.g. a sandbox escape) must surface once through
+  // filePaths instead of also leaving keysResolution as an unhandled rejection that ends the
+  // Gateway process.
+  void keysResolution.catch(() => undefined);
   const releaseClaims = options?.filePaths
     ? await claimGuardPaths(await options.filePaths, options.toolName ?? "unknown")
     : undefined;
   try {
     const scope = getAgentToolExecutionContext()?.assistantMessage ?? keyAdmissions.fallbackScope;
     const previousAdmission = keyAdmissions.tails.get(scope) ?? Promise.resolve();
-    void keysResolution.catch(() => undefined);
     let operation!: Promise<T>;
     const admission = previousAdmission.then(async () => {
       const keys = await keysResolution;
