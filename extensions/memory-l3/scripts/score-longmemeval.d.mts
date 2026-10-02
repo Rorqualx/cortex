@@ -6,12 +6,21 @@ export declare function countTemporalPreserved(
   answer: string | null | undefined,
   response: string | null | undefined,
 ): { total: number; preserved: number };
-export declare function parseDimensionScores(
-  raw: string,
-): {
+export declare function parseDimensionScores(raw: string): {
   faithfulness: number;
   completeness: number;
   factualConsistency: number;
   clarity: number;
 } | null;
 export declare function computeWeightedComposite(scores: Record<string, number>): number;
+export declare function pickStabilitySample<T>(
+  items: readonly T[],
+  size: number,
+  seed: number,
+): T[];
+export declare function summarizeStabilityRuns(verdicts: Array<boolean | null>): {
+  repeats: number;
+  distinctVerdicts: number;
+  flipped: boolean;
+  unparseable: number;
+};

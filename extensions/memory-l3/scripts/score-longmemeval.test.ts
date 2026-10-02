@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { countTemporalPreserved, extractTemporalExpressions } from "./score-longmemeval.mjs";
+import {
+  countTemporalPreserved,
+  extractTemporalExpressions,
+  pickStabilitySample,
+  summarizeStabilityRuns,
+} from "./score-longmemeval.mjs";
 
 // Temporal-expression preservation metric (QW2, 2026-08-25): deterministic
 // anchor extraction + survival counting. Guards the TEMPORAL prompt rule's
@@ -54,5 +59,57 @@ describe("countTemporalPreserved", () => {
 
   it("handles nullish inputs without throwing", () => {
     expect(countTemporalPreserved(undefined, undefined)).toEqual({ total: 0, preserved: 0 });
+  });
+});
+
+// Judge stability check (QW2, 2026-10-02): deterministic sampling + flip
+// summarization for byte-identical re-judging. Guards against judge verdict
+// noise corrupting the metric every memory-l3 change is judged by.
+
+describe("pickStabilitySample", () => {
+  it("is deterministic for a fixed seed and caps to the requested size", () => {
+    const items = Array.from({ length: 30 }, (_, i) => i);
+    const a = pickStabilitySample(items, 8, 20261002);
+    const b = pickStabilitySample(items, 8, 20261002);
+    expect(a).toEqual(b);
+    expect(a).toHaveLength(8);
+    expect(new Set(a).size).toBe(8);
+  });
+
+  it("returns the full list in order when size >= length", () => {
+    expect(pickStabilitySample([1, 2, 3], 5, 20261002)).toEqual([1, 2, 3]);
+  });
+
+  it("samples differently under a different seed", () => {
+    const items = Array.from({ length: 30 }, (_, i) => i);
+    expect(pickStabilitySample(items, 8, 1)).not.toEqual(pickStabilitySample(items, 8, 2));
+  });
+});
+
+describe("summarizeStabilityRuns", () => {
+  it("marks a flip when byte-identical answers get different verdicts", () => {
+    expect(summarizeStabilityRuns([true, true, false, true])).toEqual({
+      repeats: 4,
+      distinctVerdicts: 2,
+      flipped: true,
+      unparseable: 0,
+    });
+  });
+
+  it("stable verdicts do not flip", () => {
+    expect(summarizeStabilityRuns([true, true, true]).flipped).toBe(false);
+  });
+
+  it("ignores unparseable nulls for flip detection but counts them", () => {
+    expect(summarizeStabilityRuns([true, null, true])).toEqual({
+      repeats: 3,
+      distinctVerdicts: 1,
+      flipped: false,
+      unparseable: 1,
+    });
+  });
+
+  it("flips even when nulls are interleaved", () => {
+    expect(summarizeStabilityRuns([true, null, false]).flipped).toBe(true);
   });
 });
