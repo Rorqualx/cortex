@@ -287,6 +287,7 @@ async function applyPatch(input: string, options: ApplyPatchOptions): Promise<Ap
           await assertPatchParentPath(hunk.movePath, patchOptions);
           await ensureDir(moveTarget.resolved, fileOps);
           const moveResolvesToSource =
+            moveTarget.queueKey === target.queueKey ||
             path.resolve(moveTarget.resolved) === path.resolve(target.resolved);
           if (moveResolvesToSource) {
             const existing = await fileOps.readFile(target.resolved);

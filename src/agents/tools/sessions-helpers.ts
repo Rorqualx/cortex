@@ -4,6 +4,7 @@
  * Keeps list/send/status tools aligned on rows, visibility context, and compact kind/channel labels.
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { parseRawSessionConversationRef } from "../../sessions/session-key-utils.js";
 import { Type } from "typebox";
 import type {
   SessionRow,
@@ -273,17 +274,10 @@ export function deriveChannel(params: {
   if (params.kind === "cron" || params.kind === "hook" || params.kind === "node") {
     return "internal";
   }
-  const channel = normalizeOptionalString(params.channel ?? undefined);
-  if (channel) {
-    return channel;
-  }
-  const lastChannel = normalizeOptionalString(params.lastChannel ?? undefined);
-  if (lastChannel) {
-    return lastChannel;
-  }
-  const [scopePart, kindPart, targetPart] = params.key.split(":").filter(Boolean);
-  if (scopePart && targetPart !== undefined && (kindPart === "group" || kindPart === "channel")) {
-    return scopePart;
-  }
-  return "unknown";
+  return (
+    normalizeOptionalString(params.channel) ??
+    normalizeOptionalString(params.lastChannel) ??
+    parseRawSessionConversationRef(params.key)?.channel ??
+    "unknown"
+  );
 }

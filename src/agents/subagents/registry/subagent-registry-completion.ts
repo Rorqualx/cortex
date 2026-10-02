@@ -1,9 +1,4 @@
 import { hasSqliteWorkerOutcomeUnknown } from "../../../infra/sqlite-worker-contract.js";
-/**
- * Subagent run completion helpers.
- * Compares outcomes, maps them to lifecycle events, and emits completion hooks
- * exactly once per completed child run.
- */
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
 import type { SubagentRunOutcome } from "../subagent-run-outcome.types.js";
@@ -21,77 +16,6 @@ import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
 const log = createSubsystemLogger("agents/subagent-registry-completion");
 
-/** Returns true when an outcome carries timing fields. */
-function runOutcomeHasTiming(outcome: SubagentRunOutcome | undefined): boolean {
-  return (
-    Number.isFinite(outcome?.startedAt) ||
-    Number.isFinite(outcome?.endedAt) ||
-    Number.isFinite(outcome?.elapsedMs)
-  );
-}
-
-/** Compares subagent run outcomes, treating missing timing as compatible. */
-function runOutcomesEqual(
-  a: SubagentRunOutcome | undefined,
-  b: SubagentRunOutcome | undefined,
-): boolean {
-  if (!a && !b) {
-    return true;
-  }
-  if (!a || !b) {
-    return false;
-  }
-  if (a.status !== b.status) {
-    return false;
-  }
-  if (a.status === "error" && b.status === "error") {
-    if ((a.error ?? "") !== (b.error ?? "")) {
-      return false;
-    }
-  }
-  // An outcome recorded before timing was captured must not count as different
-  // from the same outcome with timing, or every run would rewrite itself.
-  if (!runOutcomeHasTiming(a) || !runOutcomeHasTiming(b)) {
-    return true;
-  }
-  return a.startedAt === b.startedAt && a.endedAt === b.endedAt && a.elapsedMs === b.elapsedMs;
-}
-
-/** Returns true when a run outcome update should replace current state. */
-export function shouldUpdateRunOutcome(
-  current: SubagentRunOutcome | undefined,
-  next: SubagentRunOutcome | undefined,
-): boolean {
-  return (
-    !runOutcomesEqual(current, next) || (!runOutcomeHasTiming(current) && runOutcomeHasTiming(next))
-  );
-}
-
-/** Classify execution independently of reply capture, including cancelled yielded runs. */
-function resolveSubagentTaskTerminalStatus(
-  entry: SubagentRunRecord,
-): SubagentTerminalState["status"] | undefined {
-  const outcome = entry.execution.outcome;
-  if (
-    typeof entry.execution.endedAt !== "number" ||
-    !outcome ||
-    entry.pauseReason === "sessions_yield"
-  ) {
-    return undefined;
-  }
-  if (
-    entry.endedReason === SUBAGENT_ENDED_REASON_KILLED &&
-    entry.suppressAnnounceReason !== "steer-restart"
-  ) {
-    return "cancelled";
-  }
-  return outcome.status === "ok"
-    ? "succeeded"
-    : outcome.status === "timeout"
-      ? "timed_out"
-      : "failed";
-}
-
 /** Returns terminal execution facts only after completion capture has settled. */
 export function resolveFinalizedSubagentTaskState(
   entry: SubagentRunRecord,
@@ -99,21 +23,30 @@ export function resolveFinalizedSubagentTaskState(
   const endedAt = entry.execution.endedAt;
   const outcome = entry.execution.outcome;
   const completion = entry.completion;
-  const status = resolveSubagentTaskTerminalStatus(entry);
   if (
     typeof endedAt !== "number" ||
-    status === undefined ||
+    !outcome ||
+    entry.pauseReason === "sessions_yield" ||
     (completion?.resultText === undefined && typeof completion?.capturedAt !== "number")
   ) {
     return undefined;
   }
+  const status =
+    entry.endedReason === SUBAGENT_ENDED_REASON_KILLED &&
+    entry.suppressAnnounceReason !== "steer-restart"
+      ? "cancelled"
+      : outcome.status === "ok"
+        ? "succeeded"
+        : outcome.status === "timeout"
+          ? "timed_out"
+          : "failed";
   return {
     status,
     endedAt,
     error:
       status === "cancelled"
         ? SUBAGENT_KILL_TASK_ERROR
-        : outcome?.status === "error"
+        : outcome.status === "error"
           ? outcome.error
           : undefined,
   };
@@ -134,7 +67,6 @@ export function resolveKilledSubagentTaskEndedAt(entry: SubagentRunRecord): numb
     : endedAt;
 }
 
-/** Maps registry run outcome to lifecycle event outcome. */
 export function resolveLifecycleOutcomeFromRunOutcome(
   outcome: SubagentRunOutcome | undefined,
 ): SubagentLifecycleEndedOutcome {
@@ -193,13 +125,7 @@ export async function emitSubagentEndedHookOnce(params: {
   recordEmitted: () => void | Promise<void>;
 }) {
   const runId = params.entry.runId.trim();
-  if (!runId) {
-    return false;
-  }
-  if (params.entry.endedHookEmittedAt) {
-    return false;
-  }
-  if (params.inFlightRunIds.has(runId)) {
+  if (!runId || params.entry.endedHookEmittedAt || params.inFlightRunIds.has(runId)) {
     return false;
   }
 
@@ -211,7 +137,7 @@ export async function emitSubagentEndedHookOnce(params: {
     if (!hookRunner) {
       return false;
     }
-    if (hookRunner?.hasHooks("subagent_ended")) {
+    if (hookRunner.hasHooks("subagent_ended")) {
       await hookRunner.runSubagentEnded(
         {
           targetSessionKey: params.entry.childSessionKey,

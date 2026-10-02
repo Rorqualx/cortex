@@ -17,7 +17,6 @@ import {
 import { readPreparedModelCatalog } from "../agents/prepared-model-catalog.js";
 import { resolveDefaultSessionStorePath } from "../config/sessions/paths.js";
 import { patchSessionEntryWithKey } from "../config/sessions/session-accessor.entry.js";
-import { loadSessionStore } from "../plugin-sdk/session-store-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   loadCronJobsStore,
@@ -25,6 +24,7 @@ import {
   resolveCronJobsStorePath,
   saveCronJobsStore,
 } from "../cron/store.js";
+import { listSessionEntries } from "../plugin-sdk/session-store-runtime.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { listDiscoveredModels, listSilentUpgrades } from "./discovered-store.js";
 import { loadOpenClawProviderIndex } from "./provider-index/index.js";
@@ -113,7 +113,9 @@ function readSessionEntriesSafe(storePath: string) {
   try {
     // Read-only binding scan: no clone keeps this on the shared store cache
     // (the former readSessionEntries snapshot helper was removed upstream).
-    return Object.entries(loadSessionStore(storePath));
+    return listSessionEntries({ storePath, readOnly: true }).map(
+      ({ sessionKey, entry }) => [sessionKey, entry] as const,
+    );
   } catch {
     return [];
   }

@@ -25,7 +25,7 @@ import { makeEmptyPluginMetadataOwners } from "../../../plugins/current-plugin-m
 import type { PluginMetadataSnapshot } from "../../../plugins/plugin-metadata-snapshot.js";
 import { createLazyPromise } from "../../../shared/lazy-runtime.js";
 import { prepareSystemAgentRunAdmission } from "../../admitted-run-context.js";
-import type { EmbeddedContextFile } from "../../embedded-agent-helpers.js";
+import type { EmbeddedContextFile } from "../../embedded-agent-helpers/context-file.js";
 import type {
   MessagingToolSend,
   MessagingToolSourceReplyPayload,

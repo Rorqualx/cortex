@@ -74,7 +74,6 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import {
   classifyFailoverReason,
   extractObservedOverflowTokenCount,
-  type FailoverReason,
   formatAssistantErrorText,
   isAuthAssistantError,
   isBillingAssistantError,
@@ -94,6 +93,7 @@ import {
   FailoverError,
   resolveFailoverStatus,
 } from "../failover-error.js";
+import type { FailoverReason } from "../failover/signal.js";
 import { ensureSelectedAgentHarnessPlugin } from "../harness/runtime-plugin.js";
 import { selectAgentHarness } from "../harness/selection.js";
 import { LiveSessionModelSwitchError } from "../live-model-switch-error.js";

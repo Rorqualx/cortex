@@ -215,7 +215,6 @@ export {
   applySessionEntryReplacements,
   applySessionPatchProjection,
   applySessionPatchProjections,
-  applySessionStoreProjection,
   cleanupPluginHostSessionStore,
   cleanupSessionLifecycleArtifactsCore,
   deleteSessionEntryLifecycle,

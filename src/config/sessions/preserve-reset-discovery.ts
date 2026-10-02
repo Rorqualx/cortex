@@ -4,7 +4,7 @@
 // reuse one implementation without a config/sessions -> gateway import cycle.
 import fs from "node:fs";
 import { logVerbose } from "../../globals.js";
-import { updateSessionStore } from "../../plugin-sdk/session-store-runtime.js";
+import { updateSessionStoreEntry } from "../../plugin-sdk/session-store-runtime.js";
 import {
   isDashboardSessionKey,
   normalizeAgentId,
@@ -121,27 +121,29 @@ export async function preserveResetSessionForDiscovery(params: {
     const agentId = normalizeAgentId(params.agentId ?? parsed?.agentId);
     const previousKey = `agent:${agentId}:dashboard:previous-${oldSessionId}`;
     const title = firstUserText.replace(/\s+/g, " ").slice(0, 60);
-    await updateSessionStore(storePath, (store) => {
-      const existing = store[previousKey];
-      if (existing) {
-        return existing;
-      }
-      // No transcript locator: sessionFile is retired and stripped on write.
-      // The restored canonicalPath above is resolved from sessionId instead.
-      const entry: SessionEntry = {
-        sessionId: oldSessionId,
-        updatedAt: oldEntry?.updatedAt ?? Date.now(),
-        sessionStartedAt: oldEntry?.sessionStartedAt,
-        systemSent: true,
-        abortedLastRun: false,
-        displayName: `Previous: ${title}`,
-        chatType: oldEntry?.chatType,
-        // Carry the archived chat's delivery ownership so the preserved row keeps
-        // its origin; upstream models origin inside the external delivery variant.
-        ...(oldEntry?.delivery ? { delivery: oldEntry.delivery } : {}),
-      };
-      store[previousKey] = entry;
-      return entry;
+    await updateSessionStoreEntry({
+      sessionKey: previousKey,
+      storePath,
+      update: (existing) => {
+        if (existing) {
+          return existing;
+        }
+        // No transcript locator: sessionFile is retired and stripped on write.
+        // The restored canonicalPath above is resolved from sessionId instead.
+        const entry: SessionEntry = {
+          sessionId: oldSessionId,
+          updatedAt: oldEntry?.updatedAt ?? Date.now(),
+          sessionStartedAt: oldEntry?.sessionStartedAt,
+          systemSent: true,
+          abortedLastRun: false,
+          displayName: `Previous: ${title}`,
+          chatType: oldEntry?.chatType,
+          // Carry the archived chat's delivery ownership so the preserved row keeps
+          // its origin; upstream models origin inside the external delivery variant.
+          ...(oldEntry?.delivery ? { delivery: oldEntry.delivery } : {}),
+        };
+        return entry;
+      },
     });
   } catch (err) {
     logVerbose(`preserve-reset session keep-listed failed: ${String(err)}`);

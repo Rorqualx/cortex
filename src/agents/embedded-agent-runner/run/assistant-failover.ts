@@ -11,12 +11,12 @@ import {
   formatUserFacingAssistantErrorText,
   GENERIC_ASSISTANT_ERROR_TEXT,
   isTimeoutErrorMessage,
-  type FailoverReason,
 } from "../../embedded-agent-helpers.js";
 import { buildAssistantFailoverSignal } from "../../embedded-agent-helpers/assistant-message-failures.js";
 import { FailoverError, resolveFailoverStatus } from "../../failover-error.js";
 import type { PreparedProviderFailoverOwner } from "../../failover/provider-patterns.js";
 import { classifyRateLimitWindow, resolveRetryAfterMs } from "../../failover/retry-evidence.js";
+import type { FailoverReason } from "../../failover/signal.js";
 import {
   mergeRetryFailoverReason,
   resolveRunFailoverDecision,

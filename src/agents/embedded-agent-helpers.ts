@@ -16,7 +16,6 @@ export {
   extractObservedOverflowTokenCount,
   isCompactionFailureError,
 } from "./embedded-agent-helpers/context-overflow-observation.js";
-export type { EmbeddedContextFile } from "./embedded-agent-helpers/context-file.js";
 export {
   formatAssistantErrorText,
   formatUserFacingAssistantErrorText,
@@ -45,7 +44,6 @@ export {
   // agent-runner-error-handler.ts consumes this classifier.
   isTransientHttpError,
 } from "./failover/classify.js";
-export type { FailoverReason } from "./failover/signal.js";
 export { sanitizeGoogleTurnOrdering } from "./embedded-agent-helpers/google.js";
 
 export {

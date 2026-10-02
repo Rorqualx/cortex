@@ -6,8 +6,8 @@ import { generateSecureToken } from "../../../infra/secure-random.js";
 import type { AssistantMessage } from "../../../llm/types.js";
 import { extractAssistantTextForPhase } from "../../../shared/chat-message-content.js";
 import { resolveAgentConfig } from "../../agent-scope-config.js";
-import type { FailoverReason } from "../../embedded-agent-helpers.js";
 import { extractAssistantVisibleText } from "../../embedded-agent-utils.js";
+import type { FailoverReason } from "../../failover/signal.js";
 import {
   deriveContextPromptTokens,
   hasNonzeroUsage,

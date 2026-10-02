@@ -342,6 +342,10 @@ type SessionEntryCore = SessionRestartRecoveryState &
     archiveReason?: SessionEntryArchiveReason;
     /** Timestamp (ms) when the session was pinned for quick access. */
     pinnedAt?: number;
+    /** Epoch ms wake time; suppresses the active session in sidebar lists until then. */
+    snoozedUntil?: number;
+    /** Server-stamped epoch ms when the current snooze was set. */
+    snoozedAt?: number;
     /** Custom sidebar icon in the format accepted by the gateway protocol session-icon helper. */
     icon?: string;
     /** Named sidebar tint (SESSION_COLOR_IDS); palette mirrors Claude Code /color for import. */

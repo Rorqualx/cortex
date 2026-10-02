@@ -1731,6 +1731,7 @@
               {
                 "group": "Plugin guides",
                 "pages": [
+                  "plugins/agentsapi",
                   {
                     "group": "Codex",
                     "pages": [
