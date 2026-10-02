@@ -20,6 +20,28 @@
 # Exit 3 = deferred (other cron jobs still running past the wait window; gateway intact).
 set -uo pipefail
 
+# Every trigger (Midnight Deploy and schema self-heal cron command jobs, upstream-merge land)
+# backgrounds this script with nohup from a short-lived parent. Cron command jobs run in their
+# own process group and the Gateway kills that whole group once the command exits, so a plain
+# nohup child died milliseconds after "dispatched" and no deploy ran (silently, from 2026-09
+# until 2026-10-01). Re-exec into a fresh session via python double-fork+setsid (macOS has no
+# setsid(1)), keeping the caller's stdout/stderr log redirection. Opt out: DEPLOY_NO_DAEMON=1.
+if [ "${DEPLOY_DAEMONIZED:-}" != 1 ] && [ "${DEPLOY_NO_DAEMON:-}" != 1 ]; then
+  if DEPLOY_DAEMONIZED=1 python3 - "$0" "$@" <<'PY'; then
+import os, sys
+if os.fork() > 0: os._exit(0)
+os.setsid()
+if os.fork() > 0: os._exit(0)
+devnull = os.open(os.devnull, os.O_RDONLY)
+os.dup2(devnull, 0)
+os.execvp("bash", ["bash"] + sys.argv[1:])
+PY
+    echo "DEPLOY: re-launched detached from the triggering process group (pid lookup: pgrep -f cron-deploy-build.sh)"
+    exit 0
+  fi
+  echo "DEPLOY: WARN could not detach (python3 failed); running in the foreground" >&2
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/deploy-build-core.sh
 source "$ROOT/scripts/lib/deploy-build-core.sh"
