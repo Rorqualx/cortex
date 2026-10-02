@@ -10,7 +10,8 @@ import { defaultRuntime } from "../../../runtime.js";
 import { removeQueuedItemsByRef } from "../../../utils/queue-helpers.js";
 import { clearFollowupDrainCallback } from "./drain.js";
 import { completeFollowupRunLifecycle } from "./lifecycle.js";
-import { clearFollowupQueue, FOLLOWUP_QUEUES, followupQueueSources } from "./state.js";
+import { clearFollowupQueue } from "./state.js";
+import { FOLLOWUP_QUEUES, followupQueueSources } from "./state.js";
 import { consumeQueueSummaryDelivery } from "./summary-consumption.js";
 import type { FollowupRun } from "./types.js";
 
@@ -222,24 +223,6 @@ export function clearSessionLifecycleLanes(
   return laneCleared;
 }
 
-export function hasSessionLifecycleQueueWork(params: SessionLifecycleQueueTarget): boolean {
-  const { keys, sessionKeyAliases, matchesLaneEntry } = resolveSessionLifecycleQueueKeys(params);
-  for (const key of keys) {
-    const queue = FOLLOWUP_QUEUES.get(key);
-    if (
-      queue &&
-      [...followupQueueSources(queue), ...queue.inFlight].some((source) =>
-        matchesSessionFollowupRun(source, { ...params, sessionKeyAliases }),
-      )
-    ) {
-      return true;
-    }
-  }
-  return keys.some(
-    (key) => countQueuedCommandsInLane(resolveEmbeddedSessionLane(key), matchesLaneEntry(key)) > 0,
-  );
-}
-
 export function clearSessionQueues(keys: Array<string | undefined>): ClearSessionQueueResult {
   const seen = new Set<string>();
   let followupCleared = 0;
@@ -257,4 +240,22 @@ export function clearSessionQueues(keys: Array<string | undefined>): ClearSessio
   }
 
   return { followupCleared, laneCleared, keys: [...seen] };
+}
+
+export function hasSessionLifecycleQueueWork(params: SessionLifecycleQueueTarget): boolean {
+  const { keys, sessionKeyAliases, matchesLaneEntry } = resolveSessionLifecycleQueueKeys(params);
+  for (const key of keys) {
+    const queue = FOLLOWUP_QUEUES.get(key);
+    if (
+      queue &&
+      [...followupQueueSources(queue), ...queue.inFlight].some((source) =>
+        matchesSessionFollowupRun(source, { ...params, sessionKeyAliases }),
+      )
+    ) {
+      return true;
+    }
+  }
+  return keys.some(
+    (key) => countQueuedCommandsInLane(resolveEmbeddedSessionLane(key), matchesLaneEntry(key)) > 0,
+  );
 }

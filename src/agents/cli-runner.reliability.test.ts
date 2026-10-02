@@ -2,9 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSolidPngBuffer } from "../../test/helpers/image-fixtures.js";
-import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { getReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import { createReplyOperation, replyRunRegistry } from "../auto-reply/reply/reply-run-registry.js";
 import { testing as replyRunTesting } from "../auto-reply/reply/reply-run-registry.test-support.js";
@@ -46,9 +45,8 @@ import {
   type UserTurnTranscriptRecorder,
 } from "../sessions/user-turn-transcript.js";
 import { createTestUserTurnTranscriptTarget } from "../sessions/user-turn-transcript.test-support.js";
-import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
-import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { captureEnv, setTestEnvValue } from "../test-utils/env.js";
+import { useSessionStoreTempDirs } from "../test-utils/session-state-cleanup.js";
 import { prepareSystemAgentRunAdmission } from "./admitted-run-context.js";
 import { createTestAdmittedRunContext } from "./admitted-run-context.test-support.js";
 import { testing as cliBackendsTesting } from "./cli-backends.test-support.js";
@@ -111,7 +109,7 @@ vi.mock("../tts/tts-settings.js", () => ({
 
 const mockGetGlobalHookRunner = vi.mocked(getGlobalHookRunner);
 const hookRunnerGlobalStateKey = Symbol.for("openclaw.plugins.hook-runner-global-state");
-const autoCleanupTempDirs = useAutoCleanupTempDirTracker(afterEach);
+const sessionDirs = useSessionStoreTempDirs(afterAll, "openclaw-cli-hooks-");
 let sessionFileEnvSnapshot: ReturnType<typeof captureEnv> | undefined;
 
 type HookRunnerGlobalStateForTest = {
@@ -149,7 +147,7 @@ function createSessionFixture(params?: {
   history?: Array<{ role: "user"; content: string }>;
   sessionKey?: string;
 }) {
-  const dir = autoCleanupTempDirs.make("openclaw-cli-hooks-");
+  const dir = sessionDirs.make();
   sessionFileEnvSnapshot ??= captureEnv(["OPENCLAW_STATE_DIR"]);
   setTestEnvValue("OPENCLAW_STATE_DIR", dir);
   const storePath = path.join(dir, "agents", "main", "sessions", "sessions.json");
@@ -461,8 +459,6 @@ describe("runCliAgent reliability", () => {
     mockGetGlobalHookRunner.mockReset();
     setHookRunnerForTest(null);
     vi.unstubAllEnvs();
-    closeOpenClawAgentDatabasesForTest();
-    closeOpenClawStateDatabaseForTest();
     sessionFileEnvSnapshot?.restore();
     sessionFileEnvSnapshot = undefined;
     resetDiagnosticEventsForTest();
@@ -833,7 +829,7 @@ describe("runCliAgent reliability", () => {
       imageArg: "--image",
       imageMode: "repeat",
     };
-    const stateDir = autoCleanupTempDirs.make("openclaw-cli-retry-images-");
+    const stateDir = sessionDirs.make();
     const workspaceDir = path.join(stateDir, "workspace");
     const inboundDir = path.join(stateDir, "media", "inbound");
     const mediaId = "offloaded.png";
@@ -3386,7 +3382,7 @@ describe("runCliAgent reliability", () => {
   });
 
   it("does not execute the CLI when approved user turn persistence fails", async () => {
-    const dir = autoCleanupTempDirs.make("openclaw-cli-persist-fail-");
+    const dir = sessionDirs.make();
     const onUserMessagePersisted = vi.fn();
     // SQLite-backed persistence no longer fails via blocked transcript
     // directories; a rejecting recorder models the same persistence failure.
@@ -3646,7 +3642,7 @@ describe("runCliAgent reliability", () => {
       })),
     };
     setHookRunnerForTest(hookRunner);
-    const dir = autoCleanupTempDirs.make("openclaw-cli-fixed-owner-");
+    const dir = sessionDirs.make();
     const storePath = path.join(dir, "shared-sessions.json");
     const sessionKey = "global";
     const context = makeClaudePreparedContext({
@@ -4261,7 +4257,7 @@ describe("runCliAgent reliability", () => {
       expect(context.contextEngine).toBeUndefined();
       expect(context.claudeSkillsPluginArgs).toEqual([]);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      admission.close();
     }
   });
 });

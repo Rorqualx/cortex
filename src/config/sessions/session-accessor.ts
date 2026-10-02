@@ -158,7 +158,6 @@ export {
   patchSessionEntryWithKey,
   prepareQualifiedSessionEntryTarget,
   readSessionUpdatedAtCore,
-  readSessionStoreSummaryReadOnly,
   replaceSessionEntry,
   replaceSessionEntrySync,
   resolveSessionEntryAccessTarget,

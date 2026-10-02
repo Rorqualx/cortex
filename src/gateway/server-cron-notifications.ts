@@ -65,6 +65,8 @@ type CronFailureAlertParams = Parameters<
 /**
  * The owner conversation receives the repair request as an ordinary turn: its own session,
  * workspace, and tool policy, with the reply delivered to its last route (thread included).
+ * Only its authored reply reaches the chat: runtime failure payloads (timeouts, provider
+ * errors) are not posted, and the job's next failure alert owns escalation.
  */
 export async function runGatewayCronFailureRepair(
   request: CronFailureRepairRequest,
@@ -87,7 +89,10 @@ export async function runGatewayCronFailureRepair(
           },
           idempotencyKey: `cron-failure-repair:${request.repairId}`,
         },
-        resolveGatewayContext ? { resolveGatewayContext } : {},
+        {
+          internalDeliverySuppressErrors: true,
+          ...(resolveGatewayContext ? { resolveGatewayContext } : {}),
+        },
       ),
     "cron:failure-repair",
   );

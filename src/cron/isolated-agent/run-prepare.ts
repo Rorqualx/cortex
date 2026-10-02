@@ -23,6 +23,7 @@ import { buildCronMessagePrefix } from "../cron-message-prefix.js";
 import { createCronRunDiagnosticsFromError } from "../run-diagnostics.js";
 import { resolveCronScheduledToolPolicy } from "../scheduled-tool-policy.js";
 import { isDetachedCronSessionTarget } from "../session-target.js";
+import { resolveCronRunToolsAllow } from "../tools-allow.js";
 import {
   resolveCronModelSelection,
   resolveCronModelSelectionOwner,
@@ -410,7 +411,10 @@ export async function prepareCronRunContext(params: {
     // Preserve an explicit cron timeout even when it equals the agent default;
     // the embedded runner uses its presence to configure the idle watchdog.
     const runTimeoutOverrideMs = resolveCronRunTimeoutOverrideMs(explicitTimeoutSeconds);
-    const agentPayload = input.job.payload.kind === "agentTurn" ? input.job.payload : null;
+    const agentPayload =
+      input.job.payload.kind === "agentTurn"
+        ? { ...input.job.payload, toolsAllow: resolveCronRunToolsAllow(input.job) }
+        : null;
     const configuredProvider = cfgWithAgentDefaults.models?.providers?.[provider];
     const modelApi =
       findModelInCatalog(thinkingSelection.catalog, provider, model)?.api ??
@@ -424,11 +428,8 @@ export async function prepareCronRunContext(params: {
       modelApi,
       agentId: modelOwner.agentId,
       agentDir: modelOwner.agentDir,
-      workspaceDir: executionWorkspaceDir,
       sessionKey: agentSessionKey,
       agentPayload,
-      agentRuntime: effectiveAgentRuntime,
-      toolsAllowProvenance: input.job.toolsAllowProvenance,
     });
     const {
       deliveryPlan,

@@ -13,7 +13,6 @@ import {
   onInternalDiagnosticEvent,
   resetDiagnosticEventsForTest,
   type DiagnosticEventMetadata,
-  type DiagnosticExecProcessCompletedEvent,
   type DiagnosticEventPayload,
 } from "../infra/diagnostic-events.js";
 import type { GatewayActiveWorkInspectors } from "../infra/gateway-active-work.js";
@@ -557,7 +556,8 @@ describe("sandbox exec preparation failures", () => {
       createDeferred<Awaited<ReturnType<NonNullable<BashSandboxConfig["buildExecSpec"]>>>>();
     const finalizeExec = vi.fn<NonNullable<BashSandboxConfig["finalizeExec"]>>(async () => {});
     const onSettledBeforeNotify = vi.fn();
-    const completionEvents: DiagnosticExecProcessCompletedEvent[] = [];
+    const completionEvents: Extract<DiagnosticEventPayload, { type: "exec.process.completed" }>[] =
+      [];
     const unsubscribe = onInternalDiagnosticEvent((event) => {
       if (
         event.type === "exec.process.completed" &&
@@ -1013,7 +1013,7 @@ describe("runExecProcess PTY fallback", () => {
       });
 
       const event = events.find(
-        (item): item is DiagnosticExecProcessCompletedEvent =>
+        (item): item is Extract<DiagnosticEventPayload, { type: "exec.process.completed" }> =>
           item.type === "exec.process.completed",
       );
       if (!event) {
