@@ -7,7 +7,7 @@
 // paper-comparable numbers.
 //
 // Usage:
-//   node extensions/memory-l3/scripts/score-longmemeval.mjs [hypothesis.jsonl] [--concurrency=N]
+//   node extensions/memory-l3/scripts/score-longmemeval.mjs [hypothesis.jsonl] [--concurrency=N] [--stability-check=N] [--stability-sample=M]
 
 import { readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
@@ -23,6 +23,18 @@ const hypArg =
 const concArg = args.find((a) => a.startsWith("--concurrency="));
 const CONCURRENCY = concArg ? Number.parseInt(concArg.split("=")[1], 10) : 5;
 const JUDGE_MODEL = process.env.JUDGE_MODEL ?? "glm-5.2";
+// Judge stability check (QW2, 2026-10-02): the "Auditable Long-Term Memory"
+// paper reports judges flipping verdicts on byte-identical answers. When
+// --stability-check=N is set, a deterministic sample of answers is re-judged
+// N times and the verdict-flip rate is reported alongside accuracy.
+const stabArg = args.find((a) => a.startsWith("--stability-check="));
+const STABILITY_CHECK = stabArg ? Math.max(2, Number.parseInt(stabArg.split("=")[1], 10) || 0) : 0;
+const stabSampleArg = args.find((a) => a.startsWith("--stability-sample="));
+const STABILITY_SAMPLE = stabSampleArg
+  ? Math.max(1, Number.parseInt(stabSampleArg.split("=")[1], 10) || 1)
+  : 8;
+// Fixed seed so stability samples are comparable across invocations.
+const STABILITY_SEED = 20261002;
 
 // Dimension weights for composite scoring (from PubHealthBench hybrid-retrieval
 // study: judge-human agreement is strongest for faithfulness and completeness).
@@ -176,6 +188,50 @@ export function computeWeightedComposite(scores) {
 
 // ── End dimension scoring helpers ─────────────────────────────────────────
 
+// ── Judge stability helpers ─────────────────────────────────────────────────
+// Deterministic PRNG (mulberry32): same seed → same sample, so flip rates stay
+// comparable across invocations and CI reruns.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Deterministically sample `size` items (seeded Fisher-Yates, stable order). */
+export function pickStabilitySample(items, size, seed) {
+  if (items.length <= size) {
+    return items.slice();
+  }
+  const rand = mulberry32(seed);
+  const idx = items.map((_, i) => i);
+  for (let i = idx.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  return idx
+    .slice(0, size)
+    .sort((a, b) => a - b)
+    .map((i) => items[i]);
+}
+
+/** Flip summary for N verdicts of one byte-identical answer. */
+export function summarizeStabilityRuns(verdicts) {
+  const distinct = new Set(verdicts.filter((v) => v !== null));
+  return {
+    repeats: verdicts.length,
+    distinctVerdicts: distinct.size,
+    flipped: distinct.size > 1,
+    unparseable: verdicts.filter((v) => v === null).length,
+  };
+}
+
+// ── End judge stability helpers ───────────────────────────────────────────
+
 async function resolveZaiKey() {
   const fromEnv = process.env.ZAI_API_KEY ?? process.env.Z_AI_API_KEY;
   if (fromEnv) {
@@ -306,6 +362,11 @@ async function main() {
   console.log(`Hypothesis: ${hypArg}`);
   console.log(`Judge: ${JUDGE_MODEL}`);
   console.log(`Concurrency: ${CONCURRENCY}`);
+  if (STABILITY_CHECK > 0) {
+    console.log(
+      `Stability check: ${STABILITY_CHECK} repeats over a deterministic sample of up to ${STABILITY_SAMPLE} byte-identical answers`,
+    );
+  }
 
   // Echo the run manifest (sibling of the hypothesis file) so scored numbers
   // are always printed next to the configuration that produced them.
@@ -455,6 +516,50 @@ async function main() {
           `weighted=${avgComposite.toFixed(2)}`,
       );
     }
+  }
+
+  if (STABILITY_CHECK > 0) {
+    const sample = pickStabilitySample(tasks, STABILITY_SAMPLE, STABILITY_SEED);
+    console.log(
+      `\n=== Judge stability check (${STABILITY_CHECK} repeats x ${sample.length} sampled answers, judge=${JUDGE_MODEL}) ===`,
+    );
+    const stabilityRows = [];
+    for (const t of sample) {
+      // Byte-identical prompt on every repeat: any verdict change is judge noise,
+      // not a change in the answer under test.
+      const prompt = buildPrompt(
+        t.oracle.question_type,
+        t.oracle.question,
+        t.oracle.answer,
+        t.hyp.hypothesis ?? "",
+      );
+      const verdicts = [];
+      for (let i = 0; i < STABILITY_CHECK; i += 1) {
+        verdicts.push(parseVerdict(await callJudge({ apiKey, prompt })));
+      }
+      stabilityRows.push({
+        question_id: t.hyp.question_id,
+        question_type: t.oracle.question_type,
+        verdicts,
+        ...summarizeStabilityRuns(verdicts),
+      });
+      process.stdout.write(`\r  stability progress: ${stabilityRows.length}/${sample.length} `);
+    }
+    process.stdout.write("\n");
+    const flippedTasks = stabilityRows.filter((r) => r.flipped).length;
+    const flipPct = sample.length > 0 ? Math.round((flippedTasks / sample.length) * 100) : 0;
+    const unparseableCalls = stabilityRows.reduce((s, r) => s + r.unparseable, 0);
+    // Deliberately not `type hits/total (pct%)` shaped — optimize-weights.ts
+    // parses that pattern from this output.
+    console.log(
+      `  verdict flips: ${flippedTasks} of ${sample.length} sampled answers across ${STABILITY_CHECK} byte-identical re-judgings (${flipPct}% flip rate)`,
+    );
+    console.log(
+      `  unparseable judge calls: ${unparseableCalls} of ${sample.length * STABILITY_CHECK}`,
+    );
+    const stabilityPath = `${hypArg}.stability-${JUDGE_MODEL}.jsonl`;
+    await writeFile(stabilityPath, stabilityRows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    console.log(`Wrote ${stabilityPath}`);
   }
 
   const outPath = `${hypArg}.eval-${JUDGE_MODEL}.jsonl`;

@@ -2,7 +2,11 @@ import type { ExecHost } from "../infra/exec-approvals.js";
 import { requireValidExecTarget } from "../infra/exec-approvals.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { resolveAgentConfig } from "./agent-scope-config.js";
-import { EXEC_RETENTION_CAP_NOTE, renderExecOutputText } from "./bash-tools.exec-output.js";
+import {
+  containExecOutputForModel,
+  EXEC_RETENTION_CAP_NOTE,
+  renderExecOutputText,
+} from "./bash-tools.exec-output.js";
 import type { ExecToolArgs } from "./bash-tools.exec-request-preparation.js";
 import { resolveExecTarget } from "./bash-tools.exec-runtime.js";
 import type {
@@ -70,7 +74,13 @@ export function buildExecForegroundResult(params: {
       cwd: params.cwd,
     });
   }
-  const outputText = `${retentionCapNote}${warningText}${renderExecOutputText(params.outcome.aggregated)}`;
+  // Contain verbose completed output at the exec boundary (QW3, 2026-10-02):
+  // log-like output is content-aware digested, other output head/tail excerpted.
+  // The failure path keeps its full reason — load-bearing for diagnosis — and
+  // details.aggregated always carries the untouched full text either way.
+  const outputText = `${retentionCapNote}${warningText}${containExecOutputForModel(
+    renderExecOutputText(params.outcome.aggregated),
+  )}`;
   return textResult(outputText, {
     status: "completed",
     exitCode: params.outcome.exitCode,
