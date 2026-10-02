@@ -41,6 +41,7 @@ import type {
   SessionParticipant,
 } from "./session-entry-provenance.js";
 import type { AgentPatchedSessionModelFallback } from "./session-model-fallback.js";
+import type { SessionSkillSnapshot } from "./session-prompt-types.js";
 import type { SessionSystemPromptReport } from "./session-system-prompt-report.js";
 import type { SessionToolOverrides } from "./session-tool-overrides.js";
 import type { PendingSessionWorktree } from "./session-worktree-intent.js";
@@ -914,32 +915,10 @@ export type GroupKeyResolution = {
   chatType?: SessionChatType;
 };
 
-export type SessionSkillPromptRef = {
-  version: 1;
-  algorithm: "sha256";
-  hash: string;
-  bytes: number;
-};
-
-export type SessionSkillSnapshot = {
-  prompt: string;
-  /** Persisted stores may replace large duplicate prompts with a content-addressed blob ref. */
-  promptRef?: SessionSkillPromptRef;
-  skills: Array<{ name: string; primaryEnv?: string; requiredEnv?: string[] }>;
-  /** Normalized agent-level filter used to build this snapshot; undefined means unrestricted. */
-  skillFilter?: string[];
-  /** Effective node-exec eligibility used to select connected node-hosted skills. */
-  nodeSkillsEligibility?: { canExec: boolean; node?: string };
-  /**
-   * Runtime-only, never persisted. Carries the full parsed Skill[] (including
-   * each SKILL.md body) so the embedded runner can skip a workspace skill
-   * scan within a turn. Persistence projections strip it before committing
-   * session state. On a cold session resume this is undefined and
-   * src/skills/runtime/embedded-run-entries.ts rebuilds it from disk.
-   */
-  resolvedSkills?: Skill[];
-  version?: number;
-};
+// Canonical snapshot shape (with upstream librarySelections/discoverySkills) lives
+// in session-prompt-types.ts; re-export both so callers importing from this
+// barrel see the single upstream definition rather than a drifting duplicate.
+export type { SessionSkillPromptRef, SessionSkillSnapshot } from "./session-prompt-types.js";
 
 // Canonical report shape (with the injectionStatus native-doc discriminant) lives
 // in session-system-prompt-report.ts; re-export it so callers importing from this
