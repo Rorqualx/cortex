@@ -385,12 +385,17 @@ function stripSettledSessionRouting(session: ProcessSession): void {
   delete session.notifyOnExitEmptySuccess;
 }
 
-
 function maybeNotifyOnExit(
   session: ProcessSession,
   status: "completed" | "failed",
   subagentSession: boolean,
 ) {
+  if (
+    !session.backgrounded ||
+    !session.notifyOnExit ||
+    session.exitNotified ||
+    session.terminalPollObserved
+  ) {
     return;
   }
   const sessionKey = session.sessionKey?.trim();
