@@ -47,6 +47,7 @@ import {
   withAgentDeletion,
   claimCompletedAgentDeletion,
 } from "../../agents/agent-lifecycle-registry.js";
+import { listAgentIds } from "../../agents/agent-roster.js";
 import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
@@ -834,12 +835,6 @@ function cleanupPathCovers(
       (cleanupPath.kind === "target" || isPathInside(cleanupPath.trashPath, trashTargetPath)) &&
       isPathInside(cleanupPath.canonicalPath, canonicalTargetPath))
   );
-}
-
-function unregisterAgentDeleteDatabases(agentId: string, databasePaths: string[]): void {
-  for (const databasePath of databasePaths) {
-    unregisterOpenClawAgentDatabase({ agentId, path: databasePath });
-  }
 }
 
 function respondWorkspaceFileUnsafe(respond: RespondFn, name: string): void {

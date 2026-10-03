@@ -447,6 +447,7 @@ export async function prepareHarnessNativeMcpAppPreview(params: {
   runtime: import("../agents/agent-bundle-mcp-types.js").SessionMcpRuntime;
   serverName: string;
   toolName: string;
+  agentId?: string;
   uiResourceUri: string;
   toolCallId: string;
   toolInput: unknown;
