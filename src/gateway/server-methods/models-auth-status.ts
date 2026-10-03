@@ -57,6 +57,16 @@ import { respondUnavailableOnThrow } from "./response.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
 import { assertValidParams } from "./validation.js";
 
+export type {
+  ModelAuthExpiry,
+  ModelAuthLogoutResult,
+  ModelAuthOrderSetResult,
+  ModelAuthStatusProfile,
+  ModelAuthStatusProvider,
+  ModelAuthStatusResult,
+  ModelProviderCapability,
+} from "./models-auth-status.types.js";
+
 const log = createSubsystemLogger("models-auth-status");
 function resolveAuthRefreshScope(cfg: OpenClawConfig): {
   providerIds: string[];

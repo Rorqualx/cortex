@@ -152,9 +152,11 @@ export function isToolCardError(card: ToolCard): boolean {
 
 export function extractToolPreview(
   outputText: string | undefined,
-  toolName: string | undefined,
+  _toolName: string | undefined,
 ): ToolCard["preview"] | undefined {
-  return extractCanvasFromText(outputText, toolName);
+  // Upstream dropped the vestigial toolName param from extractCanvasFromText
+  // (it was never read); the fork caller passes it for signature compat only.
+  return extractCanvasFromText(outputText);
 }
 
 function resolveToolCardId(
@@ -559,13 +561,15 @@ function renderToolDataBlock(params: {
         <span class="chat-tool-card__block-icon">${icons.zap}</span>
         <span class="chat-tool-card__block-label">${label}</span>
       </div>
-      ${empty
-        ? html`<div class="chat-tool-card__block-empty muted">${text}</div>`
-        : expanded
-          ? html`<pre class="chat-tool-card__block-content"><code>${text}</code></pre>`
-          : html`<div class="chat-tool-card__block-preview mono">
-              ${getTruncatedPreview(text)}
-            </div>`}
+      ${
+        empty
+          ? html`<div class="chat-tool-card__block-empty muted">${text}</div>`
+          : expanded
+            ? html`<pre class="chat-tool-card__block-content"><code>${text}</code></pre>`
+            : html`<div class="chat-tool-card__block-preview mono">
+                ${getTruncatedPreview(text)}
+              </div>`
+      }
     </div>
   `;
 }
@@ -590,14 +594,20 @@ function renderCollapsedToolSummary(params: {
     >
       <span class="chat-tool-msg-summary__icon">${icon}</span>
       <span class="chat-tool-msg-summary__label">${displayLabel}</span>
-      ${displayName
-        ? html`<span class="chat-tool-msg-summary__names">${displayName}</span>`
-        : nothing}
-      ${isError
-        ? html`<span class="chat-tool-msg-summary__error-badge" aria-label="Tool returned an error"
-            >${icons.x}<span>Error</span></span
-          >`
-        : nothing}
+      ${
+        displayName
+          ? html`<span class="chat-tool-msg-summary__names">${displayName}</span>`
+          : nothing
+      }
+      ${
+        isError
+          ? html`<span
+              class="chat-tool-msg-summary__error-badge"
+              aria-label="Tool returned an error"
+              >${icons.x}<span>Error</span></span
+            >`
+          : nothing
+      }
     </button>
   `;
 }
@@ -661,9 +671,9 @@ export function renderToolCard(
 
   return html`
     <div
-      class="chat-tool-msg-collapse chat-tool-msg-collapse--manual ${opts.expanded
-        ? "is-open"
-        : ""}"
+      class="chat-tool-msg-collapse chat-tool-msg-collapse--manual ${
+        opts.expanded ? "is-open" : ""
+      }"
     >
       ${renderCollapsedToolSummary({
         label: summary.label,
@@ -673,20 +683,22 @@ export function renderToolCard(
         isError,
         onToggleExpanded: () => opts.onToggleExpanded(card.id),
       })}
-      ${opts.expanded
-        ? html`
-            <div class="chat-tool-msg-body">
-              ${renderExpandedToolCardContent(
-                card,
-                opts.sessionKey,
-                opts.onOpenSidebar,
-                opts.canvasPluginSurfaceUrl,
-                opts.embedSandboxMode ?? "scripts",
-                opts.allowExternalEmbedUrls ?? false,
-              )}
-            </div>
-          `
-        : nothing}
+      ${
+        opts.expanded
+          ? html`
+              <div class="chat-tool-msg-body">
+                ${renderExpandedToolCardContent(
+                  card,
+                  opts.sessionKey,
+                  opts.onOpenSidebar,
+                  opts.canvasPluginSurfaceUrl,
+                  opts.embedSandboxMode ?? "scripts",
+                  opts.allowExternalEmbedUrls ?? false,
+                )}
+              </div>
+            `
+          : nothing
+      }
     </div>
   `;
 }
@@ -732,45 +744,53 @@ export function renderExpandedToolCardContent(
         <div class="chat-tool-card__title">
           <span class="chat-tool-card__icon">${icons[display.icon]}</span>
           <span>${display.label}</span>
-          ${isError
-            ? html`<span class="chat-tool-card__status-badge" role="status"
-                >${icons.x}<span>Error</span></span
-              >`
-            : nothing}
+          ${
+            isError
+              ? html`<span class="chat-tool-card__status-badge" role="status"
+                  >${icons.x}<span>Error</span></span
+                >`
+              : nothing
+          }
         </div>
-        ${canOpenSidebar
-          ? html`
-              <div class="chat-tool-card__actions">
-                <button
-                  class="chat-tool-card__action-btn"
-                  type="button"
-                  @click=${() => onOpenSidebar?.(sidebarActionContent)}
-                  title="Open in the side panel"
-                  aria-label="Open tool details in side panel"
-                >
-                  <span class="chat-tool-card__action-icon">${icons.panelRightOpen}</span>
-                </button>
-              </div>
-            `
-          : nothing}
+        ${
+          canOpenSidebar
+            ? html`
+                <div class="chat-tool-card__actions">
+                  <button
+                    class="chat-tool-card__action-btn"
+                    type="button"
+                    @click=${() => onOpenSidebar?.(sidebarActionContent)}
+                    title="Open in the side panel"
+                    aria-label="Open tool details in side panel"
+                  >
+                    <span class="chat-tool-card__action-icon">${icons.panelRightOpen}</span>
+                  </button>
+                </div>
+              `
+            : nothing
+        }
       </div>
       ${detail ? html`<div class="chat-tool-card__detail">${detail}</div>` : nothing}
-      ${hasInput
-        ? renderToolDataBlock({
-            label: "Tool input",
-            text: card.inputText!,
-            expanded: true,
-          })
-        : nothing}
-      ${hasOutput
-        ? card.preview
-          ? html`${visiblePreview} ${renderRawOutputToggle(card.outputText!)}`
-          : renderToolDataBlock({
-              label: isError ? "Tool error" : "Tool output",
-              text: card.outputText!,
+      ${
+        hasInput
+          ? renderToolDataBlock({
+              label: "Tool input",
+              text: card.inputText!,
               expanded: true,
             })
-        : nothing}
+          : nothing
+      }
+      ${
+        hasOutput
+          ? card.preview
+            ? html`${visiblePreview} ${renderRawOutputToggle(card.outputText!)}`
+            : renderToolDataBlock({
+                label: isError ? "Tool error" : "Tool output",
+                text: card.outputText!,
+                expanded: true,
+              })
+          : nothing
+      }
     </div>
   `;
 }
@@ -812,66 +832,80 @@ export function renderToolCardSidebar(
 
   return html`
     <div
-      class="chat-tool-card ${canClick ? "chat-tool-card--clickable" : ""} ${isError
-        ? "chat-tool-card--error"
-        : ""}"
+      class="chat-tool-card ${canClick ? "chat-tool-card--clickable" : ""} ${
+        isError ? "chat-tool-card--error" : ""
+      }"
       @click=${handleClick}
       role=${canClick ? "button" : nothing}
       tabindex=${canClick ? "0" : nothing}
-      @keydown=${canClick
-        ? (e: KeyboardEvent) => {
-            if (e.key !== "Enter" && e.key !== " ") {
-              return;
+      @keydown=${
+        canClick
+          ? (e: KeyboardEvent) => {
+              if (e.key !== "Enter" && e.key !== " ") {
+                return;
+              }
+              e.preventDefault();
+              handleClick?.();
             }
-            e.preventDefault();
-            handleClick?.();
-          }
-        : nothing}
+          : nothing
+      }
     >
       <div class="chat-tool-card__header">
         <div class="chat-tool-card__title">
           <span class="chat-tool-card__icon">${icons[display.icon]}</span>
           <span>${display.label}</span>
         </div>
-        ${canClick
-          ? html`<span
-              class="chat-tool-card__action ${isError ? "chat-tool-card__action--error" : ""}"
-              >${isError ? "View error" : hasText || hasPreview ? "View" : ""} ${statusIcon}</span
-            >`
-          : nothing}
-        ${isEmpty && !canClick
-          ? html`<span
-              class="chat-tool-card__status ${isError ? "chat-tool-card__status--error" : ""}"
-              >${statusIcon}</span
-            >`
-          : nothing}
+        ${
+          canClick
+            ? html`<span
+                class="chat-tool-card__action ${isError ? "chat-tool-card__action--error" : ""}"
+                >${isError ? "View error" : hasText || hasPreview ? "View" : ""} ${statusIcon}</span
+              >`
+            : nothing
+        }
+        ${
+          isEmpty && !canClick
+            ? html`<span
+                class="chat-tool-card__status ${isError ? "chat-tool-card__status--error" : ""}"
+                >${statusIcon}</span
+              >`
+            : nothing
+        }
       </div>
       ${detail ? html`<div class="chat-tool-card__detail">${detail}</div>` : nothing}
-      ${isEmpty
-        ? html`<div
-            class="chat-tool-card__status-text ${isError
-              ? "chat-tool-card__status-text--error"
-              : "muted"}"
-          >
-            ${isError ? "Failed" : "Completed"}
-          </div>`
-        : nothing}
-      ${preview
-        ? html`${renderToolPreview(preview, "chat_tool", {
-            onOpenSidebar,
-            rawText: card.outputText,
-            canvasPluginSurfaceUrl,
-            embedSandboxMode,
-          })}`
-        : nothing}
-      ${showCollapsed
-        ? html`<div class="chat-tool-card__preview mono">
-            ${getTruncatedPreview(card.outputText!)}
-          </div>`
-        : nothing}
-      ${showInline
-        ? html`<div class="chat-tool-card__inline mono">${card.outputText}</div>`
-        : nothing}
+      ${
+        isEmpty
+          ? html`<div
+              class="chat-tool-card__status-text ${
+                isError ? "chat-tool-card__status-text--error" : "muted"
+              }"
+            >
+              ${isError ? "Failed" : "Completed"}
+            </div>`
+          : nothing
+      }
+      ${
+        preview
+          ? html`${renderToolPreview(preview, "chat_tool", {
+              onOpenSidebar,
+              rawText: card.outputText,
+              canvasPluginSurfaceUrl,
+              embedSandboxMode,
+            })}`
+          : nothing
+      }
+      ${
+        showCollapsed
+          ? html`<div class="chat-tool-card__preview mono">
+              ${getTruncatedPreview(card.outputText!)}
+            </div>`
+          : nothing
+      }
+      ${
+        showInline
+          ? html`<div class="chat-tool-card__inline mono">${card.outputText}</div>`
+          : nothing
+      }
     </div>
   `;
 }

@@ -134,17 +134,6 @@ export function registerModelsCli(program: Command) {
       });
     });
 
-  models
-    .command("refresh")
-    .description("Refresh the hosted model catalog")
-    .option("--json", "Output JSON", false)
-    .action(async (opts, command: Command) => {
-      await withGlobalModelsRuntime(command, "refresh", async ({ defaultRuntime }) => {
-        const { modelsRefreshCommand } = await import("../commands/models/refresh.js");
-        await modelsRefreshCommand({ json: hasJsonOutput(opts) }, defaultRuntime);
-      });
-    });
-
   for (const [name, description, loadCommand] of [
     [
       "set",

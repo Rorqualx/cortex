@@ -16,14 +16,73 @@ import * as fc from "fast-check";
 import { describe, expect, beforeEach, it } from "vitest";
 import {
   listPendingAgentSteeringItemsFromSubagentRuns,
-  leasePendingAgentSteeringItemsFromSubagentRuns,
-  ackLeasedAgentSteeringItemsFromSubagentRuns,
-  releaseLeasedAgentSteeringItemsFromSubagentRuns,
+  preparePendingAgentSteeringLease,
+  planAgentSteeringAcknowledgment,
+  planAgentSteeringRelease,
 } from "../agent-steering-queue.js";
+import type { PreparedAnnounceResult } from "../subagents/announce/subagent-announce-result.js";
 import type { SubagentRunRecord } from "../subagents/registry/subagent-registry.types.js";
 import { arbUUID, arbTimestamp } from "../test-helpers/property-generators.js";
 
 const readResult = async () => ({ text: "", isCurrent: () => true });
+
+// Upstream split the lease/ack/release API into prepare + postimage planners.
+// These adapters restore the pre-split call shape the property suite asserts
+// against, applying the planned postimages in place like the old mutators did.
+type SteeringTestRuns = Map<string, SubagentRunRecord>;
+
+async function leasePendingAgentSteeringItemsFromSubagentRuns(params: {
+  runs: SteeringTestRuns;
+  requesterSessionKey: string;
+  leaseId: string;
+  now?: number;
+  readResult?: (entry: SubagentRunRecord) => Promise<PreparedAnnounceResult>;
+}) {
+  const prepared = await preparePendingAgentSteeringLease({
+    ...params,
+    readResult: params.readResult ?? readResult,
+  });
+  const planned = prepared?.plan(params.runs);
+  if (!planned) {
+    return undefined;
+  }
+  for (const [runId, postimage] of planned.postimages ?? []) {
+    if (postimage !== null) {
+      params.runs.set(runId, postimage);
+    }
+  }
+  return planned.value;
+}
+
+function ackLeasedAgentSteeringItemsFromSubagentRuns(params: {
+  runs: SteeringTestRuns;
+  runIds: readonly string[];
+  leaseId: string;
+  now?: number;
+}): number {
+  const planned = planAgentSteeringAcknowledgment(params);
+  for (const [runId, postimage] of planned.postimages ?? []) {
+    if (postimage !== null) {
+      params.runs.set(runId, postimage);
+    }
+  }
+  return planned.value;
+}
+
+function releaseLeasedAgentSteeringItemsFromSubagentRuns(params: {
+  runs: SteeringTestRuns;
+  runIds: readonly string[];
+  leaseId: string;
+  error?: string;
+}): number {
+  const planned = planAgentSteeringRelease(params);
+  for (const [runId, postimage] of planned.postimages ?? []) {
+    if (postimage !== null) {
+      params.runs.set(runId, postimage);
+    }
+  }
+  return planned.value;
+}
 
 describe("agent-steering-queue properties", () => {
   describe("listPendingAgentSteeringItemsFromSubagentRuns", () => {
@@ -364,9 +423,9 @@ describe("agent-steering-queue properties", () => {
   });
 
   describe("leasePendingAgentSteeringItemsFromSubagentRuns", () => {
-    it("assigns unique lease IDs", () => {
-      fc.assert(
-        fc.property(
+    it("assigns unique lease IDs", async () => {
+      await fc.assert(
+        fc.asyncProperty(
           arbUUID, // leaseId
           arbUUID, // requesterSessionKey
           fc.array(
@@ -398,7 +457,7 @@ describe("agent-steering-queue properties", () => {
             }),
             { minLength: 1, maxLength: 20 },
           ),
-          (leaseId, requesterSessionKey, runs) => {
+          async (leaseId, requesterSessionKey, runs) => {
             // Set all runs to have the requester session key
             const runsWithSession = runs.map((r) => ({
               ...r,
@@ -414,7 +473,7 @@ describe("agent-steering-queue properties", () => {
             const runsMap = new Map(
               runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]),
             );
-            const result = leasePendingAgentSteeringItemsFromSubagentRuns({
+            const result = await leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
               leaseId,
@@ -448,9 +507,9 @@ describe("agent-steering-queue properties", () => {
       );
     });
 
-    it("sets steeringLeasedAt timestamp", () => {
-      fc.assert(
-        fc.property(
+    it("sets steeringLeasedAt timestamp", async () => {
+      await fc.assert(
+        fc.asyncProperty(
           arbUUID,
           arbUUID,
           fc.array(
@@ -483,7 +542,7 @@ describe("agent-steering-queue properties", () => {
             { minLength: 1, maxLength: 20 },
           ),
           arbTimestamp,
-          (leaseId, requesterSessionKey, runs, now) => {
+          async (leaseId, requesterSessionKey, runs, now) => {
             const runsWithSession = runs.map((r) => ({
               ...r,
               delivery: {
@@ -498,7 +557,7 @@ describe("agent-steering-queue properties", () => {
             const runsMap = new Map(
               runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]),
             );
-            const result = leasePendingAgentSteeringItemsFromSubagentRuns({
+            const result = await leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
               leaseId,
@@ -520,9 +579,9 @@ describe("agent-steering-queue properties", () => {
       );
     });
 
-    it("sets status to in_progress", () => {
-      fc.assert(
-        fc.property(
+    it("sets status to in_progress", async () => {
+      await fc.assert(
+        fc.asyncProperty(
           arbUUID,
           arbUUID,
           fc.array(
@@ -554,7 +613,7 @@ describe("agent-steering-queue properties", () => {
             }),
             { minLength: 1, maxLength: 20 },
           ),
-          (leaseId, requesterSessionKey, runs) => {
+          async (leaseId, requesterSessionKey, runs) => {
             const runsWithSession = runs.map((r) => ({
               ...r,
               delivery: {
@@ -569,7 +628,7 @@ describe("agent-steering-queue properties", () => {
             const runsMap = new Map(
               runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]),
             );
-            const result = leasePendingAgentSteeringItemsFromSubagentRuns({
+            const result = await leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
               leaseId,
@@ -589,9 +648,9 @@ describe("agent-steering-queue properties", () => {
       );
     });
 
-    it("sets cleanupHandled to true", () => {
-      fc.assert(
-        fc.property(
+    it("sets cleanupHandled to true", async () => {
+      await fc.assert(
+        fc.asyncProperty(
           arbUUID,
           arbUUID,
           fc.array(
@@ -623,7 +682,7 @@ describe("agent-steering-queue properties", () => {
             }),
             { minLength: 1, maxLength: 20 },
           ),
-          (leaseId, requesterSessionKey, runs) => {
+          async (leaseId, requesterSessionKey, runs) => {
             const runsWithSession = runs.map((r) => ({
               ...r,
               delivery: {
@@ -638,7 +697,7 @@ describe("agent-steering-queue properties", () => {
             const runsMap = new Map(
               runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]),
             );
-            const result = leasePendingAgentSteeringItemsFromSubagentRuns({
+            const result = await leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
               leaseId,
@@ -660,9 +719,9 @@ describe("agent-steering-queue properties", () => {
   });
 
   describe("ackLeasedAgentSteeringItemsFromSubagentRuns", () => {
-    it("sets status to delivered and clears lease", () => {
-      fc.assert(
-        fc.property(
+    it("sets status to delivered and clears lease", async () => {
+      await fc.assert(
+        fc.asyncProperty(
           arbUUID, // leaseId
           arbUUID, // requesterSessionKey
           fc.array(
@@ -704,7 +763,7 @@ describe("agent-steering-queue properties", () => {
             { minLength: 1, maxLength: 20 },
           ),
           arbTimestamp,
-          (leaseId, requesterSessionKey, runs, now) => {
+          async (leaseId, requesterSessionKey, runs, now) => {
             // First lease the items
             const runsWithSession = runs.map((r) => ({
               ...r,
@@ -722,7 +781,7 @@ describe("agent-steering-queue properties", () => {
             const runsMap = new Map(
               runsWithSession.map((r) => [r.runId, r as unknown as SubagentRunRecord]),
             );
-            const leaseResult = leasePendingAgentSteeringItemsFromSubagentRuns({
+            const leaseResult = await leasePendingAgentSteeringItemsFromSubagentRuns({
               runs: runsMap,
               requesterSessionKey,
               leaseId,
