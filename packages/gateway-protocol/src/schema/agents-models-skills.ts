@@ -6,6 +6,9 @@ import { NonEmptyString, Sha256String } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
 import { GatewayAgentRuntimeSchema } from "./session-row.js";
 import { SessionPermissionModeSchema } from "./sessions-row.js";
+import { SkillsDetailResultSchema } from "./skill-detail.js";
+
+export { SkillsDetailResultSchema } from "./skill-detail.js";
 
 export {
   ModelChoiceSchema,
@@ -497,6 +500,7 @@ export const SkillsSearchResultSchema = closedObject({
 export const SkillsDetailParamsSchema = Type.Object(
   {
     slug: NonEmptyString,
+    version: Type.Optional(NonEmptyString),
   },
   { additionalProperties: false },
 );
@@ -509,70 +513,6 @@ export const SkillsSecurityVerdictsParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
-/** Skill registry detail, latest version, metadata, and owner info. */
-export const SkillsDetailResultSchema = Type.Object(
-  {
-    skill: Type.Union([
-      Type.Object(
-        {
-          slug: NonEmptyString,
-          displayName: NonEmptyString,
-          summary: Type.Optional(Type.String()),
-          icon: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-          tags: Type.Optional(Type.Record(NonEmptyString, Type.String())),
-          channel: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-          isOfficial: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
-          createdAt: Type.Integer(),
-          updatedAt: Type.Integer(),
-        },
-        { additionalProperties: false },
-      ),
-      Type.Null(),
-    ]),
-    latestVersion: Type.Optional(
-      Type.Union([
-        Type.Object(
-          {
-            version: NonEmptyString,
-            createdAt: Type.Integer(),
-            changelog: Type.Optional(Type.String()),
-          },
-          { additionalProperties: false },
-        ),
-        Type.Null(),
-      ]),
-    ),
-    metadata: Type.Optional(
-      Type.Union([
-        Type.Object(
-          {
-            os: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
-            systems: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
-          },
-          { additionalProperties: false },
-        ),
-        Type.Null(),
-      ]),
-    ),
-    owner: Type.Optional(
-      Type.Union([
-        Type.Object(
-          {
-            handle: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
-            displayName: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
-            image: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-            official: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
-            channel: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-            isOfficial: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
-          },
-          { additionalProperties: false },
-        ),
-        Type.Null(),
-      ]),
-    ),
-  },
-  { additionalProperties: false },
-);
 
 /** Security verdict report for installed/requested skills. */
 export const SkillsSecurityVerdictsResultSchema = Type.Object(

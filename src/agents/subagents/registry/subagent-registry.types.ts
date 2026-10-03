@@ -285,6 +285,7 @@ export type SubagentRegistrationScope = {
   readonly canLaunch: () => boolean;
   readonly canCleanupSession: () => boolean;
   readonly canAcceptLaunch: () => boolean;
+  readonly canAbortAcceptedRun: () => boolean;
   readonly canRetireReservation: () => boolean;
   readonly settleFailedLaunch: (error: string) => Promise<void>;
 };

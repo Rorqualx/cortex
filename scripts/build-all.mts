@@ -533,7 +533,9 @@ function resolveStepEnv(step: BuildAllStep, env: NodeJS.ProcessEnv, platform: No
 
 export function resolveBuildAllStep(step: BuildAllStep, params: BuildAllStepParams = {}) {
   const platform = params.platform ?? process.platform;
-  const env = resolveStepEnv(step, params.env ?? process.env, platform);
+  const env = step.env
+    ? Object.assign({}, params.env ?? process.env, step.env)
+    : (params.env ?? process.env);
   const assetArgs =
     params.deferIsolatedAssets && step.label === "plugins:assets:build" ? ["--defer-isolated"] : [];
   const pnpmArgs = step.kind === "pnpm" ? [...step.pnpmArgs, ...assetArgs] : undefined;

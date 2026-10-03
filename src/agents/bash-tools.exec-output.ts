@@ -102,3 +102,22 @@ export function appendExecTimeoutRetryGuidance(
   }
   return `${text}\n\n${EXEC_TIMEOUT_RETRY_GUIDANCE}`;
 }
+
+const DEFAULT_NOTIFY_SNIPPET_CHARS = 180;
+
+/** Normalizes notification snippets to a compact single-line form. */
+export function normalizeNotifyOutput(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+export function compactNotifyOutput(value: string, maxChars = DEFAULT_NOTIFY_SNIPPET_CHARS) {
+  const normalized = normalizeNotifyOutput(value);
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  const safe = Math.max(1, maxChars - 1);
+  return `${truncateUtf16Safe(normalized, safe)}…`;
+}

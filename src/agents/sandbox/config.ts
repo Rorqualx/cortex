@@ -246,7 +246,10 @@ export function resolveSandboxConfigForAgent(
     scope: agentSandbox?.scope ?? agent?.scope,
   });
 
-  const toolPolicy = resolveSandboxToolPolicyForAgent(cfg, agentId);
+  const { sources: _toolPolicySources, ...toolPolicy } = resolveSandboxToolPolicyForAgent(
+    cfg,
+    agentId,
+  );
   const scopedAgentDocker = scope === "shared" ? undefined : agentSandbox?.docker;
 
   return {
@@ -275,10 +278,7 @@ export function resolveSandboxConfigForAgent(
       globalBrowser: agent?.browser,
       agentBrowser: agentSandbox?.browser,
     }),
-    tools: {
-      allow: toolPolicy.allow,
-      deny: toolPolicy.deny,
-    },
+    tools: toolPolicy,
     prune: resolveSandboxPruneConfig({
       scope,
       globalPrune: agent?.prune,

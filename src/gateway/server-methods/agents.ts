@@ -22,10 +22,13 @@ import { createAgent } from "../../agents/agent-create.js";
 import {
   AgentSharedStoreOwnerError,
   assertAgentSessionStoreDeletionSafe,
+  finishAgentDeleteDatabases,
   isPathOwnedBySurvivingAgent,
   prepareAgentDeleteDatabases,
+  prepareJournaledAgentDirOwnership,
   readAgentDeleteDatabaseRegistry,
   resolveSurvivingDatabaseFilePaths,
+  retireAgentDeleteRuntime,
   type AgentDeleteDatabasePlan,
 } from "../../agents/agent-delete-databases.js";
 import {
@@ -35,7 +38,6 @@ import {
 } from "../../agents/agent-delete-safety.js";
 import {
   normalizeAgentDirRegistryPath,
-  registerResolvedAgentDir,
   resolveRegisteredAgentIdForDir,
   unregisterResolvedAgentDir,
 } from "../../agents/agent-dir-registry.js";
@@ -46,7 +48,6 @@ import {
   claimCompletedAgentDeletion,
 } from "../../agents/agent-lifecycle-registry.js";
 import {
-  listAgentIds,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
@@ -111,8 +112,8 @@ import {
   readAgentDeletionJournal,
   type AgentDeletionJournalCleanupPath,
 } from "../../state/agent-deletion-journal.js";
-import { unregisterOpenClawAgentDatabase } from "../../state/openclaw-agent-db-registry.js";
 import { resolveUserPath } from "../../utils.js";
+import { reviveAgentDatabasesAfterConfigCommit } from "../server-reload-agent-databases.js";
 import {
   AgentConfigPreconditionError,
   AgentModelSelectionError,
@@ -952,7 +953,7 @@ async function buildIdentityMarkdownOrRespondUnsafe(params: {
 
 export const agentsHandlers: GatewayRequestHandlers = {
   "agents.list": agentListHandler,
-  "agents.create": async ({ params, respond }) => {
+  "agents.create": async ({ params, respond, context }) => {
     if (!assertValidParams(params, validateAgentsCreateParams, "agents.create", respond)) {
       return;
     }
@@ -968,6 +969,11 @@ export const agentsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, result.message));
       return;
     }
+    // Upstream hardening: a roster that re-admits an agent may adopt databases its
+    // deletion left behind; revive readers right after the config commit.
+    await reviveAgentDatabasesAfterConfigCommit([result.agentId], (message) =>
+      context.logGateway.warn(message),
+    );
     respond(
       true,
       {
@@ -1419,6 +1425,12 @@ export const agentsHandlers: GatewayRequestHandlers = {
             throw error;
           }
 
+          await retireAgentDeleteRuntime(
+            lockedConfig,
+            deletion,
+            databasePlan?.agentDirs ?? [journal.agentDir],
+          );
+
           const deleteResult = committed?.result ?? {
             agentDir: journal.agentDir,
             workspaceDir: journal.workspaceDir,
@@ -1433,7 +1445,12 @@ export const agentsHandlers: GatewayRequestHandlers = {
           const purgeFailed = await purgeAgentSessionStoreEntries(lockedConfig, agentId, {
             runDatabaseCleanup: deletion.runDatabaseCleanup,
           });
-          deletion.assertCurrent();
+          await deletion.assertCurrentAsync();
+          const { closeDeletedAgentDatabases } =
+            await import("../../state/openclaw-agent-db-readers.js");
+          await deletion.assertCurrentAsync();
+          await closeDeletedAgentDatabases(agentId, databasePlan?.readerPaths ?? []);
+          await deletion.assertCurrentAsync();
 
           const removed: AgentDeleteRemovedPath[] = [];
           const failed: AgentDeleteFailedPath[] = [];
@@ -1659,14 +1676,13 @@ export const agentsHandlers: GatewayRequestHandlers = {
               unregisterResolvedAgentDir({ agentId, agentDir: agentDirRegistryPath });
             }
           }
-          deletion.assertCurrent();
-          if (failed.length === 0 && !purgeFailed) {
-            unregisterResolvedAgentDir({ agentId, agentDir: agentDirRegistryPath });
-            if (deleteFiles) {
-              unregisterAgentDeleteDatabases(agentId, databasePlan?.registrationPaths ?? []);
-            }
-            deletion.finish();
-          }
+          await finishAgentDeleteDatabases({
+            deletion,
+            databasePlan,
+            agentDir: agentDirRegistryPath,
+            deleteFiles,
+            complete: failed.length === 0 && !purgeFailed,
+          });
           return {
             ok: true,
             agentId,

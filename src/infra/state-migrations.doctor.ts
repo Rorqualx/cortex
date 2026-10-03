@@ -6,7 +6,6 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { sortUniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { listAgentIds } from "../agents/agent-scope-config.js";
 import { resolveSharedMainAuthAgentDir } from "../agents/auth-profiles/shared-main-dir.js";
-import { resolveInstallAgentDir } from "../agents/install-agent-dir.js";
 import {
   discardLegacyRegistryWorktrees,
   rewriteRegistryWorktreePathsForMigration,
@@ -14,7 +13,6 @@ import {
 import { resolveChannelDefaultAccountId } from "../channels/plugins/helpers.js";
 import { getChannelPlugin } from "../channels/plugins/registry.js";
 import type { ChannelId } from "../channels/plugins/types.public.js";
-import { readCurrentConfigForResolution } from "../config/io.runtime.js";
 import { resolveSessionStoreCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import { resolveConfigPath, resolveOAuthDir, resolveStateDir } from "../config/paths.js";
 import { migrateLegacyMainSessionKeys } from "../config/sessions/legacy-main-session-migration.js";
@@ -98,7 +96,8 @@ import {
 import { migrationFileExists, readSessionStoreJson5 } from "./state-migrations.fs.js";
 import {
   classifyLegacyOwnerFindings,
-  tryResolveDoctorSessionMigrationAgentId,
+  hasCustomAgentDirOverride,
+  resolveLegacyStateMigrationOwner,
 } from "./state-migrations.legacy-owner.js";
 import {
   inspectLegacyAgentDir,
@@ -229,10 +228,6 @@ import {
 
 const autoMigrateChecked = new Set<string>();
 
-function hasCustomAgentDirOverride(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.OPENCLAW_AGENT_DIR?.trim() || env.PI_CODING_AGENT_DIR?.trim());
-}
-
 function resolveConcreteBindingAccountId(value: unknown): string | undefined {
   const accountId = normalizeOptionalString(value);
   return accountId && accountId !== "*" ? accountId : undefined;
@@ -240,6 +235,8 @@ function resolveConcreteBindingAccountId(value: unknown): string | undefined {
 
 export async function detectLegacyStateMigrations(params: {
   cfg: OpenClawConfig;
+  /** Doctor's original resolved locators, before roster ownership was materialized. */
+  sourceConfigBeforeMigrations?: OpenClawConfig;
   /** Legacy session file inspection belongs to Doctor, including its read-only preview. */
   mode?: "automatic" | "doctor";
   pluginDoctorConfig?: OpenClawConfig;
@@ -259,16 +256,13 @@ export async function detectLegacyStateMigrations(params: {
   const stateDir = resolveStateDir(env, homedir);
   const oauthDir = resolveOAuthDir(env, stateDir);
   const detectSessionFiles = params.mode !== "automatic";
-  const installAgentDir = resolveInstallAgentDir(
-    (resolutionEnv) => readCurrentConfigForResolution({ config: params.cfg, env: resolutionEnv }),
-    { env, homedir },
-  );
-  const migrationTarget = installAgentDir.migrationTarget;
-  const migrationAgentId = migrationTarget?.owner;
-  const sessionMigrationAgentId = tryResolveDoctorSessionMigrationAgentId(
-    params.cfg,
-    migrationAgentId,
-  );
+  const { installAgentDir, migrationTarget, migrationAgentId, sessionMigrationAgentId } =
+    resolveLegacyStateMigrationOwner({
+      cfg: params.cfg,
+      locatorConfig: params.sourceConfigBeforeMigrations ?? params.cfg,
+      env,
+      homedir,
+    });
   const targetAgentId = migrationAgentId ?? sessionMigrationAgentId ?? LEGACY_IMPLICIT_AGENT_ID;
   const targetMainKey = normalizeOptionalString(params.cfg.session?.mainKey) ?? DEFAULT_MAIN_KEY;
   const targetScope = params.cfg.session?.scope;
@@ -665,7 +659,7 @@ export async function detectLegacyStateMigrations(params: {
       deviceIdentity.hasInvalidCanonical && !deviceIdentity.hasLegacy,
       "- Primary device identity: invalid SQLite row → new device identity",
     ],
-    [execApprovals.hasLegacy, "- Exec approvals: legacy JSON → shared SQLite state"],
+    [execApprovals.hasLegacy, execApprovals.preview],
     [mcpOauth.hasLegacy, "- MCP OAuth credentials: legacy JSON → shared SQLite state"],
     [
       meetingTranscripts.hasLegacy,
@@ -1247,7 +1241,7 @@ function buildLegacyStateMigrationSteps(
       detected.deviceIdentity.hasLegacy || detected.deviceIdentity.hasInvalidCanonical,
     ],
     "exec-approvals": [
-      pathEndpoints(detected.execApprovals.sourcePath),
+      [...pathEndpoints(detected.execApprovals.sourcePath), stateDatabase],
       detected.execApprovals.hasLegacy,
     ],
     "mcp-oauth": [
@@ -2509,6 +2503,7 @@ export async function runLegacyStateMigrations(params: {
 /** Run canonical startup migrations and explicit Doctor-owned file repairs. */
 export async function autoMigrateLegacyState(params: {
   cfg: OpenClawConfig;
+  sourceConfigBeforeMigrations?: OpenClawConfig;
   invocationPurpose?: LegacyStateMigrationInvocationPurpose;
   agentDatabaseMigrationDiscovery?: PreparedAgentDatabaseMigrationDiscovery;
   pluginDoctorConfig?: OpenClawConfig;
@@ -2677,14 +2672,12 @@ async function executeLegacyStateMigrations(
         });
       // Capture ownership before orphan-key rewrites. Atomic replacement can split
       // a configured filesystem alias from the standard target pathname.
-      const ownershipAgentId = tryResolveDoctorSessionMigrationAgentId(
-        params.cfg,
-        resolveInstallAgentDir(
-          (resolutionEnv) =>
-            readCurrentConfigForResolution({ config: params.cfg, env: resolutionEnv }),
-          { env, homedir },
-        ).migrationTarget?.owner,
-      );
+      const { sessionMigrationAgentId: ownershipAgentId } = resolveLegacyStateMigrationOwner({
+        cfg: params.cfg,
+        locatorConfig: params.sourceConfigBeforeMigrations ?? params.cfg,
+        env,
+        homedir,
+      });
       sessionStoreOwnership = ownershipAgentId
         ? resolveSessionStoreOwnership({
             cfg: params.cfg,
@@ -2727,6 +2720,7 @@ async function executeLegacyStateMigrations(
       run: async () => {
         detected = await detectLegacyStateMigrations({
           cfg: params.cfg,
+          sourceConfigBeforeMigrations: params.sourceConfigBeforeMigrations,
           mode,
           pluginDoctorConfig: params.pluginDoctorConfig,
           ...(mode === "doctor" ? { pluginSessionStoreAgentIds } : {}),

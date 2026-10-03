@@ -108,14 +108,17 @@ export function descendantAbortError(
 export function abortQueuedCollectorSession(
   params: Omit<ChatSessionAbortParams, "ops"> & { runId?: string },
 ): Promise<QueuedCollectorAbortOutcome> | undefined {
-  const entry = getLatestLiveSubagentRunByChildSessionKey(params.sessionKey);
+  const entry = getLatestLiveSubagentRunByChildSessionKey(
+    params.sessionKey,
+    undefined,
+    params.agentId,
+  );
   if (
     !entry ||
     !isSubagentRunQueued(entry) ||
     params.excludeRunIds?.has(entry.runId) ||
     (params.runId && entry.runId !== params.runId)
-  ) {
-    return undefined;
+  ) {    return undefined;
   }
   const workerCancellation = captureWorkerInferenceForSession({
     context: params.context,
