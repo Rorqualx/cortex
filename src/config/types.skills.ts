@@ -56,6 +56,9 @@ export type SkillsLimitsConfig = {
 
 export type SkillsWorkshopAutonomousMode = "off" | "propose" | "auto";
 
+/** Legacy upstream name (Skill Workshop -> Skill Forge); kept so upstream-authored consumers keep type-checking. */
+export type SkillsWorkshopConfig = SkillsForgeConfig;
+
 /** Skill Forge config (interactive/autonomous skill proposal + lifecycle pipeline). */
 export type SkillsForgeConfig = {
   /** Whether skill_forge promote/retire actions need explicit approval. */

@@ -2,20 +2,22 @@
 import crypto from "node:crypto";
 import { hasNonEmptyString } from "@openclaw/normalization-core/string-coerce";
 import { hasOutboundReplyContent } from "openclaw/plugin-sdk/reply-payload";
-import { prepareSystemAgentRunAdmission } from "../../agents/admitted-run-context.js";
-import { peekSessionMcpRuntime } from "../../agents/agent-bundle-mcp-manager-api.js";
+import {
+  assertAdmittedRunOperatorAuthority,
+  type AdmittedRunContext,
+  type PreparedAgentRunAdmission,
+} from "../../agents/admitted-run-context.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-budget.js";
 import {
   createDeferredEmbeddedRunLifecycleManager,
   type DeferredEmbeddedRunLifecycleManager,
 } from "../../agents/embedded-agent-runner/run/deferred-lifecycle-owner.js";
 import type { RunEmbeddedAgentParams } from "../../agents/embedded-agent-runner/run/params.js";
-import { appendCurrentInboundContext } from "../../agents/embedded-agent-runner/run/runtime-context-prompt.js";
 import { runEmbeddedAgent } from "../../agents/embedded-agent.js";
 import { classifyFailoverReason } from "../../agents/failover/classify.js";
 import { renderRateLimitOrOverloadedCopy } from "../../agents/failover/user-copy.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
-import { leaseMcpAppModelContextForTurn } from "../../agents/mcp-app-model-context.js";
+import { leaseMcpAppModelContextForSessionTurn } from "../../agents/mcp-ui-resource.js";
 import { resolveReplyExpectation } from "../../agents/reply-completion.js";
 import { createAgentPatchedSessionModelRunGuard } from "../../agents/session-model-auto-revert.js";
 import type { SessionEntry } from "../../config/sessions.js";
@@ -42,6 +44,17 @@ import {
   markOverloadRetryUnsafeToReplay,
   type OverloadRetryState,
 } from "./agent-runner-error-handler.js";
+import {
+  applyMcpAppModelContext,
+  type AppContextTurnParams,
+} from "./agent-runner-execution-mcp-context.js"
+import { readChannelContextGatewayContextResolver } from "../../channels/message-access/admission-evidence.js";
+import {
+  bindGatewayContextResolver,
+  getPluginRuntimeGatewayRequestScope,
+} from "../../plugins/runtime/gateway-request-scope.js";
+import { captureCommandOwnerAssertion } from "../command-owner-authority.js";
+import { prepareChannelRunAdmission } from "./channel-run-admission.js";
 import { recordAgentTurnExecutionOutcome } from "./agent-runner-execution-outcome.js";
 import type {
   AgentTurnCompaction,
@@ -78,15 +91,18 @@ import { resolveReplyOperationAbortReason } from "./reply-operation-abort.js";
 import { retainReplyOperationUntilComplete } from "./reply-run-registry.js";
 import { isReplyProfilerEnabled } from "./reply-timing-tracker.js";
 
-async function executeAgentTurnInternalWithRetryState(
-  params: AgentTurnParams,
-  commitTerminalOutcome: () => void,
-  overloadRetryState: OverloadRetryState,
-  commitMcpAppModelContext: () => void,
+async function executeAgentTurnInternalLoop(
+  inputParams: AppContextTurnParams,
   runId: string,
+  commitTerminalOutcome: () => void,
+  prepareMcpAppModelContext: () => Promise<AppContextTurnParams["mcpAppContextLease"]>,
+  preparedRunAdmission: PreparedAgentRunAdmission,
+  admittedRunContext: { current?: AdmittedRunContext },
+  overloadRetryState: OverloadRetryState,
   deferredLifecycle: DeferredEmbeddedRunLifecycleManager,
   compaction: AgentTurnCompaction,
 ): Promise<AgentTurnInternalResult> {
+  let params = inputParams;
   const heartbeatState = { didLogStrip: false };
   // Direct delivery receipts retain settlement facts across fallback candidates.
   const directBlockDeliveries: DirectBlockDelivery[] = [];
@@ -126,17 +142,6 @@ async function executeAgentTurnInternalWithRetryState(
     liveModelSwitchRuntimeEntry = { agentRuntimeOverride: err.agentRuntimeOverride };
   };
 
-  // FLAG: no established chat-turn admission producer exists yet (unlike the
-  // memory-flush/system-agent/CLI paths, which each call prepareAgentRunAdmission
-  // with their own ingress facts). Reusing the system-agent boundary here is the
-  // closest local precedent, not a verified ingress classification for a normal
-  // inbound chat turn — revisit before relying on this for audit/security facts.
-  const preparedRunAdmission = prepareSystemAgentRunAdmission(
-    runtimeConfig,
-    runId,
-    effectiveRun.agentId,
-    "auto-reply.turn",
-  );
   const agentTurnTiming = createAgentTurnTimingTracker({
     profilerEnabled: isReplyProfilerEnabled({ config: runtimeConfig }),
   });
@@ -217,6 +222,11 @@ async function executeAgentTurnInternalWithRetryState(
             imageOrder: params.opts?.imageOrder,
           }),
         );
+    const modelContextLease = await prepareMcpAppModelContext();
+    if (modelContextLease) {
+      params = { ...params, mcpAppContextLease: modelContextLease };
+    }
+    ({ params, currentTurnImages } = applyMcpAppModelContext(params, currentTurnImages));
   } catch (error) {
     clearAgentRunContext(runId, lifecycleGeneration);
     throw error;
@@ -244,8 +254,12 @@ async function executeAgentTurnInternalWithRetryState(
       lastRunStartupPhase = startupPhase;
       emitAgentRunStatusEvent({ runId, phase: startupPhase });
     }
-    if (info.phase === "model_call_started" || info.phase === "process_spawned") {
-      commitMcpAppModelContext();
+    if (
+      info.phase === "turn_accepted" ||
+      info.phase === "model_call_started" ||
+      info.phase === "process_spawned"
+    ) {
+      params.mcpAppContextLease?.commit();
     }
     if (info.phase === "tool_execution_started" || info.phase === "assistant_output_started") {
       markOverloadRetryUnsafeToReplay(overloadRetryState);
@@ -464,6 +478,7 @@ async function executeAgentTurnInternalWithRetryState(
     const replyExpectation = resolveReplyExpectation(params.followupRun.run);
     terminalFailurePayload = buildTerminalAgentRunFailureReplyPayload({
       isHeartbeat: params.isHeartbeat,
+      useHeartbeatFailureCopy: params.opts?.useHeartbeatFailureCopy,
       replyExpectation,
       visibleReplyDelivered:
         replyExpectation === "optional"
@@ -498,11 +513,35 @@ async function executeAgentTurnInternalWithRetryState(
 }
 
 async function executeAgentTurnInternal(
-  params: AgentTurnParams,
+  params: AppContextTurnParams,
+  runId: string,
   commitTerminalOutcome: () => void,
-  commitMcpAppModelContext: () => void,
+  prepareMcpAppModelContext: () => Promise<AppContextTurnParams["mcpAppContextLease"]>,
   compaction: AgentTurnCompaction,
 ): Promise<AgentTurnInternalResult> {
+  const admittedRunContext: { current?: AdmittedRunContext } = {};
+  const gatewayContextResolver =
+    readChannelContextGatewayContextResolver(params.sessionCtx) ??
+    getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
+  const preparedRunAdmission = prepareChannelRunAdmission({
+    cfg: resolveQueuedReplyRuntimeConfig(params.followupRun.run.config),
+    runId,
+    agentId: params.followupRun.run.agentId,
+    ingressKind: "channel",
+    boundary: "auto-reply.agent-runner",
+    operatorAuthority: params.followupRun.operatorAuthority,
+    evidence: params.followupRun.channelAdmissionEvidence,
+    gatewayLocalUserIngress: params.followupRun.gatewayLocalUserIngress,
+    assertSourceCurrent:
+      params.followupRun.run.senderIsOwner === true
+        ? captureCommandOwnerAssertion(params.followupRun.run)
+        : undefined,
+    onAdmitted: (context) => {
+      bindGatewayContextResolver(context, gatewayContextResolver);
+      admittedRunContext.current = context;
+      params.followupRun.run.skillLibraryAuthoring?.bind(context);
+    },
+  });
   const overloadRetryState: OverloadRetryState = {
     retryCount: 0,
     turnStartedAtMs: Date.now(),
@@ -510,7 +549,6 @@ async function executeAgentTurnInternal(
     noticeSent: false,
     completed: false,
   };
-  const runId = params.opts?.runId ?? crypto.randomUUID();
   const deferredLifecycle = createDeferredEmbeddedRunLifecycleManager({
     runId,
     agentId: params.followupRun.run.agentId,
@@ -523,12 +561,14 @@ async function executeAgentTurnInternal(
     }),
   });
   try {
-    return await executeAgentTurnInternalWithRetryState(
+    return await executeAgentTurnInternalLoop(
       params,
-      commitTerminalOutcome,
-      overloadRetryState,
-      commitMcpAppModelContext,
       runId,
+      commitTerminalOutcome,
+      prepareMcpAppModelContext,
+      preparedRunAdmission,
+      admittedRunContext,
+      overloadRetryState,
       deferredLifecycle,
       compaction,
     );
@@ -562,36 +602,29 @@ export function computeContextAwareReserveTokensFloor(contextWindow: number | un
 }
 
 /** Runs the agent turn with provider/model fallback, retry, and closed settlement. */
-async function executeAgentTurnOutcome(params: AgentTurnParams): Promise<AgentTurnExecutionResult> {
-  const runId = params.opts?.runId ?? crypto.randomUUID();
-  const executionParams =
-    params.opts?.runId === runId ? params : { ...params, opts: { ...params.opts, runId } };
-  // Gateway writes require exact view identity against this bare session runtime;
-  // requester-scoped and combined runtimes cannot cross the App view boundary.
-  const runtime = executionParams.isHeartbeat
-    ? undefined
-    : peekSessionMcpRuntime({
-        sessionId: executionParams.followupRun.run.sessionId,
-        sessionKey: executionParams.sessionKey ?? executionParams.followupRun.run.sessionKey,
-      });
-  const modelContextLease = runtime
-    ? leaseMcpAppModelContextForTurn({
-        runtime,
-      })
-    : undefined;
-  const turnParams = modelContextLease
-    ? {
-        ...executionParams,
-        followupRun: {
-          ...executionParams.followupRun,
-          currentInboundContext: appendCurrentInboundContext(
-            executionParams.followupRun.currentInboundContext,
-            [modelContextLease.context],
-            modelContextLease.legacyText,
-          ),
-        },
-      }
-    : executionParams;
+async function executeAgentTurnOutcome(
+  executionParams: AppContextTurnParams,
+  runId: string,
+): Promise<AgentTurnExecutionResult> {
+  const requester = executionParams.followupRun.operatorAuthority;
+  if (requester) {
+    assertAdmittedRunOperatorAuthority(requester);
+    requester.assertCurrent();
+  }
+  let modelContextLease: AppContextTurnParams["mcpAppContextLease"];
+  const prepareMcpAppModelContext = async () => {
+    requester?.assertCurrent();
+    modelContextLease = executionParams.isHeartbeat
+      ? undefined
+      : await leaseMcpAppModelContextForSessionTurn({
+          agentId: executionParams.followupRun.run.agentId,
+          sessionId: executionParams.followupRun.run.sessionId,
+          sessionKey: executionParams.sessionKey ?? executionParams.followupRun.run.sessionKey,
+          requesterId: requester?.profileId,
+        });
+    requester?.assertCurrent();
+    return modelContextLease;
+  };
   // Keep committed facts outside cleanup so a restart cannot erase them.
   const compaction: AgentTurnCompaction = { count: 0, durable: [] };
   const completedCompaction = () =>
@@ -612,9 +645,10 @@ async function executeAgentTurnOutcome(params: AgentTurnParams): Promise<AgentTu
     const internal = await withAgentRunLifecycleGeneration(lifecycleGeneration, async () => {
       try {
         return await executeAgentTurnInternal(
-          turnParams,
+          executionParams,
+          runId,
           commitTerminalOutcome,
-          modelContextLease?.commit ?? (() => undefined),
+          prepareMcpAppModelContext,
           compaction,
         );
       } finally {
@@ -703,7 +737,7 @@ export async function executeAgentTurn(params: AgentTurnParams): Promise<AgentTu
   const executionParams =
     params.opts?.runId === runId ? params : { ...params, opts: { ...params.opts, runId } };
   try {
-    const result = await executeAgentTurnOutcome(executionParams);
+    const result = await executeAgentTurnOutcome(executionParams, runId);
     recordAgentTurnExecutionOutcome(executionParams, result);
     return result;
   } catch (error) {

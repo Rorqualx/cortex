@@ -1110,7 +1110,7 @@ export async function createGatewaySession(
             forkResult.transcript,
             {
               sessionKey: forkParentSessionKey,
-              sessionId: currentParentSessionEntry.sessionId,
+              entry: currentParentSessionEntry,
             },
             existingEntry,
           ),

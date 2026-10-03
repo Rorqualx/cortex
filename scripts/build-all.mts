@@ -104,6 +104,7 @@ const PNPM_STEP_NODE_FALLBACKS = new Map([
   ["ui:build", ["scripts/ui.js", "build"]],
 ]);
 export const BUILD_ALL_STEPS: BuildAllStep[] = [
+  nodeStep("native-protocol", ["scripts/prepare-native-protocol.mjs"]),
   nodeStep("clean:dist", [
     "-e",
     'require("node:fs").rmSync("dist", { recursive: true, force: true })',
@@ -237,6 +238,7 @@ const FINAL_BUILD_ARTIFACTS_STEP_LABELS = [
   ...BUILD_METADATA_STEP_LABELS,
 ] as const;
 const CI_ARTIFACT_STEP_LABELS = [
+  "native-protocol",
   ...ASSET_RUNTIME_STEP_LABELS,
   ...FINAL_BUILD_ARTIFACTS_STEP_LABELS,
 ];
@@ -250,12 +252,17 @@ const FULL_COMPILER_STEP_LABELS = [
 const FULL_RUNTIME_STEP_LABELS = ASSET_RUNTIME_STEP_LABELS.flatMap((step) =>
   step === "tsdown" ? FULL_COMPILER_STEP_LABELS : [step],
 );
-const FULL_BUILD_STEP_LABELS = [...FULL_RUNTIME_STEP_LABELS, ...FINAL_BUILD_ARTIFACTS_STEP_LABELS];
+const FULL_BUILD_STEP_LABELS = [
+  "native-protocol",
+  ...FULL_RUNTIME_STEP_LABELS,
+  ...FINAL_BUILD_ARTIFACTS_STEP_LABELS,
+];
 
 export const BUILD_ALL_PROFILES: Record<string, string[]> = {
   // Fork deploy profile, inlined (NOT FULL_BUILD_STEP_LABELS): reorders
   // runtime-postbuild-stamp to last — see the comment there.
   full: [
+    "native-protocol",
     "plugins:assets:build",
     "tsdown-ai",
     "tsdown-packages",
@@ -285,21 +292,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "runtime-postbuild-stamp",
   ],
   package: ["clean:dist", ...FULL_BUILD_STEP_LABELS],
-  ciArtifacts: [
-    "plugins:assets:build",
-    "tsdown",
-    "external-plugins:local-dist",
-    "check-cli-bootstrap-imports",
-    "plugins:assets:copy",
-    "runtime-postbuild",
-    "build-stamp",
-    "runtime-postbuild-stamp",
-    "write-plugin-sdk-entry-dts",
-    "check-plugin-sdk-exports",
-    "ui:build",
-    "write-build-info",
-    "write-cli-startup-metadata",
-  ],
+  ciArtifacts: [...CI_ARTIFACT_STEP_LABELS],
   // Upstream smoke profiles (strictSmoke / pluginSdkStrictSmoke): typed compilation + publication checks without the
   // UI/metadata tail.
   strictSmoke: [...FULL_RUNTIME_STEP_LABELS, ...SDK_DECLARATION_STEP_LABELS],
@@ -315,6 +308,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
 };
 
 const FULL_RUNTIME_ONLY_STEPS = [
+  "native-protocol",
   "plugins:assets:build",
   "tsdown",
   "external-plugins:local-dist",

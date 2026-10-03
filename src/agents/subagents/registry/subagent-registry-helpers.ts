@@ -22,7 +22,7 @@ import {
 } from "../../../sessions/session-run-error.js";
 import { truncateUtf8Prefix } from "../../../utils/utf8-truncate.js";
 import { cleanupMaterializedSubagentAttachments } from "../subagent-attachment-cleanup.js";
-import { getDeliveryAttemptCount, getDeliveryLastError } from "./subagent-delivery-state.js";
+import { getDeliveryLastError } from "./subagent-delivery-state.js";
 import { SUBAGENT_ENDED_REASON_KILLED } from "./subagent-lifecycle-events.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import {
@@ -56,7 +56,6 @@ const ANNOUNCE_RETRY_BACKOFF = {
 
 const FROZEN_RESULT_TEXT_MAX_BYTES = 100 * 1024;
 
-/** Caps frozen completion text stored for later announce/recovery delivery. */
 export function capFrozenResultText(resultText: string): string {
   const trimmed = resultText.trim();
   const totalBytes = Buffer.byteLength(trimmed, "utf8");
@@ -72,7 +71,6 @@ export function capFrozenResultText(resultText: string): string {
   return `${payload}${notice}`;
 }
 
-/** Computes bounded exponential backoff for subagent announce retries. */
 export function resolveAnnounceRetryDelayMs(retryCount: number) {
   return computeBackoff(ANNOUNCE_RETRY_BACKOFF, Math.max(1, retryCount));
 }
@@ -84,12 +82,11 @@ function formatAnnounceGiveUpLogField(value: string): string {
   );
 }
 
-/** Logs a sanitized final give-up line for failed subagent announce delivery. */
 export function logAnnounceGiveUp(
   entry: SubagentRunRecord,
   reason: "expiry" | "permanent_failure",
 ) {
-  const retryCount = getDeliveryAttemptCount(entry);
+  const retryCount = entry.delivery?.attemptCount ?? 0;
   const endedAt = entry.execution.endedAt;
   const endedAgoMs = typeof endedAt === "number" ? Math.max(0, Date.now() - endedAt) : undefined;
   const endedAgoLabel = endedAgoMs != null ? `${Math.round(endedAgoMs / 1000)}s` : "n/a";
@@ -102,7 +99,6 @@ export function logAnnounceGiveUp(
   );
 }
 
-/** Persists child session timing/status derived from the subagent registry row. */
 export async function persistSubagentSessionTiming(
   entry: SubagentRunRecord,
   options?: {
@@ -291,7 +287,6 @@ export async function persistSubagentSessionTiming(
   }
 }
 
-/** Best-effort async removal for a subagent attachment directory. */
 export async function safeRemoveAttachmentsDir(
   entry: SubagentRunRecord,
   isCurrent?: () => boolean,

@@ -5,7 +5,7 @@
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { parseRawSessionConversationRef } from "../../sessions/session-key-utils.js";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import type {
   SessionRow,
   SessionRunStatus,
@@ -18,6 +18,7 @@ import {
 } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
 import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { GatewaySessionRow } from "../../gateway/session-utils.types.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import { stringEnum } from "../schema/typebox.js";
 import {
@@ -130,75 +131,18 @@ export const SessionListRowSchema = Type.Object(
   { additionalProperties: false },
 );
 
-/** Full Gateway session row consumed by session orchestration internals. */
 export type GatewaySessionListRow = Omit<
-  SessionRow,
-  "classification" | "contextTokens" | "totalTokens"
+  GatewaySessionRow,
+  "classification" | "contextTokens" | "totalTokens" | "updatedAt"
 > & {
-  classification: NonNullable<SessionRow["classification"]>;
+  classification: NonNullable<GatewaySessionRow["classification"]>;
   contextTokens?: number | null;
   totalTokens?: number | null;
-  origin?: {
-    provider?: string;
-    accountId?: string;
-  };
-  category?: string;
-  deliveryContext?: DeliveryContext;
-  abortedLastRun?: boolean;
-  lastChannel?: string;
+  updatedAt?: number;
 };
 
-/** Normalized session row returned by session list-style tools. */
-export type SessionListRow = {
-  key: string;
-  agentId?: string;
-  kind: SessionKind;
-  channel: string;
-  origin?: {
-    provider?: string;
-    accountId?: string;
-  };
-  spawnedBy?: string;
-  label?: string;
-  displayName?: string;
-  derivedTitle?: string;
-  llmTitle?: string;
-  lastMessagePreview?: string;
-  parentSessionKey?: string;
-  deliveryContext?: SessionListDeliveryContext;
-  updatedAt?: number | null;
-  archived?: boolean;
-  archivedAt?: number;
-  pinned?: boolean;
-  pinnedAt?: number;
-  sessionId?: string;
-  model?: string;
-  contextTokens?: number | null;
-  totalTokens?: number | null;
-  estimatedCostUsd?: number;
-  status?: SessionRunStatus;
-  startedAt?: number;
-  endedAt?: number;
-  runtimeMs?: number;
-  childSessions?: string[];
-  thinkingLevel?: string;
-  fastMode?: boolean;
-  verboseLevel?: string;
-  reasoningLevel?: string;
-  elevatedLevel?: string;
-  responseUsage?: string;
-  systemSent?: boolean;
-  abortedLastRun?: boolean;
-  sendPolicy?: string;
-  lastChannel?: string;
-  lastTo?: string;
-  lastAccountId?: string;
-  lastThreadId?: string | number;
-  transcriptPath?: string;
-  messages?: unknown[];
-};
+export type SessionListRow = Static<typeof SessionListRowSchema>;
 
-/** Resolves config plus sandbox visibility context for a session tool call. */
 export function resolveSessionToolContext(opts?: {
   agentSessionKey?: string;
   sandboxed?: boolean;

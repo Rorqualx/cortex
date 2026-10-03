@@ -9,7 +9,7 @@ import {
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { evaluateWebPolicy, loadPolicy } from "../../exec-policy/index.js";
 import { sha256Hex } from "../../infra/crypto-digest.js";
@@ -333,17 +333,10 @@ function wrapWebFetchContent(value: string, maxChars: number): WebFetchWrappedCo
   };
 }
 
-type WebFetchWrappedContent = {
-  text: string;
-  truncated: boolean;
-  rawLength: number;
-  length: number;
-  spill?: {
-    path: string;
-    chars: number;
-    truncated?: true;
-  };
-};
+type WebFetchWrappedContent = Pick<
+  Static<typeof WebFetchOutputSchema>,
+  "text" | "truncated" | "rawLength" | "length" | "spill"
+>;
 
 async function spillWebFetchContent(
   value: string,

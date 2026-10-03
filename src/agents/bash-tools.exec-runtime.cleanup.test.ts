@@ -1,8 +1,9 @@
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
 import type { ManagedRun, SpawnInput } from "../process/supervisor/types.js";
 import { markBackgrounded, waitForExecScope } from "./bash-process-registry.js";
 import { resetProcessRegistryForTests } from "./bash-process-registry.test-support.js";
+import { runExecProcess } from "./bash-tools.exec-runtime.js";
 import { createAgentCleanupScope } from "./run-cleanup-timeout.js";
 
 const supervisorMock = vi.hoisted(() => ({ spawn: vi.fn() }));
@@ -10,10 +11,6 @@ vi.mock("../process/supervisor/index.js", () => ({
   getProcessSupervisor: () => supervisorMock,
 }));
 
-let runExecProcess: typeof import("./bash-tools.exec-runtime.js").runExecProcess;
-beforeAll(async () => {
-  ({ runExecProcess } = await import("./bash-tools.exec-runtime.js"));
-});
 beforeEach(() => {
   resetProcessRegistryForTests();
   supervisorMock.spawn.mockReset();

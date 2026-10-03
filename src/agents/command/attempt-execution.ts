@@ -51,7 +51,6 @@ import { resolveAuthProfileOrder } from "../auth-profiles/order.js";
 import { ensureAuthProfileStore } from "../auth-profiles/store-runtime.js";
 import { resizeExecApprovalContinuationPrompt } from "../bash-tools.exec-approval-output.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../bootstrap-budget.js";
-import { resolveCliBackendConfig } from "../cli-backends.js";
 import {
   cliBackendAcceptsAuthProfileForwarding,
   resolveCliExecutionAuthProfileId,
@@ -62,8 +61,7 @@ import { buildCliMcpDelegationCapabilityBinding } from "../cli-runner/mcp-grant-
 import { resolveCliRuntimeToolsAllow } from "../cli-runner/tool-policy.js";
 import {
   clearCliSessionInStore,
-  consumeCliSessionForkInStore,
-  persistCliSessionForkSuccessorInStore,
+  buildCliSessionForkRunParams,
   restoreCliSessionForkInStore,
 } from "../cli-session-store.js";
 import {
@@ -84,7 +82,6 @@ import type { ContextEngineLogicalTurnLease } from "../harness/context-engine-lo
 import type { ContextEngineTurnAttemptFacts } from "../harness/context-engine-turn-attempt.js";
 import { runAgentHarnessBeforeMessageWriteHook } from "../harness/hook-helpers.js";
 import { resolveAvailableAgentHarnessPolicy } from "../harness/selection.js";
-import { AGENT_LANE_SUBAGENT } from "../lanes.js";
 import {
   getGeneratedMediaTaskIdsForSessionKey,
   hasNewGeneratedMediaTaskForSessionKey,
@@ -112,6 +109,7 @@ import {
   resolveCompletionToolPolicy,
   isClaudeCliProvider,
   claudeCliSessionTranscriptHasContent,
+  resolveCommandReplyExpectation,
   resolveFallbackRetryPrompt,
   rebaseExecApprovalContinuationPromptRange,
 } from "./attempt-execution.helpers.js";
@@ -527,7 +525,6 @@ export function runAgentAttempt(params: {
           ? { id: sessionAuthProfileId, source: sessionAuthProfileSource }
           : undefined;
   const isRawModelRun = params.opts.modelRun === true || params.opts.promptMode === "none";
-  const isSubagentLane = params.opts.lane === AGENT_LANE_SUBAGENT;
   // A completion handoff relays frozen child output, so only a verified private
   // capability plus persisted requester lineage may restore its tool surface.
   const isSubagentAnnounceHandoff = isSubagentAnnounceCompletionHandoff({
@@ -773,6 +770,7 @@ export function runAgentAttempt(params: {
     (agentHarnessPolicy.runtime === "openclaw" && agentHarnessPolicy.runtimeSource !== "implicit"
       ? "openclaw"
       : undefined);
+  const replyExpectation = resolveCommandReplyExpectation(params);
   // Read session fields at invocation time, after admitted CLI binding recovery.
   const buildCommonRunParams = () =>
     ({
@@ -821,7 +819,8 @@ export function runAgentAttempt(params: {
       onContextEngineTurnCandidate: params.onContextEngineTurnCandidate,
       suppressNextUserMessagePersistence: params.suppressPromptPersistenceOnRetry === true,
       disableTools,
-      allowEmptyAssistantReplyAsSilent: isSubagentLane || isSubagentAnnounceHandoff,
+      terminalReplyExpectation: replyExpectation,
+      silentReplyPromptMode: replyExpectation === "required" ? "none" : undefined,
       bootstrapPromptWarningSignaturesSeen,
       bootstrapPromptWarningSignature,
     }) satisfies Partial<RunEmbeddedAgentInternalParams>;
@@ -969,15 +968,8 @@ export function runAgentAttempt(params: {
         let result: EmbeddedAgentRunResult;
         try {
           const forkCliSessionOnResume = cliSessionBinding?.forkNextResume === true;
-          const resolvedCliBackend = resolveCliBackendConfig(cliExecutionProvider, params.cfg, {
-            agentId: params.sessionAgentId,
-          });
-          const supportsCliSessionFork = Boolean(resolvedCliBackend?.config.forkArg);
-          if (forkCliSessionOnResume && !supportsCliSessionFork) {
-            throw new Error(`CLI backend "${cliExecutionProvider}" does not support session forks`);
-          }
           const forkStoreParams =
-            supportsCliSessionFork && cliSessionBinding?.sessionId && mutableCliSessionStore
+            cliSessionBinding?.sessionId && mutableCliSessionStore
               ? {
                   provider: cliExecutionProvider,
                   expectedCliSessionId: cliSessionBinding.sessionId,
@@ -1013,35 +1005,16 @@ export function runAgentAttempt(params: {
             cliSessionBinding,
             forkCliSessionOnResume,
             ...(forkStoreParams
-              ? {
-                  claimCliSessionFork: async () => {
-                    const claimed = await consumeCliSessionForkInStore(forkStoreParams);
-                    if (claimed) {
-                      params.sessionEntry = claimed;
-                    }
-                    return Boolean(claimed);
+              ? buildCliSessionForkRunParams(
+                  {
+                    ...forkStoreParams,
+                    assertCommitAllowed: assertSettlementCurrent,
+                    abortSignal: params.deferredLifecycle?.signal ?? params.opts.abortSignal,
                   },
-                  restoreCliSessionFork: async () => {
-                    // Restoring the fork is current-owner cleanup, including after cancellation.
-                    const restored = await restoreCliSessionForkInStore({
-                      ...forkStoreParams,
-                      assertCommitAllowed: assertSettlementCurrent,
-                    });
-                    if (restored) {
-                      params.sessionEntry = restored;
-                    }
+                  (entry) => {
+                    params.sessionEntry = entry;
                   },
-                  persistCliSessionForkSuccessor: async (successorCliSessionId: string) => {
-                    const persisted = await persistCliSessionForkSuccessorInStore({
-                      ...forkStoreParams,
-                      successorCliSessionId,
-                    });
-                    if (!persisted) {
-                      throw new Error("CLI session fork successor could not be persisted");
-                    }
-                    params.sessionEntry = persisted;
-                  },
-                }
+                )
               : {}),
             authProfileId: cliAuthProfileId,
             // Image discovery must use the original turn, before retry/history decoration.
@@ -1178,8 +1151,6 @@ export function runAgentAttempt(params: {
   const embeddedRunParams: RunEmbeddedAgentInternalParams = {
     ...buildCommonRunParams(),
     sandboxSessionKey: params.sessionKey,
-    // Subagent lifecycle owns the stricter explicit visible/silent/empty evidence check.
-    terminalReplyExpectation: isSubagentLane ? "optional" : undefined,
     ...toolContext,
     messageTo: params.opts.replyTo ?? params.opts.to,
     messageThreadId: params.opts.threadId,

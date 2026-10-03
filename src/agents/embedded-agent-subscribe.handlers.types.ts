@@ -222,6 +222,10 @@ export type EmbeddedAgentSubscribeState = {
   pendingMessagingTexts: Map<string, string>;
   pendingMessagingTargets: Map<string, MessagingToolSend>;
   sourceReplyDeliveryState?: ReplyDeliveryState;
+  /** Whether the current provider turn's finished tools were only complete source progress. */
+  turnToolsOnlySourceProgress?: boolean;
+  /** The same fact for the latest provider turn that finished any tool. */
+  lastToolTurnOnlySourceProgress?: boolean;
   successfulCronAdds: number;
   pendingMessagingMediaUrls: Map<string, string[]>;
   pendingToolMediaUrls: string[];
@@ -405,6 +409,8 @@ type ToolHandlerState = Pick<
   | "messageToolOnlySourceReplyDelivered"
   | "sourceReplyDelivered"
   | "sourceReplyDeliveryState"
+  | "turnToolsOnlySourceProgress"
+  | "lastToolTurnOnlySourceProgress"
   | "messagingToolSentTargets"
   | "heartbeatToolResponse"
   | "successfulCronAdds"
