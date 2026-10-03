@@ -23,6 +23,8 @@ import {
 import type { SubagentRunRecord } from "../subagents/registry/subagent-registry.types.js";
 import { arbUUID, arbTimestamp } from "../test-helpers/property-generators.js";
 
+const readResult = async () => ({ text: "", isCurrent: () => true });
+
 describe("agent-steering-queue properties", () => {
   describe("listPendingAgentSteeringItemsFromSubagentRuns", () => {
     it("maintains deterministic ordering by endedAt", () => {
@@ -501,6 +503,7 @@ describe("agent-steering-queue properties", () => {
               requesterSessionKey,
               leaseId,
               now,
+              readResult,
             });
 
             if (!result) {
@@ -724,6 +727,7 @@ describe("agent-steering-queue properties", () => {
               requesterSessionKey,
               leaseId,
               now,
+              readResult,
             });
 
             if (!leaseResult) {

@@ -129,7 +129,6 @@ describe("completed delivery through runner and dispatcher", () => {
       const captured = subscription.getCurrentAttemptAssistant();
       const embedded = buildEmbeddedRunPayloads({
         assistantTexts: subscription.assistantTexts,
-        answerSegments: subscription.answerSegments,
         lastAssistant: captured,
         currentAssistant: captured ?? null,
         sessionKey: "agent:main:admission",

@@ -45,7 +45,6 @@ vi.mock("../plugins/provider-hook-runtime.js", async () => {
           modelId?: string;
           modelApi?: string;
           env?: NodeJS.ProcessEnv;
-          inHistorySystemUpdates?: boolean;
         }) => {
           const modelId = context?.modelId?.toLowerCase() ?? "";
           switch (provider) {
@@ -68,11 +67,7 @@ vi.mock("../plugins/provider-hook-runtime.js", async () => {
               };
             case "amazon-bedrock":
             case "anthropic":
-              return replayHelpers.buildAnthropicReplayPolicyForModel(
-                modelId,
-                undefined,
-                context?.inHistorySystemUpdates,
-              );
+              return replayHelpers.buildAnthropicReplayPolicyForModel(modelId, undefined);
             case "minimax":
               return context?.modelApi === "openai-completions"
                 ? {
@@ -366,81 +361,6 @@ describe("resolveTranscriptPolicy", () => {
     expect(policy.dropThinkingBlocks).toBe(true);
     expect(policy.validateAnthropicTurns).toBe(true);
   });
-
-  it("gates in-history updates by authenticated route and keeps cached policies separate", () => {
-    const config = {} as OpenClawConfig;
-    const model = makeOpenAiCompatibleReasoningModel({
-      id: "claude-opus-5",
-      provider: "anthropic",
-      api: "anthropic-messages",
-      baseUrl: "https://api.anthropic.com",
-    });
-    for (const [directApiKey, provider, api, baseUrl, expected] of [
-      [false, "anthropic", "anthropic-messages", model.baseUrl, false],
-      [true, "anthropic", "anthropic-messages", model.baseUrl, true],
-      [true, "anthropic", "anthropic-messages", "https://proxy.example.test", false],
-      [true, "amazon-bedrock", "bedrock-converse-stream", model.baseUrl, false],
-      [true, "google-vertex", "anthropic-messages", model.baseUrl, false],
-      [true, "microsoft-foundry", "anthropic-messages", model.baseUrl, false],
-    ] as const) {
-      const policy = resolveTranscriptPolicy({
-        config,
-        directApiKey,
-        provider,
-        modelApi: api,
-        modelId: model.id,
-        model: { ...model, provider, api, baseUrl },
-      });
-      expect(policy.inHistorySystemUpdates).toBe(expected);
-      expect(policy.appendOnlyRuntimeContext).toBe(expected);
-    }
-  });
-
-  it("uses the supplied environment for in-history route eligibility", () => {
-    const config = {} as OpenClawConfig;
-    for (const [baseUrl, expected] of [
-      ["https://proxy.example.test", false],
-      ["https://api.anthropic.com", true],
-    ] as const) {
-      const policy = resolveTranscriptPolicy({
-        config,
-        directApiKey: true,
-        provider: "anthropic",
-        modelApi: "anthropic-messages",
-        modelId: "claude-opus-5",
-        env: { ANTHROPIC_BASE_URL: baseUrl },
-      });
-      expect(policy.inHistorySystemUpdates).toBe(expected);
-      expect(policy.appendOnlyRuntimeContext).toBe(expected);
-    }
-  });
-
-  it.each([false, true])(
-    "constrains explicit plugin updates to host route eligibility (direct API key=%s)",
-    (directApiKey) => {
-      const policy = resolveTranscriptPolicy({
-        directApiKey,
-        provider: "anthropic",
-        modelApi: "anthropic-messages",
-        modelId: "claude-opus-5",
-        env: { ANTHROPIC_BASE_URL: "https://api.anthropic.com" },
-        runtimeHandle: {
-          provider: "anthropic",
-          plugin: {
-            id: "anthropic",
-            label: "Anthropic",
-            auth: [],
-            buildReplayPolicy: () => ({
-              inHistorySystemUpdates: true,
-              appendOnlyRuntimeContext: false,
-            }),
-          },
-        },
-      });
-      expect(policy.inHistorySystemUpdates).toBe(directApiKey);
-      expect(policy.appendOnlyRuntimeContext).toBe(directApiKey);
-    },
-  );
 
   it("does not reuse cached unowned Anthropic policies across reasoning compat changes", () => {
     const config = {} as OpenClawConfig;

@@ -5,7 +5,7 @@ import type { CallGatewayOptions } from "../../gateway/call.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createSessionConversationTestRegistry } from "../../test-utils/session-conversation-registry.js";
 import { runAgentStep } from "./agent-step.js";
-import type { SessionListRow } from "./sessions-helpers.js";
+import type { GatewaySessionListRow } from "./sessions-helpers.js";
 import { runSessionsSendA2AFlow } from "./sessions-send-tool.a2a.js";
 
 const callGatewayMock = vi.hoisted(() => vi.fn());
@@ -57,7 +57,7 @@ function firstMockArg(
 
 describe("runSessionsSendA2AFlow reply delivery", () => {
   let gatewayCalls: CallGatewayOptions[];
-  let sessionListRows: SessionListRow[];
+  let sessionListRows: GatewaySessionListRow[];
 
   beforeEach(() => {
     setActivePluginRegistry(createSessionConversationTestRegistry());
@@ -501,13 +501,14 @@ describe("runSessionsSendA2AFlow reply delivery", () => {
       key: "agent:main:discord:channel:target-room",
       agentId: "main",
       kind: "group",
+      classification: "channel",
       channel: "discord",
       deliveryContext: {
         channel: "discord",
         to: "channel:target-room",
         accountId,
       },
-    } satisfies SessionListRow;
+    } satisfies GatewaySessionListRow;
     sessionListRows = [session];
 
     await runSessionsSendA2AFlow({

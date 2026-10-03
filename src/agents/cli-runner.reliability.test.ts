@@ -4,8 +4,8 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSolidPngBuffer } from "../../test/helpers/image-fixtures.js";
-import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
+import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { getReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import { createReplyOperation, replyRunRegistry } from "../auto-reply/reply/reply-run-registry.js";
 import { testing as replyRunTesting } from "../auto-reply/reply/reply-run-registry.test-support.js";
@@ -52,7 +52,6 @@ import { useSessionStoreTempDirs } from "../test-utils/session-state-cleanup.js"
 import { prepareSystemAgentRunAdmission } from "./admitted-run-context.js";
 import { createTestAdmittedRunContext } from "./admitted-run-context.test-support.js";
 import { testing as cliBackendsTesting } from "./cli-backends.test-support.js";
-import { createLifecycleHooks, setHookRunnerForTest } from "./cli-runner.hooks.test-support.js";
 import {
   restoreCliRunnerTestDeps,
   runPreparedCliAgent as runPreparedCliAgentCore,
@@ -111,9 +110,42 @@ vi.mock("../tts/tts-settings.js", () => ({
   setTtsMachinePrefsPathResolver: vi.fn(),
 }));
 
+const mockGetGlobalHookRunner = vi.mocked(getGlobalHookRunner);
+const hookRunnerGlobalStateKey = Symbol.for("openclaw.plugins.hook-runner-global-state");
 const sessionDirs = useSessionStoreTempDirs(afterAll, "openclaw-cli-hooks-");
 const autoCleanupTempDirs = useAutoCleanupTempDirTracker(afterEach);
 let sessionFileEnvSnapshot: ReturnType<typeof captureEnv> | undefined;
+
+type HookRunnerGlobalStateForTest = {
+  hookRunner: unknown;
+  registry: unknown;
+};
+
+function setHookRunnerForTest(hookRunner: unknown): void {
+  // Keep the module-level hook runner singleton aligned with the mocked getter.
+  mockGetGlobalHookRunner.mockReturnValue(hookRunner as never);
+  const globalStore = globalThis as Record<PropertyKey, unknown>;
+  const state = (globalStore[hookRunnerGlobalStateKey] as
+    | HookRunnerGlobalStateForTest
+    | undefined) ?? {
+    hookRunner: null,
+    registry: null,
+  };
+  state.hookRunner = hookRunner;
+  state.registry = null;
+  globalStore[hookRunnerGlobalStateKey] = state;
+}
+
+function createLifecycleHooks(hooks: string[], onAgentEnd: () => Promise<void> = async () => {}) {
+  const hookRunner = {
+    hasHooks: vi.fn((hookName: string) => hooks.includes(hookName)),
+    runLlmInput: vi.fn(async () => undefined),
+    runLlmOutput: vi.fn(async () => undefined),
+    runAgentEnd: vi.fn(onAgentEnd),
+  };
+  setHookRunnerForTest(hookRunner);
+  return hookRunner;
+}
 
 function createSessionFixture(params?: {
   history?: Array<{ role: "user"; content: string }>;
@@ -320,6 +352,22 @@ function completeCapturedToolCall(
   }
   recordMcpLoopbackToolCallResult({ ...call, captureHandle, result, outcome: "completed" });
   markMcpLoopbackToolCallFinished(captureHandle);
+}
+
+function withParams(
+  context: PreparedCliRunContext,
+  overrides: Partial<PreparedCliRunContext["params"]>,
+): PreparedCliRunContext {
+  return { ...context, params: { ...context.params, ...overrides } };
+}
+
+function capturedContext(
+  params: PreparedContextOverrides,
+  runParams: Partial<PreparedCliRunContext["params"]> = {},
+): PreparedCliRunContext {
+  const context = withParams(makeClaudePreparedContext(params), runParams);
+  context.mcpDeliveryCapture = true;
+  return context;
 }
 
 function makeNoOutputTimeoutRun() {
@@ -1830,8 +1878,9 @@ describe("runCliAgent reliability", () => {
           runId: "live-retry-timeout",
           pid: 3301,
           startedAtMs: Date.now(),
+          activity: { resultSettled: false, lastOutputAtMs: Date.now() },
           stdin: {
-            write: vi.fn((dataValue: string, cb?: (err?: Error | null) => void) => cb?.()),
+            write: vi.fn((dataValue: string | Buffer, cb?: (err?: Error | null) => void) => cb?.()),
             end: vi.fn(),
           },
           wait: vi.fn(() => exited),
@@ -1855,8 +1904,9 @@ describe("runCliAgent reliability", () => {
         runId: "live-retry-fresh",
         pid: 3302,
         startedAtMs: Date.now(),
+        activity: { resultSettled: false, lastOutputAtMs: Date.now() },
         stdin: {
-          write: vi.fn((dataValue: string, cb?: (err?: Error | null) => void) => {
+          write: vi.fn((dataValue: string | Buffer, cb?: (err?: Error | null) => void) => {
             stdoutListener?.(
               [
                 JSON.stringify({ type: "system", subtype: "init", session_id: "fresh-live" }),
@@ -1867,7 +1917,7 @@ describe("runCliAgent reliability", () => {
           }),
           end: vi.fn(),
         },
-        wait: vi.fn(() => new Promise(() => {})),
+        wait: vi.fn(() => new Promise<RunExit>(() => {})),
         cancel: vi.fn(),
       };
     });
@@ -2827,9 +2877,6 @@ describe("runCliAgent reliability", () => {
     });
     const persistApprovedSpy = vi.spyOn(recorder, "persistApproved");
     const onUserMessagePersisted = vi.fn();
-
-  it("keeps raw assistant output separate from transformed visible CLI output", async () => {
-    supervisorSpawnMock.mockResolvedValueOnce(makeManagedRun({ stdout: "hello from cli" }));
 
     const context = buildPreparedContext({
       sessionKey: "agent:main:main",
@@ -3845,11 +3892,6 @@ describe("runCliAgent reliability", () => {
     );
     expect(hookRunner.runLlmOutput).not.toHaveBeenCalled();
   });
-
-  it("returns silent payload for empty CLI output when silence is allowed", async () => {
-    const hookRunner = createLifecycleHooks(["llm_output"]);
-
-    supervisorSpawnMock.mockResolvedValueOnce(makeManagedRun({ stdout: "   " }));
 
   it.each(["   ", SILENT_REPLY_TOKEN])(
     "returns a silent payload for optional CLI output %j",
