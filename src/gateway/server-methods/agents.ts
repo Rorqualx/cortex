@@ -104,10 +104,7 @@ import { withAgentExecApprovalsRemoved } from "../../infra/exec-approvals.js";
 import { root, FsSafeError, type ReadResult } from "../../infra/fs-safe.js";
 import { isPathInside } from "../../infra/path-guards.js";
 import { movePathToTrash } from "../../plugin-sdk/browser-maintenance.js";
-import {
-  normalizeAgentId,
-  normalizeAgentIdStrict,
-} from "../../routing/session-key.js";
+import { normalizeAgentId, normalizeAgentIdStrict } from "../../routing/session-key.js";
 import {
   readAgentDeletionJournal,
   type AgentDeletionJournalCleanupPath,
@@ -843,22 +840,6 @@ function unregisterAgentDeleteDatabases(agentId: string, databasePaths: string[]
   for (const databasePath of databasePaths) {
     unregisterOpenClawAgentDatabase({ agentId, path: databasePath });
   }
-}
-
-function prepareJournaledAgentDirOwnership(
-  cfg: OpenClawConfig,
-  agentId: string,
-  agentDir: string,
-): void {
-  for (const configuredAgentId of listAgentIds(cfg)) {
-    resolveAgentDir(cfg, configuredAgentId);
-  }
-  const registeredOwner = resolveRegisteredAgentIdForDir(agentDir);
-  if (registeredOwner !== undefined) {
-    return;
-  }
-  // The durable journal retains ownership across restarts after the roster entry is gone.
-  registerResolvedAgentDir({ agentId, agentDir });
 }
 
 function respondWorkspaceFileUnsafe(respond: RespondFn, name: string): void {
