@@ -547,7 +547,41 @@ struct RootTabsSourceGuardTests {
 
             #expect(tokenAssignment.lowerBound < tokenEndpointGuard.lowerBound)
             #expect(passwordAssignment.lowerBound < passwordEndpointGuard.lowerBound)
+    @Test @MainActor func `credential fields stay scoped to exact gateway owners`() throws {
+        let instanceID = "credential-fields-\(UUID().uuidString)"
+        defer { GatewaySettingsStore.deleteAllGatewayCredentials(instanceId: instanceID) }
+        let firstID = "manual|caf\u{e9}.example|443"
+        let secondID = "manual|cafe\u{301}.example|443"
+        for (stableID, token) in [(firstID, "first-token"), (secondID, "second-token")] {
+            #expect(GatewaySettingsStore.saveGatewayCredentials(
+                token: token,
+                bootstrapToken: nil,
+                password: nil,
+                gatewayStableID: stableID,
+                suppressStoredDeviceAuth: true,
+                instanceId: instanceID))
         }
+        var fields = GatewayConnectionController.ManualAuthOverride.Fields()
+        fields.load(instanceId: instanceID, targetStableID: firstID)
+        #expect(fields.token == "first-token")
+        fields.token = "edited-token"
+        fields.persist(instanceId: instanceID, targetStableID: firstID)
+        #expect(GatewaySettingsStore.loadGatewayCredentials(
+            instanceId: instanceID,
+            gatewayStableID: firstID).token == "edited-token")
+
+        fields.selectTarget(secondID, instanceId: instanceID, allowManualOverride: false)
+        #expect(fields.token == "second-token")
+        #expect(fields.pendingOverride == nil)
+        #expect(fields.prepareManualConnection(instanceId: instanceID, targetStableID: firstID) == nil)
+        #expect(GatewaySettingsStore.loadGatewayCredentials(
+            instanceId: instanceID,
+            gatewayStableID: firstID).token == "edited-token")
+        let selected = try #require(fields.prepareManualConnection(instanceId: instanceID, targetStableID: secondID))
+        #expect(selected.token == "second-token")
+        #expect(GatewaySettingsStore.loadGatewayCredentials(
+            instanceId: instanceID,
+            gatewayStableID: secondID).token == "second-token")
     }
 
     @Test func `onboarding mode defaults clear credentials after endpoint changes`() throws {

@@ -2,10 +2,7 @@ import "./attempt-spawn-workspace.tools-mock.test-support.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  normalizeLowercaseStringOrEmpty,
-  normalizeOptionalLowercaseString,
-} from "@openclaw/normalization-core/string-coerce";
+import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { vi, type Mock } from "vitest";
 import type {
   AssembleResult,
@@ -27,11 +24,6 @@ import type { PluginMetadataSnapshot } from "../../../plugins/plugin-metadata-sn
 import { createLazyPromise } from "../../../shared/lazy-runtime.js";
 import { prepareSystemAgentRunAdmission } from "../../admitted-run-context.js";
 import type { EmbeddedContextFile } from "../../embedded-agent-helpers/context-file.js";
-import type {
-  MessagingToolSend,
-  MessagingToolSourceReplyPayload,
-} from "../../embedded-agent-messaging.types.js";
-import { buildToolLifecycleErrorResult } from "../../embedded-agent-tool-results.js";
 import type { Agent, AgentMessage, StreamFn } from "../../runtime/index.js";
 import { agentSessionSetContextReplacementHook } from "../../sessions/agent-session-compaction.js";
 import { agentSessionSetPromptPreparation } from "../../sessions/agent-session-prompting.js";
@@ -42,7 +34,12 @@ import {
 } from "../../sessions/model-registry-runtime.js";
 import type { WorkspaceBootstrapFile } from "../../workspace.js";
 import { getSkillMocks, resetSkillMocks } from "./attempt-skills-mock.test-support.js";
-import type { SessionManagerMocks } from "./attempt-spawn-workspace.session-manager-mock.test-support.js";
+import {
+  readMockSessionCacheTtlTimestamp,
+  resetSessionManagerMocks,
+  type SessionManagerMocks,
+} from "./attempt-spawn-workspace.session-manager-mock.test-support.js";
+import { createSubscriptionMock } from "./attempt-spawn-workspace.subscription-mock.test-support.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 type SubscribeEmbeddedAgentSessionFn =
@@ -55,7 +52,6 @@ type CreateCodingToolsFn = (
   ...args: Parameters<typeof import("../../agent-tools.js").createOpenClawCodingToolsInternal>
 ) => unknown;
 
-type SubscriptionMock = ReturnType<SubscribeEmbeddedAgentSessionFn>;
 type UnknownMock = Mock<(...args: unknown[]) => unknown>;
 type AsyncUnknownMock = Mock<(...args: unknown[]) => Promise<unknown>>;
 type AsyncContextEngineMaintenanceMock = Mock<
@@ -117,90 +113,6 @@ type AttemptSpawnWorkspaceHoisted = {
   sessionManager: SessionManagerMocks;
 };
 
-function createSubscriptionMock(): SubscriptionMock {
-  // Minimal subscription surface for runEmbeddedAttempt tests; individual tests
-  // override only the lifecycle method they need.
-  return {
-    assistantTexts: [] as string[],
-    getCurrentAttemptAssistant: () => undefined,
-    hasSuccessfulModelResponse: () => false,
-    getLastAssistantTextMessageIndex: () => undefined,
-    flushAssistantStream: () => {},
-    getLatestMcpAppChannelView: () => undefined,
-    getLatestMcpConnectAction: () => undefined,
-    endsWithSourceProgress: () => false,
-    toolMetas: [] as SubscriptionMock["toolMetas"],
-    runToolLifecycle: async <T>(toolParams: {
-      args: unknown;
-      replaySafe?: boolean;
-      execute: (onImplementationStart: () => void) => Promise<T>;
-      onTerminal?: (terminal: {
-        result: unknown;
-        isError: boolean;
-        executedArguments: unknown;
-        effectReceipt: {
-          state: "read_completed" | "failed_no_effect" | "mutation_committed" | "uncertain";
-        };
-      }) => void | Promise<void>;
-    }) => {
-      try {
-        const result = await toolParams.execute(() => undefined);
-        await toolParams.onTerminal?.({
-          result,
-          isError: false,
-          executedArguments: structuredClone(toolParams.args),
-          effectReceipt: {
-            state: toolParams.replaySafe ? "read_completed" : "mutation_committed",
-          },
-        });
-        return result;
-      } catch (error) {
-        await toolParams.onTerminal?.({
-          result: buildToolLifecycleErrorResult(error),
-          isError: true,
-          executedArguments: structuredClone(toolParams.args),
-          effectReceipt: {
-            state: toolParams.replaySafe ? "failed_no_effect" : "uncertain",
-          },
-        });
-        throw error;
-      }
-    },
-    unsubscribe: () => {},
-    setTerminalLifecycleMeta: () => {},
-    waitForCompactionRetry: async () => {},
-    waitForPendingEvents: async () => {},
-    getAcceptedSessionSpawns: () => [],
-    getMessagingToolSentTexts: () => [] as string[],
-    getMessagingToolSentMediaUrls: () => [] as string[],
-    getMessagingToolSentTargets: () => [] as MessagingToolSend[],
-    getMessagingToolSourceReplyPayloads: () => [] as MessagingToolSourceReplyPayload[],
-    getSourceReplyDelivered: () => undefined,
-    getSourceReplyDeliveryState: () => undefined,
-    getHeartbeatToolResponse: () => undefined,
-    getPendingToolMediaReply: () => null,
-    getToolAutoDeliveryMediaUrls: () => [] as string[],
-    hasToolMediaBlockReply: () => false,
-    getVisibleBlockReplyCount: () => 0,
-    getSuccessfulCronAdds: () => 0,
-    getReplayState: () => ({
-      replayInvalid: false,
-      hadPotentialSideEffects: false,
-    }),
-    didSendViaMessagingTool: () => false,
-    didSendDeterministicApprovalPrompt: () => false,
-    getLastToolError: () => undefined,
-    getLastToolRecovery: () => undefined,
-    getUsageTotals: () => undefined,
-    getLastAssistantUsage: () => undefined,
-    getAssistantTurnCount: () => 0,
-    getCompactionCount: () => 0,
-    getLastCompactionTokensAfter: () => undefined,
-    getItemLifecycle: () => ({ startedCount: 0, completedCount: 0, activeCount: 0 }),
-    isCompacting: () => false,
-    isCompactionInFlight: () => false,
-  };
-}
 
 type AttemptBaseMocks = Omit<AttemptSpawnWorkspaceHoisted, keyof ReturnType<typeof getSkillMocks>>;
 
@@ -280,7 +192,10 @@ const hoisted = vi.hoisted((): AttemptBaseMocks => {
     appendThinkingLevelChange: vi.fn(),
     appendModelChange: vi.fn(),
     appendCustomEntry: vi.fn(),
+    appendCustomEntryAsync: vi.fn(),
     appendMessage: vi.fn(),
+    appendMessageAsync: async (...args: unknown[]): Promise<unknown> =>
+      sessionManager.appendMessage(...args),
     appendSessionInfo: vi.fn(),
     appendLabelChange: vi.fn(),
     flushPendingPersistence: vi.fn(),
@@ -452,6 +367,22 @@ vi.mock("../../sessions/sdk.js", () => ({
   createAgentSessionForEmbeddedRunner: (options: CreateAgentSessionOptions) =>
     hoisted.createAgentSessionMock(options),
 }));
+
+vi.mock("../../../config/sessions/session-entry-read-runtime.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../config/sessions/session-entry-read-runtime.js")>();
+  const readSessionEntryInWorker: typeof actual.readSessionEntryInWorker = async (
+    _scope,
+    assertCurrent,
+  ) => {
+    // These attempt fixtures have no quota-recovery entry; retain the async admission boundary.
+    assertCurrent();
+    await Promise.resolve();
+    assertCurrent();
+    return undefined;
+  };
+  return { ...actual, readSessionEntryInWorker };
+});
 
 vi.mock("../../subagents/spawn/subagent-spawn.js", () => ({
   SUBAGENT_SPAWN_MODES: ["run", "session"],
@@ -768,44 +699,8 @@ vi.mock("../cache-ttl.js", () => ({
     data: unknown,
   ) => sessionManager.appendCustomEntry?.("openclaw.cache-ttl", data),
   isCacheTtlEligibleProvider: (provider?: string) => provider === "anthropic",
-  readLastCacheTtlTimestamp: (
-    sessionManager: {
-      appendCustomEntry?: { mock?: { calls?: unknown[][] } };
-    },
-    context?: { provider?: string; modelId?: string },
-  ) => {
-    const calls = sessionManager.appendCustomEntry?.mock?.calls ?? [];
-    for (let index = calls.length - 1; index >= 0; index -= 1) {
-      const [customType, data] = calls[index] ?? [];
-      if (customType !== "openclaw.cache-ttl") {
-        continue;
-      }
-      const entry = data as
-        | {
-            timestamp?: unknown;
-            provider?: string;
-            modelId?: string;
-          }
-        | undefined;
-      if (
-        context?.provider &&
-        normalizeOptionalLowercaseString(entry?.provider) !==
-          normalizeOptionalLowercaseString(context.provider)
-      ) {
-        continue;
-      }
-      if (
-        context?.modelId &&
-        normalizeOptionalLowercaseString(entry?.modelId) !==
-          normalizeOptionalLowercaseString(context.modelId)
-      ) {
-        continue;
-      }
-      const timestamp = entry?.timestamp;
-      return typeof timestamp === "number" ? timestamp : null;
-    }
-    return null;
-  },
+  readLastCacheTtlTimestamp: (...args: Parameters<typeof readMockSessionCacheTtlTimestamp>) =>
+    readMockSessionCacheTtlTimestamp(...args),
 }));
 
 vi.mock("../compaction-runtime-context.js", () => ({
@@ -1080,30 +975,7 @@ export function resetEmbeddedAttemptHarness(
   hoisted.systemPromptTexts.length = 0;
   hoisted.embeddedSystemPromptInputs.length = 0;
   hoisted.trajectoryEvents.length = 0;
-  hoisted.sessionManager.getSessionTarget.mockReset().mockReturnValue(undefined);
-  hoisted.sessionManager.getSessionId.mockReset().mockReturnValue("embedded-session");
-  hoisted.sessionManager.getAppendParentId.mockReset().mockReturnValue(null);
-  hoisted.sessionManager.getHeader.mockReset().mockReturnValue({ version: 3 });
-  hoisted.sessionManager.getLeafId.mockReset().mockReturnValue(null);
-  hoisted.sessionManager.getLeafEntry.mockReset().mockReturnValue(null);
-  hoisted.sessionManager.getEntry.mockReset().mockReturnValue(undefined);
-  hoisted.sessionManager.getEntries.mockReset().mockReturnValue([]);
-  hoisted.sessionManager.getBranch.mockReset().mockReturnValue([]);
-  hoisted.sessionManager.getBoundaryCount.mockReset().mockReturnValue(0);
-  hoisted.sessionManager.branch.mockReset();
-  hoisted.sessionManager.resetLeaf.mockReset();
-  hoisted.sessionManager.clearNextUserMessagePersistenceSuppression.mockReset();
-  hoisted.sessionManager.buildSessionContext
-    .mockReset()
-    .mockReturnValue({ messages: params.sessionMessages ?? [] });
-  hoisted.sessionManager.appendThinkingLevelChange.mockReset();
-  hoisted.sessionManager.appendModelChange.mockReset();
-  hoisted.sessionManager.appendCustomEntry.mockReset();
-  hoisted.sessionManager.appendMessage.mockReset();
-  hoisted.sessionManager.appendSessionInfo.mockReset();
-  hoisted.sessionManager.appendLabelChange.mockReset();
-  hoisted.sessionManager.flushPendingPersistence.mockReset();
-  hoisted.sessionManager.reloadPersistedTranscript.mockReset();
+  resetSessionManagerMocks(hoisted.sessionManager, params.sessionMessages);
   if (params.subscribeImpl) {
     hoisted.subscribeEmbeddedAgentSessionMock.mockImplementation(params.subscribeImpl);
   }

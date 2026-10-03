@@ -841,6 +841,15 @@ function mergeSessionEntryWithPolicy(
   if (existing.createdAt !== undefined) {
     next.createdAt = existing.createdAt;
   }
+  if (existing.conversationLink !== undefined) {
+    next.conversationLink = existing.conversationLink;
+  }
+  if (existing.projectId !== undefined) {
+    next.projectId = existing.projectId;
+  }
+  if (existing.repositoryWorkspaceId !== undefined) {
+    next.repositoryWorkspaceId = existing.repositoryWorkspaceId;
+  }
   if (existing.forkSource !== undefined) {
     next.forkSource = existing.forkSource;
   }
