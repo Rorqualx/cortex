@@ -575,12 +575,11 @@ export async function materializeBundleMcpToolsForRun(params: {
             details.structuredContent = sanitizeMcpStructuredValue(details.structuredContent);
           }
           const agentResult: AgentToolResult<unknown> = {
-            content: projected.content.map((block) =>
-              fenceUntrustedMcpBlock(block, serverName),
-            ),
+            content: projected.content.map((block) => fenceUntrustedMcpBlock(block, serverName)),
             details,
           };
-          // Requester-scoped servers never mint app views (outlive run; no requester id on view boundary).          const scopedServer = runtime.isRequesterScopedServer?.(serverName) === true;
+          // Requester-scoped servers never mint app views (outlive run; no requester id on view boundary).
+          const scopedServer = runtime.isRequesterScopedServer?.(serverName) === true;
           const requesterId = appRequester?.profileId;
           // Transport sender ids are not Gateway profiles. Keep private channel
           // views suppressed until an identity owner supplies a mapped profile.

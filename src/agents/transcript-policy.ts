@@ -128,6 +128,7 @@ function buildUnownedProviderTransportReplayFallback(params: {
     };
   }
   const isStrictOpenAiCompatible = params.modelApi === "openai-completions";
+  const isOpenAiResponses = isOpenAiResponsesCompatibleApi(params.modelApi);
   const requiresOpenAiCompatibleToolIdSanitization =
     params.modelApi === "openai-completions" ||
     params.modelApi === "openai-responses" ||
