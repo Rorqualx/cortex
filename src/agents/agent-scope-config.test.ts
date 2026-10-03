@@ -473,13 +473,20 @@ describe("agent roster resolution", () => {
   });
 
   it("resolves the retained legacy owner after the marker is migrated away", () => {
-    // Regression: the load-time roster migration strips the raw default marker but records the
-    // single legacy owner as a retained fact. Generic default-owner callers (cron runs, plugin
-    // prewarm, memory narratives) receive that migrated config; before the fix they threw
-    // AgentSelectionRequiredError on a multi-agent roster that carried exactly one shipped default.
-    const cfg = migratePersistedImplicitMainRoster({
-      agents: { entries: { ops: { default: true }, research: {} } },
-    }).config as OpenClawConfig;
+    // Regression: after the load-time roster migration (removed upstream by #162612, which moved
+    // legacy roster reads into Doctor) a migrated config carries no raw default marker, records the
+    // single legacy owner as a retained fact, and materializes systemAgent.agentId. Generic
+    // default-owner callers (cron runs, plugin prewarm, memory narratives) receive that migrated
+    // config; before the fix they threw AgentSelectionRequiredError on a multi-agent roster that
+    // carried exactly one shipped default. The post-migration state is constructed directly here.
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: { systemAgent: { agentId: "ops" } },
+        entries: { ops: {}, research: {} },
+      },
+    };
+    retainLegacyDefaultAgentId(cfg, "ops");
+    expect(getRetainedLegacyDefaultAgentId(cfg)).toBe("ops");
 
     expect(cfg.agents?.entries?.ops?.default).toBeUndefined();
     expect(tryResolveSoleAgentId(cfg)).toBeUndefined();

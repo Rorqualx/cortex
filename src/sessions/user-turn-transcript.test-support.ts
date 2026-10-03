@@ -6,6 +6,7 @@ import { loadTranscriptEvents } from "../config/sessions/session-accessor.js";
 import type {
   PersistUserTurnTranscriptParams,
   UserTurnTranscriptPersistResult,
+  UserTurnTranscriptPersistenceTarget,
   UserTurnTranscriptTarget,
 } from "./user-turn-transcript.types.js";
 
@@ -75,7 +76,7 @@ export async function readTranscriptMessages(params: {
 /** Creates a store-backed transcript target for tests that do not own runtime session setup. */
 export function createTestUserTurnTranscriptTarget(
   overrides: Partial<UserTurnTranscriptTarget> = {},
-): UserTurnTranscriptTarget {
+): UserTurnTranscriptPersistenceTarget {
   return {
     agentId: "main",
     sessionEntry: undefined,

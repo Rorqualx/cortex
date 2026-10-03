@@ -782,11 +782,13 @@ describe("agents.create", () => {
 
     expectRespondErrorContaining(respond, "already exists");
     expect(mocks.writeConfigFile).not.toHaveBeenCalled();
+  });
 
-    registerAgentCreationCommitTests({
+  registerAgentCreationCommitTests({
     ...mocks,
     create: (params) => makeCall("agents.create", params),
-    configuredConfig: () => mocks.loadConfigReturn,  });
+    configuredConfig: () => mocks.loadConfigReturn,
+  });
 
   it("rejects invalid params (missing name)", async () => {
     const respond = await call("agents.create", {

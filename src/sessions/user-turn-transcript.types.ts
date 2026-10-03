@@ -108,7 +108,7 @@ type UserTurnBeforeMessageWrite = (params: {
   sessionKey?: string;
 }) => AgentMessage | null;
 
-type UserTurnTranscriptPersistenceTarget = {
+export type UserTurnTranscriptPersistenceTarget = {
   sessionId: string;
   expectedSessionId?: string;
   initialSessionEntry?: SessionEntry;
