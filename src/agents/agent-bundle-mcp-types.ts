@@ -139,6 +139,8 @@ export type SessionMcpRuntime = {
    */
   isRequesterScopedServer?: (serverName: string) => boolean;
   mcpAppsEnabled?: boolean;
+  /** Native adapter proves its exact thread/client binding is still current. */
+  assertOwnerCurrent?: () => void;
   /** Latest non-persisted App context, owned by the exact live view that supplied it. */
   pendingMcpAppModelContext?: { owner: object; text: string; leased?: boolean };
   /** Blocks a deferred-retirement view from restoring context across reset. */

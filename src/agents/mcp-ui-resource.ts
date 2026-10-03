@@ -32,6 +32,8 @@ export type McpAppViewLease = {
   runtime: SessionMcpRuntime;
   agentId: string;
   sessionId: string;
+  /** Owning requester profile id, when the view was created under an explicit requester. */
+  requesterId?: string;
   serverName: string;
   toolName: string;
   uiResourceUri: string;
