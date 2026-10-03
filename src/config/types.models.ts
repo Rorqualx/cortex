@@ -1,10 +1,10 @@
 import type { z } from "zod";
 import type { ModelDataMediaInputConfig } from "../../packages/llm-core/src/model-data.js";
 import type { OpenAICompletionsCompat, RawModelCostConfig } from "../llm/types.js";
+import type { ModelApi } from "./model-config-vocabulary.js";
 import type { AgentRuntimePolicyConfig } from "./types.agents-shared.js";
 import type { ConfiguredModelProviderRequest } from "./types.provider-request.js";
 import type { SecretInput } from "./types.secrets.js";
-import type { ModelApi } from "./model-config-vocabulary.js";
 import type { ModelsConfigSchema } from "./zod-schema.core.js";
 
 export {
@@ -120,6 +120,8 @@ export type BedrockDiscoveryConfig = {
   /** Max output tokens applied when discovery cannot infer one. */
   defaultMaxTokens?: number;
 };
+
+export type ModelCatalogRefreshConfig = NonNullable<ModelsSchemaInput["catalogRefresh"]>;
 
 export type ModelsConfig = Omit<ModelsSchemaInput, "providers"> & {
   /** Configured provider catalog keyed by provider id. */

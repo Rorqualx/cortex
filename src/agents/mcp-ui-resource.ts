@@ -8,7 +8,11 @@ import { resolveGlobalMap } from "../shared/global-singleton.js";
 import { completeDeferredSessionMcpRuntimeRetirement } from "./agent-bundle-mcp-manager-cleanup.js";
 import { getSessionMcpRequestSignal } from "./agent-bundle-mcp-request-context.js";
 import type { SessionMcpRuntime } from "./agent-bundle-mcp-types.js";
-import { clearMcpAppModelContextForView } from "./mcp-app-model-context.js";
+import {
+  clearMcpAppModelContextForView,
+  leaseMcpAppModelContextForTurn,
+  projectMcpAppModelContextInput,
+} from "./mcp-app-model-context.js";
 import { type McpAppCsp, normalizeMcpAppCsp } from "./mcp-app-sandbox.js";
 
 const MCP_APP_RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
@@ -418,4 +422,76 @@ const testing = {
 if (process.env.VITEST || process.env.NODE_ENV === "test") {
   (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.mcpUiResourceTestApi")] =
     testing;
+}
+
+/** The bounded live-view owner joins managed, discovery and native runtimes for one exact turn. */
+export async function leaseMcpAppModelContextForSessionTurn(params: {
+  sessionKey?: string;
+  sessionId: string;
+  agentId?: string;
+  requesterId?: string;
+}) {
+  if (!params.sessionKey) {
+    return undefined;
+  }
+  const agentId = normalizeAgentId(
+    params.agentId ?? parseAgentSessionKey(params.sessionKey)?.agentId,
+  );
+  pruneViewStore();
+  const byRuntime = new Map<SessionMcpRuntime, Set<object>>();
+  for (const view of getViewStore().values()) {
+    if (
+      view.runtime.sessionKey !== params.sessionKey ||
+      view.sessionId !== params.sessionId ||
+      view.agentId !== agentId ||
+      (view.requesterId !== undefined && view.requesterId !== params.requesterId) ||
+      view.readOnly ||
+      view.allowedAppToolNames === undefined
+    ) {
+      continue;
+    }
+    try {
+      view.runtime.assertOwnerCurrent?.();
+      if (view.authorizeAppInteraction && !(await view.authorizeAppInteraction())) {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+    if (
+      getMcpAppViewLease(view.viewId, view.runtime) !== view ||
+      view.runtime.mcpAppModelContextRevoked
+    ) {
+      continue;
+    }
+    const views = byRuntime.get(view.runtime) ?? new Set<object>();
+    views.add(view);
+    byRuntime.set(view.runtime, views);
+  }
+  const leases = [...byRuntime].flatMap(([runtime, views]) => {
+    const lease = leaseMcpAppModelContextForTurn({ runtime, views });
+    return lease ? [lease] : [];
+  });
+  if (!leases.length) {
+    return undefined;
+  }
+  const modelContext = leases.flatMap((lease) => lease.modelContext);
+  return {
+    project: (imageOffset: number) => projectMcpAppModelContextInput(modelContext, imageOffset),
+    assertCurrent: () => {
+      for (const lease of leases) {
+        lease.assertCurrent();
+      }
+    },
+    commit: () => {
+      for (const lease of leases) {
+        lease.commit();
+      }
+    },
+    rollback: () => {
+      for (const lease of leases) {
+        lease.rollback();
+      }
+    },
+  };
 }

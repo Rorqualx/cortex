@@ -12,6 +12,9 @@ export type AgentContextInjection = NonNullable<SchemaAgentDefaultsConfig["conte
 export type OptionalBootstrapFileName = NonNullable<
   SchemaAgentDefaultsConfig["skipOptionalBootstrapFiles"]
 >[number];
+export type EmbeddedAgentExecutionContract = NonNullable<
+  NonNullable<SchemaAgentDefaultsConfig["embeddedAgent"]>["executionContract"]
+>;
 export type SubagentDelegationMode = NonNullable<
   NonNullable<SchemaAgentDefaultsConfig["subagents"]>["delegationMode"]
 >;

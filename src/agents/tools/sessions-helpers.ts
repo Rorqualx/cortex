@@ -4,12 +4,9 @@
  * Keeps list/send/status tools aligned on rows, visibility context, and compact kind/channel labels.
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { parseRawSessionConversationRef } from "../../sessions/session-key-utils.js";
 import { Type, type Static } from "typebox";
-import type {
-  SessionRow,
-  SessionRunStatus,
-} from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+import type { SessionRunStatus } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+import { parseRawSessionConversationRef } from "../../sessions/session-key-utils.js";
 
 export type { SessionRunStatus };
 import {
@@ -19,7 +16,6 @@ import {
 import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { GatewaySessionRow } from "../../gateway/session-utils.types.js";
-import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import { stringEnum } from "../schema/typebox.js";
 import {
   createAgentToAgentPolicy,

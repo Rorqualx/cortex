@@ -128,6 +128,7 @@ function createSubscriptionMock(): SubscriptionMock {
     flushAssistantStream: () => {},
     getLatestMcpAppChannelView: () => undefined,
     getLatestMcpConnectAction: () => undefined,
+    endsWithSourceProgress: () => false,
     toolMetas: [] as SubscriptionMock["toolMetas"],
     runToolLifecycle: async <T>(toolParams: {
       args: unknown;

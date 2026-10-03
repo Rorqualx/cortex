@@ -20,6 +20,7 @@ import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-erro
 import { leaseMcpAppModelContextForSessionTurn } from "../../agents/mcp-ui-resource.js";
 import { resolveReplyExpectation } from "../../agents/reply-completion.js";
 import { createAgentPatchedSessionModelRunGuard } from "../../agents/session-model-auto-revert.js";
+import { readChannelContextGatewayContextResolver } from "../../channels/message-access/admission-evidence.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
 import {
@@ -31,8 +32,13 @@ import { emitAgentRunStatusEvent } from "../../infra/agent-run-status-events.js"
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { logSessionTurnCreated } from "../../logging/diagnostic.js";
+import {
+  bindGatewayContextResolver,
+  getPluginRuntimeGatewayRequestScope,
+} from "../../plugins/runtime/gateway-request-scope.js";
 import { progressCardRefreshRunProjection } from "../../sessions/input-provenance.js";
 import { isInternalMessageChannel } from "../../utils/message-channel.js";
+import { captureCommandOwnerAssertion } from "../command-owner-authority.js";
 import type { ReplyPayload } from "../types.js";
 import {
   clearRecoveredAutoFallbackPrimaryProbeSelection,
@@ -47,14 +53,7 @@ import {
 import {
   applyMcpAppModelContext,
   type AppContextTurnParams,
-} from "./agent-runner-execution-mcp-context.js"
-import { readChannelContextGatewayContextResolver } from "../../channels/message-access/admission-evidence.js";
-import {
-  bindGatewayContextResolver,
-  getPluginRuntimeGatewayRequestScope,
-} from "../../plugins/runtime/gateway-request-scope.js";
-import { captureCommandOwnerAssertion } from "../command-owner-authority.js";
-import { prepareChannelRunAdmission } from "./channel-run-admission.js";
+} from "./agent-runner-execution-mcp-context.js";
 import { recordAgentTurnExecutionOutcome } from "./agent-runner-execution-outcome.js";
 import type {
   AgentTurnCompaction,
@@ -78,6 +77,7 @@ import {
   resolveRunStartupPhase,
 } from "./agent-runner-turn-timing.js";
 import { resolveQueuedReplyRuntimeConfig } from "./agent-runner-utils.js";
+import { prepareChannelRunAdmission } from "./channel-run-admission.js";
 import { shouldNotifyUserAboutCompaction } from "./compaction-notice.js";
 import { type CurrentTurnImages, resolveCurrentTurnImages } from "./current-turn-images.js";
 import type { FollowupRun } from "./queue.js";
@@ -97,7 +97,6 @@ async function executeAgentTurnInternalLoop(
   commitTerminalOutcome: () => void,
   prepareMcpAppModelContext: () => Promise<AppContextTurnParams["mcpAppContextLease"]>,
   preparedRunAdmission: PreparedAgentRunAdmission,
-  admittedRunContext: { current?: AdmittedRunContext },
   overloadRetryState: OverloadRetryState,
   deferredLifecycle: DeferredEmbeddedRunLifecycleManager,
   compaction: AgentTurnCompaction,
@@ -567,7 +566,6 @@ async function executeAgentTurnInternal(
       commitTerminalOutcome,
       prepareMcpAppModelContext,
       preparedRunAdmission,
-      admittedRunContext,
       overloadRetryState,
       deferredLifecycle,
       compaction,
