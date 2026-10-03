@@ -205,13 +205,8 @@ export function buildEmbeddedRunPayloads(params: {
           ? {
               providerFailure: {
                 reason: classifyAssistantFailoverReason(assistantForPayload, {
-                  cfg: params.config,
-                  sessionKey: params.sessionKey,
-                  agentId: params.agentId,
                   provider: params.provider,
                   providerOwner: params.providerOwner,
-                  model: params.model,
-                  authMode: params.authMode,
                 }),
                 rawError: rawErrorMessage,
               },
@@ -224,7 +219,8 @@ export function buildEmbeddedRunPayloads(params: {
     suppressAssistantArtifacts || runAborted || lastAssistantNeedsErrorSurface
       ? ""
       : assistantForPayload && params.reasoningLevel === "on" && params.thinkingLevel !== "off"
-        ? extractAssistantThinking(assistantForPayload)        : "";
+        ? extractAssistantThinking(assistantForPayload)
+        : "";
   if (reasoningText) {
     replyItems.push({ text: reasoningText, isReasoning: true });
   }

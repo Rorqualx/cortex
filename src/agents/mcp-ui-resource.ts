@@ -80,7 +80,6 @@ export type McpAppViewLease = {
   uploadResources?: McpFormResourceUpload;
   authorizeAppInteraction?: () => boolean | Promise<boolean>;
   readOnly?: true;
-  requesterId?: string;
   hostFile?: McpAppHostFile;
   richModelContextSupported?: boolean;
   deepLink?: { url: string };

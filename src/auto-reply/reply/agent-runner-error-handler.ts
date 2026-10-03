@@ -519,9 +519,6 @@ export async function handleAgentExecutionError(params: {
     });
   }
   defaultRuntime.error(`Embedded agent failed before reply: ${message}`);
-  const userFacingMessage = isTransientHttp
-    ? renderUserFacingText(message, { errorContext: true })
-    : message;
   const externalRunFailureCandidate =
     !failureSummary && !isContextOverflow
       ? buildExternalRunFailureReply(
@@ -549,7 +546,8 @@ export async function handleAgentExecutionError(params: {
       ? "⚠️ Context overflow — prompt too large for this model. Try a shorter message or a larger-context model."
       : (externalRunFailureReply?.text ??
         (params.shouldSurfaceToControlUi
-          ? renderControlUiAgentFailureCopy()          : (useHeartbeatFailureCopy ?? turn.isHeartbeat)
+          ? renderControlUiAgentFailureCopy()
+          : (useHeartbeatFailureCopy ?? turn.isHeartbeat)
             ? HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT
             : GENERIC_EXTERNAL_RUN_FAILURE_TEXT)));
   return await settleFailure(
