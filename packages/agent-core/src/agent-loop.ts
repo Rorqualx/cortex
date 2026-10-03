@@ -272,13 +272,15 @@ async function runLoop(
   initialPromptContext: AgentMessage[] = [],
 ): Promise<AgentMessage[]> {
   let config = initialConfig;
-  let promptContext = initialPromptContext;
   let firstTurn = true;
   let prepareContinuation: AgentLoopTurnUpdate["prepareContinuation"];
   let turnOpen = true;
   let turnTainted = isActiveTurnTainted(state.context.messages);
   // Check for steering messages at start (user may have typed while waiting)
-  let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
+  let pendingMessages: AgentMessage[] = [
+    ...initialPromptContext,
+    ...((await config.getSteeringMessages?.()) || []),
+  ];
   const stopIfAborted = async (): Promise<boolean> => {
     if (!signal?.aborted) {
       return false;

@@ -8,7 +8,6 @@ import {
   isLikelyContextOverflowError,
   isTransientHttpError,
 } from "../../agents/embedded-agent-helpers.js";
-import { renderUserFacingText } from "../../agents/embedded-agent-helpers/user-facing-text.js";
 import { findCliTimeoutError, isFailoverError } from "../../agents/failover-error.js";
 import { resolveReplyFailoverFacts } from "../../agents/failover/request-error-facts.js";
 import {
