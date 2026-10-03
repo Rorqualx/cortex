@@ -556,6 +556,9 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
       ? [
           createSessionsSpawnTool({
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+          // Upstream: only a keyed parent has a stored incarnation for spawn to check.
+          expectedParentSessionId:
+            (options?.runSessionKey ?? options?.agentSessionKey) ? options?.sessionId : undefined,
             requesterTurnRunId: options?.runId,
             requesterThinkingLevel: options?.requesterThinkingLevel,
             completionOwnerKey: options?.runSessionKey,

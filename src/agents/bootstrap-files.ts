@@ -11,11 +11,7 @@ import { resolveAgentConfig, resolveDefaultAgentId } from "./agent-scope.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
 import type { BootstrapContextRunKind } from "./bootstrap-mode.js";
-import {
-  buildBootstrapContextFiles,
-  resolveBootstrapMaxChars,
-  resolveBootstrapTotalMaxChars,
-} from "./embedded-agent-helpers.js";
+import { buildBootstrapContextForFiles } from "./embedded-agent-helpers/bootstrap.js";
 import type { EmbeddedContextFile } from "./embedded-agent-helpers/context-file.js";
 import type { AgentRunSessionTarget } from "./run-session-target.types.js";
 import { getAgentWorkspaceAccess } from "./workspace-access.js";
@@ -28,7 +24,6 @@ import {
   filterBootstrapFilesForSession,
   getWorkspaceFileSourceRelativePath,
   isWorkspaceSetupCompleted,
-  isWorkspaceBootstrapPending,
   loadWorkspaceBootstrapFiles,
   type WorkspaceBootstrapFile,
   workspaceFilesShareSourceIdentity,
@@ -423,21 +418,3 @@ export async function resolveBootstrapContextWithProjectedHookFiles(
   const contextFiles = buildBootstrapContextForFiles(bootstrapFiles, params);
   return { bootstrapFiles, contextFiles };
 }
-
-/** Builds bounded context files from already-resolved bootstrap file metadata. */
-export function buildBootstrapContextForFiles(
-  bootstrapFiles: WorkspaceBootstrapFile[],
-  params: {
-    config?: OpenClawConfig;
-    agentId?: string | null;
-    warn?: (message: string) => void;
-  },
-): EmbeddedContextFile[] {
-  return buildBootstrapContextFiles(bootstrapFiles, {
-    maxChars: resolveBootstrapMaxChars(params.config, params.agentId),
-    totalMaxChars: resolveBootstrapTotalMaxChars(params.config, params.agentId),
-    warn: params.warn,
-  });
-}
-
-export { isWorkspaceBootstrapPending };

@@ -101,6 +101,10 @@ export type CompactEmbeddedAgentSessionParams = Pick<
   currentChannelId?: string;
   currentThreadTs?: string;
   currentMessageId?: string | number;
+  /** Host-resolved memory partition inherited from the compacted session. */
+  memoryAudience?: import("../../plugins/memory-provider-types.js").MemoryAudience;
+  /** Host-resolved sandbox fact paired with the compacted session authority. */
+  memorySandboxed?: boolean;
   /** Trusted sender id from inbound context for scoped message-tool discovery. */
   senderId?: string;
   senderName?: string;
