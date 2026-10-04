@@ -10,11 +10,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { toToolDefinitions } from "./agent-tool-definition-adapter.js";
 import { createBaseToolHandlerState } from "./agent-tool-handler-state.test-helpers.js";
 import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.js";
+import type { MessagingToolSend } from "./embedded-agent-messaging.types.js";
 import {
   handleToolExecutionEnd,
   handleToolExecutionStart,
 } from "./embedded-agent-subscribe.handlers.tools.js";
-import type { ToolHandlerContext } from "./embedded-agent-subscribe.handlers.types.js";
+import type {
+  ToolCallSummary,
+  ToolHandlerContext,
+} from "./embedded-agent-subscribe.handlers.types.js";
 
 function createContractTool(name: string, execute: AgentTool["execute"]): AgentTool {
   return {
