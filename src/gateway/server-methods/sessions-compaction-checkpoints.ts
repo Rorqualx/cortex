@@ -21,9 +21,9 @@ import {
   restoreCheckpointSessionFromStoredBoundary,
 } from "../session-compaction-checkpoints.js";
 import { buildDashboardSessionKey } from "../session-create-service.js";
+import { resolveOperatorSessionCreation } from "../session-creation-provenance.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import { emitSessionsChanged } from "./session-change-event.js";
-import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
 import { interruptSessionRunIfActive } from "./session-run-interruption.js";
 import {
   loadAccessorSessionEntryForGatewayTarget,
@@ -180,7 +180,7 @@ function createCheckpointHandler(action: CheckpointAction): GatewayRequestHandle
     let preparationError: ErrorShape | undefined;
     // Restore replaces the active transcript identity. Hold the same lifecycle fence as
     // compaction so neither operation can publish state from the other's obsolete session.
-    await runExclusiveSessionLifecycleMutation({
+    await runExclusiveSessionLifecycleMutation("restore", {
       scope: storePath,
       identities: [entry.sessionId, entry.lifecycleRevision],
       prepare: async () => {
