@@ -350,7 +350,7 @@ vi.mock("../../sessions/index.js", () => {
 
   return {
     AuthStorage,
-    createAgentSession: (options: CreateAgentSessionOptions = {}) =>
+    createAgentSession: (options: CreateAgentSessionOptions) =>
       hoisted.createAgentSessionMock(options),
     estimateTokens,
     generateSummary: async () => "",

@@ -212,7 +212,6 @@ async function validateResetAuthChoice(params: {
   }
   const availableChoices = new Set(
     formatAuthChoiceChoicesForCli({
-      includeSkip: true,
       config: params.baseConfig,
       workspaceDir: params.workspaceDir,
       env: process.env,
@@ -657,12 +656,12 @@ export async function setupWizardCommand(
       if (
         normalizedOpts.nonInteractive &&
         (normalizedOpts.mode ?? "local") !== "remote" &&
-        !applyNonInteractiveGatewayConfig({
+        !(await applyNonInteractiveGatewayConfig({
           nextConfig: setupBaseConfig,
           opts: normalizedOpts,
           runtime,
           defaultPort: resolveGatewayPort(setupBaseConfig),
-        })
+        }))
       ) {
         return;
       }

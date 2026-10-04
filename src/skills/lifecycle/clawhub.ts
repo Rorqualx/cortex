@@ -289,7 +289,6 @@ export async function updateSkillsFromClawHub(params: {
         }
         return installed;
       },
-      { required: true },
     );
     results.push(
       install.ok

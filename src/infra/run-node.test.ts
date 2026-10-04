@@ -57,7 +57,6 @@ import {
   firstMockCall,
   writeRuntimePostBuildScaffold,
   expectedBuildSpawn,
-  statusCommandSpawn,
   resolvePath,
   isTsxScriptArgs,
   touchProjectFiles,
@@ -174,6 +173,50 @@ describe("run-node script", () => {
   const OLD_TIME = new Date("2026-03-13T10:00:00.000Z");
   const BUILD_TIME = new Date("2026-03-13T12:00:00.000Z");
   const NEW_TIME = new Date("2026-03-13T12:00:01.000Z");
+
+  it.for([undefined, "node", "bun"])(
+    "starts the %s CLI only after the Node runtime build completes",
+    async (runtime, { tmp }) => {
+      const build = new EventEmitter();
+      const fakeProcess = createFakeProcess();
+      const { promise: buildSpawned, resolve: markBuildSpawned } = createDeferred();
+      const spawn = vi.fn((_cmd: string, args: string[]) => {
+        if (!isTsxScriptArgs(args, "scripts/build-all.mts")) {
+          return createExitedProcess(0);
+        }
+        markBuildSpawned();
+        return build;
+      });
+      const runRuntimePostBuild = vi.fn();
+      const result = runNodeCommand(tmp, {
+        spawn,
+        process: fakeProcess,
+        env: {
+          OPENCLAW_FORCE_BUILD: "1",
+          OPENCLAW_VITEST_RUNTIME: runtime,
+          OPENCLAW_TRACE_SYNC_IO: "1",
+        },
+        runRuntimePostBuild,
+      });
+      await Promise.race([buildSpawned, result]);
+      expect(spawn).toHaveBeenCalledOnce();
+      const lockDir = path.join(tmp, ".artifacts", "run-node-build.lock");
+      expect(fsSync.existsSync(lockDir)).toBe(true);
+      expect(fakeProcess.listenerCount("exit")).toBe(1);
+      build.emit("exit", 0, null);
+
+      expect(await result).toBe(0);
+      expect(spawn.mock.calls.map(([cmd, args]) => [cmd].concat(args))).toEqual([
+        expectedBuildSpawn(),
+        [runtime === "bun" ? "bun" : process.execPath, "--trace-sync-io", "openclaw.mjs", "status"],
+      ]);
+      // The canonical profile owns metadata and both stamps; the local runner
+      // only invokes postbuild directly on its separate metadata-only path.
+      expect(runRuntimePostBuild).not.toHaveBeenCalled();
+      expect(fsSync.existsSync(lockDir)).toBe(false);
+      expect(fakeProcess.listenerCount("exit")).toBe(0);
+    },
+  );
 
   const BASE_PROJECT_FILES = {
     [ROOT_TSCONFIG]: "{}\n",

@@ -1,7 +1,3 @@
-/**
- * Regression coverage for core tool catalog profile defaults.
- * Verifies built-in profile allowlists include expected core tool groups.
- */
 import { describe, expect, it } from "vitest";
 import {
   listCoreToolSections,
@@ -22,39 +18,16 @@ function requireCoreToolProfilePolicy(profile: Parameters<typeof resolveCoreTool
   return policy;
 }
 
-function requirePolicyAllow(profile: Parameters<typeof resolveCoreToolProfilePolicy>[0]) {
-  const allow = requireCoreToolProfilePolicy(profile).allow;
-  if (!allow) {
-    throw new Error(`expected ${profile} tool profile allow list`);
-  }
-  return allow;
-}
-
 describe("tool-catalog", () => {
-  it("lists personal instructions only when the multi-user capability is enabled", () => {
-    const ids = (personalInstructionsEnabled?: boolean) =>
-      listCoreToolSections({ personalInstructionsEnabled }).flatMap((section) =>
-        section.tools.map((tool) => tool.id),
-      );
-    expect(ids()).not.toContain("personal_instructions");
-    expect(ids(false)).not.toContain("personal_instructions");
-    expect(ids(true)).toContain("personal_instructions");
-  });
-  it("lists the setup helper once in Automation without adding restricted profile membership", () => {
-    const sections = listCoreToolSections();
-    expect(
-      sections.flatMap((section) => section.tools).filter((tool) => tool.id === "openclaw"),
-    ).toEqual([
-      {
-        id: "openclaw",
-        label: "openclaw",
-        description: "Delegate OpenClaw setup and repair",
-      },
-    ]);
-    expect(
-      sections.find((section) => section.id === "automation")?.tools.map((tool) => tool.id),
-    ).toContain("openclaw");
-    expect(resolveCoreToolProfiles("openclaw")).toEqual([]);
+  it.each([
+    ["personal_instructions", { personalInstructionsEnabled: true }],
+    ["agents_wait", { swarmEnabled: true }],
+  ] as const)("lists %s only with its capability enabled", (id, config) => {
+    const ids = (options?: Parameters<typeof listCoreToolSections>[0]) =>
+      listCoreToolSections(options).flatMap((section) => section.tools.map((tool) => tool.id));
+    expect(ids()).not.toContain(id);
+    expect(ids({ personalInstructionsEnabled: false })).not.toContain(id);
+    expect(ids(config)).toContain(id);
   });
 
   it.each(["group:automation", "group:openclaw"])(
@@ -76,14 +49,6 @@ describe("tool-catalog", () => {
       }
     },
   );
-
-  it("lists agents_wait only for a Swarm-enabled catalog", () => {
-    const ids = (config?: Parameters<typeof listCoreToolSections>[0]) =>
-      listCoreToolSections(config).flatMap((section) => section.tools.map((tool) => tool.id));
-
-    expect(ids()).not.toContain("agents_wait");
-    expect(ids({ swarmEnabled: true })).toContain("agents_wait");
-  });
 
   it("lets operators configure run-dependent tools without granting restricted profiles", () => {
     const ids = listCoreToolSections().flatMap((section) => section.tools.map((tool) => tool.id));
@@ -227,6 +192,31 @@ describe("tool-catalog", () => {
       ?.tools.map((tool) => tool.id);
     expect(mediaIds).toContain("pdf");
     expect(mediaIds).toContain("tts");
+  });
+
+  it.each([
+    {
+      profile: "minimal",
+      allowed: ["presence", "session_status", "gateway"],
+      denied: ["exec", "message"],
+    },
+    { profile: "coding", allowed: ["read", "exec", "bundle-mcp"], denied: ["browser", "message"] },
+    {
+      profile: "messaging",
+      allowed: ["message", "bundle-mcp"],
+      denied: ["exec", "process", "write"],
+    },
+  ] as const)("keeps the $profile capability boundary", ({ profile, allowed, denied }) => {
+    const policy = requireCoreToolProfilePolicy(profile);
+    if (profile === "minimal") {
+      expect(policy.allow).toEqual(["presence", "session_status", "gateway"]);
+    }
+    for (const tool of allowed) {
+      expect(isToolAllowedByPolicies(tool, [policy]), tool).toBe(true);
+    }
+    for (const tool of [...denied, "tts", "openclaw"]) {
+      expect(isToolAllowedByPolicies(tool, [policy]), tool).toBe(false);
+    }
   });
 
   it("full profile uses wildcard to grant all tools (#76507)", () => {

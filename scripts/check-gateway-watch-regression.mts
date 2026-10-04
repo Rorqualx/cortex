@@ -34,7 +34,6 @@ const DEFAULTS = {
   cpuFailMs: 8_000,
   distRuntimeFileGrowthMax: 200,
   distRuntimeByteGrowthMax: 2 * 1024 * 1024,
-  keepLogs: true,
   skipBuild: false,
 };
 const NUMERIC_FLAGS = Object.entries({
@@ -222,14 +221,6 @@ export function parseArgs(argv: string[]): WatchOptions {
   return options;
 }
 
-function ensureDir(dirPath: string) {
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function removePathIfExists(targetPath: string) {
-  fs.rmSync(targetPath, { recursive: true, force: true });
-}
-
 function lstatIfExists(targetPath: string): {
   isDirectory(): boolean;
   isFile(): boolean;
@@ -348,7 +339,7 @@ function writeSnapshot(snapshotDir: string): {
   dist: TreeSnapshot;
   distRuntime: TreeSnapshot;
 } {
-  ensureDir(snapshotDir);
+  fs.mkdirSync(snapshotDir, { recursive: true });
   const pathEntries = [...listTreeEntries("dist"), ...listTreeEntries("dist-runtime")];
   fs.writeFileSync(path.join(snapshotDir, "paths.txt"), `${pathEntries.join("\n")}\n`, "utf8");
 
@@ -568,7 +559,7 @@ export async function runTimedWatch(
     const stdoutPath = path.join(outputDir, "watch.stdout.log");
     const stderrPath = path.join(outputDir, "watch.stderr.log");
     for (const stalePath of [pidFilePath, timeFilePath, stdoutPath, stderrPath]) {
-      removePathIfExists(stalePath);
+      fs.rmSync(stalePath, { recursive: true, force: true });
     }
     const port = await allocatePort();
     fs.writeFileSync(path.join(outputDir, "watch.port.txt"), `${String(port)}\n`, "utf8");
@@ -872,7 +863,7 @@ function parsePathFile(filePath: string): string[] {
 
 function writeDiffArtifacts(outputDir: string, preDir: string, postDir: string) {
   const diffDir = path.join(outputDir, "diff");
-  ensureDir(diffDir);
+  fs.mkdirSync(diffDir, { recursive: true });
   const prePaths = parsePathFile(path.join(preDir, "paths.txt"));
   const postPaths = parsePathFile(path.join(postDir, "paths.txt"));
   const preSet = new Set(prePaths);
@@ -1056,7 +1047,7 @@ function printWatchLogDiagnostics(watchResult: TimedWatchResult) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  ensureDir(options.outputDir);
+  fs.mkdirSync(options.outputDir, { recursive: true });
   if (!options.skipBuild) {
     runCheckedCommand("node", ["--import", "tsx", "scripts/build-all.mts", "gatewayWatch"]);
     // The watch harness must start from a completed dist/runtime baseline.
@@ -1109,7 +1100,7 @@ async function main() {
   const pre = writeSnapshot(preDir);
 
   const watchDir = path.join(options.outputDir, "watch");
-  ensureDir(watchDir);
+  fs.mkdirSync(watchDir, { recursive: true });
   const watchResult = await runTimedWatch(options, watchDir);
 
   const postDir = path.join(options.outputDir, "post");

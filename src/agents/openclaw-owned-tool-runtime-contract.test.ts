@@ -19,6 +19,7 @@ import type {
   ToolCallSummary,
   ToolHandlerContext,
 } from "./embedded-agent-subscribe.handlers.types.js";
+import { prepareToolResult } from "./embedded-agent-tool-results.js";
 
 function createContractTool(name: string, execute: AgentTool["execute"]): AgentTool {
   return {
@@ -152,6 +153,7 @@ describe("OpenClaw-owned tool runtime contract - embedded agent adapter", () => 
         isError: false,
         result,
       }),
+      prepareToolResult(result),
     );
 
     expect(hooks.beforeToolCall).toHaveBeenCalledTimes(1);
@@ -219,6 +221,7 @@ describe("OpenClaw-owned tool runtime contract - embedded agent adapter", () => 
         isError: true,
         result,
       }),
+      prepareToolResult(result),
     );
 
     expect(hooks.beforeToolCall).toHaveBeenCalledTimes(1);
@@ -279,6 +282,7 @@ describe("OpenClaw-owned tool runtime contract - embedded agent adapter", () => 
         isError: false,
         result,
       }),
+      prepareToolResult(result),
     );
 
     expect(ctx.state.messagingToolSentTexts).toEqual(["hello from embedded agent"]);
@@ -361,6 +365,7 @@ describe("OpenClaw-owned tool runtime contract - embedded agent adapter", () => 
         isError: true,
         result,
       }),
+      prepareToolResult(result),
     );
 
     expect(hooks.beforeToolCall).toHaveBeenCalledTimes(1);

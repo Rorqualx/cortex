@@ -425,7 +425,6 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
 
   async function runInvoke(params: {
     preferMacAppExecHost: boolean;
-    execHostFallbackAllowed?: boolean;
     runViaResponse?: ExecHostResponse | null;
     command?: string[];
     env?: Record<string, string>;
@@ -519,8 +518,6 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
         current: params.skillBinsCurrent ?? (async () => []),
       },
       signal: params.signal,
-      execHostEnforced: false,
-      execHostFallbackAllowed: params.execHostFallbackAllowed ?? true,
       runCommand: spies.runCommand,
       sendInvokeResult: spies.sendInvokeResult,
       sendNodeEvent: spies.sendNodeEvent,
@@ -572,7 +569,7 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
   });
 
   it("keeps a lost companion response ambiguous", async () => {
-    const result = await runMac({ execHostFallbackAllowed: false });
+    const result = await runMac();
     expect(result.requestExecHost).toHaveBeenCalledOnce();
     expect(result.runCommand).not.toHaveBeenCalled();
     expect(invokeResult(result.sendInvokeResult)).toMatchObject({

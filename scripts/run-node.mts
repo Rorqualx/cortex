@@ -46,6 +46,7 @@ import {
   resolveStaticExtensionAssetSource,
   shouldCopyStaticExtensionAssets,
 } from "./lib/static-extension-assets.mts";
+import { resolveTestRuntime } from "./lib/test-runtime.mts";
 import {
   isBuildRelevantRunNodePath,
   normalizeRunNodePath as normalizePath,
@@ -1250,7 +1251,7 @@ const getInterruptedSpawnOutcome = (
   return null;
 };
 
-const runNodeChild = async (deps: RunNodeDeps, args: string[]) => {
+const runNodeChild = async (deps: RunNodeDeps, args: string[], execPath = deps.execPath) => {
   deps.cancellation.signal.throwIfAborted();
   const useProcessGroup = shouldUseRunNodeChildProcessGroup(deps);
   // The parent route grants lifecycle IPC; generic children must not extend
@@ -1261,7 +1262,7 @@ const runNodeChild = async (deps: RunNodeDeps, args: string[]) => {
       mode: "command-path",
     }) !== null;
   const nodeProcess = asRunNodeChild(
-    deps.spawn(deps.execPath, args, {
+    deps.spawn(execPath, args, {
       cwd: deps.cwd,
       detached: useProcessGroup,
       env: deps.env,
@@ -1284,7 +1285,11 @@ const runNodeChild = async (deps: RunNodeDeps, args: string[]) => {
 };
 
 const runOpenClaw = (deps: RunNodeDeps) =>
-  runNodeChild(deps, [...resolveRunNodeDiagnosticArgs(deps), "openclaw.mjs", ...deps.args]);
+  runNodeChild(
+    deps,
+    [...resolveRunNodeDiagnosticArgs(deps), "openclaw.mjs", ...deps.args],
+    resolveTestRuntime(deps.env) === "bun" ? "bun" : deps.execPath,
+  );
 
 const pipeSpawnedOutput = (
   childProcess: RunNodeChild,

@@ -6,7 +6,11 @@ import {
   createInlineCodeState,
 } from "../../packages/markdown-core/src/code-spans.js";
 import type { FenceScanState } from "../../packages/markdown-core/src/fences.js";
-import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
+import {
+  addReplyPayloadMediaFailures,
+  appendReplyMediaFailures,
+  setReplyPayloadMetadata,
+} from "../auto-reply/reply-payload.js";
 import type { ReplyDirectiveParseResult } from "../auto-reply/reply/reply-directives.js";
 import { createStreamingDirectiveAccumulator } from "../auto-reply/reply/streaming-directives.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
@@ -541,6 +545,7 @@ export function createStreamRendering({
     const {
       text: cleanedText,
       mediaUrls,
+      mediaFailures,
       audioAsVoice,
       replyToId,
       replyToTag,
@@ -551,6 +556,7 @@ export function createStreamRendering({
     );
     if (
       !cleanedText &&
+      !mediaFailures?.length &&
       (!mediaUrls || mediaUrls.length === 0) &&
       !audioAsVoice &&
       !hasPendingFinalMedia
@@ -562,13 +568,14 @@ export function createStreamRendering({
     }
     pushAssistantText(chunk, normalizedChunk);
     const payload = {
-      text: cleanedText,
+      text: cleanedText || appendReplyMediaFailures(cleanedText, mediaFailures ?? []),
       mediaUrls: mediaUrls?.length ? mediaUrls : undefined,
       audioAsVoice,
       replyToId,
       replyToTag,
       replyToCurrent,
     };
+    addReplyPayloadMediaFailures(payload, mediaFailures);
     if (splitResult.isSilent) {
       setReplyPayloadMetadata(payload, { silentReply: true });
     }
