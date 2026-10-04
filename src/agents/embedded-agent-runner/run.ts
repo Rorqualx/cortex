@@ -2268,6 +2268,9 @@ export async function runEmbeddedAgent(
               cfg: params.config,
               sessionKey: resolvedSessionKey,
               agentId: params.agentId,
+              defaultProvider: DEFAULT_PROVIDER,
+              defaultModel: DEFAULT_MODEL,
+              expectedSelection: requestedSelection,
             });
             log.info(
               `live session model switch requested during active attempt for ${params.sessionId}: ${provider}/${modelId} -> ${requestedSelection.provider}/${requestedSelection.model}`,

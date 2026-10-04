@@ -5,7 +5,7 @@ import {
   waitForEmbeddedAgentRunEnd,
 } from "../../agents/embedded-agent-runner/runs.js";
 import { tryResolveSessionCompatibilityOwnerAgentId } from "../session-request-agent.js";
-import { asWorkerInferenceControl } from "../worker-environments/inference-control.js";
+import { getWorkerInferenceSessionControl } from "../worker-environments/inference-control-internal.js";
 import { handleChatAbortRequestWithLifecycle } from "./chat-abort-handler.js";
 import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
 import { resolveAbortSessionKey } from "./sessions-abort.js";
@@ -42,7 +42,7 @@ export async function interruptSessionRunIfActive(params: {
       : false;
   const hasWorkerRun =
     typeof params.sessionId === "string" && params.sessionId
-      ? (asWorkerInferenceControl(params.context.workerEnvironmentService)?.hasInferenceForSession(
+      ? (getWorkerInferenceSessionControl(params.context.workerEnvironmentService)?.hasSession(
           params.sessionId,
         ) ?? false)
       : false;
