@@ -40,6 +40,7 @@ export type EmbeddingProvider = {
   /** Compute embeddings for multiple texts in a batch. */
   embedBatch(texts: string[]): Promise<number[][]>;
 };
+import { recordRetrievalUses, type RetrievedUseItem } from "./retrieval-use-store.js";
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { cosineSimilarity } from "./scoring.js";
 import { selectSlidingWindow } from "./sliding-window.js";
@@ -116,6 +117,8 @@ type ReTopKCacheEntry = {
   query: string;
   embedding: number[];
   result: string;
+  /** Retrieve-then-use telemetry: chunks this cached result injects. */
+  injected: RetrievedUseItem[];
 };
 
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
@@ -281,6 +284,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       params.tokenBudget && params.tokenBudget > 0
         ? Math.min(1, window.estimatedTokens / params.tokenBudget)
         : 0,
+      params.sessionId,
     );
 
     return {
@@ -293,6 +297,7 @@ export class HierarchicalL3Engine implements ContextEngine {
   private async buildMemorySection(
     prompt: string | undefined,
     tokenPressure = 0,
+    sessionId = "unknown",
   ): Promise<string | undefined> {
     if (!prompt || prompt.length === 0) {
       return undefined;
@@ -315,6 +320,8 @@ export class HierarchicalL3Engine implements ContextEngine {
           this.retrievalCache.splice(i, 1);
           this.retrievalCache.push(entry);
           l3debug(`ReTopK cache hit (sim ≥ ${retopkThreshold}) for query: ${prompt.slice(0, 60)}`);
+          // Retrieve-then-use telemetry: a cache hit still injects these chunks.
+          this.recordRetrievalUse(sessionId, entry.injected);
           return entry.result;
         }
       }
@@ -334,9 +341,17 @@ export class HierarchicalL3Engine implements ContextEngine {
     }
     const result = formatMemorySection(top.facts, { now: Date.now() });
 
+    // Retrieve-then-use telemetry: these chunks reached the prompt (the actual
+    // behavioral-use signal — “retrieved” alone is not “injected”).
+    const injected: RetrievedUseItem[] = top.facts.map((fact) => ({
+      chunkId: fact.chunkId,
+      tier: fact.tier,
+    }));
+    this.recordRetrievalUse(sessionId, injected);
+
     // Populate cache when we have an embedding for similarity comparison.
     if (queryEmbedding && queryEmbedding.length > 0) {
-      this.retrievalCache.push({ query: prompt, embedding: queryEmbedding, result });
+      this.retrievalCache.push({ query: prompt, embedding: queryEmbedding, result, injected });
       // LRU eviction: keep only the most recent RETOPK_MAX_ENTRIES entries.
       if (this.retrievalCache.length > RETOPK_MAX_ENTRIES) {
         this.retrievalCache.shift();
@@ -353,6 +368,18 @@ export class HierarchicalL3Engine implements ContextEngine {
     if (this.retrievalCache.length > 0) {
       l3debug(`ReTopK cache invalidated (${this.retrievalCache.length} entries cleared)`);
       this.retrievalCache = [];
+    }
+  }
+
+  /** Retrieve-then-use telemetry: fire-and-forget, never blocks or breaks assembly. */
+  private recordRetrievalUse(sessionId: string, injected: readonly RetrievedUseItem[]): void {
+    if (injected.length === 0) {
+      return;
+    }
+    try {
+      recordRetrievalUses({ sessionId, items: injected, dir: this.storage.root });
+    } catch {
+      // Telemetry must never break assembly.
     }
   }
 

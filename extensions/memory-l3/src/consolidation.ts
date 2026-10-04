@@ -1,4 +1,5 @@
 import type { LlmCaller } from "./llm.js";
+import { summarizeChunkUse } from "./retrieval-use-store.js";
 import type { Storage } from "./storage.js";
 import type { FactCertainty, L2Fact, LongTermFact } from "./types.js";
 
@@ -57,6 +58,15 @@ export const DEFAULT_CONSOLIDATION_CONFIG: ConsolidationConfig = {
   tentativeMinDayspanMs: 5 * MS_PER_DAY,
 };
 
+/**
+ * Retrieve-then-use credit cap (2026-10-04 quick-win): behavioral use
+ * (recorded prompt injections of a candidate's source chunks) can substitute
+ * for at most ONE distinct-chunk recall. Uses prove the fact matters to the
+ * agent, but many injections of one chunk are weaker evidence than two
+ * independent chunks, so the credit is capped.
+ */
+const RETRIEVAL_USE_RECALL_CREDIT_CAP = 1;
+
 /** Rank for upgrading candidate certainty: any stronger occurrence wins. */
 const CERTAINTY_RANK: Record<FactCertainty, number> = {
   tentative: 0,
@@ -78,6 +88,13 @@ export type ConsolidationCandidate = {
   lastConfirmedAt: number;
   /** Chunk ids that confirmed this dedupKey, in encounter order. */
   sourceChunkIds: string[];
+  /**
+   * Retrieve-then-use telemetry (2026-10-04): cumulative recorded prompt
+   * injections of this candidate's source chunks. Joined in selectPromotable
+   * from retrieval-use-store; optional so hand-built candidates and older
+   * call sites behave exactly as before.
+   */
+  retrievalUseCount?: number;
   /**
    * Strongest certainty across occurrences: one confirmed/instructional
    * sighting lifts the candidate out of the tentative bar. Facts extracted
@@ -162,7 +179,10 @@ export function passesPromotionThresholds(
   }
   const minRecallCount = tentative ? config.tentativeMinRecallCount : config.minRecallCount;
   const minDayspanMs = tentative ? config.tentativeMinDayspanMs : config.minDayspanMs;
-  if (candidate.recallCount < minRecallCount) {
+  // Behavioral-use credit: recorded prompt injections can substitute for at
+  // most one distinct-chunk recall (see RETRIEVAL_USE_RECALL_CREDIT_CAP).
+  const useCredit = Math.min(candidate.retrievalUseCount ?? 0, RETRIEVAL_USE_RECALL_CREDIT_CAP);
+  if (candidate.recallCount + useCredit < minRecallCount) {
     return false;
   }
   if (candidate.lastConfirmedAt - candidate.firstSeenAt < minDayspanMs) {
@@ -386,5 +406,38 @@ export async function selectPromotable(
   config: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG,
 ): Promise<ConsolidationCandidate[]> {
   const candidates = await aggregateCandidates(storage);
-  return candidates.filter((c) => passesPromotionThresholds(c, config));
+  return joinRetrievalUseCounts(candidates, storage.root).filter((c) =>
+    passesPromotionThresholds(c, config),
+  );
+}
+
+/**
+ * Retrieve-then-use join (2026-10-04 quick-win): stamp each candidate with the
+ * cumulative prompt-injection count of its source chunks from the telemetry
+ * store (`retrieval-use.sqlite`, colocated with the l3 store). A telemetry
+ * outage degrades to unstamped candidates — consolidation never blocks on it.
+ */
+export function joinRetrievalUseCounts(
+  candidates: ConsolidationCandidate[],
+  l3Root: string,
+): ConsolidationCandidate[] {
+  if (candidates.length === 0) {
+    return candidates;
+  }
+  try {
+    const chunkIds = [...new Set(candidates.flatMap((c) => c.sourceChunkIds))];
+    const useByChunk = summarizeChunkUse({ chunkIds, dir: l3Root });
+    if (useByChunk.size === 0) {
+      return candidates;
+    }
+    return candidates.map((candidate) => ({
+      ...candidate,
+      retrievalUseCount: candidate.sourceChunkIds.reduce(
+        (sum, chunkId) => sum + (useByChunk.get(chunkId)?.uses ?? 0),
+        0,
+      ),
+    }));
+  } catch {
+    return candidates;
+  }
 }

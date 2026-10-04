@@ -6,11 +6,13 @@ import {
   aggregateCandidates,
   type ConsolidationConfig,
   DEFAULT_CONSOLIDATION_CONFIG,
+  joinRetrievalUseCounts,
   passesPromotionThresholds,
   runVerificationGate,
   selectPromotable,
 } from "./consolidation.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
+import { closeRetrievalUseStoreForTest, recordRetrievalUses } from "./retrieval-use-store.js";
 import { Storage } from "./storage.js";
 import type { L2Fact, TypedFact } from "./types.js";
 
@@ -26,6 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  closeRetrievalUseStoreForTest();
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -122,6 +125,65 @@ describe("aggregateCandidates", () => {
   });
 });
 
+describe("joinRetrievalUseCounts", () => {
+  it("stamps candidates with cumulative source-chunk use counts from the telemetry store", () => {
+    recordRetrievalUses({
+      sessionId: "s",
+      items: [
+        { chunkId: "chunk-a", tier: "l2" },
+        { chunkId: "chunk-a", tier: "l2" },
+        { chunkId: "chunk-b", tier: "l2" },
+      ],
+      now: NOW,
+      dir: storage.root,
+    });
+    const stamped = joinRetrievalUseCounts(
+      [
+        {
+          dedupKey: "k:1",
+          text: "uses two chunks",
+          importance: 0.7,
+          recallCount: 2,
+          firstSeenAt: NOW,
+          lastConfirmedAt: NOW,
+          sourceChunkIds: ["chunk-a", "chunk-b"],
+          certainty: "confirmed" as const,
+        },
+        {
+          dedupKey: "k:2",
+          text: "never injected",
+          importance: 0.7,
+          recallCount: 2,
+          firstSeenAt: NOW,
+          lastConfirmedAt: NOW,
+          sourceChunkIds: ["chunk-c"],
+          certainty: "confirmed" as const,
+        },
+      ],
+      storage.root,
+    );
+    expect(stamped[0]?.retrievalUseCount).toBe(3);
+    expect(stamped[1]?.retrievalUseCount).toBe(0);
+  });
+
+  it("degrades to unstamped candidates when the telemetry store is unavailable", () => {
+    const candidates = [
+      {
+        dedupKey: "k:1",
+        text: "t",
+        importance: 0.7,
+        recallCount: 2,
+        firstSeenAt: NOW,
+        lastConfirmedAt: NOW,
+        sourceChunkIds: ["chunk-a"],
+        certainty: "confirmed" as const,
+      },
+    ];
+    // A non-directory path makes the sqlite open fail; consolidation proceeds.
+    expect(joinRetrievalUseCounts(candidates, "/dev/null")).toBe(candidates);
+  });
+});
+
 describe("passesPromotionThresholds", () => {
   const baseCfg: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG;
 
@@ -159,6 +221,42 @@ describe("passesPromotionThresholds", () => {
         baseCfg,
       ),
     ).toBe(true);
+  });
+
+  it("retrieval-use credit lets an otherwise-barred single-recall fact promote", () => {
+    const candidate = {
+      dedupKey: "k:used",
+      text: "behaviorally valuable",
+      importance: 0.7,
+      recallCount: 1,
+      firstSeenAt: NOW,
+      lastConfirmedAt: NOW + 4 * MS_PER_DAY,
+      sourceChunkIds: ["chunk-1"],
+      certainty: "confirmed" as const,
+    };
+    // Without behavioral use the single chunk cannot clear minRecallCount 2.
+    expect(passesPromotionThresholds(candidate, baseCfg)).toBe(false);
+    // Two recorded prompt injections substitute for one distinct-chunk recall.
+    expect(passesPromotionThresholds({ ...candidate, retrievalUseCount: 2 }, baseCfg)).toBe(true);
+  });
+
+  it("caps retrieval-use credit at one recall so uses cannot replace evidence", () => {
+    expect(
+      passesPromotionThresholds(
+        {
+          dedupKey: "k:spam",
+          text: "injected constantly but never re-emitted",
+          importance: 0.7,
+          recallCount: 0,
+          firstSeenAt: NOW,
+          lastConfirmedAt: NOW + 4 * MS_PER_DAY,
+          sourceChunkIds: ["chunk-1"],
+          certainty: "confirmed",
+          retrievalUseCount: 50,
+        },
+        baseCfg,
+      ),
+    ).toBe(false);
   });
 
   it("rejects when recall count is met but dayspan is too small", () => {
