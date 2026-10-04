@@ -18,6 +18,14 @@ function requireCoreToolProfilePolicy(profile: Parameters<typeof resolveCoreTool
   return policy;
 }
 
+function requirePolicyAllow(profile: Parameters<typeof resolveCoreToolProfilePolicy>[0]) {
+  const allow = requireCoreToolProfilePolicy(profile).allow;
+  if (!allow) {
+    throw new Error(`expected ${profile} tool profile allow list`);
+  }
+  return allow;
+}
+
 describe("tool-catalog", () => {
   it.each([
     ["personal_instructions", { personalInstructionsEnabled: true }],
