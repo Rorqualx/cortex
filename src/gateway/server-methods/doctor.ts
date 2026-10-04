@@ -4,6 +4,7 @@ import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { CronJob } from "../../cron/types.js";
 import { formatErrorMessage as formatError } from "../../infra/errors.js";
 import {
   MANAGED_MEMORY_DREAMING_CRON_NAME,
@@ -44,7 +45,7 @@ import {
   renderL3Layer,
   renderL3LayerForAllAgents,
 } from "./doctor.memory-l3-layers.js";
-import type { GatewayRequestHandlers } from "./types.js";
+import type { GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
 
 export type { DoctorMemoryDreamDiaryPayload } from "./doctor-memory-files.js";
 
@@ -59,56 +60,13 @@ type DoctorMemoryCoreRuntime = Pick<
   | "writeBackfillDiaryEntries"
 >;
 
-type DoctorMemoryDreamingPhasePayload = {
-  enabled: boolean;
-  cron: string;
-  managedCronPresent: boolean;
-  nextRunAtMs?: number;
-};
-
-type DoctorMemoryLightDreamingPayload = DoctorMemoryDreamingPhasePayload & {
-  lookbackDays: number;
-  limit: number;
-};
-
-type DoctorMemoryDeepDreamingPayload = DoctorMemoryDreamingPhasePayload & {
-  minScore: number;
-  minRecallCount: number;
-  minUniqueQueries: number;
-  recencyHalfLifeDays: number;
-  maxAgeDays?: number;
-  limit: number;
-};
-
-type DoctorMemoryRemDreamingPayload = DoctorMemoryDreamingPhasePayload & {
-  lookbackDays: number;
-  limit: number;
-  minPatternStrength: number;
-};
-
 type DreamingStoreStats = Omit<ShortTermDreamingStats, "storePath" | "phaseSignalPath"> & {
   storePath?: string;
   phaseSignalPath?: string;
   storeError?: string;
 };
 
-type DoctorMemoryDreamingConfigPayload = {
-  enabled: boolean;
-  timezone?: string;
-  verboseLogging: boolean;
-  storageMode: "inline" | "separate" | "both";
-  separateReports: boolean;
-  shortTermEntries: ShortTermDreamingStatsEntry[];
-  signalEntries: ShortTermDreamingStatsEntry[];
-  promotedEntries: ShortTermDreamingStatsEntry[];
-  phases: {
-    light: DoctorMemoryLightDreamingPayload;
-    deep: DoctorMemoryDeepDreamingPayload;
-    rem: DoctorMemoryRemDreamingPayload;
-  };
-};
-
-type DoctorMemoryDreamingPayload = DoctorMemoryDreamingConfigPayload & DreamingStoreStats;
+type DoctorMemoryDreamingPayload = ReturnType<typeof resolveDreamingConfig> & DreamingStoreStats;
 
 export type DoctorMemoryStatusPayload = {
   agentId: string;
@@ -156,28 +114,26 @@ function groundedMarkdownToDiaryLines(markdown: string): string[] {
     );
 }
 
-function resolveDreamingConfig(cfg: OpenClawConfig): DoctorMemoryDreamingConfigPayload {
+function resolveDreamingConfig(cfg: OpenClawConfig) {
   const resolved = resolveMemoryDreamingConfig({
     pluginConfig: resolveMemoryDreamingPluginConfig(cfg),
     cfg,
   });
   const { light, deep, rem } = resolved.phases;
+  const cronStatus: ManagedDreamingCronStatus = { managedCronPresent: false };
   return {
     enabled: resolved.enabled,
     ...(resolved.timezone ? { timezone: resolved.timezone } : {}),
     verboseLogging: resolved.verboseLogging,
     storageMode: resolved.storage.mode,
     separateReports: resolved.storage.separateReports,
-    shortTermEntries: [],
-    signalEntries: [],
-    promotedEntries: [],
     phases: {
       light: {
         enabled: resolved.enabled && light.enabled,
         cron: light.cron,
         lookbackDays: light.lookbackDays,
         limit: light.limit,
-        managedCronPresent: false,
+        ...cronStatus,
       },
       deep: {
         enabled: resolved.enabled && deep.enabled,
@@ -187,7 +143,7 @@ function resolveDreamingConfig(cfg: OpenClawConfig): DoctorMemoryDreamingConfigP
         minRecallCount: deep.minRecallCount,
         minUniqueQueries: deep.minUniqueQueries,
         recencyHalfLifeDays: deep.recencyHalfLifeDays,
-        managedCronPresent: false,
+        ...cronStatus,
         ...(typeof deep.maxAgeDays === "number" ? { maxAgeDays: deep.maxAgeDays } : {}),
       },
       rem: {
@@ -196,7 +152,7 @@ function resolveDreamingConfig(cfg: OpenClawConfig): DoctorMemoryDreamingConfigP
         lookbackDays: rem.lookbackDays,
         limit: rem.limit,
         minPatternStrength: rem.minPatternStrength,
-        managedCronPresent: false,
+        ...cronStatus,
       },
     },
   };
@@ -372,44 +328,29 @@ type ManagedDreamingCronStatus = {
   nextRunAtMs?: number;
 };
 
-type ManagedCronJobLike = {
-  name?: string;
-  description?: string;
-  enabled?: boolean;
-  payload?: { kind?: string; text?: string };
-  state?: { nextRunAtMs?: number };
-};
-
-function isManagedDreamingJob(job: ManagedCronJobLike): boolean {
+function isManagedDreamingJob(job: CronJob): boolean {
   const description = normalizeOptionalString(job.description);
   if (description?.includes(MANAGED_MEMORY_DREAMING_CRON_TAG)) {
     return true;
   }
   // Older managed jobs may lack the tag, so fall back to the exact system-event signature.
   const name = normalizeOptionalString(job.name);
-  const payloadKind = normalizeOptionalString(job.payload?.kind)?.toLowerCase();
-  const payloadText = normalizeOptionalString(job.payload?.text);
   return (
     name === MANAGED_MEMORY_DREAMING_CRON_NAME &&
-    payloadKind === "systemevent" &&
-    payloadText === MEMORY_DREAMING_SYSTEM_EVENT_TEXT
+    job.payload.kind === "systemEvent" &&
+    normalizeOptionalString(job.payload.text) === MEMORY_DREAMING_SYSTEM_EVENT_TEXT
   );
 }
 
-async function resolveManagedDreamingCronStatus(context: {
-  cron?: { list?: (opts?: { includeDisabled?: boolean }) => Promise<unknown[]> };
-}): Promise<ManagedDreamingCronStatus> {
-  if (!context.cron || typeof context.cron.list !== "function") {
-    return { managedCronPresent: false };
-  }
+async function resolveManagedDreamingCronStatus(
+  context: Pick<GatewayRequestContext, "cron">,
+): Promise<ManagedDreamingCronStatus> {
   try {
     const jobs = await context.cron.list({ includeDisabled: true });
-    const managed = jobs
-      .filter((job): job is ManagedCronJobLike => typeof job === "object" && job !== null)
-      .filter(isManagedDreamingJob);
+    const managed = jobs.filter(isManagedDreamingJob);
     let nextRunAtMs: number | undefined;
     for (const job of managed) {
-      if (job.enabled !== true) {
+      if (!job.enabled) {
         continue;
       }
       const candidate = job.state?.nextRunAtMs;
@@ -427,14 +368,6 @@ async function resolveManagedDreamingCronStatus(context: {
   } catch {
     return { managedCronPresent: false };
   }
-}
-
-function shouldProbeMemoryEmbeddings(params: unknown): boolean {
-  if (!params || typeof params !== "object") {
-    return false;
-  }
-  const record = params as Record<string, unknown>;
-  return record.probe === true || record.deep === true;
 }
 
 export const createDoctorHandlers = (
@@ -526,7 +459,7 @@ export const createDoctorHandlers = (
 
     try {
       let status = manager.status();
-      const shouldProbe = shouldProbeMemoryEmbeddings(params);
+      const shouldProbe = params.probe === true || params.deep === true;
       let embedding = shouldProbe
         ? await manager.probeEmbeddingAvailability()
         : (manager.getCachedEmbeddingAvailability?.() ?? SKIPPED_MEMORY_EMBEDDING_PROBE);

@@ -28,6 +28,7 @@ import {
   resolveGitHead,
   writeRuntimePostBuildStamp as writeDistRuntimePostBuildStamp,
 } from "./lib/local-build-metadata.mts";
+import { resolveQaCodexApiKeyEnvPatch, type ReadQaCodexApiKey } from "./lib/qa-codex-auth-env.mts";
 import {
   captureRunNodeInputState,
   type RunNodeInputState,
@@ -91,6 +92,7 @@ type RunNodeMainParams = {
   env?: NodeJS.ProcessEnv;
   runRuntimePostBuild?: RunNodeRuntimePostBuild;
   platform?: NodeJS.Platform;
+  readCodexApiKey?: ReadQaCodexApiKey;
 };
 type RunNodeProgress = {
   clearLine(): void;
@@ -1735,6 +1737,7 @@ function createRunNodeDeps(params: RunNodeMainParams) {
     args,
     env,
     platform: params.platform ?? process.platform,
+    readCodexApiKey: params.readCodexApiKey,
     signalProcess:
       params.signalProcess ??
       ((pid: number, signal?: NodeJS.Signals | number) => process.kill(pid, signal)),
@@ -1781,6 +1784,14 @@ export async function runNodeMain(params: RunNodeMainParams = {}): Promise<RunNo
     deps.env.OPENCLAW_BUILD_PRIVATE_QA = "1";
     deps.env.OPENCLAW_ENABLE_PRIVATE_QA_CLI = "1";
     deps.env.OPENCLAW_DISABLE_BUNDLED_PLUGINS ??= "0";
+    Object.assign(
+      deps.env,
+      resolveQaCodexApiKeyEnvPatch({
+        args: deps.args,
+        env: deps.env,
+        readCodexApiKey: deps.readCodexApiKey,
+      }),
+    );
   }
   deps.outputTee = createRunNodeOutputTee(deps);
   // Children own signal forwarding; retain cancellation across in-process steps

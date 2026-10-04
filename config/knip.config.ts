@@ -404,6 +404,8 @@ const rootEntries = [
   "src/gateway/plugin-channel-reload-targets.ts!",
   // Published-update bridges import lifecycle facts from this stable dist entry.
   "src/agents/provider-runtime-lifecycle.ts!",
+  // July and later Gateways retain this lazy entry across in-place updates.
+  "src/agents/models-config.runtime.ts!",
   // Shipped compatibility facade for statusCommand and getStatusSummary.
   "src/commands/status.ts!",
   "src/cli/daemon-cli.ts!",
@@ -424,6 +426,9 @@ const rootEntries = [
   "scripts/bench-cron-session-reaper.ts!",
   "scripts/bench-codex-catalog-pages.ts!",
   "scripts/bench-redaction-hot-paths.ts!",
+  // The manual heap-retention CLI launches its private IPC preload by path.
+  "scripts/bench-gateway-heap-retention.ts!",
+  "scripts/lib/gateway-heap-retention-preload.mjs!",
   // docs/reference/test/performance.md invokes this standalone comparison harness.
   "scripts/bench-workspace-computation.ts!",
   // Docker/manual E2E executables and their nested assertion/probe entrypoints.

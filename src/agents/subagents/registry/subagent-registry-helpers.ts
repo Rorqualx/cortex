@@ -1,3 +1,4 @@
+import { asFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { DEFAULT_SUBAGENT_ARCHIVE_AFTER_MINUTES } from "../../../config/agent-limits.js";
 import { getRuntimeConfig } from "../../../config/config.js";
@@ -111,6 +112,11 @@ export async function persistSubagentSessionTiming(
     assertCommitAllowed?: () => void;
     assertCurrentEntry?: (entry: SessionEntryCurrentFacts | undefined) => void;
     sessionEntryCurrent?: SessionEntryCurrentCheck;
+    settledQueuedCancellation?: {
+      storePath: string;
+      sessionId: string;
+      lifecycleRevision?: string;
+    };
   },
 ) {
   const childSessionKey = entry.childSessionKey?.trim();
@@ -123,6 +129,7 @@ export async function persistSubagentSessionTiming(
   const storePath =
     options?.sessionEntryCurrent?.source.path ??
     options?.session?.storePath ??
+    options?.settledQueuedCancellation?.storePath ??
     resolveSessionStorePathCore(cfg.session?.store, { agentId });
   const refused = new Error("Subagent timing owner changed before commit");
   const assertGenerationCurrent = () => {
@@ -132,10 +139,7 @@ export async function persistSubagentSessionTiming(
     options?.assertCommitAllowed?.();
   };
   const startedAt = getSubagentSessionStartedAt(entry);
-  const endedAt =
-    typeof entry.execution.endedAt === "number" && Number.isFinite(entry.execution.endedAt)
-      ? entry.execution.endedAt
-      : undefined;
+  const endedAt = asFiniteNumber(entry.execution.endedAt);
   const runtimeMs = getSubagentSessionRuntimeMs(entry, endedAt);
   const status = resolveSubagentSessionStatus(entry);
 
@@ -143,6 +147,25 @@ export async function persistSubagentSessionTiming(
     ? resolveSessionRunError(entry.execution.outcome ?? {}, status)
     : undefined;
   const update = (sessionEntry: InternalSessionEntry) => {
+    const settled = options?.settledQueuedCancellation;
+    if (
+      settled &&
+      (entry.collect !== true ||
+        entry.execution.status !== "terminal" ||
+        entry.execution.startedAt !== undefined ||
+        sessionEntry.startedAt !== undefined ||
+        entry.endedReason !== SUBAGENT_ENDED_REASON_KILLED ||
+        !entry.killReconciliation ||
+        storePath !== settled.storePath ||
+        sessionEntry.sessionId !== settled.sessionId ||
+        sessionEntry.lifecycleRevision !== settled.lifecycleRevision ||
+        sessionEntry.activeWriterRunId !== undefined ||
+        sessionEntry.lifecycleRunId !== undefined ||
+        (sessionEntry.lastRunId !== undefined &&
+          sessionEntry.lastRunId !== (entry.swarmRunId ?? entry.runId)))
+    ) {
+      return null;
+    }
     if (status === "killed") {
       const existingCompletion = resolveCompletionFromSessionEntry(sessionEntry, Date.now(), {
         notBeforeMs: entry.execution.startedAt ?? entry.createdAt,
@@ -160,6 +183,11 @@ export async function persistSubagentSessionTiming(
       }
     }
     const next = { ...sessionEntry };
+    if (settled) {
+      // Exact queued withdrawal and successful resource cleanup qualify identity,
+      // without fabricating an agent start or execution.
+      next.lastRunId = entry.swarmRunId ?? entry.runId;
+    }
 
     for (const [key, value] of [
       ["startedAt", startedAt],
@@ -329,10 +357,7 @@ function resolveArchiveAfterMs(cfg?: OpenClawConfig) {
 
 /** Arms retention only after the run or its waitable collector result has completed. */
 export function updateSubagentArchiveAtMs(entry: SubagentRunRecord, cfg?: OpenClawConfig): boolean {
-  const endedAt =
-    typeof entry.execution.endedAt === "number" && Number.isFinite(entry.execution.endedAt)
-      ? entry.execution.endedAt
-      : undefined;
+  const endedAt = asFiniteNumber(entry.execution.endedAt);
   const completedAt = entry.collect
     ? endedAt === undefined && !entry.collectorCompletion
       ? undefined

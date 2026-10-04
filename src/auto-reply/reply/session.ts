@@ -128,13 +128,11 @@ import {
   resolveSessionDeliveryRoute,
 } from "./session-delivery.js";
 import { createReplySessionEntryHandle } from "./session-entry-handle.js";
-import { projectSessionEntryLifecycleCarry } from "./session-entry-lifecycle-carry.js";
 import {
   createReplySessionResetBoundary,
   emitReplySessionEndHook,
   emitReplySessionStartHook,
   resolveExplicitSessionEndReason,
-  resolveStaleSessionEndReason,
 } from "./session-hooks.js";
 import {
   ReplySessionInitConflictError,
@@ -731,10 +729,9 @@ async function initSessionStateAttemptLocked(
     (resetTriggered || !effectiveFreshEntry) && entry ? { ...entry } : undefined;
   const previousSessionEndReason = resetTriggered
     ? resolveExplicitSessionEndReason(matchedResetTriggerLower)
-    : resolveStaleSessionEndReason({
-        entry,
-        freshness: entryFreshness,
-      });
+    : entry
+      ? entryFreshness?.staleReason
+      : undefined;
   const lifecycleMutationMatches = Boolean(
     previousSessionEntry &&
     lifecycleMutationIdentity?.sessionKey === sessionKey &&
@@ -861,7 +858,11 @@ async function initSessionStateAttemptLocked(
     sessionStartedAt: isNewSession
       ? now
       : (baseEntry?.sessionStartedAt ?? lifecycleTimestamps.sessionStartedAt),
-    ...projectSessionEntryLifecycleCarry({ entry, baseEntry, isSystemEvent, now }),
+    lastInteractionAt: isSystemEvent ? baseEntry?.lastInteractionAt : now,
+    agentStatus: isSystemEvent ? baseEntry?.agentStatus : undefined,
+    pinnedAt: entry?.pinnedAt,
+    snoozedUntil: isSystemEvent ? entry?.snoozedUntil : undefined,
+    snoozedAt: isSystemEvent ? entry?.snoozedAt : undefined,
     systemSent,
     abortedLastRun: recoveredTerminalEntry ? undefined : abortedLastRun,
     usageFamilyKey,
