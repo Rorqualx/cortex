@@ -216,8 +216,17 @@ function collectControlUiLocaleAssetGroups(assets: Array<ReturnType<typeof readA
 }
 
 // Counts what the Gateway retains for already-open tabs: manifest entries minus sidecars.
+// Fork graft (resync 2026-10-03): ui/ is fork-owned (pre-rearchitecture ui/src/ui/**,
+// restored wholesale at stage time) and its vite build emits no asset manifest —
+// upstream writes it from the rearchitected ui/vite.config.ts this fork has not
+// adopted. Treat an absent manifest as "retention accounting unavailable" (zero
+// entries, no budget verdict) instead of failing the build; a present manifest is
+// still validated strictly below.
 function collectRetainedIdentity(distDir: string) {
   const retainedIdentity = { assets: 0, bytes: 0 };
+  if (!fs.existsSync(path.join(distDir, CONTROL_UI_ASSET_MANIFEST_FILENAME))) {
+    return retainedIdentity;
+  }
   try {
     const manifest: unknown = JSON.parse(
       fs.readFileSync(path.join(distDir, CONTROL_UI_ASSET_MANIFEST_FILENAME), "utf8"),
