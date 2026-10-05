@@ -6,11 +6,20 @@ export type IdleTimeoutBreakerState = {
   consecutiveIdleTimeoutsBeforeOutput: number;
 };
 
+export function createIdleTimeoutBreakerState(): IdleTimeoutBreakerState {
+  return { consecutiveIdleTimeoutsBeforeOutput: 0 };
+}
+
 // Non-timeout failures without completed progress neither reset nor increment
 // the counter: they prove neither recovery nor another idle timeout.
 export function stepIdleTimeoutBreaker(
   state: IdleTimeoutBreakerState,
-  input: { idleTimedOut: boolean; completedModelProgress: boolean },
+  input: {
+    idleTimedOut: boolean;
+    completedModelProgress: boolean;
+    /** Fork: billed output tokens observed this attempt (accepted for call-site parity; partial billed tokens are not progress). */
+    outputTokens?: number;
+  },
 ) {
   if (input.idleTimedOut && !input.completedModelProgress) {
     state.consecutiveIdleTimeoutsBeforeOutput += 1;

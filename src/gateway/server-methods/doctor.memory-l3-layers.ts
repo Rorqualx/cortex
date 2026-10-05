@@ -286,14 +286,13 @@ async function renderGlobalLayer(layerId: string): Promise<string> {
 
 /** Distinct L3 roots across all configured agents (agents often share a workspace). */
 function uniqueL3Roots(cfg: OpenClawConfig): string[] {
-  const list = Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
   const seen = new Set<string>();
   const roots: string[] = [];
-  for (const entry of list) {
-    if (!entry || typeof entry.id !== "string") {
+  for (const [agentId, entry] of Object.entries(cfg.agents?.entries ?? {})) {
+    if (!entry || typeof agentId !== "string" || !agentId) {
       continue;
     }
-    const root = l3Root(cfg, normalizeAgentId(entry.id));
+    const root = l3Root(cfg, normalizeAgentId(agentId));
     if (!seen.has(root)) {
       seen.add(root);
       roots.push(root);
