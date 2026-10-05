@@ -228,6 +228,10 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
   };
 }
 
+// PROMPT_VERSION = 16 — adds ASPECT rule (LAPSE verb-aspect preservation, arXiv
+// matched-pair evidence: progressive/habitual forms must not flatten into completed
+// ones) and HEDGE rule (Manufactured Confidence: hedged source wording stays hedged
+// in the fact text itself, never laundered into a definitive statement).
 // PROMPT_VERSION = 15 — adds PERSIST policy guard (MCB persist/verify decision
 // policy): persist only unambiguous durable facts; changing-state or ambiguous
 // facts must be flagged tentative with importance ≤0.4 (verification bar) or
@@ -262,10 +266,12 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=15):
+Rules (PROMPT_VERSION=16):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts — statements that remain true across future sessions (identity, preferences, decisions, infrastructure, verified knowledge). Do NOT persist transient/changing state ("currently", "right now", in-progress task status, session-scoped values) or ambiguous statements (unclear referent, hedged wording, unresolved questions) as confirmed facts: skip them entirely when they are pure session context, otherwise emit with certainty "tentative" AND importance ≤0.4 so the verification bar holds them until re-observed. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: preserve dates and times verbatim; do not abbreviate or drop temporal expressions (keep "2026-08-16", "9:00 AM MT", "every Tuesday", "last week" exactly as stated) — temporal anchors drive later retrieval.
+- ASPECT: preserve verb aspect exactly as stated — keep the distinction between ongoing ("is migrating"), habitual ("runs every Tuesday"), and completed ("migrated") actions; never flatten ongoing/habitual forms into completed ones.
+- HEDGE: keep hedged wording from the source ("might", "plans to", "reportedly", "unconfirmed") inside the fact text itself — never rewrite a hedged source into a definitive statement; also mark certainty "tentative".
 - CONFLICT: when sources give conflicting values for the same fact or slot, do NOT force one definitive value — emit each alternative separately: typed facts repeat the slot with each conflicting value at confidence ≤0.5 (each with its own sourceSpan), and the prose fact carries certainty "tentative". Supersession arbitration happens downstream; extraction must preserve all sides of the conflict.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional sentence explaining WHY this fact is worth remembering across sessions.
@@ -320,10 +326,12 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=15-NATIVE):
+Rules (PROMPT_VERSION=16-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts (true across future sessions: identity, preferences, decisions, infrastructure, verified knowledge). Transient/changing state ("currently", in-progress status, session-scoped values) and ambiguous statements (unclear referent, hedged wording, unresolved questions) must NOT be persisted as confirmed — skip when pure session context, else certainty "tentative" + importance ≤0.4 for the verification bar. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: dates and times must stay verbatim even under compression — never abbreviate or drop temporal expressions ("2026-08-16", "9:00 AM MT", "every Tuesday", "last week"); temporal anchors drive later retrieval.
+- ASPECT: verb aspect survives compression — ongoing ("is migrating"), habitual ("runs every Tuesday"), completed ("migrated") stay distinct; never flatten progressive/habitual into completed.
+- HEDGE: hedged source wording ("might", "plans to", "reportedly", "unconfirmed") stays in the fact text — never launder a hedge into a definitive statement; certainty "tentative".
 - CONFLICT: conflicting values for the same slot → emit each alternative separately (same slot, each value, confidence ≤0.5, own sourceSpan; prose certainty "tentative"). Never force one winner — supersession arbitration is downstream.
 - DEDUPKEY: stable kebab-case key like "user_preference:morning_standups".
 - REASONING: one optional compressed sentence explaining WHY this fact is worth remembering across sessions.

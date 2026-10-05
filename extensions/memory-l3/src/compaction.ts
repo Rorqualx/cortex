@@ -384,6 +384,8 @@ ${JSON.stringify(structuredFacts, null, 2)}
 
 Output strict JSON only: {"text": "the combined statement", "certainty": "tentative|confirmed|instructional"}
 - Preserve dates and times verbatim; do not abbreviate or drop temporal expressions from the input facts.
+- Preserve verb aspect: ongoing ("is migrating"), habitual ("runs every Tuesday"), and completed ("migrated") stay distinct — never flatten progressive/habitual forms into completed ones.
+- Preserve hedged wording ("might", "plans to", "reportedly", "unconfirmed") in the merged text — never launder a hedge into a definitive statement.
 - If any input fact has certainty "tentative", the output certainty must be "tentative".
 - If any input fact has certainty "instructional" (and none are tentative), the output certainty must be "instructional".
 - Otherwise, output "confirmed".`;
@@ -392,7 +394,7 @@ Output strict JSON only: {"text": "the combined statement", "certainty": "tentat
   try {
     raw = await caller({
       systemPrompt:
-        "You are a fact compressor. Combine multiple related facts into one concise statement. Preserve dates and times verbatim — never abbreviate or drop temporal expressions. Output strict JSON with 'text' and 'certainty' fields. The 'certainty' field must be the most conservative (weakest) certainty from the inputs.",
+        "You are a fact compressor. Combine multiple related facts into one concise statement. Preserve dates and times verbatim — never abbreviate or drop temporal expressions. Preserve verb aspect (ongoing vs habitual vs completed) and hedged wording exactly. Output strict JSON with 'text' and 'certainty' fields. The 'certainty' field must be the most conservative (weakest) certainty from the inputs.",
       userPrompt: prompt,
       thinking: false,
     });

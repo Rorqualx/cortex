@@ -402,9 +402,12 @@ describe("compactSession", () => {
     });
     expect(caller).toHaveBeenCalledTimes(1);
     const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.systemPrompt;
-    expect(systemPrompt).toContain("PROMPT_VERSION=15-NATIVE");
+    expect(systemPrompt).toContain("PROMPT_VERSION=16-NATIVE");
     // QW1 (2026-08-16): native dense extraction must preserve temporal expressions.
     expect(systemPrompt).toContain("TEMPORAL");
+    // QW2 (2026-10-05): LAPSE verb-aspect + hedge preservation guards.
+    expect(systemPrompt).toContain("ASPECT");
+    expect(systemPrompt).toContain("HEDGE");
     // QW2 (2026-08-17): TANGLE conflict-preservation guard.
     expect(systemPrompt).toContain("CONFLICT");
     // QW3 (2026-08-24): MCB persist/verify policy guard.
