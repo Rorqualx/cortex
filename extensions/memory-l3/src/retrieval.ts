@@ -4,6 +4,7 @@ import {
   buildEdgeLookup,
   extractEdgesFromRetrieval,
   hebbianBoost,
+  hebbianCentrality,
   mergeEdges,
   type HebbianConfig,
   type HebbianEdge,
@@ -808,6 +809,26 @@ export async function retrieveTopK(params: {
     rrfScores = rrfFuse([bm25Ranking, semanticRanking], k);
   }
 
+  // Load-bearing centrality (EngramRAG CATD): hoist the Hebbian config +
+  // edge-map read above the scoring loop so stale demotion can attenuate for
+  // facts many downstream facts link through (high 2-hop degree), independent
+  // of recallCount. The same lookup is reused below for neighbor boosting and
+  // post-slice expansion without a second edge-map read.
+  const hConfig = params.hebbianConfig ?? DEFAULT_HEBBIAN_CONFIG;
+  let edgeLookup: Map<string, HebbianEdge[]> | null = null;
+  if (hConfig.enabled && prescored.length > 0) {
+    try {
+      const edgeRaw = await params.storage.readEdgeMap();
+      const edges = Array.isArray(edgeRaw) ? (edgeRaw as HebbianEdge[]) : [];
+      if (edges.length > 0) {
+        edgeLookup = buildEdgeLookup(edges);
+      }
+    } catch {
+      // Edge map read failed — skip Hebbian boosting + centrality.
+    }
+  }
+  const centralityMaxDegree = Math.max(1, config.staleCentralityMaxDegree ?? 6);
+
   const scored: RetrievedFact[] = [];
   for (const { item, signals } of prescored) {
     let baseScore: number;
@@ -832,11 +853,14 @@ export async function retrieveTopK(params: {
     const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
     // Stale-utility demotion: facts never retrieved across multiple epochs
     // get their composite score multiplied down to reflect low demonstrated
-    // utility (RMM — arXiv:2607.19873).
+    // utility (RMM — arXiv:2607.19873). Load-bearing facts keep more of
+    // their score via the CATD centrality term, independent of recallCount.
+    const degree = edgeLookup ? hebbianCentrality(item.fact.dedupKey, edgeLookup) : 0;
     const demotion = staleDemotionMultiplier({
       recallCount: retrievalSignalMap.get(item.fact.id)?.recallCount ?? 0,
       ageMs: now - item.fact.createdAt,
       config,
+      ...(degree > 0 ? { centrality: Math.min(1, degree / centralityMaxDegree) } : {}),
     });
     const score = rawScore * demotion;
     if (score > 0) {
@@ -1000,30 +1024,19 @@ export async function retrieveTopK(params: {
   }
 
   // Hebbian neighbor boosting — facts that co-occur frequently across chunks
-  // get a small additive boost when their neighbors score high.
-  const hConfig = params.hebbianConfig ?? DEFAULT_HEBBIAN_CONFIG;
-  // Hoisted so both the boost (re-rank) and the post-slice expansion
-  // (pattern completion) can reuse it without a second edge-map read.
-  let edgeLookup: Map<string, HebbianEdge[]> | null = null;
-  if (hConfig.enabled && scored.length > 0) {
-    try {
-      const edgeRaw = await params.storage.readEdgeMap();
-      const edges = Array.isArray(edgeRaw) ? (edgeRaw as HebbianEdge[]) : [];
-      if (edges.length > 0) {
-        edgeLookup = buildEdgeLookup(edges);
-        const baseScores = new Map<string, number>();
-        for (const item of scored) {
-          baseScores.set(item.fact.dedupKey, item.score);
-        }
-        for (const item of scored) {
-          const boost = hebbianBoost(item.fact.dedupKey, edgeLookup, baseScores, hConfig);
-          if (boost > 0) {
-            item.score += boost;
-          }
-        }
+  // get a small additive boost when their neighbors score high. hConfig and
+  // edgeLookup are hoisted above the scoring loop (they also feed the CATD
+  // centrality term in stale demotion), so no second edge-map read here.
+  if (hConfig.enabled && edgeLookup && scored.length > 0) {
+    const baseScores = new Map<string, number>();
+    for (const item of scored) {
+      baseScores.set(item.fact.dedupKey, item.score);
+    }
+    for (const item of scored) {
+      const boost = hebbianBoost(item.fact.dedupKey, edgeLookup, baseScores, hConfig);
+      if (boost > 0) {
+        item.score += boost;
       }
-    } catch {
-      // Edge map read failed — skip Hebbian boosting.
     }
   }
 

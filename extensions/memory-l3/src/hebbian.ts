@@ -229,3 +229,37 @@ export function hebbianBoost(
   }
   return boost;
 }
+
+/**
+ * Load-bearing centrality (EngramRAG CATD): number of unique facts reachable
+ * from `dedupKey` within two hops of the co-occurrence graph. Facts with high
+ * 2-hop degree sit upstream of many other memories — demoting (evicting) them
+ * tears holes in recall that recallCount alone cannot see. Callers normalize
+ * against a saturation cap (see `staleCentralityMaxDegree`) to get 0..1.
+ * Returns 0 when the fact has no edges.
+ */
+export function hebbianCentrality(
+  dedupKey: string,
+  edgeLookup: Map<string, HebbianEdge[]>,
+): number {
+  const edges = edgeLookup.get(dedupKey);
+  if (!edges || edges.length === 0) {
+    return 0;
+  }
+  const reachable = new Set<string>();
+  for (const edge of edges) {
+    const neighborKey = edge.a === dedupKey ? edge.b : edge.a;
+    reachable.add(neighborKey);
+    const secondHopEdges = edgeLookup.get(neighborKey);
+    if (!secondHopEdges) {
+      continue;
+    }
+    for (const second of secondHopEdges) {
+      const farKey = second.a === neighborKey ? second.b : second.a;
+      if (farKey !== dedupKey) {
+        reachable.add(farKey);
+      }
+    }
+  }
+  return reachable.size;
+}

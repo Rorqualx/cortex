@@ -980,6 +980,85 @@ describe("staleDemotionMultiplier", () => {
     ).toBe(0.5);
   });
 
+  it("attenuates demotion for load-bearing facts (CATD centrality, default attenuation 0.5)", () => {
+    // recallCount=0, factor=0.5, centrality=1.0 → 0.5 + 0.5*min(1, 0.5) = 0.75
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        centrality: 1.0,
+      }),
+    ).toBeCloseTo(0.75, 6);
+    // centrality=0.6 → 0.5 + 0.5*min(1, 0.3) = 0.65
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        centrality: 0.6,
+      }),
+    ).toBeCloseTo(0.65, 6);
+  });
+
+  it("clamps centrality and never demotes below the base multiplier", () => {
+    // centrality > 1 clamps to 1
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        centrality: 5,
+      }),
+    ).toBeCloseTo(0.75, 6);
+    // negative centrality clamps to 0 → pure base
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        centrality: -1,
+      }),
+    ).toBe(0.5);
+  });
+
+  it("centrality term disabled at attenuation=0 (pure RMM behavior)", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, staleCentralityAttenuation: 0 };
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config,
+        centrality: 1.0,
+      }),
+    ).toBe(0.5);
+  });
+
+  it("full attenuation keeps a maximally central stale fact undemoted", () => {
+    const config = { ...DEFAULT_SCORING_CONFIG, staleCentralityAttenuation: 1 };
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config,
+        centrality: 1.0,
+      }),
+    ).toBe(1.0);
+  });
+
+  it("centrality lerps the partial-demotion recallCount 1-2 path too", () => {
+    // recallCount=1: base = 0.5 + 0.5*(1/3); centrality=1, attenuation=0.5
+    const base = 0.5 + 0.5 * (1 / 3);
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 1,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        centrality: 1.0,
+      }),
+    ).toBeCloseTo(base + (1 - base) * 0.5, 6);
+  });
+
   it("returns 1.0 when demotion factor is 1.0 (disabled)", () => {
     const config = { ...DEFAULT_SCORING_CONFIG, staleZeroRecallDemotion: 1.0 };
     expect(

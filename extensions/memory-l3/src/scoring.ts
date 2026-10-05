@@ -114,6 +114,21 @@ export type ScoringConfig = {
    */
   staleZeroRecallDemotion?: number;
   /**
+   * How much load-bearing centrality attenuates the stale demotion penalty
+   * (EngramRAG CATD). Facts many downstream facts link through (high 2-hop
+   * Hebbian degree) keep more of their score even with zero recalls — they
+   * are structural, not stale. 0 disables the centrality term (pure RMM
+   * behavior); the multiplier lerps toward 1.0 proportionally to
+   * attenuation × centrality. Default 0.5.
+   */
+  staleCentralityAttenuation?: number;
+  /**
+   * 2-hop Hebbian degree at which centrality saturates to 1.0. Default 6 —
+   * a fact reachable from six-plus other facts within two hops is fully
+   * load-bearing for recall purposes.
+   */
+  staleCentralityMaxDegree?: number;
+  /**
    * Fact count threshold above which BM25 weight is scaled up. Research
    * (arXiv:2607.26497) shows BM25 overtakes agent-based retrieval at
    * ~10M tokens (~50k facts at current avg fact length). Below this,
@@ -152,6 +167,8 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   polarityDemotionFactor: 0.5,
   staleZeroRecallAgeDays: 21,
   staleZeroRecallDemotion: 0.5,
+  staleCentralityAttenuation: 0.5,
+  staleCentralityMaxDegree: 6,
   corpusSizeBm25Threshold: 50_000,
   corpusSizeBm25ScaleFactor: 1.5,
 };
@@ -616,11 +633,18 @@ export function scoreFact(params: {
  * Returns 1.0 (no demotion) when:
  * - age in days < `staleZeroRecallAgeDays` (fact hasn't been around long enough)
  * - `recallCount >= 3` (enough recall history to be considered stable)
+ *
+ * Load-bearing centrality (EngramRAG CATD): an optional 0..1 `centrality`
+ * (normalized 2-hop Hebbian degree) attenuates the penalty independent of
+ * recallCount — a fact many downstream facts link through keeps
+ * factor + (1-factor) × min(1, attenuation × centrality) of its score.
  */
 export function staleDemotionMultiplier(params: {
   recallCount: number;
   ageMs: number;
   config: ScoringConfig;
+  /** Normalized 0..1 load-bearing centrality; absent/0 = no attenuation. */
+  centrality?: number;
 }): number {
   const thresholdDays = params.config.staleZeroRecallAgeDays ?? 21;
   const factor = params.config.staleZeroRecallDemotion ?? 0.5;
@@ -631,13 +655,18 @@ export function staleDemotionMultiplier(params: {
   // Usage-redundancy gradient: facts with more recall history are
   // demoted less. recallCount 0 → full demotion, ≥3 → no demotion.
   if (params.recallCount >= 3) return 1.0;
-  if (params.recallCount <= 0) return factor;
+  const t = params.recallCount <= 0 ? 0 : Math.min(1, params.recallCount / 3);
+  const base = factor + (1 - factor) * t;
 
-  // Linear interpolation for recallCount 1–2:
-  // recallCount=1 → factor + (1-factor) * (1/3) ≈ factor + 0.33*(1-factor)
-  // recallCount=2 → factor + (1-factor) * (2/3) ≈ factor + 0.67*(1-factor)
-  const t = params.recallCount / 3;
-  return factor + (1 - factor) * t;
+  // Load-bearing centrality (CATD): lerp the multiplier toward 1.0 by
+  // attenuation × centrality — structural facts are not stale, regardless
+  // of recallCount.
+  const attenuation = params.config.staleCentralityAttenuation ?? 0.5;
+  const centrality = Math.max(0, Math.min(1, params.centrality ?? 0));
+  if (attenuation <= 0 || centrality <= 0) {
+    return base;
+  }
+  return base + (1 - base) * Math.min(1, attenuation * centrality);
 }
 
 export function composite(signals: Signals, config: ScoringConfig): number {

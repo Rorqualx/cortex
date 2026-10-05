@@ -7,6 +7,7 @@ import {
   extractEdges,
   extractEdgesFromRetrieval,
   hebbianBoost,
+  hebbianCentrality,
   mergeEdges,
   edgeKey,
 } from "./hebbian.js";
@@ -228,6 +229,62 @@ describe("hebbian", () => {
       // k:2 has no score (0), only k:3 contributes
       const boost = hebbianBoost("k:1", lookup, scores);
       assert.ok(Math.abs(boost - 0.06) < 1e-10); // 0.4 * 3 * 0.05
+    });
+  });
+
+  describe("hebbianCentrality", () => {
+    it("returns 0 when fact has no edges", () => {
+      assert.strictEqual(hebbianCentrality("k:lonely", buildEdgeLookup([])), 0);
+      assert.strictEqual(hebbianCentrality("k:lonely", new Map()), 0);
+    });
+
+    it("counts direct neighbors plus 2-hop reach (CATD degree)", () => {
+      const lookup = buildEdgeLookup([
+        { a: "k:1", b: "k:2", weight: 1 },
+        { a: "k:1", b: "k:3", weight: 2 },
+      ]);
+      assert.strictEqual(hebbianCentrality("k:1", lookup), 2);
+      // k:2 reaches k:1 directly and k:3 via k:1 (2 hops) → 2 unique facts.
+      assert.strictEqual(hebbianCentrality("k:2", lookup), 2);
+    });
+
+    it("includes unique 2-hop facts and never counts the origin twice", () => {
+      // k:1 -> k:2, k:3 (1 hop); k:2 -> k:4, k:3 (2 hop); k:4 -> k:1 (origin, skipped)
+      const lookup = buildEdgeLookup([
+        { a: "k:1", b: "k:2", weight: 1 },
+        { a: "k:1", b: "k:3", weight: 1 },
+        { a: "k:2", b: "k:3", weight: 1 }, // k:3 already direct
+        { a: "k:2", b: "k:4", weight: 1 },
+        { a: "k:1", b: "k:4", weight: 1 }, // k:4 also direct via k:2 but direct here
+      ]);
+      // Reachable from k:1: k:2, k:3, k:4 = 3 unique facts within 2 hops.
+      assert.strictEqual(hebbianCentrality("k:1", lookup), 3);
+      // From k:4: direct k:1, k:2; 2-hop via k:1 -> k:3 → 3 unique.
+      assert.strictEqual(hebbianCentrality("k:4", lookup), 3);
+    });
+
+    it("hub node scores higher than leaf node", () => {
+      // Star: hub k:hub linked to 4 leaves; each leaf links only to hub.
+      const lookup = buildEdgeLookup([
+        { a: "k:hub", b: "k:l1", weight: 1 },
+        { a: "k:hub", b: "k:l2", weight: 1 },
+        { a: "k:hub", b: "k:l3", weight: 1 },
+        { a: "k:hub", b: "k:l4", weight: 1 },
+      ]);
+      // hub reaches 4 leaves directly; each leaf reaches hub + the other 3 via 2 hops.
+      const hub = hebbianCentrality("k:hub", lookup);
+      const leaf = hebbianCentrality("k:l1", lookup);
+      assert.strictEqual(hub, 4);
+      assert.strictEqual(leaf, 4); // fully connected star — all reach the same set
+      // Break the symmetry: l1 loses its edge, becomes a leaf-of-leaf.
+      const sparse = buildEdgeLookup([
+        { a: "k:hub", b: "k:l2", weight: 1 },
+        { a: "k:hub", b: "k:l3", weight: 1 },
+        { a: "k:hub", b: "k:l4", weight: 1 },
+        { a: "k:l2", b: "k:l1", weight: 1 },
+      ]);
+      assert.strictEqual(hebbianCentrality("k:hub", sparse), 4); // l2,l3,l4 + l1 via l2
+      assert.strictEqual(hebbianCentrality("k:l1", sparse), 2); // l2 direct + hub via l2
     });
   });
 
