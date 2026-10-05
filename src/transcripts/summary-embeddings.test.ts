@@ -29,6 +29,8 @@ describe("Summary Embeddings", () => {
       actionItems: ["Implement JWT middleware", "Add token refresh endpoint"],
       risks: ["Token leakage vulnerability", "Revocation strategy needed"],
       utteranceCount: 2,
+      participants: [],
+      source: "heuristic",
       ...overrides,
     };
   }
@@ -132,6 +134,8 @@ describe("Summary Embeddings", () => {
         generatedAt: "2024-01-01T00:00:00Z",
         overview: "Brief discussion",
         transcript: [],
+        participants: [],
+        source: "heuristic",
         decisions: [],
         actionItems: [],
         risks: [],

@@ -544,9 +544,12 @@ describe("agent roster resolution", () => {
     expect(tryResolveDefaultAgentId({ agents: { list: [{ id: "alpha" }] } })).toBe("alpha");
     for (const marker of ["false", 1]) {
       expect(
+        // Markers are intentionally malformed (wrong primitive types); the fork's
+        // canonical AgentEntryConfig rejects `default` outright, so bypass typing
+        // like fork-main did (`as unknown as OpenClawConfig`).
         tryResolveDefaultAgentId({
           agents: { entries: { alpha: { default: marker } } },
-        }),
+        } as unknown as Parameters<typeof tryResolveDefaultAgentId>[0]),
       ).toBe("alpha");
     }
   });

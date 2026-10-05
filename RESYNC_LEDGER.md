@@ -528,3 +528,57 @@ Preflight 20:32 left tsgo:core=19 after merge commit 60b7d0f878f. All 19 traced 
 - `src/workboard/sessions-board-rules.ts` + `packages/workboard-contract/src/sessions-board.test.ts` — git rm (KEEP-OURS): orphaned salvage port of upstream #163823 extensions/workboard rules had zero consumers and imported contract types the fork doesn't carry; the adopted test imports the nonexistent sessions-board.js module. Fork ships no sessions-board feature (standing policy: upstream workboard features not shipped; fork workboard = core src/workboard/).
 
 tsgo:core 19→0 locally (cache cleared).
+
+## 2026-10-05 resume (upstream e25a9815, bounded batch 209 of 794, base 6d05367, fork 361402c)
+
+Resumed STAGE after 09:17Z proof FAIL. That proof: BUILD_EXIT=1 (control-ui startup-JS budget)
+
+- 20 net-new tsgo:core:test/test:src errors. All 20 traced to 5 clusters and fixed (commit follows):
+
+* **A: `src/config/types.agents.ts`** — merge dropped fork's legacy/projection fields; re-grafted
+  `default?/agentRuntime?/compaction?` onto AgentConfig (fork @deprecated comments, AgentModelEntryConfig
+  import) + `list?: AgentConfig[]` projection onto AgentsConfig. Clears agent-scope-config.test ×3,
+  extraparams-resolve ×6, sandbox/config.test, run-fallback-policy (AgentsConfig.list keystone).
+* **B: `src/agents/cli-runner.reliability.test.ts`** — upstream split the cli-runner monolith; fork's
+  `setCliRunnerTestDeps` (monolith export) is gone and `resolveCliNoOutputTimeoutMs`/`resolveCliRunTimeoutOverrideMs`
+  moved to `cli-runner/reliability.ts`. ADOPT-UPSTREAM mechanism: 3 `setCliRunnerTestDeps({claudeCliSessionTranscriptHasContent})`
+  sites converted to the `vi.spyOn(cliTranscript, ...)` pattern already used by this test's beforeEach AND
+  upstream's prepare.test-support.ts (same fn, same interception seam); resolve* import re-pointed helpers.js→reliability.js.
+* **C: `src/agents/sandbox/dependency-template.test.ts`** — upstream test adopted while fork SandboxConfig
+  keeps REQUIRED `osSandbox` (fork-only, base+upstream: zero refs). Added minimal disabled literal
+  (`{enabled:false, extraWritableRoots:[], extraProtectedMetadata:[], network:"deny"}` — matches browser.create.test convention).
+* **D: `scripts/run-node.mts`** — ENHANCE-OURS: upstream restructure (typed ChildProcess, no validator)
+  dropped the fork's test injection surface. Re-grafted `spawn?/process?/platform?/execPath?/stdout?/stderr?`
+  params + RunNodeChild/RunNodeSpawn/RunNodeWritable types + asRunNodeChild validator, wired through
+  createRunNodeDeps; loosened signalSpawnedProcess/waitForSpawnedProcess/pipeSpawnedOutput to RunNodeChild
+  (bodies already use only the loose surface); writeRunnerStream/RunNodeLogDeps stderr → RunNodeWritable.
+  Clears run-node.test ×8.
+* **E: `src/transcripts/summary-embeddings.test.ts`** — fork-only test (upstream DELETED it at e25a9815);
+  was pre-existing red on main (old type required participants+source, mock literals lacked them — baseline
+  debt that re-texted as net-new when summary.ts adopted the SchemaContract derivation). Completed both
+  literals (participants: [], source: "heuristic") → file now 0 errors, strictly better than baseline.
+
+### BLOCKER (maintainer decision, not auto-pickable): control-ui startup-JS budget
+
+Build fails on huey: startup JS **30 requests** (limit 28) and **626211 B** gzip
+(baseline 590540 + allowances = enforcement 591116 B; committed max ceiling **590848 B** = 577 KiB,
+maintainer-approved 2026-09-29). Mac-deploy dist baseline proxy: 23 requests / 586967 B.
+Growth is entirely in `control-ui-foundation-*` chunks (7→14 requests, +37.7 KiB); core/markdown/lit/
+gateway-runtime chunks flat. Source-map attribution of all 7 new chunks: **typebox@1.3.34 runtime**
+(system/settings/hashing/arguments/environment + full locale catalog; 661 sources across 5 chunks, 14.7K
++7.8K +5.9K +4.4K +3.8K gzip) + two tiny chunks (nanoid 307B, unist-util-stringify-position 309B).
+Upstream adopted typebox as the protocol-schema runtime this batch; the fork UI's unchanged startup
+imports of gateway-protocol now drag it in. Legitimate structural growth, NOT a mis-bundle/duplicate.
+
+Options for the maintainer:
+
+1. Raise `startupJsGzipBytes` ceiling (577→~616 KiB) + `startupJsRequests` 28→≥30 + regenerate baseline
+   (`--update-baseline --reason`) — cheapest; continues the "structural growth each batch" pattern at 10x scale.
+2. Trim the startup path (recorded follow-up): defer typebox-bearing schema modules from UI startup,
+   or tree-shake typebox's locale catalog (ar_001/bn_BD/… in a startup chunk is deferrable).
+3. Defer markdown-runtime (78.8 KiB, unchanged since before this batch) from startup — biggest single win, ui/-side change (breaks ui==main invariant for one landing).
+
+tsgo lanes after fixes: core 0; all 20 net-new test-lane errors cleared (local shard verification in
+tonight's commit message). Proof NOT re-run tonight: budget check fails deterministically at build end
+and my fixes are test/type-only (zero effect on the bundle). Branch resumable via STAGE-RESUME once the
+budget decision lands.
