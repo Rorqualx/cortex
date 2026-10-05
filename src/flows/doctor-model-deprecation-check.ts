@@ -3,6 +3,8 @@
  * has flagged deprecated, and `--fix` reassigns them to nearest-capability
  * survivors (or disables/clears when none survive). Aliases pointing at a dead
  * model are surfaced as warnings for config normalization, not auto-edited here.
+ * Reassignments caused by a silent serve-swap (stable name now answered by a
+ * different snapshot id) carry a snapshot-drift note and escalate to warning.
  *
  * The heavy runtime wiring (state DB, cron store, session stores, catalog) is
  * lazy-imported inside detect/repair so registering the check stays cheap.
@@ -87,6 +89,52 @@ async function loadInputCaps(): Promise<ModelInputCaps> {
   }
 }
 
+/** Minimal shape of a probe-recorded silent upgrade (`provider/from/to`). */
+export type SilentUpgradeLink = { provider: string; from: string; to: string };
+
+/**
+ * Loads probe-recorded silent upgrades (stable name -> served snapshot id) from
+ * the state DB. Providers that do not expose snapshot ids simply contribute no
+ * rows, so absence degrades to "no signal" rather than an error.
+ */
+async function loadSilentUpgrades(): Promise<readonly SilentUpgradeLink[]> {
+  try {
+    const { openOpenClawStateDatabase } = await import("../state/openclaw-state-db.js");
+    const { listSilentUpgrades } = await import("../model-catalog/discovered-store.js");
+    const { db } = openOpenClawStateDatabase();
+    return listSilentUpgrades(db);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Warning note for reassignments caused by a silent serve-swap: the pinned
+ * name now answers as a different snapshot id (e.g. a retired `deepseek-v4-flash`
+ * name silently serving V4.1-Flash behind the same alias), so model behavior
+ * changed behind a stable name. Null when the action's pin has no recorded
+ * upgrade link — not all providers expose snapshot ids, and absence of a link
+ * is not drift.
+ */
+export function serveSwapNote(
+  action: {
+    binding: { ref: { provider: string; modelId: string } };
+    outcome: "rewrite" | "clear";
+  },
+  upgrades: readonly SilentUpgradeLink[],
+): string | null {
+  const { provider, modelId } = action.binding.ref;
+  const hit = upgrades.find(
+    (u) =>
+      u.provider.toLowerCase() === provider.toLowerCase() &&
+      u.from.toLowerCase() === modelId.toLowerCase(),
+  );
+  if (!hit) {
+    return null;
+  }
+  return `${modelId} is now served as ${hit.to} behind the same name — model behavior changed behind a stable name (snapshot drift); verify pinned behavior`;
+}
+
 function describeReassignment(action: {
   binding: { kind: string; jobId?: string; agentId?: string; sessionKey?: string; alias?: string };
   outcome: "rewrite" | "clear";
@@ -113,21 +161,24 @@ export const MODEL_DEPRECATION_HEALTH_CHECK: HealthCheck = {
     const { buildRuntimeReassignmentPlan } = await import("../model-catalog/reassign-runtime.js");
     const { plan } = await buildRuntimeReassignmentPlan(ctx.cfg);
     const caps = await loadInputCaps();
+    const upgrades = await loadSilentUpgrades();
     return plan.actions.map((action) => {
       const note = visionDropNote(action, caps);
+      const swapNote = serveSwapNote(action, upgrades);
       const base =
         action.outcome === "rewrite"
           ? `Pinned to a deprecated or superseded model; reassign ${describeReassignment(action)}.`
           : `Pinned to a deprecated model with no replacement: ${describeReassignment(action)}.`;
+      // A vision-dropping or serve-swapped pin deserves operator visibility
+      // even for aliases, which otherwise report as info-only.
+      const notes = [note, swapNote].filter((n): n is string => n !== null);
       return {
         checkId: CHECK_ID,
-        // A vision-dropping swap deserves operator visibility even for aliases,
-        // which otherwise report as info-only.
         severity:
-          note !== null || action.binding.kind !== "alias"
+          notes.length > 0 || action.binding.kind !== "alias"
             ? ("warning" as const)
             : ("info" as const),
-        message: note !== null ? `${base} Note: ${note}.` : base,
+        message: notes.length > 0 ? `${base} Note: ${notes.join("; ")}.` : base,
         fixHint: "Run `openclaw doctor --fix` to reassign deprecated/superseded model pins.",
       };
     });
@@ -188,12 +239,15 @@ export const MODEL_DEPRECATION_HEALTH_CHECK: HealthCheck = {
     }
 
     // Surface silent capability drops (e.g. a retired vision alias repointed at
-    // a text-only replacement) so the operator sees what the swap costs.
+    // a text-only replacement) and silent serve-swaps (stable name now answered
+    // by a different snapshot id) so the operator sees what the swap costs.
     const caps = await loadInputCaps();
+    const upgrades = await loadSilentUpgrades();
     for (const action of plan.actions) {
-      const note = visionDropNote(action, caps);
-      if (note !== null) {
-        changes.push(`${describeReassignment(action)} — ${note}`);
+      for (const note of [visionDropNote(action, caps), serveSwapNote(action, upgrades)]) {
+        if (note !== null) {
+          changes.push(`${describeReassignment(action)} — ${note}`);
+        }
       }
     }
 

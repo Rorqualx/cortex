@@ -1,7 +1,11 @@
 // Model-deprecation check: vision-drop warning note + provider-index caps projection.
 import { describe, expect, it } from "vitest";
 import { loadOpenClawProviderIndex } from "../model-catalog/provider-index/index.js";
-import { buildProviderIndexInputCaps, visionDropNote } from "./doctor-model-deprecation-check.js";
+import {
+  buildProviderIndexInputCaps,
+  serveSwapNote,
+  visionDropNote,
+} from "./doctor-model-deprecation-check.js";
 
 const CAPS = buildProviderIndexInputCaps({
   providers: {
@@ -89,5 +93,56 @@ describe("visionDropNote", () => {
         liveCaps,
       ),
     ).toContain("drops vision capability");
+  });
+});
+
+const SWAPS = [
+  { provider: "deepseek", from: "deepseek-v4-flash", to: "DeepSeek-V4.1-Flash-1003" },
+  // Mixed casing proves matching is case-insensitive on both provider and id.
+  { provider: "ZAI", from: "GLM-5.1", to: "glm-5.2" },
+];
+
+describe("serveSwapNote", () => {
+  it("warns when the pinned name is now served as a different snapshot id", () => {
+    const note = serveSwapNote(
+      rewriteAction("deepseek", "deepseek-v4-flash", "deepseek-flash"),
+      SWAPS,
+    );
+    expect(note).toContain("deepseek-v4-flash");
+    expect(note).toContain("DeepSeek-V4.1-Flash-1003");
+    expect(note).toContain("behavior changed behind a stable name");
+  });
+
+  it("matches provider and model id case-insensitively", () => {
+    const note = serveSwapNote(rewriteAction("zai", "glm-5.1", "glm-5.2"), SWAPS);
+    expect(note).toContain("glm-5.2");
+  });
+
+  it("stays silent when the pin has no recorded upgrade link", () => {
+    expect(
+      serveSwapNote(rewriteAction("deepseek", "deepseek-chat", "deepseek-flash"), SWAPS),
+    ).toBeNull();
+    expect(serveSwapNote(rewriteAction("other", "deepseek-v4-flash", "x"), SWAPS)).toBeNull();
+  });
+
+  it("fires also for clear-outcome actions (the swap explains the loss)", () => {
+    const note = serveSwapNote(
+      {
+        binding: {
+          kind: "alias",
+          alias: "x",
+          ref: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+        },
+        outcome: "clear" as const,
+      },
+      SWAPS,
+    );
+    expect(note).toContain("DeepSeek-V4.1-Flash-1003");
+  });
+
+  it("stays silent with no probe data (providers without snapshot ids)", () => {
+    expect(
+      serveSwapNote(rewriteAction("deepseek", "deepseek-v4-flash", "deepseek-flash"), []),
+    ).toBeNull();
   });
 });
