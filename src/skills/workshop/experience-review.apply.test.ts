@@ -553,8 +553,9 @@ describe("experience review auto apply", () => {
       const workspaceDir = await tempDirs.make("openclaw-experience-auto-apply-workspace-");
       const agentDir = await tempDirs.make("openclaw-experience-auto-apply-agent-dir-");
       const config = {
-        agents: { entries: { main: { default: true, agentDir } } },
-        skills: { forge: { autonomous: { mode: "auto" as const } } },      };
+        agents: { entries: { main: { agentDir } } },
+        skills: { forge: { autonomous: { mode: "auto" as const } } },
+      };
       const foregroundPromptCacheKey = resolveSessionBoundaryPromptCacheKey({
         api: "openai-responses",
         boundaryCount: 0,
@@ -734,7 +735,7 @@ describe("experience review auto apply", () => {
         foregroundPromptContext: foregroundPromptContext(worktreeWorkspaceDir),
       },
       config: {
-        agents: { list: [{ id: "main", default: true, workspace: canonicalWorkspaceDir }] },
+        agents: { list: [{ id: "main", workspace: canonicalWorkspaceDir }] },
         skills: { forge: { autonomous: { mode: "auto" as const } } },
       },
     };

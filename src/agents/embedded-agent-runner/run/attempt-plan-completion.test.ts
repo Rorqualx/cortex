@@ -113,7 +113,7 @@ it.each([
     });
     const events: Array<{ stream: string; data: Record<string, unknown> }> = [];
     const attempt = { completionCheck };
-    const prepared = prepareCatalogExecutor([], {
+    const prepared = prepareCatalogExecutor({
       activeSession: session,
       attempt,
       onAgentEvent: (event) => events.push(event),
@@ -266,7 +266,7 @@ it.each([
     },
   });
   const { session } = await createTestSession({ customTools: [progress] });
-  const prepared = prepareCatalogExecutor([], {
+  const prepared = prepareCatalogExecutor({
     activeSession: session,
     attempt: {
       completionCheck,
@@ -353,7 +353,7 @@ it.each([
           createMockPluginRegistry([{ hookName: "before_agent_finalize", handler: onFinalize }]),
         )
       : undefined;
-  const prepared = prepareCatalogExecutor([], {
+  const prepared = prepareCatalogExecutor({
     activeSession: session,
     hookRunner,
     runAbortController: controller,

@@ -34,11 +34,6 @@ type PostCompactionGuardVerdict =
       message: string;
     };
 
-type PostCompactionLoopGuard = {
-  armPostCompaction: () => void;
-  observe: (call: PostCompactionGuardObservation) => PostCompactionGuardVerdict;
-};
-
 function asPositiveInt(value: number | undefined, fallback: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
     return fallback;
@@ -53,14 +48,13 @@ const observationSignature = (call: PostCompactionGuardObservation): string =>
 export function createPostCompactionLoopGuard(
   config?: ToolLoopPostCompactionGuardConfig,
   options?: { enabled?: boolean },
-): PostCompactionLoopGuard {
+) {
   const enabled = options?.enabled ?? true;
   const windowSize = asPositiveInt(config?.windowSize, DEFAULT_WINDOW_SIZE);
   const recentCalls: PostCompactionGuardObservation[] = [];
   let remainingAttempts = 0;
   let history: PostCompactionGuardObservation[] = [];
   let baselineSignatures: Set<string> | undefined;
-  let windowObserved = 0;
   let windowRepeats = 0;
   let repeatTools = new Set<string>();
 
@@ -74,20 +68,11 @@ export function createPostCompactionLoopGuard(
         : undefined;
     remainingAttempts = windowSize;
     history = [];
-    windowObserved = 0;
     windowRepeats = 0;
     repeatTools = new Set<string>();
     if (enabled) {
       log.info(`post-compaction guard armed for ${windowSize} attempts`);
     }
-  };
-
-  const logWindowSummary = (): void => {
-    const tools = [...repeatTools].toSorted().join(",");
-    log.info(
-      `post-compaction window closed: toolCalls=${windowObserved} ` +
-        `preCompactionRepeats=${windowRepeats}${tools ? ` tools=${tools}` : ""}`,
-    );
   };
 
   const observe = (call: PostCompactionGuardObservation): PostCompactionGuardVerdict => {
@@ -102,7 +87,6 @@ export function createPostCompactionLoopGuard(
       return { shouldAbort: false, armed: false, remainingAttempts: 0 };
     }
     remainingAttempts -= 1;
-    windowObserved += 1;
     if (baselineSignatures?.has(observationSignature(call))) {
       windowRepeats += 1;
       repeatTools.add(call.toolName);
@@ -135,9 +119,12 @@ export function createPostCompactionLoopGuard(
     }
 
     if (!armedAfter) {
-      logWindowSummary();
+      const tools = [...repeatTools].toSorted().join(",");
+      log.info(
+        `post-compaction window closed: toolCalls=${history.length} ` +
+          `preCompactionRepeats=${windowRepeats}${tools ? ` tools=${tools}` : ""}`,
+      );
       baselineSignatures = undefined;
-      windowObserved = 0;
       windowRepeats = 0;
       repeatTools = new Set<string>();
     }

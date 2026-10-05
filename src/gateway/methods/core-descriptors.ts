@@ -3,6 +3,7 @@ import type { CoreGatewayMethodSpecRow } from "./core-descriptor-types.js";
 // Canonical append-only method table; derived lookup and dispatch policy lives in core-method-policy.ts.
 const CONTROL_PLANE_WRITE = { controlPlaneWrite: true } as const;
 const SIDECAR_CONTROL_PLANE_WRITE = { startup: true, controlPlaneWrite: true } as const;
+const OBSERVATION = { lifetime: "observation" } as const;
 
 // This is the canonical core method policy table: every core handler must appear here so
 // listing, authorization, startup availability, and write throttling stay in sync.
@@ -761,4 +762,9 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   // Provider-neutral reads append without changing legacy method indices or payloads.
   ["memory.get", "memory-search", "operator.read", "2026.9"],
   ["memory.status", "memory-search", "operator.read", "2026.9"],
+  ["sessions.files.assets", "sessions-files", "operator.read", "2026.9"],
+  ["worktrees.recoverRemoval", "worktrees", "operator.admin", "2026.9", CONTROL_PLANE_WRITE],
+  ["worktrees.retireSnapshot", "worktrees", "operator.admin", "2026.9", CONTROL_PLANE_WRITE],
+  ["sessions.processes.list", "session-processes", "operator.read", "2026.9", OBSERVATION],
+  ["sessions.processes.stop", "session-processes", "operator.write", "2026.9"],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];
