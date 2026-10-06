@@ -225,7 +225,9 @@ describe("collectEnabledInsecureOrDangerousFlags", () => {
 
   it("keeps legacy list indices for id-less dangerous sandbox rows", () => {
     const cfg: Omit<OpenClawConfig, "agents"> & {
-      agents?: NonNullable<OpenClawConfig["agents"]> & { list?: Record<string, unknown>[] };
+      agents?: Omit<NonNullable<OpenClawConfig["agents"]>, "list"> & {
+        list?: Record<string, unknown>[];
+      };
     } = {
       agents: {
         list: [
@@ -242,9 +244,9 @@ describe("collectEnabledInsecureOrDangerousFlags", () => {
         ],
       },
     };
-    expect(collectEnabledInsecureOrDangerousFlagsFromContracts(cfg)).toContain(
-      "agents.list.1.sandbox.docker.dangerouslyAllowContainerNamespaceJoin=true",
-    );
+    expect(
+      collectEnabledInsecureOrDangerousFlagsFromContracts(cfg as unknown as OpenClawConfig),
+    ).toContain("agents.list.1.sandbox.docker.dangerouslyAllowContainerNamespaceJoin=true");
   });
   it("uses keyed roster paths for entries-shaped dangerous sandbox flags", () => {
     expect(

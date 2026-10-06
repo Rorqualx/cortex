@@ -30,6 +30,7 @@ describe("Summary Embeddings", () => {
       risks: ["Token leakage vulnerability", "Revocation strategy needed"],
       utteranceCount: 2,
       ...overrides,
+      source: overrides?.source ?? "heuristic",
     };
   }
 
@@ -129,6 +130,7 @@ describe("Summary Embeddings", () => {
       const summary: TranscriptsSummary = {
         sessionId: "minimal",
         title: "Minimal",
+        source: "heuristic",
         generatedAt: "2024-01-01T00:00:00Z",
         overview: "Brief discussion",
         transcript: [],

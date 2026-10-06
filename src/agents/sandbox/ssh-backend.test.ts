@@ -9,6 +9,7 @@ import {
 } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
+import { setActiveDegradedSecretOwners } from "../../secrets/runtime-degraded-state.js";
 import { captureFullEnv } from "../../test-utils/env.js";
 import { resolveSshRuntimePaths } from "./ssh-backend.js";
 import type { SandboxConfig } from "./types.js";

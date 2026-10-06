@@ -239,7 +239,6 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentConfig: (cfg: unknown, agentId: string) =>
     getAgentList(cfg).find((entry) => entry.id === agentId),
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
 }));
 
 vi.mock("../../agents/simple-completion-runtime.js", () => ({
