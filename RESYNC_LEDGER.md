@@ -528,3 +528,20 @@ Preflight 20:32 left tsgo:core=19 after merge commit 60b7d0f878f. All 19 traced 
 - `src/workboard/sessions-board-rules.ts` + `packages/workboard-contract/src/sessions-board.test.ts` — git rm (KEEP-OURS): orphaned salvage port of upstream #163823 extensions/workboard rules had zero consumers and imported contract types the fork doesn't carry; the adopted test imports the nonexistent sessions-board.js module. Fork ships no sessions-board feature (standing policy: upstream workboard features not shipped; fork workboard = core src/workboard/).
 
 tsgo:core 19→0 locally (cache cleared).
+
+## 2026-10-06 bounded-batch merge (e25a9815, advance 200 of 1091)
+
+- `extensions/workboard/**` + `packages/workboard-contract/src/sessions-board.{ts,test.ts}`: **KEEP-OURS** deletion — fork product decision 14e83c5185e (replaced by core `src/workboard/`); upstream delta since base = sidebar feat #164604 + deslop refactors on the abandoned tree; zero `sessions-board` importers outside it.
+- `src/cron/service.pr-automation.test.ts`: **KEEP-OURS** deletion — UI-coupled to dropped `ui/src/lib/session-pr-automation-spec.js` (fork ui policy).
+- `src/agents/tools/sessions-list-title.test.ts`: **ADOPT-UPSTREAM** — imports all resolve in merged tree, feature (sessions-list title) in fork production; prior deletion was unledgered 10-04 merge debt.
+- `src/agents/provider-request-config.ts` (+ new `.types.ts`): **ADOPT-UPSTREAM** module split; grafted fork `maxConcurrentRequests` (provider-concurrency-gate) into `.types.ts` + sanitize/merge/policy fns.
+- `src/agents/embedded-agent-runner/post-compaction-loop-guard.ts`: **ENHANCE-OURS** — fork `ToolLoopPostCompactionGuardConfig` windowSize feature on upstream deslop scaffold.
+- `src/cron/types.ts`: **ENHANCE-OURS** — keep fork-required `export type CronTrigger`, adopt upstream `SchemaContract` wire-derived def (shape-identical: script/once).
+- `src/agents/tool-catalog.ts`: **ADOPT-UPSTREAM** `portal` tool entry; fork exports kept via drift rebase.
+- `src/gateway/methods/core-descriptors.ts`: **ADOPT-UPSTREAM** +5 new method rows (sessions.files.assets, worktrees.recoverRemoval/retireSnapshot, sessions.processes.list/stop).
+- `src/agents/system-prompt.ts`: **ENHANCE-OURS** — kept fork helper extraction; ported upstream's 3 embed-text edit groups into `buildWebchatCanvasSection`.
+- `src/transcripts/summary.ts`: **ENHANCE-OURS** — upstream SchemaContract derivation + fork persistence fields incl. memory-l3 `embedding`.
+- `extraparams-resolve.test.ts`: **ADOPT-UPSTREAM** parameterized alias table (subsumes fork list-shape tests; merged config is entries-only) + grafted 2 fork-unique tests.
+- `run-fallback-policy.test.ts`: **UNION** — fork base + 5 upstream-unique tests (production identical both sides).
+- `ssh-backend.test.ts` / `agents-mutate.test.ts` / `run-node.test.ts` / `experience-review.apply.test.ts` / `build-all.test.ts`: upstream additions on fork scaffold (run-node: + upstream cast cleanup; experience-review: fork forge/seed flow kept, dual-key skills type admits both).
+- merge=ours drift (11 files) rebased onto upstream w/ fork delta re-applied; protocol-gen + kysely + lockfile regenerated clean.

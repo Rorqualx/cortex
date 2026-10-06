@@ -47,7 +47,7 @@ import type { PendingSessionWorktree } from "./session-worktree-intent.js";
 
 export type { SessionToolOverrides } from "./session-tool-overrides.js";
 
-export type SessionScope = "per-sender" | "global";
+export type { SessionScope } from "../types.base.js";
 export type SessionChatType = ChatType;
 export type PersistedSessionRunStatus = SessionRunStatus;
 export const SESSION_TOTAL_TOKENS_VERSION = 1 as const;

@@ -3,6 +3,8 @@ import {
   normalizeStringEntries,
   normalizeUniqueStringEntries,
 } from "@openclaw/normalization-core/string-normalization";
+import type { SchemaContract } from "../../packages/gateway-protocol/src/schema-contract.js";
+import type { TranscriptsGetResult } from "../../packages/gateway-protocol/src/schema/transcripts.js";
 import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { TranscriptSessionDescriptor, TranscriptUtterance } from "./provider-types.js";
@@ -14,14 +16,14 @@ import type { TranscriptSessionDescriptor, TranscriptUtterance } from "./provide
  * transcripts when no model-backed summarizer is involved.
  */
 /** Summary artifact written alongside transcript sessions. */
-export type TranscriptsSummary = {
+type TranscriptSummaryWire = NonNullable<TranscriptsGetResult["summary"]>;
+
+export type TranscriptsSummary = SchemaContract<
+  Omit<TranscriptSummaryWire, "markdown" | "source">
+> & {
   sessionId: string;
   title: string;
-  generatedAt: string;
-  overview: string;
-  participants: string[];
-  source: "model" | "heuristic";
-  model?: string;
+  source: NonNullable<TranscriptSummaryWire["source"]>;
   transcript: string[];
   decisions: string[];
   actionItems: string[];
