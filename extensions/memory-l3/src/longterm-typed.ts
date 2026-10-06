@@ -572,6 +572,7 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     archived: false,
     archivedAt: null,
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
+    validity: c.latest.validity,
     lastAccessedAt: c.latest.createdAt,
     volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
     sourceSessionId: sessionId,
@@ -616,6 +617,9 @@ function reaffirm(
     firstSeenAt: Math.min(prior.firstSeenAt, c.firstSeenAt),
     lastConfirmedAt: Math.max(prior.lastConfirmedAt, c.latest.createdAt),
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
+    // QW-2 (LAPSE): the latest emission's validity window wins; a reaffirm
+    // without a validity marker keeps the prior window (conservative).
+    validity: c.latest.validity ?? prior.validity,
     recallCount: merged.length,
     sourceChunkIds: merged,
     validFrom: prior.validFrom,
@@ -663,6 +667,7 @@ function supersede(
     firstSeenAt: Math.min(prior.firstSeenAt, c.firstSeenAt),
     lastConfirmedAt: c.latest.createdAt,
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
+    validity: c.latest.validity,
     recallCount: merged.length,
     sourceChunkIds: merged,
     history: [...prior.history, { value: prior.value, supersededAt: now }],

@@ -11,6 +11,7 @@ import { createZeroUsageFixture } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it } from "vitest";
 import { runSingleProviderCatalog } from "../test-support/provider-model-test-helpers.js";
 import deepseekPlugin from "./index.js";
+import manifest from "./openclaw.plugin.json" with { type: "json" };
 import { buildDeepSeekProvider } from "./provider-catalog.js";
 import { createDeepSeekV4ThinkingWrapper } from "./stream.js";
 
@@ -180,6 +181,32 @@ describe("deepseek provider plugin", () => {
     expect(resolved.method.id).toBe("api-key");
   });
 
+  it("declares the Anthropic-protocol endpoint as a refreshable deepseek-anthropic provider", () => {
+    // DeepSeek serves an Anthropic-compatible API at https://api.deepseek.com/anthropic.
+    // It rides the existing `api: "anthropic-messages"` seam: discovery resolves via
+    // fetchAnthropicMessagesModels (GET <baseUrl>/v1/models) and requests route through
+    // the generic Anthropic transport — no new plugin transport code.
+    expect(manifest.providers).toContain("deepseek-anthropic");
+
+    const anthropicCatalog = manifest.modelCatalog.providers["deepseek-anthropic"];
+    expect(anthropicCatalog.baseUrl).toBe("https://api.deepseek.com/anthropic");
+    expect(anthropicCatalog.api).toBe("anthropic-messages");
+    expect(anthropicCatalog.defaultModel).toBe("deepseek-flash");
+    expect(anthropicCatalog.models.map((model) => model.id)).toEqual([
+      "deepseek-flash",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
+    ]);
+
+    // Live discovery against the Anthropic /v1/models endpoint, same seam as kimi-coding.
+    expect(manifest.modelCatalog.discovery["deepseek-anthropic"]).toBe("refreshable");
+    // The same DEEPSEEK_API_KEY credential backs both providers.
+    const setupEntry = manifest.setup.providers.find((entry) => entry.id === "deepseek-anthropic");
+    expect(setupEntry?.envVars).toEqual(["DEEPSEEK_API_KEY"]);
+    // Requests keep the deepseek payload family.
+    expect(manifest.providerRequest.providers["deepseek-anthropic"]?.family).toBe("deepseek");
+  });
+
   it("builds the static DeepSeek model catalog", async () => {
     const provider = await registerSingleProviderPlugin(deepseekPlugin);
     const catalogProvider = await runSingleProviderCatalog({ catalog: provider.staticCatalog });
@@ -190,6 +217,7 @@ describe("deepseek provider plugin", () => {
       "deepseek-v4-flash",
       "deepseek-v4-pro",
       "deepseek-v4-flash-vision-exp",
+      "deepseek-flash",
     ]);
     const flashModel = catalogProvider.models?.find((model) => model.id === "deepseek-v4-flash");
     expect(flashModel?.reasoning).toBe(true);
@@ -221,6 +249,11 @@ describe("deepseek provider plugin", () => {
         contextWindow: 1_000_000,
         maxTokens: 384_000,
         cost: { input: 0.44, output: 1.32, cacheRead: 0.014, cacheWrite: 0 },
+      },
+      "deepseek-flash": {
+        contextWindow: 1_000_000,
+        maxTokens: 384_000,
+        cost: { input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0 },
       },
     });
   });

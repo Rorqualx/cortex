@@ -247,13 +247,15 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=16");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=17");
     // QW1 (2026-08-16): extraction prompts must demand verbatim temporal expressions.
     expect(call.systemPrompt).toContain("TEMPORAL");
     // QW2 (2026-10-05): LAPSE verb-aspect preservation guard.
     expect(call.systemPrompt).toContain("ASPECT");
     // QW2 (2026-10-05): Manufactured Confidence — hedges stay hedged in fact text.
     expect(call.systemPrompt).toContain("HEDGE");
+    // QW-2 (2026-10-06): LAPSE time-bounded vs. standing validity preservation.
+    expect(call.systemPrompt).toContain("VALIDITY");
     // QW3 (2026-08-24): MCB persist/verify policy guard — unambiguous durable facts only.
     expect(call.systemPrompt).toContain("PERSIST");
     expect(call.systemPrompt).toContain("verification bar");

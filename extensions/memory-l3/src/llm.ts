@@ -1,5 +1,5 @@
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
-import type { FactCertainty } from "./types.js";
+import type { FactCertainty, FactValidity } from "./types.js";
 
 export type LlmCaller = (params: {
   systemPrompt: string;
@@ -228,6 +228,10 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
   };
 }
 
+// PROMPT_VERSION = 17 — adds VALIDITY rule (LAPSE time-bounded vs. standing
+// distinction): explicitly bounded typed facts emit validity { kind,
+// validThrough } so retrieval scoring can demote them once the window closes
+// — no contradicting fact required; temporal qualifiers stay verbatim.
 // PROMPT_VERSION = 16 — adds ASPECT rule (LAPSE verb-aspect preservation, arXiv
 // matched-pair evidence: progressive/habitual forms must not flatten into completed
 // ones) and HEDGE rule (Manufactured Confidence: hedged source wording stays hedged
@@ -266,10 +270,11 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=16):
+Rules (PROMPT_VERSION=17):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts — statements that remain true across future sessions (identity, preferences, decisions, infrastructure, verified knowledge). Do NOT persist transient/changing state ("currently", "right now", in-progress task status, session-scoped values) or ambiguous statements (unclear referent, hedged wording, unresolved questions) as confirmed facts: skip them entirely when they are pure session context, otherwise emit with certainty "tentative" AND importance ≤0.4 so the verification bar holds them until re-observed. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: preserve dates and times verbatim; do not abbreviate or drop temporal expressions (keep "2026-08-16", "9:00 AM MT", "every Tuesday", "last week" exactly as stated) — temporal anchors drive later retrieval.
+- VALIDITY: preserve the time-bounded vs. standing distinction. Keep the temporal qualifier verbatim inside the fact text ("since 2026-06", "currently", "until March", "expires 2027-01") — never drop it or rewrite a bounded statement into an unqualified standing one. Typed facts whose value is explicitly time-bounded ("until ...", "through ...", "expires ...") must additionally emit "validity": { "kind": "time-bounded", "validThrough": "<end date as YYYY-MM-DD or YYYY-MM, or null when no explicit end date>" }; standing facts omit validity entirely.
 - ASPECT: preserve verb aspect exactly as stated — keep the distinction between ongoing ("is migrating"), habitual ("runs every Tuesday"), and completed ("migrated") actions; never flatten ongoing/habitual forms into completed ones.
 - HEDGE: keep hedged wording from the source ("might", "plans to", "reportedly", "unconfirmed") inside the fact text itself — never rewrite a hedged source into a definitive statement; also mark certainty "tentative".
 - CONFLICT: when sources give conflicting values for the same fact or slot, do NOT force one definitive value — emit each alternative separately: typed facts repeat the slot with each conflicting value at confidence ≤0.5 (each with its own sourceSpan), and the prose fact carries certainty "tentative". Supersession arbitration happens downstream; extraction must preserve all sides of the conflict.
@@ -326,10 +331,11 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=16-NATIVE):
+Rules (PROMPT_VERSION=17-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts (true across future sessions: identity, preferences, decisions, infrastructure, verified knowledge). Transient/changing state ("currently", in-progress status, session-scoped values) and ambiguous statements (unclear referent, hedged wording, unresolved questions) must NOT be persisted as confirmed — skip when pure session context, else certainty "tentative" + importance ≤0.4 for the verification bar. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: dates and times must stay verbatim even under compression — never abbreviate or drop temporal expressions ("2026-08-16", "9:00 AM MT", "every Tuesday", "last week"); temporal anchors drive later retrieval.
+- VALIDITY: keep the time-bounded vs. standing distinction — temporal qualifiers ("since 2026-06", "currently", "until March") stay verbatim in fact text; typed facts with an explicit end emit "validity": { "kind": "time-bounded", "validThrough": "YYYY-MM-DD | YYYY-MM | null" }; standing facts omit validity.
 - ASPECT: verb aspect survives compression — ongoing ("is migrating"), habitual ("runs every Tuesday"), completed ("migrated") stay distinct; never flatten progressive/habitual into completed.
 - HEDGE: hedged source wording ("might", "plans to", "reportedly", "unconfirmed") stays in the fact text — never launder a hedge into a definitive statement; certainty "tentative".
 - CONFLICT: conflicting values for the same slot → emit each alternative separately (same slot, each value, confidence ≤0.5, own sourceSpan; prose certainty "tentative"). Never force one winner — supersession arbitration is downstream.
@@ -396,6 +402,9 @@ export type ExtractedTypedFact = {
   sourceSpan: string;
   unit: string | null;
   confidence: number;
+  /** QW-2 (LAPSE): emitted per the VALIDITY rule for explicitly time-bounded
+   * values; absent = standing. */
+  validity?: FactValidity;
 };
 
 export type ExtractResult = {
@@ -603,15 +612,64 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
     }
     const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
     const unit = typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null;
+    const validity = normalizeFactValidity(o.validity);
     out.push({
       slot,
       value: valueRaw,
       sourceSpan: spanRaw,
       unit,
       confidence: Math.max(0, Math.min(1, confidenceRaw)),
+      ...(validity ? { validity } : {}),
     });
   }
   return out;
+}
+
+/**
+ * QW-2 (LAPSE): coerce the LLM-emitted validity marker into a FactValidity.
+ * Tolerant of drift: kind must be "standing" or "time-bounded"; validThrough
+ * accepts epoch seconds/ms or a compact ISO date (YYYY, YYYY-MM, YYYY-MM-DD),
+ * resolved to the END of the stated period — "until 2026-06" means the value
+ * is valid through the last moment of June 2026. An unparseable end date
+ * keeps kind "time-bounded" with no deterministic expiry; the textual
+ * qualifier preserved by the VALIDITY rule still guards recall.
+ */
+function normalizeFactValidity(raw: unknown): FactValidity | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const o = raw as Record<string, unknown>;
+  const kindRaw = typeof o.kind === "string" ? o.kind.trim().toLowerCase() : "";
+  if (kindRaw !== "standing" && kindRaw !== "time-bounded") {
+    return undefined;
+  }
+  if (kindRaw === "standing") {
+    return { kind: "standing" };
+  }
+  const validThrough = coerceValidThrough(o.validThrough ?? o.valid_through ?? o.until);
+  return { kind: "time-bounded", ...(validThrough !== undefined ? { validThrough } : {}) };
+}
+
+function coerceValidThrough(raw: unknown): number | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    // Accept epoch seconds or milliseconds (same heuristic as model-discovery).
+    return raw < 1_000_000_000_000 ? Math.round(raw * 1000) : Math.round(raw);
+  }
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const match = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/.exec(raw.trim());
+  if (!match) {
+    return undefined;
+  }
+  const year = Number(match[1]);
+  const month = match[2] ? Number(match[2]) : 12;
+  if (month < 1 || month > 12) {
+    return undefined;
+  }
+  // End-of-period semantics: the stated period's final millisecond.
+  const lastDay = match[3] ? Number(match[3]) : new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month - 1, lastDay, 23, 59, 59, 999)).getTime();
 }
 
 function normalizeDecisions(items: ReadonlyArray<unknown>): ExtractedDecision[] {

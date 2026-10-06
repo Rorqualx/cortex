@@ -1113,6 +1113,7 @@ function liftToTypedFact(
     confidence: extracted.confidence,
     createdAt,
     lastVerifiedAt: createdAt,
+    validity: extracted.validity,
     eventTime: episodic?.eventTime,
     sessionId: episodic?.sessionId,
     participants: episodic?.participants,

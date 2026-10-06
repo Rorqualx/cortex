@@ -24,6 +24,8 @@ import {
   DEFAULT_SCORING_CONFIG,
   type CorpusStats,
   jaccard,
+  parseQueryTimeRange,
+  type QueryTimeRange,
   type ScoringConfig,
   rankByScore,
   rrfFuse,
@@ -737,6 +739,11 @@ export async function retrieveTopK(params: {
       ? Date.now() + retConfig.retrievalTimeoutMs
       : null;
 
+  // TEMPS: parse an explicit query time range once; facts whose temporal
+  // footprint overlaps it earn a small alignment boost in the composite
+  // (weight 0.05 — non-temporal queries parse to null and are unaffected).
+  const queryTimeRange = parseQueryTimeRange(params.query, now);
+
   for (const item of items) {
     // Check deadline before scoring each item (avoids per-item timer overhead)
     if (scoringDeadline !== null && Date.now() > scoringDeadline) {
@@ -757,6 +764,7 @@ export async function retrieveTopK(params: {
       significant: item.fact.significant,
       informationGain: item.informationGain,
       sourceTrust: item.sourceTrust,
+      ...(queryTimeRange ? { queryTimeRange } : {}),
     });
     // Add embedding-based semantic signal when both query and fact have vectors
     if (
@@ -860,6 +868,8 @@ export async function retrieveTopK(params: {
       recallCount: retrievalSignalMap.get(item.fact.id)?.recallCount ?? 0,
       ageMs: now - item.fact.createdAt,
       config,
+      ...(item.fact.validity ? { validity: item.fact.validity } : {}),
+      nowMs: now,
       ...(degree > 0 ? { centrality: Math.min(1, degree / centralityMaxDegree) } : {}),
     });
     const score = rawScore * demotion;
@@ -1534,6 +1544,8 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     eventTime: typed.eventTime,
     sessionId: typed.sessionId,
     participants: typed.participants,
+    // QW-2 (LAPSE): thread the validity window into the scoring pipeline.
+    validity: typed.validity,
   };
 }
 
@@ -1551,6 +1563,8 @@ function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
     // HERO-style provenance-on-recall: thread the verbatim source span
     // through so the recall renderer can surface an evidence pointer.
     provenanceQuote: ltt.provenance?.quote,
+    // QW-2 (LAPSE): thread the validity window into the scoring pipeline.
+    validity: ltt.validity,
   };
 }
 

@@ -10,12 +10,14 @@ import {
   episodicValidity,
   fsrsRetrievability,
   jaccard,
+  parseQueryTimeRange,
   rankByScore,
   recencyScore,
   rrfFuse,
   scoreFact,
   sourceTrustToReliability,
   staleDemotionMultiplier,
+  temporalAlignmentScore,
   tokenize,
   volatilityMultiplier,
 } from "./scoring.js";
@@ -980,6 +982,67 @@ describe("staleDemotionMultiplier", () => {
     ).toBe(0.5);
   });
 
+  it("QW-2 (LAPSE): window-closed time-bounded facts demote regardless of recall/centrality", () => {
+    const now = 1_800_000_000_000;
+    const expired = { kind: "time-bounded" as const, validThrough: now - DAY };
+    // Deterministic expiry: high recall history and load-bearing centrality
+    // cannot resurrect an expired value — no contradicting fact required.
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 5,
+        ageMs: 1 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: expired,
+        centrality: 1.0,
+        nowMs: now,
+      }),
+    ).toBe(0.5);
+    // recallCount=0 path also hits the factor floor (never below it).
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: expired,
+        nowMs: now,
+      }),
+    ).toBe(0.5);
+  });
+
+  it("QW-2 (LAPSE): open validity windows and standing facts keep normal demotion", () => {
+    const now = 1_800_000_000_000;
+    // Window still open → the normal age gate applies (young fact not demoted).
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 10 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: { kind: "time-bounded", validThrough: now + DAY },
+        nowMs: now,
+      }),
+    ).toBe(1.0);
+    // Standing facts are unaffected by the window-closed branch.
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 3,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: { kind: "standing" },
+        nowMs: now,
+      }),
+    ).toBe(1.0);
+    // Time-bounded with no parseable end date → no deterministic expiry.
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 3,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: { kind: "time-bounded" },
+        nowMs: now,
+      }),
+    ).toBe(1.0);
+  });
+
   it("attenuates demotion for load-bearing facts (CATD centrality, default attenuation 0.5)", () => {
     // recallCount=0, factor=0.5, centrality=1.0 → 0.5 + 0.5*min(1, 0.5) = 0.75
     expect(
@@ -1420,5 +1483,151 @@ describe("QW-1: rankByScore", () => {
 
   it("returns empty array for empty map", () => {
     expect(rankByScore(new Map())).toEqual([]);
+  });
+});
+
+describe("QW-3 (TEMPS): parseQueryTimeRange", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = new Date(2026, 9, 6, 12).getTime(); // 2026-10-06 local
+
+  it("parses an ISO date to its day window", () => {
+    const range = parseQueryTimeRange("what did we do on 2026-03-15", NOW);
+    expect(range).not.toBeNull();
+    expect(range!.start).toBe(new Date(2026, 2, 15).getTime());
+    expect(range!.end).toBe(new Date(2026, 2, 15).getTime() + DAY);
+  });
+
+  it("parses month-name + year to the calendar month", () => {
+    const range = parseQueryTimeRange("plans from March 2026", NOW);
+    expect(range!.start).toBe(new Date(2026, 2, 1).getTime());
+    expect(range!.end).toBe(new Date(2026, 3, 1).getTime());
+  });
+
+  it("parses a bare year (word-bounded)", () => {
+    const range = parseQueryTimeRange("anything decided in 2025", NOW);
+    expect(range!.start).toBe(new Date(2025, 0, 1).getTime());
+    expect(range!.end).toBe(new Date(2026, 0, 1).getTime());
+  });
+
+  it("parses two dates into a span (between A and B)", () => {
+    const range = parseQueryTimeRange("between 2026-01-01 and 2026-02-01", NOW);
+    expect(range!.start).toBe(new Date(2026, 0, 1).getTime());
+    expect(range!.end).toBe(new Date(2026, 1, 1).getTime() + DAY);
+  });
+
+  it("treats since/after as a range up to now", () => {
+    const range = parseQueryTimeRange("changes since June 2026", NOW);
+    expect(range!.start).toBe(new Date(2026, 5, 1).getTime());
+    expect(range!.end).toBe(NOW);
+  });
+
+  it("parses relative windows anchored at now", () => {
+    const range = parseQueryTimeRange("what happened last week", NOW);
+    expect(range!.end).toBe(NOW);
+    expect(range!.start).toBe(NOW - 7 * DAY);
+  });
+
+  it("returns null for non-temporal queries", () => {
+    expect(parseQueryTimeRange("what is the pi-hole IP", NOW)).toBeNull();
+    expect(parseQueryTimeRange("tell me about the greenhouse project", NOW)).toBeNull();
+  });
+});
+
+describe("QW-3 (TEMPS): temporalAlignmentScore", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const range = { start: new Date(2026, 2, 1).getTime(), end: new Date(2026, 2, 31).getTime() };
+
+  it("scores overlapping facts 1.0", () => {
+    expect(temporalAlignmentScore({ createdAt: new Date(2026, 2, 10).getTime() }, range)).toBe(1);
+  });
+
+  it("prefers eventTime over createdAt", () => {
+    expect(
+      temporalAlignmentScore(
+        {
+          createdAt: new Date(2025, 0, 1).getTime(),
+          eventTime: new Date(2026, 2, 5).getTime(),
+        },
+        range,
+      ),
+    ).toBe(1);
+  });
+
+  it("grades near misses 0.5 within one query-span", () => {
+    // 20 days after range end; the span is 30 days → within span → 0.5
+    expect(temporalAlignmentScore({ createdAt: range.end + 20 * DAY }, range)).toBe(0.5);
+  });
+
+  it("scores far misses 0", () => {
+    expect(temporalAlignmentScore({ createdAt: new Date(2020, 0, 1).getTime() }, range)).toBe(0);
+  });
+
+  it("extends time-bounded facts to validThrough (LAPSE interplay)", () => {
+    expect(
+      temporalAlignmentScore(
+        {
+          createdAt: new Date(2026, 0, 1).getTime(),
+          validity: { kind: "time-bounded", validThrough: new Date(2026, 2, 15).getTime() },
+        },
+        range,
+      ),
+    ).toBe(1);
+  });
+});
+
+describe("QW-3 (TEMPS): scoreFact + composite fusion", () => {
+  it("sets temporalAlignment from queryTimeRange and weighs it in composite", () => {
+    const fact = {
+      id: "f1",
+      text: "user subscribed to the gym plan",
+      importance: 0.5,
+      createdAt: new Date(2026, 2, 10).getTime(),
+      dedupKey: "k:gym",
+    };
+    const now = new Date(2026, 9, 6).getTime();
+    const marchRange = {
+      start: new Date(2026, 2, 1).getTime(),
+      end: new Date(2026, 2, 31).getTime(),
+    };
+    const distantRange = {
+      start: new Date(2020, 0, 1).getTime(),
+      end: new Date(2020, 0, 31).getTime(),
+    };
+    const inRange = scoreFact({
+      queryTokens: tokenize("gym plan"),
+      fact,
+      now,
+      config: DEFAULT_SCORING_CONFIG,
+      queryTimeRange: marchRange,
+    });
+    const outOfRange = scoreFact({
+      queryTokens: tokenize("gym plan"),
+      fact,
+      now,
+      config: DEFAULT_SCORING_CONFIG,
+      queryTimeRange: distantRange,
+    });
+    expect(inRange.temporalAlignment).toBe(1);
+    expect(outOfRange.temporalAlignment).toBe(0);
+    expect(
+      composite(inRange, DEFAULT_SCORING_CONFIG) - composite(outOfRange, DEFAULT_SCORING_CONFIG),
+    ).toBeCloseTo(0.05, 6);
+  });
+
+  it("defaults temporalAlignment to 0 without a queryTimeRange", () => {
+    const fact = {
+      id: "f1",
+      text: "standing fact",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const signals = scoreFact({
+      queryTokens: tokenize("standing"),
+      fact,
+      now: Date.now(),
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    expect(signals.temporalAlignment).toBe(0);
   });
 });

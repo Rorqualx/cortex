@@ -337,7 +337,7 @@ function buildVerificationPrompt(
 }
 
 const VERIFICATION_SYSTEM_PROMPT =
-  "You are a memory-quality verifier. Score each consolidation candidate on four axes (coverage, preservation, faithfulness, temporal) from 0 to 1. Temporal measures whether every date/time expression from the source facts survives verbatim. Be strict: any hallucination, missing information, or mangled date should score below 0.7. Output valid JSON only.";
+  "You are a memory-quality verifier. Score each consolidation candidate on four axes (coverage, preservation, faithfulness, temporal) from 0 to 1. Temporal measures whether every date/time expression and time-bounded qualifier (since/until/currently) from the source facts survives verbatim. Be strict: any hallucination, missing information, or mangled date should score below 0.7. Output valid JSON only.";
 
 function parseVerificationResponse(
   raw: string,
